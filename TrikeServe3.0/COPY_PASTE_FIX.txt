@@ -1,0 +1,52 @@
+================================================================================
+                    COPY & PASTE THIS TO FIX YOUR ERROR
+================================================================================
+
+STEP 1: CLOSE YOUR CURRENT TERMINAL/POWERSHELL WINDOW COMPLETELY
+   → Click the X button to close it
+   → Wait 2 seconds
+
+STEP 2: OPEN A NEW POWERSHELL WINDOW
+   → Press Windows Key
+   → Type: PowerShell
+   → Click Windows PowerShell
+
+STEP 3: COPY AND PASTE THESE COMMANDS ONE BY ONE
+
+Command 1 - Navigate to project:
+   cd "C:\Users\Mayo\Desktop\TrikeServe3.0\TrikeServe3.0"
+
+Command 2 - Delete cache:
+   Remove-Item -Recurse -Force node_modules\.vite -ErrorAction SilentlyContinue
+
+Command 3 - Restart dev server:
+   npm run dev
+
+STEP 4: WAIT FOR THIS MESSAGE IN CONSOLE
+   Look for these TWO ✅ checkmarks:
+
+   [Supabase Init] VITE_SUPABASE_URL: ✅ Set
+   [Supabase Init] VITE_SUPABASE_ANON_KEY: ✅ Set
+   [Supabase Init] ✅ All credentials loaded successfully
+
+   If you see these, the fix worked! ✅
+
+STEP 5: IN YOUR BROWSER
+   1. Press Ctrl+Shift+Delete (clears cache)
+   2. Select "All time"
+   3. Click "Clear browsing data"
+   4. Go to: http://localhost:5173
+   5. Login as business user
+   6. Go to Orders page
+   7. Orders should load WITHOUT ERRORS ✅
+
+================================================================================
+THAT'S IT! THE FIX IS COMPLETE!
+================================================================================
+
+If you see the ✅ checkmarks in PowerShell and orders appear in browser,
+the error is FIXED and business owners can now see their orders!
+
+Need help? Read: CRITICAL_FIX_DEV_SERVER_RESTART.md
+================================================================================
+

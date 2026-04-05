@@ -9,6 +9,7 @@ import BusinessSidebar from "./BusinessSidebar";
 import { useMediaQuery } from "../../hooks/useMediaQuery";
 import AddCustomizationModal, { CustomizationGroup } from "./AddCustomizationModal";
 import { useAuth } from "../../contexts/AuthContext";
+import { supabase } from "../../../utils/supabase";
 
 interface Category {
   id: string;
@@ -55,29 +56,267 @@ export default function BusinessMenu() {
   ]);
 
   const [menuItems, setMenuItems] = useState<MenuItem[]>([]);
+  const [restaurantId, setRestaurantId] = useState<string | null>(null);
 
-  // Load menu items from localStorage on mount
+  // First, get or create the restaurant record
   useEffect(() => {
-    if (user?.email) {
-      const storageKey = `menuItems_${user.email}`;
-      const savedItems = localStorage.getItem(storageKey);
-      if (savedItems) {
-        try {
-          setMenuItems(JSON.parse(savedItems));
-        } catch (error) {
-          console.error('Error loading menu items:', error);
+    const loadRestaurant = async () => {
+      if (!user?.id || user?.role !== 'business') return;
+
+      try {
+        // Check if restaurant exists for this user
+        const { data: existingRestaurant } = await supabase
+          .from('restaurants')
+          .select('id')
+          .eq('business_user_id', user.id)
+          .single();
+
+        if (existingRestaurant) {
+          setRestaurantId(existingRestaurant.id);
+        } else {
+          // Create restaurant record if it doesn't exist
+          const { data: newRestaurant, error } = await supabase
+            .from('restaurants')
+            .insert([{
+              name: user.businessName || user.name || 'My Restaurant',
+              business_user_id: user.id,
+              address: (user as any).businessAddress || '',
+              phone: user.phone || '',
+              rating: 5.0,
+              is_open: true,
+              created_at: new Date().toISOString(),
+            }])
+            .select()
+            .single();
+
+          if (newRestaurant) {
+            setRestaurantId(newRestaurant.id);
+          } else if (error) {
+            console.error('Error creating restaurant:', error);
+          }
         }
+      } catch (error) {
+        console.error('Error loading restaurant:', error);
       }
-    }
-  }, [user?.email]);
+    };
 
-  // Save menu items to localStorage whenever they change
+    loadRestaurant();
+  }, [user?.id, user?.role]);
+
+  // Load menu items from Supabase
   useEffect(() => {
-    if (user?.email && menuItems.length >= 0) {
+    const loadMenuItems = async () => {
+      if (!restaurantId) {
+        // Fallback to localStorage if no restaurant ID yet
+        console.log('[Menu Load] No restaurant ID, loading from localStorage');
+        if (user?.email) {
+          const storageKey = `menuItems_${user.email}`;
+          const savedItems = localStorage.getItem(storageKey);
+          if (savedItems) {
+            try {
+              const parsed = JSON.parse(savedItems);
+              console.log('[Menu Load] Loaded from localStorage:', parsed.length, 'items');
+              setMenuItems(parsed);
+            } catch (error) {
+              console.error('Error loading menu items from localStorage:', error);
+            }
+          }
+        }
+        return;
+      }
+
+      try {
+        console.log('[Menu Load] Loading from Supabase, restaurantId:', restaurantId);
+        const { data, error } = await supabase
+          .from('menu_items')
+          .select('*')
+          .eq('restaurant_id', restaurantId);
+
+        if (error) {
+          console.error('[Menu Load] Data API error:', error);
+          console.log('[Menu Load] Falling back to localStorage');
+          // Fallback to localStorage
+          if (user?.email) {
+            const storageKey = `menuItems_${user.email}`;
+            const savedItems = localStorage.getItem(storageKey);
+            if (savedItems) {
+              const parsed = JSON.parse(savedItems);
+              console.log('[Menu Load] Loaded from localStorage (fallback):', parsed.length, 'items');
+              setMenuItems(parsed);
+            }
+          }
+        } else if (data) {
+          console.log('[Menu Load] Loaded from Supabase:', data.length, 'items');
+          // Map Supabase data to MenuItem format
+          const items = data.map((item: any) => ({
+            id: item.id || Math.random(),
+            name: item.name,
+            description: item.description || '',
+            price: item.price,
+            image: item.image_url || 'https://images.unsplash.com/photo-1546069901-ba9599a7e63c?w=400',
+            category: item.category,
+            available: item.is_available,
+            customizationGroups: item.customization_groups || [],
+          }));
+          setMenuItems(items);
+        }
+      } catch (error) {
+        console.error('[Menu Load] Critical error fetching menu items:', error);
+        console.log('[Menu Load] Falling back to localStorage');
+      }
+    };
+
+    loadMenuItems();
+  }, [restaurantId, user?.email]);
+
+  // Save menu items to both Supabase and localStorage
+  useEffect(() => {
+    const saveMenuItems = async () => {
+      if (!user?.email) return;
+
+      // Always save to localStorage as backup
       const storageKey = `menuItems_${user.email}`;
       localStorage.setItem(storageKey, JSON.stringify(menuItems));
-    }
-  }, [menuItems, user?.email]);
+      console.log('[Menu Sync] Saved to localStorage:', menuItems.length, 'items');
+
+      // Save to Supabase if restaurant ID exists
+      if (!restaurantId) {
+        console.log('[Menu Sync] No restaurant ID yet, skipping Supabase save');
+        return;
+      }
+
+      try {
+        // For now, we'll sync items - in production you might want more sophisticated logic
+        for (const item of menuItems) {
+          if (typeof item.id === 'number') {
+            // Local item (not yet in Supabase), insert it
+            console.log('[Menu Sync] Inserting new item to Supabase:', item.name);
+            const { data: insertedItem, error: insertError } = await supabase
+              .from('menu_items')
+              .insert([{
+                restaurant_id: restaurantId,
+                name: item.name,
+                description: item.description,
+                price: item.price,
+                category: item.category,
+                image_url: item.image,
+                is_available: item.available,
+                created_at: new Date().toISOString(),
+              }])
+              .select()
+              .single();
+
+            if (insertError) {
+              console.error('[Menu Sync] Insert error:', insertError);
+            } else if (insertedItem) {
+              console.log('[Menu Sync] Item inserted successfully with UUID:', insertedItem.id);
+              // Update local state with UUID from Supabase
+              setMenuItems(prevItems =>
+                prevItems.map(i =>
+                  i.id === item.id ? { ...i, id: insertedItem.id } : i
+                )
+              );
+            }
+          } else if (typeof item.id === 'string') {
+            // Already in Supabase, update it
+            console.log('[Menu Sync] Updating item in Supabase:', item.name, 'ID:', item.id);
+            const { error: updateError } = await supabase
+              .from('menu_items')
+              .update({
+                name: item.name,
+                description: item.description,
+                price: item.price,
+                category: item.category,
+                image_url: item.image,
+                is_available: item.available,
+                updated_at: new Date().toISOString(),
+              })
+              .eq('id', item.id);
+
+            if (updateError) {
+              console.error('[Menu Sync] Update error:', updateError);
+            } else {
+              console.log('[Menu Sync] Item updated successfully');
+            }
+          }
+        }
+        console.log('[Menu Sync] Supabase sync completed successfully');
+      } catch (error) {
+        console.error('[Menu Sync] Critical error during save:', error);
+        console.warn('[Menu Sync] Items still saved to localStorage, no data lost');
+        // Items are still saved to localStorage, so user won't lose data
+      }
+    };
+
+    // Reduced debounce from 1000ms to 300ms for faster saves
+    const debounceTimer = setTimeout(saveMenuItems, 300);
+    return () => clearTimeout(debounceTimer);
+  }, [menuItems, restaurantId, user?.email]);
+
+  // Sync when page visibility changes (tab switch, before unload, etc)
+  useEffect(() => {
+    const handleVisibilityChange = async () => {
+      if (document.hidden) {
+        // Page is hidden - save immediately before tab switch
+        if (user?.email && menuItems.length > 0 && restaurantId) {
+          const storageKey = `menuItems_${user.email}`;
+          localStorage.setItem(storageKey, JSON.stringify(menuItems));
+
+          // Attempt immediate save to Supabase
+          try {
+            for (const item of menuItems) {
+              if (typeof item.id === 'number') {
+                await supabase
+                  .from('menu_items')
+                  .insert([{
+                    restaurant_id: restaurantId,
+                    name: item.name,
+                    description: item.description,
+                    price: item.price,
+                    category: item.category,
+                    image_url: item.image,
+                    is_available: item.available,
+                    created_at: new Date().toISOString(),
+                  }]);
+              } else if (typeof item.id === 'string') {
+                await supabase
+                  .from('menu_items')
+                  .update({
+                    name: item.name,
+                    description: item.description,
+                    price: item.price,
+                    category: item.category,
+                    image_url: item.image,
+                    is_available: item.available,
+                    updated_at: new Date().toISOString(),
+                  })
+                  .eq('id', item.id);
+              }
+            }
+          } catch (error) {
+            console.error('Error syncing on tab hide:', error);
+          }
+        }
+      }
+    };
+
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+
+    // Also sync before page unload
+    const handleBeforeUnload = async () => {
+      if (user?.email && menuItems.length > 0) {
+        const storageKey = `menuItems_${user.email}`;
+        localStorage.setItem(storageKey, JSON.stringify(menuItems));
+      }
+    };
+
+    window.addEventListener('beforeunload', handleBeforeUnload);
+
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+      window.removeEventListener('beforeunload', handleBeforeUnload);
+    };
+  }, [menuItems, restaurantId, user?.email]);
 
   const [newItem, setNewItem] = useState<Partial<MenuItem>>({
     name: "",
@@ -103,8 +342,21 @@ export default function BusinessMenu() {
     ));
   };
 
-  const deleteItem = (id: number) => {
+  const deleteItem = async (id: number | string) => {
     if (confirm("Delete this item? This action cannot be undone.")) {
+      // Delete from Supabase if it's a UUID
+      if (typeof id === 'string' && restaurantId) {
+        try {
+          await supabase
+            .from('menu_items')
+            .delete()
+            .eq('id', id)
+            .eq('restaurant_id', restaurantId);
+        } catch (error) {
+          console.error('Error deleting from Supabase:', error);
+        }
+      }
+      // Remove from local state
       setMenuItems(menuItems.filter(item => item.id !== id));
     }
   };

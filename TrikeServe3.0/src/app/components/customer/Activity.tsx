@@ -2,12 +2,103 @@ import { ArrowLeft, Home as HomeIcon, Calendar, MessageCircle, User, Navigation,
 import { Link, useNavigate } from "react-router";
 import { Button } from "../ui/button";
 import { Card } from "../ui/card";
-import { useOrders } from "../../contexts/OrderContext";
+import { useAuth } from "../../contexts/AuthContext";
 import { ImageWithFallback } from "../figma/ImageWithFallback";
+import { supabase } from "../../../lib/supabase";
+import { useState, useEffect } from "react";
+
+interface OrderDisplay {
+  id: string;
+  orderNumber: string;
+  restaurantName: string;
+  restaurantImage: string;
+  customerName: string;
+  date: string;
+  status: string;
+  items: any[];
+  total: number;
+  createdAt: string;
+}
 
 export default function Activity() {
   const navigate = useNavigate();
-  const { orders } = useOrders();
+  const { user } = useAuth();
+  const [displayOrders, setDisplayOrders] = useState<OrderDisplay[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+
+  // Fetch orders from Supabase on component mount
+  useEffect(() => {
+    loadOrdersFromSupabase();
+  }, [user]);
+
+  const loadOrdersFromSupabase = async () => {
+    try {
+      setIsLoading(true);
+
+      if (!user?.id) {
+        console.log('[Activity] No user logged in');
+        setDisplayOrders([]);
+        setIsLoading(false);
+        return;
+      }
+
+      console.log('[Activity] Loading orders from Supabase for customer:', user.id);
+
+      // Fetch orders for the current customer from Supabase
+      const { data: supabaseOrders, error: fetchError } = await supabase
+        .from('orders')
+        .select('*')
+        .eq('customer_id', user.id)
+        .order('created_at', { ascending: false });
+
+      if (fetchError) {
+        console.error('[Activity] Error loading orders from Supabase:', fetchError);
+        setDisplayOrders([]);
+        setIsLoading(false);
+        return;
+      }
+
+      if (!supabaseOrders || supabaseOrders.length === 0) {
+        console.log('[Activity] No orders in Supabase');
+        setDisplayOrders([]);
+        setIsLoading(false);
+        return;
+      }
+
+      // Transform Supabase orders to display format
+      const transformedOrders: OrderDisplay[] = supabaseOrders.map((dbOrder: any) => {
+        // Safely parse items JSON
+        let parsedItems = [];
+        try {
+          parsedItems = typeof dbOrder.items === 'string' ? JSON.parse(dbOrder.items) : (Array.isArray(dbOrder.items) ? dbOrder.items : []);
+        } catch (parseError) {
+          console.error('[Activity] Error parsing items JSON for order', dbOrder.order_number, parseError);
+          parsedItems = [];
+        }
+
+        return {
+          id: dbOrder.id,
+          orderNumber: dbOrder.order_number || 'Unknown',
+          restaurantName: dbOrder.restaurant_name || 'Restaurant',
+          restaurantImage: dbOrder.restaurant_image || '', // Use image from database
+          customerName: dbOrder.customer_name || 'Customer',
+          date: new Date(dbOrder.created_at).toLocaleString(),
+          status: dbOrder.status || 'pending',
+          items: parsedItems,
+          total: dbOrder.total || 0,
+          createdAt: dbOrder.created_at,
+        };
+      });
+
+      console.log('[Activity] Loaded', transformedOrders.length, 'orders from Supabase');
+      setDisplayOrders(transformedOrders);
+    } catch (error) {
+      console.error('[Activity] Exception loading orders:', error);
+      setDisplayOrders([]);
+    } finally {
+      setIsLoading(false);
+    }
+  };
 
   const getStatusColor = (status: string) => {
     switch (status) {
@@ -50,10 +141,16 @@ export default function Activity() {
       <div className="px-5">
         <h2 className="text-lg font-semibold text-[#64748B] mb-4">Recent</h2>
 
-        <div className="space-y-4">
+        {isLoading ? (
+          <div className="text-center py-8">
+            <Package className="w-8 h-8 text-[#0EA5E9] mx-auto animate-bounce" />
+            <p className="text-[#64748B] mt-2">Loading orders...</p>
+          </div>
+        ) : (
+          <div className="space-y-4">
           {/* Food Orders */}
-          {orders.length > 0 ? (
-            orders.map((order) => (
+          {displayOrders.length > 0 ? (
+            displayOrders.map((order) => (
               <Card key={order.id} className="p-5 border-2 border-[#E2E8F0] shadow-sm">
                 <div className="flex items-start gap-4">
                   {/* Restaurant Image */}
@@ -108,6 +205,7 @@ export default function Activity() {
             </div>
           )}
         </div>
+        )}
       </div>
 
       {/* Bottom Navigation */}

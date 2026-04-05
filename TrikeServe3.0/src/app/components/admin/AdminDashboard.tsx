@@ -10,6 +10,7 @@ import { Badge } from "../ui/badge";
 import { Input } from "../ui/input";
 import { useAuth } from "../../contexts/AuthContext";
 import AdminSidebar from "./AdminSidebar";
+import { supabase } from "../../../utils/supabase";
 
 interface StoredUser {
   id: string;
@@ -86,25 +87,44 @@ export default function AdminDashboard() {
     }
   };
 
-  const loadUsers = () => {
-    const usersJson = localStorage.getItem('trikeserve_users');
-    if (usersJson) {
-      const users: StoredUser[] = JSON.parse(usersJson);
+  const loadUsers = async () => {
+    try {
+      const { data: supabaseUsers, error } = await supabase
+        .from('users')
+        .select('*');
 
-      // Get current admin's type
+      if (error) {
+        console.error('Error loading users from Supabase:', error);
+        loadUsersFromLocalStorage();
+        return;
+      }
+
+      if (!supabaseUsers) return;
+
+      const users: StoredUser[] = supabaseUsers.map((u: any) => ({
+        id: u.id,
+        name: u.name,
+        email: u.email,
+        phone: u.phone,
+        role: u.role,
+        isVerified: u.is_verified,
+        createdAt: u.created_at,
+        password: '',
+        todaPlate: u.toda_plate,
+        licenseNumber: u.license_number,
+        businessName: u.business_name,
+        businessAddress: u.business_address,
+        address: u.address,
+      }));
+
       const adminType = user?.adminType;
-
-      // Filter users based on admin type
       let filteredUsers = users;
       if (adminType === 'business_customer') {
-        // Show only business and customer users
         filteredUsers = users.filter(u => u.role === 'business' || u.role === 'customer');
       } else if (adminType === 'rider') {
-        // Show only rider users
         filteredUsers = users.filter(u => u.role === 'rider');
       }
 
-      // Filter pending users (not verified, not customer, not admin)
       const pending = filteredUsers
         .filter(u => !u.isVerified && (u.role === 'rider' || u.role === 'business'))
         .map(u => ({
@@ -123,12 +143,61 @@ export default function AdminDashboard() {
           businessAddress: u.businessAddress,
         }));
 
-      // Filter active/verified users (excluding admin)
       const active = filteredUsers
         .filter(u => u.isVerified && u.role !== 'admin')
         .map(u => ({
           id: u.id,
+          name: u.name,
+          type: u.role as 'customer' | 'rider' | 'business',
+          email: u.email,
+          phone: u.phone,
+          verifiedDate: new Date(u.createdAt).toLocaleDateString('en-PH'),
+        }));
+
+      setPendingVerifications(pending);
+      setActiveUsers(active);
+    } catch (error) {
+      console.error('Error in loadUsers:', error);
+      loadUsersFromLocalStorage();
+    }
+  };
+
+  const loadUsersFromLocalStorage = () => {
+    const usersJson = localStorage.getItem('trikeserve_users');
+    if (usersJson) {
+      const users: StoredUser[] = JSON.parse(usersJson);
+      const adminType = user?.adminType;
+
+      let filteredUsers = users;
+      if (adminType === 'business_customer') {
+        filteredUsers = users.filter(u => u.role === 'business' || u.role === 'customer');
+      } else if (adminType === 'rider') {
+        filteredUsers = users.filter(u => u.role === 'rider');
+      }
+
+      const pending = filteredUsers
+        .filter(u => !u.isVerified && (u.role === 'rider' || u.role === 'business'))
+        .map(u => ({
+          id: u.id,
           name: u.role === 'business' ? (u.businessName || u.name) : u.name,
+          type: u.role as 'rider' | 'business',
+          email: u.email,
+          phone: u.phone,
+          documents: u.role === 'rider'
+            ? ['TODA Plate', 'Driver\'s License', 'Valid ID']
+            : ['Business Permit', 'Sanitary Permit', 'Valid ID'],
+          submittedDate: new Date(u.createdAt).toLocaleDateString('en-PH'),
+          todaPlate: u.todaPlate,
+          licenseNumber: u.licenseNumber,
+          businessName: u.businessName,
+          businessAddress: u.businessAddress,
+        }));
+
+      const active = filteredUsers
+        .filter(u => u.isVerified && u.role !== 'admin')
+        .map(u => ({
+          id: u.id,
+          name: u.name,
           type: u.role as 'customer' | 'rider' | 'business',
           email: u.email,
           phone: u.phone,
@@ -140,25 +209,39 @@ export default function AdminDashboard() {
     }
   };
 
-  const handleApproveUser = (userId: string) => {
-    const usersJson = localStorage.getItem('trikeserve_users');
-    if (usersJson) {
-      const users: StoredUser[] = JSON.parse(usersJson);
-      const updatedUsers = users.map(u => 
-        u.id === userId ? { ...u, isVerified: true } : u
-      );
-      localStorage.setItem('trikeserve_users', JSON.stringify(updatedUsers));
-      loadUsers(); // Reload to update UI
+  const handleApproveUser = async (userId: string) => {
+    try {
+      const { error } = await supabase
+        .from('users')
+        .update({ is_verified: true, updated_at: new Date().toISOString() })
+        .eq('id', userId);
+
+      if (error) {
+        console.error('Error approving user:', error);
+        return;
+      }
+
+      loadUsers();
+    } catch (error) {
+      console.error('Error in handleApproveUser:', error);
     }
   };
 
-  const handleRejectUser = (userId: string) => {
-    const usersJson = localStorage.getItem('trikeserve_users');
-    if (usersJson) {
-      const users: StoredUser[] = JSON.parse(usersJson);
-      const updatedUsers = users.filter(u => u.id !== userId);
-      localStorage.setItem('trikeserve_users', JSON.stringify(updatedUsers));
-      loadUsers(); // Reload to update UI
+  const handleRejectUser = async (userId: string) => {
+    try {
+      const { error } = await supabase
+        .from('users')
+        .delete()
+        .eq('id', userId);
+
+      if (error) {
+        console.error('Error rejecting user:', error);
+        return;
+      }
+
+      loadUsers();
+    } catch (error) {
+      console.error('Error in handleRejectUser:', error);
     }
   };
 
@@ -175,6 +258,9 @@ export default function AdminDashboard() {
     pendingCount: pendingVerifications.length,
     totalUsers: activeUsers.length,
   };
+
+  // Check if user is Driver Admin (only they can see rate configuration)
+  const isDriverAdmin = user?.adminType === 'rider';
 
   return (
     <div className="min-h-screen bg-[#F8F9FA] flex">
@@ -435,86 +521,88 @@ export default function AdminDashboard() {
             </div>
           </div>
 
-          {/* Rate Configuration */}
-          <div>
-            <h2 className="text-xl lg:text-2xl font-bold text-[#121212] mb-4">Fixed Rate Configuration</h2>
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 lg:gap-6">
-              <Card className="p-5 lg:p-6 border-2 border-[#E2E8F0] bg-white">
-                <div className="flex items-start justify-between mb-4">
-                  <div>
-                    <Users className="w-8 h-8 lg:w-10 lg:h-10 text-[#3B82F6] mb-2" />
-                    <h3 className="font-bold text-base lg:text-lg text-[#121212]">Shared Ride</h3>
-                    <p className="text-xs text-[#64748B]">Sasabay (per passenger)</p>
+          {/* Rate Configuration - Only for Driver Admin */}
+          {isDriverAdmin && (
+            <div>
+              <h2 className="text-xl lg:text-2xl font-bold text-[#121212] mb-4">Fixed Rate Configuration</h2>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4 lg:gap-6">
+                <Card className="p-5 lg:p-6 border-2 border-[#E2E8F0] bg-white">
+                  <div className="flex items-start justify-between mb-4">
+                    <div>
+                      <Users className="w-8 h-8 lg:w-10 lg:h-10 text-[#3B82F6] mb-2" />
+                      <h3 className="font-bold text-base lg:text-lg text-[#121212]">Shared Ride</h3>
+                      <p className="text-xs text-[#64748B]">Sasabay (per passenger)</p>
+                    </div>
                   </div>
-                </div>
-                <div className="flex items-center gap-2 mb-3">
-                  <span className="text-lg text-[#64748B] font-bold">₱</span>
-                  <Input
-                    type="number"
-                    value={rateConfig.sharedRide}
-                    onChange={(e) => setRateConfig({ ...rateConfig, sharedRide: Number(e.target.value) })}
-                    className="text-2xl lg:text-3xl font-bold text-center border-2 border-[#E2E8F0]"
-                  />
-                </div>
-                <button
-                  onClick={() => handleUpdateRate('sharedRide')}
-                  className="w-full py-3 bg-[#E11D48] hover:bg-[#BE123C] text-white font-bold rounded-xl uppercase transition-all"
-                >
-                  Update Rate
-                </button>
-              </Card>
+                  <div className="flex items-center gap-2 mb-3">
+                    <span className="text-lg text-[#64748B] font-bold">₱</span>
+                    <Input
+                      type="number"
+                      value={rateConfig.sharedRide}
+                      onChange={(e) => setRateConfig({ ...rateConfig, sharedRide: Number(e.target.value) })}
+                      className="text-2xl lg:text-3xl font-bold text-center border-2 border-[#E2E8F0]"
+                    />
+                  </div>
+                  <button
+                    onClick={() => handleUpdateRate('sharedRide')}
+                    className="w-full py-3 bg-[#E11D48] hover:bg-[#BE123C] text-white font-bold rounded-xl uppercase transition-all"
+                  >
+                    Update Rate
+                  </button>
+                </Card>
 
-              <Card className="p-5 lg:p-6 border-2 border-[#E2E8F0] bg-white">
-                <div className="flex items-start justify-between mb-4">
-                  <div>
-                    <Bike className="w-8 h-8 lg:w-10 lg:h-10 text-[#9333EA] mb-2" />
-                    <h3 className="font-bold text-base lg:text-lg text-[#121212]">Private Ride</h3>
-                    <p className="text-xs text-[#64748B]">Pakyaw (entire trike)</p>
+                <Card className="p-5 lg:p-6 border-2 border-[#E2E8F0] bg-white">
+                  <div className="flex items-start justify-between mb-4">
+                    <div>
+                      <Bike className="w-8 h-8 lg:w-10 lg:h-10 text-[#9333EA] mb-2" />
+                      <h3 className="font-bold text-base lg:text-lg text-[#121212]">Private Ride</h3>
+                      <p className="text-xs text-[#64748B]">Pakyaw (entire trike)</p>
+                    </div>
                   </div>
-                </div>
-                <div className="flex items-center gap-2 mb-3">
-                  <span className="text-lg text-[#64748B] font-bold">₱</span>
-                  <Input
-                    type="number"
-                    value={rateConfig.privateRide}
-                    onChange={(e) => setRateConfig({ ...rateConfig, privateRide: Number(e.target.value) })}
-                    className="text-2xl lg:text-3xl font-bold text-center border-2 border-[#E2E8F0]"
-                  />
-                </div>
-                <button
-                  onClick={() => handleUpdateRate('privateRide')}
-                  className="w-full py-3 bg-[#E11D48] hover:bg-[#BE123C] text-white font-bold rounded-xl uppercase transition-all"
-                >
-                  Update Rate
-                </button>
-              </Card>
+                  <div className="flex items-center gap-2 mb-3">
+                    <span className="text-lg text-[#64748B] font-bold">₱</span>
+                    <Input
+                      type="number"
+                      value={rateConfig.privateRide}
+                      onChange={(e) => setRateConfig({ ...rateConfig, privateRide: Number(e.target.value) })}
+                      className="text-2xl lg:text-3xl font-bold text-center border-2 border-[#E2E8F0]"
+                    />
+                  </div>
+                  <button
+                    onClick={() => handleUpdateRate('privateRide')}
+                    className="w-full py-3 bg-[#E11D48] hover:bg-[#BE123C] text-white font-bold rounded-xl uppercase transition-all"
+                  >
+                    Update Rate
+                  </button>
+                </Card>
 
-              <Card className="p-5 lg:p-6 border-2 border-[#E2E8F0] bg-white">
-                <div className="flex items-start justify-between mb-4">
-                  <div>
-                    <Store className="w-8 h-8 lg:w-10 lg:h-10 text-[#10B981] mb-2" />
-                    <h3 className="font-bold text-base lg:text-lg text-[#121212]">Delivery Fee</h3>
-                    <p className="text-xs text-[#64748B]">Food delivery (base rate)</p>
+                <Card className="p-5 lg:p-6 border-2 border-[#E2E8F0] bg-white">
+                  <div className="flex items-start justify-between mb-4">
+                    <div>
+                      <Store className="w-8 h-8 lg:w-10 lg:h-10 text-[#10B981] mb-2" />
+                      <h3 className="font-bold text-base lg:text-lg text-[#121212]">Delivery Fee</h3>
+                      <p className="text-xs text-[#64748B]">Food delivery (base rate)</p>
+                    </div>
                   </div>
-                </div>
-                <div className="flex items-center gap-2 mb-3">
-                  <span className="text-lg text-[#64748B] font-bold">₱</span>
-                  <Input
-                    type="number"
-                    value={rateConfig.deliveryBaseFee}
-                    onChange={(e) => setRateConfig({ ...rateConfig, deliveryBaseFee: Number(e.target.value) })}
-                    className="text-2xl lg:text-3xl font-bold text-center border-2 border-[#E2E8F0]"
-                  />
-                </div>
-                <button
-                  onClick={() => handleUpdateRate('deliveryBaseFee')}
-                  className="w-full py-3 bg-[#E11D48] hover:bg-[#BE123C] text-white font-bold rounded-xl uppercase transition-all"
-                >
-                  Update Rate
-                </button>
-              </Card>
+                  <div className="flex items-center gap-2 mb-3">
+                    <span className="text-lg text-[#64748B] font-bold">₱</span>
+                    <Input
+                      type="number"
+                      value={rateConfig.deliveryBaseFee}
+                      onChange={(e) => setRateConfig({ ...rateConfig, deliveryBaseFee: Number(e.target.value) })}
+                      className="text-2xl lg:text-3xl font-bold text-center border-2 border-[#E2E8F0]"
+                    />
+                  </div>
+                  <button
+                    onClick={() => handleUpdateRate('deliveryBaseFee')}
+                    className="w-full py-3 bg-[#E11D48] hover:bg-[#BE123C] text-white font-bold rounded-xl uppercase transition-all"
+                  >
+                    Update Rate
+                  </button>
+                </Card>
+              </div>
             </div>
-          </div>
+          )}
         </div>
       </div>
 

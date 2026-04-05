@@ -1,7 +1,7 @@
 import { X, Camera, Star, ChevronRight } from "lucide-react";
 import { Link, useNavigate } from "react-router";
 import { useState } from "react";
-import profilePlaceholder from "figma:asset/46984638ac5e8b0cdd6b13a34400903427e5c56b.png";
+import profilePlaceholder from "../../../assets/49624c6fb8f504041a2a91198a581a109cd5507d.png";
 
 export default function Profile() {
   const navigate = useNavigate();

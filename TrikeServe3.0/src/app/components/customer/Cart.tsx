@@ -6,12 +6,15 @@ import { useState } from "react";
 import { ImageWithFallback } from "../figma/ImageWithFallback";
 import { useCart } from "../../contexts/CartContext";
 import { useOrders } from "../../contexts/OrderContext";
+import { useAuth } from "../../contexts/AuthContext";
+import { supabase } from "../../../utils/supabase";
 import MapSelector from "./MapSelector";
 
 export default function Cart() {
   const navigate = useNavigate();
   const { cartRestaurants, updateItemQuantity, removeRestaurant, getTotalItems } = useCart();
   const { addOrder } = useOrders();
+  const { user } = useAuth();
   const [isManageMode, setIsManageMode] = useState(false);
   const [selectedRestaurants, setSelectedRestaurants] = useState<number[]>([]);
   const [viewMode, setViewMode] = useState<"list" | "checkout">("list");
@@ -121,56 +124,186 @@ export default function Cart() {
     return calculateSubtotal() + getDeliveryFee();
   };
 
-  const handlePlaceOrder = () => {
+  const handlePlaceOrder = async () => {
     if (checkoutRestaurant) {
-      const orderNumber = Math.random().toString(36).substring(2, 9).toUpperCase();
-      const selectedOption = deliveryOptions.find(opt => opt.id === selectedDeliveryOption);
-      
-      // Get current user info
-      const currentUserData = localStorage.getItem('trikeserve_current_user');
-      const currentUser = currentUserData ? JSON.parse(currentUserData) : null;
-      
-      const order = {
-        id: Date.now().toString(),
-        orderNumber,
-        restaurantName: checkoutRestaurant.name,
-        restaurantImage: checkoutRestaurant.image,
-        restaurantEmail: checkoutRestaurant.id, // This is the business email
-        customerEmail: currentUser?.email || '',
-        customerName: currentUser?.name || 'Customer',
-        customerPhone: currentUser?.phone || '',
-        items: checkoutRestaurant.items.map((item: any) => ({
-          id: item.id,
-          name: item.name,
-          description: item.description,
-          price: item.price,
-          quantity: item.quantity,
-          image: item.image,
-          category: item.category,
-          customizations: item.customizations || [],
-        })),
-        subtotal: calculateSubtotal(),
-        deliveryFee: getDeliveryFee(),
-        total: calculateTotal(),
-        status: "pending" as const,
-        deliveryMode,
-        paymentMethod,
-        address: selectedAddress.full,
-        date: new Date().toLocaleString('en-US', { 
-          month: 'short', 
-          day: '2-digit', 
-          year: 'numeric', 
-          hour: '2-digit', 
-          minute: '2-digit',
-          hour12: true 
-        }),
-        createdAt: new Date().toISOString(),
-        estimatedTime: selectedOption?.time || "25 mins",
-        needsCutlery,
-      };
-      
-      addOrder(order);
-      setShowOrderConfirmation(true);
+      try {
+        // CRITICAL: Get the actual Supabase restaurant.id for RLS isolation
+        const businessUserId = checkoutRestaurant.businessUserId;
+
+        let supabaseRestaurantId = checkoutRestaurant.supabaseRestaurantId;
+
+        // If we don't have it, fetch from Supabase
+        if (!supabaseRestaurantId && businessUserId) {
+          console.log('[Cart] Fetching restaurant ID from Supabase for:', businessUserId);
+          try {
+            const { data: restaurantRecord, error: fetchError } = await supabase
+              .from('restaurants')
+              .select('id')
+              .eq('business_user_id', businessUserId)
+              .single();
+
+            if (fetchError) {
+              console.warn('[Cart] Could not fetch restaurant ID:', fetchError);
+              // Continue anyway - fallback to business_id in RLS
+            } else if (restaurantRecord) {
+              supabaseRestaurantId = restaurantRecord.id;
+              console.log('[Cart] Got restaurant ID from Supabase:', supabaseRestaurantId);
+            }
+          } catch (error) {
+            console.warn('[Cart] Error fetching restaurant:', error);
+          }
+        }
+
+        const orderNumber = Math.random().toString(36).substring(2, 9).toUpperCase();
+        const selectedOption = deliveryOptions.find(opt => opt.id === selectedDeliveryOption);
+
+        // Get current user info
+        const currentUserData = localStorage.getItem('trikeserve_current_user');
+        const currentUser = currentUserData ? JSON.parse(currentUserData) : null;
+
+        const order = {
+          id: Date.now().toString(),
+          orderNumber,
+          restaurantName: checkoutRestaurant.name,
+          restaurantImage: checkoutRestaurant.image,
+          restaurantEmail: checkoutRestaurant.id, // This is the business email/restaurant UUID
+          customerEmail: currentUser?.email || '',
+          customerName: currentUser?.name || 'Customer',
+          customerPhone: currentUser?.phone || '',
+          items: checkoutRestaurant.items.map((item: any) => ({
+            id: item.id,
+            name: item.name,
+            description: item.description,
+            price: item.price,
+            quantity: item.quantity,
+            image: item.image,
+            category: item.category,
+            customizations: item.customizations || [],
+          })),
+          subtotal: calculateSubtotal(),
+          deliveryFee: getDeliveryFee(),
+          total: calculateTotal(),
+          status: "pending" as const,
+          deliveryMode,
+          paymentMethod,
+          address: selectedAddress.full,
+          date: new Date().toLocaleString('en-US', {
+            month: 'short',
+            day: '2-digit',
+            year: 'numeric',
+            hour: '2-digit',
+            minute: '2-digit',
+            hour12: true
+          }),
+          createdAt: new Date().toISOString(),
+          estimatedTime: selectedOption?.time || "25 mins",
+          needsCutlery,
+        };
+
+        console.log('[Cart] Order created with:', {
+          orderNumber: order.orderNumber,
+          restaurantEmail: order.restaurantEmail,
+          supabaseRestaurantId: supabaseRestaurantId,
+          customerEmail: order.customerEmail,
+          customerName: order.customerName,
+          total: order.total
+        });
+
+        // Save to Supabase FIRST (before localStorage)
+        try {
+          console.log('[Cart] ========== ORDER SAVE DEBUG ==========');
+          console.log('[Cart] Saving order to Supabase:', order.orderNumber);
+          console.log('[Cart] Restaurant object:', {
+            id: checkoutRestaurant.id,
+            name: checkoutRestaurant.name,
+            businessUserId: checkoutRestaurant.businessUserId
+          });
+          console.log('[Cart] With customer_id:', user?.id);
+          console.log('[Cart] With business_id:', businessUserId);
+          console.log('[Cart] With restaurant_email:', order.restaurantEmail);
+          console.log('[Cart] ======================================');
+
+          // Map to actual Supabase columns (based on actual schema)
+          const { data: savedOrder, error: insertError } = await supabase
+            .from('orders')
+            .insert([{
+              customer_id: user?.id || null, // Connect order to authenticated customer
+              business_id: businessUserId || null, // Connect order to business user/restaurant owner
+              order_number: order.orderNumber,
+              restaurant_email: order.restaurantEmail || null, // Restaurant identifier
+              restaurant_name: order.restaurantName || null, // Restaurant name for display
+              restaurant_image: order.restaurantImage || null, // Restaurant image for display
+              customer_email: order.customerEmail,
+              customer_name: order.customerName,
+              customer_phone: order.customerPhone,
+              items: JSON.stringify(order.items),
+              subtotal: order.subtotal,
+              delivery_fee: order.deliveryFee,
+              total: order.total,
+              status: order.status,
+              delivery_mode: order.deliveryMode,
+              payment_method: order.paymentMethod,
+              address: order.address,
+              estimated_time: order.estimatedTime,
+              needs_cutlery: order.needsCutlery,
+              created_at: order.createdAt,
+            }])
+            .select()
+            .single();
+
+          if (insertError) {
+            console.error('[Cart] Error saving order to Supabase:', insertError);
+            alert('Error saving order: ' + (insertError?.message || 'Unknown error'));
+            return;
+          } else {
+            console.log('[Cart] ✅ Order saved successfully to Supabase:', savedOrder);
+
+            // ONLY add to localStorage AFTER successful Supabase save
+            addOrder(order);
+
+            // Create processing record for restaurant workflow
+            try {
+              console.log('[Cart] Creating order processing record...');
+              const processingRecord = {
+                order_id: savedOrder?.id || order.id,
+                restaurant_id: supabaseRestaurantId || null,
+                order_number: order.orderNumber,
+                customer_email: order.customerEmail,
+                customer_name: order.customerName,
+                status: 'received',
+                estimated_prep_time: parseInt(selectedOption?.time) || 25,
+                notes: needsCutlery ? 'Needs cutlery' : '',
+              };
+
+              const { error: processingError } = await supabase
+                .from('order_processing')
+                .insert([processingRecord])
+                .select()
+                .single();
+
+              if (processingError) {
+                console.error('[Cart] Error creating processing record:', processingError);
+              } else {
+                console.log('[Cart] Processing record created successfully');
+              }
+            } catch (error) {
+              console.error('[Cart] Error creating processing record:', error);
+            }
+
+            // SUPABASE: Business user will see the order through Supabase real-time updates
+            // No need to store notifications in localStorage anymore
+            console.log('[Cart] Order sent to business user via Supabase');
+            console.log('[Cart] Business user will receive real-time update from order_number:', order.orderNumber);
+          }
+        } catch (error) {
+          console.error('[Cart] Error saving order:', error);
+          // Order is still saved locally, so continue
+        }
+
+        setShowOrderConfirmation(true);
+      } catch (error) {
+        console.error('[Cart] Unexpected error in handlePlaceOrder:', error);
+      }
     }
   };
 

@@ -5,9 +5,10 @@ import { Card } from "../ui/card";
 import { Badge } from "../ui/badge";
 import { ImageWithFallback } from "../figma/ImageWithFallback";
 import Slider from "react-slick";
-import tricycleIcon from "figma:asset/0b76d1aa56b8ad6e15dd4efc8a0100b0ca5762a1.png";
+import tricycleIcon from "../../../assets/0b76d1aa56b8ad6e15dd4efc8a0100b0ca5762a1.png";
 import { useCart } from "../../contexts/CartContext";
 import { useFavorites } from "../../contexts/FavoritesContext";
+import { supabase } from "../../../utils/supabase";
 
 // TrikeServe Food Delivery Home - Tagalag, Valenzuela
 export default function FoodHome() {
@@ -50,14 +51,69 @@ export default function FoodHome() {
     return notifications.filter((n: any) => n.unread).length;
   };
 
-  // Function to load restaurants
-  const loadRestaurants = () => {
+  // Function to load restaurants from Supabase
+  const loadRestaurantsFromSupabase = async () => {
+    try {
+      const { data: restaurants, error } = await supabase
+        .from('restaurants')
+        .select(`
+          id,
+          name,
+          address,
+          phone,
+          rating,
+          is_open,
+          business_user_id
+        `)
+        .order('name');
+
+      if (error) {
+        console.error('[FoodHome] Supabase error:', error);
+        loadRestaurantsFromLocalStorage();
+        return;
+      }
+
+      if (restaurants && restaurants.length > 0) {
+        console.log('[FoodHome] Loaded restaurants from Supabase:', restaurants.length);
+        const restaurantList = restaurants.map((restaurant: any) => ({
+          id: restaurant.id,
+          businessUserId: restaurant.business_user_id, // ✅ CRITICAL: Add business user ID for orders
+          name: restaurant.name || "Restaurant",
+          subtitle: restaurant.address || "Tagalag, Valenzuela",
+          logo: "🍽️",
+          image: "https://images.unsplash.com/photo-1517248135467-4c7edcad34c4?w=800",
+          time: "25-35 min",
+          rating: restaurant.rating || 5.0,
+          ratingCount: 0,
+          bgColor: "#FFF7ED",
+          deliveryFee: "₱35",
+          promo: restaurant.is_open ? "Open for Orders!" : "Closed",
+          verified: true,
+          category: "restaurant",
+          address: restaurant.address || "",
+          operatingHours: "8:00 AM - 10:00 PM",
+          hasMenu: true,
+          isOpen: restaurant.is_open
+        }));
+        setRestaurants(restaurantList);
+      } else {
+        console.log('[FoodHome] No restaurants in Supabase, loading from localStorage');
+        loadRestaurantsFromLocalStorage();
+      }
+    } catch (error) {
+      console.error('[FoodHome] Error loading from Supabase:', error);
+      loadRestaurantsFromLocalStorage();
+    }
+  };
+
+  // Function to load restaurants from localStorage
+  const loadRestaurantsFromLocalStorage = () => {
     const usersData = localStorage.getItem('trikeserve_users');
     if (usersData) {
       try {
         const users = JSON.parse(usersData);
-        const businessUsers = users.filter((u: any) => u.role === 'business' && u.isVerified);
-        
+        const businessUsers = users.filter((u: any) => u.role === 'business');
+
         const restaurantList = businessUsers.map((business: any) => {
           const restaurantDataKey = `restaurantData_${business.email}`;
           const savedData = localStorage.getItem(restaurantDataKey);
@@ -71,6 +127,7 @@ export default function FoodHome() {
           
           return {
             id: business.email,
+            businessUserId: business.id, // ✅ CRITICAL: Add actual business user ID for orders
             name: restaurantData.name || business.businessName || business.name || "Restaurant",
             subtitle: restaurantData.subtitle || business.businessAddress || "Tagalag",
             logo: restaurantData.logo || "🍽️",
@@ -81,7 +138,7 @@ export default function FoodHome() {
             bgColor: "#FFF7ED",
             deliveryFee: `₱${restaurantData.deliveryFee || 35}`,
             promo: hasMenu ? "Open for Orders!" : "Coming Soon",
-            verified: true,
+            verified: business.isVerified || false,
             category: "restaurant",
             address: restaurantData.address || business.businessAddress || "",
             operatingHours: restaurantData.operatingHours || "8:00 AM - 10:00 PM",
@@ -89,23 +146,27 @@ export default function FoodHome() {
           };
         });
         
+        console.log('[FoodHome] Loaded restaurants from localStorage:', restaurantList.length);
         setRestaurants(restaurantList);
       } catch (error) {
-        console.error('Error loading restaurants:', error);
+        console.error('[FoodHome] Error loading from localStorage:', error);
+        setRestaurants([]);
       }
+    } else {
+      setRestaurants([]);
     }
   };
 
   // Load verified business users as restaurants - Initial load
   useEffect(() => {
-    loadRestaurants();
+    loadRestaurantsFromSupabase();
     setUnreadNotifications(getUnreadNotificationsCount());
   }, []);
 
   // Auto-refresh restaurants every 5 seconds to detect newly verified businesses
   useEffect(() => {
     const refreshInterval = setInterval(() => {
-      loadRestaurants();
+      loadRestaurantsFromSupabase();
       setUnreadNotifications(getUnreadNotificationsCount());
     }, 5000); // Check every 5 seconds
 
@@ -116,7 +177,7 @@ export default function FoodHome() {
   useEffect(() => {
     const handleVisibilityChange = () => {
       if (document.visibilityState === 'visible') {
-        loadRestaurants();
+        loadRestaurantsFromSupabase();
       }
     };
 

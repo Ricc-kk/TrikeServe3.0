@@ -1,4 +1,5 @@
 import { createContext, useContext, useState, useEffect, ReactNode } from 'react';
+import { supabase } from '../../utils/supabase';
 
 export type UserRole = 'customer' | 'rider' | 'business' | 'admin';
 
@@ -20,6 +21,7 @@ export interface User {
   // Business specific
   businessName?: string;
   businessAddress?: string;
+  restaurantId?: string;  // Added: Link to restaurant
   // Customer specific
   address?: string;
 }
@@ -55,91 +57,187 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   // Initialize auth state from localStorage and create default admin
   useEffect(() => {
-    // Create default admin accounts if they don't exist
-    const usersJson = localStorage.getItem('trikeserve_users');
-    const users: (User & { password: string })[] = usersJson ? JSON.parse(usersJson) : [];
-
-    const admin1Exists = users.some(u => u.email === 'admin@gmail.com');
-    const admin2Exists = users.some(u => u.email === 'admin1@gmail.com');
-
-    if (!admin1Exists) {
-      const defaultAdmin1: User & { password: string } = {
-        id: 'admin_default_001',
-        email: 'admin@gmail.com',
-        name: 'Business & Customer Admin',
-        role: 'admin',
-        adminType: 'business_customer',
-        phone: '09171234567',
-        password: 'admin123',
-        isVerified: true,
-        createdAt: new Date().toISOString(),
-      };
-      users.push(defaultAdmin1);
-    }
-
-    if (!admin2Exists) {
-      const defaultAdmin2: User & { password: string } = {
-        id: 'admin_default_002',
-        email: 'admin1@gmail.com',
-        name: 'Rider Admin',
-        role: 'admin',
-        adminType: 'rider',
-        phone: '09171234568',
-        password: 'admin123',
-        isVerified: true,
-        createdAt: new Date().toISOString(),
-      };
-      users.push(defaultAdmin2);
-    }
-
-    localStorage.setItem('trikeserve_users', JSON.stringify(users));
-
-    // Load current user
-    const storedUser = localStorage.getItem('trikeserve_current_user');
-    if (storedUser) {
+    const initializeAuth = async () => {
+      // Create default admin accounts in Supabase if they don't exist
       try {
-        const parsedUser = JSON.parse(storedUser);
-        setUser(parsedUser);
+        // Check if admins exist in Supabase
+        const { data: existingAdmins } = await supabase
+          .from('admins')
+          .select('email')
+          .in('email', ['admin@gmail.com', 'admin1@gmail.com']);
+
+        const existingEmails = (existingAdmins || []).map(a => a.email);
+
+        // Create default admin 1 if doesn't exist
+        if (!existingEmails.includes('admin@gmail.com')) {
+          await supabase
+            .from('admins')
+            .insert([{
+              email: 'admin@gmail.com',
+              name: 'Business & Customer Admin',
+              phone: '09171234567',
+              admin_type: 'business_customer',
+              password_hash: 'admin123', // In production, use proper hashing
+              is_verified: true,
+              created_at: new Date().toISOString(),
+            }]);
+        }
+
+        // Create default admin 2 if doesn't exist
+        if (!existingEmails.includes('admin1@gmail.com')) {
+          await supabase
+            .from('admins')
+            .insert([{
+              email: 'admin1@gmail.com',
+              name: 'Rider Admin',
+              phone: '09171234568',
+              admin_type: 'rider',
+              password_hash: 'admin123', // In production, use proper hashing
+              is_verified: true,
+              created_at: new Date().toISOString(),
+            }]);
+        }
       } catch (error) {
-        console.error('Error parsing stored user:', error);
-        localStorage.removeItem('trikeserve_current_user');
+        console.error('Error initializing admin accounts in Supabase:', error);
       }
-    }
-    setIsLoading(false);
+
+      // Load current user from localStorage
+      const storedUser = localStorage.getItem('trikeserve_current_user');
+      if (storedUser) {
+        try {
+          const parsedUser = JSON.parse(storedUser);
+          setUser(parsedUser);
+        } catch (error) {
+          console.error('Error parsing stored user:', error);
+          localStorage.removeItem('trikeserve_current_user');
+        }
+      }
+      setIsLoading(false);
+    };
+
+    initializeAuth();
   }, []);
 
   const login = async (email: string, password: string): Promise<{ success: boolean; error?: string }> => {
     try {
-      // Get all users from localStorage
-      const usersJson = localStorage.getItem('trikeserve_users');
-      const users: (User & { password: string })[] = usersJson ? JSON.parse(usersJson) : [];
+      // First, check if user is an admin
+      const { data: adminUser, error: adminError } = await supabase
+        .from('admins')
+        .select('*')
+        .eq('email', email.toLowerCase())
+        .single();
 
-      // Find user by email
-      const foundUser = users.find(u => u.email.toLowerCase() === email.toLowerCase());
+      if (adminUser && !adminError) {
+        // Admin found in Supabase admins table
+        if (adminUser.password_hash !== password) {
+          return { success: false, error: 'Invalid email or password' };
+        }
+
+        // Map admin to user format
+        const userToSet: User = {
+          id: adminUser.id,
+          email: adminUser.email,
+          name: adminUser.name,
+          role: 'admin',
+          phone: adminUser.phone,
+          isVerified: adminUser.is_verified,
+          createdAt: adminUser.created_at,
+          adminType: adminUser.admin_type,
+        };
+
+        setUser(userToSet);
+        localStorage.setItem('trikeserve_current_user', JSON.stringify(userToSet));
+        return { success: true };
+      }
+
+      // If not an admin, check regular users table
+      const { data: supabaseUser, error: supabaseError } = await supabase
+        .from('users')
+        .select('*')
+        .eq('email', email.toLowerCase())
+        .single();
+
+      let foundUser = supabaseUser;
+
+      // If not found in Supabase, fallback to localStorage
+      if (!foundUser || supabaseError) {
+        const usersJson = localStorage.getItem('trikeserve_users');
+        const users: (User & { password: string })[] = usersJson ? JSON.parse(usersJson) : [];
+        const localUser = users.find(u => u.email.toLowerCase() === email.toLowerCase());
+
+        if (!localUser) {
+          return { success: false, error: 'Invalid email or password' };
+        }
+
+        // Check password against localStorage
+        if (localUser.password !== password) {
+          return { success: false, error: 'Invalid email or password' };
+        }
+
+        foundUser = localUser;
+      }
 
       if (!foundUser) {
         return { success: false, error: 'Invalid email or password' };
       }
 
-      // Check password
-      if (foundUser.password !== password) {
-        return { success: false, error: 'Invalid email or password' };
-      }
-
       // Check if user is verified
-      if (!foundUser.isVerified) {
-        return { 
+      const isVerified = 'is_verified' in foundUser ? foundUser.is_verified : foundUser.isVerified;
+      if (!isVerified) {
+        return {
           success: false, 
           error: 'Account pending verification. Please visit the TrikeServe office at Barangay Hall with your documents.' 
         };
       }
 
-      // Remove password from user object before storing
-      const { password: _, ...userWithoutPassword } = foundUser;
+      // Map Supabase user to local user format if needed
+      let userToSet: User = {
+        id: foundUser.id,
+        email: foundUser.email,
+        name: foundUser.name,
+        role: foundUser.role,
+        phone: foundUser.phone,
+        isVerified: isVerified,
+        createdAt: foundUser.created_at || foundUser.createdAt,
+        adminType: foundUser.admin_type || foundUser.adminType,
+        todaPlate: foundUser.toda_plate || foundUser.todaPlate,
+        licenseNumber: foundUser.license_number || foundUser.licenseNumber,
+        businessName: foundUser.business_name || foundUser.businessName,
+        businessAddress: foundUser.business_address || foundUser.businessAddress,
+        restaurantId: foundUser.restaurant_id || foundUser.restaurantId,  // Added
+        address: foundUser.address,
+      };
+
+      // For business users without restaurantId, fetch it from Supabase
+      if (foundUser.role === 'business' && !userToSet.restaurantId) {
+        console.log('[AuthContext] Business user has no restaurantId, fetching from Supabase...');
+
+        try {
+          // SECURITY: Fetch the restaurant record directly from Supabase
+          // This ensures we get the CORRECT restaurant for this business user
+          const { data: restaurantRecord } = await supabase
+            .from('restaurants')
+            .select('id')
+            .eq('business_user_id', userToSet.id)
+            .single();
+
+          if (restaurantRecord) {
+            userToSet.restaurantId = restaurantRecord.id;
+            console.log('[AuthContext] Fetched restaurantId from Supabase:', restaurantRecord.id);
+          } else {
+            console.warn('[AuthContext] No restaurant found in Supabase for this business user');
+            // The user will need to create a restaurant before they can place orders
+          }
+        } catch (error) {
+          console.warn('[AuthContext] Error fetching restaurant from Supabase:', error);
+          // Continue without restaurantId - it will be fetched later when needed
+        }
+      }
+
 
       // Store user in state and localStorage
-      setUser(userWithoutPassword);
-      localStorage.setItem('trikeserve_current_user', JSON.stringify(userWithoutPassword));
+      setUser(userToSet);
+      localStorage.setItem('trikeserve_current_user', JSON.stringify(userToSet));
 
       return { success: true };
     } catch (error) {
@@ -155,30 +253,70 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const signup = async (data: SignupData): Promise<{ success: boolean; error?: string }> => {
     try {
-      // Get existing users
-      const usersJson = localStorage.getItem('trikeserve_users');
-      const users: (User & { password: string })[] = usersJson ? JSON.parse(usersJson) : [];
+      // Check if email already exists in Supabase
+      const { data: existingUser, error: checkError } = await supabase
+        .from('users')
+        .select('id')
+        .eq('email', data.email.toLowerCase())
+        .single();
 
-      // Check if email already exists
-      if (users.some(u => u.email.toLowerCase() === data.email.toLowerCase())) {
+      if (existingUser) {
         return { success: false, error: 'Email already registered' };
       }
 
+      // If error is not "no rows found", it's a real error
+      if (checkError && checkError.code !== 'PGRST116') {
+        console.error('Error checking existing user:', checkError);
+      }
+
       // Determine if user should be auto-verified
-      // Customers are automatically verified, others need admin approval
       const isAutoVerified = data.role === 'customer';
 
-      // Create new user
-      const newUser: User & { password: string } = {
-        id: `user_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+      // Create new user in Supabase
+      const { data: newSupabaseUser, error: insertError } = await supabase
+        .from('users')
+        .insert([{
+          email: data.email.toLowerCase(),
+          name: data.name,
+          phone: data.phone,
+          role: data.role,
+          is_verified: isAutoVerified,
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+          // Role-specific fields
+          ...(data.role === 'rider' && {
+            toda_plate: data.todaPlate,
+            license_number: data.licenseNumber,
+          }),
+          ...(data.role === 'business' && {
+            business_name: data.businessName,
+            business_address: data.businessAddress,
+          }),
+          ...(data.role === 'customer' && {
+            address: data.address,
+          }),
+        }])
+        .select()
+        .single();
+
+      if (insertError) {
+        console.error('Error creating user in Supabase:', insertError);
+        return { success: false, error: 'Failed to create account. Please try again.' };
+      }
+
+      // Also save to localStorage as fallback
+      const usersJson = localStorage.getItem('trikeserve_users');
+      const users: (User & { password: string })[] = usersJson ? JSON.parse(usersJson) : [];
+
+      const newLocalUser: User & { password: string } = {
+        id: newSupabaseUser?.id || `user_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
         email: data.email,
         name: data.name,
         phone: data.phone,
         role: data.role,
         password: data.password,
-        isVerified: isAutoVerified, // Customer auto-verified, rider/business need approval
+        isVerified: isAutoVerified,
         createdAt: new Date().toISOString(),
-        // Add role-specific fields
         ...(data.role === 'rider' && {
           todaPlate: data.todaPlate,
           licenseNumber: data.licenseNumber,
@@ -192,11 +330,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         }),
       };
 
-      // Save to users array
-      users.push(newUser);
+      users.push(newLocalUser);
       localStorage.setItem('trikeserve_users', JSON.stringify(users));
 
-      // Initialize restaurant data for business users
+      // Initialize restaurant data for business users (localStorage)
       if (data.role === 'business') {
         const restaurantDataKey = `restaurantData_${data.email}`;
         const defaultRestaurantData = {
@@ -221,7 +358,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       return { success: true };
     } catch (error) {
       console.error('Signup error:', error);
-      return { success: false, error: 'An error occurred during registration' };
+      return { success: false, error: 'An error occurred during signup. Please try again.' };
     }
   };
 
@@ -231,32 +368,48 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         return { success: false, error: 'No user logged in' };
       }
 
-      // Get all users
+      // Update in Supabase
+      const { error: updateError } = await supabase
+        .from('users')
+        .update({
+          ...(data.name && { name: data.name }),
+          ...(data.phone && { phone: data.phone }),
+          ...(data.address && { address: data.address }),
+          ...(data.todaPlate && { toda_plate: data.todaPlate }),
+          ...(data.licenseNumber && { license_number: data.licenseNumber }),
+          ...(data.businessName && { business_name: data.businessName }),
+          ...(data.businessAddress && { business_address: data.businessAddress }),
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', user.id);
+
+      if (updateError) {
+        console.error('Error updating profile in Supabase:', updateError);
+        // Continue with localStorage update as fallback
+      }
+
+      // Also update localStorage as fallback
       const usersJson = localStorage.getItem('trikeserve_users');
       const users: (User & { password: string })[] = usersJson ? JSON.parse(usersJson) : [];
 
       // Find and update user
       const userIndex = users.findIndex(u => u.id === user.id);
-      if (userIndex === -1) {
-        return { success: false, error: 'User not found' };
+      if (userIndex !== -1) {
+        users[userIndex] = {
+          ...users[userIndex],
+          ...data,
+          createdAt: users[userIndex].createdAt,
+        };
+        localStorage.setItem('trikeserve_users', JSON.stringify(users));
       }
 
-      // Update user data
-      const updatedUser = {
-        ...users[userIndex],
+      // Update current user in state
+      const updatedUser: User = {
+        ...user,
         ...data,
-        id: users[userIndex].id, // Prevent ID change
-        email: users[userIndex].email, // Prevent email change
-        role: users[userIndex].role, // Prevent role change
       };
-
-      users[userIndex] = updatedUser;
-      localStorage.setItem('trikeserve_users', JSON.stringify(users));
-
-      // Update current user state
-      const { password: _, ...userWithoutPassword } = updatedUser;
-      setUser(userWithoutPassword);
-      localStorage.setItem('trikeserve_current_user', JSON.stringify(userWithoutPassword));
+      setUser(updatedUser);
+      localStorage.setItem('trikeserve_current_user', JSON.stringify(updatedUser));
 
       return { success: true };
     } catch (error) {
@@ -272,7 +425,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   );
 }
 
-export function useAuth() {
+export function useAuth(): AuthContextType {
   const context = useContext(AuthContext);
   if (context === undefined) {
     throw new Error('useAuth must be used within an AuthProvider');

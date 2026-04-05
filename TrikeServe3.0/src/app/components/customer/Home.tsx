@@ -5,27 +5,23 @@ import { Button } from "../ui/button";
 import { Card } from "../ui/card";
 import { Badge } from "../ui/badge";
 import { Input } from "../ui/input";
-import { MapContainer, TileLayer, Marker, Popup } from 'react-leaflet';
-import 'leaflet/dist/leaflet.css';
-import L from 'leaflet';
-import tricycleIcon from 'figma:asset/f95136f107da6abaa01df388b0dc853ed3643fd5.png';
+import { GoogleMap, LoadScript, Marker, InfoWindow } from "@react-google-maps/api";
+import tricycleIcon from '../../../assets/0b76d1aa56b8ad6e15dd4efc8a0100b0ca5762a1.png';
 import { useAuth } from "../../contexts/AuthContext";
 import SharedRides from "./SharedRides";
 import ShareRideLobby from "./ShareRideLobby";
 import LobbyList from "./LobbyList";
 
-// Fix Leaflet default marker icon
-delete (L.Icon.Default.prototype as any)._getIconUrl;
-L.Icon.Default.mergeOptions({
-  iconRetinaUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon-2x.png',
-  iconUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon.png',
-  shadowUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png',
-});
+// Get Google Maps API Key from environment variable
+const GOOGLE_MAPS_API_KEY = import.meta.env.VITE_GOOGLE_MAPS_API_KEY || "";
 
 export default function CustomerHome() {
   const { user } = useAuth();
   const [selectedVehicle, setSelectedVehicle] = useState<'share' | 'special' | null>(null);
-  const [currentLocation] = useState<[number, number]>([14.5995, 120.9842]); // Tagalag coordinates
+  const [currentLocation, setCurrentLocation] = useState<{ lat: number; lng: number }>({ lat: 14.5995, lng: 120.9842 }); // Default: Manila
+  const [selectedMarker, setSelectedMarker] = useState<{ lat: number; lng: number } | null>(null);
+  const [isLoadingLocation, setIsLoadingLocation] = useState(true);
+  const [locationError, setLocationError] = useState<string | null>(null);
   const [showLocationPicker, setShowLocationPicker] = useState(false);
   const [activeLocationInput, setActiveLocationInput] = useState<'pickup' | 'dropoff' | null>(null);
   const [pickup, setPickup] = useState("");
@@ -46,6 +42,38 @@ export default function CustomerHome() {
   const [passengerCount, setPassengerCount] = useState(1);
   const [showLobbyList, setShowLobbyList] = useState(false);
   const [unreadMessagesCount, setUnreadMessagesCount] = useState(0);
+
+  // Get user's current location on component mount
+  useEffect(() => {
+    setIsLoadingLocation(true);
+    setLocationError(null);
+
+    if ('geolocation' in navigator) {
+      navigator.geolocation.getCurrentPosition(
+        (position) => {
+          const { latitude, longitude } = position.coords;
+          setCurrentLocation({ lat: latitude, lng: longitude });
+          setIsLoadingLocation(false);
+          console.log('User location:', latitude, longitude);
+        },
+        (error) => {
+          console.warn('Geolocation error:', error.message);
+          setLocationError(error.message);
+          setIsLoadingLocation(false);
+          // Keep default location (Manila) if geolocation fails
+        },
+        {
+          enableHighAccuracy: true,
+          timeout: 10000,
+          maximumAge: 0
+        }
+      );
+    } else {
+      console.warn('Geolocation not supported by browser');
+      setLocationError('Geolocation not supported');
+      setIsLoadingLocation(false);
+    }
+  }, []);
 
   // DEBUG: Clear all ride data
   const clearAllRideData = () => {
@@ -371,20 +399,50 @@ export default function CustomerHome() {
     <div className="min-h-screen bg-white flex flex-col relative">
       {/* Full Screen Map */}
       <div className="absolute inset-0">
-        <MapContainer
-          center={currentLocation}
-          zoom={15}
-          className="h-full w-full"
-          zoomControl={false}
-        >
-          <TileLayer
-            attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
-            url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
-          />
-          <Marker position={currentLocation}>
-            <Popup>Your Location</Popup>
-          </Marker>
-        </MapContainer>
+        {!GOOGLE_MAPS_API_KEY ? (
+          <div className="w-full h-full flex items-center justify-center bg-gray-200">
+            <div className="text-center">
+              <p className="text-xl font-bold text-red-600 mb-4">⚠️ Google Maps API Key Missing</p>
+              <p className="text-gray-700 mb-4">To use Google Maps, please add your API key to .env.local</p>
+            </div>
+          </div>
+        ) : (
+          <LoadScript googleMapsApiKey={GOOGLE_MAPS_API_KEY} libraries={["places"]}>
+            <GoogleMap
+              mapContainerStyle={{ width: "100%", height: "100%" }}
+              center={currentLocation}
+              zoom={15}
+              options={{
+                zoomControl: false,
+                fullscreenControl: true,
+                streetViewControl: false,
+                mapTypeControl: true,
+              }}
+            >
+              {/* Current Location Marker */}
+              <Marker
+                position={currentLocation}
+                onClick={() => setSelectedMarker(currentLocation)}
+                title="Your location"
+              />
+
+              {/* Info Window for selected marker */}
+              {selectedMarker && (
+                <InfoWindow
+                  position={selectedMarker}
+                  onCloseClick={() => setSelectedMarker(null)}
+                >
+                  <div className="text-sm">
+                    <p className="font-bold">Your current location</p>
+                    <p className="text-gray-600">
+                      {selectedMarker.lat.toFixed(4)}, {selectedMarker.lng.toFixed(4)}
+                    </p>
+                  </div>
+                </InfoWindow>
+              )}
+            </GoogleMap>
+          </LoadScript>
+        )}
 
         {/* Search Bar Overlay */}
         <div className="absolute top-4 left-4 right-4 z-[1000]">
@@ -398,21 +456,6 @@ export default function CustomerHome() {
                 style={{ outline: 'none' }}
               />
             </div>
-            <button
-              onClick={clearAllRideData}
-              className="w-12 h-12 bg-red-500 hover:bg-red-600 text-white rounded-xl shadow-lg border-0 flex items-center justify-center text-lg font-bold"
-              title="Clear all ride data (Debug)"
-            >
-              🗑️
-            </button>
-            <Link to="/customer/account-management">
-              <Button 
-                size="icon"
-                className="w-12 h-12 bg-white hover:bg-gray-50 text-2xl rounded-xl shadow-lg border-0"
-              >
-                👤
-              </Button>
-            </Link>
           </div>
         </div>
 

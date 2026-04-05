@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import {
-  Shield, MessageSquare, X, Users, Settings
+  Shield, MessageSquare, X, Users, Settings, CheckCircle
 } from "lucide-react";
 import { Link, useLocation } from "react-router";
 import { Card } from "../ui/card";
@@ -57,6 +57,7 @@ export default function AdminSidebar({ isMobileMenuOpen, setIsMobileMenuOpen }: 
   const menuItems = [
     { path: "/admin/dashboard", icon: Shield, label: "Overview" },
     { path: "/admin/users", icon: Users, label: "Users" },
+    { path: "/admin/verified-users", icon: CheckCircle, label: "Verified Users" },
     { path: "/admin/settings", icon: Settings, label: "Settings" }
   ];
 

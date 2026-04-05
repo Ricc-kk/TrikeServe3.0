@@ -55,35 +55,12 @@ export function OrderProvider({ children }: { children: ReactNode }) {
   const [orders, setOrders] = useState<Order[]>([]);
   const [isLoaded, setIsLoaded] = useState(false);
 
-  // Function to load orders from localStorage
+  // Function to load orders from Supabase (called by child components)
+  // No longer loading from localStorage - all orders come from Supabase
   const loadOrders = () => {
-    const currentUserData = localStorage.getItem('trikeserve_current_user');
-    if (currentUserData) {
-      const currentUser = JSON.parse(currentUserData);
-      const userEmail = currentUser.email;
-      const userRole = currentUser.role;
-      
-      // Load from appropriate key based on user role
-      let ordersKey: string;
-      if (userRole === 'business') {
-        ordersKey = `business_orders_${userEmail}`;
-      } else {
-        ordersKey = `orders_${userEmail}`;
-      }
-      
-      const savedOrders = localStorage.getItem(ordersKey);
-      if (savedOrders) {
-        const parsedOrders = JSON.parse(savedOrders);
-        // Only update if orders have changed to prevent unnecessary re-renders
-        setOrders(prevOrders => {
-          if (JSON.stringify(prevOrders) !== JSON.stringify(parsedOrders)) {
-            return parsedOrders;
-          }
-          return prevOrders;
-        });
-      }
-      setIsLoaded(true);
-    }
+    // This function is kept for backward compatibility but no longer loads from localStorage
+    // Child components (Activity, BusinessOrders) now handle fetching from Supabase
+    setIsLoaded(true);
   };
 
   // Load orders on mount and set up polling for real-time updates
@@ -96,41 +73,14 @@ export function OrderProvider({ children }: { children: ReactNode }) {
     return () => clearInterval(interval);
   }, []);
 
-  // Save orders to localStorage whenever they change (but only after initial load)
-  useEffect(() => {
-    if (!isLoaded) return; // Don't save on initial load
-    
-    const currentUserData = localStorage.getItem('trikeserve_current_user');
-    if (currentUserData) {
-      const currentUser = JSON.parse(currentUserData);
-      const userEmail = currentUser.email;
-      const userRole = currentUser.role;
-      
-      // Save to appropriate key based on user role
-      let ordersKey: string;
-      if (userRole === 'business') {
-        ordersKey = `business_orders_${userEmail}`;
-      } else {
-        ordersKey = `orders_${userEmail}`;
-      }
-      
-      localStorage.setItem(ordersKey, JSON.stringify(orders));
-    }
-  }, [orders, isLoaded]);
-
   const addOrder = (order: Order) => {
-    // Save to customer's orders
+    console.log('[OrderContext] Adding order (stored in Supabase):', order.restaurantEmail);
+
+    // Update local state for immediate UI update
     setOrders((prev) => [order, ...prev]);
     
-    // Also save to business owner's orders if restaurantEmail exists
+    // Create notification for business owner
     if (order.restaurantEmail) {
-      const businessOrdersKey = `business_orders_${order.restaurantEmail}`;
-      const existingBusinessOrders = localStorage.getItem(businessOrdersKey);
-      const businessOrders = existingBusinessOrders ? JSON.parse(existingBusinessOrders) : [];
-      businessOrders.unshift(order);
-      localStorage.setItem(businessOrdersKey, JSON.stringify(businessOrders));
-      
-      // Create notification for business owner
       const businessNotificationsKey = `notifications_${order.restaurantEmail}`;
       const existingNotifications = localStorage.getItem(businessNotificationsKey);
       const notifications = existingNotifications ? JSON.parse(existingNotifications) : [];
@@ -150,6 +100,9 @@ export function OrderProvider({ children }: { children: ReactNode }) {
       
       notifications.unshift(notification);
       localStorage.setItem(businessNotificationsKey, JSON.stringify(notifications));
+      console.log('[OrderContext] Notification created for restaurant:', businessNotificationsKey);
+    } else {
+      console.warn('[OrderContext] Order has no restaurantEmail! Order:', order);
     }
   };
 
@@ -166,32 +119,8 @@ export function OrderProvider({ children }: { children: ReactNode }) {
       // Find the updated order
       const updatedOrder = updatedOrders.find(o => o.id === id);
       
-      // If order has restaurantEmail, update business orders too
-      if (updatedOrder?.restaurantEmail) {
-        const businessOrdersKey = `business_orders_${updatedOrder.restaurantEmail}`;
-        const existingBusinessOrders = localStorage.getItem(businessOrdersKey);
-        if (existingBusinessOrders) {
-          const businessOrders = JSON.parse(existingBusinessOrders);
-          const updatedBusinessOrders = businessOrders.map((order: Order) =>
-            order.id === id ? { ...order, status } : order
-          );
-          localStorage.setItem(businessOrdersKey, JSON.stringify(updatedBusinessOrders));
-        }
-      }
-      
-      // If order has customerEmail, update customer orders too
-      if (updatedOrder?.customerEmail) {
-        const customerOrdersKey = `orders_${updatedOrder.customerEmail}`;
-        const existingCustomerOrders = localStorage.getItem(customerOrdersKey);
-        if (existingCustomerOrders) {
-          const customerOrders = JSON.parse(existingCustomerOrders);
-          const updatedCustomerOrders = customerOrders.map((order: Order) =>
-            order.id === id ? { ...order, status } : order
-          );
-          localStorage.setItem(customerOrdersKey, JSON.stringify(updatedCustomerOrders));
-        }
-      }
-      
+      // Orders are updated in Supabase, no need to update localStorage
+
       return updatedOrders;
     });
   };

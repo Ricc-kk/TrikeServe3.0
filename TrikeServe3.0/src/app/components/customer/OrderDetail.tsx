@@ -3,16 +3,127 @@ import { useNavigate, useParams } from "react-router";
 import { Card } from "../ui/card";
 import { Button } from "../ui/button";
 import { useOrders } from "../../contexts/OrderContext";
+import { useAuth } from "../../contexts/AuthContext";
 import { ImageWithFallback } from "../figma/ImageWithFallback";
+import { supabase } from "../../../lib/supabase";
+import { useState, useEffect } from "react";
+
+interface OrderData {
+  id: string;
+  orderNumber: string;
+  restaurantName: string;
+  restaurantImage: string;
+  customerName: string;
+  customerEmail: string;
+  customerPhone: string;
+  date: string;
+  status: string;
+  deliveryMode: string;
+  address: string;
+  estimatedTime: string;
+  items: any[];
+  subtotal: number;
+  deliveryFee: number;
+  total: number;
+  paymentMethod: string;
+  needsCutlery: boolean;
+  createdAt: string;
+}
 
 export default function OrderDetail() {
   const navigate = useNavigate();
   const { orderId } = useParams();
+  const { user } = useAuth();
   const { getOrderById } = useOrders();
+  const [order, setOrder] = useState<OrderData | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
-  const order = getOrderById(orderId || "");
+  // Try to fetch order from Supabase first, then fall back to OrderContext
+  useEffect(() => {
+    const fetchOrder = async () => {
+      try {
+        setIsLoading(true);
 
-  if (!order) {
+        // First try Supabase
+        if (orderId) {
+          const { data: dbOrder, error: dbError } = await supabase
+            .from('orders')
+            .select('*')
+            .eq('id', orderId)
+            .single();
+
+          if (!dbError && dbOrder) {
+            // Parse items safely
+            let parsedItems = [];
+            try {
+              parsedItems = typeof dbOrder.items === 'string' ? JSON.parse(dbOrder.items) : (Array.isArray(dbOrder.items) ? dbOrder.items : []);
+            } catch (parseError) {
+              console.error('[OrderDetail] Error parsing items:', parseError);
+              parsedItems = [];
+            }
+
+            const transformedOrder: OrderData = {
+              id: dbOrder.id,
+              orderNumber: dbOrder.order_number || 'Unknown',
+              restaurantName: dbOrder.restaurant_name || 'Restaurant',
+              restaurantImage: '',
+              customerName: dbOrder.customer_name || 'Customer',
+              customerEmail: dbOrder.customer_email || '',
+              customerPhone: dbOrder.customer_phone || '',
+              date: new Date(dbOrder.created_at).toLocaleString(),
+              status: dbOrder.status || 'pending',
+              deliveryMode: dbOrder.delivery_mode || 'delivery',
+              address: dbOrder.address || '',
+              estimatedTime: dbOrder.estimated_time || '30 mins',
+              items: parsedItems,
+              subtotal: dbOrder.subtotal || 0,
+              deliveryFee: dbOrder.delivery_fee || 0,
+              total: dbOrder.total || 0,
+              paymentMethod: dbOrder.payment_method || 'cash',
+              needsCutlery: dbOrder.needs_cutlery || false,
+              createdAt: dbOrder.created_at,
+            };
+
+            setOrder(transformedOrder);
+            setIsLoading(false);
+            return;
+          }
+        }
+
+        // Fall back to OrderContext (for backward compatibility)
+        const localOrder = getOrderById(orderId || "");
+        if (localOrder) {
+          setOrder(localOrder);
+          setIsLoading(false);
+          return;
+        }
+
+        // No order found
+        setError('Order not found');
+        setIsLoading(false);
+      } catch (error) {
+        console.error('[OrderDetail] Error loading order:', error);
+        setError('Failed to load order');
+        setIsLoading(false);
+      }
+    };
+
+    fetchOrder();
+  }, [orderId, user]);
+
+  if (isLoading) {
+    return (
+      <div className="min-h-screen bg-white flex items-center justify-center">
+        <div className="text-center">
+          <Package className="w-12 h-12 text-[#0EA5E9] mx-auto mb-4 animate-bounce" />
+          <p className="text-[#64748B]">Loading order details...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (error || !order) {
     return (
       <div className="min-h-screen bg-white flex items-center justify-center">
         <div className="text-center">

@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
-import { MapContainer, TileLayer, Marker, Popup } from "react-leaflet";
-import { 
+import { GoogleMap, LoadScript, Marker, InfoWindow } from "@react-google-maps/api";
+import {
   Home as HomeIcon, 
   Package, 
   Users, 
@@ -27,15 +27,9 @@ import { Card } from "../ui/card";
 import { Switch } from "../ui/switch";
 import { Badge } from "../ui/badge";
 import { Input } from "../ui/input";
-import L from "leaflet";
 
-// Fix Leaflet default marker icon issue
-delete (L.Icon.Default.prototype as any)._getIconUrl;
-L.Icon.Default.mergeOptions({
-  iconRetinaUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon-2x.png',
-  iconUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon.png',
-  shadowUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png',
-});
+// Get Google Maps API Key from environment variable
+const GOOGLE_MAPS_API_KEY = import.meta.env.VITE_GOOGLE_MAPS_API_KEY || "";
 
 interface IncomingRequest {
   id: string;
@@ -65,8 +59,44 @@ export default function RiderDashboard() {
   const [hasActiveRide, setHasActiveRide] = useState(false);
   const [activeRideData, setActiveRideData] = useState<any>(null);
   const [unreadMessagesCount, setUnreadMessagesCount] = useState(0);
+  const [mapCenter, setMapCenter] = useState<{ lat: number; lng: number }>({ lat: 14.5995, lng: 120.9842 }); // Default: Manila
+  const [selectedMarker, setSelectedMarker] = useState<{ lat: number; lng: number } | null>(null);
+  const [isLoadingLocation, setIsLoadingLocation] = useState(true);
+  const [locationError, setLocationError] = useState<string | null>(null);
 
-  // Check for active ride on mount
+  // Get user's current location on component mount
+  useEffect(() => {
+    setIsLoadingLocation(true);
+    setLocationError(null);
+
+    if ('geolocation' in navigator) {
+      navigator.geolocation.getCurrentPosition(
+        (position) => {
+          const { latitude, longitude } = position.coords;
+          setMapCenter({ lat: latitude, lng: longitude });
+          setIsLoadingLocation(false);
+          console.log('User location:', latitude, longitude);
+        },
+        (error) => {
+          console.warn('Geolocation error:', error.message);
+          setLocationError(error.message);
+          setIsLoadingLocation(false);
+          // Keep default location (Manila) if geolocation fails
+        },
+        {
+          enableHighAccuracy: true,
+          timeout: 10000,
+          maximumAge: 0
+        }
+      );
+    } else {
+      console.warn('Geolocation not supported by browser');
+      setLocationError('Geolocation not supported');
+      setIsLoadingLocation(false);
+    }
+  }, []);
+
+  // ...existing code...
   useEffect(() => {
     const checkActiveRide = () => {
       const savedRide = localStorage.getItem('trikeserve_active_ride');
@@ -176,12 +206,6 @@ export default function RiderDashboard() {
     };
   }, []);
 
-  const incomingRequests: IncomingRequest[] = [];
-
-  const handleAcceptRequest = (request: IncomingRequest) => {
-    setActiveTrip(request);
-  };
-
   const handleCompleteTrip = () => {
     if (activeTrip) {
       setEarnings(prev => prev + activeTrip.amount);
@@ -194,20 +218,57 @@ export default function RiderDashboard() {
     <div className="h-screen flex flex-col bg-[#F8F9FA] relative">
       {/* Full Screen Map */}
       <div className="absolute inset-0">
-        <MapContainer
-          center={[14.5995, 120.9842]}
-          zoom={15}
-          className="h-full w-full"
-          zoomControl={false}
-        >
-          <TileLayer
-            attribution='&copy; <a href="https://www.openstreetmap.org/copyright\">OpenStreetMap</a>'
-            url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
-          />
-          <Marker position={[14.5995, 120.9842]}>
-            <Popup>Your current location</Popup>
-          </Marker>
-        </MapContainer>
+        {!GOOGLE_MAPS_API_KEY ? (
+          <div className="w-full h-full flex items-center justify-center bg-gray-200">
+            <div className="text-center">
+              <p className="text-xl font-bold text-red-600 mb-4">⚠️ Google Maps API Key Missing</p>
+              <p className="text-gray-700 mb-4">To use Google Maps, please:</p>
+              <ol className="text-left text-sm text-gray-600 mb-4">
+                <li>1. Get a Google Maps API Key from Google Cloud Console</li>
+                <li>2. Create a .env.local file in the project root</li>
+                <li>3. Add: VITE_GOOGLE_MAPS_API_KEY=your_api_key</li>
+                <li>4. Restart the dev server</li>
+              </ol>
+              <p className="text-xs text-gray-500">Default location shown: Manila, Philippines</p>
+            </div>
+          </div>
+        ) : (
+          <LoadScript googleMapsApiKey={GOOGLE_MAPS_API_KEY} libraries={["places"]}>
+            <GoogleMap
+              mapContainerStyle={{ width: "100%", height: "100%" }}
+              center={mapCenter}
+              zoom={15}
+              options={{
+                zoomControl: false,
+                fullscreenControl: true,
+                streetViewControl: false,
+                mapTypeControl: true,
+              }}
+            >
+              {/* Current Location Marker */}
+              <Marker
+                position={mapCenter}
+                onClick={() => setSelectedMarker(mapCenter)}
+                title="Your location"
+              />
+
+              {/* Info Window for selected marker */}
+              {selectedMarker && (
+                <InfoWindow
+                  position={selectedMarker}
+                  onCloseClick={() => setSelectedMarker(null)}
+                >
+                  <div className="text-sm">
+                    <p className="font-bold">Your current location</p>
+                    <p className="text-gray-600">
+                      {selectedMarker.lat.toFixed(4)}, {selectedMarker.lng.toFixed(4)}
+                    </p>
+                  </div>
+                </InfoWindow>
+              )}
+            </GoogleMap>
+          </LoadScript>
+        )}
 
         {/* Toggle Online/Offline Button */}
         {!activeTrip && (

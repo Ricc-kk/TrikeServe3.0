@@ -7,6 +7,7 @@ import { Button } from "../ui/button";
 import { ImageWithFallback } from "../figma/ImageWithFallback";
 import BusinessSidebar from "./BusinessSidebar";
 import { useAuth } from "../../contexts/AuthContext";
+import { supabase } from "../../../utils/supabase";
 
 export default function BusinessHome() {
   const navigate = useNavigate();
@@ -33,20 +34,82 @@ export default function BusinessHome() {
     operatingHours: "8:00 AM - 10:00 PM"
   });
 
-  // Load menu items from localStorage
+  // Load menu items from Supabase
   useEffect(() => {
-    if (user?.email) {
-      const storageKey = `menuItems_${user.email}`;
-      const savedItems = localStorage.getItem(storageKey);
-      if (savedItems) {
-        try {
-          setMenuItems(JSON.parse(savedItems));
-        } catch (error) {
-          console.error('Error loading menu items:', error);
+    const loadMenuItems = async () => {
+      if (!user?.id || user?.role !== 'business') return;
+
+      try {
+        // Get restaurant ID
+        const { data: restaurant } = await supabase
+          .from('restaurants')
+          .select('id')
+          .eq('business_user_id', user.id)
+          .single();
+
+        if (!restaurant) {
+          // Fallback to localStorage
+          if (user?.email) {
+            const storageKey = `menuItems_${user.email}`;
+            const savedItems = localStorage.getItem(storageKey);
+            if (savedItems) {
+              setMenuItems(JSON.parse(savedItems));
+            }
+          }
+          return;
+        }
+
+        // Load menu items from Supabase
+        const { data: items } = await supabase
+          .from('menu_items')
+          .select('*')
+          .eq('restaurant_id', restaurant.id);
+
+        if (items) {
+          const mappedItems = items.map((item: any) => ({
+            id: item.id,
+            name: item.name,
+            description: item.description || '',
+            price: item.price,
+            image: item.image_url || 'https://images.unsplash.com/photo-1546069901-ba9599a7e63c?w=400',
+            category: item.category,
+            available: item.is_available,
+          }));
+          setMenuItems(mappedItems);
+        } else if (user?.email) {
+          // Fallback to localStorage if Supabase query fails
+          const storageKey = `menuItems_${user.email}`;
+          const savedItems = localStorage.getItem(storageKey);
+          if (savedItems) {
+            setMenuItems(JSON.parse(savedItems));
+          }
+        }
+      } catch (error) {
+        console.error('Error loading menu items:', error);
+        // Fallback to localStorage
+        if (user?.email) {
+          const storageKey = `menuItems_${user.email}`;
+          const savedItems = localStorage.getItem(storageKey);
+          if (savedItems) {
+            setMenuItems(JSON.parse(savedItems));
+          }
         }
       }
-    }
-  }, [user?.email]);
+    };
+
+    loadMenuItems();
+
+    // Reload menu items when page becomes visible (switching back from another tab)
+    const handleVisibilityChange = () => {
+      if (!document.hidden) {
+        // Page is now visible - reload menu items
+        loadMenuItems();
+      }
+    };
+
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    return () => document.removeEventListener('visibilitychange', handleVisibilityChange);
+  }, [user?.id, user?.email, user?.role]);
 
   // Update restaurant data when user data is available
   useEffect(() => {

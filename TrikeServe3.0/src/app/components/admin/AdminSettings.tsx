@@ -10,6 +10,7 @@ import { Input } from "../ui/input";
 import { Badge } from "../ui/badge";
 import { useAuth } from "../../contexts/AuthContext";
 import AdminSidebar from "./AdminSidebar";
+import { supabase } from "../../../utils/supabase";
 
 export default function AdminSettings() {
   const navigate = useNavigate();
@@ -42,18 +43,31 @@ export default function AdminSettings() {
     loadSettings();
   }, []);
 
-  const loadSettings = () => {
-    // Load rates
-    const savedRates = localStorage.getItem('trikeserve_rates');
-    if (savedRates) {
-      try {
-        setRateConfig(JSON.parse(savedRates));
-      } catch (error) {
-        console.error('Error loading rates:', error);
+  const loadSettings = async () => {
+    // Load rates from Supabase
+    try {
+      const { data: ratesData, error } = await supabase
+        .from('admin_settings')
+        .select('*')
+        .eq('setting_key', 'rates')
+        .single();
+
+      if (!error && ratesData) {
+        try {
+          setRateConfig(JSON.parse(ratesData.setting_value));
+        } catch (e) {
+          console.error('Error parsing rates:', e);
+          loadRatesFromLocalStorage();
+        }
+      } else {
+        loadRatesFromLocalStorage();
       }
+    } catch (error) {
+      console.error('Error loading rates from Supabase:', error);
+      loadRatesFromLocalStorage();
     }
 
-    // Load platform settings
+    // Load platform settings from localStorage (can be extended to Supabase)
     const savedPlatformSettings = localStorage.getItem('trikeserve_platform_settings');
     if (savedPlatformSettings) {
       try {
@@ -64,9 +78,43 @@ export default function AdminSettings() {
     }
   };
 
-  const handleSaveRates = () => {
-    localStorage.setItem('trikeserve_rates', JSON.stringify(rateConfig));
-    showSavedMessage("Rate configuration saved successfully!");
+  const loadRatesFromLocalStorage = () => {
+    const savedRates = localStorage.getItem('trikeserve_rates');
+    if (savedRates) {
+      try {
+        setRateConfig(JSON.parse(savedRates));
+      } catch (error) {
+        console.error('Error loading rates:', error);
+      }
+    }
+  };
+
+  const handleSaveRates = async () => {
+    try {
+      // Save to Supabase
+      const { error } = await supabase
+        .from('admin_settings')
+        .upsert({
+          setting_key: 'rates',
+          setting_value: JSON.stringify(rateConfig),
+          updated_at: new Date().toISOString()
+        }, {
+          onConflict: 'setting_key'
+        });
+
+      if (error) {
+        console.error('Error saving to Supabase:', error);
+      }
+
+      // Also save to localStorage as backup
+      localStorage.setItem('trikeserve_rates', JSON.stringify(rateConfig));
+      showSavedMessage("Rate configuration saved successfully!");
+    } catch (error) {
+      console.error('Error in handleSaveRates:', error);
+      // Fallback to localStorage only
+      localStorage.setItem('trikeserve_rates', JSON.stringify(rateConfig));
+      showSavedMessage("Rate configuration saved locally!");
+    }
   };
 
   const handleSavePlatformSettings = () => {
@@ -83,6 +131,12 @@ export default function AdminSettings() {
     logout();
     navigate('/');
   };
+
+  // Check if user is Driver Admin (only they can view rate configuration)
+  const isDriverAdmin = user?.adminType === 'rider';
+
+  // Check if user is Business & Customer Admin (not allowed to see rate configuration)
+  const isBusinessCustomerAdmin = user?.adminType === 'business_customer';
 
   return (
     <div className="min-h-screen bg-[#F8F9FA] flex">
@@ -121,19 +175,34 @@ export default function AdminSettings() {
 
         {/* Content */}
         <div className="p-5 lg:p-8 space-y-6 lg:space-y-8">
-          {/* Rate Configuration Section */}
-          <div>
-            <div className="flex items-center gap-3 mb-4">
-              <div className="w-10 h-10 bg-[#FFF1F2] rounded-xl flex items-center justify-center">
-                <DollarSign className="w-6 h-6 text-[#E11D48]" />
-              </div>
+          {/* Access Restricted Notice for Business & Customer Admin */}
+          {isBusinessCustomerAdmin && (
+            <div className="bg-[#FEF3C7] border-2 border-[#FCD34D] rounded-xl p-6 flex items-start gap-4">
+              <AlertTriangle className="w-6 h-6 text-[#F59E0B] flex-shrink-0 mt-1" />
               <div>
-                <h2 className="text-xl lg:text-2xl font-bold text-[#121212]">Fixed Rate Configuration</h2>
-                <p className="text-sm text-[#64748B]">Set base rates for different service types</p>
+                <h3 className="font-bold text-[#121212] mb-2">Access Restricted</h3>
+                <p className="text-sm text-[#92400E]">
+                  As a Business & Customer Administrator, you do not have access to fixed rate configuration.
+                  Only Driver Administrators can modify rate settings.
+                </p>
               </div>
             </div>
+          )}
 
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 lg:gap-6">
+          {/* Rate Configuration Section - Only for Driver Admin */}
+          {isDriverAdmin && (
+            <div>
+              <div className="flex items-center gap-3 mb-4">
+                <div className="w-10 h-10 bg-[#FFF1F2] rounded-xl flex items-center justify-center">
+                  <DollarSign className="w-6 h-6 text-[#E11D48]" />
+                </div>
+                <div>
+                  <h2 className="text-xl lg:text-2xl font-bold text-[#121212]">Fixed Rate Configuration</h2>
+                  <p className="text-sm text-[#64748B]">Set base rates for different service types</p>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4 lg:gap-6">
               {/* Shared Ride Rate */}
               <Card className="p-5 lg:p-6 border-2 border-[#E2E8F0] bg-white">
                 <div className="flex items-start justify-between mb-4">
@@ -203,6 +272,7 @@ export default function AdminSettings() {
               Save Rate Configuration
             </button>
           </div>
+          )}
 
           {/* Platform Settings Section */}
           <div>

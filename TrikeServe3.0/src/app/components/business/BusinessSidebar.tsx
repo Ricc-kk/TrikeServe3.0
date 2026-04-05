@@ -5,6 +5,7 @@ import {
 } from "lucide-react";
 import { Link, useLocation } from "react-router";
 import { Card } from "../ui/card";
+import { supabase } from "../../../lib/supabase";
 
 interface BusinessSidebarProps {
   isMobileMenuOpen: boolean;
@@ -15,7 +16,7 @@ export default function BusinessSidebar({ isMobileMenuOpen, setIsMobileMenuOpen 
   const location = useLocation();
   const [pendingOrdersCount, setPendingOrdersCount] = useState(0);
 
-  // Load pending orders count
+  // Load pending orders count from Supabase
   useEffect(() => {
     loadPendingOrdersCount();
     
@@ -24,21 +25,37 @@ export default function BusinessSidebar({ isMobileMenuOpen, setIsMobileMenuOpen 
     return () => clearInterval(interval);
   }, []);
 
-  const loadPendingOrdersCount = () => {
-    const currentUserData = localStorage.getItem('trikeserve_current_user');
-    if (!currentUserData) return;
+  const loadPendingOrdersCount = async () => {
+    try {
+      const currentUserData = localStorage.getItem('trikeserve_current_user');
+      if (!currentUserData) {
+        setPendingOrdersCount(0);
+        return;
+      }
 
-    const currentUser = JSON.parse(currentUserData);
-    const userEmail = currentUser.email;
+      const currentUser = JSON.parse(currentUserData);
 
-    const businessOrdersKey = `business_orders_${userEmail}`;
-    const savedOrders = localStorage.getItem(businessOrdersKey);
-    
-    if (savedOrders) {
-      const orders = JSON.parse(savedOrders);
-      const pendingCount = orders.filter((o: any) => o.status === 'pending').length;
-      setPendingOrdersCount(pendingCount);
-    } else {
+      // SECURITY: Fetch orders from Supabase using RLS
+      // The RLS policy ensures this business user can only see orders for their restaurant
+      const { data: supabaseOrders, error: fetchError } = await supabase
+        .from('orders')
+        .select('*')
+        .eq('business_id', currentUser.id)
+        .in('status', ['pending', 'preparing', 'ready', 'on-the-way']);
+
+      if (fetchError) {
+        console.error('[BusinessSidebar] Error fetching orders from Supabase:', fetchError);
+        setPendingOrdersCount(0);
+        return;
+      }
+
+      if (supabaseOrders) {
+        setPendingOrdersCount(supabaseOrders.length);
+      } else {
+        setPendingOrdersCount(0);
+      }
+    } catch (error) {
+      console.error('[BusinessSidebar] Error in loadPendingOrdersCount:', error);
       setPendingOrdersCount(0);
     }
   };

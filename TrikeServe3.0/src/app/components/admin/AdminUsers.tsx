@@ -9,6 +9,7 @@ import { Badge } from "../ui/badge";
 import { Input } from "../ui/input";
 import { useAuth } from "../../contexts/AuthContext";
 import AdminSidebar from "./AdminSidebar";
+import { supabase } from "../../../utils/supabase";
 
 interface StoredUser {
   id: string;
@@ -42,21 +43,62 @@ export default function AdminUsers() {
     loadUsers();
   }, [user]);
 
-  const loadUsers = () => {
+  const loadUsers = async () => {
+    try {
+      const { data: supabaseUsers, error } = await supabase
+        .from('users')
+        .select('*');
+
+      if (error) {
+        console.error('Error loading users from Supabase:', error);
+        loadUsersFromLocalStorage();
+        return;
+      }
+
+      if (!supabaseUsers) return;
+
+      const allUsers: StoredUser[] = supabaseUsers.map((u: any) => ({
+        id: u.id,
+        name: u.name,
+        email: u.email,
+        phone: u.phone,
+        role: u.role,
+        isVerified: u.is_verified,
+        createdAt: u.created_at,
+        password: '',
+        adminType: u.admin_type,
+        todaPlate: u.toda_plate,
+        licenseNumber: u.license_number,
+        businessName: u.business_name,
+        businessAddress: u.business_address,
+        address: u.address,
+      }));
+
+      const adminType = user?.adminType;
+      let filteredUsers = allUsers.filter(u => u.role !== 'admin');
+      if (adminType === 'business_customer') {
+        filteredUsers = filteredUsers.filter(u => u.role === 'business' || u.role === 'customer');
+      } else if (adminType === 'rider') {
+        filteredUsers = filteredUsers.filter(u => u.role === 'rider');
+      }
+
+      setUsers(filteredUsers);
+    } catch (error) {
+      console.error('Error in loadUsers:', error);
+      loadUsersFromLocalStorage();
+    }
+  };
+
+  const loadUsersFromLocalStorage = () => {
     const usersJson = localStorage.getItem('trikeserve_users');
     if (usersJson) {
       const allUsers: StoredUser[] = JSON.parse(usersJson);
-
-      // Get current admin's type
       const adminType = user?.adminType;
 
-      // Filter users based on admin type
       let filteredUsers = allUsers.filter(u => u.role !== 'admin');
       if (adminType === 'business_customer') {
-        // Show only business and customer users
         filteredUsers = filteredUsers.filter(u => u.role === 'business' || u.role === 'customer');
       } else if (adminType === 'rider') {
-        // Show only rider users
         filteredUsers = filteredUsers.filter(u => u.role === 'rider');
       }
 
@@ -64,27 +106,41 @@ export default function AdminUsers() {
     }
   };
 
-  const handleDeleteUser = (userId: string) => {
+  const handleDeleteUser = async (userId: string) => {
     if (confirm("Are you sure you want to delete this user? This action cannot be undone.")) {
-      const usersJson = localStorage.getItem('trikeserve_users');
-      if (usersJson) {
-        const allUsers: StoredUser[] = JSON.parse(usersJson);
-        const updatedUsers = allUsers.filter(u => u.id !== userId);
-        localStorage.setItem('trikeserve_users', JSON.stringify(updatedUsers));
+      try {
+        const { error } = await supabase
+          .from('users')
+          .delete()
+          .eq('id', userId);
+
+        if (error) {
+          console.error('Error deleting user:', error);
+          return;
+        }
+
         loadUsers();
+      } catch (error) {
+        console.error('Error in handleDeleteUser:', error);
       }
     }
   };
 
-  const handleVerifyUser = (userId: string) => {
-    const usersJson = localStorage.getItem('trikeserve_users');
-    if (usersJson) {
-      const allUsers: StoredUser[] = JSON.parse(usersJson);
-      const updatedUsers = allUsers.map(u =>
-        u.id === userId ? { ...u, isVerified: true } : u
-      );
-      localStorage.setItem('trikeserve_users', JSON.stringify(updatedUsers));
+  const handleVerifyUser = async (userId: string) => {
+    try {
+      const { error } = await supabase
+        .from('users')
+        .update({ is_verified: true, updated_at: new Date().toISOString() })
+        .eq('id', userId);
+
+      if (error) {
+        console.error('Error verifying user:', error);
+        return;
+      }
+
       loadUsers();
+    } catch (error) {
+      console.error('Error in handleVerifyUser:', error);
     }
   };
 
@@ -98,6 +154,37 @@ export default function AdminUsers() {
       localStorage.setItem('trikeserve_users', JSON.stringify(updatedUsers));
       loadUsers();
     }
+  };
+
+  // Helper function to check if admin can verify a user
+  const canVerifyUser = (userRole: string): boolean => {
+    // Business & Customer Admin can verify customer and business users, but NOT riders
+    if (user?.adminType === 'business_customer') {
+      return userRole !== 'rider';
+    }
+    // Driver Admin can verify rider users, but NOT customers or businesses
+    if (user?.adminType === 'rider') {
+      return userRole === 'rider';
+    }
+    // Super admin can verify anyone
+    return true;
+  };
+
+  // Helper function to check if admin can delete a user
+  const canDeleteUser = (userRole: string): boolean => {
+    // Same restrictions as verification
+    return canVerifyUser(userRole);
+  };
+
+  // Helper function to get reason why action is blocked
+  const getBlockedReason = (userRole: string): string => {
+    if (user?.adminType === 'business_customer' && userRole === 'rider') {
+      return 'Business & Customer Admin cannot manage driver users';
+    }
+    if (user?.adminType === 'rider' && (userRole === 'customer' || userRole === 'business')) {
+      return 'Driver Admin can only manage driver users';
+    }
+    return '';
   };
 
   const handleStartEditRole = (userId: string, currentRole: string) => {
@@ -406,26 +493,30 @@ export default function AdminUsers() {
                         </td>
                         <td className="px-4 py-4">
                           <div className="flex items-center justify-center gap-2">
-                            {!u.isVerified ? (
-                              <button
-                                onClick={() => handleVerifyUser(u.id)}
-                                className="px-3 py-1.5 bg-[#10B981] hover:bg-[#059669] text-white rounded-lg transition-all flex items-center gap-1.5 font-semibold text-xs"
-                              >
-                                <CheckCircle className="w-4 h-4" />
-                                Verify
-                              </button>
-                            ) : (
-                              <button
-                                onClick={() => handleUnverifyUser(u.id)}
-                                className="px-3 py-1.5 bg-[#F59E0B] hover:bg-[#D97706] text-white rounded-lg transition-all flex items-center gap-1.5 font-semibold text-xs"
-                              >
-                                <XCircle className="w-4 h-4" />
-                                Unverify
-                              </button>
-                            )}
                             <button
-                              onClick={() => handleDeleteUser(u.id)}
-                              className="px-3 py-1.5 bg-[#EF4444] hover:bg-[#DC2626] text-white rounded-lg transition-all flex items-center gap-1.5 font-semibold text-xs"
+                              onClick={canVerifyUser(u.role) ? (u.isVerified ? () => handleUnverifyUser(u.id) : () => handleVerifyUser(u.id)) : undefined}
+                              disabled={!canVerifyUser(u.role)}
+                              title={!canVerifyUser(u.role) ? getBlockedReason(u.role) : u.isVerified ? 'Unverify this user' : 'Verify this user'}
+                              className={`px-3 py-1.5 rounded-lg transition-all flex items-center gap-1.5 font-semibold text-xs ${
+                                canVerifyUser(u.role)
+                                  ? u.isVerified
+                                    ? 'bg-[#F59E0B] hover:bg-[#D97706] text-white cursor-pointer'
+                                    : 'bg-[#10B981] hover:bg-[#059669] text-white cursor-pointer'
+                                  : 'bg-[#D1D5DB] text-[#6B7280] cursor-not-allowed opacity-50'
+                              }`}
+                            >
+                              {u.isVerified ? <XCircle className="w-4 h-4" /> : <CheckCircle className="w-4 h-4" />}
+                              {u.isVerified ? 'Unverify' : 'Verify'}
+                            </button>
+                            <button
+                              onClick={canDeleteUser(u.role) ? () => handleDeleteUser(u.id) : undefined}
+                              disabled={!canDeleteUser(u.role)}
+                              title={!canDeleteUser(u.role) ? getBlockedReason(u.role) : 'Delete this user'}
+                              className={`px-3 py-1.5 rounded-lg transition-all flex items-center gap-1.5 font-semibold text-xs ${
+                                canDeleteUser(u.role)
+                                  ? 'bg-[#EF4444] hover:bg-[#DC2626] text-white cursor-pointer'
+                                  : 'bg-[#D1D5DB] text-[#6B7280] cursor-not-allowed opacity-50'
+                              }`}
                             >
                               <Trash2 className="w-4 h-4" />
                               Delete
