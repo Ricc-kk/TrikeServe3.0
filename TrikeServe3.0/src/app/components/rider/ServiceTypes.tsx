@@ -1,16 +1,28 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useNavigate } from "react-router";
 import { ArrowLeft, Package, Users, Car } from "lucide-react";
 import { Button } from "../ui/button";
 import { Card } from "../ui/card";
+import { useAuth } from "../../contexts/AuthContext";
 
 export default function ServiceTypes() {
   const navigate = useNavigate();
-  const [selectedServices, setSelectedServices] = useState<string[]>(['shared', 'delivery']);
-  const [currentSeats, setCurrentSeats] = useState(0);
+  const { user, updateProfile } = useAuth();
+  const [selectedServices, setSelectedServices] = useState<string[]>(user?.serviceTypes || ['shared', 'delivery']);
+  const [currentSeats, setCurrentSeats] = useState(user?.currentSeats || 0);
+  const [isSaving, setIsSaving] = useState(false);
 
-  const handleSave = () => {
-    navigate('/rider');
+  const handleSave = async () => {
+    setIsSaving(true);
+    const result = await updateProfile({
+      serviceTypes: selectedServices,
+      currentSeats
+    });
+    setIsSaving(false);
+
+    if (result.success) {
+      navigate('/rider');
+    }
   };
 
   return (
@@ -156,9 +168,10 @@ export default function ServiceTypes() {
 
         <Button 
           onClick={handleSave}
+          disabled={isSaving}
           className="w-full bg-[#E11D48] hover:bg-[#BE123C] uppercase mt-4"
         >
-          Save Service Types
+          {isSaving ? 'Saving...' : 'Save Service Types'}
         </Button>
       </div>
     </div>

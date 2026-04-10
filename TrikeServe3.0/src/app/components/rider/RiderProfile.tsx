@@ -1,6 +1,6 @@
 import { useState } from "react";
-import { useNavigate } from "react-router";
-import { 
+import { useNavigate, Link } from "react-router";
+import {
   ArrowLeft, 
   User, 
   Mail, 
@@ -297,10 +297,36 @@ export default function RiderProfile() {
         <Card className="p-5 border-0 shadow-md">
           <h2 className="text-lg font-bold text-[#121212] mb-4 flex items-center gap-2">
             <MapPin className="w-5 h-5 text-[#E11D48]" />
-            Operating Locations
+            Operating Locations & Services
           </h2>
           
           <div className="space-y-4">
+            {/* Service Types */}
+            <div>
+              <label className="text-xs font-semibold text-[#64748B] uppercase tracking-wide mb-3 block">
+                Active Service Types
+              </label>
+              <div className="flex flex-wrap gap-2">
+                {user.serviceTypes && user.serviceTypes.length > 0 ? (
+                  user.serviceTypes.map((service) => (
+                    <Badge
+                      key={service}
+                      className="bg-[#E11D48] text-white capitalize px-3 py-1.5"
+                    >
+                      {service === 'shared' ? '👥 Ride Share' : service === 'delivery' ? '📦 Delivery' : '🚗 Private'}
+                    </Badge>
+                  ))
+                ) : (
+                  <p className="text-sm text-[#64748B]">No service types selected</p>
+                )}
+              </div>
+              <p className="text-xs text-[#94A3B8] mt-2">
+                <Link to="/rider/service-types" className="text-[#E11D48] hover:underline font-semibold">
+                  Manage Service Types
+                </Link>
+              </p>
+            </div>
+
             {/* Pickup Location */}
             <div>
               <label className="text-xs font-semibold text-[#64748B] uppercase tracking-wide mb-2 block">

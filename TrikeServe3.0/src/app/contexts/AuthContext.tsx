@@ -18,6 +18,9 @@ export interface User {
   licenseNumber?: string;
   pickupLocation?: string;
   dropoffLocation?: string;
+  isOnline?: boolean;
+  serviceTypes?: string[];
+  currentSeats?: number;
   // Business specific
   businessName?: string;
   businessAddress?: string;
@@ -206,6 +209,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         businessAddress: foundUser.business_address || foundUser.businessAddress,
         restaurantId: foundUser.restaurant_id || foundUser.restaurantId,  // Added
         address: foundUser.address,
+        // Rider-specific fields
+        isOnline: foundUser.is_online || foundUser.isOnline || false,
+        serviceTypes: foundUser.service_types || foundUser.serviceTypes || ['shared', 'delivery'],
+        currentSeats: foundUser.current_seats || foundUser.currentSeats || 0,
+        pickupLocation: foundUser.pickup_location || foundUser.pickupLocation,
+        dropoffLocation: foundUser.dropoff_location || foundUser.dropoffLocation,
       };
 
       // For business users without restaurantId, fetch it from Supabase
@@ -287,6 +296,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           ...(data.role === 'rider' && {
             toda_plate: data.todaPlate,
             license_number: data.licenseNumber,
+            is_online: false,
+            service_types: ['shared', 'delivery'],
+            current_seats: 0,
           }),
           ...(data.role === 'business' && {
             business_name: data.businessName,
@@ -320,6 +332,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         ...(data.role === 'rider' && {
           todaPlate: data.todaPlate,
           licenseNumber: data.licenseNumber,
+          isOnline: false,
+          serviceTypes: ['shared', 'delivery'],
+          currentSeats: 0,
         }),
         ...(data.role === 'business' && {
           businessName: data.businessName,
@@ -377,6 +392,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           ...(data.address && { address: data.address }),
           ...(data.todaPlate && { toda_plate: data.todaPlate }),
           ...(data.licenseNumber && { license_number: data.licenseNumber }),
+          ...(data.pickupLocation && { pickup_location: data.pickupLocation }),
+          ...(data.dropoffLocation && { dropoff_location: data.dropoffLocation }),
+          ...(data.isOnline !== undefined && { is_online: data.isOnline }),
+          ...(data.serviceTypes && { service_types: data.serviceTypes }),
+          ...(data.currentSeats !== undefined && { current_seats: data.currentSeats }),
           ...(data.businessName && { business_name: data.businessName }),
           ...(data.businessAddress && { business_address: data.businessAddress }),
           updated_at: new Date().toISOString(),

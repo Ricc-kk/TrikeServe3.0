@@ -27,6 +27,7 @@ import { Card } from "../ui/card";
 import { Switch } from "../ui/switch";
 import { Badge } from "../ui/badge";
 import { Input } from "../ui/input";
+import { useAuth } from "../../contexts/AuthContext";
 
 // Get Google Maps API Key from environment variable
 const GOOGLE_MAPS_API_KEY = import.meta.env.VITE_GOOGLE_MAPS_API_KEY || "";
@@ -45,15 +46,16 @@ interface IncomingRequest {
 
 export default function RiderDashboard() {
   const navigate = useNavigate();
-  const [isOnline, setIsOnline] = useState(false);
+  const { user, updateProfile } = useAuth();
+  const [isOnline, setIsOnline] = useState(user?.isOnline || false);
   const [mode, setMode] = useState<'shared' | 'delivery'>('shared');
-  const [currentSeats, setCurrentSeats] = useState(0);
+  const [currentSeats, setCurrentSeats] = useState(user?.currentSeats || 0);
   const [earnings, setEarnings] = useState(450);
   const [activeTrip, setActiveTrip] = useState<IncomingRequest | null>(null);
   const [showServiceTypes, setShowServiceTypes] = useState(false);
   const [showDestination, setShowDestination] = useState(false);
   const [showMore, setShowMore] = useState(false);
-  const [selectedServices, setSelectedServices] = useState<string[]>(['shared', 'delivery']);
+  const [selectedServices, setSelectedServices] = useState<string[]>(user?.serviceTypes || ['shared', 'delivery']);
   const [destination, setDestination] = useState('');
   const [totalPendingRequests, setTotalPendingRequests] = useState(0);
   const [hasActiveRide, setHasActiveRide] = useState(false);
@@ -96,7 +98,18 @@ export default function RiderDashboard() {
     }
   }, []);
 
-  // ...existing code...
+  // Persist online status and service types to auth context
+  useEffect(() => {
+    if (user && updateProfile) {
+      updateProfile({
+        isOnline,
+        serviceTypes: selectedServices,
+        currentSeats
+      });
+    }
+  }, [isOnline, selectedServices, currentSeats, user, updateProfile]);
+
+  // Check for active ride in localStorage
   useEffect(() => {
     const checkActiveRide = () => {
       const savedRide = localStorage.getItem('trikeserve_active_ride');
@@ -277,14 +290,14 @@ export default function RiderDashboard() {
               onClick={() => setIsOnline(!isOnline)}
               className={`${
                 isOnline 
-                  ? 'bg-white hover:bg-gray-50 text-[#121212] border-2 border-gray-200' 
+                  ? 'bg-[#E11D48] hover:bg-[#BE123C] text-white'
                   : 'bg-[#121212] hover:bg-[#2a2a2a] text-white'
               } px-8 py-3 rounded-full font-bold shadow-xl flex items-center gap-2`}
             >
               {isOnline ? (
                 <>
-                  <div className="w-3 h-3 rounded-full bg-green-500 animate-pulse" />
-                  <span>Go Offline</span>
+                  <div className="w-3 h-3 rounded-full bg-white animate-pulse" />
+                  <span>You're Online</span>
                 </>
               ) : (
                 <>
@@ -359,12 +372,12 @@ export default function RiderDashboard() {
         {/* Incoming Requests */}
         {/* Removed - requests only shown on Passenger Requests page */}
 
-        {/* Bottom Sheet - Service Types (when online and no active trip) */}
-        {isOnline && !activeTrip && (
+        {/* Bottom Sheet - Always visible (Quick Actions, Service Types, Destination, Auto Accept, Passenger Requests) */}
+        {!activeTrip && (
           <div className="absolute bottom-20 left-0 right-0 z-[999] px-4">
-            <Card className="bg-white shadow-xl rounded-t-3xl">
+            <Card className="bg-white shadow-xl rounded-t-3xl max-h-[70vh] overflow-y-auto">
               {/* Quick Actions */}
-              <div className="p-6 grid grid-cols-3 gap-4">
+              <div className={`p-6 grid grid-cols-3 gap-4 ${!isOnline ? 'opacity-50 pointer-events-none' : ''}`}>
                 <Link to="/rider/service-types" className="flex flex-col items-center gap-2">
                   <div className="w-16 h-16 rounded-full bg-gray-100 flex items-center justify-center hover:bg-gray-200 transition-colors">
                     <Car className="w-7 h-7 text-[#64748B]" />
@@ -377,15 +390,48 @@ export default function RiderDashboard() {
                   </div>
                   <span className="text-xs font-medium text-[#121212] text-center">My<br/>Destination</span>
                 </Link>
-                <button onClick={() => setShowMore(!showMore)} className="flex flex-col items-center gap-2">
+                <Link to="/rider/auto-accept" className="flex flex-col items-center gap-2">
                   <div className="w-16 h-16 rounded-full bg-gray-100 flex items-center justify-center hover:bg-gray-200 transition-colors">
                     <Zap className="w-7 h-7 text-[#64748B]" />
                   </div>
                   <span className="text-xs font-medium text-[#121212] text-center">Auto<br/>Accept</span>
-                </button>
+                </Link>
               </div>
 
-              {/* Service Types Expandable Section */}
+              {/* View All Passenger Requests Card - Always visible, button disabled when offline */}
+              <div className="border-t border-gray-200 px-6 py-6">
+                <div className="flex flex-col items-center text-center">
+                  {/* Header */}
+                  <h3 className="font-bold text-lg text-[#121212] mb-6">PASSENGER REQUESTS</h3>
+
+                  {/* Icon and Text Section */}
+                  <div className={`flex items-center justify-center gap-4 mb-6 ${!isOnline ? 'opacity-50' : ''}`}>
+                    {/* Green Icon Circle */}
+                    <div className="w-16 h-16 rounded-full bg-[#10B981] flex items-center justify-center flex-shrink-0">
+                      <Users className="w-8 h-8 text-white" />
+                    </div>
+
+                    {/* Text Content */}
+                    <div className="text-left">
+                      <p className="text-sm font-semibold text-[#121212] mb-1">{totalPendingRequests} passengers waiting</p>
+                      <p className="text-xs text-[#64748B]">Looking for tricycle<br/>service nearby</p>
+                    </div>
+                  </div>
+
+                  {/* View All Button - Disabled when offline */}
+                  {isOnline ? (
+                    <Link to="/rider/passenger-requests" className="w-full">
+                      <Button className="w-full bg-[#E11D48] hover:bg-[#BE123C] text-white font-bold">
+                        View All Passenger Requests
+                      </Button>
+                    </Link>
+                  ) : (
+                    <Button disabled className="w-full bg-gray-300 text-gray-500 font-bold cursor-not-allowed">
+                      View All Passenger Requests
+                    </Button>
+                  )}
+                </div>
+              </div>
               {showServiceTypes && (
                 <div className="border-t border-gray-200 p-4 space-y-3">
                   <div className="flex items-center justify-between mb-3">
@@ -399,7 +445,7 @@ export default function RiderDashboard() {
                   </p>
                   <div className="space-y-2">
                     {/* Delivery */}
-                    <div 
+                    <div
                       onClick={() => {
                         if (selectedServices.includes('delivery')) {
                           setSelectedServices(selectedServices.filter(s => s !== 'delivery'));
@@ -408,8 +454,8 @@ export default function RiderDashboard() {
                         }
                       }}
                       className={`flex items-center justify-between p-4 border-2 rounded-lg cursor-pointer transition-all ${
-                        selectedServices.includes('delivery') 
-                          ? 'border-[#E11D48] bg-red-50' 
+                        selectedServices.includes('delivery')
+                          ? 'border-[#E11D48] bg-red-50'
                           : 'border-gray-200 hover:border-gray-300'
                       }`}
                     >
@@ -421,8 +467,8 @@ export default function RiderDashboard() {
                         </div>
                       </div>
                       <div className={`w-5 h-5 rounded border-2 flex items-center justify-center ${
-                        selectedServices.includes('delivery') 
-                          ? 'bg-[#E11D48] border-[#E11D48]' 
+                        selectedServices.includes('delivery')
+                          ? 'bg-[#E11D48] border-[#E11D48]'
                           : 'border-gray-300'
                       }`}>
                         {selectedServices.includes('delivery') && (
@@ -432,7 +478,7 @@ export default function RiderDashboard() {
                     </div>
 
                     {/* Ride Share (Sasabay) */}
-                    <div 
+                    <div
                       onClick={() => {
                         if (selectedServices.includes('shared')) {
                           setSelectedServices(selectedServices.filter(s => s !== 'shared'));
@@ -441,8 +487,8 @@ export default function RiderDashboard() {
                         }
                       }}
                       className={`flex items-center justify-between p-4 border-2 rounded-lg cursor-pointer transition-all ${
-                        selectedServices.includes('shared') 
-                          ? 'border-[#E11D48] bg-red-50' 
+                        selectedServices.includes('shared')
+                          ? 'border-[#E11D48] bg-red-50'
                           : 'border-gray-200 hover:border-gray-300'
                       }`}
                     >
@@ -454,8 +500,8 @@ export default function RiderDashboard() {
                         </div>
                       </div>
                       <div className={`w-5 h-5 rounded border-2 flex items-center justify-center ${
-                        selectedServices.includes('shared') 
-                          ? 'bg-[#E11D48] border-[#E11D48]' 
+                        selectedServices.includes('shared')
+                          ? 'bg-[#E11D48] border-[#E11D48]'
                           : 'border-gray-300'
                       }`}>
                         {selectedServices.includes('shared') && (
@@ -465,7 +511,7 @@ export default function RiderDashboard() {
                     </div>
 
                     {/* Private Ride (Pakyaw) */}
-                    <div 
+                    <div
                       onClick={() => {
                         if (selectedServices.includes('private')) {
                           setSelectedServices(selectedServices.filter(s => s !== 'private'));
@@ -474,8 +520,8 @@ export default function RiderDashboard() {
                         }
                       }}
                       className={`flex items-center justify-between p-4 border-2 rounded-lg cursor-pointer transition-all ${
-                        selectedServices.includes('private') 
-                          ? 'border-[#E11D48] bg-red-50' 
+                        selectedServices.includes('private')
+                          ? 'border-[#E11D48] bg-red-50'
                           : 'border-gray-200 hover:border-gray-300'
                       }`}
                     >
@@ -487,8 +533,8 @@ export default function RiderDashboard() {
                         </div>
                       </div>
                       <div className={`w-5 h-5 rounded border-2 flex items-center justify-center ${
-                        selectedServices.includes('private') 
-                          ? 'bg-[#E11D48] border-[#E11D48]' 
+                        selectedServices.includes('private')
+                          ? 'bg-[#E11D48] border-[#E11D48]'
                           : 'border-gray-300'
                       }`}>
                         {selectedServices.includes('private') && (
@@ -521,7 +567,7 @@ export default function RiderDashboard() {
                     </div>
                   )}
 
-                  <Button 
+                  <Button
                     onClick={() => setShowServiceTypes(false)}
                     className="w-full bg-[#E11D48] hover:bg-[#BE123C] uppercase"
                   >
@@ -539,429 +585,39 @@ export default function RiderDashboard() {
                       <X className="w-5 h-5 text-[#64748B]" />
                     </button>
                   </div>
-                  <p className="text-sm text-[#64748B] mb-3">
-                    Set your preferred destination to receive relevant trip requests
-                  </p>
-                  <div className="space-y-3">
-                    <Input
-                      placeholder="Enter destination address"
-                      value={destination}
-                      onChange={(e) => setDestination(e.target.value)}
-                      className="w-full"
-                    />
-                    <div className="space-y-2">
-                      <button className="w-full text-left p-3 border border-gray-200 rounded-lg hover:border-[#E11D48] transition-colors">
-                        <p className="font-semibold text-[#121212]">Tagalag Terminal</p>
-                        <p className="text-xs text-[#64748B]">Main Road, Tagalag</p>
-                      </button>
-                      <button className="w-full text-left p-3 border border-gray-200 rounded-lg hover:border-[#E11D48] transition-colors">
-                        <p className="font-semibold text-[#121212]">Barangay Hall</p>
-                        <p className="text-xs text-[#64748B]">Tagalag Center</p>
-                      </button>
-                      <button className="w-full text-left p-3 border border-gray-200 rounded-lg hover:border-[#E11D48] transition-colors">
-                        <p className="font-semibold text-[#121212]">Tagalag Market</p>
-                        <p className="text-xs text-[#64748B]">Market District</p>
-                      </button>
-                    </div>
-                    <Button 
-                      onClick={() => setShowDestination(false)}
-                      className="w-full bg-[#E11D48] hover:bg-[#BE123C] uppercase"
-                    >
-                      Set Destination
-                    </Button>
-                  </div>
+                  <Input
+                    value={destination}
+                    onChange={(e) => setDestination(e.target.value)}
+                    placeholder="Enter your destination"
+                    className="w-full"
+                  />
+                  <Button className="w-full bg-[#E11D48] hover:bg-[#BE123C] uppercase">
+                    Set Destination
+                  </Button>
                 </div>
               )}
 
-              {/* More Section */}
+              {/* More Options Section */}
               {showMore && (
                 <div className="border-t border-gray-200 p-4 space-y-3">
                   <div className="flex items-center justify-between mb-3">
-                    <h3 className="font-bold text-[#121212]">Auto Accept Settings</h3>
+                    <h3 className="font-bold text-[#121212]">More Options</h3>
                     <button onClick={() => setShowMore(false)}>
                       <X className="w-5 h-5 text-[#64748B]" />
                     </button>
                   </div>
-                  <div className="bg-teal-50 border border-teal-200 rounded-lg p-4 mb-4">
-                    <div className="flex items-start gap-3">
-                      <Zap className="w-6 h-6 text-teal-700 flex-shrink-0 mt-1" />
-                      <div>
-                        <p className="font-semibold text-teal-900 mb-1">Auto Accept Requests</p>
-                        <p className="text-sm text-teal-800">
-                          Enable to automatically accept passenger requests based on your preferences.
-                        </p>
-                      </div>
-                    </div>
-                  </div>
                   <div className="space-y-2">
-                    <div className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
-                      <span className="text-sm text-[#64748B]">Auto-accept all requests</span>
-                      <Switch />
-                    </div>
-                    <div className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
-                      <span className="text-sm text-[#64748B]">Delivery requests only</span>
-                      <Switch />
-                    </div>
-                    <div className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
-                      <span className="text-sm text-[#64748B]">Shared rides only</span>
-                      <Switch />
-                    </div>
-                    <div className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
-                      <span className="text-sm text-[#64748B]">Within 2km radius</span>
-                      <Switch defaultChecked />
-                    </div>
-                    <div className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
-                      <span className="text-sm text-[#64748B]">Sound notification</span>
-                      <Switch defaultChecked />
-                    </div>
-                  </div>
-                </div>
-              )}
-
-              {/* Passenger Request Section */}
-              <div className="border-t border-gray-200 p-4">
-                <div className="flex items-center justify-between mb-3">
-                  <h3 className="font-bold text-[#121212]">Passenger Request</h3>
-                  <button>
-                    <span className="text-sm text-[#64748B]">▲</span>
-                  </button>
-                </div>
-                <div className="flex items-center gap-3 mb-3">
-                  <div className="w-12 h-12 rounded-full bg-teal-100 flex items-center justify-center">
-                    <Users className="w-6 h-6 text-teal-700" />
-                  </div>
-                  <div className="flex-1">
-                    <p className="text-sm font-semibold text-[#121212]">{totalPendingRequests} passengers waiting</p>
-                    <p className="text-xs text-[#64748B]">Looking for tricycle service nearby</p>
-                  </div>
-                </div>
-                <Link to="/rider/passenger-requests">
-                  <Button variant="outline" className="w-full">
-                    View All Passenger Request
-                  </Button>
-                </Link>
-              </div>
-            </Card>
-          </div>
-        )}
-
-        {/* Offline Button (when online) */}
-        {isOnline && !activeTrip && (
-          <>
-            {/* Online Status Indicator */}
-            <div className="absolute top-4 left-1/2 -translate-x-1/2 z-[1000]">
-              <div className="bg-white px-6 py-3 rounded-full shadow-xl flex items-center gap-2">
-                <div className="w-3 h-3 rounded-full bg-green-500 animate-pulse" />
-                <span className="font-bold text-[#121212]">You're online</span>
-              </div>
-            </div>
-            
-            {/* Go Offline Button */}
-            <div className="absolute bottom-[420px] left-1/2 -translate-x-1/2 z-[1000]">
-              <Button
-                onClick={() => setIsOnline(false)}
-                className="bg-[#121212] hover:bg-[#2a2a2a] text-white px-8 py-3 rounded-full font-bold shadow-xl flex items-center gap-2"
-              >
-                <Power className="w-5 h-5" />
-                Go Offline
-              </Button>
-            </div>
-          </>
-        )}
-
-        {/* Bottom Sheet - Always visible when offline */}
-        {!isOnline && !activeTrip && (
-          <div className="absolute bottom-20 left-0 right-0 z-[999] px-4 space-y-3">
-            {/* Offline Status Card - Separate */}
-            <Card className="bg-white shadow-xl rounded-2xl">
-              <div className="p-4">
-                <div className="flex items-center gap-3">
-                  <div className="w-3 h-3 rounded-full bg-red-500" />
-                  <span className="font-semibold text-[#121212]">You're offline.</span>
-                </div>
-              </div>
-            </Card>
-
-            {/* Main Bottom Sheet */}
-            <Card className="bg-white shadow-xl rounded-2xl">
-              {/* Quick Actions */}
-              <div className="p-6 grid grid-cols-3 gap-4">
-                <Link to="/rider/service-types" className="flex flex-col items-center gap-2">
-                  <div className="w-16 h-16 rounded-full bg-gray-100 flex items-center justify-center hover:bg-gray-200 transition-colors">
-                    <Car className="w-7 h-7 text-[#64748B]" />
-                  </div>
-                  <span className="text-xs font-medium text-[#121212] text-center">Service<br/>Types</span>
-                </Link>
-                <Link to="/rider/my-destination" className="flex flex-col items-center gap-2">
-                  <div className="w-16 h-16 rounded-full bg-gray-100 flex items-center justify-center hover:bg-gray-200 transition-colors">
-                    <MapPin className="w-7 h-7 text-[#64748B]" />
-                  </div>
-                  <span className="text-xs font-medium text-[#121212] text-center">My<br/>Destination</span>
-                </Link>
-                <button onClick={() => setShowMore(!showMore)} className="flex flex-col items-center gap-2">
-                  <div className="w-16 h-16 rounded-full bg-gray-100 flex items-center justify-center hover:bg-gray-200 transition-colors">
-                    <Zap className="w-7 h-7 text-[#64748B]" />
-                  </div>
-                  <span className="text-xs font-medium text-[#121212] text-center">Auto<br/>Accept</span>
-                </button>
-              </div>
-
-              {/* Service Types Expandable Section */}
-              {showServiceTypes && (
-                <div className="border-t border-gray-200 p-4 space-y-3">
-                  <div className="flex items-center justify-between mb-3">
-                    <h3 className="font-bold text-[#121212]">Service Types</h3>
-                    <button onClick={() => setShowServiceTypes(false)}>
-                      <X className="w-5 h-5 text-[#64748B]" />
-                    </button>
-                  </div>
-                  <p className="text-sm text-[#64748B] mb-3">
-                    Select which service types you want to accept
-                  </p>
-                  <div className="space-y-2">
-                    {/* Delivery */}
-                    <div 
-                      onClick={() => {
-                        if (selectedServices.includes('delivery')) {
-                          setSelectedServices(selectedServices.filter(s => s !== 'delivery'));
-                        } else {
-                          setSelectedServices([...selectedServices, 'delivery']);
-                        }
-                      }}
-                      className={`flex items-center justify-between p-4 border-2 rounded-lg cursor-pointer transition-all ${
-                        selectedServices.includes('delivery') 
-                          ? 'border-[#E11D48] bg-red-50' 
-                          : 'border-gray-200 hover:border-gray-300'
-                      }`}
-                    >
-                      <div className="flex items-center gap-3">
-                        <Package className="w-5 h-5 text-[#E11D48]" />
-                        <div>
-                          <p className="font-semibold text-[#121212]">Delivery</p>
-                          <p className="text-xs text-[#64748B]">Food & package delivery</p>
-                        </div>
-                      </div>
-                      <div className={`w-5 h-5 rounded border-2 flex items-center justify-center ${
-                        selectedServices.includes('delivery') 
-                          ? 'bg-[#E11D48] border-[#E11D48]' 
-                          : 'border-gray-300'
-                      }`}>
-                        {selectedServices.includes('delivery') && (
-                          <div className="w-2 h-2 bg-white rounded-sm" />
-                        )}
-                      </div>
-                    </div>
-
-                    {/* Ride Share (Sasabay) */}
-                    <div 
-                      onClick={() => {
-                        if (selectedServices.includes('shared')) {
-                          setSelectedServices(selectedServices.filter(s => s !== 'shared'));
-                        } else {
-                          setSelectedServices([...selectedServices, 'shared']);
-                        }
-                      }}
-                      className={`flex items-center justify-between p-4 border-2 rounded-lg cursor-pointer transition-all ${
-                        selectedServices.includes('shared') 
-                          ? 'border-[#E11D48] bg-red-50' 
-                          : 'border-gray-200 hover:border-gray-300'
-                      }`}
-                    >
-                      <div className="flex items-center gap-3">
-                        <Users className="w-5 h-5 text-[#E11D48]" />
-                        <div>
-                          <p className="font-semibold text-[#121212]">Ride Share</p>
-                          <p className="text-xs text-[#64748B]">Shared rides with other passengers</p>
-                        </div>
-                      </div>
-                      <div className={`w-5 h-5 rounded border-2 flex items-center justify-center ${
-                        selectedServices.includes('shared') 
-                          ? 'bg-[#E11D48] border-[#E11D48]' 
-                          : 'border-gray-300'
-                      }`}>
-                        {selectedServices.includes('shared') && (
-                          <div className="w-2 h-2 bg-white rounded-sm" />
-                        )}
-                      </div>
-                    </div>
-
-                    {/* Private Ride (Pakyaw) */}
-                    <div 
-                      onClick={() => {
-                        if (selectedServices.includes('private')) {
-                          setSelectedServices(selectedServices.filter(s => s !== 'private'));
-                        } else {
-                          setSelectedServices([...selectedServices, 'private']);
-                        }
-                      }}
-                      className={`flex items-center justify-between p-4 border-2 rounded-lg cursor-pointer transition-all ${
-                        selectedServices.includes('private') 
-                          ? 'border-[#E11D48] bg-red-50' 
-                          : 'border-gray-200 hover:border-gray-300'
-                      }`}
-                    >
-                      <div className="flex items-center gap-3">
-                        <Car className="w-5 h-5 text-[#E11D48]" />
-                        <div>
-                          <p className="font-semibold text-[#121212]">Private Ride</p>
-                          <p className="text-xs text-[#64748B]">Exclusive rides, no sharing</p>
-                        </div>
-                      </div>
-                      <div className={`w-5 h-5 rounded border-2 flex items-center justify-center ${
-                        selectedServices.includes('private') 
-                          ? 'bg-[#E11D48] border-[#E11D48]' 
-                          : 'border-gray-300'
-                      }`}>
-                        {selectedServices.includes('private') && (
-                          <div className="w-2 h-2 bg-white rounded-sm" />
-                        )}
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Seat Management for Shared Mode */}
-                  {selectedServices.includes('shared') && (
-                    <div className="pt-3 border-t border-gray-200">
-                      <p className="text-sm font-semibold text-[#121212] mb-2">Current Seats Taken</p>
-                      <div className="flex gap-2">
-                        {[0, 1, 2, 3, 4].map((num) => (
-                          <Button
-                            key={num}
-                            onClick={() => setCurrentSeats(num)}
-                            variant={currentSeats === num ? 'default' : 'outline'}
-                            size="sm"
-                            className={`flex-1 ${currentSeats === num ? 'bg-[#E11D48] hover:bg-[#BE123C]' : ''}`}
-                          >
-                            {num}
-                          </Button>
-                        ))}
-                      </div>
-                      <p className="text-xs text-[#64748B] mt-2">
-                        {currentSeats === 4 ? 'Trike is full' : `${4 - currentSeats} seat(s) available`}
-                      </p>
-                    </div>
-                  )}
-
-                  <Button 
-                    onClick={() => setShowServiceTypes(false)}
-                    className="w-full bg-[#E11D48] hover:bg-[#BE123C] uppercase"
-                  >
-                    Save Service Types
-                  </Button>
-                </div>
-              )}
-
-              {/* My Destination Section */}
-              {showDestination && (
-                <div className="border-t border-gray-200 p-4 space-y-3">
-                  <div className="flex items-center justify-between mb-3">
-                    <h3 className="font-bold text-[#121212]">My Destination</h3>
-                    <button onClick={() => setShowDestination(false)}>
-                      <X className="w-5 h-5 text-[#64748B]" />
-                    </button>
-                  </div>
-                  <p className="text-sm text-[#64748B] mb-3">
-                    Set your preferred destination to receive relevant trip requests
-                  </p>
-                  <div className="space-y-3">
-                    <Input
-                      placeholder="Enter destination address"
-                      value={destination}
-                      onChange={(e) => setDestination(e.target.value)}
-                      className="w-full"
-                    />
-                    <div className="space-y-2">
-                      <button className="w-full text-left p-3 border border-gray-200 rounded-lg hover:border-[#E11D48] transition-colors">
-                        <p className="font-semibold text-[#121212]">Tagalag Terminal</p>
-                        <p className="text-xs text-[#64748B]">Main Road, Tagalag</p>
-                      </button>
-                      <button className="w-full text-left p-3 border border-gray-200 rounded-lg hover:border-[#E11D48] transition-colors">
-                        <p className="font-semibold text-[#121212]">Barangay Hall</p>
-                        <p className="text-xs text-[#64748B]">Tagalag Center</p>
-                      </button>
-                      <button className="w-full text-left p-3 border border-gray-200 rounded-lg hover:border-[#E11D48] transition-colors">
-                        <p className="font-semibold text-[#121212]">Tagalag Market</p>
-                        <p className="text-xs text-[#64748B]">Market District</p>
-                      </button>
-                    </div>
-                    <Button 
-                      onClick={() => setShowDestination(false)}
-                      className="w-full bg-[#E11D48] hover:bg-[#BE123C] uppercase"
-                    >
-                      Set Destination
+                    <Button variant="outline" className="w-full justify-center">
+                      <Settings className="w-4 h-4 mr-2" />
+                      Settings
+                    </Button>
+                    <Button variant="outline" className="w-full justify-center">
+                      <Bell className="w-4 h-4 mr-2" />
+                      Notifications
                     </Button>
                   </div>
                 </div>
               )}
-
-              {/* More Section */}
-              {showMore && (
-                <div className="border-t border-gray-200 p-4 space-y-3">
-                  <div className="flex items-center justify-between mb-3">
-                    <h3 className="font-bold text-[#121212]">Auto Accept Settings</h3>
-                    <button onClick={() => setShowMore(false)}>
-                      <X className="w-5 h-5 text-[#64748B]" />
-                    </button>
-                  </div>
-                  <div className="bg-teal-50 border border-teal-200 rounded-lg p-4 mb-4">
-                    <div className="flex items-start gap-3">
-                      <Zap className="w-6 h-6 text-teal-700 flex-shrink-0 mt-1" />
-                      <div>
-                        <p className="font-semibold text-teal-900 mb-1">Auto Accept Requests</p>
-                        <p className="text-sm text-teal-800">
-                          Enable to automatically accept passenger requests based on your preferences.
-                        </p>
-                      </div>
-                    </div>
-                  </div>
-                  <div className="space-y-2">
-                    <div className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
-                      <span className="text-sm text-[#64748B]">Auto-accept all requests</span>
-                      <Switch />
-                    </div>
-                    <div className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
-                      <span className="text-sm text-[#64748B]">Delivery requests only</span>
-                      <Switch />
-                    </div>
-                    <div className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
-                      <span className="text-sm text-[#64748B]">Shared rides only</span>
-                      <Switch />
-                    </div>
-                    <div className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
-                      <span className="text-sm text-[#64748B]">Within 2km radius</span>
-                      <Switch defaultChecked />
-                    </div>
-                    <div className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
-                      <span className="text-sm text-[#64748B]">Sound notification</span>
-                      <Switch defaultChecked />
-                    </div>
-                  </div>
-                </div>
-              )}
-
-              {/* Passenger Request Section */}
-              <div className="border-t border-gray-200 p-4">
-                <div className="flex items-center justify-between mb-3">
-                  <h3 className="font-bold text-[#121212]">Passenger Request</h3>
-                  <button>
-                    <span className="text-sm text-[#64748B]">▲</span>
-                  </button>
-                </div>
-                <div className="flex items-center gap-3 mb-3">
-                  <div className="w-12 h-12 rounded-full bg-teal-100 flex items-center justify-center">
-                    <Users className="w-6 h-6 text-teal-700" />
-                  </div>
-                  <div className="flex-1">
-                    <p className="text-sm font-semibold text-[#121212]">{totalPendingRequests} passengers waiting</p>
-                    <p className="text-xs text-[#64748B]">Looking for tricycle service nearby</p>
-                  </div>
-                </div>
-                <Link to="/rider/passenger-requests">
-                  <Button variant="outline" className="w-full">
-                    View All Passenger Request
-                  </Button>
-                </Link>
-              </div>
             </Card>
           </div>
         )}
