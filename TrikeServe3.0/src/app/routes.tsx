@@ -8,6 +8,7 @@ import RoleRedirect from "./components/RoleRedirect";
 import RiderDashboard from "./components/rider/RiderDashboard";
 import ServiceTypes from "./components/rider/ServiceTypes";
 import MyDestination from "./components/rider/MyDestination";
+import AutoAccept from "./components/rider/AutoAccept";
 import MoreOptions from "./components/rider/MoreOptions";
 import PassengerRequests from "./components/rider/PassengerRequests";
 import ActiveRide from "./components/rider/ActiveRide";
@@ -78,7 +79,15 @@ export const router = createBrowserRouter([
         )
       },
       { 
-        path: "rider/more-options", 
+        path: "rider/auto-accept",
+        element: (
+          <ProtectedRoute allowedRoles={['rider']}>
+            <AutoAccept />
+          </ProtectedRoute>
+        )
+      },
+      {
+        path: "rider/more-options",
         element: (
           <ProtectedRoute allowedRoles={['rider']}>
             <MoreOptions />

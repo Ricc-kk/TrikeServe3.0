@@ -268,7 +268,7 @@ export default function PassengerRequests() {
   });
 
   return (
-    <div className="min-h-screen bg-[#F8F9FA]">
+    <div className="min-h-screen bg-[#F8F9FA] relative">
       {/* Header */}
       <div className="bg-white border-b-2 border-[#CBD5E1] px-4 py-3 flex items-center gap-3">
         <Button variant="ghost" size="icon" onClick={() => navigate('/rider')}>
@@ -282,6 +282,7 @@ export default function PassengerRequests() {
         </div>
       </div>
 
+      {/* Main Content */}
       <div className="p-4 space-y-3">
         <div className="bg-teal-50 border border-teal-200 rounded-lg p-3 mb-4">
           <p className="text-sm text-teal-900">
