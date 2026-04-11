@@ -192,13 +192,8 @@ export default function CustomerHome() {
               eta: myRide.eta || '5 mins',
             });
 
-            // Show popup with driver details
-            setDriverAcceptedPopup({
-              driverName: myRide.driverName || 'Driver',
-              driverPlate: myRide.driverPlate || 'N/A',
-              driverRating: myRide.driverRating || '4.8',
-              driverPhoto: '👨‍✈️',
-            });
+            // ❌ REMOVED: Popup will be shown from real-time subscription instead
+            // This prevents duplicate popups from multiple triggers
 
             setRideStatus('driver-found');
             setIsSearchMinimized(false);
@@ -258,13 +253,8 @@ export default function CustomerHome() {
 
           console.log('✅ STATE UPDATED: rideStatus should now be "driver-found"');
 
-          // Show popup
-          setDriverAcceptedPopup({
-            driverName: rideRequest.driver_name || 'Driver',
-            driverPlate: rideRequest.driver_plate || 'N/A',
-            driverRating: rideRequest.driver_rating || '4.8',
-            driverPhoto: '👨‍✈️',
-          });
+          // ❌ REMOVED: Popup will be shown from real-time subscription instead
+          // This prevents duplicate popups from multiple triggers
         }
 
         // Only show status popup if driver_status has been updated AND we haven't shown it yet
@@ -1041,56 +1031,8 @@ export default function CustomerHome() {
         )}
 
         {/* Driver Status Update Popup */}
-        {driverStatusPopup && (
-          <div className="fixed top-4 left-4 right-4 z-[2100] max-w-md mx-auto">
-            <Card className={`p-4 shadow-xl border-2 animate-slide-down ${
-              driverStatusPopup.status === 'on-the-way' ? 'border-blue-300 bg-blue-50' :
-              driverStatusPopup.status === 'arrived' ? 'border-yellow-300 bg-yellow-50' :
-              driverStatusPopup.status === 'pickup' ? 'border-green-300 bg-green-50' :
-              driverStatusPopup.status === 'drop-off' ? 'border-purple-300 bg-purple-50' :
-              driverStatusPopup.status === 'payment' ? 'border-orange-300 bg-orange-50' :
-              'border-[#E2E8F0] bg-white'
-            }`}>
-              <div className="flex items-start gap-3">
-                <div className={`text-3xl ${
-                  driverStatusPopup.status === 'on-the-way' ? '📍' :
-                  driverStatusPopup.status === 'arrived' ? '✋' :
-                  driverStatusPopup.status === 'pickup' ? '🚗' :
-                  driverStatusPopup.status === 'drop-off' ? '📍' :
-                  driverStatusPopup.status === 'payment' ? '💰' :
-                  '📲'
-                }`}></div>
-                <div className="flex-1">
-                  <p className={`font-bold text-sm ${
-                    driverStatusPopup.status === 'on-the-way' ? 'text-blue-900' :
-                    driverStatusPopup.status === 'arrived' ? 'text-yellow-900' :
-                    driverStatusPopup.status === 'pickup' ? 'text-green-900' :
-                    driverStatusPopup.status === 'drop-off' ? 'text-purple-900' :
-                    driverStatusPopup.status === 'payment' ? 'text-orange-900' :
-                    'text-[#121212]'
-                  }`}>
-                    {driverStatusPopup.status === 'on-the-way' ? '📍 On The Way' :
-                     driverStatusPopup.status === 'arrived' ? '✋ I\'ve Arrived' :
-                     driverStatusPopup.status === 'pickup' ? '🚗 Arrived at Pickup' :
-                     driverStatusPopup.status === 'drop-off' ? '📍 Arrived at Drop-off' :
-                     driverStatusPopup.status === 'payment' ? '💰 Ready for Payment' :
-                     driverStatusPopup.message}
-                  </p>
-                  <p className={`text-xs mt-1 ${
-                    driverStatusPopup.status === 'on-the-way' ? 'text-blue-700' :
-                    driverStatusPopup.status === 'arrived' ? 'text-yellow-700' :
-                    driverStatusPopup.status === 'pickup' ? 'text-green-700' :
-                    driverStatusPopup.status === 'drop-off' ? 'text-purple-700' :
-                    driverStatusPopup.status === 'payment' ? 'text-orange-700' :
-                    'text-[#64748B]'
-                  }`}>
-                    {driverStatusPopup.message}
-                  </p>
-                </div>
-              </div>
-            </Card>
-          </div>
-        )}
+        {/* ❌ REMOVED: Driver status popup that appeared at top of screen */}
+        {/* This was showing status updates like "On the Way", "Arrived", etc. */}
       </div>
 
       {/* Bottom Navigation */}
