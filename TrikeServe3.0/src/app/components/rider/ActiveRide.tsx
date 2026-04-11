@@ -73,12 +73,28 @@ export default function ActiveRide() {
         // Update DATABASE with driver info and "on-the-way" status for ALL ride types
         if (ride.customerId && ride.id && user?.id) {
           console.log('📤 Updating DATABASE with driver acceptance...');
+
+          // DEBUG: Log user object details
+          console.log('👤 USER OBJECT DEBUG:');
+          console.log('   user.id:', user.id);
+          console.log('   user.name:', user.name);
+          console.log('   user.todaPlate:', user.todaPlate);
+          console.log('   user.user_metadata:', user.user_metadata);
+          console.log('   Full user object:', user);
+
           try {
+            const driverPlateValue = user.todaPlate || 'N/A';
+            console.log('🏷️  About to call acceptRideRequest with:');
+            console.log('   driverPlate:', driverPlateValue);
+            console.log('   driverRating: 4.8');
+
             const { error } = await supabaseHelpers.acceptRideRequest(
               ride.id,
               user.id,
               user.user_metadata?.full_name || 'Driver',
-              user.user_metadata?.avatar_url
+              user.user_metadata?.avatar_url,
+              driverPlateValue,
+              '4.8'
             );
 
             if (error) {
@@ -99,7 +115,19 @@ export default function ActiveRide() {
           }
         }
       } else {
-        // ...existing code...
+        // Load from localStorage if no route state
+        const savedRide = localStorage.getItem('trikeserve_active_ride');
+        if (savedRide) {
+          try {
+            const ride = JSON.parse(savedRide) as ActiveRideData;
+            setRideData(ride);
+            console.log('✅ Loaded active ride from localStorage:', ride.id);
+          } catch (error) {
+            console.error('❌ Error parsing saved ride data:', error);
+          }
+        } else {
+          console.log('⚠️ No active ride found in localStorage');
+        }
       }
     };
 
@@ -553,7 +581,7 @@ export default function ActiveRide() {
           <Button 
             variant="ghost" 
             size="icon" 
-            onClick={() => navigate('/rider')}
+            onClick={() => window.history.back()}
             className="text-white hover:bg-white/20"
           >
             <ArrowLeft className="w-5 h-5" />
