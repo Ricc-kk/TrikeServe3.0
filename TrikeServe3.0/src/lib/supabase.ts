@@ -130,22 +130,44 @@ export const supabaseHelpers = {
   },
 
   // Store accepted request in database
-  async acceptRideRequest(rideId: string, driverId: string, driverName: string, driverPhoto?: string) {
+  async acceptRideRequest(rideId: string, driverId: string, driverName: string, driverPhoto?: string, driverPlate?: string, driverRating?: string) {
     const timestamp = new Date().toISOString();
+
+    // DEBUG: Log what we're about to update
+    console.log('📤 acceptRideRequest DEBUG LOG:');
+    console.log('   Ride ID:', rideId);
+    console.log('   Driver ID:', driverId);
+    console.log('   Driver Name:', driverName);
+    console.log('   Driver Photo:', driverPhoto);
+    console.log('   Driver Plate:', driverPlate, '(will be:', (driverPlate || 'N/A'), ')');
+    console.log('   Driver Rating:', driverRating, '(will be:', (driverRating || '4.8'), ')');
+
+    const updateData = {
+      driver_id: driverId,
+      driver_name: driverName,
+      driver_photo: driverPhoto,
+      driver_plate: driverPlate || 'N/A',
+      driver_rating: driverRating || '4.8',
+      status: 'accepted',
+      accepted_at: timestamp,
+      accepted_driver_id: driverId,
+      updated_at: timestamp
+    };
+
+    console.log('📝 Update object:', updateData);
+
     const { data, error } = await supabase
       .from('ride_requests')
-      .update({
-        driver_id: driverId,
-        driver_name: driverName,
-        driver_photo: driverPhoto,
-        status: 'accepted',
-        accepted_at: timestamp,
-        accepted_driver_id: driverId,
-        updated_at: timestamp
-      })
+      .update(updateData)
       .eq('id', rideId)
       .select()
       .single();
+
+    if (error) {
+      console.error('❌ Error updating ride_requests:', error);
+    } else {
+      console.log('✅ Successfully updated ride_requests:', data);
+    }
 
     return { data, error };
   },
@@ -560,6 +582,76 @@ export const supabaseHelpers = {
     }
 
     return { data: stats, error: null };
+  },
+
+  // Real-time subscription for driver status updates
+  subscribeToRideUpdates(rideId: string, callback: (data: any) => void) {
+    console.log(`📡 Setting up real-time subscription for ride: ${rideId}`);
+
+    const channel = supabase
+      .channel(`ride_${rideId}`)
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'ride_requests',
+          filter: `id=eq.${rideId}`
+        },
+        (payload) => {
+          console.log('🔄 Real-time update received:', payload);
+          callback(payload.new);
+        }
+      )
+      .subscribe((status) => {
+        if (status === 'SUBSCRIBED') {
+          console.log(`✅ Real-time subscription active for ride: ${rideId}`);
+        } else if (status === 'CHANNEL_ERROR') {
+          console.error(`❌ Subscription error for ride: ${rideId}`);
+        }
+      });
+
+    // Return unsubscribe function
+    return () => {
+      console.log(`🛑 Unsubscribing from ride: ${rideId}`);
+      supabase.removeChannel(channel);
+    };
+  },
+
+  // Subscribe to accepted rides (for driver acceptance in real-time)
+  subscribeToAcceptedRides(customerId: string, callback: (data: any) => void) {
+    console.log(`📡 Setting up real-time subscription for customer accepted rides: ${customerId}`);
+
+    const channel = supabase
+      .channel(`customer_${customerId}_rides`)
+      .on(
+        'postgres_changes',
+        {
+          event: 'UPDATE',
+          schema: 'public',
+          table: 'ride_requests',
+          filter: `customer_id=eq.${customerId}`
+        },
+        (payload) => {
+          // Only notify if driver has been assigned
+          if (payload.new.accepted_driver_id) {
+            console.log('🎉 Driver accepted ride (real-time):', payload);
+            callback(payload.new);
+          }
+        }
+      )
+      .subscribe((status) => {
+        if (status === 'SUBSCRIBED') {
+          console.log(`✅ Real-time subscription active for customer: ${customerId}`);
+        } else if (status === 'CHANNEL_ERROR') {
+          console.error(`❌ Subscription error for customer: ${customerId}`);
+        }
+      });
+
+    return () => {
+      console.log(`🛑 Unsubscribing from customer rides: ${customerId}`);
+      supabase.removeChannel(channel);
+    };
   },
 };
 

@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { Search, MapPin, Users, User as UserIcon, ChevronDown, X, Clock, CreditCard, Utensils, Search as SearchIcon, User, Navigation, MessageCircle, Bike, Home as HomeIcon, ShoppingCart, ClipboardList } from "lucide-react";
 import { Link } from "react-router";
 import { Button } from "../ui/button";
@@ -46,6 +46,9 @@ export default function CustomerHome() {
   const [driverAcceptedPopup, setDriverAcceptedPopup] = useState<any>(null);
   const [driverStatusPopup, setDriverStatusPopup] = useState<{ status: string; message: string } | null>(null);
   const [showValidationError, setShowValidationError] = useState(false);
+  const [showSameLocationError, setShowSameLocationError] = useState(false);
+  const [rideCompletedPopup, setRideCompletedPopup] = useState(false);
+  const unsubscribeRef = useRef<(() => void) | null>(null);
 
   // Get user's current location on component mount
   useEffect(() => {
@@ -220,6 +223,7 @@ export default function CustomerHome() {
         console.log('🔍 CHECKING DATABASE for Ride Status Update:');
         console.log('   Request ID:', currentRequestId);
         console.log('   DB Driver Status:', rideRequest?.driver_status);
+        console.log('   DB Accepted Driver ID:', rideRequest?.accepted_driver_id);
         console.log('   Status Message:', rideRequest?.driver_status_message);
 
         if (error) {
@@ -232,7 +236,38 @@ export default function CustomerHome() {
           return;
         }
 
-        // Only show popup if driver_status has been updated AND we haven't shown it yet
+      // CRITICAL: Check if driver has been accepted (this means driver info card should show)
+        if (rideRequest.accepted_driver_id && !activeRide) {
+          console.log('✅ DRIVER ACCEPTED (Polling detected):', rideRequest.accepted_driver_id);
+          console.log('   Driver Name:', rideRequest.driver_name);
+          console.log('   Driver Plate:', rideRequest.driver_plate);
+          console.log('   Driver Rating:', rideRequest.driver_rating);
+          console.log('   Setting activeRide and rideStatus = driver-found');
+
+          const newActiveRide = {
+            driver: rideRequest.driver_name || 'Driver',
+            plateNumber: rideRequest.driver_plate || 'N/A',
+            rating: rideRequest.driver_rating || '4.8',
+            eta: rideRequest.eta || '5 mins',
+          };
+
+          console.log('🎯 Active Ride Object:', newActiveRide);
+
+          setActiveRide(newActiveRide);
+          setRideStatus('driver-found');
+
+          console.log('✅ STATE UPDATED: rideStatus should now be "driver-found"');
+
+          // Show popup
+          setDriverAcceptedPopup({
+            driverName: rideRequest.driver_name || 'Driver',
+            driverPlate: rideRequest.driver_plate || 'N/A',
+            driverRating: rideRequest.driver_rating || '4.8',
+            driverPhoto: '👨‍✈️',
+          });
+        }
+
+        // Only show status popup if driver_status has been updated AND we haven't shown it yet
         if (rideRequest.driver_status && rideRequest.driver_status !== 'pending') {
           const lastShownStatusKey = `last_shown_status_${currentRequestId}`;
           const lastShownStatus = localStorage.getItem(lastShownStatusKey);
@@ -260,7 +295,8 @@ export default function CustomerHome() {
 
             // If ride is completed, clear everything after showing popup
             if (rideRequest.driver_status === 'completed') {
-              console.log('🎉 RIDE COMPLETED! Clearing ride state...');
+              console.log('🎉 RIDE COMPLETED! Showing completion popup...');
+              setRideCompletedPopup(true);
               setTimeout(() => {
                 // Clear all ride data
                 setRideStatus(null);
@@ -330,6 +366,101 @@ export default function CustomerHome() {
       window.removeEventListener('custom-storage-change', handleCustomStorageEvent);
     };
   }, [rideStatus, currentRequestId, selectedVehicle]);
+
+  // Real-time database subscriptions for driver updates
+  useEffect(() => {
+    if (!currentRequestId || !user?.id) return;
+
+    console.log('📡 Setting up real-time database subscriptions for ride:', currentRequestId);
+
+    // Subscribe to ride updates (driver status, acceptance, completion)
+    const unsubscribe = supabaseHelpers.subscribeToRideUpdates(currentRequestId, (updatedRide) => {
+      console.log('🔄 Real-time ride update received:', updatedRide);
+
+      // DEBUG: Log all driver-related fields
+      console.log('📊 DRIVER INFO FROM DATABASE:');
+      console.log('   accepted_driver_id:', updatedRide.accepted_driver_id);
+      console.log('   driver_name:', updatedRide.driver_name);
+      console.log('   driver_plate:', updatedRide.driver_plate);
+      console.log('   driver_rating:', updatedRide.driver_rating);
+      console.log('   driver_photo:', updatedRide.driver_photo);
+      console.log('   status:', updatedRide.status);
+
+      // Check if driver was accepted - THIS IS THE KEY!
+      if (updatedRide.accepted_driver_id && !activeRide) {
+        console.log('✅ DRIVER ACCEPTED (Real-time):', updatedRide.accepted_driver_id);
+
+        const rideState = {
+          driver: updatedRide.driver_name || 'Driver',
+          plateNumber: updatedRide.driver_plate || 'N/A',
+          rating: updatedRide.driver_rating || '4.8',
+          eta: updatedRide.eta || '5 mins',
+        };
+
+        console.log('🎯 Setting activeRide state with:', rideState);
+        console.log('🎯 Setting rideStatus to: driver-found');
+
+        setActiveRide(rideState);
+        setRideStatus('driver-found');  // ← CRITICAL! This makes the card appear!
+
+        // Show acceptance popup
+        setDriverAcceptedPopup({
+          driverName: updatedRide.driver_name || 'Driver',
+          driverPlate: updatedRide.driver_plate || 'N/A',
+          driverRating: updatedRide.driver_rating || '4.8',
+          driverPhoto: '👨‍✈️',
+        });
+      }
+
+      // Check if ride was completed
+      if (updatedRide.driver_status === 'completed') {
+        console.log('🎉 RIDE COMPLETED (Real-time):', updatedRide);
+        setRideCompletedPopup(true);
+
+        setTimeout(() => {
+          setRideStatus(null);
+          setActiveRide(null);
+          setCurrentRequestId(null);
+          setPickup('');
+          setDropoff('');
+          setPickupAddress('');
+          setDropoffAddress('');
+          setSelectedVehicle(null);
+        }, 4000);
+      }
+
+      // Check for other driver status updates (for popup messages)
+      if (updatedRide.driver_status && updatedRide.driver_status !== 'pending') {
+        const statusDisplayMap: { [key: string]: string } = {
+          'on-the-way': 'Your driver is on the way to pick you up! 🚗',
+          'arrived': 'Your driver has arrived! 📍',
+          'in-progress': 'Your ride is in progress!',
+          'completed': 'Your ride has been completed! Thank you for using TrikeServe. 🎉'
+        };
+
+        setDriverStatusPopup({
+          status: updatedRide.driver_status,
+          message: statusDisplayMap[updatedRide.driver_status] || updatedRide.driver_status_message || 'Ride status updated',
+          timestamp: Date.now()
+        });
+
+        // Auto-dismiss after 4 seconds
+        setTimeout(() => {
+          setDriverStatusPopup(null);
+        }, 4000);
+      }
+    });
+
+    // Save unsubscribe function
+    unsubscribeRef.current = unsubscribe;
+
+    return () => {
+      if (unsubscribeRef.current) {
+        console.log('🛑 Cleaning up real-time subscription');
+        unsubscribeRef.current();
+      }
+    };
+  }, [currentRequestId, user?.id]);
 
   // Persist ride data whenever it changes
   useEffect(() => {
@@ -429,7 +560,15 @@ export default function CustomerHome() {
       return;
     }
 
-    // For shared rides, check if user is already in a lobby
+    // Validate that pickup and dropoff are not the same (for special rides)
+    if (selectedVehicle === 'special') {
+      if (pickup.trim().toLowerCase() === dropoff.trim().toLowerCase()) {
+        setShowSameLocationError(true);
+        return;
+      }
+    }
+
+    // ...existing code...
     if (selectedVehicle === 'share') {
       const lobbiesData = localStorage.getItem('trikeserve_share_lobbies');
       if (lobbiesData) {
@@ -514,7 +653,6 @@ export default function CustomerHome() {
           console.log('✅ Ride request saved to database:', savedRequest);
           console.log('📱 Request ID:', savedRequest.id);
           console.log('🗄️ Saved in Supabase ride_requests table');
-          alert('✅ Ride request sent! Waiting for driver...');
         } else {
           console.error('❌ No data returned from database');
           alert('❌ Error: No response from database. Please try again.');
@@ -724,9 +862,10 @@ export default function CustomerHome() {
           </div>
         )}
 
-        {/* Active Ride Card */}
-        {activeRide && rideStatus === 'driver-found' && (
-          <div className="absolute bottom-20 left-0 right-0 z-[1000] p-4">
+
+        {/* Active Ride Card - Driver Info - ONLY when rideStatus === 'driver-found' AND activeRide exists */}
+        {rideStatus === 'driver-found' && activeRide && (
+          <div className="absolute bottom-20 left-0 right-0 z-[1100] p-4">
             <Card className="bg-white shadow-2xl border-2 border-[#E11D48] p-6">
               {/* Driver Info */}
               <div className="flex items-center gap-4 mb-4">
@@ -811,6 +950,57 @@ export default function CustomerHome() {
                 className="w-full bg-red-500 hover:bg-red-600 text-white py-3 font-bold"
               >
                 Understood
+              </Button>
+            </Card>
+          </div>
+        )}
+
+        {/* Same Location Error Popup */}
+        {showSameLocationError && (
+          <div className="fixed inset-0 bg-black/50 z-[2100] flex items-center justify-center p-4">
+            <Card className="bg-white p-8 max-w-sm w-full text-center animate-infinite-bounce">
+              <div className="w-20 h-20 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                <span className="text-4xl">⚠️</span>
+              </div>
+              <h3 className="text-xl font-bold text-red-600 mb-2">Invalid Route</h3>
+              <p className="text-sm text-[#64748B] mb-6">
+                Your <strong>pickup location</strong> and <strong>drop-off point</strong> cannot be the same. Please select different locations.
+              </p>
+
+              <Button
+                onClick={() => setShowSameLocationError(false)}
+                className="w-full bg-red-500 hover:bg-red-600 text-white py-3 font-bold"
+              >
+                Understood
+              </Button>
+            </Card>
+          </div>
+        )}
+
+
+        {/* Ride Completed Popup */}
+        {rideCompletedPopup && (
+          <div className="fixed inset-0 bg-black/50 z-[2100] flex items-center justify-center p-4">
+            <Card className="bg-white p-8 max-w-sm w-full text-center animate-infinite-bounce">
+              <div className="w-20 h-20 bg-blue-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                <span className="text-4xl">🎉</span>
+              </div>
+              <h3 className="text-xl font-bold text-[#121212] mb-2">Ride Completed!</h3>
+              <p className="text-sm text-[#64748B] mb-6">
+                Thank you for using TrikeServe. We hope you had a great ride!
+              </p>
+
+              <Button
+                onClick={() => {
+                  setRideCompletedPopup(false);
+                  // Reset ride state
+                  setActiveRide(null);
+                  setRideStatus(null);
+                  setCurrentRequestId(null);
+                }}
+                className="w-full bg-blue-500 hover:bg-blue-600 text-white py-3 font-bold"
+              >
+                Done
               </Button>
             </Card>
           </div>
