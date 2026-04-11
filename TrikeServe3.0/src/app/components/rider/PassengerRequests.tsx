@@ -7,6 +7,80 @@ import { Badge } from "../ui/badge";
 import { useAuth } from "../../contexts/AuthContext";
 import { supabaseHelpers } from "@/lib/supabase";
 
+// Utility: Forcefully clean corrupted ride data from localStorage
+const cleanupStaleRideData = () => {
+  try {
+    console.log('🧹 CLEANING UP STALE RIDE DATA...');
+
+    // List of ride-related keys to check
+    const rideKeys = [
+      'trikeserve_active_ride',
+      'trikeserve_accepted_rides',
+      'trikeserve_share_lobbies'
+    ];
+
+    for (const key of rideKeys) {
+      const data = localStorage.getItem(key);
+      if (!data) continue;
+
+      try {
+        if (key === 'trikeserve_active_ride') {
+          const ride = JSON.parse(data);
+          const activeStatuses = ['accepted', 'on-the-way', 'arrived', 'in-progress'];
+
+          // If ride doesn't have a valid active status, remove it
+          if (!ride.status || !activeStatuses.includes(ride.status)) {
+            console.log(`🗑️  Removing stale ride (status: ${ride.status || 'none'})`);
+            localStorage.removeItem(key);
+          }
+        } else if (key === 'trikeserve_accepted_rides') {
+          const rides = JSON.parse(data);
+          const activeStatuses = ['accepted', 'on-the-way', 'arrived', 'in-progress'];
+
+          // Filter out any rides that don't have active status
+          const validRides = rides.filter((ride: any) =>
+            ride.status && activeStatuses.includes(ride.status)
+          );
+
+          if (validRides.length !== rides.length) {
+            console.log(`🗑️  Removed ${rides.length - validRides.length} stale accepted rides`);
+            if (validRides.length > 0) {
+              localStorage.setItem(key, JSON.stringify(validRides));
+            } else {
+              localStorage.removeItem(key);
+            }
+          }
+        } else if (key === 'trikeserve_share_lobbies') {
+          const lobbies = JSON.parse(data);
+          const activeStatuses = ['driver-found', 'in-progress'];
+
+          // Filter out lobbies that don't have active status
+          const validLobbies = lobbies.filter((lobby: any) =>
+            lobby.status && activeStatuses.includes(lobby.status)
+          );
+
+          if (validLobbies.length !== lobbies.length) {
+            console.log(`🗑️  Removed ${lobbies.length - validLobbies.length} stale lobbies`);
+            if (validLobbies.length > 0) {
+              localStorage.setItem(key, JSON.stringify(validLobbies));
+            } else {
+              localStorage.removeItem(key);
+            }
+          }
+        }
+      } catch (error) {
+        console.error(`Error cleaning key ${key}:`, error);
+        // If we can't parse it, remove it
+        localStorage.removeItem(key);
+      }
+    }
+
+    console.log('✅ CLEANUP COMPLETE');
+  } catch (error) {
+    console.error('Error in cleanupStaleRideData:', error);
+  }
+};
+
 interface PassengerRequest {
   id: string;
   type: 'delivery' | 'shared' | 'private';
@@ -53,6 +127,9 @@ export default function PassengerRequests() {
 
   // Load requests from Supabase on mount and set up polling
   useEffect(() => {
+    // 🧹 CRITICAL: Clean up any stale ride data on mount
+    cleanupStaleRideData();
+
     const loadRequests = async () => {
       try {
         // Fetch pending ride requests from Supabase
@@ -123,20 +200,30 @@ export default function PassengerRequests() {
       try {
         const activeRide = JSON.parse(activeRideData);
         
-        // For shared rides with passenger details, check if all passengers are dropped off
-        if (activeRide.passengerDetails && activeRide.passengerDetails.length > 0) {
-          const allDroppedOff = activeRide.passengerDetails.every((p: any) => p.status === 'dropped-off');
-          
-          if (!allDroppedOff) {
+        // Only block if the ride is actually active (not completed)
+        // Check ride status to determine if it's truly in progress
+        const activeStatuses = ['accepted', 'on-the-way', 'arrived', 'in-progress'];
+        const isRideActive = activeStatuses.includes(activeRide.status);
+
+        if (!isRideActive) {
+          // Ride is completed or invalid, clear it and continue
+          localStorage.removeItem('trikeserve_active_ride');
+        } else {
+          // For shared rides with passenger details, check if all passengers are dropped off
+          if (activeRide.passengerDetails && activeRide.passengerDetails.length > 0) {
+            const allDroppedOff = activeRide.passengerDetails.every((p: any) => p.status === 'dropped-off');
+
+            if (!allDroppedOff) {
+              alert('You already have an active ride. Please complete your current ride before accepting another.');
+              return;
+            }
+            // If all passengers are dropped off, allow accepting new ride
+            // The driver just needs to click "Complete Ride" but can start accepting new requests
+          } else {
+            // For non-shared rides or rides without passenger details, check the status
             alert('You already have an active ride. Please complete your current ride before accepting another.');
             return;
           }
-          // If all passengers are dropped off, allow accepting new ride
-          // The driver just needs to click "Complete Ride" but can start accepting new requests
-        } else {
-          // For non-shared rides or rides without passenger details, check the status
-          alert('You already have an active ride. Please complete your current ride before accepting another.');
-          return;
         }
       } catch (error) {
         console.error('Error checking active ride:', error);
@@ -173,15 +260,17 @@ export default function PassengerRequests() {
 
     // Check if driver has any accepted rides
     const acceptedRidesData = localStorage.getItem('trikeserve_accepted_rides');
-    if (acceptedRidesData) {
+    if (acceptedRidesData && user?.id) {
       try {
         const acceptedRides = JSON.parse(acceptedRidesData);
         const driverActiveRides = acceptedRides.filter((ride: any) => 
-          ride.driverId === user?.id &&
-          (ride.status === 'accepted' || ride.status === 'in-progress')
+          ride.driverId === user.id &&
+          ride.status &&
+          (ride.status === 'accepted' || ride.status === 'in-progress' || ride.status === 'on-the-way' || ride.status === 'arrived')
         );
 
         if (driverActiveRides.length > 0) {
+          console.log('⚠️ Driver has active rides:', driverActiveRides);
           alert('You already have an active ride. Please complete your current ride before accepting another.');
           return;
         }
@@ -309,6 +398,22 @@ export default function PassengerRequests() {
           </h1>
           <p className="text-xs text-[#64748B]">{requests.length} customers looking for service</p>
         </div>
+        {/* Emergency Cleanup Button */}
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() => {
+            console.log('🚨 MANUAL EMERGENCY CLEANUP TRIGGERED BY USER');
+            cleanupStaleRideData();
+            // Force reload to ensure clean state
+            alert('✅ Cleanup complete! Reloading page...');
+            window.location.reload();
+          }}
+          className="text-xs whitespace-nowrap"
+          title="Clear corrupted ride data"
+        >
+          🧹 Reset
+        </Button>
       </div>
 
       {/* Main Content */}

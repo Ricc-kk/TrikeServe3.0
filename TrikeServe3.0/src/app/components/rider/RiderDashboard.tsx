@@ -28,6 +28,7 @@ import { Switch } from "../ui/switch";
 import { Badge } from "../ui/badge";
 import { Input } from "../ui/input";
 import { useAuth } from "../../contexts/AuthContext";
+import { supabaseHelpers } from "@/lib/supabase";
 
 // Get Google Maps API Key from environment variable
 const GOOGLE_MAPS_API_KEY = import.meta.env.VITE_GOOGLE_MAPS_API_KEY || "";
@@ -116,10 +117,24 @@ export default function RiderDashboard() {
       if (savedRide) {
         try {
           const ride = JSON.parse(savedRide);
-          setHasActiveRide(true);
-          setActiveRideData(ride);
+
+          // Only consider it an active ride if status is truly active
+          const activeStatuses = ['accepted', 'on-the-way', 'arrived', 'in-progress'];
+          if (ride.status && activeStatuses.includes(ride.status)) {
+            setHasActiveRide(true);
+            setActiveRideData(ride);
+          } else {
+            // Clear completed or invalid rides
+            localStorage.removeItem('trikeserve_active_ride');
+            setHasActiveRide(false);
+            setActiveRideData(null);
+          }
         } catch (error) {
           console.error('Error loading active ride:', error);
+          // Clear invalid data
+          localStorage.removeItem('trikeserve_active_ride');
+          setHasActiveRide(false);
+          setActiveRideData(null);
         }
       } else {
         setHasActiveRide(false);
@@ -135,19 +150,30 @@ export default function RiderDashboard() {
     return () => clearInterval(interval);
   }, []);
 
-  // Load and monitor passenger requests from localStorage
+  // Load and monitor passenger requests from Supabase (for real-time accuracy)
   useEffect(() => {
-    const loadRequests = () => {
-      const savedRequests = localStorage.getItem('trikeserve_ride_requests');
-      if (savedRequests) {
-        try {
-          const parsedRequests = JSON.parse(savedRequests);
-          setTotalPendingRequests(parsedRequests.length);
-        } catch (error) {
-          console.error('Error loading ride requests:', error);
+    const loadRequests = async () => {
+      try {
+        // Fetch pending ride requests from Supabase (not localStorage)
+        const { data: rideRequests, error: dbError } = await supabaseHelpers.getRideRequests({
+          status: 'pending'
+        });
+
+        if (dbError) {
+          console.error('❌ Error loading requests from database:', dbError);
           setTotalPendingRequests(0);
+          return;
         }
-      } else {
+
+        if (rideRequests && rideRequests.length > 0) {
+          setTotalPendingRequests(rideRequests.length);
+          console.log('✅ Loaded passenger count from Supabase:', rideRequests.length);
+        } else {
+          setTotalPendingRequests(0);
+          console.log('📭 No pending passenger requests in database');
+        }
+      } catch (error) {
+        console.error('❌ Error loading requests:', error);
         setTotalPendingRequests(0);
       }
     };
@@ -155,21 +181,11 @@ export default function RiderDashboard() {
     // Load initially
     loadRequests();
 
-    // Poll for updates every 2 seconds
-    const interval = setInterval(loadRequests, 2000);
-
-    // Listen for storage events (cross-tab sync)
-    const handleStorageChange = (e: StorageEvent) => {
-      if (e.key === 'trikeserve_ride_requests') {
-        loadRequests();
-      }
-    };
-
-    window.addEventListener('storage', handleStorageChange);
+    // Poll for updates every 3 seconds (matches PassengerRequests polling interval)
+    const interval = setInterval(loadRequests, 3000);
 
     return () => {
       clearInterval(interval);
-      window.removeEventListener('storage', handleStorageChange);
     };
   }, []);
 
