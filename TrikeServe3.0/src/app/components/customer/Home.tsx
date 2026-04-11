@@ -8,6 +8,7 @@ import { Input } from "../ui/input";
 import { GoogleMap, LoadScript, Marker, InfoWindow } from "@react-google-maps/api";
 import tricycleIcon from '../../../assets/0b76d1aa56b8ad6e15dd4efc8a0100b0ca5762a1.png';
 import { useAuth } from "../../contexts/AuthContext";
+import { supabaseHelpers } from "@/lib/supabase";
 import SharedRides from "./SharedRides";
 import ShareRideLobby from "./ShareRideLobby";
 import LobbyList from "./LobbyList";
@@ -42,6 +43,9 @@ export default function CustomerHome() {
   const [passengerCount, setPassengerCount] = useState(1);
   const [showLobbyList, setShowLobbyList] = useState(false);
   const [unreadMessagesCount, setUnreadMessagesCount] = useState(0);
+  const [driverAcceptedPopup, setDriverAcceptedPopup] = useState<any>(null);
+  const [driverStatusPopup, setDriverStatusPopup] = useState<{ status: string; message: string } | null>(null);
+  const [showValidationError, setShowValidationError] = useState(false);
 
   // Get user's current location on component mount
   useEffect(() => {
@@ -164,9 +168,10 @@ export default function CustomerHome() {
     checkActiveLobby();
   }, [user]);
 
-  // Listen for accepted rides (polling + storage events)
+  // Listen for accepted rides and status updates (polling + storage events)
   useEffect(() => {
-    if (rideStatus !== 'searching' || !currentRequestId) return;
+    // Continue polling as long as there's an active ride or we're searching
+    if (!currentRequestId) return;
 
     const checkForAcceptedRide = () => {
       const acceptedRidesData = localStorage.getItem('trikeserve_accepted_rides');
@@ -183,6 +188,15 @@ export default function CustomerHome() {
               rating: myRide.driverRating || '4.8',
               eta: myRide.eta || '5 mins',
             });
+
+            // Show popup with driver details
+            setDriverAcceptedPopup({
+              driverName: myRide.driverName || 'Driver',
+              driverPlate: myRide.driverPlate || 'N/A',
+              driverRating: myRide.driverRating || '4.8',
+              driverPhoto: '👨‍✈️',
+            });
+
             setRideStatus('driver-found');
             setIsSearchMinimized(false);
           }
@@ -192,26 +206,130 @@ export default function CustomerHome() {
       }
     };
 
+    // Check for driver status updates (all ride types)
+    const checkForDriverStatusUpdate = async () => {
+      if (!currentRequestId) {
+        console.log('❌ No currentRequestId, skipping driver status check');
+        return;
+      }
+
+      // Query database directly for driver status (Option 2 - Database-Driven)
+      try {
+        const { data: rideRequest, error } = await supabaseHelpers.getRideRequest(currentRequestId);
+
+        console.log('🔍 CHECKING DATABASE for Ride Status Update:');
+        console.log('   Request ID:', currentRequestId);
+        console.log('   DB Driver Status:', rideRequest?.driver_status);
+        console.log('   Status Message:', rideRequest?.driver_status_message);
+
+        if (error) {
+          console.error('❌ Database error:', error);
+          return;
+        }
+
+        if (!rideRequest) {
+          console.log('❌ Ride request not found in database');
+          return;
+        }
+
+        // Only show popup if driver_status has been updated AND we haven't shown it yet
+        if (rideRequest.driver_status && rideRequest.driver_status !== 'pending') {
+          const lastShownStatusKey = `last_shown_status_${currentRequestId}`;
+          const lastShownStatus = localStorage.getItem(lastShownStatusKey);
+
+          // Check if this is a new status update
+          if (rideRequest.driver_status !== lastShownStatus) {
+            console.log('✅ NEW STATUS UPDATE FROM DATABASE:', rideRequest.driver_status);
+
+            // Map database status to popup display
+            const statusDisplayMap: { [key: string]: string } = {
+              'on-the-way': 'Your driver is on the way to pick you up! 🚗',
+              'arrived': 'Your driver has arrived! 📍',
+              'in-progress': 'Your ride is in progress!',
+              'completed': 'Your ride has been completed! Thank you for using TrikeServe. 🎉'
+            };
+
+            setDriverStatusPopup({
+              status: rideRequest.driver_status,
+              message: statusDisplayMap[rideRequest.driver_status] || rideRequest.driver_status_message || 'Ride status updated',
+              timestamp: Date.now()
+            });
+
+            // Store that we showed this status
+            localStorage.setItem(lastShownStatusKey, rideRequest.driver_status);
+
+            // If ride is completed, clear everything after showing popup
+            if (rideRequest.driver_status === 'completed') {
+              console.log('🎉 RIDE COMPLETED! Clearing ride state...');
+              setTimeout(() => {
+                // Clear all ride data
+                setRideStatus(null);
+                setActiveRide(null);
+                setCurrentRequestId(null);
+                setPickup('');
+                setDropoff('');
+                setPickupAddress('');
+                setDropoffAddress('');
+                setSelectedVehicle(null);
+                setDriverStatusPopup(null);
+
+                // Clear from localStorage
+                localStorage.removeItem('trikeserve_active_ride');
+                localStorage.removeItem(lastShownStatusKey);
+              }, 4000);
+            } else {
+              // Auto-dismiss after 4 seconds for other statuses
+              setTimeout(() => {
+                setDriverStatusPopup(null);
+              }, 4000);
+            }
+          }
+        }
+      } catch (error) {
+        console.error('❌ Error checking driver status from database:', error);
+      }
+    };
+
     // Check immediately
     checkForAcceptedRide();
+    checkForDriverStatusUpdate();
 
     // Poll every 2 seconds
-    const interval = setInterval(checkForAcceptedRide, 2000);
+    const interval = setInterval(() => {
+      checkForAcceptedRide();
+      checkForDriverStatusUpdate();
+    }, 2000);
 
-    // Listen for storage events (cross-tab sync)
+    // Listen for storage events (cross-tab sync AND same-tab events)
     const handleStorageChange = (e: StorageEvent) => {
+      console.log('📡 Storage Event Received:', e.key);
       if (e.key === 'trikeserve_accepted_rides') {
+        console.log('🔄 Accepted rides changed, checking...');
         checkForAcceptedRide();
+      }
+      if (e.key?.startsWith('driver_status_')) {
+        console.log('🔄 Driver status changed, checking...', e.key);
+        checkForDriverStatusUpdate();
+      }
+    };
+
+    // Also listen for custom events dispatched by driver
+    const handleCustomStorageEvent = (e: any) => {
+      console.log('🎯 Custom Storage Event:', e.detail?.key);
+      if (e.detail?.key?.startsWith('driver_status_')) {
+        checkForDriverStatusUpdate();
       }
     };
 
     window.addEventListener('storage', handleStorageChange);
+    window.addEventListener('custom-storage-change', handleCustomStorageEvent);
 
     return () => {
       clearInterval(interval);
       window.removeEventListener('storage', handleStorageChange);
+      window.removeEventListener('custom-storage-change', handleCustomStorageEvent);
     };
-  }, [rideStatus, currentRequestId]);
+  }, [rideStatus, currentRequestId, selectedVehicle]);
 
   // Persist ride data whenever it changes
   useEffect(() => {
@@ -305,6 +423,12 @@ export default function CustomerHome() {
   const handleBookRide = () => {
     if (!selectedVehicle) return;
     
+    // Validate pickup and dropoff locations
+    if (!pickup.trim() || !dropoff.trim()) {
+      setShowValidationError(true);
+      return;
+    }
+
     // For shared rides, check if user is already in a lobby
     if (selectedVehicle === 'share') {
       const lobbiesData = localStorage.getItem('trikeserve_share_lobbies');
@@ -334,47 +458,75 @@ export default function CustomerHome() {
     setShowPassengerCount(true);
   };
 
-  const handleConfirmBooking = () => {
+  const handleConfirmBooking = async () => {
     setShowBookingConfirm(false);
     
     // For share rides, open the lobby system
     if (selectedVehicle === 'share') {
       setShowShareLobby(true);
     } else {
-      // For special rides, use the old system
+      // For special rides, save to Supabase database
       setRideStatus('searching');
       
-      // Create ride request and add to localStorage for drivers to see
-      const rideRequest = {
-        id: `req_${Date.now()}`,
-        type: 'private',
-        pickup: pickup,
-        dropoff: dropoff,
-        pickupAddress: pickupAddress,
-        dropoffAddress: dropoffAddress,
-        payment: paymentMethod === 'GCASH' ? 'PREPAID' : 'COD',
-        amount: getPrice(),
-        passengers: passengerCount,
-        customerName: user?.name || 'Customer',
-        customerPhoto: '👤',
-        distance: '2.5 km',
-        estimatedTime: '7 mins',
-      };
-
-      const existingRequests = localStorage.getItem('trikeserve_ride_requests');
-      let requests = [];
-      if (existingRequests) {
-        try {
-          requests = JSON.parse(existingRequests);
-        } catch (error) {
-          console.error('Error parsing existing requests:', error);
+      try {
+        // Validate user is authenticated
+        if (!user?.id) {
+          console.error('❌ User ID not found');
+          alert('❌ Error: User not authenticated. Please log in again.');
+          setRideStatus(null);
+          return;
         }
+
+        console.log('📋 Booking ride for user:', user.id);
+
+        // Create ride request data in correct database format
+        const rideRequest = {
+          customer_id: user.id,
+          pickup_location: pickup,
+          dropoff_location: dropoff,
+          status: 'pending',
+          ride_type: 'special',
+          payment_method: paymentMethod === 'GCASH' ? 'GCASH' : 'COD',
+          amount: getPrice(),
+          passenger_count: passengerCount,
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        };
+
+        console.log('📤 Sending request to Supabase:', rideRequest);
+
+        // Save to Supabase database
+        const { data: savedRequest, error: dbError } = await supabaseHelpers.createRideRequest(rideRequest);
+
+        console.log('📥 Supabase response:', { data: savedRequest, error: dbError });
+
+        if (dbError) {
+          console.error('❌ Database error:', dbError);
+          console.error('❌ Error code:', dbError.code);
+          console.error('❌ Error message:', dbError.message);
+          alert(`❌ Error booking ride: ${dbError.message || 'Please try again.'}`);
+          setRideStatus(null);
+          return;
+        }
+
+        if (savedRequest) {
+          setCurrentRequestId(savedRequest.id);
+          console.log('✅ Ride request saved to database:', savedRequest);
+          console.log('📱 Request ID:', savedRequest.id);
+          console.log('🗄️ Saved in Supabase ride_requests table');
+          alert('✅ Ride request sent! Waiting for driver...');
+        } else {
+          console.error('❌ No data returned from database');
+          alert('❌ Error: No response from database. Please try again.');
+          setRideStatus(null);
+        }
+      } catch (error: any) {
+        console.error('❌ Error creating ride request:', error);
+        console.error('❌ Error stack:', error.stack);
+        console.error('❌ Error message:', error.message);
+        alert(`❌ Error booking ride: ${error.message || 'Please try again.'}`);
+        setRideStatus(null);
       }
-      requests.push(rideRequest);
-      localStorage.setItem('trikeserve_ride_requests', JSON.stringify(requests));
-      setCurrentRequestId(rideRequest.id);
-      
-      console.log('✅ Ride request sent to drivers:', rideRequest);
     }
   };
 
@@ -641,6 +793,114 @@ export default function CustomerHome() {
             </Card>
           </div>
         )}
+
+        {/* Validation Error Popup */}
+        {showValidationError && (
+          <div className="fixed inset-0 bg-black/50 z-[2100] flex items-center justify-center p-4">
+            <Card className="bg-white p-8 max-w-sm w-full text-center animate-infinite-bounce">
+              <div className="w-20 h-20 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                <span className="text-4xl">⚠️</span>
+              </div>
+              <h3 className="text-xl font-bold text-red-600 mb-2">Incomplete Information</h3>
+              <p className="text-sm text-[#64748B] mb-6">
+                Please complete entering your <strong>pickup location</strong> and <strong>drop-off point</strong> to proceed with booking your ride.
+              </p>
+
+              <Button
+                onClick={() => setShowValidationError(false)}
+                className="w-full bg-red-500 hover:bg-red-600 text-white py-3 font-bold"
+              >
+                Understood
+              </Button>
+            </Card>
+          </div>
+        )}
+
+        {/* Driver Accepted Popup */}
+        {driverAcceptedPopup && (
+          <div className="fixed inset-0 bg-black/50 z-[2100] flex items-center justify-center p-4">
+            <Card className="bg-white p-8 max-w-sm w-full text-center animate-infinite-bounce">
+              <div className="w-24 h-24 bg-green-50 rounded-full flex items-center justify-center mx-auto mb-4">
+                <span className="text-5xl">{driverAcceptedPopup.driverPhoto}</span>
+              </div>
+              <h3 className="text-2xl font-bold text-[#121212] mb-2">🎉 Driver Accepted!</h3>
+              <p className="text-lg font-semibold text-green-600 mb-4">{driverAcceptedPopup.driverName}</p>
+
+              <div className="bg-[#F8F9FA] rounded-lg p-4 mb-4 space-y-2 text-left">
+                <div className="flex items-center justify-between">
+                  <span className="text-[#64748B]">Vehicle:</span>
+                  <span className="font-semibold text-[#121212]">{driverAcceptedPopup.driverPlate}</span>
+                </div>
+                <div className="flex items-center justify-between">
+                  <span className="text-[#64748B]">Rating:</span>
+                  <div className="flex items-center gap-1">
+                    <span className="text-yellow-500">⭐</span>
+                    <span className="font-semibold text-[#121212]">{driverAcceptedPopup.driverRating}</span>
+                  </div>
+                </div>
+              </div>
+
+              <Button
+                onClick={() => setDriverAcceptedPopup(null)}
+                className="w-full bg-green-500 hover:bg-green-600 text-white py-3 font-bold"
+              >
+                Got It!
+              </Button>
+            </Card>
+          </div>
+        )}
+
+        {/* Driver Status Update Popup */}
+        {driverStatusPopup && (
+          <div className="fixed top-4 left-4 right-4 z-[2100] max-w-md mx-auto">
+            <Card className={`p-4 shadow-xl border-2 animate-slide-down ${
+              driverStatusPopup.status === 'on-the-way' ? 'border-blue-300 bg-blue-50' :
+              driverStatusPopup.status === 'arrived' ? 'border-yellow-300 bg-yellow-50' :
+              driverStatusPopup.status === 'pickup' ? 'border-green-300 bg-green-50' :
+              driverStatusPopup.status === 'drop-off' ? 'border-purple-300 bg-purple-50' :
+              driverStatusPopup.status === 'payment' ? 'border-orange-300 bg-orange-50' :
+              'border-[#E2E8F0] bg-white'
+            }`}>
+              <div className="flex items-start gap-3">
+                <div className={`text-3xl ${
+                  driverStatusPopup.status === 'on-the-way' ? '📍' :
+                  driverStatusPopup.status === 'arrived' ? '✋' :
+                  driverStatusPopup.status === 'pickup' ? '🚗' :
+                  driverStatusPopup.status === 'drop-off' ? '📍' :
+                  driverStatusPopup.status === 'payment' ? '💰' :
+                  '📲'
+                }`}></div>
+                <div className="flex-1">
+                  <p className={`font-bold text-sm ${
+                    driverStatusPopup.status === 'on-the-way' ? 'text-blue-900' :
+                    driverStatusPopup.status === 'arrived' ? 'text-yellow-900' :
+                    driverStatusPopup.status === 'pickup' ? 'text-green-900' :
+                    driverStatusPopup.status === 'drop-off' ? 'text-purple-900' :
+                    driverStatusPopup.status === 'payment' ? 'text-orange-900' :
+                    'text-[#121212]'
+                  }`}>
+                    {driverStatusPopup.status === 'on-the-way' ? '📍 On The Way' :
+                     driverStatusPopup.status === 'arrived' ? '✋ I\'ve Arrived' :
+                     driverStatusPopup.status === 'pickup' ? '🚗 Arrived at Pickup' :
+                     driverStatusPopup.status === 'drop-off' ? '📍 Arrived at Drop-off' :
+                     driverStatusPopup.status === 'payment' ? '💰 Ready for Payment' :
+                     driverStatusPopup.message}
+                  </p>
+                  <p className={`text-xs mt-1 ${
+                    driverStatusPopup.status === 'on-the-way' ? 'text-blue-700' :
+                    driverStatusPopup.status === 'arrived' ? 'text-yellow-700' :
+                    driverStatusPopup.status === 'pickup' ? 'text-green-700' :
+                    driverStatusPopup.status === 'drop-off' ? 'text-purple-700' :
+                    driverStatusPopup.status === 'payment' ? 'text-orange-700' :
+                    'text-[#64748B]'
+                  }`}>
+                    {driverStatusPopup.message}
+                  </p>
+                </div>
+              </div>
+            </Card>
+          </div>
+        )}
       </div>
 
       {/* Bottom Navigation */}
@@ -731,30 +991,55 @@ export default function CustomerHome() {
             <p className="text-sm text-[#64748B] mb-6">Select the number of seats you need for this trip.</p>
 
             {/* Passenger Count Selection */}
-            <div className="grid grid-cols-3 gap-3 mb-6">
-              {[1, 2, 3].map(count => (
-                <button
-                  key={count}
-                  onClick={() => setPassengerCount(count)}
-                  className={`p-6 border-2 rounded-2xl transition-all ${
-                    passengerCount === count
-                      ? 'border-[#E11D48] bg-[#FFF1F2]'
-                      : 'border-[#E2E8F0] bg-white'
-                  }`}
-                >
-                  <div className="flex flex-col items-center gap-2">
-                    <div className="flex items-center gap-1">
-                      {Array.from({ length: count }).map((_, i) => (
-                        <span key={i} className="text-2xl">👤</span>
-                      ))}
-                    </div>
-                    <span className="font-bold text-lg text-[#121212]">{count}</span>
-                    <span className="text-xs text-[#64748B]">
-                      {count === 1 ? 'passenger' : 'passengers'}
-                    </span>
-                  </div>
-                </button>
-              ))}
+            <div className={`grid gap-3 mb-6 ${selectedVehicle === 'special' ? 'grid-cols-2' : 'grid-cols-3'}`}>
+              {selectedVehicle === 'special'
+                ? [1, 2].map(count => (
+                    <button
+                      key={count}
+                      onClick={() => setPassengerCount(count)}
+                      className={`p-6 border-2 rounded-2xl transition-all ${
+                        passengerCount === count
+                          ? 'border-[#E11D48] bg-[#FFF1F2]'
+                          : 'border-[#E2E8F0] bg-white'
+                      }`}
+                    >
+                      <div className="flex flex-col items-center gap-2">
+                        <div className="flex items-center gap-1">
+                          {Array.from({ length: count }).map((_, i) => (
+                            <span key={i} className="text-2xl">👤</span>
+                          ))}
+                        </div>
+                        <span className="font-bold text-lg text-[#121212]">{count}</span>
+                        <span className="text-xs text-[#64748B]">
+                          {count === 1 ? 'passenger' : 'passengers'}
+                        </span>
+                      </div>
+                    </button>
+                  ))
+                : [1, 2, 3].map(count => (
+                    <button
+                      key={count}
+                      onClick={() => setPassengerCount(count)}
+                      className={`p-6 border-2 rounded-2xl transition-all ${
+                        passengerCount === count
+                          ? 'border-[#E11D48] bg-[#FFF1F2]'
+                          : 'border-[#E2E8F0] bg-white'
+                      }`}
+                    >
+                      <div className="flex flex-col items-center gap-2">
+                        <div className="flex items-center gap-1">
+                          {Array.from({ length: count }).map((_, i) => (
+                            <span key={i} className="text-2xl">👤</span>
+                          ))}
+                        </div>
+                        <span className="font-bold text-lg text-[#121212]">{count}</span>
+                        <span className="text-xs text-[#64748B]">
+                          {count === 1 ? 'passenger' : 'passengers'}
+                        </span>
+                      </div>
+                    </button>
+                  ))
+              }
             </div>
 
             {/* Price Info */}
@@ -770,12 +1055,14 @@ export default function CustomerHome() {
               </div>
             </div>
 
-            {/* Info Card */}
-            <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 mb-6">
-              <p className="text-xs text-blue-900">
-                💡 <span className="font-semibold">Tip:</span> You'll join a shared lobby and wait for other passengers heading the same route. More passengers = faster match!
-              </p>
-            </div>
+            {/* Info Card - Only show for Share Rides */}
+            {selectedVehicle !== 'special' && (
+              <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 mb-6">
+                <p className="text-xs text-blue-900">
+                  💡 <span className="font-semibold">Tip:</span> You'll join a shared lobby and wait for other passengers heading the same route. More passengers = faster match!
+                </p>
+              </div>
+            )}
 
             {/* Action Buttons */}
             <div className="space-y-3">
@@ -788,17 +1075,19 @@ export default function CustomerHome() {
               >
                 Continue with {passengerCount} {passengerCount === 1 ? 'Seat' : 'Seats'}
               </Button>
-              <Button
-                onClick={() => {
-                  setShowPassengerCount(false);
-                  setShowLobbyList(true);
-                }}
-                variant="outline"
-                className="w-full py-6 text-lg font-semibold border-2 border-[#E11D48] text-[#E11D48] hover:bg-[#FFF1F2]"
-              >
-                <Users className="w-5 h-5 mr-2" />
-                Browse Available Lobbies
-              </Button>
+              {selectedVehicle !== 'special' && (
+                <Button
+                  onClick={() => {
+                    setShowPassengerCount(false);
+                    setShowLobbyList(true);
+                  }}
+                  variant="outline"
+                  className="w-full py-6 text-lg font-semibold border-2 border-[#E11D48] text-[#E11D48] hover:bg-[#FFF1F2]"
+                >
+                  <Users className="w-5 h-5 mr-2" />
+                  Browse Available Lobbies
+                </Button>
+              )}
               <Button
                 onClick={() => {
                   setShowPassengerCount(false);
@@ -985,6 +1274,101 @@ export default function CustomerHome() {
             setShowLobbyList(false);
           }}
         />
+      )}
+
+      {/* Driver Accepted Popup */}
+      {driverAcceptedPopup && (
+        <div className="fixed inset-0 bg-black/50 z-[3000] flex items-center justify-center p-4">
+          <Card className="bg-white p-8 max-w-sm w-full text-center animate-in fade-in zoom-in duration-300">
+            <div className="mb-4">
+              <div className="w-20 h-20 bg-[#E11D48] rounded-full flex items-center justify-center mx-auto mb-4 text-4xl">
+                {driverAcceptedPopup.driverPhoto}
+              </div>
+              <h3 className="text-2xl font-bold text-[#121212] mb-2">Driver Found! 🎉</h3>
+              <p className="text-[#64748B] mb-4">Your driver is on the way</p>
+            </div>
+
+            {/* Driver Details */}
+            <div className="bg-[#F8F9FA] rounded-xl p-4 mb-6 space-y-3">
+              <div className="flex items-center justify-between">
+                <span className="text-sm text-[#64748B] font-semibold">Driver Name</span>
+                <span className="font-bold text-[#121212]">{driverAcceptedPopup.driverName}</span>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="text-sm text-[#64748B] font-semibold">Plate Number</span>
+                <span className="font-bold text-[#121212]">{driverAcceptedPopup.driverPlate}</span>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="text-sm text-[#64748B] font-semibold">Rating</span>
+                <span className="font-bold text-[#E11D48]">⭐ {driverAcceptedPopup.driverRating}</span>
+              </div>
+            </div>
+
+            <Button
+              onClick={() => setDriverAcceptedPopup(null)}
+              className="w-full bg-[#E11D48] hover:bg-[#BE123C] text-white py-3 text-lg font-bold"
+            >
+              Got it! 👍
+            </Button>
+          </Card>
+        </div>
+      )}
+
+      {/* Driver Status Update Popup */}
+      {driverStatusPopup && (
+        <div className="fixed inset-0 bg-black/50 z-[3000] flex items-end">
+          <div className="bg-white w-full rounded-t-3xl p-6 animate-in slide-in-from-bottom duration-300">
+            <div className="max-w-sm mx-auto">
+              {/* Status Icon */}
+              <div className="w-16 h-16 bg-gradient-to-br from-[#E11D48] to-[#BE123C] rounded-full flex items-center justify-center mx-auto mb-4 text-3xl">
+                {driverStatusPopup.status === 'on-the-way' && '🚗'}
+                {driverStatusPopup.status === 'arrived' && '📍'}
+                {driverStatusPopup.status === 'pickup' && '🚀'}
+                {driverStatusPopup.status === 'drop-off' && '🏁'}
+                {driverStatusPopup.status === 'payment' && '💰'}
+                {driverStatusPopup.status === 'completed' && '🎉'}
+              </div>
+
+              {/* Status Message */}
+              <h3 className="text-2xl font-bold text-[#121212] text-center mb-2">
+                {driverStatusPopup.status === 'on-the-way' && 'Driver On The Way'}
+                {driverStatusPopup.status === 'arrived' && 'Driver Arrived'}
+                {driverStatusPopup.status === 'pickup' && 'Picked Up!'}
+                {driverStatusPopup.status === 'drop-off' && 'Arrived at Destination'}
+                {driverStatusPopup.status === 'payment' && 'Complete Payment'}
+                {driverStatusPopup.status === 'completed' && 'Ride Completed!'}
+              </h3>
+
+              <p className="text-[#64748B] text-center mb-6">{driverStatusPopup.message}</p>
+
+              {/* Status Details */}
+              <div className="bg-[#F8F9FA] rounded-xl p-4 mb-6">
+                <div className="flex items-center justify-between">
+                  <span className="text-sm text-[#64748B]">Status Update</span>
+                  <span className="font-bold text-[#121212]">
+                    {driverStatusPopup.status === 'on-the-way' && 'On the way'}
+                    {driverStatusPopup.status === 'arrived' && 'Arrived'}
+                    {driverStatusPopup.status === 'pickup' && 'Picked up'}
+                    {driverStatusPopup.status === 'drop-off' && 'At destination'}
+                    {driverStatusPopup.status === 'payment' && 'Payment pending'}
+                    {driverStatusPopup.status === 'completed' && 'Completed'}
+                  </span>
+                </div>
+                <div className="flex items-center justify-between mt-3">
+                  <span className="text-sm text-[#64748B]">Time</span>
+                  <span className="text-sm text-[#121212]">Just now</span>
+                </div>
+              </div>
+
+              <Button
+                onClick={() => setDriverStatusPopup(null)}
+                className="w-full bg-[#E11D48] hover:bg-[#BE123C] text-white py-3 text-lg font-bold"
+              >
+                OK 👍
+              </Button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

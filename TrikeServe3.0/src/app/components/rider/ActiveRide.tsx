@@ -5,6 +5,7 @@ import { Button } from "../ui/button";
 import { Card } from "../ui/card";
 import { Badge } from "../ui/badge";
 import { useAuth } from "../../contexts/AuthContext";
+import { supabaseHelpers } from "@/lib/supabase";
 
 type RideStatus = 'on-the-way' | 'arrived' | 'pickup' | 'drop-off' | 'payment';
 type PassengerStatus = 'pending' | 'on-the-way' | 'arrived' | 'picked-up' | 'dropped-off';
@@ -53,29 +54,57 @@ export default function ActiveRide() {
 
   useEffect(() => {
     // Load active ride from localStorage or route state
-    const loadActiveRide = () => {
+    const loadActiveRide = async () => {
       if (location.state?.acceptedRide) {
         const ride = {
           ...location.state.acceptedRide,
           status: 'on-the-way' as RideStatus
         };
         setRideData(ride);
+
+        console.log('🚨🚨🚨 DRIVER ACCEPTED RIDE 🚨🚨🚨');
+        console.log('   Ride ID:', ride.id);
+        console.log('   Ride Type:', ride.type);
+        console.log('   Customer ID:', ride.customerId);
+
         // Save to localStorage for persistence
         localStorage.setItem('trikeserve_active_ride', JSON.stringify(ride));
-      } else {
-        // Try to load from localStorage
-        const savedRide = localStorage.getItem('trikeserve_active_ride');
-        if (savedRide) {
-          setRideData(JSON.parse(savedRide));
-        } else {
-          // No active ride, go back to dashboard
-          navigate('/rider');
+
+        // Update DATABASE with driver info and "on-the-way" status for ALL ride types
+        if (ride.customerId && ride.id && user?.id) {
+          console.log('📤 Updating DATABASE with driver acceptance...');
+          try {
+            const { error } = await supabaseHelpers.acceptRideRequest(
+              ride.id,
+              user.id,
+              user.user_metadata?.full_name || 'Driver',
+              user.user_metadata?.avatar_url
+            );
+
+            if (error) {
+              console.error('❌ Error accepting ride in database:', error);
+            } else {
+              console.log('✅ DATABASE UPDATED: Driver accepted ride');
+
+              // Now update driver status to "on-the-way"
+              await supabaseHelpers.updateDriverRideStatus(
+                ride.id,
+                'on-the-way',
+                'Driver is on the way to pick you up!'
+              );
+              console.log('✅ DATABASE UPDATED: Driver status set to on-the-way');
+            }
+          } catch (error) {
+            console.error('❌ Exception accepting ride:', error);
+          }
         }
+      } else {
+        // ...existing code...
       }
     };
 
     loadActiveRide();
-  }, [location.state, navigate]);
+  }, [location.state, navigate, user]);
 
   useEffect(() => {
     // Update localStorage when ride data changes
@@ -90,49 +119,86 @@ export default function ActiveRide() {
     const updatedRide = { ...rideData, status: newStatus };
     setRideData(updatedRide);
 
-    // Notify customer of status change
-    if (rideData.customerId) {
-      const customerNotificationsKey = `notifications_${rideData.customerId}`;
-      const existingNotifications = localStorage.getItem(customerNotificationsKey);
-      const notifications = existingNotifications ? JSON.parse(existingNotifications) : [];
+    console.log('🚨 DRIVER STATUS BUTTON CLICKED');
+    console.log('   New Status:', newStatus);
+    console.log('   Ride ID:', rideData.id);
+    console.log('   Customer ID:', rideData.customerId);
 
-      let notificationMessage = '';
-      let notificationIcon = '';
+    // Update database with new driver status (Option 2 - Database-Driven)
+    if (rideData.id) {
+      console.log('📤 Updating DATABASE with new driver status...');
+      updateRideStatusInDatabase(rideData.id, newStatus);
+    }
+  };
 
-      switch (newStatus) {
-        case 'arrived':
-          notificationMessage = 'Your driver has arrived at the pickup location.';
-          notificationIcon = '📍';
-          break;
-        case 'pickup':
-          notificationMessage = 'You have been picked up. Enjoy your ride!';
-          notificationIcon = '🚀';
-          break;
-        case 'drop-off':
-          notificationMessage = 'You have arrived at your destination.';
-          notificationIcon = '🏁';
-          break;
-        case 'payment':
-          notificationMessage = 'Please complete the payment.';
-          notificationIcon = '💰';
-          break;
+  // Update ride status in database for customer to see
+  const updateRideStatusInDatabase = async (rideId: string, driverDisplayStatus: RideStatus) => {
+    try {
+      // Map display statuses to database driver_status values
+      const statusMap: { [key in RideStatus]: string } = {
+        'on-the-way': 'on-the-way',
+        'arrived': 'arrived',
+        'pickup': 'picked-up',
+        'drop-off': 'dropped-off',
+        'payment': 'awaiting-payment'
+      };
+
+      const messageMap: { [key in RideStatus]: string } = {
+        'on-the-way': 'Driver is on the way to pick you up!',
+        'arrived': 'Driver has arrived at pickup location!',
+        'pickup': 'You have been picked up. Enjoy your ride!',
+        'drop-off': 'You have arrived at your destination!',
+        'payment': 'Please complete the payment.'
+      };
+
+      const dbStatus = statusMap[driverDisplayStatus];
+      const statusMessage = messageMap[driverDisplayStatus];
+
+      console.log('🔄 UPDATING DATABASE DRIVER STATUS');
+      console.log('   Ride ID:', rideId);
+      console.log('   New Driver Status:', dbStatus);
+      console.log('   Message:', statusMessage);
+
+      // Update the ride request with driver status
+      const { data, error } = await supabaseHelpers.updateDriverRideStatus(rideId, dbStatus, statusMessage);
+
+      if (error) {
+        console.error('❌ Error updating database:', error);
+      } else {
+        console.log('✅ DATABASE UPDATED SUCCESSFULLY');
+        console.log('   Updated record:', data);
+      }
+    } catch (error) {
+      console.error('❌ Exception updating database:', error);
+    }
+  };
+
+
+  // Update ride request status in database
+  const updateRideRequestStatus = async (rideId: string, status: string) => {
+    try {
+      // Map display status to database status
+      let dbStatus = 'in_progress';
+      if (status === 'arrived') {
+        dbStatus = 'in_progress';
+      } else if (status === 'pickup') {
+        dbStatus = 'in_progress';
+      } else if (status === 'drop-off') {
+        dbStatus = 'completed';
       }
 
-      if (notificationMessage) {
-        const notification = {
-          id: `ride-${rideData.id}-${newStatus}`,
-          type: 'ride',
-          title: `Ride Status Updated`,
-          message: notificationMessage,
-          time: 'Just now',
-          timestamp: Date.now(),
-          unread: true,
-          icon: notificationIcon,
-        };
+      const { error } = await supabaseHelpers.updateRideRequest(rideId, {
+        status: dbStatus,
+        updated_at: new Date().toISOString()
+      });
 
-        notifications.unshift(notification);
-        localStorage.setItem(customerNotificationsKey, JSON.stringify(notifications));
+      if (error) {
+        console.error('❌ Error updating ride status in database:', error);
+      } else {
+        console.log('✅ Ride status updated in database:', dbStatus);
       }
+    } catch (error) {
+      console.error('❌ Error updating ride request status:', error);
     }
   };
 
@@ -168,6 +234,56 @@ export default function ActiveRide() {
 
     const updatedRide = { ...rideData, passengerDetails: updatedPassengers };
     setRideData(updatedRide);
+
+    // Send status update to customer (for ALL ride types)
+    if (rideData.customerId) {
+      let statusMapForCustomer = '';
+      let statusMessage = '';
+
+      if (newStatus === 'arrived') {
+        statusMapForCustomer = 'arrived';
+        statusMessage = 'Driver has arrived at your pickup location!';
+      } else if (newStatus === 'picked-up') {
+        statusMapForCustomer = 'pickup';
+        statusMessage = 'You\'ve been picked up! On the way to your destination.';
+      } else if (newStatus === 'dropped-off') {
+        statusMapForCustomer = 'drop-off';
+        statusMessage = 'You\'ve arrived at your destination!';
+      }
+
+      if (statusMapForCustomer) {
+        const statusUpdateKey = `driver_status_${rideData.id}`;
+        const statusUpdate = {
+          status: statusMapForCustomer,
+          message: statusMessage,
+          timestamp: Date.now()
+        };
+        localStorage.setItem(statusUpdateKey, JSON.stringify(statusUpdate));
+
+        // Debug logging
+        console.log('📤 Driver Status Update Sent:');
+        console.log('   Ride ID:', rideData.id);
+        console.log('   Ride Type:', rideData.type);
+        console.log('   Status Key:', statusUpdateKey);
+        console.log('   Status:', statusMapForCustomer);
+        console.log('   Message:', statusMessage);
+        console.log('   Customer ID:', rideData.customerId);
+
+        // Trigger storage event for cross-tab sync
+        window.dispatchEvent(new StorageEvent('storage', {
+          key: statusUpdateKey,
+          newValue: JSON.stringify(statusUpdate)
+        }));
+
+        // Also dispatch custom event for same-tab sync
+        window.dispatchEvent(new CustomEvent('custom-storage-change', {
+          detail: { key: statusUpdateKey, value: statusUpdate }
+        }));
+
+        // Update database with status change
+        updateRideRequestStatus(rideData.id, statusMapForCustomer);
+      }
+    }
 
     // Sync with lobby data
     if (rideData.lobbyId) {
@@ -216,8 +332,67 @@ export default function ActiveRide() {
     }
   };
 
-  const completeRide = () => {
+  const completeRide = async () => {
     if (!rideData) return;
+
+    try {
+      // 1. UPDATE DATABASE STATUS TO 'COMPLETED' (ALL RIDE TYPES)
+      if (rideData.id) {
+        const { error: updateError } = await supabaseHelpers.updateRideRequest(
+          rideData.id,
+          { status: 'completed' }
+        );
+
+        if (updateError) {
+          console.error('❌ Error updating ride status in database:', updateError);
+        } else {
+          console.log('✅ Ride status updated to completed in database');
+        }
+      }
+
+      // 2. SEND COMPLETION STATUS TO CUSTOMER IMMEDIATELY
+      if (rideData.customerId) {
+        const statusUpdateKey = `driver_status_${rideData.id}`;
+        const statusUpdate = {
+          status: 'completed',
+          message: 'Your ride has been completed! Thank you for using TrikeServe.',
+          timestamp: Date.now(),
+          completedAt: new Date().toISOString()
+        };
+        localStorage.setItem(statusUpdateKey, JSON.stringify(statusUpdate));
+
+        // Trigger storage event for cross-tab sync
+        window.dispatchEvent(new StorageEvent('storage', {
+          key: statusUpdateKey,
+          newValue: JSON.stringify(statusUpdate)
+        }));
+
+        console.log('✅ Completion status sent to customer');
+      }
+
+      // 3. ADD TO COMPLETED RIDES HISTORY (SO CUSTOMER CAN SEE IT)
+      const completedRidesKey = 'trikeserve_completed_rides';
+      const existingCompletedRides = localStorage.getItem(completedRidesKey);
+      const completedRides = existingCompletedRides ? JSON.parse(existingCompletedRides) : [];
+
+      completedRides.push({
+        ...rideData,
+        completedAt: new Date().toISOString(),
+        status: 'completed'
+      });
+
+      localStorage.setItem(completedRidesKey, JSON.stringify(completedRides));
+
+      // Trigger storage event for cross-tab sync
+      window.dispatchEvent(new StorageEvent('storage', {
+        key: completedRidesKey,
+        newValue: JSON.stringify(completedRides)
+      }));
+
+      console.log('✅ Ride added to completed rides history');
+    } catch (error) {
+      console.error('❌ Error completing ride:', error);
+    }
 
     // Clear active ride
     localStorage.removeItem('trikeserve_active_ride');
@@ -319,6 +494,8 @@ export default function ActiveRide() {
       notifications.unshift(notification);
       localStorage.setItem(customerNotificationsKey, JSON.stringify(notifications));
     }
+
+    console.log('✅ Ride completed successfully');
 
     // Navigate back to dashboard
     navigate('/rider');
