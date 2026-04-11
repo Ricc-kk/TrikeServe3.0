@@ -5,6 +5,7 @@ import { Button } from "../ui/button";
 import { Card } from "../ui/card";
 import { Badge } from "../ui/badge";
 import { useAuth } from "../../contexts/AuthContext";
+import { supabaseHelpers } from "@/lib/supabase";
 
 interface PassengerRequest {
   id: string;
@@ -50,18 +51,47 @@ export default function PassengerRequests() {
   const [selectedCategory, setSelectedCategory] = useState<'all' | 'shared' | 'private' | 'delivery'>('all');
   const [requests, setRequests] = useState<PassengerRequest[]>([]);
 
-  // Load requests from localStorage on mount and set up polling
+  // Load requests from Supabase on mount and set up polling
   useEffect(() => {
-    const loadRequests = () => {
-      const savedRequests = localStorage.getItem('trikeserve_ride_requests');
-      if (savedRequests) {
-        try {
-          const parsedRequests = JSON.parse(savedRequests);
-          setRequests(parsedRequests);
-        } catch (error) {
-          console.error('Error loading ride requests:', error);
+    const loadRequests = async () => {
+      try {
+        // Fetch pending ride requests from Supabase
+        const { data: rideRequests, error: dbError } = await supabaseHelpers.getRideRequests({
+          status: 'pending'
+        });
+
+        if (dbError) {
+          console.error('❌ Error loading requests from database:', dbError);
+          setRequests([]);
+          return;
         }
-      } else {
+
+        if (rideRequests && rideRequests.length > 0) {
+          // Map database format to component format
+          const mappedRequests = rideRequests.map((req: any) => ({
+            id: req.id,
+            type: req.ride_type || 'private', // Map ride_type to type
+            pickup: req.pickup_location,
+            dropoff: req.dropoff_location,
+            payment: req.payment_method === 'GCASH' ? 'PREPAID' : 'COD',
+            amount: req.amount,
+            customerName: req.customer_name || 'Customer',
+            customerPhoto: '👤',
+            distance: '2.5 km',
+            estimatedTime: '7 mins',
+            passengers: req.passenger_count || 1,
+            customerId: req.customer_id,
+            created_at: req.created_at,
+          }));
+
+          setRequests(mappedRequests);
+          console.log('✅ Loaded passenger requests from database:', mappedRequests);
+        } else {
+          setRequests([]);
+          console.log('📭 No pending passenger requests in database');
+        }
+      } catch (error) {
+        console.error('❌ Error loading requests:', error);
         setRequests([]);
       }
     };
@@ -69,26 +99,25 @@ export default function PassengerRequests() {
     // Load initially
     loadRequests();
 
-    // Poll for updates every 2 seconds
-    const interval = setInterval(loadRequests, 2000);
-
-    // Listen for storage events (cross-tab sync)
-    const handleStorageChange = (e: StorageEvent) => {
-      if (e.key === 'trikeserve_ride_requests') {
-        loadRequests();
-      }
-    };
-
-    window.addEventListener('storage', handleStorageChange);
+    // Poll for updates every 3 seconds (fetches from Supabase)
+    const interval = setInterval(loadRequests, 3000);
 
     return () => {
       clearInterval(interval);
-      window.removeEventListener('storage', handleStorageChange);
     };
   }, []);
 
   const handleAcceptRequest = (request: PassengerRequest) => {
-    // Check if driver already has an active ride
+    // 🚨 CRITICAL: Log what request is being accepted
+    console.log('🚨🚨🚨 DRIVER ACCEPTING REQUEST 🚨🚨🚨');
+    console.log('   Request ID:', request.id);
+    console.log('   Request Type:', request.type);
+    console.log('   Customer ID:', request.customerId);
+    console.log('   Full request object:', request);
+
+    if (!request.id) {
+      console.error('❌❌❌ REQUEST HAS NO ID! THIS IS THE BUG! ❌❌❌');
+    }
     const activeRideData = localStorage.getItem('trikeserve_active_ride');
     if (activeRideData) {
       try {

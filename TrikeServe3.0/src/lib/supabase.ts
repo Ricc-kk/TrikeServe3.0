@@ -101,6 +101,73 @@ export const supabaseHelpers = {
     return { data, error };
   },
 
+  async getRideRequest(rideId: string) {
+    const { data, error } = await supabase
+      .from('ride_requests')
+      .select('*')
+      .eq('id', rideId)
+      .single();
+    return { data, error };
+  },
+
+  // Database-driven status updates for customer notifications
+  async updateRideStatus(rideId: string, status: string, statusDetails?: any) {
+    const timestamp = new Date().toISOString();
+    const updateData: any = {
+      status,
+      updated_at: timestamp,
+      ...statusDetails
+    };
+
+    const { data, error } = await supabase
+      .from('ride_requests')
+      .update(updateData)
+      .eq('id', rideId)
+      .select()
+      .single();
+
+    return { data, error };
+  },
+
+  // Store accepted request in database
+  async acceptRideRequest(rideId: string, driverId: string, driverName: string, driverPhoto?: string) {
+    const timestamp = new Date().toISOString();
+    const { data, error } = await supabase
+      .from('ride_requests')
+      .update({
+        driver_id: driverId,
+        driver_name: driverName,
+        driver_photo: driverPhoto,
+        status: 'accepted',
+        accepted_at: timestamp,
+        accepted_driver_id: driverId,
+        updated_at: timestamp
+      })
+      .eq('id', rideId)
+      .select()
+      .single();
+
+    return { data, error };
+  },
+
+  // Update driver's current status for the ride
+  async updateDriverRideStatus(rideId: string, driverStatus: string, statusMessage?: string) {
+    const timestamp = new Date().toISOString();
+    const { data, error } = await supabase
+      .from('ride_requests')
+      .update({
+        driver_status: driverStatus,
+        driver_status_message: statusMessage,
+        driver_status_updated_at: timestamp,
+        updated_at: timestamp
+      })
+      .eq('id', rideId)
+      .select()
+      .single();
+
+    return { data, error };
+  },
+
   async updateRideRequest(rideId: string, updates: any) {
     const { data, error } = await supabase
       .from('ride_requests')
