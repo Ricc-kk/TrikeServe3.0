@@ -143,6 +143,64 @@ export default function BusinessHome() {
     }
   }, [restaurantData, user?.email]);
 
+  // Function to save store information to Supabase
+  const saveStoreInformation = async () => {
+    if (!user?.id) return;
+
+    try {
+      // Get or create restaurant record
+      let { data: restaurant } = await supabase
+        .from('restaurants')
+        .select('id')
+        .eq('business_user_id', user.id)
+        .single();
+
+      if (!restaurant) {
+        // Create new restaurant record
+        const { data: newRestaurant, error } = await supabase
+          .from('restaurants')
+          .insert([{
+            name: restaurantData.name,
+            business_user_id: user.id,
+            address: restaurantData.address,
+            phone: user.phone || '',
+            rating: restaurantData.rating,
+            is_open: isStoreOpen,
+            created_at: new Date().toISOString(),
+          }])
+          .select()
+          .single();
+
+        if (error) {
+          console.error('Error creating restaurant:', error);
+          return;
+        }
+        restaurant = newRestaurant;
+      } else {
+        // Update existing restaurant
+        const { error } = await supabase
+          .from('restaurants')
+          .update({
+            name: restaurantData.name,
+            address: restaurantData.address,
+            is_open: isStoreOpen,
+            updated_at: new Date().toISOString(),
+          })
+          .eq('id', restaurant.id);
+
+        if (error) {
+          console.error('Error updating restaurant:', error);
+          return;
+        }
+      }
+
+      // Close the modal after successful save
+      setShowEditInfo(false);
+    } catch (error) {
+      console.error('Error saving store information:', error);
+    }
+  };
+
   const todayStats = {
     orders: 0,
     revenue: 0,
@@ -572,7 +630,7 @@ export default function BusinessHome() {
               <div className="sticky top-0 bg-white border-b border-[#E2E8F0] px-5 py-4 flex items-center justify-between">
                 <h2 className="text-xl font-bold text-[#121212]">Edit Store Info</h2>
                 <button
-                  onClick={() => setShowEditInfo(false)}
+                  onClick={saveStoreInformation}
                   className="px-4 py-2 bg-[#10B981] text-white rounded-lg font-semibold active:scale-95 transition-transform flex items-center gap-2"
                 >
                   <Check className="w-4 h-4" />

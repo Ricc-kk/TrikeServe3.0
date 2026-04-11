@@ -49,7 +49,6 @@ export default function RestaurantDetail() {
   const { toggleFavorite, isFavorite: checkIsFavorite } = useFavorites();
   
   const [selectedCategory, setSelectedCategory] = useState("all");
-  const [showCategoryDropdown, setShowCategoryDropdown] = useState(false);
   const [isScrolled, setIsScrolled] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [showSearchModal, setShowSearchModal] = useState(false);
@@ -93,17 +92,41 @@ export default function RestaurantDetail() {
           console.error('[RestaurantDetail] Error loading menu items:', menuError);
         }
 
-        // Extract unique categories from menu items
-        const categoriesSet = new Set(
-          (menuItems || []).map((item: any) => item.category)
-        );
-        const categories = [
-          { id: "all", name: "All Items" },
-          ...Array.from(categoriesSet).map((cat: any) => ({
-            id: cat as string,
-            name: (cat as string).charAt(0).toUpperCase() + (cat as string).slice(1)
-          }))
-        ];
+        // Load categories from the categories table for this restaurant
+        const { data: categoriesData, error: categoriesError } = await supabase
+          .from('categories')
+          .select('*')
+          .eq('restaurant_id', restaurantId);
+
+        if (categoriesError) {
+          console.error('[RestaurantDetail] Error loading categories:', categoriesError);
+        }
+
+        // Use categories from the database, or fall back to extracting from menu items
+        let categories = [{ id: "all", name: "All Items" }];
+
+        if (categoriesData && categoriesData.length > 0) {
+          // Use categories from database
+          categories = [
+            { id: "all", name: "All Items" },
+            ...categoriesData.map((cat: any) => ({
+              id: cat.id,
+              name: cat.name
+            }))
+          ];
+        } else {
+          // Fallback: Extract unique categories from menu items
+          const categoriesSet = new Set(
+            (menuItems || []).map((item: any) => item.category)
+          );
+          categories = [
+            { id: "all", name: "All Items" },
+            ...Array.from(categoriesSet).map((cat: any) => ({
+              id: cat as string,
+              name: (cat as string).charAt(0).toUpperCase() + (cat as string).slice(1)
+            }))
+          ];
+        }
 
         // Map menu items to MenuItem format
         const mappedMenuItems = (menuItems || []).map((item: any) => ({
@@ -148,6 +171,138 @@ export default function RestaurantDetail() {
 
     loadRestaurantData();
   }, [restaurantId, restaurantName]);
+
+  // Real-time subscription to categories changes
+  useEffect(() => {
+    if (!restaurantId) return;
+
+    console.log('[RestaurantDetail] Setting up real-time categories subscription');
+
+    // Subscribe to categories table changes
+    const subscription = supabase
+      .channel(`categories-${restaurantId}`)
+      .on(
+        'postgres_changes',
+        {
+          event: '*', // Listen to INSERT, UPDATE, DELETE
+          schema: 'public',
+          table: 'categories',
+          filter: `restaurant_id=eq.${restaurantId}`
+        },
+        (payload) => {
+          console.log('[RestaurantDetail] Categories changed:', payload);
+
+          // Reload categories when they change
+          const reloadCategories = async () => {
+            try {
+              const { data: categoriesData } = await supabase
+                .from('categories')
+                .select('*')
+                .eq('restaurant_id', restaurantId);
+
+              if (restaurantData && categoriesData) {
+                // Build new categories list
+                let categories = [{ id: "all", name: "All Items" }];
+
+                if (categoriesData.length > 0) {
+                  categories = [
+                    { id: "all", name: "All Items" },
+                    ...categoriesData.map((cat: any) => ({
+                      id: cat.id,
+                      name: cat.name
+                    }))
+                  ];
+                }
+
+                // Update restaurant data with new categories
+                setRestaurantData({
+                  ...restaurantData,
+                  categories
+                });
+
+                console.log('[RestaurantDetail] Categories updated in real-time');
+              }
+            } catch (error) {
+              console.error('[RestaurantDetail] Error reloading categories:', error);
+            }
+          };
+
+          reloadCategories();
+        }
+      )
+      .subscribe();
+
+    return () => {
+      console.log('[RestaurantDetail] Cleaning up categories subscription');
+      supabase.removeChannel(subscription);
+    };
+  }, [restaurantId, restaurantData]);
+
+  // Real-time subscription to menu items changes
+  useEffect(() => {
+    if (!restaurantId) return;
+
+    console.log('[RestaurantDetail] Setting up real-time menu items subscription');
+
+    // Subscribe to menu_items table changes
+    const subscription = supabase
+      .channel(`menu-items-${restaurantId}`)
+      .on(
+        'postgres_changes',
+        {
+          event: '*', // Listen to INSERT, UPDATE, DELETE
+          schema: 'public',
+          table: 'menu_items',
+          filter: `restaurant_id=eq.${restaurantId}`
+        },
+        (payload) => {
+          console.log('[RestaurantDetail] Menu items changed:', payload);
+
+          // Reload menu items when they change
+          const reloadMenuItems = async () => {
+            try {
+              const { data: menuItems } = await supabase
+                .from('menu_items')
+                .select('*')
+                .eq('restaurant_id', restaurantId);
+
+              if (restaurantData && menuItems) {
+                // Map menu items to MenuItem format
+                const mappedMenuItems = (menuItems || []).map((item: any) => ({
+                  id: item.id,
+                  name: item.name,
+                  description: item.description || '',
+                  price: parseFloat(item.price),
+                  image: item.image_url || 'https://images.unsplash.com/photo-1546069901-ba9599a7e63c?w=400',
+                  category: item.category,
+                  available: item.is_available,
+                  badge: undefined,
+                  customizationGroups: []
+                }));
+
+                // Update restaurant data with new menu items
+                setRestaurantData({
+                  ...restaurantData,
+                  menuItems: mappedMenuItems
+                });
+
+                console.log('[RestaurantDetail] Menu items updated in real-time:', mappedMenuItems.length, 'items');
+              }
+            } catch (error) {
+              console.error('[RestaurantDetail] Error reloading menu items:', error);
+            }
+          };
+
+          reloadMenuItems();
+        }
+      )
+      .subscribe();
+
+    return () => {
+      console.log('[RestaurantDetail] Cleaning up menu items subscription');
+      supabase.removeChannel(subscription);
+    };
+  }, [restaurantId, restaurantData]);
 
   // Scroll detection
   useEffect(() => {
@@ -301,50 +456,40 @@ export default function RestaurantDetail() {
         </div>
       </div>
 
-      {/* Sticky Category Header */}
+      {/* Sticky Category Header with Visible Pills */}
       <div className={`sticky top-0 z-40 bg-white transition-all mt-4 ${isScrolled ? 'shadow-lg' : ''}`}>
-        <div className="px-5 py-4 flex items-center gap-3">
-          <div className="relative flex-1">
-            <button
-              onClick={() => setShowCategoryDropdown(!showCategoryDropdown)}
-              className="w-full bg-white border-2 border-[#E2E8F0] rounded-2xl px-4 py-3 flex items-center justify-between active:scale-98 transition-all"
-            >
-              <span className="font-bold text-[#121212] text-sm truncate">{selectedCategoryName}</span>
-              <ChevronDown className={`w-5 h-5 text-[#64748B] transition-transform ${showCategoryDropdown ? 'rotate-180' : ''}`} />
-            </button>
-            
-            {showCategoryDropdown && (
-              <>
-                <div 
-                  className="fixed inset-0 z-40"
-                  onClick={() => setShowCategoryDropdown(false)}
-                />
-                <div className="absolute top-full left-0 right-0 mt-2 bg-white border-2 border-[#E2E8F0] rounded-2xl shadow-2xl max-h-64 overflow-y-auto z-50">
-                  {restaurantData?.categories.map((category) => (
-                    <button
-                      key={category.id}
-                      onClick={() => {
-                        setSelectedCategory(category.id);
-                        setShowCategoryDropdown(false);
-                      }}
-                      className={`w-full px-4 py-3 text-left hover:bg-[#F8F9FA] transition-colors ${
-                        selectedCategory === category.id ? 'bg-[#FEF2F2] text-[#E11D48] font-bold' : 'text-[#121212]'
-                      }`}
-                    >
-                      {category.name}
-                    </button>
-                  ))}
-                </div>
-              </>
-            )}
+        <div className="px-5 py-4 space-y-3">
+          {/* Category Pills */}
+          <div className="flex gap-2 overflow-x-auto pb-2 scrollbar-hide">
+            {restaurantData?.categories.map((category) => (
+              <button
+                key={category.id}
+                onClick={() => setSelectedCategory(category.id)}
+                className={`px-4 py-2 rounded-full text-sm font-semibold whitespace-nowrap transition-all flex-shrink-0 ${
+                  selectedCategory === category.id
+                    ? "bg-[#E11D48] text-white"
+                    : "bg-[#F1F5F9] text-[#64748B] hover:bg-[#E2E8F0]"
+                }`}
+              >
+                {category.name}
+              </button>
+            ))}
           </div>
 
-          <button 
-            onClick={() => setShowSearchModal(true)}
-            className="bg-white border-2 border-[#E2E8F0] rounded-2xl w-11 h-11 flex items-center justify-center active:scale-95 transition-all"
-          >
-            <Search className="w-5 h-5 text-[#121212]" />
-          </button>
+          {/* Search Bar */}
+          <div className="flex items-center gap-2">
+            <div className="relative flex-1">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-[#64748B]" />
+              <input
+                type="text"
+                placeholder="Search menu items..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                onClick={() => setShowSearchModal(true)}
+                className="w-full pl-10 pr-4 py-2.5 border-2 border-[#E2E8F0] rounded-2xl text-sm bg-[#F8F9FA]"
+              />
+            </div>
+          </div>
         </div>
       </div>
 

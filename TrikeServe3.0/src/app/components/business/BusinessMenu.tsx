@@ -42,6 +42,8 @@ export default function BusinessMenu() {
   const [showBulkActions, setShowBulkActions] = useState(false);
   const [showCustomizationModal, setShowCustomizationModal] = useState(false);
   const [customizingItem, setCustomizingItem] = useState<MenuItem | null>(null);
+  const [showDeleteCategoryModal, setShowDeleteCategoryModal] = useState(false);
+  const [categoryToDelete, setCategoryToDelete] = useState<string | null>(null);
 
   // Use media query hook to detect mobile
   const isMobile = useMediaQuery('(max-width: 1023px)');
@@ -322,7 +324,7 @@ export default function BusinessMenu() {
     name: "",
     description: "",
     price: 0,
-    category: "Silog",
+    category: categories.length > 0 ? categories[0].id : "Silog", // Default to first category
     available: true,
     image: ""
   });
@@ -426,21 +428,96 @@ export default function BusinessMenu() {
     });
   };
 
-  const addNewCategory = () => {
-    if (newCategory.trim()) {
-      const id = newCategory.toLowerCase().replace(/\s+/g, '-');
-      setCategories([...categories, { id, name: newCategory }]);
+  const addNewCategory = async () => {
+    if (!newCategory.trim()) return;
+
+    const categoryId = newCategory.toLowerCase().replace(/\s+/g, '-');
+    const newCat = { id: categoryId, name: newCategory };
+
+    try {
+      // If we have a restaurant ID, save to Supabase
+      if (restaurantId) {
+        const { error } = await supabase
+          .from('categories')
+          .insert([{
+            restaurant_id: restaurantId,
+            name: newCat.name,
+            id: categoryId,
+            created_at: new Date().toISOString(),
+          }]);
+
+        if (error) {
+          console.error('Error creating category in Supabase:', error);
+          // Still add locally even if Supabase fails
+        }
+      }
+
+      // Always update local state
+      setCategories([...categories, newCat]);
       setNewCategory("");
       setShowAddCategory(false);
+
+      // Save to localStorage as backup
+      if (user?.email) {
+        const storageKey = `categories_${user.email}`;
+        const updatedCategories = [...categories, newCat];
+        localStorage.setItem(storageKey, JSON.stringify(updatedCategories));
+      }
+    } catch (error) {
+      console.error('Error adding category:', error);
     }
   };
 
-  const handleDeleteCategory = (category: string) => {
+  const handleDeleteCategory = async (category: string) => {
     const categoryObj = categories.find(c => c.id === category);
-    if (categoryObj && confirm(`Delete category "${categoryObj.name}"? All items in this category will also be deleted. This action cannot be undone.`)) {
-      setCategories(categories.filter(c => c.id !== category));
-      setMenuItems(menuItems.filter(i => i.category !== category));
+    if (!categoryObj) return;
+
+    // Show the confirmation modal instead of using confirm()
+    setCategoryToDelete(category);
+    setShowDeleteCategoryModal(true);
+  };
+
+  const confirmDeleteCategory = async () => {
+    if (!categoryToDelete) return;
+
+    try {
+      // Delete from Supabase if restaurant ID exists
+      if (restaurantId) {
+        const { error } = await supabase
+          .from('categories')
+          .delete()
+          .eq('restaurant_id', restaurantId)
+          .eq('id', categoryToDelete);
+
+        if (error) {
+          console.error('Error deleting category from Supabase:', error);
+          // Still delete locally even if Supabase fails
+        }
+      }
+
+      // Update local state
+      const updatedCategories = categories.filter(c => c.id !== categoryToDelete);
+      setCategories(updatedCategories);
+
+      // Remove all items in this category
+      const updatedItems = menuItems.filter(i => i.category !== categoryToDelete);
+      setMenuItems(updatedItems);
+
       setSelectedCategory("all");
+
+      // Save to localStorage as backup
+      if (user?.email) {
+        const storageKey = `categories_${user.email}`;
+        localStorage.setItem(storageKey, JSON.stringify(updatedCategories));
+      }
+
+      // Close the modal
+      setShowDeleteCategoryModal(false);
+      setCategoryToDelete(null);
+    } catch (error) {
+      console.error('Error deleting category:', error);
+      setShowDeleteCategoryModal(false);
+      setCategoryToDelete(null);
     }
   };
 
@@ -494,6 +571,67 @@ export default function BusinessMenu() {
       default: return null;
     }
   };
+
+  // Load categories from Supabase
+  useEffect(() => {
+    const loadCategories = async () => {
+      try {
+        if (restaurantId) {
+          // Try to load from Supabase
+          const { data, error } = await supabase
+            .from('categories')
+            .select('*')
+            .eq('restaurant_id', restaurantId);
+
+          if (error) {
+            console.error('[Categories Load] Error loading from Supabase:', error);
+            // Fall back to localStorage
+            if (user?.email) {
+              const storageKey = `categories_${user.email}`;
+              const saved = localStorage.getItem(storageKey);
+              if (saved) {
+                try {
+                  const parsed = JSON.parse(saved);
+                  setCategories(parsed);
+                } catch (e) {
+                  console.error('Error parsing stored categories:', e);
+                }
+              }
+            }
+          } else if (data && data.length > 0) {
+            // Map Supabase data to Category format
+            const loadedCategories = data.map((cat: any) => ({
+              id: cat.id,
+              name: cat.name,
+            }));
+            setCategories(loadedCategories);
+
+            // Also save to localStorage as backup
+            if (user?.email) {
+              const storageKey = `categories_${user.email}`;
+              localStorage.setItem(storageKey, JSON.stringify(loadedCategories));
+            }
+          }
+        } else if (user?.email) {
+          // No restaurant ID yet, try localStorage
+          const storageKey = `categories_${user.email}`;
+          const saved = localStorage.getItem(storageKey);
+          if (saved) {
+            try {
+              const parsed = JSON.parse(saved);
+              setCategories(parsed);
+            } catch (e) {
+              console.error('Error parsing stored categories:', e);
+            }
+          }
+        }
+      } catch (error) {
+        console.error('[Categories Load] Error loading categories:', error);
+      }
+    };
+
+    loadCategories();
+  }, [restaurantId, user?.email]);
 
   return (
     <div className="min-h-screen bg-[#F8F9FA] flex overflow-x-hidden">
@@ -1138,6 +1276,43 @@ export default function BusinessMenu() {
                 </Button>
               </div>
             </div>
+          </div>
+        )}
+
+        {/* Delete Category Confirmation Modal */}
+        {showDeleteCategoryModal && categoryToDelete && (
+          <div className="fixed inset-0 bg-black/50 z-[2000] flex items-center justify-center p-4">
+            <Card className="bg-white p-6 max-w-md w-full rounded-2xl shadow-2xl">
+              <div className="flex items-center justify-center mb-4">
+                <div className="w-12 h-12 bg-[#FEE2E2] rounded-full flex items-center justify-center">
+                  <X className="w-6 h-6 text-[#E11D48]" />
+                </div>
+              </div>
+              <h3 className="text-xl font-bold text-[#121212] text-center mb-2">
+                Delete Category?
+              </h3>
+              <p className="text-sm text-[#64748B] text-center mb-6">
+                {`All items in "${categories.find(c => c.id === categoryToDelete)?.name}" will also be deleted. This action cannot be undone.`}
+              </p>
+              <div className="flex gap-2">
+                <Button
+                  onClick={() => {
+                    setShowDeleteCategoryModal(false);
+                    setCategoryToDelete(null);
+                  }}
+                  variant="outline"
+                  className="flex-1"
+                >
+                  Cancel
+                </Button>
+                <Button
+                  onClick={confirmDeleteCategory}
+                  className="flex-1 bg-[#E11D48] hover:bg-[#BE123C] text-white uppercase font-bold"
+                >
+                  Delete
+                </Button>
+              </div>
+            </Card>
           </div>
         )}
 
