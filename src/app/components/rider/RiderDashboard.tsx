@@ -1,0 +1,748 @@
+import { useState, useEffect } from "react";
+import { GoogleMap, LoadScript, Marker, InfoWindow } from "@react-google-maps/api";
+import {
+  Home as HomeIcon, 
+  Package, 
+  Users, 
+  DollarSign, 
+  Camera, 
+  Navigation,
+  Inbox,
+  Calendar,
+  UserCircle,
+  MapPin,
+  MoreHorizontal,
+  Power,
+  Car,
+  Settings,
+  Bell,
+  Star,
+  X,
+  Zap,
+  MessageCircle
+} from "lucide-react";
+import { Link, useNavigate } from "react-router";
+import { Button } from "../ui/button";
+import { Card } from "../ui/card";
+import { Switch } from "../ui/switch";
+import { Badge } from "../ui/badge";
+import { Input } from "../ui/input";
+import { useAuth } from "../../contexts/AuthContext";
+import { supabaseHelpers } from "@/lib/supabase";
+
+// Get Google Maps API Key from environment variable
+const GOOGLE_MAPS_API_KEY = import.meta.env.VITE_GOOGLE_MAPS_API_KEY || "";
+
+interface IncomingRequest {
+  id: string;
+  type: 'delivery' | 'shared' | 'private';
+  pickup: string;
+  dropoff: string;
+  payment: 'COD' | 'PREPAID';
+  amount: number;
+  foodCost?: number;
+  passengers?: number;
+  waitingPassengers?: number;
+}
+
+export default function RiderDashboard() {
+  const navigate = useNavigate();
+  const { user, updateProfile } = useAuth();
+  const [isOnline, setIsOnline] = useState(user?.isOnline || false);
+  const [mode, setMode] = useState<'shared' | 'delivery'>('shared');
+  const [currentSeats, setCurrentSeats] = useState(user?.currentSeats || 0);
+  const [earnings, setEarnings] = useState(450);
+  const [activeTrip, setActiveTrip] = useState<IncomingRequest | null>(null);
+  const [showServiceTypes, setShowServiceTypes] = useState(false);
+  const [showDestination, setShowDestination] = useState(false);
+  const [showMore, setShowMore] = useState(false);
+  const [selectedServices, setSelectedServices] = useState<string[]>(user?.serviceTypes || ['shared', 'delivery']);
+  const [destination, setDestination] = useState('');
+  const [totalPendingRequests, setTotalPendingRequests] = useState(0);
+  const [hasActiveRide, setHasActiveRide] = useState(false);
+  const [activeRideData, setActiveRideData] = useState<any>(null);
+  const [unreadMessagesCount, setUnreadMessagesCount] = useState(0);
+  const [tripsCompletedCount, setTripsCompletedCount] = useState(0);
+  const [mapCenter, setMapCenter] = useState<{ lat: number; lng: number }>({ lat: 14.5995, lng: 120.9842 }); // Default: Manila
+  const [selectedMarker, setSelectedMarker] = useState<{ lat: number; lng: number } | null>(null);
+  const [isLoadingLocation, setIsLoadingLocation] = useState(true);
+  const [locationError, setLocationError] = useState<string | null>(null);
+
+  // Get user's current location on component mount
+  useEffect(() => {
+    setIsLoadingLocation(true);
+    setLocationError(null);
+
+    if ('geolocation' in navigator) {
+      navigator.geolocation.getCurrentPosition(
+        (position) => {
+          const { latitude, longitude } = position.coords;
+          setMapCenter({ lat: latitude, lng: longitude });
+          setIsLoadingLocation(false);
+          console.log('User location:', latitude, longitude);
+        },
+        (error) => {
+          console.warn('Geolocation error:', error.message);
+          setLocationError(error.message);
+          setIsLoadingLocation(false);
+          // Keep default location (Manila) if geolocation fails
+        },
+        {
+          enableHighAccuracy: true,
+          timeout: 10000,
+          maximumAge: 0
+        }
+      );
+    } else {
+      console.warn('Geolocation not supported by browser');
+      setLocationError('Geolocation not supported');
+      setIsLoadingLocation(false);
+    }
+  }, []);
+
+  // Persist online status and service types to auth context
+  useEffect(() => {
+    if (user && updateProfile) {
+      updateProfile({
+        isOnline,
+        serviceTypes: selectedServices,
+        currentSeats
+      });
+    }
+  }, [isOnline, selectedServices, currentSeats, user, updateProfile]);
+
+  // Check for active ride in localStorage
+  useEffect(() => {
+    const checkActiveRide = () => {
+      const savedRide = localStorage.getItem('trikeserve_active_ride');
+      if (savedRide) {
+        try {
+          const ride = JSON.parse(savedRide);
+
+          // Only consider it an active ride if status is truly active
+          const activeStatuses = ['accepted', 'on-the-way', 'arrived', 'in-progress'];
+          if (ride.status && activeStatuses.includes(ride.status)) {
+            setHasActiveRide(true);
+            setActiveRideData(ride);
+          } else {
+            // Clear completed or invalid rides
+            localStorage.removeItem('trikeserve_active_ride');
+            setHasActiveRide(false);
+            setActiveRideData(null);
+          }
+        } catch (error) {
+          console.error('Error loading active ride:', error);
+          // Clear invalid data
+          localStorage.removeItem('trikeserve_active_ride');
+          setHasActiveRide(false);
+          setActiveRideData(null);
+        }
+      } else {
+        setHasActiveRide(false);
+        setActiveRideData(null);
+      }
+    };
+
+    checkActiveRide();
+
+    // Poll for active ride updates
+    const interval = setInterval(checkActiveRide, 2000);
+
+    return () => clearInterval(interval);
+  }, []);
+
+  // Load and monitor passenger requests from Supabase (for real-time accuracy)
+  useEffect(() => {
+    const loadRequests = async () => {
+      try {
+        // Fetch pending ride requests from Supabase (not localStorage)
+        const { data: rideRequests, error: dbError } = await supabaseHelpers.getRideRequests({
+          status: 'pending'
+        });
+
+        if (dbError) {
+          console.error('❌ Error loading requests from database:', dbError);
+          setTotalPendingRequests(0);
+          return;
+        }
+
+        if (rideRequests && rideRequests.length > 0) {
+          setTotalPendingRequests(rideRequests.length);
+          console.log('✅ Loaded passenger count from Supabase:', rideRequests.length);
+        } else {
+          setTotalPendingRequests(0);
+          console.log('📭 No pending passenger requests in database');
+        }
+      } catch (error) {
+        console.error('❌ Error loading requests:', error);
+        setTotalPendingRequests(0);
+      }
+    };
+
+    // Load initially
+    loadRequests();
+
+    // Poll for updates every 3 seconds (matches PassengerRequests polling interval)
+    const interval = setInterval(loadRequests, 3000);
+
+    return () => {
+      clearInterval(interval);
+    };
+  }, []);
+
+  // Count unread messages from passengers
+  useEffect(() => {
+    const countUnreadMessages = () => {
+      let unreadCount = 0;
+      
+      // Scan localStorage for all chat keys
+      for (let i = 0; i < localStorage.length; i++) {
+        const key = localStorage.key(i);
+        if (key && key.startsWith('chat_')) {
+          try {
+            const messages = JSON.parse(localStorage.getItem(key) || '[]');
+            // Count unread messages from passengers (sent by customers)
+            const unread = messages.filter((m: any) => 
+              m.senderType === 'passenger' && !m.read
+            ).length;
+            unreadCount += unread;
+          } catch (error) {
+            console.error('Error counting unread messages:', error);
+          }
+        }
+      }
+      
+      setUnreadMessagesCount(unreadCount);
+    };
+
+    // Count initially
+    countUnreadMessages();
+
+    // Poll for updates every 2 seconds
+    const interval = setInterval(countUnreadMessages, 2000);
+
+    // Listen for storage events (cross-tab sync)
+    const handleStorageChange = (e: StorageEvent) => {
+      if (e.key?.startsWith('chat_')) {
+        countUnreadMessages();
+      }
+    };
+
+    window.addEventListener('storage', handleStorageChange);
+
+    return () => {
+      clearInterval(interval);
+      window.removeEventListener('storage', handleStorageChange);
+    };
+  }, []);
+
+  // Fetch completed trips count
+  useEffect(() => {
+    const fetchCompletedTripsCount = async () => {
+      try {
+        // Get completed rides from database for this driver
+        const { data: completedRides, error } = await supabaseHelpers.getRideRequests({
+          driverId: user?.id,
+          status: 'completed'
+        });
+
+        if (error) {
+          console.error('❌ Error fetching completed rides:', error);
+          return;
+        }
+
+        // Also check localStorage for ride history
+        const historyKey = `ride_history_${user?.id}`;
+        const historyData = localStorage.getItem(historyKey);
+        let localCount = 0;
+        if (historyData) {
+          try {
+            localCount = JSON.parse(historyData).filter((r: any) => r.status === 'completed').length;
+          } catch (error) {
+            console.error('❌ Error parsing ride history:', error);
+          }
+        }
+
+        // Combine counts (avoid double counting)
+        const totalCount = (completedRides?.length || 0) + localCount;
+        setTripsCompletedCount(totalCount);
+
+        console.log('✅ Completed trips count:', totalCount);
+      } catch (error) {
+        console.error('❌ Error fetching completed trips count:', error);
+      }
+    };
+
+    if (user?.id) {
+      fetchCompletedTripsCount();
+
+      // Poll for updates every 10 seconds
+      const interval = setInterval(fetchCompletedTripsCount, 10000);
+      return () => clearInterval(interval);
+    }
+  }, [user?.id]);
+
+  const handleCompleteTrip = () => {
+    if (activeTrip) {
+      setEarnings(prev => prev + activeTrip.amount);
+      setActiveTrip(null);
+      setCurrentSeats(0);
+    }
+  };
+
+  return (
+    <div className="h-screen flex flex-col bg-[#F8F9FA] relative">
+      {/* Full Screen Map */}
+      <div className="absolute inset-0">
+        {!GOOGLE_MAPS_API_KEY ? (
+          <div className="w-full h-full flex items-center justify-center bg-gray-200">
+            <div className="text-center">
+              <p className="text-xl font-bold text-red-600 mb-4">⚠️ Google Maps API Key Missing</p>
+              <p className="text-gray-700 mb-4">To use Google Maps, please:</p>
+              <ol className="text-left text-sm text-gray-600 mb-4">
+                <li>1. Get a Google Maps API Key from Google Cloud Console</li>
+                <li>2. Create a .env.local file in the project root</li>
+                <li>3. Add: VITE_GOOGLE_MAPS_API_KEY=your_api_key</li>
+                <li>4. Restart the dev server</li>
+              </ol>
+              <p className="text-xs text-gray-500">Default location shown: Manila, Philippines</p>
+            </div>
+          </div>
+        ) : (
+          <LoadScript googleMapsApiKey={GOOGLE_MAPS_API_KEY} libraries={["places"]}>
+            <GoogleMap
+              mapContainerStyle={{ width: "100%", height: "100%" }}
+              center={mapCenter}
+              zoom={15}
+              options={{
+                zoomControl: false,
+                fullscreenControl: true,
+                streetViewControl: false,
+                mapTypeControl: true,
+              }}
+            >
+              {/* Current Location Marker */}
+              <Marker
+                position={mapCenter}
+                onClick={() => setSelectedMarker(mapCenter)}
+                title="Your location"
+              />
+
+              {/* Info Window for selected marker */}
+              {selectedMarker && (
+                <InfoWindow
+                  position={selectedMarker}
+                  onCloseClick={() => setSelectedMarker(null)}
+                >
+                  <div className="text-sm">
+                    <p className="font-bold">Your current location</p>
+                    <p className="text-gray-600">
+                      {selectedMarker.lat.toFixed(4)}, {selectedMarker.lng.toFixed(4)}
+                    </p>
+                  </div>
+                </InfoWindow>
+              )}
+            </GoogleMap>
+          </LoadScript>
+        )}
+
+        {/* Toggle Online/Offline Button */}
+        {!activeTrip && (
+          <div className="absolute top-4 left-1/2 -translate-x-1/2 z-[1000]">
+            <Button
+              onClick={() => setIsOnline(!isOnline)}
+              className={`${
+                isOnline 
+                  ? 'bg-[#E11D48] hover:bg-[#BE123C] text-white'
+                  : 'bg-[#121212] hover:bg-[#2a2a2a] text-white'
+              } px-8 py-3 rounded-full font-bold shadow-xl flex items-center gap-2`}
+            >
+              {isOnline ? (
+                <>
+                  <div className="w-3 h-3 rounded-full bg-white animate-pulse" />
+                  <span>You're Online</span>
+                </>
+              ) : (
+                <>
+                  <Power className="w-5 h-5" />
+                  <span>Go Online</span>
+                </>
+              )}
+            </Button>
+          </div>
+        )}
+
+        {/* Active Trip Card */}
+        {activeTrip && (
+          <div className="absolute bottom-20 left-0 right-0 z-[1000] p-4">
+            <Card className="p-6 bg-white shadow-2xl border-2 border-[#E11D48]">
+              <div className="flex items-start justify-between mb-4">
+                <div>
+                  <Badge className="mb-2 bg-[#E11D48]">
+                    {activeTrip.type === 'delivery' ? 'DELIVERY' : activeTrip.type.toUpperCase()}
+                  </Badge>
+                  <h3 className="font-bold text-lg text-[#121212]">Active Trip</h3>
+                </div>
+                <Badge variant="outline" className={activeTrip.payment === 'COD' ? 'border-orange-500 text-orange-500' : 'border-green-500 text-green-500'}>
+                  {activeTrip.payment}
+                </Badge>
+              </div>
+
+              <div className="space-y-3 mb-4">
+                <div className="flex gap-2">
+                  <Navigation className="w-5 h-5 text-[#E11D48] flex-shrink-0 mt-0.5" />
+                  <div className="flex-1">
+                    <p className="text-xs text-[#64748B]">Pickup</p>
+                    <p className="font-semibold text-[#121212]">{activeTrip.pickup}</p>
+                  </div>
+                </div>
+                <div className="flex gap-2">
+                  <Navigation className="w-5 h-5 text-green-600 flex-shrink-0 mt-0.5" />
+                  <div className="flex-1">
+                    <p className="text-xs text-[#64748B]">Drop-off</p>
+                    <p className="font-semibold text-[#121212]">{activeTrip.dropoff}</p>
+                  </div>
+                </div>
+              </div>
+
+              {activeTrip.type === 'delivery' && activeTrip.payment === 'COD' && (
+                <div className="bg-orange-50 border border-orange-200 rounded-lg p-3 mb-4">
+                  <p className="text-sm font-semibold text-orange-800 mb-1">⚠️ Pay Restaurant First</p>
+                  <p className="text-xs text-orange-700">Food Cost: ₱{activeTrip.foodCost?.toFixed(2)}</p>
+                  <p className="text-xs text-orange-700">You'll be reimbursed by customer</p>
+                </div>
+              )}
+
+              <div className="flex gap-2">
+                <Button
+                  onClick={handleCompleteTrip}
+                  className="flex-1 bg-green-600 hover:bg-green-700 text-white uppercase"
+                >
+                  <Camera className="w-4 h-4 mr-2" />
+                  COMPLETE TRIP
+                </Button>
+              </div>
+
+              <div className="mt-3 text-center">
+                <p className="text-sm text-[#64748B]">
+                  Delivery Fee: <span className="font-bold text-[#E11D48]">₱{activeTrip.amount.toFixed(2)}</span>
+                </p>
+              </div>
+            </Card>
+          </div>
+        )}
+
+        {/* Incoming Requests */}
+        {/* Removed - requests only shown on Passenger Requests page */}
+
+        {/* Bottom Sheet - Always visible (Quick Actions, Service Types, Destination, Auto Accept, Passenger Requests) */}
+        {!activeTrip && (
+          <div className="absolute bottom-20 left-0 right-0 z-[999] px-4">
+            <Card className="bg-white shadow-xl rounded-t-3xl max-h-[70vh] overflow-y-auto">
+              {/* Quick Actions */}
+              <div className={`p-6 grid grid-cols-3 gap-4 ${!isOnline ? 'opacity-50 pointer-events-none' : ''}`}>
+                <Link to="/rider/service-types" className="flex flex-col items-center gap-2">
+                  <div className="w-16 h-16 rounded-full bg-gray-100 flex items-center justify-center hover:bg-gray-200 transition-colors">
+                    <Car className="w-7 h-7 text-[#64748B]" />
+                  </div>
+                  <span className="text-xs font-medium text-[#121212] text-center">Service<br/>Types</span>
+                </Link>
+                <Link to="/rider/my-destination" className="flex flex-col items-center gap-2">
+                  <div className="w-16 h-16 rounded-full bg-gray-100 flex items-center justify-center hover:bg-gray-200 transition-colors">
+                    <MapPin className="w-7 h-7 text-[#64748B]" />
+                  </div>
+                  <span className="text-xs font-medium text-[#121212] text-center">My<br/>Destination</span>
+                </Link>
+                <Link to="/rider/auto-accept" className="flex flex-col items-center gap-2">
+                  <div className="w-16 h-16 rounded-full bg-gray-100 flex items-center justify-center hover:bg-gray-200 transition-colors">
+                    <Zap className="w-7 h-7 text-[#64748B]" />
+                  </div>
+                  <span className="text-xs font-medium text-[#121212] text-center">Auto<br/>Accept</span>
+                </Link>
+              </div>
+
+              {/* View All Passenger Requests Card - Always visible, button disabled when offline */}
+              <div className="border-t border-gray-200 px-6 py-6">
+                <div className="flex flex-col items-center text-center">
+                  {/* Header */}
+                  <h3 className="font-bold text-lg text-[#121212] mb-6">PASSENGER REQUESTS</h3>
+
+                  {/* Icon and Text Section */}
+                  <div className={`flex items-center justify-center gap-4 mb-6 ${!isOnline ? 'opacity-50' : ''}`}>
+                    {/* Green Icon Circle */}
+                    <div className="w-16 h-16 rounded-full bg-[#10B981] flex items-center justify-center flex-shrink-0">
+                      <Users className="w-8 h-8 text-white" />
+                    </div>
+
+                    {/* Text Content */}
+                    <div className="text-left">
+                      <p className="text-sm font-semibold text-[#121212] mb-1">{totalPendingRequests} passengers waiting</p>
+                      <p className="text-xs text-[#64748B]">Looking for tricycle<br/>service nearby</p>
+                    </div>
+                  </div>
+
+                  {/* View All Button - Disabled when offline */}
+                  {isOnline ? (
+                    <Link to="/rider/passenger-requests" className="w-full">
+                      <Button className="w-full bg-[#E11D48] hover:bg-[#BE123C] text-white font-bold">
+                        View All Passenger Requests
+                      </Button>
+                    </Link>
+                  ) : (
+                    <Button disabled className="w-full bg-gray-300 text-gray-500 font-bold cursor-not-allowed">
+                      View All Passenger Requests
+                    </Button>
+                  )}
+                </div>
+              </div>
+
+
+              {showServiceTypes && (
+                <div className="border-t border-gray-200 p-4 space-y-3">
+                  <div className="flex items-center justify-between mb-3">
+                    <h3 className="font-bold text-[#121212]">Service Types</h3>
+                    <button onClick={() => setShowServiceTypes(false)}>
+                      <X className="w-5 h-5 text-[#64748B]" />
+                    </button>
+                  </div>
+                  <p className="text-sm text-[#64748B] mb-3">
+                    Select which service types you want to accept
+                  </p>
+                  <div className="space-y-2">
+                    {/* Delivery */}
+                    <div
+                      onClick={() => {
+                        if (selectedServices.includes('delivery')) {
+                          setSelectedServices(selectedServices.filter(s => s !== 'delivery'));
+                        } else {
+                          setSelectedServices([...selectedServices, 'delivery']);
+                        }
+                      }}
+                      className={`flex items-center justify-between p-4 border-2 rounded-lg cursor-pointer transition-all ${
+                        selectedServices.includes('delivery')
+                          ? 'border-[#E11D48] bg-red-50'
+                          : 'border-gray-200 hover:border-gray-300'
+                      }`}
+                    >
+                      <div className="flex items-center gap-3">
+                        <Package className="w-5 h-5 text-[#E11D48]" />
+                        <div>
+                          <p className="font-semibold text-[#121212]">Delivery</p>
+                          <p className="text-xs text-[#64748B]">Food & package delivery</p>
+                        </div>
+                      </div>
+                      <div className={`w-5 h-5 rounded border-2 flex items-center justify-center ${
+                        selectedServices.includes('delivery')
+                          ? 'bg-[#E11D48] border-[#E11D48]'
+                          : 'border-gray-300'
+                      }`}>
+                        {selectedServices.includes('delivery') && (
+                          <div className="w-2 h-2 bg-white rounded-sm" />
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Ride Share (Sasabay) */}
+                    <div
+                      onClick={() => {
+                        if (selectedServices.includes('shared')) {
+                          setSelectedServices(selectedServices.filter(s => s !== 'shared'));
+                        } else {
+                          setSelectedServices([...selectedServices, 'shared']);
+                        }
+                      }}
+                      className={`flex items-center justify-between p-4 border-2 rounded-lg cursor-pointer transition-all ${
+                        selectedServices.includes('shared')
+                          ? 'border-[#E11D48] bg-red-50'
+                          : 'border-gray-200 hover:border-gray-300'
+                      }`}
+                    >
+                      <div className="flex items-center gap-3">
+                        <Users className="w-5 h-5 text-[#E11D48]" />
+                        <div>
+                          <p className="font-semibold text-[#121212]">Ride Share</p>
+                          <p className="text-xs text-[#64748B]">Shared rides with other passengers</p>
+                        </div>
+                      </div>
+                      <div className={`w-5 h-5 rounded border-2 flex items-center justify-center ${
+                        selectedServices.includes('shared')
+                          ? 'bg-[#E11D48] border-[#E11D48]'
+                          : 'border-gray-300'
+                      }`}>
+                        {selectedServices.includes('shared') && (
+                          <div className="w-2 h-2 bg-white rounded-sm" />
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Private Ride (Pakyaw) */}
+                    <div
+                      onClick={() => {
+                        if (selectedServices.includes('private')) {
+                          setSelectedServices(selectedServices.filter(s => s !== 'private'));
+                        } else {
+                          setSelectedServices([...selectedServices, 'private']);
+                        }
+                      }}
+                      className={`flex items-center justify-between p-4 border-2 rounded-lg cursor-pointer transition-all ${
+                        selectedServices.includes('private')
+                          ? 'border-[#E11D48] bg-red-50'
+                          : 'border-gray-200 hover:border-gray-300'
+                      }`}
+                    >
+                      <div className="flex items-center gap-3">
+                        <Car className="w-5 h-5 text-[#E11D48]" />
+                        <div>
+                          <p className="font-semibold text-[#121212]">Private Ride</p>
+                          <p className="text-xs text-[#64748B]">Exclusive rides, no sharing</p>
+                        </div>
+                      </div>
+                      <div className={`w-5 h-5 rounded border-2 flex items-center justify-center ${
+                        selectedServices.includes('private')
+                          ? 'bg-[#E11D48] border-[#E11D48]'
+                          : 'border-gray-300'
+                      }`}>
+                        {selectedServices.includes('private') && (
+                          <div className="w-2 h-2 bg-white rounded-sm" />
+                        )}
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Seat Management for Shared Mode */}
+                  {selectedServices.includes('shared') && (
+                    <div className="pt-3 border-t border-gray-200">
+                      <p className="text-sm font-semibold text-[#121212] mb-2">Current Seats Taken</p>
+                      <div className="flex gap-2">
+                        {[0, 1, 2, 3, 4].map((num) => (
+                          <Button
+                            key={num}
+                            onClick={() => setCurrentSeats(num)}
+                            variant={currentSeats === num ? 'default' : 'outline'}
+                            size="sm"
+                            className={`flex-1 ${currentSeats === num ? 'bg-[#E11D48] hover:bg-[#BE123C]' : ''}`}
+                          >
+                            {num}
+                          </Button>
+                        ))}
+                      </div>
+                      <p className="text-xs text-[#64748B] mt-2">
+                        {currentSeats === 4 ? 'Trike is full' : `${4 - currentSeats} seat(s) available`}
+                      </p>
+                    </div>
+                  )}
+
+                  <Button
+                    onClick={() => setShowServiceTypes(false)}
+                    className="w-full bg-[#E11D48] hover:bg-[#BE123C] uppercase"
+                  >
+                    Save Service Types
+                  </Button>
+                </div>
+              )}
+
+              {/* My Destination Section */}
+              {showDestination && (
+                <div className="border-t border-gray-200 p-4 space-y-3">
+                  <div className="flex items-center justify-between mb-3">
+                    <h3 className="font-bold text-[#121212]">My Destination</h3>
+                    <button onClick={() => setShowDestination(false)}>
+                      <X className="w-5 h-5 text-[#64748B]" />
+                    </button>
+                  </div>
+                  <Input
+                    value={destination}
+                    onChange={(e) => setDestination(e.target.value)}
+                    placeholder="Enter your destination"
+                    className="w-full"
+                  />
+                  <Button className="w-full bg-[#E11D48] hover:bg-[#BE123C] uppercase">
+                    Set Destination
+                  </Button>
+                </div>
+              )}
+
+              {/* More Options Section */}
+              {showMore && (
+                <div className="border-t border-gray-200 p-4 space-y-3">
+                  <div className="flex items-center justify-between mb-3">
+                    <h3 className="font-bold text-[#121212]">More Options</h3>
+                    <button onClick={() => setShowMore(false)}>
+                      <X className="w-5 h-5 text-[#64748B]" />
+                    </button>
+                  </div>
+                  <div className="space-y-2">
+                    <Button variant="outline" className="w-full justify-center">
+                      <Settings className="w-4 h-4 mr-2" />
+                      Settings
+                    </Button>
+                    <Button variant="outline" className="w-full justify-center">
+                      <Bell className="w-4 h-4 mr-2" />
+                      Notifications
+                    </Button>
+                  </div>
+                </div>
+              )}
+            </Card>
+          </div>
+        )}
+      </div>
+
+      {/* Bottom Navigation - Fixed */}
+      <div className="absolute bottom-0 left-0 right-0 bg-white border-t-2 border-[#CBD5E1] z-[1000]">
+        <div className="px-4 py-3 flex justify-around items-center">
+          <Button variant="ghost" className="flex flex-col items-center gap-1">
+            <HomeIcon className="w-5 h-5 text-[#00A854]" />
+            <span className="text-xs font-semibold text-[#00A854]">Home</span>
+          </Button>
+          <Link to="/rider/earnings">
+            <Button variant="ghost" className="flex flex-col items-center gap-1">
+              <DollarSign className="w-5 h-5 text-[#64748B]" />
+              <span className="text-xs text-[#64748B]">Earnings</span>
+            </Button>
+          </Link>
+          <Link to="/rider/messages">
+            <Button variant="ghost" className="flex flex-col items-center gap-1 relative">
+              <MessageCircle className="w-5 h-5 text-[#64748B]" />
+              <span className="text-xs text-[#64748B]">Messages</span>
+              {unreadMessagesCount > 0 && (
+                <div className="absolute -top-1 -right-1 w-5 h-5 bg-[#E11D48] rounded-full border-2 border-white flex items-center justify-center">
+                  <div className="w-2 h-2 bg-white rounded-full animate-pulse" />
+                </div>
+              )}
+            </Button>
+          </Link>
+          <Link to="/rider/inbox">
+            <Button variant="ghost" className="flex flex-col items-center gap-1">
+              <Inbox className="w-5 h-5 text-[#64748B]" />
+              <span className="text-xs text-[#64748B]">Inbox</span>
+            </Button>
+          </Link>
+          <Link to="/rider/profile">
+            <Button variant="ghost" className="flex flex-col items-center gap-1">
+              <UserCircle className="w-5 h-5 text-[#64748B]" />
+              <span className="text-xs text-[#64748B]">Profile</span>
+            </Button>
+          </Link>
+        </div>
+      </div>
+
+      {/* Active Ride Floating Icon */}
+      {hasActiveRide && activeRideData && (
+        <div 
+          onClick={() => navigate('/rider/active-ride')}
+          className="fixed bottom-24 right-4 z-[1500] cursor-pointer animate-bounce hover:animate-none"
+        >
+          <div className="bg-[#E11D48] text-white rounded-full w-16 h-16 flex items-center justify-center shadow-2xl border-4 border-white hover:scale-110 transition-transform">
+            <div className="text-center">
+              <p className="text-2xl">{activeRideData.customerPhoto || '🚗'}</p>
+            </div>
+          </div>
+          <div className="absolute -top-1 -right-1 w-5 h-5 bg-[#10B981] rounded-full border-2 border-white flex items-center justify-center">
+            <div className="w-2 h-2 bg-white rounded-full animate-pulse" />
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
