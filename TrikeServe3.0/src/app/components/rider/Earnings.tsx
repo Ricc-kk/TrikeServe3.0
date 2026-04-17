@@ -1,3 +1,4 @@
+import { useState, useEffect } from "react";
 import { ArrowLeft, DollarSign, TrendingUp, Calendar, Download } from "lucide-react";
 import { useNavigate } from "react-router";
 import { Button } from "../ui/button";
@@ -6,64 +7,142 @@ import { Badge } from "../ui/badge";
 import Slider from "react-slick";
 import "slick-carousel/slick/slick.css";
 import "slick-carousel/slick/slick-theme.css";
+import { useAuth } from "../../contexts/AuthContext";
+import { supabaseHelpers } from "@/lib/supabase";
+
+interface CompletedTrip {
+  id: string;
+  type: string;
+  date: string;
+  amount: number;
+  payment: 'COD' | 'PREPAID';
+  customerName?: string;
+}
 
 export default function Earnings() {
   const navigate = useNavigate();
+  const { user } = useAuth();
 
-  const todayEarnings = 450;
-  const weekEarnings = 2850;
-  const monthEarnings = 12450;
+  const [completedTrips, setCompletedTrips] = useState<CompletedTrip[]>([]);
+  const [tripsCompletedCount, setTripsCompletedCount] = useState(0);
+  const [todayEarnings, setTodayEarnings] = useState(0);
+  const [weekEarnings, setWeekEarnings] = useState(0);
+  const [monthEarnings, setMonthEarnings] = useState(0);
+  const [isLoading, setIsLoading] = useState(true);
 
-  const recentTrips = [
-    {
-      id: '1',
-      type: 'Delivery',
-      date: 'Mar 16, 2026 - 2:30 PM',
-      amount: 35,
-      payment: 'COD',
-      status: 'Completed'
-    },
-    {
-      id: '2',
-      type: 'Ride Share',
-      date: 'Mar 16, 2026 - 1:45 PM',
-      amount: 15,
-      payment: 'PREPAID',
-      status: 'Completed'
-    },
-    {
-      id: '3',
-      type: 'Private Ride',
-      date: 'Mar 16, 2026 - 12:30 PM',
-      amount: 80,
-      payment: 'PREPAID',
-      status: 'Completed'
-    },
-    {
-      id: '4',
-      type: 'Delivery',
-      date: 'Mar 16, 2026 - 11:15 AM',
-      amount: 25,
-      payment: 'COD',
-      status: 'Completed'
-    },
-    {
-      id: '5',
-      type: 'Ride Share',
-      date: 'Mar 16, 2026 - 10:00 AM',
-      amount: 12,
-      payment: 'PREPAID',
-      status: 'Completed'
-    },
-  ];
+  // Fetch completed rides from database and localStorage
+  useEffect(() => {
+    const fetchCompletedTrips = async () => {
+      setIsLoading(true);
+      try {
+        // Get completed rides from database for this driver
+        const { data: dbRides, error: dbError } = await supabaseHelpers.getRideRequests({
+          driverId: user?.id,
+          status: 'completed'
+        });
 
-  const settings = {
-    dots: true,
-    infinite: true,
-    speed: 500,
-    slidesToShow: 1,
-    slidesToScroll: 1
-  };
+        if (dbError) {
+          console.error('❌ Error fetching completed rides from database:', dbError);
+        }
+
+        // Also check localStorage for recently completed rides
+        const historyKey = `ride_history_${user?.id}`;
+        const historyData = localStorage.getItem(historyKey);
+        let localRides: any[] = [];
+        if (historyData) {
+          try {
+            localRides = JSON.parse(historyData).filter((r: any) => r.status === 'completed');
+          } catch (error) {
+            console.error('❌ Error parsing ride history:', error);
+          }
+        }
+
+        // Combine database rides and local rides, remove duplicates
+        const allRides = [...(dbRides || []), ...localRides];
+        const uniqueRides = Array.from(new Map(allRides.map(ride => [ride.id, ride])).values());
+
+        // Format rides for display
+        const formattedRides = uniqueRides
+          .map((ride: any) => {
+            let type = 'Ride';
+            if (ride.type === 'delivery') type = 'Delivery';
+            else if (ride.type === 'shared') type = 'Ride Share';
+            else if (ride.type === 'private') type = 'Private Ride';
+
+            const dateObj = ride.completedAt || ride.completed_at || ride.acceptedAt || ride.accepted_at || new Date();
+            const dateStr = typeof dateObj === 'string' ? new Date(dateObj).toLocaleString() : dateObj.toLocaleString();
+
+            return {
+              id: ride.id,
+              type: type,
+              date: dateStr,
+              amount: ride.amount || 0,
+              payment: ride.payment || 'PREPAID',
+              customerName: ride.customer_name || ride.customerName || 'Customer'
+            };
+          })
+          .sort((a, b) => {
+            try {
+              return new Date(b.date).getTime() - new Date(a.date).getTime();
+            } catch {
+              return 0;
+            }
+          });
+
+        setCompletedTrips(formattedRides);
+        setTripsCompletedCount(formattedRides.length);
+
+        // Calculate earnings by time period
+        const now = new Date();
+        const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+        const weekStart = new Date(today);
+        weekStart.setDate(today.getDate() - today.getDay());
+        const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+
+        let todayTotal = 0;
+        let weekTotal = 0;
+        let monthTotal = 0;
+
+        formattedRides.forEach((trip) => {
+          try {
+            const tripDate = new Date(trip.date);
+            const tripAmount = trip.amount || 0;
+
+            if (tripDate >= today) {
+              todayTotal += tripAmount;
+            }
+            if (tripDate >= weekStart) {
+              weekTotal += tripAmount;
+            }
+            if (tripDate >= monthStart) {
+              monthTotal += tripAmount;
+            }
+          } catch (error) {
+            console.error('Error calculating earnings:', error);
+          }
+        });
+
+        setTodayEarnings(todayTotal);
+        setWeekEarnings(weekTotal);
+        setMonthEarnings(monthTotal);
+
+        console.log('✅ Fetched completed trips:', {
+          count: formattedRides.length,
+          todayEarnings: todayTotal,
+          weekEarnings: weekTotal,
+          monthEarnings: monthTotal
+        });
+      } catch (error) {
+        console.error('❌ Error fetching completed trips:', error);
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    if (user?.id) {
+      fetchCompletedTrips();
+    }
+  }, [user?.id]);
 
   return (
     <div className="min-h-screen bg-[#F8F9FA] pb-20">
@@ -102,10 +181,14 @@ export default function Earnings() {
             <div style={{ width: '335px' }} className="pl-4 pr-1">
               <Card className="p-4 bg-gradient-to-br from-[#E11D48] to-[#BE123C] text-white border-0 rounded-2xl">
                 <p className="text-sm opacity-90 mb-1">Today</p>
-                <p className="text-4xl font-extrabold mb-2">₱{todayEarnings}</p>
+                <p className="text-4xl font-extrabold mb-2">₱{todayEarnings.toFixed(2)}</p>
                 <div className="flex items-center gap-1 text-sm opacity-90">
                   <TrendingUp className="w-4 h-4" />
-                  <span>+12% from yesterday</span>
+                  <span>{completedTrips.filter(t => {
+                    const tripDate = new Date(t.date);
+                    const today = new Date();
+                    return tripDate.toDateString() === today.toDateString();
+                  }).length} trips today</span>
                 </div>
               </Card>
             </div>
@@ -114,10 +197,15 @@ export default function Earnings() {
             <div style={{ width: '335px' }} className="pl-4 pr-1">
               <Card className="p-4 bg-gradient-to-br from-teal-600 to-teal-700 text-white border-0 rounded-2xl">
                 <p className="text-sm opacity-90 mb-1">This Week</p>
-                <p className="text-4xl font-extrabold mb-2">₱{weekEarnings}</p>
+                <p className="text-4xl font-extrabold mb-2">₱{weekEarnings.toFixed(2)}</p>
                 <div className="flex items-center gap-1 text-sm opacity-90">
                   <TrendingUp className="w-4 h-4" />
-                  <span>+8% from last week</span>
+                  <span>{completedTrips.filter(t => {
+                    const tripDate = new Date(t.date);
+                    const weekStart = new Date();
+                    weekStart.setDate(weekStart.getDate() - weekStart.getDay());
+                    return tripDate >= weekStart;
+                  }).length} trips this week</span>
                 </div>
               </Card>
             </div>
@@ -126,10 +214,15 @@ export default function Earnings() {
             <div style={{ width: '335px' }} className="pl-4 pr-1">
               <Card className="p-4 bg-gradient-to-br from-blue-600 to-blue-700 text-white border-0 rounded-2xl">
                 <p className="text-sm opacity-90 mb-1">This Month</p>
-                <p className="text-4xl font-extrabold mb-2">₱{monthEarnings}</p>
+                <p className="text-4xl font-extrabold mb-2">₱{monthEarnings.toFixed(2)}</p>
                 <div className="flex items-center gap-1 text-sm opacity-90">
                   <TrendingUp className="w-4 h-4" />
-                  <span>+15% from last month</span>
+                  <span>{completedTrips.filter(t => {
+                    const tripDate = new Date(t.date);
+                    const monthStart = new Date();
+                    monthStart.setDate(1);
+                    return tripDate >= monthStart;
+                  }).length} trips this month</span>
                 </div>
               </Card>
             </div>
@@ -138,23 +231,25 @@ export default function Earnings() {
 
         {/* Quick Stats */}
         <Card className="p-5 bg-white border-0 shadow-sm">
-          <h3 className="font-extrabold text-[#121212] mb-4" style={{ fontSize: '18px' }}>Today's Performance</h3>
+          <h3 className="font-extrabold text-[#121212] mb-4" style={{ fontSize: '18px' }}>Overall Performance</h3>
           <div className="grid grid-cols-2 gap-x-4 gap-y-4">
             <div>
               <p className="text-sm text-[#0891B2] mb-1">Trips Completed</p>
-              <p className="text-2xl font-extrabold text-[#E11D48]">12</p>
+              <p className="text-2xl font-extrabold text-[#E11D48]">{tripsCompletedCount}</p>
             </div>
             <div>
-              <p className="text-sm text-[#0891B2] mb-1">Online Hours</p>
-              <p className="text-2xl font-extrabold text-[#E11D48]">6.5h</p>
+              <p className="text-sm text-[#0891B2] mb-1">Total Earnings</p>
+              <p className="text-2xl font-extrabold text-[#E11D48]">₱{(todayEarnings + weekEarnings + monthEarnings).toFixed(2)}</p>
             </div>
             <div>
               <p className="text-sm text-[#0891B2] mb-1">Avg. per Trip</p>
-              <p className="text-2xl font-extrabold text-[#E11D48]">₱37.50</p>
+              <p className="text-2xl font-extrabold text-[#E11D48]">
+                {tripsCompletedCount > 0 ? `₱${((todayEarnings + weekEarnings + monthEarnings) / tripsCompletedCount).toFixed(2)}` : '₱0'}
+              </p>
             </div>
             <div>
-              <p className="text-sm text-[#0891B2] mb-1">Cash on Hand</p>
-              <p className="text-2xl font-extrabold text-[#F97316]">₱180</p>
+              <p className="text-sm text-[#0891B2] mb-1">Today's Total</p>
+              <p className="text-2xl font-extrabold text-[#E11D48]">₱{todayEarnings.toFixed(2)}</p>
             </div>
           </div>
         </Card>
@@ -163,36 +258,44 @@ export default function Earnings() {
         <div>
           <div className="flex items-center justify-between mb-3">
             <h3 className="font-extrabold text-[#121212]" style={{ fontSize: '18px' }}>Recent Trips</h3>
-            <button className="text-sm font-bold text-[#E11D48]">
-              View All
-            </button>
           </div>
-          <div className="space-y-3">
-            {recentTrips.map((trip) => (
-              <Card key={trip.id} className="p-4 bg-white border-0 shadow-sm">
-                <div className="flex items-start justify-between mb-2">
-                  <div>
-                    <p className="font-extrabold text-[#121212] mb-1">{trip.type}</p>
-                    <p className="text-xs text-[#0891B2]">{trip.date}</p>
+
+          {isLoading ? (
+            <Card className="p-4 bg-white border-0 shadow-sm">
+              <p className="text-center text-[#64748B]">Loading completed trips...</p>
+            </Card>
+          ) : completedTrips.length === 0 ? (
+            <Card className="p-4 bg-white border-0 shadow-sm">
+              <p className="text-center text-[#64748B]">No completed trips yet. Start accepting rides to see your recent trips here!</p>
+            </Card>
+          ) : (
+            <div className="space-y-3">
+              {completedTrips.slice(0, 10).map((trip) => (
+                <Card key={trip.id} className="p-4 bg-white border-0 shadow-sm">
+                  <div className="flex items-start justify-between mb-2">
+                    <div>
+                      <p className="font-extrabold text-[#121212] mb-1">{trip.type}</p>
+                      <p className="text-xs text-[#0891B2]">{trip.date}</p>
+                    </div>
+                    <div className="text-right">
+                      <p className="font-extrabold text-xl text-[#E11D48] mb-1">₱{trip.amount.toFixed(2)}</p>
+                      <Badge
+                        variant="outline"
+                        className={trip.payment === 'COD' ? 'border-[#F97316] text-[#F97316] rounded-full' : 'border-green-500 text-green-500 rounded-full'}
+                      >
+                        {trip.payment}
+                      </Badge>
+                    </div>
                   </div>
-                  <div className="text-right">
-                    <p className="font-extrabold text-xl text-[#E11D48] mb-1">₱{trip.amount}</p>
-                    <Badge 
-                      variant="outline" 
-                      className={trip.payment === 'COD' ? 'border-[#F97316] text-[#F97316] rounded-full' : 'border-green-500 text-green-500 rounded-full'}
-                    >
-                      {trip.payment}
+                  <div>
+                    <Badge className="bg-[#10B981] text-white border-0 rounded-md">
+                      Completed
                     </Badge>
                   </div>
-                </div>
-                <div>
-                  <Badge className="bg-[#10B981] text-white border-0 rounded-md">
-                    {trip.status}
-                  </Badge>
-                </div>
-              </Card>
-            ))}
-          </div>
+                </Card>
+              ))}
+            </div>
+          )}
         </div>
 
       </div>

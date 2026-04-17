@@ -62,6 +62,7 @@ export default function RiderDashboard() {
   const [hasActiveRide, setHasActiveRide] = useState(false);
   const [activeRideData, setActiveRideData] = useState<any>(null);
   const [unreadMessagesCount, setUnreadMessagesCount] = useState(0);
+  const [tripsCompletedCount, setTripsCompletedCount] = useState(0);
   const [mapCenter, setMapCenter] = useState<{ lat: number; lng: number }>({ lat: 14.5995, lng: 120.9842 }); // Default: Manila
   const [selectedMarker, setSelectedMarker] = useState<{ lat: number; lng: number } | null>(null);
   const [isLoadingLocation, setIsLoadingLocation] = useState(true);
@@ -234,6 +235,52 @@ export default function RiderDashboard() {
       window.removeEventListener('storage', handleStorageChange);
     };
   }, []);
+
+  // Fetch completed trips count
+  useEffect(() => {
+    const fetchCompletedTripsCount = async () => {
+      try {
+        // Get completed rides from database for this driver
+        const { data: completedRides, error } = await supabaseHelpers.getRideRequests({
+          driverId: user?.id,
+          status: 'completed'
+        });
+
+        if (error) {
+          console.error('❌ Error fetching completed rides:', error);
+          return;
+        }
+
+        // Also check localStorage for ride history
+        const historyKey = `ride_history_${user?.id}`;
+        const historyData = localStorage.getItem(historyKey);
+        let localCount = 0;
+        if (historyData) {
+          try {
+            localCount = JSON.parse(historyData).filter((r: any) => r.status === 'completed').length;
+          } catch (error) {
+            console.error('❌ Error parsing ride history:', error);
+          }
+        }
+
+        // Combine counts (avoid double counting)
+        const totalCount = (completedRides?.length || 0) + localCount;
+        setTripsCompletedCount(totalCount);
+
+        console.log('✅ Completed trips count:', totalCount);
+      } catch (error) {
+        console.error('❌ Error fetching completed trips count:', error);
+      }
+    };
+
+    if (user?.id) {
+      fetchCompletedTripsCount();
+
+      // Poll for updates every 10 seconds
+      const interval = setInterval(fetchCompletedTripsCount, 10000);
+      return () => clearInterval(interval);
+    }
+  }, [user?.id]);
 
   const handleCompleteTrip = () => {
     if (activeTrip) {
@@ -448,6 +495,8 @@ export default function RiderDashboard() {
                   )}
                 </div>
               </div>
+
+
               {showServiceTypes && (
                 <div className="border-t border-gray-200 p-4 space-y-3">
                   <div className="flex items-center justify-between mb-3">

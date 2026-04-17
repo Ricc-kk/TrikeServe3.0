@@ -39,7 +39,6 @@ import Favorites from "./components/customer/Favorites";
 import AdminDashboard from "./components/admin/AdminDashboard";
 import AdminUsers from "./components/admin/AdminUsers";
 import AdminSettings from "./components/admin/AdminSettings";
-import VerifiedUsers from "./components/admin/VerifiedUsers";
 
 export const router = createBrowserRouter([
   {
@@ -338,14 +337,6 @@ export const router = createBrowserRouter([
         element: (
           <ProtectedRoute allowedRoles={['admin']}>
             <AdminUsers />
-          </ProtectedRoute>
-        )
-      },
-      {
-        path: "admin/verified-users",
-        element: (
-          <ProtectedRoute allowedRoles={['admin']}>
-            <VerifiedUsers />
           </ProtectedRoute>
         )
       },
