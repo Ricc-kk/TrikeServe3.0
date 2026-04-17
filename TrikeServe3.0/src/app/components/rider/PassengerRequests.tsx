@@ -398,22 +398,6 @@ export default function PassengerRequests() {
           </h1>
           <p className="text-xs text-[#64748B]">{requests.length} customers looking for service</p>
         </div>
-        {/* Emergency Cleanup Button */}
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={() => {
-            console.log('🚨 MANUAL EMERGENCY CLEANUP TRIGGERED BY USER');
-            cleanupStaleRideData();
-            // Force reload to ensure clean state
-            alert('✅ Cleanup complete! Reloading page...');
-            window.location.reload();
-          }}
-          className="text-xs whitespace-nowrap"
-          title="Clear corrupted ride data"
-        >
-          🧹 Reset
-        </Button>
       </div>
 
       {/* Main Content */}
