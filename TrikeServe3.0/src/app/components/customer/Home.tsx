@@ -521,11 +521,27 @@ export default function CustomerHome() {
   }, [user]);
 
   const popularLocations = [
+    { name: "Adelfa Street", address: "Adelfa Street, Valenzuela", icon: "📍" },
+    { name: "B.Garcia Street", address: "B.Garcia Street, Valenzuela", icon: "📍" },
+    { name: "Cadena de Amor Street", address: "Cadena de Amor Street, Valenzuela", icon: "📍" },
+    { name: "Carnation Street", address: "Carnation Street, Valenzuela", icon: "🌸" },
+    { name: "Daffodil Street", address: "Daffodil Street, Valenzuela", icon: "🌼" },
+    { name: "Dama de Noche Street", address: "Dama de Noche Street, Valenzuela", icon: "🌙" },
+    { name: "Gladiola Street", address: "Gladiola Street, Valenzuela", icon: "🌹" },
+    { name: "Ilang-Ilang Street", address: "Ilang-Ilang Street, Valenzuela", icon: "🌸" },
+    { name: "Lilac Street", address: "Lilac Street, Valenzuela", icon: "💜" },
+    { name: "Jasmin Street", address: "Jasmin Street, Valenzuela", icon: "🌸" },
+    { name: "Morning Glory Street", address: "Morning Glory Street, Valenzuela", icon: "🌺" },
+    { name: "Marigold Street", address: "Marigold Street, Valenzuela", icon: "🌼" },
+    { name: "Orchid Street", address: "Orchid Street, Valenzuela", icon: "🌸" },
+    { name: "Rosal Street", address: "Rosal Street, Valenzuela", icon: "🌹" },
+    { name: "Balikatan Street", address: "Balikatan Street, Valenzuela", icon: "📍" },
+    { name: "Rose Mary Street", address: "Rose Mary Street, Valenzuela", icon: "🌹" },
+    { name: "Sampaguita Street", address: "Sampaguita Street, Valenzuela", icon: "🌼" },
+    { name: "Everlasting Street", address: "Everlasting Street, Valenzuela", icon: "🌸" },
     { name: "Tagalag Terminal", address: "Main Road, Tagalag", icon: "🚏" },
     { name: "Barangay Hall", address: "Tagalag Center", icon: "🏛️" },
     { name: "Tagalag Market", address: "Market District", icon: "🏪" },
-    { name: "SM City North EDSA", address: "North Avenue - cor EDSA", icon: "🏬" },
-    { name: "Carlo's Palabok", address: "Macarthur Highway, Karuhatan", icon: "🍜" },
   ];
 
   const handleLocationSelect = (location: any) => {

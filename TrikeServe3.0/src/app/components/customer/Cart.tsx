@@ -36,30 +36,142 @@ export default function Cart() {
   const savedAddresses = [
     { 
       id: 1, 
-      name: "257, Tagalag Road, Tagalag", 
-      full: "Tagalag Road, Tagalag, Valenzuela City, Metro Manila",
-      icon: "🏠",
-      label: "Home"
+      name: "Adelfa Street",
+      full: "Adelfa Street, Valenzuela City, Metro Manila",
+      icon: "📍",
+      label: "Saved"
     },
     { 
       id: 2, 
-      name: "SM City North EDSA", 
-      full: "North Avenue - cor EDSA, Quezon City, Metro Manila",
-      icon: "🏢",
-      label: "Work"
+      name: "B.Garcia Street",
+      full: "B.Garcia Street, Valenzuela City, Metro Manila",
+      icon: "📍",
+      label: "Saved"
     },
     { 
       id: 3, 
-      name: "Tagalag Terminal", 
-      full: "Main Road, Tagalag, Valenzuela City, Metro Manila",
+      name: "Cadena de Amor Street",
+      full: "Cadena de Amor Street, Valenzuela City, Metro Manila",
       icon: "📍",
       label: "Saved"
     },
     { 
       id: 4, 
-      name: "Barangay Hall", 
+      name: "Carnation Street",
+      full: "Carnation Street, Valenzuela City, Metro Manila",
+      icon: "🌸",
+      label: "Saved"
+    },
+    {
+      id: 5,
+      name: "Daffodil Street",
+      full: "Daffodil Street, Valenzuela City, Metro Manila",
+      icon: "🌼",
+      label: "Saved"
+    },
+    {
+      id: 6,
+      name: "Dama de Noche Street",
+      full: "Dama de Noche Street, Valenzuela City, Metro Manila",
+      icon: "🌙",
+      label: "Saved"
+    },
+    {
+      id: 7,
+      name: "Gladiola Street",
+      full: "Gladiola Street, Valenzuela City, Metro Manila",
+      icon: "🌹",
+      label: "Saved"
+    },
+    {
+      id: 8,
+      name: "Ilang-Ilang Street",
+      full: "Ilang-Ilang Street, Valenzuela City, Metro Manila",
+      icon: "🌸",
+      label: "Saved"
+    },
+    {
+      id: 9,
+      name: "Lilac Street",
+      full: "Lilac Street, Valenzuela City, Metro Manila",
+      icon: "💜",
+      label: "Saved"
+    },
+    {
+      id: 10,
+      name: "Jasmin Street",
+      full: "Jasmin Street, Valenzuela City, Metro Manila",
+      icon: "🌸",
+      label: "Saved"
+    },
+    {
+      id: 11,
+      name: "Morning Glory Street",
+      full: "Morning Glory Street, Valenzuela City, Metro Manila",
+      icon: "🌺",
+      label: "Saved"
+    },
+    {
+      id: 12,
+      name: "Marigold Street",
+      full: "Marigold Street, Valenzuela City, Metro Manila",
+      icon: "🌼",
+      label: "Saved"
+    },
+    {
+      id: 13,
+      name: "Orchid Street",
+      full: "Orchid Street, Valenzuela City, Metro Manila",
+      icon: "🌸",
+      label: "Saved"
+    },
+    {
+      id: 14,
+      name: "Rosal Street",
+      full: "Rosal Street, Valenzuela City, Metro Manila",
+      icon: "🌹",
+      label: "Saved"
+    },
+    {
+      id: 15,
+      name: "Balikatan Street",
+      full: "Balikatan Street, Valenzuela City, Metro Manila",
+      icon: "📍",
+      label: "Saved"
+    },
+    {
+      id: 16,
+      name: "Rose Mary Street",
+      full: "Rose Mary Street, Valenzuela City, Metro Manila",
+      icon: "🌹",
+      label: "Saved"
+    },
+    {
+      id: 17,
+      name: "Sampaguita Street",
+      full: "Sampaguita Street, Valenzuela City, Metro Manila",
+      icon: "🌼",
+      label: "Saved"
+    },
+    {
+      id: 18,
+      name: "Tagalag Terminal",
+      full: "Main Road, Tagalag, Valenzuela City, Metro Manila",
+      icon: "🚏",
+      label: "Saved"
+    },
+    {
+      id: 19,
+      name: "Barangay Hall",
       full: "Tagalag Center, Valenzuela City, Metro Manila",
       icon: "🏛️",
+      label: "Saved"
+    },
+    {
+      id: 20,
+      name: "Tagalag Market",
+      full: "Market District, Tagalag, Valenzuela City, Metro Manila",
+      icon: "🏪",
       label: "Saved"
     },
   ];
