@@ -9,6 +9,7 @@ import { GoogleMap, LoadScript, Marker, InfoWindow } from "@react-google-maps/ap
 import tricycleIcon from '../../../assets/0b76d1aa56b8ad6e15dd4efc8a0100b0ca5762a1.png';
 import { useAuth } from "../../contexts/AuthContext";
 import { supabaseHelpers } from "@/lib/supabase";
+import { supabase } from "../../../utils/supabase";
 import SharedRides from "./SharedRides";
 import ShareRideLobby from "./ShareRideLobby";
 import LobbyList from "./LobbyList";
@@ -48,6 +49,8 @@ export default function CustomerHome() {
   const [showValidationError, setShowValidationError] = useState(false);
   const [showSameLocationError, setShowSameLocationError] = useState(false);
   const [rideCompletedPopup, setRideCompletedPopup] = useState(false);
+  const [privateRidePrice, setPrivateRidePrice] = useState(50); // Default price for special rides
+  const [sharedRidePrice, setSharedRidePrice] = useState(15); // Default price for share rides
   const unsubscribeRef = useRef<(() => void) | null>(null);
 
   // Get user's current location on component mount
@@ -170,6 +173,35 @@ export default function CustomerHome() {
 
     checkActiveLobby();
   }, [user]);
+
+  // Load admin pricing settings from Supabase
+  useEffect(() => {
+    const loadPricingSettings = async () => {
+      try {
+        const { data, error } = await supabase
+          .from('admin_settings')
+          .select('setting_value')
+          .eq('setting_key', 'rates')
+          .single();
+
+        if (error) {
+          console.warn('Error loading pricing from Supabase:', error);
+          return;
+        }
+
+        if (data?.setting_value) {
+          const settings = JSON.parse(data.setting_value);
+          setSharedRidePrice(settings.sharedRide || 15);
+          setPrivateRidePrice(settings.privateRide || 50);
+          console.log('✅ Loaded admin pricing - Shared: ₱' + settings.sharedRide + ', Private: ₱' + settings.privateRide);
+        }
+      } catch (error) {
+        console.error('Error parsing pricing settings:', error);
+      }
+    };
+
+    loadPricingSettings();
+  }, []);
 
   // Listen for accepted rides and status updates (polling + storage events)
   useEffect(() => {
@@ -681,8 +713,8 @@ export default function CustomerHome() {
   };
 
   const getPrice = () => {
-    if (selectedVehicle === 'share') return 15;
-    if (selectedVehicle === 'special') return 50;
+    if (selectedVehicle === 'share') return sharedRidePrice;
+    if (selectedVehicle === 'special') return privateRidePrice;
     return 0;
   };
 
@@ -1195,11 +1227,22 @@ export default function CustomerHome() {
               <div className="flex items-center justify-between">
                 <div>
                   <p className="text-xs text-[#92400E] uppercase tracking-wide font-semibold">Your Total Fare</p>
-                  <p className="text-sm text-[#78350F] mt-0.5">
-                    ₱15 × {passengerCount} {passengerCount === 1 ? 'seat' : 'seats'}
-                  </p>
+                  {selectedVehicle === 'share' ? (
+                    <>
+                      <p className="text-sm text-[#78350F] mt-0.5">
+                        ₱{sharedRidePrice} × {passengerCount} {passengerCount === 1 ? 'seat' : 'seats'}
+                      </p>
+                      <p className="text-3xl font-bold text-[#EA580C]">₱{sharedRidePrice * passengerCount}</p>
+                    </>
+                  ) : (
+                    <>
+                      <p className="text-sm text-[#78350F] mt-0.5">
+                        ₱{privateRidePrice} × {passengerCount} {passengerCount === 1 ? 'seat' : 'seats'}
+                      </p>
+                      <p className="text-3xl font-bold text-[#EA580C]">₱{privateRidePrice * passengerCount}</p>
+                    </>
+                  )}
                 </div>
-                <p className="text-3xl font-bold text-[#EA580C]">₱{15 * passengerCount}</p>
               </div>
             </div>
 
@@ -1396,6 +1439,7 @@ export default function CustomerHome() {
           dropoff={dropoff}
           dropoffAddress={dropoffAddress}
           passengerCount={passengerCount}
+          pricePerSeat={sharedRidePrice}
           onDriverFound={(lobbyId) => {
             // Don't close the lobby - let customers see driver info in the lobby itself
             // Just update the status for tracking

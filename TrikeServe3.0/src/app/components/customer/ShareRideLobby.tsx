@@ -36,6 +36,7 @@ interface ShareRideLobbyProps {
   dropoff: string;
   dropoffAddress: string;
   passengerCount?: number; // New prop
+  pricePerSeat?: number; // New prop for dynamic pricing
   onDriverFound: (driverId: string) => void;
   onClose: () => void;
 }
@@ -46,6 +47,7 @@ export default function ShareRideLobby({
   dropoff,
   dropoffAddress,
   passengerCount = 1, // Default to 1
+  pricePerSeat = 15, // Default price
   onDriverFound,
   onClose
 }: ShareRideLobbyProps) {
@@ -188,7 +190,7 @@ export default function ShareRideLobby({
         dropoffAddress,
         passengers,
         maxSeats: 3,
-        pricePerSeat: 15,
+        pricePerSeat: pricePerSeat,
         status: 'waiting',
         createdAt: new Date().toISOString()
       };
@@ -605,20 +607,20 @@ export default function ShareRideLobby({
             <div className="flex items-center justify-between mb-3">
               <div>
                 <p className="text-sm text-[#64748B]">Your Fare</p>
-                <p className="text-3xl font-bold text-[#E11D48]">₱{lobby.pricePerSeat * passengerCount}</p>
-                {passengerCount > 1 && (
+                <p className="text-3xl font-bold text-[#E11D48]">₱{pricePerSeat}</p>
+                {lobby.passengers.length > 1 && (
                   <p className="text-xs text-[#94A3B8]">
-                    {passengerCount} seat{passengerCount > 1 ? 's' : ''} × ₱{lobby.pricePerSeat}
+                    ₱{pricePerSeat} per person
                   </p>
                 )}
               </div>
               <div className="text-right">
-                <p className="text-sm text-[#64748B]">Total Trip Value</p>
+                <p className="text-sm text-[#64748B]">Total Trip Cost</p>
                 <p className="text-xl font-bold text-[#121212]">
-                  ₱{lobby.pricePerSeat * lobby.passengers.length}
+                  ₱{pricePerSeat * lobby.passengers.length}
                 </p>
                 <p className="text-xs text-[#94A3B8]">
-                  {lobby.passengers.length} passenger{lobby.passengers.length > 1 ? 's' : ''}
+                  {lobby.passengers.length} × ₱{pricePerSeat}
                 </p>
               </div>
             </div>
