@@ -15,8 +15,7 @@ const cleanupStaleRideData = () => {
     // List of ride-related keys to check
     const rideKeys = [
       'trikeserve_active_ride',
-      'trikeserve_accepted_rides',
-      'trikeserve_share_lobbies'
+      'trikeserve_accepted_rides'
     ];
 
     for (const key of rideKeys) {
@@ -46,23 +45,6 @@ const cleanupStaleRideData = () => {
             console.log(`🗑️  Removed ${rides.length - validRides.length} stale accepted rides`);
             if (validRides.length > 0) {
               localStorage.setItem(key, JSON.stringify(validRides));
-            } else {
-              localStorage.removeItem(key);
-            }
-          }
-        } else if (key === 'trikeserve_share_lobbies') {
-          const lobbies = JSON.parse(data);
-          const activeStatuses = ['driver-found', 'in-progress'];
-
-          // Filter out lobbies that don't have active status
-          const validLobbies = lobbies.filter((lobby: any) =>
-            lobby.status && activeStatuses.includes(lobby.status)
-          );
-
-          if (validLobbies.length !== lobbies.length) {
-            console.log(`🗑️  Removed ${lobbies.length - validLobbies.length} stale lobbies`);
-            if (validLobbies.length > 0) {
-              localStorage.setItem(key, JSON.stringify(validLobbies));
             } else {
               localStorage.removeItem(key);
             }
@@ -137,15 +119,18 @@ export default function PassengerRequests() {
           status: 'pending'
         });
 
+        // Fetch waiting shared lobbies from Supabase
+        const { data: waitingLobbies, error: lobbyError } = await supabaseHelpers.getWaitingLobbiesForDriver();
+
         if (dbError) {
           console.error('❌ Error loading requests from database:', dbError);
-          setRequests([]);
-          return;
         }
 
-        if (rideRequests && rideRequests.length > 0) {
-          // Map database format to component format
-          const mappedRequests = rideRequests.map((req: any) => ({
+        if (lobbyError) {
+          console.error('❌ Error loading waiting lobbies from database:', lobbyError);
+        }
+
+        const mappedRequests = (rideRequests || []).map((req: any) => ({
             id: req.id,
             type: req.ride_type || 'private', // Map ride_type to type
             pickup: req.pickup_location,
@@ -161,12 +146,33 @@ export default function PassengerRequests() {
             created_at: req.created_at,
           }));
 
-          setRequests(mappedRequests);
-          console.log('✅ Loaded passenger requests from database:', mappedRequests);
-        } else {
-          setRequests([]);
-          console.log('📭 No pending passenger requests in database');
-        }
+        const mappedLobbies = (waitingLobbies || []).map((lobby: any) => {
+          const passengers = Array.isArray(lobby.passengers_json) ? lobby.passengers_json : [];
+          return {
+            id: `lobby_${lobby.id}`,
+            type: 'shared',
+            pickup: lobby.pickup_location,
+            dropoff: lobby.dropoff_location,
+            pickupAddress: lobby.pickup_address,
+            dropoffAddress: lobby.dropoff_address,
+            payment: 'PREPAID',
+            amount: Number(lobby.price_per_seat || 15) * passengers.length,
+            passengers: passengers.length,
+            maxPassengers: Number(lobby.max_seats || 3),
+            customerName: passengers.length > 1 ? `${passengers.length} Passengers` : (passengers[0]?.name || 'Customer'),
+            customerPhoto: '🚲',
+            distance: '2.5 km',
+            estimatedTime: '7 mins',
+            customerId: lobby.customer_id,
+            lobbyId: lobby.id,
+            passengerDetails: passengers,
+            created_at: lobby.created_at,
+          } as PassengerRequest;
+        });
+
+        const mergedRequests = [...mappedRequests, ...mappedLobbies];
+        setRequests(mergedRequests);
+        console.log('✅ Loaded passenger + lobby requests from database:', mergedRequests);
       } catch (error) {
         console.error('❌ Error loading requests:', error);
         setRequests([]);
@@ -184,7 +190,7 @@ export default function PassengerRequests() {
     };
   }, []);
 
-  const handleAcceptRequest = (request: PassengerRequest) => {
+  const handleAcceptRequest = async (request: PassengerRequest) => {
     // 🚨 CRITICAL: Log what request is being accepted
     console.log('🚨🚨🚨 DRIVER ACCEPTING REQUEST 🚨🚨🚨');
     console.log('   Request ID:', request.id);
@@ -194,6 +200,11 @@ export default function PassengerRequests() {
 
     if (!request.id) {
       console.error('❌❌❌ REQUEST HAS NO ID! THIS IS THE BUG! ❌❌❌');
+    }
+
+    if (!user?.id) {
+      alert('You must be logged in as a driver to accept requests.');
+      return;
     }
     const activeRideData = localStorage.getItem('trikeserve_active_ride');
     if (activeRideData) {
@@ -230,28 +241,20 @@ export default function PassengerRequests() {
       }
     }
 
-    // Check if driver already has an active ride/lobby
-    const lobbiesData = localStorage.getItem('trikeserve_share_lobbies');
-    if (lobbiesData) {
+    // Check if driver already has an active shared lobby in Supabase
+    if (user?.id) {
       try {
-        const lobbies = JSON.parse(lobbiesData);
-        const driverActiveLobbies = lobbies.filter((lobby: any) => {
-          if ((lobby.status === 'driver-found' || lobby.status === 'in-progress') &&
-              lobby.driverName === user?.name) {
-            
-            // Check if all passengers are dropped off
-            if (lobby.passengers && lobby.passengers.length > 0) {
-              const allDroppedOff = lobby.passengers.every((p: any) => p.status === 'dropped-off');
-              return !allDroppedOff; // Only count as active if not all dropped off
-            }
-            return true;
-          }
-          return false;
-        });
+        const { data: allLobbies, error: lobbiesError } = await supabaseHelpers.getLobbies();
+        if (!lobbiesError && allLobbies) {
+          const driverActiveLobbies = allLobbies.filter((lobby: any) =>
+            lobby.driver_id === user.id &&
+            (lobby.status === 'driver_found' || lobby.status === 'in_progress')
+          );
 
-        if (driverActiveLobbies.length > 0) {
-          alert('You already have an active ride. Please complete your current ride before accepting another.');
-          return;
+          if (driverActiveLobbies.length > 0) {
+            alert('You already have an active ride. Please complete your current ride before accepting another.');
+            return;
+          }
         }
       } catch (error) {
         console.error('Error checking driver lobbies:', error);
@@ -279,59 +282,30 @@ export default function PassengerRequests() {
       }
     }
 
-    // If it's a shared ride lobby, update lobby status
+    // If it's a shared ride lobby, update lobby status in Supabase
     if (request.lobbyId) {
-      const lobbiesData = localStorage.getItem('trikeserve_share_lobbies');
-      if (lobbiesData) {
-        try {
-          let lobbies = JSON.parse(lobbiesData);
-          const lobbyIndex = lobbies.findIndex((l: any) => l.id === request.lobbyId);
-          
-          if (lobbyIndex >= 0) {
-            // Initialize passenger statuses
-            const passengersWithStatus = lobbies[lobbyIndex].passengers.map((p: any) => ({
-              ...p,
-              status: 'pending'
-            }));
-
-            // Update lobby with driver info and passenger statuses
-            lobbies[lobbyIndex].status = 'driver-found';
-            lobbies[lobbyIndex].driverName = user?.name;
-            lobbies[lobbyIndex].driverPlate = user?.todaPlate;
-            lobbies[lobbyIndex].driverRating = '4.8';
-            lobbies[lobbyIndex].passengers = passengersWithStatus;
-            
-            localStorage.setItem('trikeserve_share_lobbies', JSON.stringify(lobbies));
-            
-            // Trigger storage event for cross-tab sync
-            window.dispatchEvent(new StorageEvent('storage', {
-              key: 'trikeserve_share_lobbies',
-              newValue: JSON.stringify(lobbies)
-            }));
-
-            // Add passenger details to request for acceptedRide
-            request.passengerDetails = passengersWithStatus;
-          }
-        } catch (error) {
-          console.error('Error updating lobby:', error);
-        }
-      }
-    }
-    
-    // Remove the request from the queue
-    const existingRequests = localStorage.getItem('trikeserve_ride_requests');
-    let requests: PassengerRequest[] = [];
-    if (existingRequests) {
       try {
-        requests = JSON.parse(existingRequests);
+        const { data: updatedLobby, error: acceptError } = await supabaseHelpers.acceptLobbyAsDriver(
+          request.lobbyId,
+          user?.id || '',
+          user?.name || 'Driver',
+          user?.todaPlate,
+          '4.8'
+        );
+
+        if (acceptError) {
+          console.error('Error accepting shared lobby:', acceptError);
+          alert('Failed to accept shared ride lobby. Please try again.');
+          return;
+        }
+
+        request.passengerDetails = Array.isArray(updatedLobby?.passengers_json) ? updatedLobby.passengers_json : [];
       } catch (error) {
-        console.error('Error parsing requests:', error);
+        console.error('Error updating lobby:', error);
+        alert('Failed to update shared ride lobby. Please try again.');
+        return;
       }
     }
-
-    // Filter out the accepted request
-    const updatedRequests = requests.filter(req => req.id !== request.id);
-    localStorage.setItem('trikeserve_ride_requests', JSON.stringify(updatedRequests));
 
     // Create an accepted ride record
     const acceptedRide = {

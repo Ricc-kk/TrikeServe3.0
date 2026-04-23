@@ -239,6 +239,267 @@ export const supabaseHelpers = {
     return { data, error };
   },
 
+  // Enhanced Shared Ride Lobby Operations
+  async getAvailableLobbyByRoute(pickupAddr: string, dropoffAddr: string) {
+    const { data, error } = await supabase
+      .from('shared_ride_lobbies')
+      .select('*')
+      .eq('status', 'waiting')
+      .eq('dropoff_address', dropoffAddr)
+      .gt('max_seats', 0)
+      .order('created_at', { ascending: true })
+      .limit(1);
+
+    return { data: data?.[0] || null, error };
+  },
+
+  async getAvailableLobbies(dropoffAddr?: string) {
+    let query = supabase
+      .from('shared_ride_lobbies')
+      .select('*')
+      .eq('status', 'waiting');
+
+    if (dropoffAddr) {
+      query = query.eq('dropoff_address', dropoffAddr);
+    }
+
+    const { data, error } = await query
+      .order('created_at', { ascending: true });
+
+    return { data, error };
+  },
+
+  async getWaitingLobbiesForDriver() {
+    const { data, error } = await supabase
+      .from('shared_ride_lobbies')
+      .select('*')
+      .eq('status', 'waiting')
+      .order('created_at', { ascending: true });
+
+    return { data, error };
+  },
+
+  async createShareRideLobby(lobby: any) {
+    const timestamp = new Date().toISOString();
+    const lobbyData = {
+      ...lobby,
+      passengers_json: lobby.passengers || [],
+      created_at: timestamp,
+      updated_at: timestamp
+    };
+
+    const { data, error } = await supabase
+      .from('shared_ride_lobbies')
+      .insert([lobbyData])
+      .select()
+      .single();
+
+    return { data, error };
+  },
+
+  async joinShareRideLobby(lobbyId: string, passenger: any) {
+    // First get the current lobby
+    const { data: lobby, error: fetchError } = await supabase
+      .from('shared_ride_lobbies')
+      .select('*')
+      .eq('id', lobbyId)
+      .single();
+
+    if (fetchError) return { data: null, error: fetchError };
+    if (!lobby) return { data: null, error: new Error('Lobby not found') };
+
+    // Parse passengers
+    let passengers = [];
+    try {
+      passengers = Array.isArray(lobby.passengers_json) ? lobby.passengers_json : JSON.parse(lobby.passengers_json || '[]');
+    } catch (e) {
+      passengers = [];
+    }
+
+    // Check if passenger already in lobby
+    if (passengers.some((p: any) => p.id === passenger.id)) {
+      return { data: lobby, error: null };
+    }
+
+    // Check capacity
+    if (passengers.length >= lobby.max_seats) {
+      return { data: null, error: new Error('Lobby is full') };
+    }
+
+    // Add passenger
+    passengers.push(passenger);
+    const timestamp = new Date().toISOString();
+
+    const { data, error } = await supabase
+      .from('shared_ride_lobbies')
+      .update({
+        passengers_json: passengers,
+        updated_at: timestamp
+      })
+      .eq('id', lobbyId)
+      .select()
+      .single();
+
+    return { data, error };
+  },
+
+  async leaveShareRideLobby(lobbyId: string, passengerId: string) {
+    // First get the current lobby
+    const { data: lobby, error: fetchError } = await supabase
+      .from('shared_ride_lobbies')
+      .select('*')
+      .eq('id', lobbyId)
+      .single();
+
+    if (fetchError) return { data: null, error: fetchError };
+    if (!lobby) return { data: null, error: new Error('Lobby not found') };
+
+    // Parse passengers
+    let passengers = [];
+    try {
+      passengers = Array.isArray(lobby.passengers_json) ? lobby.passengers_json : JSON.parse(lobby.passengers_json || '[]');
+    } catch (e) {
+      passengers = [];
+    }
+
+    // Remove passenger and companions (companions have ID like "userId_companion_1")
+    const updatedPassengers = passengers.filter((p: any) =>
+      p.id !== passengerId && !p.id.startsWith(`${passengerId}_companion_`)
+    );
+
+    const timestamp = new Date().toISOString();
+
+    // If no passengers left, mark lobby as cancelled
+    if (updatedPassengers.length === 0) {
+      const { data, error } = await supabase
+        .from('shared_ride_lobbies')
+        .update({
+          status: 'cancelled',
+          passengers_json: [],
+          updated_at: timestamp
+        })
+        .eq('id', lobbyId)
+        .select()
+        .single();
+
+      return { data, error };
+    }
+
+    // Update lobby with remaining passengers
+    const { data, error } = await supabase
+      .from('shared_ride_lobbies')
+      .update({
+        passengers_json: updatedPassengers,
+        updated_at: timestamp
+      })
+      .eq('id', lobbyId)
+      .select()
+      .single();
+
+    return { data, error };
+  },
+
+  async acceptLobbyAsDriver(lobbyId: string, driverId: string, driverName: string, driverPlate?: string, driverRating?: string) {
+    const timestamp = new Date().toISOString();
+
+    const { data, error } = await supabase
+      .from('shared_ride_lobbies')
+      .update({
+        driver_id: driverId,
+        driver_name: driverName,
+        driver_plate: driverPlate || null,
+        driver_rating: driverRating || '4.8',
+        status: 'driver_found',
+        updated_at: timestamp
+      })
+      .eq('id', lobbyId)
+      .select()
+      .single();
+
+    return { data, error };
+  },
+
+  async updateLobbyPassengers(lobbyId: string, passengers: any[]) {
+    const timestamp = new Date().toISOString();
+
+    const { data, error } = await supabase
+      .from('shared_ride_lobbies')
+      .update({
+        passengers_json: passengers,
+        updated_at: timestamp
+      })
+      .eq('id', lobbyId)
+      .select()
+      .single();
+
+    return { data, error };
+  },
+
+  async startLobbyRide(lobbyId: string) {
+    const timestamp = new Date().toISOString();
+
+    const { data, error } = await supabase
+      .from('shared_ride_lobbies')
+      .update({
+        status: 'in_progress',
+        updated_at: timestamp
+      })
+      .eq('id', lobbyId)
+      .select()
+      .single();
+
+    return { data, error };
+  },
+
+  async completeLobbyRide(lobbyId: string) {
+    const timestamp = new Date().toISOString();
+
+    const { data, error } = await supabase
+      .from('shared_ride_lobbies')
+      .update({
+        status: 'completed',
+        updated_at: timestamp
+      })
+      .eq('id', lobbyId)
+      .select()
+      .single();
+
+    return { data, error };
+  },
+
+  async subscribeLobbyUpdates(lobbyId: string, callback: (data: any) => void) {
+    console.log(`📡 Setting up real-time subscription for lobby: ${lobbyId}`);
+
+    const channel = supabase
+      .channel(`lobby_${lobbyId}`)
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'shared_ride_lobbies',
+          filter: `id=eq.${lobbyId}`
+        },
+        (payload) => {
+          console.log('🔄 Lobby update received:', payload);
+          callback(payload.new);
+        }
+      )
+      .subscribe((status) => {
+        if (status === 'SUBSCRIBED') {
+          console.log(`✅ Real-time subscription active for lobby: ${lobbyId}`);
+        } else if (status === 'CHANNEL_ERROR') {
+          console.error(`❌ Subscription error for lobby: ${lobbyId}`);
+        }
+      });
+
+    // Return unsubscribe function
+    return () => {
+      console.log(`🛑 Unsubscribing from lobby: ${lobbyId}`);
+      supabase.removeChannel(channel);
+    };
+  },
+
   // Message operations
   async saveMessage(message: any) {
     const { data, error } = await supabase

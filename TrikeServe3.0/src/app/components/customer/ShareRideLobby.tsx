@@ -4,6 +4,7 @@ import { Button } from "../ui/button";
 import { Card } from "../ui/card";
 import { Badge } from "../ui/badge";
 import { useAuth } from "../../contexts/AuthContext";
+import { supabaseHelpers } from "@/lib/supabase";
 
 interface LobbyPassenger {
   id: string;
@@ -16,18 +17,19 @@ interface LobbyPassenger {
 
 interface ShareRideLobby {
   id: string;
-  pickup: string;
-  pickupAddress: string;
-  dropoff: string;
-  dropoffAddress: string;
-  passengers: LobbyPassenger[];
-  maxSeats: number;
-  pricePerSeat: number;
-  status: 'waiting' | 'driver-found' | 'in-progress' | 'completed';
-  driverName?: string;
-  driverPlate?: string;
-  driverRating?: string;
-  createdAt: string;
+  customer_id?: string;
+  pickup_location: string;
+  pickup_address: string;
+  dropoff_location: string;
+  dropoff_address: string;
+  passengers_json?: LobbyPassenger[];
+  max_seats: number;
+  price_per_seat: number;
+  status: 'waiting' | 'driver_found' | 'in_progress' | 'completed';
+  driver_name?: string;
+  driver_plate?: string;
+  driver_rating?: string;
+  created_at: string;
 }
 
 interface ShareRideLobbyProps {
@@ -35,9 +37,9 @@ interface ShareRideLobbyProps {
   pickupAddress: string;
   dropoff: string;
   dropoffAddress: string;
-  passengerCount?: number; // New prop
-  pricePerSeat?: number; // New prop for dynamic pricing
-  onDriverFound: (driverId: string) => void;
+  passengerCount?: number;
+  pricePerSeat?: number;
+  onDriverFound: (lobbyId: string) => void;
   onClose: () => void;
 }
 
@@ -46,8 +48,8 @@ export default function ShareRideLobby({
   pickupAddress,
   dropoff,
   dropoffAddress,
-  passengerCount = 1, // Default to 1
-  pricePerSeat = 15, // Default price
+  passengerCount = 1,
+  pricePerSeat = 15,
   onDriverFound,
   onClose
 }: ShareRideLobbyProps) {
@@ -55,341 +57,245 @@ export default function ShareRideLobby({
   const [lobby, setLobby] = useState<ShareRideLobby | null>(null);
   const [isMinimized, setIsMinimized] = useState(false);
   const [showLeaveConfirm, setShowLeaveConfirm] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
-  // Initialize or join lobby
+  // Initialize or join lobby on mount
   useEffect(() => {
-    const existingLobby = findOrCreateLobby();
-    setLobby(existingLobby);
+    const initializeLobby = async () => {
+      try {
+        setLoading(true);
+        const existingLobby = await findOrCreateLobby();
+        if (existingLobby) {
+          setLobby(existingLobby);
 
-    // Poll for updates every 2 seconds
-    const interval = setInterval(() => {
-      const updatedLobby = loadLobby(existingLobby.id);
-      if (updatedLobby) {
-        setLobby(updatedLobby);
-        
-        // Check if driver was found
-        if (updatedLobby.status === 'driver-found' && updatedLobby.driverName) {
-          onDriverFound(updatedLobby.id);
-        }
-      }
-    }, 2000);
+          // Set up real-time subscription
+          const unsubscribe = supabaseHelpers.subscribeLobbyUpdates(
+            existingLobby.id,
+            (updatedLobbyData) => {
+              console.log('🔄 Lobby updated:', updatedLobbyData);
+              setLobby(prevLobby => ({
+                ...prevLobby!,
+                ...updatedLobbyData,
+                passengers_json: updatedLobbyData.passengers_json || []
+              }));
 
-    // Listen for storage events (cross-tab sync)
-    const handleStorageChange = (e: StorageEvent) => {
-      if (e.key === 'trikeserve_share_lobbies') {
-        const updatedLobby = loadLobby(existingLobby.id);
-        if (updatedLobby) {
-          setLobby(updatedLobby);
+              // Check if driver was found
+              if (updatedLobbyData.status === 'driver_found' && updatedLobbyData.driver_name) {
+                onDriverFound(updatedLobbyData.id);
+              }
+            }
+          );
+
+          return unsubscribe;
         }
+      } catch (err) {
+        console.error('Error initializing lobby:', err);
+        setError('Failed to create lobby');
+      } finally {
+        setLoading(false);
       }
     };
 
-    window.addEventListener('storage', handleStorageChange);
+    let unsubscribe: (() => void) | undefined;
+    initializeLobby().then(unsub => {
+      unsubscribe = unsub;
+    });
 
     return () => {
-      clearInterval(interval);
-      window.removeEventListener('storage', handleStorageChange);
+      if (unsubscribe) unsubscribe();
     };
   }, []);
-
-  const findOrCreateLobby = (): ShareRideLobby => {
-    const lobbiesData = localStorage.getItem('trikeserve_share_lobbies');
-    let lobbies: ShareRideLobby[] = [];
-
-    if (lobbiesData) {
-      try {
-        lobbies = JSON.parse(lobbiesData);
-      } catch (error) {
-        console.error('Error parsing lobbies:', error);
-      }
-    }
-
-    // First, check if user is already in an existing lobby
-    const existingUserLobby = lobbies.find(l => 
-      l.status === 'waiting' &&
-      l.passengers.some(p => p.id === user?.id || p.id.startsWith(`${user?.id}_companion_`))
-    );
-
-    if (existingUserLobby) {
-      console.log('✅ User already in lobby, rejoining:', existingUserLobby.id);
-      return existingUserLobby;
-    }
-
-    // Find matching lobby with same drop-off and available seats
-    const matchingLobby = lobbies.find(l => 
-      isSameRoute(l.pickup, l.dropoff, pickup, dropoff) &&
-      l.passengers.length + passengerCount <= l.maxSeats && // Check if enough seats
-      l.status === 'waiting' &&
-      !l.passengers.some(p => p.id === user?.id)
-    );
-
-    if (matchingLobby) {
-      // Join existing lobby - add main passenger and companions
-      const mainPassenger: LobbyPassenger = {
-        id: user?.id || `user_${Date.now()}`,
-        name: user?.name || 'Customer',
-        emoji: getRandomEmoji(),
-        joinedAt: new Date().toISOString(),
-        pickup: pickup,
-        pickupAddress: pickupAddress
-      };
-
-      matchingLobby.passengers.push(mainPassenger);
-
-      // Add companions if passenger count > 1
-      for (let i = 1; i < passengerCount; i++) {
-        const companion: LobbyPassenger = {
-          id: `${user?.id || `user_${Date.now()}`}_companion_${i}`,
-          name: `+${i} Companion`,
-          emoji: '👥',
-          joinedAt: new Date().toISOString(),
-          pickup: pickup,
-          pickupAddress: pickupAddress
-        };
-        matchingLobby.passengers.push(companion);
-      }
-
-      saveLobby(matchingLobby);
-      
-      // Update ride request with new passenger count
-      createRideRequest(matchingLobby);
-      
-      console.log('✅ Joined existing lobby:', matchingLobby.id);
-      return matchingLobby;
-    } else {
-      // Create new lobby - add main passenger and companions
-      const mainPassenger: LobbyPassenger = {
-        id: user?.id || `user_${Date.now()}`,
-        name: user?.name || 'Customer',
-        emoji: getRandomEmoji(),
-        joinedAt: new Date().toISOString(),
-        pickup: pickup,
-        pickupAddress: pickupAddress
-      };
-
-      const passengers: LobbyPassenger[] = [mainPassenger];
-
-      // Add companions if passenger count > 1
-      for (let i = 1; i < passengerCount; i++) {
-        const companion: LobbyPassenger = {
-          id: `${user?.id || `user_${Date.now()}`}_companion_${i}`,
-          name: `+${i} Companion`,
-          emoji: '👥',
-          joinedAt: new Date().toISOString(),
-          pickup: pickup,
-          pickupAddress: pickupAddress
-        };
-        passengers.push(companion);
-      }
-
-      const newLobby: ShareRideLobby = {
-        id: `lobby_${Date.now()}`,
-        pickup,
-        pickupAddress,
-        dropoff,
-        dropoffAddress,
-        passengers,
-        maxSeats: 3,
-        pricePerSeat: pricePerSeat,
-        status: 'waiting',
-        createdAt: new Date().toISOString()
-      };
-
-      lobbies.push(newLobby);
-      localStorage.setItem('trikeserve_share_lobbies', JSON.stringify(lobbies));
-
-      // Also create ride request for drivers
-      createRideRequest(newLobby);
-
-      console.log('✅ Created new lobby:', newLobby.id);
-      return newLobby;
-    }
-  };
-
-  const loadLobby = (lobbyId: string): ShareRideLobby | null => {
-    const lobbiesData = localStorage.getItem('trikeserve_share_lobbies');
-    if (!lobbiesData) return null;
-
-    try {
-      const lobbies: ShareRideLobby[] = JSON.parse(lobbiesData);
-      return lobbies.find(l => l.id === lobbyId) || null;
-    } catch (error) {
-      console.error('Error loading lobby:', error);
-      return null;
-    }
-  };
-
-  const saveLobby = (updatedLobby: ShareRideLobby) => {
-    const lobbiesData = localStorage.getItem('trikeserve_share_lobbies');
-    let lobbies: ShareRideLobby[] = [];
-
-    if (lobbiesData) {
-      try {
-        lobbies = JSON.parse(lobbiesData);
-      } catch (error) {
-        console.error('Error parsing lobbies:', error);
-      }
-    }
-
-    const index = lobbies.findIndex(l => l.id === updatedLobby.id);
-    if (index >= 0) {
-      lobbies[index] = updatedLobby;
-    } else {
-      lobbies.push(updatedLobby);
-    }
-
-    localStorage.setItem('trikeserve_share_lobbies', JSON.stringify(lobbies));
-
-    // Trigger storage event for cross-tab sync
-    window.dispatchEvent(new StorageEvent('storage', {
-      key: 'trikeserve_share_lobbies',
-      newValue: JSON.stringify(lobbies)
-    }));
-  };
-
-  const createRideRequest = (lobby: ShareRideLobby) => {
-    const rideRequest = {
-      id: `req_${lobby.id}`,
-      lobbyId: lobby.id,
-      type: 'shared',
-      pickup: lobby.pickup,
-      dropoff: lobby.dropoff,
-      pickupAddress: lobby.pickupAddress,
-      dropoffAddress: lobby.dropoffAddress,
-      payment: 'PREPAID',
-      amount: lobby.pricePerSeat * lobby.passengers.length,
-      passengers: lobby.passengers.length,
-      maxPassengers: lobby.maxSeats,
-      passengerDetails: lobby.passengers,
-      customerName: lobby.passengers.length > 1 
-        ? `${lobby.passengers.length} Passengers` 
-        : lobby.passengers[0]?.name || 'Customer',
-      customerPhoto: '🚲',
-      distance: '2.5 km',
-      estimatedTime: '7 mins',
-      status: 'waiting',
-      createdAt: lobby.createdAt
-    };
-
-    const existingRequests = localStorage.getItem('trikeserve_ride_requests');
-    let requests = [];
-    if (existingRequests) {
-      try {
-        requests = JSON.parse(existingRequests);
-      } catch (error) {
-        console.error('Error parsing requests:', error);
-      }
-    }
-
-    // Check if request already exists
-    const existingIndex = requests.findIndex((r: any) => r.lobbyId === lobby.id);
-    if (existingIndex >= 0) {
-      requests[existingIndex] = rideRequest;
-    } else {
-      requests.push(rideRequest);
-    }
-
-    localStorage.setItem('trikeserve_ride_requests', JSON.stringify(requests));
-  };
-
-  const handleLeaveLobby = () => {
-    if (!lobby) return;
-
-    const lobbiesData = localStorage.getItem('trikeserve_share_lobbies');
-    if (!lobbiesData) return;
-
-    try {
-      let lobbies: ShareRideLobby[] = JSON.parse(lobbiesData);
-      const targetLobby = lobbies.find(l => l.id === lobby.id);
-
-      if (targetLobby) {
-        // Remove current user and their companions from passengers
-        targetLobby.passengers = targetLobby.passengers.filter(p => {
-          // Remove the main user
-          if (p.id === user?.id) return false;
-          // Remove companions (they have id like "userId_companion_1")
-          if (p.id.startsWith(`${user?.id}_companion_`)) return false;
-          return true;
-        });
-
-        // Check if lobby is now empty or user was the only one left
-        if (targetLobby.passengers.length === 0) {
-          // Delete lobby if empty - user was the only one left
-          lobbies = lobbies.filter(l => l.id !== lobby.id);
-          console.log(`Lobby ${lobby.id} deleted - last passenger left`);
-          
-          // Also remove the associated ride request
-          const requestsData = localStorage.getItem('trikeserve_ride_requests');
-          if (requestsData) {
-            try {
-              let requests = JSON.parse(requestsData);
-              requests = requests.filter((r: any) => r.lobbyId !== lobby.id);
-              localStorage.setItem('trikeserve_ride_requests', JSON.stringify(requests));
-              console.log(`Ride request for lobby ${lobby.id} deleted`);
-            } catch (error) {
-              console.error('Error removing ride request:', error);
-            }
-          }
-        } else {
-          // Update the lobby with remaining passengers
-          lobbies = lobbies.map(l => l.id === lobby.id ? targetLobby : l);
-          
-          // Update the ride request with new passenger count
-          const requestsData = localStorage.getItem('trikeserve_ride_requests');
-          if (requestsData) {
-            try {
-              let requests = JSON.parse(requestsData);
-              const requestIndex = requests.findIndex((r: any) => r.lobbyId === lobby.id);
-              if (requestIndex >= 0) {
-                requests[requestIndex].passengers = targetLobby.passengers.length;
-                requests[requestIndex].amount = targetLobby.pricePerSeat * targetLobby.passengers.length;
-                requests[requestIndex].passengerDetails = targetLobby.passengers;
-                requests[requestIndex].customerName = targetLobby.passengers.length > 1 
-                  ? `${targetLobby.passengers.length} Passengers` 
-                  : targetLobby.passengers[0]?.name || 'Customer';
-                localStorage.setItem('trikeserve_ride_requests', JSON.stringify(requests));
-                console.log(`Ride request for lobby ${lobby.id} updated - ${targetLobby.passengers.length} passengers remaining`);
-              }
-            } catch (error) {
-              console.error('Error updating ride request:', error);
-            }
-          }
-        }
-
-        localStorage.setItem('trikeserve_share_lobbies', JSON.stringify(lobbies));
-        
-        // Trigger storage event for cross-tab sync
-        window.dispatchEvent(new StorageEvent('storage', {
-          key: 'trikeserve_share_lobbies',
-          newValue: JSON.stringify(lobbies)
-        }));
-      }
-    } catch (error) {
-      console.error('Error leaving lobby:', error);
-    }
-
-    onClose();
-  };
-
-  const isSameRoute = (l1Pickup: string, l1Dropoff: string, l2Pickup: string, l2Dropoff: string) => {
-    // Only match drop-off location, allow different pickups
-    const dropoffMatch = l1Dropoff.toLowerCase().trim() === l2Dropoff.toLowerCase().trim();
-    return dropoffMatch;
-  };
 
   const getRandomEmoji = () => {
     const emojis = ['👤', '👨', '👩', '🧑', '👦', '👧', '👨‍💼', '👩‍💼', '👨‍🎓', '👩‍🎓'];
     return emojis[Math.floor(Math.random() * emojis.length)];
   };
 
+  const findOrCreateLobby = async (): Promise<ShareRideLobby | null> => {
+    try {
+      // First, check if user is already in a waiting lobby
+      const { data: userLobbies, error: userError } = await supabaseHelpers.getAvailableLobbies();
+      if (!userError && userLobbies) {
+        const existingUserLobby = userLobbies.find((l: any) => {
+          const passengers = Array.isArray(l.passengers_json) ? l.passengers_json : [];
+          return passengers.some((p: any) => p.id === user?.id || p.id.startsWith(`${user?.id}_companion_`));
+        });
+
+        if (existingUserLobby) {
+          console.log('✅ User already in lobby:', existingUserLobby.id);
+          return {
+            ...existingUserLobby,
+            passengers_json: Array.isArray(existingUserLobby.passengers_json)
+              ? existingUserLobby.passengers_json
+              : []
+          };
+        }
+      }
+
+      // Try to find matching lobby with same dropoff
+      const { data: matchingLobby, error: matchError } = await supabaseHelpers.getAvailableLobbyByRoute(
+        pickupAddress,
+        dropoffAddress
+      );
+
+      if (!matchError && matchingLobby) {
+        const passengers = Array.isArray(matchingLobby.passengers_json)
+          ? matchingLobby.passengers_json
+          : [];
+
+        // Check if we have space
+        if (passengers.length + passengerCount <= matchingLobby.max_seats) {
+          // Join the lobby
+          const mainPassenger: LobbyPassenger = {
+            id: user?.id || `user_${Date.now()}`,
+            name: user?.name || 'Customer',
+            emoji: getRandomEmoji(),
+            joinedAt: new Date().toISOString(),
+            pickup,
+            pickupAddress
+          };
+
+          const newPassengers = [...passengers, mainPassenger];
+
+          // Add companions if needed
+          for (let i = 1; i < passengerCount; i++) {
+            newPassengers.push({
+              id: `${user?.id}_companion_${i}`,
+              name: `+${i} Companion`,
+              emoji: '👥',
+              joinedAt: new Date().toISOString(),
+              pickup,
+              pickupAddress
+            });
+          }
+
+          // Update the lobby
+          const { data: updated, error: updateError } = await supabaseHelpers.updateLobbyPassengers(
+            matchingLobby.id,
+            newPassengers
+          );
+
+          if (!updateError && updated) {
+            console.log('✅ Joined existing lobby:', matchingLobby.id);
+            return {
+              ...updated,
+              passengers_json: Array.isArray(updated.passengers_json) ? updated.passengers_json : []
+            };
+          }
+        }
+      }
+
+      // No matching lobby found, create a new one
+      const mainPassenger: LobbyPassenger = {
+        id: user?.id || `user_${Date.now()}`,
+        name: user?.name || 'Customer',
+        emoji: getRandomEmoji(),
+        joinedAt: new Date().toISOString(),
+        pickup,
+        pickupAddress
+      };
+
+      const passengers: LobbyPassenger[] = [mainPassenger];
+
+      // Add companions if needed
+      for (let i = 1; i < passengerCount; i++) {
+        passengers.push({
+          id: `${user?.id}_companion_${i}`,
+          name: `+${i} Companion`,
+          emoji: '👥',
+          joinedAt: new Date().toISOString(),
+          pickup,
+          pickupAddress
+        });
+      }
+
+      const newLobby = {
+        customer_id: user?.id,
+        pickup_location: pickup,
+        pickup_address: pickupAddress,
+        dropoff_location: dropoff,
+        dropoff_address: dropoffAddress,
+        passengers_json: passengers,
+        max_seats: 3,
+        price_per_seat: pricePerSeat,
+        status: 'waiting'
+      };
+
+      const { data: createdLobby, error: createError } = await supabaseHelpers.createShareRideLobby(newLobby);
+
+      if (!createError && createdLobby) {
+        console.log('✅ Created new lobby:', createdLobby.id);
+        return {
+          ...createdLobby,
+          passengers_json: Array.isArray(createdLobby.passengers_json) ? createdLobby.passengers_json : []
+        };
+      }
+
+      setError('Failed to create lobby');
+      return null;
+    } catch (err) {
+      console.error('Error finding or creating lobby:', err);
+      setError('Error with lobby system');
+      return null;
+    }
+  };
+
+  const handleLeaveLobby = async () => {
+    if (!lobby || !user) return;
+
+    try {
+      const { error: leaveError } = await supabaseHelpers.leaveShareRideLobby(
+        lobby.id,
+        user.id
+      );
+
+      if (leaveError) {
+        console.error('Error leaving lobby:', leaveError);
+        setError('Failed to leave lobby');
+        return;
+      }
+
+      onClose();
+    } catch (err) {
+      console.error('Error in handleLeaveLobby:', err);
+      setError('Error leaving lobby');
+    }
+  };
+
   const getWaitingTime = () => {
     if (!lobby) return '0s';
-    const elapsed = Date.now() - new Date(lobby.createdAt).getTime();
+    const elapsed = Date.now() - new Date(lobby.created_at).getTime();
     const seconds = Math.floor(elapsed / 1000);
     if (seconds < 60) return `${seconds}s`;
     const minutes = Math.floor(seconds / 60);
     return `${minutes}m ${seconds % 60}s`;
   };
+
+  if (loading) {
+    return (
+      <div className="fixed inset-0 bg-black/50 z-[2000] flex items-center justify-center">
+        <div className="bg-white rounded-lg p-8 text-center">
+          <div className="animate-spin w-12 h-12 border-4 border-[#E11D48] border-t-transparent rounded-full mx-auto mb-4"></div>
+          <p className="text-[#64748B]">Creating lobby...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="fixed inset-0 bg-black/50 z-[2000] flex items-center justify-center p-4">
+        <Card className="bg-white p-6 max-w-sm w-full">
+          <h3 className="text-lg font-bold text-red-600 mb-2">Error</h3>
+          <p className="text-sm text-[#64748B] mb-6">{error}</p>
+          <Button onClick={onClose} className="w-full bg-red-500 hover:bg-red-600">
+            Close
+          </Button>
+        </Card>
+      </div>
+    );
+  }
 
   if (!lobby) return null;
 
@@ -404,16 +310,18 @@ export default function ShareRideLobby({
           <div className="w-16 h-16 bg-[#E11D48] rounded-full flex items-center justify-center hover:bg-[#BE123C] transition-all hover:scale-110">
             <Users className="w-8 h-8 text-white" />
           </div>
-          {/* Passenger count badge */}
           <div className="absolute -top-1 -right-1 w-7 h-7 bg-white rounded-full border-2 border-[#E11D48] flex items-center justify-center">
-            <span className="text-xs font-bold text-[#E11D48]">{lobby.passengers.length}/{lobby.maxSeats}</span>
+            <span className="text-xs font-bold text-[#E11D48]">
+              {(lobby.passengers_json || []).length}/{lobby.max_seats}
+            </span>
           </div>
-          {/* Pulse animation */}
           <div className="absolute inset-0 bg-[#E11D48] rounded-full animate-ping opacity-20"></div>
         </div>
       </button>
     );
   }
+
+  const passengers = lobby.passengers_json || [];
 
   // Full lobby view
   return (
@@ -447,14 +355,13 @@ export default function ShareRideLobby({
                 </button>
               </div>
             </div>
-            
-            {/* Status Badge */}
+
             <Badge className={
-              lobby.status === 'driver-found' 
-                ? 'bg-green-500 text-white' 
+              lobby.status === 'driver_found'
+                ? 'bg-green-500 text-white'
                 : 'bg-yellow-500 text-white'
             }>
-              {lobby.status === 'driver-found' ? '✓ Driver Found!' : '🔍 Finding Driver...'}
+              {lobby.status === 'driver_found' ? '✓ Driver Found!' : '🔍 Finding Driver...'}
             </Badge>
           </div>
 
@@ -465,16 +372,16 @@ export default function ShareRideLobby({
                 <MapPin className="w-4 h-4 text-[#121212] mt-0.5 flex-shrink-0" />
                 <div className="flex-1 min-w-0">
                   <p className="text-xs text-[#64748B] uppercase tracking-wide font-semibold">Pickup</p>
-                  <p className="font-bold text-[#121212]">{lobby.pickup}</p>
-                  <p className="text-xs text-[#64748B]">{lobby.pickupAddress}</p>
+                  <p className="font-bold text-[#121212]">{lobby.pickup_location}</p>
+                  <p className="text-xs text-[#64748B]">{lobby.pickup_address}</p>
                 </div>
               </div>
               <div className="flex items-start gap-2">
                 <MapPin className="w-4 h-4 text-[#E11D48] mt-0.5 flex-shrink-0" />
                 <div className="flex-1 min-w-0">
                   <p className="text-xs text-[#64748B] uppercase tracking-wide font-semibold">Drop-off</p>
-                  <p className="font-bold text-[#121212]">{lobby.dropoff}</p>
-                  <p className="text-xs text-[#64748B]">{lobby.dropoffAddress}</p>
+                  <p className="font-bold text-[#121212]">{lobby.dropoff_location}</p>
+                  <p className="text-xs text-[#64748B]">{lobby.dropoff_address}</p>
                 </div>
               </div>
             </div>
@@ -486,15 +393,14 @@ export default function ShareRideLobby({
               <div className="flex items-center justify-between mb-3">
                 <h3 className="text-sm font-bold text-[#64748B] uppercase tracking-wide">Passengers</h3>
                 <span className="text-sm font-bold text-[#E11D48]">
-                  {lobby.passengers.length}/{lobby.maxSeats} Seats
+                  {passengers.length}/{lobby.max_seats} Seats
                 </span>
               </div>
 
               {/* Passenger Cards */}
               <div className="space-y-2">
-                {lobby.passengers.map((passenger, index) => {
-                  // Check if this passenger belongs to the current user (main or companion)
-                  const isCurrentUserOrCompanion = 
+                {passengers.map((passenger, index) => {
+                  const isCurrentUserOrCompanion =
                     passenger.id === user?.id || 
                     passenger.id.startsWith(`${user?.id}_companion_`);
                   
@@ -535,8 +441,8 @@ export default function ShareRideLobby({
                 })}
 
                 {/* Empty Seats */}
-                {Array.from({ length: lobby.maxSeats - lobby.passengers.length }).map((_, index) => (
-                  <Card 
+                {Array.from({ length: lobby.max_seats - passengers.length }).map((_, index) => (
+                  <Card
                     key={`empty-${index}`}
                     className="p-4 border-2 border-dashed border-[#E2E8F0] bg-[#F8F9FA]"
                   >
@@ -552,7 +458,7 @@ export default function ShareRideLobby({
             </div>
 
             {/* Driver Info (when found) */}
-            {lobby.status === 'driver-found' && lobby.driverName && (
+            {lobby.status === 'driver_found' && lobby.driver_name && (
               <Card className="p-4 border-2 border-green-500 bg-green-50 mb-4">
                 <div className="flex items-center gap-3">
                   <div className="w-14 h-14 rounded-full bg-green-200 flex items-center justify-center text-3xl">
@@ -560,15 +466,15 @@ export default function ShareRideLobby({
                   </div>
                   <div className="flex-1">
                     <p className="text-xs text-green-700 font-semibold uppercase tracking-wide mb-0.5">Your Driver</p>
-                    <p className="font-bold text-[#121212] text-lg">{lobby.driverName}</p>
+                    <p className="font-bold text-[#121212] text-lg">{lobby.driver_name}</p>
                     <div className="flex items-center gap-2">
-                      <span className="text-xs text-[#64748B]">{lobby.driverPlate}</span>
-                      {lobby.driverRating && (
+                      <span className="text-xs text-[#64748B]">{lobby.driver_plate}</span>
+                      {lobby.driver_rating && (
                         <>
                           <span className="text-[#64748B]">•</span>
                           <div className="flex items-center gap-1">
                             <span className="text-yellow-500">⭐</span>
-                            <span className="text-xs font-semibold text-[#121212]">{lobby.driverRating}</span>
+                            <span className="text-xs font-semibold text-[#121212]">{lobby.driver_rating}</span>
                           </div>
                         </>
                       )}
@@ -591,8 +497,8 @@ export default function ShareRideLobby({
                   <span className="text-4xl">🔍</span>
                 </div>
                 <p className="text-sm text-[#64748B] mb-1">
-                  {lobby.passengers.length < lobby.maxSeats 
-                    ? 'Waiting for more passengers...' 
+                  {passengers.length < lobby.max_seats
+                    ? 'Waiting for more passengers...'
                     : 'Finding the best driver for you...'}
                 </p>
                 <p className="text-xs text-[#94A3B8]">
@@ -608,7 +514,7 @@ export default function ShareRideLobby({
               <div>
                 <p className="text-sm text-[#64748B]">Your Fare</p>
                 <p className="text-3xl font-bold text-[#E11D48]">₱{pricePerSeat}</p>
-                {lobby.passengers.length > 1 && (
+                {passengers.length > 1 && (
                   <p className="text-xs text-[#94A3B8]">
                     ₱{pricePerSeat} per person
                   </p>
@@ -617,15 +523,15 @@ export default function ShareRideLobby({
               <div className="text-right">
                 <p className="text-sm text-[#64748B]">Total Trip Cost</p>
                 <p className="text-xl font-bold text-[#121212]">
-                  ₱{pricePerSeat * lobby.passengers.length}
+                  ₱{pricePerSeat * passengers.length}
                 </p>
                 <p className="text-xs text-[#94A3B8]">
-                  {lobby.passengers.length} × ₱{pricePerSeat}
+                  {passengers.length} × ₱{pricePerSeat}
                 </p>
               </div>
             </div>
 
-            {lobby.passengers.length === lobby.maxSeats && (
+            {passengers.length === lobby.max_seats && (
               <div className="bg-green-50 border border-green-200 rounded-lg p-3 text-center">
                 <p className="text-sm text-green-700 font-semibold">
                   🎉 Lobby Full! Prioritizing your ride request...
