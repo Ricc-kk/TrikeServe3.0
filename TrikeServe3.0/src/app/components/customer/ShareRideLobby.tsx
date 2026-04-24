@@ -86,100 +86,175 @@ export default function ShareRideLobby({
 
   const toTime = (value?: string) => new Date(value || 0).getTime();
 
-  // Initialize or join lobby on mount
-  useEffect(() => {
-    const initializeLobby = async () => {
-      try {
-        setLoading(true);
-        let existingLobby: ShareRideLobby | null = null;
+   // Initialize or join lobby on mount
+   useEffect(() => {
+     let unsubscribe: (() => void) | undefined;
+     let syncInterval: NodeJS.Timeout | undefined;
+     let isMounted = true;
 
-        if (lobbyId) {
-          const { data: selectedLobby, error: selectedLobbyError } = await supabaseHelpers.getLobbyById(lobbyId);
-          if (selectedLobbyError) {
-            console.error('Error loading selected lobby:', selectedLobbyError);
-          } else if (selectedLobby) {
-            existingLobby = {
-              ...selectedLobby,
-              passengers_json: normalizePassengers(selectedLobby.passengers_json)
-            };
-          }
-        }
+     const initializeLobby = async () => {
+       try {
+         if (!isMounted) return;
+         setLoading(true);
+         let existingLobby: ShareRideLobby | null = null;
 
-        if (!existingLobby) {
-          existingLobby = await findOrCreateLobby();
-        }
+         if (lobbyId) {
+           const { data: selectedLobby, error: selectedLobbyError } = await supabaseHelpers.getLobbyById(lobbyId);
+           if (selectedLobbyError) {
+             console.error('Error loading selected lobby:', selectedLobbyError);
+           } else if (selectedLobby) {
+             existingLobby = {
+               ...selectedLobby,
+               passengers_json: normalizePassengers(selectedLobby.passengers_json)
+             };
+           }
+         }
 
-        if (existingLobby) {
-          setLobby(existingLobby);
+         if (!existingLobby) {
+           existingLobby = await findOrCreateLobby();
+         }
 
-          // Set up real-time subscription
-          const unsubscribe = supabaseHelpers.subscribeLobbyUpdates(
-            existingLobby.id,
-            (updatedLobbyData) => {
-              console.log('🔄 Lobby updated:', updatedLobbyData);
-              const normalizedPassengers = dedupePassengers(normalizePassengers(updatedLobbyData?.passengers_json));
-              setLobby(prevLobby => ({
-                ...prevLobby!,
-                ...updatedLobbyData,
-                passengers_json: Object.prototype.hasOwnProperty.call(updatedLobbyData || {}, 'passengers_json')
-                  ? normalizedPassengers
-                  : (prevLobby?.passengers_json || [])
-              }));
+         if (existingLobby && isMounted) {
+           setLobby(existingLobby);
 
-              // Check if driver was found
-              if (updatedLobbyData.status === 'driver_found' && updatedLobbyData.driver_name) {
-                onDriverFound(updatedLobbyData.id);
-              }
+            // Set up real-time subscription
+            if (typeof supabaseHelpers.subscribeLobbyUpdates === 'function') {
+              unsubscribe = supabaseHelpers.subscribeLobbyUpdates(
+                existingLobby.id,
+                async (updatedLobbyData) => {
+                  if (!isMounted) return;
+                  console.log('🔄 🔄 🔄 LOBBY UPDATE RECEIVED 🔄 🔄 🔄:', updatedLobbyData);
+
+                  // CRITICAL: Always fetch the fresh lobby data from database
+                  // This ensures we get the complete passenger list
+                  try {
+                    const { data: freshLobby, error: freshError } = await supabaseHelpers.getLobbyById(existingLobby.id);
+
+                    if (freshError) {
+                      console.error('❌ Error fetching fresh lobby data:', freshError);
+                      return;
+                    }
+
+                    if (!freshLobby) {
+                      console.error('❌ Fresh lobby data is null');
+                      return;
+                    }
+
+                    if (!isMounted) return;
+
+                    console.log('✅ ✅ ✅ FRESH LOBBY DATA FROM DB ✅ ✅ ✅:', freshLobby);
+                    const normalizedPassengers = dedupePassengers(normalizePassengers(freshLobby.passengers_json));
+
+                    setLobby(prevLobby => {
+                      const newLobby = {
+                        ...prevLobby!,
+                        ...freshLobby,
+                        passengers_json: normalizedPassengers
+                      };
+
+                      console.log('👥 OLD PASSENGERS:', (prevLobby?.passengers_json || []).length);
+                      console.log('👥 NEW PASSENGERS:', normalizedPassengers.length);
+
+                      return newLobby;
+                    });
+
+                    // Check if driver was found
+                    if (freshLobby.status === 'driver_found' && freshLobby.driver_name) {
+                      console.log('🚗 DRIVER FOUND:', freshLobby.driver_name);
+                      // Safely call onDriverFound if it's a function
+                      if (typeof onDriverFound === 'function') {
+                        onDriverFound(freshLobby.id);
+                      } else {
+                        console.error('❌ onDriverFound is not a function:', typeof onDriverFound);
+                      }
+                    }
+                  } catch (err) {
+                    console.error('❌ Error processing lobby update:', err);
+                  }
+                }
+              );
+            } else {
+              console.error('❌ subscribeLobbyUpdates is not a function');
             }
-          );
 
-          // Fallback sync for cases where realtime payloads are delayed/partial.
-          const syncInterval = setInterval(async () => {
-            const { data: latestLobby, error: latestLobbyError } = await supabaseHelpers.getLobbyById(existingLobby!.id);
-            if (latestLobbyError || !latestLobby) return;
+            // Fallback sync for cases where realtime payloads are delayed/partial.
+            syncInterval = setInterval(async () => {
+              if (!isMounted) return;
+              try {
+                const { data: latestLobby, error: latestLobbyError } = await supabaseHelpers.getLobbyById(existingLobby!.id);
+                if (latestLobbyError || !latestLobby) {
+                  console.log('⏳ Sync interval: Could not fetch lobby');
+                  return;
+                }
 
-            const latestPassengers = dedupePassengers(normalizePassengers(latestLobby.passengers_json));
-            setLobby((prevLobby) => {
-              if (!prevLobby) return prevLobby;
-              const prevCount = (prevLobby.passengers_json || []).length;
-              if (
-                prevCount === latestPassengers.length &&
-                prevLobby.status === latestLobby.status &&
-                toTime(prevLobby.updated_at) === toTime(latestLobby.updated_at)
-              ) {
-                return prevLobby;
+                const latestPassengers = dedupePassengers(normalizePassengers(latestLobby.passengers_json));
+                setLobby((prevLobby) => {
+                  if (!prevLobby) return prevLobby;
+                  const prevCount = (prevLobby.passengers_json || []).length;
+                  const latestCount = latestPassengers.length;
+
+                  // Log every sync for debugging
+                  console.log(`⏳ SYNC CHECK: prev=${prevCount} passengers, latest=${latestCount} passengers, status=${latestLobby.status}`);
+
+                  // Always update if passenger count changed
+                  if (prevCount !== latestCount) {
+                    console.log(`🔄 PASSENGER COUNT CHANGED from ${prevCount} to ${latestCount} - UPDATING!`);
+                    return {
+                      ...prevLobby,
+                      ...latestLobby,
+                      passengers_json: latestPassengers,
+                    };
+                  }
+
+                  // Also update if other important fields changed
+                  if (
+                    prevLobby.status !== latestLobby.status ||
+                    toTime(prevLobby.updated_at) !== toTime(latestLobby.updated_at)
+                  ) {
+                    console.log(`🔄 LOBBY STATE CHANGED - UPDATING!`);
+                    return {
+                      ...prevLobby,
+                      ...latestLobby,
+                      passengers_json: latestPassengers,
+                    };
+                  }
+
+                  return prevLobby;
+                });
+              } catch (err) {
+                console.error('❌ Error in sync interval:', err);
               }
+            }, 1500);
+         }
+       } catch (err) {
+         console.error('Error initializing lobby:', err);
+         if (isMounted) {
+           setError('Failed to create lobby');
+         }
+       } finally {
+         if (isMounted) {
+           setLoading(false);
+         }
+       }
+     };
 
-              return {
-                ...prevLobby,
-                ...latestLobby,
-                passengers_json: latestPassengers,
-              };
-            });
-          }, 2500);
+     // Call initialization
+     initializeLobby().catch(err => console.error('Unhandled error in initializeLobby:', err));
 
-          return () => {
-            clearInterval(syncInterval);
-            unsubscribe();
-          };
-        }
-      } catch (err) {
-        console.error('Error initializing lobby:', err);
-        setError('Failed to create lobby');
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    let unsubscribe: (() => void) | undefined;
-    initializeLobby().then(unsub => {
-      unsubscribe = unsub;
-    });
-
-    return () => {
-      if (unsubscribe) unsubscribe();
-    };
-  }, [lobbyId]);
+     return () => {
+       isMounted = false;
+       if (typeof syncInterval !== 'undefined' && syncInterval !== null) {
+         clearInterval(syncInterval);
+       }
+       if (typeof unsubscribe === 'function') {
+         try {
+           unsubscribe();
+         } catch (err) {
+           console.error('❌ Error in cleanup unsubscribe:', err);
+         }
+       }
+     };
+   }, [lobbyId]);
 
   const getRandomEmoji = () => {
     const emojis = ['👤', '👨', '👩', '🧑', '👦', '👧', '👨‍💼', '👩‍💼', '👨‍🎓', '👩‍🎓'];
@@ -320,27 +395,42 @@ export default function ShareRideLobby({
     }
   };
 
-  const handleLeaveLobby = async () => {
-    if (!lobby || !user) return;
+   const handleLeaveLobby = async () => {
+     if (!lobby || !user) {
+       console.error('❌ Missing lobby or user data');
+       setError('Cannot leave lobby: missing data');
+       return;
+     }
 
-    try {
-      const { error: leaveError } = await supabaseHelpers.leaveShareRideLobby(
-        lobby.id,
-        user.id
-      );
+     try {
+       console.log('🚪 Attempting to leave lobby...');
 
-      if (leaveError) {
-        console.error('Error leaving lobby:', leaveError);
-        setError('Failed to leave lobby');
-        return;
-      }
+       const { error: leaveError } = await supabaseHelpers.leaveShareRideLobby(
+         lobby.id,
+         user.id
+       );
 
-      onClose();
-    } catch (err) {
-      console.error('Error in handleLeaveLobby:', err);
-      setError('Error leaving lobby');
-    }
-  };
+       if (leaveError) {
+         console.error('❌ Error leaving lobby:', leaveError);
+
+         // Check if it's a permission error
+         if (leaveError.message?.includes('policy') || leaveError.message?.includes('permission')) {
+           setError('Permission denied: You cannot leave this lobby. Please try again.');
+         } else {
+           setError(`Failed to leave lobby: ${leaveError.message || 'Unknown error'}`);
+         }
+         return;
+       }
+
+       console.log('✅ Successfully left lobby');
+       // Small delay to ensure database update completes
+       await new Promise(resolve => setTimeout(resolve, 500));
+       onClose();
+     } catch (err) {
+       console.error('❌ Unexpected error in handleLeaveLobby:', err);
+       setError(`Error leaving lobby: ${err instanceof Error ? err.message : 'Unknown error'}`);
+     }
+   };
 
   const getWaitingTime = () => {
     if (!lobby) return '0s';

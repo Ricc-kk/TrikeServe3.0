@@ -348,61 +348,104 @@ export const supabaseHelpers = {
     return { data, error };
   },
 
-  async leaveShareRideLobby(lobbyId: string, passengerId: string) {
-    // First get the current lobby
-    const { data: lobby, error: fetchError } = await supabase
-      .from('shared_ride_lobbies')
-      .select('*')
-      .eq('id', lobbyId)
-      .single();
+   async leaveShareRideLobby(lobbyId: string, passengerId: string) {
+     console.log(`🚪 LEAVE LOBBY: lobbyId=${lobbyId}, passengerId=${passengerId}`);
 
-    if (fetchError) return { data: null, error: fetchError };
-    if (!lobby) return { data: null, error: new Error('Lobby not found') };
+     try {
+       // First get the current lobby
+       const { data: lobby, error: fetchError } = await supabase
+         .from('shared_ride_lobbies')
+         .select('*')
+         .eq('id', lobbyId)
+         .single();
 
-    // Parse passengers
-    let passengers = [];
-    try {
-      passengers = Array.isArray(lobby.passengers_json) ? lobby.passengers_json : JSON.parse(lobby.passengers_json || '[]');
-    } catch (e) {
-      passengers = [];
-    }
+       if (fetchError) {
+         console.error('❌ Error fetching lobby:', fetchError);
+         return { data: null, error: fetchError };
+       }
 
-    // Remove passenger and companions (companions have ID like "userId_companion_1")
-    const updatedPassengers = passengers.filter((p: any) =>
-      p.id !== passengerId && !p.id.startsWith(`${passengerId}_companion_`)
-    );
+       if (!lobby) {
+         console.error('❌ Lobby not found:', lobbyId);
+         return { data: null, error: new Error('Lobby not found') };
+       }
 
-    const timestamp = new Date().toISOString();
+       console.log('✅ Lobby found:', { id: lobbyId, status: lobby.status });
 
-    // If no passengers left, mark lobby as cancelled
-    if (updatedPassengers.length === 0) {
-      const { data, error } = await supabase
-        .from('shared_ride_lobbies')
-        .update({
-          status: 'cancelled',
-          passengers_json: [],
-          updated_at: timestamp
-        })
-        .eq('id', lobbyId)
-        .select()
-        .single();
+       // Parse passengers
+       let passengers = [];
+       try {
+         passengers = Array.isArray(lobby.passengers_json) ? lobby.passengers_json : JSON.parse(lobby.passengers_json || '[]');
+       } catch (e) {
+         console.warn('⚠️ Error parsing passengers:', e);
+         passengers = [];
+       }
 
-      return { data, error };
-    }
+       console.log(`👥 Current passengers (${passengers.length}):`, passengers.map((p: any) => p.id));
 
-    // Update lobby with remaining passengers
-    const { data, error } = await supabase
-      .from('shared_ride_lobbies')
-      .update({
-        passengers_json: updatedPassengers,
-        updated_at: timestamp
-      })
-      .eq('id', lobbyId)
-      .select()
-      .single();
+       // Remove passenger and companions (companions have ID like "userId_companion_1")
+       const updatedPassengers = passengers.filter((p: any) => {
+         const isMainPassenger = p.id === passengerId;
+         const isCompanion = p.id.startsWith(`${passengerId}_companion_`);
+         const shouldKeep = !isMainPassenger && !isCompanion;
 
-    return { data, error };
-  },
+         if (!shouldKeep) {
+           console.log(`  🚶 Removing passenger: ${p.id}`);
+         }
+
+         return shouldKeep;
+       });
+
+       console.log(`👥 Updated passengers (${updatedPassengers.length}):`, updatedPassengers.map((p: any) => p.id));
+
+       const timestamp = new Date().toISOString();
+
+       // If no passengers left, delete or mark as cancelled
+       if (updatedPassengers.length === 0) {
+         console.log('🗑️ Lobby is now empty, marking as cancelled');
+         const { data, error } = await supabase
+           .from('shared_ride_lobbies')
+           .update({
+             status: 'cancelled',
+             passengers_json: [],
+             updated_at: timestamp
+           })
+           .eq('id', lobbyId)
+           .select()
+           .single();
+
+         if (error) {
+           console.error('❌ Error marking lobby as cancelled:', error);
+           return { data: null, error };
+         }
+
+         console.log('✅ Lobby marked as cancelled');
+         return { data, error };
+       }
+
+       // Update lobby with remaining passengers
+       console.log('📝 Updating lobby with remaining passengers');
+       const { data, error } = await supabase
+         .from('shared_ride_lobbies')
+         .update({
+           passengers_json: updatedPassengers,
+           updated_at: timestamp
+         })
+         .eq('id', lobbyId)
+         .select()
+         .single();
+
+       if (error) {
+         console.error('❌ Error updating lobby:', error);
+         return { data: null, error };
+       }
+
+       console.log('✅ Successfully left lobby');
+       return { data, error };
+     } catch (err) {
+       console.error('❌ Unexpected error in leaveShareRideLobby:', err);
+       return { data: null, error: err instanceof Error ? err : new Error(String(err)) };
+     }
+   },
 
   async acceptLobbyAsDriver(lobbyId: string, driverId: string, driverName: string, driverPlate?: string, driverRating?: string) {
     const timestamp = new Date().toISOString();
@@ -472,38 +515,52 @@ export const supabaseHelpers = {
     return { data, error };
   },
 
-  async subscribeLobbyUpdates(lobbyId: string, callback: (data: any) => void) {
-    console.log(`📡 Setting up real-time subscription for lobby: ${lobbyId}`);
+   subscribeLobbyUpdates(lobbyId: string, callback: (data: any) => Promise<void> | void) {
+     console.log(`📡 Setting up real-time subscription for lobby: ${lobbyId}`);
 
-    const channel = supabase
-      .channel(`lobby_${lobbyId}`)
-      .on(
-        'postgres_changes',
-        {
-          event: '*',
-          schema: 'public',
-          table: 'shared_ride_lobbies',
-          filter: `id=eq.${lobbyId}`
-        },
-        (payload) => {
-          console.log('🔄 Lobby update received:', payload);
-          callback(payload.new);
-        }
-      )
-      .subscribe((status) => {
-        if (status === 'SUBSCRIBED') {
-          console.log(`✅ Real-time subscription active for lobby: ${lobbyId}`);
-        } else if (status === 'CHANNEL_ERROR') {
-          console.error(`❌ Subscription error for lobby: ${lobbyId}`);
-        }
-      });
+     const channel = supabase
+       .channel(`lobby_${lobbyId}`)
+       .on(
+         'postgres_changes',
+         {
+           event: '*',
+           schema: 'public',
+           table: 'shared_ride_lobbies',
+           filter: `id=eq.${lobbyId}`
+         },
+         async (payload) => {
+           console.log('🔄 🔄 🔄 REAL-TIME UPDATE RECEIVED 🔄 🔄 🔄', {
+             event: payload.eventType,
+             table: payload.table,
+             lobbyId: payload.new?.id,
+             newData: payload.new
+           });
 
-    // Return unsubscribe function
-    return () => {
-      console.log(`🛑 Unsubscribing from lobby: ${lobbyId}`);
-      supabase.removeChannel(channel);
-    };
-  },
+           try {
+             // Call the callback with the new data
+             // The callback can be async, so we await it
+             await Promise.resolve(callback(payload.new));
+           } catch (err) {
+             console.error('❌ Error processing lobby update callback:', err);
+           }
+         }
+       )
+       .subscribe((status) => {
+         if (status === 'SUBSCRIBED') {
+           console.log(`✅ Real-time subscription ACTIVE for lobby: ${lobbyId}`);
+         } else if (status === 'CHANNEL_ERROR') {
+           console.error(`❌ Subscription ERROR for lobby: ${lobbyId}`);
+         } else if (status === 'CLOSED') {
+           console.warn(`⚠️ Subscription CLOSED for lobby: ${lobbyId}`);
+         }
+       });
+
+     // Return unsubscribe function
+     return () => {
+       console.log(`🛑 Unsubscribing from lobby: ${lobbyId}`);
+       supabase.removeChannel(channel);
+     };
+   },
 
   // Message operations
   async saveMessage(message: any) {
