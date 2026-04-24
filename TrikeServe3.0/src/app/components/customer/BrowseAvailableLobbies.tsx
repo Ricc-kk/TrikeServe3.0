@@ -90,8 +90,10 @@ export default function BrowseAvailableLobbies({
           const matchesRoute = payload.new?.pickup_address === pickupAddress && payload.new?.dropoff_address === dropoffAddress;
 
           if (payload.eventType === 'INSERT' && payload.new.status === 'waiting' && matchesRoute) {
+            console.log('➕ NEW LOBBY CREATED:', payload.new.id);
             setLobbies(prev => [...prev, payload.new as AvailableLobby]);
           } else if (payload.eventType === 'UPDATE') {
+            console.log('🔄 LOBBY UPDATED:', payload.new.id, 'Passengers:', (payload.new.passengers_json || []).length);
             setLobbies(prev =>
               prev.map(l => l.id === payload.new.id ? payload.new as AvailableLobby : l)
                 .filter(l => l.status === 'waiting')
@@ -102,8 +104,29 @@ export default function BrowseAvailableLobbies({
       )
       .subscribe();
 
+    // Add polling to ensure lobbies are always up-to-date (every 2 seconds)
+    const pollInterval = setInterval(async () => {
+      try {
+        const { data, error: fetchError } = await supabaseHelpers.getAvailableLobbies(dropoffAddress, pickupAddress);
+
+        if (!fetchError && data) {
+          const availableLobbies = (data as AvailableLobby[]).filter(lobby => {
+            const passengers = lobby.passengers_json || [];
+            return lobby.pickup_address === pickupAddress &&
+              lobby.dropoff_address === dropoffAddress &&
+              !passengers.some(p => p.id === user?.id || p.id.startsWith(`${user?.id}_companion_`));
+          });
+
+          setLobbies(availableLobbies);
+        }
+      } catch (err) {
+        console.error('Polling error:', err);
+      }
+    }, 2000);
+
     return () => {
       supabase.removeChannel(channel);
+      clearInterval(pollInterval);
     };
   }, [pickupAddress, dropoffAddress, user?.id]);
 
