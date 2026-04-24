@@ -17,31 +17,38 @@ ADD COLUMN IF NOT EXISTS driver_rating VARCHAR(10);
 CREATE INDEX IF NOT EXISTS idx_lobbies_customer ON shared_ride_lobbies(customer_id);
 CREATE INDEX IF NOT EXISTS idx_lobbies_status_waiting ON shared_ride_lobbies(status)
   WHERE status = 'waiting';
+CREATE INDEX IF NOT EXISTS idx_lobbies_pickup_dropoff_status ON shared_ride_lobbies(pickup_address, dropoff_address, status);
 CREATE INDEX IF NOT EXISTS idx_lobbies_dropoff_status ON shared_ride_lobbies(dropoff_location, status);
 CREATE INDEX IF NOT EXISTS idx_lobbies_created_at ON shared_ride_lobbies(created_at);
 
 -- Update RLS policies for shared_ride_lobbies
 -- Allow customers to view all waiting lobbies for browsing
+DROP POLICY IF EXISTS "Customers can view waiting lobbies" ON shared_ride_lobbies;
 CREATE POLICY "Customers can view waiting lobbies" ON shared_ride_lobbies
   FOR SELECT USING (status = 'waiting');
 
 -- Allow customers to view lobbies they created
+DROP POLICY IF EXISTS "Customers can view own lobbies" ON shared_ride_lobbies;
 CREATE POLICY "Customers can view own lobbies" ON shared_ride_lobbies
   FOR SELECT USING (auth.uid()::text = customer_id::text);
 
 -- Allow drivers to view lobbies assigned to them
+DROP POLICY IF EXISTS "Drivers can view assigned lobbies" ON shared_ride_lobbies;
 CREATE POLICY "Drivers can view assigned lobbies" ON shared_ride_lobbies
   FOR SELECT USING (auth.uid()::text = driver_id::text);
 
 -- Allow customers to create lobbies
+DROP POLICY IF EXISTS "Customers can create lobbies" ON shared_ride_lobbies;
 CREATE POLICY "Customers can create lobbies" ON shared_ride_lobbies
   FOR INSERT WITH CHECK (auth.uid()::text = customer_id::text);
 
 -- Allow customers to update their own lobbies
+DROP POLICY IF EXISTS "Customers can update own lobbies" ON shared_ride_lobbies;
 CREATE POLICY "Customers can update own lobbies" ON shared_ride_lobbies
   FOR UPDATE USING (auth.uid()::text = customer_id::text);
 
 -- Allow drivers to update lobbies they're assigned to
+DROP POLICY IF EXISTS "Drivers can update assigned lobbies" ON shared_ride_lobbies;
 CREATE POLICY "Drivers can update assigned lobbies" ON shared_ride_lobbies
   FOR UPDATE USING (auth.uid()::text = driver_id::text);
 

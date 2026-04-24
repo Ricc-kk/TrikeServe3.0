@@ -43,6 +43,7 @@ export default function CustomerHome() {
   const [showPassengerCount, setShowPassengerCount] = useState(false);
   const [passengerCount, setPassengerCount] = useState(1);
   const [showLobbyList, setShowLobbyList] = useState(false);
+  const [activeShareLobbyId, setActiveShareLobbyId] = useState<string | null>(null);
   const [unreadMessagesCount, setUnreadMessagesCount] = useState(0);
   const [driverAcceptedPopup, setDriverAcceptedPopup] = useState<any>(null);
   const [driverStatusPopup, setDriverStatusPopup] = useState<{ status: string; message: string } | null>(null);
@@ -617,6 +618,7 @@ export default function CustomerHome() {
 
           if (existingLobby) {
             alert('You are already in an active lobby. Please leave your current lobby before joining another.');
+            setActiveShareLobbyId(existingLobby.id);
             setShowShareLobby(true);
             return;
           }
@@ -635,6 +637,7 @@ export default function CustomerHome() {
     
     // For share rides, open the lobby system
     if (selectedVehicle === 'share') {
+      setActiveShareLobbyId(null);
       setShowShareLobby(true);
     } else {
       // For special rides, save to Supabase database
@@ -1429,6 +1432,7 @@ export default function CustomerHome() {
       {/* Share Ride Lobby */}
       {showShareLobby && (
         <ShareRideLobby
+          lobbyId={activeShareLobbyId || undefined}
           pickup={pickup}
           pickupAddress={pickupAddress}
           dropoff={dropoff}
@@ -1443,6 +1447,7 @@ export default function CustomerHome() {
           }}
           onClose={() => {
             setShowShareLobby(false);
+            setActiveShareLobbyId(null);
           }}
         />
       )}
@@ -1450,8 +1455,10 @@ export default function CustomerHome() {
       {/* Browse Available Lobbies Modal */}
       {showLobbyList && (
         <BrowseAvailableLobbies
+          pickupAddress={pickupAddress || pickup}
           dropoffAddress={dropoffAddress || dropoff}
-          onLobbyJoined={() => {
+          onLobbyJoined={(lobbyId) => {
+            setActiveShareLobbyId(lobbyId);
             setShowLobbyList(false);
             setShowShareLobby(true);
           }}

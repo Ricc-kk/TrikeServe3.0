@@ -33,6 +33,7 @@ interface ShareRideLobby {
 }
 
 interface ShareRideLobbyProps {
+  lobbyId?: string;
   pickup: string;
   pickupAddress: string;
   dropoff: string;
@@ -44,6 +45,7 @@ interface ShareRideLobbyProps {
 }
 
 export default function ShareRideLobby({
+  lobbyId,
   pickup,
   pickupAddress,
   dropoff,
@@ -60,12 +62,53 @@ export default function ShareRideLobby({
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
+  const normalizePassengers = (value: any): LobbyPassenger[] => {
+    if (Array.isArray(value)) return value;
+    if (typeof value === 'string') {
+      try {
+        const parsed = JSON.parse(value);
+        return Array.isArray(parsed) ? parsed : [];
+      } catch {
+        return [];
+      }
+    }
+    return [];
+  };
+
+  const dedupePassengers = (passengers: LobbyPassenger[]) => {
+    const seen = new Set<string>();
+    return passengers.filter((p) => {
+      if (!p?.id || seen.has(p.id)) return false;
+      seen.add(p.id);
+      return true;
+    });
+  };
+
+  const toTime = (value?: string) => new Date(value || 0).getTime();
+
   // Initialize or join lobby on mount
   useEffect(() => {
     const initializeLobby = async () => {
       try {
         setLoading(true);
-        const existingLobby = await findOrCreateLobby();
+        let existingLobby: ShareRideLobby | null = null;
+
+        if (lobbyId) {
+          const { data: selectedLobby, error: selectedLobbyError } = await supabaseHelpers.getLobbyById(lobbyId);
+          if (selectedLobbyError) {
+            console.error('Error loading selected lobby:', selectedLobbyError);
+          } else if (selectedLobby) {
+            existingLobby = {
+              ...selectedLobby,
+              passengers_json: normalizePassengers(selectedLobby.passengers_json)
+            };
+          }
+        }
+
+        if (!existingLobby) {
+          existingLobby = await findOrCreateLobby();
+        }
+
         if (existingLobby) {
           setLobby(existingLobby);
 
@@ -74,10 +117,13 @@ export default function ShareRideLobby({
             existingLobby.id,
             (updatedLobbyData) => {
               console.log('🔄 Lobby updated:', updatedLobbyData);
+              const normalizedPassengers = dedupePassengers(normalizePassengers(updatedLobbyData?.passengers_json));
               setLobby(prevLobby => ({
                 ...prevLobby!,
                 ...updatedLobbyData,
-                passengers_json: updatedLobbyData.passengers_json || []
+                passengers_json: Object.prototype.hasOwnProperty.call(updatedLobbyData || {}, 'passengers_json')
+                  ? normalizedPassengers
+                  : (prevLobby?.passengers_json || [])
               }));
 
               // Check if driver was found
@@ -87,7 +133,35 @@ export default function ShareRideLobby({
             }
           );
 
-          return unsubscribe;
+          // Fallback sync for cases where realtime payloads are delayed/partial.
+          const syncInterval = setInterval(async () => {
+            const { data: latestLobby, error: latestLobbyError } = await supabaseHelpers.getLobbyById(existingLobby!.id);
+            if (latestLobbyError || !latestLobby) return;
+
+            const latestPassengers = dedupePassengers(normalizePassengers(latestLobby.passengers_json));
+            setLobby((prevLobby) => {
+              if (!prevLobby) return prevLobby;
+              const prevCount = (prevLobby.passengers_json || []).length;
+              if (
+                prevCount === latestPassengers.length &&
+                prevLobby.status === latestLobby.status &&
+                toTime(prevLobby.updated_at) === toTime(latestLobby.updated_at)
+              ) {
+                return prevLobby;
+              }
+
+              return {
+                ...prevLobby,
+                ...latestLobby,
+                passengers_json: latestPassengers,
+              };
+            });
+          }, 2500);
+
+          return () => {
+            clearInterval(syncInterval);
+            unsubscribe();
+          };
         }
       } catch (err) {
         console.error('Error initializing lobby:', err);
@@ -105,7 +179,7 @@ export default function ShareRideLobby({
     return () => {
       if (unsubscribe) unsubscribe();
     };
-  }, []);
+  }, [lobbyId]);
 
   const getRandomEmoji = () => {
     const emojis = ['👤', '👨', '👩', '🧑', '👦', '👧', '👨‍💼', '👩‍💼', '👨‍🎓', '👩‍🎓'];
@@ -117,18 +191,23 @@ export default function ShareRideLobby({
       // First, check if user is already in a waiting lobby
       const { data: userLobbies, error: userError } = await supabaseHelpers.getAvailableLobbies();
       if (!userError && userLobbies) {
-        const existingUserLobby = userLobbies.find((l: any) => {
+        const userLobbyCandidates = userLobbies.filter((l: any) => {
           const passengers = Array.isArray(l.passengers_json) ? l.passengers_json : [];
           return passengers.some((p: any) => p.id === user?.id || p.id.startsWith(`${user?.id}_companion_`));
         });
+
+        const routeMatchedLobby = userLobbyCandidates
+          .filter((l: any) => l.pickup_address === pickupAddress && l.dropoff_address === dropoffAddress)
+          .sort((a: any, b: any) => toTime(b.updated_at || b.created_at) - toTime(a.updated_at || a.created_at))[0];
+
+        const existingUserLobby = routeMatchedLobby || userLobbyCandidates
+          .sort((a: any, b: any) => toTime(b.updated_at || b.created_at) - toTime(a.updated_at || a.created_at))[0];
 
         if (existingUserLobby) {
           console.log('✅ User already in lobby:', existingUserLobby.id);
           return {
             ...existingUserLobby,
-            passengers_json: Array.isArray(existingUserLobby.passengers_json)
-              ? existingUserLobby.passengers_json
-              : []
+            passengers_json: dedupePassengers(normalizePassengers(existingUserLobby.passengers_json))
           };
         }
       }
@@ -415,7 +494,7 @@ export default function ShareRideLobby({
                     >
                       <div className="flex items-center gap-3">
                         <div className="w-12 h-12 rounded-full bg-gradient-to-br from-[#E11D48] to-[#BE123C] flex items-center justify-center text-2xl">
-                          {passenger.emoji}
+                          {passenger.emoji || '👤'}
                         </div>
                         <div className="flex-1">
                           <div className="flex items-center gap-2">

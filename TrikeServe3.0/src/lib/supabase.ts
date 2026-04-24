@@ -245,6 +245,7 @@ export const supabaseHelpers = {
       .from('shared_ride_lobbies')
       .select('*')
       .eq('status', 'waiting')
+      .eq('pickup_address', pickupAddr)
       .eq('dropoff_address', dropoffAddr)
       .gt('max_seats', 0)
       .order('created_at', { ascending: true })
@@ -253,11 +254,15 @@ export const supabaseHelpers = {
     return { data: data?.[0] || null, error };
   },
 
-  async getAvailableLobbies(dropoffAddr?: string) {
+  async getAvailableLobbies(dropoffAddr?: string, pickupAddr?: string) {
     let query = supabase
       .from('shared_ride_lobbies')
       .select('*')
       .eq('status', 'waiting');
+
+    if (pickupAddr) {
+      query = query.eq('pickup_address', pickupAddr);
+    }
 
     if (dropoffAddr) {
       query = query.eq('dropoff_address', dropoffAddr);
@@ -283,7 +288,7 @@ export const supabaseHelpers = {
     const timestamp = new Date().toISOString();
     const lobbyData = {
       ...lobby,
-      passengers_json: lobby.passengers || [],
+      passengers_json: lobby.passengers_json ?? lobby.passengers ?? [],
       created_at: timestamp,
       updated_at: timestamp
     };

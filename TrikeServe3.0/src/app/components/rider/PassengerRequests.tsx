@@ -7,62 +7,6 @@ import { Badge } from "../ui/badge";
 import { useAuth } from "../../contexts/AuthContext";
 import { supabaseHelpers } from "@/lib/supabase";
 
-// Utility: Forcefully clean corrupted ride data from localStorage
-const cleanupStaleRideData = () => {
-  try {
-    console.log('🧹 CLEANING UP STALE RIDE DATA...');
-
-    // List of ride-related keys to check
-    const rideKeys = [
-      'trikeserve_active_ride',
-      'trikeserve_accepted_rides'
-    ];
-
-    for (const key of rideKeys) {
-      const data = localStorage.getItem(key);
-      if (!data) continue;
-
-      try {
-        if (key === 'trikeserve_active_ride') {
-          const ride = JSON.parse(data);
-          const activeStatuses = ['accepted', 'on-the-way', 'arrived', 'in-progress'];
-
-          // If ride doesn't have a valid active status, remove it
-          if (!ride.status || !activeStatuses.includes(ride.status)) {
-            console.log(`🗑️  Removing stale ride (status: ${ride.status || 'none'})`);
-            localStorage.removeItem(key);
-          }
-        } else if (key === 'trikeserve_accepted_rides') {
-          const rides = JSON.parse(data);
-          const activeStatuses = ['accepted', 'on-the-way', 'arrived', 'in-progress'];
-
-          // Filter out any rides that don't have active status
-          const validRides = rides.filter((ride: any) =>
-            ride.status && activeStatuses.includes(ride.status)
-          );
-
-          if (validRides.length !== rides.length) {
-            console.log(`🗑️  Removed ${rides.length - validRides.length} stale accepted rides`);
-            if (validRides.length > 0) {
-              localStorage.setItem(key, JSON.stringify(validRides));
-            } else {
-              localStorage.removeItem(key);
-            }
-          }
-        }
-      } catch (error) {
-        console.error(`Error cleaning key ${key}:`, error);
-        // If we can't parse it, remove it
-        localStorage.removeItem(key);
-      }
-    }
-
-    console.log('✅ CLEANUP COMPLETE');
-  } catch (error) {
-    console.error('Error in cleanupStaleRideData:', error);
-  }
-};
-
 interface PassengerRequest {
   id: string;
   type: 'delivery' | 'shared' | 'private';
@@ -109,9 +53,6 @@ export default function PassengerRequests() {
 
   // Load requests from Supabase on mount and set up polling
   useEffect(() => {
-    // 🧹 CRITICAL: Clean up any stale ride data on mount
-    cleanupStaleRideData();
-
     const loadRequests = async () => {
       try {
         // Fetch pending ride requests from Supabase
@@ -206,40 +147,8 @@ export default function PassengerRequests() {
       alert('You must be logged in as a driver to accept requests.');
       return;
     }
-    const activeRideData = localStorage.getItem('trikeserve_active_ride');
-    if (activeRideData) {
-      try {
-        const activeRide = JSON.parse(activeRideData);
-        
-        // Only block if the ride is actually active (not completed)
-        // Check ride status to determine if it's truly in progress
-        const activeStatuses = ['accepted', 'on-the-way', 'arrived', 'in-progress'];
-        const isRideActive = activeStatuses.includes(activeRide.status);
 
-        if (!isRideActive) {
-          // Ride is completed or invalid, clear it and continue
-          localStorage.removeItem('trikeserve_active_ride');
-        } else {
-          // For shared rides with passenger details, check if all passengers are dropped off
-          if (activeRide.passengerDetails && activeRide.passengerDetails.length > 0) {
-            const allDroppedOff = activeRide.passengerDetails.every((p: any) => p.status === 'dropped-off');
-
-            if (!allDroppedOff) {
-              alert('You already have an active ride. Please complete your current ride before accepting another.');
-              return;
-            }
-            // If all passengers are dropped off, allow accepting new ride
-            // The driver just needs to click "Complete Ride" but can start accepting new requests
-          } else {
-            // For non-shared rides or rides without passenger details, check the status
-            alert('You already have an active ride. Please complete your current ride before accepting another.');
-            return;
-          }
-        }
-      } catch (error) {
-        console.error('Error checking active ride:', error);
-      }
-    }
+    const activeStatuses = ['accepted', 'on-the-way', 'arrived', 'in-progress'];
 
     // Check if driver already has an active shared lobby in Supabase
     if (user?.id) {
@@ -248,7 +157,7 @@ export default function PassengerRequests() {
         if (!lobbiesError && allLobbies) {
           const driverActiveLobbies = allLobbies.filter((lobby: any) =>
             lobby.driver_id === user.id &&
-            (lobby.status === 'driver_found' || lobby.status === 'in_progress')
+            activeStatuses.includes(lobby.status)
           );
 
           if (driverActiveLobbies.length > 0) {
@@ -261,28 +170,8 @@ export default function PassengerRequests() {
       }
     }
 
-    // Check if driver has any accepted rides
-    const acceptedRidesData = localStorage.getItem('trikeserve_accepted_rides');
-    if (acceptedRidesData && user?.id) {
-      try {
-        const acceptedRides = JSON.parse(acceptedRidesData);
-        const driverActiveRides = acceptedRides.filter((ride: any) => 
-          ride.driverId === user.id &&
-          ride.status &&
-          (ride.status === 'accepted' || ride.status === 'in-progress' || ride.status === 'on-the-way' || ride.status === 'arrived')
-        );
-
-        if (driverActiveRides.length > 0) {
-          console.log('⚠️ Driver has active rides:', driverActiveRides);
-          alert('You already have an active ride. Please complete your current ride before accepting another.');
-          return;
-        }
-      } catch (error) {
-        console.error('Error checking accepted rides:', error);
-      }
-    }
-
     // If it's a shared ride lobby, update lobby status in Supabase
+    let passengerDetails = request.passengerDetails || [];
     if (request.lobbyId) {
       try {
         const { data: updatedLobby, error: acceptError } = await supabaseHelpers.acceptLobbyAsDriver(
@@ -299,7 +188,7 @@ export default function PassengerRequests() {
           return;
         }
 
-        request.passengerDetails = Array.isArray(updatedLobby?.passengers_json) ? updatedLobby.passengers_json : [];
+        passengerDetails = Array.isArray(updatedLobby?.passengers_json) ? updatedLobby.passengers_json : passengerDetails;
       } catch (error) {
         console.error('Error updating lobby:', error);
         alert('Failed to update shared ride lobby. Please try again.');
@@ -310,6 +199,7 @@ export default function PassengerRequests() {
     // Create an accepted ride record
     const acceptedRide = {
       ...request,
+      passengerDetails,
       driverId: user?.id,
       driverName: user?.name,
       driverPlate: user?.todaPlate,
@@ -318,19 +208,6 @@ export default function PassengerRequests() {
       acceptedAt: new Date().toISOString(),
       eta: '5 mins',
     };
-
-    // Store in accepted rides
-    const existingAcceptedRides = localStorage.getItem('trikeserve_accepted_rides');
-    let acceptedRides = [];
-    if (existingAcceptedRides) {
-      try {
-        acceptedRides = JSON.parse(existingAcceptedRides);
-      } catch (error) {
-        console.error('Error parsing accepted rides:', error);
-      }
-    }
-    acceptedRides.push(acceptedRide);
-    localStorage.setItem('trikeserve_accepted_rides', JSON.stringify(acceptedRides));
 
     // Navigate to active ride page
     navigate('/rider/active-ride', { state: { acceptedRide } });
@@ -380,9 +257,7 @@ export default function PassengerRequests() {
           <p className="text-sm text-teal-900">
             <span className="font-bold">{requests.length} passengers</span> are currently looking for tricycle service in your area
           </p>
-          <p className="text-xs text-teal-700 mt-1">
-            💡 You can view requests anytime, even when offline
-          </p>
+          <p className="text-xs text-teal-700 mt-1">💡 Requests are loaded from Supabase and refresh automatically</p>
         </div>
 
         <div className="flex gap-2 mb-4 overflow-x-auto scrollbar-hide">

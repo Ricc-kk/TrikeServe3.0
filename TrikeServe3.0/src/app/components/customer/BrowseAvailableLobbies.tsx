@@ -21,12 +21,14 @@ interface AvailableLobby {
 }
 
 interface BrowseAvailableLobbiesProps {
+  pickupAddress: string;
   dropoffAddress: string;
   onLobbyJoined: (lobbyId: string) => void;
   onClose: () => void;
 }
 
 export default function BrowseAvailableLobbies({
+  pickupAddress,
   dropoffAddress,
   onLobbyJoined,
   onClose
@@ -44,7 +46,7 @@ export default function BrowseAvailableLobbies({
       try {
         setLoading(true);
         // Fetch lobbies with matching dropoff address
-        const { data, error: fetchError } = await supabaseHelpers.getAvailableLobbies(dropoffAddress);
+        const { data, error: fetchError } = await supabaseHelpers.getAvailableLobbies(dropoffAddress, pickupAddress);
 
         if (fetchError) {
           setError('Failed to load available lobbies');
@@ -56,7 +58,9 @@ export default function BrowseAvailableLobbies({
           // Filter out lobbies where user is already a passenger
           const availableLobbies = (data as AvailableLobby[]).filter(lobby => {
             const passengers = lobby.passengers_json || [];
-            return !passengers.some(p => p.id === user?.id || p.id.startsWith(`${user?.id}_companion_`));
+            return lobby.pickup_address === pickupAddress &&
+              lobby.dropoff_address === dropoffAddress &&
+              !passengers.some(p => p.id === user?.id || p.id.startsWith(`${user?.id}_companion_`));
           });
 
           setLobbies(availableLobbies);
@@ -83,12 +87,15 @@ export default function BrowseAvailableLobbies({
           filter: `dropoff_address=eq.${dropoffAddress}`
         },
         (payload) => {
-          if (payload.eventType === 'INSERT' && payload.new.status === 'waiting') {
+          const matchesRoute = payload.new?.pickup_address === pickupAddress && payload.new?.dropoff_address === dropoffAddress;
+
+          if (payload.eventType === 'INSERT' && payload.new.status === 'waiting' && matchesRoute) {
             setLobbies(prev => [...prev, payload.new as AvailableLobby]);
           } else if (payload.eventType === 'UPDATE') {
             setLobbies(prev =>
               prev.map(l => l.id === payload.new.id ? payload.new as AvailableLobby : l)
                 .filter(l => l.status === 'waiting')
+                .filter(l => l.pickup_address === pickupAddress && l.dropoff_address === dropoffAddress)
             );
           }
         }
@@ -98,7 +105,7 @@ export default function BrowseAvailableLobbies({
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [dropoffAddress, user?.id]);
+  }, [pickupAddress, dropoffAddress, user?.id]);
 
   const handleJoinLobby = async (lobbyId: string) => {
     if (!user) {
