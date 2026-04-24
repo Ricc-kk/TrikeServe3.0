@@ -12,7 +12,7 @@ import { supabaseHelpers } from "@/lib/supabase";
 import { supabase } from "../../../utils/supabase";
 import SharedRides from "./SharedRides";
 import ShareRideLobby from "./ShareRideLobby";
-import LobbyList from "./LobbyList";
+import BrowseAvailableLobbies from "./BrowseAvailableLobbies";
 
 // Get Google Maps API Key from environment variable
 const GOOGLE_MAPS_API_KEY = import.meta.env.VITE_GOOGLE_MAPS_API_KEY || "";
@@ -43,6 +43,7 @@ export default function CustomerHome() {
   const [showPassengerCount, setShowPassengerCount] = useState(false);
   const [passengerCount, setPassengerCount] = useState(1);
   const [showLobbyList, setShowLobbyList] = useState(false);
+  const [activeShareLobbyId, setActiveShareLobbyId] = useState<string | null>(null);
   const [unreadMessagesCount, setUnreadMessagesCount] = useState(0);
   const [driverAcceptedPopup, setDriverAcceptedPopup] = useState<any>(null);
   const [driverStatusPopup, setDriverStatusPopup] = useState<{ status: string; message: string } | null>(null);
@@ -589,7 +590,7 @@ export default function CustomerHome() {
     setSearchQuery("");
   };
 
-  const handleBookRide = () => {
+  const handleBookRide = async () => {
     if (!selectedVehicle) return;
     
     // Validate pickup and dropoff locations
@@ -606,28 +607,24 @@ export default function CustomerHome() {
       }
     }
 
-    // ...existing code...
-    if (selectedVehicle === 'share') {
-      const lobbiesData = localStorage.getItem('trikeserve_share_lobbies');
-      if (lobbiesData) {
-        try {
-          const lobbies = JSON.parse(lobbiesData);
-          const existingLobby = lobbies.find((lobby: any) => 
-            lobby.status === 'waiting' &&
-            lobby.passengers.some((p: any) => 
-              p.id === user?.id || p.id.startsWith(`${user?.id}_companion_`)
-            )
-          );
+    if (selectedVehicle === 'share' && user?.id) {
+      try {
+        const { data: waitingLobbies, error } = await supabaseHelpers.getAvailableLobbies();
+        if (!error && waitingLobbies) {
+          const existingLobby = waitingLobbies.find((lobby: any) => {
+            const passengers = Array.isArray(lobby.passengers_json) ? lobby.passengers_json : [];
+            return passengers.some((p: any) => p.id === user.id || p.id.startsWith(`${user.id}_companion_`));
+          });
 
           if (existingLobby) {
-            // User is already in a lobby, show it instead of creating new
             alert('You are already in an active lobby. Please leave your current lobby before joining another.');
+            setActiveShareLobbyId(existingLobby.id);
             setShowShareLobby(true);
             return;
           }
-        } catch (error) {
-          console.error('Error checking lobbies:', error);
         }
+      } catch (error) {
+        console.error('Error checking active lobbies:', error);
       }
     }
     
@@ -640,6 +637,7 @@ export default function CustomerHome() {
     
     // For share rides, open the lobby system
     if (selectedVehicle === 'share') {
+      setActiveShareLobbyId(null);
       setShowShareLobby(true);
     } else {
       // For special rides, save to Supabase database
@@ -1434,6 +1432,7 @@ export default function CustomerHome() {
       {/* Share Ride Lobby */}
       {showShareLobby && (
         <ShareRideLobby
+          lobbyId={activeShareLobbyId || undefined}
           pickup={pickup}
           pickupAddress={pickupAddress}
           dropoff={dropoff}
@@ -1448,17 +1447,18 @@ export default function CustomerHome() {
           }}
           onClose={() => {
             setShowShareLobby(false);
+            setActiveShareLobbyId(null);
           }}
         />
       )}
 
-      {/* Lobby List Modal */}
+      {/* Browse Available Lobbies Modal */}
       {showLobbyList && (
-        <LobbyList
-          dropoff={dropoff}
-          onJoinLobby={(lobby) => {
-            // Set the user's pickup to their selected location
-            // Join the lobby with the selected pickup
+        <BrowseAvailableLobbies
+          pickupAddress={pickupAddress || pickup}
+          dropoffAddress={dropoffAddress || dropoff}
+          onLobbyJoined={(lobbyId) => {
+            setActiveShareLobbyId(lobbyId);
             setShowLobbyList(false);
             setShowShareLobby(true);
           }}
