@@ -49,6 +49,7 @@ export default function RestaurantDetail() {
   const { toggleFavorite, isFavorite: checkIsFavorite } = useFavorites();
   
   const [selectedCategory, setSelectedCategory] = useState("all");
+  const [selectedBudget, setSelectedBudget] = useState("all");
   const [isScrolled, setIsScrolled] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [showSearchModal, setShowSearchModal] = useState(false);
@@ -366,7 +367,25 @@ export default function RestaurantDetail() {
       item.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
       item.description.toLowerCase().includes(searchQuery.toLowerCase());
     
-    return matchesCategory && matchesSearch;
+    // Budget filter logic
+    let matchesBudget = true;
+    if (selectedBudget !== "all") {
+      if (selectedBudget === "under100") {
+        matchesBudget = item.price < 100;
+      } else if (selectedBudget === "100-149") {
+        matchesBudget = item.price >= 100 && item.price < 150;
+      } else if (selectedBudget === "150-199") {
+        matchesBudget = item.price >= 150 && item.price < 200;
+      } else if (selectedBudget === "200-249") {
+        matchesBudget = item.price >= 200 && item.price < 250;
+      } else if (selectedBudget === "250-299") {
+        matchesBudget = item.price >= 250 && item.price < 300;
+      } else if (selectedBudget === "300+") {
+        matchesBudget = item.price >= 300;
+      }
+    }
+
+    return matchesCategory && matchesSearch && matchesBudget;
   }) || [];
 
   const selectedCategoryName = restaurantData?.categories.find(cat => cat.id === selectedCategory)?.name || "All Items";
@@ -474,6 +493,80 @@ export default function RestaurantDetail() {
                 {category.name}
               </button>
             ))}
+          </div>
+
+          {/* Budget Filter Pills */}
+          <div className="flex gap-2 overflow-x-auto pb-2 scrollbar-hide">
+            <button
+              onClick={() => setSelectedBudget("all")}
+              className={`px-4 py-2 rounded-full text-sm font-semibold whitespace-nowrap transition-all flex-shrink-0 ${
+                selectedBudget === "all"
+                  ? "bg-[#E11D48] text-white"
+                  : "bg-[#F1F5F9] text-[#64748B] hover:bg-[#E2E8F0]"
+              }`}
+            >
+              All Budgets
+            </button>
+            <button
+              onClick={() => setSelectedBudget("under100")}
+              className={`px-4 py-2 rounded-full text-sm font-semibold whitespace-nowrap transition-all flex-shrink-0 ${
+                selectedBudget === "under100"
+                  ? "bg-[#E11D48] text-white"
+                  : "bg-[#F1F5F9] text-[#64748B] hover:bg-[#E2E8F0]"
+              }`}
+            >
+              Less than ₱100
+            </button>
+            <button
+              onClick={() => setSelectedBudget("100-149")}
+              className={`px-4 py-2 rounded-full text-sm font-semibold whitespace-nowrap transition-all flex-shrink-0 ${
+                selectedBudget === "100-149"
+                  ? "bg-[#E11D48] text-white"
+                  : "bg-[#F1F5F9] text-[#64748B] hover:bg-[#E2E8F0]"
+              }`}
+            >
+              ₱100
+            </button>
+            <button
+              onClick={() => setSelectedBudget("150-199")}
+              className={`px-4 py-2 rounded-full text-sm font-semibold whitespace-nowrap transition-all flex-shrink-0 ${
+                selectedBudget === "150-199"
+                  ? "bg-[#E11D48] text-white"
+                  : "bg-[#F1F5F9] text-[#64748B] hover:bg-[#E2E8F0]"
+              }`}
+            >
+              ₱150
+            </button>
+            <button
+              onClick={() => setSelectedBudget("200-249")}
+              className={`px-4 py-2 rounded-full text-sm font-semibold whitespace-nowrap transition-all flex-shrink-0 ${
+                selectedBudget === "200-249"
+                  ? "bg-[#E11D48] text-white"
+                  : "bg-[#F1F5F9] text-[#64748B] hover:bg-[#E2E8F0]"
+              }`}
+            >
+              ₱200
+            </button>
+            <button
+              onClick={() => setSelectedBudget("250-299")}
+              className={`px-4 py-2 rounded-full text-sm font-semibold whitespace-nowrap transition-all flex-shrink-0 ${
+                selectedBudget === "250-299"
+                  ? "bg-[#E11D48] text-white"
+                  : "bg-[#F1F5F9] text-[#64748B] hover:bg-[#E2E8F0]"
+              }`}
+            >
+              ₱250
+            </button>
+            <button
+              onClick={() => setSelectedBudget("300+")}
+              className={`px-4 py-2 rounded-full text-sm font-semibold whitespace-nowrap transition-all flex-shrink-0 ${
+                selectedBudget === "300+"
+                  ? "bg-[#E11D48] text-white"
+                  : "bg-[#F1F5F9] text-[#64748B] hover:bg-[#E2E8F0]"
+              }`}
+            >
+              ₱300
+            </button>
           </div>
 
           {/* Search Bar */}
