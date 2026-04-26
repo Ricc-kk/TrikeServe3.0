@@ -138,7 +138,7 @@ export default function RestaurantDetail() {
           image: item.image_url || 'https://images.unsplash.com/photo-1546069901-ba9599a7e63c?w=400',
           category: item.category,
           available: item.is_available,
-          badge: undefined,
+          badge: item.badge || undefined,
           customizationGroups: []
         }));
 
@@ -267,19 +267,19 @@ export default function RestaurantDetail() {
                 .select('*')
                 .eq('restaurant_id', restaurantId);
 
-              if (restaurantData && menuItems) {
-                // Map menu items to MenuItem format
-                const mappedMenuItems = (menuItems || []).map((item: any) => ({
-                  id: item.id,
-                  name: item.name,
-                  description: item.description || '',
-                  price: parseFloat(item.price),
-                  image: item.image_url || 'https://images.unsplash.com/photo-1546069901-ba9599a7e63c?w=400',
-                  category: item.category,
-                  available: item.is_available,
-                  badge: undefined,
-                  customizationGroups: []
-                }));
+               if (restaurantData && menuItems) {
+                 // Map menu items to MenuItem format
+                 const mappedMenuItems = (menuItems || []).map((item: any) => ({
+                   id: item.id,
+                   name: item.name,
+                   description: item.description || '',
+                   price: parseFloat(item.price),
+                   image: item.image_url || 'https://images.unsplash.com/photo-1546069901-ba9599a7e63c?w=400',
+                   category: item.category,
+                   available: item.is_available,
+                   badge: item.badge || undefined,
+                   customizationGroups: []
+                 }));
 
                 // Update restaurant data with new menu items
                 setRestaurantData({
@@ -385,7 +385,10 @@ export default function RestaurantDetail() {
       }
     }
 
-    return matchesCategory && matchesSearch && matchesBudget;
+    // Only show available items to customers
+    const isAvailable = item.available === true;
+
+    return matchesCategory && matchesSearch && matchesBudget && isAvailable;
   }) || [];
 
   const selectedCategoryName = restaurantData?.categories.find(cat => cat.id === selectedCategory)?.name || "All Items";
@@ -794,7 +797,7 @@ export default function RestaurantDetail() {
           <div className="px-5 pb-6">
             <h3 className="text-lg font-bold text-[#121212] mb-4">Top picks</h3>
             <div className="flex gap-3 overflow-x-auto pb-2 -mx-5 px-5">
-              {restaurantData?.menuItems.filter(item => item.badge).slice(0, 4).map((item) => (
+              {restaurantData?.menuItems.filter(item => item.badge && item.available).slice(0, 4).map((item) => (
                 <div key={item.id} className="flex-shrink-0 w-32">
                   <div className="relative w-32 h-32 rounded-2xl overflow-hidden mb-2">
                     <ImageWithFallback

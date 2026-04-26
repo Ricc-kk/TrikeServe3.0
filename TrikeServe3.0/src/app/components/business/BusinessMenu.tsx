@@ -157,6 +157,7 @@ export default function BusinessMenu() {
             price: item.price,
             image: item.image_url || 'https://images.unsplash.com/photo-1546069901-ba9599a7e63c?w=400',
             category: item.category,
+            badge: item.badge || undefined,
             available: item.is_available,
             customizationGroups: item.customization_groups || [],
           }));
@@ -203,6 +204,7 @@ export default function BusinessMenu() {
                 category: item.category,
                 image_url: item.image,
                 is_available: item.available,
+                badge: item.badge || null,
                 created_at: new Date().toISOString(),
               }])
               .select()
@@ -231,6 +233,7 @@ export default function BusinessMenu() {
                 category: item.category,
                 image_url: item.image,
                 is_available: item.available,
+                badge: item.badge || null,
                 updated_at: new Date().toISOString(),
               })
               .eq('id', item.id);
@@ -278,6 +281,7 @@ export default function BusinessMenu() {
                     category: item.category,
                     image_url: item.image,
                     is_available: item.available,
+                    badge: item.badge || null,
                     created_at: new Date().toISOString(),
                   }]);
               } else if (typeof item.id === 'string') {
@@ -290,6 +294,7 @@ export default function BusinessMenu() {
                     category: item.category,
                     image_url: item.image,
                     is_available: item.available,
+                    badge: item.badge || null,
                     updated_at: new Date().toISOString(),
                   })
                   .eq('id', item.id);

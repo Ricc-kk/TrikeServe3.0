@@ -65,10 +65,6 @@ export default function Login() {
               <div className="w-2 h-2 bg-white rounded-full" />
               <p className="text-lg text-white/80">Fixed TODA Rates</p>
             </div>
-            <div className="flex items-center gap-3">
-              <div className="w-2 h-2 bg-white rounded-full" />
-              <p className="text-lg text-white/80">Community Trust System</p>
-            </div>
           </div>
           
           <div className="bg-white/20 text-white border border-white/30 backdrop-blur-sm w-fit px-3 py-1 rounded-md text-sm">
