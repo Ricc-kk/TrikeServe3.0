@@ -425,7 +425,14 @@ export default function ShareRideLobby({
        console.log('✅ Successfully left lobby');
        // Small delay to ensure database update completes
        await new Promise(resolve => setTimeout(resolve, 500));
-       onClose();
+       // FIX: Add defensive check
+       if (typeof onClose === 'function') {
+         onClose();
+       } else {
+         console.error('❌ onClose prop is not a function or is missing');
+         // Optional: fallback navigation if you have a router available
+         // router.push('/customer/home');
+       }
      } catch (err) {
        console.error('❌ Unexpected error in handleLeaveLobby:', err);
        setError(`Error leaving lobby: ${err instanceof Error ? err.message : 'Unknown error'}`);
