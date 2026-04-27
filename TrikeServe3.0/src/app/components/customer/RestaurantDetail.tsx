@@ -38,6 +38,7 @@ interface RestaurantData {
   categories: { id: string; name: string }[];
   menuItems: MenuItem[];
   reviews: Review[];
+  is_open: boolean;
 }
 
 export default function RestaurantDetail() {
@@ -58,6 +59,7 @@ export default function RestaurantDetail() {
   const [selectedItem, setSelectedItem] = useState<MenuItem | null>(null);
   const [restaurantData, setRestaurantData] = useState<RestaurantData | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [showStoreClosedModal, setShowStoreClosedModal] = useState(false);
 
   // Load restaurant data from Supabase
   useEffect(() => {
@@ -158,7 +160,8 @@ export default function RestaurantDetail() {
           goodService: true,
           categories,
           menuItems: mappedMenuItems,
-          reviews: []
+          reviews: [],
+          is_open: restaurant.is_open !== undefined ? restaurant.is_open : true
         };
 
         console.log('[RestaurantDetail] Loaded restaurant with', mappedMenuItems.length, 'menu items');
@@ -303,6 +306,42 @@ export default function RestaurantDetail() {
       console.log('[RestaurantDetail] Cleaning up menu items subscription');
       supabase.removeChannel(subscription);
     };
+   }, [restaurantId, restaurantData]);
+
+  // Real-time subscription to restaurant status changes
+  useEffect(() => {
+    if (!restaurantId) return;
+
+    console.log('[RestaurantDetail] Setting up real-time restaurant status subscription');
+
+    // Subscribe to restaurant table changes
+    const subscription = supabase
+      .channel(`restaurant-${restaurantId}`)
+      .on(
+        'postgres_changes',
+        {
+          event: 'UPDATE',
+          schema: 'public',
+          table: 'restaurants',
+          filter: `id=eq.${restaurantId}`
+        },
+        (payload) => {
+          console.log('[RestaurantDetail] Restaurant status changed:', payload);
+
+          if (restaurantData && payload.new) {
+            setRestaurantData({
+              ...restaurantData,
+              is_open: payload.new.is_open !== undefined ? payload.new.is_open : true
+            });
+          }
+        }
+      )
+      .subscribe();
+
+    return () => {
+      console.log('[RestaurantDetail] Cleaning up restaurant status subscription');
+      supabase.removeChannel(subscription);
+    };
   }, [restaurantId, restaurantData]);
 
   // Scroll detection
@@ -320,6 +359,12 @@ export default function RestaurantDetail() {
   }
 
   const handleAddToCart = (item: MenuItem) => {
+    // Check if store is open
+    if (restaurantData && !restaurantData.is_open) {
+      setShowStoreClosedModal(true);
+      return;
+    }
+
     // If item has customization groups, show the customization modal
     if (item.customizationGroups && item.customizationGroups.length > 0) {
       setSelectedItem(item);
@@ -925,18 +970,44 @@ export default function RestaurantDetail() {
         </div>
       )}
 
-      {/* Customization Modal */}
-      {selectedItem && (
-        <CustomizationModal
-          item={selectedItem}
-          isOpen={showCustomizationModal}
-          onClose={() => {
-            setShowCustomizationModal(false);
-            setSelectedItem(null);
-          }}
-          onAddToCart={addToCartWithCustomizations}
-        />
-      )}
-    </div>
+       {/* Customization Modal */}
+       {selectedItem && (
+         <CustomizationModal
+           item={selectedItem}
+           isOpen={showCustomizationModal}
+           onClose={() => {
+             setShowCustomizationModal(false);
+             setSelectedItem(null);
+           }}
+           onAddToCart={addToCartWithCustomizations}
+         />
+       )}
+
+       {/* Store Closed Modal */}
+       {showStoreClosedModal && (
+         <div className="fixed inset-0 bg-black/50 z-[2000] flex items-center justify-center px-4">
+           <div className="bg-white rounded-3xl p-6 max-w-sm w-full shadow-2xl animate-in zoom-in duration-300">
+             <div className="flex flex-col items-center text-center">
+               <div className="w-16 h-16 bg-[#FEE2E2] rounded-full flex items-center justify-center mb-4">
+                 <span className="text-3xl">🔒</span>
+               </div>
+
+               <h2 className="text-xl font-bold text-[#121212] mb-2">Store Closed</h2>
+
+               <p className="text-[#64748B] text-base mb-6">
+                 Store not accepting orders at the moment
+               </p>
+
+               <button
+                 onClick={() => setShowStoreClosedModal(false)}
+                 className="w-full py-3 rounded-2xl font-bold text-white bg-gradient-to-br from-[#E11D48] to-[#BE123C] hover:shadow-xl active:scale-95 transition-all shadow-lg shadow-[#E11D48]/30"
+               >
+                 Got it
+               </button>
+             </div>
+           </div>
+         </div>
+       )}
+     </div>
   );
 }
