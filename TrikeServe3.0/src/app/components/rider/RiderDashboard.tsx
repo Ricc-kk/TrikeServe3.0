@@ -29,6 +29,7 @@ import { Badge } from "../ui/badge";
 import { Input } from "../ui/input";
 import { useAuth } from "../../contexts/AuthContext";
 import { supabaseHelpers } from "@/lib/supabase";
+import { supabase } from "../../../lib/supabase";
 
 // Get Google Maps API Key from environment variable
 const GOOGLE_MAPS_API_KEY = import.meta.env.VITE_GOOGLE_MAPS_API_KEY || "";
@@ -151,44 +152,108 @@ export default function RiderDashboard() {
     return () => clearInterval(interval);
   }, []);
 
-  // Load and monitor passenger requests from Supabase (for real-time accuracy)
-  useEffect(() => {
-    const loadRequests = async () => {
-      try {
-        // Fetch pending ride requests from Supabase (not localStorage)
-        const { data: rideRequests, error: dbError } = await supabaseHelpers.getRideRequests({
-          status: 'pending'
-        });
+    // Load and monitor passenger requests from Supabase with real-time updates
+    useEffect(() => {
+      const loadRequests = async () => {
+        try {
+          // Fetch pending ride requests from Supabase (not localStorage)
+          const { data: rideRequests, error: dbError } = await supabaseHelpers.getRideRequests({
+            status: 'pending'
+          });
 
-        if (dbError) {
-          console.error('❌ Error loading requests from database:', dbError);
+          // Fetch waiting shared ride lobbies from Supabase
+          const { data: waitingLobbies, error: lobbyError } = await supabaseHelpers.getWaitingLobbiesForDriver();
+
+          if (dbError) {
+            console.error('❌ Dashboard: Error loading ride requests from database:', dbError);
+          }
+
+          if (lobbyError) {
+            console.error('❌ Dashboard: Error loading waiting lobbies from database:', lobbyError);
+          }
+
+          // Count ride requests
+          const rideRequestCount = rideRequests?.length || 0;
+
+          // Count total passengers in all waiting lobbies
+          let totalLobbyPassengers = 0;
+          if (waitingLobbies && waitingLobbies.length > 0) {
+            totalLobbyPassengers = waitingLobbies.reduce((total: number, lobby: any) => {
+              const passengers = Array.isArray(lobby.passengers_json) ? lobby.passengers_json : [];
+              return total + passengers.length;
+            }, 0);
+          }
+
+          // Total = ride requests + passengers waiting in lobbies
+          const totalCount = rideRequestCount + totalLobbyPassengers;
+
+          setTotalPendingRequests(totalCount);
+
+          if (totalCount > 0) {
+            console.log('✅ Dashboard: Loaded passenger count:', {
+              rideRequests: rideRequestCount,
+              lobbyPassengers: totalLobbyPassengers,
+              total: totalCount
+            });
+          } else {
+            console.log('📭 Dashboard: No pending passengers or lobby requests');
+          }
+        } catch (error) {
+          console.error('❌ Dashboard: Error loading requests:', error);
           setTotalPendingRequests(0);
-          return;
         }
+      };
 
-        if (rideRequests && rideRequests.length > 0) {
-          setTotalPendingRequests(rideRequests.length);
-          console.log('✅ Loaded passenger count from Supabase:', rideRequests.length);
-        } else {
-          setTotalPendingRequests(0);
-          console.log('📭 No pending passenger requests in database');
-        }
-      } catch (error) {
-        console.error('❌ Error loading requests:', error);
-        setTotalPendingRequests(0);
-      }
-    };
+      // Load initially
+      loadRequests();
 
-    // Load initially
-    loadRequests();
+      // Set up real-time subscriptions
+      console.log('🔔 Dashboard: Setting up real-time subscriptions for ride requests and lobbies');
 
-    // Poll for updates every 3 seconds (matches PassengerRequests polling interval)
-    const interval = setInterval(loadRequests, 3000);
+      // Subscribe to ride_requests table changes
+      const rideRequestsSubscription = supabase
+        .channel('dashboard-ride-requests')
+        .on(
+          'postgres_changes',
+          {
+            event: '*', // Listen to INSERT, UPDATE, DELETE
+            schema: 'public',
+            table: 'ride_requests'
+          },
+          (payload) => {
+            console.log('📡 Dashboard: Ride request changed, reloading passenger count', payload.eventType);
+            loadRequests();
+          }
+        )
+        .subscribe();
 
-    return () => {
-      clearInterval(interval);
-    };
-  }, []);
+      // Subscribe to shared_ride_lobbies table changes
+      const lobbiesSubscription = supabase
+        .channel('dashboard-shared-rides')
+        .on(
+          'postgres_changes',
+          {
+            event: '*', // Listen to INSERT, UPDATE, DELETE
+            schema: 'public',
+            table: 'shared_ride_lobbies'
+          },
+          (payload) => {
+            console.log('📡 Dashboard: Shared ride lobby changed, reloading passenger count', payload.eventType);
+            loadRequests();
+          }
+        )
+        .subscribe();
+
+      // Also poll for updates every 3 seconds as fallback
+      const interval = setInterval(loadRequests, 3000);
+
+      return () => {
+        clearInterval(interval);
+        supabase.removeChannel(rideRequestsSubscription);
+        supabase.removeChannel(lobbiesSubscription);
+        console.log('🔌 Dashboard: Cleaned up real-time subscriptions');
+      };
+   }, []);
 
   // Count unread messages from passengers
   useEffect(() => {
