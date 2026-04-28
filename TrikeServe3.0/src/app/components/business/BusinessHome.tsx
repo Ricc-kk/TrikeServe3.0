@@ -43,7 +43,7 @@ export default function BusinessHome() {
         // Get restaurant ID
         const { data: restaurant } = await supabase
           .from('restaurants')
-          .select('id')
+          .select('id, is_open')
           .eq('business_user_id', user.id)
           .single();
 
@@ -57,6 +57,11 @@ export default function BusinessHome() {
             }
           }
           return;
+        }
+
+        // Load the store status from database
+        if (restaurant.is_open !== undefined) {
+          setIsStoreOpen(restaurant.is_open);
         }
 
         // Load menu items from Supabase
@@ -111,6 +116,38 @@ export default function BusinessHome() {
     return () => document.removeEventListener('visibilitychange', handleVisibilityChange);
   }, [user?.id, user?.email, user?.role]);
 
+  // Real-time subscription to store status changes
+  useEffect(() => {
+    if (!user?.id) return;
+
+    console.log('[BusinessHome] Setting up real-time store status subscription');
+
+    // Subscribe to restaurant status changes
+    const subscription = supabase
+      .channel(`restaurant-status-${user.id}`)
+      .on(
+        'postgres_changes',
+        {
+          event: 'UPDATE',
+          schema: 'public',
+          table: 'restaurants',
+          filter: `business_user_id=eq.${user.id}`
+        },
+        (payload) => {
+          console.log('[BusinessHome] Store status changed:', payload);
+          if (payload.new && payload.new.is_open !== undefined) {
+            setIsStoreOpen(payload.new.is_open);
+          }
+        }
+      )
+      .subscribe();
+
+    return () => {
+      console.log('[BusinessHome] Cleaning up store status subscription');
+      supabase.removeChannel(subscription);
+    };
+  }, [user?.id]);
+
   // Update restaurant data when user data is available
   useEffect(() => {
     if (user) {
@@ -142,6 +179,65 @@ export default function BusinessHome() {
       localStorage.setItem(storageKey, JSON.stringify(restaurantData));
     }
   }, [restaurantData, user?.email]);
+
+  // Function to toggle store status and save to Supabase
+  const toggleStoreStatus = async (newStatus: boolean) => {
+    if (!user?.id) return;
+
+    setIsStoreOpen(newStatus);
+
+    try {
+      // Get restaurant record
+      let { data: restaurant } = await supabase
+        .from('restaurants')
+        .select('id')
+        .eq('business_user_id', user.id)
+        .single();
+
+      if (!restaurant) {
+        // Create new restaurant record if it doesn't exist
+        const { data: newRestaurant, error } = await supabase
+          .from('restaurants')
+          .insert([{
+            name: restaurantData.name,
+            business_user_id: user.id,
+            address: restaurantData.address,
+            phone: user.phone || '',
+            rating: restaurantData.rating,
+            is_open: newStatus,
+            created_at: new Date().toISOString(),
+          }])
+          .select()
+          .single();
+
+        if (error) {
+          console.error('Error creating restaurant:', error);
+          setIsStoreOpen(!newStatus); // Revert on error
+          return;
+        }
+      } else {
+        // Update existing restaurant with new status
+        const { error } = await supabase
+          .from('restaurants')
+          .update({
+            is_open: newStatus,
+            updated_at: new Date().toISOString(),
+          })
+          .eq('id', restaurant.id);
+
+        if (error) {
+          console.error('Error updating store status:', error);
+          setIsStoreOpen(!newStatus); // Revert on error
+          return;
+        }
+      }
+
+      console.log('[BusinessHome] Store status updated to:', newStatus);
+    } catch (error) {
+      console.error('Error toggling store status:', error);
+      setIsStoreOpen(!newStatus); // Revert on error
+    }
+  };
 
   // Function to save store information to Supabase
   const saveStoreInformation = async () => {
@@ -387,7 +483,7 @@ export default function BusinessHome() {
                   </p>
                 </div>
                 <button
-                  onClick={() => setIsStoreOpen(!isStoreOpen)}
+                  onClick={() => toggleStoreStatus(!isStoreOpen)}
                   className={`w-16 h-9 rounded-full transition-all ${
                     isStoreOpen ? "bg-[#10B981]" : "bg-[#CBD5E1]"
                   }`}
