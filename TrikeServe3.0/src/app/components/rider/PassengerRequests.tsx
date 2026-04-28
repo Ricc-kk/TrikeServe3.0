@@ -6,6 +6,7 @@ import { Card } from "../ui/card";
 import { Badge } from "../ui/badge";
 import { useAuth } from "../../contexts/AuthContext";
 import { supabaseHelpers } from "@/lib/supabase";
+import { supabase } from "../../../lib/supabase";
 
 interface PassengerRequest {
   id: string;
@@ -51,85 +52,125 @@ export default function PassengerRequests() {
   const [selectedCategory, setSelectedCategory] = useState<'all' | 'shared' | 'private' | 'delivery'>('all');
   const [requests, setRequests] = useState<PassengerRequest[]>([]);
 
-  // Load requests from Supabase on mount and set up polling
-  useEffect(() => {
-    const loadRequests = async () => {
-      try {
-        // Fetch pending ride requests from Supabase
-        const { data: rideRequests, error: dbError } = await supabaseHelpers.getRideRequests({
-          status: 'pending'
-        });
+   // Load requests from Supabase on mount and set up real-time subscriptions
+   useEffect(() => {
+     const loadRequests = async () => {
+       try {
+         // Fetch pending ride requests from Supabase
+         const { data: rideRequests, error: dbError } = await supabaseHelpers.getRideRequests({
+           status: 'pending'
+         });
 
-        // Fetch waiting shared lobbies from Supabase
-        const { data: waitingLobbies, error: lobbyError } = await supabaseHelpers.getWaitingLobbiesForDriver();
+         // Fetch waiting shared lobbies from Supabase
+         const { data: waitingLobbies, error: lobbyError } = await supabaseHelpers.getWaitingLobbiesForDriver();
 
-        if (dbError) {
-          console.error('❌ Error loading requests from database:', dbError);
-        }
+         if (dbError) {
+           console.error('❌ PassengerRequests: Error loading requests from database:', dbError);
+         }
 
-        if (lobbyError) {
-          console.error('❌ Error loading waiting lobbies from database:', lobbyError);
-        }
+         if (lobbyError) {
+           console.error('❌ PassengerRequests: Error loading waiting lobbies from database:', lobbyError);
+         }
 
-        const mappedRequests = (rideRequests || []).map((req: any) => ({
-            id: req.id,
-            type: req.ride_type || 'private', // Map ride_type to type
-            pickup: req.pickup_location,
-            dropoff: req.dropoff_location,
-            payment: req.payment_method === 'GCASH' ? 'PREPAID' : 'COD',
-            amount: req.amount,
-            customerName: req.customer_name || 'Customer',
-            customerPhoto: '👤',
-            distance: '2.5 km',
-            estimatedTime: '7 mins',
-            passengers: req.passenger_count || 1,
-            customerId: req.customer_id,
-            created_at: req.created_at,
-          }));
+         const mappedRequests = (rideRequests || []).map((req: any) => ({
+             id: req.id,
+             type: req.ride_type || 'private', // Map ride_type to type
+             pickup: req.pickup_location,
+             dropoff: req.dropoff_location,
+             payment: req.payment_method === 'GCASH' ? 'PREPAID' : 'COD',
+             amount: req.amount,
+             customerName: req.customer_name || 'Customer',
+             customerPhoto: '👤',
+             distance: '2.5 km',
+             estimatedTime: '7 mins',
+             passengers: req.passenger_count || 1,
+             customerId: req.customer_id,
+             created_at: req.created_at,
+           }));
 
-        const mappedLobbies = (waitingLobbies || []).map((lobby: any) => {
-          const passengers = Array.isArray(lobby.passengers_json) ? lobby.passengers_json : [];
-          return {
-            id: `lobby_${lobby.id}`,
-            type: 'shared',
-            pickup: lobby.pickup_location,
-            dropoff: lobby.dropoff_location,
-            pickupAddress: lobby.pickup_address,
-            dropoffAddress: lobby.dropoff_address,
-            payment: 'PREPAID',
-            amount: Number(lobby.price_per_seat || 15) * passengers.length,
-            passengers: passengers.length,
-            maxPassengers: Number(lobby.max_seats || 3),
-            customerName: passengers.length > 1 ? `${passengers.length} Passengers` : (passengers[0]?.name || 'Customer'),
-            customerPhoto: '🚲',
-            distance: '2.5 km',
-            estimatedTime: '7 mins',
-            customerId: lobby.customer_id,
-            lobbyId: lobby.id,
-            passengerDetails: passengers,
-            created_at: lobby.created_at,
-          } as PassengerRequest;
-        });
+         const mappedLobbies = (waitingLobbies || []).map((lobby: any) => {
+           const passengers = Array.isArray(lobby.passengers_json) ? lobby.passengers_json : [];
+           return {
+             id: `lobby_${lobby.id}`,
+             type: 'shared',
+             pickup: lobby.pickup_location,
+             dropoff: lobby.dropoff_location,
+             pickupAddress: lobby.pickup_address,
+             dropoffAddress: lobby.dropoff_address,
+             payment: 'PREPAID',
+             amount: Number(lobby.price_per_seat || 15) * passengers.length,
+             passengers: passengers.length,
+             maxPassengers: Number(lobby.max_seats || 3),
+             customerName: passengers.length > 1 ? `${passengers.length} Passengers` : (passengers[0]?.name || 'Customer'),
+             customerPhoto: '🚲',
+             distance: '2.5 km',
+             estimatedTime: '7 mins',
+             customerId: lobby.customer_id,
+             lobbyId: lobby.id,
+             passengerDetails: passengers,
+             created_at: lobby.created_at,
+           } as PassengerRequest;
+         });
 
-        const mergedRequests = [...mappedRequests, ...mappedLobbies];
-        setRequests(mergedRequests);
-        console.log('✅ Loaded passenger + lobby requests from database:', mergedRequests);
-      } catch (error) {
-        console.error('❌ Error loading requests:', error);
-        setRequests([]);
-      }
-    };
+         const mergedRequests = [...mappedRequests, ...mappedLobbies];
+         setRequests(mergedRequests);
+         console.log('✅ PassengerRequests: Loaded passenger + lobby requests from database:', mergedRequests.length);
+       } catch (error) {
+         console.error('❌ PassengerRequests: Error loading requests:', error);
+         setRequests([]);
+       }
+     };
 
-    // Load initially
-    loadRequests();
+     // Load initially
+     loadRequests();
 
-    // Poll for updates every 3 seconds (fetches from Supabase)
-    const interval = setInterval(loadRequests, 3000);
+     // Set up real-time subscriptions
+     console.log('🔔 PassengerRequests: Setting up real-time subscriptions');
 
-    return () => {
-      clearInterval(interval);
-    };
-  }, []);
+     // Subscribe to ride_requests table changes
+     const rideRequestsSubscription = supabase
+       .channel('passenger-requests-rides')
+       .on(
+         'postgres_changes',
+         {
+           event: '*',
+           schema: 'public',
+           table: 'ride_requests'
+         },
+         (payload) => {
+           console.log('📡 PassengerRequests: Ride request changed, reloading', payload.eventType);
+           loadRequests();
+         }
+       )
+       .subscribe();
+
+     // Subscribe to shared_ride_lobbies table changes
+     const lobbiesSubscription = supabase
+       .channel('passenger-requests-lobbies')
+       .on(
+         'postgres_changes',
+         {
+           event: '*',
+           schema: 'public',
+           table: 'shared_ride_lobbies'
+         },
+         (payload) => {
+           console.log('📡 PassengerRequests: Shared ride lobby changed, reloading', payload.eventType);
+           loadRequests();
+         }
+       )
+       .subscribe();
+
+     // Also poll for updates every 3 seconds as fallback
+     const interval = setInterval(loadRequests, 3000);
+
+     return () => {
+       clearInterval(interval);
+       supabase.removeChannel(rideRequestsSubscription);
+       supabase.removeChannel(lobbiesSubscription);
+       console.log('🔌 PassengerRequests: Cleaned up real-time subscriptions');
+     };
+   }, []);
 
   const handleAcceptRequest = async (request: PassengerRequest) => {
     // 🚨 CRITICAL: Log what request is being accepted
@@ -209,6 +250,13 @@ export default function PassengerRequests() {
       eta: '5 mins',
     };
 
+    // DEBUG: Log acceptedRide to verify lobbyId is included
+    console.log('🎯 ACCEPTED RIDE CREATED:');
+    console.log('   Type:', acceptedRide.type);
+    console.log('   ID:', acceptedRide.id);
+    console.log('   Lobby ID:', acceptedRide.lobbyId);
+    console.log('   Full accepted ride:', acceptedRide);
+
     // Navigate to active ride page
     navigate('/rider/active-ride', { state: { acceptedRide } });
   };
@@ -247,18 +295,11 @@ export default function PassengerRequests() {
           <h1 className="text-xl font-extrabold text-[#E11D48]" style={{ letterSpacing: '-0.02em' }}>
             Passenger Requests
           </h1>
-          <p className="text-xs text-[#64748B]">{requests.length} customers looking for service</p>
         </div>
       </div>
 
       {/* Main Content */}
       <div className="p-4 space-y-3">
-        <div className="bg-teal-50 border border-teal-200 rounded-lg p-3 mb-4">
-          <p className="text-sm text-teal-900">
-            <span className="font-bold">{requests.length} passengers</span> are currently looking for tricycle service in your area
-          </p>
-          <p className="text-xs text-teal-700 mt-1">💡 Requests are loaded from Supabase and refresh automatically</p>
-        </div>
 
         <div className="flex gap-2 mb-4 overflow-x-auto scrollbar-hide">
           <button
