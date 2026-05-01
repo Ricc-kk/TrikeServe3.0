@@ -53,11 +53,38 @@ export const supabaseHelpers = {
   },
 
   async getUserByEmail(email: string) {
+    const normalizedEmail = email.toLowerCase().trim();
+
     const { data, error } = await supabase
       .from('users')
       .select('*')
-      .eq('email', email)
+      .eq('email', normalizedEmail)
       .single();
+
+    if (data && !error) {
+      return { data, error: null };
+    }
+
+    try {
+      const localUsersJson = localStorage.getItem('trikeserve_users');
+      const localUsers: any[] = localUsersJson ? JSON.parse(localUsersJson) : [];
+      const localUser = localUsers.find((u) => (u.email || '').toLowerCase() === normalizedEmail);
+
+      if (localUser) {
+        return {
+          data: {
+            ...localUser,
+            role: localUser.role || 'customer',
+            is_verified: localUser.is_verified ?? localUser.isVerified ?? true,
+            created_at: localUser.created_at || localUser.createdAt || new Date().toISOString(),
+          },
+          error: null,
+        };
+      }
+    } catch (localError) {
+      console.warn('[supabaseHelpers.getUserByEmail] Local user lookup failed:', localError);
+    }
+
     return { data, error };
   },
 
@@ -589,6 +616,236 @@ export const supabaseHelpers = {
       .select()
       .single();
     return { data, error };
+  },
+
+  // Chat operations
+  async getChatConversationByThreadKey(threadKey: string) {
+    const { data, error } = await supabase
+      .from('chat_conversations')
+      .select('*')
+      .eq('thread_key', threadKey)
+      .single();
+    return { data, error };
+  },
+
+  async getChatConversationById(conversationId: string) {
+    const { data, error } = await supabase
+      .from('chat_conversations')
+      .select('*')
+      .eq('id', conversationId)
+      .single();
+    return { data, error };
+  },
+
+  async ensureChatConversation(conversation: {
+    threadKey: string;
+    threadType?: string;
+    contextType?: string | null;
+    contextId?: string | null;
+    participantAId: string;
+    participantBId: string;
+    participantARole: string;
+    participantBRole: string;
+    participantAName?: string;
+    participantBName?: string;
+    participantAAvatar?: string;
+    participantBAvatar?: string;
+    subject?: string | null;
+  }) {
+    const existing = await supabase
+      .from('chat_conversations')
+      .select('*')
+      .eq('thread_key', conversation.threadKey)
+      .maybeSingle();
+
+    if (existing.data) {
+      return { data: existing.data, error: existing.error };
+    }
+
+    const { data, error } = await supabase
+      .from('chat_conversations')
+      .insert([{
+        thread_key: conversation.threadKey,
+        thread_type: conversation.threadType || 'direct',
+        context_type: conversation.contextType || null,
+        context_id: conversation.contextId || null,
+        participant_a_id: conversation.participantAId,
+        participant_b_id: conversation.participantBId,
+        participant_a_role: conversation.participantARole,
+        participant_b_role: conversation.participantBRole,
+        participant_a_name: conversation.participantAName || null,
+        participant_b_name: conversation.participantBName || null,
+        participant_a_avatar: conversation.participantAAvatar || null,
+        participant_b_avatar: conversation.participantBAvatar || null,
+        subject: conversation.subject || null,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      }])
+      .select()
+      .single();
+
+    return { data, error };
+  },
+
+  async getChatConversations(userId: string) {
+    const { data, error } = await supabase
+      .from('chat_conversations')
+      .select('*')
+      .or(`participant_a_id.eq.${userId},participant_b_id.eq.${userId}`)
+      .order('updated_at', { ascending: false });
+    return { data, error };
+  },
+
+  async getChatMessages(conversationId: string) {
+    const { data, error } = await supabase
+      .from('chat_messages')
+      .select('*')
+      .eq('conversation_id', conversationId)
+      .order('created_at', { ascending: true });
+    return { data, error };
+  },
+
+  async sendChatMessage(message: {
+    conversationId: string;
+    senderId: string;
+    receiverId: string;
+    senderName: string;
+    senderRole: string;
+    receiverRole: string;
+    message: string;
+  }) {
+    const timestamp = new Date().toISOString();
+    const { data, error } = await supabase
+      .from('chat_messages')
+      .insert([{
+        conversation_id: message.conversationId,
+        sender_id: message.senderId,
+        receiver_id: message.receiverId,
+        sender_name: message.senderName,
+        sender_role: message.senderRole,
+        receiver_role: message.receiverRole,
+        message: message.message,
+        read: false,
+        created_at: timestamp,
+        updated_at: timestamp,
+      }])
+      .select()
+      .single();
+
+    if (!error) {
+      const { data: conversation } = await supabase
+        .from('chat_conversations')
+        .select('*')
+        .eq('id', message.conversationId)
+        .single();
+
+      if (conversation) {
+        const isParticipantA = conversation.participant_a_id === message.senderId;
+        const unreadA = isParticipantA ? (conversation.unread_count_a || 0) : (conversation.unread_count_a || 0) + 1;
+        const unreadB = !isParticipantA ? (conversation.unread_count_b || 0) : (conversation.unread_count_b || 0) + 1;
+
+        await supabase
+          .from('chat_conversations')
+          .update({
+            last_message_preview: message.message,
+            last_message_sender_id: message.senderId,
+            last_message_at: timestamp,
+            unread_count_a: isParticipantA ? unreadA : unreadA,
+            unread_count_b: isParticipantA ? unreadB : unreadB,
+            updated_at: timestamp,
+          })
+          .eq('id', message.conversationId);
+      }
+    }
+
+    return { data, error };
+  },
+
+  async markChatConversationRead(conversationId: string, userId: string) {
+    const timestamp = new Date().toISOString();
+    const { data: conversation } = await supabase
+      .from('chat_conversations')
+      .select('*')
+      .eq('id', conversationId)
+      .single();
+
+    const { data, error } = await supabase
+      .from('chat_messages')
+      .update({ read: true, read_at: timestamp, updated_at: timestamp })
+      .eq('conversation_id', conversationId)
+      .neq('sender_id', userId)
+      .eq('read', false)
+      .select();
+
+    if (conversation) {
+      const isParticipantA = conversation.participant_a_id === userId;
+      await supabase
+        .from('chat_conversations')
+        .update({
+          unread_count_a: isParticipantA ? 0 : conversation.unread_count_a || 0,
+          unread_count_b: isParticipantA ? conversation.unread_count_b || 0 : 0,
+          updated_at: timestamp,
+        })
+        .eq('id', conversationId);
+    }
+
+    return { data, error };
+  },
+
+  async getUnreadChatCount(userId: string) {
+    const { data, error, count } = await supabase
+      .from('chat_messages')
+      .select('*', { count: 'exact' })
+      .eq('receiver_id', userId)
+      .eq('read', false);
+
+    return { count, data, error };
+  },
+
+  subscribeToChatConversation(conversationId: string, callback: (data: any) => void) {
+    const channel = supabase
+      .channel(`chat_conversation_${conversationId}`)
+      .on(
+        'postgres_changes',
+        {
+          event: 'INSERT',
+          schema: 'public',
+          table: 'chat_messages',
+          filter: `conversation_id=eq.${conversationId}`
+        },
+        (payload) => callback(payload.new)
+      )
+      .subscribe();
+
+    return () => supabase.removeChannel(channel);
+  },
+
+  subscribeToUserChatThreads(userId: string, callback: () => void) {
+    const channel = supabase
+      .channel(`chat_threads_${userId}`)
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'chat_conversations',
+          filter: `participant_a_id=eq.${userId}`,
+        },
+        () => callback()
+      )
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'chat_conversations',
+          filter: `participant_b_id=eq.${userId}`,
+        },
+        () => callback()
+      )
+      .subscribe();
+
+    return () => supabase.removeChannel(channel);
   },
 
   // Order operations

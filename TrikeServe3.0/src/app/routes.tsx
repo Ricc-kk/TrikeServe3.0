@@ -13,15 +13,15 @@ import MoreOptions from "./components/rider/MoreOptions";
 import PassengerRequests from "./components/rider/PassengerRequests";
 import ActiveRide from "./components/rider/ActiveRide";
 import Earnings from "./components/rider/Earnings";
-import Inbox from "./components/rider/Inbox";
 import RiderProfile from "./components/rider/RiderProfile";
-import RiderMessages from "./components/rider/Messages";
-import RiderMessageChat from "./components/rider/RiderMessageChat";
+import RiderMessagesPage from "./components/rider/RiderMessagesPage";
+import RiderDirectChat from "./components/rider/RiderDirectChat";
 import BusinessDashboard from "./components/business/BusinessDashboard";
 import BusinessHome from "./components/business/BusinessHome";
 import BusinessMenu from "./components/business/BusinessMenu";
 import BusinessOrders from "./components/business/BusinessOrders";
 import BusinessAccount from "./components/business/BusinessAccount";
+import BusinessMessages from "./components/business/BusinessMessages";
 import CustomerApp from "./components/customer/CustomerApp";
 import CustomerHome from "./components/customer/Home";
 import FoodHome from "./components/customer/FoodHome";
@@ -29,7 +29,7 @@ import CategoryFood from "./components/customer/CategoryFood";
 import RestaurantDetail from "./components/customer/RestaurantDetail";
 import Cart from "./components/customer/Cart";
 import Activity from "./components/customer/Activity";
-import Messages from "./components/customer/Messages";
+import CustomerMessages from "./components/customer/CustomerMessages";
 import Notifications from "./components/customer/Notifications";
 import Account from "./components/customer/Account";
 import AccountManagement from "./components/customer/AccountManagement";
@@ -121,7 +121,7 @@ export const router = createBrowserRouter([
         path: "rider/inbox", 
         element: (
           <ProtectedRoute allowedRoles={['rider']}>
-            <Inbox />
+            <RiderMessagesPage />
           </ProtectedRoute>
         )
       },
@@ -137,7 +137,15 @@ export const router = createBrowserRouter([
         path: "rider/messages", 
         element: (
           <ProtectedRoute allowedRoles={['rider']}>
-            <RiderMessages />
+            <RiderMessagesPage />
+          </ProtectedRoute>
+        )
+      },
+      {
+        path: "rider/messages/thread/:conversationId",
+        element: (
+          <ProtectedRoute allowedRoles={['rider']}>
+            <RiderMessagesPage />
           </ProtectedRoute>
         )
       },
@@ -145,7 +153,7 @@ export const router = createBrowserRouter([
         path: "rider/messages/:rideId/:passengerId", 
         element: (
           <ProtectedRoute allowedRoles={['rider']}>
-            <RiderMessageChat />
+            <RiderDirectChat />
           </ProtectedRoute>
         )
       },
@@ -200,7 +208,22 @@ export const router = createBrowserRouter([
       },
       // Redirect old business routes to dashboard using loader
       { path: "business/customers", loader: () => redirect("/business/dashboard") },
-      { path: "business/messages", loader: () => redirect("/business/dashboard") },
+      {
+        path: "business/messages",
+        element: (
+          <ProtectedRoute allowedRoles={['business']}>
+            <BusinessMessages />
+          </ProtectedRoute>
+        )
+      },
+      {
+        path: "business/messages/thread/:conversationId",
+        element: (
+          <ProtectedRoute allowedRoles={['business']}>
+            <BusinessMessages />
+          </ProtectedRoute>
+        )
+      },
       { path: "business/analytics", loader: () => redirect("/business/dashboard") },
       // Customer routes - protected
       { 
@@ -263,7 +286,15 @@ export const router = createBrowserRouter([
         path: "customer/messages", 
         element: (
           <ProtectedRoute allowedRoles={['customer']}>
-            <Messages />
+            <CustomerMessages />
+          </ProtectedRoute>
+        )
+      },
+      {
+        path: "customer/messages/thread/:conversationId",
+        element: (
+          <ProtectedRoute allowedRoles={['customer']}>
+            <CustomerMessages />
           </ProtectedRoute>
         )
       },

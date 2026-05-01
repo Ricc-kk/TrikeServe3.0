@@ -3,7 +3,7 @@ import {
   Store, Package, ShoppingBag, MessageSquare, TrendingUp, 
   Settings, BarChart3, Users, X, Menu
 } from "lucide-react";
-import { Link, useLocation } from "react-router";
+import { Link, useLocation, useNavigate } from "react-router";
 import { Card } from "../ui/card";
 import { supabase } from "../../../lib/supabase";
 
@@ -14,6 +14,7 @@ interface BusinessSidebarProps {
 
 export default function BusinessSidebar({ isMobileMenuOpen, setIsMobileMenuOpen }: BusinessSidebarProps) {
   const location = useLocation();
+  const navigate = useNavigate();
   const [pendingOrdersCount, setPendingOrdersCount] = useState(0);
 
   // Load pending orders count from Supabase
@@ -68,6 +69,7 @@ export default function BusinessSidebar({ isMobileMenuOpen, setIsMobileMenuOpen 
     { path: "/business/dashboard", icon: BarChart3, label: "Overview" },
     { path: "/business/menu", icon: Package, label: "Products" },
     { path: "/business/orders", icon: ShoppingBag, label: "Orders" },
+    { path: "/business/messages", icon: MessageSquare, label: "Messages" },
     { path: "/business/home", icon: Store, label: "Shop" },
     { path: "/business/account", icon: Settings, label: "Settings" }
   ];
@@ -145,7 +147,10 @@ export default function BusinessSidebar({ isMobileMenuOpen, setIsMobileMenuOpen 
                 <h3 className="font-bold text-[#121212] mb-1">Need Help?</h3>
                 <p className="text-xs text-[#64748B]">Contact our support team</p>
               </div>
-              <button className="w-full py-2.5 bg-[#E11D48] text-white font-bold rounded-lg text-sm uppercase hover:bg-[#BE123C] transition-all">
+              <button
+                onClick={() => navigate('/business/messages')}
+                className="w-full py-2.5 bg-[#E11D48] text-white font-bold rounded-lg text-sm uppercase hover:bg-[#BE123C] transition-all"
+              >
                 Get Support
               </button>
             </Card>

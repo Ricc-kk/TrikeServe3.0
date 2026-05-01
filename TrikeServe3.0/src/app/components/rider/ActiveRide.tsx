@@ -6,6 +6,7 @@ import { Card } from "../ui/card";
 import { Badge } from "../ui/badge";
 import { useAuth } from "../../contexts/AuthContext";
 import { supabaseHelpers } from "@/lib/supabase";
+import PassengerMessagingDB from "./PassengerMessagingDB";
 
 type RideStatus = 'on-the-way' | 'arrived' | 'pickup' | 'drop-off' | 'payment';
 type PassengerStatus = 'pending' | 'on-the-way' | 'arrived' | 'picked-up' | 'dropped-off';
@@ -363,6 +364,13 @@ export default function ActiveRide() {
   const completeRide = async () => {
     if (!rideData) return;
 
+    // DEBUG: Log ride data to check if lobbyId is set
+    console.log('🔍 COMPLETE RIDE DEBUG INFO:');
+    console.log('   Ride Type:', rideData.type);
+    console.log('   Ride ID:', rideData.id);
+    console.log('   Lobby ID:', rideData.lobbyId);
+    console.log('   Full ride data:', rideData);
+
     try {
       // 1. UPDATE DATABASE STATUS TO 'COMPLETED' (ALL RIDE TYPES)
       if (rideData.id) {
@@ -444,8 +452,26 @@ export default function ActiveRide() {
       }
     }
 
-    // If it's a shared ride, update lobby status to completed
+    // If it's a shared ride, update lobby status to completed in database
     if (rideData.lobbyId) {
+      console.log('🚴 SHARED RIDE DETECTED - Updating lobby in database');
+      console.log('   Lobby ID:', rideData.lobbyId);
+      try {
+        // Update in Supabase database
+        console.log('📤 Calling completeLobbyRide with lobbyId:', rideData.lobbyId);
+        const { error: dbError } = await supabaseHelpers.completeLobbyRide(rideData.lobbyId);
+        if (dbError) {
+          console.error('❌ Error updating shared ride lobby status in database:', dbError);
+          console.error('   Error code:', dbError.code);
+          console.error('   Error message:', dbError.message);
+        } else {
+          console.log('✅ Shared ride lobby status updated to completed in database');
+        }
+      } catch (error) {
+        console.error('Error updating shared ride lobby in database:', error);
+      }
+
+      // Also update localStorage for immediate UI feedback
       const lobbiesData = localStorage.getItem('trikeserve_share_lobbies');
       if (lobbiesData) {
         try {
@@ -464,9 +490,11 @@ export default function ActiveRide() {
             }));
           }
         } catch (error) {
-          console.error('Error updating lobby:', error);
+          console.error('Error updating lobby in localStorage:', error);
         }
       }
+    } else {
+      console.log('⚠️ NO SHARED RIDE - lobbyId is undefined/null');
     }
 
     // Add to ride history
@@ -986,7 +1014,7 @@ export default function ActiveRide() {
 
       {/* Messaging Modal */}
       {activeMessaging && rideData && (
-        <PassengerMessaging
+        <PassengerMessagingDB
           passengerId={activeMessaging.id}
           passengerName={activeMessaging.name}
           passengerEmoji={activeMessaging.emoji}
