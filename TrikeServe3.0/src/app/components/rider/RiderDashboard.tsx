@@ -257,49 +257,45 @@ export default function RiderDashboard() {
 
   // Count unread messages from passengers
   useEffect(() => {
-    const countUnreadMessages = () => {
-      let unreadCount = 0;
-      
-      // Scan localStorage for all chat keys
-      for (let i = 0; i < localStorage.length; i++) {
-        const key = localStorage.key(i);
-        if (key && key.startsWith('chat_')) {
-          try {
-            const messages = JSON.parse(localStorage.getItem(key) || '[]');
-            // Count unread messages from passengers (sent by customers)
-            const unread = messages.filter((m: any) => 
-              m.senderType === 'passenger' && !m.read
-            ).length;
-            unreadCount += unread;
-          } catch (error) {
-            console.error('Error counting unread messages:', error);
-          }
+    if (!user?.id) return;
+
+    const countUnreadMessages = async () => {
+      try {
+        const { count, error } = await supabaseHelpers.getUnreadChatCount(user.id);
+        if (error) {
+          console.error('Error counting unread chat messages:', error);
+          return;
         }
+
+        setUnreadMessagesCount(count || 0);
+      } catch (error) {
+        console.error('Error counting unread chat messages:', error);
       }
-      
-      setUnreadMessagesCount(unreadCount);
     };
 
-    // Count initially
     countUnreadMessages();
 
-    // Poll for updates every 2 seconds
-    const interval = setInterval(countUnreadMessages, 2000);
+    const interval = setInterval(countUnreadMessages, 3000);
 
-    // Listen for storage events (cross-tab sync)
-    const handleStorageChange = (e: StorageEvent) => {
-      if (e.key?.startsWith('chat_')) {
-        countUnreadMessages();
-      }
-    };
-
-    window.addEventListener('storage', handleStorageChange);
+    const subscription = supabase
+      .channel(`rider-unread-chat-${user.id}`)
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'chat_messages',
+          filter: `receiver_id=eq.${user.id}`
+        },
+        () => countUnreadMessages()
+      )
+      .subscribe();
 
     return () => {
       clearInterval(interval);
-      window.removeEventListener('storage', handleStorageChange);
+      supabase.removeChannel(subscription);
     };
-  }, []);
+  }, [user?.id]);
 
   // Fetch completed trips count
   useEffect(() => {
