@@ -1,4 +1,4 @@
-import { Store, Package, Clock, User, ChevronRight, LogOut, Bell, HelpCircle, FileText, Settings, Shield, BarChart3, ArrowLeft, Menu } from "lucide-react";
+import { Store, Package, Clock, User, ChevronRight, LogOut, ArrowLeft, Menu } from "lucide-react";
 import { Link, useNavigate } from "react-router";
 import { Card } from "../ui/card";
 import { Badge } from "../ui/badge";
@@ -146,83 +146,6 @@ export default function BusinessAccount() {
                   <ChevronRight className="w-4 h-4 lg:w-5 lg:h-5 text-[#64748B] flex-shrink-0 ml-2" />
                 </Card>
               </Link>
-            </div>
-          </div>
-
-          {/* Settings */}
-          <div>
-            <h3 className="text-xs lg:text-sm font-bold text-[#64748B] uppercase mb-2 lg:mb-3 tracking-wide">Settings</h3>
-            <div className="space-y-2">
-              <Card className="p-3 lg:p-4 border border-[#E2E8F0] bg-white flex items-center justify-between active:scale-[0.98] transition-transform">
-                <div className="flex items-center gap-2.5 lg:gap-3 min-w-0">
-                  <div className="w-10 h-10 lg:w-12 lg:h-12 bg-[#F8F9FA] rounded-xl flex items-center justify-center flex-shrink-0">
-                    <Bell className="w-4 h-4 lg:w-5 lg:h-5 text-[#64748B]" />
-                  </div>
-                  <div className="min-w-0">
-                    <p className="font-semibold text-sm lg:text-base text-[#121212]">Notifications</p>
-                    <p className="text-[10px] lg:text-xs text-[#64748B]">Order alerts and updates</p>
-                  </div>
-                </div>
-                <ChevronRight className="w-4 h-4 lg:w-5 lg:h-5 text-[#64748B] flex-shrink-0 ml-2" />
-              </Card>
-
-              <Card className="p-3 lg:p-4 border border-[#E2E8F0] bg-white flex items-center justify-between active:scale-[0.98] transition-transform">
-                <div className="flex items-center gap-2.5 lg:gap-3 min-w-0">
-                  <div className="w-10 h-10 lg:w-12 lg:h-12 bg-[#F8F9FA] rounded-xl flex items-center justify-center flex-shrink-0">
-                    <Settings className="w-4 h-4 lg:w-5 lg:h-5 text-[#64748B]" />
-                  </div>
-                  <div className="min-w-0">
-                    <p className="font-semibold text-sm lg:text-base text-[#121212]">Business Settings</p>
-                    <p className="text-[10px] lg:text-xs text-[#64748B]">Hours, delivery zones</p>
-                  </div>
-                </div>
-                <ChevronRight className="w-4 h-4 lg:w-5 lg:h-5 text-[#64748B] flex-shrink-0 ml-2" />
-              </Card>
-
-              <Card className="p-3 lg:p-4 border border-[#E2E8F0] bg-white flex items-center justify-between active:scale-[0.98] transition-transform">
-                <div className="flex items-center gap-2.5 lg:gap-3 min-w-0">
-                  <div className="w-10 h-10 lg:w-12 lg:h-12 bg-[#F8F9FA] rounded-xl flex items-center justify-center flex-shrink-0">
-                    <Shield className="w-4 h-4 lg:w-5 lg:h-5 text-[#64748B]" />
-                  </div>
-                  <div className="min-w-0">
-                    <p className="font-semibold text-sm lg:text-base text-[#121212]">Privacy & Security</p>
-                    <p className="text-[10px] lg:text-xs text-[#64748B]">Password, verification</p>
-                  </div>
-                </div>
-                <ChevronRight className="w-4 h-4 lg:w-5 lg:h-5 text-[#64748B] flex-shrink-0 ml-2" />
-              </Card>
-            </div>
-          </div>
-
-          {/* Support */}
-          <div>
-            <h3 className="text-xs lg:text-sm font-bold text-[#64748B] uppercase mb-2 lg:mb-3 tracking-wide">Support</h3>
-            <div className="space-y-2">
-              <Card className="p-3 lg:p-4 border border-[#E2E8F0] bg-white flex items-center justify-between active:scale-[0.98] transition-transform">
-                <div className="flex items-center gap-2.5 lg:gap-3 min-w-0">
-                  <div className="w-10 h-10 lg:w-12 lg:h-12 bg-[#F8F9FA] rounded-xl flex items-center justify-center flex-shrink-0">
-                    <HelpCircle className="w-4 h-4 lg:w-5 lg:h-5 text-[#64748B]" />
-                  </div>
-                  <div className="min-w-0">
-                    <p className="font-semibold text-sm lg:text-base text-[#121212]">Help Center</p>
-                    <p className="text-[10px] lg:text-xs text-[#64748B]">FAQs and guides</p>
-                  </div>
-                </div>
-                <ChevronRight className="w-4 h-4 lg:w-5 lg:h-5 text-[#64748B] flex-shrink-0 ml-2" />
-              </Card>
-
-              <Card className="p-3 lg:p-4 border border-[#E2E8F0] bg-white flex items-center justify-between active:scale-[0.98] transition-transform">
-                <div className="flex items-center gap-2.5 lg:gap-3 min-w-0">
-                  <div className="w-10 h-10 lg:w-12 lg:h-12 bg-[#F8F9FA] rounded-xl flex items-center justify-center flex-shrink-0">
-                    <FileText className="w-4 h-4 lg:w-5 lg:h-5 text-[#64748B]" />
-                  </div>
-                  <div className="min-w-0">
-                    <p className="font-semibold text-sm lg:text-base text-[#121212]">Terms & Policies</p>
-                    <p className="text-[10px] lg:text-xs text-[#64748B]">Legal information</p>
-                  </div>
-                </div>
-                <ChevronRight className="w-4 h-4 lg:w-5 lg:h-5 text-[#64748B] flex-shrink-0 ml-2" />
-              </Card>
             </div>
           </div>
 
