@@ -112,14 +112,14 @@ export default function ServiceTypes() {
           {/* Private Ride (Pakyaw) */}
           <Card
             onClick={() => {
-              if (selectedServices.includes('private')) {
-                setSelectedServices(selectedServices.filter(s => s !== 'private'));
+              if (selectedServices.includes('special')) {
+                setSelectedServices(selectedServices.filter(s => s !== 'special'));
               } else {
-                setSelectedServices([...selectedServices, 'private']);
+                setSelectedServices([...selectedServices, 'special']);
               }
             }}
             className={`flex items-center justify-between p-4 border-2 cursor-pointer transition-all ${
-              selectedServices.includes('private') 
+              selectedServices.includes('special')
                 ? 'border-[#E11D48] bg-red-50' 
                 : 'border-gray-200 hover:border-gray-300'
             }`}
@@ -127,16 +127,16 @@ export default function ServiceTypes() {
             <div className="flex items-center gap-3">
               <Car className="w-5 h-5 text-[#E11D48]" />
               <div>
-                <p className="font-semibold text-[#121212]">Private Ride</p>
+                <p className="font-semibold text-[#121212]">Special Ride</p>
                 <p className="text-xs text-[#64748B]">Exclusive rides, no sharing</p>
               </div>
             </div>
             <div className={`w-5 h-5 rounded border-2 flex items-center justify-center ${
-              selectedServices.includes('private') 
+              selectedServices.includes('special')
                 ? 'bg-[#E11D48] border-[#E11D48]' 
                 : 'border-gray-300'
             }`}>
-              {selectedServices.includes('private') && (
+              {selectedServices.includes('special') && (
                 <div className="w-2 h-2 bg-white rounded-sm" />
               )}
             </div>

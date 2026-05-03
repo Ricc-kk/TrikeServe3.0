@@ -313,7 +313,7 @@ export default function RiderProfile() {
                       key={service}
                       className="bg-[#E11D48] text-white capitalize px-3 py-1.5"
                     >
-                      {service === 'shared' ? '👥 Ride Share' : service === 'delivery' ? '📦 Delivery' : '🚗 Private'}
+                      {service === 'shared' ? '👥 Ride Share' : service === 'delivery' ? '📦 Delivery' : '🚗 Special'}
                     </Badge>
                   ))
                 ) : (
