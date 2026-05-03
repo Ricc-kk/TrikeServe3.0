@@ -1323,7 +1323,7 @@ export default function CustomerHome() {
                   <span className="text-4xl">{selectedVehicle === 'share' ? '🛵' : '🚙'}</span>
                   <div>
                     <p className="font-bold text-[#121212]">
-                      {selectedVehicle === 'share' ? 'Share Ride' : 'Special Ride'}
+                      {selectedVehicle === 'share' ? 'Share Ride' : 'Private Ride'}
                     </p>
                     <p className="text-sm text-[#64748B]">
                       {selectedVehicle === 'share' ? 'Shared with others' : 'Private ride'}

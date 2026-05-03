@@ -10,7 +10,6 @@ export default function Account() {
     name: user?.name || "User",
     mobile: user?.phone || "",
     email: user?.email || "",
-    gender: ""
   });
 
   const handleLogout = () => {
@@ -96,24 +95,6 @@ export default function Account() {
           </p>
         </div>
 
-        {/* Gender */}
-        <div>
-          <label className="block text-sm font-medium text-[#121212] mb-2">Gender</label>
-          <div className="relative">
-            <select
-              value={formData.gender}
-              onChange={(e) => setFormData({ ...formData, gender: e.target.value })}
-              className="w-full text-base text-[#CBD5E1] pb-2 border-b border-[#E2E8F0] focus:border-[#18B5A4] outline-none transition-colors appearance-none bg-transparent pr-8"
-            >
-              <option value="">Please select your gender</option>
-              <option value="male">Male</option>
-              <option value="female">Female</option>
-              <option value="other">Other</option>
-              <option value="prefer-not-to-say">Prefer not to say</option>
-            </select>
-            <ChevronRight className="w-5 h-5 text-[#CBD5E1] absolute right-0 bottom-2 pointer-events-none -rotate-90" />
-          </div>
-        </div>
       </div>
 
       {/* Log out Button */}
