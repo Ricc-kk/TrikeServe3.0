@@ -1,30 +1,30 @@
-# Special Ride Tracking - Quick Reference Guide
+# Private Ride Tracking - Quick Reference Guide
 
-## ✅ What Was Implemented
+## âœ… What Was Implemented
 
-### 1. **Booking Validation** 🛑
+### 1. **Booking Validation** ðŸ›‘
 - Customer MUST select Pickup AND Drop-off location
 - Error message shown if missing either location
-- Works for both Share and Special Rides
+- Works for both Share and Private Rides
 
-### 2. **Ride Request to Drivers** 📲
-- Special Ride requests now appear in Driver's "Passenger Requests" tab
-- Only Special Rides go to driver (Shared Rides use lobby system)
+### 2. **Ride Request to Drivers** ðŸ“²
+- Private Ride requests now appear in Driver's "Passenger Requests" tab
+- Only Private Rides go to driver (Shared Rides use lobby system)
 - Request shows customer details and route info
 
-### 3. **Real-Time Status Popups** 📍
+### 3. **Real-Time Status Popups** ðŸ“
 Customer sees popups for each driver action:
 
 | When Driver Does... | Customer Sees... | Emoji | Auto-Dismiss |
 |---|---|---|---|
-| Accepts Request | Driver Accepted popup with details | 👨‍✈️ | No (click to dismiss) |
-| Starts Active Ride | "On The Way" status popup | 📍 | 4 seconds |
-| Clicks "Arrived at Pickup" | "I've Arrived" status popup | ✋ | 4 seconds |
-| Clicks "Confirm Pickup" | "Pickup" status popup | 🚗 | 4 seconds |
-| Clicks "Drop Off" | "Drop-Off" status popup | 📍 | 4 seconds |
-| Clicks "Complete Ride" | "Payment" status popup | 💰 | 4 seconds |
+| Accepts Request | Driver Accepted popup with details | ðŸ‘¨â€âœˆï¸ | No (click to dismiss) |
+| Starts Active Ride | "On The Way" status popup | ðŸ“ | 4 seconds |
+| Clicks "Arrived at Pickup" | "I've Arrived" status popup | âœ‹ | 4 seconds |
+| Clicks "Confirm Pickup" | "Pickup" status popup | ðŸš— | 4 seconds |
+| Clicks "Drop Off" | "Drop-Off" status popup | ðŸ“ | 4 seconds |
+| Clicks "Complete Ride" | "Payment" status popup | ðŸ’° | 4 seconds |
 
-## 🎯 Key Features
+## ðŸŽ¯ Key Features
 
 ### Driver Accepted Popup
 - Shows driver name, plate, rating
@@ -38,23 +38,23 @@ Customer sees popups for each driver action:
 - Auto-dismisses after 4 seconds
 - Stacks if multiple updates come quickly
 
-## 🔧 How It Works (Technical)
+## ðŸ”§ How It Works (Technical)
 
 ### Storage & Sync
 ```
-Driver clicks button → Status saved to localStorage 
-  → Storage event triggered 
-  → Customer's effect hook detects change
-  → Popup displayed on customer screen
-  → Auto-dismissed after 4 seconds
+Driver clicks button â†’ Status saved to localStorage 
+  â†’ Storage event triggered 
+  â†’ Customer's effect hook detects change
+  â†’ Popup displayed on customer screen
+  â†’ Auto-dismissed after 4 seconds
 ```
 
 ### Key Storage Keys:
-- `trikeserve_accepted_rides` - Driver accepted special ride
+- `trikeserve_accepted_rides` - Driver accepted private ride
 - `driver_status_{rideId}` - Status updates from driver
 - `trikeserve_ride_requests` - Pending ride requests
 
-## 📱 Customer Flow
+## ðŸ“± Customer Flow
 
 ```
 1. Open booking
@@ -63,13 +63,13 @@ Driver clicks button → Status saved to localStorage
 4. Choose vehicle (Share/Special)
 5. Select passenger count (1 or 2 for Special)
 6. Confirm booking
-   ↓
+   â†“
 7. See "Driver Searching" card
 8. [Wait for driver to accept]
-9. See "Driver Accepted" popup with details ← NEW!
-10. See "On The Way" popup ← NEW!
+9. See "Driver Accepted" popup with details â† NEW!
+10. See "On The Way" popup â† NEW!
 11. See driver info card in bottom sheet
-12. [During ride, see status updates] ← NEW!
+12. [During ride, see status updates] â† NEW!
     - "I've Arrived" popup
     - "Pickup" popup  
     - "Drop-Off" popup
@@ -77,60 +77,60 @@ Driver clicks button → Status saved to localStorage
 13. Ride complete
 ```
 
-## 👨‍💼 Driver Flow (Special Rides)
+## ðŸ‘¨â€ðŸ’¼ Driver Flow (Private Rides)
 
 ```
 1. Open Passenger Requests
-2. See Special Ride request (type: 'private')
+2. See Private Ride request (type: 'private')
 3. Click "Accept Request"
 4. Redirect to Active Ride page
-   ↓ (Automatically sends "On The Way" status)
+   â†“ (Automatically sends "On The Way" status)
 5. Customer receives popup on their screen
 6. Drive to pickup location
-7. Click "Arrived at Pickup Location" ← Sends status to customer
+7. Click "Arrived at Pickup Location" â† Sends status to customer
 8. Customer receives "I've Arrived" popup
-9. Click "Confirm Pickup" ← Sends status to customer
+9. Click "Confirm Pickup" â† Sends status to customer
 10. Customer receives "Pickup" popup
 11. Drive to drop-off location
-12. Click "Drop Off [Name]" ← Sends status to customer
+12. Click "Drop Off [Name]" â† Sends status to customer
 13. Customer receives "Drop-Off" popup
-14. Click "Complete Ride" ← Sends status to customer
+14. Click "Complete Ride" â† Sends status to customer
 15. Customer receives "Payment" popup
 16. Ride history recorded
 ```
 
-## 🎨 Popup Appearance
+## ðŸŽ¨ Popup Appearance
 
 ### Driver Accepted Popup
 ```
-┌─────────────────────────┐
-│   👨‍✈️ [Large emoji]      │
-│                         │
-│  🎉 Driver Accepted!   │
-│  John Doe              │
-│                         │
-│  Vehicle: JD-123       │
-│  Rating: ⭐ 4.8        │
-│                         │
-│  [    Got It!    ]     │
-└─────────────────────────┘
+â”Œâ”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”
+â”‚   ðŸ‘¨â€âœˆï¸ [Large emoji]      â”‚
+â”‚                         â”‚
+â”‚  ðŸŽ‰ Driver Accepted!   â”‚
+â”‚  John Doe              â”‚
+â”‚                         â”‚
+â”‚  Vehicle: JD-123       â”‚
+â”‚  Rating: â­ 4.8        â”‚
+â”‚                         â”‚
+â”‚  [    Got It!    ]     â”‚
+â””â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”˜
 ```
 
 ### Status Update Popup (example: "I've Arrived")
 ```
-┌──────────────────────────────┐
-│  ✋  ✋ I've Arrived          │
-│  Driver has arrived at your  │
-│  pickup location!            │
-└──────────────────────────────┘
+â”Œâ”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”
+â”‚  âœ‹  âœ‹ I've Arrived          â”‚
+â”‚  Driver has arrived at your  â”‚
+â”‚  pickup location!            â”‚
+â””â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”˜
 (Auto-dismisses in 4 seconds)
 ```
 
-## 🚀 Testing Quickly
+## ðŸš€ Testing Quickly
 
 ### Test Scenario (Two Browser Tabs/Windows):
 1. **Tab 1 (Customer)**
-   - Book a Special Ride
+   - Book a Private Ride
    - Keep tab open
 
 2. **Tab 2 (Driver)**
@@ -140,30 +140,30 @@ Driver clicks button → Status saved to localStorage
    - Accept it
    - See popups appear in Tab 1
 
-## ⚠️ Important Notes
+## âš ï¸ Important Notes
 
-### ✅ What Works:
-- Special Rides ONLY (for now)
+### âœ… What Works:
+- Private Rides ONLY (for now)
 - Multiple passengers (1-2 for special)
 - Both COD and GCASH payment
 - Cross-tab communication
 - Mobile and desktop
 
-### ❌ Not Yet Implemented:
+### âŒ Not Yet Implemented:
 - Shared Rides status tracking (separate task)
 - Persistent storage (uses localStorage, not database)
 - Real-time location tracking
 - Push notifications
 - Sound alerts
 
-### 🔍 Debugging Tips:
-- Open Browser DevTools → Application → LocalStorage
+### ðŸ” Debugging Tips:
+- Open Browser DevTools â†’ Application â†’ LocalStorage
 - Look for keys starting with `driver_status_`
 - Check `trikeserve_ride_requests` for pending requests
 - Check `trikeserve_accepted_rides` for active rides
 - Open Console to see `console.log()` debug messages
 
-## 📝 Status Update Messages
+## ðŸ“ Status Update Messages
 
 | Status | Message | Use Case |
 |---|---|---|
@@ -173,7 +173,7 @@ Driver clicks button → Status saved to localStorage
 | drop-off | "You've arrived at your destination!" | Arrived at drop-off |
 | payment | "Ride completed! Please process payment." | Ride finished |
 
-## 🎓 Learning Resources
+## ðŸŽ“ Learning Resources
 
 ### Files Modified:
 1. `src/app/components/customer/Home.tsx` - Customer UI & popups
@@ -193,6 +193,6 @@ Driver clicks button → Status saved to localStorage
 ---
 
 **Last Updated**: April 2026
-**Version**: 1.0 (Special Rides)
+**Version**: 1.0 (Private Rides)
 **Status**: Ready for Testing
 

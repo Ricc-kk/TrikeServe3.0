@@ -55,7 +55,7 @@ export default function Login() {
           <div className="space-y-3 mb-8">
             <div className="flex items-center gap-3">
               <div className="w-2 h-2 bg-white rounded-full" />
-              <p className="text-lg text-white/80">Shared & Special Rides</p>
+              <p className="text-lg text-white/80">Shared & Private Rides</p>
             </div>
             <div className="flex items-center gap-3">
               <div className="w-2 h-2 bg-white rounded-full" />

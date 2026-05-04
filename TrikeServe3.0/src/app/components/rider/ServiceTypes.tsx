@@ -127,7 +127,7 @@ export default function ServiceTypes() {
             <div className="flex items-center gap-3">
               <Car className="w-5 h-5 text-[#E11D48]" />
               <div>
-                <p className="font-semibold text-[#121212]">Special Ride</p>
+                <p className="font-semibold text-[#121212]">Private Ride</p>
                 <p className="text-xs text-[#64748B]">Exclusive rides, no sharing</p>
               </div>
             </div>

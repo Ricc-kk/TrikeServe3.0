@@ -1,9 +1,9 @@
-# ⚡ Import Error - SOLVED! Just Restart
+# âš¡ Import Error - SOLVED! Just Restart
 
 ## What I Fixed
 Changed import paths from `../../lib/supabase` to `@/lib/supabase` in:
-- ✅ `src/app/components/customer/Home.tsx`
-- ✅ `src/app/components/rider/PassengerRequests.tsx`
+- âœ… `src/app/components/customer/Home.tsx`
+- âœ… `src/app/components/rider/PassengerRequests.tsx`
 
 ## What You Need to Do
 
@@ -11,16 +11,16 @@ Changed import paths from `../../lib/supabase` to `@/lib/supabase` in:
 
 1. Press: **`Ctrl + C`** (to stop current server)
 2. Run: **`npm run dev`** (to restart)
-3. **Done!** ✨
+3. **Done!** âœ¨
 
 ---
 
 ## Result
-✅ Error gone  
-✅ App loads  
-✅ Ready to test special rides  
+âœ… Error gone  
+âœ… App loads  
+âœ… Ready to test private rides  
 
 ---
 
-**That's it!** Restart and you're good! 🚀
+**That's it!** Restart and you're good! ðŸš€
 

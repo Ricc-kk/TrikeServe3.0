@@ -1,22 +1,22 @@
 # Quick Testing Guide - Customer Booking Popups
 
-## ✅ All Changes Implemented
+## âœ… All Changes Implemented
 
 Three new popup features have been added to the customer booking flow.
 
 ---
 
-## 🧪 TEST SCENARIO 1: Same Location Warning
+## ðŸ§ª TEST SCENARIO 1: Same Location Warning
 
 ### Steps:
-1. Open browser → `http://localhost:5173`
-2. Click "Book Special Ride"
+1. Open browser â†’ `http://localhost:5173`
+2. Click "Book Private Ride"
 3. Select Pickup: "Home"
 4. Select Drop-off: "Home" (same location)
-5. Click "Book Special Ride - ₱50"
+5. Click "Book Private Ride - â‚±50"
 
 ### Expected Result:
-- ⚠️ Popup appears with red theme
+- âš ï¸ Popup appears with red theme
 - Title: "Invalid Route"
 - Message: "Your pickup location and drop-off point cannot be the same..."
 - Button: "Understood"
@@ -24,22 +24,22 @@ Three new popup features have been added to the customer booking flow.
 
 ### What Changed:
 - Added validation for same pickup/dropoff location
-- Only applies to Special Rides
+- Only applies to Private Rides
 - Shows warning popup instead of allowing booking
 
 ---
 
-## 🧪 TEST SCENARIO 2: Booking Success Popup
+## ðŸ§ª TEST SCENARIO 2: Booking Success Popup
 
 ### Steps:
-1. Open browser → `http://localhost:5173`
-2. Click "Book Special Ride"
+1. Open browser â†’ `http://localhost:5173`
+2. Click "Book Private Ride"
 3. Select Pickup: "Home"
 4. Select Drop-off: "Work" (different location)
-5. Click "Book Special Ride - ₱50"
+5. Click "Book Private Ride - â‚±50"
 
 ### Expected Result:
-- ✅ Popup appears with green theme
+- âœ… Popup appears with green theme
 - Title: "Ride Request Sent!"
 - Message: "We're finding a driver for you..."
 - Shows spinning loader animation
@@ -52,18 +52,18 @@ Three new popup features have been added to the customer booking flow.
 
 ---
 
-## 🧪 TEST SCENARIO 3: Ride Completed Popup
+## ðŸ§ª TEST SCENARIO 3: Ride Completed Popup
 
 ### Steps:
 1. Complete TEST SCENARIO 2 (book a ride)
 2. Open another browser/tab for driver (`http://localhost:5173`)
-3. Go to Driver → Passenger Requests
+3. Go to Driver â†’ Passenger Requests
 4. Accept the ride from customer
-5. Click "I've Arrived" → "Confirm Pickup" → "Arrived at Drop-off" → "Complete Ride"
+5. Click "I've Arrived" â†’ "Confirm Pickup" â†’ "Arrived at Drop-off" â†’ "Complete Ride"
 6. Back to customer browser
 
 ### Expected Result:
-- 🎉 Popup appears with blue theme
+- ðŸŽ‰ Popup appears with blue theme
 - Title: "Ride Completed!"
 - Message: "Thank you for using TrikeServe..."
 - Button: "Done"
@@ -76,29 +76,29 @@ Three new popup features have been added to the customer booking flow.
 
 ---
 
-## 🔄 How the Popups Work Together
+## ðŸ”„ How the Popups Work Together
 
 ```
 [Customer Books] 
-  ↓
-1️⃣ Validation Check (empty locations) → Show popup #1 ⚠️
-  ↓
-2️⃣ Validation Check (same location) → Show popup #2 ⚠️
-  ↓
-3️⃣ Booking Success → Show popup #3 ✅
-  ↓
+  â†“
+1ï¸âƒ£ Validation Check (empty locations) â†’ Show popup #1 âš ï¸
+  â†“
+2ï¸âƒ£ Validation Check (same location) â†’ Show popup #2 âš ï¸
+  â†“
+3ï¸âƒ£ Booking Success â†’ Show popup #3 âœ…
+  â†“
 [Driver Accepts]
-  ↓
-[Driver Updates Status → Show status popups]
-  ↓
+  â†“
+[Driver Updates Status â†’ Show status popups]
+  â†“
 [Driver Completes Ride]
-  ↓
-4️⃣ Ride Completed → Show popup #4 🎉
+  â†“
+4ï¸âƒ£ Ride Completed â†’ Show popup #4 ðŸŽ‰
 ```
 
 ---
 
-## 📋 Popup Reference
+## ðŸ“‹ Popup Reference
 
 | Popup | Trigger | Color | Auto-dismiss |
 |-------|---------|-------|--------------|
@@ -109,7 +109,7 @@ Three new popup features have been added to the customer booking flow.
 
 ---
 
-## 💡 Tips
+## ðŸ’¡ Tips
 
 - All popups have a bounce animation for attention
 - Popups are on top of all UI (z-index: 2100)
@@ -119,7 +119,7 @@ Three new popup features have been added to the customer booking flow.
 
 ---
 
-## 🐛 Troubleshooting
+## ðŸ› Troubleshooting
 
 ### Popups not appearing?
 1. Check browser console for errors
@@ -141,7 +141,7 @@ Three new popup features have been added to the customer booking flow.
 
 ---
 
-## ✨ Success Checklist
+## âœ¨ Success Checklist
 
 - [x] Same location validation popup works
 - [x] Booking success popup appears and dismisses
@@ -154,11 +154,11 @@ Three new popup features have been added to the customer booking flow.
 
 ---
 
-## 📞 Questions?
+## ðŸ“ž Questions?
 
 All changes are documented in:
 - **Main File:** `src/app/components/customer/Home.tsx`
 - **Documentation:** `CUSTOMER_BOOKING_POPUP_UPDATES.md`
 
-Ready to test! 🚀
+Ready to test! ðŸš€
 

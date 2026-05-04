@@ -1,4 +1,4 @@
-# ✅ STEP-BY-STEP: Get Driver Info Card Working NOW
+# âœ… STEP-BY-STEP: Get Driver Info Card Working NOW
 
 ## CRITICAL: Does Driver Have TODA Plate?
 
@@ -67,15 +67,15 @@ Clear console in both (click circle-slash icon)
 1. Click the location (top of screen)
 2. Set Pickup: "SM Mall"
 3. Set Dropoff: "Ayala Center"
-4. Select "Special Ride"
-5. Click "Book Special Ride"
+4. Select "Private Ride"
+5. Click "Book Private Ride"
 6. See "Searching for Driver..."
 
 **Console check:**
 Look for:
 ```
-📡 Setting up real-time database subscriptions for ride: [ride-id]
-✅ Real-time subscription active for ride: [ride-id]
+ðŸ“¡ Setting up real-time database subscriptions for ride: [ride-id]
+âœ… Real-time subscription active for ride: [ride-id]
 ```
 
 ---
@@ -89,14 +89,14 @@ Look for:
 **Console check (Window B - DRIVER):**
 Look for:
 ```
-🚨🚨🚨 DRIVER ACCEPTED RIDE 🚨🚨🚨
+ðŸš¨ðŸš¨ðŸš¨ DRIVER ACCEPTED RIDE ðŸš¨ðŸš¨ðŸš¨
    Ride ID: [id]
    Ride Type: special
    Customer ID: [id]
 
-📤 Updating DATABASE with driver acceptance...
-👤 USER OBJECT DEBUG:
-   user.todaPlate: TEST-1234  ← KEY! Should show plate, NOT empty
+ðŸ“¤ Updating DATABASE with driver acceptance...
+ðŸ‘¤ USER OBJECT DEBUG:
+   user.todaPlate: TEST-1234  â† KEY! Should show plate, NOT empty
 ```
 
 If `user.todaPlate: undefined` or `user.todaPlate: null`:
@@ -108,20 +108,20 @@ If `user.todaPlate: TEST-1234`:
 
 Look for:
 ```
-🏷️ About to call acceptRideRequest with:
-   driverPlate: TEST-1234  ← KEY! Should show plate, NOT 'N/A'
+ðŸ·ï¸ About to call acceptRideRequest with:
+   driverPlate: TEST-1234  â† KEY! Should show plate, NOT 'N/A'
    driverRating: 4.8
 ```
 
 Then:
 ```
-📝 Update object: {
-   driver_plate: "TEST-1234",  ← CRITICAL!
-   driver_rating: "4.8",       ← CRITICAL!
+ðŸ“ Update object: {
+   driver_plate: "TEST-1234",  â† CRITICAL!
+   driver_rating: "4.8",       â† CRITICAL!
    ...
 }
 
-✅ Successfully updated ride_requests: {...}
+âœ… Successfully updated ride_requests: {...}
 ```
 
 If you see **ERROR** message:
@@ -134,23 +134,23 @@ If you see **ERROR** message:
 
 Look for:
 ```
-🔄 Real-time ride update received: {
+ðŸ”„ Real-time ride update received: {
    ...
    driver_plate: "TEST-1234",
    driver_rating: "4.8",
    ...
 }
 
-📊 DRIVER INFO FROM DATABASE:
+ðŸ“Š DRIVER INFO FROM DATABASE:
    driver_plate: TEST-1234
    driver_rating: 4.8
 
-✅ DRIVER ACCEPTED (Real-time): [driver-id]
+âœ… DRIVER ACCEPTED (Real-time): [driver-id]
 
-🎯 Setting activeRide state with: {
+ðŸŽ¯ Setting activeRide state with: {
    driver: "[name]",
-   plateNumber: "TEST-1234",  ← SHOULD BE HERE
-   rating: "4.8",             ← SHOULD BE HERE
+   plateNumber: "TEST-1234",  â† SHOULD BE HERE
+   rating: "4.8",             â† SHOULD BE HERE
    eta: "5 mins"
 }
 ```
@@ -163,29 +163,29 @@ Look at the bottom of the map screen. Do you see:
 
 **Popup:**
 ```
-┌────────────────────────┐
-│  🎉 Driver Found! 🎉   │
-│  John Driver           │
-│  Vehicle: TEST-1234 ✅ │
-│  Rating: ⭐ 4.8 ✅    │
-└────────────────────────┘
+â”Œâ”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”
+â”‚  ðŸŽ‰ Driver Found! ðŸŽ‰   â”‚
+â”‚  John Driver           â”‚
+â”‚  Vehicle: TEST-1234 âœ… â”‚
+â”‚  Rating: â­ 4.8 âœ…    â”‚
+â””â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”˜
 ```
 
 **AND**
 
 **Card:**
 ```
-┌────────────────────────┐
-│ 👨 John Driver         │
-│ 🚗 TEST-1234      ✅  │
-│ ⭐ 4.8            ✅  │
-│ ETA: 5 mins            │
-└────────────────────────┘
+â”Œâ”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”
+â”‚ ðŸ‘¨ John Driver         â”‚
+â”‚ ðŸš— TEST-1234      âœ…  â”‚
+â”‚ â­ 4.8            âœ…  â”‚
+â”‚ ETA: 5 mins            â”‚
+â””â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”˜
 ```
 
 ---
 
-## IF IT WORKS ✅
+## IF IT WORKS âœ…
 
 Congratulations! The Driver Info Card is working!
 
@@ -193,7 +193,7 @@ The customer can now see complete driver information in real-time!
 
 ---
 
-## IF IT DOESN'T WORK ❌
+## IF IT DOESN'T WORK âŒ
 
 **Tell me exactly:**
 
@@ -204,11 +204,11 @@ The customer can now see complete driver information in real-time!
    - Do driver_plate and driver_rating exist? (YES/NO)
 
 3. **Database Update:**
-   - Did `✅ Successfully updated ride_requests` appear? (YES/NO)
+   - Did `âœ… Successfully updated ride_requests` appear? (YES/NO)
    - If NO, what error appeared?
 
 4. **Real-Time Event:**
-   - Did `🔄 Real-time ride update received` appear? (YES/NO)
+   - Did `ðŸ”„ Real-time ride update received` appear? (YES/NO)
    - Did it contain `driver_plate`? (YES/NO)
 
 5. **Screen Display:**
@@ -287,7 +287,7 @@ Complete all of these:
 
 ---
 
-**If all checkboxes ✅: WORKING PERFECTLY!**
+**If all checkboxes âœ…: WORKING PERFECTLY!**
 
-**If any ❌: Tell me which ones and I'll fix it!**
+**If any âŒ: Tell me which ones and I'll fix it!**
 

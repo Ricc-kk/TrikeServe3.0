@@ -50,7 +50,7 @@ export default function CustomerHome() {
   const [showValidationError, setShowValidationError] = useState(false);
   const [showSameLocationError, setShowSameLocationError] = useState(false);
   const [rideCompletedPopup, setRideCompletedPopup] = useState(false);
-  const [privateRidePrice, setPrivateRidePrice] = useState(50); // Default price for special rides
+  const [privateRidePrice, setPrivateRidePrice] = useState(50); // Default price for private rides
   const [sharedRidePrice, setSharedRidePrice] = useState(15); // Default price for share rides
   const unsubscribeRef = useRef<(() => void) | null>(null);
 
@@ -599,7 +599,7 @@ export default function CustomerHome() {
       return;
     }
 
-    // Validate that pickup and dropoff are not the same (for special rides)
+    // Validate that pickup and dropoff are not the same (for private rides)
     if (selectedVehicle === 'special') {
       if (pickup.trim().toLowerCase() === dropoff.trim().toLowerCase()) {
         setShowSameLocationError(true);
@@ -628,7 +628,7 @@ export default function CustomerHome() {
       }
     }
     
-    // Ask for passenger count for both share and special rides
+    // Ask for passenger count for both share and private rides
     setShowPassengerCount(true);
   };
 
@@ -640,7 +640,7 @@ export default function CustomerHome() {
       setActiveShareLobbyId(null);
       setShowShareLobby(true);
     } else {
-      // For special rides, save to Supabase database
+      // For private rides, save to Supabase database
       setRideStatus('searching');
       
       try {
@@ -809,7 +809,7 @@ export default function CustomerHome() {
                     </div>
                   </button>
 
-                  {/* Special Ride */}
+                  {/* Private Ride */}
                   <button
                     onClick={() => setSelectedVehicle('special')}
                     className={`p-3 rounded-2xl border-2 transition-all ${
@@ -822,7 +822,7 @@ export default function CustomerHome() {
                       <div className="w-20 h-20 rounded-2xl bg-white border-2 border-[#E2E8F0] flex items-center justify-center">
                         <UserIcon className="w-10 h-10 text-[#121212]" />
                       </div>
-                      <span className="font-bold text-sm text-[#121212]">Special Ride</span>
+                      <span className="font-bold text-sm text-[#121212]">Private Ride</span>
                     </div>
                   </button>
                 </div>

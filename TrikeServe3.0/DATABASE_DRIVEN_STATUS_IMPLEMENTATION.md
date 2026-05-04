@@ -70,11 +70,11 @@ await supabaseHelpers.updateDriverRideStatus(rideId, driverStatus, statusMessage
 ```
 
 **Status Mapping:**
-- on-the-way → 'on-the-way'
-- arrived → 'arrived'
-- pickup → 'picked-up'
-- drop-off → 'dropped-off'
-- payment → 'awaiting-payment'
+- on-the-way â†’ 'on-the-way'
+- arrived â†’ 'arrived'
+- pickup â†’ 'picked-up'
+- drop-off â†’ 'dropped-off'
+- payment â†’ 'awaiting-payment'
 
 ## Driver Status Update Flow
 
@@ -82,17 +82,17 @@ When driver clicks status buttons:
 
 ```
 Driver clicks "I've Arrived" button
-    ↓
+    â†“
 updateStatus('arrived') called
-    ↓
+    â†“
 updateRideStatusInDatabase() called
-    ↓
+    â†“
 supabaseHelpers.updateDriverRideStatus(rideId, 'arrived', 'Driver has arrived...')
-    ↓
+    â†“
 Database updated with new driver_status
-    ↓
+    â†“
 Customer's periodic checkForDriverStatusUpdate() detects change
-    ↓
+    â†“
 Popup shown to customer with updated status
 ```
 
@@ -102,53 +102,53 @@ Customer periodically checks (every 2 seconds via useEffect):
 
 ```
 checkForDriverStatusUpdate() called
-    ↓
+    â†“
 supabaseHelpers.getRideRequest(currentRequestId)
-    ↓
+    â†“
 Fetch from database ride_requests table
-    ↓
+    â†“
 Check if driver_status !== last shown status
-    ↓
-If NEW status → Show popup
-    ↓
+    â†“
+If NEW status â†’ Show popup
+    â†“
 Store shown status in localStorage to prevent duplicates
-    ↓
+    â†“
 Auto-dismiss after 4 seconds
-    ↓
-If 'completed' → Clear all ride data
+    â†“
+If 'completed' â†’ Clear all ride data
 ```
 
 ## Why This Approach is Better
 
-✅ **Persistent:** Data survives page refreshes and browser closures  
-✅ **Real-time:** Direct database queries, no localStorage sync lag  
-✅ **Reliable:** Single source of truth (database), not dependent on localStorage  
-✅ **Scalable:** Works across devices and multiple tabs  
-✅ **Indexed:** Database queries optimized with indexes on frequently accessed columns  
-✅ **No Key Mismatches:** Eliminates issues like `driver_status_abc123` not matching expected key  
+âœ… **Persistent:** Data survives page refreshes and browser closures  
+âœ… **Real-time:** Direct database queries, no localStorage sync lag  
+âœ… **Reliable:** Single source of truth (database), not dependent on localStorage  
+âœ… **Scalable:** Works across devices and multiple tabs  
+âœ… **Indexed:** Database queries optimized with indexes on frequently accessed columns  
+âœ… **No Key Mismatches:** Eliminates issues like `driver_status_abc123` not matching expected key  
 
 ## Status Progression
 
 ```
 User Books Ride (status: 'pending')
-    ↓
+    â†“
 Driver Accepts (status: 'accepted', driver_status: 'on-the-way')
-    ↓
+    â†“
 Driver Clicks "I've Arrived" (driver_status: 'arrived')
-    ↓
+    â†“
 Driver Clicks "Confirm Pickup" (driver_status: 'picked-up')
-    ↓
+    â†“
 Driver Clicks "Arrived at Drop-off" (driver_status: 'dropped-off')
-    ↓
+    â†“
 Driver Clicks "Complete Ride" (status: 'completed', driver_status: 'completed')
-    ↓
+    â†“
 Ride cleared from customer's active rides
 ```
 
 ## Testing Checklist
 
 - [ ] Run SQL migration to add new columns
-- [ ] Customer books special ride
+- [ ] Customer books private ride
 - [ ] Driver accepts ride (check database for accepted_at, driver_id, driver_status = 'on-the-way')
 - [ ] Customer sees "Driver is on the way" popup
 - [ ] Driver clicks "I've Arrived" (check database for driver_status = 'arrived')

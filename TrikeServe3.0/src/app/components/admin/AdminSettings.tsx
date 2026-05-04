@@ -228,8 +228,8 @@ export default function AdminSettings() {
                 <div className="flex items-start justify-between mb-4">
                   <div>
                     <Bike className="w-8 h-8 lg:w-10 lg:h-10 text-[#9333EA] mb-2" />
-                    <h3 className="font-bold text-base lg:text-lg text-[#121212]">Special Ride</h3>
-                    <p className="text-xs text-[#64748B]">Pakyaw (entire trike)</p>
+                    <h3 className="font-bold text-base lg:text-lg text-[#121212]">Private Ride</h3>
+                    <p className="text-xs text-[#64748B]">Solo Ride (Entire tricycle)</p>
                   </div>
                 </div>
                 <div className="flex items-center gap-2 mb-3">

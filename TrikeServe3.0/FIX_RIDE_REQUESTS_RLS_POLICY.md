@@ -1,15 +1,15 @@
-# ✅ Fix Ride Requests Database Error - RLS Policy Issue
+# âœ… Fix Ride Requests Database Error - RLS Policy Issue
 
 ## The Problem
 ```
-❌ Error booking ride. Please try again.
+âŒ Error booking ride. Please try again.
 ```
 
 ## Root Cause
 The `ride_requests` table has **Row Level Security (RLS)** policies that are blocking INSERT operations because:
 - Your app uses **custom authentication** (localStorage)
 - RLS policies check `auth.uid()` which is **NULL** with custom auth
-- Result: All INSERTs are blocked ❌
+- Result: All INSERTs are blocked âŒ
 
 ## The Solution
 
@@ -50,14 +50,14 @@ CREATE POLICY "Anyone can delete ride requests" ON ride_requests
 
 1. Paste the SQL above into the SQL Editor
 2. Click: **Run** button (or press Ctrl+Enter)
-3. Should see: ✅ Success message at the bottom
+3. Should see: âœ… Success message at the bottom
 
 ### STEP 4: Test in Your App
 
 1. Stop dev server: `Ctrl + C`
 2. Start dev server: `npm run dev`
-3. Try booking a special ride again
-4. **Should work now!** ✅
+3. Try booking a private ride again
+4. **Should work now!** âœ…
 
 ---
 
@@ -65,10 +65,10 @@ CREATE POLICY "Anyone can delete ride requests" ON ride_requests
 
 | Policy | Allows |
 |--------|--------|
-| `Anyone can insert ride requests` | App can create new ride bookings ✅ |
-| `Anyone can view ride requests` | App can fetch requests ✅ |
-| `Anyone can update ride requests` | App can update request status ✅ |
-| `Anyone can delete ride requests` | App can delete requests ✅ |
+| `Anyone can insert ride requests` | App can create new ride bookings âœ… |
+| `Anyone can view ride requests` | App can fetch requests âœ… |
+| `Anyone can update ride requests` | App can update request status âœ… |
+| `Anyone can delete ride requests` | App can delete requests âœ… |
 
 ---
 
@@ -83,14 +83,14 @@ This is the standard approach for **custom authentication** systems.
 
 ---
 
-## ✅ After Running SQL
+## âœ… After Running SQL
 
 - [x] SQL executed successfully
 - [x] Old policies dropped
 - [x] New permissive policies created
 - [x] Restart dev server
 - [x] Try booking a ride
-- [x] Should work! 🎉
+- [x] Should work! ðŸŽ‰
 
 ---
 
@@ -103,5 +103,5 @@ Check console (F12) for the exact error and:
 
 ---
 
-**Solution is ready! Execute the SQL above and restart your app.** 🚀
+**Solution is ready! Execute the SQL above and restart your app.** ðŸš€
 

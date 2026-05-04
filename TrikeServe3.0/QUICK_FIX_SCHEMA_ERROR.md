@@ -1,20 +1,20 @@
-# ⚡ Quick Fix - Database Schema Error
+# âš¡ Quick Fix - Database Schema Error
 
 ## Problem
 ```
-❌ Could not find the 'dropoff_address' column
+âŒ Could not find the 'dropoff_address' column
 ```
 
 ## Solution Applied
-✅ **Fixed** - Removed non-existent database columns from code
+âœ… **Fixed** - Removed non-existent database columns from code
 
 **Columns that were removed:**
-- ❌ `pickup_address` (doesn't exist)
-- ❌ `dropoff_address` (doesn't exist)
+- âŒ `pickup_address` (doesn't exist)
+- âŒ `dropoff_address` (doesn't exist)
 
 **Using correct columns:**
-- ✅ `pickup_location` (exists in DB)
-- ✅ `dropoff_location` (exists in DB)
+- âœ… `pickup_location` (exists in DB)
+- âœ… `dropoff_location` (exists in DB)
 
 ---
 
@@ -28,13 +28,13 @@
 
 2. **Test booking:**
    - Select pickup & dropoff
-   - Choose Special Ride
+   - Choose Private Ride
    - Click Confirm
-   - **Should work now!** ✅
+   - **Should work now!** âœ…
 
 ---
 
-## That's It! 🎉
+## That's It! ðŸŽ‰
 
 Code is fixed. Just restart and test!
 
