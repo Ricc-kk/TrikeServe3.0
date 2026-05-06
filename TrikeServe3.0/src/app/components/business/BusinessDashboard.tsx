@@ -10,6 +10,7 @@ import { Badge } from "../ui/badge";
 import { ImageWithFallback } from "../figma/ImageWithFallback";
 import BusinessSidebar from "./BusinessSidebar";
 import { useAuth } from "../../contexts/AuthContext";
+import { supabase } from "../../../lib/supabase";
 
 export default function BusinessDashboard() {
   const navigate = useNavigate();
@@ -18,20 +19,188 @@ export default function BusinessDashboard() {
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [showNotifications, setShowNotifications] = useState(false);
   const [showMessages, setShowMessages] = useState(false);
-
-  // Empty stats (no orders yet)
-  const stats = {
+  const [stats, setStats] = useState({
     totalOrders: 0,
     totalRevenue: 0,
     totalItems: 0,
     earnings: 0
-  };
+  });
+  const [popularMenu, setPopularMenu] = useState<any[]>([]);
+  const [dailySales, setDailySales] = useState<any[]>([]);
+  const [incomeBreakdown, setIncomeBreakdown] = useState<any[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [restaurantId, setRestaurantId] = useState<string | null>(null);
 
-  const popularMenu: any[] = [];
-  const dailySales: any[] = [];
-  const incomeBreakdown: any[] = [];
   const notifications: any[] = [];
   const messages: any[] = [];
+
+  // Load dashboard data
+  useEffect(() => {
+    loadDashboardData();
+    // Refresh data every 30 seconds
+    const interval = setInterval(() => {
+      loadDashboardData();
+    }, 30000);
+    return () => clearInterval(interval);
+  }, []);
+
+  const loadDashboardData = async () => {
+    try {
+      const currentUserData = localStorage.getItem('trikeserve_current_user');
+      if (!currentUserData) {
+        setIsLoading(false);
+        return;
+      }
+
+      const currentUser = JSON.parse(currentUserData);
+      let businessRestaurantId = currentUser.restaurantId;
+
+      // If no restaurantId, fetch from Supabase
+      if (!businessRestaurantId && currentUser.id) {
+        const { data: restaurant } = await supabase
+          .from('restaurants')
+          .select('id')
+          .eq('business_user_id', currentUser.id)
+          .single();
+
+        if (restaurant) {
+          businessRestaurantId = restaurant.id;
+          setRestaurantId(businessRestaurantId);
+        }
+      } else if (businessRestaurantId) {
+        setRestaurantId(businessRestaurantId);
+      }
+
+      if (!businessRestaurantId) {
+        setIsLoading(false);
+        return;
+      }
+
+      // Load orders
+      const { data: orders } = await supabase
+        .from('orders')
+        .select('*')
+        .eq('restaurant_email', businessRestaurantId)
+        .order('created_at', { ascending: false });
+
+      if (orders && orders.length > 0) {
+        // Calculate stats
+        const totalOrders = orders.length;
+        const totalRevenue = orders.reduce((sum: number, order: any) => sum + (order.total || 0), 0);
+
+        // Today's earnings - orders from today
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+        const todaysOrders = orders.filter((order: any) => {
+          const orderDate = new Date(order.created_at);
+          orderDate.setHours(0, 0, 0, 0);
+          return orderDate.getTime() === today.getTime();
+        });
+        const earnings = todaysOrders.reduce((sum: number, order: any) => sum + (order.total || 0), 0);
+
+        setStats({
+          totalOrders,
+          totalRevenue,
+          totalItems: 0, // Will be loaded separately
+          earnings
+        });
+
+        // Calculate daily sales for last 7 days
+        const dailySalesData = calculateDailySales(orders);
+        setDailySales(dailySalesData);
+
+        // Calculate income breakdown (cash vs gcash)
+        const incomeBreakdownData = calculateIncomeBreakdown(orders);
+        setIncomeBreakdown(incomeBreakdownData);
+      }
+
+      // Load menu items
+      const { data: menuItems } = await supabase
+        .from('menu_items')
+        .select('*')
+        .eq('restaurant_id', businessRestaurantId)
+        .order('created_at', { ascending: false })
+        .limit(6);
+
+      if (menuItems) {
+        setStats(prev => ({
+          ...prev,
+          totalItems: menuItems.length
+        }));
+
+        // Show top 6 items (most ordered or most recent)
+        setPopularMenu(menuItems.slice(0, 6).map((item: any) => ({
+          id: item.id,
+          name: item.name,
+          price: item.price,
+          image: item.image || 'https://via.placeholder.com/200x150?text=Menu+Item'
+        })));
+      }
+
+      setIsLoading(false);
+    } catch (error) {
+      console.error('[BusinessDashboard] Error loading data:', error);
+      setIsLoading(false);
+    }
+  };
+
+  const calculateDailySales = (orders: any[]) => {
+    const days = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+    const salesData = [];
+
+    // Get last 7 days
+    for (let i = 6; i >= 0; i--) {
+      const date = new Date();
+      date.setDate(date.getDate() - i);
+      date.setHours(0, 0, 0, 0);
+
+      const nextDate = new Date(date);
+      nextDate.setDate(nextDate.getDate() + 1);
+
+      const daySales = orders.filter((order: any) => {
+        const orderDate = new Date(order.created_at);
+        return orderDate >= date && orderDate < nextDate;
+      });
+
+      const amount = daySales.reduce((sum: number, order: any) => sum + (order.total || 0), 0);
+      salesData.push({
+        day: days[date.getDay()],
+        amount: Math.max(amount, 100) // Minimum 100 for chart visibility
+      });
+    }
+
+    return salesData;
+  };
+
+  const calculateIncomeBreakdown = (orders: any[]) => {
+    let cashTotal = 0;
+    let gcashTotal = 0;
+
+    orders.forEach((order: any) => {
+      const amount = order.total || 0;
+      if (order.payment_method === 'gcash') {
+        gcashTotal += amount;
+      } else {
+        cashTotal += amount;
+      }
+    });
+
+    const total = cashTotal + gcashTotal;
+    if (total === 0) return [];
+
+    return [
+      {
+        label: 'Cash on Delivery',
+        percentage: Math.round((cashTotal / total) * 100),
+        color: '#F59E0B'
+      },
+      {
+        label: 'GCash (Prepaid)',
+        percentage: Math.round((gcashTotal / total) * 100),
+        color: '#10B981'
+      }
+    ];
+  };
 
   // Check if user is not verified
   if (!user?.isVerified) {
@@ -64,7 +233,10 @@ export default function BusinessDashboard() {
     );
   }
 
-  const maxSales = 1; // Default to avoid division by zero
+  // Calculate max sales for chart scaling
+  const maxSales = dailySales.length > 0
+    ? Math.max(...dailySales.map(d => d.amount))
+    : 1;
 
   return (
     <div className="min-h-screen bg-[#F8F9FA] flex">
@@ -158,7 +330,7 @@ export default function BusinessDashboard() {
               <div className="flex items-start justify-between mb-3 lg:mb-4">
                 <div>
                   <p className="text-xs lg:text-sm text-[#64748B] mb-1">Total Revenue</p>
-                  <h2 className="text-2xl lg:text-4xl font-bold text-[#121212]">₱{(stats.totalRevenue / 1000).toFixed(0)}k</h2>
+                  <h2 className="text-2xl lg:text-4xl font-bold text-[#121212]">₱{(stats.totalRevenue >= 1000 ? (stats.totalRevenue / 1000).toFixed(1) : stats.totalRevenue.toFixed(0))}{stats.totalRevenue >= 1000 ? 'k' : ''}</h2>
                 </div>
                 <div className="w-10 h-10 lg:w-12 lg:h-12 bg-[#FEF3C7] rounded-xl flex items-center justify-center">
                   <DollarSign className="w-5 h-5 lg:w-6 lg:h-6 text-[#F59E0B]" />
@@ -202,7 +374,7 @@ export default function BusinessDashboard() {
               <div className="flex items-start justify-between mb-3 lg:mb-4">
                 <div>
                   <p className="text-xs lg:text-sm text-[#64748B] mb-1">Today's Earnings</p>
-                  <h2 className="text-2xl lg:text-4xl font-bold text-[#121212]">₱{(stats.earnings / 1000).toFixed(0)}k</h2>
+                  <h2 className="text-2xl lg:text-4xl font-bold text-[#121212]">₱{(stats.earnings >= 1000 ? (stats.earnings / 1000).toFixed(1) : stats.earnings.toFixed(0))}{stats.earnings >= 1000 ? 'k' : ''}</h2>
                 </div>
                 <div className="w-10 h-10 lg:w-12 lg:h-12 bg-[#DBEAFE] rounded-xl flex items-center justify-center">
                   <TrendingUp className="w-5 h-5 lg:w-6 lg:h-6 text-[#3B82F6]" />
@@ -284,7 +456,10 @@ export default function BusinessDashboard() {
                     <div className="mb-6">
                       <p className="text-sm text-[#64748B] mb-1">This Week</p>
                       <h3 className="text-2xl lg:text-3xl font-bold text-[#121212]">
-                        ₱{(dailySales.reduce((sum, d) => sum + d.amount, 0) / 1000).toFixed(1)}k
+                        ₱{((dailySales.reduce((sum, d) => sum + d.amount, 0) - dailySales.length * 100) >= 1000
+                          ? ((dailySales.reduce((sum, d) => sum + d.amount, 0) - dailySales.length * 100) / 1000).toFixed(1)
+                          : (dailySales.reduce((sum, d) => sum + d.amount, 0) - dailySales.length * 100).toFixed(0))}
+                        {(dailySales.reduce((sum, d) => sum + d.amount, 0) - dailySales.length * 100) >= 1000 ? 'k' : ''}
                       </h3>
                     </div>
                     

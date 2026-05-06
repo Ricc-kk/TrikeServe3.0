@@ -297,13 +297,6 @@ export default function BusinessHome() {
     }
   };
 
-  const todayStats = {
-    orders: 0,
-    revenue: 0,
-    avgOrderValue: 0,
-    pendingOrders: 0
-  };
-
   return (
     <div className="min-h-screen bg-white flex">
       {/* Sidebar Navigation */}
@@ -497,37 +490,6 @@ export default function BusinessHome() {
               </div>
             </div>
 
-            {/* Today's Stats */}
-            <div className="px-5 py-4 bg-[#F8F9FA]">
-              <h3 className="font-bold text-[#121212] mb-3">📊 Today's Performance</h3>
-              <div className="grid grid-cols-2 gap-3">
-                <Card className="p-4 border-2 border-[#E2E8F0] bg-white">
-                  <p className="text-xs text-[#64748B] mb-1">Total Orders</p>
-                  <p className="text-3xl font-bold text-[#121212]">{todayStats.orders}</p>
-                  <Badge className="bg-[#10B981] mt-2 text-xs">+5 from yesterday</Badge>
-                </Card>
-                <Card className="p-4 border-2 border-[#E2E8F0] bg-white">
-                  <p className="text-xs text-[#64748B] mb-1">Revenue</p>
-                  <p className="text-2xl font-bold text-[#E11D48]">₱{todayStats.revenue.toLocaleString()}</p>
-                  <Badge className="bg-[#3B82F6] mt-2 text-xs">+12%</Badge>
-                </Card>
-                <Card className="p-4 border-2 border-[#E2E8F0] bg-white">
-                  <p className="text-xs text-[#64748B] mb-1">Average Order</p>
-                  <p className="text-2xl font-bold text-[#121212]">₱{todayStats.avgOrderValue}</p>
-                </Card>
-                <Card className="p-4 border-2 border-[#E2E8F0] bg-white">
-                  <p className="text-xs text-[#64748B] mb-1">Pending</p>
-                  <p className="text-3xl font-bold text-[#F59E0B]">{todayStats.pendingOrders}</p>
-                  {todayStats.pendingOrders > 0 && (
-                    <Link to="/business/orders">
-                      <Button size="sm" variant="outline" className="mt-2 text-xs w-full">
-                        View Orders
-                      </Button>
-                    </Link>
-                  )}
-                </Card>
-              </div>
-            </div>
 
             {/* Quick Actions */}
             <div className="px-5 py-4">
@@ -541,13 +503,8 @@ export default function BusinessHome() {
                   </Card>
                 </Link>
                 <Link to="/business/orders">
-                  <Card className="p-5 text-center border-2 border-[#E2E8F0] hover:border-[#3B82F6] transition-all active:scale-95 bg-gradient-to-br from-[#EFF6FF] to-white relative">
+                  <Card className="p-5 text-center border-2 border-[#E2E8F0] hover:border-[#3B82F6] transition-all active:scale-95 bg-gradient-to-br from-[#EFF6FF] to-white">
                     <Clock className="w-10 h-10 text-[#3B82F6] mx-auto mb-2" />
-                    {todayStats.pendingOrders > 0 && (
-                      <div className="absolute top-2 right-2 w-6 h-6 bg-[#E11D48] rounded-full flex items-center justify-center">
-                        <span className="text-xs font-bold text-white">{todayStats.pendingOrders}</span>
-                      </div>
-                    )}
                     <p className="font-bold text-[#121212] mb-1">Orders</p>
                     <p className="text-xs text-[#64748B]">Manage orders</p>
                   </Card>
