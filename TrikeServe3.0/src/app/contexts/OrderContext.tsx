@@ -63,14 +63,10 @@ export function OrderProvider({ children }: { children: ReactNode }) {
     setIsLoaded(true);
   };
 
-  // Load orders on mount and set up polling for real-time updates
+  // Initialize orders on mount
   useEffect(() => {
     loadOrders();
-    
-    // Poll for updates every 2 seconds
-    const interval = setInterval(loadOrders, 2000);
-    
-    return () => clearInterval(interval);
+    // No polling needed - each component (Activity, BusinessOrders) handles its own data fetching from Supabase
   }, []);
 
   const addOrder = (order: Order) => {

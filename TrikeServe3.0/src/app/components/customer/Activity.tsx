@@ -42,6 +42,11 @@ export default function Activity() {
   const [displayRides, setDisplayRides] = useState<RideDisplay[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
+  const isDeliveryRide = (dbRide: any) => {
+    const pickupLocation = (dbRide?.pickup_location || '').toString();
+    return pickupLocation.startsWith('DELIVERY|');
+  };
+
   // Fetch orders and rides from Supabase on component mount
   useEffect(() => {
     loadActivityFromSupabase();
@@ -117,7 +122,9 @@ export default function Activity() {
         setDisplayRides([]);
       } else if (completedRides && completedRides.length > 0) {
         // Transform Supabase rides to display format
-        const transformedRides: RideDisplay[] = completedRides.map((dbRide: any) => {
+        const transformedRides: RideDisplay[] = completedRides
+          .filter((dbRide: any) => !isDeliveryRide(dbRide))
+          .map((dbRide: any) => {
           return {
             id: dbRide.id,
             pickupLocation: dbRide.pickup_location || 'Pickup',

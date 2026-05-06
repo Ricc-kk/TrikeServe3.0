@@ -1,4 +1,4 @@
-import { ArrowLeft, Package, Clock, MapPin, CreditCard, User as UserIcon, Phone, X } from "lucide-react";
+import { ArrowLeft, Package, Clock, MapPin, CreditCard, User as UserIcon, Phone, X, RefreshCw } from "lucide-react";
 import { useNavigate, useParams } from "react-router";
 import { Card } from "../ui/card";
 import { Button } from "../ui/button";
@@ -37,80 +37,121 @@ export default function OrderDetail() {
   const { getOrderById } = useOrders();
   const [order, setOrder] = useState<OrderData | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [isRefreshing, setIsRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Try to fetch order from Supabase first, then fall back to OrderContext
-  useEffect(() => {
-    const fetchOrder = async () => {
-      try {
+  const refreshOrderFromSupabase = async (isManualRefresh = false) => {
+    try {
+      if (isManualRefresh) {
+        setIsRefreshing(true);
+      } else {
         setIsLoading(true);
+      }
 
-        // First try Supabase
-        if (orderId) {
-          const { data: dbOrder, error: dbError } = await supabase
-            .from('orders')
-            .select('*')
-            .eq('id', orderId)
-            .single();
+      if (!orderId) {
+        setIsLoading(false);
+        setIsRefreshing(false);
+        return false;
+      }
 
-          if (!dbError && dbOrder) {
-            // Parse items safely
-            let parsedItems = [];
-            try {
-              parsedItems = typeof dbOrder.items === 'string' ? JSON.parse(dbOrder.items) : (Array.isArray(dbOrder.items) ? dbOrder.items : []);
-            } catch (parseError) {
-              console.error('[OrderDetail] Error parsing items:', parseError);
-              parsedItems = [];
-            }
+      const { data: dbOrder, error: dbError } = await supabase
+        .from('orders')
+        .select('*')
+        .eq('id', orderId)
+        .single();
 
-            const transformedOrder: OrderData = {
-              id: dbOrder.id,
-              orderNumber: dbOrder.order_number || 'Unknown',
-              restaurantName: dbOrder.restaurant_name || 'Restaurant',
-              restaurantImage: '',
-              customerName: dbOrder.customer_name || 'Customer',
-              customerEmail: dbOrder.customer_email || '',
-              customerPhone: dbOrder.customer_phone || '',
-              date: new Date(dbOrder.created_at).toLocaleString(),
-              status: dbOrder.status || 'pending',
-              deliveryMode: dbOrder.delivery_mode || 'delivery',
-              address: dbOrder.address || '',
-              estimatedTime: dbOrder.estimated_time || '30 mins',
-              items: parsedItems,
-              subtotal: dbOrder.subtotal || 0,
-              deliveryFee: dbOrder.delivery_fee || 0,
-              total: dbOrder.total || 0,
-              paymentMethod: dbOrder.payment_method || 'cash',
-              needsCutlery: dbOrder.needs_cutlery || false,
-              createdAt: dbOrder.created_at,
-            };
+      if (dbError || !dbOrder) {
+        setIsLoading(false);
+        setIsRefreshing(false);
+        return false;
+      }
 
-            setOrder(transformedOrder);
+      let parsedItems = [];
+      try {
+        parsedItems = typeof dbOrder.items === 'string' ? JSON.parse(dbOrder.items) : (Array.isArray(dbOrder.items) ? dbOrder.items : []);
+      } catch {
+        parsedItems = [];
+      }
+
+      setOrder({
+        id: dbOrder.id,
+        orderNumber: dbOrder.order_number || 'Unknown',
+        restaurantName: dbOrder.restaurant_name || 'Restaurant',
+        restaurantImage: '',
+        customerName: dbOrder.customer_name || 'Customer',
+        customerEmail: dbOrder.customer_email || '',
+        customerPhone: dbOrder.customer_phone || '',
+        date: new Date(dbOrder.created_at).toLocaleString(),
+        status: dbOrder.status || 'pending',
+        deliveryMode: dbOrder.delivery_mode || 'delivery',
+        address: dbOrder.address || '',
+        estimatedTime: dbOrder.estimated_time || '30 mins',
+        items: parsedItems,
+        subtotal: dbOrder.subtotal || 0,
+        deliveryFee: dbOrder.delivery_fee || 0,
+        total: dbOrder.total || 0,
+        paymentMethod: dbOrder.payment_method || 'cash',
+        needsCutlery: dbOrder.needs_cutlery || false,
+        createdAt: dbOrder.created_at,
+      });
+
+      setIsLoading(false);
+      setIsRefreshing(false);
+      return true;
+    } catch (e) {
+      console.error('[OrderDetail] refreshOrderFromSupabase error:', e);
+      setIsLoading(false);
+      setIsRefreshing(false);
+      return false;
+    }
+  };
+
+  // Load order only once per session
+  useEffect(() => {
+    if (!orderId) {
+      setIsLoading(false);
+      return;
+    }
+
+    // Check if we've already loaded this order in this session
+    const sessionKey = `orderdetail_loaded_${orderId}`;
+    const hasLoaded = sessionStorage.getItem(sessionKey);
+
+    if (!hasLoaded) {
+      console.log('[OrderDetail] First load for order in this session:', orderId);
+      sessionStorage.setItem(sessionKey, 'true');
+
+      const fetchOrder = async () => {
+        try {
+          // First try Supabase
+          if (await refreshOrderFromSupabase()) {
+            return;
+          }
+
+          // Fall back to OrderContext (for backward compatibility)
+          const localOrder = getOrderById(orderId || "");
+          if (localOrder) {
+            setOrder(localOrder);
             setIsLoading(false);
             return;
           }
-        }
 
-        // Fall back to OrderContext (for backward compatibility)
-        const localOrder = getOrderById(orderId || "");
-        if (localOrder) {
-          setOrder(localOrder);
+          // No order found
+          setError('Order not found');
           setIsLoading(false);
-          return;
+        } catch (error) {
+          console.error('[OrderDetail] Error loading order:', error);
+          setError('Failed to load order');
+          setIsLoading(false);
         }
+      };
 
-        // No order found
-        setError('Order not found');
-        setIsLoading(false);
-      } catch (error) {
-        console.error('[OrderDetail] Error loading order:', error);
-        setError('Failed to load order');
-        setIsLoading(false);
-      }
-    };
-
-    fetchOrder();
-  }, [orderId, user]);
+      fetchOrder();
+    } else {
+      console.log('[OrderDetail] Already loaded in this session, skipping');
+      setIsLoading(false);
+    }
+  }, [orderId]);
 
   if (isLoading) {
     return (
@@ -185,6 +226,14 @@ export default function OrderDetail() {
             <h1 className="text-xl font-extrabold text-[#121212]">Order Details</h1>
             <p className="text-sm text-[#64748B]">#{order.orderNumber}</p>
           </div>
+          <button
+            onClick={() => refreshOrderFromSupabase(true)}
+            disabled={isRefreshing}
+            className="p-2 hover:bg-[#F1F5F9] rounded-full transition-colors disabled:opacity-50"
+            title="Refresh order details"
+          >
+            <RefreshCw className={`w-6 h-6 text-[#64748B] ${isRefreshing ? 'animate-spin' : ''}`} />
+          </button>
         </div>
       </div>
 

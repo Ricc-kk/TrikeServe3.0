@@ -25,6 +25,8 @@ interface PassengerRequest {
   pickupAddress?: string;
   dropoffAddress?: string;
   customerId?: string;
+  orderId?: string;
+  orderNumber?: string;
   lobbyId?: string; // New field for shared rides
   passengerDetails?: Array<{ // New field for lobby passengers
     id: string;
@@ -52,6 +54,32 @@ export default function PassengerRequests() {
   const [selectedCategory, setSelectedCategory] = useState<'all' | 'shared' | 'private' | 'delivery'>('all');
   const [requests, setRequests] = useState<PassengerRequest[]>([]);
 
+  const mapRideType = (rideType: string, pickupLocation?: string): PassengerRequest['type'] => {
+    const normalized = (rideType || '').toLowerCase();
+    const taggedDelivery = (pickupLocation || '').startsWith('DELIVERY|');
+    if (normalized === 'delivery' || taggedDelivery) return 'delivery';
+    if (normalized === 'share' || normalized === 'shared') return 'shared';
+    return 'private';
+  };
+
+  const normalizePickupLabel = (pickupLocation?: string) => {
+    const value = pickupLocation || 'Pickup';
+    return value.startsWith('DELIVERY|') ? value.replace('DELIVERY|', '') : value;
+  };
+
+  const parseDeliveryTag = (pickupLocation?: string) => {
+    if (!pickupLocation?.startsWith('DELIVERY|')) return { orderId: undefined, orderNumber: undefined };
+
+    const parts = pickupLocation.split('|');
+    const orderIdPart = parts.find((part) => part.startsWith('ORDER_ID:'));
+    const orderNumberPart = parts.find((part) => part.startsWith('ORDER_NO:'));
+
+    return {
+      orderId: orderIdPart ? orderIdPart.replace('ORDER_ID:', '') : undefined,
+      orderNumber: orderNumberPart ? orderNumberPart.replace('ORDER_NO:', '') : undefined,
+    };
+  };
+
    // Load requests from Supabase on mount and set up real-time subscriptions
    useEffect(() => {
      const loadRequests = async () => {
@@ -73,19 +101,23 @@ export default function PassengerRequests() {
          }
 
          const mappedRequests = (rideRequests || []).map((req: any) => ({
-             id: req.id,
-             type: req.ride_type || 'private', // Map ride_type to type
-             pickup: req.pickup_location,
-             dropoff: req.dropoff_location,
-             payment: req.payment_method === 'GCASH' ? 'PREPAID' : 'COD',
-             amount: req.amount,
-             customerName: req.customer_name || 'Customer',
-             customerPhoto: '👤',
-             distance: '2.5 km',
-             estimatedTime: '7 mins',
-             passengers: req.passenger_count || 1,
-             customerId: req.customer_id,
-             created_at: req.created_at,
+              id: req.id,
+             type: mapRideType(req.ride_type, req.pickup_location),
+             pickup: normalizePickupLabel(req.pickup_location),
+              dropoff: req.dropoff_location || 'Drop-off',
+              payment: req.payment_method === 'GCASH' ? 'PREPAID' : 'COD',
+              amount: Number(req.amount || 0),
+              foodCost: Number(req.food_cost || 0),
+              customerName: req.customer_name || 'Customer',
+              customerPhoto: '👤',
+              distance: '2.5 km',
+              estimatedTime: '7 mins',
+              passengers: req.passenger_count || 1,
+              customerId: req.customer_id,
+              ...parseDeliveryTag(req.pickup_location),
+              pickupAddress: req.pickup_address || undefined,
+              dropoffAddress: req.dropoff_address || undefined,
+              created_at: req.created_at,
            }));
 
          const mappedLobbies = (waitingLobbies || []).map((lobby: any) => {
@@ -170,7 +202,7 @@ export default function PassengerRequests() {
        supabase.removeChannel(lobbiesSubscription);
        console.log('🔌 PassengerRequests: Cleaned up real-time subscriptions');
      };
-   }, []);
+   }, [user?.id]);
 
   const handleAcceptRequest = async (request: PassengerRequest) => {
     // 🚨 CRITICAL: Log what request is being accepted
@@ -259,6 +291,23 @@ export default function PassengerRequests() {
 
     // Navigate to active ride page
     navigate('/rider/active-ride', { state: { acceptedRide } });
+  };
+
+  const handleDeclineRequest = async (request: PassengerRequest) => {
+    if (!request.id || request.lobbyId) return;
+
+    const { error } = await supabase
+      .from('ride_requests')
+      .update({ status: 'cancelled', updated_at: new Date().toISOString() })
+      .eq('id', request.id);
+
+    if (error) {
+      console.error('❌ Failed to decline request:', error);
+      alert('Failed to decline request. Please try again.');
+      return;
+    }
+
+    setRequests((prev) => prev.filter((req) => req.id !== request.id));
   };
 
   const getServiceIcon = (type: string) => {
@@ -529,12 +578,30 @@ export default function PassengerRequests() {
                     </div>
                   </div>
 
-                  <Button
-                    onClick={() => handleAcceptRequest(request)}
-                    className="w-full bg-[#E11D48] hover:bg-[#BE123C] uppercase"
-                  >
-                    Accept Request
-                  </Button>
+                  {request.type === 'delivery' ? (
+                    <div className="grid grid-cols-2 gap-2">
+                      <Button
+                        onClick={() => handleDeclineRequest(request)}
+                        variant="outline"
+                        className="border-[#E11D48] text-[#E11D48] uppercase"
+                      >
+                        Decline
+                      </Button>
+                      <Button
+                        onClick={() => handleAcceptRequest(request)}
+                        className="bg-[#E11D48] hover:bg-[#BE123C] uppercase"
+                      >
+                        Accept
+                      </Button>
+                    </div>
+                  ) : (
+                    <Button
+                      onClick={() => handleAcceptRequest(request)}
+                      className="w-full bg-[#E11D48] hover:bg-[#BE123C] uppercase"
+                    >
+                      Accept Request
+                    </Button>
+                  )}
                 </div>
               </div>
             )}
