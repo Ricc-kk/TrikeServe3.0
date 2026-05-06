@@ -419,12 +419,15 @@ export default function ChatHub({
           ) : (
             messages.map((msg) => {
               const isMine = msg.sender_id === user.id;
+              const messageDate = new Date(msg.created_at);
+              const dateTimeString = messageDate.toLocaleDateString([], { month: 'short', day: 'numeric', year: 'numeric' }) + ', ' +
+                                     messageDate.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
               return (
                 <div key={msg.id} className={`flex ${isMine ? 'justify-end' : 'justify-start'}`}>
                   <div className={`max-w-[75%] rounded-2xl px-4 py-2 ${isMine ? 'bg-[#E11D48] text-white' : 'bg-white border border-gray-200'}`}>
                     <p className="text-sm break-words">{msg.message}</p>
                     <p className={`text-[10px] mt-1 ${isMine ? 'text-white/70' : 'text-gray-400'}`}>
-                      {new Date(msg.created_at).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}
+                      {dateTimeString}
                     </p>
                   </div>
                 </div>
@@ -540,7 +543,14 @@ export default function ChatHub({
                             </Badge>
                           )}
                         </div>
-                        <p className="text-sm text-[#64748B] mt-2 truncate">{conversation.last_message_preview || 'No messages yet'}</p>
+                        <div className="flex items-end justify-between gap-2 mt-2">
+                          <p className="text-sm text-[#64748B] truncate">{conversation.last_message_preview || 'No messages yet'}</p>
+                          {conversation.last_message_at && (
+                            <p className="text-[11px] text-[#94A3B8] whitespace-nowrap">
+                              {new Date(conversation.last_message_at).toLocaleDateString([], { month: 'short', day: 'numeric' })} {new Date(conversation.last_message_at).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}
+                            </p>
+                          )}
+                        </div>
                       </div>
                     </div>
                   </Card>
