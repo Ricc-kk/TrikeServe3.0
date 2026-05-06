@@ -5,7 +5,7 @@ import { Card } from "../ui/card";
 import { Badge } from "../ui/badge";
 import { Button } from "../ui/button";
 import BusinessSidebar from "./BusinessSidebar";
-import { supabase } from "../../../lib/supabase";
+import { supabase, supabaseHelpers } from "../../../lib/supabase";
 
 interface Order {
   id: string;
@@ -25,6 +25,18 @@ interface Order {
   createdAt: string;
   deliveryMode: 'delivery' | 'pickup';
   needsCutlery: boolean;
+  customerId?: string;
+  restaurantName?: string;
+  restaurantAddress?: string;
+}
+
+interface AvailableRider {
+  id: string;
+  name: string;
+  phone?: string;
+  todaPlate?: string;
+  currentSeats?: number;
+  serviceTypes: string[];
 }
 
 export default function BusinessOrders() {
@@ -34,11 +46,14 @@ export default function BusinessOrders() {
   const [selectedStatusFilter, setSelectedStatusFilter] = useState<'all' | 'pending' | 'preparing' | 'ready' | 'on-the-way'>('all');
   const [selectedReadyOrders, setSelectedReadyOrders] = useState<string[]>([]);
   const [showBookRideModal, setShowBookRideModal] = useState(false);
-
   const [orders, setOrders] = useState<Order[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [restaurantId, setRestaurantId] = useState<string | null>(null);
   const [isUpdatingStatus, setIsUpdatingStatus] = useState(false); // Prevent refresh during update
+  const [showRiderAssignmentModal, setShowRiderAssignmentModal] = useState(false);
+  const [orderForRiderAssignment, setOrderForRiderAssignment] = useState<Order | null>(null);
+  const [availableDeliveryRiders, setAvailableDeliveryRiders] = useState<AvailableRider[]>([]);
+  const [isLoadingRiders, setIsLoadingRiders] = useState(false);
 
   // Load orders from Supabase (secure - uses RLS policies)
   useEffect(() => {
@@ -201,6 +216,9 @@ export default function BusinessOrders() {
           createdAt: dbOrder.created_at,
           deliveryMode: dbOrder.delivery_mode || 'delivery',
           needsCutlery: dbOrder.needs_cutlery || false,
+          customerId: dbOrder.customer_id || undefined,
+          restaurantName: dbOrder.restaurant_name || undefined,
+          restaurantAddress: dbOrder.restaurant_address || undefined,
         };
       });
 
@@ -382,6 +400,138 @@ export default function BusinessOrders() {
       alert('Error: ' + String(error).substring(0, 150));
       setIsUpdatingStatus(false);
     }
+  };
+
+  const normalizeServiceTypes = (rawServiceTypes: unknown): string[] => {
+    if (Array.isArray(rawServiceTypes)) {
+      return rawServiceTypes.map((type) => String(type).toLowerCase());
+    }
+
+    if (typeof rawServiceTypes === 'string') {
+      try {
+        const parsed = JSON.parse(rawServiceTypes);
+        if (Array.isArray(parsed)) {
+          return parsed.map((type) => String(type).toLowerCase());
+        }
+      } catch {
+        return rawServiceTypes
+          .split(',')
+          .map((type) => type.trim().toLowerCase())
+          .filter(Boolean);
+      }
+    }
+
+    return [];
+  };
+
+  const loadAvailableDeliveryRiders = async () => {
+    try {
+      setIsLoadingRiders(true);
+      const { data, error } = await supabase
+        .from('users')
+        .select('id, name, phone, is_online, service_types, toda_plate, current_seats')
+        .eq('role', 'rider')
+        .eq('is_online', true)
+        .order('name', { ascending: true });
+
+      if (error) {
+        console.error('[BusinessOrders] Failed to load available riders:', error);
+        setAvailableDeliveryRiders([]);
+        return;
+      }
+
+      const riders: AvailableRider[] = (data || [])
+        .filter((rider: any) => normalizeServiceTypes(rider.service_types).includes('delivery'))
+        .map((rider: any) => ({
+          id: rider.id,
+          name: rider.name || 'Rider',
+          phone: rider.phone || '',
+          todaPlate: rider.toda_plate || '',
+          currentSeats: rider.current_seats || 0,
+          serviceTypes: normalizeServiceTypes(rider.service_types),
+        }));
+
+      setAvailableDeliveryRiders(riders);
+    } catch (error) {
+      console.error('[BusinessOrders] Unexpected error loading riders:', error);
+      setAvailableDeliveryRiders([]);
+    } finally {
+      setIsLoadingRiders(false);
+    }
+  };
+
+  const openRiderAssignmentModal = async (order: Order) => {
+    setSelectedOrder(null);
+    setOrderForRiderAssignment(order);
+    setShowRiderAssignmentModal(true);
+    await loadAvailableDeliveryRiders();
+  };
+
+  const createDeliveryRideRequest = async (order: Order, rider: AvailableRider) => {
+    if (!order.customerId) {
+      alert('Cannot assign rider: missing customer ID in this order.');
+      return false;
+    }
+
+    const currentUserData = localStorage.getItem('trikeserve_current_user');
+    const currentUser = currentUserData ? JSON.parse(currentUserData) : null;
+
+    const pickupLabel = order.restaurantName || currentUser?.businessName || 'Restaurant Pickup';
+    const taggedPickup = `DELIVERY|ORDER_ID:${order.id}|ORDER_NO:${order.orderNumber}|${pickupLabel}`;
+
+    const { error } = await supabase
+      .from('ride_requests')
+      .insert([{
+        customer_id: order.customerId,
+        driver_id: rider.id,
+        pickup_location: taggedPickup,
+        dropoff_location: order.address,
+        status: 'pending',
+        ride_type: 'special',
+        payment_method: order.paymentMethod === 'gcash' ? 'GCASH' : 'COD',
+        amount: Number(order.deliveryFee || 0),
+        passenger_count: 1,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      }]);
+
+    if (error) {
+      console.error('[BusinessOrders] Failed to create delivery ride request:', error);
+      alert(`Failed to send delivery request to rider. ${error.code ? `Code: ${error.code}. ` : ''}${error.message || 'Please try again.'}`);
+      return false;
+    }
+
+    try {
+      await supabaseHelpers.assignRiderToOrder(order.id, rider.id, rider.name);
+      await supabaseHelpers.updateOrderProcessingStatus(order.id, 'assigned_rider', {
+        assigned_rider_id: rider.id,
+        assigned_rider_name: rider.name,
+      });
+    } catch (assignmentError) {
+      console.warn('[BusinessOrders] Delivery request created but order_processing assignment update failed:', assignmentError);
+    }
+
+    return true;
+  };
+
+  const assignRiderAndStartDelivery = async (rider: AvailableRider) => {
+    if (!orderForRiderAssignment) return;
+
+    console.log('[BusinessOrders] Selected delivery rider:', {
+      riderId: rider.id,
+      riderName: rider.name,
+      orderId: orderForRiderAssignment.id,
+      orderNumber: orderForRiderAssignment.orderNumber,
+    });
+
+    const didCreateRideRequest = await createDeliveryRideRequest(orderForRiderAssignment, rider);
+    if (!didCreateRideRequest) {
+      return;
+    }
+
+    await updateOrderStatus(orderForRiderAssignment.id, 'on-the-way');
+    setShowRiderAssignmentModal(false);
+    setOrderForRiderAssignment(null);
   };
 
   const getStatusColor = (status: Order['status']) => {
@@ -711,6 +861,63 @@ export default function BusinessOrders() {
           </div>
         )}
 
+        {/* Rider Assignment Modal (Delivery riders only) */}
+        {showRiderAssignmentModal && orderForRiderAssignment && (
+          <div className="fixed inset-0 bg-black/50 z-[2100] flex items-end">
+            <div className="bg-white w-full rounded-t-3xl max-h-[85vh] overflow-y-auto">
+              <div className="sticky top-0 bg-white border-b border-[#E2E8F0] px-5 py-4">
+                <div className="flex items-center justify-between mb-2">
+                  <h2 className="text-xl font-bold text-[#121212]">Assign Delivery Rider</h2>
+                  <button
+                    onClick={() => {
+                      setShowRiderAssignmentModal(false);
+                      setOrderForRiderAssignment(null);
+                    }}
+                  >
+                    <span className="text-lg font-semibold text-[#3B82F6]">Cancel</span>
+                  </button>
+                </div>
+                <p className="text-sm text-[#64748B]">
+                  Order #{orderForRiderAssignment.orderNumber} - showing riders who are online and support Delivery
+                </p>
+              </div>
+
+              <div className="p-5 space-y-3">
+                {isLoadingRiders ? (
+                  <div className="text-center py-10">
+                    <p className="text-[#64748B]">Loading available delivery riders...</p>
+                  </div>
+                ) : availableDeliveryRiders.length === 0 ? (
+                  <div className="text-center py-10 bg-[#F8FAFC] rounded-2xl border border-[#E2E8F0]">
+                    <p className="font-semibold text-[#121212] mb-1">No delivery riders available</p>
+                    <p className="text-sm text-[#64748B]">No online rider with Delivery service type is currently available.</p>
+                  </div>
+                ) : (
+                  availableDeliveryRiders.map((rider) => (
+                    <Card key={rider.id} className="p-4 border-2 border-[#E2E8F0]">
+                      <div className="flex items-center justify-between gap-3">
+                        <div>
+                          <p className="font-bold text-[#121212]">{rider.name}</p>
+                          <p className="text-sm text-[#64748B]">
+                            {rider.todaPlate ? `Plate: ${rider.todaPlate}` : 'Plate: N/A'}
+                          </p>
+                          {rider.phone && <p className="text-sm text-[#64748B]">{rider.phone}</p>}
+                        </div>
+                        <Button
+                          onClick={() => assignRiderAndStartDelivery(rider)}
+                          className="bg-[#FFA500] hover:bg-[#FF8C00] uppercase"
+                        >
+                          Assign Rider
+                        </Button>
+                      </div>
+                    </Card>
+                  ))
+                )}
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* Order Detail Modal */}
         {selectedOrder && (
           <div className="fixed inset-0 bg-black/50 z-[2000] flex items-end">
@@ -872,10 +1079,7 @@ export default function BusinessOrders() {
                     </div>
                     {selectedOrder.deliveryMode === 'delivery' ? (
                       <Button
-                        onClick={async () => {
-                          await updateOrderStatus(selectedOrder.id, 'on-the-way');
-                          setSelectedOrder(null);
-                        }}
+                        onClick={() => openRiderAssignmentModal(selectedOrder)}
                         className="w-full bg-[#FFA500] hover:bg-[#FF8C00] uppercase py-6 font-bold"
                       >
                         → Rider Assigned - On The Way

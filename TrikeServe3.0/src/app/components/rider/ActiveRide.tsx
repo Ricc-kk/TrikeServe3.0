@@ -41,6 +41,8 @@ interface ActiveRideData {
   status: RideStatus;
   acceptedAt: string;
   customerId?: string;
+  orderId?: string;
+  orderNumber?: string;
   lobbyId?: string;
   passengerDetails?: PassengerInfo[];
 }
@@ -89,14 +91,18 @@ export default function ActiveRide() {
             console.log('   driverPlate:', driverPlateValue);
             console.log('   driverRating: 4.8');
 
-            const { error } = await supabaseHelpers.acceptRideRequest(
-              ride.id,
-              user.id,
-              user.user_metadata?.full_name || 'Driver',
-              user.user_metadata?.avatar_url,
-              driverPlateValue,
-              '4.8'
-            );
+            if (ride.orderId) {
+              console.log('   orderId:', ride.orderId);
+            }
+
+             const { error } = await supabaseHelpers.acceptRideRequest(
+               ride.id,
+               user.id,
+               user.user_metadata?.full_name || 'Driver',
+               user.user_metadata?.avatar_url,
+               driverPlateValue,
+               '4.8'
+             );
 
             if (error) {
               console.error('❌ Error accepting ride in database:', error);
@@ -386,12 +392,40 @@ export default function ActiveRide() {
         }
       }
 
+      // 1b. If this is a delivery ride, also complete the linked order so business/customer views update.
+      if (rideData.type === 'delivery' && rideData.orderId) {
+        try {
+          const { error: orderUpdateError } = await supabaseHelpers.updateOrder(rideData.orderId, {
+            status: 'delivered',
+            updated_at: new Date().toISOString(),
+          });
+
+          if (orderUpdateError) {
+            console.error('❌ Error updating linked order to delivered:', orderUpdateError);
+          } else {
+            console.log('✅ Linked order marked delivered in orders table');
+          }
+
+          const { error: processingUpdateError } = await supabaseHelpers.updateOrderProcessingStatus(rideData.orderId, 'delivered');
+          if (processingUpdateError) {
+            console.error('❌ Error updating order_processing to delivered:', processingUpdateError);
+          } else {
+            console.log('✅ Linked order_processing marked delivered');
+          }
+        } catch (linkedOrderError) {
+          console.error('❌ Error completing linked delivery order:', linkedOrderError);
+        }
+      }
+
       // 2. SEND COMPLETION STATUS TO CUSTOMER IMMEDIATELY
       if (rideData.customerId) {
+        const isDelivery = rideData.type === 'delivery';
         const statusUpdateKey = `driver_status_${rideData.id}`;
         const statusUpdate = {
           status: 'completed',
-          message: 'Your ride has been completed! Thank you for using TrikeServe.',
+          message: isDelivery
+            ? 'Your delivery has been completed! Thank you for using TrikeServe.'
+            : 'Your ride has been completed! Thank you for using TrikeServe.',
           timestamp: Date.now(),
           completedAt: new Date().toISOString()
         };
@@ -406,7 +440,7 @@ export default function ActiveRide() {
         console.log('✅ Completion status sent to customer');
       }
 
-      // 3. ADD TO COMPLETED RIDES HISTORY (SO CUSTOMER CAN SEE IT)
+      // 3. ADD TO COMPLETED RIDES HISTORY (FOR DRIVER LOGS)
       const completedRidesKey = 'trikeserve_completed_rides';
       const existingCompletedRides = localStorage.getItem(completedRidesKey);
       const completedRides = existingCompletedRides ? JSON.parse(existingCompletedRides) : [];
@@ -425,7 +459,7 @@ export default function ActiveRide() {
         newValue: JSON.stringify(completedRides)
       }));
 
-      console.log('✅ Ride added to completed rides history');
+      console.log(`✅ ${rideData.type === 'delivery' ? 'Delivery' : 'Ride'} added to completed rides history`);
     } catch (error) {
       console.error('❌ Error completing ride:', error);
     }
@@ -497,7 +531,7 @@ export default function ActiveRide() {
       console.log('⚠️ NO SHARED RIDE - lobbyId is undefined/null');
     }
 
-    // Add to ride history
+    // Add to ride history for driver logs, including deliveries
     const historyKey = `ride_history_${user?.id}`;
     const existingHistory = localStorage.getItem(historyKey);
     const history = existingHistory ? JSON.parse(existingHistory) : [];
@@ -516,11 +550,14 @@ export default function ActiveRide() {
         const existingNotifications = localStorage.getItem(customerNotificationsKey);
         const notifications = existingNotifications ? JSON.parse(existingNotifications) : [];
 
+        const isDelivery = rideData.type === 'delivery';
         const notification = {
           id: `ride-${rideData.id}-completed-${passenger.id}`,
           type: 'ride',
-          title: `Ride Completed`,
-          message: 'Your ride has been completed. Thank you for using TrikeServe!',
+          title: isDelivery ? 'Delivery Completed' : 'Ride Completed',
+          message: isDelivery
+            ? 'Your delivery has been completed. Thank you for using TrikeServe!'
+            : 'Your ride has been completed. Thank you for using TrikeServe!',
           time: 'Just now',
           timestamp: Date.now(),
           unread: true,
@@ -536,11 +573,14 @@ export default function ActiveRide() {
       const existingNotifications = localStorage.getItem(customerNotificationsKey);
       const notifications = existingNotifications ? JSON.parse(existingNotifications) : [];
 
+      const isDelivery = rideData.type === 'delivery';
       const notification = {
         id: `ride-${rideData.id}-completed`,
         type: 'ride',
-        title: `Ride Completed`,
-        message: 'Your ride has been completed. Thank you for using TrikeServe!',
+        title: isDelivery ? 'Delivery Completed' : 'Ride Completed',
+        message: isDelivery
+          ? 'Your delivery has been completed. Thank you for using TrikeServe!'
+          : 'Your ride has been completed. Thank you for using TrikeServe!',
         time: 'Just now',
         timestamp: Date.now(),
         unread: true,
@@ -1025,3 +1065,4 @@ export default function ActiveRide() {
     </div>
   );
 }
+
