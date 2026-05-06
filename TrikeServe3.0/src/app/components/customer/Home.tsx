@@ -1169,9 +1169,9 @@ export default function CustomerHome() {
             <p className="text-sm text-[#64748B] mb-6">Select the number of seats you need for this trip.</p>
 
             {/* Passenger Count Selection */}
-            <div className={`grid gap-3 mb-6 ${selectedVehicle === 'special' ? 'grid-cols-2' : 'grid-cols-3'}`}>
+            <div className={`grid gap-3 mb-6 ${selectedVehicle === 'special' ? 'grid-cols-1' : 'grid-cols-3'}`}>
               {selectedVehicle === 'special'
-                ? [1, 2].map(count => (
+                ? [1].map(count => (
                     <button
                       key={count}
                       onClick={() => setPassengerCount(count)}
