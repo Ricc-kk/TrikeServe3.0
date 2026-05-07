@@ -62,9 +62,12 @@ export default function PassengerRequests() {
     return 'private';
   };
 
-  const normalizePickupLabel = (pickupLocation?: string) => {
-    const value = pickupLocation || 'Pickup';
-    return value.startsWith('DELIVERY|') ? value.replace('DELIVERY|', '') : value;
+  const formatPickup = (value?: string) => {
+    const pickup = value || 'Pickup';
+    if (!pickup.startsWith('DELIVERY|')) return pickup;
+
+    const parts = pickup.split('|');
+    return parts[parts.length - 1] || pickup;
   };
 
   const parseDeliveryTag = (pickupLocation?: string) => {
@@ -103,7 +106,7 @@ export default function PassengerRequests() {
          const mappedRequests = (rideRequests || []).map((req: any) => ({
               id: req.id,
              type: mapRideType(req.ride_type, req.pickup_location),
-             pickup: normalizePickupLabel(req.pickup_location),
+              pickup: formatPickup(req.pickup_location),
               dropoff: req.dropoff_location || 'Drop-off',
               payment: req.payment_method === 'GCASH' ? 'PREPAID' : 'COD',
               amount: Number(req.amount || 0),
@@ -559,7 +562,7 @@ export default function PassengerRequests() {
                     </p>
                   )}
 
-                  {request.type === 'delivery' && request.payment === 'COD' && (
+                  {request.type === 'delivery' && request.payment === 'COD' && Number(request.foodCost || 0) > 0 && (
                     <div className="bg-orange-50 border border-orange-200 rounded-lg p-2 mb-3">
                       <p className="text-xs text-orange-900">
                         <span className="font-semibold">⚠️ Pay Restaurant First:</span> ₱{request.foodCost}

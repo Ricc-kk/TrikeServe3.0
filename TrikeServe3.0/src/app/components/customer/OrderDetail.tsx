@@ -185,6 +185,10 @@ export default function OrderDetail() {
     switch (status) {
       case 'preparing':
         return 'text-[#F59E0B] bg-[#FEF3C7]';
+      case 'ready':
+        return 'text-[#10B981] bg-[#D1FAE5]';
+      case 'confirmed':
+        return 'text-[#06B6D4] bg-[#CFFAFE]';
       case 'on-the-way':
         return 'text-[#3B82F6] bg-[#DBEAFE]';
       case 'delivered':
@@ -200,6 +204,10 @@ export default function OrderDetail() {
     switch (status) {
       case 'preparing':
         return 'Preparing Your Order';
+      case 'ready':
+        return 'Ready for Pickup';
+      case 'confirmed':
+        return 'Ready for Delivery';
       case 'on-the-way':
         return 'On the Way';
       case 'delivered':
