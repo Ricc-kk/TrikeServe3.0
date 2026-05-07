@@ -87,6 +87,19 @@ export default function Notifications() {
               icon: '🛵',
               actionUrl: `/customer/order-detail/${order.id}`
             };
+          } else if (order.status === 'confirmed') {
+            notification = {
+              id: `order-${order.id}-ready-for-delivery`,
+              orderId: order.id,
+              type: 'delivery',
+              title: 'Order Ready for Delivery',
+              message: `Your order from ${order.restaurantName} is ready and waiting for a driver. Order #${order.id.substring(0, 8)}`,
+              time: formatTimeAgo(orderTime),
+              timestamp: orderTime,
+              unread: true,
+              icon: '📦',
+              actionUrl: `/customer/order-detail/${order.id}`
+            };
           } else if (order.status === 'preparing') {
             notification = {
               id: `order-${order.id}-preparing`,

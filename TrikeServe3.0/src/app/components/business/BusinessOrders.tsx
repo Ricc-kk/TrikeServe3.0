@@ -1,11 +1,11 @@
 import { useState, useEffect } from "react";
-import { Store, Package, Clock, User, ChevronRight, CheckCircle, XCircle, AlertCircle, Menu, Bike, MapPin } from "lucide-react";
+import { Store, Package, Clock, User, ChevronRight, CheckCircle, XCircle, AlertCircle, Menu } from "lucide-react";
 import { Link } from "react-router";
 import { Card } from "../ui/card";
 import { Badge } from "../ui/badge";
 import { Button } from "../ui/button";
 import BusinessSidebar from "./BusinessSidebar";
-import { supabase, supabaseHelpers } from "../../../lib/supabase";
+    import { supabase } from "../../../lib/supabase";
 
 interface Order {
   id: string;
@@ -16,7 +16,7 @@ interface Order {
   items: { name: string; quantity: number; price: number }[];
   total: number;
   subtotal: number;
-  status: 'pending' | 'preparing' | 'ready' | 'on-the-way' | 'delivered' | 'cancelled';
+  status: 'pending' | 'confirmed' | 'preparing' | 'ready' | 'on-the-way' | 'delivered' | 'cancelled';
   paymentMethod: 'cash' | 'gcash';
   address: string;
   deliveryFee: number;
@@ -30,30 +30,16 @@ interface Order {
   restaurantAddress?: string;
 }
 
-interface AvailableRider {
-  id: string;
-  name: string;
-  phone?: string;
-  todaPlate?: string;
-  currentSeats?: number;
-  serviceTypes: string[];
-}
 
 export default function BusinessOrders() {
   const [selectedTab, setSelectedTab] = useState<'active' | 'history'>('active');
   const [selectedOrder, setSelectedOrder] = useState<Order | null>(null);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
-  const [selectedStatusFilter, setSelectedStatusFilter] = useState<'all' | 'pending' | 'preparing' | 'ready' | 'on-the-way'>('all');
-  const [selectedReadyOrders, setSelectedReadyOrders] = useState<string[]>([]);
-  const [showBookRideModal, setShowBookRideModal] = useState(false);
+  const [selectedStatusFilter, setSelectedStatusFilter] = useState<'all' | 'pending' | 'confirmed' | 'preparing' | 'ready' | 'on-the-way'>('all');
   const [orders, setOrders] = useState<Order[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [restaurantId, setRestaurantId] = useState<string | null>(null);
   const [isUpdatingStatus, setIsUpdatingStatus] = useState(false); // Prevent refresh during update
-  const [showRiderAssignmentModal, setShowRiderAssignmentModal] = useState(false);
-  const [orderForRiderAssignment, setOrderForRiderAssignment] = useState<Order | null>(null);
-  const [availableDeliveryRiders, setAvailableDeliveryRiders] = useState<AvailableRider[]>([]);
-  const [isLoadingRiders, setIsLoadingRiders] = useState(false);
 
   // Load orders from Supabase (secure - uses RLS policies)
   useEffect(() => {
@@ -233,88 +219,13 @@ export default function BusinessOrders() {
     }
   };
 
-  const activeOrders = orders.filter(o => ['pending', 'preparing', 'ready', 'on-the-way'].includes(o.status));
+  const activeOrders = orders.filter(o => ['pending', 'confirmed', 'preparing', 'ready', 'on-the-way'].includes(o.status));
   const historyOrders = orders.filter(o => ['delivered', 'cancelled'].includes(o.status));
 
   // Filter active orders by selected status
   const filteredActiveOrders = selectedStatusFilter === 'all' 
     ? activeOrders 
     : activeOrders.filter(o => o.status === selectedStatusFilter);
-
-  // Get ready orders for delivery
-  const readyOrders = orders.filter(o => o.status === 'ready');
-
-  // Toggle order selection
-  const toggleOrderSelection = (orderId: string) => {
-    setSelectedReadyOrders(prev => 
-      prev.includes(orderId) 
-        ? prev.filter(id => id !== orderId)
-        : [...prev, orderId]
-    );
-  };
-
-  // Handle Book Ride
-  const handleBookRide = async () => {
-    if (selectedReadyOrders.length === 0) return;
-
-    // Get selected orders details
-    const selectedOrders = orders.filter(o => selectedReadyOrders.includes(o.id));
-    
-    // Create delivery request to localStorage for drivers
-    const deliveryRequest = {
-      id: `delivery_req_${Date.now()}`,
-      type: 'delivery',
-      businessName: 'Your Restaurant', // In production, get from current user
-      orders: selectedOrders.map(order => ({
-        orderNumber: order.orderNumber,
-        customerName: order.customerName,
-        customerAddress: order.address,
-        customerPhone: order.customerPhone,
-        total: order.total,
-        paymentMethod: order.paymentMethod,
-        items: order.items,
-      })),
-      pickup: 'Restaurant Location', // In production, get business address
-      pickupAddress: 'Your restaurant address',
-      totalOrders: selectedOrders.length,
-      totalAmount: selectedOrders.reduce((sum, order) => sum + order.deliveryFee, 0),
-      payment: 'COD',
-      customerPhoto: '🍔',
-      distance: '3.5 km',
-      estimatedTime: '15 mins',
-    };
-
-    // Add to driver requests
-    const existingRequests = localStorage.getItem('trikeserve_ride_requests');
-    let requests = [];
-    if (existingRequests) {
-      try {
-        requests = JSON.parse(existingRequests);
-      } catch (error) {
-        console.error('Error parsing existing requests:', error);
-      }
-    }
-    requests.push(deliveryRequest);
-    localStorage.setItem('trikeserve_ride_requests', JSON.stringify(requests));
-
-    // CRITICAL: Wait for all order status updates to complete
-    console.log('[BusinessOrders] Updating ' + selectedReadyOrders.length + ' orders to on-the-way...');
-    try {
-      const updatePromises = selectedReadyOrders.map(orderId =>
-        updateOrderStatus(orderId, 'on-the-way')
-      );
-      await Promise.all(updatePromises);
-      console.log('[BusinessOrders] ✅ All order statuses updated successfully');
-    } catch (error) {
-      console.error('[BusinessOrders] ❌ Error updating order statuses:', error);
-      alert('Failed to update order statuses');
-      return;
-    }
-
-    // Clear selection and close modal AFTER all updates are complete
-    setSelectedReadyOrders([]);
-    setShowBookRideModal(false);
-  };
 
   const updateOrderStatus = async (orderId: string, newStatus: Order['status']) => {
     console.log('[BusinessOrders] ========== STATUS UPDATE START ==========');
@@ -402,74 +313,10 @@ export default function BusinessOrders() {
     }
   };
 
-  const normalizeServiceTypes = (rawServiceTypes: unknown): string[] => {
-    if (Array.isArray(rawServiceTypes)) {
-      return rawServiceTypes.map((type) => String(type).toLowerCase());
-    }
-
-    if (typeof rawServiceTypes === 'string') {
-      try {
-        const parsed = JSON.parse(rawServiceTypes);
-        if (Array.isArray(parsed)) {
-          return parsed.map((type) => String(type).toLowerCase());
-        }
-      } catch {
-        return rawServiceTypes
-          .split(',')
-          .map((type) => type.trim().toLowerCase())
-          .filter(Boolean);
-      }
-    }
-
-    return [];
-  };
-
-  const loadAvailableDeliveryRiders = async () => {
-    try {
-      setIsLoadingRiders(true);
-      const { data, error } = await supabase
-        .from('users')
-        .select('id, name, phone, is_online, service_types, toda_plate, current_seats')
-        .eq('role', 'rider')
-        .eq('is_online', true)
-        .order('name', { ascending: true });
-
-      if (error) {
-        console.error('[BusinessOrders] Failed to load available riders:', error);
-        setAvailableDeliveryRiders([]);
-        return;
-      }
-
-      const riders: AvailableRider[] = (data || [])
-        .filter((rider: any) => normalizeServiceTypes(rider.service_types).includes('delivery'))
-        .map((rider: any) => ({
-          id: rider.id,
-          name: rider.name || 'Rider',
-          phone: rider.phone || '',
-          todaPlate: rider.toda_plate || '',
-          currentSeats: rider.current_seats || 0,
-          serviceTypes: normalizeServiceTypes(rider.service_types),
-        }));
-
-      setAvailableDeliveryRiders(riders);
-    } catch (error) {
-      console.error('[BusinessOrders] Unexpected error loading riders:', error);
-      setAvailableDeliveryRiders([]);
-    } finally {
-      setIsLoadingRiders(false);
-    }
-  };
-
-  const openRiderAssignmentModal = async (order: Order) => {
-    setSelectedOrder(null);
-    setOrderForRiderAssignment(order);
-    setShowRiderAssignmentModal(true);
-    await loadAvailableDeliveryRiders();
-  };
-
-  const createDeliveryRideRequest = async (order: Order, rider: AvailableRider) => {
+  // Create an OPEN delivery request (not assigned to specific driver)
+  const createOpenDeliveryRequest = async (order: Order) => {
     if (!order.customerId) {
-      alert('Cannot assign rider: missing customer ID in this order.');
+      alert('Cannot create delivery request: missing customer ID in this order.');
       return false;
     }
 
@@ -479,15 +326,23 @@ export default function BusinessOrders() {
     const pickupLabel = order.restaurantName || currentUser?.businessName || 'Restaurant Pickup';
     const taggedPickup = `DELIVERY|ORDER_ID:${order.id}|ORDER_NO:${order.orderNumber}|${pickupLabel}`;
 
+    console.log('[BusinessOrders] Creating OPEN delivery request for order:', {
+      orderId: order.id,
+      orderNumber: order.orderNumber,
+      customerId: order.customerId,
+      deliveryFee: order.deliveryFee,
+    });
+
+    // Create delivery request WITHOUT driver_id - open for any driver with delivery service type
     const { error } = await supabase
       .from('ride_requests')
       .insert([{
         customer_id: order.customerId,
-        driver_id: rider.id,
+        driver_id: null,  // Open request - any driver can accept
         pickup_location: taggedPickup,
         dropoff_location: order.address,
         status: 'pending',
-        ride_type: 'special',
+        ride_type: 'special',  // Use 'special' type (database constraint only allows specific values)
         payment_method: order.paymentMethod === 'gcash' ? 'GCASH' : 'COD',
         amount: Number(order.deliveryFee || 0),
         passenger_count: 1,
@@ -496,42 +351,26 @@ export default function BusinessOrders() {
       }]);
 
     if (error) {
-      console.error('[BusinessOrders] Failed to create delivery ride request:', error);
-      alert(`Failed to send delivery request to rider. ${error.code ? `Code: ${error.code}. ` : ''}${error.message || 'Please try again.'}`);
+      console.error('[BusinessOrders] Failed to create delivery request:', error);
+      alert(`Failed to post delivery request. ${error.code ? `Code: ${error.code}. ` : ''}${error.message || 'Please try again.'}`);
       return false;
     }
 
-    try {
-      await supabaseHelpers.assignRiderToOrder(order.id, rider.id, rider.name);
-      await supabaseHelpers.updateOrderProcessingStatus(order.id, 'assigned_rider', {
-        assigned_rider_id: rider.id,
-        assigned_rider_name: rider.name,
-      });
-    } catch (assignmentError) {
-      console.warn('[BusinessOrders] Delivery request created but order_processing assignment update failed:', assignmentError);
-    }
-
+    console.log('[BusinessOrders] ✅ Open delivery request created - visible to all drivers with delivery service');
     return true;
   };
 
-  const assignRiderAndStartDelivery = async (rider: AvailableRider) => {
-    if (!orderForRiderAssignment) return;
+  // Handle "Ready for Delivery" button click
+  const handleReadyForDelivery = async (order: Order) => {
+    console.log('[BusinessOrders] Ready for Delivery clicked for order:', order.orderNumber);
 
-    console.log('[BusinessOrders] Selected delivery rider:', {
-      riderId: rider.id,
-      riderName: rider.name,
-      orderId: orderForRiderAssignment.id,
-      orderNumber: orderForRiderAssignment.orderNumber,
-    });
-
-    const didCreateRideRequest = await createDeliveryRideRequest(orderForRiderAssignment, rider);
-    if (!didCreateRideRequest) {
+    const didCreateRequest = await createOpenDeliveryRequest(order);
+    if (!didCreateRequest) {
       return;
     }
 
-    await updateOrderStatus(orderForRiderAssignment.id, 'on-the-way');
-    setShowRiderAssignmentModal(false);
-    setOrderForRiderAssignment(null);
+    await updateOrderStatus(order.id, 'confirmed');
+    setSelectedOrder(null);
   };
 
   const getStatusColor = (status: Order['status']) => {
@@ -540,6 +379,8 @@ export default function BusinessOrders() {
         return 'bg-[#F59E0B]';
       case 'preparing':
         return 'bg-[#3B82F6]';
+      case 'confirmed':
+        return 'bg-[#06B6D4]';
       case 'ready':
         return 'bg-[#10B981]';
       case 'on-the-way':
@@ -557,6 +398,8 @@ export default function BusinessOrders() {
         return 'New Order';
       case 'preparing':
         return 'Preparing';
+      case 'confirmed':
+        return 'Ready for Delivery';
       case 'ready':
         return 'Ready for Pickup';
       case 'on-the-way':
@@ -571,11 +414,12 @@ export default function BusinessOrders() {
   // Get the workflow status for display
   const getStatusWorkflow = (status: Order['status']) => {
     const workflows: Record<Order['status'], { steps: string[]; current: number }> = {
-      'pending': { steps: ['Pending', 'Preparing', 'Ready', 'Delivered'], current: 0 },
-      'preparing': { steps: ['Pending', 'Preparing', 'Ready', 'Delivered'], current: 1 },
-      'ready': { steps: ['Pending', 'Preparing', 'Ready', 'Delivered'], current: 2 },
-      'on-the-way': { steps: ['Pending', 'Preparing', 'Ready', 'Delivering', 'Delivered'], current: 3 },
-      'delivered': { steps: ['Pending', 'Preparing', 'Ready', 'Delivered'], current: 3 },
+      'pending': { steps: ['Pending', 'Preparing', 'Ready', 'Ready for Delivery', 'Delivered'], current: 0 },
+      'preparing': { steps: ['Pending', 'Preparing', 'Ready', 'Ready for Delivery', 'Delivered'], current: 1 },
+      'ready': { steps: ['Pending', 'Preparing', 'Ready', 'Ready for Delivery', 'Delivered'], current: 2 },
+      'confirmed': { steps: ['Pending', 'Preparing', 'Ready', 'Ready for Delivery', 'Delivered'], current: 3 },
+      'on-the-way': { steps: ['Pending', 'Preparing', 'Ready', 'Ready for Delivery', 'Delivering', 'Delivered'], current: 4 },
+      'delivered': { steps: ['Pending', 'Preparing', 'Ready', 'Ready for Delivery', 'Delivered'], current: 4 },
       'cancelled': { steps: ['Cancelled'], current: 0 }
     };
     return workflows[status];
@@ -633,74 +477,73 @@ export default function BusinessOrders() {
             </button>
           </div>
 
-          {/* Status Filter - Only for Active Tab */}
-          {selectedTab === 'active' && (
-            <div className="flex gap-2 overflow-x-auto scrollbar-hide pb-1">
-              <button
-                onClick={() => setSelectedStatusFilter('all')}
-                className={`px-4 py-2 rounded-full text-sm font-medium whitespace-nowrap transition-all flex-shrink-0 ${
-                  selectedStatusFilter === 'all'
-                    ? 'bg-[#E11D48] text-white'
-                    : 'bg-[#F1F5F9] text-[#64748B] hover:bg-[#E2E8F0]'
-                }`}
-              >
-                All ({activeOrders.length})
-              </button>
-              <button
-                onClick={() => setSelectedStatusFilter('pending')}
-                className={`px-4 py-2 rounded-full text-sm font-medium whitespace-nowrap transition-all flex-shrink-0 ${
-                  selectedStatusFilter === 'pending'
-                    ? 'bg-[#E11D48] text-white'
-                    : 'bg-[#F1F5F9] text-[#64748B] hover:bg-[#E2E8F0]'
-                }`}
-              >
-                New ({activeOrders.filter(o => o.status === 'pending').length})
-              </button>
-              <button
-                onClick={() => setSelectedStatusFilter('preparing')}
-                className={`px-4 py-2 rounded-full text-sm font-medium whitespace-nowrap transition-all flex-shrink-0 ${
-                  selectedStatusFilter === 'preparing'
-                    ? 'bg-[#E11D48] text-white'
-                    : 'bg-[#F1F5F9] text-[#64748B] hover:bg-[#E2E8F0]'
-                }`}
-              >
-                Preparing ({activeOrders.filter(o => o.status === 'preparing').length})
-              </button>
-              <button
-                onClick={() => setSelectedStatusFilter('ready')}
-                className={`px-4 py-2 rounded-full text-sm font-medium whitespace-nowrap transition-all flex-shrink-0 ${
-                  selectedStatusFilter === 'ready'
-                    ? 'bg-[#E11D48] text-white'
-                    : 'bg-[#F1F5F9] text-[#64748B] hover:bg-[#E2E8F0]'
-                }`}
-              >
-                Ready ({readyOrders.length})
-              </button>
-              <button
-                onClick={() => setSelectedStatusFilter('on-the-way')}
-                className={`px-4 py-2 rounded-full text-sm font-medium whitespace-nowrap transition-all flex-shrink-0 ${
-                  selectedStatusFilter === 'on-the-way'
-                    ? 'bg-[#E11D48] text-white'
-                    : 'bg-[#F1F5F9] text-[#64748B] hover:bg-[#E2E8F0]'
-                }`}
-              >
-                On The Way ({activeOrders.filter(o => o.status === 'on-the-way').length})
-              </button>
-            </div>
-          )}
+           {/* Status Filter - Only for Active Tab */}
+           {selectedTab === 'active' && (
+             <div className="flex gap-2 overflow-x-auto scrollbar-hide pb-1">
+               <button
+                 onClick={() => setSelectedStatusFilter('all')}
+                 className={`px-4 py-2 rounded-full text-sm font-medium whitespace-nowrap transition-all flex-shrink-0 ${
+                   selectedStatusFilter === 'all'
+                     ? 'bg-[#E11D48] text-white'
+                     : 'bg-[#F1F5F9] text-[#64748B] hover:bg-[#E2E8F0]'
+                 }`}
+               >
+                 All ({activeOrders.length})
+               </button>
+               <button
+                 onClick={() => setSelectedStatusFilter('pending')}
+                 className={`px-4 py-2 rounded-full text-sm font-medium whitespace-nowrap transition-all flex-shrink-0 ${
+                   selectedStatusFilter === 'pending'
+                     ? 'bg-[#E11D48] text-white'
+                     : 'bg-[#F1F5F9] text-[#64748B] hover:bg-[#E2E8F0]'
+                 }`}
+               >
+                 New ({activeOrders.filter(o => o.status === 'pending').length})
+               </button>
+               <button
+                 onClick={() => setSelectedStatusFilter('preparing')}
+                 className={`px-4 py-2 rounded-full text-sm font-medium whitespace-nowrap transition-all flex-shrink-0 ${
+                   selectedStatusFilter === 'preparing'
+                     ? 'bg-[#E11D48] text-white'
+                     : 'bg-[#F1F5F9] text-[#64748B] hover:bg-[#E2E8F0]'
+                 }`}
+               >
+                 Preparing ({activeOrders.filter(o => o.status === 'preparing').length})
+               </button>
+               <button
+                 onClick={() => setSelectedStatusFilter('ready')}
+                 className={`px-4 py-2 rounded-full text-sm font-medium whitespace-nowrap transition-all flex-shrink-0 ${
+                   selectedStatusFilter === 'ready'
+                     ? 'bg-[#E11D48] text-white'
+                     : 'bg-[#F1F5F9] text-[#64748B] hover:bg-[#E2E8F0]'
+                 }`}
+               >
+                 Ready ({activeOrders.filter(o => o.status === 'ready').length})
+               </button>
+               <button
+                 onClick={() => setSelectedStatusFilter('confirmed')}
+                 className={`px-4 py-2 rounded-full text-sm font-medium whitespace-nowrap transition-all flex-shrink-0 ${
+                   selectedStatusFilter === 'confirmed'
+                     ? 'bg-[#E11D48] text-white'
+                     : 'bg-[#F1F5F9] text-[#64748B] hover:bg-[#E2E8F0]'
+                 }`}
+               >
+                 Delivery ({activeOrders.filter(o => o.status === 'confirmed').length})
+               </button>
+               <button
+                 onClick={() => setSelectedStatusFilter('on-the-way')}
+                 className={`px-4 py-2 rounded-full text-sm font-medium whitespace-nowrap transition-all flex-shrink-0 ${
+                   selectedStatusFilter === 'on-the-way'
+                     ? 'bg-[#E11D48] text-white'
+                     : 'bg-[#F1F5F9] text-[#64748B] hover:bg-[#E2E8F0]'
+                 }`}
+               >
+                 On The Way ({activeOrders.filter(o => o.status === 'on-the-way').length})
+               </button>
+             </div>
+           )}
 
           {/* Book Ride Button - Only show when ready orders exist */}
-          {selectedTab === 'active' && readyOrders.length > 0 && (
-            <div className="flex gap-2">
-              <Button
-                onClick={() => setShowBookRideModal(true)}
-                className="flex-1 bg-[#10B981] hover:bg-[#059669] uppercase flex items-center justify-center gap-2"
-              >
-                <Bike className="w-5 h-5" />
-                Book Ride for Delivery ({readyOrders.length})
-              </Button>
-            </div>
-          )}
         </div>
 
         {/* Orders List */}
@@ -795,128 +638,6 @@ export default function BusinessOrders() {
             )
           )}
         </div>
-
-        {/* Book Ride Modal */}
-        {showBookRideModal && (
-          <div className="fixed inset-0 bg-black/50 z-[2000] flex items-end">
-            <div className="bg-white w-full rounded-t-3xl max-h-[85vh] overflow-y-auto">
-              <div className="sticky top-0 bg-white border-b border-[#E2E8F0] px-5 py-4">
-                <div className="flex items-center justify-between mb-2">
-                  <h2 className="text-xl font-bold text-[#121212]">Select Orders for Delivery</h2>
-                  <button onClick={() => setShowBookRideModal(false)}>
-                    <span className="text-lg font-semibold text-[#3B82F6]">Cancel</span>
-                  </button>
-                </div>
-                <p className="text-sm text-[#64748B]">Select ready orders to book a ride</p>
-              </div>
-
-              <div className="p-5 space-y-3">
-                {readyOrders.map((order) => (
-                  <Card
-                    key={order.id}
-                    onClick={() => toggleOrderSelection(order.id)}
-                    className={`p-4 border-2 transition-all cursor-pointer ${
-                      selectedReadyOrders.includes(order.id)
-                        ? 'border-[#10B981] bg-[#F0FDF4]'
-                        : 'border-[#E2E8F0]'
-                    }`}
-                  >
-                    <div className="flex items-start gap-3">
-                      <div className={`w-5 h-5 rounded border-2 flex items-center justify-center flex-shrink-0 mt-0.5 ${
-                        selectedReadyOrders.includes(order.id)
-                          ? 'bg-[#10B981] border-[#10B981]'
-                          : 'border-[#CBD5E1]'
-                      }`}>
-                        {selectedReadyOrders.includes(order.id) && (
-                          <CheckCircle className="w-4 h-4 text-white" />
-                        )}
-                      </div>
-                      <div className="flex-1">
-                        <div className="flex items-center justify-between mb-2">
-                          <h3 className="font-bold text-[#121212]">#{order.orderNumber}</h3>
-                          <p className="text-lg font-bold text-[#E11D48]">₱{order.total.toFixed(2)}</p>
-                        </div>
-                        <p className="text-sm text-[#64748B] mb-1">{order.customerName}</p>
-                        <div className="flex items-center gap-2 text-xs text-[#64748B]">
-                          <MapPin className="w-3 h-3" />
-                          <span>{order.address}</span>
-                        </div>
-                      </div>
-                    </div>
-                  </Card>
-                ))}
-              </div>
-
-              <div className="sticky bottom-0 bg-white border-t border-[#E2E8F0] p-5">
-                <Button
-                  onClick={handleBookRide}
-                  disabled={selectedReadyOrders.length === 0}
-                  className="w-full bg-[#10B981] hover:bg-[#059669] uppercase py-6 disabled:opacity-50 disabled:cursor-not-allowed"
-                >
-                  <Bike className="w-5 h-5 mr-2" />
-                  Book Ride ({selectedReadyOrders.length} orders)
-                </Button>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* Rider Assignment Modal (Delivery riders only) */}
-        {showRiderAssignmentModal && orderForRiderAssignment && (
-          <div className="fixed inset-0 bg-black/50 z-[2100] flex items-end">
-            <div className="bg-white w-full rounded-t-3xl max-h-[85vh] overflow-y-auto">
-              <div className="sticky top-0 bg-white border-b border-[#E2E8F0] px-5 py-4">
-                <div className="flex items-center justify-between mb-2">
-                  <h2 className="text-xl font-bold text-[#121212]">Assign Delivery Rider</h2>
-                  <button
-                    onClick={() => {
-                      setShowRiderAssignmentModal(false);
-                      setOrderForRiderAssignment(null);
-                    }}
-                  >
-                    <span className="text-lg font-semibold text-[#3B82F6]">Cancel</span>
-                  </button>
-                </div>
-                <p className="text-sm text-[#64748B]">
-                  Order #{orderForRiderAssignment.orderNumber} - showing riders who are online and support Delivery
-                </p>
-              </div>
-
-              <div className="p-5 space-y-3">
-                {isLoadingRiders ? (
-                  <div className="text-center py-10">
-                    <p className="text-[#64748B]">Loading available delivery riders...</p>
-                  </div>
-                ) : availableDeliveryRiders.length === 0 ? (
-                  <div className="text-center py-10 bg-[#F8FAFC] rounded-2xl border border-[#E2E8F0]">
-                    <p className="font-semibold text-[#121212] mb-1">No delivery riders available</p>
-                    <p className="text-sm text-[#64748B]">No online rider with Delivery service type is currently available.</p>
-                  </div>
-                ) : (
-                  availableDeliveryRiders.map((rider) => (
-                    <Card key={rider.id} className="p-4 border-2 border-[#E2E8F0]">
-                      <div className="flex items-center justify-between gap-3">
-                        <div>
-                          <p className="font-bold text-[#121212]">{rider.name}</p>
-                          <p className="text-sm text-[#64748B]">
-                            {rider.todaPlate ? `Plate: ${rider.todaPlate}` : 'Plate: N/A'}
-                          </p>
-                          {rider.phone && <p className="text-sm text-[#64748B]">{rider.phone}</p>}
-                        </div>
-                        <Button
-                          onClick={() => assignRiderAndStartDelivery(rider)}
-                          className="bg-[#FFA500] hover:bg-[#FF8C00] uppercase"
-                        >
-                          Assign Rider
-                        </Button>
-                      </div>
-                    </Card>
-                  ))
-                )}
-              </div>
-            </div>
-          </div>
-        )}
 
         {/* Order Detail Modal */}
         {selectedOrder && (
@@ -1079,10 +800,10 @@ export default function BusinessOrders() {
                     </div>
                     {selectedOrder.deliveryMode === 'delivery' ? (
                       <Button
-                        onClick={() => openRiderAssignmentModal(selectedOrder)}
-                        className="w-full bg-[#FFA500] hover:bg-[#FF8C00] uppercase py-6 font-bold"
+                        onClick={() => handleReadyForDelivery(selectedOrder)}
+                        className="w-full bg-[#06B6D4] hover:bg-[#0891B2] uppercase py-6 font-bold"
                       >
-                        → Rider Assigned - On The Way
+                        → Ready for Delivery
                       </Button>
                     ) : (
                       <Button
@@ -1095,6 +816,18 @@ export default function BusinessOrders() {
                         ✓ Completed
                       </Button>
                     )}
+                  </div>
+                )}
+
+                {selectedOrder.status === 'confirmed' && (
+                  <div className="space-y-2">
+                    <div className="bg-[#CFFAFE] border-l-4 border-[#06B6D4] p-3 rounded">
+                      <p className="text-sm font-semibold text-[#164E63]">Status: Ready for Delivery</p>
+                      <p className="text-xs text-[#164E63] mt-1">Waiting for driver to accept and start delivery</p>
+                    </div>
+                    <p className="text-xs text-[#64748B]">
+                      This order is now available in the driver's delivery requests. Once a driver accepts, the status will change to "On The Way".
+                    </p>
                   </div>
                 )}
 

@@ -466,7 +466,7 @@ export default function RiderDashboard() {
                 </div>
               </div>
 
-              {activeTrip.type === 'delivery' && activeTrip.payment === 'COD' && (
+              {activeTrip.type === 'delivery' && activeTrip.payment === 'COD' && Number(activeTrip.foodCost || 0) > 0 && (
                 <div className="bg-orange-50 border border-orange-200 rounded-lg p-3 mb-4">
                   <p className="text-sm font-semibold text-orange-800 mb-1">⚠️ Pay Restaurant First</p>
                   <p className="text-xs text-orange-700">Food Cost: ₱{activeTrip.foodCost?.toFixed(2)}</p>

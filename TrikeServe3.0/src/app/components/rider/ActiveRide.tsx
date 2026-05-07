@@ -116,6 +116,25 @@ export default function ActiveRide() {
                 'Driver is on the way to pick you up!'
               );
               console.log('✅ DATABASE UPDATED: Driver status set to on-the-way');
+
+              // If this is a delivery order, update order status to "on-the-way"
+              if (ride.type === 'delivery' && ride.orderId) {
+                try {
+                  console.log('[ActiveRide] Updating delivery order to on-the-way...');
+                  const { error: orderUpdateError } = await supabaseHelpers.updateOrder(ride.orderId, {
+                    status: 'on-the-way',
+                    updated_at: new Date().toISOString()
+                  });
+
+                  if (orderUpdateError) {
+                    console.error('❌ Error updating delivery order status:', orderUpdateError);
+                  } else {
+                    console.log('✅ Delivery order status updated to on-the-way');
+                  }
+                } catch (orderError) {
+                  console.error('❌ Exception updating delivery order:', orderError);
+                }
+              }
             }
           } catch (error) {
             console.error('❌ Exception accepting ride:', error);
@@ -768,7 +787,7 @@ export default function ActiveRide() {
           </div>
 
           {/* Delivery Special Info */}
-          {rideData.type === 'delivery' && rideData.payment === 'COD' && rideData.foodCost && (
+          {rideData.type === 'delivery' && rideData.payment === 'COD' && Number(rideData.foodCost || 0) > 0 && (
             <div className="mt-3 p-3 bg-orange-50 border border-orange-200 rounded-lg">
               <p className="text-sm text-orange-900">
                 <span className="font-semibold">⚠️ Collect from customer:</span> ₱{rideData.foodCost + rideData.amount}
