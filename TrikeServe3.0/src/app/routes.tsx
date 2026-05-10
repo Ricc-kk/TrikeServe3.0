@@ -117,16 +117,8 @@ export const router = createBrowserRouter([
           </ProtectedRoute>
         )
       },
-      { 
-        path: "rider/inbox", 
-        element: (
-          <ProtectedRoute allowedRoles={['rider']}>
-            <RiderMessagesPage />
-          </ProtectedRoute>
-        )
-      },
-      { 
-        path: "rider/profile", 
+      {
+        path: "rider/profile",
         element: (
           <ProtectedRoute allowedRoles={['rider']}>
             <RiderProfile />

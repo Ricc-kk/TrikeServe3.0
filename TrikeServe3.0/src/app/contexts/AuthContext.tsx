@@ -36,6 +36,10 @@ interface AuthContextType {
   logout: () => void;
   signup: (data: SignupData) => Promise<{ success: boolean; error?: string }>;
   updateProfile: (data: Partial<User>) => Promise<{ success: boolean; error?: string }>;
+  // Switch UI role temporarily (client-side only) so a user (e.g., driver) can view another role's UI
+  switchUiRole: (role: User['role']) => void;
+  // Restore original role if UI was switched
+  restoreOriginalRole: () => void;
 }
 
 interface SignupData {
@@ -258,6 +262,70 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const logout = () => {
     setUser(null);
     localStorage.removeItem('trikeserve_current_user');
+    // Clear any temporary UI role stored
+    localStorage.removeItem('trikeserve_original_role');
+    localStorage.removeItem('trikeserve_post_switch_route');
+  };
+
+  // Switch the user's role and persist to Supabase
+  const switchUiRole = async (role: User['role']) => {
+    if (!user) return;
+
+    // If already switched and target equals current, nothing to do
+    if (user.role === role) return;
+
+    // Save original role if not already saved
+    const existingOriginal = localStorage.getItem('trikeserve_original_role');
+    if (!existingOriginal) {
+      localStorage.setItem('trikeserve_original_role', user.role);
+    }
+
+    try {
+      // Update role in Supabase
+      const { error: updateError } = await supabase
+        .from('users')
+        .update({ role })
+        .eq('id', user.id);
+
+      if (updateError) {
+        console.error('Error updating role in Supabase:', updateError);
+        // Continue with local update as fallback
+      }
+    } catch (error) {
+      console.error('Error switching role:', error);
+    }
+
+    const updatedUser = { ...user, role };
+    setUser(updatedUser);
+    localStorage.setItem('trikeserve_current_user', JSON.stringify(updatedUser));
+  };
+
+  const restoreOriginalRole = async () => {
+    if (!user) return;
+    const original = localStorage.getItem('trikeserve_original_role');
+    if (!original) return;
+
+    const originalRole = original as User['role'];
+
+    try {
+      // Restore role in Supabase
+      const { error: updateError } = await supabase
+        .from('users')
+        .update({ role: originalRole })
+        .eq('id', user.id);
+
+      if (updateError) {
+        console.error('Error restoring role in Supabase:', updateError);
+        // Continue with local update as fallback
+      }
+    } catch (error) {
+      console.error('Error restoring role:', error);
+    }
+
+    const updatedUser = { ...user, role: originalRole };
+    setUser(updatedUser);
+    localStorage.setItem('trikeserve_current_user', JSON.stringify(updatedUser));
+    localStorage.removeItem('trikeserve_original_role');
   };
 
   const signup = async (data: SignupData): Promise<{ success: boolean; error?: string }> => {
@@ -439,7 +507,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   return (
-    <AuthContext.Provider value={{ user, isLoading, login, logout, signup, updateProfile }}>
+    <AuthContext.Provider value={{ user, isLoading, login, logout, signup, updateProfile, switchUiRole, restoreOriginalRole }}>
       {children}
     </AuthContext.Provider>
   );

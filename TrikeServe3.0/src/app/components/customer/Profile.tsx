@@ -1,10 +1,13 @@
-import { X, Camera, Star, ChevronRight } from "lucide-react";
+import { X, Camera, Star, ChevronRight, ArrowLeft } from "lucide-react";
 import { Link, useNavigate } from "react-router";
 import { useState } from "react";
 import profilePlaceholder from "../../../assets/49624c6fb8f504041a2a91198a581a109cd5507d.png";
+import { useAuth } from "../../contexts/AuthContext";
+import { Button } from "../ui/button";
 
 export default function Profile() {
   const navigate = useNavigate();
+  const { user, restoreOriginalRole } = useAuth();
   const [formData, setFormData] = useState({
     name: "User12345",
     mobile: "+63 • 9613483404",
@@ -154,14 +157,30 @@ export default function Profile() {
             }`} />
           </button>
         </div>
-      </div>
+       </div>
 
-      {/* Log out Button */}
-      <div className="px-5 py-6">
-        <button className="w-full py-3 text-base font-medium text-[#64748B] border border-[#E2E8F0] rounded-lg hover:bg-[#F8FAFC] transition-colors">
-          Log out
-        </button>
-      </div>
+       {/* Switch Back to Driver Button - if user is currently viewing customer UI but is a driver */}
+       {localStorage.getItem('trikeserve_original_role') === 'rider' && (
+         <div className="px-5 py-6">
+           <Button
+             onClick={async () => {
+               await restoreOriginalRole?.();
+               navigate('/rider');
+             }}
+             className="w-full bg-[#0f172a] hover:bg-[#111827] text-white font-bold uppercase py-4 rounded-lg flex items-center justify-center gap-2"
+           >
+             <ArrowLeft className="w-5 h-5" />
+             Switch back to Driver App
+           </Button>
+         </div>
+       )}
+
+       {/* Log out Button */}
+       <div className="px-5 py-6">
+         <button className="w-full py-3 text-base font-medium text-[#64748B] border border-[#E2E8F0] rounded-lg hover:bg-[#F8FAFC] transition-colors">
+           Log out
+         </button>
+       </div>
 
       {/* Version Info */}
       <div className="text-center text-xs text-[#CBD5E1] pb-8">

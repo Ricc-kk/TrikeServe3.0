@@ -9,14 +9,12 @@ export default function ServiceTypes() {
   const navigate = useNavigate();
   const { user, updateProfile } = useAuth();
   const [selectedServices, setSelectedServices] = useState<string[]>(user?.serviceTypes || ['shared', 'delivery']);
-  const [currentSeats, setCurrentSeats] = useState(user?.currentSeats || 0);
   const [isSaving, setIsSaving] = useState(false);
 
   const handleSave = async () => {
     setIsSaving(true);
     const result = await updateProfile({
       serviceTypes: selectedServices,
-      currentSeats
     });
     setIsSaving(false);
 
@@ -143,28 +141,7 @@ export default function ServiceTypes() {
           </Card>
         </div>
 
-        {/* Seat Management for Shared Mode */}
-        {selectedServices.includes('shared') && (
-          <Card className="p-4 mt-4">
-            <p className="text-sm font-semibold text-[#121212] mb-3">Current Seats Taken</p>
-            <div className="flex gap-2">
-              {[0, 1, 2, 3, 4].map((num) => (
-                <Button
-                  key={num}
-                  onClick={() => setCurrentSeats(num)}
-                  variant={currentSeats === num ? 'default' : 'outline'}
-                  size="sm"
-                  className={`flex-1 ${currentSeats === num ? 'bg-[#E11D48] hover:bg-[#BE123C]' : ''}`}
-                >
-                  {num}
-                </Button>
-              ))}
-            </div>
-            <p className="text-xs text-[#64748B] mt-2">
-              {currentSeats === 4 ? 'Trike is full' : `${4 - currentSeats} seat(s) available`}
-            </p>
-          </Card>
-        )}
+        {/* Seat management removed */}
 
         <Button 
           onClick={handleSave}

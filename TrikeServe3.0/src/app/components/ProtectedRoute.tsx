@@ -25,6 +25,13 @@ export default function ProtectedRoute({ children, allowedRoles }: ProtectedRout
   }
 
   if (allowedRoles && !allowedRoles.includes(user.role)) {
+    // Honor one-time redirect target after role switching (e.g., rider -> customer/food)
+    const postSwitchRoute = localStorage.getItem('trikeserve_post_switch_route');
+    if (postSwitchRoute && postSwitchRoute.startsWith(`/${user.role}`)) {
+      localStorage.removeItem('trikeserve_post_switch_route');
+      return <Navigate to={postSwitchRoute} replace />;
+    }
+
     // Redirect to appropriate dashboard based on user role
     const roleRoutes: Record<UserRole, string> = {
       customer: '/customer',

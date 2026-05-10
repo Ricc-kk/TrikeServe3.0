@@ -10,8 +10,13 @@
     "cap:add:android": "cap add android",
     "cap:sync": "cap sync",
     "cap:open:android": "cap open android",
-    "apk:debug": "cd android && .\\gradlew assembleDebug",
-    "apk:release": "cd android && .\\gradlew assembleRelease"
+    "android:sync": "npm run build && npx cap sync android",
+    "android:open": "npx cap open android",
+    "android:debug": "cd android && .\\gradlew.bat assembleDebug",
+    "android:install:debug": "cd android && .\\gradlew.bat installDebug",
+    "android:release": "cd android && .\\gradlew.bat assembleRelease",
+    "apk:debug": "cd android && .\\gradlew.bat assembleDebug",
+    "apk:release": "cd android && .\\gradlew.bat assembleRelease"
   },
   "dependencies": {
     "@capacitor/android": "^7.6.2",

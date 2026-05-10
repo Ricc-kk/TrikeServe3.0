@@ -336,6 +336,12 @@ export default function PassengerRequests() {
     return request.type === selectedCategory;
   });
 
+  // Filter requests based on driver's active service types
+  const requestsMatchingServiceTypes = filteredRequests.filter(request => {
+    const driverActiveTypes = user?.serviceTypes || ['shared', 'delivery'];
+    return driverActiveTypes.includes(request.type);
+  });
+
   return (
     <div className="min-h-screen bg-[#F8F9FA] relative">
       {/* Header */}
@@ -396,7 +402,7 @@ export default function PassengerRequests() {
           </button>
         </div>
 
-        {filteredRequests.map((request) => (
+        {requestsMatchingServiceTypes.map((request) => (
           <Card key={request.id} className="p-4 bg-white border-2 border-[#CBD5E1] hover:border-[#E11D48] transition-colors">
             {/* Shared Ride Lobby Display */}
             {request.lobbyId && request.passengerDetails && request.passengerDetails.length > 0 ? (
@@ -612,7 +618,7 @@ export default function PassengerRequests() {
         ))}
 
         {/* Empty State */}
-        {filteredRequests.length === 0 && (
+        {requestsMatchingServiceTypes.length === 0 && (
           <div className="text-center py-12">
             <div className="w-20 h-20 bg-[#F1F5F9] rounded-full flex items-center justify-center mx-auto mb-4">
               <Users className="w-10 h-10 text-[#94A3B8]" />

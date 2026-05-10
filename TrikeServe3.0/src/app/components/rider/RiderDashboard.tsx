@@ -7,7 +7,6 @@ import {
   DollarSign, 
   Camera, 
   Navigation,
-  Inbox,
   Calendar,
   UserCircle,
   MapPin,
@@ -670,28 +669,7 @@ export default function RiderDashboard() {
                     </div>
                   </div>
 
-                  {/* Seat Management for Shared Mode */}
-                  {selectedServices.includes('shared') && (
-                    <div className="pt-3 border-t border-gray-200">
-                      <p className="text-sm font-semibold text-[#121212] mb-2">Current Seats Taken</p>
-                      <div className="flex gap-2">
-                        {[0, 1, 2, 3, 4].map((num) => (
-                          <Button
-                            key={num}
-                            onClick={() => setCurrentSeats(num)}
-                            variant={currentSeats === num ? 'default' : 'outline'}
-                            size="sm"
-                            className={`flex-1 ${currentSeats === num ? 'bg-[#E11D48] hover:bg-[#BE123C]' : ''}`}
-                          >
-                            {num}
-                          </Button>
-                        ))}
-                      </div>
-                      <p className="text-xs text-[#64748B] mt-2">
-                        {currentSeats === 4 ? 'Trike is full' : `${4 - currentSeats} seat(s) available`}
-                      </p>
-                    </div>
-                  )}
+                  {/* Seat management removed from quick actions */}
 
                   <Button
                     onClick={() => setShowServiceTypes(false)}
@@ -771,12 +749,6 @@ export default function RiderDashboard() {
                   <div className="w-2 h-2 bg-white rounded-full animate-pulse" />
                 </div>
               )}
-            </Button>
-          </Link>
-          <Link to="/rider/inbox">
-            <Button variant="ghost" className="flex flex-col items-center gap-1">
-              <Inbox className="w-5 h-5 text-[#64748B]" />
-              <span className="text-xs text-[#64748B]">Inbox</span>
             </Button>
           </Link>
           <Link to="/rider/profile">

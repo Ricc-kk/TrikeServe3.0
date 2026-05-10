@@ -1,11 +1,12 @@
-import { Camera, Star, ChevronRight, Home as HomeIcon, MessageCircle, User, ShoppingCart, ClipboardList } from "lucide-react";
+import { Camera, Star, ChevronRight, Home as HomeIcon, MessageCircle, User, ShoppingCart, ClipboardList, ArrowLeft } from "lucide-react";
 import { Link, useNavigate } from "react-router";
 import { useState } from "react";
 import { useAuth } from "../../contexts/AuthContext";
+import { Button } from "../ui/button";
 
 export default function Account() {
   const navigate = useNavigate();
-  const { user, logout } = useAuth();
+  const { user, logout, restoreOriginalRole } = useAuth();
   const [formData, setFormData] = useState({
     name: user?.name || "User",
     mobile: user?.phone || "",
@@ -95,17 +96,33 @@ export default function Account() {
           </p>
         </div>
 
-      </div>
+       </div>
 
-      {/* Log out Button */}
-      <div className="px-5 py-6 mt-8">
-        <button
-          className="w-full py-3 text-base font-medium text-[#64748B] border border-[#E2E8F0] rounded-lg hover:bg-[#F8FAFC] transition-colors"
-          onClick={handleLogout}
-        >
-          Log out
-        </button>
-      </div>
+       {/* Switch Back to Driver Button - if user is currently viewing customer UI but is a driver */}
+       {localStorage.getItem('trikeserve_original_role') === 'rider' && (
+         <div className="px-5 py-3">
+           <Button
+             onClick={async () => {
+               await restoreOriginalRole?.();
+               navigate('/rider');
+             }}
+             className="w-full bg-[#0f172a] hover:bg-[#111827] text-white font-bold uppercase py-3 rounded-lg flex items-center justify-center gap-2"
+           >
+             <ArrowLeft className="w-5 h-5" />
+             Switch back to Driver App
+           </Button>
+         </div>
+       )}
+
+       {/* Log out Button */}
+       <div className="px-5 py-6 mt-8">
+         <button
+           className="w-full py-3 text-base font-medium text-[#64748B] border border-[#E2E8F0] rounded-lg hover:bg-[#F8FAFC] transition-colors"
+           onClick={handleLogout}
+         >
+           Log out
+         </button>
+       </div>
 
       {/* Bottom Navigation */}
       <div className="fixed bottom-0 left-0 right-0 bg-white border-t-2 border-[#E2E8F0] px-4 py-3 z-50">

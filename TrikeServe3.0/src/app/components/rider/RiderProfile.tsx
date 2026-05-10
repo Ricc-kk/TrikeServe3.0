@@ -23,7 +23,7 @@ import { useAuth } from "../../contexts/AuthContext";
 
 export default function RiderProfile() {
   const navigate = useNavigate();
-  const { user, updateProfile, logout } = useAuth();
+  const { user, updateProfile, logout, switchUiRole, restoreOriginalRole } = useAuth();
   const [isEditing, setIsEditing] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   
@@ -409,11 +409,42 @@ export default function RiderProfile() {
           <div className="flex items-start gap-2 text-sm">
             <MapPin className="w-4 h-4 text-[#E11D48] mt-0.5 flex-shrink-0" />
             <p className="text-[#121212] font-medium">
-              Barangay Hall, Tagalog, Valenzuela City<br />
+              Barangay Hall, Tagalag, Valenzuela City<br />
               <span className="text-[#64748B] font-normal">Monday-Friday, 9:00 AM - 5:00 PM</span>
             </p>
           </div>
         </Card>
+
+        {/* Switch UI Role (Driver -> Customer) */}
+        <div>
+          {user.role === 'rider' ? (
+            <Button
+              onClick={async () => {
+                // Switch to customer UI so driver can place orders
+                localStorage.setItem('trikeserve_post_switch_route', '/customer/food');
+                switchUiRole && await switchUiRole('customer');
+                // Fallback navigation (guard will already route using post-switch key)
+                navigate('/customer/food');
+              }}
+              className="w-full bg-[#065f46] hover:bg-[#047857] text-white font-bold uppercase py-4 rounded-lg flex items-center justify-center gap-2 shadow-md mb-3"
+            >
+              Use Customer App
+            </Button>
+          ) : (
+            // If user's UI has been switched, allow restoring original role
+            localStorage.getItem('trikeserve_original_role') && (
+              <Button
+                onClick={async () => {
+                  await restoreOriginalRole?.();
+                  navigate('/rider');
+                }}
+                className="w-full bg-[#0f172a] hover:bg-[#111827] text-white font-bold uppercase py-4 rounded-lg flex items-center justify-center gap-2 shadow-md mb-3"
+              >
+                Switch back to Driver App
+              </Button>
+            )
+          )}
+        </div>
 
         {/* Sign Out Button */}
         <Button
