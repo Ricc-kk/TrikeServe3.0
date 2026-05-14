@@ -3,6 +3,8 @@ import { AuthProvider } from "../contexts/AuthContext";
 import { CartProvider } from "../contexts/CartContext";
 import { OrderProvider } from "../contexts/OrderContext";
 import { FavoritesProvider } from "../contexts/FavoritesContext";
+import { NotificationProvider } from "../contexts/NotificationContext";
+import Toast from "./ui/Toast";
 
 export default function Root() {
   return (
@@ -10,9 +12,12 @@ export default function Root() {
       <FavoritesProvider>
         <CartProvider>
           <OrderProvider>
-            <div className="min-h-screen">
-              <Outlet />
-            </div>
+            <NotificationProvider>
+              <Toast />
+              <div className="min-h-screen">
+                <Outlet />
+              </div>
+            </NotificationProvider>
           </OrderProvider>
         </CartProvider>
       </FavoritesProvider>
