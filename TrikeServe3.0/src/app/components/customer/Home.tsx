@@ -50,6 +50,7 @@ export default function CustomerHome() {
   const [showValidationError, setShowValidationError] = useState(false);
   const [showSameLocationError, setShowSameLocationError] = useState(false);
   const [rideCompletedPopup, setRideCompletedPopup] = useState(false);
+  const [showRatingModal, setShowRatingModal] = useState(false);
   const [privateRidePrice, setPrivateRidePrice] = useState(50); // Default price for private rides
   const [sharedRidePrice, setSharedRidePrice] = useState(15); // Default price for share rides
   const unsubscribeRef = useRef<(() => void) | null>(null);
@@ -209,6 +210,55 @@ export default function CustomerHome() {
     // Continue polling as long as there's an active ride or we're searching
     if (!currentRequestId) return;
 
+    const processDriverStatusUpdate = (status: string, message?: string, source: string = 'unknown') => {
+      const lastShownStatusKey = `last_shown_status_${currentRequestId}`;
+      const lastShownStatus = localStorage.getItem(lastShownStatusKey);
+
+      console.log('📣 PROCESS DRIVER STATUS UPDATE:', { status, message, source, lastShownStatus });
+
+      if (status === 'completed' && status !== lastShownStatus) {
+        console.log('🎉 COMPLETION STATUS RECEIVED - showing completion popup now');
+        setRideCompletedPopup(true);
+        localStorage.setItem(lastShownStatusKey, status);
+
+        // Clear visible ride state immediately so the driver card disappears
+        // as soon as the driver taps Complete Ride.
+        setRideStatus(null);
+        setActiveRide(null);
+        setCurrentRequestId(null);
+        setPickup('');
+        setDropoff('');
+        setPickupAddress('');
+        setDropoffAddress('');
+        setSelectedVehicle(null);
+        localStorage.removeItem('trikeserve_active_ride');
+        return;
+      }
+
+      if (status && status !== 'pending') {
+        const statusDisplayMap: { [key: string]: string } = {
+          'on-the-way': 'Your driver is on the way to pick you up! 🚗',
+          'arrived': 'Your driver has arrived! 📍',
+          'in-progress': 'Your ride is in progress!',
+          'payment': message || 'Please complete the payment.',
+          'awaiting-payment': message || 'Please complete the payment.'
+        };
+
+        if (status !== lastShownStatus) {
+          setDriverStatusPopup({
+            status,
+            message: statusDisplayMap[status] || message || 'Ride status updated',
+            timestamp: Date.now()
+          });
+          localStorage.setItem(lastShownStatusKey, status);
+
+          if (status === 'payment' || status === 'awaiting-payment') {
+            setTimeout(() => setDriverStatusPopup(null), 4000);
+          }
+        }
+      }
+    };
+
     const checkForAcceptedRide = () => {
       const acceptedRidesData = localStorage.getItem('trikeserve_accepted_rides');
       if (acceptedRidesData) {
@@ -264,6 +314,30 @@ export default function CustomerHome() {
           return;
         }
 
+      // If the database says the ride is already completed, make sure we clear UI and
+      // do NOT re-show the driver card. This prevents polling from setting
+      // `rideStatus = 'driver-found'` again when an accepted_driver_id remains set
+      // in the DB after the ride is completed.
+        // Normalize status fields. If the ride is explicitly completed in any
+        // column, prefer that over intermediate payment-stage values.
+        const dbStatus =
+          rideRequest.status === 'completed' ||
+          rideRequest.driver_status === 'completed' ||
+          (rideRequest as any).ride_status === 'completed'
+            ? 'completed'
+            : rideRequest.driver_status || rideRequest.status || (rideRequest as any).ride_status;
+
+        // Handle completion carefully: only the explicit `completed` status
+        // should trigger the Ride Completed popup. Payment-stage statuses are
+        // shown as payment prompts, not completion.
+        const lastShownStatusKey = `last_shown_status_${currentRequestId}`;
+        const lastShownStatus = localStorage.getItem(lastShownStatusKey);
+
+        if (dbStatus === 'completed') {
+          processDriverStatusUpdate('completed', rideRequest.driver_status_message || rideRequest.status_message, 'polling-db');
+          return;
+        }
+
       // CRITICAL: Check if driver has been accepted (this means driver info card should show)
         if (rideRequest.accepted_driver_id && !activeRide) {
           console.log('✅ DRIVER ACCEPTED (Polling detected):', rideRequest.accepted_driver_id);
@@ -292,57 +366,11 @@ export default function CustomerHome() {
 
         // Only show status popup if driver_status has been updated AND we haven't shown it yet
         if (rideRequest.driver_status && rideRequest.driver_status !== 'pending') {
-          const lastShownStatusKey = `last_shown_status_${currentRequestId}`;
-          const lastShownStatus = localStorage.getItem(lastShownStatusKey);
-
-          // Check if this is a new status update
-          if (rideRequest.driver_status !== lastShownStatus) {
-            console.log('✅ NEW STATUS UPDATE FROM DATABASE:', rideRequest.driver_status);
-
-            // Map database status to popup display
-            const statusDisplayMap: { [key: string]: string } = {
-              'on-the-way': 'Your driver is on the way to pick you up! 🚗',
-              'arrived': 'Your driver has arrived! 📍',
-              'in-progress': 'Your ride is in progress!',
-              'completed': 'Your ride has been completed! Thank you for using TrikeServe. 🎉'
-            };
-
-            setDriverStatusPopup({
-              status: rideRequest.driver_status,
-              message: statusDisplayMap[rideRequest.driver_status] || rideRequest.driver_status_message || 'Ride status updated',
-              timestamp: Date.now()
-            });
-
-            // Store that we showed this status
-            localStorage.setItem(lastShownStatusKey, rideRequest.driver_status);
-
-            // If ride is completed, clear everything after showing popup
-            if (rideRequest.driver_status === 'completed') {
-              console.log('🎉 RIDE COMPLETED! Showing completion popup...');
-              setRideCompletedPopup(true);
-              setTimeout(() => {
-                // Clear all ride data
-                setRideStatus(null);
-                setActiveRide(null);
-                setCurrentRequestId(null);
-                setPickup('');
-                setDropoff('');
-                setPickupAddress('');
-                setDropoffAddress('');
-                setSelectedVehicle(null);
-                setDriverStatusPopup(null);
-
-                // Clear from localStorage
-                localStorage.removeItem('trikeserve_active_ride');
-                localStorage.removeItem(lastShownStatusKey);
-              }, 4000);
-            } else {
-              // Auto-dismiss after 4 seconds for other statuses
-              setTimeout(() => {
-                setDriverStatusPopup(null);
-              }, 4000);
-            }
-          }
+          processDriverStatusUpdate(
+            rideRequest.driver_status,
+            rideRequest.driver_status_message || rideRequest.status_message,
+            'polling-driver_status'
+          );
         }
       } catch (error) {
         console.error('❌ Error checking driver status from database:', error);
@@ -368,6 +396,15 @@ export default function CustomerHome() {
       }
       if (e.key?.startsWith('driver_status_')) {
         console.log('🔄 Driver status changed, checking...', e.key);
+        try {
+          const parsed = e.newValue ? JSON.parse(e.newValue) : null;
+          if (parsed?.status) {
+            processDriverStatusUpdate(parsed.status, parsed.message, 'storage-event');
+            return;
+          }
+        } catch (parseError) {
+          console.warn('⚠️ Could not parse driver status storage payload:', parseError);
+        }
         checkForDriverStatusUpdate();
       }
     };
@@ -376,6 +413,10 @@ export default function CustomerHome() {
     const handleCustomStorageEvent = (e: any) => {
       console.log('🎯 Custom Storage Event:', e.detail?.key);
       if (e.detail?.key?.startsWith('driver_status_')) {
+        if (e.detail?.value?.status) {
+          processDriverStatusUpdate(e.detail.value.status, e.detail.value.message, 'custom-storage-event');
+          return;
+        }
         checkForDriverStatusUpdate();
       }
     };
@@ -409,8 +450,18 @@ export default function CustomerHome() {
       console.log('   driver_photo:', updatedRide.driver_photo);
       console.log('   status:', updatedRide.status);
 
+      // Normalize realtime status field (support driver_status, status, ride_status).
+      // Prefer explicit completion over payment-stage values.
+      const realtimeStatus =
+        updatedRide.status === 'completed' ||
+        updatedRide.driver_status === 'completed' ||
+        (updatedRide as any).ride_status === 'completed'
+          ? 'completed'
+          : updatedRide.driver_status || updatedRide.status || (updatedRide as any).ride_status;
+
       // Check if driver was accepted - THIS IS THE KEY!
-      if (updatedRide.accepted_driver_id && !activeRide) {
+      // Don't show acceptance if the ride is already completed.
+      if (updatedRide.accepted_driver_id && !activeRide && realtimeStatus !== 'completed') {
         console.log('✅ DRIVER ACCEPTED (Real-time):', updatedRide.accepted_driver_id);
 
         const rideState = {
@@ -435,12 +486,18 @@ export default function CustomerHome() {
         });
       }
 
-      // Check if ride was completed
-      if (updatedRide.driver_status === 'completed') {
-        console.log('🎉 RIDE COMPLETED (Real-time):', updatedRide);
-        setRideCompletedPopup(true);
+      // Handle completion status only.
+      if (realtimeStatus === 'completed') {
+        const lastShownStatusKey = `last_shown_status_${currentRequestId}`;
+        const lastShownStatus = localStorage.getItem(lastShownStatusKey);
 
-        setTimeout(() => {
+        if (realtimeStatus !== lastShownStatus) {
+          console.log('🎉 RIDE COMPLETED (Real-time):', updatedRide);
+          setRideCompletedPopup(true);
+          localStorage.setItem(lastShownStatusKey, realtimeStatus);
+
+          // Immediately clear ride UI so the driver card disappears while
+          // the completion popup is shown.
           setRideStatus(null);
           setActiveRide(null);
           setCurrentRequestId(null);
@@ -449,11 +506,11 @@ export default function CustomerHome() {
           setPickupAddress('');
           setDropoffAddress('');
           setSelectedVehicle(null);
-        }, 4000);
+        }
       }
 
       // Check for other driver status updates (for popup messages)
-      if (updatedRide.driver_status && updatedRide.driver_status !== 'pending') {
+      if (realtimeStatus && realtimeStatus !== 'pending') {
         const statusDisplayMap: { [key: string]: string } = {
           'on-the-way': 'Your driver is on the way to pick you up! 🚗',
           'arrived': 'Your driver has arrived! 📍',
@@ -462,8 +519,8 @@ export default function CustomerHome() {
         };
 
         setDriverStatusPopup({
-          status: updatedRide.driver_status,
-          message: statusDisplayMap[updatedRide.driver_status] || updatedRide.driver_status_message || 'Ride status updated',
+          status: realtimeStatus,
+          message: statusDisplayMap[realtimeStatus] || updatedRide.driver_status_message || 'Ride status updated',
           timestamp: Date.now()
         });
 
@@ -1026,17 +1083,46 @@ export default function CustomerHome() {
                 Thank you for using TrikeServe. We hope you had a great ride!
               </p>
 
+              <div className="grid grid-cols-2 gap-3 mb-0">
+                <Button
+                  onClick={() => {
+                    // Open placeholder rating modal (implementation later)
+                    setRideCompletedPopup(false);
+                    setShowRatingModal(true);
+                  }}
+                  className="w-full bg-white border-2 border-blue-200 text-blue-600 py-3 font-bold"
+                >
+                  Leave a Rating
+                </Button>
+
+                <Button
+                  onClick={() => {
+                    setRideCompletedPopup(false);
+                    // Reset ride state
+                    setActiveRide(null);
+                    setRideStatus(null);
+                    setCurrentRequestId(null);
+                  }}
+                  className="w-full bg-blue-500 hover:bg-blue-600 text-white py-3 font-bold"
+                >
+                  Done
+                </Button>
+              </div>
+            </Card>
+          </div>
+        )}
+
+        {/* Placeholder Rating Modal - opened when user taps Leave a Rating (for future implementation) */}
+        {showRatingModal && (
+          <div className="fixed inset-0 bg-black/50 z-[2200] flex items-center justify-center p-4">
+            <Card className="bg-white p-6 max-w-sm w-full text-center">
+              <h3 className="text-xl font-bold mb-4">Leave a Rating (Coming Soon)</h3>
+              <p className="text-sm text-[#64748B] mb-6">This will let the customer rate the driver. Implementation coming next.</p>
               <Button
-                onClick={() => {
-                  setRideCompletedPopup(false);
-                  // Reset ride state
-                  setActiveRide(null);
-                  setRideStatus(null);
-                  setCurrentRequestId(null);
-                }}
-                className="w-full bg-blue-500 hover:bg-blue-600 text-white py-3 font-bold"
+                onClick={() => setShowRatingModal(false)}
+                className="w-full bg-[#E11D48] hover:bg-[#BE123C] text-white py-3 font-bold"
               >
-                Done
+                Close
               </Button>
             </Card>
           </div>
