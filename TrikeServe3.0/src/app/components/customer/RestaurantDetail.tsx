@@ -6,6 +6,7 @@ import { Badge } from "../ui/badge";
 import { ImageWithFallback } from "../figma/ImageWithFallback";
 import { useCart } from "../../contexts/CartContext";
 import { useFavorites } from "../../contexts/FavoritesContext";
+import { useNotification } from "../../contexts/NotificationContext";
 import CustomizationModal, { MenuItem as CustomizableMenuItem, CustomizationGroup } from "./CustomizationModal";
 import { supabase } from "../../../utils/supabase";
 
@@ -48,7 +49,8 @@ export default function RestaurantDetail() {
   const restaurantName = searchParams.get("name") || "Restaurant";
   const { addToCart: addItemToCart, getTotalItems } = useCart();
   const { toggleFavorite, isFavorite: checkIsFavorite } = useFavorites();
-  
+  const { showNotification } = useNotification();
+
   const [selectedCategory, setSelectedCategory] = useState("all");
   const [selectedBudget, setSelectedBudget] = useState("all");
   const [isScrolled, setIsScrolled] = useState(false);
@@ -375,36 +377,39 @@ export default function RestaurantDetail() {
     }
   };
 
-  const addToCartWithCustomizations = (item: MenuItem, quantity: number, customizations: any[]) => {
-    const restaurantInfo = {
-      id: restaurantId || restaurantData.name, // Use restaurant ID
-      businessUserId: (restaurantData as any)?.business_user_id, // ✅ CRITICAL: Add business user ID for orders
-      name: restaurantData.name,
-      location: restaurantData.subtitle,
-      distance: "1.2 km",
-      time: restaurantData.deliveryTime,
-      image: restaurantData.image,
-      deliveryFee: restaurantData.deliveryFee
-    };
+   const addToCartWithCustomizations = (item: MenuItem, quantity: number, customizations: any[]) => {
+     const restaurantInfo = {
+       id: restaurantId || restaurantData.name, // Use restaurant ID
+       businessUserId: (restaurantData as any)?.business_user_id, // ✅ CRITICAL: Add business user ID for orders
+       name: restaurantData.name,
+       location: restaurantData.subtitle,
+       distance: "1.2 km",
+       time: restaurantData.deliveryTime,
+       image: restaurantData.image,
+       deliveryFee: restaurantData.deliveryFee
+     };
 
-    // Calculate total price with customizations
-    let itemPrice = item.price;
-    customizations.forEach((customization: any) => {
-      itemPrice += customization.price;
-    });
+     // Calculate total price with customizations
+     let itemPrice = item.price;
+     customizations.forEach((customization: any) => {
+       itemPrice += customization.price;
+     });
 
-    addItemToCart(restaurantInfo, {
-      id: item.id,
-      name: item.name,
-      description: item.description,
-      price: itemPrice,
-      quantity: quantity,
-      image: item.image,
-      category: item.category,
-      badge: item.badge,
-      customizations: customizations
-    });
-  };
+     addItemToCart(restaurantInfo, {
+       id: item.id,
+       name: item.name,
+       description: item.description,
+       price: itemPrice,
+       quantity: quantity,
+       image: item.image,
+       category: item.category,
+       badge: item.badge,
+       customizations: customizations
+     });
+
+     // Show notification
+     showNotification(`${quantity} item${quantity > 1 ? 's' : ''} added to the cart`, 'success');
+   };
 
   const filteredItems = restaurantData?.menuItems.filter(item => {
     const matchesCategory = selectedCategory === "all" || item.category === selectedCategory;
