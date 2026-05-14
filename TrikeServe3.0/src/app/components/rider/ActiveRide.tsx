@@ -238,7 +238,11 @@ export default function ActiveRide() {
       } else if (status === 'pickup') {
         dbStatus = 'in_progress';
       } else if (status === 'drop-off') {
-        dbStatus = 'completed';
+        // The driver has reached the drop-off point, but the ride is not
+        // completed yet. Keep this as a payment-stage status so the customer
+        // still sees the ride as active until the driver presses
+        // "Complete Ride".
+        dbStatus = 'payment';
       }
 
       const { error } = await supabaseHelpers.updateRideRequest(rideId, {
@@ -408,6 +412,27 @@ export default function ActiveRide() {
           console.error('❌ Error updating ride status in database:', updateError);
         } else {
           console.log('✅ Ride status updated to completed in database');
+
+          // Also mark the driver status as completed so customers listening to
+          // driver_status receive the final completion signal, not the earlier
+          // payment-stage status.
+          try {
+            const { error: driverStatusError } = await supabaseHelpers.updateDriverRideStatus(
+              rideData.id,
+              'completed',
+              rideData.type === 'delivery'
+                ? 'Your delivery has been completed! Thank you for using TrikeServe.'
+                : 'Your ride has been completed! Thank you for using TrikeServe.'
+            );
+
+            if (driverStatusError) {
+              console.error('❌ Error updating driver_status to completed:', driverStatusError);
+            } else {
+              console.log('✅ Driver status updated to completed in database');
+            }
+          } catch (driverStatusException) {
+            console.error('❌ Exception updating driver_status to completed:', driverStatusException);
+          }
         }
       }
 
