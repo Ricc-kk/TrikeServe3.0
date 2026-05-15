@@ -386,7 +386,7 @@ export default function BusinessOrders() {
       case 'on-the-way':
         return 'bg-[#FFA500]';
       case 'delivered':
-        return 'bg-[#64748B]';
+        return 'bg-[#10B981]';
       case 'cancelled':
         return 'bg-[#E11D48]';
     }
@@ -627,7 +627,8 @@ export default function BusinessOrders() {
                       <p key={idx} className="text-sm text-[#64748B]">
                         {item.quantity}x {item.name}
                       </p>
-                    ))}\n                  </div>
+                    ))}
+                  </div>
                 </Card>
               ))
             ) : (
@@ -776,10 +777,6 @@ export default function BusinessOrders() {
 
                 {selectedOrder.status === 'preparing' && (
                   <div className="space-y-2">
-                    <div className="bg-[#DBEAFE] border-l-4 border-[#3B82F6] p-3 rounded">
-                      <p className="text-sm font-semibold text-[#1E40AF]">Status: Preparing</p>
-                      <p className="text-xs text-[#1E40AF] mt-1">Order is being prepared in the kitchen</p>
-                    </div>
                     <Button
                       onClick={() => {
                         updateOrderStatus(selectedOrder.id, 'ready');
@@ -794,10 +791,6 @@ export default function BusinessOrders() {
 
                 {selectedOrder.status === 'ready' && (
                   <div className="space-y-2">
-                    <div className="bg-[#D1FAE5] border-l-4 border-[#10B981] p-3 rounded">
-                      <p className="text-sm font-semibold text-[#065F46]">Status: Ready</p>
-                      <p className="text-xs text-[#065F46] mt-1">Order ready for {selectedOrder.deliveryMode === 'delivery' ? 'delivery' : 'pickup'}</p>
-                    </div>
                     {selectedOrder.deliveryMode === 'delivery' ? (
                       <Button
                         onClick={() => handleReadyForDelivery(selectedOrder)}
@@ -821,13 +814,6 @@ export default function BusinessOrders() {
 
                 {selectedOrder.status === 'confirmed' && (
                   <div className="space-y-2">
-                    <div className="bg-[#CFFAFE] border-l-4 border-[#06B6D4] p-3 rounded">
-                      <p className="text-sm font-semibold text-[#164E63]">Status: Ready for Delivery</p>
-                      <p className="text-xs text-[#164E63] mt-1">Waiting for driver to accept and start delivery</p>
-                    </div>
-                    <p className="text-xs text-[#64748B]">
-                      This order is now available in the driver's delivery requests. Once a driver accepts, the status will change to "On The Way".
-                    </p>
                   </div>
                 )}
 

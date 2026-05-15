@@ -1076,7 +1076,7 @@ export default function ActiveRide() {
                 <div className="p-4 bg-orange-50 border border-orange-200 rounded-lg">
                   <p className="font-semibold text-orange-900 mb-2">Collect Payment</p>
                   <p className="text-2xl font-bold text-orange-900 mb-1">₱{rideData.amount}</p>
-                  {rideData.type === 'delivery' && rideData.foodCost && (
+                  {rideData.type === 'delivery' && rideData.foodCost > 0 && (
                     <p className="text-sm text-orange-700">
                       + ₱{rideData.foodCost} for food = ₱{rideData.amount + rideData.foodCost}
                     </p>
