@@ -50,6 +50,7 @@ export default function CustomerHome() {
   const [showValidationError, setShowValidationError] = useState(false);
   const [showSameLocationError, setShowSameLocationError] = useState(false);
   const [rideCompletedPopup, setRideCompletedPopup] = useState(false);
+  const [completionPopupType, setCompletionPopupType] = useState<'ride' | 'delivery'>('ride');
   const [showRatingModal, setShowRatingModal] = useState(false);
   const [privateRidePrice, setPrivateRidePrice] = useState(50); // Default price for private rides
   const [sharedRidePrice, setSharedRidePrice] = useState(15); // Default price for share rides
@@ -210,28 +211,39 @@ export default function CustomerHome() {
     // Continue polling as long as there's an active ride or we're searching
     if (!currentRequestId) return;
 
-    const processDriverStatusUpdate = (status: string, message?: string, source: string = 'unknown') => {
-      const lastShownStatusKey = `last_shown_status_${currentRequestId}`;
-      const lastShownStatus = localStorage.getItem(lastShownStatusKey);
+     const processDriverStatusUpdate = (status: string, message?: string, source: string = 'unknown', rideContext?: any) => {
+       const lastShownStatusKey = `last_shown_status_${currentRequestId}`;
+       const lastShownStatus = localStorage.getItem(lastShownStatusKey);
+       const rideType = String(rideContext?.ride_type || rideContext?.type || rideContext?.rideType || selectedVehicle || '').toLowerCase();
+       const inferredCompletionType: 'ride' | 'delivery' =
+         rideType === 'delivery' || message?.toLowerCase().includes('delivery') ? 'delivery' : 'ride';
 
-      console.log('📣 PROCESS DRIVER STATUS UPDATE:', { status, message, source, lastShownStatus });
+       console.log('📣 PROCESS DRIVER STATUS UPDATE:', { status, message, source, currentRequestId, lastShownStatus, inferredCompletionType });
 
-      if (status === 'completed' && status !== lastShownStatus) {
-        console.log('🎉 COMPLETION STATUS RECEIVED - showing completion popup now');
-        setRideCompletedPopup(true);
+       if (status === 'completed' && status !== lastShownStatus) {
+         console.log('✅✅✅ COMPLETION STATUS RECEIVED - showing completion popup now');
+         console.log('   Source:', source);
+         console.log('   Inferred Completion Type:', inferredCompletionType);
+         console.log('   Setting rideCompletedPopup = TRUE');
+         setCompletionPopupType(inferredCompletionType);
+         setRideCompletedPopup(true);
         localStorage.setItem(lastShownStatusKey, status);
 
-        // Clear visible ride state immediately so the driver card disappears
-        // as soon as the driver taps Complete Ride.
+        // Clear visible ride state so the driver card disappears
+        // but delay clearing currentRequestId to avoid racing popup render.
         setRideStatus(null);
         setActiveRide(null);
-        setCurrentRequestId(null);
         setPickup('');
         setDropoff('');
         setPickupAddress('');
         setDropoffAddress('');
         setSelectedVehicle(null);
         localStorage.removeItem('trikeserve_active_ride');
+
+        // Clear currentRequestId after a short delay to allow popup to render
+        setTimeout(() => {
+          setCurrentRequestId(null);
+        }, 100);
         return;
       }
 
@@ -320,6 +332,11 @@ export default function CustomerHome() {
       // in the DB after the ride is completed.
         // Normalize status fields. If the ride is explicitly completed in any
         // column, prefer that over intermediate payment-stage values.
+        console.log('🔍 POLLING: Raw DB fields:');
+        console.log('   rideRequest.status:', rideRequest.status);
+        console.log('   rideRequest.driver_status:', rideRequest.driver_status);
+        console.log('   rideRequest.ride_status:', (rideRequest as any).ride_status);
+
         const dbStatus =
           rideRequest.status === 'completed' ||
           rideRequest.driver_status === 'completed' ||
@@ -327,18 +344,16 @@ export default function CustomerHome() {
             ? 'completed'
             : rideRequest.driver_status || rideRequest.status || (rideRequest as any).ride_status;
 
-        // Handle completion carefully: only the explicit `completed` status
-        // should trigger the Ride Completed popup. Payment-stage statuses are
-        // shown as payment prompts, not completion.
-        const lastShownStatusKey = `last_shown_status_${currentRequestId}`;
-        const lastShownStatus = localStorage.getItem(lastShownStatusKey);
+         console.log('🔍 POLLING: Normalized dbStatus:', dbStatus);
 
+       // CRITICAL: Check for completion FIRST before checking driver acceptance
         if (dbStatus === 'completed') {
-          processDriverStatusUpdate('completed', rideRequest.driver_status_message || rideRequest.status_message, 'polling-db');
+          console.log('✅🎉 POLLING: DB HAS COMPLETED STATUS - calling processDriverStatusUpdate');
+          processDriverStatusUpdate('completed', rideRequest.driver_status_message || rideRequest.status_message || 'Delivery completed!', 'polling-db-completed', rideRequest);
           return;
         }
 
-      // CRITICAL: Check if driver has been accepted (this means driver info card should show)
+       // CRITICAL: Check if driver has been accepted (this means driver info card should show)
         if (rideRequest.accepted_driver_id && !activeRide) {
           console.log('✅ DRIVER ACCEPTED (Polling detected):', rideRequest.accepted_driver_id);
           console.log('   Driver Name:', rideRequest.driver_name);
@@ -366,11 +381,7 @@ export default function CustomerHome() {
 
         // Only show status popup if driver_status has been updated AND we haven't shown it yet
         if (rideRequest.driver_status && rideRequest.driver_status !== 'pending') {
-          processDriverStatusUpdate(
-            rideRequest.driver_status,
-            rideRequest.driver_status_message || rideRequest.status_message,
-            'polling-driver_status'
-          );
+          processDriverStatusUpdate(rideRequest.driver_status, rideRequest.driver_status_message || rideRequest.status_message, 'polling-driver_status', rideRequest);
         }
       } catch (error) {
         console.error('❌ Error checking driver status from database:', error);
@@ -449,6 +460,10 @@ export default function CustomerHome() {
       console.log('   driver_rating:', updatedRide.driver_rating);
       console.log('   driver_photo:', updatedRide.driver_photo);
       console.log('   status:', updatedRide.status);
+      console.log('   driver_status:', updatedRide.driver_status);
+      console.log('   ride_status:', (updatedRide as any).ride_status);
+      console.log('   driver_status_message:', updatedRide.driver_status_message);
+      console.log('   ride_type:', updatedRide.ride_type);
 
       // Normalize realtime status field (support driver_status, status, ride_status).
       // Prefer explicit completion over payment-stage values.
@@ -458,6 +473,9 @@ export default function CustomerHome() {
         (updatedRide as any).ride_status === 'completed'
           ? 'completed'
           : updatedRide.driver_status || updatedRide.status || (updatedRide as any).ride_status;
+
+      console.log('🔍 REALTIME STATUS NORMALIZATION:');
+      console.log('   Normalized realtimeStatus:', realtimeStatus);
 
       // Check if driver was accepted - THIS IS THE KEY!
       // Don't show acceptance if the ride is already completed.
@@ -486,36 +504,56 @@ export default function CustomerHome() {
         });
       }
 
-      // Handle completion status only.
-      if (realtimeStatus === 'completed') {
-        const lastShownStatusKey = `last_shown_status_${currentRequestId}`;
-        const lastShownStatus = localStorage.getItem(lastShownStatusKey);
+       // Handle completion status only.
+       if (realtimeStatus === 'completed') {
+         const lastShownStatusKey = `last_shown_status_${currentRequestId}`;
+         const lastShownStatus = localStorage.getItem(lastShownStatusKey);
+         const inferredCompletionType: 'ride' | 'delivery' =
+           String(updatedRide.ride_type || updatedRide.type || updatedRide.rideType || '').toLowerCase() === 'delivery' ||
+           updatedRide.driver_status_message?.toLowerCase().includes('delivery') ||
+           updatedRide.status_message?.toLowerCase().includes('delivery')
+             ? 'delivery'
+             : 'ride';
 
-        if (realtimeStatus !== lastShownStatus) {
-          console.log('🎉 RIDE COMPLETED (Real-time):', updatedRide);
-          setRideCompletedPopup(true);
-          localStorage.setItem(lastShownStatusKey, realtimeStatus);
+         console.log('🔍 REALTIME COMPLETION CHECK:');
+         console.log('   realtimeStatus:', realtimeStatus);
+         console.log('   lastShownStatus:', lastShownStatus);
+         console.log('   Inferred Type:', inferredCompletionType);
+         console.log('   Will Show?', realtimeStatus !== lastShownStatus);
 
-          // Immediately clear ride UI so the driver card disappears while
-          // the completion popup is shown.
-          setRideStatus(null);
-          setActiveRide(null);
-          setCurrentRequestId(null);
-          setPickup('');
-          setDropoff('');
-          setPickupAddress('');
-          setDropoffAddress('');
-          setSelectedVehicle(null);
-        }
-      }
+         if (realtimeStatus !== lastShownStatus) {
+           console.log('✅ REALTIME HAS NEW COMPLETED - showing popup');
+           console.log('🎉 RIDE COMPLETED (Real-time):', updatedRide);
+           console.log('   Inferred Completion Type:', inferredCompletionType);
+           console.log('   Setting rideCompletedPopup = true');
+           setCompletionPopupType(inferredCompletionType);
+           setRideCompletedPopup(true);
+           localStorage.setItem(lastShownStatusKey, realtimeStatus);
+
+           // Immediately clear most ride UI so the driver card disappears while
+           // the completion popup is shown, but keep currentRequestId briefly to
+           // avoid racing the popup render.
+           setRideStatus(null);
+           setActiveRide(null);
+           setPickup('');
+           setDropoff('');
+           setPickupAddress('');
+           setDropoffAddress('');
+           setSelectedVehicle(null);
+
+           // Clear currentRequestId after a short delay to allow popup to render
+           setTimeout(() => {
+             setCurrentRequestId(null);
+           }, 100);
+         }
+       }
 
       // Check for other driver status updates (for popup messages)
-      if (realtimeStatus && realtimeStatus !== 'pending') {
+      if (realtimeStatus && realtimeStatus !== 'pending' && realtimeStatus !== 'completed') {
         const statusDisplayMap: { [key: string]: string } = {
           'on-the-way': 'Your driver is on the way to pick you up! 🚗',
           'arrived': 'Your driver has arrived! 📍',
           'in-progress': 'Your ride is in progress!',
-          'completed': 'Your ride has been completed! Thank you for using TrikeServe. 🎉'
         };
 
         setDriverStatusPopup({
@@ -1078,9 +1116,13 @@ export default function CustomerHome() {
               <div className="w-20 h-20 bg-blue-100 rounded-full flex items-center justify-center mx-auto mb-4">
                 <span className="text-4xl">🎉</span>
               </div>
-              <h3 className="text-xl font-bold text-[#121212] mb-2">Ride Completed!</h3>
+              <h3 className="text-xl font-bold text-[#121212] mb-2">
+                {completionPopupType === 'delivery' ? 'Delivery Completed!' : 'Ride Completed!'}
+              </h3>
               <p className="text-sm text-[#64748B] mb-6">
-                Thank you for using TrikeServe. We hope you had a great ride!
+                {completionPopupType === 'delivery'
+                  ? 'Thank you for using TrikeServe. Your delivery has been completed!'
+                  : 'Thank you for using TrikeServe. We hope you had a great ride!'}
               </p>
 
               <div className="grid grid-cols-2 gap-3 mb-0">
@@ -1102,6 +1144,7 @@ export default function CustomerHome() {
                     setActiveRide(null);
                     setRideStatus(null);
                     setCurrentRequestId(null);
+                    setCompletionPopupType('ride');
                   }}
                   className="w-full bg-blue-500 hover:bg-blue-600 text-white py-3 font-bold"
                 >
@@ -1645,9 +1688,54 @@ export default function CustomerHome() {
                 OK 👍
               </Button>
             </div>
-          </div>
-        </div>
-      )}
-    </div>
-  );
-}
+           </div>
+         </div>
+       )}
+
+       {/* DEBUG: Manual Completion Popup Test - PROMINENT */}
+       <div className="fixed top-4 right-4 z-[9999] bg-red-900/95 text-white p-6 rounded-xl max-w-sm font-mono space-y-3 border-4 border-yellow-400 shadow-2xl">
+         <div className="text-2xl font-bold border-b-2 border-yellow-400 pb-2">🔧 COMPLETION DEBUG</div>
+
+         <div className="text-sm">
+           <div className="font-bold">STATE:</div>
+           <div className="bg-black/50 p-2 rounded mt-1 text-xs space-y-1">
+             <div>✓ rideCompletedPopup: <span className={rideCompletedPopup ? 'text-green-400 font-bold' : 'text-red-400'}>{String(rideCompletedPopup)}</span></div>
+             <div>✓ completionPopupType: <span className="text-yellow-300">{completionPopupType}</span></div>
+             <div>✓ currentRequestId: <span className="text-cyan-300">{currentRequestId ? currentRequestId.slice(0, 8) + '...' : 'NULL'}</span></div>
+             <div>✓ rideStatus: <span className="text-cyan-300">{rideStatus || 'null'}</span></div>
+             <div>✓ activeRide: <span className="text-cyan-300">{activeRide ? 'YES' : 'null'}</span></div>
+           </div>
+         </div>
+
+         <div className="space-y-2">
+           <div className="text-sm font-bold">FORCE TEST:</div>
+           <Button
+             onClick={() => {
+               console.log('🧪 MANUAL TEST: Forcing completion popup with type=delivery');
+               setCompletionPopupType('delivery');
+               setRideCompletedPopup(true);
+             }}
+             className="w-full bg-orange-600 hover:bg-orange-700 text-white py-2 text-sm font-bold rounded"
+           >
+             🟠 SHOW DELIVERY POPUP
+           </Button>
+           <Button
+             onClick={() => {
+               console.log('🧪 MANUAL TEST: Forcing completion popup with type=ride');
+               setCompletionPopupType('ride');
+               setRideCompletedPopup(true);
+             }}
+             className="w-full bg-blue-600 hover:bg-blue-700 text-white py-2 text-sm font-bold rounded"
+           >
+             🔵 SHOW RIDE POPUP
+           </Button>
+         </div>
+
+         <div className="text-xs text-yellow-200 bg-black/50 p-2 rounded">
+           If buttons work → UI is fine<br/>
+           If nothing → issue is detection
+         </div>
+       </div>
+     </div>
+   );
+ }
