@@ -220,7 +220,7 @@ export default function CustomerHome() {
 
        console.log('📣 PROCESS DRIVER STATUS UPDATE:', { status, message, source, currentRequestId, lastShownStatus, inferredCompletionType });
 
-       if (status === 'completed' && status !== lastShownStatus) {
+       if (status === 'completed' && !rideCompletedPopup) {
          console.log('✅✅✅ COMPLETION STATUS RECEIVED - showing completion popup now');
          console.log('   Source:', source);
          console.log('   Inferred Completion Type:', inferredCompletionType);
@@ -239,11 +239,6 @@ export default function CustomerHome() {
         setDropoffAddress('');
         setSelectedVehicle(null);
         localStorage.removeItem('trikeserve_active_ride');
-
-        // Clear currentRequestId after a short delay to allow popup to render
-        setTimeout(() => {
-          setCurrentRequestId(null);
-        }, 100);
         return;
       }
 
@@ -521,7 +516,7 @@ export default function CustomerHome() {
          console.log('   Inferred Type:', inferredCompletionType);
          console.log('   Will Show?', realtimeStatus !== lastShownStatus);
 
-         if (realtimeStatus !== lastShownStatus) {
+         if (!rideCompletedPopup) {
            console.log('✅ REALTIME HAS NEW COMPLETED - showing popup');
            console.log('🎉 RIDE COMPLETED (Real-time):', updatedRide);
            console.log('   Inferred Completion Type:', inferredCompletionType);
@@ -540,11 +535,6 @@ export default function CustomerHome() {
            setPickupAddress('');
            setDropoffAddress('');
            setSelectedVehicle(null);
-
-           // Clear currentRequestId after a short delay to allow popup to render
-           setTimeout(() => {
-             setCurrentRequestId(null);
-           }, 100);
          }
        }
 
@@ -1131,6 +1121,7 @@ export default function CustomerHome() {
                     // Open placeholder rating modal (implementation later)
                     setRideCompletedPopup(false);
                     setShowRatingModal(true);
+                    setCurrentRequestId(null);
                   }}
                   className="w-full bg-white border-2 border-blue-200 text-blue-600 py-3 font-bold"
                 >
@@ -1691,51 +1682,6 @@ export default function CustomerHome() {
            </div>
          </div>
        )}
-
-       {/* DEBUG: Manual Completion Popup Test - PROMINENT */}
-       <div className="fixed top-4 right-4 z-[9999] bg-red-900/95 text-white p-6 rounded-xl max-w-sm font-mono space-y-3 border-4 border-yellow-400 shadow-2xl">
-         <div className="text-2xl font-bold border-b-2 border-yellow-400 pb-2">🔧 COMPLETION DEBUG</div>
-
-         <div className="text-sm">
-           <div className="font-bold">STATE:</div>
-           <div className="bg-black/50 p-2 rounded mt-1 text-xs space-y-1">
-             <div>✓ rideCompletedPopup: <span className={rideCompletedPopup ? 'text-green-400 font-bold' : 'text-red-400'}>{String(rideCompletedPopup)}</span></div>
-             <div>✓ completionPopupType: <span className="text-yellow-300">{completionPopupType}</span></div>
-             <div>✓ currentRequestId: <span className="text-cyan-300">{currentRequestId ? currentRequestId.slice(0, 8) + '...' : 'NULL'}</span></div>
-             <div>✓ rideStatus: <span className="text-cyan-300">{rideStatus || 'null'}</span></div>
-             <div>✓ activeRide: <span className="text-cyan-300">{activeRide ? 'YES' : 'null'}</span></div>
-           </div>
-         </div>
-
-         <div className="space-y-2">
-           <div className="text-sm font-bold">FORCE TEST:</div>
-           <Button
-             onClick={() => {
-               console.log('🧪 MANUAL TEST: Forcing completion popup with type=delivery');
-               setCompletionPopupType('delivery');
-               setRideCompletedPopup(true);
-             }}
-             className="w-full bg-orange-600 hover:bg-orange-700 text-white py-2 text-sm font-bold rounded"
-           >
-             🟠 SHOW DELIVERY POPUP
-           </Button>
-           <Button
-             onClick={() => {
-               console.log('🧪 MANUAL TEST: Forcing completion popup with type=ride');
-               setCompletionPopupType('ride');
-               setRideCompletedPopup(true);
-             }}
-             className="w-full bg-blue-600 hover:bg-blue-700 text-white py-2 text-sm font-bold rounded"
-           >
-             🔵 SHOW RIDE POPUP
-           </Button>
-         </div>
-
-         <div className="text-xs text-yellow-200 bg-black/50 p-2 rounded">
-           If buttons work → UI is fine<br/>
-           If nothing → issue is detection
-         </div>
-       </div>
      </div>
    );
  }
