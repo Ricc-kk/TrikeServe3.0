@@ -290,7 +290,7 @@ export default function FoodHome() {
             <Search className="absolute left-5 top-1/2 -translate-y-1/2 w-6 h-6 text-[#94A3B8]" />
             <input
               type="text"
-              placeholder="Search for restaurants and groceries"
+              placeholder="Search for Restaurants "
               className="w-full pl-16 pr-5 py-4 bg-white rounded-full shadow-sm border-0 text-base text-[#121212] placeholder:text-[#94A3B8]"
               style={{ outline: 'none' }}
             />
