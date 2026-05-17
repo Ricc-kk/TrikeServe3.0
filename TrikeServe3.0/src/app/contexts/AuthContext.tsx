@@ -62,79 +62,114 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
-  // Initialize auth state from localStorage and create default admin
+  // Initialize auth state from localStorage (critical - must complete for provider to be ready)
   useEffect(() => {
-    const initializeAuth = async () => {
-      // Create default admin accounts in Supabase if they don't exist
+    const loadUser = () => {
       try {
-        // Check if admins exist in Supabase
-        const { data: existingAdmins } = await supabase
+        const storedUser = localStorage.getItem('trikeserve_current_user');
+        if (storedUser) {
+          const parsedUser = JSON.parse(storedUser);
+          setUser(parsedUser);
+        }
+      } catch (error) {
+        console.error('[AuthContext] Error parsing stored user:', error);
+        localStorage.removeItem('trikeserve_current_user');
+      }
+      // Always complete loading phase so context is ready
+      setIsLoading(false);
+    };
+
+    loadUser();
+  }, []);
+
+  // Initialize default admin accounts (non-critical, runs after auth loads)
+  useEffect(() => {
+    const initializeAdmins = async () => {
+      try {
+        // Try to check if admins exist in Supabase
+        const { data: existingAdmins, error: checkError } = await supabase
           .from('admins')
           .select('email')
           .in('email', ['admin@gmail.com', 'admin1@gmail.com']);
+
+        // If check failed (406, RLS, etc), skip admin initialization
+        if (checkError) {
+          console.warn('[AuthContext] Admin table inaccessible (non-critical):', checkError.message);
+          return;
+        }
 
         const existingEmails = (existingAdmins || []).map(a => a.email);
 
         // Create default admin 1 if doesn't exist
         if (!existingEmails.includes('admin@gmail.com')) {
-          await supabase
+          const { error: insertError } = await supabase
             .from('admins')
             .insert([{
               email: 'admin@gmail.com',
               name: 'Business & Customer Admin',
               phone: '09171234567',
               admin_type: 'business_customer',
-              password_hash: 'admin123', // In production, use proper hashing
+              password_hash: 'admin123',
               is_verified: true,
               created_at: new Date().toISOString(),
             }]);
+
+          if (insertError) {
+            console.warn('[AuthContext] Failed to create admin@gmail.com (non-critical):', insertError.message);
+          }
         }
 
         // Create default admin 2 if doesn't exist
         if (!existingEmails.includes('admin1@gmail.com')) {
-          await supabase
+          const { error: insertError } = await supabase
             .from('admins')
             .insert([{
               email: 'admin1@gmail.com',
               name: 'Rider Admin',
               phone: '09171234568',
               admin_type: 'rider',
-              password_hash: 'admin123', // In production, use proper hashing
+              password_hash: 'admin123',
               is_verified: true,
               created_at: new Date().toISOString(),
             }]);
+
+          if (insertError) {
+            console.warn('[AuthContext] Failed to create admin1@gmail.com (non-critical):', insertError.message);
+          }
         }
       } catch (error) {
-        console.error('Error initializing admin accounts in Supabase:', error);
+        // Don't let any errors during admin initialization break the auth provider
+        console.warn('[AuthContext] Admin initialization failed (non-critical):', error instanceof Error ? error.message : error);
       }
-
-      // Load current user from localStorage
-      const storedUser = localStorage.getItem('trikeserve_current_user');
-      if (storedUser) {
-        try {
-          const parsedUser = JSON.parse(storedUser);
-          setUser(parsedUser);
-        } catch (error) {
-          console.error('Error parsing stored user:', error);
-          localStorage.removeItem('trikeserve_current_user');
-        }
-      }
-      setIsLoading(false);
     };
 
-    initializeAuth();
-  }, []);
+    // Only attempt admin initialization once user loading is complete
+    if (!isLoading) {
+      initializeAdmins();
+    }
+  }, [isLoading]);
 
   const login = async (email: string, password: string): Promise<{ success: boolean; error?: string }> => {
     try {
       // First, check if user is an admin
-      const { data: adminUser, error: adminError } = await supabase
-        .from('admins')
-        .select('*')
-        .eq('email', email.toLowerCase())
-        .single();
+      let adminUser = null;
+      try {
+        const { data, error } = await supabase
+          .from('admins')
+          .select('*')
+          .eq('email', email.toLowerCase())
+          .single();
 
-      if (adminUser && !adminError) {
+        adminUser = data;
+        if (error && error.code !== 'PGRST116') {
+          // Log unexpected admin query errors but don't crash - just continue to users table
+          console.warn('[AuthContext] Admin query failed (will try users table):', error.message);
+        }
+      } catch (adminQueryError) {
+        console.warn('[AuthContext] Admin table query error (non-critical, skipping to users):', adminQueryError instanceof Error ? adminQueryError.message : adminQueryError);
+      }
+
+      if (adminUser) {
         // Admin found in Supabase admins table
         if (adminUser.password_hash !== password) {
           return { success: false, error: 'Invalid email or password' };

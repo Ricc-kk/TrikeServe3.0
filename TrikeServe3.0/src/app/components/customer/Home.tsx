@@ -5,7 +5,9 @@ import { Button } from "../ui/button";
 import { Card } from "../ui/card";
 import { Badge } from "../ui/badge";
 import { Input } from "../ui/input";
-import { GoogleMap, LoadScript, Marker, InfoWindow } from "@react-google-maps/api";
+import { GoogleMap, MarkerF, InfoWindow, Polyline, useJsApiLoader } from "@react-google-maps/api";
+import { GOOGLE_MAPS_LIBRARIES } from "@/lib/googleMaps";
+import { autocompletePlacesNew, createPlacesSessionToken, fetchPlaceDetailsNew, type PlaceResult, type PlacesAutocompleteSuggestion } from "@/lib/placesApi";
 import tricycleIcon from '../../../assets/0b76d1aa56b8ad6e15dd4efc8a0100b0ca5762a1.png';
 import { useAuth } from "../../contexts/AuthContext";
 import { supabaseHelpers } from "@/lib/supabase";
@@ -17,11 +19,103 @@ import BrowseAvailableLobbies from "./BrowseAvailableLobbies";
 // Get Google Maps API Key from environment variable
 const GOOGLE_MAPS_API_KEY = import.meta.env.VITE_GOOGLE_MAPS_API_KEY || "";
 
+type RecommendedLocation = {
+  id: string;
+  name: string;
+  full: string;
+  lat: number;
+  lng: number;
+};
+
+type LatLng = { lat: number; lng: number };
+
+type GeocodedLocation = {
+   lat: number;
+   lng: number;
+   name: string;
+   fullAddress: string;
+ };
+
+ type MapsDiagnostics = {
+   keyPresent: boolean;
+   mapsLoaded: boolean;
+   geocoderAvailable: boolean;
+   directionsAvailable: boolean;
+   geocoderStatus: string;
+   directionsStatus: string;
+   backendRouteStatus: string;
+ };
+
+const TAGALAG_BISIG_RECOMMENDATIONS: RecommendedLocation[] = [
+  { id: "tagalag-terminal", name: "Tagalag Terminal", full: "Main Road, Tagalag, Valenzuela City", lat: 14.7294, lng: 120.9349 },
+  { id: "tagalag-market", name: "Tagalag Market", full: "Tagalag Market, Valenzuela City", lat: 14.7301, lng: 120.9356 },
+  { id: "tagalag-eco-park", name: "Tagalag Eco Park", full: "Tagalag Eco Park, Valenzuela City", lat: 14.7287, lng: 120.9342 },
+  { id: "tagalag-mini-park", name: "Tagalag Mini Park", full: "Tagalag Mini Park, Valenzuela City", lat: 14.7278, lng: 120.9361 },
+  { id: "advance-st", name: "Advance Street", full: "Advance Street, Tagalag, Valenzuela City", lat: 14.7285, lng: 120.9355 },
+  { id: "balay-de-jesus", name: "Balay De Jesus", full: "Balay De Jesus, Tagalag, Valenzuela City", lat: 14.7296, lng: 120.9344 },
+  { id: "pablo-muni", name: "Pablo's Muni", full: "Pablo's Muni Restaurant, Tagalag, Valenzuela City", lat: 14.7293, lng: 120.9359 },
+  { id: "pares-overlord", name: "Pares Overlord", full: "Pares Overlord, Tagalag, Valenzuela City", lat: 14.7281, lng: 120.9370 },
+  { id: "kuya-oliver", name: "Kuya Oliver", full: "Kuya Oliver, Tagalag, Valenzuela City", lat: 14.7289, lng: 120.9346 },
+];
+
+const getNearestRecommendedLocation = (location: { lat: number; lng: number }) => {
+  return TAGALAG_BISIG_RECOMMENDATIONS.reduce((nearest, candidate) => {
+    const nearestDistance = (nearest.lat - location.lat) ** 2 + (nearest.lng - location.lng) ** 2;
+    const candidateDistance = (candidate.lat - location.lat) ** 2 + (candidate.lng - location.lng) ** 2;
+    return candidateDistance < nearestDistance ? candidate : nearest;
+  }, TAGALAG_BISIG_RECOMMENDATIONS[0]);
+};
+
+const decodeGooglePolyline = (encoded: string): LatLng[] => {
+  let index = 0;
+  let lat = 0;
+  let lng = 0;
+  const points: LatLng[] = [];
+
+  while (index < encoded.length) {
+    let shift = 0;
+    let result = 0;
+    let byte: number;
+
+    do {
+      byte = encoded.charCodeAt(index++) - 63;
+      result |= (byte & 0x1f) << shift;
+      shift += 5;
+    } while (byte >= 0x20);
+
+    const deltaLat = (result & 1) !== 0 ? ~(result >> 1) : result >> 1;
+    lat += deltaLat;
+
+    shift = 0;
+    result = 0;
+
+    do {
+      byte = encoded.charCodeAt(index++) - 63;
+      result |= (byte & 0x1f) << shift;
+      shift += 5;
+    } while (byte >= 0x20);
+
+    const deltaLng = (result & 1) !== 0 ? ~(result >> 1) : result >> 1;
+    lng += deltaLng;
+
+    points.push({ lat: lat / 1e5, lng: lng / 1e5 });
+  }
+
+  return points;
+};
+
 export default function CustomerHome() {
   const { user } = useAuth();
   const [selectedVehicle, setSelectedVehicle] = useState<'share' | 'special' | null>(null);
   const [currentLocation, setCurrentLocation] = useState<{ lat: number; lng: number }>({ lat: 14.5995, lng: 120.9842 }); // Default: Manila
+  const [mapCenter, setMapCenter] = useState<{ lat: number; lng: number }>({ lat: 14.5995, lng: 120.9842 });
   const [selectedMarker, setSelectedMarker] = useState<{ lat: number; lng: number } | null>(null);
+  const [pickupMarker, setPickupMarker] = useState<{ lat: number; lng: number } | null>(null);
+  const [dropoffMarker, setDropoffMarker] = useState<{ lat: number; lng: number } | null>(null);
+  const [focusedMarker, setFocusedMarker] = useState<{ lat: number; lng: number; type: 'current' | 'pickup' | 'dropoff'; title: string } | null>(null);
+  const [routeTarget, setRouteTarget] = useState<{ lat: number; lng: number; type: 'pickup' | 'dropoff'; title: string } | null>(null);
+  const [routePath, setRoutePath] = useState<LatLng[]>([]);
+  const [routeApiError, setRouteApiError] = useState<string | null>(null);
   const [isLoadingLocation, setIsLoadingLocation] = useState(true);
   const [locationError, setLocationError] = useState<string | null>(null);
   const [showLocationPicker, setShowLocationPicker] = useState(false);
@@ -30,33 +124,85 @@ export default function CustomerHome() {
   const [pickupAddress, setPickupAddress] = useState("");
   const [dropoff, setDropoff] = useState("");
   const [dropoffAddress, setDropoffAddress] = useState("");
+  // Coordinates for pickup (defaulted to currentLocation) and dropoff (user-selected)
+  const [pickupCoords, setPickupCoords] = useState<{ lat: number; lng: number } | null>(null);
+  const [dropoffCoords, setDropoffCoords] = useState<{ lat: number; lng: number } | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
+  // Places autocomplete state
+  const [predictions, setPredictions] = useState<PlacesAutocompleteSuggestion[]>([]);
+  const [placesSessionToken, setPlacesSessionToken] = useState<string>(() => createPlacesSessionToken());
+  const [locationPreview, setLocationPreview] = useState<GeocodedLocation | null>(null);
   const [showBookingConfirm, setShowBookingConfirm] = useState(false);
   const [showSharedRides, setShowSharedRides] = useState(false);
   const [showShareLobby, setShowShareLobby] = useState(false);
   const [paymentMethod, setPaymentMethod] = useState<'COD' | 'GCASH'>('GCASH');
   const [activeRide, setActiveRide] = useState<any>(null);
   const [rideStatus, setRideStatus] = useState<'searching' | 'driver-found' | 'picking-up' | 'in-transit' | null>(null);
-  const [isSearchMinimized, setIsSearchMinimized] = useState(false);
-  const [currentRequestId, setCurrentRequestId] = useState<string | null>(null);
-  const [currentSharedRideId, setCurrentSharedRideId] = useState<string | null>(null);
-  const [showPassengerCount, setShowPassengerCount] = useState(false);
-  const [passengerCount, setPassengerCount] = useState(1);
-  const [showLobbyList, setShowLobbyList] = useState(false);
-  const [activeShareLobbyId, setActiveShareLobbyId] = useState<string | null>(null);
-  const [unreadMessagesCount, setUnreadMessagesCount] = useState(0);
-  const [driverAcceptedPopup, setDriverAcceptedPopup] = useState<any>(null);
-  const [driverStatusPopup, setDriverStatusPopup] = useState<{ status: string; message: string } | null>(null);
-  const [showValidationError, setShowValidationError] = useState(false);
-  const [showSameLocationError, setShowSameLocationError] = useState(false);
-  const [rideCompletedPopup, setRideCompletedPopup] = useState(false);
-  const [completionPopupType, setCompletionPopupType] = useState<'ride' | 'delivery'>('ride');
-  const [showRatingModal, setShowRatingModal] = useState(false);
-  const [privateRidePrice, setPrivateRidePrice] = useState(50); // Default price for private rides
-  const [sharedRidePrice, setSharedRidePrice] = useState(15); // Default price for share rides
-  const unsubscribeRef = useRef<(() => void) | null>(null);
+   const [isSearchMinimized, setIsSearchMinimized] = useState(false);
+   const [currentRequestId, setCurrentRequestId] = useState<string | null>(null);
+   const [currentSharedRideId, setCurrentSharedRideId] = useState<string | null>(null);
+   const [showPassengerCount, setShowPassengerCount] = useState(false);
+   const [passengerCount, setPassengerCount] = useState(1);
+   const [showLobbyList, setShowLobbyList] = useState(false);
+   const [activeShareLobbyId, setActiveShareLobbyId] = useState<string | null>(null);
+   const [unreadMessagesCount, setUnreadMessagesCount] = useState(0);
+   const [driverAcceptedPopup, setDriverAcceptedPopup] = useState<any>(null);
+   const [driverStatusPopup, setDriverStatusPopup] = useState<{ status: string; message: string } | null>(null);
+   const [showValidationError, setShowValidationError] = useState(false);
+   const [showSameLocationError, setShowSameLocationError] = useState(false);
+   const [rideCompletedPopup, setRideCompletedPopup] = useState(false);
+   const [completionPopupType, setCompletionPopupType] = useState<'ride' | 'delivery'>('ride');
+   const [showRatingModal, setShowRatingModal] = useState(false);
+   const [privateRidePrice, setPrivateRidePrice] = useState(50); // Default price for private rides
+   const [sharedRidePrice, setSharedRidePrice] = useState(15); // Default price for share rides
+   const [mapsDiagnostics, setMapsDiagnostics] = useState<MapsDiagnostics>({
+     keyPresent: Boolean(GOOGLE_MAPS_API_KEY),
+     mapsLoaded: false,
+     geocoderAvailable: false,
+     directionsAvailable: false,
+     geocoderStatus: 'idle',
+     directionsStatus: 'idle',
+     backendRouteStatus: 'idle',
+   });
+    const [mapsBlocked, setMapsBlocked] = useState<string | null>(null);
+   const mapRef = useRef<any>(null);
+   const hasManualPickupSelectionRef = useRef(false);
+   const unsubscribeRef = useRef<(() => void) | null>(null);
 
-  // Get user's current location on component mount
+   const { isLoaded: isMapsLoaded, loadError: mapsLoadError } = useJsApiLoader({
+     id: "google-map-script",
+     googleMapsApiKey: GOOGLE_MAPS_API_KEY,
+     libraries: GOOGLE_MAPS_LIBRARIES as unknown as any,
+   });
+
+    // Detect cases where the loader finished but google.* is blocked by client/adblockers or CSP.
+    useEffect(() => {
+      if (mapsLoadError) {
+        console.warn('Google Maps loader error:', mapsLoadError);
+        setMapsBlocked(String(mapsLoadError?.message || mapsLoadError));
+        setMapsDiagnostics(prev => ({ ...prev, mapsLoaded: false }));
+        return;
+      }
+
+      // If loader reports loaded but global `google` is missing after a short delay,
+      // it's likely a browser extension or network filter blocked Maps resources.
+      if (isMapsLoaded) {
+        const t = setTimeout(() => {
+          if (!(window as any).google || !(window as any).google.maps) {
+            console.warn('Google Maps appears to be blocked or unavailable (google undefined)');
+            setMapsBlocked('Google Maps scripts are blocked by a browser extension or network policy. Please disable adblock/privacy extensions or allow maps.googleapis.com');
+            setMapsDiagnostics(prev => ({ ...prev, mapsLoaded: false }));
+          } else {
+            setMapsBlocked(null);
+            setMapsDiagnostics(prev => ({ ...prev, mapsLoaded: true }));
+          }
+        }, 800);
+
+        return () => clearTimeout(t);
+      }
+    }, [isMapsLoaded, mapsLoadError]);
+
+   // Get user's current location on component mount
   useEffect(() => {
     setIsLoadingLocation(true);
     setLocationError(null);
@@ -66,6 +212,8 @@ export default function CustomerHome() {
         (position) => {
           const { latitude, longitude } = position.coords;
           setCurrentLocation({ lat: latitude, lng: longitude });
+          // default pickup coords to current location when available
+          setPickupCoords({ lat: latitude, lng: longitude });
           setIsLoadingLocation(false);
           console.log('User location:', latitude, longitude);
         },
@@ -87,6 +235,119 @@ export default function CustomerHome() {
       setIsLoadingLocation(false);
     }
   }, []);
+
+  // Keep pickup state synchronized with currentLocation unless user changes it
+  useEffect(() => {
+    if (!pickupCoords && currentLocation) {
+      setPickupCoords(currentLocation);
+      setPickup('Current Location');
+      setPickupAddress(`${currentLocation.lat.toFixed(5)}, ${currentLocation.lng.toFixed(5)}`);
+    }
+  }, [currentLocation]);
+
+  // Fetch autocomplete predictions (Places API) and set predictions state
+  const fetchPredictions = async (input: string) => {
+    setSearchQuery(input);
+    if (!input || !input.trim()) {
+      setPredictions([]);
+      return;
+    }
+
+    try {
+      const apiKey = GOOGLE_MAPS_API_KEY;
+      if (!apiKey) {
+        console.warn('No Google Maps API key configured for autocomplete');
+        setPredictions([]);
+        return;
+      }
+
+      const suggestions = await autocompletePlacesNew({
+        input: input.trim(),
+        apiKey,
+        // bias around current map center for better local results
+        locationBias: mapCenter || currentLocation,
+        restrictToCountry: 'ph',
+        sessionToken: placesSessionToken,
+      });
+
+      setPredictions(suggestions || []);
+    } catch (err: any) {
+      console.warn('autocompletePlacesNew failed:', err?.message || err);
+      setPredictions([]);
+    }
+  };
+
+  // When a prediction is selected, fetch Place Details (Place Details API) and set coordinates & address
+  const selectPrediction = async (placeId: string) => {
+    if (!placeId) return;
+
+    try {
+      const apiKey = GOOGLE_MAPS_API_KEY;
+      if (!apiKey) return;
+
+      const place = await fetchPlaceDetailsNew({ placeId, apiKey, sessionToken: placesSessionToken });
+      // rotate session token after selection
+      setPlacesSessionToken(createPlacesSessionToken());
+
+      if (!place) {
+        console.warn('Place details not found for', placeId);
+        return;
+      }
+
+      const coords = place.lat && place.lng ? { lat: place.lat, lng: place.lng } : null;
+      const displayName = place.name || place.formatted_address || place.formatted_address || place.place_id || 'Selected place';
+
+      if (activeLocationInput === 'pickup') {
+        if (coords) {
+          setPickupCoords(coords);
+          setPickup(displayName);
+          setPickupAddress(place.formatted_address || displayName);
+          setMapCenter(coords);
+        }
+      } else if (activeLocationInput === 'dropoff') {
+        if (coords) {
+          setDropoffCoords(coords);
+          setDropoff(displayName);
+          setDropoffAddress(place.formatted_address || displayName);
+          setMapCenter(coords);
+        }
+      }
+
+      // Clear UI picker
+      setShowLocationPicker(false);
+      setActiveLocationInput(null);
+      setPredictions([]);
+      setSearchQuery('');
+
+      // If we now have both pickup and dropoff coords, compute directions client-side
+      const origin = pickupCoords || (activeLocationInput === 'pickup' ? coords : pickupCoords);
+      const destination = dropoffCoords || (activeLocationInput === 'dropoff' ? coords : dropoffCoords);
+
+      if (origin && destination && isMapsLoaded && (window as any).google) {
+        const DirectionsService = new (window as any).google.maps.DirectionsService();
+        DirectionsService.route(
+          {
+            origin: new (window as any).google.maps.LatLng(origin.lat, origin.lng),
+            destination: new (window as any).google.maps.LatLng(destination.lat, destination.lng),
+            travelMode: (window as any).google.maps.TravelMode.DRIVING,
+          },
+          (result: any, status: string) => {
+            setMapsDiagnostics(prev => ({ ...prev, directionsAvailable: Boolean((window as any).google?.maps?.DirectionsService), directionsStatus: status || 'unknown' }));
+            if (status === 'OK' && result?.routes?.[0]?.overview_polyline?.points) {
+              setRouteApiError(null);
+              const poly = result.routes[0].overview_polyline.points;
+              const decoded = decodeGooglePolyline(poly);
+              setRoutePath(decoded);
+            } else {
+              setRouteApiError(`Directions status: ${status}`);
+            }
+          }
+        );
+      }
+    } catch (error: any) {
+      console.warn('selectPrediction failed:', error?.message || error);
+    }
+  };
 
   // DEBUG: Clear all ride data
   const clearAllRideData = () => {
@@ -675,6 +936,65 @@ export default function CustomerHome() {
     setSearchQuery("");
   };
 
+  const handleLocationPickerMapClick = (event: any) => {
+    const latLng = event?.latLng;
+    if (!latLng) return;
+
+    const lat = latLng.lat();
+    const lng = latLng.lng();
+
+    const fallbackLabel = `${lat.toFixed(5)}, ${lng.toFixed(5)}`;
+    setLocationPreview({
+      lat,
+      lng,
+      name: fallbackLabel,
+      fullAddress: fallbackLabel,
+    });
+
+    const geocoder = (window as any)?.google?.maps?.Geocoder
+      ? new (window as any).google.maps.Geocoder()
+      : null;
+
+    if (!geocoder) return;
+
+    geocoder.geocode({ location: { lat, lng } }, (results: any, status: string) => {
+      if (status === 'OK' && results?.[0]) {
+        const formatted = results[0].formatted_address || fallbackLabel;
+        setLocationPreview({
+          lat,
+          lng,
+          name: formatted,
+          fullAddress: formatted,
+        });
+      }
+    });
+  };
+
+  const applyLocationPreview = () => {
+    if (!locationPreview || !activeLocationInput) return;
+
+    const coords = { lat: locationPreview.lat, lng: locationPreview.lng };
+
+    if (activeLocationInput === 'pickup') {
+      setPickup(locationPreview.name);
+      setPickupAddress(locationPreview.fullAddress);
+      setPickupCoords(coords);
+      setPickupMarker(coords);
+    } else {
+      setDropoff(locationPreview.name);
+      setDropoffAddress(locationPreview.fullAddress);
+      setDropoffCoords(coords);
+      setDropoffMarker(coords);
+    }
+
+    setMapCenter(coords);
+    setShowLocationPicker(false);
+    setActiveLocationInput(null);
+    setSearchQuery('');
+    setPredictions([]);
+    setLocationPreview(null);
+  };
+
   const handleBookRide = async () => {
     if (!selectedVehicle) return;
     
@@ -817,45 +1137,79 @@ export default function CustomerHome() {
               <p className="text-gray-700 mb-4">To use Google Maps, please add your API key to .env.local</p>
             </div>
           </div>
-        ) : (
-          <LoadScript googleMapsApiKey={GOOGLE_MAPS_API_KEY} libraries={["places"]}>
-            <GoogleMap
-              mapContainerStyle={{ width: "100%", height: "100%" }}
-              center={currentLocation}
-              zoom={15}
-              options={{
-                zoomControl: false,
-                fullscreenControl: true,
-                streetViewControl: false,
-                mapTypeControl: true,
-              }}
-            >
-              {/* Current Location Marker */}
-              <Marker
-                position={currentLocation}
-                onClick={() => setSelectedMarker(currentLocation)}
-                title="Your location"
-              />
+         ) : mapsBlocked || mapsLoadError ? (
+            <div className="w-full h-full flex items-center justify-center bg-gray-100">
+              <div className="text-center max-w-md px-6">
+                <p className="text-lg font-bold text-red-600 mb-3">⚠️ Map resources blocked</p>
+                <p className="text-sm text-gray-700 mb-4">Your browser or a network filter is blocking Google Maps resources (maps.googleapis.com). This commonly happens when an ad-blocker or privacy extension blocks Google domains.</p>
+                {mapsBlocked && <p className="text-xs text-gray-600 mb-3">Diagnostic: {mapsBlocked}</p>}
+                <div className="flex gap-3 justify-center">
+                  <button
+                    onClick={() => window.location.reload()}
+                    className="px-4 py-2 bg-[#E11D48] text-white rounded-md"
+                  >
+                    Retry
+                  </button>
+                  <button
+                    onClick={() => {
+                      setMapsBlocked(null);
+                      window.open('about:blank', '_blank');
+                    }}
+                    className="px-4 py-2 border rounded-md"
+                  >
+                    Open Incognito / Disable Extensions
+                  </button>
+                </div>
+              </div>
+            </div>
+          ) : !isMapsLoaded ? (
+            <div className="w-full h-full flex items-center justify-center bg-gray-100">
+              <p className="text-sm text-gray-600">Loading map...</p>
+            </div>
+          ) : (
+           <GoogleMap
+             mapContainerStyle={{ width: "100%", height: "100%" }}
+             center={currentLocation}
+             zoom={15}
+             options={{
+               zoomControl: false,
+               fullscreenControl: true,
+               streetViewControl: false,
+               mapTypeControl: true,
+             }}
+           >
+             {/* Current location marker (always visible, reference point) */}
+             <MarkerF
+               position={currentLocation}
+               onClick={() => setSelectedMarker(currentLocation)}
+               title="Your location (start)"
+             />
 
-              {/* Info Window for selected marker */}
-              {selectedMarker && (
-                <InfoWindow
-                  position={selectedMarker}
-                  onCloseClick={() => setSelectedMarker(null)}
-                >
-                  <div className="text-sm">
-                    <p className="font-bold">Your current location</p>
-                    <p className="text-gray-600">
-                      {selectedMarker.lat.toFixed(4)}, {selectedMarker.lng.toFixed(4)}
-                    </p>
-                  </div>
-                </InfoWindow>
-              )}
-            </GoogleMap>
-          </LoadScript>
-        )}
+             {/* Drop-off marker only */}
+             {dropoffCoords && (
+               <MarkerF position={dropoffCoords} title="Drop-off location" />
+             )}
 
-        {/* Search Bar Overlay */}
+             {routePath.length > 0 && (
+               <Polyline path={routePath} options={{ strokeColor: '#E11D48', strokeWeight: 5, geodesic: true }} />
+             )}
+
+             {/* Info Window for selected marker */}
+             {selectedMarker && (
+               <InfoWindow
+                 position={selectedMarker}
+                 onCloseClick={() => setSelectedMarker(null)}
+               >
+                 <div className="text-sm">
+                   <p className="font-bold">Your current location</p>
+                   <p className="text-gray-600">
+                     {selectedMarker.lat.toFixed(4)}, {selectedMarker.lng.toFixed(4)}
+                   </p>
+                 </div>
+               </InfoWindow>
+             )}
+           </GoogleMap>
+         )}
         <div className="absolute top-4 left-4 right-4 z-[1000]">
           <div className="flex items-center gap-2">
             <div className="relative flex-1">
@@ -920,10 +1274,20 @@ export default function CustomerHome() {
                   </label>
                   
                   {/* Current Location */}
-                  <Card 
+                  <Card
                     className="p-3 border-2 border-[#E2E8F0] shadow-sm cursor-pointer hover:border-[#E11D48] transition-colors"
                     onClick={() => {
                       setActiveLocationInput('pickup');
+                      setLocationPreview(
+                        pickupCoords
+                          ? {
+                              lat: pickupCoords.lat,
+                              lng: pickupCoords.lng,
+                              name: pickup || `${pickupCoords.lat.toFixed(5)}, ${pickupCoords.lng.toFixed(5)}`,
+                              fullAddress: pickupAddress || pickup || `${pickupCoords.lat.toFixed(5)}, ${pickupCoords.lng.toFixed(5)}`,
+                            }
+                          : null
+                      );
                       setShowLocationPicker(true);
                     }}
                   >
@@ -951,6 +1315,16 @@ export default function CustomerHome() {
                     className="p-3 border-2 border-[#E2E8F0] shadow-sm cursor-pointer hover:border-[#E11D48] transition-colors"
                     onClick={() => {
                       setActiveLocationInput('dropoff');
+                      setLocationPreview(
+                        dropoffCoords
+                          ? {
+                              lat: dropoffCoords.lat,
+                              lng: dropoffCoords.lng,
+                              name: dropoff || `${dropoffCoords.lat.toFixed(5)}, ${dropoffCoords.lng.toFixed(5)}`,
+                              fullAddress: dropoffAddress || dropoff || `${dropoffCoords.lat.toFixed(5)}, ${dropoffCoords.lng.toFixed(5)}`,
+                            }
+                          : null
+                      );
                       setShowLocationPicker(true);
                     }}
                   >
@@ -971,7 +1345,7 @@ export default function CustomerHome() {
 
                 {/* Book Ride Button */}
                 {selectedVehicle && (
-                  <Button 
+                  <Button
                     onClick={handleBookRide}
                     className="w-full bg-[#E11D48] hover:bg-[#BE123C] text-white py-6 text-lg font-bold uppercase rounded-xl"
                   >
@@ -1234,52 +1608,83 @@ export default function CustomerHome() {
 
       {/* Location Picker Modal */}
       {showLocationPicker && (
-        <div className="fixed inset-0 bg-black/50 z-[2000] flex items-end">
-          <div className="bg-white w-full rounded-t-3xl max-h-[80vh] overflow-hidden flex flex-col">
-            {/* Header */}
-            <div className="p-5 border-b border-[#E2E8F0]">
-              <div className="flex items-center justify-between mb-4">
-                <h2 className="text-xl font-bold text-[#121212]">
-                  {activeLocationInput === 'pickup' ? 'Pickup Location' : 'Drop-off Location'}
-                </h2>
-                <button onClick={() => {
-                  setShowLocationPicker(false);
-                  setActiveLocationInput(null);
-                  setSearchQuery("");
-                }}>
+        <div className="fixed inset-0 z-[2000] bg-white flex flex-col">
+          <div className="absolute top-4 left-4 right-4 z-[2010]">
+            <Card className="bg-white/95 backdrop-blur shadow-xl border-0 p-4">
+              <div className="flex items-center justify-between gap-3">
+                <div className="flex-1">
+                  <p className="text-xs uppercase tracking-wide text-[#64748B] font-semibold">
+                    {activeLocationInput === 'pickup' ? 'Pickup — search or tap map' : 'Drop-off — search or tap map'}
+                  </p>
+                  <h2 className="text-lg font-bold text-[#121212]">Find a nearby place or tap the map</h2>
+                </div>
+                <button onClick={() => { setShowLocationPicker(false); setActiveLocationInput(null); setLocationPreview(null); setPredictions([]); setSearchQuery(""); }}>
                   <X className="w-6 h-6 text-[#64748B]" />
                 </button>
               </div>
-              <Input
-                placeholder="Search location..."
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                className="w-full"
-                autoFocus
-              />
+
+              <div className="mt-3">
+                <Input value={searchQuery} onChange={(e) => { fetchPredictions((e.target as HTMLInputElement).value); }} placeholder="Search restaurants, parks, hotels, terminals..." />
+                {predictions.length > 0 && (
+                  <div className="mt-2 bg-white border border-gray-200 rounded-lg max-h-48 overflow-y-auto">
+                    {predictions.map((p, i) => (
+                      <button key={i} onClick={() => selectPrediction(p.place_id)} className="w-full text-left p-3 hover:bg-gray-50 border-b last:border-b-0">
+                        <div className="text-sm font-semibold">{p.description}</div>
+                      </button>
+                    ))}
+                  </div>
+                )}
+               </div>
+             </Card>
+           </div>
+
+          <div className="flex-1 pt-40 relative">
+            {!isMapsLoaded ? (
+              <div className="h-full w-full flex items-center justify-center bg-gray-100">
+                <p className="text-sm text-gray-600">Loading picker map...</p>
+              </div>
+            ) : (
+              <GoogleMap
+                mapContainerStyle={{ width: '100%', height: '100%' }}
+                center={locationPreview ? { lat: locationPreview.lat, lng: locationPreview.lng } : mapCenter}
+                zoom={16}
+                onClick={handleLocationPickerMapClick}
+                options={{
+                  zoomControl: true,
+                  fullscreenControl: false,
+                  streetViewControl: false,
+                  mapTypeControl: false,
+                }}
+              >
+                <MarkerF position={currentLocation} title="Current location" />
+                {locationPreview && (
+                  <MarkerF
+                    position={{ lat: locationPreview.lat, lng: locationPreview.lng }}
+                    title={activeLocationInput === 'pickup' ? 'Pickup preview' : 'Drop-off preview'}
+                  />
+                )}
+              </GoogleMap>
+            )}
+
+            <div className="absolute top-2 left-1/2 -translate-x-1/2 bg-black/70 text-white text-xs px-3 py-1.5 rounded-full">
+              Tap map to pin {activeLocationInput === 'pickup' ? 'pickup' : 'drop-off'}
             </div>
 
-            {/* Location List */}
-            <div className="flex-1 overflow-y-auto p-5 space-y-2">
-              {filteredLocations.map((location, idx) => (
-                <button
-                  key={idx}
-                  onClick={() => handleLocationSelect(location)}
-                  className="w-full text-left p-4 border-2 border-[#E2E8F0] rounded-xl hover:border-[#E11D48] transition-colors"
-                >
-                  <div className="flex items-center gap-3">
-                    <span className="text-3xl">{location.icon}</span>
-                    <div className="flex-1">
-                      <p className="font-bold text-[#121212]">{location.name}</p>
-                      <p className="text-sm text-[#64748B]">{location.address}</p>
-                    </div>
-                  </div>
-                </button>
-              ))}
-            </div>
+            {locationPreview && (
+              <div className="absolute bottom-4 left-4 right-4">
+                <Card className="p-4 shadow-xl">
+                  <p className="text-xs text-[#64748B] mb-1 uppercase tracking-wide">Selected location</p>
+                  <p className="text-sm font-semibold text-[#121212] truncate">{locationPreview.fullAddress}</p>
+                  <Button onClick={applyLocationPreview} className="w-full mt-3 bg-[#E11D48] hover:bg-[#BE123C] text-white">
+                    Confirm {activeLocationInput === 'pickup' ? 'Pickup' : 'Drop-off'}
+                  </Button>
+                </Card>
+              </div>
+            )}
           </div>
-        </div>
-      )}
+
+         </div>
+       )}
 
       {/* Passenger Count Modal (for Share Rides) */}
       {showPassengerCount && (

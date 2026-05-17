@@ -32,6 +32,11 @@ import { supabaseHelpers } from "@/lib/supabase";
 // Get Google Maps API Key from environment variable
 const GOOGLE_MAPS_API_KEY = import.meta.env.VITE_GOOGLE_MAPS_API_KEY || "";
 
+// Debug: print runtime API key (helps confirm import.meta.env is available at runtime)
+// Remove this log once you've verified the environment value
+console.log('DEBUG: VITE_GOOGLE_MAPS_API_KEY =', GOOGLE_MAPS_API_KEY);
+const GOOGLE_MAPS_LIBRARIES = ["places"] as const;
+
 interface IncomingRequest {
   id: string;
   type: 'delivery' | 'shared' | 'private';
@@ -308,7 +313,7 @@ export default function RiderDashboard() {
             </div>
           </div>
         ) : (
-          <LoadScript googleMapsApiKey={GOOGLE_MAPS_API_KEY} libraries={["places"]}>
+          <LoadScript googleMapsApiKey={GOOGLE_MAPS_API_KEY} libraries={GOOGLE_MAPS_LIBRARIES}>
             <GoogleMap
               mapContainerStyle={{ width: "100%", height: "100%" }}
               center={mapCenter}

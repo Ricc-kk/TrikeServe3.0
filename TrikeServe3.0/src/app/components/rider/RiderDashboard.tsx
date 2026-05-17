@@ -1,5 +1,7 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { GoogleMap, LoadScript, Marker, InfoWindow } from "@react-google-maps/api";
+import PlaceSearch from "../ui/PlaceSearch";
+import { GOOGLE_MAPS_LIBRARIES, VALENZUELA_BIAS } from "@/lib/googleMaps";
 import {
   Home as HomeIcon, 
   Package, 
@@ -63,10 +65,10 @@ export default function RiderDashboard() {
   const [activeRideData, setActiveRideData] = useState<any>(null);
   const [unreadMessagesCount, setUnreadMessagesCount] = useState(0);
   const [tripsCompletedCount, setTripsCompletedCount] = useState(0);
-  const [mapCenter, setMapCenter] = useState<{ lat: number; lng: number }>({ lat: 14.5995, lng: 120.9842 }); // Default: Manila
-  const [selectedMarker, setSelectedMarker] = useState<{ lat: number; lng: number } | null>(null);
-  const [isLoadingLocation, setIsLoadingLocation] = useState(true);
-  const [locationError, setLocationError] = useState<string | null>(null);
+   const [mapCenter, setMapCenter] = useState<{ lat: number; lng: number }>({ lat: 14.5995, lng: 120.9842 }); // Default: Manila
+   const [selectedMarker, setSelectedMarker] = useState<{ lat: number; lng: number } | null>(null);
+   const [isLoadingLocation, setIsLoadingLocation] = useState(true);
+   const [locationError, setLocationError] = useState<string | null>(null);
 
   // Get user's current location on component mount
   useEffect(() => {
@@ -342,13 +344,25 @@ export default function RiderDashboard() {
     }
   }, [user?.id]);
 
-  const handleCompleteTrip = () => {
-    if (activeTrip) {
-      setEarnings(prev => prev + activeTrip.amount);
-      setActiveTrip(null);
-      setCurrentSeats(0);
-    }
-  };
+   const handleCompleteTrip = () => {
+     if (activeTrip) {
+       setEarnings(prev => prev + activeTrip.amount);
+       setActiveTrip(null);
+       setCurrentSeats(0);
+     }
+   };
+
+    const handlePlaceSelected = (place: any) => {
+      if (!place) return;
+      setDestination(place.formatted_address || place.name || "");
+
+      if (place.lat && place.lng) {
+        const location = { lat: place.lat, lng: place.lng };
+        setMapCenter(location);
+        setSelectedMarker(location);
+        console.log('✅ Location selected:', place.formatted_address || place.name, location);
+      }
+    };
 
   return (
     <div className="h-screen flex flex-col bg-[#F8F9FA] relative">
@@ -369,7 +383,7 @@ export default function RiderDashboard() {
             </div>
           </div>
         ) : (
-          <LoadScript googleMapsApiKey={GOOGLE_MAPS_API_KEY} libraries={["places"]}>
+          <LoadScript googleMapsApiKey={GOOGLE_MAPS_API_KEY} libraries={GOOGLE_MAPS_LIBRARIES}>
             <GoogleMap
               mapContainerStyle={{ width: "100%", height: "100%" }}
               center={mapCenter}
@@ -680,26 +694,38 @@ export default function RiderDashboard() {
                 </div>
               )}
 
-              {/* My Destination Section */}
-              {showDestination && (
-                <div className="border-t border-gray-200 p-4 space-y-3">
-                  <div className="flex items-center justify-between mb-3">
-                    <h3 className="font-bold text-[#121212]">My Destination</h3>
-                    <button onClick={() => setShowDestination(false)}>
-                      <X className="w-5 h-5 text-[#64748B]" />
-                    </button>
+                {/* My Destination Section */}
+                {showDestination && GOOGLE_MAPS_API_KEY && (
+                  <div className="border-t border-gray-200 p-4 space-y-3">
+                    <div className="flex items-center justify-between mb-3">
+                      <h3 className="font-bold text-[#121212]">My Destination</h3>
+                      <button onClick={() => setShowDestination(false)}>
+                        <X className="w-5 h-5 text-[#64748B]" />
+                      </button>
+                    </div>
+                    <PlaceSearch
+                      value={destination}
+                      onChange={setDestination}
+                      onSelect={handlePlaceSelected}
+                      placeholder="Search location... (e.g., Tagalag Valenzuela City)"
+                      className="w-full px-4 py-2 border-2 border-gray-200 rounded focus:border-[#E11D48] focus:outline-none"
+                      locationBias={VALENZUELA_BIAS}
+                      restrictToCity="Valenzuela"
+                    />
+                    <div className="text-xs text-gray-500 p-2 bg-blue-50 rounded">
+                      💡 Type a location and select from the dropdown to search and populate the map
+                    </div>
+                    <Button
+                      onClick={() => {
+                        setShowDestination(false);
+                        console.log('Destination set to:', destination);
+                      }}
+                      className="w-full bg-[#E11D48] hover:bg-[#BE123C] uppercase"
+                    >
+                      Set Destination
+                    </Button>
                   </div>
-                  <Input
-                    value={destination}
-                    onChange={(e) => setDestination(e.target.value)}
-                    placeholder="Enter your destination"
-                    className="w-full"
-                  />
-                  <Button className="w-full bg-[#E11D48] hover:bg-[#BE123C] uppercase">
-                    Set Destination
-                  </Button>
-                </div>
-              )}
+                )}
 
               {/* More Options Section */}
               {showMore && (

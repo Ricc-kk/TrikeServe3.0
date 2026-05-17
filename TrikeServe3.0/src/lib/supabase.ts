@@ -2,17 +2,24 @@ import { createClient } from '@supabase/supabase-js';
 
 // Initialize Supabase client
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
-const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
+// Support both legacy and current env var names for the client key.
+const supabaseAnonKey =
+  import.meta.env.VITE_SUPABASE_ANON_KEY ||
+  import.meta.env.VITE_SUPABASE_PUBLISHABLE_DEFAULT_KEY;
 
 console.log('[Supabase Init] Checking environment variables...');
 console.log('[Supabase Init] VITE_SUPABASE_URL:', supabaseUrl ? '✅ Set' : '❌ Missing');
 console.log('[Supabase Init] VITE_SUPABASE_ANON_KEY:', supabaseAnonKey ? '✅ Set' : '❌ Missing');
+console.log(
+  '[Supabase Init] VITE_SUPABASE_PUBLISHABLE_DEFAULT_KEY:',
+  import.meta.env.VITE_SUPABASE_PUBLISHABLE_DEFAULT_KEY ? '✅ Set' : '❌ Missing'
+);
 
 // Check if credentials are configured
 if (!supabaseUrl || !supabaseAnonKey) {
   const missing = [];
   if (!supabaseUrl) missing.push('VITE_SUPABASE_URL');
-  if (!supabaseAnonKey) missing.push('VITE_SUPABASE_ANON_KEY');
+  if (!supabaseAnonKey) missing.push('VITE_SUPABASE_ANON_KEY or VITE_SUPABASE_PUBLISHABLE_DEFAULT_KEY');
 
   const errorMsg =
     `\n\n❌ SUPABASE CONFIGURATION ERROR\n` +
@@ -22,7 +29,9 @@ if (!supabaseUrl || !supabaseAnonKey) {
     `1. Open the file: .env.local (in project root)\n` +
     `2. Make sure it contains:\n` +
     `   VITE_SUPABASE_URL=https://azmzuucnfqqymnunntmw.supabase.co\n` +
-    `   VITE_SUPABASE_ANON_KEY=your_actual_key_here\n\n` +
+    `   VITE_SUPABASE_ANON_KEY=your_actual_key_here\n` +
+    `   # OR\n` +
+    `   VITE_SUPABASE_PUBLISHABLE_DEFAULT_KEY=your_actual_key_here\n\n` +
     `3. Get the key from: Supabase Dashboard → Settings → API\n` +
     `4. STOP the dev server (Ctrl+C)\n` +
     `5. DELETE the .vite cache folder in node_modules\n` +

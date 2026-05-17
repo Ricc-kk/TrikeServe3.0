@@ -1,15 +1,24 @@
-import { useState } from "react";
+import { useState, useRef } from "react";
 import { useNavigate } from "react-router";
 import { ArrowLeft } from "lucide-react";
 import { Button } from "../ui/button";
 import { Input } from "../ui/input";
+import PlaceSearch from "../ui/PlaceSearch";
+import { VALENZUELA_BIAS } from "@/lib/googleMaps";
+
+// Get Google Maps API Key from environment variable
+const GOOGLE_MAPS_API_KEY = import.meta.env.VITE_GOOGLE_MAPS_API_KEY || "";
 
 export default function MyDestination() {
   const navigate = useNavigate();
   const [destination, setDestination] = useState('');
-
   const handleSetDestination = () => {
     navigate('/rider');
+  };
+  const handleSelectDestination = (place: any) => {
+    if (!place) return;
+    setDestination(place.formatted_address || place.name || '');
+    console.log('✅ Destination selected:', place);
   };
 
   return (
@@ -29,41 +38,28 @@ export default function MyDestination() {
           Set your preferred destination to receive relevant trip requests
         </p>
 
-        <Input
-          placeholder="Enter destination address"
-          value={destination}
-          onChange={(e) => setDestination(e.target.value)}
-          className="w-full"
-        />
+        {!GOOGLE_MAPS_API_KEY ? (
+          <div className="bg-red-50 border border-red-200 rounded-lg p-4 mb-4">
+            <p className="text-sm text-red-700">
+              ⚠️ Google Maps API key is not configured. Please add it to .env.local to enable address/location search.
+            </p>
+          </div>
+        ) : (
+          <PlaceSearch
+            value={destination}
+            onChange={setDestination}
+            onSelect={handleSelectDestination}
+            placeholder="Search for an address, landmark, or destination (e.g., Tagalag Valenzuela City)"
+            className="w-full px-4 py-3 border-2 border-gray-200 rounded-lg focus:border-[#E11D48] focus:outline-none"
+            locationBias={VALENZUELA_BIAS}
+            restrictToCity="Valenzuela"
+          />
+        )}
 
-        <div className="space-y-2 mt-4">
-          <button 
-            onClick={() => {
-              setDestination('Tagalag Terminal');
-            }}
-            className="w-full text-left p-3 border border-gray-200 rounded-lg hover:border-[#E11D48] transition-colors bg-white"
-          >
-            <p className="font-semibold text-[#121212]">Tagalag Terminal</p>
-            <p className="text-xs text-[#64748B]">Main Road, Tagalag</p>
-          </button>
-          <button 
-            onClick={() => {
-              setDestination('Barangay Hall');
-            }}
-            className="w-full text-left p-3 border border-gray-200 rounded-lg hover:border-[#E11D48] transition-colors bg-white"
-          >
-            <p className="font-semibold text-[#121212]">Barangay Hall</p>
-            <p className="text-xs text-[#64748B]">Tagalag Center</p>
-          </button>
-          <button 
-            onClick={() => {
-              setDestination('Tagalag Market');
-            }}
-            className="w-full text-left p-3 border border-gray-200 rounded-lg hover:border-[#E11D48] transition-colors bg-white"
-          >
-            <p className="font-semibold text-[#121212]">Tagalag Market</p>
-            <p className="text-xs text-[#64748B]">Market District</p>
-          </button>
+        <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 mt-4">
+          <p className="text-sm text-blue-700">
+            💡 Start typing an address, landmark, or location name. Select a suggestion to populate the field.
+          </p>
         </div>
 
         <Button 
