@@ -296,19 +296,38 @@ export default function CustomerHome() {
 
       const coords = place.lat && place.lng ? { lat: place.lat, lng: place.lng } : null;
       const displayName = place.name || place.formatted_address || place.formatted_address || place.place_id || 'Selected place';
+      const fullAddress = place.formatted_address || displayName;
 
+      // If we're in location picker mode, show the preview on the map
+      if (showLocationPicker && activeLocationInput) {
+        if (coords) {
+          setLocationPreview({
+            lat: coords.lat,
+            lng: coords.lng,
+            name: displayName,
+            fullAddress: fullAddress,
+          });
+          setMapCenter(coords);
+          setPredictions([]);
+          setSearchQuery('');
+          // Keep location picker open so user can confirm
+          return;
+        }
+      }
+
+      // Otherwise, directly apply the selection (for non-picker flows)
       if (activeLocationInput === 'pickup') {
         if (coords) {
           setPickupCoords(coords);
           setPickup(displayName);
-          setPickupAddress(place.formatted_address || displayName);
+          setPickupAddress(fullAddress);
           setMapCenter(coords);
         }
       } else if (activeLocationInput === 'dropoff') {
         if (coords) {
           setDropoffCoords(coords);
           setDropoff(displayName);
-          setDropoffAddress(place.formatted_address || displayName);
+          setDropoffAddress(fullAddress);
           setMapCenter(coords);
         }
       }
@@ -1623,18 +1642,19 @@ export default function CustomerHome() {
                 </button>
               </div>
 
-              <div className="mt-3">
-                <Input value={searchQuery} onChange={(e) => { fetchPredictions((e.target as HTMLInputElement).value); }} placeholder="Search restaurants, parks, hotels, terminals..." />
-                {predictions.length > 0 && (
-                  <div className="mt-2 bg-white border border-gray-200 rounded-lg max-h-48 overflow-y-auto">
-                    {predictions.map((p, i) => (
-                      <button key={i} onClick={() => selectPrediction(p.place_id)} className="w-full text-left p-3 hover:bg-gray-50 border-b last:border-b-0">
-                        <div className="text-sm font-semibold">{p.description}</div>
-                      </button>
-                    ))}
-                  </div>
-                )}
-               </div>
+               <div className="mt-3">
+                 <Input value={searchQuery} onChange={(e) => { fetchPredictions((e.target as HTMLInputElement).value); }} placeholder="Search restaurants, parks, hotels, terminals..." />
+                 {predictions.length > 0 && (
+                   <div className="mt-2 bg-white border border-gray-200 rounded-lg max-h-48 overflow-y-auto">
+                     {predictions.map((p, i) => (
+                       <button key={i} onClick={() => selectPrediction(p.place_id)} className="w-full text-left p-3 hover:bg-gray-50 border-b last:border-b-0">
+                         <div className="text-sm font-semibold text-[#121212]">{p.displayName}</div>
+                         {p.secondaryText && <div className="text-xs text-[#64748B] mt-0.5">{p.secondaryText}</div>}
+                       </button>
+                     ))}
+                   </div>
+                 )}
+                </div>
              </Card>
            </div>
 
