@@ -104,6 +104,45 @@ const decodeGooglePolyline = (encoded: string): LatLng[] => {
   return points;
 };
 
+const buildNavigationMarkerIcon = (color: string) => {
+  const google = (window as any)?.google;
+  if (!google?.maps?.SymbolPath) return undefined;
+
+  return {
+    path: google.maps.SymbolPath.CIRCLE,
+    fillColor: color,
+    fillOpacity: 1,
+    strokeColor: '#FFFFFF',
+    strokeWeight: 2,
+    scale: 8,
+  } as any;
+};
+
+const buildNavigationRouteOptions = (color: string, weight: number) => {
+  const google = (window as any)?.google;
+  const arrowPath = google?.maps?.SymbolPath?.FORWARD_CLOSED_ARROW;
+
+  return {
+    strokeColor: color,
+    strokeOpacity: 0.92,
+    strokeWeight: weight,
+    geodesic: true,
+    icons: arrowPath
+      ? [
+          {
+            icon: {
+              path: arrowPath,
+              scale: 3,
+              strokeColor: color,
+              strokeOpacity: 1,
+            },
+            offset: '100%',
+          },
+        ]
+      : undefined,
+  } as any;
+};
+
 export default function CustomerHome() {
   const { user } = useAuth();
   const [selectedVehicle, setSelectedVehicle] = useState<'share' | 'special' | null>(null);
@@ -155,6 +194,8 @@ export default function CustomerHome() {
    const [showRatingModal, setShowRatingModal] = useState(false);
    const [privateRidePrice, setPrivateRidePrice] = useState(50); // Default price for private rides
    const [sharedRidePrice, setSharedRidePrice] = useState(15); // Default price for share rides
+   const [driverLocation, setDriverLocation] = useState<{ lat: number; lng: number } | null>(null);
+   const [driverRoutePath, setDriverRoutePath] = useState<LatLng[]>([]);
    const [mapsDiagnostics, setMapsDiagnostics] = useState<MapsDiagnostics>({
      keyPresent: Boolean(GOOGLE_MAPS_API_KEY),
      mapsLoaded: false,
@@ -244,6 +285,41 @@ export default function CustomerHome() {
       setPickupAddress(`${currentLocation.lat.toFixed(5)}, ${currentLocation.lng.toFixed(5)}`);
     }
   }, [currentLocation]);
+
+  useEffect(() => {
+    if (!isMapsLoaded || !(window as any).google) return;
+
+    let cancelled = false;
+    const geocoder = new (window as any).google.maps.Geocoder();
+
+    const geocode = (address: string) =>
+      new Promise<{ lat: number; lng: number } | null>((resolve) => {
+        geocoder.geocode({ address }, (results: any, status: string) => {
+          if (status === 'OK' && results?.[0]?.geometry?.location) {
+            const location = results[0].geometry.location;
+            resolve({ lat: location.lat(), lng: location.lng() });
+          } else {
+            resolve(null);
+          }
+        });
+      });
+
+    (async () => {
+      if (!pickupCoords && pickupAddress && pickup !== 'Current Location') {
+        const coords = await geocode(pickupAddress);
+        if (!cancelled && coords) setPickupCoords(coords);
+      }
+
+      if (!dropoffCoords && dropoffAddress) {
+        const coords = await geocode(dropoffAddress);
+        if (!cancelled && coords) setDropoffCoords(coords);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [isMapsLoaded, pickup, pickupAddress, pickupCoords, dropoffAddress, dropoffCoords]);
 
   // Fetch autocomplete predictions (Places API) and set predictions state
   const fetchPredictions = async (input: string) => {
@@ -401,8 +477,10 @@ export default function CustomerHome() {
         setRideStatus(rideData.status);
         setPickup(rideData.pickup);
         setPickupAddress(rideData.pickupAddress);
+        setPickupCoords(rideData.pickupCoords || null);
         setDropoff(rideData.dropoff);
         setDropoffAddress(rideData.dropoffAddress);
+        setDropoffCoords(rideData.dropoffCoords || null);
         setSelectedVehicle(rideData.vehicleType);
         setPaymentMethod(rideData.paymentMethod);
         setCurrentRequestId(rideData.requestId);
@@ -435,8 +513,10 @@ export default function CustomerHome() {
           // User is already in a lobby, restore state
           setPickup(userLobby.pickup);
           setPickupAddress(userLobby.pickupAddress);
+          setPickupCoords(userLobby.pickupCoords || null);
           setDropoff(userLobby.dropoff);
           setDropoffAddress(userLobby.dropoffAddress);
+          setDropoffCoords(userLobby.dropoffCoords || null);
           setSelectedVehicle('share');
           
           // Count how many seats the user has (main + companions)
@@ -511,15 +591,7 @@ export default function CustomerHome() {
 
         // Clear visible ride state so the driver card disappears
         // but delay clearing currentRequestId to avoid racing popup render.
-        setRideStatus(null);
-        setActiveRide(null);
-        setPickup('');
-        setDropoff('');
-        setPickupAddress('');
-        setDropoffAddress('');
-        setSelectedVehicle(null);
-        localStorage.removeItem('trikeserve_active_ride');
-        return;
+        resetCustomerRideVisuals();
       }
 
       if (status && status !== 'pending') {
@@ -646,12 +718,15 @@ export default function CustomerHome() {
           console.log('🎯 Active Ride Object:', newActiveRide);
 
           setActiveRide(newActiveRide);
-          setRideStatus('driver-found');
+          setRideStatus('driver-found');  // ← CRITICAL! This makes the card appear!
 
-          console.log('✅ STATE UPDATED: rideStatus should now be "driver-found"');
-
-          // ❌ REMOVED: Popup will be shown from real-time subscription instead
-          // This prevents duplicate popups from multiple triggers
+          // Show acceptance popup
+          setDriverAcceptedPopup({
+            driverName: rideRequest.driver_name || 'Driver',
+            driverPlate: rideRequest.driver_plate || 'N/A',
+            driverRating: rideRequest.driver_rating || '4.8',
+            driverPhoto: '👨‍✈️',
+          });
         }
 
         // Only show status popup if driver_status has been updated AND we haven't shown it yet
@@ -752,32 +827,42 @@ export default function CustomerHome() {
       console.log('🔍 REALTIME STATUS NORMALIZATION:');
       console.log('   Normalized realtimeStatus:', realtimeStatus);
 
-      // Check if driver was accepted - THIS IS THE KEY!
-      // Don't show acceptance if the ride is already completed.
-      if (updatedRide.accepted_driver_id && !activeRide && realtimeStatus !== 'completed') {
-        console.log('✅ DRIVER ACCEPTED (Real-time):', updatedRide.accepted_driver_id);
+       // Check if driver was accepted - THIS IS THE KEY!
+       // Don't show acceptance if the ride is already completed.
+       if (updatedRide.accepted_driver_id && !activeRide && realtimeStatus !== 'completed') {
+         console.log('✅ DRIVER ACCEPTED (Real-time):', updatedRide.accepted_driver_id);
 
-        const rideState = {
-          driver: updatedRide.driver_name || 'Driver',
-          plateNumber: updatedRide.driver_plate || 'N/A',
-          rating: updatedRide.driver_rating || '4.8',
-          eta: updatedRide.eta || '5 mins',
-        };
+         const rideState = {
+           driver: updatedRide.driver_name || 'Driver',
+           plateNumber: updatedRide.driver_plate || 'N/A',
+           rating: updatedRide.driver_rating || '4.8',
+           eta: updatedRide.eta || '5 mins',
+         };
 
-        console.log('🎯 Setting activeRide state with:', rideState);
-        console.log('🎯 Setting rideStatus to: driver-found');
+         console.log('🎯 Setting activeRide state with:', rideState);
+         console.log('🎯 Setting rideStatus to: driver-found');
 
-        setActiveRide(rideState);
-        setRideStatus('driver-found');  // ← CRITICAL! This makes the card appear!
+         setActiveRide(rideState);
+         setRideStatus('driver-found');  // ← CRITICAL! This makes the card appear!
 
-        // Show acceptance popup
-        setDriverAcceptedPopup({
-          driverName: updatedRide.driver_name || 'Driver',
-          driverPlate: updatedRide.driver_plate || 'N/A',
-          driverRating: updatedRide.driver_rating || '4.8',
-          driverPhoto: '👨‍✈️',
-        });
-      }
+         // Show acceptance popup
+         setDriverAcceptedPopup({
+           driverName: updatedRide.driver_name || 'Driver',
+           driverPlate: updatedRide.driver_plate || 'N/A',
+           driverRating: updatedRide.driver_rating || '4.8',
+           driverPhoto: '👨‍✈️',
+         });
+       }
+
+       // Update driver location on map (real-time tracking)
+       if (updatedRide.accepted_driver_id && updatedRide.driver_lat && updatedRide.driver_lng) {
+         const newDriverLocation = {
+           lat: updatedRide.driver_lat,
+           lng: updatedRide.driver_lng,
+         };
+         setDriverLocation(newDriverLocation);
+         console.log('📍 Driver location updated:', newDriverLocation);
+       }
 
        // Handle completion status only.
        if (realtimeStatus === 'completed') {
@@ -808,13 +893,7 @@ export default function CustomerHome() {
            // Immediately clear most ride UI so the driver card disappears while
            // the completion popup is shown, but keep currentRequestId briefly to
            // avoid racing the popup render.
-           setRideStatus(null);
-           setActiveRide(null);
-           setPickup('');
-           setDropoff('');
-           setPickupAddress('');
-           setDropoffAddress('');
-           setSelectedVehicle(null);
+           resetCustomerRideVisuals();
          }
        }
 
@@ -857,8 +936,10 @@ export default function CustomerHome() {
         status: rideStatus,
         pickup,
         pickupAddress,
+        pickupCoords,
         dropoff,
         dropoffAddress,
+        dropoffCoords,
         vehicleType: selectedVehicle,
         paymentMethod,
         activeRide,
@@ -868,15 +949,40 @@ export default function CustomerHome() {
     } else {
       localStorage.removeItem('trikeserve_active_ride');
     }
-  }, [rideStatus, pickup, pickupAddress, dropoff, dropoffAddress, selectedVehicle, paymentMethod, activeRide, currentRequestId]);
+   }, [rideStatus, pickup, pickupAddress, dropoff, dropoffAddress, selectedVehicle, paymentMethod, activeRide, currentRequestId]);
 
-  // Count unread messages from drivers
-  useEffect(() => {
-    const countUnreadMessages = () => {
-      if (!user?.id) return;
-      
-      let unreadCount = 0;
-      
+   // Compute driver's route to pickup/dropoff location (real-time tracking)
+   useEffect(() => {
+     if (!driverLocation || !pickupCoords || !isMapsLoaded || !(window as any).google || rideStatus !== 'driver-found') return;
+
+     const DirectionsService = new (window as any).google.maps.DirectionsService();
+
+     // Determine if driver is going to pickup or dropoff
+     const destination = pickupCoords;
+
+     DirectionsService.route(
+       {
+         origin: new (window as any).google.maps.LatLng(driverLocation.lat, driverLocation.lng),
+         destination: new (window as any).google.maps.LatLng(destination.lat, destination.lng),
+         travelMode: (window as any).google.maps.TravelMode.DRIVING,
+       },
+       (result: any, status: string) => {
+         if (status === 'OK' && result?.routes?.[0]?.overview_polyline?.points) {
+           const poly = result.routes[0].overview_polyline.points;
+           const decoded = decodeGooglePolyline(poly);
+           setDriverRoutePath(decoded);
+         }
+       }
+     );
+   }, [driverLocation, pickupCoords, isMapsLoaded, rideStatus]);
+
+   // Count unread messages from drivers
+   useEffect(() => {
+     const countUnreadMessages = () => {
+       if (!user?.id) return;
+
+       let unreadCount = 0;
+
       // Scan localStorage for all chat keys
       for (let i = 0; i < localStorage.length; i++) {
         const key = localStorage.key(i);
@@ -1140,6 +1246,25 @@ export default function CustomerHome() {
     return 0;
   };
 
+  const resetCustomerRideVisuals = () => {
+    setPickup('');
+    setPickupAddress('');
+    setDropoff('');
+    setDropoffAddress('');
+    setPickupCoords(null);
+    setDropoffCoords(null);
+    setRoutePath([]);
+    setDriverLocation(null);
+    setDriverRoutePath([]);
+    setSelectedMarker(null);
+    setLocationPreview(null);
+    setPredictions([]);
+    setSearchQuery('');
+    setActiveRide(null);
+    setSelectedVehicle(null);
+    setIsSearchMinimized(false);
+  };
+
   const filteredLocations = popularLocations.filter(loc =>
     loc.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
     loc.address.toLowerCase().includes(searchQuery.toLowerCase())
@@ -1204,14 +1329,28 @@ export default function CustomerHome() {
                title="Your location (start)"
              />
 
-             {/* Drop-off marker only */}
-             {dropoffCoords && (
-               <MarkerF position={dropoffCoords} title="Drop-off location" />
-             )}
+              {/* Drop-off marker only */}
+              {dropoffCoords && (
+                <MarkerF position={dropoffCoords} title="Drop-off location" />
+              )}
 
-             {routePath.length > 0 && (
-               <Polyline path={routePath} options={{ strokeColor: '#E11D48', strokeWeight: 5, geodesic: true }} />
-             )}
+              {/* Driver location marker (real-time tracking) */}
+              {driverLocation && rideStatus === 'driver-found' && (
+                <MarkerF
+                  position={driverLocation}
+                  title="Driver Location"
+                  icon={buildNavigationMarkerIcon('#2563EB')}
+                />
+              )}
+
+              {routePath.length > 0 && (
+                <Polyline path={routePath} options={buildNavigationRouteOptions('#E11D48', 5)} />
+              )}
+
+              {/* Driver route polyline (real-time) */}
+              {driverRoutePath.length > 0 && rideStatus === 'driver-found' && (
+                <Polyline path={driverRoutePath} options={buildNavigationRouteOptions('#3B82F6', 4)} />
+              )}
 
              {/* Info Window for selected marker */}
              {selectedMarker && (
@@ -1550,40 +1689,6 @@ export default function CustomerHome() {
                 className="w-full bg-[#E11D48] hover:bg-[#BE123C] text-white py-3 font-bold"
               >
                 Close
-              </Button>
-            </Card>
-          </div>
-        )}
-
-        {/* Driver Accepted Popup */}
-        {driverAcceptedPopup && (
-          <div className="fixed inset-0 bg-black/50 z-[2100] flex items-center justify-center p-4">
-            <Card className="bg-white p-8 max-w-sm w-full text-center animate-infinite-bounce">
-              <div className="w-24 h-24 bg-green-50 rounded-full flex items-center justify-center mx-auto mb-4">
-                <span className="text-5xl">{driverAcceptedPopup.driverPhoto}</span>
-              </div>
-              <h3 className="text-2xl font-bold text-[#121212] mb-2">🎉 Driver Accepted!</h3>
-              <p className="text-lg font-semibold text-green-600 mb-4">{driverAcceptedPopup.driverName}</p>
-
-              <div className="bg-[#F8F9FA] rounded-lg p-4 mb-4 space-y-2 text-left">
-                <div className="flex items-center justify-between">
-                  <span className="text-[#64748B]">Vehicle:</span>
-                  <span className="font-semibold text-[#121212]">{driverAcceptedPopup.driverPlate}</span>
-                </div>
-                <div className="flex items-center justify-between">
-                  <span className="text-[#64748B]">Rating:</span>
-                  <div className="flex items-center gap-1">
-                    <span className="text-yellow-500">⭐</span>
-                    <span className="font-semibold text-[#121212]">{driverAcceptedPopup.driverRating}</span>
-                  </div>
-                </div>
-              </div>
-
-              <Button
-                onClick={() => setDriverAcceptedPopup(null)}
-                className="w-full bg-green-500 hover:bg-green-600 text-white py-3 font-bold"
-              >
-                Got It!
               </Button>
             </Card>
           </div>
@@ -2013,43 +2118,6 @@ export default function CustomerHome() {
         />
       )}
 
-      {/* Driver Accepted Popup */}
-      {driverAcceptedPopup && (
-        <div className="fixed inset-0 bg-black/50 z-[3000] flex items-center justify-center p-4">
-          <Card className="bg-white p-8 max-w-sm w-full text-center animate-in fade-in zoom-in duration-300">
-            <div className="mb-4">
-              <div className="w-20 h-20 bg-[#E11D48] rounded-full flex items-center justify-center mx-auto mb-4 text-4xl">
-                {driverAcceptedPopup.driverPhoto}
-              </div>
-              <h3 className="text-2xl font-bold text-[#121212] mb-2">Driver Found! 🎉</h3>
-              <p className="text-[#64748B] mb-4">Your driver is on the way</p>
-            </div>
-
-            {/* Driver Details */}
-            <div className="bg-[#F8F9FA] rounded-xl p-4 mb-6 space-y-3">
-              <div className="flex items-center justify-between">
-                <span className="text-sm text-[#64748B] font-semibold">Driver Name</span>
-                <span className="font-bold text-[#121212]">{driverAcceptedPopup.driverName}</span>
-              </div>
-              <div className="flex items-center justify-between">
-                <span className="text-sm text-[#64748B] font-semibold">Plate Number</span>
-                <span className="font-bold text-[#121212]">{driverAcceptedPopup.driverPlate}</span>
-              </div>
-              <div className="flex items-center justify-between">
-                <span className="text-sm text-[#64748B] font-semibold">Rating</span>
-                <span className="font-bold text-[#E11D48]">⭐ {driverAcceptedPopup.driverRating}</span>
-              </div>
-            </div>
-
-            <Button
-              onClick={() => setDriverAcceptedPopup(null)}
-              className="w-full bg-[#E11D48] hover:bg-[#BE123C] text-white py-3 text-lg font-bold"
-            >
-              Got it! 👍
-            </Button>
-          </Card>
-        </div>
-      )}
 
       {/* Driver Status Update Popup */}
       {driverStatusPopup && (
