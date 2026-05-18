@@ -35,6 +35,7 @@ export default function FoodHome() {
   const [selectedPriceRange, setSelectedPriceRange] = useState<string[]>([]);
   const [selectedRating, setSelectedRating] = useState<string>("");
   const [freeDeliveryOnly, setFreeDeliveryOnly] = useState(false);
+  const [searchQuery, setSearchQuery] = useState<string>("");
 
   // Function to get unread notifications count
   const getUnreadNotificationsCount = () => {
@@ -283,26 +284,28 @@ export default function FoodHome() {
         </div>
       </div>
 
-      {/* Search Bar - Clean White */}
-      <div className="bg-gradient-to-b from-[#BE123C] to-[#BE123C]/95 px-5 pb-6">
-        <div className="flex items-center gap-3">
-          <div className="relative flex-1">
-            <Search className="absolute left-5 top-1/2 -translate-y-1/2 w-6 h-6 text-[#94A3B8]" />
-            <input
-              type="text"
-              placeholder="Search for Restaurants "
-              className="w-full pl-16 pr-5 py-4 bg-white rounded-full shadow-sm border-0 text-base text-[#121212] placeholder:text-[#94A3B8]"
-              style={{ outline: 'none' }}
-            />
-          </div>
-          <button 
-            onClick={() => setShowFilterModal(true)}
-            className="w-12 h-12 bg-white/20 backdrop-blur-sm rounded-2xl flex items-center justify-center active:scale-90 transition-transform flex-shrink-0"
-          >
-            <SlidersHorizontal className="w-5 h-5 text-white" />
-          </button>
-        </div>
-      </div>
+       {/* Search Bar - Clean White */}
+       <div className="bg-gradient-to-b from-[#BE123C] to-[#BE123C]/95 px-5 pb-6">
+         <div className="flex items-center gap-3">
+           <div className="relative flex-1">
+             <Search className="absolute left-5 top-1/2 -translate-y-1/2 w-6 h-6 text-[#94A3B8]" />
+             <input
+               type="text"
+               placeholder="Search for Restaurants"
+               value={searchQuery}
+               onChange={(e) => setSearchQuery(e.target.value)}
+               className="w-full pl-16 pr-5 py-4 bg-white rounded-full shadow-sm border-0 text-base text-[#121212] placeholder:text-[#94A3B8]"
+               style={{ outline: 'none' }}
+             />
+           </div>
+           <button
+             onClick={() => setShowFilterModal(true)}
+             className="w-12 h-12 bg-white/20 backdrop-blur-sm rounded-2xl flex items-center justify-center active:scale-90 transition-transform flex-shrink-0"
+           >
+             <SlidersHorizontal className="w-5 h-5 text-white" />
+           </button>
+         </div>
+       </div>
 
       {/* Restaurant Carousel - Extended Crimson Background */}
       {restaurants.length > 0 && (
@@ -394,18 +397,35 @@ export default function FoodHome() {
         <div className="pt-2">
           <h3 className="text-xl font-bold text-[#121212] mb-4">Lahat ng Tindahan sa Tagalag</h3>
           
-          {restaurants.length === 0 ? (
-            // Empty State
-            <div className="text-center py-12">
-              <div className="w-24 h-24 bg-[#F1F5F9] rounded-full flex items-center justify-center mx-auto mb-4">
-                <Store className="w-12 h-12 text-[#94A3B8]" />
-              </div>
-              <h3 className="text-xl font-bold text-[#121212] mb-2">Walang Available na Tindahan</h3>
-              <p className="text-sm text-[#64748B] mb-4 px-8">
-                No verified restaurants yet. Check back soon!
-              </p>
-            </div>
-          ) : (
+           {restaurants.length === 0 ? (
+             // Empty State
+             <div className="text-center py-12">
+               <div className="w-24 h-24 bg-[#F1F5F9] rounded-full flex items-center justify-center mx-auto mb-4">
+                 <Store className="w-12 h-12 text-[#94A3B8]" />
+               </div>
+               <h3 className="text-xl font-bold text-[#121212] mb-2">Walang Available na Tindahan</h3>
+               <p className="text-sm text-[#64748B] mb-4 px-8">
+                 No verified restaurants yet. Check back soon!
+               </p>
+             </div>
+           ) : restaurants.filter(r => {
+             const matchesSearch = searchQuery.toLowerCase().trim() === '' ||
+               r.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+               r.subtitle.toLowerCase().includes(searchQuery.toLowerCase()) ||
+               r.address.toLowerCase().includes(searchQuery.toLowerCase());
+             return matchesSearch;
+           }).length === 0 ? (
+             // No search results
+             <div className="text-center py-12">
+               <div className="w-24 h-24 bg-[#F1F5F9] rounded-full flex items-center justify-center mx-auto mb-4">
+                 <Search className="w-12 h-12 text-[#94A3B8]" />
+               </div>
+               <h3 className="text-xl font-bold text-[#121212] mb-2">Walang Nakitang Tindahan</h3>
+               <p className="text-sm text-[#64748B] mb-4 px-8">
+                 No restaurants match your search "{searchQuery}". Try a different name or location.
+               </p>
+             </div>
+           ) : (
             <>
               {/* Filter Pills */}
               <style>{`
@@ -448,13 +468,20 @@ export default function FoodHome() {
                 ))}
               </div>
 
-              {/* Restaurant Cards with Verified Badges */}
-              <div className="space-y-4">
-                {restaurants
-                  .filter((restaurant) => 
-                    activeCategory === 'all' || restaurant.category === activeCategory
-                  )
-                  .map((restaurant, idx) => (
+               {/* Restaurant Cards with Verified Badges */}
+               <div className="space-y-4">
+                 {restaurants
+                   .filter((restaurant) => {
+                     const matchesSearch = searchQuery.toLowerCase().trim() === '' ||
+                       restaurant.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+                       restaurant.subtitle.toLowerCase().includes(searchQuery.toLowerCase()) ||
+                       restaurant.address.toLowerCase().includes(searchQuery.toLowerCase());
+
+                     const matchesCategory = activeCategory === 'all' || restaurant.category === activeCategory;
+
+                     return matchesSearch && matchesCategory;
+                   })
+                   .map((restaurant, idx) => (
                   <Link key={idx} to={`/customer/restaurant-detail?id=${encodeURIComponent(restaurant.id)}&name=${encodeURIComponent(restaurant.name)}`}>
                     <Card className="overflow-hidden shadow-xl hover:shadow-2xl transition-all duration-300 border-0 rounded-3xl bg-white active:scale-[0.98]">
                     <div className="flex items-center gap-0">
