@@ -1,11 +1,13 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useNavigate, useLocation } from "react-router";
 import { ArrowLeft, Navigation, User, Phone, MapPin, CheckCircle, Minimize2, Maximize2, Package, Users, Car, MessageCircle, Send, X } from "lucide-react";
+import { GoogleMap, MarkerF, Polyline, useJsApiLoader } from "@react-google-maps/api";
 import { Button } from "../ui/button";
 import { Card } from "../ui/card";
 import { Badge } from "../ui/badge";
 import { useAuth } from "../../contexts/AuthContext";
 import { supabaseHelpers } from "@/lib/supabase";
+import { GOOGLE_MAPS_LIBRARIES } from "@/lib/googleMaps";
 import PassengerMessagingDB from "./PassengerMessagingDB";
 
 type RideStatus = 'on-the-way' | 'arrived' | 'pickup' | 'drop-off' | 'payment';
@@ -32,6 +34,10 @@ interface ActiveRideData {
   dropoff: string;
   pickupAddress?: string;
   dropoffAddress?: string;
+  pickupLat?: number;
+  pickupLng?: number;
+  dropoffLat?: number;
+  dropoffLng?: number;
   payment: 'COD' | 'PREPAID';
   amount: number;
   foodCost?: number;
@@ -54,6 +60,19 @@ export default function ActiveRide() {
   const [rideData, setRideData] = useState<ActiveRideData | null>(null);
   const [isMinimized, setIsMinimized] = useState(false);
   const [activeMessaging, setActiveMessaging] = useState<PassengerInfo | null>(null);
+
+  // Location tracking states
+  const [driverLocation, setDriverLocation] = useState<{ lat: number; lng: number } | null>(null);
+  const [routePath, setRoutePath] = useState<Array<{ lat: number; lng: number }>>([]);
+  const locationWatchIdRef = useRef<number | null>(null);
+
+  // Google Maps setup
+  const GOOGLE_MAPS_API_KEY = import.meta.env.VITE_GOOGLE_MAPS_API_KEY || "";
+  const { isLoaded: isMapsLoaded } = useJsApiLoader({
+    id: "google-map-script-driver",
+    googleMapsApiKey: GOOGLE_MAPS_API_KEY,
+    libraries: GOOGLE_MAPS_LIBRARIES as unknown as any,
+  });
 
   useEffect(() => {
     // Load active ride from localStorage or route state
@@ -166,6 +185,219 @@ export default function ActiveRide() {
       localStorage.setItem('trikeserve_active_ride', JSON.stringify(rideData));
     }
   }, [rideData]);
+
+  // Real-time driver location tracking
+  useEffect(() => {
+    if (!rideData) return;
+
+    // Start geolocation tracking
+    if ('geolocation' in navigator) {
+      // Get initial location
+      navigator.geolocation.getCurrentPosition(
+        (position) => {
+          const { latitude, longitude } = position.coords;
+          setDriverLocation({ lat: latitude, lng: longitude });
+        },
+        (error) => console.warn('❌ Geolocation error:', error.message)
+      );
+
+      // Watch position and update every 3 seconds
+      locationWatchIdRef.current = navigator.geolocation.watchPosition(
+        (position) => {
+          const newLocation = {
+            lat: position.coords.latitude,
+            lng: position.coords.longitude,
+          };
+          setDriverLocation(newLocation);
+
+          // Update database with driver location
+          if (rideData.id) {
+            supabaseHelpers.updateRideRequest(rideData.id, {
+              driver_lat: newLocation.lat,
+              driver_lng: newLocation.lng,
+              updated_at: new Date().toISOString(),
+            }).catch(err => console.warn('⚠️ Error updating driver location:', err));
+          }
+        },
+        (error) => console.warn('❌ Watch position error:', error.message),
+        {
+          enableHighAccuracy: true,
+          timeout: 10000,
+          maximumAge: 0
+        }
+      );
+    }
+
+    return () => {
+      if (locationWatchIdRef.current !== null) {
+        navigator.geolocation.clearWatch(locationWatchIdRef.current);
+      }
+    };
+  }, [rideData?.id]);
+
+  // Compute route when driver location or target changes
+  useEffect(() => {
+    if (!driverLocation || !rideData || !isMapsLoaded || !(window as any).google) return;
+
+    // Determine target location based on ride status
+    let targetLocation = null;
+    if (rideData.status === 'on-the-way') {
+      // Route to pickup
+      targetLocation = rideData.pickupLat && rideData.pickupLng
+        ? { lat: rideData.pickupLat, lng: rideData.pickupLng }
+        : null;
+    } else if (rideData.status === 'pickup' || rideData.status === 'arrived') {
+      // Route to dropoff after "I've arrived"
+      targetLocation = rideData.dropoffLat && rideData.dropoffLng
+        ? { lat: rideData.dropoffLat, lng: rideData.dropoffLng }
+        : null;
+    }
+
+    if (!targetLocation) return;
+
+    const DirectionsService = new (window as any).google.maps.DirectionsService();
+    DirectionsService.route(
+      {
+        origin: new (window as any).google.maps.LatLng(driverLocation.lat, driverLocation.lng),
+        destination: new (window as any).google.maps.LatLng(targetLocation.lat, targetLocation.lng),
+        travelMode: (window as any).google.maps.TravelMode.DRIVING,
+      },
+      (result: any, status: string) => {
+        if (status === 'OK' && result?.routes?.[0]?.overview_polyline?.points) {
+          const poly = result.routes[0].overview_polyline.points;
+          const decoded = decodeGooglePolyline(poly);
+          setRoutePath(decoded);
+        }
+      }
+    );
+  }, [driverLocation, rideData?.status, isMapsLoaded]);
+
+  // Helper function to decode polyline
+  const decodeGooglePolyline = (encoded: string): Array<{ lat: number; lng: number }> => {
+    let index = 0;
+    let lat = 0;
+    let lng = 0;
+    const points: Array<{ lat: number; lng: number }> = [];
+
+    while (index < encoded.length) {
+      let shift = 0;
+      let result = 0;
+      let byte: number;
+
+      do {
+        byte = encoded.charCodeAt(index++) - 63;
+        result |= (byte & 0x1f) << shift;
+        shift += 5;
+      } while (byte >= 0x20);
+
+      const deltaLat = (result & 1) !== 0 ? ~(result >> 1) : result >> 1;
+      lat += deltaLat;
+
+      shift = 0;
+      result = 0;
+
+      do {
+        byte = encoded.charCodeAt(index++) - 63;
+        result |= (byte & 0x1f) << shift;
+        shift += 5;
+      } while (byte >= 0x20);
+
+      const deltaLng = (result & 1) !== 0 ? ~(result >> 1) : result >> 1;
+      lng += deltaLng;
+
+      points.push({ lat: lat / 1e5, lng: lng / 1e5 });
+    }
+
+    return points;
+  };
+
+  const buildNavigationMarkerIcon = (color: string) => {
+    const google = (window as any)?.google;
+    if (!google?.maps?.SymbolPath) return undefined;
+
+    return {
+      path: google.maps.SymbolPath.CIRCLE,
+      fillColor: color,
+      fillOpacity: 1,
+      strokeColor: '#FFFFFF',
+      strokeWeight: 2,
+      scale: 8,
+    } as any;
+  };
+
+  const buildNavigationRouteOptions = (color: string, weight: number) => {
+    const google = (window as any)?.google;
+    const arrowPath = google?.maps?.SymbolPath?.FORWARD_CLOSED_ARROW;
+
+    return {
+      strokeColor: color,
+      strokeOpacity: 0.92,
+      strokeWeight: weight,
+      geodesic: true,
+      icons: arrowPath
+        ? [
+            {
+              icon: {
+                path: arrowPath,
+                scale: 3,
+                strokeColor: color,
+                strokeOpacity: 1,
+              },
+              offset: '100%',
+            },
+          ]
+        : undefined,
+    } as any;
+  };
+
+  useEffect(() => {
+    if (!rideData || !isMapsLoaded || !(window as any).google) return;
+
+    if (rideData.pickupLat && rideData.pickupLng && rideData.dropoffLat && rideData.dropoffLng) return;
+
+    let cancelled = false;
+    const geocoder = new (window as any).google.maps.Geocoder();
+
+    const geocode = (address: string) =>
+      new Promise<{ lat: number; lng: number } | null>((resolve) => {
+        geocoder.geocode({ address }, (results: any, status: string) => {
+          if (status === 'OK' && results?.[0]?.geometry?.location) {
+            const location = results[0].geometry.location;
+            resolve({ lat: location.lat(), lng: location.lng() });
+          } else {
+            resolve(null);
+          }
+        });
+      });
+
+    (async () => {
+      const updates: Partial<ActiveRideData> = {};
+
+      if (!rideData.pickupLat && (rideData.pickupAddress || rideData.pickup)) {
+        const coords = await geocode(rideData.pickupAddress || rideData.pickup);
+        if (!cancelled && coords) {
+          updates.pickupLat = coords.lat;
+          updates.pickupLng = coords.lng;
+        }
+      }
+
+      if (!rideData.dropoffLat && (rideData.dropoffAddress || rideData.dropoff)) {
+        const coords = await geocode(rideData.dropoffAddress || rideData.dropoff);
+        if (!cancelled && coords) {
+          updates.dropoffLat = coords.lat;
+          updates.dropoffLng = coords.lng;
+        }
+      }
+
+      if (!cancelled && Object.keys(updates).length > 0) {
+        setRideData(prev => prev ? { ...prev, ...updates } : prev);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [rideData, isMapsLoaded]);
 
   const updateStatus = (newStatus: RideStatus) => {
     if (!rideData) return;
@@ -750,6 +982,73 @@ export default function ActiveRide() {
           </div>
         </div>
       </div>
+
+      {/* Live Tracking Map */}
+      {isMapsLoaded && GOOGLE_MAPS_API_KEY && (
+        <div className="relative w-full h-64 bg-gray-100 border-b border-gray-200">
+          <GoogleMap
+            mapContainerStyle={{ width: '100%', height: '100%' }}
+            center={driverLocation || { lat: 14.5995, lng: 120.9842 }}
+            zoom={15}
+            options={{
+              zoomControl: true,
+              fullscreenControl: false,
+              streetViewControl: false,
+              mapTypeControl: false,
+            }}
+          >
+            {/* Driver Current Location */}
+            {driverLocation && (
+              <MarkerF
+                position={driverLocation}
+                title="Your Location"
+                icon={buildNavigationMarkerIcon('#EF4444')}
+              />
+            )}
+
+            {/* Pickup Location */}
+            {rideData.pickupLat && rideData.pickupLng && (
+              <MarkerF
+                position={{ lat: rideData.pickupLat, lng: rideData.pickupLng }}
+                title="Pickup Location"
+                icon={buildNavigationMarkerIcon('#EAB308')}
+              />
+            )}
+
+            {/* Dropoff Location (show after "I've Arrived") */}
+            {(rideData.status === 'pickup' || rideData.status === 'drop-off' || rideData.status === 'payment') &&
+             rideData.dropoffLat && rideData.dropoffLng && (
+              <MarkerF
+                position={{ lat: rideData.dropoffLat, lng: rideData.dropoffLng }}
+                title="Drop-off Location"
+                icon={buildNavigationMarkerIcon('#22C55E')}
+              />
+            )}
+
+            {/* Route Polyline */}
+            {routePath.length > 0 && (
+              <Polyline
+                path={routePath}
+                options={buildNavigationRouteOptions('#E11D48', 5)}
+              />
+            )}
+          </GoogleMap>
+
+          {/* Map Status Badge */}
+          <div className="absolute top-3 left-3 bg-white px-3 py-1.5 rounded-full shadow-md text-xs font-semibold">
+            {rideData.status === 'on-the-way'
+              ? '🚗 Heading to Pickup'
+              : rideData.status === 'arrived'
+              ? '📍 Arrived at Pickup'
+              : rideData.status === 'pickup'
+              ? '🚗 Heading to Drop-off'
+              : rideData.status === 'drop-off'
+              ? '📍 Arrived at Drop-off'
+              : 'Ride Complete'
+            }
+          </div>
+        </div>
+      )}
 
       <div className="p-4 space-y-3">
         {/* Customer Info Card */}
