@@ -24,8 +24,7 @@ import {
   MessageCircle,
   Clock,
   Maximize,
-  TrendingDown,
-  Check
+  TrendingDown
 } from "lucide-react";
 import { Link, useNavigate } from "react-router";
 import { Button } from "../ui/button";
@@ -826,31 +825,33 @@ export default function RiderDashboard() {
                </InfoWindow>
              )}
 
-             {/* DirectionsRenderer for multi-stop route (replaces polyline) */}
-             {directionsResult && (
-               <DirectionsRenderer
-                 directions={directionsResult}
-                 options={{
-                   markerOptions: {
-                     visible: false,
-                   },
-                   polylineOptions: {
-                     strokeColor: '#E11D48',
-                     strokeOpacity: 0.92,
-                     strokeWeight: 5,
-                   },
-                 }}
-               />
-             )}
+              {/* DirectionsRenderer for multi-stop route (replaces polyline) */}
+              {/* HIDDEN: Recommended pickup route is not shown in home panel */}
+              {/* {directionsResult && (
+                <DirectionsRenderer
+                  directions={directionsResult}
+                  options={{
+                    markerOptions: {
+                      visible: false,
+                    },
+                    polylineOptions: {
+                      strokeColor: '#E11D48',
+                      strokeOpacity: 0.92,
+                      strokeWeight: 5,
+                    },
+                  }}
+                />
+              )} */}
 
-             {/* Marker for the prioritized pickup target - Customer (Blue Pin) */}
-             {navTargetRequest && navTargetRequest.pickupLat && navTargetRequest.pickupLng && (
-               <Marker
-                 position={{ lat: Number(navTargetRequest.pickupLat), lng: Number(navTargetRequest.pickupLng) }}
-                 title={`📍 Prioritized Pickup: ${navTargetRequest.pickup || navTargetRequest.address || ''}`}
-                 icon={createCustomerMarkerIcon()}
-               />
-             )}
+              {/* Marker for the prioritized pickup target - Customer (Blue Pin) */}
+              {/* HIDDEN: Prioritized pickup target marker not shown in home panel */}
+              {/* {navTargetRequest && navTargetRequest.pickupLat && navTargetRequest.pickupLng && (
+                <Marker
+                  position={{ lat: Number(navTargetRequest.pickupLat), lng: Number(navTargetRequest.pickupLng) }}
+                  title={`📍 Prioritized Pickup: ${navTargetRequest.pickup || navTargetRequest.address || ''}`}
+                  icon={createCustomerMarkerIcon()}
+                />
+              )} */}
           </GoogleMap>
         ) : isMapsLoaded && blocked ? (
           <div className="w-full h-full flex items-center justify-center bg-yellow-50">
@@ -1026,96 +1027,6 @@ export default function RiderDashboard() {
                   )}
                 </div>
               </div>
-
-              {/* Prioritization Reasons Card - Shows why next pickup was selected */}
-              {prioritizationReasons && prioritizationReasons.primary && isOnline && (
-                <div className="border-t border-green-200 bg-gradient-to-br from-green-50 to-emerald-50 p-4 space-y-3">
-                  <h3 className="font-bold text-[#121212] flex items-center gap-2">
-                    <Check className="w-5 h-5 text-green-600" />
-                    Recommended Pickup
-                  </h3>
-
-                  {/* Primary Pickup Info */}
-                  <div className="bg-white rounded-lg p-3 border-2 border-green-200">
-                    <p className="font-semibold text-[#121212] mb-2">
-                      🎯 {prioritizationReasons.primary.pickup || prioritizationReasons.primary.address}
-                    </p>
-
-                    {/* Prioritization Indicators */}
-                    <div className="grid grid-cols-2 gap-2 mb-3">
-                      {/* Distance */}
-                      <div className="flex items-center gap-2 bg-blue-50 p-2 rounded">
-                        <Navigation className="w-4 h-4 text-blue-600" />
-                        <div className="text-xs">
-                          <p className="text-blue-600 font-semibold">
-                            {(prioritizationReasons.distance / 1000).toFixed(1)} km
-                          </p>
-                          <p className="text-blue-500">Distance</p>
-                        </div>
-                      </div>
-
-                      {/* ETA */}
-                      <div className="flex items-center gap-2 bg-purple-50 p-2 rounded">
-                        <Clock className="w-4 h-4 text-purple-600" />
-                        <div className="text-xs">
-                          <p className="text-purple-600 font-semibold">
-                            {Math.ceil(prioritizationReasons.eta / 60)} min
-                          </p>
-                          <p className="text-purple-500">ETA</p>
-                        </div>
-                      </div>
-
-                      {/* Passengers */}
-                      <div className="flex items-center gap-2 bg-orange-50 p-2 rounded">
-                        <Users className="w-4 h-4 text-orange-600" />
-                        <div className="text-xs">
-                          <p className="text-orange-600 font-semibold">
-                            {prioritizationReasons.passengers}
-                          </p>
-                          <p className="text-orange-500">Passengers</p>
-                        </div>
-                      </div>
-
-                      {/* Payment */}
-                      <div className="flex items-center gap-2 bg-green-100 p-2 rounded">
-                        <DollarSign className="w-4 h-4 text-green-700" />
-                        <div className="text-xs">
-                          <p className="text-green-700 font-semibold">
-                            {prioritizationReasons.prepaid ? 'PREPAID' : 'COD'}
-                          </p>
-                          <p className="text-green-600">Payment</p>
-                        </div>
-                      </div>
-                    </div>
-
-                    {/* Multi-stop info */}
-                    {prioritizationReasons.allStops && prioritizationReasons.allStops.length > 1 && (
-                      <div className="text-xs bg-amber-50 border border-amber-200 rounded p-2 text-amber-800">
-                        <p className="font-semibold mb-1">📍 Multi-stop route active</p>
-                        <p>{prioritizationReasons.allStops.length} pickups optimized</p>
-                      </div>
-                    )}
-                  </div>
-
-                  {/* Filtered Requests Info */}
-                  {prioritizationReasons.filteredOut && prioritizationReasons.filteredOut.length > 0 && (
-                    <div className="text-xs bg-gray-100 rounded p-2">
-                      <p className="text-gray-700 font-semibold">Filtering applied:</p>
-                      <ul className="text-gray-600 ml-2 mt-1">
-                        {prioritizationReasons.filteredOut.slice(0, 2).map((r: any, idx: number) => (
-                          <li key={idx}>
-                            • {r.__filter === 'too_far' && `${(r.__distance / 1000).toFixed(1)} km away (too far)`}
-                            {r.__filter === 'no_capacity' && `Needs ${r.__seats} seats (full)`}
-                          </li>
-                        ))}
-                        {prioritizationReasons.filteredOut.length > 2 && (
-                          <li>• +{prioritizationReasons.filteredOut.length - 2} more filtered out</li>
-                        )}
-                      </ul>
-                    </div>
-                  )}
-                </div>
-              )}
 
 
                {showServiceTypes && (

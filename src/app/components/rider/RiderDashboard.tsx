@@ -498,48 +498,50 @@ export default function RiderDashboard() {
                 title="Your location"
               />
 
-              {/* Passenger request markers (pending) */}
-              {passengerRequests.map((r, idx) => {
-                const c = coordsFromRequest(r);
-                if (!c) return null;
-                return (
-                  <Marker
-                    key={`pass_${r.id || idx}`}
-                    position={c}
-                    title={r.customerName || 'Passenger'}
-                    onClick={() => setSelectedMarker(c)}
-                    icon={{
-                      // Simple colored circle marker for passenger
-                      path: 'M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7z',
-                      fillColor: '#10B981',
-                      fillOpacity: 1,
-                      strokeWeight: 0,
-                      scale: 1.2,
-                    }}
-                  />
-                );
-              })}
+               {/* Passenger request markers (pending) */}
+               {/* HIDDEN: Passenger request markers not shown in home panel */}
+               {/* {passengerRequests.map((r, idx) => {
+                 const c = coordsFromRequest(r);
+                 if (!c) return null;
+                 return (
+                   <Marker
+                     key={`pass_${r.id || idx}`}
+                     position={c}
+                     title={r.customerName || 'Passenger'}
+                     onClick={() => setSelectedMarker(c)}
+                     icon={{
+                       // Simple colored circle marker for passenger
+                       path: 'M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7z',
+                       fillColor: '#10B981',
+                       fillOpacity: 1,
+                       strokeWeight: 0,
+                       scale: 1.2,
+                     }}
+                   />
+                 );
+               })} */
 
-              {/* Accepted rides / active passengers */}
-              {acceptedRides.map((r, idx) => {
-                const c = coordsFromRequest(r) || coordsFromRequest({ pickup: r.pickup });
-                if (!c) return null;
-                return (
-                  <Marker
-                    key={`acc_${r.id || idx}`}
-                    position={c}
-                    title={r.customerName || 'Accepted Passenger'}
-                    onClick={() => setSelectedMarker(c)}
-                    icon={{
-                      path: 'M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7z',
-                      fillColor: '#E11D48',
-                      fillOpacity: 1,
-                      strokeWeight: 0,
-                      scale: 1.2,
-                    }}
-                  />
-                );
-              })}
+               {/* Accepted rides / active passengers */}
+               {/* HIDDEN: Passenger request markers not shown in home panel */}
+               {/* {acceptedRides.map((r, idx) => {
+                 const c = coordsFromRequest(r) || coordsFromRequest({ pickup: r.pickup });
+                 if (!c) return null;
+                 return (
+                   <Marker
+                     key={`acc_${r.id || idx}`}
+                     position={c}
+                     title={r.customerName || 'Accepted Passenger'}
+                     onClick={() => setSelectedMarker(c)}
+                     icon={{
+                       path: 'M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7z',
+                       fillColor: '#E11D48',
+                       fillOpacity: 1,
+                       strokeWeight: 0,
+                       scale: 1.2,
+                     }}
+                   />
+                 );
+               })} */
 
               {/* Info Window for selected marker */}
               {selectedMarker && (

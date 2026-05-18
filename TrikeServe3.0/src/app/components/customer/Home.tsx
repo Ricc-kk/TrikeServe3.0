@@ -294,6 +294,13 @@ export default function CustomerHome() {
    const hasManualPickupSelectionRef = useRef(false);
    const unsubscribeRef = useRef<(() => void) | null>(null);
 
+   const readValidCoords = (latValue: any, lngValue: any) => {
+     const latNum = Number(latValue);
+     const lngNum = Number(lngValue);
+     if (!Number.isFinite(latNum) || !Number.isFinite(lngNum)) return null;
+     return { lat: latNum, lng: lngNum };
+   };
+
     const { isLoaded: isMapsLoaded, loadError: mapsLoadError, blocked, apiKeyPresent } = useMapLoader();
 
     // Detect cases where the loader finished but google.* is blocked by client/adblockers or CSP.
@@ -816,6 +823,18 @@ export default function CustomerHome() {
           });
         }
 
+        // Ensure pickup/dropoff coordinates are hydrated from DB once driver accepts.
+        // This keeps the same route-to-pickup behavior as when pickup is recommended manually.
+        const dbPickupCoords = readValidCoords(rideRequest.pickup_lat, rideRequest.pickup_lng);
+        if (dbPickupCoords) {
+          setPickupCoords(dbPickupCoords);
+        }
+
+        const dbDropoffCoords = readValidCoords(rideRequest.dropoff_lat, rideRequest.dropoff_lng);
+        if (dbDropoffCoords) {
+          setDropoffCoords(dbDropoffCoords);
+        }
+
         // Update driver location from DB when available (polling fallback)
         if (rideRequest.driver_lat && rideRequest.driver_lng) {
           try {
@@ -952,6 +971,18 @@ export default function CustomerHome() {
          });
        }
 
+       // Hydrate route coordinates from realtime payload so route-to-pickup is always available
+       // after acceptance (same behavior as recommended pickup routing).
+       const realtimePickupCoords = readValidCoords(updatedRide.pickup_lat, updatedRide.pickup_lng);
+       if (realtimePickupCoords) {
+         setPickupCoords(realtimePickupCoords);
+       }
+
+       const realtimeDropoffCoords = readValidCoords(updatedRide.dropoff_lat, updatedRide.dropoff_lng);
+       if (realtimeDropoffCoords) {
+         setDropoffCoords(realtimeDropoffCoords);
+       }
+
        // Update driver location on map (real-time tracking)
        if (updatedRide.accepted_driver_id && updatedRide.driver_lat && updatedRide.driver_lng) {
          const newDriverLocation = {
@@ -1054,7 +1085,7 @@ export default function CustomerHome() {
     } else {
       localStorage.removeItem('trikeserve_active_ride');
     }
-   }, [rideStatus, pickup, pickupAddress, dropoff, dropoffAddress, selectedVehicle, paymentMethod, activeRide, currentRequestId]);
+   }, [rideStatus, pickup, pickupAddress, pickupCoords, dropoff, dropoffAddress, dropoffCoords, selectedVehicle, paymentMethod, activeRide, currentRequestId]);
 
    // Compute driver's route to pickup/dropoff location (real-time tracking)
    useEffect(() => {

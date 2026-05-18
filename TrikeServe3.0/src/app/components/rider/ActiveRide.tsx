@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from "react";
 import { useNavigate, useLocation } from "react-router";
 import { ArrowLeft, Navigation, User, Phone, MapPin, CheckCircle, Minimize2, Maximize2, Package, Users, Car, MessageCircle, Send, X } from "lucide-react";
-import { GoogleMap, MarkerF, Polyline } from "@react-google-maps/api";
+import { GoogleMap, Marker, MarkerF, Polyline, DirectionsRenderer, InfoWindow } from "@react-google-maps/api";
 import { Button } from "../ui/button";
 import { Card } from "../ui/card";
 import { Badge } from "../ui/badge";
@@ -14,6 +14,7 @@ import tricycleIcon from "../../../assets/0b76d1aa56b8ad6e15dd4efc8a0100b0ca5762
 
 type RideStatus = 'on-the-way' | 'arrived' | 'pickup' | 'drop-off' | 'payment';
 type PassengerStatus = 'pending' | 'on-the-way' | 'arrived' | 'picked-up' | 'dropped-off';
+const OVERLAY_SNAP_POINTS = [25, 50, 85] as const;
 
 interface PassengerInfo {
   id: string;
@@ -61,6 +62,8 @@ export default function ActiveRide() {
   const { user } = useAuth();
   const [rideData, setRideData] = useState<ActiveRideData | null>(null);
   const [isMinimized, setIsMinimized] = useState(false);
+  const [overlayHeightPct, setOverlayHeightPct] = useState<number>(25);
+  const [isDraggingOverlay, setIsDraggingOverlay] = useState(false);
   const [activeMessaging, setActiveMessaging] = useState<PassengerInfo | null>(null);
   const [mapZoom, setMapZoom] = useState(15);
 
@@ -68,8 +71,14 @@ export default function ActiveRide() {
   const [driverLocation, setDriverLocation] = useState<{ lat: number; lng: number } | null>(null);
   const [routePath, setRoutePath] = useState<Array<{ lat: number; lng: number }>>([]);
   const [mapCenter, setMapCenter] = useState<{ lat: number; lng: number }>({ lat: 14.6037, lng: 120.9793 });
+  const [directionsResult, setDirectionsResult] = useState<any>(null);
+  const [availablePassengerRequests, setAvailablePassengerRequests] = useState<any[]>([]);
+  const [selectedMarker, setSelectedMarker] = useState<{ lat: number; lng: number } | null>(null);
   const mapRef = useRef<any>(null);
   const locationWatchIdRef = useRef<number | null>(null);
+  const overlayDragActiveRef = useRef(false);
+  const overlayDragStartYRef = useRef(0);
+  const overlayDragStartPctRef = useRef(25);
 
   // Google Maps setup
   const GOOGLE_MAPS_API_KEY = import.meta.env.VITE_GOOGLE_MAPS_API_KEY || "";
@@ -193,6 +202,32 @@ export default function ActiveRide() {
     }
   }, [rideData]);
 
+  // Load available passenger requests to show as background markers
+  useEffect(() => {
+    if (!rideData) return;
+
+    const loadAvailableRequests = async () => {
+      try {
+        const { data: requests, error } = await supabaseHelpers.getRideRequests('pending');
+        if (error) {
+          console.error('Error loading available requests:', error);
+          return;
+        }
+
+        // Filter out the current accepted ride and requests without location data
+        const otherRequests = (requests || []).filter(
+          (req: any) => req.id !== rideData.id && req.pickup_lat && req.pickup_lng
+        );
+
+        setAvailablePassengerRequests(otherRequests);
+      } catch (error) {
+        console.error('Exception loading available requests:', error);
+      }
+    };
+
+    loadAvailableRequests();
+  }, [rideData]);
+
   // Real-time driver location tracking
   useEffect(() => {
     if (!rideData) return;
@@ -291,7 +326,15 @@ export default function ActiveRide() {
         }
       }
     );
-  }, [driverLocation, rideData?.status, isMapsLoaded]);
+  }, [
+    driverLocation,
+    rideData?.status,
+    rideData?.pickupLat,
+    rideData?.pickupLng,
+    rideData?.dropoffLat,
+    rideData?.dropoffLng,
+    isMapsLoaded,
+  ]);
 
   // Helper function to decode polyline
   const decodeGooglePolyline = (encoded: string): Array<{ lat: number; lng: number }> => {
@@ -995,6 +1038,96 @@ export default function ActiveRide() {
     }
   };
 
+  const clampOverlayHeight = (value: number) => Math.min(85, Math.max(25, value));
+
+  const snapOverlayHeight = (value: number) => {
+    return OVERLAY_SNAP_POINTS.reduce((closest, current) => {
+      return Math.abs(current - value) < Math.abs(closest - value) ? current : closest;
+    }, OVERLAY_SNAP_POINTS[0]);
+  };
+
+  const startOverlayDrag = (e: any) => {
+    if (!isMinimized) return;
+    overlayDragActiveRef.current = true;
+    overlayDragStartYRef.current = e.clientY;
+    overlayDragStartPctRef.current = overlayHeightPct;
+    setIsDraggingOverlay(true);
+
+    if (typeof e?.currentTarget?.setPointerCapture === 'function') {
+      e.currentTarget.setPointerCapture(e.pointerId);
+    }
+  };
+
+  useEffect(() => {
+    const handlePointerMove = (e: PointerEvent) => {
+      if (!overlayDragActiveRef.current) return;
+      const deltaY = overlayDragStartYRef.current - e.clientY;
+      const deltaPct = (deltaY / window.innerHeight) * 100;
+      const nextPct = clampOverlayHeight(overlayDragStartPctRef.current + deltaPct);
+      setOverlayHeightPct(nextPct);
+    };
+
+    const handlePointerUp = () => {
+      if (!overlayDragActiveRef.current) return;
+      overlayDragActiveRef.current = false;
+      setIsDraggingOverlay(false);
+      const snapped = snapOverlayHeight(overlayHeightPct);
+      setOverlayHeightPct(snapped);
+    };
+
+    window.addEventListener('pointermove', handlePointerMove);
+    window.addEventListener('pointerup', handlePointerUp);
+    window.addEventListener('pointercancel', handlePointerUp);
+
+    return () => {
+      window.removeEventListener('pointermove', handlePointerMove);
+      window.removeEventListener('pointerup', handlePointerUp);
+      window.removeEventListener('pointercancel', handlePointerUp);
+    };
+  }, [overlayHeightPct]);
+
+  const getCurrentDestination = () => {
+    // Before pickup completion, navigate driver to pickup.
+    if (rideData.status === 'on-the-way' || rideData.status === 'arrived') {
+      if (rideData.pickupLat && rideData.pickupLng) {
+        return {
+          lat: rideData.pickupLat,
+          lng: rideData.pickupLng,
+          label: 'Pickup Location',
+        };
+      }
+      return null;
+    }
+
+    // After pickup, navigate driver to drop-off.
+    if (rideData.dropoffLat && rideData.dropoffLng) {
+      return {
+        lat: rideData.dropoffLat,
+        lng: rideData.dropoffLng,
+        label: 'Drop-off Location',
+      };
+    }
+
+    return null;
+  };
+
+  const openExternalDirections = () => {
+    const destination = getCurrentDestination();
+    if (!destination) {
+      alert('Destination coordinates are not available yet. Please refresh and try again.');
+      return;
+    }
+
+    const destinationValue = `${destination.lat},${destination.lng}`;
+    const originValue = driverLocation ? `${driverLocation.lat},${driverLocation.lng}` : '';
+
+    const url = originValue
+      ? `https://www.google.com/maps/dir/?api=1&origin=${encodeURIComponent(originValue)}&destination=${encodeURIComponent(destinationValue)}&travelmode=driving`
+      : `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(destinationValue)}&travelmode=driving`;
+
+    window.open(url, '_blank', 'noopener,noreferrer');
+  };
+
   if (!rideData) {
     return null;
   }
@@ -1004,7 +1137,7 @@ export default function ActiveRide() {
   const steps = getStatusSteps();
 
   return (
-    <div className="min-h-screen bg-[#F8F9FA] pb-20">
+    <div className="min-h-screen bg-[#F8F9FA] pb-20 relative">
       {/* Header */}
       <div className="bg-[#E11D48] text-white px-4 py-4">
         <div className="flex items-center justify-between mb-4">
@@ -1019,13 +1152,22 @@ export default function ActiveRide() {
           <h1 className="text-xl font-extrabold" style={{ letterSpacing: '-0.02em' }}>
             Active {rideData.type === 'delivery' ? 'Delivery' : 'Ride'}
           </h1>
-          <Button 
-            variant="ghost" 
+          <Button
+            variant="ghost"
             size="icon"
-            onClick={() => setIsMinimized(true)}
+            onClick={() => {
+              setIsMinimized((prev) => {
+                const next = !prev;
+                if (next) {
+                  setOverlayHeightPct(25);
+                }
+                return next;
+              });
+            }}
             className="text-white hover:bg-white/20"
+            title={isMinimized ? 'Expand overlay' : 'Minimize overlay'}
           >
-            <Minimize2 className="w-5 h-5" />
+            {isMinimized ? <Maximize2 className="w-5 h-5" /> : <Minimize2 className="w-5 h-5" />}
           </Button>
         </div>
 
@@ -1071,73 +1213,82 @@ export default function ActiveRide() {
 
       {/* Live Tracking Map */}
       {isMapsLoaded && !blocked && apiKeyPresent ? (
-        <div className="relative w-full h-64 bg-gray-100 border-b border-gray-200">
+        <div className={`relative w-full bg-gray-100 border-b border-gray-200 transition-all ${isMinimized ? 'h-[72vh]' : 'h-64'}`}>
           <GoogleMap
-            ref={mapRef}
             mapContainerStyle={{ width: '100%', height: '100%' }}
             center={mapCenter}
-            zoom={mapZoom}
+            zoom={15}
             options={{
-              zoomControl: true,
-              fullscreenControl: false,
+              zoomControl: false,
+              fullscreenControl: true,
               streetViewControl: false,
-              mapTypeControl: false,
-            }}
-            onZoomChanged={() => {
-              if (mapRef.current) {
-                setMapZoom(mapRef.current.getZoom?.() || 15);
-              }
+              mapTypeControl: true,
             }}
           >
-            {/* Driver Current Location */}
-            {driverLocation && (
-              <MarkerF
-                position={driverLocation}
-                title="Your Location"
-                icon={createDriverMarkerIcon()}
-              />
-            )}
+            {/* Current Location Marker - Driver (Red Car) */}
+            <Marker
+              position={mapCenter}
+              onClick={() => setSelectedMarker(mapCenter)}
+              title="🚗 Your location (Driver)"
+              icon={createDriverMarkerIcon()}
+            />
 
-            {/* Pickup Location - Blue Pin Icon */}
-            {rideData.pickupLat && rideData.pickupLng && (
-              <MarkerF
-                position={{ lat: rideData.pickupLat, lng: rideData.pickupLng }}
-                title="📍 Pickup Location (Customer)"
-                  icon={createCustomerMarkerIcon()}
-              />
-            )}
-
-            {/* Dropoff Location (show after "I've Arrived") */}
-            {(rideData.status === 'pickup' || rideData.status === 'drop-off' || rideData.status === 'payment') &&
-             rideData.dropoffLat && rideData.dropoffLng && (
-              <MarkerF
-                position={{ lat: rideData.dropoffLat, lng: rideData.dropoffLng }}
-                title="Drop-off Location"
-                  icon={createDropoffMarkerIcon()}
-              />
-            )}
-
-            {/* Route Polyline */}
-            {routePath.length > 0 && (
-              <Polyline
-                path={routePath}
-                options={buildNavigationRouteOptions('#E11D48', 5)}
-              />
+            {/* Info Window for selected marker */}
+            {selectedMarker && (
+              <InfoWindow
+                position={selectedMarker}
+                onCloseClick={() => setSelectedMarker(null)}
+              >
+                <div className="text-sm">
+                  <p className="font-bold">Your current location</p>
+                  <p className="text-gray-600">
+                    {selectedMarker.lat.toFixed(4)}, {selectedMarker.lng.toFixed(4)}
+                  </p>
+                </div>
+              </InfoWindow>
             )}
           </GoogleMap>
 
-          {/* Map Status Badge */}
-          <div className="absolute top-3 left-3 bg-white px-3 py-1.5 rounded-full shadow-md text-xs font-semibold">
-            {rideData.status === 'on-the-way'
-              ? '🚗 Heading to Pickup'
-              : rideData.status === 'arrived'
-              ? '📍 Arrived at Pickup'
-              : rideData.status === 'pickup'
-              ? '🚗 Heading to Drop-off'
-              : rideData.status === 'drop-off'
-              ? '📍 Arrived at Drop-off'
-              : 'Ride Complete'
-            }
+           {/* Map Status Badge */}
+           <div className="absolute top-3 left-3 bg-white px-3 py-1.5 rounded-full shadow-md text-xs font-semibold">
+             {rideData.status === 'on-the-way'
+               ? '🚗 Heading to Pickup'
+               : rideData.status === 'arrived'
+               ? '📍 Arrived at Pickup'
+               : rideData.status === 'pickup'
+               ? '🚗 Heading to Drop-off'
+               : rideData.status === 'drop-off'
+               ? '📍 Arrived at Drop-off'
+               : 'Ride Complete'
+             }
+           </div>
+
+           {/* Map Legend */}
+           {availablePassengerRequests.length > 0 && (
+             <div className="absolute bottom-3 left-3 bg-white px-3 py-2 rounded-lg shadow-md text-xs max-w-[250px]">
+               <p className="font-semibold text-[#121212] mb-1.5">🗺️ Map Legend</p>
+               <div className="space-y-1.5 text-[#64748B]">
+                 <div className="flex items-center gap-2">
+                   <div className="w-3 h-3 rounded-full bg-[#10B981]"></div>
+                   <span>Pending pickups</span>
+                 </div>
+                 <div className="flex items-center gap-2">
+                   <div className="w-3 h-3 rounded-full bg-[#2563EB]"></div>
+                   <span>Your pickup</span>
+                 </div>
+               </div>
+             </div>
+           )}
+
+          <div className="absolute top-3 right-3">
+            <Button
+              size="sm"
+              onClick={openExternalDirections}
+              className="bg-white text-[#121212] hover:bg-gray-100 border shadow-md"
+            >
+              <Navigation className="w-4 h-4 mr-1" />
+              Directions
+            </Button>
           </div>
         </div>
       ) : isMapsLoaded && blocked ? (
@@ -1166,7 +1317,52 @@ export default function ActiveRide() {
         </div>
       )}
 
-      <div className="p-4 space-y-3">
+      <div
+        className={isMinimized
+          ? 'fixed bottom-0 left-0 right-0 z-[1100] overflow-y-auto bg-[#F8F9FA]/95 backdrop-blur-sm border-t border-[#E2E8F0] p-3 space-y-3 shadow-[0_-8px_24px_rgba(15,23,42,0.18)]'
+          : 'p-4 space-y-3'}
+        style={isMinimized ? { height: `${overlayHeightPct}vh` } : undefined}
+      >
+        {isMinimized && (
+          <div className="bg-white rounded-xl border border-[#E2E8F0] px-3 py-2">
+            <div
+              className={`w-full flex justify-center pb-2 ${isDraggingOverlay ? 'cursor-grabbing' : 'cursor-grab'}`}
+              onPointerDown={startOverlayDrag}
+            >
+              <div className={`h-1.5 w-16 rounded-full transition-colors ${isDraggingOverlay ? 'bg-[#E11D48]' : 'bg-[#CBD5E1]'}`} />
+            </div>
+
+            <div className="flex items-center justify-between">
+              <div>
+              <p className="text-xs text-[#64748B]">Overlay Minimized</p>
+                <p className="text-sm font-bold text-[#121212]">Drag to snap: 25% / 50% / 85%</p>
+              </div>
+              <div className="flex items-center gap-2">
+                <Button size="sm" variant="outline" onClick={openExternalDirections}>
+                  <Navigation className="w-4 h-4 mr-1" />
+                  Route
+                </Button>
+                <Button size="sm" onClick={() => setIsMinimized(false)} className="bg-[#E11D48] hover:bg-[#BE123C]">
+                  <Maximize2 className="w-4 h-4 mr-1" />
+                  Expand
+                </Button>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2 mt-2">
+              {OVERLAY_SNAP_POINTS.map((point) => (
+                <button
+                  key={point}
+                  type="button"
+                  onClick={() => setOverlayHeightPct(point)}
+                  className={`px-2 py-1 rounded-md text-xs border transition-colors ${Math.round(overlayHeightPct) === point ? 'bg-[#E11D48] text-white border-[#E11D48]' : 'bg-white text-[#334155] border-[#CBD5E1]'}`}
+                >
+                  {point}%
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
         {/* Customer Info Card */}
         <Card className="p-4 border-2 border-[#E2E8F0]">
           <div className="flex items-start gap-4 mb-4">
