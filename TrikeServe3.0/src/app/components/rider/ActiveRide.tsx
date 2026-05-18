@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from "react";
 import { useNavigate, useLocation } from "react-router";
 import { ArrowLeft, Navigation, Phone, MapPin, CheckCircle, Minimize2, Maximize2, Users, X } from "lucide-react";
-import { GoogleMap, Marker, Polyline, InfoWindow } from "@react-google-maps/api";
+import { GoogleMap, Marker, Polyline, InfoWindow, DirectionsRenderer } from "@react-google-maps/api";
 import { Button } from "../ui/button";
 import { Card } from "../ui/card";
 import { Badge } from "../ui/badge";
@@ -29,6 +29,7 @@ interface ActiveRideData {
   status: RideStatus;
   orderId?: string;
   lobbyId?: string;
+  passengerDetails?: any[];
 }
 
 export default function ActiveRide() {
@@ -38,10 +39,10 @@ export default function ActiveRide() {
   const [rideData, setRideData] = useState<ActiveRideData | null>(null);
   const [isMinimized, setIsMinimized] = useState(false);
   const [driverLocation, setDriverLocation] = useState<{ lat: number; lng: number } | null>(null);
-  const [routePath, setRoutePath] = useState<Array<{ lat: number; lng: number }>>([]);
+  const [directions, setDirections] = useState<google.maps.DirectionsResult | null>(null);
   const [mapCenter, setMapCenter] = useState<{ lat: number; lng: number }>({ lat: 14.6037, lng: 120.9793 });
   const [availableRequests, setAvailableRequests] = useState<any[]>([]);
-  const { isMapsLoaded, apiKeyPresent } = useMapLoader();
+  const { isLoaded: isMapsLoaded, apiKeyPresent } = useMapLoader();
 
   useEffect(() => {
     if (location.state?.acceptedRide) {
@@ -94,7 +95,7 @@ export default function ActiveRide() {
       dest = rideData.dropoffLat && rideData.dropoffLng ? { lat: Number(rideData.dropoffLat), lng: Number(rideData.dropoffLng) } : null;
     }
 
-    if (!dest) { setRoutePath([]); return; }
+    if (!dest) { setDirections(null); return; }
 
     const DirectionsService = new (window as any).google.maps.DirectionsService();
     DirectionsService.route({
@@ -102,15 +103,11 @@ export default function ActiveRide() {
       destination: new (window as any).google.maps.LatLng(dest.lat, dest.lng),
       travelMode: (window as any).google.maps.TravelMode.DRIVING,
     }, (result: any, status: string) => {
-      if (status === 'OK' && result.routes?.[0]?.overview_path) {
-        const path = result.routes[0].overview_path.map((p: any) => ({
-          lat: p.lat(),
-          lng: p.lng()
-        }));
-        setRoutePath(path);
+      if (status === 'OK') {
+        setDirections(result);
       } else {
         console.error('Directions failed:', status);
-        setRoutePath([]);
+        setDirections(null);
       }
     });
   }, [driverLocation, rideData?.status, rideData?.pickupLat, rideData?.pickupLng, rideData?.dropoffLat, rideData?.dropoffLng, isMapsLoaded]);
@@ -153,16 +150,16 @@ export default function ActiveRide() {
       <div className={`relative w-full transition-all duration-300 ${isMinimized ? 'h-[80vh]' : 'h-80'}`}>
         {isMapsLoaded && apiKeyPresent ? (
           <GoogleMap mapContainerStyle={{ width: '100%', height: '100%' }} center={mapCenter} zoom={15} options={{ disableDefaultUI: true }}>
-            <Marker position={mapCenter} icon={{ url: tricycleIcon, scaledSize: new google.maps.Size(44, 44), anchor: new google.maps.Point(22, 22) }} zIndex={100} />
+            <Marker position={mapCenter} icon={{ url: tricycleIcon, scaledSize: new (window as any).google.maps.Size(44, 44), anchor: new (window as any).google.maps.Point(22, 22) }} zIndex={100} />
             {rideData.pickupLat && <Marker position={{ lat: Number(rideData.pickupLat), lng: Number(rideData.pickupLng) }} icon={markerIcon('#2563EB')} title="Pickup" />}
             {rideData.dropoffLat && <Marker position={{ lat: Number(rideData.dropoffLat), lng: Number(rideData.dropoffLng) }} icon={markerIcon('#E11D48')} title="Drop-off" />}
             {availableRequests.map(r => <Marker key={r.id} position={{ lat: Number(r.pickup_lat), lng: Number(r.pickup_lng) }} icon={markerIcon('#10B981')} />)}
-            {routePath.length > 0 && <Polyline path={routePath} options={{ strokeColor: '#2563EB', strokeWeight: 6, strokeOpacity: 0.8, zIndex: 50 }} />}
+            {directions && <DirectionsRenderer directions={directions} options={{ suppressMarkers: true, polylineOptions: { strokeColor: '#2563EB', strokeWeight: 6, strokeOpacity: 0.8 } }} />}
           </GoogleMap>
-        ) : <div className="h-full flex items-center justify-center bg-gray-100">Loading Map...</div>}
+        ) : <div className="h-full flex items-center justify-center bg-gray-100 font-bold text-gray-500">Loading Map...</div>}
         <Button onClick={() => {
           const dest = rideData?.status === 'on-the-way' ? { lat: rideData.pickupLat, lng: rideData.pickupLng } : { lat: rideData.dropoffLat, lng: rideData.dropoffLng };
-          if (dest.lat) window.open(`https://www.google.com/maps/dir/?api=1&origin=${driverLocation?.lat},${driverLocation?.lng}&destination=${dest.lat},${dest.lng}&travelmode=driving`, '_blank');
+          if (dest && dest.lat) window.open(`https://www.google.com/maps/dir/?api=1&origin=${driverLocation?.lat},${driverLocation?.lng}&destination=${dest.lat},${dest.lng}&travelmode=driving`, '_blank');
         }} className="absolute top-3 right-3 bg-white text-black shadow-md hover:bg-gray-100"><Navigation className="w-4 h-4 mr-2" />Navigate</Button>
       </div>
 
