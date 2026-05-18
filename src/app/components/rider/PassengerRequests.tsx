@@ -367,6 +367,18 @@ export default function PassengerRequests() {
     acceptedRides.push(acceptedRide);
     localStorage.setItem('trikeserve_accepted_rides', JSON.stringify(acceptedRides));
 
+    // Also set the active ride so customers (and other tabs) can see the driver on map
+    try {
+      localStorage.setItem('trikeserve_active_ride', JSON.stringify(acceptedRide));
+      // Dispatch a storage event to notify other tabs/components
+      window.dispatchEvent(new StorageEvent('storage', {
+        key: 'trikeserve_active_ride',
+        newValue: JSON.stringify(acceptedRide)
+      }));
+    } catch (e) {
+      console.warn('Could not set active ride in localStorage:', e);
+    }
+
     // Navigate to active ride page
     navigate('/rider/active-ride', { state: { acceptedRide } });
   };

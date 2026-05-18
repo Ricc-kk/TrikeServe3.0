@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { MapPin, Users, Clock, X, ChevronDown, MessageCircle, User, Minimize2 } from "lucide-react";
 import { Button } from "../ui/button";
 import { Card } from "../ui/card";
@@ -59,8 +59,31 @@ export default function ShareRideLobby({
   const [lobby, setLobby] = useState<ShareRideLobby | null>(null);
   const [isMinimized, setIsMinimized] = useState(false);
   const [showLeaveConfirm, setShowLeaveConfirm] = useState(false);
+  const [terminalStatus, setTerminalStatus] = useState<'completed' | 'cancelled' | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const hasHandledTerminalLobbyStatus = useRef(false);
+  const terminalCloseTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const handleTerminalLobbyStatus = (status?: string) => {
+    if (hasHandledTerminalLobbyStatus.current) return;
+
+    if (status === 'completed' || status === 'cancelled') {
+      hasHandledTerminalLobbyStatus.current = true;
+      setIsMinimized(false);
+      setTerminalStatus(status);
+
+      if (terminalCloseTimeoutRef.current) {
+        clearTimeout(terminalCloseTimeoutRef.current);
+      }
+
+      terminalCloseTimeoutRef.current = setTimeout(() => {
+        if (typeof onClose === 'function') {
+          onClose();
+        }
+      }, 1600);
+    }
+  };
 
   const normalizePassengers = (value: any): LobbyPassenger[] => {
     if (Array.isArray(value)) return value;
@@ -116,6 +139,7 @@ export default function ShareRideLobby({
 
          if (existingLobby && isMounted) {
            setLobby(existingLobby);
+            handleTerminalLobbyStatus(existingLobby.status);
 
             // Set up real-time subscription
             if (typeof supabaseHelpers.subscribeLobbyUpdates === 'function') {
@@ -157,6 +181,8 @@ export default function ShareRideLobby({
 
                       return newLobby;
                     });
+
+                    handleTerminalLobbyStatus(freshLobby.status);
 
                     // Check if driver was found
                     if (freshLobby.status === 'driver_found' && freshLobby.driver_name) {
@@ -221,6 +247,8 @@ export default function ShareRideLobby({
 
                   return prevLobby;
                 });
+
+                handleTerminalLobbyStatus(latestLobby.status);
               } catch (err) {
                 console.error('❌ Error in sync interval:', err);
               }
@@ -243,6 +271,9 @@ export default function ShareRideLobby({
 
      return () => {
        isMounted = false;
+        if (terminalCloseTimeoutRef.current) {
+          clearTimeout(terminalCloseTimeoutRef.current);
+        }
        if (typeof syncInterval !== 'undefined' && syncInterval !== null) {
          clearInterval(syncInterval);
        }
@@ -498,6 +529,7 @@ export default function ShareRideLobby({
   }
 
   const passengers = lobby.passengers_json || [];
+  const isTerminal = terminalStatus !== null;
 
   // Full lobby view
   return (
@@ -717,6 +749,24 @@ export default function ShareRideLobby({
           </div>
         </div>
       </div>
+
+      {isTerminal && (
+        <div className="fixed inset-0 bg-black/60 z-[2200] flex items-center justify-center p-4">
+          <Card className="bg-white p-6 max-w-sm w-full text-center shadow-2xl border-2 border-green-200">
+            <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-green-100 flex items-center justify-center text-3xl">
+              {terminalStatus === 'completed' ? '🎉' : '🛑'}
+            </div>
+            <h3 className="text-xl font-bold text-[#121212] mb-2">
+              {terminalStatus === 'completed' ? 'Ride Completed' : 'Ride Cancelled'}
+            </h3>
+            <p className="text-sm text-[#64748B]">
+              {terminalStatus === 'completed'
+                ? 'Your driver has completed the ride. Returning you to the customer screen...'
+                : 'This ride has been cancelled. Returning you to the customer screen...'}
+            </p>
+          </Card>
+        </div>
+      )}
 
       {/* Leave Confirmation Modal */}
       {showLeaveConfirm && (

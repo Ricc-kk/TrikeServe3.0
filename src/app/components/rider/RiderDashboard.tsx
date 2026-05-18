@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { GoogleMap, Marker, InfoWindow } from "@react-google-maps/api";
 import useMapLoader from "@/lib/mapLoader";
 import {
@@ -72,6 +72,110 @@ export default function RiderDashboard() {
   const [selectedMarker, setSelectedMarker] = useState<{ lat: number; lng: number } | null>(null);
   const [isLoadingLocation, setIsLoadingLocation] = useState(true);
   const [locationError, setLocationError] = useState<string | null>(null);
+
+  // Additional UI state for showing passenger/accepted markers and fullscreen behavior
+  const [passengerRequests, setPassengerRequests] = useState<any[]>([]);
+  const [acceptedRides, setAcceptedRides] = useState<any[]>([]);
+  const [isMapFullscreen, setIsMapFullscreen] = useState(false);
+
+  // Refs for GoogleMap instance and container DOM node
+  const mapRef = useRef<any>(null);
+  const mapContainerRef = useRef<HTMLDivElement | null>(null);
+
+  // Load passenger requests & accepted rides from localStorage so driver can see customer icons
+  useEffect(() => {
+    const loadStoredRequests = () => {
+      try {
+        const raw = localStorage.getItem('trikeserve_ride_requests');
+        const rawAccepted = localStorage.getItem('trikeserve_accepted_rides');
+        const reqs = raw ? JSON.parse(raw) : [];
+        const accepted = rawAccepted ? JSON.parse(rawAccepted) : [];
+        setPassengerRequests(Array.isArray(reqs) ? reqs : []);
+        setAcceptedRides(Array.isArray(accepted) ? accepted : []);
+      } catch (e) {
+        console.error('Error loading stored requests:', e);
+        setPassengerRequests([]);
+        setAcceptedRides([]);
+      }
+    };
+
+    loadStoredRequests();
+    const interval = setInterval(loadStoredRequests, 3000);
+    window.addEventListener('storage', loadStoredRequests);
+    return () => {
+      clearInterval(interval);
+      window.removeEventListener('storage', loadStoredRequests);
+    };
+  }, []);
+
+  // Helper: try to extract lat/lng from a stored request object
+  const coordsFromRequest = useCallback((r: any) => {
+    if (!r) return null;
+    if (typeof r.pickupLat === 'number' && typeof r.pickupLng === 'number') return { lat: r.pickupLat, lng: r.pickupLng };
+    if (r.pickup_coords && typeof r.pickup_coords.lat === 'number' && typeof r.pickup_coords.lng === 'number') return { lat: r.pickup_coords.lat, lng: r.pickup_coords.lng };
+    if (typeof r.pickup === 'string') {
+      const parts = r.pickup.split(',').map((p: string) => p.trim());
+      if (parts.length === 2) {
+        const la = Number(parts[0]);
+        const lo = Number(parts[1]);
+        if (!Number.isNaN(la) && !Number.isNaN(lo)) return { lat: la, lng: lo };
+      }
+    }
+    return null;
+  }, []);
+
+  // When an active ride status changes to in-progress (picked up), fullscreen the map to focus on navigation
+  useEffect(() => {
+    if (activeRideData && activeRideData.status === 'in-progress') {
+      if (!isMapFullscreen) {
+        try {
+          if (mapContainerRef.current && (mapContainerRef.current as any).requestFullscreen) {
+            (mapContainerRef.current as any).requestFullscreen();
+          } else if (document.documentElement.requestFullscreen) {
+            document.documentElement.requestFullscreen();
+          }
+        } catch (e) {
+          console.warn('Failed to enter fullscreen:', e);
+        }
+        // Always update state so we still apply the CSS-based fullscreen fallback (hide UI, expand map)
+        setIsMapFullscreen(true);
+      }
+
+      // If active ride includes a dropoff or route center, try to center map
+      if (mapRef.current) {
+        const dest = coordsFromRequest(activeRideData) || coordsFromRequest({ pickup: activeRideData.dropoff }) || null;
+        try {
+          if (dest && mapRef.current.panTo) {
+            mapRef.current.panTo(dest);
+            mapRef.current.setZoom?.(16);
+          }
+        } catch (e) {}
+      }
+    }
+  }, [activeRideData, isMapFullscreen, coordsFromRequest]);
+
+  // Toggle fullscreen manually
+  const toggleFullscreen = async () => {
+    try {
+      if (!isMapFullscreen) {
+        if (mapContainerRef.current && (mapContainerRef.current as any).requestFullscreen) {
+          await (mapContainerRef.current as any).requestFullscreen();
+        } else if (document.documentElement.requestFullscreen) {
+          await document.documentElement.requestFullscreen();
+        }
+        setIsMapFullscreen(true);
+      } else {
+        if (document.fullscreenElement) {
+          await document.exitFullscreen();
+        }
+        setIsMapFullscreen(false);
+      }
+    } catch (e) {
+      console.warn('Fullscreen toggle failed', e);
+      // Apply CSS fallback
+      setIsMapFullscreen(prev => !prev);
+    }
+  };
 
   // Load Google Maps SDK via shared loader
   const { isLoaded: isMapsLoaded, loadError: mapsLoadError, blocked, apiKeyPresent } = useMapLoader();
@@ -292,11 +396,68 @@ export default function RiderDashboard() {
 
   const handleCompleteTrip = () => {
     if (activeTrip) {
+      // Update earnings and UI state
       setEarnings(prev => prev + activeTrip.amount);
       setActiveTrip(null);
       setCurrentSeats(0);
+
+      // Mark active ride as completed in localStorage so customer side will update
+      try {
+        const raw = localStorage.getItem('trikeserve_active_ride');
+        if (raw) {
+          const ar = JSON.parse(raw);
+          if (!ar.completedAt) ar.completedAt = new Date().toISOString();
+          ar.status = 'completed';
+          localStorage.setItem('trikeserve_active_ride', JSON.stringify(ar));
+          window.dispatchEvent(new StorageEvent('storage', { key: 'trikeserve_active_ride', newValue: JSON.stringify(ar) }));
+        }
+
+        // Also update accepted rides list if present
+        const rawAccepted = localStorage.getItem('trikeserve_accepted_rides');
+        if (rawAccepted) {
+          try {
+            const accepted = JSON.parse(rawAccepted);
+            const idx = accepted.findIndex((r: any) => r.id === activeTrip.id);
+            if (idx >= 0) {
+              accepted[idx].status = 'completed';
+              accepted[idx].completedAt = new Date().toISOString();
+              localStorage.setItem('trikeserve_accepted_rides', JSON.stringify(accepted));
+              window.dispatchEvent(new StorageEvent('storage', { key: 'trikeserve_accepted_rides', newValue: JSON.stringify(accepted) }));
+            }
+          } catch (e) {
+            console.warn('Error updating accepted rides on complete:', e);
+          }
+        }
+      } catch (e) {
+        console.warn('Error marking active ride complete:', e);
+      }
+      // Clear active ride UI
+      setHasActiveRide(false);
+      setActiveRideData(null);
     }
   };
+
+  // When driver has an active ride, periodically update their current coordinates into localStorage
+  useEffect(() => {
+    if (!hasActiveRide) return;
+    const interval = setInterval(() => {
+      try {
+        const raw = localStorage.getItem('trikeserve_active_ride');
+        if (!raw) return;
+        const ar = JSON.parse(raw);
+        // Update driver location from mapCenter
+        ar.driverLat = mapCenter.lat;
+        ar.driverLng = mapCenter.lng;
+        ar.lastUpdated = new Date().toISOString();
+        localStorage.setItem('trikeserve_active_ride', JSON.stringify(ar));
+        window.dispatchEvent(new StorageEvent('storage', { key: 'trikeserve_active_ride', newValue: JSON.stringify(ar) }));
+      } catch (e) {
+        // ignore
+      }
+    }, 2000);
+
+    return () => clearInterval(interval);
+  }, [hasActiveRide, mapCenter]);
 
   return (
     <div className="h-screen flex flex-col bg-[#F8F9FA] relative">
@@ -317,39 +478,92 @@ export default function RiderDashboard() {
             </div>
           </div>
         ) : isMapsLoaded && !blocked && apiKeyPresent ? (
-          <GoogleMap
-            mapContainerStyle={{ width: "100%", height: "100%" }}
-            center={mapCenter}
-            zoom={15}
-            options={{
-              zoomControl: false,
-              fullscreenControl: true,
-              streetViewControl: false,
-              mapTypeControl: true,
-            }}
-          >
-            {/* Current Location Marker */}
-            <Marker
-              position={mapCenter}
-              onClick={() => setSelectedMarker(mapCenter)}
-              title="Your location"
-            />
+          <div ref={mapContainerRef} className={isMapFullscreen ? 'fixed inset-0 z-[2000] bg-white' : 'w-full h-full relative'}>
+            <GoogleMap
+              onLoad={(map) => { mapRef.current = map; }}
+              mapContainerStyle={{ width: "100%", height: "100%" }}
+              center={mapCenter}
+              zoom={15}
+              options={{
+                zoomControl: false,
+                fullscreenControl: true,
+                streetViewControl: false,
+                mapTypeControl: true,
+              }}
+            >
+              {/* Current Location Marker (driver) */}
+              <Marker
+                position={mapCenter}
+                onClick={() => setSelectedMarker(mapCenter)}
+                title="Your location"
+              />
 
-            {/* Info Window for selected marker */}
-            {selectedMarker && (
-              <InfoWindow
-                position={selectedMarker}
-                onCloseClick={() => setSelectedMarker(null)}
-              >
-                <div className="text-sm">
-                  <p className="font-bold">Your current location</p>
-                  <p className="text-gray-600">
-                    {selectedMarker.lat.toFixed(4)}, {selectedMarker.lng.toFixed(4)}
-                  </p>
-                </div>
-              </InfoWindow>
-            )}
-          </GoogleMap>
+              {/* Passenger request markers (pending) */}
+              {passengerRequests.map((r, idx) => {
+                const c = coordsFromRequest(r);
+                if (!c) return null;
+                return (
+                  <Marker
+                    key={`pass_${r.id || idx}`}
+                    position={c}
+                    title={r.customerName || 'Passenger'}
+                    onClick={() => setSelectedMarker(c)}
+                    icon={{
+                      // Simple colored circle marker for passenger
+                      path: 'M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7z',
+                      fillColor: '#10B981',
+                      fillOpacity: 1,
+                      strokeWeight: 0,
+                      scale: 1.2,
+                    }}
+                  />
+                );
+              })}
+
+              {/* Accepted rides / active passengers */}
+              {acceptedRides.map((r, idx) => {
+                const c = coordsFromRequest(r) || coordsFromRequest({ pickup: r.pickup });
+                if (!c) return null;
+                return (
+                  <Marker
+                    key={`acc_${r.id || idx}`}
+                    position={c}
+                    title={r.customerName || 'Accepted Passenger'}
+                    onClick={() => setSelectedMarker(c)}
+                    icon={{
+                      path: 'M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7z',
+                      fillColor: '#E11D48',
+                      fillOpacity: 1,
+                      strokeWeight: 0,
+                      scale: 1.2,
+                    }}
+                  />
+                );
+              })}
+
+              {/* Info Window for selected marker */}
+              {selectedMarker && (
+                <InfoWindow
+                  position={selectedMarker}
+                  onCloseClick={() => setSelectedMarker(null)}
+                >
+                  <div className="text-sm">
+                    <p className="font-bold">Location</p>
+                    <p className="text-gray-600">
+                      {selectedMarker.lat.toFixed(4)}, {selectedMarker.lng.toFixed(4)}
+                    </p>
+                  </div>
+                </InfoWindow>
+              )}
+            </GoogleMap>
+
+            {/* Fullscreen toggle button */}
+            <div className="absolute top-4 right-4 z-[1500]">
+              <Button onClick={toggleFullscreen} className="bg-white shadow-md px-3 py-2 rounded-md">
+                {isMapFullscreen ? 'Exit Fullscreen' : 'Fullscreen Map'}
+              </Button>
+            </div>
+          </div>
         ) : isMapsLoaded && blocked ? (
           <div className="w-full h-full flex items-center justify-center bg-yellow-50">
             <div className="text-center max-w-md px-6">
@@ -376,7 +590,7 @@ export default function RiderDashboard() {
         )}
 
         {/* Toggle Online/Offline Button */}
-        {!activeTrip && (
+        {!activeTrip && !isMapFullscreen && (
           <div className="absolute top-4 left-1/2 -translate-x-1/2 z-[1000]">
             <Button
               onClick={() => setIsOnline(!isOnline)}
@@ -402,7 +616,7 @@ export default function RiderDashboard() {
         )}
 
         {/* Active Trip Card */}
-        {activeTrip && (
+        {activeTrip && !isMapFullscreen && (
           <div className="absolute bottom-20 left-0 right-0 z-[1000] p-4">
             <Card className="p-6 bg-white shadow-2xl border-2 border-[#E11D48]">
               <div className="flex items-start justify-between mb-4">
@@ -465,7 +679,7 @@ export default function RiderDashboard() {
         {/* Removed - requests only shown on Passenger Requests page */}
 
         {/* Bottom Sheet - Always visible (Quick Actions, Service Types, Destination, Auto Accept, Passenger Requests) */}
-        {!activeTrip && (
+        {!activeTrip && !isMapFullscreen && (
           <div className="absolute bottom-20 left-0 right-0 z-[999] px-4">
             <Card className="bg-white shadow-xl rounded-t-3xl max-h-[70vh] overflow-y-auto">
               {/* Quick Actions */}
@@ -697,7 +911,8 @@ export default function RiderDashboard() {
       </div>
 
       {/* Bottom Navigation - Fixed */}
-      <div className="absolute bottom-0 left-0 right-0 bg-white border-t-2 border-[#CBD5E1] z-[1000]">
+      {!isMapFullscreen && (
+        <div className="absolute bottom-0 left-0 right-0 bg-white border-t-2 border-[#CBD5E1] z-[1000]">
         <div className="px-4 py-3 flex justify-around items-center">
           <Button variant="ghost" className="flex flex-col items-center gap-1">
             <HomeIcon className="w-5 h-5 text-[#00A854]" />
@@ -727,7 +942,8 @@ export default function RiderDashboard() {
             </Button>
           </Link>
         </div>
-      </div>
+        </div>
+      )}
 
       {/* Active Ride Floating Icon */}
       {hasActiveRide && activeRideData && (
