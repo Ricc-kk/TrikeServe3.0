@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from "react";
-import { GoogleMap, LoadScript, Marker, InfoWindow } from "@react-google-maps/api";
+import { GoogleMap, Marker, InfoWindow, DirectionsRenderer } from "@react-google-maps/api";
+import useMapLoader from "@/lib/mapLoader";
 import PlaceSearch from "../ui/PlaceSearch";
 import { GOOGLE_MAPS_LIBRARIES, VALENZUELA_BIAS } from "@/lib/googleMaps";
 import {
@@ -20,7 +21,11 @@ import {
   Star,
   X,
   Zap,
-  MessageCircle
+  MessageCircle,
+  Clock,
+  Maximize,
+  TrendingDown,
+  Check
 } from "lucide-react";
 import { Link, useNavigate } from "react-router";
 import { Button } from "../ui/button";
@@ -65,10 +70,28 @@ export default function RiderDashboard() {
   const [activeRideData, setActiveRideData] = useState<any>(null);
   const [unreadMessagesCount, setUnreadMessagesCount] = useState(0);
   const [tripsCompletedCount, setTripsCompletedCount] = useState(0);
-   const [mapCenter, setMapCenter] = useState<{ lat: number; lng: number }>({ lat: 14.5995, lng: 120.9842 }); // Default: Manila
+   const [mapCenter, setMapCenter] = useState<{ lat: number; lng: number }>({ lat: 14.6037, lng: 120.9793 }); // Default: Tagalag, Valenzuela
    const [selectedMarker, setSelectedMarker] = useState<{ lat: number; lng: number } | null>(null);
-   const [isLoadingLocation, setIsLoadingLocation] = useState(true);
-   const [locationError, setLocationError] = useState<string | null>(null);
+    const [pendingRequestsList, setPendingRequestsList] = useState<any[]>([]);
+    const [navRoutePath, setNavRoutePath] = useState<Array<{ lat: number; lng: number }>>([]);
+    const [navTargetRequest, setNavTargetRequest] = useState<any | null>(null);
+    const [directionsResult, setDirectionsResult] = useState<any>(null);
+    const [prioritizedRouteStops, setPrioritizedRouteStops] = useState<any[]>([]);
+    const [prioritizationReasons, setPrioritizationReasons] = useState<any>(null);
+    const [geocodeCache, setGeocodeCache] = useState<Record<string, { lat: number; lng: number }>>(() => {
+      try {
+        const cached = localStorage.getItem('trikeserve_geocode_cache');
+        return cached ? JSON.parse(cached) : {};
+      } catch {
+        return {};
+      }
+    });
+    const [directionsThrottleTime, setDirectionsThrottleTime] = useState<number>(0);
+    const [isLoadingLocation, setIsLoadingLocation] = useState(true);
+     const [locationError, setLocationError] = useState<string | null>(null);
+
+          // Load Google Maps SDK via shared loader
+          const { isLoaded: isMapsLoaded, loadError: mapsLoadError, blocked, apiKeyPresent } = useMapLoader();
 
   // Get user's current location on component mount
   useEffect(() => {
@@ -173,8 +196,9 @@ export default function RiderDashboard() {
             console.error('❌ Dashboard: Error loading waiting lobbies from database:', lobbyError);
           }
 
-          // Count ride requests
+          // Save ride requests for routing and prioritization
           const rideRequestCount = rideRequests?.length || 0;
+          setPendingRequestsList(rideRequests || []);
 
           // Count total passengers in all waiting lobbies
           let totalLobbyPassengers = 0;
@@ -255,6 +279,392 @@ export default function RiderDashboard() {
         console.log('🔌 Dashboard: Cleaned up real-time subscriptions');
       };
    }, []);
+
+  // Helpers: Haversine distance in meters
+  const haversineDistance = (a: { lat: number; lng: number }, b: { lat: number; lng: number }) => {
+    const toRad = (x: number) => (x * Math.PI) / 180;
+    const R = 6371e3; // metres
+    const φ1 = toRad(a.lat);
+    const φ2 = toRad(b.lat);
+    const Δφ = toRad(b.lat - a.lat);
+    const Δλ = toRad(b.lng - a.lng);
+
+    const sa = Math.sin(Δφ / 2) * Math.sin(Δφ / 2) +
+      Math.cos(φ1) * Math.cos(φ2) * Math.sin(Δλ / 2) * Math.sin(Δλ / 2);
+    const c = 2 * Math.atan2(Math.sqrt(sa), Math.sqrt(1 - sa));
+    return R * c;
+  };
+
+  // Decode polyline (same algorithm used in ActiveRide)
+  const decodeGooglePolyline = (encoded: string): Array<{ lat: number; lng: number }> => {
+    let index = 0;
+    let lat = 0;
+    let lng = 0;
+    const points: Array<{ lat: number; lng: number }> = [];
+
+    while (index < encoded.length) {
+      let shift = 0;
+      let result = 0;
+      let byte: number;
+
+      do {
+        byte = encoded.charCodeAt(index++) - 63;
+        result |= (byte & 0x1f) << shift;
+        shift += 5;
+      } while (byte >= 0x20);
+
+      const deltaLat = (result & 1) !== 0 ? ~(result >> 1) : result >> 1;
+      lat += deltaLat;
+
+      shift = 0;
+      result = 0;
+
+      do {
+        byte = encoded.charCodeAt(index++) - 63;
+        result |= (byte & 0x1f) << shift;
+        shift += 5;
+      } while (byte >= 0x20);
+
+      const deltaLng = (result & 1) !== 0 ? ~(result >> 1) : result >> 1;
+      lng += deltaLng;
+
+      points.push({ lat: lat / 1e5, lng: lng / 1e5 });
+    }
+
+    return points;
+  };
+
+  // Helper: Create custom SVG marker for driver (red car)
+  const createDriverMarkerIcon = (): google.maps.Icon | undefined => {
+    const google = (window as any)?.google;
+    if (!google?.maps?.Size || !google?.maps?.Point) return undefined;
+
+    const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="#EF4444" stroke="white" stroke-width="0.5">
+      <path d="M18.92 6.01C18.72 5.42 18.16 5 17.5 5h-11c-.66 0-1.21.42-1.42 1.01L3 12v8c0 .55.45 1 1 1h1c.55 0 1-.45 1-1v-1h12v1c0 .55.45 1 1 1h1c.55 0 1-.45 1-1v-8l-2.08-5.99zM6.5 16c-1.1 0-2-.9-2-2s.9-2 2-2 2 .9 2 2-.9 2-2 2zm11 0c-1.1 0-2-.9-2-2s.9-2 2-2 2 .9 2 2-.9 2-2 2z"/>
+    </svg>`;
+
+    return {
+      url: 'data:image/svg+xml;charset=UTF-8,' + encodeURIComponent(svg),
+      scaledSize: new google.maps.Size(40, 40),
+      anchor: new google.maps.Point(20, 20),
+    };
+  };
+
+  // Helper: Create custom SVG marker for customer/passenger (blue pin)
+  const createCustomerMarkerIcon = (): google.maps.Icon | undefined => {
+    const google = (window as any)?.google;
+    if (!google?.maps?.Size || !google?.maps?.Point) return undefined;
+
+    const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="#3B82F6" stroke="white" stroke-width="1">
+      <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.42 0-8-3.58-8-8s3.58-8 8-8 8 3.58 8 8-3.58 8-8 8zm3.5-9c.83 0 1.5-.67 1.5-1.5S16.33 8 15.5 8 14 8.67 14 9.5s.67 1.5 1.5 1.5z"/>
+    </svg>`;
+
+    return {
+      url: 'data:image/svg+xml;charset=UTF-8,' + encodeURIComponent(svg),
+      scaledSize: new google.maps.Size(40, 40),
+      anchor: new google.maps.Point(20, 40),
+    };
+  };
+
+  // Helper: Compute route using new google.maps.routes API (replaces deprecated DirectionsService)
+  const computeRouteWithNewAPI = async (
+    origin: { lat: number; lng: number },
+    destination: { lat: number; lng: number },
+    waypoints: Array<{ lat: number; lng: number }>
+  ): Promise<any> => {
+    if (!GOOGLE_MAPS_API_KEY) {
+      console.error('❌ Google Maps API Key missing');
+      return null;
+    }
+
+    try {
+      const intermediates = waypoints.map(
+        (wp) => ({"location": {"latLng": {"latitude": wp.lat, "longitude": wp.lng}}})
+      );
+
+      const requestBody = {
+        origin: { "location": { "latLng": { "latitude": origin.lat, "longitude": origin.lng } } },
+        destination: { "location": { "latLng": { "latitude": destination.lat, "longitude": destination.lng } } },
+        intermediates: intermediates,
+        travelMode: "DRIVE",
+        routingPreference: "TRAFFIC_AWARE",
+        computeAlternativeRoutes: false,
+      };
+
+      const response = await fetch(
+        `https://routes.googleapis.com/directions/v2:computeRoutes?key=${GOOGLE_MAPS_API_KEY}`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(requestBody),
+        }
+      );
+
+      if (!response.ok) {
+        console.warn('⚠️ Routes API failed, falling back to legacy API:', response.statusText);
+        return null;
+      }
+
+      const data = await response.json();
+
+      if (data.routes && data.routes[0]) {
+        const route = data.routes[0];
+        const overviewPolyline = route.polyline.encodedPolyline;
+
+        return {
+          routes: [
+            {
+              overview_polyline: { points: overviewPolyline },
+              legs: route.legs,
+            }
+          ]
+        };
+      }
+
+      return null;
+    } catch (error) {
+      console.warn('⚠️ New Routes API error, falling back to legacy:', error);
+      return null;
+    }
+  };
+
+  const geocodeAddress = async (address: string): Promise<{ lat: number; lng: number } | null> => {
+    if (!address) return null;
+
+    // Check cache first
+    if (geocodeCache[address]) {
+      console.log('✅ Geocode cache hit:', address);
+      return geocodeCache[address];
+    }
+
+    const google = (window as any)?.google;
+    if (!google?.maps?.Geocoder) return null;
+
+    const geocoder = new google.maps.Geocoder();
+    return new Promise((resolve) => {
+      geocoder.geocode({ address }, (results: any, status: string) => {
+        if (status === 'OK' && results?.[0]?.geometry?.location) {
+          const location = {
+            lat: results[0].geometry.location.lat(),
+            lng: results[0].geometry.location.lng(),
+          };
+          // Update cache
+          const newCache = { ...geocodeCache, [address]: location };
+          setGeocodeCache(newCache);
+          try {
+            localStorage.setItem('trikeserve_geocode_cache', JSON.stringify(newCache));
+          } catch (e) {
+            console.warn('Could not save geocode cache:', e);
+          }
+          console.log('✅ Geocoded:', address, location);
+          resolve(location);
+        } else {
+          resolve(null);
+        }
+      });
+    });
+  };
+
+  // Calculate distance-based ETA in seconds (rough estimate: 40 km/h average speed)
+  const estimateETA = (distanceMeters: number): number => {
+    const averageSpeedMPS = 40000 / 3600; // 40 km/h in m/s
+    return Math.ceil(distanceMeters / averageSpeedMPS);
+  };
+
+  // Compute optimized multi-stop route to prioritized pickups
+  useEffect(() => {
+    const computeOptimizedRoute = async () => {
+      if (!mapCenter || !pendingRequestsList || pendingRequestsList.length === 0) return;
+      const google = (window as any)?.google;
+      if (!isMapsLoaded || !google || !google.maps?.DirectionsService) return;
+
+      // Throttle DirectionsService calls: min 2 seconds between calls
+      const now = Date.now();
+      if (directionsThrottleTime && now - directionsThrottleTime < 2000) {
+        console.log('⏱ DirectionsService throttled');
+        return;
+      }
+
+      console.log('🚀 Computing optimized multi-stop route...');
+
+      // Normalize and geocode request addresses
+      let requestsWithCoords = await Promise.all(
+        pendingRequestsList.map(async (r) => {
+          let pickupLat = r.pickup_lat || r.pickupLat || r.pickupLatitude;
+          let pickupLng = r.pickup_lng || r.pickupLng || r.pickupLongitude;
+
+          // If no coords, try geocoding
+          if (!pickupLat || !pickupLng) {
+            const address = r.pickupAddress || r.pickup || r.address;
+            if (address) {
+              const geocoded = await geocodeAddress(address);
+              if (geocoded) {
+                pickupLat = geocoded.lat;
+                pickupLng = geocoded.lng;
+              }
+            }
+          }
+
+          return {
+            ...r,
+            pickupLat: pickupLat || null,
+            pickupLng: pickupLng || null,
+          };
+        })
+      );
+
+      // Filter: requests with valid coordinates
+      requestsWithCoords = requestsWithCoords.filter((r) => r.pickupLat && r.pickupLng);
+
+      if (requestsWithCoords.length === 0) {
+        console.log('⚠️ No requests with coordinates after geocoding');
+        setDirectionsResult(null);
+        setPrioritizedRouteStops([]);
+        setNavTargetRequest(null);
+        return;
+      }
+
+      // Capacity check: driver seats
+      const availableSeats = currentSeats || 0;
+      console.log('🪑 Available seats:', availableSeats);
+
+      // Prioritization: compute score for each request
+      const MAX_DISTANCE_METERS = 10000; // 10 km max detour
+      const TIME_WINDOW_HOURS = 1; // Assume 1 hour window
+
+      const scored = requestsWithCoords
+        .map((r) => {
+          const dist = haversineDistance(mapCenter, {
+            lat: Number(r.pickupLat),
+            lng: Number(r.pickupLng),
+          });
+
+          // Filter by distance
+          if (dist > MAX_DISTANCE_METERS) {
+            return { ...r, __valid: false, __filter: 'too_far', __distance: dist };
+          }
+
+          // Filter by capacity (shared ride: passengers, delivery: 1)
+          const requiredSeats = r.type === 'shared' ? Math.max(1, r.passengers || 1) : 1;
+          if (requiredSeats > availableSeats) {
+            return { ...r, __valid: false, __filter: 'no_capacity', __distance: dist, __seats: requiredSeats };
+          }
+
+          const eta = estimateETA(dist);
+          const passengers = Math.max(1, r.passengers || 1);
+          const isPrepaid = r.payment === 'PREPAID' ? 1 : 0;
+
+          // Scoring: lower is better (distance weighted heavily)
+          const score =
+            dist +  // distance in meters
+            (passengers * 100) * -1 +  // prefer more passengers (negative = boost)
+            (isPrepaid * 500) * -1;  // prepaid preference (negative = boost)
+
+          return {
+            ...r,
+            __valid: true,
+            __distance: dist,
+            __eta: eta,
+            __score: score,
+            __seats: requiredSeats,
+            __passengers: passengers,
+            __prepaid: isPrepaid === 1,
+          };
+        });
+
+      // Separate valid and invalid
+      const validRequests = scored.filter((r) => r.__valid);
+      const filteredRequests = scored.filter((r) => !r.__valid);
+
+      if (validRequests.length === 0) {
+        console.log('⚠️ No valid requests after filtering');
+        console.log('   Filtered out:', filteredRequests.map((r) => ({ id: r.id, reason: r.__filter })));
+        setDirectionsResult(null);
+        setPrioritizedRouteStops([]);
+        setNavTargetRequest(null);
+        return;
+      }
+
+      // Sort and pick top 4 stops (Google DirectionsService max waypoints ~23, but keep it small for UX)
+      validRequests.sort((a: any, b: any) => a.__score - b.__score);
+      const topStops = validRequests.slice(0, 4);
+
+      console.log('✅ Top prioritized stops:', topStops.map((r: any) => ({ id: r.id, score: r.__score, distance: r.__distance })));
+
+      setPrioritizedRouteStops(topStops);
+      setNavTargetRequest(topStops[0] || null);
+
+      // Store prioritization reasons
+      setPrioritizationReasons({
+        primary: topStops[0],
+        distance: topStops[0]?.__distance || 0,
+        eta: topStops[0]?.__eta || 0,
+        passengers: topStops[0]?.__passengers || 0,
+        prepaid: topStops[0]?.__prepaid || false,
+        allStops: topStops,
+        filteredOut: filteredRequests,
+      });
+
+      // Build waypoints (up to 23)
+      const waypoints = topStops.slice(1).map((r: any) => ({
+        lat: Number(r.pickupLat),
+        lng: Number(r.pickupLng),
+      }));
+
+      // Try new Routes API first (preference over deprecated DirectionsService)
+      setDirectionsThrottleTime(now);
+
+      const newApiResult = await computeRouteWithNewAPI(
+        mapCenter,
+        {
+          lat: Number(topStops[0].pickupLat),
+          lng: Number(topStops[0].pickupLng),
+        },
+        waypoints
+      );
+
+      if (newApiResult) {
+        setDirectionsResult(newApiResult);
+        console.log('✅ Multi-stop directions rendered (New Routes API)');
+        return;
+      }
+
+      // Fallback to legacy DirectionsService if new API unavailable
+      if (!google?.maps?.DirectionsService) {
+        console.warn('⚠️ DirectionsService not available, routes visualization unavailable');
+        return;
+      }
+
+      const waypointsForLegacy = topStops.slice(1).map((r: any) => ({
+        location: new google.maps.LatLng(r.pickupLat, r.pickupLng),
+        stopover: true,
+      }));
+
+      const DirectionsService = new google.maps.DirectionsService();
+      DirectionsService.route(
+        {
+          origin: new google.maps.LatLng(mapCenter.lat, mapCenter.lng),
+          destination: new google.maps.LatLng(
+            Number(topStops[0].pickupLat),
+            Number(topStops[0].pickupLng)
+          ),
+          waypoints: waypointsForLegacy,
+          travelMode: google.maps.TravelMode.DRIVING,
+          optimizeWaypoints: true,
+        },
+        (result: any, status: string) => {
+          if (status === 'OK') {
+            setDirectionsResult(result);
+            console.log('✅ Multi-stop directions rendered (Legacy DirectionsService)');
+          } else {
+            console.error('❌ DirectionsService error:', status);
+          }
+        }
+      );
+    };
+
+    computeOptimizedRoute();
+  }, [mapCenter, pendingRequestsList, isMapsLoaded, currentSeats, geocodeCache]);
 
   // Count unread messages from passengers
   useEffect(() => {
@@ -382,43 +792,91 @@ export default function RiderDashboard() {
               <p className="text-xs text-gray-500">Default location shown: Manila, Philippines</p>
             </div>
           </div>
-        ) : (
-          <LoadScript googleMapsApiKey={GOOGLE_MAPS_API_KEY} libraries={GOOGLE_MAPS_LIBRARIES}>
-            <GoogleMap
-              mapContainerStyle={{ width: "100%", height: "100%" }}
-              center={mapCenter}
-              zoom={15}
-              options={{
-                zoomControl: false,
-                fullscreenControl: true,
-                streetViewControl: false,
-                mapTypeControl: true,
-              }}
-            >
-              {/* Current Location Marker */}
-              <Marker
-                position={mapCenter}
-                onClick={() => setSelectedMarker(mapCenter)}
-                title="Your location"
-              />
+                ) : isMapsLoaded && !blocked && apiKeyPresent ? (
+          <GoogleMap
+            mapContainerStyle={{ width: "100%", height: "100%" }}
+            center={mapCenter}
+            zoom={15}
+            options={{
+              zoomControl: false,
+              fullscreenControl: true,
+              streetViewControl: false,
+              mapTypeControl: true,
+            }}
+          >
+            {/* Current Location Marker - Driver (Red Car) */}
+            <Marker
+              position={mapCenter}
+              onClick={() => setSelectedMarker(mapCenter)}
+              title="🚗 Your location (Driver)"
+              icon={createDriverMarkerIcon()}
+            />
 
-              {/* Info Window for selected marker */}
-              {selectedMarker && (
-                <InfoWindow
-                  position={selectedMarker}
-                  onCloseClick={() => setSelectedMarker(null)}
-                >
-                  <div className="text-sm">
-                    <p className="font-bold">Your current location</p>
-                    <p className="text-gray-600">
-                      {selectedMarker.lat.toFixed(4)}, {selectedMarker.lng.toFixed(4)}
-                    </p>
-                  </div>
-                </InfoWindow>
-              )}
-            </GoogleMap>
-          </LoadScript>
-        )}
+             {/* Info Window for selected marker */}
+             {selectedMarker && (
+               <InfoWindow
+                 position={selectedMarker}
+                 onCloseClick={() => setSelectedMarker(null)}
+               >
+                 <div className="text-sm">
+                   <p className="font-bold">Your current location</p>
+                   <p className="text-gray-600">
+                     {selectedMarker.lat.toFixed(4)}, {selectedMarker.lng.toFixed(4)}
+                   </p>
+                 </div>
+               </InfoWindow>
+             )}
+
+             {/* DirectionsRenderer for multi-stop route (replaces polyline) */}
+             {directionsResult && (
+               <DirectionsRenderer
+                 directions={directionsResult}
+                 options={{
+                   markerOptions: {
+                     visible: false,
+                   },
+                   polylineOptions: {
+                     strokeColor: '#E11D48',
+                     strokeOpacity: 0.92,
+                     strokeWeight: 5,
+                   },
+                 }}
+               />
+             )}
+
+             {/* Marker for the prioritized pickup target - Customer (Blue Pin) */}
+             {navTargetRequest && navTargetRequest.pickupLat && navTargetRequest.pickupLng && (
+               <Marker
+                 position={{ lat: Number(navTargetRequest.pickupLat), lng: Number(navTargetRequest.pickupLng) }}
+                 title={`📍 Prioritized Pickup: ${navTargetRequest.pickup || navTargetRequest.address || ''}`}
+                 icon={createCustomerMarkerIcon()}
+               />
+             )}
+          </GoogleMap>
+        ) : isMapsLoaded && blocked ? (
+          <div className="w-full h-full flex items-center justify-center bg-yellow-50">
+            <div className="text-center max-w-md px-6">
+              <p className="text-lg font-bold text-yellow-700 mb-2">⚠️ Google Maps scripts loaded but unavailable</p>
+              <p className="text-sm text-yellow-800 mb-3">The Maps SDK appears to be blocked by a browser extension or network policy (window.google is missing). Try disabling ad-blockers or allow maps.googleapis.com.</p>
+              <div className="flex gap-3 justify-center">
+                <button onClick={() => window.location.reload()} className="px-4 py-2 bg-[#E11D48] text-white rounded-md">Retry</button>
+                <button onClick={() => window.open('about:blank', '_blank')} className="px-4 py-2 border rounded-md">Open Incognito / Disable Extensions</button>
+              </div>
+            </div>
+          </div>
+        ) : mapsLoadError ? (
+          <div className="w-full h-full flex items-center justify-center bg-red-50">
+            <div className="text-center">
+              <p className="text-xl font-bold text-red-600">⚠️ Map Error</p>
+              <p className="text-sm text-red-700">{String(mapsLoadError?.message || mapsLoadError)}</p>
+            </div>
+          </div>
+        ) : (
+          <div className="w-full h-full flex items-center justify-center bg-gray-100">
+            <p className="text-sm text-gray-600">Loading map...</p>
+          </div>
+        )
+        }
 
         {/* Toggle Online/Offline Button */}
         {!activeTrip && (
@@ -570,8 +1028,98 @@ export default function RiderDashboard() {
                 </div>
               </div>
 
+              {/* Prioritization Reasons Card - Shows why next pickup was selected */}
+              {prioritizationReasons && prioritizationReasons.primary && isOnline && (
+                <div className="border-t border-green-200 bg-gradient-to-br from-green-50 to-emerald-50 p-4 space-y-3">
+                  <h3 className="font-bold text-[#121212] flex items-center gap-2">
+                    <Check className="w-5 h-5 text-green-600" />
+                    Recommended Pickup
+                  </h3>
 
-              {showServiceTypes && (
+                  {/* Primary Pickup Info */}
+                  <div className="bg-white rounded-lg p-3 border-2 border-green-200">
+                    <p className="font-semibold text-[#121212] mb-2">
+                      🎯 {prioritizationReasons.primary.pickup || prioritizationReasons.primary.address}
+                    </p>
+
+                    {/* Prioritization Indicators */}
+                    <div className="grid grid-cols-2 gap-2 mb-3">
+                      {/* Distance */}
+                      <div className="flex items-center gap-2 bg-blue-50 p-2 rounded">
+                        <Navigation className="w-4 h-4 text-blue-600" />
+                        <div className="text-xs">
+                          <p className="text-blue-600 font-semibold">
+                            {(prioritizationReasons.distance / 1000).toFixed(1)} km
+                          </p>
+                          <p className="text-blue-500">Distance</p>
+                        </div>
+                      </div>
+
+                      {/* ETA */}
+                      <div className="flex items-center gap-2 bg-purple-50 p-2 rounded">
+                        <Clock className="w-4 h-4 text-purple-600" />
+                        <div className="text-xs">
+                          <p className="text-purple-600 font-semibold">
+                            {Math.ceil(prioritizationReasons.eta / 60)} min
+                          </p>
+                          <p className="text-purple-500">ETA</p>
+                        </div>
+                      </div>
+
+                      {/* Passengers */}
+                      <div className="flex items-center gap-2 bg-orange-50 p-2 rounded">
+                        <Users className="w-4 h-4 text-orange-600" />
+                        <div className="text-xs">
+                          <p className="text-orange-600 font-semibold">
+                            {prioritizationReasons.passengers}
+                          </p>
+                          <p className="text-orange-500">Passengers</p>
+                        </div>
+                      </div>
+
+                      {/* Payment */}
+                      <div className="flex items-center gap-2 bg-green-100 p-2 rounded">
+                        <DollarSign className="w-4 h-4 text-green-700" />
+                        <div className="text-xs">
+                          <p className="text-green-700 font-semibold">
+                            {prioritizationReasons.prepaid ? 'PREPAID' : 'COD'}
+                          </p>
+                          <p className="text-green-600">Payment</p>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Multi-stop info */}
+                    {prioritizationReasons.allStops && prioritizationReasons.allStops.length > 1 && (
+                      <div className="text-xs bg-amber-50 border border-amber-200 rounded p-2 text-amber-800">
+                        <p className="font-semibold mb-1">📍 Multi-stop route active</p>
+                        <p>{prioritizationReasons.allStops.length} pickups optimized</p>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Filtered Requests Info */}
+                  {prioritizationReasons.filteredOut && prioritizationReasons.filteredOut.length > 0 && (
+                    <div className="text-xs bg-gray-100 rounded p-2">
+                      <p className="text-gray-700 font-semibold">Filtering applied:</p>
+                      <ul className="text-gray-600 ml-2 mt-1">
+                        {prioritizationReasons.filteredOut.slice(0, 2).map((r: any, idx: number) => (
+                          <li key={idx}>
+                            • {r.__filter === 'too_far' && `${(r.__distance / 1000).toFixed(1)} km away (too far)`}
+                            {r.__filter === 'no_capacity' && `Needs ${r.__seats} seats (full)`}
+                          </li>
+                        ))}
+                        {prioritizationReasons.filteredOut.length > 2 && (
+                          <li>• +{prioritizationReasons.filteredOut.length - 2} more filtered out</li>
+                        )}
+                      </ul>
+                    </div>
+                  )}
+                </div>
+              )}
+
+
+               {showServiceTypes && (
                 <div className="border-t border-gray-200 p-4 space-y-3">
                   <div className="flex items-center justify-between mb-3">
                     <h3 className="font-bold text-[#121212]">Service Types</h3>

@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
-import { GoogleMap, LoadScript, Marker, InfoWindow } from "@react-google-maps/api";
+import { GoogleMap, Marker, InfoWindow } from "@react-google-maps/api";
+import useMapLoader from "@/lib/mapLoader";
 import {
   Home as HomeIcon, 
   Package, 
@@ -71,6 +72,9 @@ export default function RiderDashboard() {
   const [selectedMarker, setSelectedMarker] = useState<{ lat: number; lng: number } | null>(null);
   const [isLoadingLocation, setIsLoadingLocation] = useState(true);
   const [locationError, setLocationError] = useState<string | null>(null);
+
+  // Load Google Maps SDK via shared loader
+  const { isLoaded: isMapsLoaded, loadError: mapsLoadError, blocked, apiKeyPresent } = useMapLoader();
 
   // Get user's current location on component mount
   useEffect(() => {
@@ -312,42 +316,63 @@ export default function RiderDashboard() {
               <p className="text-xs text-gray-500">Default location shown: Manila, Philippines</p>
             </div>
           </div>
-        ) : (
-          <LoadScript googleMapsApiKey={GOOGLE_MAPS_API_KEY} libraries={GOOGLE_MAPS_LIBRARIES}>
-            <GoogleMap
-              mapContainerStyle={{ width: "100%", height: "100%" }}
-              center={mapCenter}
-              zoom={15}
-              options={{
-                zoomControl: false,
-                fullscreenControl: true,
-                streetViewControl: false,
-                mapTypeControl: true,
-              }}
-            >
-              {/* Current Location Marker */}
-              <Marker
-                position={mapCenter}
-                onClick={() => setSelectedMarker(mapCenter)}
-                title="Your location"
-              />
+        ) : isMapsLoaded && !blocked && apiKeyPresent ? (
+          <GoogleMap
+            mapContainerStyle={{ width: "100%", height: "100%" }}
+            center={mapCenter}
+            zoom={15}
+            options={{
+              zoomControl: false,
+              fullscreenControl: true,
+              streetViewControl: false,
+              mapTypeControl: true,
+            }}
+          >
+            {/* Current Location Marker */}
+            <Marker
+              position={mapCenter}
+              onClick={() => setSelectedMarker(mapCenter)}
+              title="Your location"
+            />
 
-              {/* Info Window for selected marker */}
-              {selectedMarker && (
-                <InfoWindow
-                  position={selectedMarker}
-                  onCloseClick={() => setSelectedMarker(null)}
-                >
-                  <div className="text-sm">
-                    <p className="font-bold">Your current location</p>
-                    <p className="text-gray-600">
-                      {selectedMarker.lat.toFixed(4)}, {selectedMarker.lng.toFixed(4)}
-                    </p>
-                  </div>
-                </InfoWindow>
-              )}
-            </GoogleMap>
-          </LoadScript>
+            {/* Info Window for selected marker */}
+            {selectedMarker && (
+              <InfoWindow
+                position={selectedMarker}
+                onCloseClick={() => setSelectedMarker(null)}
+              >
+                <div className="text-sm">
+                  <p className="font-bold">Your current location</p>
+                  <p className="text-gray-600">
+                    {selectedMarker.lat.toFixed(4)}, {selectedMarker.lng.toFixed(4)}
+                  </p>
+                </div>
+              </InfoWindow>
+            )}
+          </GoogleMap>
+        ) : isMapsLoaded && blocked ? (
+          <div className="w-full h-full flex items-center justify-center bg-yellow-50">
+            <div className="text-center max-w-md px-6">
+              <p className="text-lg font-bold text-yellow-700 mb-2">⚠️ Google Maps scripts loaded but unavailable</p>
+              <p className="text-sm text-yellow-800 mb-3">The Maps SDK appears to be blocked by a browser extension or network policy (window.google is missing). Try disabling ad-blockers or allow maps.googleapis.com.</p>
+              <div className="flex gap-3 justify-center">
+                <button onClick={() => window.location.reload()} className="px-4 py-2 bg-[#E11D48] text-white rounded-md">Retry</button>
+                <button onClick={() => window.open('about:blank', '_blank')} className="px-4 py-2 border rounded-md">Open Incognito / Disable Extensions</button>
+              </div>
+            </div>
+          </div>
+        ) : mapsLoadError ? (
+          <div className="w-full h-full flex items-center justify-center bg-red-50">
+            <div className="text-center">
+              <p className="text-xl font-bold text-red-600">⚠️ Map Error</p>
+              <p className="text-sm text-red-700">{String(mapsLoadError?.message || mapsLoadError)}</p>
+            </div>
+          </div>
+        ) : (
+          <div className="w-full h-full flex items-center justify-center bg-gray-100">
+            <p className="text-sm text-gray-600">Loading map...</p>
+          </div>
+        )
         )}
 
         {/* Toggle Online/Offline Button */}

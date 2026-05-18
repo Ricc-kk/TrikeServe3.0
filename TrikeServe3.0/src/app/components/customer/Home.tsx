@@ -5,7 +5,8 @@ import { Button } from "../ui/button";
 import { Card } from "../ui/card";
 import { Badge } from "../ui/badge";
 import { Input } from "../ui/input";
-import { GoogleMap, MarkerF, InfoWindow, Polyline, useJsApiLoader } from "@react-google-maps/api";
+import { GoogleMap, MarkerF, InfoWindow, Polyline } from "@react-google-maps/api";
+import useMapLoader from "@/lib/mapLoader";
 import { GOOGLE_MAPS_LIBRARIES } from "@/lib/googleMaps";
 import { autocompletePlacesNew, createPlacesSessionToken, fetchPlaceDetailsNew, type PlaceResult, type PlacesAutocompleteSuggestion } from "@/lib/placesApi";
 import tricycleIcon from '../../../assets/0b76d1aa56b8ad6e15dd4efc8a0100b0ca5762a1.png';
@@ -210,38 +211,29 @@ export default function CustomerHome() {
    const hasManualPickupSelectionRef = useRef(false);
    const unsubscribeRef = useRef<(() => void) | null>(null);
 
-   const { isLoaded: isMapsLoaded, loadError: mapsLoadError } = useJsApiLoader({
-     id: "google-map-script",
-     googleMapsApiKey: GOOGLE_MAPS_API_KEY,
-     libraries: GOOGLE_MAPS_LIBRARIES as unknown as any,
-   });
+    const { isLoaded: isMapsLoaded, loadError: mapsLoadError, blocked, apiKeyPresent } = useMapLoader();
 
     // Detect cases where the loader finished but google.* is blocked by client/adblockers or CSP.
     useEffect(() => {
       if (mapsLoadError) {
         console.warn('Google Maps loader error:', mapsLoadError);
         setMapsBlocked(String(mapsLoadError?.message || mapsLoadError));
-        setMapsDiagnostics(prev => ({ ...prev, mapsLoaded: false }));
+        setMapsDiagnostics(prev => ({ ...prev, mapsLoaded: false, keyPresent: Boolean(apiKeyPresent) }));
         return;
       }
 
-      // If loader reports loaded but global `google` is missing after a short delay,
-      // it's likely a browser extension or network filter blocked Maps resources.
-      if (isMapsLoaded) {
-        const t = setTimeout(() => {
-          if (!(window as any).google || !(window as any).google.maps) {
-            console.warn('Google Maps appears to be blocked or unavailable (google undefined)');
-            setMapsBlocked('Google Maps scripts are blocked by a browser extension or network policy. Please disable adblock/privacy extensions or allow maps.googleapis.com');
-            setMapsDiagnostics(prev => ({ ...prev, mapsLoaded: false }));
-          } else {
-            setMapsBlocked(null);
-            setMapsDiagnostics(prev => ({ ...prev, mapsLoaded: true }));
-          }
-        }, 800);
-
-        return () => clearTimeout(t);
+      if (blocked) {
+        console.warn('Google Maps appears to be blocked or unavailable (google undefined)');
+        setMapsBlocked('Google Maps scripts are blocked by a browser extension or network policy. Please disable adblock/privacy extensions or allow maps.googleapis.com');
+        setMapsDiagnostics(prev => ({ ...prev, mapsLoaded: false, keyPresent: Boolean(apiKeyPresent) }));
+        return;
       }
-    }, [isMapsLoaded, mapsLoadError]);
+
+      if (isMapsLoaded) {
+        setMapsBlocked(null);
+        setMapsDiagnostics(prev => ({ ...prev, mapsLoaded: true, keyPresent: Boolean(apiKeyPresent) }));
+      }
+    }, [isMapsLoaded, mapsLoadError, blocked, apiKeyPresent]);
 
    // Get user's current location on component mount
   useEffect(() => {

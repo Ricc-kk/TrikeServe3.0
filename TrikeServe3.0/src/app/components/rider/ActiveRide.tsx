@@ -1,12 +1,13 @@
 import { useState, useEffect, useRef } from "react";
 import { useNavigate, useLocation } from "react-router";
 import { ArrowLeft, Navigation, User, Phone, MapPin, CheckCircle, Minimize2, Maximize2, Package, Users, Car, MessageCircle, Send, X } from "lucide-react";
-import { GoogleMap, MarkerF, Polyline, useJsApiLoader } from "@react-google-maps/api";
+import { GoogleMap, MarkerF, Polyline } from "@react-google-maps/api";
 import { Button } from "../ui/button";
 import { Card } from "../ui/card";
 import { Badge } from "../ui/badge";
 import { useAuth } from "../../contexts/AuthContext";
 import { supabaseHelpers } from "@/lib/supabase";
+import useMapLoader from "@/lib/mapLoader";
 import { GOOGLE_MAPS_LIBRARIES } from "@/lib/googleMaps";
 import PassengerMessagingDB from "./PassengerMessagingDB";
 
@@ -60,19 +61,18 @@ export default function ActiveRide() {
   const [rideData, setRideData] = useState<ActiveRideData | null>(null);
   const [isMinimized, setIsMinimized] = useState(false);
   const [activeMessaging, setActiveMessaging] = useState<PassengerInfo | null>(null);
+  const [mapZoom, setMapZoom] = useState(15);
 
   // Location tracking states
   const [driverLocation, setDriverLocation] = useState<{ lat: number; lng: number } | null>(null);
   const [routePath, setRoutePath] = useState<Array<{ lat: number; lng: number }>>([]);
+  const [mapCenter, setMapCenter] = useState<{ lat: number; lng: number }>({ lat: 14.6037, lng: 120.9793 });
+  const mapRef = useRef<any>(null);
   const locationWatchIdRef = useRef<number | null>(null);
 
   // Google Maps setup
   const GOOGLE_MAPS_API_KEY = import.meta.env.VITE_GOOGLE_MAPS_API_KEY || "";
-  const { isLoaded: isMapsLoaded } = useJsApiLoader({
-    id: "google-map-script-driver",
-    googleMapsApiKey: GOOGLE_MAPS_API_KEY,
-    libraries: GOOGLE_MAPS_LIBRARIES as unknown as any,
-  });
+  const { isLoaded: isMapsLoaded, loadError, blocked, apiKeyPresent } = useMapLoader();
 
   useEffect(() => {
     // Load active ride from localStorage or route state
@@ -178,6 +178,12 @@ export default function ActiveRide() {
 
     loadActiveRide();
   }, [location.state, navigate, user]);
+
+  useEffect(() => {
+    if (driverLocation) {
+      setMapCenter(driverLocation);
+    }
+  }, [driverLocation]);
 
   useEffect(() => {
     // Update localStorage when ride data changes
@@ -322,6 +328,24 @@ export default function ActiveRide() {
       strokeColor: '#FFFFFF',
       strokeWeight: 2,
       scale: 8,
+    } as any;
+  };
+
+  const createCustomerMarkerIcon = () => {
+    const google = (window as any)?.google;
+    if (!google?.maps?.Size || !google?.maps?.Point) {
+      // Fallback to circle icon when SVG helpers are unavailable
+      return buildNavigationMarkerIcon('#3B82F6');
+    }
+
+    const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="#3B82F6" stroke="white" stroke-width="1">
+      <path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5A2.5 2.5 0 1 1 12 6a2.5 2.5 0 0 1 0 5.5z"/>
+    </svg>`;
+
+    return {
+      url: 'data:image/svg+xml;charset=UTF-8,' + encodeURIComponent(svg),
+      scaledSize: new google.maps.Size(40, 40),
+      anchor: new google.maps.Point(20, 40),
     } as any;
   };
 
@@ -984,17 +1008,23 @@ export default function ActiveRide() {
       </div>
 
       {/* Live Tracking Map */}
-      {isMapsLoaded && GOOGLE_MAPS_API_KEY && (
+      {isMapsLoaded && !blocked && apiKeyPresent ? (
         <div className="relative w-full h-64 bg-gray-100 border-b border-gray-200">
           <GoogleMap
+            ref={mapRef}
             mapContainerStyle={{ width: '100%', height: '100%' }}
-            center={driverLocation || { lat: 14.5995, lng: 120.9842 }}
-            zoom={15}
+            center={mapCenter}
+            zoom={mapZoom}
             options={{
               zoomControl: true,
               fullscreenControl: false,
               streetViewControl: false,
               mapTypeControl: false,
+            }}
+            onZoomChanged={() => {
+              if (mapRef.current) {
+                setMapZoom(mapRef.current.getZoom?.() || 15);
+              }
             }}
           >
             {/* Driver Current Location */}
@@ -1006,12 +1036,12 @@ export default function ActiveRide() {
               />
             )}
 
-            {/* Pickup Location */}
+            {/* Pickup Location - Blue Pin Icon */}
             {rideData.pickupLat && rideData.pickupLng && (
               <MarkerF
                 position={{ lat: rideData.pickupLat, lng: rideData.pickupLng }}
-                title="Pickup Location"
-                icon={buildNavigationMarkerIcon('#EAB308')}
+                title="📍 Pickup Location (Customer)"
+                icon={createCustomerMarkerIcon()}
               />
             )}
 
@@ -1046,6 +1076,30 @@ export default function ActiveRide() {
               ? '📍 Arrived at Drop-off'
               : 'Ride Complete'
             }
+          </div>
+        </div>
+      ) : isMapsLoaded && blocked ? (
+        <div className="relative w-full h-64 bg-yellow-50 border-b border-yellow-200 flex items-center justify-center">
+          <div className="text-center max-w-md px-6">
+            <p className="text-lg font-bold text-yellow-700 mb-2">⚠️ Google Maps scripts loaded but unavailable</p>
+            <p className="text-sm text-yellow-800 mb-3">The Maps SDK appears to be blocked by a browser extension or network policy (window.google is missing). Try disabling ad-blockers or allow maps.googleapis.com.</p>
+            <div className="flex gap-3 justify-center">
+              <button onClick={() => window.location.reload()} className="px-4 py-2 bg-[#E11D48] text-white rounded-md">Retry</button>
+              <button onClick={() => window.open('about:blank', '_blank')} className="px-4 py-2 border rounded-md">Open Incognito / Disable Extensions</button>
+            </div>
+          </div>
+        </div>
+      ) : loadError ? (
+        <div className="relative w-full h-64 bg-red-50 border-b border-red-200 flex items-center justify-center">
+          <div className="text-center">
+            <p className="text-sm font-semibold text-red-600 mb-2">⚠️ Map Error</p>
+            <p className="text-xs text-red-500">{loadError.message}</p>
+          </div>
+        </div>
+      ) : (
+        <div className="relative w-full h-64 bg-gray-100 border-b border-gray-200 flex items-center justify-center">
+          <div className="text-center">
+            <p className="text-sm text-gray-500">Loading map...</p>
           </div>
         </div>
       )}
