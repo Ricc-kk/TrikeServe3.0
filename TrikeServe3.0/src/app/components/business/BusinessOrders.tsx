@@ -434,9 +434,9 @@ export default function BusinessOrders() {
       />
 
       {/* Main Content */}
-      <div className="flex-1 lg:ml-64">
+      <div className="flex-1 lg:ml-64 w-full">
         {/* Header */}
-        <div className="px-5 py-4 border-b border-[#E2E8F0]">
+        <div className="px-3 md:px-5 py-4 border-b border-[#E2E8F0]">
           <div className="flex items-center gap-3">
             {/* Hamburger Menu - Mobile Only */}
             <button
@@ -446,18 +446,18 @@ export default function BusinessOrders() {
               <Menu className="w-6 h-6 text-[#121212]" />
             </button>
             <div>
-              <h1 className="text-3xl font-extrabold text-[#121212] mb-2">Orders</h1>
-              <p className="text-sm text-[#64748B]">{activeOrders.length} active orders</p>
+              <h1 className="text-2xl md:text-3xl font-extrabold text-[#121212] mb-1 md:mb-2">Orders</h1>
+              <p className="text-xs md:text-sm text-[#64748B]">{activeOrders.length} active orders</p>
             </div>
           </div>
         </div>
 
         {/* Tabs */}
-        <div className="px-5 py-3 border-b border-[#E2E8F0] sticky top-0 bg-white z-50 space-y-3">
-          <div className="flex gap-2">
+        <div className="px-3 md:px-5 py-3 border-b border-[#E2E8F0] sticky top-0 bg-white z-50 space-y-2 md:space-y-3 overflow-x-auto">
+          <div className="flex gap-2 min-w-max md:min-w-0">
             <button
               onClick={() => setSelectedTab('active')}
-              className={`flex-1 py-2.5 rounded-xl font-semibold transition-all ${
+              className={`flex-1 md:flex-1 py-2.5 px-3 md:px-4 rounded-xl font-semibold transition-all text-sm md:text-base whitespace-nowrap ${
                 selectedTab === 'active'
                   ? 'bg-[#E11D48] text-white'
                   : 'bg-[#F8F9FA] text-[#64748B]'
@@ -467,7 +467,7 @@ export default function BusinessOrders() {
             </button>
             <button
               onClick={() => setSelectedTab('history')}
-              className={`flex-1 py-2.5 rounded-xl font-semibold transition-all ${
+              className={`flex-1 md:flex-1 py-2.5 px-3 md:px-4 rounded-xl font-semibold transition-all text-sm md:text-base whitespace-nowrap ${
                 selectedTab === 'history'
                   ? 'bg-[#E11D48] text-white'
                   : 'bg-[#F8F9FA] text-[#64748B]'
@@ -479,10 +479,10 @@ export default function BusinessOrders() {
 
            {/* Status Filter - Only for Active Tab */}
            {selectedTab === 'active' && (
-             <div className="flex gap-2 overflow-x-auto scrollbar-hide pb-1">
+             <div className="flex gap-2 overflow-x-auto scrollbar-hide pb-1 min-w-max md:flex-wrap md:gap-2">
                <button
                  onClick={() => setSelectedStatusFilter('all')}
-                 className={`px-4 py-2 rounded-full text-sm font-medium whitespace-nowrap transition-all flex-shrink-0 ${
+                 className={`px-3 md:px-4 py-2 rounded-full text-xs md:text-sm font-medium whitespace-nowrap transition-all flex-shrink-0 ${
                    selectedStatusFilter === 'all'
                      ? 'bg-[#E11D48] text-white'
                      : 'bg-[#F1F5F9] text-[#64748B] hover:bg-[#E2E8F0]'
@@ -492,7 +492,7 @@ export default function BusinessOrders() {
                </button>
                <button
                  onClick={() => setSelectedStatusFilter('pending')}
-                 className={`px-4 py-2 rounded-full text-sm font-medium whitespace-nowrap transition-all flex-shrink-0 ${
+                 className={`px-3 md:px-4 py-2 rounded-full text-xs md:text-sm font-medium whitespace-nowrap transition-all flex-shrink-0 ${
                    selectedStatusFilter === 'pending'
                      ? 'bg-[#E11D48] text-white'
                      : 'bg-[#F1F5F9] text-[#64748B] hover:bg-[#E2E8F0]'
@@ -502,7 +502,7 @@ export default function BusinessOrders() {
                </button>
                <button
                  onClick={() => setSelectedStatusFilter('preparing')}
-                 className={`px-4 py-2 rounded-full text-sm font-medium whitespace-nowrap transition-all flex-shrink-0 ${
+                 className={`px-3 md:px-4 py-2 rounded-full text-xs md:text-sm font-medium whitespace-nowrap transition-all flex-shrink-0 ${
                    selectedStatusFilter === 'preparing'
                      ? 'bg-[#E11D48] text-white'
                      : 'bg-[#F1F5F9] text-[#64748B] hover:bg-[#E2E8F0]'
@@ -512,7 +512,7 @@ export default function BusinessOrders() {
                </button>
                <button
                  onClick={() => setSelectedStatusFilter('ready')}
-                 className={`px-4 py-2 rounded-full text-sm font-medium whitespace-nowrap transition-all flex-shrink-0 ${
+                 className={`px-3 md:px-4 py-2 rounded-full text-xs md:text-sm font-medium whitespace-nowrap transition-all flex-shrink-0 ${
                    selectedStatusFilter === 'ready'
                      ? 'bg-[#E11D48] text-white'
                      : 'bg-[#F1F5F9] text-[#64748B] hover:bg-[#E2E8F0]'
@@ -522,7 +522,7 @@ export default function BusinessOrders() {
                </button>
                <button
                  onClick={() => setSelectedStatusFilter('confirmed')}
-                 className={`px-4 py-2 rounded-full text-sm font-medium whitespace-nowrap transition-all flex-shrink-0 ${
+                 className={`px-3 md:px-4 py-2 rounded-full text-xs md:text-sm font-medium whitespace-nowrap transition-all flex-shrink-0 ${
                    selectedStatusFilter === 'confirmed'
                      ? 'bg-[#E11D48] text-white'
                      : 'bg-[#F1F5F9] text-[#64748B] hover:bg-[#E2E8F0]'
@@ -532,7 +532,7 @@ export default function BusinessOrders() {
                </button>
                <button
                  onClick={() => setSelectedStatusFilter('on-the-way')}
-                 className={`px-4 py-2 rounded-full text-sm font-medium whitespace-nowrap transition-all flex-shrink-0 ${
+                 className={`px-3 md:px-4 py-2 rounded-full text-xs md:text-sm font-medium whitespace-nowrap transition-all flex-shrink-0 ${
                    selectedStatusFilter === 'on-the-way'
                      ? 'bg-[#E11D48] text-white'
                      : 'bg-[#F1F5F9] text-[#64748B] hover:bg-[#E2E8F0]'
@@ -547,42 +547,45 @@ export default function BusinessOrders() {
         </div>
 
         {/* Orders List */}
-        <div className="px-5 py-4 space-y-3">
+        <div className="px-3 md:px-5 py-3 md:py-4 space-y-2 md:space-y-3 pb-6">
           {selectedTab === 'active' ? (
             filteredActiveOrders.length > 0 ? (
               filteredActiveOrders.map((order) => (
                 <Card
                   key={order.id}
                   onClick={() => setSelectedOrder(order)}
-                  className="p-4 border-2 border-[#E2E8F0] active:scale-[0.98] transition-transform cursor-pointer"
+                  className="p-3 md:p-4 border-2 border-[#E2E8F0] active:scale-[0.98] transition-transform cursor-pointer"
                 >
-                  <div className="flex items-start justify-between mb-3">
-                    <div>
-                      <div className="flex items-center gap-2 mb-1">
-                        <h3 className="font-bold text-[#121212]">#{order.orderNumber}</h3>
+                  <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 md:gap-3 mb-3">
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-2 mb-1 flex-wrap">
+                        <h3 className="font-bold text-[#121212] text-sm md:text-base">#{order.orderNumber}</h3>
                         <Badge className={`${getStatusColor(order.status)} text-white text-xs`}>
                           {getStatusLabel(order.status)}
                         </Badge>
                       </div>
-                      <p className="text-sm text-[#64748B]">{order.customerName}</p>
+                      <p className="text-xs md:text-sm text-[#64748B] truncate">{order.customerName}</p>
                     </div>
-                    <div className="text-right">
-                      <p className="text-lg font-bold text-[#E11D48]">₱{order.total.toFixed(2)}</p>
+                    <div className="text-right flex-shrink-0">
+                      <p className="text-base md:text-lg font-bold text-[#E11D48]">₱{order.total.toFixed(2)}</p>
                       <p className="text-xs text-[#64748B]">{order.date}</p>
                     </div>
                   </div>
 
-                  <div className="space-y-1 mb-3">
-                    {order.items.map((item, idx) => (
-                      <p key={idx} className="text-sm text-[#64748B]">
+                  <div className="space-y-1 mb-3 text-xs md:text-sm">
+                    {order.items.slice(0, 2).map((item, idx) => (
+                      <p key={idx} className="text-xs md:text-sm text-[#64748B] truncate">
                         {item.quantity}x {item.name}
                       </p>
                     ))}
+                    {order.items.length > 2 && (
+                      <p className="text-xs text-[#64748B]">+{order.items.length - 2} more items</p>
+                    )}
                   </div>
 
-                  <div className="flex items-center gap-2">
+                  <div className="flex flex-wrap items-center gap-2">
                     <Badge className={order.paymentMethod === 'gcash' ? 'bg-[#10B981] text-white text-xs' : 'bg-white border border-[#E2E8F0] text-[#64748B] text-xs'}>
-                      {order.paymentMethod === 'gcash' ? 'Prepaid (GCash)' : 'Cash on Delivery'}
+                      {order.paymentMethod === 'gcash' ? 'GCash' : 'COD'}
                     </Badge>
                     {order.estimatedTime && (
                       <Badge variant="outline" className="text-xs">
@@ -595,8 +598,8 @@ export default function BusinessOrders() {
               ))
             ) : (
               <div className="text-center py-12">
-                <Clock className="w-16 h-16 text-[#CBD5E1] mx-auto mb-3" />
-                <p className="text-[#64748B]">No active orders</p>
+                <Clock className="w-12 md:w-16 h-12 md:h-16 text-[#CBD5E1] mx-auto mb-3" />
+                <p className="text-sm md:text-base text-[#64748B]">No active orders</p>
               </div>
             )
           ) : (
@@ -604,37 +607,40 @@ export default function BusinessOrders() {
               historyOrders.map((order) => (
                 <Card
                   key={order.id}
-                  className="p-4 border-2 border-[#E2E8F0] opacity-75"
+                  className="p-3 md:p-4 border-2 border-[#E2E8F0] opacity-75"
                 >
-                  <div className="flex items-start justify-between mb-3">
-                    <div>
-                      <div className="flex items-center gap-2 mb-1">
-                        <h3 className="font-bold text-[#121212]">#{order.orderNumber}</h3>
+                  <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 md:gap-3 mb-3">
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-2 mb-1 flex-wrap">
+                        <h3 className="font-bold text-[#121212] text-sm md:text-base">#{order.orderNumber}</h3>
                         <Badge className={`${getStatusColor(order.status)} text-white text-xs`}>
                           {getStatusLabel(order.status)}
                         </Badge>
                       </div>
-                      <p className="text-sm text-[#64748B]">{order.customerName}</p>
+                      <p className="text-xs md:text-sm text-[#64748B] truncate">{order.customerName}</p>
                     </div>
-                    <div className="text-right">
-                      <p className="text-lg font-bold text-[#121212]">₱{order.total}</p>
+                    <div className="text-right flex-shrink-0">
+                      <p className="text-base md:text-lg font-bold text-[#121212]">₱{order.total}</p>
                       <p className="text-xs text-[#64748B]">{order.date}</p>
                     </div>
                   </div>
 
-                  <div className="space-y-1">
-                    {order.items.map((item, idx) => (
-                      <p key={idx} className="text-sm text-[#64748B]">
+                  <div className="space-y-1 text-xs md:text-sm">
+                    {order.items.slice(0, 2).map((item, idx) => (
+                      <p key={idx} className="text-xs md:text-sm text-[#64748B] truncate">
                         {item.quantity}x {item.name}
                       </p>
                     ))}
+                    {order.items.length > 2 && (
+                      <p className="text-xs text-[#64748B]">+{order.items.length - 2} more items</p>
+                    )}
                   </div>
                 </Card>
               ))
             ) : (
               <div className="text-center py-12">
-                <Package className="w-16 h-16 text-[#CBD5E1] mx-auto mb-3" />
-                <p className="text-[#64748B]">No order history</p>
+                <Package className="w-12 md:w-16 h-12 md:h-16 text-[#CBD5E1] mx-auto mb-3" />
+                <p className="text-sm md:text-base text-[#64748B]">No order history</p>
               </div>
             )
           )}
@@ -643,26 +649,27 @@ export default function BusinessOrders() {
         {/* Order Detail Modal */}
         {selectedOrder && (
           <div className="fixed inset-0 bg-black/50 z-[2000] flex items-end">
-            <div className="bg-white w-full rounded-t-3xl max-h-[85vh] overflow-y-auto">
-              <div className="sticky top-0 bg-white border-b border-[#E2E8F0] px-5 py-4">
+            <div className="bg-white w-full h-full md:h-auto md:rounded-t-3xl md:max-h-[85vh] overflow-y-auto">
+              <div className="sticky top-0 bg-white border-b border-[#E2E8F0] px-4 md:px-5 py-3 md:py-4">
                 <div className="flex items-center justify-between mb-2">
-                  <h2 className="text-xl font-bold text-[#121212]">#{selectedOrder.orderNumber}</h2>
-                  <button onClick={() => setSelectedOrder(null)}>
-                    <span className="text-lg font-semibold text-[#3B82F6]">Close</span>
+                  <h2 className="text-lg md:text-xl font-bold text-[#121212]">#{selectedOrder.orderNumber}</h2>
+                  <button onClick={() => setSelectedOrder(null)} className="text-lg font-semibold text-[#3B82F6]">
+                    <span className="hidden md:inline">Close</span>
+                    <span className="md:hidden">✕</span>
                   </button>
                 </div>
                 <Badge className={`${getStatusColor(selectedOrder.status)} text-white`}>
                   {getStatusLabel(selectedOrder.status)}
                 </Badge>
 
-                {/* Status Progress Bar */}
-                <div className="mt-4">
+                {/* Status Progress Bar - Responsive */}
+                <div className="mt-3 md:mt-4">
                   <p className="text-xs font-semibold text-[#64748B] mb-2">ORDER PROGRESS</p>
-                  <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-1 md:gap-2 overflow-x-auto pb-2">
                     {getStatusWorkflow(selectedOrder.status).steps.map((step, idx) => (
-                      <div key={idx} className="flex items-center">
+                      <div key={idx} className="flex items-center flex-shrink-0">
                         <div
-                          className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold transition-all ${
+                          className={`w-6 md:w-8 h-6 md:h-8 rounded-full flex items-center justify-center text-xs font-bold transition-all ${
                             idx <= getStatusWorkflow(selectedOrder.status).current
                               ? 'bg-[#10B981] text-white'
                               : 'bg-[#E2E8F0] text-[#64748B]'
@@ -672,7 +679,7 @@ export default function BusinessOrders() {
                         </div>
                         {idx < getStatusWorkflow(selectedOrder.status).steps.length - 1 && (
                           <div
-                            className={`h-0.5 flex-1 ml-2 transition-all ${
+                            className={`h-0.5 w-2 md:w-4 ml-1 md:ml-2 transition-all ${
                               idx < getStatusWorkflow(selectedOrder.status).current
                                 ? 'bg-[#10B981]'
                                 : 'bg-[#E2E8F0]'
@@ -682,59 +689,59 @@ export default function BusinessOrders() {
                       </div>
                     ))}
                   </div>
-                  <div className="flex text-xs text-[#64748B] mt-2 gap-1">
+                  <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 text-xs text-[#64748B] mt-2 gap-1">
                     {getStatusWorkflow(selectedOrder.status).steps.map((step, idx) => (
-                      <div key={idx} className="flex-1">
-                        <p className="font-semibold">{step}</p>
+                      <div key={idx} className="min-w-0">
+                        <p className="font-semibold truncate text-[10px] md:text-xs">{step}</p>
                       </div>
                     ))}
                   </div>
                 </div>
               </div>
 
-              <div className="p-5 space-y-4">
+              <div className="p-3 md:p-5 space-y-3 md:space-y-4">
                 {/* Customer Info */}
                 <div>
-                  <h3 className="font-bold text-[#121212] mb-2">Customer</h3>
-                  <p className="text-[#64748B]">{selectedOrder.customerName}</p>
-                  <p className="text-sm text-[#64748B] mt-1">{selectedOrder.address}</p>
+                  <h3 className="font-bold text-[#121212] mb-2 text-sm md:text-base">Customer</h3>
+                  <p className="text-sm md:text-base text-[#64748B]">{selectedOrder.customerName}</p>
+                  <p className="text-xs md:text-sm text-[#64748B] mt-1 break-words">{selectedOrder.address}</p>
                   {selectedOrder.customerPhone && (
-                    <p className="text-sm text-[#64748B] mt-1">Phone: {selectedOrder.customerPhone}</p>
+                    <p className="text-xs md:text-sm text-[#64748B] mt-1">Phone: {selectedOrder.customerPhone}</p>
                   )}
                 </div>
 
                 {/* Order Items */}
                 <div>
-                  <h3 className="font-bold text-[#121212] mb-2">Items</h3>
+                  <h3 className="font-bold text-[#121212] mb-2 text-sm md:text-base">Items</h3>
                   <div className="space-y-2">
                     {selectedOrder.items.map((item, idx) => (
-                      <div key={idx} className="flex items-center justify-between p-3 bg-[#F8F9FA] rounded-xl">
-                        <div>
-                          <p className="font-semibold text-[#121212]">{item.name}</p>
-                          <p className="text-sm text-[#64748B]">Qty: {item.quantity}</p>
+                      <div key={idx} className="flex items-center justify-between p-2 md:p-3 bg-[#F8F9FA] rounded-xl">
+                        <div className="min-w-0">
+                          <p className="font-semibold text-[#121212] text-sm md:text-base truncate">{item.name}</p>
+                          <p className="text-xs md:text-sm text-[#64748B]">Qty: {item.quantity}</p>
                         </div>
-                        <p className="font-bold text-[#121212]">₱{(item.price * item.quantity).toFixed(2)}</p>
+                        <p className="font-bold text-[#121212] text-sm md:text-base flex-shrink-0">₱{(item.price * item.quantity).toFixed(2)}</p>
                       </div>
                     ))}
                   </div>
                 </div>
 
                 {/* Payment Summary */}
-                <div className="border-t border-[#E2E8F0] pt-4">
-                  <div className="flex items-center justify-between mb-2">
+                <div className="border-t border-[#E2E8F0] pt-3 md:pt-4">
+                  <div className="flex items-center justify-between mb-2 text-sm md:text-base">
                     <span className="text-[#64748B]">Subtotal</span>
                     <span className="font-semibold text-[#121212]">₱{(selectedOrder.total - selectedOrder.deliveryFee).toFixed(2)}</span>
                   </div>
-                  <div className="flex items-center justify-between mb-2">
+                  <div className="flex items-center justify-between mb-2 text-sm md:text-base">
                     <span className="text-[#64748B]">Delivery Fee</span>
                     <span className="font-semibold text-[#121212]">₱{selectedOrder.deliveryFee.toFixed(2)}</span>
                   </div>
-                  <div className="flex items-center justify-between pt-2 border-t border-[#E2E8F0]">
-                    <span className="font-bold text-[#121212]">Total</span>
-                    <span className="text-xl font-bold text-[#E11D48]">₱{selectedOrder.total.toFixed(2)}</span>
+                  <div className="flex items-center justify-between pt-2 md:pt-3 border-t border-[#E2E8F0]">
+                    <span className="font-bold text-[#121212] md:text-base">Total</span>
+                    <span className="text-lg md:text-xl font-bold text-[#E11D48]">₱{selectedOrder.total.toFixed(2)}</span>
                   </div>
-                  <div className="mt-3">
-                    <Badge className={selectedOrder.paymentMethod === 'gcash' ? 'bg-[#10B981] text-white' : 'border-orange-500 text-orange-500'} variant={selectedOrder.paymentMethod === 'gcash' ? 'default' : 'outline'}>
+                  <div className="mt-2 md:mt-3">
+                    <Badge className={selectedOrder.paymentMethod === 'gcash' ? 'bg-[#10B981] text-white text-xs md:text-sm' : 'border-orange-500 text-orange-500 text-xs md:text-sm'} variant={selectedOrder.paymentMethod === 'gcash' ? 'default' : 'outline'}>
                       {selectedOrder.paymentMethod === 'gcash' ? (
                         <>
                           <CheckCircle className="w-3 h-3 mr-1" />
@@ -758,7 +765,7 @@ export default function BusinessOrders() {
                         updateOrderStatus(selectedOrder.id, 'preparing');
                         setSelectedOrder(null);
                       }}
-                      className="w-full bg-[#10B981] hover:bg-[#059669] uppercase py-6 font-bold"
+                      className="w-full bg-[#10B981] hover:bg-[#059669] uppercase py-4 md:py-6 font-bold text-sm md:text-base"
                     >
                       ✓ Accept Order
                     </Button>
@@ -768,7 +775,7 @@ export default function BusinessOrders() {
                         setSelectedOrder(null);
                       }}
                       variant="outline"
-                      className="w-full border-[#E11D48] text-[#E11D48] uppercase py-6"
+                      className="w-full border-[#E11D48] text-[#E11D48] uppercase py-4 md:py-6 text-sm md:text-base"
                     >
                       ✗ Decline Order
                     </Button>
@@ -782,7 +789,7 @@ export default function BusinessOrders() {
                         updateOrderStatus(selectedOrder.id, 'ready');
                         setSelectedOrder(null);
                       }}
-                      className="w-full bg-[#F59E0B] hover:bg-[#D97706] uppercase py-6 font-bold"
+                      className="w-full bg-[#F59E0B] hover:bg-[#D97706] uppercase py-4 md:py-6 font-bold text-sm md:text-base"
                     >
                       → Ready for Pickup
                     </Button>
@@ -794,7 +801,7 @@ export default function BusinessOrders() {
                     {selectedOrder.deliveryMode === 'delivery' ? (
                       <Button
                         onClick={() => handleReadyForDelivery(selectedOrder)}
-                        className="w-full bg-[#06B6D4] hover:bg-[#0891B2] uppercase py-6 font-bold"
+                        className="w-full bg-[#06B6D4] hover:bg-[#0891B2] uppercase py-4 md:py-6 font-bold text-sm md:text-base"
                       >
                         → Ready for Delivery
                       </Button>
@@ -804,7 +811,7 @@ export default function BusinessOrders() {
                           updateOrderStatus(selectedOrder.id, 'delivered');
                           setSelectedOrder(null);
                         }}
-                        className="w-full bg-[#64748B] hover:bg-[#475569] uppercase py-6 font-bold"
+                        className="w-full bg-[#64748B] hover:bg-[#475569] uppercase py-4 md:py-6 font-bold text-sm md:text-base"
                       >
                         ✓ Completed
                       </Button>
@@ -819,8 +826,8 @@ export default function BusinessOrders() {
 
                 {selectedOrder.status === 'on-the-way' && (
                   <div className="space-y-2">
-                    <div className="bg-[#FEF3C7] border-l-4 border-[#FFA500] p-3 rounded">
-                      <p className="text-sm font-semibold text-[#92400E]">Status: On The Way</p>
+                    <div className="bg-[#FEF3C7] border-l-4 border-[#FFA500] p-2 md:p-3 rounded text-sm">
+                      <p className="font-semibold text-[#92400E]">Status: On The Way</p>
                       <p className="text-xs text-[#92400E] mt-1">Rider is delivering the order</p>
                     </div>
                     <Button
@@ -828,7 +835,7 @@ export default function BusinessOrders() {
                         updateOrderStatus(selectedOrder.id, 'delivered');
                         setSelectedOrder(null);
                       }}
-                      className="w-full bg-[#64748B] hover:bg-[#475569] uppercase py-6 font-bold"
+                      className="w-full bg-[#64748B] hover:bg-[#475569] uppercase py-4 md:py-6 font-bold text-sm md:text-base"
                     >
                       ✓ Delivered - Complete Order
                     </Button>
@@ -836,15 +843,15 @@ export default function BusinessOrders() {
                 )}
 
                 {selectedOrder.status === 'delivered' && (
-                  <div className="bg-[#D1FAE5] border-l-4 border-[#10B981] p-3 rounded">
-                    <p className="text-sm font-semibold text-[#065F46]">✓ Order Completed</p>
+                  <div className="bg-[#D1FAE5] border-l-4 border-[#10B981] p-2 md:p-3 rounded text-sm">
+                    <p className="font-semibold text-[#065F46]">✓ Order Completed</p>
                     <p className="text-xs text-[#065F46] mt-1">Order has been successfully delivered</p>
                   </div>
                 )}
 
                 {selectedOrder.status === 'cancelled' && (
-                  <div className="bg-[#FEE2E2] border-l-4 border-[#E11D48] p-3 rounded">
-                    <p className="text-sm font-semibold text-[#991B1B]">✗ Order Cancelled</p>
+                  <div className="bg-[#FEE2E2] border-l-4 border-[#E11D48] p-2 md:p-3 rounded text-sm">
+                    <p className="font-semibold text-[#991B1B]">✗ Order Cancelled</p>
                     <p className="text-xs text-[#991B1B] mt-1">This order has been cancelled</p>
                   </div>
                 )}
