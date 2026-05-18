@@ -435,9 +435,11 @@ export const supabaseHelpers = {
 
        const timestamp = new Date().toISOString();
 
-       // If no passengers left, delete or mark as cancelled
-       if (updatedPassengers.length === 0) {
-         console.log('🗑️ Lobby is now empty, marking as cancelled');
+        const isHostCancelling = lobby.customer_id === passengerId;
+
+        // If the host cancels, or if no passengers are left, mark the lobby as cancelled.
+        if (isHostCancelling || updatedPassengers.length === 0) {
+          console.log(isHostCancelling ? '🛑 Host is cancelling the lobby' : '🗑️ Lobby is now empty, marking as cancelled');
          const { data, error } = await supabase
            .from('shared_ride_lobbies')
            .update({

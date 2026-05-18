@@ -1276,10 +1276,48 @@ export default function CustomerHome() {
     }
   };
 
-  const handleCancelRide = () => {
-    setActiveRide(null);
-    setRideStatus(null);
-    setCurrentRequestId(null);
+  const handleCancelRide = async () => {
+    const storedRequestId = currentRequestId || (() => {
+      try {
+        const savedRideData = localStorage.getItem('trikeserve_active_ride');
+        if (!savedRideData) return null;
+
+        const parsedRide = JSON.parse(savedRideData);
+        return typeof parsedRide?.requestId === 'string' ? parsedRide.requestId : null;
+      } catch (error) {
+        console.warn('⚠️ Unable to read stored ride request for cancellation:', error);
+        return null;
+      }
+    })();
+
+    try {
+      if (storedRequestId) {
+        const { error } = await supabaseHelpers.updateRideRequest(storedRequestId, {
+          status: 'cancelled',
+          driver_status: 'cancelled',
+          driver_status_message: 'Customer cancelled the ride request.',
+          updated_at: new Date().toISOString(),
+        });
+
+        if (error) {
+          console.error('❌ Failed to cancel ride request:', error);
+          alert(`❌ Failed to cancel ride: ${error.message || 'Please try again.'}`);
+          return;
+        }
+      }
+
+      localStorage.removeItem('trikeserve_active_ride');
+      setRideCompletedPopup(false);
+      setDriverAcceptedPopup(null);
+      setDriverStatusPopup(null);
+      resetCustomerRideVisuals();
+      setRideStatus(null);
+      setCurrentRequestId(null);
+      setShowBookingConfirm(false);
+    } catch (error: any) {
+      console.error('❌ Error cancelling ride:', error);
+      alert(`❌ Failed to cancel ride: ${error?.message || 'Please try again.'}`);
+    }
   };
 
   const getPrice = () => {
