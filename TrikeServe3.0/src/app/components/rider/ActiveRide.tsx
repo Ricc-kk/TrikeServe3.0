@@ -219,11 +219,25 @@ export default function ActiveRide() {
 
           // Update database with driver location
           if (rideData.id) {
-            supabaseHelpers.updateRideRequest(rideData.id, {
-              driver_lat: newLocation.lat,
-              driver_lng: newLocation.lng,
-              updated_at: new Date().toISOString(),
-            }).catch(err => console.warn('⚠️ Error updating driver location:', err));
+            (async () => {
+              try {
+                const { data, error } = await supabaseHelpers.updateRideRequest(rideData.id, {
+                  driver_lat: newLocation.lat,
+                  driver_lng: newLocation.lng,
+                  updated_at: new Date().toISOString(),
+                });
+
+                if (error) {
+                  // Log error details so we can see why PostgREST returned 400
+                  console.warn('⚠️ Error updating driver location (ride):', rideData.id, error);
+                } else {
+                  // Debug success if needed
+                  // console.log('✅ Driver location updated on DB:', data);
+                }
+              } catch (err) {
+                console.error('❌ Unexpected error updating driver location:', err);
+              }
+            })();
           }
         },
         (error) => console.warn('❌ Watch position error:', error.message),
@@ -627,6 +641,20 @@ export default function ActiveRide() {
         window.dispatchEvent(new CustomEvent('custom-storage-change', {
           detail: { key: statusUpdateKey, value: statusUpdate }
         }));
+
+        // Sync the same status into Supabase so the customer side can detect it
+        // through database polling / real-time subscriptions as well.
+        supabaseHelpers.updateDriverRideStatus(rideData.id, statusMapForCustomer, statusMessage)
+          .then(({ error }) => {
+            if (error) {
+              console.error('❌ Error syncing driver status to database:', error);
+            } else {
+              console.log('✅ Driver status synced to database:', statusMapForCustomer);
+            }
+          })
+          .catch((error) => {
+            console.error('❌ Exception syncing driver status to database:', error);
+          });
 
         // Update database with status change
         updateRideRequestStatus(rideData.id, statusMapForCustomer);

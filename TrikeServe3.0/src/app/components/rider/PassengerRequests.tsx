@@ -24,6 +24,10 @@ interface PassengerRequest {
   estimatedTime: string;
   pickupAddress?: string;
   dropoffAddress?: string;
+  pickupLat?: number;
+  pickupLng?: number;
+  dropoffLat?: number;
+  dropoffLng?: number;
   customerId?: string;
   orderId?: string;
   orderNumber?: string;
@@ -103,47 +107,55 @@ export default function PassengerRequests() {
            console.error('❌ PassengerRequests: Error loading waiting lobbies from database:', lobbyError);
          }
 
-         const mappedRequests = (rideRequests || []).map((req: any) => ({
-              id: req.id,
-             type: mapRideType(req.ride_type, req.pickup_location),
-              pickup: formatPickup(req.pickup_location),
-              dropoff: req.dropoff_location || 'Drop-off',
-              payment: req.payment_method === 'GCASH' ? 'PREPAID' : 'COD',
-              amount: Number(req.amount || 0),
-              foodCost: Number(req.food_cost || 0),
-              customerName: req.customer_name || 'Customer',
-              customerPhoto: '👤',
+          const mappedRequests = (rideRequests || []).map((req: any) => ({
+               id: req.id,
+              type: mapRideType(req.ride_type, req.pickup_location),
+               pickup: formatPickup(req.pickup_location),
+               dropoff: req.dropoff_location || 'Drop-off',
+               payment: req.payment_method === 'GCASH' ? 'PREPAID' : 'COD',
+               amount: Number(req.amount || 0),
+               foodCost: Number(req.food_cost || 0),
+               customerName: req.customer_name || 'Customer',
+               customerPhoto: '👤',
+               distance: '2.5 km',
+               estimatedTime: '7 mins',
+               passengers: req.passenger_count || 1,
+               customerId: req.customer_id,
+               ...parseDeliveryTag(req.pickup_location),
+               pickupAddress: req.pickup_address || undefined,
+               dropoffAddress: req.dropoff_address || undefined,
+               pickupLat: req.pickup_lat || undefined,
+               pickupLng: req.pickup_lng || undefined,
+               dropoffLat: req.dropoff_lat || undefined,
+               dropoffLng: req.dropoff_lng || undefined,
+               created_at: req.created_at,
+            }));
+
+          const mappedLobbies = (waitingLobbies || []).map((lobby: any) => {
+            const passengers = Array.isArray(lobby.passengers_json) ? lobby.passengers_json : [];
+            return {
+              id: `lobby_${lobby.id}`,
+              type: 'shared',
+              pickup: lobby.pickup_location,
+              dropoff: lobby.dropoff_location,
+              pickupAddress: lobby.pickup_address,
+              dropoffAddress: lobby.dropoff_address,
+              pickupLat: lobby.pickup_lat || undefined,
+              pickupLng: lobby.pickup_lng || undefined,
+              dropoffLat: lobby.dropoff_lat || undefined,
+              dropoffLng: lobby.dropoff_lng || undefined,
+              payment: 'PREPAID',
+              amount: Number(lobby.price_per_seat || 15) * passengers.length,
+              passengers: passengers.length,
+              maxPassengers: Number(lobby.max_seats || 3),
+              customerName: passengers.length > 1 ? `${passengers.length} Passengers` : (passengers[0]?.name || 'Customer'),
+              customerPhoto: '🚲',
               distance: '2.5 km',
               estimatedTime: '7 mins',
-              passengers: req.passenger_count || 1,
-              customerId: req.customer_id,
-              ...parseDeliveryTag(req.pickup_location),
-              pickupAddress: req.pickup_address || undefined,
-              dropoffAddress: req.dropoff_address || undefined,
-              created_at: req.created_at,
-           }));
-
-         const mappedLobbies = (waitingLobbies || []).map((lobby: any) => {
-           const passengers = Array.isArray(lobby.passengers_json) ? lobby.passengers_json : [];
-           return {
-             id: `lobby_${lobby.id}`,
-             type: 'shared',
-             pickup: lobby.pickup_location,
-             dropoff: lobby.dropoff_location,
-             pickupAddress: lobby.pickup_address,
-             dropoffAddress: lobby.dropoff_address,
-             payment: 'PREPAID',
-             amount: Number(lobby.price_per_seat || 15) * passengers.length,
-             passengers: passengers.length,
-             maxPassengers: Number(lobby.max_seats || 3),
-             customerName: passengers.length > 1 ? `${passengers.length} Passengers` : (passengers[0]?.name || 'Customer'),
-             customerPhoto: '🚲',
-             distance: '2.5 km',
-             estimatedTime: '7 mins',
-             customerId: lobby.customer_id,
-             lobbyId: lobby.id,
-             passengerDetails: passengers,
-             created_at: lobby.created_at,
+              customerId: lobby.customer_id,
+              lobbyId: lobby.id,
+              passengerDetails: passengers,
+              created_at: lobby.created_at,
            } as PassengerRequest;
          });
 

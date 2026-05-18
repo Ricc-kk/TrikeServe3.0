@@ -169,6 +169,37 @@ const createDropoffMarkerIcon = () => {
   } as any;
 };
 
+const PASSENGER_COLORS = ['#8B5CF6', '#EC4899', '#F59E0B', '#10B981', '#06B6D4', '#6366F1'];
+
+const getPassengerInitials = (name: string, index: number): { initials: string; color: string } => {
+  const initials = name
+    ?.split(' ')
+    .map((n: string) => n[0])
+    .join('')
+    .toUpperCase()
+    .slice(0, 2) || '?';
+  const color = PASSENGER_COLORS[index % PASSENGER_COLORS.length];
+  return { initials, color };
+};
+
+const createPassengerMarkerIcon = (initials: string, color: string) => {
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 40 40">
+    <circle cx="20" cy="20" r="18" fill="${color}" stroke="white" stroke-width="2"/>
+    <text x="20" y="24" font-family="Arial, sans-serif" font-size="14" font-weight="bold" fill="white" text-anchor="middle">${initials}</text>
+  </svg>`;
+
+  const google = (window as any)?.google;
+  if (!google?.maps?.Size || !google?.maps?.Point) {
+    return undefined;
+  }
+
+  return {
+    url: 'data:image/svg+xml;charset=UTF-8,' + encodeURIComponent(svg),
+    scaledSize: new google.maps.Size(36, 36),
+    anchor: new google.maps.Point(18, 18),
+  } as any;
+};
+
 const buildNavigationRouteOptions = (color: string, weight: number) => {
   const google = (window as any)?.google;
   const arrowPath = google?.maps?.SymbolPath?.FORWARD_CLOSED_ARROW;
@@ -247,6 +278,8 @@ export default function CustomerHome() {
    const [sharedRidePrice, setSharedRidePrice] = useState(15); // Default price for share rides
    const [driverLocation, setDriverLocation] = useState<{ lat: number; lng: number } | null>(null);
    const [driverRoutePath, setDriverRoutePath] = useState<LatLng[]>([]);
+   const [ridePassengers, setRidePassengers] = useState<any[]>([]);
+   const [passengerLocations, setPassengerLocations] = useState<{ [key: string]: { lat: number; lng: number } }>({});
    const [mapsDiagnostics, setMapsDiagnostics] = useState<MapsDiagnostics>({
      keyPresent: Boolean(GOOGLE_MAPS_API_KEY),
      mapsLoaded: false,
@@ -516,6 +549,12 @@ export default function CustomerHome() {
     if (savedRideData) {
       try {
         const rideData = JSON.parse(savedRideData);
+        const restoredRequestId = typeof rideData?.requestId === 'string'
+          ? rideData.requestId
+          : typeof rideData?.id === 'string'
+            ? rideData.id
+            : null;
+
         setRideStatus(rideData.status);
         setPickup(rideData.pickup);
         setPickupAddress(rideData.pickupAddress);
@@ -525,7 +564,7 @@ export default function CustomerHome() {
         setDropoffCoords(rideData.dropoffCoords || null);
         setSelectedVehicle(rideData.vehicleType);
         setPaymentMethod(rideData.paymentMethod);
-        setCurrentRequestId(rideData.requestId);
+        setCurrentRequestId(restoredRequestId);
         if (rideData.activeRide) {
           setActiveRide(rideData.activeRide);
         }
@@ -613,16 +652,17 @@ export default function CustomerHome() {
     // Continue polling as long as there's an active ride or we're searching
     if (!currentRequestId) return;
 
-     const processDriverStatusUpdate = (status: string, message?: string, source: string = 'unknown', rideContext?: any) => {
+      const processDriverStatusUpdate = (status: string, message?: string, source: string = 'unknown', rideContext?: any) => {
+        const normalizedStatus = String(status || '').toLowerCase();
        const lastShownStatusKey = `last_shown_status_${currentRequestId}`;
        const lastShownStatus = localStorage.getItem(lastShownStatusKey);
        const rideType = String(rideContext?.ride_type || rideContext?.type || rideContext?.rideType || selectedVehicle || '').toLowerCase();
        const inferredCompletionType: 'ride' | 'delivery' =
          rideType === 'delivery' || message?.toLowerCase().includes('delivery') ? 'delivery' : 'ride';
 
-       console.log('📣 PROCESS DRIVER STATUS UPDATE:', { status, message, source, currentRequestId, lastShownStatus, inferredCompletionType });
+        console.log('📣 PROCESS DRIVER STATUS UPDATE:', { status: normalizedStatus, message, source, currentRequestId, lastShownStatus, inferredCompletionType });
 
-       if (status === 'completed' && !rideCompletedPopup) {
+        if (normalizedStatus === 'completed' && !rideCompletedPopup) {
          console.log('✅✅✅ COMPLETION STATUS RECEIVED - showing completion popup now');
          console.log('   Source:', source);
          console.log('   Inferred Completion Type:', inferredCompletionType);
@@ -636,24 +676,29 @@ export default function CustomerHome() {
         resetCustomerRideVisuals();
       }
 
-      if (status && status !== 'pending') {
+        if (normalizedStatus && normalizedStatus !== 'pending') {
         const statusDisplayMap: { [key: string]: string } = {
           'on-the-way': 'Your driver is on the way to pick you up! 🚗',
           'arrived': 'Your driver has arrived! 📍',
+            'pickup': 'You have been picked up! On the way to your destination.',
+            'picked-up': 'You have been picked up! On the way to your destination.',
+            'drop-off': 'You have arrived at your destination! 🏁',
+            'dropped-off': 'You have arrived at your destination! 🏁',
           'in-progress': 'Your ride is in progress!',
           'payment': message || 'Please complete the payment.',
-          'awaiting-payment': message || 'Please complete the payment.'
+            'awaiting-payment': message || 'Please complete the payment.',
+            'completed': message || 'Your ride has been completed. Thank you for using TrikeServe!'
         };
 
-        if (status !== lastShownStatus) {
+        if (normalizedStatus !== lastShownStatus) {
           setDriverStatusPopup({
-            status,
-            message: statusDisplayMap[status] || message || 'Ride status updated',
+              status: normalizedStatus,
+              message: statusDisplayMap[normalizedStatus] || message || 'Ride status updated',
             timestamp: Date.now()
           });
-          localStorage.setItem(lastShownStatusKey, status);
+          localStorage.setItem(lastShownStatusKey, normalizedStatus);
 
-          if (status === 'payment' || status === 'awaiting-payment') {
+          if (normalizedStatus === 'payment' || normalizedStatus === 'awaiting-payment') {
             setTimeout(() => setDriverStatusPopup(null), 4000);
           }
         }
@@ -859,12 +904,13 @@ export default function CustomerHome() {
 
       // Normalize realtime status field (support driver_status, status, ride_status).
       // Prefer explicit completion over payment-stage values.
-      const realtimeStatus =
-        updatedRide.status === 'completed' ||
-        updatedRide.driver_status === 'completed' ||
-        (updatedRide as any).ride_status === 'completed'
-          ? 'completed'
-          : updatedRide.driver_status || updatedRide.status || (updatedRide as any).ride_status;
+        const realtimeStatus = String(
+          updatedRide.status === 'completed' ||
+          updatedRide.driver_status === 'completed' ||
+          (updatedRide as any).ride_status === 'completed'
+            ? 'completed'
+            : updatedRide.driver_status || updatedRide.status || (updatedRide as any).ride_status || ''
+        ).toLowerCase();
 
       console.log('🔍 REALTIME STATUS NORMALIZATION:');
       console.log('   Normalized realtimeStatus:', realtimeStatus);
@@ -940,11 +986,18 @@ export default function CustomerHome() {
        }
 
       // Check for other driver status updates (for popup messages)
-      if (realtimeStatus && realtimeStatus !== 'pending' && realtimeStatus !== 'completed') {
+       if (realtimeStatus && realtimeStatus !== 'pending' && realtimeStatus !== 'completed') {
         const statusDisplayMap: { [key: string]: string } = {
           'on-the-way': 'Your driver is on the way to pick you up! 🚗',
           'arrived': 'Your driver has arrived! 📍',
+          'pickup': 'You have been picked up! On the way to your destination.',
+          'picked-up': 'You have been picked up! On the way to your destination.',
+          'drop-off': 'You have arrived at your destination! 🏁',
+          'dropped-off': 'You have arrived at your destination! 🏁',
           'in-progress': 'Your ride is in progress!',
+          'payment': updatedRide.driver_status_message || 'Please complete the payment.',
+          'awaiting-payment': updatedRide.driver_status_message || 'Please complete the payment.',
+          'completed': updatedRide.driver_status_message || 'Your ride has been completed. Thank you for using TrikeServe!'
         };
 
         setDriverStatusPopup({
@@ -1226,19 +1279,23 @@ export default function CustomerHome() {
 
         console.log('📋 Booking ride for user:', user.id);
 
-        // Create ride request data in correct database format
-        const rideRequest = {
-          customer_id: user.id,
-          pickup_location: pickup,
-          dropoff_location: dropoff,
-          status: 'pending',
-          ride_type: 'special',
-          payment_method: paymentMethod === 'GCASH' ? 'GCASH' : 'COD',
-          amount: getPrice(),
-          passenger_count: passengerCount,
-          created_at: new Date().toISOString(),
-          updated_at: new Date().toISOString(),
-        };
+         // Create ride request data in correct database format
+         const rideRequest = {
+           customer_id: user.id,
+           pickup_location: pickup,
+           dropoff_location: dropoff,
+           pickup_lat: pickupCoords?.lat || null,
+           pickup_lng: pickupCoords?.lng || null,
+           dropoff_lat: dropoffCoords?.lat || null,
+           dropoff_lng: dropoffCoords?.lng || null,
+           status: 'pending',
+           ride_type: 'special',
+           payment_method: paymentMethod === 'GCASH' ? 'GCASH' : 'COD',
+           amount: getPrice(),
+           passenger_count: passengerCount,
+           created_at: new Date().toISOString(),
+           updated_at: new Date().toISOString(),
+         };
 
         console.log('📤 Sending request to Supabase:', rideRequest);
 
@@ -1283,7 +1340,11 @@ export default function CustomerHome() {
         if (!savedRideData) return null;
 
         const parsedRide = JSON.parse(savedRideData);
-        return typeof parsedRide?.requestId === 'string' ? parsedRide.requestId : null;
+        return typeof parsedRide?.requestId === 'string'
+          ? parsedRide.requestId
+          : typeof parsedRide?.id === 'string'
+            ? parsedRide.id
+            : null;
       } catch (error) {
         console.warn('⚠️ Unable to read stored ride request for cancellation:', error);
         return null;
@@ -1714,48 +1775,50 @@ export default function CustomerHome() {
 
         {/* Ride Completed Popup */}
         {rideCompletedPopup && (
-          <div className="fixed inset-0 bg-black/50 z-[2100] flex items-center justify-center p-4">
-            <Card className="bg-white p-8 max-w-sm w-full text-center animate-infinite-bounce">
-              <div className="w-20 h-20 bg-blue-100 rounded-full flex items-center justify-center mx-auto mb-4">
-                <span className="text-4xl">🎉</span>
-              </div>
-              <h3 className="text-xl font-bold text-[#121212] mb-2">
-                {completionPopupType === 'delivery' ? 'Delivery Completed!' : 'Ride Completed!'}
-              </h3>
-              <p className="text-sm text-[#64748B] mb-6">
-                {completionPopupType === 'delivery'
-                  ? 'Thank you for using TrikeServe. Your delivery has been completed!'
-                  : 'Thank you for using TrikeServe. We hope you had a great ride!'}
-              </p>
+          <div className="fixed inset-0 bg-black/50 z-[2100] flex items-end">
+            <div className="bg-white w-full rounded-t-3xl p-6 animate-in slide-in-from-bottom duration-300">
+              <div className="max-w-sm mx-auto text-center">
+                <div className="w-16 h-16 bg-blue-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                  <span className="text-3xl">🎉</span>
+                </div>
+                <h3 className="text-2xl font-bold text-[#121212] mb-2">
+                  {completionPopupType === 'delivery' ? 'Delivery Completed!' : 'Ride Completed!'}
+                </h3>
+                <p className="text-sm text-[#64748B] mb-6">
+                  {completionPopupType === 'delivery'
+                    ? 'Thank you for using TrikeServe. Your delivery has been completed!'
+                    : 'Thank you for using TrikeServe. We hope you had a great ride!'}
+                </p>
 
-              <div className="grid grid-cols-2 gap-3 mb-0">
-                <Button
-                  onClick={() => {
-                    // Open placeholder rating modal (implementation later)
-                    setRideCompletedPopup(false);
-                    setShowRatingModal(true);
-                    setCurrentRequestId(null);
-                  }}
-                  className="w-full bg-white border-2 border-blue-200 text-blue-600 py-3 font-bold"
-                >
-                  Leave a Rating
-                </Button>
+                <div className="grid grid-cols-2 gap-3 mb-0">
+                  <Button
+                    onClick={() => {
+                      // Open placeholder rating modal (implementation later)
+                      setRideCompletedPopup(false);
+                      setShowRatingModal(true);
+                      setCurrentRequestId(null);
+                    }}
+                    className="w-full bg-white border-2 border-blue-200 text-blue-600 py-3 font-bold"
+                  >
+                    Leave a Rating
+                  </Button>
 
-                <Button
-                  onClick={() => {
-                    setRideCompletedPopup(false);
-                    // Reset ride state
-                    setActiveRide(null);
-                    setRideStatus(null);
-                    setCurrentRequestId(null);
-                    setCompletionPopupType('ride');
-                  }}
-                  className="w-full bg-blue-500 hover:bg-blue-600 text-white py-3 font-bold"
-                >
-                  Done
-                </Button>
+                  <Button
+                    onClick={() => {
+                      setRideCompletedPopup(false);
+                      // Reset ride state
+                      setActiveRide(null);
+                      setRideStatus(null);
+                      setCurrentRequestId(null);
+                      setCompletionPopupType('ride');
+                    }}
+                    className="w-full bg-blue-500 hover:bg-blue-600 text-white py-3 font-bold"
+                  >
+                    Done
+                  </Button>
+                </div>
               </div>
-            </Card>
+            </div>
           </div>
         )}
 
@@ -2173,12 +2236,14 @@ export default function CustomerHome() {
           onDriverFound={(lobbyId) => {
             // Don't close the lobby - let customers see driver info in the lobby itself
             // Just update the status for tracking
+            setCurrentRequestId(`lobby_${lobbyId}`);
             setRideStatus('driver-found');
             console.log('✅ Driver found for lobby:', lobbyId);
           }}
           onClose={() => {
             setShowShareLobby(false);
             setActiveShareLobbyId(null);
+            setCurrentRequestId(null);
           }}
         />
       )}

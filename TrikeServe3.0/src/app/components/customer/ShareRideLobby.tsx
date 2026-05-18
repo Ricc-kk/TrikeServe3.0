@@ -141,6 +141,10 @@ export default function ShareRideLobby({
            setLobby(existingLobby);
             handleTerminalLobbyStatus(existingLobby.status);
 
+             if (existingLobby.status === 'driver_found' && existingLobby.driver_name && typeof onDriverFound === 'function') {
+               onDriverFound(existingLobby.id);
+             }
+
             // Set up real-time subscription
             if (typeof supabaseHelpers.subscribeLobbyUpdates === 'function') {
               unsubscribe = supabaseHelpers.subscribeLobbyUpdates(

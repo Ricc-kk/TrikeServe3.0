@@ -1190,15 +1190,34 @@ export const supabaseHelpers = {
           filter: `id=eq.${rideId}`
         },
         (payload) => {
-          console.log('🔄 Real-time update received:', payload);
-          callback(payload.new);
+          try {
+            console.log('🔄 Real-time update received:', payload);
+            // Some payloads (DELETE) may not include `new`. Prefer `new` then `record`.
+            const record = payload?.new || payload?.record || null;
+            if (!record) {
+              console.warn('⚠️ Real-time payload had no record/new field:', payload);
+              return;
+            }
+            callback(record);
+          } catch (err) {
+            console.error('❌ Error processing realtime payload for ride', rideId, err, payload);
+          }
         }
       )
-      .subscribe((status) => {
-        if (status === 'SUBSCRIBED') {
-          console.log(`✅ Real-time subscription active for ride: ${rideId}`);
-        } else if (status === 'CHANNEL_ERROR') {
-          console.error(`❌ Subscription error for ride: ${rideId}`);
+      .subscribe((statusOrEvent) => {
+        // Status can be a string or an object depending on client version; log full value for debugging.
+        console.log(`📡 subscribe() callback for ride ${rideId} - status:`, statusOrEvent);
+
+        // Attempt to detect common error states
+        try {
+          const statusStr = typeof statusOrEvent === 'string' ? statusOrEvent : statusOrEvent?.status || statusOrEvent?.type;
+          if (statusStr === 'SUBSCRIBED') {
+            console.log(`✅ Real-time subscription active for ride: ${rideId}`);
+          } else if (String(statusStr).toUpperCase().includes('CHANNEL_ERROR') || String(statusStr).toUpperCase().includes('ERROR')) {
+            console.error(`❌ Subscription error for ride: ${rideId} - status:`, statusOrEvent);
+          }
+        } catch (err) {
+          console.warn('⚠️ Unable to parse subscribe status for ride:', rideId, statusOrEvent, err);
         }
       });
 
