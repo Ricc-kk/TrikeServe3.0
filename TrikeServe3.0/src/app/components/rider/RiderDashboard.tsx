@@ -35,6 +35,7 @@ import { Badge } from "../ui/badge";
 import { Input } from "../ui/input";
 import { useAuth } from "../../contexts/AuthContext";
 import { supabaseHelpers } from "@/lib/supabase";
+import tricycleIcon from "../../../assets/0b76d1aa56b8ad6e15dd4efc8a0100b0ca5762a1.png";
 import { supabase } from "../../../lib/supabase";
 
 // Get Google Maps API Key from environment variable
@@ -334,29 +335,27 @@ export default function RiderDashboard() {
     return points;
   };
 
-  // Helper: Create custom SVG marker for driver (red car)
+  // Helper: Create custom marker for driver (tricycle image)
   const createDriverMarkerIcon = (): google.maps.Icon | undefined => {
     const google = (window as any)?.google;
     if (!google?.maps?.Size || !google?.maps?.Point) return undefined;
 
-    const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="#EF4444" stroke="white" stroke-width="0.5">
-      <path d="M18.92 6.01C18.72 5.42 18.16 5 17.5 5h-11c-.66 0-1.21.42-1.42 1.01L3 12v8c0 .55.45 1 1 1h1c.55 0 1-.45 1-1v-1h12v1c0 .55.45 1 1 1h1c.55 0 1-.45 1-1v-8l-2.08-5.99zM6.5 16c-1.1 0-2-.9-2-2s.9-2 2-2 2 .9 2 2-.9 2-2 2zm11 0c-1.1 0-2-.9-2-2s.9-2 2-2 2 .9 2 2-.9 2-2 2z"/>
-    </svg>`;
-
     return {
-      url: 'data:image/svg+xml;charset=UTF-8,' + encodeURIComponent(svg),
-      scaledSize: new google.maps.Size(40, 40),
-      anchor: new google.maps.Point(20, 20),
-    };
+      url: tricycleIcon,
+      scaledSize: new google.maps.Size(44, 44),
+      anchor: new google.maps.Point(22, 22),
+    } as any;
   };
 
-  // Helper: Create custom SVG marker for customer/passenger (blue pin)
+  // Helper: Create custom SVG marker for customer/passenger (person icon)
   const createCustomerMarkerIcon = (): google.maps.Icon | undefined => {
     const google = (window as any)?.google;
     if (!google?.maps?.Size || !google?.maps?.Point) return undefined;
 
-    const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="#3B82F6" stroke="white" stroke-width="1">
-      <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.42 0-8-3.58-8-8s3.58-8 8-8 8 3.58 8 8-3.58 8-8 8zm3.5-9c.83 0 1.5-.67 1.5-1.5S16.33 8 15.5 8 14 8.67 14 9.5s.67 1.5 1.5 1.5z"/>
+    const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="#2563EB" stroke="white" stroke-width="1">
+      <path d="M12 2C8.13 2 5 5.13 5 9c0 4.95 6.1 11.53 6.36 11.81.36.39.92.39 1.28 0C13.9 20.53 20 13.95 20 9c0-3.87-3.13-7-8-7z"/>
+      <circle cx="12" cy="8.6" r="2.3" fill="#FFFFFF" stroke="none"/>
+      <path d="M8.7 15.9c.55-2.05 2.15-3.3 3.3-3.3s2.75 1.25 3.3 3.3" fill="#FFFFFF" stroke="none"/>
     </svg>`;
 
     return {

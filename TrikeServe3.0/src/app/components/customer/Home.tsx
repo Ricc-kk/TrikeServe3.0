@@ -119,6 +119,56 @@ const buildNavigationMarkerIcon = (color: string) => {
   } as any;
 };
 
+const createDriverMarkerIcon = () => {
+  const google = (window as any)?.google;
+  if (!google?.maps?.Size || !google?.maps?.Point) {
+    return buildNavigationMarkerIcon('#EF4444');
+  }
+
+  return {
+    url: tricycleIcon,
+    scaledSize: new google.maps.Size(44, 44),
+    anchor: new google.maps.Point(22, 22),
+  } as any;
+};
+
+const createCustomerMarkerIcon = () => {
+  const google = (window as any)?.google;
+  if (!google?.maps?.Size || !google?.maps?.Point) {
+    return buildNavigationMarkerIcon('#2563EB');
+  }
+
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="#2563EB" stroke="white" stroke-width="1">
+    <path d="M12 2C8.13 2 5 5.13 5 9c0 4.95 6.1 11.53 6.36 11.81.36.39.92.39 1.28 0C13.9 20.53 20 13.95 20 9c0-3.87-3.13-7-8-7z"/>
+    <circle cx="12" cy="8.6" r="2.3" fill="#FFFFFF" stroke="none"/>
+    <path d="M8.7 15.9c.55-2.05 2.15-3.3 3.3-3.3s2.75 1.25 3.3 3.3" fill="#FFFFFF" stroke="none"/>
+  </svg>`;
+
+  return {
+    url: 'data:image/svg+xml;charset=UTF-8,' + encodeURIComponent(svg),
+    scaledSize: new google.maps.Size(40, 40),
+    anchor: new google.maps.Point(20, 40),
+  } as any;
+};
+
+const createDropoffMarkerIcon = () => {
+  const google = (window as any)?.google;
+  if (!google?.maps?.Size || !google?.maps?.Point) {
+    return buildNavigationMarkerIcon('#E11D48');
+  }
+
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="#E11D48" stroke="white" stroke-width="1">
+    <path d="M12 2C8.13 2 5 5.13 5 9c0 4.95 6.1 11.53 6.36 11.81.36.39.92.39 1.28 0C13.9 20.53 20 13.95 20 9c0-3.87-3.13-7-8-7z"/>
+    <path d="M7.8 9.6l2.1 2.1 4.3-4.3" fill="none" stroke="#FFFFFF" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>
+  </svg>`;
+
+  return {
+    url: 'data:image/svg+xml;charset=UTF-8,' + encodeURIComponent(svg),
+    scaledSize: new google.maps.Size(40, 40),
+    anchor: new google.maps.Point(20, 40),
+  } as any;
+};
+
 const buildNavigationRouteOptions = (color: string, weight: number) => {
   const google = (window as any)?.google;
   const arrowPath = google?.maps?.SymbolPath?.FORWARD_CLOSED_ARROW;
@@ -1319,11 +1369,12 @@ export default function CustomerHome() {
                position={currentLocation}
                onClick={() => setSelectedMarker(currentLocation)}
                title="Your location (start)"
+                icon={createCustomerMarkerIcon()}
              />
 
               {/* Drop-off marker only */}
               {dropoffCoords && (
-                <MarkerF position={dropoffCoords} title="Drop-off location" />
+                <MarkerF position={dropoffCoords} title="Drop-off location" icon={createDropoffMarkerIcon()} />
               )}
 
               {/* Driver location marker (real-time tracking) */}
@@ -1331,7 +1382,7 @@ export default function CustomerHome() {
                 <MarkerF
                   position={driverLocation}
                   title="Driver Location"
-                  icon={buildNavigationMarkerIcon('#2563EB')}
+                  icon={createDriverMarkerIcon()}
                 />
               )}
 
@@ -1773,7 +1824,7 @@ export default function CustomerHome() {
                   mapTypeControl: false,
                 }}
               >
-                <MarkerF position={currentLocation} title="Current location" />
+                <MarkerF position={currentLocation} title="Current location" icon={createCustomerMarkerIcon()} />
                 {locationPreview && (
                   <MarkerF
                     position={{ lat: locationPreview.lat, lng: locationPreview.lng }}

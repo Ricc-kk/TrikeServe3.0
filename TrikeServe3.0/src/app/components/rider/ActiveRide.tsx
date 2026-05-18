@@ -10,6 +10,7 @@ import { supabaseHelpers } from "@/lib/supabase";
 import useMapLoader from "@/lib/mapLoader";
 import { GOOGLE_MAPS_LIBRARIES } from "@/lib/googleMaps";
 import PassengerMessagingDB from "./PassengerMessagingDB";
+import tricycleIcon from "../../../assets/0b76d1aa56b8ad6e15dd4efc8a0100b0ca5762a1.png";
 
 type RideStatus = 'on-the-way' | 'arrived' | 'pickup' | 'drop-off' | 'payment';
 type PassengerStatus = 'pending' | 'on-the-way' | 'arrived' | 'picked-up' | 'dropped-off';
@@ -331,15 +332,48 @@ export default function ActiveRide() {
     } as any;
   };
 
+  const createDriverMarkerIcon = () => {
+    const google = (window as any)?.google;
+    if (!google?.maps?.Size || !google?.maps?.Point) {
+      return buildNavigationMarkerIcon('#EF4444');
+    }
+
+    return {
+      url: tricycleIcon,
+      scaledSize: new google.maps.Size(44, 44),
+      anchor: new google.maps.Point(22, 22),
+    } as any;
+  };
+
   const createCustomerMarkerIcon = () => {
     const google = (window as any)?.google;
     if (!google?.maps?.Size || !google?.maps?.Point) {
       // Fallback to circle icon when SVG helpers are unavailable
-      return buildNavigationMarkerIcon('#3B82F6');
+      return buildNavigationMarkerIcon('#2563EB');
     }
 
-    const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="#3B82F6" stroke="white" stroke-width="1">
-      <path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5A2.5 2.5 0 1 1 12 6a2.5 2.5 0 0 1 0 5.5z"/>
+    const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="#2563EB" stroke="white" stroke-width="1">
+      <path d="M12 2C8.13 2 5 5.13 5 9c0 4.95 6.1 11.53 6.36 11.81.36.39.92.39 1.28 0C13.9 20.53 20 13.95 20 9c0-3.87-3.13-7-8-7z"/>
+      <circle cx="12" cy="8.6" r="2.3" fill="#FFFFFF" stroke="none"/>
+      <path d="M8.7 15.9c.55-2.05 2.15-3.3 3.3-3.3s2.75 1.25 3.3 3.3" fill="#FFFFFF" stroke="none"/>
+    </svg>`;
+
+    return {
+      url: 'data:image/svg+xml;charset=UTF-8,' + encodeURIComponent(svg),
+      scaledSize: new google.maps.Size(40, 40),
+      anchor: new google.maps.Point(20, 40),
+    } as any;
+  };
+
+  const createDropoffMarkerIcon = () => {
+    const google = (window as any)?.google;
+    if (!google?.maps?.Size || !google?.maps?.Point) {
+      return buildNavigationMarkerIcon('#E11D48');
+    }
+
+    const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="#E11D48" stroke="white" stroke-width="1">
+      <path d="M12 2C8.13 2 5 5.13 5 9c0 4.95 6.1 11.53 6.36 11.81.36.39.92.39 1.28 0C13.9 20.53 20 13.95 20 9c0-3.87-3.13-7-8-7z"/>
+      <path d="M7.8 9.6l2.1 2.1 4.3-4.3" fill="none" stroke="#FFFFFF" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>
     </svg>`;
 
     return {
@@ -1032,7 +1066,7 @@ export default function ActiveRide() {
               <MarkerF
                 position={driverLocation}
                 title="Your Location"
-                icon={buildNavigationMarkerIcon('#EF4444')}
+                icon={createDriverMarkerIcon()}
               />
             )}
 
@@ -1041,7 +1075,7 @@ export default function ActiveRide() {
               <MarkerF
                 position={{ lat: rideData.pickupLat, lng: rideData.pickupLng }}
                 title="📍 Pickup Location (Customer)"
-                icon={createCustomerMarkerIcon()}
+                  icon={createCustomerMarkerIcon()}
               />
             )}
 
@@ -1051,7 +1085,7 @@ export default function ActiveRide() {
               <MarkerF
                 position={{ lat: rideData.dropoffLat, lng: rideData.dropoffLng }}
                 title="Drop-off Location"
-                icon={buildNavigationMarkerIcon('#22C55E')}
+                  icon={createDropoffMarkerIcon()}
               />
             )}
 
