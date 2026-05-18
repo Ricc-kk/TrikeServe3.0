@@ -816,6 +816,16 @@ export default function CustomerHome() {
           });
         }
 
+        // Update driver location from DB when available (polling fallback)
+        if (rideRequest.driver_lat && rideRequest.driver_lng) {
+          try {
+            const polledDriverLocation = { lat: rideRequest.driver_lat, lng: rideRequest.driver_lng };
+            setDriverLocation(polledDriverLocation);
+            console.log('📍 Driver location updated from polling:', polledDriverLocation);
+          } catch (err) {
+            console.warn('⚠️ Failed to set driver location from polling:', err);
+          }
+        }
         // Only show status popup if driver_status has been updated AND we haven't shown it yet
         if (rideRequest.driver_status && rideRequest.driver_status !== 'pending') {
           processDriverStatusUpdate(rideRequest.driver_status, rideRequest.driver_status_message || rideRequest.status_message, 'polling-driver_status', rideRequest);
