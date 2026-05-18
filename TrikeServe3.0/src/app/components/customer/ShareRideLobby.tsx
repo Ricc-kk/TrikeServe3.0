@@ -25,7 +25,7 @@ interface ShareRideLobby {
   passengers_json?: LobbyPassenger[];
   max_seats: number;
   price_per_seat: number;
-  status: 'waiting' | 'driver_found' | 'in_progress' | 'completed';
+  status: 'waiting' | 'driver_found' | 'in_progress' | 'completed' | 'cancelled';
   driver_name?: string;
   driver_plate?: string;
   driver_rating?: string;
@@ -722,9 +722,9 @@ export default function ShareRideLobby({
       {showLeaveConfirm && (
         <div className="fixed inset-0 bg-black/70 z-[2100] flex items-center justify-center p-4">
           <Card className="bg-white p-6 max-w-sm w-full">
-            <h3 className="text-lg font-bold text-[#121212] mb-2">Leave Lobby?</h3>
+            <h3 className="text-lg font-bold text-[#121212] mb-2">Cancel Ride?</h3>
             <p className="text-sm text-[#64748B] mb-6">
-              Are you sure you want to leave? You'll need to find a new ride.
+              Are you sure you want to cancel this ride? You'll need to find a new ride.
             </p>
             <div className="flex gap-3">
               <Button
@@ -738,7 +738,7 @@ export default function ShareRideLobby({
                 onClick={handleLeaveLobby}
                 className="flex-1 bg-red-500 hover:bg-red-600 text-white"
               >
-                LEAVE
+                CANCEL RIDE
               </Button>
             </div>
           </Card>
