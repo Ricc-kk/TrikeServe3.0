@@ -28,6 +28,7 @@ interface ActiveRideData {
   amount: number;
   status: RideStatus;
   orderId?: string;
+  orderNumber?: string;
   lobbyId?: string;
   passengerDetails?: any[];
 }
@@ -123,6 +124,21 @@ export default function ActiveRide() {
 
   const completeRide = async () => {
     if (!rideData) return;
+
+    if (rideData.orderId || rideData.orderNumber) {
+      const { error: orderStatusError } = await supabaseHelpers.updateDeliveryOrderStatus(
+        rideData.orderId,
+        rideData.orderNumber,
+        'delivered'
+      );
+
+      if (orderStatusError) {
+        console.error('❌ Failed to mark delivery order as delivered:', orderStatusError);
+      } else {
+        console.log('✅ Delivery order marked as delivered');
+      }
+    }
+
     await supabaseHelpers.updateRideRequest(rideData.id, { status: 'completed' });
     await supabaseHelpers.updateDriverRideStatus(rideData.id, 'completed', 'Ride completed!');
     localStorage.removeItem('trikeserve_active_ride');
