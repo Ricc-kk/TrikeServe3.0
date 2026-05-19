@@ -955,6 +955,50 @@ export const supabaseHelpers = {
     return { data, error };
   },
 
+  // Update an order's delivery status using either the order ID or order number.
+  // This keeps delivery requests and business/customer order views in sync.
+  async updateDeliveryOrderStatus(orderId?: string, orderNumber?: string, status?: string) {
+    const timestamp = new Date().toISOString();
+    const payload = {
+      status,
+      updated_at: timestamp,
+    };
+
+    if (orderId) {
+      const byId = await supabase
+        .from('orders')
+        .update(payload)
+        .eq('id', orderId)
+        .select()
+        .single();
+
+      if (byId.data || !orderNumber) {
+        return byId;
+      }
+    }
+
+    if (orderNumber) {
+      const { data: order, error: lookupError } = await supabase
+        .from('orders')
+        .select('id')
+        .eq('order_number', orderNumber)
+        .single();
+
+      if (lookupError || !order?.id) {
+        return { data: null, error: lookupError || new Error('Order not found') };
+      }
+
+      return supabase
+        .from('orders')
+        .update(payload)
+        .eq('id', order.id)
+        .select()
+        .single();
+    }
+
+    return { data: null, error: new Error('Missing order identifier') };
+  },
+
   async updateOrder(orderId: string, updates: any) {
     const { data, error } = await supabase
       .from('orders')

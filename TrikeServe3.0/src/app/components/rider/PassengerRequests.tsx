@@ -232,6 +232,22 @@ export default function PassengerRequests() {
       passengerDetails = Array.isArray(updatedLobby?.passengers_json) ? updatedLobby.passengers_json : passengerDetails;
     }
     const acceptedRide = { ...request, passengerDetails, driverId: user.id, driverName: user.name, driverPlate: user.todaPlate, driverRating: '4.8', status: 'accepted', acceptedAt: new Date().toISOString(), eta: '5 mins' };
+
+    // Keep delivery order status in sync with the driver workflow.
+    if ((request.type === 'delivery' || request.orderId || request.orderNumber) && (request.orderId || request.orderNumber)) {
+      const { error: orderStatusError } = await supabaseHelpers.updateDeliveryOrderStatus(
+        request.orderId,
+        request.orderNumber,
+        'on-the-way'
+      );
+
+      if (orderStatusError) {
+        console.error('❌ Failed to sync delivery order status to on-the-way:', orderStatusError);
+      } else {
+        console.log('✅ Delivery order status updated to on-the-way');
+      }
+    }
+
     navigate('/rider/active-ride', { state: { acceptedRide } });
   };
 
