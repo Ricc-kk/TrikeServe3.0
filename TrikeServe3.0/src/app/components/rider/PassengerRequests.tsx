@@ -257,7 +257,7 @@ export default function PassengerRequests() {
   };
 
   const filteredRequests = requests.filter(r => selectedCategory === 'all' || r.type === selectedCategory);
-  const requestsMatchingServiceTypes = filteredRequests.filter(r => (user?.serviceTypes || ['shared', 'delivery']).includes(r.type));
+  const requestsMatchingServiceTypes = filteredRequests.filter(r => (user?.serviceTypes || ['shared']).includes(r.type));
 
   const recommendedPickup = requestsMatchingServiceTypes.filter(r => r.type === 'private' && r.pickupLat && r.pickupLng).reduce<null | (PassengerRequest & { __distance: number; __eta: number })>((best, r) => {
     const dist = haversineDistance(currentLocation, { lat: Number(r.pickupLat), lng: Number(r.pickupLng) });

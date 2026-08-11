@@ -1,15 +1,70 @@
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { useNavigate } from "react-router";
 import { ArrowLeft, Package, Users, Car } from "lucide-react";
 import { Button } from "../ui/button";
 import { Card } from "../ui/card";
 import { useAuth } from "../../contexts/AuthContext";
 
+type ServiceCategory = 'rides' | 'delivery';
+type ServiceType = 'private' | 'shared' | 'delivery';
+
+interface ServiceOption {
+  key: ServiceType;
+  name: string;
+  description: string;
+  icon: typeof Users;
+}
+
+const CATEGORIES: { key: ServiceCategory; name: string; description: string; icon: typeof Users }[] = [
+  { key: 'rides', name: 'Rides', description: 'Transport passengers', icon: Users },
+  { key: 'delivery', name: 'Delivery', description: 'Food & package delivery', icon: Package },
+];
+
+const SERVICE_OPTIONS: Record<ServiceCategory, ServiceOption[]> = {
+  rides: [
+    { key: 'shared', name: 'Ride Share', description: 'Shared rides with other passengers', icon: Users },
+    { key: 'private', name: 'Private Ride', description: 'Exclusive rides, no sharing', icon: Car },
+  ],
+  delivery: [
+    { key: 'delivery', name: 'Delivery', description: 'Food & package delivery', icon: Package },
+  ],
+};
+
 export default function ServiceTypes() {
   const navigate = useNavigate();
   const { user, updateProfile } = useAuth();
-  const [selectedServices, setSelectedServices] = useState<string[]>(user?.serviceTypes || ['shared', 'delivery']);
+
+  // Rides can include Ride Share and/or Private Ride; Delivery is exclusive with a single option
+  const normalizeSelection = (existing: string[] = []): { category: ServiceCategory; rides: ServiceType[] } => {
+    const valid = existing.filter((s) => ['private', 'shared', 'delivery'].includes(s));
+    const rides = valid.filter((s) => s === 'shared' || s === 'private');
+    return {
+      category: valid.includes('delivery') ? 'delivery' : 'rides',
+      rides: rides.length > 0 ? rides : ['shared'],
+    };
+  };
+
+  const initial = normalizeSelection(user?.serviceTypes);
+  const [category, setCategory] = useState<ServiceCategory>(initial.category);
+  const [ridesSelection, setRidesSelection] = useState<ServiceType[]>(initial.rides);
   const [isSaving, setIsSaving] = useState(false);
+
+  // Delivery is the only option in its category; Rides selection is preserved across category switches
+  const selectedServices = category === 'delivery' ? ['delivery'] : ridesSelection;
+
+  const selectCategory = (next: ServiceCategory) => {
+    setCategory(next);
+  };
+
+  const toggleRideType = (key: ServiceType) => {
+    setRidesSelection((prev) => {
+      if (prev.includes(key)) {
+        // Keep at least one ride type selected
+        return prev.length > 1 ? prev.filter((s) => s !== key) : prev;
+      }
+      return [...prev, key];
+    });
+  };
 
   const handleSave = async () => {
     setIsSaving(true);
@@ -35,118 +90,95 @@ export default function ServiceTypes() {
         </h1>
       </div>
 
-      <div className="p-4 space-y-3">
-        <p className="text-sm text-[#64748B] mb-3">
-          Select which service types you want to accept
+      <div className="p-4 space-y-5">
+        <p className="text-sm text-[#64748B]">
+          Choose a category, then select the service types you want to accept.
+          {category === 'rides' && ' You can select both Ride Share and Private Ride.'}
         </p>
 
-        <div className="space-y-2">
-          {/* Delivery */}
-          <Card
-            onClick={() => {
-              if (selectedServices.includes('delivery')) {
-                setSelectedServices(selectedServices.filter(s => s !== 'delivery'));
-              } else {
-                setSelectedServices([...selectedServices, 'delivery']);
-              }
-            }}
-            className={`flex items-center justify-between p-4 border-2 cursor-pointer transition-all ${
-              selectedServices.includes('delivery') 
-                ? 'border-[#E11D48] bg-red-50' 
-                : 'border-gray-200 hover:border-gray-300'
-            }`}
-          >
-            <div className="flex items-center gap-3">
-              <Package className="w-5 h-5 text-[#E11D48]" />
-              <div>
-                <p className="font-semibold text-[#121212]">Delivery</p>
-                <p className="text-xs text-[#64748B]">Food & package delivery</p>
-              </div>
-            </div>
-            <div className={`w-5 h-5 rounded border-2 flex items-center justify-center ${
-              selectedServices.includes('delivery') 
-                ? 'bg-[#E11D48] border-[#E11D48]' 
-                : 'border-gray-300'
-            }`}>
-              {selectedServices.includes('delivery') && (
-                <div className="w-2 h-2 bg-white rounded-sm" />
-              )}
-            </div>
-          </Card>
-
-          {/* Ride Share (Sasabay) */}
-          <Card
-            onClick={() => {
-              if (selectedServices.includes('shared')) {
-                setSelectedServices(selectedServices.filter(s => s !== 'shared'));
-              } else {
-                setSelectedServices([...selectedServices, 'shared']);
-              }
-            }}
-            className={`flex items-center justify-between p-4 border-2 cursor-pointer transition-all ${
-              selectedServices.includes('shared') 
-                ? 'border-[#E11D48] bg-red-50' 
-                : 'border-gray-200 hover:border-gray-300'
-            }`}
-          >
-            <div className="flex items-center gap-3">
-              <Users className="w-5 h-5 text-[#E11D48]" />
-              <div>
-                <p className="font-semibold text-[#121212]">Ride Share</p>
-                <p className="text-xs text-[#64748B]">Shared rides with other passengers</p>
-              </div>
-            </div>
-            <div className={`w-5 h-5 rounded border-2 flex items-center justify-center ${
-              selectedServices.includes('shared') 
-                ? 'bg-[#E11D48] border-[#E11D48]' 
-                : 'border-gray-300'
-            }`}>
-              {selectedServices.includes('shared') && (
-                <div className="w-2 h-2 bg-white rounded-sm" />
-              )}
-            </div>
-          </Card>
-
-          {/* Private Ride (Pakyaw) */}
-          <Card
-            onClick={() => {
-              if (selectedServices.includes('special')) {
-                setSelectedServices(selectedServices.filter(s => s !== 'special'));
-              } else {
-                setSelectedServices([...selectedServices, 'special']);
-              }
-            }}
-            className={`flex items-center justify-between p-4 border-2 cursor-pointer transition-all ${
-              selectedServices.includes('special')
-                ? 'border-[#E11D48] bg-red-50' 
-                : 'border-gray-200 hover:border-gray-300'
-            }`}
-          >
-            <div className="flex items-center gap-3">
-              <Car className="w-5 h-5 text-[#E11D48]" />
-              <div>
-                <p className="font-semibold text-[#121212]">Private Ride</p>
-                <p className="text-xs text-[#64748B]">Exclusive rides, no sharing</p>
-              </div>
-            </div>
-            <div className={`w-5 h-5 rounded border-2 flex items-center justify-center ${
-              selectedServices.includes('special')
-                ? 'bg-[#E11D48] border-[#E11D48]' 
-                : 'border-gray-300'
-            }`}>
-              {selectedServices.includes('special') && (
-                <div className="w-2 h-2 bg-white rounded-sm" />
-              )}
-            </div>
-          </Card>
+        {/* Step 1: Category */}
+        <div>
+          <h2 className="text-sm font-bold text-[#121212] mb-2 uppercase tracking-wide">1. Choose a category</h2>
+          <div className="grid grid-cols-2 gap-3">
+            {CATEGORIES.map((cat) => {
+              const active = category === cat.key;
+              return (
+                <Card
+                  key={cat.key}
+                  onClick={() => selectCategory(cat.key)}
+                  className={`p-4 border-2 cursor-pointer transition-all ${
+                    active
+                      ? 'border-[#E11D48] bg-red-50 shadow-sm'
+                      : 'border-gray-200 hover:border-gray-300'
+                  }`}
+                >
+                  <div className="flex flex-col items-center gap-2 text-center">
+                    <div className={`w-12 h-12 rounded-full flex items-center justify-center ${
+                      active ? 'bg-[#E11D48] text-white' : 'bg-gray-100 text-[#64748B]'
+                    }`}>
+                      <cat.icon className="w-6 h-6" />
+                    </div>
+                    <div>
+                      <p className="font-semibold text-[#121212]">{cat.name}</p>
+                      <p className="text-xs text-[#64748B]">{cat.description}</p>
+                    </div>
+                    <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center ${
+                      active ? 'border-[#E11D48]' : 'border-gray-300'
+                    }`}>
+                      {active && <div className="w-2.5 h-2.5 bg-[#E11D48] rounded-full" />}
+                    </div>
+                  </div>
+                </Card>
+              );
+            })}
+          </div>
         </div>
 
-        {/* Seat management removed */}
+        {/* Step 2: Service type within category */}
+        <div>
+          <h2 className="text-sm font-bold text-[#121212] mb-2 uppercase tracking-wide">
+            2. Select service types
+          </h2>
+          <div className="space-y-2">
+            {SERVICE_OPTIONS[category].map((option) => {
+              const active = selectedServices.includes(option.key);
+              const isMulti = category === 'rides';
+              return (
+                <Card
+                  key={option.key}
+                  onClick={() => (isMulti ? toggleRideType(option.key) : undefined)}
+                  className={`flex items-center justify-between p-4 border-2 cursor-pointer transition-all ${
+                    active
+                      ? 'border-[#E11D48] bg-red-50'
+                      : 'border-gray-200 hover:border-gray-300'
+                  }`}
+                >
+                  <div className="flex items-center gap-3">
+                    <div className={`w-10 h-10 rounded-full flex items-center justify-center ${
+                      active ? 'bg-[#E11D48] text-white' : 'bg-gray-100 text-[#64748B]'
+                    }`}>
+                      <option.icon className="w-5 h-5" />
+                    </div>
+                    <div>
+                      <p className="font-semibold text-[#121212]">{option.name}</p>
+                      <p className="text-xs text-[#64748B]">{option.description}</p>
+                    </div>
+                  </div>
+                  <div className={`w-5 h-5 rounded border-2 flex items-center justify-center ${
+                    active ? 'bg-[#E11D48] border-[#E11D48]' : 'border-gray-300'
+                  }`}>
+                    {active && <div className="w-2 h-2 bg-white rounded-sm" />}
+                  </div>
+                </Card>
+              );
+            })}
+          </div>
+        </div>
 
-        <Button 
+        <Button
           onClick={handleSave}
           disabled={isSaving}
-          className="w-full bg-[#E11D48] hover:bg-[#BE123C] uppercase mt-4"
+          className="w-full bg-[#E11D48] hover:bg-[#BE123C] uppercase"
         >
           {isSaving ? 'Saving...' : 'Save Service Types'}
         </Button>

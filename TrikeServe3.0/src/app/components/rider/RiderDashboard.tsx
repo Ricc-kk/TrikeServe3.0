@@ -52,6 +52,16 @@ interface IncomingRequest {
   waitingPassengers?: number;
 }
 
+const SERVICE_OPTIONS: Record<'rides' | 'delivery', { key: string; name: string; description: string }[]> = {
+  rides: [
+    { key: 'shared', name: 'Ride Share', description: 'Shared rides with other passengers' },
+    { key: 'private', name: 'Private Ride', description: 'Exclusive rides, no sharing' },
+  ],
+  delivery: [
+    { key: 'delivery', name: 'Delivery', description: 'Food & package delivery' },
+  ],
+};
+
 export default function RiderDashboard() {
   const navigate = useNavigate();
   const { user, updateProfile } = useAuth();
@@ -63,7 +73,19 @@ export default function RiderDashboard() {
   const [showServiceTypes, setShowServiceTypes] = useState(false);
   const [showDestination, setShowDestination] = useState(false);
   const [showMore, setShowMore] = useState(false);
-  const [selectedServices, setSelectedServices] = useState<string[]>(user?.serviceTypes || ['shared', 'delivery']);
+  // Rides can include Ride Share and/or Private Ride; Delivery is exclusive with a single option
+  const normalizeServiceSelection = (existing: string[] = []): { category: 'rides' | 'delivery'; rides: string[] } => {
+    const valid = existing.filter((s) => ['private', 'shared', 'delivery'].includes(s));
+    const rides = valid.filter((s) => s === 'shared' || s === 'private');
+    return {
+      category: valid.includes('delivery') ? 'delivery' : 'rides',
+      rides: rides.length > 0 ? rides : ['shared'],
+    };
+  };
+  const initialServiceSelection = normalizeServiceSelection(user?.serviceTypes);
+  const [selectedServices, setSelectedServices] = useState<string[]>(initialServiceSelection.category === 'delivery' ? ['delivery'] : initialServiceSelection.rides);
+  const [serviceCategory, setServiceCategory] = useState<'rides' | 'delivery'>(initialServiceSelection.category);
+  const [ridesSelection, setRidesSelection] = useState<string[]>(initialServiceSelection.rides);
   const [destination, setDestination] = useState('');
   const [totalPendingRequests, setTotalPendingRequests] = useState(0);
   const [hasActiveRide, setHasActiveRide] = useState(false);
@@ -772,6 +794,24 @@ export default function RiderDashboard() {
       }
     };
 
+    const selectServiceCategory = (next: 'rides' | 'delivery') => {
+      setServiceCategory(next);
+      if (next === 'delivery') {
+        setSelectedServices(['delivery']);
+      } else {
+        setSelectedServices(ridesSelection);
+      }
+    };
+
+    const toggleServiceType = (key: string) => {
+      if (serviceCategory !== 'rides') return;
+      const next = ridesSelection.includes(key)
+        ? (ridesSelection.length > 1 ? ridesSelection.filter((s) => s !== key) : ridesSelection)
+        : [...ridesSelection, key];
+      setRidesSelection(next);
+      setSelectedServices(next);
+    };
+
   return (
     <div className="h-screen flex flex-col bg-[#F8F9FA] relative">
       {/* Full Screen Map */}
@@ -1030,118 +1070,93 @@ export default function RiderDashboard() {
 
 
                {showServiceTypes && (
-                <div className="border-t border-gray-200 p-4 space-y-3">
-                  <div className="flex items-center justify-between mb-3">
+                <div className="border-t border-gray-200 p-4 space-y-4">
+                  <div className="flex items-center justify-between mb-1">
                     <h3 className="font-bold text-[#121212]">Service Types</h3>
                     <button onClick={() => setShowServiceTypes(false)}>
                       <X className="w-5 h-5 text-[#64748B]" />
                     </button>
                   </div>
-                  <p className="text-sm text-[#64748B] mb-3">
-                    Select which service types you want to accept
+                  <p className="text-sm text-[#64748B]">
+                    Choose a category, then select the service types you want to accept.
+                    {serviceCategory === 'rides' && ' You can select both Ride Share and Private Ride.'}
                   </p>
-                  <div className="space-y-2">
-                    {/* Delivery */}
+
+                  {/* Category */}
+                  <div className="grid grid-cols-2 gap-3">
                     <div
-                      onClick={() => {
-                        if (selectedServices.includes('delivery')) {
-                          setSelectedServices(selectedServices.filter(s => s !== 'delivery'));
-                        } else {
-                          setSelectedServices([...selectedServices, 'delivery']);
-                        }
-                      }}
-                      className={`flex items-center justify-between p-4 border-2 rounded-lg cursor-pointer transition-all ${
-                        selectedServices.includes('delivery')
+                      onClick={() => selectServiceCategory('rides')}
+                      className={`flex flex-col items-center gap-2 p-4 border-2 rounded-lg cursor-pointer transition-all ${
+                        serviceCategory === 'rides'
                           ? 'border-[#E11D48] bg-red-50'
                           : 'border-gray-200 hover:border-gray-300'
                       }`}
                     >
-                      <div className="flex items-center gap-3">
-                        <Package className="w-5 h-5 text-[#E11D48]" />
-                        <div>
-                          <p className="font-semibold text-[#121212]">Delivery</p>
-                          <p className="text-xs text-[#64748B]">Food & package delivery</p>
-                        </div>
-                      </div>
-                      <div className={`w-5 h-5 rounded border-2 flex items-center justify-center ${
-                        selectedServices.includes('delivery')
-                          ? 'bg-[#E11D48] border-[#E11D48]'
-                          : 'border-gray-300'
+                      <div className={`w-12 h-12 rounded-full flex items-center justify-center ${
+                        serviceCategory === 'rides' ? 'bg-[#E11D48] text-white' : 'bg-gray-100 text-[#64748B]'
                       }`}>
-                        {selectedServices.includes('delivery') && (
-                          <div className="w-2 h-2 bg-white rounded-sm" />
-                        )}
+                        <Users className="w-6 h-6" />
+                      </div>
+                      <div className="text-center">
+                        <p className="font-semibold text-[#121212]">Rides</p>
+                        <p className="text-xs text-[#64748B]">Transport passengers</p>
                       </div>
                     </div>
-
-                    {/* Ride Share (Sasabay) */}
                     <div
-                      onClick={() => {
-                        if (selectedServices.includes('shared')) {
-                          setSelectedServices(selectedServices.filter(s => s !== 'shared'));
-                        } else {
-                          setSelectedServices([...selectedServices, 'shared']);
-                        }
-                      }}
-                      className={`flex items-center justify-between p-4 border-2 rounded-lg cursor-pointer transition-all ${
-                        selectedServices.includes('shared')
+                      onClick={() => selectServiceCategory('delivery')}
+                      className={`flex flex-col items-center gap-2 p-4 border-2 rounded-lg cursor-pointer transition-all ${
+                        serviceCategory === 'delivery'
                           ? 'border-[#E11D48] bg-red-50'
                           : 'border-gray-200 hover:border-gray-300'
                       }`}
                     >
-                      <div className="flex items-center gap-3">
-                        <Users className="w-5 h-5 text-[#E11D48]" />
-                        <div>
-                          <p className="font-semibold text-[#121212]">Ride Share</p>
-                          <p className="text-xs text-[#64748B]">Shared rides with other passengers</p>
-                        </div>
-                      </div>
-                      <div className={`w-5 h-5 rounded border-2 flex items-center justify-center ${
-                        selectedServices.includes('shared')
-                          ? 'bg-[#E11D48] border-[#E11D48]'
-                          : 'border-gray-300'
+                      <div className={`w-12 h-12 rounded-full flex items-center justify-center ${
+                        serviceCategory === 'delivery' ? 'bg-[#E11D48] text-white' : 'bg-gray-100 text-[#64748B]'
                       }`}>
-                        {selectedServices.includes('shared') && (
-                          <div className="w-2 h-2 bg-white rounded-sm" />
-                        )}
+                        <Package className="w-6 h-6" />
                       </div>
-                    </div>
-
-                    {/* Private Ride (Pakyaw) */}
-                    <div
-                      onClick={() => {
-                        if (selectedServices.includes('private')) {
-                          setSelectedServices(selectedServices.filter(s => s !== 'private'));
-                        } else {
-                          setSelectedServices([...selectedServices, 'private']);
-                        }
-                      }}
-                      className={`flex items-center justify-between p-4 border-2 rounded-lg cursor-pointer transition-all ${
-                        selectedServices.includes('private')
-                          ? 'border-[#E11D48] bg-red-50'
-                          : 'border-gray-200 hover:border-gray-300'
-                      }`}
-                    >
-                      <div className="flex items-center gap-3">
-                        <Car className="w-5 h-5 text-[#E11D48]" />
-                        <div>
-                          <p className="font-semibold text-[#121212]">Private Ride</p>
-                          <p className="text-xs text-[#64748B]">Exclusive rides, no sharing</p>
-                        </div>
-                      </div>
-                      <div className={`w-5 h-5 rounded border-2 flex items-center justify-center ${
-                        selectedServices.includes('private')
-                          ? 'bg-[#E11D48] border-[#E11D48]'
-                          : 'border-gray-300'
-                      }`}>
-                        {selectedServices.includes('private') && (
-                          <div className="w-2 h-2 bg-white rounded-sm" />
-                        )}
+                      <div className="text-center">
+                        <p className="font-semibold text-[#121212]">Delivery</p>
+                        <p className="text-xs text-[#64748B]">Food & package delivery</p>
                       </div>
                     </div>
                   </div>
 
-                  {/* Seat management removed from quick actions */}
+                  {/* Service type within category */}
+                  <div className="space-y-2">
+                    {SERVICE_OPTIONS[serviceCategory].map((option) => {
+                      const active = selectedServices.includes(option.key);
+                      const isMulti = serviceCategory === 'rides';
+                      return (
+                        <div
+                          key={option.key}
+                          onClick={() => (isMulti ? toggleServiceType(option.key) : undefined)}
+                          className={`flex items-center justify-between p-4 border-2 rounded-lg cursor-pointer transition-all ${
+                            active
+                              ? 'border-[#E11D48] bg-red-50'
+                              : 'border-gray-200 hover:border-gray-300'
+                          }`}
+                        >
+                          <div className="flex items-center gap-3">
+                            <div className={`w-10 h-10 rounded-full flex items-center justify-center ${
+                              active ? 'bg-[#E11D48] text-white' : 'bg-gray-100 text-[#64748B]'
+                            }`}>
+                              {option.key === 'delivery' ? <Package className="w-5 h-5" /> : option.key === 'private' ? <Car className="w-5 h-5" /> : <Users className="w-5 h-5" />}
+                            </div>
+                            <div>
+                              <p className="font-semibold text-[#121212]">{option.name}</p>
+                              <p className="text-xs text-[#64748B]">{option.description}</p>
+                            </div>
+                          </div>
+                          <div className={`w-5 h-5 rounded border-2 flex items-center justify-center ${
+                            active ? 'bg-[#E11D48] border-[#E11D48]' : 'border-gray-300'
+                          }`}>
+                            {active && <div className="w-2 h-2 bg-white rounded-sm" />}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
 
                   <Button
                     onClick={() => setShowServiceTypes(false)}
