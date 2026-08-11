@@ -33,6 +33,7 @@ import { Switch } from "../ui/switch";
 import { Badge } from "../ui/badge";
 import { Input } from "../ui/input";
 import { useAuth } from "../../contexts/AuthContext";
+import { useAutoAccept } from "../../hooks/useAutoAccept";
 import { supabaseHelpers } from "@/lib/supabase";
 import tricycleIcon from "../../../assets/0b76d1aa56b8ad6e15dd4efc8a0100b0ca5762a1.png";
 import { supabase } from "../../../lib/supabase";
@@ -65,6 +66,8 @@ const SERVICE_OPTIONS: Record<'rides' | 'delivery', { key: string; name: string;
 export default function RiderDashboard() {
   const navigate = useNavigate();
   const { user, updateProfile } = useAuth();
+  // Watches for private/delivery requests and auto-accepts them when enabled and the service type matches.
+  useAutoAccept();
   const [isOnline, setIsOnline] = useState(user?.isOnline || false);
   const [mode, setMode] = useState<'shared' | 'delivery'>('shared');
   const [currentSeats, setCurrentSeats] = useState(user?.currentSeats || 0);
