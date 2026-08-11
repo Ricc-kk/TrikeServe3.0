@@ -222,6 +222,9 @@ export default function PassengerRequests() {
 
   const handleAcceptRequest = async (request: PassengerRequest) => {
     if (!user?.id) return alert('You must be logged in as a driver.');
+    if (!(user?.serviceTypes || []).includes(request.type)) {
+      return alert('You can only accept requests that match your service types.');
+    }
     const activeStatuses = ['accepted', 'on-the-way', 'arrived', 'in-progress'];
     const { data: allLobbies } = await supabaseHelpers.getLobbies();
     if (allLobbies?.some((l: any) => l.driver_id === user.id && activeStatuses.includes(l.status))) return alert('You already have an active ride.');
@@ -257,14 +260,18 @@ export default function PassengerRequests() {
   };
 
   const filteredRequests = requests.filter(r => selectedCategory === 'all' || r.type === selectedCategory);
-  const requestsMatchingServiceTypes = filteredRequests.filter(r => (user?.serviceTypes || ['shared']).includes(r.type));
+  // Drivers can SEE every request, but can only ACCEPT the ones matching their service types.
+  const canAcceptRequest = (request: PassengerRequest) => (user?.serviceTypes || []).includes(request.type);
+  const requestsMatchingServiceTypes = filteredRequests.filter(r => canAcceptRequest(r));
 
   const recommendedPickup = requestsMatchingServiceTypes.filter(r => r.type === 'private' && r.pickupLat && r.pickupLng).reduce<null | (PassengerRequest & { __distance: number; __eta: number })>((best, r) => {
     const dist = haversineDistance(currentLocation, { lat: Number(r.pickupLat), lng: Number(r.pickupLng) });
     return (!best || dist < best.__distance) ? { ...r, __distance: dist, __eta: estimateETA(dist) } : best;
   }, null);
 
-  const sortedRequests = recommendedPickup ? [recommendedPickup as PassengerRequest, ...requestsMatchingServiceTypes.filter(r => r.id !== recommendedPickup.id)] : requestsMatchingServiceTypes;
+  const sortedRequests = recommendedPickup
+    ? [recommendedPickup as PassengerRequest, ...filteredRequests.filter(r => r.id !== recommendedPickup.id)]
+    : filteredRequests;
 
   return (
     <div className="min-h-screen bg-[#F8F9FA] relative">
@@ -280,27 +287,39 @@ export default function PassengerRequests() {
             </button>
           ))}
         </div>
-        {sortedRequests.map((request) => (
-          <Card key={request.id} className={`p-4 border-2 transition-colors ${recommendedPickup && request.id === recommendedPickup.id ? 'bg-gradient-to-br from-green-50 to-emerald-50 border-green-400' : 'bg-white border-[#CBD5E1]'}`}>
-            <div className="flex items-start gap-3 mb-3">
-              <div className="text-4xl">{request.customerPhoto}</div>
-              <div className="flex-1">
-                <div className="flex items-start justify-between mb-2">
-                  <div>
-                    <p className="font-bold">{request.customerName}</p>
-                    <div className="flex items-center gap-2 mt-1"><Badge className="bg-[#E11D48]">{getServiceLabel(request.type)}</Badge></div>
+        {sortedRequests.map((request) => {
+          const canAccept = canAcceptRequest(request);
+          return (
+            <Card key={request.id} className={`p-4 border-2 transition-colors ${!canAccept ? 'bg-gray-50 opacity-80' : recommendedPickup && request.id === recommendedPickup.id ? 'bg-gradient-to-br from-green-50 to-emerald-50 border-green-400' : 'bg-white border-[#CBD5E1]'}`}>
+              <div className="flex items-start gap-3 mb-3">
+                <div className="text-4xl">{request.customerPhoto}</div>
+                <div className="flex-1">
+                  <div className="flex items-start justify-between mb-2">
+                    <div>
+                      <p className="font-bold">{request.customerName}</p>
+                      <div className="flex items-center gap-2 mt-1">
+                        <Badge className="bg-[#E11D48]">{getServiceLabel(request.type)}</Badge>
+                        {!canAccept && <Badge className="bg-gray-400 text-white">Not in your service types</Badge>}
+                      </div>
+                    </div>
+                    <div className="text-right"><p className="font-bold text-xl text-[#E11D48]">₱{request.amount}</p></div>
                   </div>
-                  <div className="text-right"><p className="font-bold text-xl text-[#E11D48]">₱{request.amount}</p></div>
+                  <div className="space-y-2 mb-3 text-sm">
+                    <div className="flex gap-2"><Navigation className="w-4 h-4 text-[#E11D48]" /><div className="flex-1"><p className="font-semibold">{request.pickup}</p></div></div>
+                    <div className="flex gap-2"><Navigation className="w-4 h-4 text-green-600" /><div className="flex-1"><p className="font-semibold">{request.dropoff}</p></div></div>
+                  </div>
+                  <Button
+                    onClick={() => handleOpenPreview(request)}
+                    disabled={!canAccept}
+                    className={`w-full uppercase ${canAccept ? 'bg-[#E11D48] hover:bg-[#BE123C]' : 'bg-gray-300 text-gray-600 cursor-not-allowed'}`}
+                  >
+                    {canAccept ? (request.lobbyId ? 'View Lobby' : 'View & Accept') : 'Not in Your Service Types'}
+                  </Button>
                 </div>
-                <div className="space-y-2 mb-3 text-sm">
-                  <div className="flex gap-2"><Navigation className="w-4 h-4 text-[#E11D48]" /><div className="flex-1"><p className="font-semibold">{request.pickup}</p></div></div>
-                  <div className="flex gap-2"><Navigation className="w-4 h-4 text-green-600" /><div className="flex-1"><p className="font-semibold">{request.dropoff}</p></div></div>
-                </div>
-                <Button onClick={() => handleOpenPreview(request)} className="w-full bg-[#E11D48] hover:bg-[#BE123C] uppercase">{request.lobbyId ? 'View Lobby' : 'View & Accept'}</Button>
               </div>
-            </div>
-          </Card>
-        ))}
+            </Card>
+          );
+        })}
         {sortedRequests.length === 0 && <div className="text-center py-12"><Users className="w-10 h-10 text-[#94A3B8] mx-auto mb-4" /><p>No passenger requests</p></div>}
       </div>
       {previewRequest && (

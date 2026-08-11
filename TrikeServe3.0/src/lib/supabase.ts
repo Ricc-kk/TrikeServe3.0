@@ -208,6 +208,35 @@ export const supabaseHelpers = {
     return { data, error };
   },
 
+  // Atomically claim a pending ride for a driver (fails if already claimed).
+  // Guards on status='pending' and driver_id IS NULL so two drivers can't accept the same request.
+  async claimRideRequest(rideId: string, driverId: string, driverName: string, driverPhoto?: string, driverPlate?: string, driverRating?: string) {
+    const timestamp = new Date().toISOString();
+
+    const updateData = {
+      driver_id: driverId,
+      driver_name: driverName,
+      driver_photo: driverPhoto || null,
+      driver_plate: driverPlate || 'N/A',
+      driver_rating: driverRating || '4.8',
+      status: 'accepted',
+      accepted_at: timestamp,
+      accepted_driver_id: driverId,
+      updated_at: timestamp
+    };
+
+    const { data, error } = await supabase
+      .from('ride_requests')
+      .update(updateData)
+      .eq('id', rideId)
+      .eq('status', 'pending')
+      .is('driver_id', null)
+      .select()
+      .single();
+
+    return { data, error };
+  },
+
   // Update driver's current status for the ride
   async updateDriverRideStatus(rideId: string, driverStatus: string, statusMessage?: string) {
     const timestamp = new Date().toISOString();
