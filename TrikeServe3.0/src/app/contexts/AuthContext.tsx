@@ -250,7 +250,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         address: foundUser.address,
         // Rider-specific fields
         isOnline: foundUser.is_online || foundUser.isOnline || false,
-        serviceTypes: foundUser.service_types || foundUser.serviceTypes || ['shared', 'delivery'],
+        serviceTypes: foundUser.service_types || foundUser.serviceTypes || ['shared'],
         currentSeats: foundUser.current_seats || foundUser.currentSeats || 0,
         pickupLocation: foundUser.pickup_location || foundUser.pickupLocation,
         dropoffLocation: foundUser.dropoff_location || foundUser.dropoffLocation,
@@ -400,7 +400,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             toda_plate: data.todaPlate,
             license_number: data.licenseNumber,
             is_online: false,
-            service_types: ['shared', 'delivery'],
+            service_types: ['shared'],
             current_seats: 0,
           }),
           ...(data.role === 'business' && {
@@ -436,7 +436,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           todaPlate: data.todaPlate,
           licenseNumber: data.licenseNumber,
           isOnline: false,
-          serviceTypes: ['shared', 'delivery'],
+          serviceTypes: ['shared'],
           currentSeats: 0,
         }),
         ...(data.role === 'business' && {
