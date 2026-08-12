@@ -163,8 +163,11 @@ export default function PassengerRequests() {
             pickupLng: lobby.pickup_lng || undefined,
             dropoffLat: lobby.dropoff_lat || undefined,
             dropoffLng: lobby.dropoff_lng || undefined,
-            payment: 'PREPAID',
-            amount: Number(lobby.price_per_seat || 15) * passengers.length,
+            // The host's payment choice is stored on the lobby (COD = Cash, GCASH = Prepaid).
+            payment: lobby.payment_method === 'COD' ? 'COD' : 'PREPAID',
+            // price_per_seat stores the total private-ride fare; each passenger
+            // pays fare ÷ passengers, but the driver earns the full fare.
+            amount: Number(lobby.price_per_seat || 15),
             passengers: passengers.length,
             maxPassengers: Number(lobby.max_seats || 3),
             customerName: passengers.length > 1 ? `${passengers.length} Passengers` : (passengers[0]?.name || 'Customer'),

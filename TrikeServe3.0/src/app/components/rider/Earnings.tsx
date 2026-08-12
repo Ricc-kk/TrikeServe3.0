@@ -15,7 +15,7 @@ interface CompletedTrip {
   type: string;
   date: string;
   amount: number;
-  payment: 'COD' | 'PREPAID';
+  payment: 'Cash' | 'Prepaid';
   customerName?: string;
 }
 
@@ -86,7 +86,8 @@ export default function Earnings() {
               type: type,
               date: dateISO,
               amount: Number(ride.amount) || 0,
-              payment: ride.payment || 'PREPAID',
+              // DB stores payment_method as 'COD' or 'GCASH'; show Cash for cash, Prepaid for GCash.
+              payment: ((ride.payment_method || ride.payment) === 'COD' ? 'Cash' : 'Prepaid') as 'Cash' | 'Prepaid',
               customerName: ride.customer_name || ride.customerName || 'Customer'
             };
           })
@@ -294,7 +295,7 @@ export default function Earnings() {
                       <p className="font-extrabold text-xl text-[#E11D48] mb-1">₱{trip.amount.toFixed(2)}</p>
                       <Badge
                         variant="outline"
-                        className={trip.payment === 'COD' ? 'border-[#F97316] text-[#F97316] rounded-full' : 'border-green-500 text-green-500 rounded-full'}
+                        className={trip.payment === 'Cash' ? 'border-[#F97316] text-[#F97316] rounded-full' : 'border-green-500 text-green-500 rounded-full'}
                       >
                         {trip.payment}
                       </Badge>

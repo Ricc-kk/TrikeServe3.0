@@ -29,6 +29,9 @@ interface ActiveRideData {
   status: RideStatus;
   orderId?: string;
   orderNumber?: string;
+  customerId?: string;
+  pickupAddress?: string;
+  dropoffAddress?: string;
   lobbyId?: string;
   passengerDetails?: any[];
 }
@@ -43,6 +46,7 @@ export default function ActiveRide() {
   const [directions, setDirections] = useState<google.maps.DirectionsResult | null>(null);
   const [mapCenter, setMapCenter] = useState<{ lat: number; lng: number }>({ lat: 14.6037, lng: 120.9793 });
   const [availableRequests, setAvailableRequests] = useState<any[]>([]);
+  const isCompleting = useRef(false);
   const { isLoaded: isMapsLoaded, apiKeyPresent } = useMapLoader();
 
   useEffect(() => {
@@ -50,7 +54,9 @@ export default function ActiveRide() {
       const ride = { ...location.state.acceptedRide, status: 'on-the-way' as RideStatus };
       setRideData(ride);
       localStorage.setItem('trikeserve_active_ride', JSON.stringify(ride));
-      if (ride.id && user?.id) {
+      // Shared-ride lobbies are accepted in PassengerRequests (acceptLobbyAsDriver),
+      // so skip the ride_requests calls which only apply to private/delivery rides.
+      if (ride.id && user?.id && !ride.lobbyId) {
         supabaseHelpers.acceptRideRequest(ride.id, user.id, user.user_metadata?.full_name || 'Driver', user.user_metadata?.avatar_url, user.todaPlate || 'N/A', '4.8');
         supabaseHelpers.updateDriverRideStatus(ride.id, 'on-the-way', 'Driver is on the way!');
       }
@@ -119,11 +125,16 @@ export default function ActiveRide() {
     setRideData(updated);
     localStorage.setItem('trikeserve_active_ride', JSON.stringify(updated));
     const dbMap: Record<RideStatus, string> = { 'on-the-way': 'on-the-way', 'arrived': 'arrived', 'pickup': 'picked-up', 'drop-off': 'dropped-off', 'payment': 'awaiting-payment' };
-    supabaseHelpers.updateDriverRideStatus(rideData.id, dbMap[newStatus], 'Status updated');
+    // Lobby rides have no ride_requests row until completion, so skip the update.
+    if (!rideData.lobbyId) {
+      supabaseHelpers.updateDriverRideStatus(rideData.id, dbMap[newStatus], 'Status updated');
+    }
   };
 
   const completeRide = async () => {
-    if (!rideData) return;
+    if (!rideData || isCompleting.current) return;
+    isCompleting.current = true;
+    try {
 
     if (rideData.orderId || rideData.orderNumber) {
       const { error: orderStatusError } = await supabaseHelpers.updateDeliveryOrderStatus(
@@ -139,10 +150,39 @@ export default function ActiveRide() {
       }
     }
 
-    await supabaseHelpers.updateRideRequest(rideData.id, { status: 'completed' });
-    await supabaseHelpers.updateDriverRideStatus(rideData.id, 'completed', 'Ride completed!');
+    if (rideData.lobbyId) {
+      // Shared ride: close the lobby and record the completed ride so it shows
+      // in the driver's recent trips/earnings and the customer's activity log.
+      const { lobby, ride } = await supabaseHelpers.completeSharedRide(rideData.lobbyId, {
+        customerId: rideData.customerId || rideData.passengerDetails?.[0]?.id,
+        driverId: user?.id,
+        driverName: user?.name,
+        driverRating: '4.8',
+        pickup: rideData.pickup,
+        dropoff: rideData.dropoff,
+        pickupAddress: rideData.pickupAddress,
+        dropoffAddress: rideData.dropoffAddress,
+        pickupLat: rideData.pickupLat,
+        pickupLng: rideData.pickupLng,
+        dropoffLat: rideData.dropoffLat,
+        dropoffLng: rideData.dropoffLng,
+        amount: rideData.amount,
+        passengerCount: rideData.passengerDetails?.length || 1,
+        paymentMethod: rideData.payment === 'PREPAID' ? 'GCASH' : 'COD',
+      });
+
+      if (lobby?.error) console.error('❌ Failed to close shared ride lobby:', lobby.error);
+      if (ride?.error) console.error('❌ Failed to record shared ride trip:', ride.error);
+    } else {
+      await supabaseHelpers.updateRideRequest(rideData.id, { status: 'completed' });
+      await supabaseHelpers.updateDriverRideStatus(rideData.id, 'completed', 'Ride completed!');
+    }
+
     localStorage.removeItem('trikeserve_active_ride');
     navigate('/rider');
+    } finally {
+      isCompleting.current = false;
+    }
   };
 
   const markerIcon = (color: string) => ({
@@ -187,7 +227,7 @@ export default function ActiveRide() {
               <h2 className="font-bold text-lg">{rideData.customerName}</h2>
               <div className="flex gap-2 mt-1">
                 <Badge className="bg-[#E11D48]">₱{rideData.amount}</Badge>
-                <Badge variant="outline" className="text-gray-500">{rideData.payment}</Badge>
+                <Badge variant="outline" className="text-gray-500">{rideData.payment === 'COD' ? 'Cash' : 'Prepaid'}</Badge>
               </div>
             </div>
           </div>

@@ -25,6 +25,7 @@ interface ShareRideLobby {
   passengers_json?: LobbyPassenger[];
   max_seats: number;
   price_per_seat: number;
+  payment_method?: string;
   status: 'waiting' | 'driver_found' | 'in_progress' | 'completed' | 'cancelled';
   driver_name?: string;
   driver_plate?: string;
@@ -40,6 +41,7 @@ interface ShareRideLobbyProps {
   dropoffAddress: string;
   passengerCount?: number;
   pricePerSeat?: number;
+  paymentMethod?: 'COD' | 'GCASH';
   onDriverFound: (lobbyId: string) => void;
   onClose: () => void;
 }
@@ -52,6 +54,7 @@ export default function ShareRideLobby({
   dropoffAddress,
   passengerCount = 1,
   pricePerSeat = 15,
+  paymentMethod = 'GCASH',
   onDriverFound,
   onClose
 }: ShareRideLobbyProps) {
@@ -408,6 +411,7 @@ export default function ShareRideLobby({
         passengers_json: passengers,
         max_seats: 3,
         price_per_seat: pricePerSeat,
+        payment_method: paymentMethod,
         status: 'waiting'
       };
 

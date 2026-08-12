@@ -1744,7 +1744,7 @@ export default function CustomerHome() {
 
               {/* Payment */}
               <div className="flex items-center justify-between mb-4">
-                <span className="text-[#64748B]">Payment ({paymentMethod})</span>
+                <span className="text-[#64748B]">Payment ({paymentMethod === 'COD' ? 'Cash' : 'Prepaid'})</span>
                 <span className="text-2xl font-bold text-[#E11D48]">₱{getPrice()}</span>
               </div>
 
@@ -2272,6 +2272,7 @@ export default function CustomerHome() {
           dropoffAddress={dropoffAddress}
           passengerCount={passengerCount}
           pricePerSeat={privateRidePrice}
+          paymentMethod={paymentMethod}
           onDriverFound={(lobbyId) => {
             // Don't close the lobby - let customers see driver info in the lobby itself
             // Just update the status for tracking
