@@ -1,8 +1,8 @@
-import { Home as HomeIcon, ShoppingCart, MessageCircle, ClipboardList, User, Trash2, Plus, Minus, X, MapPin, ChevronRight, Info, Clock, Check, Search, Camera, Globe, Edit3, MoreVertical, ArrowLeft } from "lucide-react";
+import { Home as HomeIcon, ShoppingCart, MessageCircle, ClipboardList, User, Trash2, Plus, Minus, X, MapPin, ChevronRight, Info, Check } from "lucide-react";
 import { Link, useNavigate } from "react-router";
 import { Card } from "../ui/card";
 import { Button } from "../ui/button";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { ImageWithFallback } from "../figma/ImageWithFallback";
 import { useCart } from "../../contexts/CartContext";
 import { useOrders } from "../../contexts/OrderContext";
@@ -19,183 +19,55 @@ export default function Cart() {
   const [selectedRestaurants, setSelectedRestaurants] = useState<number[]>([]);
   const [viewMode, setViewMode] = useState<"list" | "checkout">("list");
   const [checkoutRestaurant, setCheckoutRestaurant] = useState<any>(null);
-  const [deliveryMode, setDeliveryMode] = useState<"delivery" | "pickup">("delivery");
-  const [selectedDeliveryOption, setSelectedDeliveryOption] = useState("standard");
+  const [deliveryFee, setDeliveryFee] = useState(35); // Admin-set base delivery fee (default until loaded)
+  const [hasSelectedAddress, setHasSelectedAddress] = useState(false);
   const [paymentMethod, setPaymentMethod] = useState<"cash" | "gcash">("cash");
   const [needsCutlery, setNeedsCutlery] = useState(false);
   const [showOrderConfirmation, setShowOrderConfirmation] = useState(false);
-  const [showAddressPicker, setShowAddressPicker] = useState(false);
-  const [addressSearchQuery, setAddressSearchQuery] = useState("");
-  const [addressTab, setAddressTab] = useState<"recent" | "suggested" | "saved">("recent");
   const [showMapSelector, setShowMapSelector] = useState(false);
   const [selectedAddress, setSelectedAddress] = useState({
-    name: "257, Tagalag Road, Tagalag",
-    full: "Tagalag Road, Tagalag, Valenzuela City, ..."
+    name: "Select Delivery Address",
+    full: "Tap to choose your delivery location",
+    lat: 14.7244,
+    lng: 120.9668,
   });
 
-  const savedAddresses = [
-    { 
-      id: 1, 
-      name: "Adelfa Street",
-      full: "Adelfa Street, Valenzuela City, Metro Manila",
-      icon: "📍",
-      label: "Saved"
-    },
-    { 
-      id: 2, 
-      name: "B.Garcia Street",
-      full: "B.Garcia Street, Valenzuela City, Metro Manila",
-      icon: "📍",
-      label: "Saved"
-    },
-    { 
-      id: 3, 
-      name: "Cadena de Amor Street",
-      full: "Cadena de Amor Street, Valenzuela City, Metro Manila",
-      icon: "📍",
-      label: "Saved"
-    },
-    { 
-      id: 4, 
-      name: "Carnation Street",
-      full: "Carnation Street, Valenzuela City, Metro Manila",
-      icon: "🌸",
-      label: "Saved"
-    },
-    {
-      id: 5,
-      name: "Daffodil Street",
-      full: "Daffodil Street, Valenzuela City, Metro Manila",
-      icon: "🌼",
-      label: "Saved"
-    },
-    {
-      id: 6,
-      name: "Dama de Noche Street",
-      full: "Dama de Noche Street, Valenzuela City, Metro Manila",
-      icon: "🌙",
-      label: "Saved"
-    },
-    {
-      id: 7,
-      name: "Gladiola Street",
-      full: "Gladiola Street, Valenzuela City, Metro Manila",
-      icon: "🌹",
-      label: "Saved"
-    },
-    {
-      id: 8,
-      name: "Ilang-Ilang Street",
-      full: "Ilang-Ilang Street, Valenzuela City, Metro Manila",
-      icon: "🌸",
-      label: "Saved"
-    },
-    {
-      id: 9,
-      name: "Lilac Street",
-      full: "Lilac Street, Valenzuela City, Metro Manila",
-      icon: "💜",
-      label: "Saved"
-    },
-    {
-      id: 10,
-      name: "Jasmin Street",
-      full: "Jasmin Street, Valenzuela City, Metro Manila",
-      icon: "🌸",
-      label: "Saved"
-    },
-    {
-      id: 11,
-      name: "Morning Glory Street",
-      full: "Morning Glory Street, Valenzuela City, Metro Manila",
-      icon: "🌺",
-      label: "Saved"
-    },
-    {
-      id: 12,
-      name: "Marigold Street",
-      full: "Marigold Street, Valenzuela City, Metro Manila",
-      icon: "🌼",
-      label: "Saved"
-    },
-    {
-      id: 13,
-      name: "Orchid Street",
-      full: "Orchid Street, Valenzuela City, Metro Manila",
-      icon: "🌸",
-      label: "Saved"
-    },
-    {
-      id: 14,
-      name: "Rosal Street",
-      full: "Rosal Street, Valenzuela City, Metro Manila",
-      icon: "🌹",
-      label: "Saved"
-    },
-    {
-      id: 15,
-      name: "Balikatan Street",
-      full: "Balikatan Street, Valenzuela City, Metro Manila",
-      icon: "📍",
-      label: "Saved"
-    },
-    {
-      id: 16,
-      name: "Rose Mary Street",
-      full: "Rose Mary Street, Valenzuela City, Metro Manila",
-      icon: "🌹",
-      label: "Saved"
-    },
-    {
-      id: 17,
-      name: "Sampaguita Street",
-      full: "Sampaguita Street, Valenzuela City, Metro Manila",
-      icon: "🌼",
-      label: "Saved"
-    },
-    {
-      id: 18,
-      name: "Tagalag Terminal",
-      full: "Main Road, Tagalag, Valenzuela City, Metro Manila",
-      icon: "🚏",
-      label: "Saved"
-    },
-    {
-      id: 19,
-      name: "Barangay Hall",
-      full: "Tagalag Center, Valenzuela City, Metro Manila",
-      icon: "🏛️",
-      label: "Saved"
-    },
-    {
-      id: 20,
-      name: "Tagalag Market",
-      full: "Market District, Tagalag, Valenzuela City, Metro Manila",
-      icon: "🏪",
-      label: "Saved"
-    },
-  ];
+  // Load the delivery fee set by the admin (admin_settings > rates > deliveryBaseFee)
+  useEffect(() => {
+    const loadDeliveryFee = async () => {
+      try {
+        const { data, error } = await supabase
+          .from('admin_settings')
+          .select('setting_value')
+          .eq('setting_key', 'rates')
+          .single();
 
-  const handleSelectAddress = (address: any) => {
-    setSelectedAddress({
-      name: address.name,
-      full: address.full
-    });
-    setShowAddressPicker(false);
-    setAddressSearchQuery("");
-  };
+        if (!error && data?.setting_value) {
+          const parsed = JSON.parse(data.setting_value);
+          if (typeof parsed?.deliveryBaseFee === 'number') {
+            setDeliveryFee(parsed.deliveryBaseFee);
+            return;
+          }
+        }
+      } catch (e) {
+        console.warn('[Cart] Could not load delivery fee from Supabase:', e);
+      }
 
-  const filteredAddresses = savedAddresses.filter(address =>
-    address.name.toLowerCase().includes(addressSearchQuery.toLowerCase()) ||
-    address.full.toLowerCase().includes(addressSearchQuery.toLowerCase()) ||
-    address.label.toLowerCase().includes(addressSearchQuery.toLowerCase())
-  );
-
-  const deliveryOptions = [
-    { id: "priority", name: "Priority", time: "15 mins", price: 60, badge: "On-Time Promise" },
-    { id: "standard", name: "Standard", time: "25 mins", price: 35 },
-    { id: "saver", name: "Saver", time: "40 mins", price: 20 },
-  ];
+      // Fallback to the localStorage backup of the admin rates
+      try {
+        const saved = localStorage.getItem('trikeserve_rates');
+        if (saved) {
+          const parsed = JSON.parse(saved);
+          if (typeof parsed?.deliveryBaseFee === 'number') {
+            setDeliveryFee(parsed.deliveryBaseFee);
+          }
+        }
+      } catch (e) {
+        console.warn('[Cart] Could not load delivery fee from localStorage:', e);
+      }
+    };
+    loadDeliveryFee();
+  }, []);
 
   const toggleRestaurantSelection = (id: number) => {
     setSelectedRestaurants(prev =>
@@ -227,10 +99,7 @@ export default function Cart() {
     return checkoutRestaurant.items.reduce((sum: number, item: any) => sum + (item.price * item.quantity), 0);
   };
 
-  const getDeliveryFee = () => {
-    const selectedOption = deliveryOptions.find(opt => opt.id === selectedDeliveryOption);
-    return selectedOption?.price || 0;
-  };
+  const getDeliveryFee = () => deliveryFee;
 
   const calculateTotal = () => {
     return calculateSubtotal() + getDeliveryFee();
@@ -238,6 +107,10 @@ export default function Cart() {
 
   const handlePlaceOrder = async () => {
     if (checkoutRestaurant) {
+      if (!hasSelectedAddress) {
+        alert("Please select a delivery address first.");
+        return;
+      }
       try {
         // CRITICAL: Get the actual Supabase restaurant.id for RLS isolation
         const businessUserId = checkoutRestaurant.businessUserId;
@@ -267,7 +140,6 @@ export default function Cart() {
         }
 
         const orderNumber = Math.random().toString(36).substring(2, 9).toUpperCase();
-        const selectedOption = deliveryOptions.find(opt => opt.id === selectedDeliveryOption);
 
         // Get current user info
         const currentUserData = localStorage.getItem('trikeserve_current_user');
@@ -296,7 +168,7 @@ export default function Cart() {
           deliveryFee: getDeliveryFee(),
           total: calculateTotal(),
           status: "pending" as const,
-          deliveryMode,
+          deliveryMode: "delivery" as const,
           paymentMethod,
           address: selectedAddress.full,
           date: new Date().toLocaleString('en-US', {
@@ -308,7 +180,7 @@ export default function Cart() {
             hour12: true
           }),
           createdAt: new Date().toISOString(),
-          estimatedTime: selectedOption?.time || "25 mins",
+          estimatedTime: "25 mins",
           needsCutlery,
         };
 
@@ -383,7 +255,7 @@ export default function Cart() {
                 customer_email: order.customerEmail,
                 customer_name: order.customerName,
                 status: 'received',
-                estimated_prep_time: parseInt(selectedOption?.time) || 25,
+                estimated_prep_time: 25,
                 notes: needsCutlery ? 'Needs cutlery' : '',
               };
 
@@ -588,7 +460,7 @@ export default function Cart() {
     <div className="min-h-screen bg-white pb-24">
       {/* Header */}
       <div className="px-5 py-4 border-b border-[#E2E8F0] sticky top-0 bg-white z-50">
-        <div className="flex items-center gap-3 mb-1">
+        <div className="flex items-center gap-3">
           <button
             onClick={() => setViewMode("list")}
             className="active:scale-90 transition-transform"
@@ -597,9 +469,6 @@ export default function Cart() {
           </button>
           <h2 className="font-bold text-[#121212] text-base flex-1">{checkoutRestaurant?.name}</h2>
         </div>
-        <p className="text-xs text-[#94A3B8] pl-9">
-          Delivery fee calculated at {new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false })}
-        </p>
       </div>
 
       <div className="px-5 py-6 space-y-6">
@@ -635,7 +504,6 @@ export default function Cart() {
                       ))}
                     </div>
                   )}
-                  <button className="text-sm font-semibold text-[#3B82F6]">Edit</button>
                 </div>
 
                 {/* Price and Quantity */}
@@ -670,39 +538,17 @@ export default function Cart() {
           </button>
         </div>
 
-        {/* Delivery/Pickup Toggle */}
         <div>
-          <div className="flex gap-2 mb-4">
-            <button
-              onClick={() => setDeliveryMode("delivery")}
-              className={`flex-1 py-3 rounded-xl font-semibold transition-all ${
-                deliveryMode === "delivery"
-                  ? 'bg-[#DBEAFE] text-[#121212]'
-                  : 'bg-white text-[#64748B] border border-[#E2E8F0]'
-              }`}
-            >
-              Delivery
-            </button>
-            <button
-              onClick={() => setDeliveryMode("pickup")}
-              className={`flex-1 py-3 rounded-xl font-semibold transition-all ${
-                deliveryMode === "pickup"
-                  ? 'bg-[#DBEAFE] text-[#121212]'
-                  : 'bg-white text-[#64748B] border border-[#E2E8F0]'
-              }`}
-            >
-              Pickup
-            </button>
-          </div>
-
           {/* Address */}
           <button
-            onClick={() => setShowAddressPicker(true)}
+            onClick={() => setShowMapSelector(true)}
             className="w-full flex items-center gap-3 p-4 bg-white border border-[#E2E8F0] rounded-xl mb-2 active:scale-[0.98] transition-transform"
           >
             <MapPin className="w-5 h-5 text-[#E11D48] flex-shrink-0" />
             <div className="flex-1 text-left">
-              <p className="font-semibold text-[#121212] mb-0.5">{selectedAddress.name}</p>
+              <p className={`font-semibold mb-0.5 ${hasSelectedAddress ? 'text-[#121212]' : 'text-[#94A3B8]'}`}>
+                {selectedAddress.name}
+              </p>
               <p className="text-sm text-[#64748B]">{selectedAddress.full}</p>
             </div>
             <ChevronRight className="w-5 h-5 text-[#64748B] flex-shrink-0" />
@@ -720,54 +566,25 @@ export default function Cart() {
           </div>
         </div>
 
-        {/* Delivery Options */}
+        {/* Delivery Fee (set by the admin) */}
         <div>
           <div className="flex items-center gap-2 mb-3">
             <Info className="w-5 h-5 text-[#F59E0B]" />
             <div>
-              <h4 className="font-bold text-[#121212] text-sm">Delivery options</h4>
-              <p className="text-xs text-[#64748B]">Distance from you: {checkoutRestaurant?.distance}</p>
+              <h4 className="font-bold text-[#121212] text-sm">Delivery fee</h4>
+              <p className="text-xs text-[#64748B]">Food delivery (base rate)</p>
             </div>
           </div>
 
-          <div className="space-y-3">
-            {deliveryOptions.map((option) => (
-              <button
-                key={option.id}
-                onClick={() => setSelectedDeliveryOption(option.id)}
-                className={`w-full p-4 rounded-xl border-2 transition-all active:scale-[0.98] ${
-                  selectedDeliveryOption === option.id
-                    ? 'border-[#10B981] bg-[#10B981]/5'
-                    : 'border-[#E2E8F0] bg-white'
-                }`}
-              >
-                <div className="flex items-center justify-between">
-                  <div className="text-left">
-                    <div className="flex items-center gap-2 mb-1">
-                      <span className="font-bold text-[#121212]">{option.name}</span>
-                      <span className="text-sm text-[#64748B]">• {option.time}</span>
-                    </div>
-                    {option.badge && (
-                      <p className="text-xs font-semibold text-[#3B82F6]">{option.badge}</p>
-                    )}
-                  </div>
-                  <span className="font-bold text-[#121212]">{option.price}.00</span>
-                </div>
-              </button>
-            ))}
-            
-            <button className="w-full p-4 rounded-xl border-2 border-[#E2E8F0] bg-white text-left active:scale-[0.98] transition-all">
-              <span className="font-semibold text-[#121212]">Order for later</span>
-            </button>
+          <div className="w-full flex items-center justify-between p-4 rounded-xl border-2 border-[#E2E8F0] bg-white">
+            <span className="font-semibold text-[#121212]">Delivery</span>
+            <span className="font-bold text-[#121212]">₱{getDeliveryFee().toFixed(2)}</span>
           </div>
         </div>
 
         {/* Payment Details */}
         <div className="pb-6">
-          <div className="flex items-center justify-between mb-3">
-            <h3 className="text-lg font-bold text-[#121212]">Payment details</h3>
-            <button className="text-sm font-semibold text-[#3B82F6]">See all</button>
-          </div>
+          <h3 className="text-lg font-bold text-[#121212] mb-3">Payment details</h3>
           <p className="text-sm text-[#64748B] mb-4">
             For safety, riders prefer cashless orders. Go cashless to get one faster.
           </p>
@@ -831,7 +648,7 @@ export default function Cart() {
           </div>
           <div className="flex items-center justify-between text-sm">
             <span className="text-[#64748B]">Delivery fee</span>
-            <span className="font-semibold text-[#121212]">₱{getDeliveryFee()}.00</span>
+            <span className="font-semibold text-[#121212]">₱{getDeliveryFee().toFixed(2)}</span>
           </div>
         </div>
       </div>
@@ -902,184 +719,6 @@ export default function Cart() {
         </div>
       )}
 
-      {/* Address Picker Modal */}
-      {showAddressPicker && (
-        <div className="fixed inset-0 bg-white z-[3000]">
-          {/* Header */}
-          <div className="px-4 py-3 border-b border-[#E2E8F0] flex items-center gap-3">
-            <button
-              onClick={() => {
-                setShowAddressPicker(false);
-                setAddressSearchQuery("");
-              }}
-              className="active:scale-90 transition-transform"
-            >
-              <ArrowLeft className="w-6 h-6 text-[#121212]" />
-            </button>
-            <div className="w-10 h-10 bg-[#E11D48] rounded-full flex items-center justify-center flex-shrink-0">
-              <MapPin className="w-5 h-5 text-white" />
-            </div>
-            <div className="flex-1 relative">
-              <input
-                type="text"
-                placeholder="try 'top picks'"
-                value={addressSearchQuery}
-                onChange={(e) => setAddressSearchQuery(e.target.value)}
-                className="w-full px-4 py-2.5 pr-20 bg-white border-2 border-[#10B981] rounded-full text-sm text-[#121212] placeholder:text-[#94A3B8] outline-none"
-              />
-              <button className="absolute right-2 top-1/2 -translate-y-1/2 w-8 h-8 bg-[#F8F9FA] rounded-full flex items-center justify-center">
-                <Camera className="w-4 h-4 text-[#64748B]" />
-              </button>
-            </div>
-            <button className="flex-shrink-0">
-              <span className="text-2xl">🇵🇭</span>
-            </button>
-          </div>
-
-          {/* Tabs */}
-          <div className="flex items-center gap-6 px-6 pt-4 pb-3 border-b border-[#E2E8F0]">
-            <button
-              onClick={() => setAddressTab("recent")}
-              className={`pb-2 font-semibold transition-all ${
-                addressTab === "recent"
-                  ? 'text-[#121212] border-b-2 border-[#10B981]'
-                  : 'text-[#94A3B8]'
-              }`}
-            >
-              Recent
-            </button>
-            <button
-              onClick={() => setAddressTab("suggested")}
-              className={`pb-2 font-semibold transition-all ${
-                addressTab === "suggested"
-                  ? 'text-[#121212] border-b-2 border-[#10B981]'
-                  : 'text-[#94A3B8]'
-              }`}
-            >
-              Suggested
-            </button>
-            <button
-              onClick={() => setAddressTab("saved")}
-              className={`pb-2 font-semibold transition-all ${
-                addressTab === "saved"
-                  ? 'text-[#121212] border-b-2 border-[#10B981]'
-                  : 'text-[#94A3B8]'
-              }`}
-            >
-              Saved
-            </button>
-          </div>
-
-          {/* Content */}
-          <div className="px-5 py-4 space-y-4 pb-32">
-            {/* Current Location */}
-            <div className="flex items-start gap-3 pb-4">
-              <div className="w-10 h-10 rounded-full border-2 border-[#10B981] flex items-center justify-center flex-shrink-0 mt-1">
-                <MapPin className="w-5 h-5 text-[#10B981]" />
-              </div>
-              <div className="flex-1">
-                <h4 className="font-bold text-[#121212] mb-1">Current location</h4>
-                <p className="text-sm text-[#64748B] leading-relaxed">
-                  257, Tagalag Road, Tagalag, Tagalag Road, Tagalag, Valenzuela City, Metro Manila, 1445, National Capital...
-                </p>
-              </div>
-              <button className="flex-shrink-0 p-2">
-                <MoreVertical className="w-5 h-5 text-[#64748B]" />
-              </button>
-            </div>
-
-            {/* Need help? */}
-            <div className="pt-4">
-              <h3 className="font-bold text-[#121212] mb-4">Need help?</h3>
-              <div className="space-y-3">
-                <button className="w-full flex items-start gap-3 p-4 bg-white border border-[#E2E8F0] rounded-xl active:scale-[0.98] transition-transform">
-                  <div className="w-10 h-10 rounded-full border-2 border-[#10B981] flex items-center justify-center flex-shrink-0">
-                    <MapPin className="w-5 h-5 text-[#10B981]" />
-                  </div>
-                  <div className="flex-1 text-left">
-                    <p className="text-sm text-[#121212]">
-                      Copy the place's Plus Code from Google Maps and search with it here.
-                    </p>
-                  </div>
-                  <ChevronRight className="w-5 h-5 text-[#64748B] flex-shrink-0 mt-1" />
-                </button>
-
-                <button className="w-full flex items-start gap-3 p-4 bg-white border border-[#E2E8F0] rounded-xl active:scale-[0.98] transition-transform">
-                  <div className="w-10 h-10 rounded-full border-2 border-[#10B981] flex items-center justify-center flex-shrink-0">
-                    <Globe className="w-5 h-5 text-[#10B981]" />
-                  </div>
-                  <div className="flex-1 text-left">
-                    <p className="text-sm text-[#121212]">
-                      If the place is located elsewhere, select its city, area, or country first.
-                    </p>
-                  </div>
-                  <ChevronRight className="w-5 h-5 text-[#64748B] flex-shrink-0 mt-1" />
-                </button>
-
-                <button className="w-full flex items-start gap-3 p-4 bg-white border border-[#E2E8F0] rounded-xl active:scale-[0.98] transition-transform">
-                  <div className="w-10 h-10 rounded-full border-2 border-[#10B981] flex items-center justify-center flex-shrink-0">
-                    <Edit3 className="w-5 h-5 text-[#10B981]" />
-                  </div>
-                  <div className="flex-1 text-left">
-                    <p className="text-sm text-[#121212]">
-                      Can't find a place or noticed incorrect details? Let us know.
-                    </p>
-                  </div>
-                  <ChevronRight className="w-5 h-5 text-[#64748B] flex-shrink-0 mt-1" />
-                </button>
-              </div>
-            </div>
-
-            {/* Saved Addresses (when addressTab is saved or filtered results) */}
-            {(addressTab === "saved" || addressSearchQuery) && filteredAddresses.length > 0 && (
-              <div className="pt-4">
-                <h3 className="font-bold text-[#121212] mb-4">Saved Addresses</h3>
-                <div className="space-y-3">
-                  {filteredAddresses.map((address) => (
-                    <button
-                      key={address.id}
-                      onClick={() => handleSelectAddress(address)}
-                      className={`w-full p-4 rounded-xl border-2 transition-all active:scale-[0.98] text-left ${
-                        selectedAddress.name === address.name
-                          ? 'border-[#10B981] bg-[#10B981]/5'
-                          : 'border-[#E2E8F0] bg-white'
-                      }`}
-                    >
-                      <div className="flex items-center gap-3">
-                        <div className="w-10 h-10 bg-[#F8F9FA] rounded-full flex items-center justify-center">
-                          <span className="text-lg">{address.icon}</span>
-                        </div>
-                        <div className="flex-1">
-                          <div className="flex items-center gap-2 mb-1">
-                            <p className="font-semibold text-[#121212]">{address.name}</p>
-                            <span className="text-xs px-2 py-0.5 bg-[#F8F9FA] text-[#64748B] rounded-full">{address.label}</span>
-                          </div>
-                          <p className="text-sm text-[#64748B]">{address.full}</p>
-                        </div>
-                      </div>
-                    </button>
-                  ))}
-                </div>
-              </div>
-            )}
-          </div>
-
-          {/* Fixed Bottom Button */}
-          <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-[#E2E8F0] px-5 py-4">
-            <button
-              onClick={() => {
-                setShowAddressPicker(false);
-                setShowMapSelector(true);
-              }}
-              className="w-full py-4 bg-white border-2 border-[#E2E8F0] text-[#121212] font-bold rounded-2xl flex items-center justify-center gap-2 active:scale-95 transition-transform"
-            >
-              <MapPin className="w-5 h-5" />
-              Choose on TrikeServeMaps
-            </button>
-          </div>
-        </div>
-      )}
-
       {/* Map Selector */}
       {showMapSelector && (
         <MapSelector
@@ -1088,7 +727,10 @@ export default function Cart() {
             setSelectedAddress({
               name: location.name,
               full: location.full,
+              lat: location.lat,
+              lng: location.lng,
             });
+            setHasSelectedAddress(true);
             setShowMapSelector(false);
           }}
           currentLocation={selectedAddress}
