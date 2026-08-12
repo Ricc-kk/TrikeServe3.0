@@ -71,7 +71,6 @@ export default function RiderDashboard() {
   const [isOnline, setIsOnline] = useState(user?.isOnline || false);
   const [mode, setMode] = useState<'shared' | 'delivery'>('shared');
   const [currentSeats, setCurrentSeats] = useState(user?.currentSeats || 0);
-  const [earnings, setEarnings] = useState(450);
   const [activeTrip, setActiveTrip] = useState<IncomingRequest | null>(null);
   const [showServiceTypes, setShowServiceTypes] = useState(false);
   const [showDestination, setShowDestination] = useState(false);
@@ -779,7 +778,6 @@ export default function RiderDashboard() {
 
    const handleCompleteTrip = () => {
      if (activeTrip) {
-       setEarnings(prev => prev + activeTrip.amount);
        setActiveTrip(null);
        setCurrentSeats(0);
      }

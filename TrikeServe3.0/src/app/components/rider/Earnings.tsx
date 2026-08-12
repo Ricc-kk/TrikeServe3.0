@@ -69,14 +69,23 @@ export default function Earnings() {
             else if (ride.type === 'shared') type = 'Ride Share';
             else if (ride.type === 'private') type = 'Private Ride';
 
-            const dateObj = ride.completedAt || ride.completed_at || ride.acceptedAt || ride.accepted_at || new Date();
-            const dateStr = typeof dateObj === 'string' ? new Date(dateObj).toLocaleString() : dateObj.toLocaleString();
+            // Prefer the completion timestamp. The DB sets updated_at on completion and
+            // may not set a dedicated completed_at column, so include it in the fallback chain.
+            const dateObj = ride.completedAt || ride.completed_at || ride.updated_at || ride.acceptedAt || ride.accepted_at || new Date();
+            // Keep an ISO timestamp for reliable period math (avoid locale-sensitive parsing).
+            // Use a safe parse: toISOString() throws on malformed dates, so fall back to now.
+            let dateISO = new Date().toISOString();
+            try {
+              dateISO = typeof dateObj === 'string' ? new Date(dateObj).toISOString() : dateObj.toISOString();
+            } catch (e) {
+              console.warn('[Earnings] Invalid trip date, using current time:', dateObj);
+            }
 
             return {
               id: ride.id,
               type: type,
-              date: dateStr,
-              amount: ride.amount || 0,
+              date: dateISO,
+              amount: Number(ride.amount) || 0,
               payment: ride.payment || 'PREPAID',
               customerName: ride.customer_name || ride.customerName || 'Customer'
             };
@@ -143,6 +152,10 @@ export default function Earnings() {
       fetchCompletedTrips();
     }
   }, [user?.id]);
+
+  // Total earnings = sum of ALL completed trips (today/week/month overlap, so adding
+  // those buckets together would triple-count trips). Used for Total Earnings and Avg per Trip.
+  const totalEarnings = completedTrips.reduce((sum, trip) => sum + (trip.amount || 0), 0);
 
   return (
     <div className="min-h-screen bg-[#F8F9FA] pb-20">
@@ -239,12 +252,12 @@ export default function Earnings() {
             </div>
             <div>
               <p className="text-sm text-[#0891B2] mb-1">Total Earnings</p>
-              <p className="text-2xl font-extrabold text-[#E11D48]">₱{(todayEarnings + weekEarnings + monthEarnings).toFixed(2)}</p>
+              <p className="text-2xl font-extrabold text-[#E11D48]">₱{totalEarnings.toFixed(2)}</p>
             </div>
             <div>
               <p className="text-sm text-[#0891B2] mb-1">Avg. per Trip</p>
               <p className="text-2xl font-extrabold text-[#E11D48]">
-                {tripsCompletedCount > 0 ? `₱${((todayEarnings + weekEarnings + monthEarnings) / tripsCompletedCount).toFixed(2)}` : '₱0'}
+                {tripsCompletedCount > 0 ? `₱${(totalEarnings / tripsCompletedCount).toFixed(2)}` : '₱0'}
               </p>
             </div>
             <div>
@@ -275,7 +288,7 @@ export default function Earnings() {
                   <div className="flex items-start justify-between mb-2">
                     <div>
                       <p className="font-extrabold text-[#121212] mb-1">{trip.type}</p>
-                      <p className="text-xs text-[#0891B2]">{trip.date}</p>
+                      <p className="text-xs text-[#0891B2]">{new Date(trip.date).toLocaleString()}</p>
                     </div>
                     <div className="text-right">
                       <p className="font-extrabold text-xl text-[#E11D48] mb-1">₱{trip.amount.toFixed(2)}</p>
