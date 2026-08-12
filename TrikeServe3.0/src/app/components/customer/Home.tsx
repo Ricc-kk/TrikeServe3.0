@@ -1423,7 +1423,7 @@ export default function CustomerHome() {
   };
 
   const getPrice = () => {
-    if (selectedVehicle === 'share') return sharedRidePrice;
+    if (selectedVehicle === 'share') return passengerCount > 0 ? Math.round((privateRidePrice / passengerCount) * 100) / 100 : sharedRidePrice;
     if (selectedVehicle === 'special') return privateRidePrice;
     return 0;
   };
@@ -2063,16 +2063,14 @@ export default function CustomerHome() {
                   {selectedVehicle === 'share' ? (
                     <>
                       <p className="text-sm text-[#78350F] mt-0.5">
-                        ₱{sharedRidePrice} × {passengerCount} {passengerCount === 1 ? 'seat' : 'seats'}
+                        ₱{privateRidePrice} ÷ {passengerCount} {passengerCount === 1 ? 'passenger' : 'passengers'}
                       </p>
-                      <p className="text-3xl font-bold text-[#EA580C]">₱{sharedRidePrice * passengerCount}</p>
+                      <p className="text-3xl font-bold text-[#EA580C]">₱{(privateRidePrice / passengerCount).toFixed(2)}</p>
                     </>
                   ) : (
                     <>
-                      <p className="text-sm text-[#78350F] mt-0.5">
-                        ₱{privateRidePrice} × {passengerCount} {passengerCount === 1 ? 'seat' : 'seats'}
-                      </p>
-                      <p className="text-3xl font-bold text-[#EA580C]">₱{privateRidePrice * passengerCount}</p>
+                      <p className="text-sm text-[#78350F] mt-0.5">Fixed rate (set by admin)</p>
+                      <p className="text-3xl font-bold text-[#EA580C]">₱{privateRidePrice}</p>
                     </>
                   )}
                 </div>
@@ -2273,7 +2271,7 @@ export default function CustomerHome() {
           dropoff={dropoff}
           dropoffAddress={dropoffAddress}
           passengerCount={passengerCount}
-          pricePerSeat={sharedRidePrice}
+          pricePerSeat={privateRidePrice}
           onDriverFound={(lobbyId) => {
             // Don't close the lobby - let customers see driver info in the lobby itself
             // Just update the status for tracking

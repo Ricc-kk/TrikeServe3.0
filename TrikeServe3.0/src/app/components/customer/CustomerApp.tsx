@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { ArrowLeft, Search, Bike, ShoppingBag, Users, User as UserIcon, MapPin, Clock, Star } from "lucide-react";
 import { Link } from "react-router";
 import { Button } from "../ui/button";
@@ -7,6 +7,7 @@ import { Input } from "../ui/input";
 import { Badge } from "../ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "../ui/tabs";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "../ui/dialog";
+import { supabase } from "../../../utils/supabase";
 
 interface Restaurant {
   id: string;
@@ -28,6 +29,35 @@ export default function CustomerApp() {
   const [searchQuery, setSearchQuery] = useState("");
   const [cart, setCart] = useState<MenuItem[]>([]);
   const [rideType, setRideType] = useState<'shared' | 'private' | null>(null);
+  const [sharedPrice, setSharedPrice] = useState(15); // Default until admin rates load
+  const [privatePrice, setPrivatePrice] = useState(50); // Default until admin rates load
+
+  // Load admin-set ride rates so the booking cards always show the admin price
+  useEffect(() => {
+    const loadRates = async () => {
+      try {
+        const { data, error } = await supabase
+          .from('admin_settings')
+          .select('setting_value')
+          .eq('setting_key', 'rates')
+          .single();
+
+        if (error) {
+          console.warn('Error loading pricing from Supabase:', error);
+          return;
+        }
+
+        if (data?.setting_value) {
+          const settings = JSON.parse(data.setting_value);
+          setSharedPrice(settings.sharedRide || 15);
+          setPrivatePrice(settings.privateRide || 50);
+        }
+      } catch (error) {
+        console.error('Error parsing pricing settings:', error);
+      }
+    };
+    loadRates();
+  }, []);
 
   const restaurants: Restaurant[] = [
     { id: '1', name: "Kuya J's Eatery", category: 'Filipino', distance: '0.8km', rating: 4.5, deliveryFee: 35 },
@@ -109,7 +139,7 @@ export default function CustomerApp() {
                       </div>
                     </div>
                     <div className="text-right">
-                      <p className="text-xl font-bold text-[#E11D48]">₱15</p>
+                      <p className="text-xl font-bold text-[#E11D48]">₱{sharedPrice}</p>
                       <p className="text-xs text-[#64748B]">per person</p>
                     </div>
                   </div>
@@ -132,7 +162,7 @@ export default function CustomerApp() {
                       </div>
                     </div>
                     <div className="text-right">
-                      <p className="text-xl font-bold text-[#E11D48]">₱50</p>
+                      <p className="text-xl font-bold text-[#E11D48]">₱{privatePrice}</p>
                       <p className="text-xs text-[#64748B]">fixed</p>
                     </div>
                   </div>
