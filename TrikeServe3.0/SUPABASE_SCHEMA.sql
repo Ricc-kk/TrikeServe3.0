@@ -124,6 +124,11 @@ CREATE TABLE IF NOT EXISTS restaurants (
   phone VARCHAR(20),
   rating DECIMAL(3, 2) DEFAULT 5.0,
   is_open BOOLEAN DEFAULT true,
+  banner_image VARCHAR(500),
+  logo_image VARCHAR(500),
+  subtitle VARCHAR(255),
+  delivery_time VARCHAR(50),
+  operating_hours VARCHAR(100),
   created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
   updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
@@ -220,4 +225,11 @@ CREATE POLICY "Public read access to restaurants" ON storage.objects
 
 CREATE POLICY "Businesses can upload restaurant images" ON storage.objects
   FOR INSERT WITH CHECK (bucket_id = 'restaurants');
+
+CREATE POLICY "Businesses can update restaurant images" ON storage.objects
+  FOR UPDATE USING (bucket_id = 'restaurants')
+  WITH CHECK (bucket_id = 'restaurants');
+
+CREATE POLICY "Businesses can delete restaurant images" ON storage.objects
+  FOR DELETE USING (bucket_id = 'restaurants');
 

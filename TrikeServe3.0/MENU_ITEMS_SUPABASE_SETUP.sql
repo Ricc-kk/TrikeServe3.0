@@ -57,6 +57,17 @@ DROP POLICY IF EXISTS "Businesses can upload menu item images" ON storage.object
 CREATE POLICY "Businesses can upload menu item images" ON storage.objects
   FOR INSERT WITH CHECK (bucket_id = 'menu_items');
 
+-- Allow re-uploading over an existing image (the app upserts, which needs UPDATE)
+DROP POLICY IF EXISTS "Businesses can update menu item images" ON storage.objects;
+CREATE POLICY "Businesses can update menu item images" ON storage.objects
+  FOR UPDATE USING (bucket_id = 'menu_items')
+  WITH CHECK (bucket_id = 'menu_items');
+
+-- Allow deleting menu item images
+DROP POLICY IF EXISTS "Businesses can delete menu item images" ON storage.objects;
+CREATE POLICY "Businesses can delete menu item images" ON storage.objects
+  FOR DELETE USING (bucket_id = 'menu_items');
+
 -- Allow public read access to menu item images
 DROP POLICY IF EXISTS "Public read access to menu items" ON storage.objects;
 CREATE POLICY "Public read access to menu items" ON storage.objects

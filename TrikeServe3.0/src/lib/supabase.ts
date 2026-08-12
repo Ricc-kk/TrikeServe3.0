@@ -49,6 +49,12 @@ export const supabase = createClient(
   supabaseAnonKey
 );
 
+// Extract a safe file extension (fallback 'jpg') so weird filenames can't break the storage path
+function safeFileExtension(file: File): string {
+  const raw = file.name.split('.').pop() || '';
+  return /^[a-zA-Z0-9]{1,10}$/.test(raw) ? raw.toLowerCase() : 'jpg';
+}
+
 // Helper functions for common operations
 export const supabaseHelpers = {
   // User operations
@@ -1082,6 +1088,38 @@ export const supabaseHelpers = {
     return { data: publicUrlData, error: null };
   },
 
+  async uploadRestaurantBanner(restaurantId: string, file: File) {
+    const filePath = `${restaurantId}/banner.${safeFileExtension(file)}`;
+
+    const { data, error } = await supabase.storage
+      .from('restaurants')
+      .upload(filePath, file, { upsert: true });
+
+    if (error) return { data: null, error };
+
+    const { data: publicUrlData } = supabase.storage
+      .from('restaurants')
+      .getPublicUrl(filePath);
+
+    return { data: publicUrlData, error: null };
+  },
+
+  async uploadRestaurantLogo(restaurantId: string, file: File) {
+    const filePath = `${restaurantId}/logo.${safeFileExtension(file)}`;
+
+    const { data, error } = await supabase.storage
+      .from('restaurants')
+      .upload(filePath, file, { upsert: true });
+
+    if (error) return { data: null, error };
+
+    const { data: publicUrlData } = supabase.storage
+      .from('restaurants')
+      .getPublicUrl(filePath);
+
+    return { data: publicUrlData, error: null };
+  },
+
   async uploadMenuItemImage(menuItemId: string, file: File) {
     const fileExt = file.name.split('.').pop();
     const filePath = `${menuItemId}/image.${fileExt}`;
@@ -1097,6 +1135,38 @@ export const supabaseHelpers = {
       .getPublicUrl(filePath);
 
     return { data: publicUrlData, error: null };
+  },
+
+  // Load the admin-set base delivery fee (admin_settings > rates > deliveryBaseFee)
+  async getAdminDeliveryFee(): Promise<number> {
+    const fallback = 35;
+    try {
+      const { data, error } = await supabase
+        .from('admin_settings')
+        .select('setting_value')
+        .eq('setting_key', 'rates')
+        .single();
+
+      if (!error && data?.setting_value) {
+        const parsed = JSON.parse(data.setting_value);
+        if (typeof parsed?.deliveryBaseFee === 'number') return parsed.deliveryBaseFee;
+      }
+    } catch (e) {
+      console.warn('[supabaseHelpers] Could not load admin delivery fee from Supabase:', e);
+    }
+
+    // Fallback to the localStorage backup of the admin rates
+    try {
+      const saved = localStorage.getItem('trikeserve_rates');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (typeof parsed?.deliveryBaseFee === 'number') return parsed.deliveryBaseFee;
+      }
+    } catch (e) {
+      console.warn('[supabaseHelpers] Could not load admin delivery fee from localStorage:', e);
+    }
+
+    return fallback;
   },
 
   // Order Processing Operations
