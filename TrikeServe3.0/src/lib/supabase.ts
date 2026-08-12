@@ -1082,6 +1082,23 @@ export const supabaseHelpers = {
     return { data: publicUrlData, error: null };
   },
 
+  async uploadMenuItemImage(menuItemId: string, file: File) {
+    const fileExt = file.name.split('.').pop();
+    const filePath = `${menuItemId}/image.${fileExt}`;
+
+    const { data, error } = await supabase.storage
+      .from('menu_items')
+      .upload(filePath, file, { upsert: true });
+
+    if (error) return { data: null, error };
+
+    const { data: publicUrlData } = supabase.storage
+      .from('menu_items')
+      .getPublicUrl(filePath);
+
+    return { data: publicUrlData, error: null };
+  },
+
   // Order Processing Operations
   async createOrderProcessing(processing: any) {
     const { data, error } = await supabase

@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { Store, Package, Clock, User, Plus, Edit2, Image as ImageIcon, X, Search, ChevronRight, Eye, EyeOff, Trash2, Check, BarChart3, Camera, Upload, TrendingUp, Star, Award, Menu, Settings } from "lucide-react";
 import { Link } from "react-router";
 import { Card } from "../ui/card";
@@ -10,6 +10,7 @@ import { useMediaQuery } from "../../hooks/useMediaQuery";
 import AddCustomizationModal, { CustomizationGroup } from "./AddCustomizationModal";
 import { useAuth } from "../../contexts/AuthContext";
 import { supabase } from "../../../utils/supabase";
+import { supabaseHelpers } from "@/lib/supabase";
 
 interface Category {
   id: string;
@@ -44,6 +45,9 @@ export default function BusinessMenu() {
   const [customizingItem, setCustomizingItem] = useState<MenuItem | null>(null);
   const [showDeleteCategoryModal, setShowDeleteCategoryModal] = useState(false);
   const [categoryToDelete, setCategoryToDelete] = useState<string | null>(null);
+  const [uploadingImage, setUploadingImage] = useState(false);
+  const [uploadTarget, setUploadTarget] = useState<'new' | 'edit'>('new');
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Use media query hook to detect mobile
   const isMobile = useMediaQuery('(max-width: 1023px)');
@@ -335,6 +339,51 @@ export default function BusinessMenu() {
   });
 
   const [newCategory, setNewCategory] = useState("");
+
+  const handleUploadClick = (target: 'new' | 'edit') => {
+    setUploadTarget(target);
+    fileInputRef.current?.click();
+  };
+
+  const handleFileSelected = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    // Enforce the max size advertised in the UI (5MB) and validate it's actually an image
+    if (!file.type.startsWith('image/')) {
+      alert('Please select a valid image file.');
+      e.target.value = '';
+      return;
+    }
+    if (file.size > 5 * 1024 * 1024) {
+      alert('Image is too large. Maximum size is 5MB.');
+      e.target.value = '';
+      return;
+    }
+
+    setUploadingImage(true);
+    try {
+      const id = uploadTarget === 'edit' ? String(editingItem?.id ?? Date.now()) : `new-${Date.now()}`;
+      const result = await supabaseHelpers.uploadMenuItemImage(id, file);
+      if (result?.data?.publicUrl) {
+        if (uploadTarget === 'edit') {
+          setEditingItem((prev: any) => (prev ? { ...prev, image: result.data.publicUrl } : prev));
+        } else {
+          setNewItem((prev) => ({ ...prev, image: result.data.publicUrl }));
+        }
+        console.log('[Menu Image] Uploaded successfully:', result.data.publicUrl);
+      } else {
+        console.error('[Menu Image] Upload failed:', result?.error);
+        alert('Failed to upload image. Please try again.');
+      }
+    } catch (error) {
+      console.error('[Menu Image] Upload error:', error);
+      alert('Failed to upload image. Please try again.');
+    } finally {
+      setUploadingImage(false);
+      e.target.value = '';
+    }
+  };
 
   const filteredItems = menuItems.filter(item => {
     const matchesCategory = selectedCategory === "all" || item.category === selectedCategory;
@@ -987,15 +1036,38 @@ export default function BusinessMenu() {
                 <div>
                   <label className="text-sm font-bold text-[#121212] mb-2 block">Item Photo</label>
                   <div className="h-48 rounded-2xl overflow-hidden mb-3 border-2 border-dashed border-[#E2E8F0] bg-[#F8F9FA] flex items-center justify-center">
-                    <div className="text-center">
-                      <ImageIcon className="w-12 h-12 text-[#CBD5E1] mx-auto mb-2" />
-                      <p className="text-sm text-[#64748B]">No image selected</p>
-                    </div>
+                    {newItem.image ? (
+                      <ImageWithFallback
+                        src={newItem.image}
+                        alt="Item photo preview"
+                        className="w-full h-full object-cover"
+                      />
+                    ) : (
+                      <div className="text-center">
+                        <ImageIcon className="w-12 h-12 text-[#CBD5E1] mx-auto mb-2" />
+                        <p className="text-sm text-[#64748B]">No image selected</p>
+                      </div>
+                    )}
                   </div>
-                  <Button className="w-full bg-[#E11D48] hover:bg-[#BE123C] uppercase">
-                    <Upload className="w-4 h-4 mr-2" />
-                    Upload Photo
-                  </Button>
+                  <div className="flex gap-2">
+                    <Button
+                      onClick={() => handleUploadClick('new')}
+                      disabled={uploadingImage}
+                      className="flex-1 bg-[#E11D48] hover:bg-[#BE123C] uppercase"
+                    >
+                      <Upload className="w-4 h-4 mr-2" />
+                      {uploadingImage ? 'Uploading...' : 'Upload Photo'}
+                    </Button>
+                    {newItem.image && (
+                      <Button
+                        onClick={() => setNewItem({ ...newItem, image: "" })}
+                        variant="outline"
+                        className="border-[#E11D48] text-[#E11D48] hover:bg-[#FFF1F2]"
+                      >
+                        <X className="w-4 h-4" />
+                      </Button>
+                    )}
+                  </div>
                   <p className="text-xs text-[#64748B] mt-2 text-center">Recommended: 800x800px, max 5MB</p>
                 </div>
 
@@ -1101,10 +1173,24 @@ export default function BusinessMenu() {
                       className="w-full h-full object-cover"
                     />
                   </div>
-                  <Button className="w-full bg-[#E11D48] hover:bg-[#BE123C] uppercase">
-                    <Upload className="w-4 h-4 mr-2" />
-                    Change Photo
-                  </Button>
+                  <div className="flex gap-2">
+                    <Button
+                      onClick={() => handleUploadClick('edit')}
+                      disabled={uploadingImage}
+                      className="flex-1 bg-[#E11D48] hover:bg-[#BE123C] uppercase"
+                    >
+                      <Upload className="w-4 h-4 mr-2" />
+                      {uploadingImage ? 'Uploading...' : 'Change Photo'}
+                    </Button>
+                    <Button
+                      onClick={() => setEditingItem({ ...editingItem, image: "" })}
+                      variant="outline"
+                      className="border-[#E11D48] text-[#E11D48] hover:bg-[#FFF1F2]"
+                    >
+                      <X className="w-4 h-4" />
+                    </Button>
+                  </div>
+                  <p className="text-xs text-[#64748B] mt-2 text-center">Recommended: 800x800px, max 5MB</p>
                 </div>
 
                 <div>
@@ -1213,6 +1299,15 @@ export default function BusinessMenu() {
             </div>
           </div>
         )}
+
+        {/* Hidden file input for menu item image uploads */}
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept="image/*"
+          className="hidden"
+          onChange={handleFileSelected}
+        />
 
         {/* Add Category Modal */}
         {showAddCategory && (
