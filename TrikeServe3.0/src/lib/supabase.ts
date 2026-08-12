@@ -588,6 +588,69 @@ export const supabaseHelpers = {
     return { data, error };
   },
 
+  // Complete a shared ride: close the lobby AND record it as a completed
+  // ride_requests row so it appears in the driver's recent trips/earnings
+  // (queried by driver_id + status='completed') and in the host customer's
+  // activity log (queried by customer_id + status='completed').
+  async completeSharedRide(lobbyId: string, details: {
+    customerId?: string;
+    driverId?: string;
+    driverName?: string;
+    driverRating?: string;
+    pickup: string;
+    dropoff: string;
+    pickupAddress?: string;
+    dropoffAddress?: string;
+    pickupLat?: number | null;
+    pickupLng?: number | null;
+    dropoffLat?: number | null;
+    dropoffLng?: number | null;
+    amount: number;
+    passengerCount?: number;
+    paymentMethod?: 'COD' | 'GCASH';
+  }) {
+    const timestamp = new Date().toISOString();
+
+    // 1) Close the lobby so it stops showing as active for everyone.
+    const lobbyResult = await this.completeLobbyRide(lobbyId);
+
+    // 2) Record the completed shared ride in ride_requests. ride_requests
+    //    requires a customer_id (NOT NULL + FK), so skip the insert when we
+    //    don't have one and just close the lobby.
+    if (!details.customerId) {
+      console.warn('[supabaseHelpers.completeSharedRide] No customer id — lobby closed but ride not recorded.');
+      return { lobby: lobbyResult, ride: { data: null, error: null } };
+    }
+
+    const rideResult = await supabase
+      .from('ride_requests')
+      .insert([{
+        customer_id: details.customerId,
+        driver_id: details.driverId || null,
+        pickup_location: details.pickup,
+        dropoff_location: details.dropoff,
+        pickup_address: details.pickupAddress || null,
+        dropoff_address: details.dropoffAddress || null,
+        pickup_lat: details.pickupLat ?? null,
+        pickup_lng: details.pickupLng ?? null,
+        dropoff_lat: details.dropoffLat ?? null,
+        dropoff_lng: details.dropoffLng ?? null,
+        status: 'completed',
+        ride_type: 'share',
+        payment_method: details.paymentMethod || 'GCASH',
+        amount: details.amount,
+        passenger_count: details.passengerCount || 1,
+        driver_name: details.driverName || null,
+        driver_rating: details.driverRating || '4.8',
+        created_at: timestamp,
+        updated_at: timestamp,
+      }])
+      .select()
+      .single();
+
+    return { lobby: lobbyResult, ride: rideResult };
+  },
+
    subscribeLobbyUpdates(lobbyId: string, callback: (data: any) => Promise<void> | void) {
      console.log(`📡 Setting up real-time subscription for lobby: ${lobbyId}`);
 

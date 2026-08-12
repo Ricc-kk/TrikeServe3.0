@@ -65,6 +65,7 @@ CREATE TABLE IF NOT EXISTS shared_ride_lobbies (
   status VARCHAR(50) NOT NULL DEFAULT 'waiting' CHECK (status IN ('waiting', 'driver_found', 'in_progress', 'completed', 'cancelled')),
   passengers TEXT[] NOT NULL DEFAULT '{}',
   driver_id UUID REFERENCES users(id) ON DELETE SET NULL,
+  payment_method VARCHAR(50),
   created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
   updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
