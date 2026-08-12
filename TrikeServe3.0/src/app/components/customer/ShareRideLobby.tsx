@@ -725,20 +725,20 @@ export default function ShareRideLobby({
             <div className="flex items-center justify-between mb-3">
               <div>
                 <p className="text-sm text-[#64748B]">Your Fare</p>
-                <p className="text-3xl font-bold text-[#E11D48]">₱{pricePerSeat}</p>
+                <p className="text-3xl font-bold text-[#E11D48]">₱{(pricePerSeat / Math.max(1, passengers.length)).toFixed(2)}</p>
                 {passengers.length > 1 && (
                   <p className="text-xs text-[#94A3B8]">
-                    ₱{pricePerSeat} per person
+                    ₱{pricePerSeat} ÷ {passengers.length} passengers
                   </p>
                 )}
               </div>
               <div className="text-right">
                 <p className="text-sm text-[#64748B]">Total Trip Cost</p>
                 <p className="text-xl font-bold text-[#121212]">
-                  ₱{pricePerSeat * passengers.length}
+                  ₱{pricePerSeat}
                 </p>
                 <p className="text-xs text-[#94A3B8]">
-                  {passengers.length} × ₱{pricePerSeat}
+                  {passengers.length} × ₱{(pricePerSeat / Math.max(1, passengers.length)).toFixed(2)}
                 </p>
               </div>
             </div>

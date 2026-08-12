@@ -305,8 +305,9 @@ export default function BrowseAvailableLobbies({
                       {/* Price and Time */}
                       <div className="flex items-center justify-between">
                         <div>
-                          <p className="text-xs text-[#64748B]">Price per seat</p>
-                          <p className="text-lg font-bold text-[#E11D48]">₱{lobby.price_per_seat}</p>
+                          <p className="text-xs text-[#64748B]">Your fare</p>
+                          <p className="text-lg font-bold text-[#E11D48]">₱{(lobby.price_per_seat / (passengers.length + 1)).toFixed(2)}</p>
+                          <p className="text-[10px] text-[#94A3B8]">₱{lobby.price_per_seat} trip ÷ {passengers.length + 1} passengers</p>
                         </div>
                         <div className="text-right">
                           <p className="text-xs text-[#64748B]">{getTimeWaiting(lobby.created_at)}</p>
