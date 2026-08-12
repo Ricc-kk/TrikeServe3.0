@@ -4,11 +4,13 @@ import { Link, useNavigate } from "react-router";
 import { Card } from "../ui/card";
 import { Badge } from "../ui/badge";
 import { ImageWithFallback } from "../figma/ImageWithFallback";
+import StoreLogo from "../figma/StoreLogo";
 import Slider from "react-slick";
 import tricycleIcon from "../../../assets/0b76d1aa56b8ad6e15dd4efc8a0100b0ca5762a1.png";
 import { useCart } from "../../contexts/CartContext";
 import { useFavorites } from "../../contexts/FavoritesContext";
 import { supabase } from "../../../utils/supabase";
+import { supabaseHelpers } from "@/lib/supabase";
 
 // TrikeServe Food Delivery Home - Tagalag, Valenzuela
 export default function FoodHome() {
@@ -23,6 +25,7 @@ export default function FoodHome() {
   const [showFilterModal, setShowFilterModal] = useState(false);
   const [restaurants, setRestaurants] = useState<any[]>([]);
   const [unreadNotifications, setUnreadNotifications] = useState(0);
+  const [adminDeliveryFee, setAdminDeliveryFee] = useState<number>(35); // Admin-set base delivery fee
   
   // Filter drag state
   const [isFilterDragging, setIsFilterDragging] = useState(false);
@@ -64,7 +67,12 @@ export default function FoodHome() {
           phone,
           rating,
           is_open,
-          business_user_id
+          banner_image,
+          logo_image,
+          business_user_id,
+          subtitle,
+          delivery_time,
+          operating_hours
         `)
         .order('name');
 
@@ -80,19 +88,18 @@ export default function FoodHome() {
           id: restaurant.id,
           businessUserId: restaurant.business_user_id, // ✅ CRITICAL: Add business user ID for orders
           name: restaurant.name || "Restaurant",
-          subtitle: restaurant.address || "Tagalag, Valenzuela",
-          logo: "🍽️",
-          image: "https://images.unsplash.com/photo-1517248135467-4c7edcad34c4?w=800",
-          time: "25-35 min",
+          subtitle: restaurant.subtitle || restaurant.address || "Tagalag, Valenzuela",
+          logo: restaurant.logo_image || "🍽️",
+          image: restaurant.banner_image || "https://images.unsplash.com/photo-1517248135467-4c7edcad34c4?w=800",
+          time: restaurant.delivery_time || "25-35 min",
           rating: restaurant.rating || 5.0,
           ratingCount: 0,
           bgColor: "#FFF7ED",
-          deliveryFee: "₱35",
           promo: restaurant.is_open ? "Open for Orders!" : "Closed",
           verified: true,
           category: "restaurant",
           address: restaurant.address || "",
-          operatingHours: "8:00 AM - 10:00 PM",
+          operatingHours: restaurant.operating_hours || "8:00 AM - 10:00 PM",
           hasMenu: true,
           isOpen: restaurant.is_open
         }));
@@ -137,7 +144,6 @@ export default function FoodHome() {
             rating: restaurantData.rating || 0,
             ratingCount: restaurantData.ratingCount || 0,
             bgColor: "#FFF7ED",
-            deliveryFee: `₱${restaurantData.deliveryFee || 35}`,
             promo: hasMenu ? "Open for Orders!" : "Coming Soon",
             verified: business.isVerified || false,
             category: "restaurant",
@@ -157,6 +163,11 @@ export default function FoodHome() {
       setRestaurants([]);
     }
   };
+
+  // Load the admin-set delivery fee (shown on restaurant cards; not editable by businesses)
+  useEffect(() => {
+    supabaseHelpers.getAdminDeliveryFee().then(setAdminDeliveryFee);
+  }, []);
 
   // Load verified business users as restaurants - Initial load
   useEffect(() => {
@@ -352,6 +363,12 @@ export default function FoodHome() {
                           <BadgeCheck className="w-3 h-3" fill="white" />
                         </div>
                       )}
+                      {/* Store logo badge (hidden for the default placeholder) */}
+                      {restaurant.logo && restaurant.logo !== "🍽️" && (
+                        <div className="absolute top-2 right-2 w-8 h-8 rounded-full bg-white shadow-md overflow-hidden flex items-center justify-center border border-white/60">
+                          <StoreLogo logo={restaurant.logo} emojiClass="text-base" />
+                        </div>
+                      )}
                     </div>
                     
                     {/* Restaurant Info */}
@@ -494,6 +511,12 @@ export default function FoodHome() {
                         />
                         {/* Gradient overlay */}
                         <div className="absolute inset-0 bg-gradient-to-t from-black/30 to-transparent" />
+                        {/* Store logo badge (hidden for the default placeholder) */}
+                        {restaurant.logo && restaurant.logo !== "🍽️" && (
+                          <div className="absolute top-2 left-2 w-9 h-9 rounded-full bg-white shadow-md overflow-hidden flex items-center justify-center border border-[#E2E8F0]">
+                            <StoreLogo logo={restaurant.logo} emojiClass="text-lg" />
+                          </div>
+                        )}
                         {/* Rating badge */}
                         <div className="absolute bottom-2 left-2 bg-white/95 backdrop-blur-sm text-[#121212] px-2 py-1 rounded-full flex items-center gap-1 shadow-lg">
                           <Star className="w-3 h-3 fill-[#FFC107] text-[#FFC107]" />
@@ -534,7 +557,7 @@ export default function FoodHome() {
                                 distance: restaurant.subtitle,
                                 estimatedTime: restaurant.time,
                                 category: restaurant.category,
-                                priceRange: restaurant.deliveryFee
+                                priceRange: `₱${adminDeliveryFee}`
                               });
                             }}
                             className={`flex-shrink-0 ml-2 w-8 h-8 rounded-full flex items-center justify-center active:scale-90 transition-transform shadow-md ${
@@ -552,7 +575,7 @@ export default function FoodHome() {
                           </span>
                           <span className="flex items-center gap-1 bg-[#F8F9FA] px-2.5 py-1.5 rounded-lg shadow-sm">
                             <span className="text-[10px]">₱</span>
-                            {restaurant.deliveryFee.replace('₱', '')}
+                            {adminDeliveryFee}
                           </span>
                         </div>
 

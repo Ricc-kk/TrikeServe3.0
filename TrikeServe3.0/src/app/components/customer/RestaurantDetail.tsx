@@ -4,11 +4,13 @@ import { Link, useNavigate, useSearchParams } from "react-router";
 import { Card } from "../ui/card";
 import { Badge } from "../ui/badge";
 import { ImageWithFallback } from "../figma/ImageWithFallback";
+import StoreLogo from "../figma/StoreLogo";
 import { useCart } from "../../contexts/CartContext";
 import { useFavorites } from "../../contexts/FavoritesContext";
 import { useNotification } from "../../contexts/NotificationContext";
 import CustomizationModal, { MenuItem as CustomizableMenuItem, CustomizationGroup } from "./CustomizationModal";
 import { supabase } from "../../../utils/supabase";
+import { supabaseHelpers } from "@/lib/supabase";
 
 interface MenuItem extends CustomizableMenuItem {
   available: boolean;
@@ -32,7 +34,6 @@ interface RestaurantData {
   rating: number;
   ratingCount: number;
   deliveryFee: number;
-  originalFee: number;
   deliveryTime: string;
   verified: boolean;
   goodService: boolean;
@@ -62,6 +63,12 @@ export default function RestaurantDetail() {
   const [restaurantData, setRestaurantData] = useState<RestaurantData | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [showStoreClosedModal, setShowStoreClosedModal] = useState(false);
+  const [adminDeliveryFee, setAdminDeliveryFee] = useState<number>(35); // Admin-set base delivery fee
+
+  // Load the admin-set delivery fee (shown on the store view)
+  useEffect(() => {
+    supabaseHelpers.getAdminDeliveryFee().then(setAdminDeliveryFee);
+  }, []);
 
   // Load restaurant data from Supabase
   useEffect(() => {
@@ -149,15 +156,14 @@ export default function RestaurantDetail() {
         // Create restaurant data object
         const data: RestaurantData = {
           name: restaurant.name || restaurantName,
-          subtitle: restaurant.address || 'Tagalag, Valenzuela',
-          logo: '🍽️',
-          image: 'https://images.unsplash.com/photo-1517248135467-4c7edcad34c4?w=800',
-          heroImage: 'https://images.unsplash.com/photo-1517248135467-4c7edcad34c4?w=800',
+          subtitle: restaurant.subtitle || restaurant.address || 'Tagalag, Valenzuela',
+          logo: restaurant.logo_image || '🍽️',
+          image: restaurant.banner_image || 'https://images.unsplash.com/photo-1517248135467-4c7edcad34c4?w=800',
+          heroImage: restaurant.banner_image || 'https://images.unsplash.com/photo-1517248135467-4c7edcad34c4?w=800',
           rating: restaurant.rating || 5.0,
           ratingCount: 0,
-          deliveryFee: 35,
-          originalFee: 70,
-          deliveryTime: '25-35 min',
+          deliveryFee: adminDeliveryFee,
+          deliveryTime: restaurant.delivery_time || '25-35 min',
           verified: true,
           goodService: true,
           categories,
@@ -176,7 +182,7 @@ export default function RestaurantDetail() {
     };
 
     loadRestaurantData();
-  }, [restaurantId, restaurantName]);
+  }, [restaurantId, restaurantName, adminDeliveryFee]);
 
   // Real-time subscription to categories changes
   useEffect(() => {
@@ -488,8 +494,8 @@ export default function RestaurantDetail() {
       {/* Restaurant Info Card */}
       <div className="bg-white mx-5 -mt-6 relative z-10 rounded-3xl shadow-2xl p-5">
         <div className="flex items-start gap-4">
-          <div className="w-20 h-20 rounded-2xl bg-gradient-to-br from-[#E11D48] to-[#BE123C] flex items-center justify-center shadow-lg flex-shrink-0">
-            <span className="text-4xl">{restaurantData?.logo}</span>
+          <div className="w-20 h-20 rounded-2xl bg-gradient-to-br from-[#E11D48] to-[#BE123C] flex items-center justify-center shadow-lg flex-shrink-0 overflow-hidden">
+            <StoreLogo logo={restaurantData?.logo} emojiClass="text-4xl" />
           </div>
           
           <div className="flex-1">
@@ -518,9 +524,6 @@ export default function RestaurantDetail() {
             <div className="flex items-center gap-2 text-sm">
               <span className="text-[#E11D48] font-bold">
                 <span className="text-xs">₱</span>{restaurantData?.deliveryFee.toFixed(2)}
-              </span>
-              <span className="text-[#94A3B8] line-through text-xs">
-                <span className="text-[10px]">₱</span>{restaurantData?.originalFee.toFixed(2)}
               </span>
               <span className="text-[#64748B]">• From {restaurantData?.deliveryTime}</span>
             </div>

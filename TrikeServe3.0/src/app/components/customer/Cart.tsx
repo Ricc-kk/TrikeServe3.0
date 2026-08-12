@@ -8,6 +8,7 @@ import { useCart } from "../../contexts/CartContext";
 import { useOrders } from "../../contexts/OrderContext";
 import { useAuth } from "../../contexts/AuthContext";
 import { supabase } from "../../../utils/supabase";
+import { supabaseHelpers } from "@/lib/supabase";
 import MapSelector from "./MapSelector";
 
 export default function Cart() {
@@ -34,39 +35,7 @@ export default function Cart() {
 
   // Load the delivery fee set by the admin (admin_settings > rates > deliveryBaseFee)
   useEffect(() => {
-    const loadDeliveryFee = async () => {
-      try {
-        const { data, error } = await supabase
-          .from('admin_settings')
-          .select('setting_value')
-          .eq('setting_key', 'rates')
-          .single();
-
-        if (!error && data?.setting_value) {
-          const parsed = JSON.parse(data.setting_value);
-          if (typeof parsed?.deliveryBaseFee === 'number') {
-            setDeliveryFee(parsed.deliveryBaseFee);
-            return;
-          }
-        }
-      } catch (e) {
-        console.warn('[Cart] Could not load delivery fee from Supabase:', e);
-      }
-
-      // Fallback to the localStorage backup of the admin rates
-      try {
-        const saved = localStorage.getItem('trikeserve_rates');
-        if (saved) {
-          const parsed = JSON.parse(saved);
-          if (typeof parsed?.deliveryBaseFee === 'number') {
-            setDeliveryFee(parsed.deliveryBaseFee);
-          }
-        }
-      } catch (e) {
-        console.warn('[Cart] Could not load delivery fee from localStorage:', e);
-      }
-    };
-    loadDeliveryFee();
+    supabaseHelpers.getAdminDeliveryFee().then(setDeliveryFee);
   }, []);
 
   const toggleRestaurantSelection = (id: number) => {

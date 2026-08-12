@@ -1,13 +1,15 @@
-import { useState, useEffect } from "react";
-import { Store, Package, BarChart3, User, Plus, Edit2, Image, Clock, Star, MapPin, BadgeCheck, Eye, EyeOff, Upload, ChevronRight, Settings, Camera, Check, Menu } from "lucide-react";
+import { useState, useEffect, useRef } from "react";
+import { Store, Package, BarChart3, User, Plus, Edit2, Image, Clock, Star, MapPin, BadgeCheck, Eye, EyeOff, Upload, ChevronRight, Settings, Camera, Check, Menu, Loader2 } from "lucide-react";
 import { Link, useNavigate } from "react-router";
 import { Card } from "../ui/card";
 import { Badge } from "../ui/badge";
 import { Button } from "../ui/button";
 import { ImageWithFallback } from "../figma/ImageWithFallback";
+import StoreLogo from "../figma/StoreLogo";
 import BusinessSidebar from "./BusinessSidebar";
 import { useAuth } from "../../contexts/AuthContext";
 import { supabase } from "../../../utils/supabase";
+import { supabaseHelpers } from "@/lib/supabase";
 
 export default function BusinessHome() {
   const navigate = useNavigate();
@@ -18,6 +20,11 @@ export default function BusinessHome() {
   const [previewMode, setPreviewMode] = useState(false);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [menuItems, setMenuItems] = useState<any[]>([]);
+  const [isBannerUploading, setIsBannerUploading] = useState(false);
+  const bannerInputRef = useRef<HTMLInputElement | null>(null);
+  const [isLogoUploading, setIsLogoUploading] = useState(false);
+  const logoInputRef = useRef<HTMLInputElement | null>(null);
+  const [adminDeliveryFee, setAdminDeliveryFee] = useState(35); // Admin-set delivery fee (view-only for the business)
 
   // Restaurant data - initialize with user data
   const [restaurantData, setRestaurantData] = useState({
@@ -28,7 +35,6 @@ export default function BusinessHome() {
     rating: 0,
     ratingCount: 0,
     deliveryTime: "25-35 min",
-    deliveryFee: 35,
     verified: true,
     address: "",
     operatingHours: "8:00 AM - 10:00 PM"
@@ -43,7 +49,7 @@ export default function BusinessHome() {
         // Get restaurant ID
         const { data: restaurant } = await supabase
           .from('restaurants')
-          .select('id, is_open')
+          .select('id, is_open, banner_image, logo_image, subtitle, delivery_time, operating_hours, name, address')
           .eq('business_user_id', user.id)
           .single();
 
@@ -63,6 +69,26 @@ export default function BusinessHome() {
         if (restaurant.is_open !== undefined) {
           setIsStoreOpen(restaurant.is_open);
         }
+
+        // Load the hero banner from the database if the business has uploaded one
+        if (restaurant.banner_image) {
+          setRestaurantData((prev) => ({ ...prev, heroImage: restaurant.banner_image }));
+        }
+
+        // Load the store logo from the database if the business has uploaded one
+        if (restaurant.logo_image) {
+          setRestaurantData((prev) => ({ ...prev, logo: restaurant.logo_image }));
+        }
+
+        // Load store info from the database (the business may have edited it on another device)
+        setRestaurantData((prev) => ({
+          ...prev,
+          name: restaurant.name || prev.name,
+          address: restaurant.address || prev.address,
+          subtitle: restaurant.subtitle || prev.subtitle,
+          deliveryTime: restaurant.delivery_time || prev.deliveryTime,
+          operatingHours: restaurant.operating_hours || prev.operatingHours,
+        }));
 
         // Load menu items from Supabase
         const { data: items } = await supabase
@@ -180,6 +206,11 @@ export default function BusinessHome() {
     }
   }, [restaurantData, user?.email]);
 
+  // Load the delivery fee set by the admin (view-only for the business)
+  useEffect(() => {
+    supabaseHelpers.getAdminDeliveryFee().then(setAdminDeliveryFee);
+  }, []);
+
   // Function to toggle store status and save to Supabase
   const toggleStoreStatus = async (newStatus: boolean) => {
     if (!user?.id) return;
@@ -205,6 +236,9 @@ export default function BusinessHome() {
             phone: user.phone || '',
             rating: restaurantData.rating,
             is_open: newStatus,
+            subtitle: restaurantData.subtitle,
+            delivery_time: restaurantData.deliveryTime,
+            operating_hours: restaurantData.operatingHours,
             created_at: new Date().toISOString(),
           }])
           .select()
@@ -239,6 +273,210 @@ export default function BusinessHome() {
     }
   };
 
+  // Upload a file with one retry for transient failures (network blips throw out of the helper,
+  // so the retry wraps the call in try/catch to catch both thrown and returned errors)
+  const uploadWithRetry = async (
+    uploadFn: (restaurantId: string, file: File) => Promise<any>,
+    restaurantId: string,
+    file: File
+  ): Promise<string> => {
+    let lastError: any = new Error('Unknown upload error');
+    for (let attempt = 1; attempt <= 2; attempt++) {
+      try {
+        const result = await uploadFn(restaurantId, file);
+        if (result?.data?.publicUrl) return result.data.publicUrl;
+        lastError = result?.error || lastError;
+      } catch (err) {
+        lastError = err;
+      }
+      if (attempt < 2) await new Promise((r) => setTimeout(r, 800));
+    }
+    throw lastError;
+  };
+
+  // Turn storage errors into actionable messages (RLS errors mean the upload policy is missing)
+  const describeUploadError = (err: any): string => {
+    const message = err?.message || 'Unknown upload error';
+    if (/row-level security|RLS|permission denied/i.test(message)) {
+      return `${message}. The storage upload policy is missing - run ENSURE_RESTAURANT_STORAGE.sql in the Supabase SQL Editor, then try again.`;
+    }
+    return message;
+  };
+
+  // Upload a new hero banner image and save it to the database
+  const handleBannerUpload = async (file: File) => {
+    if (!user?.id) return;
+
+    // Validate the file
+    if (!file.type.startsWith('image/')) {
+      alert('Please choose an image file (JPG, PNG, etc.).');
+      return;
+    }
+    if (file.size > 5 * 1024 * 1024) {
+      alert('Image is too large. Max size is 5MB.');
+      return;
+    }
+
+    setIsBannerUploading(true);
+    try {
+      // Find the restaurant record (used for the storage path + DB save)
+      const { data: restaurant } = await supabase
+        .from('restaurants')
+        .select('id')
+        .eq('business_user_id', user.id)
+        .single();
+
+      const restaurantId = restaurant?.id || user.id;
+
+      // Upload to Supabase Storage (restaurants bucket) with one retry for transient failures
+      let publicUrl: string;
+      try {
+        publicUrl = await uploadWithRetry(supabaseHelpers.uploadRestaurantBanner.bind(supabaseHelpers), restaurantId, file);
+      } catch (uploadErr: any) {
+        console.error('[BusinessHome] Banner upload failed:', uploadErr);
+        alert(`Upload failed: ${describeUploadError(uploadErr)}`);
+        return;
+      }
+
+      // Update the preview + localStorage immediately
+      setRestaurantData((prev) => ({ ...prev, heroImage: publicUrl }));
+
+      // Persist the banner URL to the restaurants table
+      if (restaurant) {
+        const { error: updateError } = await supabase
+          .from('restaurants')
+          .update({ banner_image: publicUrl, updated_at: new Date().toISOString() })
+          .eq('id', restaurant.id);
+
+        if (updateError) {
+          console.error('[BusinessHome] Error saving banner to database:', updateError);
+          alert('Banner uploaded but could not be saved to the database. Check the banner_image column exists.');
+        } else {
+          console.log('[BusinessHome] Banner saved to database ✅');
+        }
+      } else {
+        // No restaurant record yet - create one with the banner
+        const { error: insertError } = await supabase
+          .from('restaurants')
+          .insert([{
+            name: restaurantData.name,
+            business_user_id: user.id,
+            address: restaurantData.address,
+            phone: user.phone || '',
+            rating: restaurantData.rating,
+            is_open: isStoreOpen,
+            subtitle: restaurantData.subtitle,
+            delivery_time: restaurantData.deliveryTime,
+            operating_hours: restaurantData.operatingHours,
+            banner_image: publicUrl,
+            created_at: new Date().toISOString(),
+          }]);
+
+        if (insertError) {
+          console.error('[BusinessHome] Error creating restaurant with banner:', insertError);
+          alert('Banner uploaded but could not be saved to the database. Check the banner_image column exists.');
+        } else {
+          console.log('[BusinessHome] Banner saved to database ✅');
+        }
+      }
+    } catch (error: any) {
+      console.error('[BusinessHome] Banner upload error:', error);
+      alert(`Upload failed: ${error?.message || 'Unknown error'}`);
+    } finally {
+      setIsBannerUploading(false);
+      if (bannerInputRef.current) {
+        bannerInputRef.current.value = '';
+      }
+    }
+  };
+
+  // Upload a new store logo image and save it to the database
+  const handleLogoUpload = async (file: File) => {
+    if (!user?.id) return;
+
+    // Validate the file
+    if (!file.type.startsWith('image/')) {
+      alert('Please choose an image file (JPG, PNG, etc.).');
+      return;
+    }
+    if (file.size > 5 * 1024 * 1024) {
+      alert('Image is too large. Max size is 5MB.');
+      return;
+    }
+
+    setIsLogoUploading(true);
+    try {
+      // Find the restaurant record (used for the storage path + DB save)
+      const { data: restaurant } = await supabase
+        .from('restaurants')
+        .select('id')
+        .eq('business_user_id', user.id)
+        .single();
+
+      const restaurantId = restaurant?.id || user.id;
+
+      // Upload to Supabase Storage (restaurants bucket) with one retry for transient failures
+      let publicUrl: string;
+      try {
+        publicUrl = await uploadWithRetry(supabaseHelpers.uploadRestaurantLogo.bind(supabaseHelpers), restaurantId, file);
+      } catch (uploadErr: any) {
+        console.error('[BusinessHome] Logo upload failed:', uploadErr);
+        alert(`Upload failed: ${describeUploadError(uploadErr)}`);
+        return;
+      }
+
+      // Update the preview + localStorage immediately
+      setRestaurantData((prev) => ({ ...prev, logo: publicUrl }));
+
+      // Persist the logo URL to the restaurants table
+      if (restaurant) {
+        const { error: updateError } = await supabase
+          .from('restaurants')
+          .update({ logo_image: publicUrl, updated_at: new Date().toISOString() })
+          .eq('id', restaurant.id);
+
+        if (updateError) {
+          console.error('[BusinessHome] Error saving logo to database:', updateError);
+          alert('Logo uploaded but could not be saved to the database. Check the logo_image column exists.');
+        } else {
+          console.log('[BusinessHome] Logo saved to database ✅');
+        }
+      } else {
+        // No restaurant record yet - create one with the logo
+        const { error: insertError } = await supabase
+          .from('restaurants')
+          .insert([{
+            name: restaurantData.name,
+            business_user_id: user.id,
+            address: restaurantData.address,
+            phone: user.phone || '',
+            rating: restaurantData.rating,
+            is_open: isStoreOpen,
+            subtitle: restaurantData.subtitle,
+            delivery_time: restaurantData.deliveryTime,
+            operating_hours: restaurantData.operatingHours,
+            logo_image: publicUrl,
+            created_at: new Date().toISOString(),
+          }]);
+
+        if (insertError) {
+          console.error('[BusinessHome] Error creating restaurant with logo:', insertError);
+          alert('Logo uploaded but could not be saved to the database. Check the logo_image column exists.');
+        } else {
+          console.log('[BusinessHome] Logo saved to database ✅');
+        }
+      }
+    } catch (error: any) {
+      console.error('[BusinessHome] Logo upload error:', error);
+      alert(`Upload failed: ${error?.message || 'Unknown error'}`);
+    } finally {
+      setIsLogoUploading(false);
+      if (logoInputRef.current) {
+        logoInputRef.current.value = '';
+      }
+    }
+  };
+
   // Function to save store information to Supabase
   const saveStoreInformation = async () => {
     if (!user?.id) return;
@@ -262,6 +500,9 @@ export default function BusinessHome() {
             phone: user.phone || '',
             rating: restaurantData.rating,
             is_open: isStoreOpen,
+            subtitle: restaurantData.subtitle,
+            delivery_time: restaurantData.deliveryTime,
+            operating_hours: restaurantData.operatingHours,
             created_at: new Date().toISOString(),
           }])
           .select()
@@ -280,6 +521,9 @@ export default function BusinessHome() {
             name: restaurantData.name,
             address: restaurantData.address,
             is_open: isStoreOpen,
+            subtitle: restaurantData.subtitle,
+            delivery_time: restaurantData.deliveryTime,
+            operating_hours: restaurantData.operatingHours,
             updated_at: new Date().toISOString(),
           })
           .eq('id', restaurant.id);
@@ -372,8 +616,8 @@ export default function BusinessHome() {
                 
                 {/* Logo */}
                 <div className="absolute bottom-4 left-4">
-                  <div className="w-16 h-16 bg-white rounded-2xl flex items-center justify-center text-3xl shadow-lg">
-                    {restaurantData.logo}
+                  <div className="w-16 h-16 bg-white rounded-2xl flex items-center justify-center text-3xl shadow-lg overflow-hidden">
+                    <StoreLogo logo={restaurantData.logo} emojiClass="text-3xl" />
                   </div>
                 </div>
 
@@ -417,7 +661,7 @@ export default function BusinessHome() {
 
                 <div className="flex items-center justify-between pt-3 border-t border-[#E2E8F0]">
                   <span className="text-sm text-[#64748B]">Delivery Fee</span>
-                  <span className="text-xl font-bold text-[#E11D48]">₱{restaurantData.deliveryFee}</span>
+                  <span className="text-xl font-bold text-[#E11D48]">₱{adminDeliveryFee}</span>
                 </div>
               </Card>
 
@@ -540,8 +784,8 @@ export default function BusinessHome() {
                     className="w-full h-full object-cover"
                   />
                   <div className="absolute bottom-2 left-2">
-                    <div className="w-12 h-12 bg-white rounded-xl flex items-center justify-center text-xl shadow-lg">
-                      {restaurantData.logo}
+                    <div className="w-12 h-12 bg-white rounded-xl flex items-center justify-center text-xl shadow-lg overflow-hidden">
+                      <StoreLogo logo={restaurantData.logo} emojiClass="text-xl" />
                     </div>
                   </div>
                 </div>
@@ -585,7 +829,7 @@ export default function BusinessHome() {
                   </div>
                   <div className="flex items-start justify-between py-2 border-b border-[#E2E8F0]">
                     <span className="text-[#64748B]">Delivery Fee</span>
-                    <span className="font-semibold text-[#E11D48]">₱{restaurantData.deliveryFee}</span>
+                    <span className="font-semibold text-[#E11D48]">₱{adminDeliveryFee}</span>
                   </div>
                   <div className="flex items-start justify-between py-2">
                     <span className="text-[#64748B]">Hours</span>
@@ -630,46 +874,75 @@ export default function BusinessHome() {
                       className="w-full h-full object-cover"
                     />
                   </div>
-                  <Button className="w-full bg-[#E11D48] hover:bg-[#BE123C] uppercase text-sm py-5">
-                    <Upload className="w-5 h-5 mr-2" />
-                    Upload New Banner
+                  <Button
+                    onClick={() => bannerInputRef.current?.click()}
+                    disabled={isBannerUploading}
+                    className="w-full bg-[#E11D48] hover:bg-[#BE123C] uppercase text-sm py-5 disabled:opacity-60"
+                  >
+                    {isBannerUploading ? (
+                      <>
+                        <Loader2 className="w-5 h-5 mr-2 animate-spin" />
+                        Uploading...
+                      </>
+                    ) : (
+                      <>
+                        <Upload className="w-5 h-5 mr-2" />
+                        Upload New Banner
+                      </>
+                    )}
                   </Button>
+                  <input
+                    ref={bannerInputRef}
+                    type="file"
+                    accept="image/*"
+                    onChange={(e) => {
+                      const file = e.target.files?.[0];
+                      if (file) handleBannerUpload(file);
+                    }}
+                    className="hidden"
+                  />
                   <p className="text-xs text-[#64748B] mt-2 text-center">Recommended: 1200x400px (landscape), max 5MB</p>
                 </div>
 
                 <div className="border-t-2 border-[#E2E8F0] pt-5">
-                  <label className="text-sm font-bold text-[#121212] mb-2 block">Store Logo (Emoji)</label>
-                  <p className="text-xs text-[#64748B] mb-3">Choose an emoji that represents your business</p>
+                  <label className="text-sm font-bold text-[#121212] mb-2 block">Store Logo</label>
+                  <p className="text-xs text-[#64748B] mb-3">Upload your store logo (square image works best)</p>
                   <div className="flex items-center gap-3">
-                    <div className="w-20 h-20 bg-white border-2 border-[#E2E8F0] rounded-2xl flex items-center justify-center text-4xl">
-                      {restaurantData.logo}
+                    <div className="w-20 h-20 bg-white border-2 border-[#E2E8F0] rounded-2xl flex items-center justify-center text-4xl overflow-hidden flex-shrink-0">
+                      <StoreLogo logo={restaurantData.logo} emojiClass="text-4xl" />
                     </div>
                     <div className="flex-1">
-                      <input
-                        type="text"
-                        value={restaurantData.logo}
-                        onChange={(e) => setRestaurantData({ ...restaurantData, logo: e.target.value })}
-                        className="w-full p-4 border-2 border-[#E2E8F0] rounded-xl text-3xl text-center"
-                        maxLength={2}
-                        placeholder="🍗"
-                      />
+                      <Button
+                        onClick={() => logoInputRef.current?.click()}
+                        disabled={isLogoUploading}
+                        variant="outline"
+                        className="w-full text-sm disabled:opacity-60"
+                      >
+                        {isLogoUploading ? (
+                          <>
+                            <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                            Uploading...
+                          </>
+                        ) : (
+                          <>
+                            <Upload className="w-4 h-4 mr-2" />
+                            Upload Logo
+                          </>
+                        )}
+                      </Button>
+                      <p className="text-xs text-[#64748B] mt-2 text-center">Square image, max 5MB</p>
                     </div>
                   </div>
-                  <div className="mt-3 grid grid-cols-8 gap-2">
-                    {["🍗", "🍔", "🍕", "🍜", "🍱", "🍰", "☕", "🥘", "🍛", "🍝", "🥗", "🍣", "🌮", "🍩", "🧋", "🥙"].map((emoji) => (
-                      <button
-                        key={emoji}
-                        onClick={() => setRestaurantData({ ...restaurantData, logo: emoji })}
-                        className={`p-3 text-2xl rounded-xl border-2 transition-all active:scale-95 ${
-                          restaurantData.logo === emoji
-                            ? "border-[#E11D48] bg-[#FFF1F2]"
-                            : "border-[#E2E8F0] bg-white"
-                        }`}
-                      >
-                        {emoji}
-                      </button>
-                    ))}
-                  </div>
+                  <input
+                    ref={logoInputRef}
+                    type="file"
+                    accept="image/*"
+                    onChange={(e) => {
+                      const file = e.target.files?.[0];
+                      if (file) handleLogoUpload(file);
+                    }}
+                    className="hidden"
+                  />
                 </div>
               </div>
             </div>
@@ -743,12 +1016,12 @@ export default function BusinessHome() {
                       <span className="absolute left-3 top-1/2 -translate-y-1/2 text-[#64748B]">₱</span>
                       <input
                         type="number"
-                        value={restaurantData.deliveryFee}
-                        onChange={(e) => setRestaurantData({ ...restaurantData, deliveryFee: parseInt(e.target.value) || 0 })}
-                        className="w-full p-3 pl-7 border-2 border-[#E2E8F0] rounded-xl"
-                        placeholder="35"
+                        value={adminDeliveryFee}
+                        disabled
+                        className="w-full p-3 pl-7 border-2 border-[#E2E8F0] rounded-xl bg-[#F8F9FA] text-[#64748B] cursor-not-allowed"
                       />
                     </div>
+                    <p className="text-xs text-[#64748B] mt-1">Set by the admin. Contact the admin to change the delivery fee.</p>
                   </div>
                 </div>
 
