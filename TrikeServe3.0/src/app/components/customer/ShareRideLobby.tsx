@@ -30,6 +30,8 @@ interface ShareRideLobby {
   driver_name?: string;
   driver_plate?: string;
   driver_rating?: string;
+  driver_status?: string;
+  driver_status_message?: string;
   created_at: string;
 }
 
@@ -67,6 +69,8 @@ export default function ShareRideLobby({
   const [error, setError] = useState<string | null>(null);
   const hasHandledTerminalLobbyStatus = useRef(false);
   const terminalCloseTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [driverStatusPopup, setDriverStatusPopup] = useState<{ status: string; message: string } | null>(null);
+  const driverStatusTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const handleTerminalLobbyStatus = (status?: string) => {
     if (hasHandledTerminalLobbyStatus.current) return;
@@ -85,6 +89,50 @@ export default function ShareRideLobby({
           onClose();
         }
       }, 1600);
+    }
+  };
+
+  // Show the same driver-status popups customers get for private rides.
+  // The driver writes driver_status to the lobby (on-the-way, arrived,
+  // picked-up, dropped-off, awaiting-payment) as the ride progresses.
+  const processDriverStatusUpdate = (lobbyId: string, driverStatus?: string, message?: string) => {
+    if (!driverStatus) return;
+    const normalizedStatus = String(driverStatus).toLowerCase();
+    const lastShownKey = `last_shown_status_lobby_${lobbyId}`;
+    const lastShownStatus = localStorage.getItem(lastShownKey);
+
+    if (normalizedStatus === 'completed' || normalizedStatus === 'cancelled') return;
+
+    if (normalizedStatus && normalizedStatus !== 'pending' && normalizedStatus !== lastShownStatus) {
+      const statusDisplayMap: { [key: string]: string } = {
+        'on-the-way': 'Your driver is on the way to pick you up! 🚗',
+        'arrived': 'Your driver has arrived! 📍',
+        'pickup': 'You have been picked up! On the way to your destination.',
+        'picked-up': 'You have been picked up! On the way to your destination.',
+        'drop-off': 'You have arrived at your destination! 🏁',
+        'dropped-off': 'You have arrived at your destination! 🏁',
+        'in-progress': 'Your ride is in progress!',
+        'payment': message || 'Please complete the payment.',
+        'awaiting-payment': message || 'Please complete the payment.',
+      };
+
+      // Normalize driver-side statuses to the display keys used by the popup UI.
+      const displayStatus =
+        normalizedStatus === 'picked-up' ? 'pickup' :
+        normalizedStatus === 'dropped-off' ? 'drop-off' :
+        normalizedStatus === 'awaiting-payment' ? 'payment' :
+        normalizedStatus;
+
+      setDriverStatusPopup({
+        status: displayStatus,
+        message: statusDisplayMap[normalizedStatus] || message || 'Ride status updated',
+      });
+      localStorage.setItem(lastShownKey, normalizedStatus);
+
+      if (normalizedStatus === 'payment' || normalizedStatus === 'awaiting-payment') {
+        if (driverStatusTimerRef.current) clearTimeout(driverStatusTimerRef.current);
+        driverStatusTimerRef.current = setTimeout(() => setDriverStatusPopup(null), 4000);
+      }
     }
   };
 
@@ -191,6 +239,9 @@ export default function ShareRideLobby({
 
                     handleTerminalLobbyStatus(freshLobby.status);
 
+                    // Show driver status popups (on-the-way, arrived, picked-up, etc.)
+                    processDriverStatusUpdate(existingLobby.id, freshLobby.driver_status, freshLobby.driver_status_message);
+
                     // Check if driver was found
                     if (freshLobby.status === 'driver_found' && freshLobby.driver_name) {
                       console.log('🚗 DRIVER FOUND:', freshLobby.driver_name);
@@ -256,6 +307,9 @@ export default function ShareRideLobby({
                 });
 
                 handleTerminalLobbyStatus(latestLobby.status);
+
+                // Show driver status popups from the sync fallback too
+                processDriverStatusUpdate(existingLobby!.id, latestLobby.driver_status, latestLobby.driver_status_message);
               } catch (err) {
                 console.error('❌ Error in sync interval:', err);
               }
@@ -280,6 +334,9 @@ export default function ShareRideLobby({
        isMounted = false;
         if (terminalCloseTimeoutRef.current) {
           clearTimeout(terminalCloseTimeoutRef.current);
+        }
+        if (driverStatusTimerRef.current) {
+          clearTimeout(driverStatusTimerRef.current);
         }
        if (typeof syncInterval !== 'undefined' && syncInterval !== null) {
          clearInterval(syncInterval);
@@ -773,6 +830,63 @@ export default function ShareRideLobby({
                 : 'This ride has been cancelled. Returning you to the customer screen...'}
             </p>
           </Card>
+        </div>
+      )}
+
+      {/* Driver Status Update Popup (same as private rides) */}
+      {driverStatusPopup && (
+        <div className="fixed inset-0 bg-black/50 z-[2300] flex items-end">
+          <div className="bg-white w-full rounded-t-3xl p-6 animate-in slide-in-from-bottom duration-300">
+            <div className="max-w-sm mx-auto">
+              {/* Status Icon */}
+              <div className="w-16 h-16 bg-gradient-to-br from-[#E11D48] to-[#BE123C] rounded-full flex items-center justify-center mx-auto mb-4 text-3xl">
+                {driverStatusPopup.status === 'on-the-way' && '🚗'}
+                {driverStatusPopup.status === 'arrived' && '📍'}
+                {driverStatusPopup.status === 'pickup' && '🚀'}
+                {driverStatusPopup.status === 'drop-off' && '🏁'}
+                {driverStatusPopup.status === 'payment' && '💰'}
+                {driverStatusPopup.status === 'completed' && '🎉'}
+              </div>
+
+              {/* Status Message */}
+              <h3 className="text-2xl font-bold text-[#121212] text-center mb-2">
+                {driverStatusPopup.status === 'on-the-way' && 'Driver On The Way'}
+                {driverStatusPopup.status === 'arrived' && 'Driver Arrived'}
+                {driverStatusPopup.status === 'pickup' && 'Picked Up!'}
+                {driverStatusPopup.status === 'drop-off' && 'Arrived at Destination'}
+                {driverStatusPopup.status === 'payment' && 'Complete Payment'}
+                {driverStatusPopup.status === 'completed' && 'Ride Completed!'}
+              </h3>
+
+              <p className="text-[#64748B] text-center mb-6">{driverStatusPopup.message}</p>
+
+              {/* Status Details */}
+              <div className="bg-[#F8F9FA] rounded-xl p-4 mb-6">
+                <div className="flex items-center justify-between">
+                  <span className="text-sm text-[#64748B]">Status Update</span>
+                  <span className="font-bold text-[#121212]">
+                    {driverStatusPopup.status === 'on-the-way' && 'On the way'}
+                    {driverStatusPopup.status === 'arrived' && 'Arrived'}
+                    {driverStatusPopup.status === 'pickup' && 'Picked up'}
+                    {driverStatusPopup.status === 'drop-off' && 'At destination'}
+                    {driverStatusPopup.status === 'payment' && 'Payment pending'}
+                    {driverStatusPopup.status === 'completed' && 'Completed'}
+                  </span>
+                </div>
+                <div className="flex items-center justify-between mt-3">
+                  <span className="text-sm text-[#64748B]">Time</span>
+                  <span className="text-sm text-[#121212]">Just now</span>
+                </div>
+              </div>
+
+              <Button
+                onClick={() => setDriverStatusPopup(null)}
+                className="w-full bg-[#E11D48] hover:bg-[#BE123C] text-white py-3 text-lg font-bold"
+              >
+                OK 👍
+              </Button>
+            </div>
+          </div>
         </div>
       )}
 

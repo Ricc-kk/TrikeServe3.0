@@ -56,9 +56,16 @@ export default function ActiveRide() {
       localStorage.setItem('trikeserve_active_ride', JSON.stringify(ride));
       // Shared-ride lobbies are accepted in PassengerRequests (acceptLobbyAsDriver),
       // so skip the ride_requests calls which only apply to private/delivery rides.
-      if (ride.id && user?.id && !ride.lobbyId) {
-        supabaseHelpers.acceptRideRequest(ride.id, user.id, user.user_metadata?.full_name || 'Driver', user.user_metadata?.avatar_url, user.todaPlate || 'N/A', '4.8');
-        supabaseHelpers.updateDriverRideStatus(ride.id, 'on-the-way', 'Driver is on the way!');
+      if (ride.id && user?.id) {
+        if (ride.lobbyId) {
+          // Shared-ride lobbies are accepted in PassengerRequests (acceptLobbyAsDriver);
+          // here we only need to track the driver's progress on the lobby so customers
+          // see the status popups.
+          supabaseHelpers.updateLobbyDriverStatus(ride.lobbyId, 'on-the-way', 'Driver is on the way!');
+        } else {
+          supabaseHelpers.acceptRideRequest(ride.id, user.id, user.user_metadata?.full_name || 'Driver', user.user_metadata?.avatar_url, user.todaPlate || 'N/A', '4.8');
+          supabaseHelpers.updateDriverRideStatus(ride.id, 'on-the-way', 'Driver is on the way!');
+        }
       }
     } else {
       const saved = localStorage.getItem('trikeserve_active_ride');
@@ -125,8 +132,18 @@ export default function ActiveRide() {
     setRideData(updated);
     localStorage.setItem('trikeserve_active_ride', JSON.stringify(updated));
     const dbMap: Record<RideStatus, string> = { 'on-the-way': 'on-the-way', 'arrived': 'arrived', 'pickup': 'picked-up', 'drop-off': 'dropped-off', 'payment': 'awaiting-payment' };
-    // Lobby rides have no ride_requests row until completion, so skip the update.
-    if (!rideData.lobbyId) {
+    const messageMap: Record<RideStatus, string> = {
+      'on-the-way': 'Driver is on the way!',
+      'arrived': 'Driver has arrived!',
+      'pickup': 'Passengers picked up!',
+      'drop-off': 'Arrived at drop-off!',
+      'payment': 'Please complete the payment.',
+    };
+    if (rideData.lobbyId) {
+      // Lobby rides have no ride_requests row until completion, so track the
+      // driver's progress on the lobby itself so customers see status popups.
+      supabaseHelpers.updateLobbyDriverStatus(rideData.lobbyId, dbMap[newStatus], messageMap[newStatus]);
+    } else {
       supabaseHelpers.updateDriverRideStatus(rideData.id, dbMap[newStatus], 'Status updated');
     }
   };
