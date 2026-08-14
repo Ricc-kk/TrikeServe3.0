@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from "react";
-import { Search, MapPin, Users, User as UserIcon, ChevronDown, X, Clock, CreditCard, Utensils, Search as SearchIcon, User, Navigation, MessageCircle, Bike, Home as HomeIcon, ShoppingCart, ClipboardList } from "lucide-react";
+import { Search, MapPin, Users, User as UserIcon, ChevronDown, X, Clock, CreditCard, Utensils, Search as SearchIcon, User, Navigation, MessageCircle, Bike, Home as HomeIcon, ShoppingCart, ClipboardList, Star } from "lucide-react";
 import { Link } from "react-router";
 import { Button } from "../ui/button";
 import { Card } from "../ui/card";
@@ -274,6 +274,10 @@ export default function CustomerHome() {
    const [rideCompletedPopup, setRideCompletedPopup] = useState(false);
    const [completionPopupType, setCompletionPopupType] = useState<'ride' | 'delivery'>('ride');
    const [showRatingModal, setShowRatingModal] = useState(false);
+   const [rideDriverId, setRideDriverId] = useState<string | null>(null);
+   const [selectedRating, setSelectedRating] = useState(0);
+   const [ratingSubmitting, setRatingSubmitting] = useState(false);
+   const [ratingSubmitted, setRatingSubmitted] = useState(false);
    const [privateRidePrice, setPrivateRidePrice] = useState(50); // Default price for private rides
    const [sharedRidePrice, setSharedRidePrice] = useState(15); // Default price for share rides
    const [driverLocation, setDriverLocation] = useState<{ lat: number; lng: number } | null>(null);
@@ -293,6 +297,7 @@ export default function CustomerHome() {
    const mapRef = useRef<any>(null);
    const hasManualPickupSelectionRef = useRef(false);
    const unsubscribeRef = useRef<(() => void) | null>(null);
+   const driverStatusTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
    const readValidCoords = (latValue: any, lngValue: any) => {
      const latNum = Number(latValue);
@@ -698,15 +703,22 @@ export default function CustomerHome() {
         };
 
         if (normalizedStatus !== lastShownStatus) {
+          // Normalize driver-side statuses to the display keys used by the popup UI.
+          const displayStatus =
+            normalizedStatus === 'picked-up' ? 'pickup' :
+            normalizedStatus === 'dropped-off' ? 'drop-off' :
+            normalizedStatus === 'awaiting-payment' ? 'payment' :
+            normalizedStatus;
+
           setDriverStatusPopup({
-              status: normalizedStatus,
-              message: statusDisplayMap[normalizedStatus] || message || 'Ride status updated',
-            timestamp: Date.now()
+              status: displayStatus,
+              message: statusDisplayMap[normalizedStatus] || message || 'Ride status updated'
           });
           localStorage.setItem(lastShownStatusKey, normalizedStatus);
 
           if (normalizedStatus === 'payment' || normalizedStatus === 'awaiting-payment') {
-            setTimeout(() => setDriverStatusPopup(null), 4000);
+            if (driverStatusTimerRef.current) clearTimeout(driverStatusTimerRef.current);
+            driverStatusTimerRef.current = setTimeout(() => setDriverStatusPopup(null), 4000);
           }
         }
       }
@@ -802,6 +814,9 @@ export default function CustomerHome() {
           console.log('   Driver Rating:', rideRequest.driver_rating);
           console.log('   Setting activeRide and rideStatus = driver-found');
 
+          // Remember who the driver is so the customer can rate them later.
+          setRideDriverId(rideRequest.accepted_driver_id);
+
           const newActiveRide = {
             driver: rideRequest.driver_name || 'Driver',
             plateNumber: rideRequest.driver_plate || 'N/A',
@@ -820,6 +835,14 @@ export default function CustomerHome() {
             driverPlate: rideRequest.driver_plate || 'N/A',
             driverRating: rideRequest.driver_rating || '4.8',
             driverPhoto: '👨‍✈️',
+          });
+
+          // Use the driver's real average rating from driver_ratings when available.
+          supabaseHelpers.getDriverRating(rideRequest.accepted_driver_id).then(({ average }: { average: number | null }) => {
+            if (average != null) {
+              setActiveRide(prev => prev ? { ...prev, rating: average.toFixed(1) } : prev);
+              setDriverAcceptedPopup(prev => prev ? { ...prev, driverRating: average.toFixed(1) } : prev);
+            }
           });
         }
 
@@ -949,6 +972,9 @@ export default function CustomerHome() {
        if (updatedRide.accepted_driver_id && !activeRide && realtimeStatus !== 'completed') {
          console.log('✅ DRIVER ACCEPTED (Real-time):', updatedRide.accepted_driver_id);
 
+         // Remember who the driver is so the customer can rate them later.
+         setRideDriverId(updatedRide.accepted_driver_id);
+
          const rideState = {
            driver: updatedRide.driver_name || 'Driver',
            plateNumber: updatedRide.driver_plate || 'N/A',
@@ -968,6 +994,14 @@ export default function CustomerHome() {
            driverPlate: updatedRide.driver_plate || 'N/A',
            driverRating: updatedRide.driver_rating || '4.8',
            driverPhoto: '👨‍✈️',
+         });
+
+         // Use the driver's real average rating from driver_ratings when available.
+         supabaseHelpers.getDriverRating(updatedRide.accepted_driver_id).then(({ average }: { average: number | null }) => {
+           if (average != null) {
+             setActiveRide(prev => prev ? { ...prev, rating: average.toFixed(1) } : prev);
+             setDriverAcceptedPopup(prev => prev ? { ...prev, driverRating: average.toFixed(1) } : prev);
+           }
          });
        }
 
@@ -1041,16 +1075,34 @@ export default function CustomerHome() {
           'completed': updatedRide.driver_status_message || 'Your ride has been completed. Thank you for using TrikeServe!'
         };
 
-        setDriverStatusPopup({
-          status: realtimeStatus,
-          message: statusDisplayMap[realtimeStatus] || updatedRide.driver_status_message || 'Ride status updated',
-          timestamp: Date.now()
-        });
+        // Only show each status once. Realtime also fires on driver location
+        // pings (driver_lat/driver_lng), which would otherwise re-pop the
+        // popup every few seconds during the ride.
+        const rtLastShownStatusKey = `last_shown_status_${currentRequestId}`;
+        const rtLastShownStatus = localStorage.getItem(rtLastShownStatusKey);
 
-        // Auto-dismiss after 4 seconds
-        setTimeout(() => {
-          setDriverStatusPopup(null);
-        }, 4000);
+        if (realtimeStatus !== rtLastShownStatus) {
+          // Normalize driver-side statuses to the display keys used by the popup UI.
+          const displayStatus =
+            realtimeStatus === 'picked-up' ? 'pickup' :
+            realtimeStatus === 'dropped-off' ? 'drop-off' :
+            realtimeStatus === 'awaiting-payment' ? 'payment' :
+            realtimeStatus;
+
+          setDriverStatusPopup({
+            status: displayStatus,
+            message: statusDisplayMap[realtimeStatus] || updatedRide.driver_status_message || 'Ride status updated'
+          });
+          localStorage.setItem(rtLastShownStatusKey, realtimeStatus);
+
+          // Auto-dismiss after 4 seconds (payment stage only)
+          if (realtimeStatus === 'payment' || realtimeStatus === 'awaiting-payment') {
+            if (driverStatusTimerRef.current) clearTimeout(driverStatusTimerRef.current);
+            driverStatusTimerRef.current = setTimeout(() => {
+              setDriverStatusPopup(null);
+            }, 4000);
+          }
+        }
       }
     });
 
@@ -1447,6 +1499,30 @@ export default function CustomerHome() {
     setIsSearchMinimized(false);
   };
 
+  const handleSubmitRating = async () => {
+    if (!selectedRating || !rideDriverId || !user) return;
+    setRatingSubmitting(true);
+    const { error } = await supabaseHelpers.rateDriver({
+      driverId: rideDriverId,
+      customerId: user.id,
+      rating: selectedRating,
+    });
+    setRatingSubmitting(false);
+    if (error) {
+      console.error('❌ Failed to submit rating:', error);
+      alert('Failed to submit rating. Please try again.');
+      return;
+    }
+    setRatingSubmitted(true);
+  };
+
+  const closeRatingModal = () => {
+    setShowRatingModal(false);
+    setRatingSubmitted(false);
+    setSelectedRating(0);
+    setRideDriverId(null);
+  };
+
   const filteredLocations = popularLocations.filter(loc =>
     loc.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
     loc.address.toLowerCase().includes(searchQuery.toLowerCase())
@@ -1834,8 +1910,9 @@ export default function CustomerHome() {
                 <div className="grid grid-cols-2 gap-3 mb-0">
                   <Button
                     onClick={() => {
-                      // Open placeholder rating modal (implementation later)
                       setRideCompletedPopup(false);
+                      setRatingSubmitted(false);
+                      setSelectedRating(0);
                       setShowRatingModal(true);
                       setCurrentRequestId(null);
                     }}
@@ -1852,6 +1929,7 @@ export default function CustomerHome() {
                       setRideStatus(null);
                       setCurrentRequestId(null);
                       setCompletionPopupType('ride');
+                      setRideDriverId(null);
                     }}
                     className="w-full bg-blue-500 hover:bg-blue-600 text-white py-3 font-bold"
                   >
@@ -1863,18 +1941,54 @@ export default function CustomerHome() {
           </div>
         )}
 
-        {/* Placeholder Rating Modal - opened when user taps Leave a Rating (for future implementation) */}
+        {/* Leave a Rating Modal (private rides) */}
         {showRatingModal && (
-          <div className="fixed inset-0 bg-black/50 z-[2200] flex items-center justify-center p-4">
+          <div className="fixed inset-0 bg-black/70 z-[2400] flex items-center justify-center p-4">
             <Card className="bg-white p-6 max-w-sm w-full text-center">
-              <h3 className="text-xl font-bold mb-4">Leave a Rating (Coming Soon)</h3>
-              <p className="text-sm text-[#64748B] mb-6">This will let the customer rate the driver. Implementation coming next.</p>
-              <Button
-                onClick={() => setShowRatingModal(false)}
-                className="w-full bg-[#E11D48] hover:bg-[#BE123C] text-white py-3 font-bold"
-              >
-                Close
-              </Button>
+              {ratingSubmitted ? (
+                <>
+                  <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-green-100 flex items-center justify-center text-3xl">
+                    🙏
+                  </div>
+                  <h3 className="text-xl font-bold text-[#121212] mb-2">Thank you!</h3>
+                  <p className="text-sm text-[#64748B] mb-6">Your rating has been submitted.</p>
+                  <Button
+                    onClick={closeRatingModal}
+                    className="w-full bg-[#E11D48] hover:bg-[#BE123C] text-white py-3 font-bold"
+                  >
+                    Done
+                  </Button>
+                </>
+              ) : (
+                <>
+                  <h3 className="text-xl font-bold text-[#121212] mb-2">Rate Your Driver</h3>
+                  <p className="text-sm text-[#64748B] mb-6">How was your ride?</p>
+                  <div className="flex justify-center gap-2 mb-6">
+                    {[1, 2, 3, 4, 5].map((star) => (
+                      <button
+                        key={star}
+                        onClick={() => setSelectedRating(star)}
+                        className="transition-transform hover:scale-110 focus:outline-none"
+                      >
+                        <Star
+                          className={`w-10 h-10 ${
+                            star <= selectedRating
+                              ? 'fill-[#FFC107] text-[#FFC107]'
+                              : 'fill-[#E2E8F0] text-[#E2E8F0]'
+                          }`}
+                        />
+                      </button>
+                    ))}
+                  </div>
+                  <Button
+                    onClick={handleSubmitRating}
+                    disabled={!selectedRating || ratingSubmitting}
+                    className="w-full bg-[#E11D48] hover:bg-[#BE123C] text-white py-3 font-bold disabled:opacity-50"
+                  >
+                    {ratingSubmitting ? 'Submitting...' : 'Submit Rating'}
+                  </Button>
+                </>
+              )}
             </Card>
           </div>
         )}
