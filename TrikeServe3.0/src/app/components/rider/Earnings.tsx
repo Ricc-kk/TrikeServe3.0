@@ -29,6 +29,8 @@ export default function Earnings() {
   const [weekEarnings, setWeekEarnings] = useState(0);
   const [monthEarnings, setMonthEarnings] = useState(0);
   const [isLoading, setIsLoading] = useState(true);
+  const [driverRating, setDriverRating] = useState<string>('—');
+  const [driverRatingCount, setDriverRatingCount] = useState(0);
 
   // Fetch completed rides from database and localStorage
   useEffect(() => {
@@ -154,6 +156,15 @@ export default function Earnings() {
     }
   }, [user?.id]);
 
+  // Fetch the driver's own average rating from driver_ratings
+  useEffect(() => {
+    if (!user?.id) return;
+    supabaseHelpers.getDriverRating(user.id).then(({ average, count }: { average: number | null; count: number }) => {
+      setDriverRating(average != null ? average.toFixed(1) : '—');
+      setDriverRatingCount(count);
+    });
+  }, [user?.id]);
+
   // Total earnings = sum of ALL completed trips (today/week/month overlap, so adding
   // those buckets together would triple-count trips). Used for Total Earnings and Avg per Trip.
   const totalEarnings = completedTrips.reduce((sum, trip) => sum + (trip.amount || 0), 0);
@@ -264,6 +275,15 @@ export default function Earnings() {
             <div>
               <p className="text-sm text-[#0891B2] mb-1">Today's Total</p>
               <p className="text-2xl font-extrabold text-[#E11D48]">₱{todayEarnings.toFixed(2)}</p>
+            </div>
+            <div>
+              <p className="text-sm text-[#0891B2] mb-1">Driver Rating</p>
+              <p className="text-2xl font-extrabold text-[#E11D48]">
+                {driverRating === '—' ? '—' : `⭐ ${driverRating}`}
+              </p>
+              <p className="text-xs text-[#64748B]">
+                {driverRatingCount > 0 ? `${driverRatingCount} rating${driverRatingCount > 1 ? 's' : ''}` : 'No ratings yet'}
+              </p>
             </div>
           </div>
         </Card>

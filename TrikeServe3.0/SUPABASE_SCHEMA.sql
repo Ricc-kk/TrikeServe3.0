@@ -76,6 +76,19 @@ CREATE TABLE IF NOT EXISTS shared_ride_lobbies (
 CREATE INDEX idx_lobbies_status ON shared_ride_lobbies(status);
 CREATE INDEX idx_lobbies_driver ON shared_ride_lobbies(driver_id);
 
+-- Driver Ratings Table
+CREATE TABLE IF NOT EXISTS driver_ratings (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  driver_id UUID REFERENCES users(id) ON DELETE CASCADE,
+  customer_id UUID REFERENCES users(id) ON DELETE CASCADE,
+  lobby_id UUID,
+  rating INTEGER NOT NULL CHECK (rating BETWEEN 1 AND 5),
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX idx_driver_ratings_driver ON driver_ratings(driver_id);
+CREATE INDEX idx_driver_ratings_customer ON driver_ratings(customer_id);
+
 -- Messages Table
 CREATE TABLE IF NOT EXISTS messages (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
@@ -172,6 +185,7 @@ CREATE INDEX idx_favorites_customer ON favorites(customer_id);
 ALTER TABLE users ENABLE ROW LEVEL SECURITY;
 ALTER TABLE ride_requests ENABLE ROW LEVEL SECURITY;
 ALTER TABLE shared_ride_lobbies ENABLE ROW LEVEL SECURITY;
+ALTER TABLE driver_ratings ENABLE ROW LEVEL SECURITY;
 ALTER TABLE messages ENABLE ROW LEVEL SECURITY;
 ALTER TABLE orders ENABLE ROW LEVEL SECURITY;
 ALTER TABLE restaurants ENABLE ROW LEVEL SECURITY;
@@ -197,6 +211,16 @@ CREATE POLICY "Users can create messages" ON messages
 -- RLS Policies for orders
 -- Allow anyone to insert orders (validation done by app)
 CREATE POLICY "Anyone can insert orders" ON orders
+  FOR INSERT WITH CHECK (true);
+
+-- Driver ratings: the app uses custom localStorage auth (anon key, no Supabase
+-- Auth session), so auth.uid() is always NULL. Permissive policies keep the
+-- rating feature working exactly like every other table in this project;
+-- tighten to auth.uid() = customer_id/driver_id if the app moves to Supabase Auth.
+CREATE POLICY "Allow read driver ratings" ON driver_ratings
+  FOR SELECT USING (true);
+
+CREATE POLICY "Allow insert driver ratings" ON driver_ratings
   FOR INSERT WITH CHECK (true);
 
 -- Allow anyone to view orders (filtered by app)

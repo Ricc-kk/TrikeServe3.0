@@ -55,6 +55,56 @@ function safeFileExtension(file: File): string {
   return /^[a-zA-Z0-9]{1,10}$/.test(raw) ? raw.toLowerCase() : 'jpg';
 }
 
+// ---------------------------------------------------------------------------
+// Fuzzy place matching for shared-ride lobbies
+// ---------------------------------------------------------------------------
+// Google Maps can return different formatted strings for the same physical
+// place (e.g. "B. Hive Plaza, 108 Gen. T. de Leon, Valenzuela, ..." vs
+// "108 Gen T. De Leon, Corner Santolan Rd, Valenzuela, ..."), so exact string
+// equality hides lobbies from other customers browsing for the same route.
+// These helpers normalize and compare both the short display name and the
+// full address, matching either one.
+export function normalizePlace(value?: string | null): string {
+  return (value || '')
+    .toLowerCase()
+    .replace(/[^a-z0-9\s]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+export function placesMatch(a?: string | null, b?: string | null): boolean {
+  const na = normalizePlace(a);
+  const nb = normalizePlace(b);
+  if (!na || !nb) return false;
+  if (na === nb) return true;
+  // One contains the other (e.g. short name "b hive plaza" vs full address
+  // "b hive plaza 108 gen t de leon ..."). Require a minimum length so we
+  // don't match on tiny fragments like "rd".
+  return na.length >= 4 && nb.length >= 4 && (na.includes(nb) || nb.includes(na));
+}
+
+// Compare a lobby's pickup/dropoff against the user's. Both legs must match;
+// each leg matches if the short display name OR the full address matches.
+export function isSimilarRoute(
+  lobby: any,
+  userPickup: string,
+  userDropoff: string,
+  userPickupAddress?: string,
+  userDropoffAddress?: string
+): boolean {
+  const pickupMatch =
+    placesMatch(lobby.pickup_location, userPickup) ||
+    placesMatch(lobby.pickup_location, userPickupAddress) ||
+    placesMatch(lobby.pickup_address, userPickupAddress) ||
+    placesMatch(lobby.pickup_address, userPickup);
+  const dropoffMatch =
+    placesMatch(lobby.dropoff_location, userDropoff) ||
+    placesMatch(lobby.dropoff_location, userDropoffAddress) ||
+    placesMatch(lobby.dropoff_address, userDropoffAddress) ||
+    placesMatch(lobby.dropoff_address, userDropoff);
+  return pickupMatch && dropoffMatch;
+}
+
 // Helper functions for common operations
 export const supabaseHelpers = {
   // User operations
@@ -311,35 +361,32 @@ export const supabaseHelpers = {
   },
 
   // Enhanced Shared Ride Lobby Operations
-  async getAvailableLobbyByRoute(pickupAddr: string, dropoffAddr: string) {
+  async getAvailableLobbyByRoute(pickupAddr: string, dropoffAddr: string, pickupLoc?: string, dropoffLoc?: string) {
     const { data, error } = await supabase
       .from('shared_ride_lobbies')
       .select('*')
       .eq('status', 'waiting')
-      .eq('pickup_address', pickupAddr)
-      .eq('dropoff_address', dropoffAddr)
       .gt('max_seats', 0)
-      .order('created_at', { ascending: true })
-      .limit(1);
+      .order('created_at', { ascending: true });
 
-    return { data: data?.[0] || null, error };
+    if (error) return { data: null, error };
+
+    // Match on short display names first, falling back to the full addresses.
+    const match = (data || []).find((l: any) =>
+      isSimilarRoute(l, pickupLoc || pickupAddr, dropoffLoc || dropoffAddr, pickupAddr, dropoffAddr)
+    );
+
+    return { data: match || null, error };
   },
 
-  async getAvailableLobbies(dropoffAddr?: string, pickupAddr?: string) {
-    let query = supabase
+  async getAvailableLobbies() {
+    // Fetch all waiting lobbies — the fuzzy route matching happens client-side
+    // in BrowseAvailableLobbies / ShareRideLobby, because exact address
+    // equality hides lobbies whose Google-formatted address strings differ.
+    const { data, error } = await supabase
       .from('shared_ride_lobbies')
       .select('*')
-      .eq('status', 'waiting');
-
-    if (pickupAddr) {
-      query = query.eq('pickup_address', pickupAddr);
-    }
-
-    if (dropoffAddr) {
-      query = query.eq('dropoff_address', dropoffAddr);
-    }
-
-    const { data, error } = await query
+      .eq('status', 'waiting')
       .order('created_at', { ascending: true });
 
     return { data, error };
@@ -668,6 +715,48 @@ export const supabaseHelpers = {
       .single();
 
     return { lobby: lobbyResult, ride: rideResult };
+  },
+
+  // Record a customer's rating for a driver after a completed ride.
+  async rateDriver(details: {
+    driverId: string;
+    customerId: string;
+    rating: number;
+    lobbyId?: string;
+  }) {
+    const { data, error } = await supabase
+      .from('driver_ratings')
+      .insert([{
+        driver_id: details.driverId,
+        customer_id: details.customerId,
+        rating: details.rating,
+        lobby_id: details.lobbyId || null,
+      }])
+      .select()
+      .single();
+
+    return { data, error };
+  },
+
+  // Compute a driver's average rating from all ratings they've received.
+  // Returns { average, count } — average is null when there are no ratings.
+  async getDriverRating(driverId: string) {
+    const { data, error } = await supabase
+      .from('driver_ratings')
+      .select('rating')
+      .eq('driver_id', driverId);
+
+    if (error) return { average: null, count: 0, error };
+
+    const ratings = (data || [])
+      .map((r: any) => Number(r.rating))
+      .filter((n: number) => !isNaN(n));
+    const count = ratings.length;
+    const average = count > 0
+      ? ratings.reduce((sum: number, n: number) => sum + n, 0) / count
+      : null;
+
+    return { average, count, error: null };
   },
 
    subscribeLobbyUpdates(lobbyId: string, callback: (data: any) => Promise<void> | void) {

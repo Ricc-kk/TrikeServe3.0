@@ -1,10 +1,10 @@
 import { useState, useEffect, useRef } from "react";
-import { MapPin, Users, Clock, X, ChevronDown, MessageCircle, User, Minimize2 } from "lucide-react";
+import { MapPin, Users, Clock, X, ChevronDown, MessageCircle, User, Minimize2, Star } from "lucide-react";
 import { Button } from "../ui/button";
 import { Card } from "../ui/card";
 import { Badge } from "../ui/badge";
 import { useAuth } from "../../contexts/AuthContext";
-import { supabaseHelpers } from "@/lib/supabase";
+import { supabaseHelpers, isSimilarRoute } from "@/lib/supabase";
 
 interface LobbyPassenger {
   id: string;
@@ -71,6 +71,11 @@ export default function ShareRideLobby({
   const terminalCloseTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [driverStatusPopup, setDriverStatusPopup] = useState<{ status: string; message: string } | null>(null);
   const driverStatusTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [showRatingModal, setShowRatingModal] = useState(false);
+  const [selectedRating, setSelectedRating] = useState(0);
+  const [ratingSubmitting, setRatingSubmitting] = useState(false);
+  const [ratingSubmitted, setRatingSubmitted] = useState(false);
+  const [computedDriverRating, setComputedDriverRating] = useState<string | null>(null);
 
   const handleTerminalLobbyStatus = (status?: string) => {
     if (hasHandledTerminalLobbyStatus.current) return;
@@ -80,15 +85,55 @@ export default function ShareRideLobby({
       setIsMinimized(false);
       setTerminalStatus(status);
 
-      if (terminalCloseTimeoutRef.current) {
-        clearTimeout(terminalCloseTimeoutRef.current);
-      }
-
-      terminalCloseTimeoutRef.current = setTimeout(() => {
-        if (typeof onClose === 'function') {
-          onClose();
+      // Completed rides stay open so the customer can leave a rating or tap
+      // Done; cancelled rides auto-close after a short delay.
+      if (status === 'cancelled') {
+        if (terminalCloseTimeoutRef.current) {
+          clearTimeout(terminalCloseTimeoutRef.current);
         }
-      }, 1600);
+
+        terminalCloseTimeoutRef.current = setTimeout(() => {
+          if (typeof onClose === 'function') {
+            onClose();
+          }
+        }, 1600);
+      }
+    }
+  };
+
+  const openRatingModal = () => {
+    // Cancel any pending auto-close so the customer has time to rate.
+    if (terminalCloseTimeoutRef.current) {
+      clearTimeout(terminalCloseTimeoutRef.current);
+      terminalCloseTimeoutRef.current = null;
+    }
+    setSelectedRating(0);
+    setRatingSubmitted(false);
+    setShowRatingModal(true);
+  };
+
+  const handleSubmitRating = async () => {
+    if (!selectedRating || !lobby?.driver_id || !user) return;
+    setRatingSubmitting(true);
+    const { error } = await supabaseHelpers.rateDriver({
+      driverId: lobby.driver_id,
+      customerId: user.id,
+      rating: selectedRating,
+      lobbyId: lobby.id,
+    });
+    setRatingSubmitting(false);
+    if (error) {
+      console.error('❌ Failed to submit rating:', error);
+      setError('Failed to submit rating. Please try again.');
+      return;
+    }
+    setRatingSubmitted(true);
+  };
+
+  const closeAfterRating = () => {
+    setShowRatingModal(false);
+    if (typeof onClose === 'function') {
+      onClose();
     }
   };
 
@@ -192,6 +237,13 @@ export default function ShareRideLobby({
            setLobby(existingLobby);
             handleTerminalLobbyStatus(existingLobby.status);
 
+             // Use the driver's real average rating from driver_ratings.
+             if (existingLobby.driver_id) {
+               supabaseHelpers.getDriverRating(existingLobby.driver_id).then(({ average }: { average: number | null }) => {
+                 if (isMounted) setComputedDriverRating(average != null ? average.toFixed(1) : null);
+               });
+             }
+
              if (existingLobby.status === 'driver_found' && existingLobby.driver_name && typeof onDriverFound === 'function') {
                onDriverFound(existingLobby.id);
              }
@@ -241,6 +293,13 @@ export default function ShareRideLobby({
 
                     // Show driver status popups (on-the-way, arrived, picked-up, etc.)
                     processDriverStatusUpdate(existingLobby.id, freshLobby.driver_status, freshLobby.driver_status_message);
+
+                    // Use the driver's real average rating from driver_ratings.
+                    if (freshLobby.driver_id) {
+                      supabaseHelpers.getDriverRating(freshLobby.driver_id).then(({ average }: { average: number | null }) => {
+                        if (isMounted) setComputedDriverRating(average != null ? average.toFixed(1) : null);
+                      });
+                    }
 
                     // Check if driver was found
                     if (freshLobby.status === 'driver_found' && freshLobby.driver_name) {
@@ -310,6 +369,13 @@ export default function ShareRideLobby({
 
                 // Show driver status popups from the sync fallback too
                 processDriverStatusUpdate(existingLobby!.id, latestLobby.driver_status, latestLobby.driver_status_message);
+
+                // Keep the driver's computed average rating fresh.
+                if (latestLobby.driver_id) {
+                  supabaseHelpers.getDriverRating(latestLobby.driver_id).then(({ average }: { average: number | null }) => {
+                    if (isMounted) setComputedDriverRating(average != null ? average.toFixed(1) : null);
+                  });
+                }
               } catch (err) {
                 console.error('❌ Error in sync interval:', err);
               }
@@ -367,7 +433,7 @@ export default function ShareRideLobby({
         });
 
         const routeMatchedLobby = userLobbyCandidates
-          .filter((l: any) => l.pickup_address === pickupAddress && l.dropoff_address === dropoffAddress)
+          .filter((l: any) => isSimilarRoute(l, pickup, dropoff, pickupAddress, dropoffAddress))
           .sort((a: any, b: any) => toTime(b.updated_at || b.created_at) - toTime(a.updated_at || a.created_at))[0];
 
         const existingUserLobby = routeMatchedLobby || userLobbyCandidates
@@ -382,10 +448,14 @@ export default function ShareRideLobby({
         }
       }
 
-      // Try to find matching lobby with same dropoff
+      // Try to find matching lobby with a similar route (fuzzy match on
+      // short display names and full addresses, since Google Maps can return
+      // different formatted strings for the same place)
       const { data: matchingLobby, error: matchError } = await supabaseHelpers.getAvailableLobbyByRoute(
         pickupAddress,
-        dropoffAddress
+        dropoffAddress,
+        pickup,
+        dropoff
       );
 
       if (!matchError && matchingLobby) {
@@ -742,12 +812,12 @@ export default function ShareRideLobby({
                     <p className="font-bold text-[#121212] text-lg">{lobby.driver_name}</p>
                     <div className="flex items-center gap-2">
                       <span className="text-xs text-[#64748B]">{lobby.driver_plate}</span>
-                      {lobby.driver_rating && (
+                      {(computedDriverRating || lobby.driver_rating) && (
                         <>
                           <span className="text-[#64748B]">•</span>
                           <div className="flex items-center gap-1">
                             <span className="text-yellow-500">⭐</span>
-                            <span className="text-xs font-semibold text-[#121212]">{lobby.driver_rating}</span>
+                            <span className="text-xs font-semibold text-[#121212]">{computedDriverRating || lobby.driver_rating}</span>
                           </div>
                         </>
                       )}
@@ -824,11 +894,83 @@ export default function ShareRideLobby({
             <h3 className="text-xl font-bold text-[#121212] mb-2">
               {terminalStatus === 'completed' ? 'Ride Completed' : 'Ride Cancelled'}
             </h3>
-            <p className="text-sm text-[#64748B]">
+            <p className="text-sm text-[#64748B] mb-6">
               {terminalStatus === 'completed'
-                ? 'Your driver has completed the ride. Returning you to the customer screen...'
+                ? 'Your driver has completed the ride. Thank you for using TrikeServe!'
                 : 'This ride has been cancelled. Returning you to the customer screen...'}
             </p>
+            {terminalStatus === 'completed' && lobby.driver_id && (
+              <div className="grid grid-cols-2 gap-3">
+                <Button
+                  onClick={openRatingModal}
+                  className="w-full bg-white border-2 border-[#E11D48] text-[#E11D48] py-3 font-bold"
+                >
+                  ⭐ Leave a Rating
+                </Button>
+                <Button
+                  onClick={() => {
+                    if (typeof onClose === 'function') onClose();
+                  }}
+                  className="w-full bg-[#E11D48] hover:bg-[#BE123C] text-white py-3 font-bold"
+                >
+                  Done
+                </Button>
+              </div>
+            )}
+          </Card>
+        </div>
+      )}
+
+      {/* Leave a Rating Modal */}
+      {showRatingModal && (
+        <div className="fixed inset-0 bg-black/70 z-[2400] flex items-center justify-center p-4">
+          <Card className="bg-white p-6 max-w-sm w-full text-center">
+            {ratingSubmitted ? (
+              <>
+                <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-green-100 flex items-center justify-center text-3xl">
+                  🙏
+                </div>
+                <h3 className="text-xl font-bold text-[#121212] mb-2">Thank you!</h3>
+                <p className="text-sm text-[#64748B] mb-6">Your rating has been submitted.</p>
+                <Button
+                  onClick={closeAfterRating}
+                  className="w-full bg-[#E11D48] hover:bg-[#BE123C] text-white py-3 font-bold"
+                >
+                  Done
+                </Button>
+              </>
+            ) : (
+              <>
+                <h3 className="text-xl font-bold text-[#121212] mb-2">Rate Your Driver</h3>
+                <p className="text-sm text-[#64748B] mb-6">
+                  How was your ride with {lobby.driver_name || 'your driver'}?
+                </p>
+                <div className="flex justify-center gap-2 mb-6">
+                  {[1, 2, 3, 4, 5].map((star) => (
+                    <button
+                      key={star}
+                      onClick={() => setSelectedRating(star)}
+                      className="transition-transform hover:scale-110 focus:outline-none"
+                    >
+                      <Star
+                        className={`w-10 h-10 ${
+                          star <= selectedRating
+                            ? 'fill-[#FFC107] text-[#FFC107]'
+                            : 'fill-[#E2E8F0] text-[#E2E8F0]'
+                        }`}
+                      />
+                    </button>
+                  ))}
+                </div>
+                <Button
+                  onClick={handleSubmitRating}
+                  disabled={!selectedRating || ratingSubmitting}
+                  className="w-full bg-[#E11D48] hover:bg-[#BE123C] text-white py-3 font-bold disabled:opacity-50"
+                >
+                  {ratingSubmitting ? 'Submitting...' : 'Submit Rating'}
+                </Button>
+              </>
+            )}
           </Card>
         </div>
       )}

@@ -4,7 +4,7 @@ import { Button } from "../ui/button";
 import { Card } from "../ui/card";
 import { Badge } from "../ui/badge";
 import { useAuth } from "../../contexts/AuthContext";
-import { supabaseHelpers } from "@/lib/supabase";
+import { supabaseHelpers, isSimilarRoute } from "@/lib/supabase";
 import { supabase } from "@/lib/supabase";
 
 interface AvailableLobby {
@@ -40,13 +40,18 @@ export default function BrowseAvailableLobbies({
   const [selectedLobby, setSelectedLobby] = useState<string | null>(null);
   const [joiningLobby, setJoiningLobby] = useState(false);
 
+  // Fuzzy route match: same place can come back from Google Maps with
+  // different formatted strings, so compare short names + full addresses.
+  const routeMatches = (lobby: any) =>
+    isSimilarRoute(lobby, pickupAddress, dropoffAddress, pickupAddress, dropoffAddress);
+
   // Fetch available lobbies on mount
   useEffect(() => {
     const fetchLobbies = async () => {
       try {
         setLoading(true);
-        // Fetch lobbies with matching dropoff address
-        const { data, error: fetchError } = await supabaseHelpers.getAvailableLobbies(dropoffAddress, pickupAddress);
+        // Fetch waiting lobbies (fuzzy route matching happens below)
+        const { data, error: fetchError } = await supabaseHelpers.getAvailableLobbies();
 
         if (fetchError) {
           setError('Failed to load available lobbies');
@@ -58,8 +63,7 @@ export default function BrowseAvailableLobbies({
           // Filter out lobbies where user is already a passenger
           const availableLobbies = (data as AvailableLobby[]).filter(lobby => {
             const passengers = lobby.passengers_json || [];
-            return lobby.pickup_address === pickupAddress &&
-              lobby.dropoff_address === dropoffAddress &&
+            return routeMatches(lobby) &&
               !passengers.some(p => p.id === user?.id || p.id.startsWith(`${user?.id}_companion_`));
           });
 
@@ -83,11 +87,10 @@ export default function BrowseAvailableLobbies({
         {
           event: '*',
           schema: 'public',
-          table: 'shared_ride_lobbies',
-          filter: `dropoff_address=eq.${dropoffAddress}`
+          table: 'shared_ride_lobbies'
         },
         (payload) => {
-          const matchesRoute = payload.new?.pickup_address === pickupAddress && payload.new?.dropoff_address === dropoffAddress;
+          const matchesRoute = routeMatches(payload.new);
 
           if (payload.eventType === 'INSERT' && payload.new.status === 'waiting' && matchesRoute) {
             console.log('➕ NEW LOBBY CREATED:', payload.new.id);
@@ -97,7 +100,7 @@ export default function BrowseAvailableLobbies({
             setLobbies(prev =>
               prev.map(l => l.id === payload.new.id ? payload.new as AvailableLobby : l)
                 .filter(l => l.status === 'waiting')
-                .filter(l => l.pickup_address === pickupAddress && l.dropoff_address === dropoffAddress)
+                .filter(routeMatches)
             );
           }
         }
@@ -107,13 +110,12 @@ export default function BrowseAvailableLobbies({
     // Add polling to ensure lobbies are always up-to-date (every 2 seconds)
     const pollInterval = setInterval(async () => {
       try {
-        const { data, error: fetchError } = await supabaseHelpers.getAvailableLobbies(dropoffAddress, pickupAddress);
+        const { data, error: fetchError } = await supabaseHelpers.getAvailableLobbies();
 
         if (!fetchError && data) {
           const availableLobbies = (data as AvailableLobby[]).filter(lobby => {
             const passengers = lobby.passengers_json || [];
-            return lobby.pickup_address === pickupAddress &&
-              lobby.dropoff_address === dropoffAddress &&
+            return routeMatches(lobby) &&
               !passengers.some(p => p.id === user?.id || p.id.startsWith(`${user?.id}_companion_`));
           });
 
