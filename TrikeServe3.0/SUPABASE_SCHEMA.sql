@@ -66,6 +66,9 @@ CREATE TABLE IF NOT EXISTS shared_ride_lobbies (
   passengers TEXT[] NOT NULL DEFAULT '{}',
   driver_id UUID REFERENCES users(id) ON DELETE SET NULL,
   payment_method VARCHAR(50),
+  driver_status VARCHAR(50),
+  driver_status_message TEXT,
+  driver_status_updated_at TIMESTAMP WITH TIME ZONE,
   created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
   updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );

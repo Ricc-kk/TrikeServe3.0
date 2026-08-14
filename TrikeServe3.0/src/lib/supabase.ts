@@ -572,6 +572,25 @@ export const supabaseHelpers = {
     return { data, error };
   },
 
+  // Track the driver's progress on a shared-ride lobby so customers in the
+  // lobby see the same status popups they get for private rides.
+  async updateLobbyDriverStatus(lobbyId: string, driverStatus: string, statusMessage?: string) {
+    const timestamp = new Date().toISOString();
+    const { data, error } = await supabase
+      .from('shared_ride_lobbies')
+      .update({
+        driver_status: driverStatus,
+        driver_status_message: statusMessage,
+        driver_status_updated_at: timestamp,
+        updated_at: timestamp
+      })
+      .eq('id', lobbyId)
+      .select()
+      .single();
+
+    return { data, error };
+  },
+
   async completeLobbyRide(lobbyId: string) {
     const timestamp = new Date().toISOString();
 
