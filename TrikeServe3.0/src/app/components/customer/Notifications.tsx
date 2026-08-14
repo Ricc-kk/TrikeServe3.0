@@ -3,6 +3,7 @@ import { Link, useNavigate } from "react-router";
 import { Card } from "../ui/card";
 import { useState, useEffect } from "react";
 import { useCart } from "../../contexts/CartContext";
+import { supabaseHelpers } from "@/lib/supabase";
 
 interface Notification {
   id: string;
@@ -22,17 +23,19 @@ export default function Notifications() {
   const { getTotalItems } = useCart();
   const [notifications, setNotifications] = useState<Notification[]>([]);
 
-  // Load notifications from orders and rides
+  // Load notifications from orders, rides and delivery status updates.
+  // Single loader (async) so it never fights with itself: the merged list is
+  // saved back to localStorage and re-used on the next poll.
   useEffect(() => {
     loadNotifications();
     
-    // Poll for updates every 2 seconds for real-time notifications
-    const interval = setInterval(loadNotifications, 2000);
+    // Poll for updates every 5 seconds
+    const interval = setInterval(loadNotifications, 5000);
     
     return () => clearInterval(interval);
   }, []);
 
-  const loadNotifications = () => {
+  const loadNotifications = async () => {
     const currentUserData = localStorage.getItem('trikeserve_current_user');
     if (!currentUserData) return;
 
@@ -42,6 +45,38 @@ export default function Notifications() {
     // Load saved notifications from localStorage
     const savedNotifications = localStorage.getItem(`notifications_${userEmail}`);
     let notificationsList: Notification[] = savedNotifications ? JSON.parse(savedNotifications) : [];
+
+    // Merge in database-driven delivery notifications (driver status updates)
+    // so they persist in the saved list instead of being re-added every poll.
+    if (currentUser?.id) {
+      const { data } = await supabaseHelpers.getDeliveryNotifications(currentUser.id);
+      const existingIds = new Set(notificationsList.map(n => n.id));
+      const dbNotifications: Notification[] = (data || []).map((n: any) => ({
+        id: `db-${n.id}`,
+        type: 'delivery',
+        title: n.title || 'Delivery update',
+        message: n.message || '',
+        time: formatTimeAgo(new Date(n.created_at).getTime()),
+        timestamp: new Date(n.created_at).getTime(),
+        unread: !n.read,
+        icon: '📦',
+        actionUrl: n.order_id ? `/customer/order-detail/${n.order_id}` : undefined,
+        orderId: n.order_id,
+      }));
+      const fresh = dbNotifications.filter(d => !existingIds.has(d.id));
+      if (fresh.length > 0) {
+        notificationsList = [...fresh, ...notificationsList];
+      } else {
+        // Keep saved read state in sync with the database (e.g. marked read
+        // from another tab), without re-adding or toggling anything.
+        const dbReadMap = new Map((data || []).map((n: any) => [`db-${n.id}`, !!n.read]));
+        notificationsList = notificationsList.map(n =>
+          dbReadMap.has(n.id) ? { ...n, unread: !dbReadMap.get(n.id) } : n
+        );
+      }
+      // Mark the database notifications as read (this page is the reader).
+      supabaseHelpers.markDeliveryNotificationsRead(currentUser.id);
+    }
 
     // Load orders
     const ordersData = localStorage.getItem(`orders_${userEmail}`);
@@ -159,10 +194,9 @@ export default function Notifications() {
       time: formatTimeAgo(n.timestamp)
     }));
 
-    setNotifications(notificationsList);
-    
-    // Save to localStorage
+    // Save to localStorage and update the UI once.
     localStorage.setItem(`notifications_${userEmail}`, JSON.stringify(notificationsList));
+    setNotifications(notificationsList);
   };
 
   const formatTimeAgo = (timestamp: number): string => {

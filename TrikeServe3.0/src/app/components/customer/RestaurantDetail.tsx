@@ -153,6 +153,17 @@ export default function RestaurantDetail() {
           customizationGroups: []
         }));
 
+        // Compute the restaurant's real rating from business_ratings.
+        let computedRating = restaurant.rating || 5.0;
+        let computedRatingCount = 0;
+        if (restaurant.business_user_id) {
+          const ratingRes = await supabaseHelpers.getBusinessRating(restaurant.business_user_id);
+          if (ratingRes && ratingRes.average != null) {
+            computedRating = Number(ratingRes.average.toFixed(1));
+            computedRatingCount = ratingRes.count;
+          }
+        }
+
         // Create restaurant data object
         const data: RestaurantData = {
           name: restaurant.name || restaurantName,
@@ -160,8 +171,8 @@ export default function RestaurantDetail() {
           logo: restaurant.logo_image || '🍽️',
           image: restaurant.banner_image || 'https://images.unsplash.com/photo-1517248135467-4c7edcad34c4?w=800',
           heroImage: restaurant.banner_image || 'https://images.unsplash.com/photo-1517248135467-4c7edcad34c4?w=800',
-          rating: restaurant.rating || 5.0,
-          ratingCount: 0,
+          rating: computedRating,
+          ratingCount: computedRatingCount,
           deliveryFee: adminDeliveryFee,
           deliveryTime: restaurant.delivery_time || '25-35 min',
           verified: true,

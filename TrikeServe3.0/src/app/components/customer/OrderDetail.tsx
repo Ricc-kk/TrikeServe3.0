@@ -1,4 +1,4 @@
-import { ArrowLeft, Package, Clock, MapPin, CreditCard, User as UserIcon, Phone, X, RefreshCw } from "lucide-react";
+import { ArrowLeft, Package, Clock, MapPin, CreditCard, User as UserIcon, Phone, X, RefreshCw, Star } from "lucide-react";
 import { useNavigate, useParams } from "react-router";
 import { Card } from "../ui/card";
 import { Button } from "../ui/button";
@@ -6,12 +6,14 @@ import { useOrders } from "../../contexts/OrderContext";
 import { useAuth } from "../../contexts/AuthContext";
 import { ImageWithFallback } from "../figma/ImageWithFallback";
 import { supabase } from "../../../lib/supabase";
+import { supabaseHelpers } from "@/lib/supabase";
 import { useState, useEffect } from "react";
 
 interface OrderData {
   id: string;
   orderNumber: string;
   restaurantName: string;
+  businessId?: string | null;
   restaurantImage: string;
   customerName: string;
   customerEmail: string;
@@ -38,6 +40,10 @@ export default function OrderDetail() {
   const [order, setOrder] = useState<OrderData | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
+  const [rating, setRating] = useState(0);
+  const [ratingSubmitting, setRatingSubmitting] = useState(false);
+  const [ratingSubmitted, setRatingSubmitted] = useState(false);
+  const [ratingError, setRatingError] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const refreshOrderFromSupabase = async (isManualRefresh = false) => {
@@ -73,10 +79,28 @@ export default function OrderDetail() {
         parsedItems = [];
       }
 
+      // Resolve the business user id: orders.business_id may be null, but
+      // orders.restaurant_email actually stores the restaurant id, which maps
+      // to the business user via restaurants.business_user_id.
+      let resolvedBusinessId: string | null = dbOrder.business_id || null;
+      if (!resolvedBusinessId && dbOrder.restaurant_email) {
+        try {
+          const { data: restaurant } = await supabase
+            .from('restaurants')
+            .select('business_user_id')
+            .eq('id', dbOrder.restaurant_email)
+            .maybeSingle();
+          if (restaurant?.business_user_id) resolvedBusinessId = restaurant.business_user_id;
+        } catch (err) {
+          console.error('[OrderDetail] Error resolving restaurant business:', err);
+        }
+      }
+
       setOrder({
         id: dbOrder.id,
         orderNumber: dbOrder.order_number || 'Unknown',
         restaurantName: dbOrder.restaurant_name || 'Restaurant',
+        businessId: resolvedBusinessId,
         restaurantImage: '',
         customerName: dbOrder.customer_name || 'Customer',
         customerEmail: dbOrder.customer_email || '',
@@ -371,6 +395,66 @@ export default function OrderDetail() {
               <span className="text-base">🍴</span>
               Cutlery requested
             </p>
+          </Card>
+        )}
+
+        {/* Rate the restaurant after a delivered order */}
+        {order.status === 'delivered' && (
+          <Card className="p-5 border-2 border-[#E2E8F0]">
+            {ratingSubmitted ? (
+              <div className="text-center py-2">
+                <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-green-100 flex items-center justify-center text-3xl">🙏</div>
+                <h3 className="text-xl font-bold text-[#121212] mb-2">Thank you!</h3>
+                <p className="text-sm text-[#64748B]">Your rating for {order.restaurantName} has been saved.</p>
+              </div>
+            ) : (
+              <>
+                <div className="flex items-center gap-3 mb-3">
+                  <Star className="w-5 h-5 text-[#FFC107] fill-[#FFC107]" />
+                  <h3 className="font-bold text-[#121212]">Rate {order.restaurantName}</h3>
+                </div>
+                <p className="text-sm text-[#64748B] mb-4">How was your order and delivery?</p>
+                <div className="flex justify-center gap-2 mb-4">
+                  {[1, 2, 3, 4, 5].map((star) => (
+                    <button
+                      key={star}
+                      onClick={() => setRating(star)}
+                      className="transition-transform hover:scale-110 focus:outline-none"
+                    >
+                      <Star
+                        className={`w-9 h-9 ${
+                          star <= rating ? 'fill-[#FFC107] text-[#FFC107]' : 'fill-[#E2E8F0] text-[#E2E8F0]'
+                        }`}
+                      />
+                    </button>
+                  ))}
+                </div>
+                {ratingError && <p className="text-xs text-red-600 text-center mb-2">{ratingError}</p>}
+                <Button
+                  onClick={async () => {
+                    if (!rating || !user?.id || !order.businessId) return;
+                    setRatingSubmitting(true);
+                    setRatingError(null);
+                    const { error } = await supabaseHelpers.rateBusiness({
+                      businessId: order.businessId,
+                      customerId: user.id,
+                      rating,
+                      orderId: order.id,
+                    });
+                    setRatingSubmitting(false);
+                    if (error) {
+                      setRatingError('Failed to submit rating. Please try again.');
+                      return;
+                    }
+                    setRatingSubmitted(true);
+                  }}
+                  disabled={!rating || ratingSubmitting || !order.businessId}
+                  className="w-full bg-[#E11D48] hover:bg-[#BE123C] text-white py-3 font-bold disabled:opacity-50"
+                >
+                  {ratingSubmitting ? 'Submitting...' : 'Submit Rating'}
+                </Button>
+              </>
+            )}
           </Card>
         )}
       </div>

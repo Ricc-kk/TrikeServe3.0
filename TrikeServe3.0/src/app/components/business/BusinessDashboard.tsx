@@ -2,7 +2,7 @@ import { useState, useEffect } from "react";
 import { 
   Store, Package, TrendingUp, DollarSign, ChevronRight, 
   Users, MessageSquare, BarChart3, Settings, ShoppingBag,
-  Clock, Eye, Edit2, Bell, User as UserIcon, Search, Menu, X
+  Clock, Eye, Edit2, Bell, User as UserIcon, Search, Menu, X, Star
 } from "lucide-react";
 import { Link, useNavigate } from "react-router";
 import { Card } from "../ui/card";
@@ -11,6 +11,7 @@ import { ImageWithFallback } from "../figma/ImageWithFallback";
 import BusinessSidebar from "./BusinessSidebar";
 import { useAuth } from "../../contexts/AuthContext";
 import { supabase } from "../../../lib/supabase";
+import { supabaseHelpers } from "@/lib/supabase";
 
 export default function BusinessDashboard() {
   const navigate = useNavigate();
@@ -23,16 +24,55 @@ export default function BusinessDashboard() {
     totalOrders: 0,
     totalRevenue: 0,
     totalItems: 0,
-    earnings: 0
+    earnings: 0,
+    rating: 0,
+    ratingCount: 0
   });
   const [popularMenu, setPopularMenu] = useState<any[]>([]);
   const [dailySales, setDailySales] = useState<any[]>([]);
   const [incomeBreakdown, setIncomeBreakdown] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [restaurantId, setRestaurantId] = useState<string | null>(null);
-
-  const notifications: any[] = [];
+  const [notifications, setNotifications] = useState<any[]>([]);
   const messages: any[] = [];
+
+  // Load delivery status notifications (driver updates) for this business.
+  useEffect(() => {
+    if (!user?.id) return;
+    const loadNotifications = async () => {
+      const { data } = await supabaseHelpers.getDeliveryNotifications(user.id);
+      setNotifications((data || []).map((n: any) => ({
+        id: n.id,
+        type: 'delivery',
+        title: n.title || 'Delivery update',
+        message: n.message || '',
+        read: !!n.read,
+        time: formatNotificationTime(n.created_at),
+      })));
+    };
+    loadNotifications();
+    const interval = setInterval(loadNotifications, 4000);
+    return () => clearInterval(interval);
+  }, [user?.id]);
+
+  // Mark delivery notifications as read when the panel is opened.
+  useEffect(() => {
+    if (showNotifications && user?.id) {
+      supabaseHelpers.markDeliveryNotificationsRead(user.id);
+      setNotifications(prev => prev.map((n: any) => ({ ...n, read: true })));
+    }
+  }, [showNotifications, user?.id]);
+
+  const formatNotificationTime = (timestamp: string) => {
+    if (!timestamp) return '';
+    const diff = Date.now() - new Date(timestamp).getTime();
+    const minutes = Math.floor(diff / 60000);
+    if (minutes < 1) return 'Just now';
+    if (minutes < 60) return `${minutes} min ago`;
+    const hours = Math.floor(minutes / 60);
+    if (hours < 24) return `${hours} hour${hours > 1 ? 's' : ''} ago`;
+    return new Date(timestamp).toLocaleDateString();
+  };
 
   // Load dashboard data
   useEffect(() => {
@@ -98,11 +138,24 @@ export default function BusinessDashboard() {
         });
         const earnings = todaysOrders.reduce((sum: number, order: any) => sum + (order.total || 0), 0);
 
+        // Load the business's average rating from business_ratings.
+        let rating = 0;
+        let ratingCount = 0;
+        if (currentUser.id) {
+          const ratingRes = await supabaseHelpers.getBusinessRating(currentUser.id);
+          if (ratingRes && ratingRes.average != null) {
+            rating = Number(ratingRes.average.toFixed(1));
+            ratingCount = ratingRes.count;
+          }
+        }
+
         setStats({
           totalOrders,
           totalRevenue,
           totalItems: 0, // Will be loaded separately
-          earnings
+          earnings,
+          rating,
+          ratingCount
         });
 
         // Calculate daily sales for last 7 days
@@ -301,7 +354,7 @@ export default function BusinessDashboard() {
         {/* Content */}
         <div className="p-5 lg:p-8">
           {/* Stats Cards */}
-          <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 lg:gap-6 mb-6 lg:mb-8">
+          <div className="grid grid-cols-2 lg:grid-cols-5 gap-3 lg:gap-4 mb-6 lg:mb-8">
             {/* Total Orders */}
             <Card className="p-4 lg:p-6 border-2 border-[#E2E8F0] bg-white">
               <div className="flex items-start justify-between mb-3 lg:mb-4">
@@ -386,6 +439,36 @@ export default function BusinessDashboard() {
                     key={i}
                     className={`flex-1 rounded-t ${i === 11 ? 'bg-[#3B82F6]' : 'bg-[#E2E8F0]'}`}
                     style={{ height: `${height}%` }}
+                  />
+                ))}
+              </div>
+            </Card>
+
+            {/* Rating */}
+            <Card className="p-4 lg:p-6 border-2 border-[#E2E8F0] bg-white">
+              <div className="flex items-start justify-between mb-3 lg:mb-4">
+                <div>
+                  <p className="text-xs lg:text-sm text-[#64748B] mb-1">Rating</p>
+                  <div className="flex items-center gap-2">
+                    <h2 className="text-2xl lg:text-4xl font-bold text-[#121212]">{stats.rating > 0 ? stats.rating.toFixed(1) : '—'}</h2>
+                    <Star className="w-5 h-5 lg:w-6 lg:h-6 text-yellow-500 fill-yellow-500" />
+                  </div>
+                  <p className="text-xs text-[#64748B] mt-1">{stats.ratingCount > 0 ? `${stats.ratingCount} rating${stats.ratingCount !== 1 ? 's' : ''}` : 'No ratings yet'}</p>
+                </div>
+                <div className="w-10 h-10 lg:w-12 lg:h-12 bg-[#FEF3C7] rounded-xl flex items-center justify-center">
+                  <Star className="w-5 h-5 lg:w-6 lg:h-6 text-[#F59E0B]" />
+                </div>
+              </div>
+              {/* Star bar */}
+              <div className="flex items-center gap-1">
+                {[1, 2, 3, 4, 5].map((star) => (
+                  <Star
+                    key={star}
+                    className={`w-3 h-3 lg:w-4 lg:h-4 ${
+                      stats.rating > 0 && star <= Math.round(stats.rating)
+                        ? 'text-yellow-500 fill-yellow-500'
+                        : 'text-[#E2E8F0] fill-[#E2E8F0]'
+                    }`}
                   />
                 ))}
               </div>

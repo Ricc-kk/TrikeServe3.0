@@ -84,7 +84,21 @@ export default function FoodHome() {
 
       if (restaurants && restaurants.length > 0) {
         console.log('[FoodHome] Loaded restaurants from Supabase:', restaurants.length);
-        const restaurantList = restaurants.map((restaurant: any) => ({
+        // Compute each restaurant's rating from the business_ratings table so
+        // the food page shows the real average instead of the hardcoded default.
+        const withRatings = await Promise.all(restaurants.map(async (restaurant: any) => {
+          let rating = restaurant.rating || 5.0;
+          let ratingCount = 0;
+          if (restaurant.business_user_id) {
+            const res = await supabaseHelpers.getBusinessRating(restaurant.business_user_id);
+            if (res && res.average != null) {
+              rating = Number(res.average.toFixed(1));
+              ratingCount = res.count;
+            }
+          }
+          return { ...restaurant, rating, ratingCount };
+        }));
+        const restaurantList = withRatings.map((restaurant: any) => ({
           id: restaurant.id,
           businessUserId: restaurant.business_user_id, // ✅ CRITICAL: Add business user ID for orders
           name: restaurant.name || "Restaurant",
@@ -92,8 +106,8 @@ export default function FoodHome() {
           logo: restaurant.logo_image || "🍽️",
           image: restaurant.banner_image || "https://images.unsplash.com/photo-1517248135467-4c7edcad34c4?w=800",
           time: restaurant.delivery_time || "25-35 min",
-          rating: restaurant.rating || 5.0,
-          ratingCount: 0,
+          rating: restaurant.rating,
+          ratingCount: restaurant.ratingCount,
           bgColor: "#FFF7ED",
           promo: restaurant.is_open ? "Open for Orders!" : "Closed",
           verified: true,
@@ -170,16 +184,35 @@ export default function FoodHome() {
   }, []);
 
   // Load verified business users as restaurants - Initial load
+  // Combined unread count: localStorage notifications + unread delivery
+  // notifications from the database (driver status updates).
+  const loadUnreadCount = async () => {
+    let count = getUnreadNotificationsCount();
+    try {
+      const currentUserData = localStorage.getItem('trikeserve_current_user');
+      if (currentUserData) {
+        const currentUser = JSON.parse(currentUserData);
+        if (currentUser?.id) {
+          const { data } = await supabaseHelpers.getDeliveryNotifications(currentUser.id);
+          count += (data || []).filter((n: any) => !n.read).length;
+        }
+      }
+    } catch (e) {
+      // ignore - keep localStorage count
+    }
+    setUnreadNotifications(count);
+  };
+
   useEffect(() => {
     loadRestaurantsFromSupabase();
-    setUnreadNotifications(getUnreadNotificationsCount());
+    loadUnreadCount();
   }, []);
 
   // Auto-refresh restaurants every 5 seconds to detect newly verified businesses
   useEffect(() => {
     const refreshInterval = setInterval(() => {
       loadRestaurantsFromSupabase();
-      setUnreadNotifications(getUnreadNotificationsCount());
+      loadUnreadCount();
     }, 5000); // Check every 5 seconds
 
     return () => clearInterval(refreshInterval);
@@ -275,10 +308,12 @@ export default function FoodHome() {
               className="active:scale-90 transition-transform relative"
             >
               <Bell className="w-7 h-7 text-white" />
-              {/* Notification badge - can be dynamic */}
-              <div className="absolute -top-1 -right-1 w-5 h-5 bg-white rounded-full flex items-center justify-center">
-                <span className="text-[10px] font-bold text-[#E11D48]">{unreadNotifications}</span>
-              </div>
+              {/* Notification badge (delivery status updates + local notifications) */}
+              {unreadNotifications > 0 && (
+                <div className="absolute -top-1 -right-1 w-5 h-5 bg-white rounded-full flex items-center justify-center">
+                  <span className="text-[10px] font-bold text-[#E11D48]">{unreadNotifications > 9 ? '9+' : unreadNotifications}</span>
+                </div>
+              )}
             </button>
             <button 
               onClick={() => navigate('/customer/favorites')}
