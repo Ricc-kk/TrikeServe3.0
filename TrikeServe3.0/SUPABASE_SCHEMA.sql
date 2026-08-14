@@ -89,6 +89,37 @@ CREATE TABLE IF NOT EXISTS driver_ratings (
 CREATE INDEX idx_driver_ratings_driver ON driver_ratings(driver_id);
 CREATE INDEX idx_driver_ratings_customer ON driver_ratings(customer_id);
 
+-- Delivery Notifications Table
+CREATE TABLE IF NOT EXISTS delivery_notifications (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  recipient_id UUID REFERENCES users(id) ON DELETE CASCADE,
+  order_id UUID,
+  order_number VARCHAR(20),
+  restaurant_name VARCHAR(255),
+  title TEXT NOT NULL,
+  message TEXT NOT NULL,
+  type VARCHAR(50) NOT NULL DEFAULT 'delivery',
+  read BOOLEAN NOT NULL DEFAULT false,
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX idx_delivery_notifications_recipient
+  ON delivery_notifications(recipient_id, read, created_at DESC);
+
+-- Business Ratings Table
+CREATE TABLE IF NOT EXISTS business_ratings (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  business_id UUID REFERENCES users(id) ON DELETE CASCADE,
+  restaurant_id UUID,
+  customer_id UUID REFERENCES users(id) ON DELETE CASCADE,
+  order_id UUID,
+  rating INTEGER NOT NULL CHECK (rating BETWEEN 1 AND 5),
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX idx_business_ratings_business ON business_ratings(business_id);
+CREATE INDEX idx_business_ratings_customer ON business_ratings(customer_id);
+
 -- Messages Table
 CREATE TABLE IF NOT EXISTS messages (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),

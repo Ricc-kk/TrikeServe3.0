@@ -760,6 +760,292 @@ export const supabaseHelpers = {
     return { average, count, error: null };
   },
 
+  // ---- Delivery notifications & business ratings ----
+
+  // Parse the order id out of a delivery ride request's tagged pickup location:
+  // `DELIVERY|ORDER_ID:<id>|ORDER_NO:<no>|<restaurant label>`
+  parseOrderIdFromDeliveryPickup(pickupLocation?: string) {
+    if (!pickupLocation) return null;
+    const match = String(pickupLocation).match(/ORDER_ID:([0-9a-fA-F-]+)/);
+    return match ? match[1] : null;
+  },
+
+  // Notify both the customer and the business about a delivery status change.
+  // Looks up the order from the ride request's tagged pickup location so we can
+  // address the right customer and business.
+  async notifyDeliveryStatusChange(params: {
+    pickupLocation?: string;
+    customerId?: string;
+    status: string;
+    message?: string;
+  }) {
+    const { pickupLocation, customerId, status, message } = params;
+    const orderId = this.parseOrderIdFromDeliveryPickup(pickupLocation);
+
+    let businessId: string | null = null;
+    let restaurantName = '';
+    let orderNumber = '';
+    let resolvedCustomerId: string | null = customerId || null;
+
+    if (orderId) {
+      const { data: order } = await supabase
+        .from('orders')
+        .select('business_id, customer_id, restaurant_name, order_number, restaurant_email')
+        .eq('id', orderId)
+        .single();
+      if (order) {
+        businessId = order.business_id || null;
+        restaurantName = order.restaurant_name || '';
+        orderNumber = order.order_number || '';
+        resolvedCustomerId = order.customer_id || resolvedCustomerId;
+
+        // orders.restaurant_email actually holds the restaurant id; map it to
+        // the business user via restaurants.business_user_id when business_id
+        // is not set on the order.
+        if (!businessId && order.restaurant_email) {
+          const { data: restaurant } = await supabase
+            .from('restaurants')
+            .select('business_user_id')
+            .eq('id', order.restaurant_email)
+            .maybeSingle();
+          if (restaurant?.business_user_id) {
+            businessId = restaurant.business_user_id;
+          }
+        }
+      }
+    }
+
+    const statusLabels: Record<string, { title: string; message: string; emoji: string }> = {
+      'on-the-way': {
+        title: 'Driver on the way',
+        message: 'Your rider is on the way to pick up your order.',
+        emoji: '🛵',
+      },
+      'arrived': {
+        title: 'Driver arrived at restaurant',
+        message: 'Your rider has arrived at the restaurant to pick up your order.',
+        emoji: '📍',
+      },
+      'picked-up': {
+        title: 'Order picked up',
+        message: 'Your rider has picked up your order and is heading to you!',
+        emoji: '📦',
+      },
+      'dropped-off': {
+        title: 'Arrived at your location',
+        message: 'Your rider has arrived at your delivery address.',
+        emoji: '🏁',
+      },
+      'awaiting-payment': {
+        title: 'Delivery arriving',
+        message: 'Your rider is almost there — please prepare your payment.',
+        emoji: '💰',
+      },
+      'completed': {
+        title: 'Delivery completed',
+        message: 'Your delivery has been completed. Enjoy your meal! 🍽️',
+        emoji: '✅',
+      },
+    };
+
+    const label = statusLabels[status] || {
+      title: 'Delivery update',
+      message: message || 'Your delivery status has been updated.',
+      emoji: '🚚',
+    };
+
+    const notifications: any[] = [];
+    const stamp = new Date().toISOString();
+
+    if (resolvedCustomerId) {
+      notifications.push({
+        recipient_id: resolvedCustomerId,
+        order_id: orderId || null,
+        order_number: orderNumber || null,
+        restaurant_name: restaurantName || null,
+        title: label.emoji + ' ' + label.title,
+        message: restaurantName
+          ? `${label.message} (${restaurantName})`
+          : label.message,
+        type: 'delivery',
+        read: false,
+        created_at: stamp,
+      });
+    }
+
+    if (businessId) {
+      const businessLabels: Record<string, { title: string; message: string }> = {
+        'on-the-way': { title: 'Driver on the way', message: 'The delivery driver is on the way to pick up this order.' },
+        'arrived': { title: 'Driver arrived', message: 'The delivery driver has arrived at your restaurant to pick up the order.' },
+        'picked-up': { title: 'Order picked up', message: 'The delivery driver has picked up the order and is heading to the customer.' },
+        'dropped-off': { title: 'Arrived at customer', message: 'The delivery driver has arrived at the customer\'s delivery address.' },
+        'awaiting-payment': { title: 'At customer\'s location', message: 'The delivery driver is at the customer\'s location completing the delivery.' },
+        'completed': { title: 'Delivery completed', message: 'This order has been delivered successfully.' },
+      };
+      const bizLabel = businessLabels[status] || { title: 'Delivery update', message: message || 'The delivery status has been updated.' };
+      notifications.push({
+        recipient_id: businessId,
+        order_id: orderId || null,
+        order_number: orderNumber || null,
+        restaurant_name: restaurantName || null,
+        title: '🚚 ' + bizLabel.title,
+        message: orderNumber ? `${bizLabel.message} Order #${orderNumber}.` : bizLabel.message,
+        type: 'delivery',
+        read: false,
+        created_at: stamp,
+      });
+    }
+
+    if (notifications.length === 0) return { data: null, error: null };
+
+    const { data, error } = await supabase
+      .from('delivery_notifications')
+      .insert(notifications)
+      .select();
+
+    return { data, error };
+  },
+
+  // Notify the customer when the business updates an order's status
+  // (pending -> confirmed -> preparing -> ready -> delivered/cancelled).
+  async notifyBusinessOrderStatusChange(params: {
+    orderId: string;
+    orderNumber?: string;
+    restaurantName?: string;
+    status: string;
+  }) {
+    const { orderId, orderNumber, restaurantName, status } = params;
+
+    // Resolve the customer from the order.
+    let customerId: string | null = null;
+    let name = restaurantName || '';
+    let number = orderNumber || '';
+    const { data: order } = await supabase
+      .from('orders')
+      .select('customer_id, restaurant_name, order_number')
+      .eq('id', orderId)
+      .maybeSingle();
+    if (order) {
+      customerId = order.customer_id || null;
+      name = order.restaurant_name || name;
+      number = order.order_number || number;
+    }
+    if (!customerId) return { data: null, error: null };
+
+    const labels: Record<string, { title: string; message: string; emoji: string }> = {
+      'confirmed': {
+        title: 'Order Confirmed',
+        message: 'Your order has been confirmed and is being prepared.',
+        emoji: '✅',
+      },
+      'preparing': {
+        title: 'Preparing your order',
+        message: 'The restaurant is now preparing your order.',
+        emoji: '👨\u200d🍳',
+      },
+      'ready': {
+        title: 'Order ready',
+        message: 'Your order is ready and waiting for a rider.',
+        emoji: '📦',
+      },
+      'delivered': {
+        title: 'Order Delivered',
+        message: 'Your order has been delivered. Enjoy your meal!',
+        emoji: '🍽️',
+      },
+      'cancelled': {
+        title: 'Order Cancelled',
+        message: 'Your order was cancelled by the restaurant.',
+        emoji: '❌',
+      },
+    };
+    const label = labels[status] || {
+      title: 'Order update',
+      message: 'Your order status has been updated.',
+      emoji: '🛍️',
+    };
+
+    const { data, error } = await supabase
+      .from('delivery_notifications')
+      .insert([{
+        recipient_id: customerId,
+        order_id: orderId,
+        order_number: number || null,
+        restaurant_name: name || null,
+        title: `${label.emoji} ${label.title}`,
+        message: name ? `${label.message} (${name})` : label.message,
+        type: 'order',
+        read: false,
+        created_at: new Date().toISOString(),
+      }])
+      .select();
+
+    return { data, error };
+  },
+
+  async getDeliveryNotifications(recipientId: string) {
+    const { data, error } = await supabase
+      .from('delivery_notifications')
+      .select('*')
+      .eq('recipient_id', recipientId)
+      .order('created_at', { ascending: false })
+      .limit(50);
+    return { data, error };
+  },
+
+  async markDeliveryNotificationsRead(recipientId: string) {
+    const { data, error } = await supabase
+      .from('delivery_notifications')
+      .update({ read: true })
+      .eq('recipient_id', recipientId)
+      .eq('read', false)
+      .select();
+    return { data, error };
+  },
+
+  // Record a customer's rating for a business after a completed delivery.
+  async rateBusiness(details: {
+    businessId: string;
+    restaurantId?: string;
+    customerId: string;
+    rating: number;
+    orderId?: string;
+  }) {
+    const { data, error } = await supabase
+      .from('business_ratings')
+      .insert([{
+        business_id: details.businessId,
+        restaurant_id: details.restaurantId || null,
+        customer_id: details.customerId,
+        rating: details.rating,
+        order_id: details.orderId || null,
+      }])
+      .select()
+      .single();
+
+    return { data, error };
+  },
+
+  // Compute a business's average rating from all ratings received.
+  async getBusinessRating(businessId: string) {
+    const { data, error } = await supabase
+      .from('business_ratings')
+      .select('rating')
+      .eq('business_id', businessId);
+
+    if (error) return { average: null, count: 0, error };
+
+    const ratings = (data || [])
+      .map((r: any) => Number(r.rating))
+      .filter((n: number) => !isNaN(n));
+    const count = ratings.length;
+    const average = count > 0
+      ? ratings.reduce((sum: number, n: number) => sum + n, 0) / count
+      : null;
+
+    return { average, count, error: null };
+  },
+
    subscribeLobbyUpdates(lobbyId: string, callback: (data: any) => Promise<void> | void) {
      console.log(`📡 Setting up real-time subscription for lobby: ${lobbyId}`);
 

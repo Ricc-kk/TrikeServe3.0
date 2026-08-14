@@ -269,8 +269,8 @@ export default function Activity() {
                 <h3 className="text-sm font-semibold text-[#64748B] mb-3 uppercase tracking-wide">Orders</h3>
                 <div className="space-y-3">
                   {displayOrders.map((order) => (
-                    <Card key={order.id} className="p-4 border-2 border-[#E2E8F0] shadow-sm">
-                      <div className="flex items-start gap-3">
+                    <Card key={order.id} className="p-4 border-2 border-[#E2E8F0] shadow-sm cursor-pointer active:scale-[0.99] transition-transform">
+                      <div onClick={() => navigate(`/customer/order-detail/${order.id}`)} className="flex items-start gap-3">
                         {/* Restaurant Image */}
                         <div className="w-12 h-12 rounded-lg overflow-hidden flex-shrink-0">
                           <ImageWithFallback
@@ -300,6 +300,9 @@ export default function Activity() {
                               <p className="text-xs text-[#64748B]">#{order.orderNumber}</p>
                             </div>
                           </div>
+                          {order.status === 'delivered' && (
+                            <p className="text-xs font-bold text-[#E11D48] mt-2">⭐ Tap to rate this restaurant</p>
+                          )}
                         </div>
                       </div>
                     </Card>

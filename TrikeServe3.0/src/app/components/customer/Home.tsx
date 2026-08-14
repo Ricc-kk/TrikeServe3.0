@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from "react";
-import { Search, MapPin, Users, User as UserIcon, ChevronDown, X, Clock, CreditCard, Utensils, Search as SearchIcon, User, Navigation, MessageCircle, Bike, Home as HomeIcon, ShoppingCart, ClipboardList, Star } from "lucide-react";
+import { Search, MapPin, Users, User as UserIcon, ChevronDown, X, Clock, CreditCard, Utensils, Search as SearchIcon, User, Navigation, MessageCircle, Bell, Bike, Home as HomeIcon, ShoppingCart, ClipboardList, Star } from "lucide-react";
 import { Link, useNavigate } from "react-router";
 import { Button } from "../ui/button";
 import { Card } from "../ui/card";
@@ -280,6 +280,9 @@ export default function CustomerHome() {
    const [selectedRating, setSelectedRating] = useState(0);
    const [ratingSubmitting, setRatingSubmitting] = useState(false);
    const [ratingSubmitted, setRatingSubmitted] = useState(false);
+   // Business info captured when a delivery completes so the customer can rate the restaurant.
+   const [deliveryBusiness, setDeliveryBusiness] = useState<{ businessId: string; restaurantName: string; orderId?: string } | null>(null);
+   const [unreadDeliveryNotifications, setUnreadDeliveryNotifications] = useState(0);
    const [privateRidePrice, setPrivateRidePrice] = useState(50); // Default price for private rides
    const [sharedRidePrice, setSharedRidePrice] = useState(15); // Default price for share rides
    const [driverLocation, setDriverLocation] = useState<{ lat: number; lng: number } | null>(null);
@@ -650,11 +653,21 @@ export default function CustomerHome() {
         setShowShareLobby(true);
       });
     }
-  }, [user]);
+  }, [user]);   // Poll unread delivery notifications for the bell badge.
+   useEffect(() => {
+     if (!user?.id) return;
+     const loadUnread = async () => {
+       const { data } = await supabaseHelpers.getDeliveryNotifications(user.id);
+       setUnreadDeliveryNotifications((data || []).filter((n: any) => !n.read).length);
+     };
+     loadUnread();
+     const interval = setInterval(loadUnread, 5000);
+     return () => clearInterval(interval);
+   }, [user?.id]);
 
-  // Load admin pricing settings from Supabase
-  useEffect(() => {
-    const loadPricingSettings = async () => {
+   // Load admin pricing settings from Supabase
+   useEffect(() => {
+     const loadPricingSettings = async () => {
       try {
         const { data, error } = await supabase
           .from('admin_settings')
@@ -704,6 +717,11 @@ export default function CustomerHome() {
          setCompletionPopupType(inferredCompletionType);
          setRideCompletedPopup(true);
         localStorage.setItem(lastShownStatusKey, status);
+
+        // For deliveries, remember which business the customer can rate.
+        if (inferredCompletionType === 'delivery' && rideContext) {
+          captureDeliveryBusiness(rideContext);
+        }
 
         // Clear visible ride state so the driver card disappears
         // but delay clearing currentRequestId to avoid racing popup render.
@@ -1074,6 +1092,11 @@ export default function CustomerHome() {
            setCompletionPopupType(inferredCompletionType);
            setRideCompletedPopup(true);
            localStorage.setItem(lastShownStatusKey, realtimeStatus);
+
+           // For deliveries, remember which business the customer can rate.
+           if (inferredCompletionType === 'delivery') {
+             captureDeliveryBusiness(updatedRide);
+           }
 
            // Immediately clear most ride UI so the driver card disappears while
            // the completion popup is shown, but keep currentRequestId briefly to
@@ -1544,14 +1567,61 @@ export default function CustomerHome() {
     setIsSearchMinimized(false);
   };
 
+  // When a delivery completes, capture which business the customer can rate.
+  const captureDeliveryBusiness = async (rideRequest: any) => {
+    const orderId = supabaseHelpers.parseOrderIdFromDeliveryPickup(rideRequest?.pickup_location || rideRequest?.pickup);
+    if (!orderId) return;
+    try {
+      const { data: order } = await supabase
+        .from('orders')
+        .select('business_id, restaurant_name, order_number, restaurant_email')
+        .eq('id', orderId)
+        .single();
+      let businessId: string | null = order?.business_id || null;
+      // orders.restaurant_email actually stores the restaurant id; map it to the
+      // business user when business_id isn't set on the order.
+      if (!businessId && order?.restaurant_email) {
+        const { data: restaurant } = await supabase
+          .from('restaurants')
+          .select('business_user_id')
+          .eq('id', order.restaurant_email)
+          .maybeSingle();
+        if (restaurant?.business_user_id) businessId = restaurant.business_user_id;
+      }
+      if (businessId) {
+        setDeliveryBusiness({
+          businessId,
+          restaurantName: order?.restaurant_name || 'Restaurant',
+          orderId,
+        });
+      }
+    } catch (err) {
+      console.error('❌ Failed to capture delivery business:', err);
+    }
+  };
+
   const handleSubmitRating = async () => {
-    if (!selectedRating || !rideDriverId || !user) return;
+    if (!selectedRating || !user) return;
     setRatingSubmitting(true);
-    const { error } = await supabaseHelpers.rateDriver({
-      driverId: rideDriverId,
-      customerId: user.id,
-      rating: selectedRating,
-    });
+
+    let error: any = null;
+    if (completionPopupType === 'delivery' && deliveryBusiness) {
+      const result = await supabaseHelpers.rateBusiness({
+        businessId: deliveryBusiness.businessId,
+        customerId: user.id,
+        rating: selectedRating,
+        orderId: deliveryBusiness.orderId,
+      });
+      error = result.error;
+    } else if (rideDriverId) {
+      const result = await supabaseHelpers.rateDriver({
+        driverId: rideDriverId,
+        customerId: user.id,
+        rating: selectedRating,
+      });
+      error = result.error;
+    }
+
     setRatingSubmitting(false);
     if (error) {
       console.error('❌ Failed to submit rating:', error);
@@ -1566,6 +1636,7 @@ export default function CustomerHome() {
     setRatingSubmitted(false);
     setSelectedRating(0);
     setRideDriverId(null);
+    setDeliveryBusiness(null);
   };
 
   const filteredLocations = popularLocations.filter(loc =>
@@ -1683,6 +1754,19 @@ export default function CustomerHome() {
                 style={{ outline: 'none' }}
               />
             </div>
+            {/* Notifications bell - upper right of the home page */}
+            <button
+              onClick={() => navigate('/customer/notifications')}
+              className="relative w-12 h-12 bg-white rounded-xl shadow-lg flex items-center justify-center active:scale-90 transition-transform"
+              aria-label="Notifications"
+            >
+              <Bell className="w-6 h-6 text-[#E11D48]" />
+              {unreadDeliveryNotifications > 0 && (
+                <div className="absolute -top-1.5 -right-1.5 w-5 h-5 bg-[#E11D48] rounded-full border-2 border-white flex items-center justify-center">
+                  <span className="text-[10px] font-bold text-white">{unreadDeliveryNotifications > 9 ? '9+' : unreadDeliveryNotifications}</span>
+                </div>
+              )}
+            </button>
           </div>
         </div>
 
@@ -1965,7 +2049,7 @@ export default function CustomerHome() {
                     }}
                     className="w-full bg-white border-2 border-blue-200 text-blue-600 py-3 font-bold"
                   >
-                    Leave a Rating
+                    {completionPopupType === 'delivery' ? 'Rate Restaurant' : 'Leave a Rating'}
                   </Button>
 
                   <Button
@@ -1977,6 +2061,7 @@ export default function CustomerHome() {
                       setCurrentRequestId(null);
                       setCompletionPopupType('ride');
                       setRideDriverId(null);
+                      setDeliveryBusiness(null);
                     }}
                     className="w-full bg-blue-500 hover:bg-blue-600 text-white py-3 font-bold"
                   >
@@ -2008,8 +2093,17 @@ export default function CustomerHome() {
                 </>
               ) : (
                 <>
-                  <h3 className="text-xl font-bold text-[#121212] mb-2">Rate Your Driver</h3>
-                  <p className="text-sm text-[#64748B] mb-6">How was your ride?</p>
+                  {completionPopupType === 'delivery' && deliveryBusiness ? (
+                    <>
+                      <h3 className="text-xl font-bold text-[#121212] mb-2">Rate {deliveryBusiness.restaurantName}</h3>
+                      <p className="text-sm text-[#64748B] mb-6">How was your order and delivery?</p>
+                    </>
+                  ) : (
+                    <>
+                      <h3 className="text-xl font-bold text-[#121212] mb-2">Rate Your Driver</h3>
+                      <p className="text-sm text-[#64748B] mb-6">How was your ride?</p>
+                    </>
+                  )}
                   <div className="flex justify-center gap-2 mb-6">
                     {[1, 2, 3, 4, 5].map((star) => (
                       <button

@@ -65,6 +65,7 @@ export default function ActiveRide() {
         } else {
           supabaseHelpers.acceptRideRequest(ride.id, user.id, user.user_metadata?.full_name || 'Driver', user.user_metadata?.avatar_url, user.todaPlate || 'N/A', '4.8');
           supabaseHelpers.updateDriverRideStatus(ride.id, 'on-the-way', 'Driver is on the way!');
+          notifyDeliveryStatus(ride, 'on-the-way', 'Driver is on the way!');
         }
       }
     } else {
@@ -126,6 +127,22 @@ export default function ActiveRide() {
     });
   }, [driverLocation, rideData?.status, rideData?.pickupLat, rideData?.pickupLng, rideData?.dropoffLat, rideData?.dropoffLng, isMapsLoaded]);
 
+  const isDeliveryRide = (ride: any) =>
+    Boolean(ride?.orderId || ride?.orderNumber) ||
+    String(ride?.pickup || '').startsWith('DELIVERY');
+
+  // Notify the customer and business whenever the driver updates a delivery's
+  // status (accepted/on-the-way -> arrived -> picked up -> dropped off).
+  const notifyDeliveryStatus = (ride: any, dbStatus: string, message?: string) => {
+    if (!isDeliveryRide(ride)) return;
+    supabaseHelpers.notifyDeliveryStatusChange({
+      pickupLocation: ride.pickup,
+      customerId: ride.customerId || ride.passengerDetails?.[0]?.id,
+      status: dbStatus,
+      message,
+    }).catch((err) => console.error('❌ Failed to send delivery notification:', err));
+  };
+
   const updateStatus = (newStatus: RideStatus) => {
     if (!rideData) return;
     const updated = { ...rideData, status: newStatus };
@@ -145,6 +162,8 @@ export default function ActiveRide() {
       supabaseHelpers.updateLobbyDriverStatus(rideData.lobbyId, dbMap[newStatus], messageMap[newStatus]);
     } else {
       supabaseHelpers.updateDriverRideStatus(rideData.id, dbMap[newStatus], 'Status updated');
+      // Deliveries: notify the customer and the business.
+      notifyDeliveryStatus(rideData, dbMap[newStatus], messageMap[newStatus]);
     }
   };
 
@@ -152,6 +171,10 @@ export default function ActiveRide() {
     if (!rideData || isCompleting.current) return;
     isCompleting.current = true;
     try {
+
+    if (isDeliveryRide(rideData)) {
+      notifyDeliveryStatus(rideData, 'completed', 'Delivery completed!');
+    }
 
     if (rideData.orderId || rideData.orderNumber) {
       const { error: orderStatusError } = await supabaseHelpers.updateDeliveryOrderStatus(

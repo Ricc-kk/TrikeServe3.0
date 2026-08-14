@@ -90,6 +90,17 @@ export default function BusinessHome() {
           operatingHours: restaurant.operating_hours || prev.operatingHours,
         }));
 
+        // Show the business's real average rating from business_ratings.
+        supabaseHelpers.getBusinessRating(user.id).then((ratingRes) => {
+          if (ratingRes && ratingRes.average != null) {
+            setRestaurantData((prev) => ({
+              ...prev,
+              rating: Number(ratingRes.average.toFixed(1)),
+              ratingCount: ratingRes.count,
+            }));
+          }
+        }).catch((err) => console.error('[BusinessHome] Failed to load rating:', err));
+
         // Load menu items from Supabase
         const { data: items } = await supabase
           .from('menu_items')

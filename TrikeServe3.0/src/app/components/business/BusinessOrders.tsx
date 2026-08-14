@@ -6,6 +6,7 @@ import { Badge } from "../ui/badge";
 import { Button } from "../ui/button";
 import BusinessSidebar from "./BusinessSidebar";
     import { supabase } from "../../../lib/supabase";
+    import { supabaseHelpers } from "@/lib/supabase";
 
 interface Order {
   id: string;
@@ -300,6 +301,15 @@ export default function BusinessOrders() {
       }
 
       console.log('[BusinessOrders] ✅ Update successful - waiting 2 seconds...');
+
+      // Notify the customer about the new order status.
+      supabaseHelpers.notifyBusinessOrderStatusChange({
+        orderId: order.id,
+        orderNumber: order.orderNumber,
+        restaurantName: order.restaurantName,
+        status: newStatus,
+      }).catch(err => console.error('[BusinessOrders] Failed to notify customer:', err));
+
       await new Promise(resolve => setTimeout(resolve, 2000));
 
       console.log('[BusinessOrders] ========== STATUS UPDATE COMPLETE ==========');
