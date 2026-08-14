@@ -1,4 +1,5 @@
 import { createClient } from '@supabase/supabase-js';
+import { buildChatThreadKey } from './chat';
 
 // Initialize Supabase client
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
@@ -902,6 +903,63 @@ export const supabaseHelpers = {
       .single();
 
     return { data, error };
+  },
+
+  // Find an existing chat between two users (for a ride context if provided),
+  // otherwise create one. Used by the Message buttons on active ride driver
+  // cards so the customer lands in the same conversation the driver uses.
+  async findOrCreateRideChat(params: {
+    currentUserId: string;
+    currentUserName?: string;
+    currentUserRole?: string;
+    peerId: string;
+    peerName?: string;
+    peerAvatar?: string;
+    contextId?: string;
+  }) {
+    const { currentUserId, currentUserName, currentUserRole, peerId, peerName, peerAvatar, contextId } = params;
+
+    const threadKey = buildChatThreadKey({
+      participantAId: currentUserId,
+      participantBId: peerId,
+      contextType: 'ride',
+      contextId: contextId || null,
+    });
+
+    // Reuse an existing conversation when possible (any context between the
+    // two users, preferring one tied to this ride).
+    const { data: existing, error: existingError } = await supabase
+      .from('chat_conversations')
+      .select('*')
+      .or(`participant_a_id.eq.${currentUserId},participant_b_id.eq.${currentUserId}`)
+      .or(`participant_a_id.eq.${peerId},participant_b_id.eq.${peerId}`)
+      .order('updated_at', { ascending: false });
+
+    if (!existingError && existing && existing.length > 0) {
+      const match = existing.find((c: any) =>
+        c.thread_key === threadKey ||
+        (c.context_id && contextId && c.context_id === contextId &&
+          ((c.participant_a_id === currentUserId && c.participant_b_id === peerId) ||
+           (c.participant_a_id === peerId && c.participant_b_id === currentUserId)))
+      );
+      if (match) return { data: match, error: null };
+    }
+
+    return supabaseHelpers.ensureChatConversation({
+      threadKey,
+      threadType: 'ride',
+      contextType: 'ride',
+      contextId: contextId || null,
+      participantAId: currentUserId,
+      participantBId: peerId,
+      participantARole: currentUserRole || 'customer',
+      participantBRole: 'rider',
+      participantAName: currentUserName,
+      participantBName: peerName,
+      participantAAvatar: (currentUserName || '?')[0]?.toUpperCase() || '🙋',
+      participantBAvatar: peerAvatar || '👨\u200d✈️',
+      subject: contextId ? `Ride ${contextId.substring(0, 8)}` : 'Ride Chat',
+    });
   },
 
   async getChatConversations(userId: string) {

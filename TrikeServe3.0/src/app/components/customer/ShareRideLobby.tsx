@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from "react";
+import { useNavigate } from "react-router";
 import { MapPin, Users, Clock, X, ChevronDown, MessageCircle, User, Minimize2, Star } from "lucide-react";
 import { Button } from "../ui/button";
 import { Card } from "../ui/card";
@@ -27,6 +28,7 @@ interface ShareRideLobby {
   price_per_seat: number;
   payment_method?: string;
   status: 'waiting' | 'driver_found' | 'in_progress' | 'completed' | 'cancelled';
+  driver_id?: string;
   driver_name?: string;
   driver_plate?: string;
   driver_rating?: string;
@@ -45,7 +47,8 @@ interface ShareRideLobbyProps {
   pricePerSeat?: number;
   paymentMethod?: 'COD' | 'GCASH';
   onDriverFound: (lobbyId: string) => void;
-  onClose: () => void;
+  onLobbyLoaded?: (lobbyId: string) => void;
+  onClose: (status?: string) => void;
 }
 
 export default function ShareRideLobby({
@@ -58,9 +61,12 @@ export default function ShareRideLobby({
   pricePerSeat = 15,
   paymentMethod = 'GCASH',
   onDriverFound,
+  onLobbyLoaded,
   onClose
 }: ShareRideLobbyProps) {
   const { user } = useAuth();
+  const navigate = useNavigate();
+  const [openingChat, setOpeningChat] = useState(false);
   const [lobby, setLobby] = useState<ShareRideLobby | null>(null);
   const [isMinimized, setIsMinimized] = useState(false);
   const [showLeaveConfirm, setShowLeaveConfirm] = useState(false);
@@ -76,6 +82,29 @@ export default function ShareRideLobby({
   const [ratingSubmitting, setRatingSubmitting] = useState(false);
   const [ratingSubmitted, setRatingSubmitted] = useState(false);
   const [computedDriverRating, setComputedDriverRating] = useState<string | null>(null);
+
+  const handleOpenDriverChat = async () => {
+    if (!user?.id || !lobby?.driver_id || openingChat) return;
+    setOpeningChat(true);
+    try {
+      const { data, error } = await supabaseHelpers.findOrCreateRideChat({
+        currentUserId: user.id,
+        currentUserName: user.name,
+        currentUserRole: user.role,
+        peerId: lobby.driver_id,
+        peerName: lobby.driver_name || 'Driver',
+        contextId: lobby.id,
+      });
+      if (error || !data) {
+        console.error('❌ Failed to open driver chat:', error);
+        alert('Failed to open chat. Please try again.');
+        return;
+      }
+      navigate(`/customer/messages/thread/${data.id}`);
+    } finally {
+      setOpeningChat(false);
+    }
+  };
 
   const handleTerminalLobbyStatus = (status?: string) => {
     if (hasHandledTerminalLobbyStatus.current) return;
@@ -94,7 +123,7 @@ export default function ShareRideLobby({
 
         terminalCloseTimeoutRef.current = setTimeout(() => {
           if (typeof onClose === 'function') {
-            onClose();
+            onClose(status);
           }
         }, 1600);
       }
@@ -133,7 +162,7 @@ export default function ShareRideLobby({
   const closeAfterRating = () => {
     setShowRatingModal(false);
     if (typeof onClose === 'function') {
-      onClose();
+      onClose('completed');
     }
   };
 
@@ -235,6 +264,11 @@ export default function ShareRideLobby({
 
          if (existingLobby && isMounted) {
            setLobby(existingLobby);
+            // Tell the parent the lobby is open so it can persist the id for
+            // the return-to-ride button (even before a driver accepts).
+            if (typeof onLobbyLoaded === 'function') {
+              onLobbyLoaded(existingLobby.id);
+            }
             handleTerminalLobbyStatus(existingLobby.status);
 
              // Use the driver's real average rating from driver_ratings.
@@ -593,7 +627,7 @@ export default function ShareRideLobby({
        await new Promise(resolve => setTimeout(resolve, 500));
        // FIX: Add defensive check
        if (typeof onClose === 'function') {
-         onClose();
+         onClose(lobby.status);
        } else {
          console.error('❌ onClose prop is not a function or is missing');
          // Optional: fallback navigation if you have a router available
@@ -826,6 +860,8 @@ export default function ShareRideLobby({
                   <Button
                     size="icon"
                     className="bg-green-500 hover:bg-green-600 text-white"
+                    onClick={handleOpenDriverChat}
+                    disabled={openingChat}
                   >
                     <MessageCircle className="w-5 h-5" />
                   </Button>
@@ -909,7 +945,7 @@ export default function ShareRideLobby({
                 </Button>
                 <Button
                   onClick={() => {
-                    if (typeof onClose === 'function') onClose();
+                    if (typeof onClose === 'function') onClose(terminalStatus || undefined);
                   }}
                   className="w-full bg-[#E11D48] hover:bg-[#BE123C] text-white py-3 font-bold"
                 >

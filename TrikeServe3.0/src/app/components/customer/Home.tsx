@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 import { Search, MapPin, Users, User as UserIcon, ChevronDown, X, Clock, CreditCard, Utensils, Search as SearchIcon, User, Navigation, MessageCircle, Bike, Home as HomeIcon, ShoppingCart, ClipboardList, Star } from "lucide-react";
-import { Link } from "react-router";
+import { Link, useNavigate } from "react-router";
 import { Button } from "../ui/button";
 import { Card } from "../ui/card";
 import { Badge } from "../ui/badge";
@@ -227,6 +227,7 @@ const buildNavigationRouteOptions = (color: string, weight: number) => {
 
 export default function CustomerHome() {
   const { user } = useAuth();
+  const navigate = useNavigate();
   const [selectedVehicle, setSelectedVehicle] = useState<'share' | 'special' | null>(null);
   const [currentLocation, setCurrentLocation] = useState<{ lat: number; lng: number }>({ lat: 14.5995, lng: 120.9842 }); // Default: Manila
   const [mapCenter, setMapCenter] = useState<{ lat: number; lng: number }>({ lat: 14.5995, lng: 120.9842 });
@@ -275,6 +276,7 @@ export default function CustomerHome() {
    const [completionPopupType, setCompletionPopupType] = useState<'ride' | 'delivery'>('ride');
    const [showRatingModal, setShowRatingModal] = useState(false);
    const [rideDriverId, setRideDriverId] = useState<string | null>(null);
+   const [openingChat, setOpeningChat] = useState(false);
    const [selectedRating, setSelectedRating] = useState(0);
    const [ratingSubmitting, setRatingSubmitting] = useState(false);
    const [ratingSubmitted, setRatingSubmitted] = useState(false);
@@ -628,6 +630,26 @@ export default function CustomerHome() {
     };
 
     checkActiveLobby();
+
+    // Restore an active share ride lobby (the current mechanism) so that
+    // returning to the rides page reopens the lobby during an active ride,
+    // just like the private-ride active card is restored.
+    const storedLobbyId = localStorage.getItem('trikeserve_active_share_lobby');
+    if (storedLobbyId) {
+      supabaseHelpers.getLobbyById(storedLobbyId).then(({ data: storedLobby, error }) => {
+        if (error || !storedLobby) {
+          localStorage.removeItem('trikeserve_active_share_lobby');
+          return;
+        }
+        if (storedLobby.status === 'completed' || storedLobby.status === 'cancelled') {
+          localStorage.removeItem('trikeserve_active_share_lobby');
+          return;
+        }
+        // Ride still active - reopen the lobby automatically.
+        setActiveShareLobbyId(storedLobbyId);
+        setShowShareLobby(true);
+      });
+    }
   }, [user]);
 
   // Load admin pricing settings from Supabase
@@ -1474,6 +1496,29 @@ export default function CustomerHome() {
     }
   };
 
+  const handleOpenDriverChat = async () => {
+    if (!user?.id || !rideDriverId || openingChat) return;
+    setOpeningChat(true);
+    try {
+      const { data, error } = await supabaseHelpers.findOrCreateRideChat({
+        currentUserId: user.id,
+        currentUserName: user.name,
+        currentUserRole: user.role,
+        peerId: rideDriverId,
+        peerName: activeRide?.driver || 'Driver',
+        contextId: currentRequestId || undefined,
+      });
+      if (error || !data) {
+        console.error('❌ Failed to open driver chat:', error);
+        alert('Failed to open chat. Please try again.');
+        return;
+      }
+      navigate(`/customer/messages/thread/${data.id}`);
+    } finally {
+      setOpeningChat(false);
+    }
+  };
+
   const getPrice = () => {
     if (selectedVehicle === 'share') return passengerCount > 0 ? Math.round((privateRidePrice / passengerCount) * 100) / 100 : sharedRidePrice;
     if (selectedVehicle === 'special') return privateRidePrice;
@@ -1829,9 +1874,11 @@ export default function CustomerHome() {
                 <Button
                   variant="outline"
                   className="flex items-center gap-2"
+                  onClick={handleOpenDriverChat}
+                  disabled={openingChat}
                 >
                   <MessageCircle className="w-4 h-4" />
-                  Message
+                  {openingChat ? 'Opening...' : 'Message'}
                 </Button>
                 <Button
                   onClick={handleCancelRide}
@@ -2387,17 +2434,29 @@ export default function CustomerHome() {
           passengerCount={passengerCount}
           pricePerSeat={privateRidePrice}
           paymentMethod={paymentMethod}
+          onLobbyLoaded={(lobbyId) => {
+            // Persist the active lobby as soon as it opens so the return-to-ride
+            // button works even before a driver accepts.
+            localStorage.setItem('trikeserve_active_share_lobby', lobbyId);
+          }}
           onDriverFound={(lobbyId) => {
             // Don't close the lobby - let customers see driver info in the lobby itself
             // Just update the status for tracking
             setCurrentRequestId(`lobby_${lobbyId}`);
             setRideStatus('driver-found');
+            // Remember the active lobby so the customer can return after leaving.
+            localStorage.setItem('trikeserve_active_share_lobby', lobbyId);
             console.log('✅ Driver found for lobby:', lobbyId);
           }}
-          onClose={() => {
+          onClose={(status) => {
             setShowShareLobby(false);
             setActiveShareLobbyId(null);
             setCurrentRequestId(null);
+            // Ride finished - no longer offer to return. If the customer left
+            // mid-ride (no terminal status), keep the return button.
+            if (status === 'completed' || status === 'cancelled') {
+              localStorage.removeItem('trikeserve_active_share_lobby');
+            }
           }}
         />
       )}
@@ -2411,6 +2470,8 @@ export default function CustomerHome() {
             setActiveShareLobbyId(lobbyId);
             setShowLobbyList(false);
             setShowShareLobby(true);
+            // Remember the active lobby so the customer can return after leaving.
+            localStorage.setItem('trikeserve_active_share_lobby', lobbyId);
           }}
           onClose={() => {
             setShowLobbyList(false);
