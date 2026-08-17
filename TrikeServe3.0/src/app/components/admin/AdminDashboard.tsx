@@ -525,32 +525,7 @@ export default function AdminDashboard() {
           {isDriverAdmin && (
             <div>
               <h2 className="text-xl lg:text-2xl font-bold text-[#121212] mb-4">Fixed Rate Configuration</h2>
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4 lg:gap-6">
-                <Card className="p-5 lg:p-6 border-2 border-[#E2E8F0] bg-white">
-                  <div className="flex items-start justify-between mb-4">
-                    <div>
-                      <Users className="w-8 h-8 lg:w-10 lg:h-10 text-[#3B82F6] mb-2" />
-                      <h3 className="font-bold text-base lg:text-lg text-[#121212]">Shared Ride</h3>
-                      <p className="text-xs text-[#64748B]">Sasabay (per passenger)</p>
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-2 mb-3">
-                    <span className="text-lg text-[#64748B] font-bold">₱</span>
-                    <Input
-                      type="number"
-                      value={rateConfig.sharedRide}
-                      onChange={(e) => setRateConfig({ ...rateConfig, sharedRide: Number(e.target.value) })}
-                      className="text-2xl lg:text-3xl font-bold text-center border-2 border-[#E2E8F0]"
-                    />
-                  </div>
-                  <button
-                    onClick={() => handleUpdateRate('sharedRide')}
-                    className="w-full py-3 bg-[#E11D48] hover:bg-[#BE123C] text-white font-bold rounded-xl uppercase transition-all"
-                  >
-                    Update Rate
-                  </button>
-                </Card>
-
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 lg:gap-6">
                 <Card className="p-5 lg:p-6 border-2 border-[#E2E8F0] bg-white">
                   <div className="flex items-start justify-between mb-4">
                     <div>
