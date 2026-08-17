@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import {
   Settings, Menu, Save, DollarSign, Shield, Bell,
-  MapPin, Clock, Bike, Users as UsersIcon, Store, CheckCircle,
+  MapPin, Clock, Bike, Store, CheckCircle,
   LogOut, AlertTriangle
 } from "lucide-react";
 import { useNavigate } from "react-router";
@@ -202,27 +202,7 @@ export default function AdminSettings() {
                 </div>
               </div>
 
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4 lg:gap-6">
-              {/* Shared Ride Rate */}
-              <Card className="p-5 lg:p-6 border-2 border-[#E2E8F0] bg-white">
-                <div className="flex items-start justify-between mb-4">
-                  <div>
-                    <UsersIcon className="w-8 h-8 lg:w-10 lg:h-10 text-[#3B82F6] mb-2" />
-                    <h3 className="font-bold text-base lg:text-lg text-[#121212]">Share Ride</h3>
-                    <p className="text-xs text-[#64748B]">Sasabay (per passenger)</p>
-                  </div>
-                </div>
-                <div className="flex items-center gap-2 mb-3">
-                  <span className="text-lg text-[#64748B] font-bold">₱</span>
-                  <Input
-                    type="number"
-                    value={rateConfig.sharedRide}
-                    onChange={(e) => setRateConfig({ ...rateConfig, sharedRide: Number(e.target.value) })}
-                    className="text-2xl lg:text-3xl font-bold text-center border-2 border-[#E2E8F0]"
-                  />
-                </div>
-              </Card>
-
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 lg:gap-6">
               {/* Private Ride Rate */}
               <Card className="p-5 lg:p-6 border-2 border-[#E2E8F0] bg-white">
                 <div className="flex items-start justify-between mb-4">
