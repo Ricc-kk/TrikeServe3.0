@@ -63,7 +63,7 @@ export default function ActiveRide() {
           // see the status popups.
           supabaseHelpers.updateLobbyDriverStatus(ride.lobbyId, 'on-the-way', 'Driver is on the way!');
         } else {
-          supabaseHelpers.acceptRideRequest(ride.id, user.id, user.user_metadata?.full_name || 'Driver', user.user_metadata?.avatar_url, user.todaPlate || 'N/A', '4.8');
+          supabaseHelpers.acceptRideRequest(ride.id, user.id, user.name || 'Driver', user.user_metadata?.avatar_url, user.todaPlate || 'N/A', '4.8');
           supabaseHelpers.updateDriverRideStatus(ride.id, 'on-the-way', 'Driver is on the way!');
           notifyDeliveryStatus(ride, 'on-the-way', 'Driver is on the way!');
         }
