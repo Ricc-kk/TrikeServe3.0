@@ -26,6 +26,7 @@ export default function Cart() {
   const [needsCutlery, setNeedsCutlery] = useState(false);
   const [showOrderConfirmation, setShowOrderConfirmation] = useState(false);
   const [showMapSelector, setShowMapSelector] = useState(false);
+  const [placedOrderNumber, setPlacedOrderNumber] = useState<string | null>(null);
   const [selectedAddress, setSelectedAddress] = useState({
     name: "Select Delivery Address",
     full: "Tap to choose your delivery location",
@@ -253,6 +254,7 @@ export default function Cart() {
           // Order is still saved locally, so continue
         }
 
+        setPlacedOrderNumber(order.orderNumber);
         setShowOrderConfirmation(true);
       } catch (error) {
         console.error('[Cart] Unexpected error in handlePlaceOrder:', error);
@@ -657,9 +659,12 @@ export default function Cart() {
             <p className="text-[#64748B] text-center mb-2">
               Your order has been successfully placed and is being prepared.
             </p>
-            <p className="text-sm text-[#64748B] text-center mb-8">
-              Order #{Math.random().toString(36).substring(2, 9).toUpperCase()}
-            </p>
+            {placedOrderNumber && (
+              <p className="text-sm text-[#64748B] text-center mb-8">
+                Order #{placedOrderNumber}
+              </p>
+            )}
+
 
             {/* Action Buttons */}
             <div className="space-y-3">
