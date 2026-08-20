@@ -1422,6 +1422,8 @@ export default function CustomerHome() {
            customer_id: user.id,
            pickup_location: pickup,
            dropoff_location: dropoff,
+           pickup_address: pickupAddress || pickup || null,
+           dropoff_address: dropoffAddress || dropoff || null,
            pickup_lat: pickupCoords?.lat || null,
            pickup_lng: pickupCoords?.lng || null,
            dropoff_lat: dropoffCoords?.lat || null,
