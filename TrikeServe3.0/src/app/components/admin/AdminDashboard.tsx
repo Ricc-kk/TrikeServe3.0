@@ -262,6 +262,9 @@ export default function AdminDashboard() {
   // Check if user is Driver Admin (only they can see rate configuration)
   const isDriverAdmin = user?.adminType === 'rider';
 
+  // Check if user is Business & Customer Admin
+  const isBusinessCustomerAdmin = user?.adminType === 'business_customer';
+
   return (
     <div className="min-h-screen bg-[#F8F9FA] flex">
       {/* Sidebar Navigation */}
@@ -521,6 +524,37 @@ export default function AdminDashboard() {
             </div>
           </div>
 
+          {/* Delivery Fee Configuration - Business & Customer Admin */}
+          {isBusinessCustomerAdmin && (
+            <div>
+              <h2 className="text-xl lg:text-2xl font-bold text-[#121212] mb-4">Delivery Fee Configuration</h2>
+              <Card className="p-5 lg:p-6 border-2 border-[#E2E8F0] bg-white max-w-md">
+                <div className="flex items-start justify-between mb-4">
+                  <div>
+                    <Store className="w-8 h-8 lg:w-10 lg:h-10 text-[#10B981] mb-2" />
+                    <h3 className="font-bold text-base lg:text-lg text-[#121212]">Delivery Fee</h3>
+                    <p className="text-xs text-[#64748B]">Food delivery (base rate)</p>
+                  </div>
+                </div>
+                <div className="flex items-center gap-2 mb-3">
+                  <span className="text-lg text-[#64748B] font-bold">₱</span>
+                  <Input
+                    type="number"
+                    value={rateConfig.deliveryBaseFee}
+                    onChange={(e) => setRateConfig({ ...rateConfig, deliveryBaseFee: Number(e.target.value) })}
+                    className="text-2xl lg:text-3xl font-bold text-center border-2 border-[#E2E8F0]"
+                  />
+                </div>
+                <button
+                  onClick={() => handleUpdateRate('deliveryBaseFee')}
+                  className="w-full py-3 bg-[#E11D48] hover:bg-[#BE123C] text-white font-bold rounded-xl uppercase transition-all"
+                >
+                  Update Rate
+                </button>
+              </Card>
+            </div>
+          )}
+
           {/* Rate Configuration - Only for Driver Admin */}
           {isDriverAdmin && (
             <div>
@@ -551,30 +585,7 @@ export default function AdminDashboard() {
                   </button>
                 </Card>
 
-                <Card className="p-5 lg:p-6 border-2 border-[#E2E8F0] bg-white">
-                  <div className="flex items-start justify-between mb-4">
-                    <div>
-                      <Store className="w-8 h-8 lg:w-10 lg:h-10 text-[#10B981] mb-2" />
-                      <h3 className="font-bold text-base lg:text-lg text-[#121212]">Delivery Fee</h3>
-                      <p className="text-xs text-[#64748B]">Food delivery (base rate)</p>
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-2 mb-3">
-                    <span className="text-lg text-[#64748B] font-bold">₱</span>
-                    <Input
-                      type="number"
-                      value={rateConfig.deliveryBaseFee}
-                      onChange={(e) => setRateConfig({ ...rateConfig, deliveryBaseFee: Number(e.target.value) })}
-                      className="text-2xl lg:text-3xl font-bold text-center border-2 border-[#E2E8F0]"
-                    />
-                  </div>
-                  <button
-                    onClick={() => handleUpdateRate('deliveryBaseFee')}
-                    className="w-full py-3 bg-[#E11D48] hover:bg-[#BE123C] text-white font-bold rounded-xl uppercase transition-all"
-                  >
-                    Update Rate
-                  </button>
-                </Card>
+  
               </div>
             </div>
           )}

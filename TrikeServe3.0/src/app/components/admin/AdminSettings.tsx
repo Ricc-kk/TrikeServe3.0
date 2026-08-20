@@ -175,17 +175,45 @@ export default function AdminSettings() {
 
         {/* Content */}
         <div className="p-5 lg:p-8 space-y-6 lg:space-y-8">
-          {/* Access Restricted Notice for Business & Customer Admin */}
+          {/* Delivery Fee Configuration - Business & Customer Admin */}
           {isBusinessCustomerAdmin && (
-            <div className="bg-[#FEF3C7] border-2 border-[#FCD34D] rounded-xl p-6 flex items-start gap-4">
-              <AlertTriangle className="w-6 h-6 text-[#F59E0B] flex-shrink-0 mt-1" />
-              <div>
-                <h3 className="font-bold text-[#121212] mb-2">Access Restricted</h3>
-                <p className="text-sm text-[#92400E]">
-                  As a Business & Customer Administrator, you do not have access to fixed rate configuration.
-                  Only Driver Administrators can modify rate settings.
-                </p>
+            <div>
+              <div className="flex items-center gap-3 mb-4">
+                <div className="w-10 h-10 bg-[#D1FAE5] rounded-xl flex items-center justify-center">
+                  <Store className="w-6 h-6 text-[#10B981]" />
+                </div>
+                <div>
+                  <h2 className="text-xl lg:text-2xl font-bold text-[#121212]">Delivery Fee Configuration</h2>
+                  <p className="text-sm text-[#64748B]">Set the base delivery fee for food orders</p>
+                </div>
               </div>
+
+              <Card className="p-5 lg:p-6 border-2 border-[#E2E8F0] bg-white max-w-md">
+                <div className="flex items-start justify-between mb-4">
+                  <div>
+                    <Store className="w-8 h-8 lg:w-10 lg:h-10 text-[#10B981] mb-2" />
+                    <h3 className="font-bold text-base lg:text-lg text-[#121212]">Delivery Fee</h3>
+                    <p className="text-xs text-[#64748B]">Food delivery (base rate)</p>
+                  </div>
+                </div>
+                <div className="flex items-center gap-2 mb-3">
+                  <span className="text-lg text-[#64748B] font-bold">₱</span>
+                  <Input
+                    type="number"
+                    value={rateConfig.deliveryBaseFee}
+                    onChange={(e) => setRateConfig({ ...rateConfig, deliveryBaseFee: Number(e.target.value) })}
+                    className="text-2xl lg:text-3xl font-bold text-center border-2 border-[#E2E8F0]"
+                  />
+                </div>
+              </Card>
+
+              <button
+                onClick={handleSaveRates}
+                className="mt-4 px-6 py-3 bg-[#E11D48] hover:bg-[#BE123C] text-white font-bold rounded-xl uppercase transition-all flex items-center gap-2"
+              >
+                <Save className="w-5 h-5" />
+                Save Delivery Fee
+              </button>
             </div>
           )}
 
@@ -223,25 +251,7 @@ export default function AdminSettings() {
                 </div>
               </Card>
 
-              {/* Delivery Fee */}
-              <Card className="p-5 lg:p-6 border-2 border-[#E2E8F0] bg-white">
-                <div className="flex items-start justify-between mb-4">
-                  <div>
-                    <Store className="w-8 h-8 lg:w-10 lg:h-10 text-[#10B981] mb-2" />
-                    <h3 className="font-bold text-base lg:text-lg text-[#121212]">Delivery Fee</h3>
-                    <p className="text-xs text-[#64748B]">Food delivery (base rate)</p>
-                  </div>
-                </div>
-                <div className="flex items-center gap-2 mb-3">
-                  <span className="text-lg text-[#64748B] font-bold">₱</span>
-                  <Input
-                    type="number"
-                    value={rateConfig.deliveryBaseFee}
-                    onChange={(e) => setRateConfig({ ...rateConfig, deliveryBaseFee: Number(e.target.value) })}
-                    className="text-2xl lg:text-3xl font-bold text-center border-2 border-[#E2E8F0]"
-                  />
-                </div>
-              </Card>
+
             </div>
 
             <button
