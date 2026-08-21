@@ -298,7 +298,7 @@ export default function FoodHome() {
           <div className="flex items-center gap-3">
             <MapPin className="w-7 h-7 text-white" />
             <div>
-              <h1 className="text-white font-bold text-2xl leading-tight">Tagalag Rd</h1>
+              <h1 className="text-white font-bold text-2xl leading-tight">Gen T Deleon</h1>
               <p className="text-white/90 text-sm">Valenzuela City</p>
             </div>
           </div>
@@ -447,7 +447,7 @@ export default function FoodHome() {
       <div className="px-5 py-6 bg-white rounded-t-[32px] -mt-2 relative z-10">
         {/* Popular Restaurants - Enhanced Cards */}
         <div className="pt-2">
-          <h3 className="text-xl font-bold text-[#121212] mb-4">Lahat ng Tindahan sa Tagalag</h3>
+          <h3 className="text-xl font-bold text-[#121212] mb-4">All Available Restaurants</h3>
           
            {restaurants.length === 0 ? (
              // Empty State
