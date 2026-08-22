@@ -158,7 +158,9 @@ export default function Cart() {
           status: "pending" as const,
           deliveryMode: "delivery" as const,
           paymentMethod,
-          address: selectedAddress.full,
+          address: selectedAddress.lat && selectedAddress.lng
+            ? `${selectedAddress.lat}, ${selectedAddress.lng}`
+            : selectedAddress.full,
           date: new Date().toLocaleString('en-US', {
             month: 'short',
             day: '2-digit',

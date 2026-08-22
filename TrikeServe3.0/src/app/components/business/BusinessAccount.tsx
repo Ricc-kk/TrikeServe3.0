@@ -1,4 +1,4 @@
-import { Store, Package, Clock, User, ChevronRight, LogOut, ArrowLeft, Menu, Shield, Bell, HelpCircle, CreditCard } from "lucide-react";
+import { Store, Package, Clock, User, ChevronRight, LogOut, ArrowLeft, Menu, Shield, Bell, HelpCircle, CreditCard, Pencil } from "lucide-react";
 import { Link, useNavigate } from "react-router";
 import { Card } from "../ui/card";
 import { Badge } from "../ui/badge";
@@ -65,9 +65,13 @@ export default function BusinessAccount() {
               <ArrowLeft className="w-5 h-5 lg:w-6 lg:h-6 text-[#121212]" />
             </button>
             
-            <div className="min-w-0">
+            <div className="flex-1 min-w-0">
               <h1 className="text-lg lg:text-2xl xl:text-3xl font-extrabold text-[#121212]">Account</h1>
             </div>
+            <Link to="/business/profile" className="flex-shrink-0 flex items-center gap-1.5 px-3 py-1.5 bg-white/80 backdrop-blur-sm rounded-full text-[#E11D48] text-xs font-semibold hover:bg-white transition-colors shadow-sm">
+              <Pencil className="w-3.5 h-3.5" />
+              Edit Profile
+            </Link>
           </div>
           <p className="text-xs lg:text-sm text-[#64748B] ml-7 lg:ml-11">Manage your business settings</p>
         </div>

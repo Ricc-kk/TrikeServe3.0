@@ -343,14 +343,40 @@ export default function BusinessOrders() {
       deliveryFee: order.deliveryFee,
     });
 
-    // Create delivery request WITHOUT driver_id - open for any driver with delivery service type
+    // Parse dropoff coordinates from address (e.g. "14.72415, 120.96287")
+    const parseCoords = (addr: string) => {
+      const match = addr.match(/(\d+\.\d+)\s*,\s*(\d+\.\d+)/);
+      if (match) return { lat: parseFloat(match[1]), lng: parseFloat(match[2]) };
+      return null;
+    };
+    const dropoffCoords = parseCoords(order.address || '');
+
+    // Look up restaurant address for pickup geocoding
+    let pickupLat = null;
+    let pickupLng = null;
+    let pickupAddress = pickupLabel;
+    try {
+      const { data: restaurant } = await supabase
+        .from('restaurants')
+        .select('address')
+        .eq('business_user_id', currentUser?.id)
+        .single();
+      if (restaurant?.address) {
+        pickupAddress = restaurant.address;
+      }
+    } catch (e) {}
+
     const { error } = await supabase
       .from('ride_requests')
       .insert([{
         customer_id: order.customerId,
         driver_id: null,  // Open request - any driver can accept
         pickup_location: taggedPickup,
+        pickup_address: pickupAddress,
         dropoff_location: order.address,
+        dropoff_address: order.address,
+        dropoff_lat: dropoffCoords?.lat || null,
+        dropoff_lng: dropoffCoords?.lng || null,
         status: 'pending',
         ride_type: 'special',  // Use 'special' type (database constraint only allows specific values)
         payment_method: order.paymentMethod === 'gcash' ? 'GCASH' : 'COD',

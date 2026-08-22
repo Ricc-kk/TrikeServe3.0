@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from "react";
 import { useNavigate, useLocation } from "react-router";
 import { ArrowLeft, Navigation, Phone, MapPin, CheckCircle, Minimize2, Maximize2, Users, X } from "lucide-react";
-import { GoogleMap, Marker, Polyline, InfoWindow, DirectionsRenderer } from "@react-google-maps/api";
+import { GoogleMap, Marker, InfoWindow, DirectionsRenderer } from "@react-google-maps/api";
 import { Button } from "../ui/button";
 import { Card } from "../ui/card";
 import { Badge } from "../ui/badge";
@@ -46,9 +46,9 @@ export default function ActiveRide() {
   const [driverLocation, setDriverLocation] = useState<{ lat: number; lng: number } | null>(null);
   const [directions, setDirections] = useState<google.maps.DirectionsResult | null>(null);
   const [mapCenter, setMapCenter] = useState<{ lat: number; lng: number }>({ lat: 14.6037, lng: 120.9793 });
-  const [availableRequests, setAvailableRequests] = useState<any[]>([]);
+
   const isCompleting = useRef(false);
-  const { isLoaded: isMapsLoaded, apiKeyPresent } = useMapLoader();
+  const { isLoaded: isMapsLoaded } = useMapLoader();
 
   useEffect(() => {
     if (location.state?.acceptedRide) {
@@ -77,37 +77,76 @@ export default function ActiveRide() {
 
   useEffect(() => { if (driverLocation) setMapCenter(driverLocation); }, [driverLocation]);
 
-  useEffect(() => {
-    if (!rideData) return;
-    const fetchRequests = async () => {
-      try {
-        const { data } = await supabaseHelpers.getRideRequests('pending');
-        setAvailableRequests((data || []).filter((r: any) => r.id !== rideData.id && r.pickup_lat && r.pickup_lng));
-      } catch (e) {}
-    };
-    fetchRequests();
-  }, [rideData?.id]);
 
+
+  // Request device GPS location
   useEffect(() => {
-    if (!rideData) return;
-    if ('geolocation' in navigator) {
-      navigator.geolocation.getCurrentPosition((pos) => setDriverLocation({ lat: pos.coords.latitude, lng: pos.coords.longitude }));
-      const watchId = navigator.geolocation.watchPosition((pos) => {
+    if (!('geolocation' in navigator)) return;
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        console.log('[ActiveRide] Got device location:', pos.coords.latitude, pos.coords.longitude);
+        setDriverLocation({ lat: pos.coords.latitude, lng: pos.coords.longitude });
+      },
+      (err) => {
+        console.error('[ActiveRide] Geolocation error:', err.message);
+        // Retry once after a short delay — sometimes the first request is rushed
+        setTimeout(() => {
+          navigator.geolocation.getCurrentPosition(
+            (pos2) => setDriverLocation({ lat: pos2.coords.latitude, lng: pos2.coords.longitude }),
+            () => console.error('[ActiveRide] Geolocation retry also failed'),
+            { enableHighAccuracy: true, timeout: 15000 }
+          );
+        }, 2000);
+      },
+      { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
+    );
+  }, []);
+
+  // Watch position for real-time updates
+  useEffect(() => {
+    if (!('geolocation' in navigator)) return;
+    const watchId = navigator.geolocation.watchPosition(
+      (pos) => {
         const loc = { lat: pos.coords.latitude, lng: pos.coords.longitude };
         setDriverLocation(loc);
-        if (rideData.id) supabaseHelpers.updateRideRequest(rideData.id, { driver_lat: loc.lat, driver_lng: loc.lng, updated_at: new Date().toISOString() });
-      }, null, { enableHighAccuracy: true });
-      return () => navigator.geolocation.clearWatch(watchId);
-    }
+        if (rideData?.id) supabaseHelpers.updateRideRequest(rideData.id, { driver_lat: loc.lat, driver_lng: loc.lng, updated_at: new Date().toISOString() });
+      },
+      () => {},
+      { enableHighAccuracy: true, maximumAge: 5000 }
+    );
+    return () => navigator.geolocation.clearWatch(watchId);
   }, [rideData?.id]);
 
-  useEffect(() => {
-    if (!driverLocation || !rideData || !isMapsLoaded || !(window as any).google) return;
+  // Determine if we're heading to pickup or dropoff
+  const isHeadingToPickup = rideData?.status === 'on-the-way' || rideData?.status === 'arrived';
 
-    let dest = null;
-    if (rideData.status === 'on-the-way') {
+  // For delivery rides: geocode the restaurant pickup address if lat/lng are missing
+  useEffect(() => {
+    if (!rideData || !isMapsLoaded || !(window as any).google) return;
+    const isDelivery = Boolean(rideData.orderId || rideData.orderNumber) || String(rideData.pickup || '').startsWith('DELIVERY');
+    if (!isDelivery) return;
+    if (rideData.pickupLat && rideData.pickupLng) return; // Already has coordinates
+    if (!rideData.pickupAddress && !rideData.pickup) return;
+
+    const Geocoder = new (window as any).google.maps.Geocoder();
+    Geocoder.geocode({ address: rideData.pickupAddress || rideData.pickup }, (results: any, status: string) => {
+      if (status === 'OK' && results?.[0]) {
+        const loc = results[0].geometry.location;
+        const updated = { ...rideData, pickupLat: loc.lat(), pickupLng: loc.lng() };
+        setRideData(updated);
+        localStorage.setItem('trikeserve_active_ride', JSON.stringify(updated));
+      }
+    });
+  }, [rideData?.pickupAddress, rideData?.pickup, rideData?.pickupLat, rideData?.pickupLng, isMapsLoaded]);
+
+  useEffect(() => {
+    if (!rideData || !isMapsLoaded || !(window as any).google) return;
+    if (!driverLocation) return;
+
+    let dest: { lat: number; lng: number } | null = null;
+    if (isHeadingToPickup) {
       dest = rideData.pickupLat && rideData.pickupLng ? { lat: Number(rideData.pickupLat), lng: Number(rideData.pickupLng) } : null;
-    } else if (['pickup', 'drop-off', 'arrived'].includes(rideData.status)) {
+    } else if (['pickup', 'drop-off'].includes(rideData.status)) {
       dest = rideData.dropoffLat && rideData.dropoffLng ? { lat: Number(rideData.dropoffLat), lng: Number(rideData.dropoffLng) } : null;
     }
 
@@ -122,11 +161,11 @@ export default function ActiveRide() {
       if (status === 'OK') {
         setDirections(result);
       } else {
-        console.error('Directions failed:', status);
+        console.error('[ActiveRide] Directions failed:', status);
         setDirections(null);
       }
     });
-  }, [driverLocation, rideData?.status, rideData?.pickupLat, rideData?.pickupLng, rideData?.dropoffLat, rideData?.dropoffLng, isMapsLoaded]);
+  }, [driverLocation, rideData?.status, rideData?.pickupLat, rideData?.pickupLng, rideData?.dropoffLat, rideData?.dropoffLng, isMapsLoaded, isHeadingToPickup]);
 
   const isDeliveryRide = (ride: any) =>
     Boolean(ride?.orderId || ride?.orderNumber) ||
@@ -265,19 +304,67 @@ export default function ActiveRide() {
       </div>
 
       <div className={`relative w-full transition-all duration-300 ${isMinimized ? 'h-[80vh]' : 'h-80'}`}>
-        {isMapsLoaded && apiKeyPresent ? (
-          <GoogleMap mapContainerStyle={{ width: '100%', height: '100%' }} center={mapCenter} zoom={15} options={{ disableDefaultUI: true }}>
-            <Marker position={mapCenter} icon={{ url: tricycleIcon, scaledSize: new (window as any).google.maps.Size(44, 44), anchor: new (window as any).google.maps.Point(22, 22) }} zIndex={100} />
-            {rideData.pickupLat && <Marker position={{ lat: Number(rideData.pickupLat), lng: Number(rideData.pickupLng) }} icon={markerIcon('#2563EB')} title="Pickup" />}
-            {rideData.dropoffLat && <Marker position={{ lat: Number(rideData.dropoffLat), lng: Number(rideData.dropoffLng) }} icon={markerIcon('#E11D48')} title="Drop-off" />}
-            {availableRequests.map(r => <Marker key={r.id} position={{ lat: Number(r.pickup_lat), lng: Number(r.pickup_lng) }} icon={markerIcon('#10B981')} />)}
-            {directions && <DirectionsRenderer directions={directions} options={{ suppressMarkers: true, polylineOptions: { strokeColor: '#2563EB', strokeWeight: 6, strokeOpacity: 0.8 } }} />}
+        {isMapsLoaded ? (
+          <GoogleMap mapContainerStyle={{ width: '100%', height: '100%' }} center={driverLocation || mapCenter} zoom={15} options={{ disableDefaultUI: true }}>
+            {driverLocation && (
+              <Marker position={driverLocation} icon={{ url: tricycleIcon, scaledSize: new (window as any).google.maps.Size(44, 44), anchor: new (window as any).google.maps.Point(22, 22) }} zIndex={100} />
+            )}
+            {/* Pickup marker: only show when heading to pickup */}
+            {isHeadingToPickup && rideData.pickupLat && (
+              <Marker position={{ lat: Number(rideData.pickupLat), lng: Number(rideData.pickupLng) }} icon={markerIcon('#10B981')} title="Pickup" />
+            )}
+            {/* Dropoff marker: only show when heading to dropoff */}
+            {!isHeadingToPickup && rideData.dropoffLat && (
+              <Marker position={{ lat: Number(rideData.dropoffLat), lng: Number(rideData.dropoffLng) }} icon={markerIcon('#E11D48')} title="Drop-off" />
+            )}
+
+            {/* Google Directions route line */}
+            {directions && (
+              <DirectionsRenderer
+                directions={directions}
+                options={{
+                  suppressMarkers: true,
+                  polylineOptions: {
+                    strokeColor: isHeadingToPickup ? '#10B981' : '#E11D48',
+                    strokeWeight: 6,
+                    strokeOpacity: 0.9,
+                  },
+                }}
+              />
+            )}
+
           </GoogleMap>
-        ) : <div className="h-full flex items-center justify-center bg-gray-100 font-bold text-gray-500">Loading Map...</div>}
+        ) : (
+          <div className="h-full flex flex-col items-center justify-center bg-gray-100 space-y-4 p-6">
+            <Navigation className="w-12 h-12 text-[#E11D48] animate-pulse" />
+            <p className="text-gray-500 font-bold text-center">Loading Map...</p>
+            {!driverLocation && (
+              <div className="text-center">
+                <p className="text-sm text-gray-400 mb-3">Waiting for your device location...</p>
+                <Button onClick={() => {
+                  navigator.geolocation.getCurrentPosition(
+                    (pos) => setDriverLocation({ lat: pos.coords.latitude, lng: pos.coords.longitude }),
+                    () => alert('Please enable Location Services in your device settings to use navigation.'),
+                    { enableHighAccuracy: true, timeout: 15000 }
+                  );
+                }} className="bg-[#E11D48]">
+                  <MapPin className="w-4 h-4 mr-2" />Enable Location
+                </Button>
+              </div>
+            )}
+          </div>
+        )}
         <Button onClick={() => {
-          const dest = rideData?.status === 'on-the-way' ? { lat: rideData.pickupLat, lng: rideData.pickupLng } : { lat: rideData.dropoffLat, lng: rideData.dropoffLng };
+          const dest = isHeadingToPickup
+            ? { lat: rideData.pickupLat, lng: rideData.pickupLng }
+            : { lat: rideData.dropoffLat, lng: rideData.dropoffLng };
           if (dest && dest.lat) window.open(`https://www.google.com/maps/dir/?api=1&origin=${driverLocation?.lat},${driverLocation?.lng}&destination=${dest.lat},${dest.lng}&travelmode=driving`, '_blank');
         }} className="absolute top-3 right-3 bg-white text-black shadow-md hover:bg-gray-100"><Navigation className="w-4 h-4 mr-2" />Navigate</Button>
+        {/* Route phase indicator banner */}
+        <div className={`absolute top-3 left-3 px-3 py-1.5 rounded-full text-white text-xs font-bold shadow-md flex items-center gap-1.5 ${isHeadingToPickup ? 'bg-green-500' : 'bg-[#E11D48]'}`}>
+          <div className={`w-2 h-2 rounded-full ${isHeadingToPickup ? 'bg-white animate-pulse' : 'bg-white animate-pulse'}`} />
+          {isHeadingToPickup ? 'Heading to Pickup' : 'Heading to Drop-off'}
+        </div>
       </div>
 
       <div className={isMinimized ? 'fixed bottom-0 left-0 right-0 bg-white rounded-t-3xl shadow-[0_-10px_40px_rgba(0,0,0,0.1)] p-4 h-[40vh] overflow-y-auto z-[1001]' : 'p-4 space-y-4'}>
@@ -293,8 +380,22 @@ export default function ActiveRide() {
             </div>
           </div>
           <div className="space-y-3 mt-4">
-            <div className="flex gap-3"><div className="w-2 h-2 rounded-full bg-[#E11D48] mt-1.5" /><div className="flex-1 text-sm"><p className="text-gray-500 text-xs">Pickup</p><p className="font-semibold">{rideData.pickup}</p></div></div>
-            <div className="flex gap-3"><div className="w-2 h-2 rounded-full bg-green-600 mt-1.5" /><div className="flex-1 text-sm"><p className="text-gray-500 text-xs">Drop-off</p><p className="font-semibold">{rideData.dropoff}</p></div></div>
+            <div className={`flex gap-3 p-2 rounded-lg ${isHeadingToPickup ? 'bg-green-50 border border-green-200' : ''}`}>
+              <div className={`w-2 h-2 rounded-full mt-1.5 ${isHeadingToPickup ? 'bg-green-500' : 'bg-gray-400'}`} />
+              <div className="flex-1 text-sm">
+                <p className="text-gray-500 text-xs">Pickup</p>
+                <p className="font-semibold">{rideData.pickup}</p>
+              </div>
+              {isHeadingToPickup && <span className="text-[10px] bg-green-500 text-white px-2 py-0.5 rounded-full font-bold self-center">HERE</span>}
+            </div>
+            <div className={`flex gap-3 p-2 rounded-lg ${!isHeadingToPickup && ['pickup', 'drop-off'].includes(rideData.status) ? 'bg-red-50 border border-red-200' : ''}`}>
+              <div className={`w-2 h-2 rounded-full mt-1.5 ${!isHeadingToPickup && ['pickup', 'drop-off'].includes(rideData.status) ? 'bg-[#E11D48]' : 'bg-gray-400'}`} />
+              <div className="flex-1 text-sm">
+                <p className="text-gray-500 text-xs">Drop-off</p>
+                <p className="font-semibold">{rideData.dropoff}</p>
+              </div>
+              {!isHeadingToPickup && ['pickup', 'drop-off'].includes(rideData.status) && <span className="text-[10px] bg-[#E11D48] text-white px-2 py-0.5 rounded-full font-bold self-center">HERE</span>}
+            </div>
           </div>
         </Card>
         <div className="grid gap-2">

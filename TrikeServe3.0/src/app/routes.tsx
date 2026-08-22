@@ -21,6 +21,7 @@ import BusinessHome from "./components/business/BusinessHome";
 import BusinessMenu from "./components/business/BusinessMenu";
 import BusinessOrders from "./components/business/BusinessOrders";
 import BusinessAccount from "./components/business/BusinessAccount";
+import BusinessProfile from "./components/business/BusinessProfile";
 import BusinessMessages from "./components/business/BusinessMessages";
 import CustomerApp from "./components/customer/CustomerApp";
 import CustomerHome from "./components/customer/Home";
@@ -196,6 +197,14 @@ export const router = createBrowserRouter([
         element: (
           <ProtectedRoute allowedRoles={['business']}>
             <BusinessAccount />
+          </ProtectedRoute>
+        )
+      },
+      {
+        path: "business/profile",
+        element: (
+          <ProtectedRoute allowedRoles={['business']}>
+            <BusinessProfile />
           </ProtectedRoute>
         )
       },
