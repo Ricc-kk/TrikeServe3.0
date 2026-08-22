@@ -1,4 +1,4 @@
-import { X, Camera, Star, ChevronRight, ArrowLeft } from "lucide-react";
+import { X, Camera, ArrowLeft } from "lucide-react";
 import { Link, useNavigate } from "react-router";
 import { useState } from "react";
 import profilePlaceholder from "../../../assets/49624c6fb8f504041a2a91198a581a109cd5507d.png";
@@ -46,12 +46,7 @@ export default function Profile() {
           </button>
         </div>
 
-        {/* Not enough ratings */}
-        <button className="flex items-center gap-1.5 text-[#64748B]">
-          <Star className="w-4 h-4 fill-[#F59E0B] text-[#F59E0B]" />
-          <span className="text-sm">Not enough ratings</span>
-          <ChevronRight className="w-4 h-4" />
-        </button>
+
       </div>
 
       {/* Form Fields */}
