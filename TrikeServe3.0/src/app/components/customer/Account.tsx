@@ -1,4 +1,4 @@
-import { Camera, ChevronRight, Home as HomeIcon, MessageCircle, User, ShoppingCart, ClipboardList, ArrowLeft, LogOut, Shield, Bell, HelpCircle } from "lucide-react";
+import { Camera, ChevronRight, Home as HomeIcon, MessageCircle, User, ShoppingCart, ClipboardList, ArrowLeft, LogOut, Shield, Bell, HelpCircle, Pencil, Heart } from "lucide-react";
 import { Link, useNavigate } from "react-router";
 import { useState } from "react";
 import { useAuth } from "../../contexts/AuthContext";
@@ -12,16 +12,26 @@ export default function Account() {
     mobile: user?.phone || "",
     email: user?.email || "",
   });
+  const [showGoodbye, setShowGoodbye] = useState(false);
 
   const handleLogout = () => {
-    logout();
-    navigate("/");
+    setShowGoodbye(true);
+    setTimeout(() => {
+      logout();
+      navigate("/");
+    }, 2000);
   };
 
   return (
     <div className="min-h-screen bg-[#F8FAFC] pb-24">
       {/* Gradient Header with Profile */}
       <div className="relative bg-gradient-to-br from-[#E11D48] via-[#BE123C] to-[#9F1239] px-5 pt-6 pb-6 rounded-b-2xl shadow-lg">
+        {/* Edit Profile Button - Top Right */}
+        <Link to="/customer/profile" className="absolute top-4 right-4 flex items-center gap-1.5 bg-white/20 backdrop-blur-sm text-white text-xs font-semibold px-3 py-1.5 rounded-full hover:bg-white/30 transition-colors">
+          <Pencil className="w-3.5 h-3.5" />
+          Edit Profile
+        </Link>
+
         <div className="relative flex flex-col items-center">
           {/* Profile Photo */}
           <div className="relative mb-2">
@@ -189,6 +199,24 @@ export default function Account() {
           </Link>
         </div>
       </div>
+
+      {/* Goodbye Popup */}
+      {showGoodbye && (
+        <div className="fixed inset-0 bg-black/50 z-[2000] flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl shadow-xl p-8 max-w-sm w-full text-center">
+            <div className="w-16 h-16 bg-[#FFF1F2] rounded-full flex items-center justify-center mx-auto mb-4">
+              <Heart className="w-8 h-8 text-[#E11D48]" />
+            </div>
+            <h3 className="text-2xl font-bold text-[#121212] mb-2">Goodbye!</h3>
+            <p className="text-[#64748B] text-sm">See you again soon, <span className="font-semibold text-[#121212]">{formData.name}</span>! 👋</p>
+            <div className="mt-6">
+              <div className="w-full bg-[#E2E8F0] rounded-full h-1.5">
+                <div className="bg-[#E11D48] h-1.5 rounded-full" style={{ width: '100%', animation: 'shrink 2s linear forwards' }} />
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

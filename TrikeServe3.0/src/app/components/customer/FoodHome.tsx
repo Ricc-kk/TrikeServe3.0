@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { Search, MapPin, Heart, User, Home as HomeIcon, ShoppingCart, MessageCircle, ClipboardList, BadgeCheck, Clock, Star, Shield, SlidersHorizontal, ArrowUp, X, Check, Store, Bell } from "lucide-react";
+import { Search, MapPin, Heart, User, Home as HomeIcon, ShoppingCart, MessageCircle, ClipboardList, BadgeCheck, Clock, Star, Shield, SlidersHorizontal, ArrowUp, X, Check, Store, Bell, CheckCircle } from "lucide-react";
 import { Link, useNavigate } from "react-router";
 import { Card } from "../ui/card";
 import { Badge } from "../ui/badge";
@@ -35,6 +35,8 @@ export default function FoodHome() {
   // Filter states
   const [selectedSortBy, setSelectedSortBy] = useState<string>("recommended");
   const [selectedDeliveryTime, setSelectedDeliveryTime] = useState<string[]>([]);
+  const [showWelcomeBack, setShowWelcomeBack] = useState(false);
+  const [welcomeUserName, setWelcomeUserName] = useState("");
   const [selectedPriceRange, setSelectedPriceRange] = useState<string[]>([]);
   const [selectedRating, setSelectedRating] = useState<string>("");
   const [freeDeliveryOnly, setFreeDeliveryOnly] = useState(false);
@@ -276,6 +278,20 @@ export default function FoodHome() {
   ];
 
   const restaurantFilters = ["All", "Pinoy Food", "Fast Food", "Kape", "Merienda"];
+
+  // Show welcome back popup after login
+  useEffect(() => {
+    const showWelcome = sessionStorage.getItem('trikeserve_show_welcome');
+    const userName = sessionStorage.getItem('trikeserve_welcome_name');
+    if (showWelcome === 'true') {
+      sessionStorage.removeItem('trikeserve_show_welcome');
+      sessionStorage.removeItem('trikeserve_welcome_name');
+      setWelcomeUserName(userName || 'there');
+      const timer = setTimeout(() => setShowWelcomeBack(true), 500);
+      const hideTimer = setTimeout(() => setShowWelcomeBack(false), 3000);
+      return () => { clearTimeout(timer); clearTimeout(hideTimer); };
+    }
+  }, []);
 
   const carouselSettings = {
     dots: true,
@@ -857,6 +873,24 @@ export default function FoodHome() {
               >
                 Apply Filters
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Welcome Back Popup */}
+      {showWelcomeBack && (
+        <div className="fixed inset-0 bg-black/50 z-[2000] flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl shadow-xl p-8 max-w-sm w-full text-center">
+            <div className="w-16 h-16 bg-[#D1FAE5] rounded-full flex items-center justify-center mx-auto mb-4">
+              <CheckCircle className="w-8 h-8 text-[#10B981]" />
+            </div>
+            <h3 className="text-2xl font-bold text-[#121212] mb-2">Welcome Back!</h3>
+            <p className="text-[#64748B] text-sm">Good to see you again, <span className="font-semibold text-[#121212]">{welcomeUserName}</span></p>
+            <div className="mt-6">
+              <div className="w-full bg-[#E2E8F0] rounded-full h-1.5">
+                <div className="bg-[#10B981] h-1.5 rounded-full" style={{ width: '100%', animation: 'shrink 2.5s linear forwards' }} />
+              </div>
             </div>
           </div>
         </div>
