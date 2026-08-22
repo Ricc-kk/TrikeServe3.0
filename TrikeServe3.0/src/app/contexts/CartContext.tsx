@@ -29,11 +29,13 @@ export interface CartRestaurant {
   image: string;
   items: CartItem[];
   deliveryFee: number;
+  businessUserId?: string; // Business user ID for order notifications
+  supabaseRestaurantId?: string; // Supabase restaurant UUID
 }
 
 interface CartContextType {
   cartRestaurants: CartRestaurant[];
-  addToCart: (restaurantData: { id: string; name: string; location: string; distance: string; time: string; image: string; deliveryFee: number }, item: CartItem) => void;
+  addToCart: (restaurantData: { id: string; name: string; location: string; distance: string; time: string; image: string; deliveryFee: number; businessUserId?: string; supabaseRestaurantId?: string }, item: CartItem) => void;
   updateItemQuantity: (restaurantId: string, itemId: number, change: number) => void;
   removeItem: (restaurantId: string, itemId: number) => void;
   removeRestaurant: (restaurantId: string) => void;
@@ -92,7 +94,7 @@ export function CartProvider({ children }: { children: ReactNode }) {
   }, [cartRestaurants, currentUserEmail]);
 
   const addToCart = (
-    restaurantData: { id: string; name: string; location: string; distance: string; time: string; image: string; deliveryFee: number },
+    restaurantData: { id: string; name: string; location: string; distance: string; time: string; image: string; deliveryFee: number; businessUserId?: string; supabaseRestaurantId?: string },
     item: CartItem
   ) => {
     setCartRestaurants((prev) => {
@@ -129,6 +131,8 @@ export function CartProvider({ children }: { children: ReactNode }) {
           image: restaurantData.image,
           items: [{ ...item, quantity: 1 }],
           deliveryFee: restaurantData.deliveryFee,
+          businessUserId: restaurantData.businessUserId,
+          supabaseRestaurantId: restaurantData.supabaseRestaurantId,
         };
 
         return [...prev, newRestaurant];

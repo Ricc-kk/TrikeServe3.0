@@ -739,19 +739,21 @@ export default function BusinessDashboard() {
               {notifications.map((notification) => (
                 <Card 
                   key={notification.id}
-                  className={`p-4 border-2 transition-all cursor-pointer hover:border-[#E11D48] ${
-                    notification.read ? 'border-[#E2E8F0] bg-white' : 'border-[#FFF1F2] bg-[#FFF1F2]'
+                  className={`p-4 border transition-all cursor-pointer hover:border-[#E11D48] ${
+                    notification.read ? 'border-[#E2E8F0] bg-white' : 'border-[#E2E8F0] bg-white'
                   }`}
                 >
                   <div className="flex items-start gap-3">
                     <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${
-                      notification.type === 'order' ? 'bg-[#FFF1F2]' :
+                      notification.type === 'order' || notification.type === 'new_order' ? 'bg-[#FFF1F2]' :
+                      notification.type === 'delivery' || notification.type === 'delivery_completed' ? 'bg-[#D1FAE5]' :
                       notification.type === 'system' ? 'bg-[#DBEAFE]' :
-                      'bg-[#FEF3C7]'
+                      'bg-[#F1F5F9]'
                     }`}>
-                      {notification.type === 'order' && <ShoppingBag className="w-5 h-5 text-[#E11D48]" />}
+                      {(notification.type === 'order' || notification.type === 'new_order') && <ShoppingBag className="w-5 h-5 text-[#E11D48]" />}
+                      {(notification.type === 'delivery' || notification.type === 'delivery_completed') && <Clock className="w-5 h-5 text-[#10B981]" />}
                       {notification.type === 'system' && <Settings className="w-5 h-5 text-[#3B82F6]" />}
-                      {notification.type === 'review' && <Users className="w-5 h-5 text-[#F59E0B]" />}
+                      {notification.type === 'review' && <Star className="w-5 h-5 text-[#F59E0B]" />}
                     </div>
                     <div className="flex-1">
                       <div className="flex items-start justify-between mb-1">
