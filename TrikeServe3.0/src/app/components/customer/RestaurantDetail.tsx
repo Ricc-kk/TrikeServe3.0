@@ -398,6 +398,7 @@ export default function RestaurantDetail() {
      const restaurantInfo = {
        id: restaurantId || restaurantData.name, // Use restaurant ID
        businessUserId: (restaurantData as any)?.business_user_id, // ✅ CRITICAL: Add business user ID for orders
+       supabaseRestaurantId: restaurantId || undefined, // Supabase restaurant UUID
        name: restaurantData.name,
        location: restaurantData.subtitle,
        distance: "1.2 km",

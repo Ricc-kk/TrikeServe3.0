@@ -983,6 +983,60 @@ export const supabaseHelpers = {
     return { data, error };
   },
 
+  async notifyBusinessNewOrder(params: {
+    orderId: string;
+    orderNumber: string;
+    restaurantName: string;
+    customerName: string;
+    total: number;
+    businessUserId: string;
+  }) {
+    const { orderId, orderNumber, restaurantName, customerName, total, businessUserId } = params;
+
+    const { data, error } = await supabase
+      .from('delivery_notifications')
+      .insert([{
+        recipient_id: businessUserId,
+        order_id: orderId,
+        order_number: orderNumber,
+        restaurant_name: restaurantName,
+        title: '🛒 New Order Received!',
+        message: `${customerName} just placed an order for ₱${total.toFixed(2)} (Order #${orderNumber})`,
+        type: 'new_order',
+        read: false,
+        created_at: new Date().toISOString(),
+      }])
+      .select();
+
+    return { data, error };
+  },
+
+  async notifyBusinessDeliveryCompleted(params: {
+    orderId: string;
+    orderNumber: string;
+    restaurantName: string;
+    businessUserId: string;
+  }) {
+    const { orderId, orderNumber, restaurantName, businessUserId } = params;
+
+    const { data, error } = await supabase
+      .from('delivery_notifications')
+      .insert([{
+        recipient_id: businessUserId,
+        order_id: orderId,
+        order_number: orderNumber,
+        restaurant_name: restaurantName,
+        title: '✅ Delivery Completed!',
+        message: `Order #${orderNumber} has been delivered successfully`,
+        type: 'delivery_completed',
+        read: false,
+        created_at: new Date().toISOString(),
+      }])
+      .select();
+
+    return { data, error };
+  },
+
   async getDeliveryNotifications(recipientId: string) {
     const { data, error } = await supabase
       .from('delivery_notifications')

@@ -83,12 +83,31 @@ export default function Cart() {
       }
       try {
         // CRITICAL: Get the actual Supabase restaurant.id for RLS isolation
-        const businessUserId = checkoutRestaurant.businessUserId;
+        let businessUserId = checkoutRestaurant.businessUserId;
 
         let supabaseRestaurantId = checkoutRestaurant.supabaseRestaurantId;
 
-        // If we don't have it, fetch from Supabase
-        if (!supabaseRestaurantId && businessUserId) {
+        // If we don't have businessUserId, look it up from the restaurant name
+        if (!businessUserId && checkoutRestaurant.name) {
+          console.log('[Cart] businessUserId missing, looking up by restaurant name:', checkoutRestaurant.name);
+          try {
+            const { data: restaurantRecord, error: fetchError } = await supabase
+              .from('restaurants')
+              .select('id, business_user_id')
+              .ilike('name', checkoutRestaurant.name)
+              .single();
+
+            if (!fetchError && restaurantRecord) {
+              businessUserId = restaurantRecord.business_user_id;
+              supabaseRestaurantId = restaurantRecord.id;
+              console.log('[Cart] Found businessUserId from restaurant name:', businessUserId);
+            } else {
+              console.warn('[Cart] Could not find restaurant by name:', fetchError);
+            }
+          } catch (error) {
+            console.warn('[Cart] Error looking up restaurant by name:', error);
+          }
+        } else if (!supabaseRestaurantId && businessUserId) {
           console.log('[Cart] Fetching restaurant ID from Supabase for:', businessUserId);
           try {
             const { data: restaurantRecord, error: fetchError } = await supabase
@@ -99,7 +118,6 @@ export default function Cart() {
 
             if (fetchError) {
               console.warn('[Cart] Could not fetch restaurant ID:', fetchError);
-              // Continue anyway - fallback to business_id in RLS
             } else if (restaurantRecord) {
               supabaseRestaurantId = restaurantRecord.id;
               console.log('[Cart] Got restaurant ID from Supabase:', supabaseRestaurantId);
@@ -244,10 +262,23 @@ export default function Cart() {
               console.error('[Cart] Error creating processing record:', error);
             }
 
-            // SUPABASE: Business user will see the order through Supabase real-time updates
-            // No need to store notifications in localStorage anymore
-            console.log('[Cart] Order sent to business user via Supabase');
-            console.log('[Cart] Business user will receive real-time update from order_number:', order.orderNumber);
+            // Notify the business about the new order
+            try {
+              if (businessUserId) {
+                console.log('[Cart] Notifying business about new order...');
+                await supabaseHelpers.notifyBusinessNewOrder({
+                  orderId: savedOrder?.id || order.id,
+                  orderNumber: order.orderNumber,
+                  restaurantName: order.restaurantName,
+                  customerName: order.customerName,
+                  total: order.total,
+                  businessUserId: businessUserId,
+                });
+                console.log('[Cart] Business notification sent successfully');
+              }
+            } catch (notifError) {
+              console.error('[Cart] Error notifying business:', notifError);
+            }
           }
         } catch (error) {
           console.error('[Cart] Error saving order:', error);

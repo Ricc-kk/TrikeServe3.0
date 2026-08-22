@@ -7,6 +7,7 @@ import { Card } from "../ui/card";
 import { Badge } from "../ui/badge";
 import { useAuth } from "../../contexts/AuthContext";
 import { supabaseHelpers } from "@/lib/supabase";
+import { supabase } from "../../../utils/supabase";
 import useMapLoader from "@/lib/mapLoader";
 import PassengerMessagingDB from "./PassengerMessagingDB";
 import tricycleIcon from "../../../assets/0b76d1aa56b8ad6e15dd4efc8a0100b0ca5762a1.png";
@@ -187,6 +188,26 @@ export default function ActiveRide() {
         console.error('❌ Failed to mark delivery order as delivered:', orderStatusError);
       } else {
         console.log('✅ Delivery order marked as delivered');
+
+        // Notify the business that delivery is completed
+        try {
+          const orderData = await supabase
+            .from('orders')
+            .select('business_id, restaurant_name, order_number')
+            .eq('id', rideData.orderId)
+            .single();
+          if (orderData?.data?.business_id) {
+            await supabaseHelpers.notifyBusinessDeliveryCompleted({
+              orderId: rideData.orderId,
+              orderNumber: orderData.data.order_number || rideData.orderNumber || '',
+              restaurantName: orderData.data.restaurant_name || '',
+              businessUserId: orderData.data.business_id,
+            });
+            console.log('✅ Business notified: delivery completed');
+          }
+        } catch (notifError) {
+          console.error('❌ Error notifying business:', notifError);
+        }
       }
     }
 
