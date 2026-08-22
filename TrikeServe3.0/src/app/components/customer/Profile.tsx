@@ -1,23 +1,54 @@
-import { X, Camera, ArrowLeft } from "lucide-react";
+import { X, Camera, ArrowLeft, Check, LogOut } from "lucide-react";
 import { Link, useNavigate } from "react-router";
 import { useState } from "react";
 import profilePlaceholder from "../../../assets/49624c6fb8f504041a2a91198a581a109cd5507d.png";
 import { useAuth } from "../../contexts/AuthContext";
 import { Button } from "../ui/button";
+import { supabase } from "../../../lib/supabase";
 
 export default function Profile() {
   const navigate = useNavigate();
-  const { user, restoreOriginalRole } = useAuth();
+  const { user, logout, restoreOriginalRole } = useAuth();
   const [formData, setFormData] = useState({
-    name: "User12345",
-    mobile: "+63 • 9613483404",
-    email: "",
+    name: user?.name || "",
+    mobile: user?.phone || "",
+    email: user?.email || "",
   });
+  const [isSaving, setIsSaving] = useState(false);
+  const [showSaved, setShowSaved] = useState(false);
 
   const [linkedAccounts, setLinkedAccounts] = useState({
     facebook: false,
     google: false
   });
+
+  const handleSave = async () => {
+    if (!user?.id) return;
+    setIsSaving(true);
+    try {
+      const { error } = await supabase
+        .from('users')
+        .update({
+          name: formData.name,
+          email: formData.email,
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', user.id);
+      if (error) throw error;
+      setShowSaved(true);
+      setTimeout(() => setShowSaved(false), 2000);
+    } catch (err) {
+      console.error('Error saving profile:', err);
+      alert('Failed to save. Please try again.');
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const handleLogout = () => {
+    logout();
+    navigate("/");
+  };
 
   return (
     <div className="min-h-screen bg-white">
@@ -170,12 +201,33 @@ export default function Profile() {
          </div>
        )}
 
-       {/* Log out Button */}
-       <div className="px-5 py-6">
-         <button className="w-full py-3 text-base font-medium text-[#64748B] border border-[#E2E8F0] rounded-lg hover:bg-[#F8FAFC] transition-colors">
-           Log out
-         </button>
-       </div>
+      {/* Save Button */}
+      <div className="px-5 pt-4">
+        <button
+          onClick={handleSave}
+          disabled={isSaving}
+          className="w-full py-3.5 text-base font-semibold text-white bg-[#18B5A4] rounded-2xl hover:bg-[#159E8F] transition-all active:scale-[0.98] flex items-center justify-center gap-2 disabled:opacity-50"
+        >
+          {isSaving ? (
+            <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" />
+          ) : showSaved ? (
+            <><Check className="w-5 h-5" /> Saved!</>
+          ) : (
+            'Save Changes'
+          )}
+        </button>
+      </div>
+
+      {/* Log out Button */}
+      <div className="px-5 py-4">
+        <button
+          onClick={handleLogout}
+          className="w-full py-3 text-base font-semibold text-[#E11D48] bg-[#FFF1F2] rounded-2xl hover:bg-[#FFE4E6] transition-all active:scale-[0.98] flex items-center justify-center gap-2"
+        >
+          <LogOut className="w-5 h-5" />
+          Log out
+        </button>
+      </div>
 
       {/* Version Info */}
       <div className="text-center text-xs text-[#CBD5E1] pb-8">

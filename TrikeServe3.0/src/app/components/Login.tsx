@@ -49,6 +49,7 @@ export default function Login() {
   const [showAccounts, setShowAccounts] = useState(false);
   const [accounts, setAccounts] = useState<TestAccount[]>([]);
 
+
   // Load all created accounts (localStorage users + Supabase admins/users)
   // so testers can fill the login form with one click.
   useEffect(() => {
@@ -147,7 +148,12 @@ export default function Login() {
     setIsLoading(false);
     
     if (result.success) {
-      // Redirect to /redirect which will handle role-based navigation
+      // Redirect immediately, then show welcome popup on destination page
+      // Store welcome data for the popup
+      const matched = accounts.find(a => a.email.toLowerCase() === email.toLowerCase());
+      const displayName = matched?.name || email.split('@')[0];
+      sessionStorage.setItem('trikeserve_welcome_name', displayName);
+      sessionStorage.setItem('trikeserve_show_welcome', 'true');
       navigate('/redirect');
     } else {
       setError(result.error || "Login failed");
@@ -352,6 +358,8 @@ export default function Login() {
           </div>
         </div>
       </div>
+
+
     </div>
   );
 }
