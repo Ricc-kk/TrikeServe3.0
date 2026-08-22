@@ -144,10 +144,11 @@ export default function PassengerRequests() {
           ...parseDeliveryTag(req.pickup_location),
           pickupAddress: req.pickup_address || undefined,
           dropoffAddress: req.dropoff_address || undefined,
+          // For deliveries, parse coordinates from address if lat/lng columns are empty
           pickupLat: req.pickup_lat || undefined,
           pickupLng: req.pickup_lng || undefined,
-          dropoffLat: req.dropoff_lat || undefined,
-          dropoffLng: req.dropoff_lng || undefined,
+          dropoffLat: req.dropoff_lat || (req.dropoff_location?.match(/(\d+\.\d+)\s*,\s*(\d+\.\d+)/) ? parseFloat(req.dropoff_location.match(/(\d+\.\d+)\s*,\s*(\d+\.\d+)/)![1]) : undefined),
+          dropoffLng: req.dropoff_lng || (req.dropoff_location?.match(/(\d+\.\d+)\s*,\s*(\d+\.\d+)/) ? parseFloat(req.dropoff_location.match(/(\d+\.\d+)\s*,\s*(\d+\.\d+)/)![2]) : undefined),
           created_at: req.created_at,
         }));
         const mappedLobbies = (waitingLobbies || []).map((lobby: any) => {

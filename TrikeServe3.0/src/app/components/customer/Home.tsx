@@ -2527,6 +2527,8 @@ export default function CustomerHome() {
           pickupAddress={pickupAddress}
           dropoff={dropoff}
           dropoffAddress={dropoffAddress}
+          pickupCoords={pickupCoords}
+          dropoffCoords={dropoffCoords}
           passengerCount={passengerCount}
           pricePerSeat={privateRidePrice}
           paymentMethod={paymentMethod}

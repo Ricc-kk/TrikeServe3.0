@@ -43,6 +43,8 @@ interface ShareRideLobbyProps {
   pickupAddress: string;
   dropoff: string;
   dropoffAddress: string;
+  pickupCoords?: { lat: number; lng: number } | null;
+  dropoffCoords?: { lat: number; lng: number } | null;
   passengerCount?: number;
   pricePerSeat?: number;
   paymentMethod?: 'COD' | 'GCASH';
@@ -57,6 +59,8 @@ export default function ShareRideLobby({
   pickupAddress,
   dropoff,
   dropoffAddress,
+  pickupCoords,
+  dropoffCoords,
   passengerCount = 1,
   pricePerSeat = 15,
   paymentMethod = 'GCASH',
@@ -569,6 +573,10 @@ export default function ShareRideLobby({
         pickup_address: pickupAddress,
         dropoff_location: dropoff,
         dropoff_address: dropoffAddress,
+        pickup_lat: pickupCoords?.lat || null,
+        pickup_lng: pickupCoords?.lng || null,
+        dropoff_lat: dropoffCoords?.lat || null,
+        dropoff_lng: dropoffCoords?.lng || null,
         passengers_json: passengers,
         max_seats: 3,
         price_per_seat: pricePerSeat,
