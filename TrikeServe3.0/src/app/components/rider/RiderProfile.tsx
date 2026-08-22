@@ -409,7 +409,7 @@ export default function RiderProfile() {
           <div className="flex items-start gap-2 text-sm">
             <MapPin className="w-4 h-4 text-[#E11D48] mt-0.5 flex-shrink-0" />
             <p className="text-[#121212] font-medium">
-              Barangay Hall, Tagalag, Valenzuela City<br />
+              Barangay Hall, Gen T Deleon, Valenzuela City<br />
               <span className="text-[#64748B] font-normal">Monday-Friday, 9:00 AM - 5:00 PM</span>
             </p>
           </div>
