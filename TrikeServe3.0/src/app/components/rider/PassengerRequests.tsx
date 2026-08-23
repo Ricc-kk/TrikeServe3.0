@@ -52,6 +52,8 @@ export default function PassengerRequests() {
   const [currentLocation, setCurrentLocation] = useState<{ lat: number; lng: number }>({ lat: 14.5995, lng: 120.9842 });
   const [previewRequest, setPreviewRequest] = useState<PassengerRequest | null>(null);
   const [directionsResult, setDirectionsResult] = useState<google.maps.DirectionsResult | null>(null);
+  const [deliveryRouteResult, setDeliveryRouteResult] = useState<google.maps.DirectionsResult | null>(null);
+  const [resolvedPickupCoords, setResolvedPickupCoords] = useState<{ lat: number; lng: number } | null>(null);
   const [previewMapCenter, setPreviewMapCenter] = useState<{ lat: number; lng: number }>({ lat: 14.5995, lng: 120.9842 });
   const { isLoaded: isMapsLoaded } = useMapLoader();
 
@@ -145,10 +147,21 @@ export default function PassengerRequests() {
           pickupAddress: req.pickup_address || undefined,
           dropoffAddress: req.dropoff_address || undefined,
           // For deliveries, parse coordinates from address if lat/lng columns are empty
+          // Supports both old format ("lat, lng") and new format ("name|lat,lng")
           pickupLat: req.pickup_lat || undefined,
           pickupLng: req.pickup_lng || undefined,
-          dropoffLat: req.dropoff_lat || (req.dropoff_location?.match(/(\d+\.\d+)\s*,\s*(\d+\.\d+)/) ? parseFloat(req.dropoff_location.match(/(\d+\.\d+)\s*,\s*(\d+\.\d+)/)![1]) : undefined),
-          dropoffLng: req.dropoff_lng || (req.dropoff_location?.match(/(\d+\.\d+)\s*,\s*(\d+\.\d+)/) ? parseFloat(req.dropoff_location.match(/(\d+\.\d+)\s*,\s*(\d+\.\d+)/)![2]) : undefined),
+          dropoffLat: req.dropoff_lat || (() => {
+            const addr = req.dropoff_address || req.dropoff_location || '';
+            const coordPart = addr.includes('|') ? addr.split('|')[1] : addr;
+            const m = coordPart.match(/(\d+\.\d+)\s*,\s*(\d+\.\d+)/);
+            return m ? parseFloat(m[1]) : undefined;
+          })(),
+          dropoffLng: req.dropoff_lng || (() => {
+            const addr = req.dropoff_address || req.dropoff_location || '';
+            const coordPart = addr.includes('|') ? addr.split('|')[1] : addr;
+            const m = coordPart.match(/(\d+\.\d+)\s*,\s*(\d+\.\d+)/);
+            return m ? parseFloat(m[2]) : undefined;
+          })(),
           created_at: req.created_at,
         }));
         const mappedLobbies = (waitingLobbies || []).map((lobby: any) => {
@@ -201,28 +214,64 @@ export default function PassengerRequests() {
 
     const pLat = Number(previewRequest.pickupLat);
     const pLng = Number(previewRequest.pickupLng);
+    const dLat = Number(previewRequest.dropoffLat);
+    const dLng = Number(previewRequest.dropoffLng);
+    const isDelivery = previewRequest.type === 'delivery';
+    const DirectionsService = new (window as any).google.maps.DirectionsService();
 
+    // Set pickup coords for marker
     if (!isNaN(pLat) && !isNaN(pLng)) {
-        setPreviewMapCenter({ lat: pLat, lng: pLng });
+      setResolvedPickupCoords({ lat: pLat, lng: pLng });
+      setPreviewMapCenter({ lat: pLat, lng: pLng });
     }
 
-    const DirectionsService = new (window as any).google.maps.DirectionsService();
-    DirectionsService.route({
-      origin: new (window as any).google.maps.LatLng(currentLocation.lat, currentLocation.lng),
-      destination: new (window as any).google.maps.LatLng(pLat || currentLocation.lat, pLng || currentLocation.lng),
-      travelMode: (window as any).google.maps.TravelMode.DRIVING,
-    }, (result: any, status: string) => {
-      if (status === 'OK') {
-          console.log('✅ Route found for preview');
-          setDirectionsResult(result);
-      } else {
-          console.error('❌ Route preview failed:', status);
-          setDirectionsResult(null);
+    // If no pickup coords available, try geocoding the restaurant address
+    const resolveAndRoute = (pickup: { lat: number; lng: number }) => {
+      setResolvedPickupCoords(pickup);
+      setPreviewMapCenter(pickup);
+
+      // Route 1: Driver → Pickup
+      DirectionsService.route({
+        origin: new (window as any).google.maps.LatLng(currentLocation.lat, currentLocation.lng),
+        destination: new (window as any).google.maps.LatLng(pickup.lat, pickup.lng),
+        travelMode: (window as any).google.maps.TravelMode.DRIVING,
+      }, (result: any, status: string) => {
+        if (status === 'OK') setDirectionsResult(result);
+      });
+
+      // Route 2 (delivery): Pickup → Dropoff
+      if (isDelivery && !isNaN(dLat) && !isNaN(dLng)) {
+        DirectionsService.route({
+          origin: new (window as any).google.maps.LatLng(pickup.lat, pickup.lng),
+          destination: new (window as any).google.maps.LatLng(dLat, dLng),
+          travelMode: (window as any).google.maps.TravelMode.DRIVING,
+        }, (result: any, status: string) => {
+          if (status === 'OK') setDeliveryRouteResult(result);
+        });
       }
-    });
+    };
+
+    if (!isNaN(pLat) && !isNaN(pLng)) {
+      resolveAndRoute({ lat: pLat, lng: pLng });
+    } else if (isDelivery) {
+      // Fallback: geocode the restaurant address using REST API
+      const apiKey = import.meta.env.VITE_GOOGLE_MAPS_API_KEY || '';
+      const address = previewRequest.pickupAddress || previewRequest.pickup;
+      if (apiKey && address) {
+        fetch(`https://maps.googleapis.com/maps/api/geocode/json?address=${encodeURIComponent(address)}&key=${apiKey}`)
+          .then(res => res.json())
+          .then(data => {
+            if (data.status === 'OK' && data.results?.[0]) {
+              const loc = data.results[0].geometry.location;
+              resolveAndRoute({ lat: loc.lat, lng: loc.lng });
+            }
+          })
+          .catch(() => {});
+      }
+    }
   }, [previewRequest, isMapsLoaded, currentLocation]);
 
-  const handleOpenPreview = (request: PassengerRequest) => { setDirectionsResult(null); setPreviewRequest(request); };
+  const handleOpenPreview = (request: PassengerRequest) => { setDirectionsResult(null); setDeliveryRouteResult(null); setResolvedPickupCoords(null); setPreviewRequest(request); };
 
   const handleAcceptRequest = async (request: PassengerRequest) => {
     if (!user?.id) return alert('You must be logged in as a driver.');
@@ -340,11 +389,11 @@ export default function PassengerRequests() {
                 >
                   <Marker position={currentLocation} icon={createDriverMarkerIcon()} title="Your Location" />
 
-                  {previewRequest.pickupLat && previewRequest.pickupLng && (
+                  {resolvedPickupCoords && (
                     <Marker
-                      position={{ lat: Number(previewRequest.pickupLat), lng: Number(previewRequest.pickupLng) }}
+                      position={resolvedPickupCoords}
                       icon={createCustomerMarkerIcon()}
-                      title="Pickup"
+                      title="Pickup (Restaurant)"
                     />
                   )}
 
@@ -362,9 +411,22 @@ export default function PassengerRequests() {
                       options={{
                         suppressMarkers: true,
                         polylineOptions: {
+                          strokeColor: "#10B981",
+                          strokeWeight: 5,
+                          strokeOpacity: 0.85
+                        }
+                      }}
+                    />
+                  )}
+                  {deliveryRouteResult && (
+                    <DirectionsRenderer
+                      directions={deliveryRouteResult}
+                      options={{
+                        suppressMarkers: true,
+                        polylineOptions: {
                           strokeColor: "#E11D48",
-                          strokeWeight: 6,
-                          strokeOpacity: 0.8
+                          strokeWeight: 5,
+                          strokeOpacity: 0.85
                         }
                       }}
                     />
@@ -376,8 +438,28 @@ export default function PassengerRequests() {
             )}
             <div className="p-4 space-y-4">
               <div className="space-y-2">
-                <div className="flex gap-2"><Navigation className="w-4 h-4 text-[#E11D48]" /><div className="flex-1 text-sm"><p className="font-semibold">{previewRequest.pickup}</p></div></div>
-                <div className="flex gap-2"><Navigation className="w-4 h-4 text-green-600" /><div className="flex-1 text-sm"><p className="font-semibold">{previewRequest.dropoff}</p></div></div>
+                <div className="flex items-center gap-3 p-2 bg-green-50 rounded-lg">
+                  <div className="w-3 h-3 rounded-full bg-green-500" />
+                  <div className="flex-1 text-sm">
+                    <p className="text-[10px] text-green-600 uppercase font-bold">Pickup</p>
+                    <p className="font-semibold">{previewRequest.pickup}</p>
+                  </div>
+                </div>
+                {previewRequest.type === 'delivery' && (
+                  <div className="flex items-center gap-3 p-2 bg-red-50 rounded-lg">
+                    <div className="w-3 h-3 rounded-full bg-[#E11D48]" />
+                    <div className="flex-1 text-sm">
+                      <p className="text-[10px] text-[#E11D48] uppercase font-bold">Deliver to Customer</p>
+                      <p className="font-semibold">{previewRequest.dropoff}</p>
+                    </div>
+                  </div>
+                )}
+                {previewRequest.type !== 'delivery' && (
+                  <div className="flex items-center gap-3 p-2">
+                    <Navigation className="w-4 h-4 text-[#E11D48]" />
+                    <div className="flex-1 text-sm"><p className="font-semibold">{previewRequest.dropoff}</p></div>
+                  </div>
+                )}
               </div>
               <Button onClick={() => handleAcceptRequest(previewRequest)} className="w-full bg-[#E11D48] hover:bg-[#BE123C] uppercase h-12">Accept & Navigate</Button>
               <Button onClick={() => setPreviewRequest(null)} variant="outline" className="w-full border-[#E11D48] text-[#E11D48] uppercase">Cancel</Button>

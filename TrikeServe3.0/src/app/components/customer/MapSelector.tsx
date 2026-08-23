@@ -92,7 +92,7 @@ export default function MapSelector({ onClose, onSelectLocation, currentLocation
   const handleMapClick = useCallback(
     async (lat: number, lng: number) => {
       const requestId = ++geocodeRequestIdRef.current;
-      setPickedPin({ lat, lng, name: `${lat.toFixed(5)}, ${lng.toFixed(5)}`, full: `${lat.toFixed(5)}, ${lng.toFixed(5)}` });
+      setPickedPin({ lat, lng, name: 'Loading address...', full: 'Loading address...' });
       setMapCenter({ lat, lng });
       setShowSearchDropdown(false);
       setShowAddressList(true);
@@ -104,6 +104,8 @@ export default function MapSelector({ onClose, onSelectLocation, currentLocation
       setIsGeocoding(false);
       if (address) {
         setPickedPin({ lat, lng, name: address.name, full: address.full });
+      } else {
+        setPickedPin({ lat, lng, name: 'Selected Location', full: 'Selected Location' });
       }
     },
     [reverseGeocode]
