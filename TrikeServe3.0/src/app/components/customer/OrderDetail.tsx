@@ -183,21 +183,21 @@ export default function OrderDetail() {
 
     const pollDriverLocation = async () => {
       try {
-        const { data: rideRequest } = await supabase
-          .from('ride_requests')
-          .select('driver_lat, driver_lng, driver_name, driver_plate, driver_status, pickup_lat, pickup_lng, dropoff_lat, dropoff_lng, pickup_address, dropoff_address')
-          .eq('order_id', order.id)
-          .eq('type', 'delivery')
-          .in('status', ['accepted', 'on-the-way', 'arrived', 'picked-up', 'drop-off'])
-          .order('created_at', { ascending: false })
-          .limit(1)
-          .maybeSingle();
+        // Poll driver GPS directly from orders table
+        const { data: freshOrder } = await supabase
+          .from('orders')
+          .select('driver_lat, driver_lng, driver_name, status')
+          .eq('id', order.id)
+          .single();
 
-        if (rideRequest) {
-          setRideRequestData(rideRequest);
-          setDriverStatus(rideRequest.driver_status);
-          if (rideRequest.driver_lat && rideRequest.driver_lng) {
-            setDriverLocation({ lat: rideRequest.driver_lat, lng: rideRequest.driver_lng });
+        if (freshOrder) {
+          if (freshOrder.driver_lat && freshOrder.driver_lng) {
+            setDriverLocation({ lat: freshOrder.driver_lat, lng: freshOrder.driver_lng });
+            setDriverStatus(freshOrder.status);
+          }
+          // Update order status if it changed
+          if (freshOrder.status !== order.status) {
+            setOrder((prev: any) => prev ? { ...prev, status: freshOrder.status } : prev);
           }
         }
       } catch (err) {
@@ -217,16 +217,20 @@ export default function OrderDetail() {
       return;
     }
 
-    const isHeadingToPickup = driverStatus === 'on-the-way' || driverStatus === 'arrived' || driverStatus === 'accepted';
-    let dest: { lat: number; lng: number } | null = null;
+    // Parse coordinates from order address (format: "name|lat,lng")
+    const parseCoords = (addr: string): { lat: number; lng: number } | null => {
+      const coordPart = addr.includes('|') ? addr.split('|')[1] : addr;
+      const m = coordPart.match(/(\d+\.\d+)\s*,\s*(\d+\.\d+)/);
+      return m ? { lat: parseFloat(m[1]), lng: parseFloat(m[2]) } : null;
+    };
 
-    if (isHeadingToPickup && rideRequestData?.pickup_lat && rideRequestData?.pickup_lng) {
-      dest = { lat: rideRequestData.pickup_lat, lng: rideRequestData.pickup_lng };
-    } else if (rideRequestData?.dropoff_lat && rideRequestData?.dropoff_lng) {
-      dest = { lat: rideRequestData.dropoff_lat, lng: rideRequestData.dropoff_lng };
-    }
+    // Delivery: always route to customer (dropoff)
+    // The driver first goes to restaurant (pickup) then to customer (dropoff)
+    // For simplicity, route to the customer's delivery address
+    const dropoffCoords = parseCoords(order?.address || '');
+    if (!dropoffCoords) { setRoutePath([]); return; }
 
-    if (!dest) { setRoutePath([]); return; }
+    const dest = dropoffCoords;
 
     const DirectionsService = new (window as any).google.maps.DirectionsService();
     DirectionsService.route({
@@ -239,7 +243,7 @@ export default function OrderDetail() {
         setRoutePath(decoded);
       }
     });
-  }, [driverLocation, isMapsLoaded, driverStatus, rideRequestData]);
+  }, [driverLocation, isMapsLoaded, driverStatus, order?.address]);
 
   const decodePolyline = (encoded: string): Array<{ lat: number; lng: number }> => {
     const points: Array<{ lat: number; lng: number }> = [];
@@ -402,28 +406,22 @@ export default function OrderDetail() {
                   return { url: tricycleIcon, scaledSize: new g.maps.Size(44, 44), anchor: new g.maps.Point(22, 22) };
                 })()}
               />
-              {rideRequestData?.dropoff_lat && rideRequestData?.dropoff_lng && (
+              {(() => {
+                const coords = (order?.address || '').includes('|') ? order.address.split('|')[1] : (order?.address || '');
+                const m = coords.match(/(\d+\.\d+)\s*,\s*(\d+\.\d+)/);
+                if (!m) return null;
+                return (
                 <MarkerF
-                  position={{ lat: rideRequestData.dropoff_lat, lng: rideRequestData.dropoff_lng }}
-                  title="Your location"
+                  position={{ lat: parseFloat(m[1]), lng: parseFloat(m[2]) }}
+                  title="Your delivery location"
                   icon={{
                     url: 'data:image/svg+xml;charset=UTF-8,' + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="#E11D48" stroke="white" stroke-width="1"><path d="M12 2C8.13 2 5 5.13 5 9c0 4.95 6.1 11.53 6.36 11.81.36.39.92.39 1.28 0C13.9 20.53 20 13.95 20 9c0-3.87-3.13-7-8-7z"/><circle cx="12" cy="8.6" r="2.3" fill="#FFFFFF" stroke="none"/></svg>'),
                     scaledSize: new (window as any).google.maps.Size(32, 32),
                     anchor: new (window as any).google.maps.Point(16, 32),
                   }}
                 />
-              )}
-              {rideRequestData?.pickup_lat && rideRequestData?.pickup_lng && (
-                <MarkerF
-                  position={{ lat: rideRequestData.pickup_lat, lng: rideRequestData.pickup_lng }}
-                  title="Restaurant"
-                  icon={{
-                    url: 'data:image/svg+xml;charset=UTF-8,' + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="#10B981" stroke="white" stroke-width="1"><path d="M12 2C8.13 2 5 5.13 5 9c0 4.95 6.1 11.53 6.36 11.81.36.39.92.39 1.28 0C13.9 20.53 20 13.95 20 9c0-3.87-3.13-7-8-7z"/><circle cx="12" cy="8.6" r="2.3" fill="#FFFFFF" stroke="none"/></svg>'),
-                    scaledSize: new (window as any).google.maps.Size(32, 32),
-                    anchor: new (window as any).google.maps.Point(16, 32),
-                  }}
-                />
-              )}
+              );
+              })()}
               {routePath.length > 0 && (
                 <Polyline
                   path={routePath}
@@ -436,8 +434,8 @@ export default function OrderDetail() {
                 <p className="text-xs font-semibold text-[#121212]">
                   {(driverStatus === 'on-the-way' || driverStatus === 'arrived' || driverStatus === 'accepted') ? '🟢 Driver heading to restaurant' : '🔴 Driver delivering to you'}
                 </p>
-                {rideRequestData?.driver_name && (
-                  <p className="text-[10px] text-[#64748B]">{rideRequestData.driver_name} • {rideRequestData.driver_plate || ''}</p>
+                {order?.driverName && (
+                  <p className="text-[10px] text-[#64748B]">{order.driverName}</p>
                 )}
               </div>
               <div className="text-[10px] text-[#94A3B8]">● Live</div>

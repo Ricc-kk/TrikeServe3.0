@@ -355,7 +355,7 @@ export default function Activity() {
               <div className="space-y-3">
                 {displayOrders.map((order) => (
                   <Card key={order.id} className="p-3.5 sm:p-4 border-2 border-[#E2E8F0] shadow-sm cursor-pointer active:scale-[0.98] transition-transform">
-                    <div onClick={() => navigate(`/customer/order-detail/${order.id}`)} className="flex items-start gap-3">
+                    <div onClick={() => navigate(order.status === 'delivered' ? `/customer/order-detail/${order.id}` : `/customer/delivery-tracker/${order.id}`)} className="flex items-start gap-3">
                       {/* Restaurant Image */}
                       <div className="w-12 h-12 rounded-lg overflow-hidden flex-shrink-0">
                         <ImageWithFallback

@@ -78,21 +78,16 @@ export default function BusinessOrders() {
 
     const pollDriver = async () => {
       try {
-        const { data: rideRequest } = await supabase
-          .from('ride_requests')
-          .select('driver_lat, driver_lng, driver_name, driver_plate, driver_status, pickup_lat, pickup_lng, dropoff_lat, dropoff_lng')
-          .eq('order_id', selectedOrder.id)
-          .eq('type', 'delivery')
-          .in('status', ['accepted', 'on-the-way', 'arrived', 'picked-up', 'drop-off'])
-          .order('created_at', { ascending: false })
-          .limit(1)
-          .maybeSingle();
+        const { data: freshOrder } = await supabase
+          .from('orders')
+          .select('driver_lat, driver_lng, driver_name, status, address')
+          .eq('id', selectedOrder.id)
+          .single();
 
-        if (rideRequest) {
-          setRideRequestInfo(rideRequest);
-          setDriverStatus(rideRequest.driver_status);
-          if (rideRequest.driver_lat && rideRequest.driver_lng) {
-            setDriverLocation({ lat: rideRequest.driver_lat, lng: rideRequest.driver_lng });
+        if (freshOrder) {
+          if (freshOrder.driver_lat && freshOrder.driver_lng) {
+            setDriverLocation({ lat: freshOrder.driver_lat, lng: freshOrder.driver_lng });
+            setDriverStatus(freshOrder.status);
           }
         }
       } catch (err) {
@@ -112,16 +107,12 @@ export default function BusinessOrders() {
       return;
     }
 
-    const isHeadingToPickup = driverStatus === 'on-the-way' || driverStatus === 'arrived' || driverStatus === 'accepted';
-    let dest: { lat: number; lng: number } | null = null;
-
-    if (isHeadingToPickup && rideRequestInfo?.pickup_lat && rideRequestInfo?.pickup_lng) {
-      dest = { lat: rideRequestInfo.pickup_lat, lng: rideRequestInfo.pickup_lng };
-    } else if (rideRequestInfo?.dropoff_lat && rideRequestInfo?.dropoff_lng) {
-      dest = { lat: rideRequestInfo.dropoff_lat, lng: rideRequestInfo.dropoff_lng };
-    }
-
-    if (!dest) { setRoutePath([]); return; }
+    // Parse customer delivery coordinates from order address (format: "name|lat,lng")
+    const addr = selectedOrder?.address || '';
+    const coordPart = addr.includes('|') ? addr.split('|')[1] : addr;
+    const m = coordPart.match(/(\d+\.\d+)\s*,\s*(\d+\.\d+)/);
+    if (!m) { setRoutePath([]); return; }
+    const dest = { lat: parseFloat(m[1]), lng: parseFloat(m[2]) };
 
     const DirectionsService = new (window as any).google.maps.DirectionsService();
     DirectionsService.route({
@@ -134,7 +125,7 @@ export default function BusinessOrders() {
         setRoutePath(decoded);
       }
     });
-  }, [driverLocation, isMapsLoaded, driverStatus, rideRequestInfo]);
+  }, [driverLocation, isMapsLoaded, driverStatus, selectedOrder?.address]);
 
   const decodePolyline = (encoded: string): Array<{ lat: number; lng: number }> => {
     const points: Array<{ lat: number; lng: number }> = [];
@@ -305,6 +296,32 @@ export default function BusinessOrders() {
 
       console.log(`[BusinessOrders] Loaded ${transformedOrders.length} orders from Supabase`);
       console.log('[BusinessOrders] SECURITY: These orders are protected by RLS policies');
+      // Check ride_requests for driver status on each order
+      const orderIds = transformedOrders.map((o: any) => o.id);
+      if (orderIds.length > 0) {
+        const { data: rideReqs } = await supabase
+          .from('ride_requests')
+          .select('order_id, driver_status, driver_name, accepted_driver_id')
+          .in('order_id', orderIds)
+          .not('accepted_driver_id', 'is', null);
+
+        if (rideReqs) {
+          rideReqs.forEach((rr: any) => {
+            if (!rr.order_id || !rr.driver_status) return;
+            const statusMap: Record<string, string> = {
+              'on-the-way': 'on-the-way', 'arrived': 'on-the-way',
+              'picked-up': 'on-the-way', 'drop-off': 'on-the-way',
+              'completed': 'delivered',
+            };
+            const mapped = statusMap[rr.driver_status];
+            if (mapped) {
+              const order = transformedOrders.find((o: any) => o.id === rr.order_id);
+              if (order) order.status = mapped;
+            }
+          });
+        }
+      }
+
       setOrders(transformedOrders);
     } catch (error) {
       console.error('[BusinessOrders] Unexpected error loading orders:', error);
@@ -495,6 +512,8 @@ export default function BusinessOrders() {
         dropoff_address: addressDisplayName || order.address,
         dropoff_lat: dropoffCoords?.lat || null,
         dropoff_lng: dropoffCoords?.lng || null,
+        order_id: order.id,
+        order_number: order.orderNumber || null,
         status: 'pending',
         ride_type: 'special',  // Use 'special' type (database constraint only allows specific values)
         payment_method: order.paymentMethod === 'gcash' ? 'GCASH' : 'COD',
@@ -1005,9 +1024,14 @@ export default function BusinessOrders() {
                               return { url: tricycleIcon, scaledSize: new g.maps.Size(44, 44), anchor: new g.maps.Point(22, 22) };
                             })()}
                           />
-                          {rideRequestInfo?.dropoff_lat && rideRequestInfo?.dropoff_lng && (
+                          {(() => {
+                            const addr = selectedOrder?.address || '';
+                            const cp = addr.includes('|') ? addr.split('|')[1] : addr;
+                            const cm = cp.match(/(\d+\.\d+)\s*,\s*(\d+\.\d+)/);
+                            if (!cm) return null;
+                            return (
                             <MarkerF
-                              position={{ lat: rideRequestInfo.dropoff_lat, lng: rideRequestInfo.dropoff_lng }}
+                              position={{ lat: parseFloat(cm[1]), lng: parseFloat(cm[2]) }}
                               title="Customer"
                               icon={{
                                 url: 'data:image/svg+xml;charset=UTF-8,' + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="#E11D48" stroke="white" stroke-width="1"><path d="M12 2C8.13 2 5 5.13 5 9c0 4.95 6.1 11.53 6.36 11.81.36.39.92.39 1.28 0C13.9 20.53 20 13.95 20 9c0-3.87-3.13-7-8-7z"/><circle cx="12" cy="8.6" r="2.3" fill="#FFFFFF" stroke="none"/></svg>'),
@@ -1015,7 +1039,8 @@ export default function BusinessOrders() {
                                 anchor: new (window as any).google.maps.Point(16, 32),
                               }}
                             />
-                          )}
+                            );
+                          })()}
                           {routePath.length > 0 && (
                             <Polyline
                               path={routePath}
@@ -1027,8 +1052,8 @@ export default function BusinessOrders() {
                           <span className="text-xs font-semibold text-[#121212]">
                             {(driverStatus === 'on-the-way' || driverStatus === 'arrived' || driverStatus === 'accepted') ? '🟢 Heading to restaurant' : '🔴 Delivering to customer'}
                           </span>
-                          {rideRequestInfo?.driver_name && (
-                            <span className="text-[10px] text-[#64748B]">{rideRequestInfo.driver_name} • {rideRequestInfo.driver_plate || ''}</span>
+                          {selectedOrder?.customerName && (
+                            <span className="text-[10px] text-[#64748B]">{selectedOrder.customerName}</span>
                           )}
                         </div>
                       </div>
