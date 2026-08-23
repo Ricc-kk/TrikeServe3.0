@@ -74,7 +74,7 @@ export default function SignUp() {
     // Role-specific validation
     if (formData.role === "rider") {
       if (!formData.todaPlate || !formData.licenseNumber) {
-        setError("TODA Plate and License Number are required for riders");
+        setError("TODA Plate and License Number are required for drivers");
         return;
       }
     }
@@ -213,7 +213,7 @@ export default function SignUp() {
                     <Bike className="w-8 h-8 text-[#3B82F6] group-hover:text-white" />
                   </div>
                   <div>
-                    <h3 className="font-bold text-lg text-[#121212]">Rider</h3>
+                    <h3 className="font-bold text-lg text-[#121212]">Driver</h3>
                     <p className="text-sm text-[#64748B]">Accept deliveries & rides</p>
                   </div>
                 </div>
@@ -370,7 +370,7 @@ export default function SignUp() {
                     </label>
                     <Input
                       type="text"
-                      placeholder="123 Main St, Tagalag"
+                      placeholder="123 Main St, Gen T Deleon"
                       value={formData.businessAddress || ""}
                       onChange={(e) => handleInputChange("businessAddress", e.target.value)}
                       className="border-2 border-[#CBD5E1] focus:border-[#E11D48]"
@@ -389,7 +389,7 @@ export default function SignUp() {
                   </label>
                   <Input
                     type="text"
-                    placeholder="123 Main St, Tagalag"
+                    placeholder="123 Main St, Gen T Deleon"
                     value={formData.address || ""}
                     onChange={(e) => handleInputChange("address", e.target.value)}
                     className="border-2 border-[#CBD5E1] focus:border-[#E11D48]"

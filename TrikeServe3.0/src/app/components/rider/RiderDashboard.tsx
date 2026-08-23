@@ -94,7 +94,7 @@ export default function RiderDashboard() {
   const [activeRideData, setActiveRideData] = useState<any>(null);
   const [unreadMessagesCount, setUnreadMessagesCount] = useState(0);
   const [tripsCompletedCount, setTripsCompletedCount] = useState(0);
-   const [mapCenter, setMapCenter] = useState<{ lat: number; lng: number }>({ lat: 14.6037, lng: 120.9793 }); // Default: Tagalag, Valenzuela
+   const [mapCenter, setMapCenter] = useState<{ lat: number; lng: number }>({ lat: 14.6037, lng: 120.9793 }); // Default: Gen T Deleon, Valenzuela
    const [selectedMarker, setSelectedMarker] = useState<{ lat: number; lng: number } | null>(null);
     const [pendingRequestsList, setPendingRequestsList] = useState<any[]>([]);
     const [navRoutePath, setNavRoutePath] = useState<Array<{ lat: number; lng: number }>>([]);
@@ -1181,7 +1181,7 @@ export default function RiderDashboard() {
                       value={destination}
                       onChange={setDestination}
                       onSelect={handlePlaceSelected}
-                      placeholder="Search location... (e.g., Tagalag Valenzuela City)"
+                      placeholder="Search location... (e.g., Gen T Deleon Valenzuela City)"
                       className="w-full px-4 py-2 border-2 border-gray-200 rounded focus:border-[#E11D48] focus:outline-none"
                       locationBias={VALENZUELA_BIAS}
                       restrictToCity="Valenzuela"

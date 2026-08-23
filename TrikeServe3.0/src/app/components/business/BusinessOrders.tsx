@@ -1061,7 +1061,7 @@ export default function BusinessOrders() {
 
                     <div className="bg-[#FEF3C7] border-l-4 border-[#FFA500] p-2 md:p-3 rounded text-sm">
                       <p className="font-semibold text-[#92400E]">Status: On The Way</p>
-                      <p className="text-xs text-[#92400E] mt-1">Rider is delivering the order</p>
+                      <p className="text-xs text-[#92400E] mt-1">Driver is delivering the order</p>
                     </div>
                     <Button
                       onClick={() => {

@@ -125,7 +125,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             .from('admins')
             .insert([{
               email: 'admin1@gmail.com',
-              name: 'Rider Admin',
+              name: 'Driver Admin',
               phone: '09171234568',
               admin_type: 'rider',
               password_hash: 'admin123',
@@ -456,7 +456,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         const restaurantDataKey = `restaurantData_${data.email}`;
         const defaultRestaurantData = {
           name: data.businessName || "My Restaurant",
-          subtitle: data.businessAddress || "Tagalag, Valenzuela",
+          subtitle: data.businessAddress || "Gen T Deleon, Valenzuela",
           logo: "🍽️",
           heroImage: "https://images.unsplash.com/photo-1517248135467-4c7edcad34c4?w=800",
           deliveryTime: "25-35 min",

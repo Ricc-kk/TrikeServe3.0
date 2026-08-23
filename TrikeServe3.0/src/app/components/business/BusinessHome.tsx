@@ -994,7 +994,7 @@ export default function BusinessHome() {
                     value={restaurantData.subtitle}
                     onChange={(e) => setRestaurantData({ ...restaurantData, subtitle: e.target.value })}
                     className="w-full p-3 border-2 border-[#E2E8F0] rounded-xl"
-                    placeholder="e.g., Tagalag Center"
+                    placeholder="e.g., Gen T Deleon Center"
                   />
                   <p className="text-xs text-[#64748B] mt-1">Branch location or tagline</p>
                 </div>

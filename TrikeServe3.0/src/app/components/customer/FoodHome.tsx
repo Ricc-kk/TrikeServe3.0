@@ -12,7 +12,7 @@ import { useFavorites } from "../../contexts/FavoritesContext";
 import { supabase } from "../../../utils/supabase";
 import { supabaseHelpers } from "@/lib/supabase";
 
-// TrikeServe Food Delivery Home - Tagalag, Valenzuela
+// TrikeServe Food Delivery Home - Gen T Deleon, Valenzuela
 export default function FoodHome() {
   const navigate = useNavigate();
   const { getTotalItems } = useCart();
@@ -104,7 +104,7 @@ export default function FoodHome() {
           id: restaurant.id,
           businessUserId: restaurant.business_user_id, // ✅ CRITICAL: Add business user ID for orders
           name: restaurant.name || "Restaurant",
-          subtitle: restaurant.subtitle || restaurant.address || "Tagalag, Valenzuela",
+          subtitle: restaurant.subtitle || restaurant.address || "Gen T Deleon, Valenzuela",
           logo: restaurant.logo_image || "🍽️",
           image: restaurant.banner_image || "https://images.unsplash.com/photo-1517248135467-4c7edcad34c4?w=800",
           time: restaurant.delivery_time || "25-35 min",
@@ -153,7 +153,7 @@ export default function FoodHome() {
             id: business.email,
             businessUserId: business.id, // ✅ CRITICAL: Add actual business user ID for orders
             name: restaurantData.name || business.businessName || business.name || "Restaurant",
-            subtitle: restaurantData.subtitle || business.businessAddress || "Tagalag",
+            subtitle: restaurantData.subtitle || business.businessAddress || "Gen T Deleon",
             logo: restaurantData.logo || "🍽️",
             image: restaurantData.heroImage || "https://images.unsplash.com/photo-1517248135467-4c7edcad34c4?w=800",
             time: restaurantData.deliveryTime || "25-35 min",
@@ -267,7 +267,7 @@ export default function FoodHome() {
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
-  // Local Valenzuela/Tagalag categories
+  // Local Valenzuela/Gen T Deleon categories
   const categories = [
     { id: "silugan", name: "Silugan", icon: "🍳", gradient: "from-yellow-400 to-orange-400" },
     { id: "ihawan", name: "Ihawan", icon: "🔥", gradient: "from-red-500 to-orange-500" },

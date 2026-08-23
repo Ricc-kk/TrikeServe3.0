@@ -167,7 +167,7 @@ export default function RestaurantDetail() {
         // Create restaurant data object
         const data: RestaurantData = {
           name: restaurant.name || restaurantName,
-          subtitle: restaurant.subtitle || restaurant.address || 'Tagalag, Valenzuela',
+          subtitle: restaurant.subtitle || restaurant.address || 'Gen T Deleon, Valenzuela',
           logo: restaurant.logo_image || '🍽️',
           image: restaurant.banner_image || 'https://images.unsplash.com/photo-1517248135467-4c7edcad34c4?w=800',
           heroImage: restaurant.banner_image || 'https://images.unsplash.com/photo-1517248135467-4c7edcad34c4?w=800',

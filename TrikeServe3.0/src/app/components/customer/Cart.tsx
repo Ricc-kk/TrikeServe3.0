@@ -590,7 +590,7 @@ export default function Cart() {
         <div className="pb-6">
           <h3 className="text-lg font-bold text-[#121212] mb-3">Payment details</h3>
           <p className="text-sm text-[#64748B] mb-4">
-            For safety, riders prefer cashless orders. Go cashless to get one faster.
+            For safety, drivers prefer cashless orders. Go cashless to get one faster.
           </p>
 
           <div className="space-y-3">

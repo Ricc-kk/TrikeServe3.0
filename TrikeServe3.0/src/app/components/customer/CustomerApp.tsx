@@ -61,7 +61,7 @@ export default function CustomerApp() {
 
   const restaurants: Restaurant[] = [
     { id: '1', name: "Kuya J's Eatery", category: 'Filipino', distance: '0.8km', rating: 4.5, deliveryFee: 35 },
-    { id: '2', name: 'Tagalag Carinderia', category: 'Filipino', distance: '1.2km', rating: 4.3, deliveryFee: 40 },
+    { id: '2', name: 'Gen T Deleon Carinderia', category: 'Filipino', distance: '1.2km', rating: 4.3, deliveryFee: 40 },
     { id: '3', name: 'Mang Tomas BBQ', category: 'BBQ & Grill', distance: '0.5km', rating: 4.7, deliveryFee: 30 },
   ];
 
@@ -69,7 +69,7 @@ export default function CustomerApp() {
     { id: '1', name: 'Lechon Kawali', price: 120, restaurant: "Kuya J's Eatery" },
     { id: '2', name: 'Sisig', price: 95, restaurant: "Kuya J's Eatery" },
     { id: '3', name: 'BBQ Combo', price: 150, restaurant: 'Mang Tomas BBQ' },
-    { id: '4', name: 'Pancit Canton', price: 80, restaurant: 'Tagalag Carinderia' },
+    { id: '4', name: 'Pancit Canton', price: 80, restaurant: 'Gen T Deleon Carinderia' },
   ];
 
   const addToCart = (item: MenuItem) => {
@@ -157,8 +157,8 @@ export default function CustomerApp() {
                         <UserIcon className="w-6 h-6 text-purple-600" />
                       </div>
                       <div>
-                        <h4 className="font-bold text-[#121212]">Private (Pakyaw)</h4>
-                        <p className="text-xs text-[#64748B]">Entire trike</p>
+                        <h4 className="font-bold text-[#121212]">Special</h4>
+                        <p className="text-xs text-[#64748B]">Special ride</p>
                       </div>
                     </div>
                     <div className="text-right">
@@ -285,7 +285,7 @@ export default function CustomerApp() {
                 </div>
                 <div className="flex-1">
                   <h4 className="font-bold text-[#121212]">Shared Ride</h4>
-                  <p className="text-sm text-[#64748B]">Tagalag Terminal → Barangay Hall</p>
+                  <p className="text-sm text-[#64748B]">Gen T Deleon Terminal → Barangay Hall</p>
                 </div>
                 <div className="text-right">
                   <p className="font-bold text-[#E11D48]">₱15</p>

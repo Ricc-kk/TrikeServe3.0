@@ -37,7 +37,7 @@ const createSelectedPinIcon = () => {
 export default function MapSelector({ onClose, onSelectLocation, currentLocation }: MapSelectorProps) {
   const { isLoaded, loadError, blocked, apiKeyPresent } = useMapLoader();
 
-  // Tagalag, Valenzuela City coordinates (also used as the default map center)
+  // Gen T Deleon, Valenzuela City coordinates (also used as the default map center)
   const [mapCenter, setMapCenter] = useState<{ lat: number; lng: number }>({ lat: 14.7244, lng: 120.9668 });
   const [pickedPin, setPickedPin] = useState<{ lat: number; lng: number; name: string; full: string } | null>(null);
   const [showPinInfo, setShowPinInfo] = useState(false);

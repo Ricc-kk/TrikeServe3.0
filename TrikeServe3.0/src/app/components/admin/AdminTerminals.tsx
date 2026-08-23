@@ -247,7 +247,7 @@ export default function AdminTerminals() {
   }
 
   function deleteTerminal(id: string) {
-    if (!confirm("Delete this terminal? Assigned riders will be unassigned.")) return;
+    if (!confirm("Delete this terminal? Assigned drivers will be unassigned.")) return;
     const unassignIds = users.filter(u => riderTerminalId(u) === id).map(u => u.id);
     const updated = users.map(u =>
       riderTerminalId(u) === id
@@ -394,8 +394,6 @@ export default function AdminTerminals() {
                           <p className="text-[#64748B] text-sm mt-0.5">📍 {t.boundary}</p>
                           <div className="flex items-center gap-4 mt-2 text-xs text-[#64748B]">
                             <span className="flex items-center gap-1"><Users size={12} />{termRiders.length} drivers</span>
-                            <span>Radius {t.radius_km}km</span>
-                            <span>({t.center_lat.toFixed(4)}, {t.center_lng.toFixed(4)})</span>
                           </div>
                         </div>
                       </div>

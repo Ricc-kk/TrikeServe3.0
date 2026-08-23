@@ -377,8 +377,8 @@ export default function AdminSettings() {
 
                     <div className="flex items-center justify-between p-4 bg-[#F8F9FA] rounded-xl">
                       <div>
-                        <p className="font-semibold text-[#121212]">Require Rider Verification</p>
-                        <p className="text-sm text-[#64748B]">Riders must be verified by admin before accepting rides</p>
+                        <p className="font-semibold text-[#121212]">Require Driver Verification</p>
+                        <p className="text-sm text-[#64748B]">Drivers must be verified by admin before accepting rides</p>
                       </div>
                       <button
                         onClick={() => setPlatformSettings({ ...platformSettings, requireRiderVerification: !platformSettings.requireRiderVerification })}

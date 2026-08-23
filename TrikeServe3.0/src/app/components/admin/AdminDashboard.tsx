@@ -292,7 +292,7 @@ export default function AdminDashboard() {
                 </h1>
                 <p className="text-xs lg:text-sm text-[#64748B]">
                   {user?.adminType === 'business_customer' ? 'Business & Customer Management' :
-                   user?.adminType === 'rider' ? 'Rider Management' :
+                   user?.adminType === 'rider' ? 'Driver Management' :
                    'TrikeServe Control Panel - System Overview'}
                 </p>
               </div>
@@ -350,11 +350,11 @@ export default function AdminDashboard() {
               </div>
             </Card>
 
-            {/* Total Riders */}
+            {/* Total Drivers */}
             <Card className="p-4 lg:p-6 border-2 border-[#E2E8F0] bg-white">
               <div className="flex items-start justify-between mb-3 lg:mb-4">
                 <div>
-                  <p className="text-xs lg:text-sm text-[#64748B] mb-1">Riders</p>
+                  <p className="text-xs lg:text-sm text-[#64748B] mb-1">Drivers</p>
                   <h2 className="text-2xl lg:text-4xl font-bold text-[#121212]">{stats.totalRiders}</h2>
                 </div>
                 <div className="w-10 h-10 lg:w-12 lg:h-12 bg-[#DBEAFE] rounded-xl flex items-center justify-center">
@@ -565,7 +565,7 @@ export default function AdminDashboard() {
                     <div>
                       <Bike className="w-8 h-8 lg:w-10 lg:h-10 text-[#9333EA] mb-2" />
                       <h3 className="font-bold text-base lg:text-lg text-[#121212]">Private Ride</h3>
-                      <p className="text-xs text-[#64748B]">Pakyaw (entire trike)</p>
+                      <p className="text-xs text-[#64748B]">Special</p>
                     </div>
                   </div>
                   <div className="flex items-center gap-2 mb-3">

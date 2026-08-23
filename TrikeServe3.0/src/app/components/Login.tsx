@@ -32,10 +32,11 @@ const ROLE_ORDER: Record<string, number> = {
 
 function roleLabel(acc: TestAccount): string {
   if (acc.role === "admin") {
-    if (acc.subrole === "rider") return "Rider Admin";
+    if (acc.subrole === "rider") return "Driver Admin";
     if (acc.subrole === "business_customer") return "Business & Customer Admin";
     return "Admin";
   }
+  if (acc.role === "rider") return "Driver";
   return acc.role;
 }
 
@@ -167,7 +168,7 @@ export default function Login() {
         {/* Background Image */}
         <img 
           src={tagalagImage} 
-          alt="Tagalag" 
+          alt="Gen T Deleon" 
           className="absolute inset-0 w-full h-full object-cover"
         />
         
@@ -198,7 +199,7 @@ export default function Login() {
           </div>
           
           <div className="bg-white/20 text-white border border-white/30 backdrop-blur-sm w-fit px-3 py-1 rounded-md text-sm">
-            Serving Tagalag, Philippines
+            Serving Gen T Deleon, Philippines
           </div>
         </div>
       </div>

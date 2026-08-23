@@ -49,7 +49,7 @@ export default function MyDestination() {
             value={destination}
             onChange={setDestination}
             onSelect={handleSelectDestination}
-            placeholder="Search for an address, landmark, or destination (e.g., Tagalag Valenzuela City)"
+            placeholder="Search for an address, landmark, or destination (e.g., Gen T Deleon Valenzuela City)"
             className="w-full px-4 py-3 border-2 border-gray-200 rounded-lg focus:border-[#E11D48] focus:outline-none"
             locationBias={VALENZUELA_BIAS}
             restrictToCity="Valenzuela"
