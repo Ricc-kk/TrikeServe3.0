@@ -48,15 +48,15 @@ type GeocodedLocation = {
  };
 
 const TAGALAG_BISIG_RECOMMENDATIONS: RecommendedLocation[] = [
-  { id: "tagalag-terminal", name: "Tagalag Terminal", full: "Main Road, Tagalag, Valenzuela City", lat: 14.7294, lng: 120.9349 },
-  { id: "tagalag-market", name: "Tagalag Market", full: "Tagalag Market, Valenzuela City", lat: 14.7301, lng: 120.9356 },
-  { id: "tagalag-eco-park", name: "Tagalag Eco Park", full: "Tagalag Eco Park, Valenzuela City", lat: 14.7287, lng: 120.9342 },
-  { id: "tagalag-mini-park", name: "Tagalag Mini Park", full: "Tagalag Mini Park, Valenzuela City", lat: 14.7278, lng: 120.9361 },
-  { id: "advance-st", name: "Advance Street", full: "Advance Street, Tagalag, Valenzuela City", lat: 14.7285, lng: 120.9355 },
-  { id: "balay-de-jesus", name: "Balay De Jesus", full: "Balay De Jesus, Tagalag, Valenzuela City", lat: 14.7296, lng: 120.9344 },
-  { id: "pablo-muni", name: "Pablo's Muni", full: "Pablo's Muni Restaurant, Tagalag, Valenzuela City", lat: 14.7293, lng: 120.9359 },
-  { id: "pares-overlord", name: "Pares Overlord", full: "Pares Overlord, Tagalag, Valenzuela City", lat: 14.7281, lng: 120.9370 },
-  { id: "kuya-oliver", name: "Kuya Oliver", full: "Kuya Oliver, Tagalag, Valenzuela City", lat: 14.7289, lng: 120.9346 },
+  { id: "tagalag-terminal", name: "Gen T Deleon Terminal", full: "Main Road, Gen T Deleon, Valenzuela City", lat: 14.7294, lng: 120.9349 },
+  { id: "tagalag-market", name: "Gen T Deleon Market", full: "Gen T Deleon Market, Valenzuela City", lat: 14.7301, lng: 120.9356 },
+  { id: "tagalag-eco-park", name: "Gen T Deleon Eco Park", full: "Gen T Deleon Eco Park, Valenzuela City", lat: 14.7287, lng: 120.9342 },
+  { id: "tagalag-mini-park", name: "Gen T Deleon Mini Park", full: "Gen T Deleon Mini Park, Valenzuela City", lat: 14.7278, lng: 120.9361 },
+  { id: "advance-st", name: "Advance Street", full: "Advance Street, Gen T Deleon, Valenzuela City", lat: 14.7285, lng: 120.9355 },
+  { id: "balay-de-jesus", name: "Balay De Jesus", full: "Balay De Jesus, Gen T Deleon, Valenzuela City", lat: 14.7296, lng: 120.9344 },
+  { id: "pablo-muni", name: "Pablo's Muni", full: "Pablo's Muni Restaurant, Gen T Deleon, Valenzuela City", lat: 14.7293, lng: 120.9359 },
+  { id: "pares-overlord", name: "Pares Overlord", full: "Pares Overlord, Gen T Deleon, Valenzuela City", lat: 14.7281, lng: 120.9370 },
+  { id: "kuya-oliver", name: "Kuya Oliver", full: "Kuya Oliver, Gen T Deleon, Valenzuela City", lat: 14.7289, lng: 120.9346 },
 ];
 
 const getNearestRecommendedLocation = (location: { lat: number; lng: number }) => {
@@ -374,9 +374,20 @@ export default function CustomerHome() {
     if (!pickupCoords && currentLocation) {
       setPickupCoords(currentLocation);
       setPickup('Current Location');
-      setPickupAddress(`${currentLocation.lat.toFixed(5)}, ${currentLocation.lng.toFixed(5)}`);
     }
   }, [currentLocation]);
+
+  // Reverse geocode pickup coords whenever Maps loads or coords change
+  useEffect(() => {
+    if (pickupCoords && isMapsLoaded && (window as any).google?.maps?.Geocoder) {
+      const geocoder = new (window as any).google.maps.Geocoder();
+      geocoder.geocode({ location: pickupCoords }, (results: any[], status: string) => {
+        if (status === 'OK' && results?.[0]) {
+          setPickupAddress(results[0].formatted_address);
+        }
+      });
+    }
+  }, [pickupCoords, isMapsLoaded]);
 
   useEffect(() => {
     if (!isMapsLoaded || !(window as any).google) return;
@@ -1276,9 +1287,9 @@ export default function CustomerHome() {
     { name: "Rose Mary Street", address: "Rose Mary Street, Valenzuela", icon: "🌹" },
     { name: "Sampaguita Street", address: "Sampaguita Street, Valenzuela", icon: "🌼" },
     { name: "Everlasting Street", address: "Everlasting Street, Valenzuela", icon: "🌸" },
-    { name: "Tagalag Terminal", address: "Main Road, Tagalag", icon: "🚏" },
-    { name: "Barangay Hall", address: "Tagalag Center", icon: "🏛️" },
-    { name: "Tagalag Market", address: "Market District", icon: "🏪" },
+    { name: "Gen T Deleon Terminal", address: "Main Road, Gen T Deleon", icon: "🚏" },
+    { name: "Barangay Hall", address: "Gen T Deleon Center", icon: "🏛️" },
+    { name: "Gen T Deleon Market", address: "Market District", icon: "🏪" },
   ];
 
   const handleLocationSelect = (location: any) => {
@@ -1753,17 +1764,8 @@ export default function CustomerHome() {
              )}
            </GoogleMap>
          )}
-        <div className="absolute top-4 left-4 right-4 z-[1000]">
+        <div className="absolute top-4 right-4 z-[1000]">
           <div className="flex items-center gap-2">
-            <div className="relative flex-1">
-              <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-[#94A3B8]" />
-              <input
-                type="text"
-                placeholder="Search"
-                className="w-full pl-12 pr-4 py-3.5 bg-white rounded-xl shadow-lg border-0 text-base"
-                style={{ outline: 'none' }}
-              />
-            </div>
             {/* Notifications bell - upper right of the home page */}
             <button
               onClick={() => navigate('/customer/notifications')}
@@ -1839,8 +1841,8 @@ export default function CustomerHome() {
                           ? {
                               lat: pickupCoords.lat,
                               lng: pickupCoords.lng,
-                              name: pickup || `${pickupCoords.lat.toFixed(5)}, ${pickupCoords.lng.toFixed(5)}`,
-                              fullAddress: pickupAddress || pickup || `${pickupCoords.lat.toFixed(5)}, ${pickupCoords.lng.toFixed(5)}`,
+                              name: pickup || 'Pickup Location',
+                              fullAddress: pickupAddress || pickup || 'Current location',
                             }
                           : null
                       );
@@ -1876,8 +1878,8 @@ export default function CustomerHome() {
                           ? {
                               lat: dropoffCoords.lat,
                               lng: dropoffCoords.lng,
-                              name: dropoff || `${dropoffCoords.lat.toFixed(5)}, ${dropoffCoords.lng.toFixed(5)}`,
-                              fullAddress: dropoffAddress || dropoff || `${dropoffCoords.lat.toFixed(5)}, ${dropoffCoords.lng.toFixed(5)}`,
+                              name: dropoff || 'Drop-off Location',
+                              fullAddress: dropoffAddress || dropoff || 'Select drop-off location',
                             }
                           : null
                       );
@@ -1889,8 +1891,8 @@ export default function CustomerHome() {
                         <MapPin className="w-4 h-4 text-[#E11D48]" />
                       </div>
                       <div className="flex-1 min-w-0">
-                        <p className="font-bold text-sm text-[#121212] mb-0.5">{dropoff}</p>
-                        <p className="text-xs text-[#64748B] truncate">{dropoffAddress}</p>
+                        <p className="font-bold text-sm text-[#121212] mb-0.5">{dropoff || 'Tap to set destination'}</p>
+                        <p className="text-xs text-[#64748B] truncate">{dropoffAddress || (dropoffCoords ? `${dropoffCoords.lat.toFixed(5)}, ${dropoffCoords.lng.toFixed(5)}` : 'Select drop-off location')}</p>
                       </div>
                       <button className="mt-0.5 flex-shrink-0">
                         <ChevronDown className="w-4 h-4 text-[#64748B]" />

@@ -835,27 +835,27 @@ export const supabaseHelpers = {
     const statusLabels: Record<string, { title: string; message: string; emoji: string }> = {
       'on-the-way': {
         title: 'Driver on the way',
-        message: 'Your rider is on the way to pick up your order.',
+        message: 'Your driver is on the way to pick up your order.',
         emoji: '🛵',
       },
       'arrived': {
         title: 'Driver arrived at restaurant',
-        message: 'Your rider has arrived at the restaurant to pick up your order.',
+        message: 'Your driver has arrived at the restaurant to pick up your order.',
         emoji: '📍',
       },
       'picked-up': {
         title: 'Order picked up',
-        message: 'Your rider has picked up your order and is heading to you!',
+        message: 'Your driver has picked up your order and is heading to you!',
         emoji: '📦',
       },
       'dropped-off': {
         title: 'Arrived at your location',
-        message: 'Your rider has arrived at your delivery address.',
+        message: 'Your driver has arrived at your delivery address.',
         emoji: '🏁',
       },
       'awaiting-payment': {
         title: 'Delivery arriving',
-        message: 'Your rider is almost there — please prepare your payment.',
+        message: 'Your driver is almost there — please prepare your payment.',
         emoji: '💰',
       },
       'completed': {
@@ -962,7 +962,7 @@ export const supabaseHelpers = {
       },
       'ready': {
         title: 'Order ready',
-        message: 'Your order is ready and waiting for a rider.',
+        message: 'Your order is ready and waiting for a driver.',
         emoji: '📦',
       },
       'delivered': {

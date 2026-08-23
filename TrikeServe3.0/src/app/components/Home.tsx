@@ -13,7 +13,7 @@ export default function Home() {
     },
     {
       path: "/rider",
-      title: "Rider",
+      title: "Driver",
       description: "Accept deliveries & rides",
       icon: Bike,
       gradient: "from-[#121212] to-[#2a2a2a]",
@@ -57,7 +57,7 @@ export default function Home() {
             TrikeServe
           </h1>
           <p className="text-xl text-white/60 font-medium">
-            Community-Based Tricycle Platform for Tagalag
+            Community-Based Tricycle Platform for Gen T Deleon
           </p>
           <div className="mt-6 flex items-center justify-center gap-4 text-sm text-white/40">
             <span className="flex items-center gap-2">

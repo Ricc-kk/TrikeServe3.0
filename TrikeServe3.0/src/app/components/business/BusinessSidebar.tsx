@@ -136,25 +136,6 @@ export default function BusinessSidebar({ isMobileMenuOpen, setIsMobileMenuOpen 
               </Link>
             ))}
           </nav>
-
-          {/* Support Widget */}
-          <div className="p-6">
-            <Card className="p-4 border-2 border-[#E2E8F0] bg-gradient-to-br from-[#FFF1F2] to-white">
-              <div className="text-center mb-3">
-                <div className="w-16 h-16 bg-[#E11D48] rounded-full flex items-center justify-center mx-auto mb-3">
-                  <MessageSquare className="w-8 h-8 text-white" />
-                </div>
-                <h3 className="font-bold text-[#121212] mb-1">Need Help?</h3>
-                <p className="text-xs text-[#64748B]">Contact our support team</p>
-              </div>
-              <button
-                onClick={() => navigate('/business/messages')}
-                className="w-full py-2.5 bg-[#E11D48] text-white font-bold rounded-lg text-sm uppercase hover:bg-[#BE123C] transition-all"
-              >
-                Get Support
-              </button>
-            </Card>
-          </div>
         </div>
       </div>
     </>

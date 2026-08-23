@@ -303,7 +303,7 @@ export default function AdminUsers() {
               <p className="text-2xl font-bold text-[#10B981]">{stats.customers}</p>
             </Card>
             <Card className="p-4 border-2 border-[#E2E8F0] bg-white">
-              <p className="text-xs text-[#64748B] mb-1">Riders</p>
+              <p className="text-xs text-[#64748B] mb-1">Drivers</p>
               <p className="text-2xl font-bold text-[#3B82F6]">{stats.riders}</p>
             </Card>
             <Card className="p-4 border-2 border-[#E2E8F0] bg-white">
@@ -350,7 +350,7 @@ export default function AdminUsers() {
                     </>
                   )}
                   {(!user?.adminType || user?.adminType === 'rider') && (
-                    <option value="rider">Riders</option>
+                    <option value="rider">Drivers</option>
                   )}
                 </select>
               </div>
@@ -427,7 +427,7 @@ export default function AdminUsers() {
                                   </>
                                 )}
                                 {(!user?.adminType || user?.adminType === 'rider') && (
-                                  <option value="rider">Rider</option>
+                                  <option value="rider">Driver</option>
                                 )}
                               </select>
                               <button

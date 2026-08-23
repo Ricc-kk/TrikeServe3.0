@@ -1,9 +1,8 @@
 import { useState, useEffect } from "react";
 import {
-  Shield, MessageSquare, X, Users, Settings, MapPin
+  Shield, X, Users, Settings, MapPin
 } from "lucide-react";
 import { Link, useLocation } from "react-router";
-import { Card } from "../ui/card";
 import { useAuth } from "../../contexts/AuthContext";
 
 interface AdminSidebarProps {
@@ -54,12 +53,16 @@ export default function AdminSidebar({ isMobileMenuOpen, setIsMobileMenuOpen }: 
     return location.pathname === path;
   };
 
-  const menuItems = [
+  const allMenuItems = [
     { path: "/admin/dashboard", icon: Shield, label: "Overview" },
     { path: "/admin/users", icon: Users, label: "Users" },
     { path: "/admin/terminals", icon: MapPin, label: "Terminals" },
     { path: "/admin/settings", icon: Settings, label: "Settings" }
   ];
+
+  const menuItems = user?.adminType === 'business_customer'
+    ? allMenuItems.filter(item => item.path !== '/admin/terminals')
+    : allMenuItems;
 
   return (
     <>
@@ -90,7 +93,7 @@ export default function AdminSidebar({ isMobileMenuOpen, setIsMobileMenuOpen }: 
                   <span className="text-xl font-bold text-[#121212]">ADMIN</span>
                   <p className="text-xs text-[#64748B]">
                     {user?.adminType === 'business_customer' ? 'Business & Customer' :
-                     user?.adminType === 'rider' ? 'Rider Management' :
+                     user?.adminType === 'rider' ? 'Driver Management' :
                      'Control Panel'}
                   </p>
                 </div>
@@ -131,21 +134,7 @@ export default function AdminSidebar({ isMobileMenuOpen, setIsMobileMenuOpen }: 
             ))}
           </nav>
 
-          {/* Support Widget */}
-          <div className="p-6">
-            <Card className="p-4 border-2 border-[#E2E8F0] bg-gradient-to-br from-[#FFF1F2] to-white">
-              <div className="text-center mb-3">
-                <div className="w-16 h-16 bg-gradient-to-br from-[#E11D48] to-[#121212] rounded-full flex items-center justify-center mx-auto mb-3">
-                  <MessageSquare className="w-8 h-8 text-white" />
-                </div>
-                <h3 className="font-bold text-[#121212] mb-1">System Status</h3>
-                <p className="text-xs text-[#64748B]">All systems operational</p>
-              </div>
-              <div className="w-full py-2.5 bg-[#10B981] text-white font-bold rounded-lg text-sm uppercase text-center">
-                Online
-              </div>
-            </Card>
-          </div>
+
         </div>
       </div>
     </>

@@ -1,0 +1,94 @@
+[2m11:50:05 PM[22m [31m[1m[vite][22m[39m [31m[2m(client)[22m[39m Pre-transform error: Failed to resolve import "./components/business/BusinessProfile" from "src/app/routes.tsx". Does the file exist?
+  Plugin: [35mvite:import-analysis[39m
+  File: [36mC:/Users/mayoi/StudioProjects/TrikeServe3.0/.freebuff/worktrees/899eebb7-8f4e-4f8d-a583-c41516a531d5/TrikeServe3.0/src/app/routes.tsx[39m:24:28
+[33m  23 |  import BusinessOrders from "./components/business/BusinessOrders";
+  24 |  import BusinessAccount from "./components/business/BusinessAccount";
+  25 |  import BusinessProfile from "./components/business/BusinessProfile";
+     |                               ^
+  26 |  import BusinessMessages from "./components/business/BusinessMessages";
+  27 |  import CustomerApp from "./components/customer/CustomerApp";[39m
+[2m11:50:25 PM[22m [31m[1m[vite][22m[39m [31mInternal server error: Failed to resolve import "./components/business/BusinessProfile" from "src/app/routes.tsx". Does the file exist?[39m
+  Plugin: [35mvite:import-analysis[39m
+  File: [36mC:/Users/mayoi/StudioProjects/TrikeServe3.0/.freebuff/worktrees/899eebb7-8f4e-4f8d-a583-c41516a531d5/TrikeServe3.0/src/app/routes.tsx[39m:24:28
+[33m  23 |  import BusinessOrders from "./components/business/BusinessOrders";
+  24 |  import BusinessAccount from "./components/business/BusinessAccount";
+  25 |  import BusinessProfile from "./components/business/BusinessProfile";
+     |                               ^
+  26 |  import BusinessMessages from "./components/business/BusinessMessages";
+  27 |  import CustomerApp from "./components/customer/CustomerApp";[39m
+      at TransformPluginContext._formatLog (file:///C:/Users/mayoi/StudioProjects/TrikeServe3.0/.freebuff/worktrees/899eebb7-8f4e-4f8d-a583-c41516a531d5/TrikeServe3.0/node_modules/vite/dist/node/chunks/dep-DBxKXgDP.js:42499:41)
+      at TransformPluginContext.error (file:///C:/Users/mayoi/StudioProjects/TrikeServe3.0/.freebuff/worktrees/899eebb7-8f4e-4f8d-a583-c41516a531d5/TrikeServe3.0/node_modules/vite/dist/node/chunks/dep-DBxKXgDP.js:42496:16)
+      at normalizeUrl (file:///C:/Users/mayoi/StudioProjects/TrikeServe3.0/.freebuff/worktrees/899eebb7-8f4e-4f8d-a583-c41516a531d5/TrikeServe3.0/node_modules/vite/dist/node/chunks/dep-DBxKXgDP.js:40475:23)
+      at process.processTicksAndRejections (node:internal/process/task_queues:103:5)
+      at async file:///C:/Users/mayoi/StudioProjects/TrikeServe3.0/.freebuff/worktrees/899eebb7-8f4e-4f8d-a583-c41516a531d5/TrikeServe3.0/node_modules/vite/dist/node/chunks/dep-DBxKXgDP.js:40594:37
+      at async Promise.all (index 24)
+      at async TransformPluginContext.transform (file:///C:/Users/mayoi/StudioProjects/TrikeServe3.0/.freebuff/worktrees/899eebb7-8f4e-4f8d-a583-c41516a531d5/TrikeServe3.0/node_modules/vite/dist/node/chunks/dep-DBxKXgDP.js:40521:7)
+      at async EnvironmentPluginContainer.transform (file:///C:/Users/mayoi/StudioProjects/TrikeServe3.0/.freebuff/worktrees/899eebb7-8f4e-4f8d-a583-c41516a531d5/TrikeServe3.0/node_modules/vite/dist/node/chunks/dep-DBxKXgDP.js:42294:18)
+      at async loadAndTransform (file:///C:/Users/mayoi/StudioProjects/TrikeServe3.0/.freebuff/worktrees/899eebb7-8f4e-4f8d-a583-c41516a531d5/TrikeServe3.0/node_modules/vite/dist/node/chunks/dep-DBxKXgDP.js:35735:27)
+      at async viteTransformMiddleware (file:///C:/Users/mayoi/StudioProjects/TrikeServe3.0/.freebuff/worktrees/899eebb7-8f4e-4f8d-a583-c41516a531d5/TrikeServe3.0/node_modules/vite/dist/node/chunks/dep-DBxKXgDP.js:37250:24)
+[2m11:50:37 PM[22m [31m[1m[vite][22m[39m [31mInternal server error: Failed to resolve import "./components/business/BusinessProfile" from "src/app/routes.tsx". Does the file exist?[39m
+  Plugin: [35mvite:import-analysis[39m
+  File: [36mC:/Users/mayoi/StudioProjects/TrikeServe3.0/.freebuff/worktrees/899eebb7-8f4e-4f8d-a583-c41516a531d5/TrikeServe3.0/src/app/routes.tsx[39m:24:28
+[33m  23 |  import BusinessOrders from "./components/business/BusinessOrders";
+  24 |  import BusinessAccount from "./components/business/BusinessAccount";
+  25 |  import BusinessProfile from "./components/business/BusinessProfile";
+     |                               ^
+  26 |  import BusinessMessages from "./components/business/BusinessMessages";
+  27 |  import CustomerApp from "./components/customer/CustomerApp";[39m
+      at TransformPluginContext._formatLog (file:///C:/Users/mayoi/StudioProjects/TrikeServe3.0/.freebuff/worktrees/899eebb7-8f4e-4f8d-a583-c41516a531d5/TrikeServe3.0/node_modules/vite/dist/node/chunks/dep-DBxKXgDP.js:42499:41)
+      at TransformPluginContext.error (file:///C:/Users/mayoi/StudioProjects/TrikeServe3.0/.freebuff/worktrees/899eebb7-8f4e-4f8d-a583-c41516a531d5/TrikeServe3.0/node_modules/vite/dist/node/chunks/dep-DBxKXgDP.js:42496:16)
+      at normalizeUrl (file:///C:/Users/mayoi/StudioProjects/TrikeServe3.0/.freebuff/worktrees/899eebb7-8f4e-4f8d-a583-c41516a531d5/TrikeServe3.0/node_modules/vite/dist/node/chunks/dep-DBxKXgDP.js:40475:23)
+      at process.processTicksAndRejections (node:internal/process/task_queues:103:5)
+      at async file:///C:/Users/mayoi/StudioProjects/TrikeServe3.0/.freebuff/worktrees/899eebb7-8f4e-4f8d-a583-c41516a531d5/TrikeServe3.0/node_modules/vite/dist/node/chunks/dep-DBxKXgDP.js:40594:37
+      at async Promise.all (index 24)
+      at async TransformPluginContext.transform (file:///C:/Users/mayoi/StudioProjects/TrikeServe3.0/.freebuff/worktrees/899eebb7-8f4e-4f8d-a583-c41516a531d5/TrikeServe3.0/node_modules/vite/dist/node/chunks/dep-DBxKXgDP.js:40521:7)
+      at async EnvironmentPluginContainer.transform (file:///C:/Users/mayoi/StudioProjects/TrikeServe3.0/.freebuff/worktrees/899eebb7-8f4e-4f8d-a583-c41516a531d5/TrikeServe3.0/node_modules/vite/dist/node/chunks/dep-DBxKXgDP.js:42294:18)
+      at async loadAndTransform (file:///C:/Users/mayoi/StudioProjects/TrikeServe3.0/.freebuff/worktrees/899eebb7-8f4e-4f8d-a583-c41516a531d5/TrikeServe3.0/node_modules/vite/dist/node/chunks/dep-DBxKXgDP.js:35735:27)
+      at async viteTransformMiddleware (file:///C:/Users/mayoi/StudioProjects/TrikeServe3.0/.freebuff/worktrees/899eebb7-8f4e-4f8d-a583-c41516a531d5/TrikeServe3.0/node_modules/vite/dist/node/chunks/dep-DBxKXgDP.js:37250:24)
+[2m11:52:02 PM[22m [31m[1m[vite][22m[39m [31m[2m(client)[22m[39m Pre-transform error: Failed to resolve import "./components/customer/DeliveryTracker" from "src/app/routes.tsx". Does the file exist?
+  Plugin: [35mvite:import-analysis[39m
+  File: [36mC:/Users/mayoi/StudioProjects/TrikeServe3.0/.freebuff/worktrees/899eebb7-8f4e-4f8d-a583-c41516a531d5/TrikeServe3.0/src/app/routes.tsx[39m:39:28
+[33m  38 |  import Profile from "./components/customer/Profile";
+  39 |  import OrderDetail from "./components/customer/OrderDetail";
+  40 |  import DeliveryTracker from "./components/customer/DeliveryTracker";
+     |                               ^
+  41 |  import Favorites from "./components/customer/Favorites";
+  42 |  import AdminDashboard from "./components/admin/AdminDashboard";[39m
+[2m11:52:02 PM[22m [31m[1m[vite][22m[39m [31mInternal server error: Failed to resolve import "./components/customer/DeliveryTracker" from "src/app/routes.tsx". Does the file exist?[39m
+  Plugin: [35mvite:import-analysis[39m
+  File: [36mC:/Users/mayoi/StudioProjects/TrikeServe3.0/.freebuff/worktrees/899eebb7-8f4e-4f8d-a583-c41516a531d5/TrikeServe3.0/src/app/routes.tsx[39m:39:28
+[33m  38 |  import Profile from "./components/customer/Profile";
+  39 |  import OrderDetail from "./components/customer/OrderDetail";
+  40 |  import DeliveryTracker from "./components/customer/DeliveryTracker";
+     |                               ^
+  41 |  import Favorites from "./components/customer/Favorites";
+  42 |  import AdminDashboard from "./components/admin/AdminDashboard";[39m
+      at TransformPluginContext._formatLog (file:///C:/Users/mayoi/StudioProjects/TrikeServe3.0/.freebuff/worktrees/899eebb7-8f4e-4f8d-a583-c41516a531d5/TrikeServe3.0/node_modules/vite/dist/node/chunks/dep-DBxKXgDP.js:42499:41)
+      at TransformPluginContext.error (file:///C:/Users/mayoi/StudioProjects/TrikeServe3.0/.freebuff/worktrees/899eebb7-8f4e-4f8d-a583-c41516a531d5/TrikeServe3.0/node_modules/vite/dist/node/chunks/dep-DBxKXgDP.js:42496:16)
+      at normalizeUrl (file:///C:/Users/mayoi/StudioProjects/TrikeServe3.0/.freebuff/worktrees/899eebb7-8f4e-4f8d-a583-c41516a531d5/TrikeServe3.0/node_modules/vite/dist/node/chunks/dep-DBxKXgDP.js:40475:23)
+      at process.processTicksAndRejections (node:internal/process/task_queues:103:5)
+      at async file:///C:/Users/mayoi/StudioProjects/TrikeServe3.0/.freebuff/worktrees/899eebb7-8f4e-4f8d-a583-c41516a531d5/TrikeServe3.0/node_modules/vite/dist/node/chunks/dep-DBxKXgDP.js:40594:37
+      at async Promise.all (index 39)
+      at async TransformPluginContext.transform (file:///C:/Users/mayoi/StudioProjects/TrikeServe3.0/.freebuff/worktrees/899eebb7-8f4e-4f8d-a583-c41516a531d5/TrikeServe3.0/node_modules/vite/dist/node/chunks/dep-DBxKXgDP.js:40521:7)
+      at async EnvironmentPluginContainer.transform (file:///C:/Users/mayoi/StudioProjects/TrikeServe3.0/.freebuff/worktrees/899eebb7-8f4e-4f8d-a583-c41516a531d5/TrikeServe3.0/node_modules/vite/dist/node/chunks/dep-DBxKXgDP.js:42294:18)
+      at async loadAndTransform (file:///C:/Users/mayoi/StudioProjects/TrikeServe3.0/.freebuff/worktrees/899eebb7-8f4e-4f8d-a583-c41516a531d5/TrikeServe3.0/node_modules/vite/dist/node/chunks/dep-DBxKXgDP.js:35735:27)
+      at async viteTransformMiddleware (file:///C:/Users/mayoi/StudioProjects/TrikeServe3.0/.freebuff/worktrees/899eebb7-8f4e-4f8d-a583-c41516a531d5/TrikeServe3.0/node_modules/vite/dist/node/chunks/dep-DBxKXgDP.js:37250:24)
+[2m11:52:06 PM[22m [31m[1m[vite][22m[39m [31mInternal server error: Failed to resolve import "./components/customer/DeliveryTracker" from "src/app/routes.tsx". Does the file exist?[39m
+  Plugin: [35mvite:import-analysis[39m
+  File: [36mC:/Users/mayoi/StudioProjects/TrikeServe3.0/.freebuff/worktrees/899eebb7-8f4e-4f8d-a583-c41516a531d5/TrikeServe3.0/src/app/routes.tsx[39m:39:28
+[33m  38 |  import Profile from "./components/customer/Profile";
+  39 |  import OrderDetail from "./components/customer/OrderDetail";
+  40 |  import DeliveryTracker from "./components/customer/DeliveryTracker";
+     |                               ^
+  41 |  import Favorites from "./components/customer/Favorites";
+  42 |  import AdminDashboard from "./components/admin/AdminDashboard";[39m
+      at TransformPluginContext._formatLog (file:///C:/Users/mayoi/StudioProjects/TrikeServe3.0/.freebuff/worktrees/899eebb7-8f4e-4f8d-a583-c41516a531d5/TrikeServe3.0/node_modules/vite/dist/node/chunks/dep-DBxKXgDP.js:42499:41)
+      at TransformPluginContext.error (file:///C:/Users/mayoi/StudioProjects/TrikeServe3.0/.freebuff/worktrees/899eebb7-8f4e-4f8d-a583-c41516a531d5/TrikeServe3.0/node_modules/vite/dist/node/chunks/dep-DBxKXgDP.js:42496:16)
+      at normalizeUrl (file:///C:/Users/mayoi/StudioProjects/TrikeServe3.0/.freebuff/worktrees/899eebb7-8f4e-4f8d-a583-c41516a531d5/TrikeServe3.0/node_modules/vite/dist/node/chunks/dep-DBxKXgDP.js:40475:23)
+      at process.processTicksAndRejections (node:internal/process/task_queues:103:5)
+      at async file:///C:/Users/mayoi/StudioProjects/TrikeServe3.0/.freebuff/worktrees/899eebb7-8f4e-4f8d-a583-c41516a531d5/TrikeServe3.0/node_modules/vite/dist/node/chunks/dep-DBxKXgDP.js:40594:37
+      at async Promise.all (index 39)
+      at async TransformPluginContext.transform (file:///C:/Users/mayoi/StudioProjects/TrikeServe3.0/.freebuff/worktrees/899eebb7-8f4e-4f8d-a583-c41516a531d5/TrikeServe3.0/node_modules/vite/dist/node/chunks/dep-DBxKXgDP.js:40521:7)
+      at async EnvironmentPluginContainer.transform (file:///C:/Users/mayoi/StudioProjects/TrikeServe3.0/.freebuff/worktrees/899eebb7-8f4e-4f8d-a583-c41516a531d5/TrikeServe3.0/node_modules/vite/dist/node/chunks/dep-DBxKXgDP.js:42294:18)
+      at async loadAndTransform (file:///C:/Users/mayoi/StudioProjects/TrikeServe3.0/.freebuff/worktrees/899eebb7-8f4e-4f8d-a583-c41516a531d5/TrikeServe3.0/node_modules/vite/dist/node/chunks/dep-DBxKXgDP.js:35735:27)
+      at async viteTransformMiddleware (file:///C:/Users/mayoi/StudioProjects/TrikeServe3.0/.freebuff/worktrees/899eebb7-8f4e-4f8d-a583-c41516a531d5/TrikeServe3.0/node_modules/vite/dist/node/chunks/dep-DBxKXgDP.js:37250:24)
