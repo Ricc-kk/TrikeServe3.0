@@ -1,5 +1,5 @@
-import { useState, useEffect } from "react";
-import { Store, Package, Clock, User, ChevronRight, CheckCircle, XCircle, AlertCircle, Menu } from "lucide-react";
+import { useState, useEffect, useRef } from "react";
+import { Store, Package, Clock, User, ChevronRight, CheckCircle, XCircle, AlertCircle, Menu, Navigation } from "lucide-react";
 import { Link } from "react-router";
 import { Card } from "../ui/card";
 import { Badge } from "../ui/badge";
@@ -7,6 +7,9 @@ import { Button } from "../ui/button";
 import BusinessSidebar from "./BusinessSidebar";
     import { supabase } from "../../../lib/supabase";
     import { supabaseHelpers } from "@/lib/supabase";
+import { GoogleMap, MarkerF, Polyline } from "@react-google-maps/api";
+import useMapLoader from "@/lib/mapLoader";
+import tricycleIcon from '../../../assets/0b76d1aa56b8ad6e15dd4efc8a0100b0ca5762a1.png'
 
 interface Order {
   id: string;
@@ -41,6 +44,12 @@ export default function BusinessOrders() {
   const [isLoading, setIsLoading] = useState(true);
   const [restaurantId, setRestaurantId] = useState<string | null>(null);
   const [isUpdatingStatus, setIsUpdatingStatus] = useState(false); // Prevent refresh during update
+  const { isLoaded: isMapsLoaded } = useMapLoader();
+  const [driverLocation, setDriverLocation] = useState<{ lat: number; lng: number } | null>(null);
+  const [driverStatus, setDriverStatus] = useState<string | null>(null);
+  const [routePath, setRoutePath] = useState<Array<{ lat: number; lng: number }>>([]);
+  const [rideRequestInfo, setRideRequestInfo] = useState<any>(null);
+  const trackingPollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   // Load orders from Supabase (secure - uses RLS policies)
   useEffect(() => {
@@ -56,6 +65,91 @@ export default function BusinessOrders() {
     }, 5000);
     return () => clearInterval(interval);
   }, [isUpdatingStatus]);
+
+  // Poll for driver location when an on-the-way order is selected
+  useEffect(() => {
+    if (!selectedOrder || selectedOrder.status !== 'on-the-way') {
+      if (trackingPollRef.current) clearInterval(trackingPollRef.current);
+      setDriverLocation(null);
+      setRoutePath([]);
+      setRideRequestInfo(null);
+      return;
+    }
+
+    const pollDriver = async () => {
+      try {
+        const { data: rideRequest } = await supabase
+          .from('ride_requests')
+          .select('driver_lat, driver_lng, driver_name, driver_plate, driver_status, pickup_lat, pickup_lng, dropoff_lat, dropoff_lng')
+          .eq('order_id', selectedOrder.id)
+          .eq('type', 'delivery')
+          .in('status', ['accepted', 'on-the-way', 'arrived', 'picked-up', 'drop-off'])
+          .order('created_at', { ascending: false })
+          .limit(1)
+          .maybeSingle();
+
+        if (rideRequest) {
+          setRideRequestInfo(rideRequest);
+          setDriverStatus(rideRequest.driver_status);
+          if (rideRequest.driver_lat && rideRequest.driver_lng) {
+            setDriverLocation({ lat: rideRequest.driver_lat, lng: rideRequest.driver_lng });
+          }
+        }
+      } catch (err) {
+        console.error('[BusinessOrders] Error polling driver location:', err);
+      }
+    };
+
+    pollDriver();
+    trackingPollRef.current = setInterval(pollDriver, 3000);
+    return () => { if (trackingPollRef.current) clearInterval(trackingPollRef.current); };
+  }, [selectedOrder?.id, selectedOrder?.status]);
+
+  // Compute route from driver to restaurant or customer
+  useEffect(() => {
+    if (!driverLocation || !isMapsLoaded || !(window as any).google) {
+      setRoutePath([]);
+      return;
+    }
+
+    const isHeadingToPickup = driverStatus === 'on-the-way' || driverStatus === 'arrived' || driverStatus === 'accepted';
+    let dest: { lat: number; lng: number } | null = null;
+
+    if (isHeadingToPickup && rideRequestInfo?.pickup_lat && rideRequestInfo?.pickup_lng) {
+      dest = { lat: rideRequestInfo.pickup_lat, lng: rideRequestInfo.pickup_lng };
+    } else if (rideRequestInfo?.dropoff_lat && rideRequestInfo?.dropoff_lng) {
+      dest = { lat: rideRequestInfo.dropoff_lat, lng: rideRequestInfo.dropoff_lng };
+    }
+
+    if (!dest) { setRoutePath([]); return; }
+
+    const DirectionsService = new (window as any).google.maps.DirectionsService();
+    DirectionsService.route({
+      origin: new (window as any).google.maps.LatLng(driverLocation.lat, driverLocation.lng),
+      destination: new (window as any).google.maps.LatLng(dest.lat, dest.lng),
+      travelMode: (window as any).google.maps.TravelMode.DRIVING,
+    }, (result: any, status: string) => {
+      if (status === 'OK' && result?.routes?.[0]?.overview_polyline?.points) {
+        const decoded = decodePolyline(result.routes[0].overview_polyline.points);
+        setRoutePath(decoded);
+      }
+    });
+  }, [driverLocation, isMapsLoaded, driverStatus, rideRequestInfo]);
+
+  const decodePolyline = (encoded: string): Array<{ lat: number; lng: number }> => {
+    const points: Array<{ lat: number; lng: number }> = [];
+    let index = 0, lat = 0, lng = 0;
+    while (index < encoded.length) {
+      let b: number, shift = 0, result = 0;
+      do { b = encoded.charCodeAt(index++) - 63; result |= (b & 0x1f) << shift; shift += 5; } while (b >= 0x20);
+      lat += (result & 1) ? ~(result >> 1) : (result >> 1);
+      shift = 0; result = 0;
+      do { b = encoded.charCodeAt(index++) - 63; result |= (b & 0x1f) << shift; shift += 5; } while (b >= 0x20);
+      lng += (result & 1) ? ~(result >> 1) : (result >> 1);
+      points.push({ lat: lat / 1e5, lng: lng / 1e5 });
+    }
+    return points;
+  };
 
   const loadOrders = async () => {
     try {
@@ -861,7 +955,61 @@ export default function BusinessOrders() {
                 )}
 
                 {selectedOrder.status === 'on-the-way' && (
-                  <div className="space-y-2">
+                  <div className="space-y-3">
+                    {/* Live Tracking Map */}
+                    {isMapsLoaded && driverLocation && (
+                      <div className="rounded-xl overflow-hidden border-2 border-[#3B82F6]">
+                        <div className="bg-gradient-to-r from-[#3B82F6] to-[#2563EB] px-3 py-2 flex items-center justify-between">
+                          <div className="flex items-center gap-2">
+                            <div className="w-2 h-2 bg-green-400 rounded-full animate-pulse" />
+                            <span className="text-xs font-bold text-white">Live Tracking</span>
+                          </div>
+                          <Navigation className="w-3.5 h-3.5 text-white/80" />
+                        </div>
+                        <GoogleMap
+                          mapContainerStyle={{ width: '100%', height: '200px' }}
+                          center={driverLocation}
+                          zoom={15}
+                          options={{ zoomControl: false, fullscreenControl: false, streetViewControl: false, mapTypeControl: false, gestureHandling: 'none' }}
+                        >
+                          <MarkerF
+                            position={driverLocation}
+                            title="Driver"
+                            icon={(() => {
+                              const g = (window as any)?.google;
+                              if (!g?.maps?.Size || !g?.maps?.Point) return undefined;
+                              return { url: tricycleIcon, scaledSize: new g.maps.Size(44, 44), anchor: new g.maps.Point(22, 22) };
+                            })()}
+                          />
+                          {rideRequestInfo?.dropoff_lat && rideRequestInfo?.dropoff_lng && (
+                            <MarkerF
+                              position={{ lat: rideRequestInfo.dropoff_lat, lng: rideRequestInfo.dropoff_lng }}
+                              title="Customer"
+                              icon={{
+                                url: 'data:image/svg+xml;charset=UTF-8,' + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="#E11D48" stroke="white" stroke-width="1"><path d="M12 2C8.13 2 5 5.13 5 9c0 4.95 6.1 11.53 6.36 11.81.36.39.92.39 1.28 0C13.9 20.53 20 13.95 20 9c0-3.87-3.13-7-8-7z"/><circle cx="12" cy="8.6" r="2.3" fill="#FFFFFF" stroke="none"/></svg>'),
+                                scaledSize: new (window as any).google.maps.Size(32, 32),
+                                anchor: new (window as any).google.maps.Point(16, 32),
+                              }}
+                            />
+                          )}
+                          {routePath.length > 0 && (
+                            <Polyline
+                              path={routePath}
+                              options={{ strokeColor: (driverStatus === 'on-the-way' || driverStatus === 'arrived' || driverStatus === 'accepted') ? '#10B981' : '#E11D48', strokeOpacity: 0.9, strokeWeight: 4, geodesic: true }}
+                            />
+                          )}
+                        </GoogleMap>
+                        <div className="px-3 py-2 bg-white border-t border-[#E2E8F0] flex items-center justify-between">
+                          <span className="text-xs font-semibold text-[#121212]">
+                            {(driverStatus === 'on-the-way' || driverStatus === 'arrived' || driverStatus === 'accepted') ? '🟢 Heading to restaurant' : '🔴 Delivering to customer'}
+                          </span>
+                          {rideRequestInfo?.driver_name && (
+                            <span className="text-[10px] text-[#64748B]">{rideRequestInfo.driver_name} • {rideRequestInfo.driver_plate || ''}</span>
+                          )}
+                        </div>
+                      </div>
+                    )}
+
                     <div className="bg-[#FEF3C7] border-l-4 border-[#FFA500] p-2 md:p-3 rounded text-sm">
                       <p className="font-semibold text-[#92400E]">Status: On The Way</p>
                       <p className="text-xs text-[#92400E] mt-1">Rider is delivering the order</p>

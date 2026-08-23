@@ -1,4 +1,4 @@
-import { ArrowLeft, Package, Clock, MapPin, CreditCard, User as UserIcon, Phone, X, RefreshCw, Star } from "lucide-react";
+import { ArrowLeft, Package, Clock, MapPin, CreditCard, User as UserIcon, Phone, X, RefreshCw, Star, Navigation } from "lucide-react";
 import { useNavigate, useParams } from "react-router";
 import { Card } from "../ui/card";
 import { Button } from "../ui/button";
@@ -7,7 +7,10 @@ import { useAuth } from "../../contexts/AuthContext";
 import { ImageWithFallback } from "../figma/ImageWithFallback";
 import { supabase } from "../../../lib/supabase";
 import { supabaseHelpers } from "@/lib/supabase";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
+import { GoogleMap, MarkerF, Polyline } from "@react-google-maps/api";
+import useMapLoader from "@/lib/mapLoader";
+import tricycleIcon from '../../../assets/0b76d1aa56b8ad6e15dd4efc8a0100b0ca5762a1.png'
 
 interface OrderData {
   id: string;
@@ -45,6 +48,12 @@ export default function OrderDetail() {
   const [ratingSubmitted, setRatingSubmitted] = useState(false);
   const [ratingError, setRatingError] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const { isLoaded: isMapsLoaded } = useMapLoader();
+  const [driverLocation, setDriverLocation] = useState<{ lat: number; lng: number } | null>(null);
+  const [driverStatus, setDriverStatus] = useState<string | null>(null);
+  const [routePath, setRoutePath] = useState<Array<{ lat: number; lng: number }>>([]);
+  const [rideRequestData, setRideRequestData] = useState<any>(null);
+  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const refreshOrderFromSupabase = async (isManualRefresh = false) => {
     try {
@@ -177,6 +186,88 @@ export default function OrderDetail() {
     }
   }, [orderId]);
 
+  // Poll for driver location when order is on-the-way
+  useEffect(() => {
+    if (!order || order.status !== 'on-the-way') {
+      if (pollRef.current) clearInterval(pollRef.current);
+      return;
+    }
+
+    const pollDriverLocation = async () => {
+      try {
+        const { data: rideRequest } = await supabase
+          .from('ride_requests')
+          .select('driver_lat, driver_lng, driver_name, driver_plate, driver_status, pickup_lat, pickup_lng, dropoff_lat, dropoff_lng, pickup_address, dropoff_address')
+          .eq('order_id', order.id)
+          .eq('type', 'delivery')
+          .in('status', ['accepted', 'on-the-way', 'arrived', 'picked-up', 'drop-off'])
+          .order('created_at', { ascending: false })
+          .limit(1)
+          .maybeSingle();
+
+        if (rideRequest) {
+          setRideRequestData(rideRequest);
+          setDriverStatus(rideRequest.driver_status);
+          if (rideRequest.driver_lat && rideRequest.driver_lng) {
+            setDriverLocation({ lat: rideRequest.driver_lat, lng: rideRequest.driver_lng });
+          }
+        }
+      } catch (err) {
+        console.error('Error polling driver location:', err);
+      }
+    };
+
+    pollDriverLocation();
+    pollRef.current = setInterval(pollDriverLocation, 3000);
+    return () => { if (pollRef.current) clearInterval(pollRef.current); };
+  }, [order?.id, order?.status]);
+
+  // Compute route from driver to restaurant or customer
+  useEffect(() => {
+    if (!driverLocation || !isMapsLoaded || !(window as any).google) {
+      setRoutePath([]);
+      return;
+    }
+
+    const isHeadingToPickup = driverStatus === 'on-the-way' || driverStatus === 'arrived' || driverStatus === 'accepted';
+    let dest: { lat: number; lng: number } | null = null;
+
+    if (isHeadingToPickup && rideRequestData?.pickup_lat && rideRequestData?.pickup_lng) {
+      dest = { lat: rideRequestData.pickup_lat, lng: rideRequestData.pickup_lng };
+    } else if (rideRequestData?.dropoff_lat && rideRequestData?.dropoff_lng) {
+      dest = { lat: rideRequestData.dropoff_lat, lng: rideRequestData.dropoff_lng };
+    }
+
+    if (!dest) { setRoutePath([]); return; }
+
+    const DirectionsService = new (window as any).google.maps.DirectionsService();
+    DirectionsService.route({
+      origin: new (window as any).google.maps.LatLng(driverLocation.lat, driverLocation.lng),
+      destination: new (window as any).google.maps.LatLng(dest.lat, dest.lng),
+      travelMode: (window as any).google.maps.TravelMode.DRIVING,
+    }, (result: any, status: string) => {
+      if (status === 'OK' && result?.routes?.[0]?.overview_polyline?.points) {
+        const decoded = decodePolyline(result.routes[0].overview_polyline.points);
+        setRoutePath(decoded);
+      }
+    });
+  }, [driverLocation, isMapsLoaded, driverStatus, rideRequestData]);
+
+  const decodePolyline = (encoded: string): Array<{ lat: number; lng: number }> => {
+    const points: Array<{ lat: number; lng: number }> = [];
+    let index = 0, lat = 0, lng = 0;
+    while (index < encoded.length) {
+      let b: number, shift = 0, result = 0;
+      do { b = encoded.charCodeAt(index++) - 63; result |= (b & 0x1f) << shift; shift += 5; } while (b >= 0x20);
+      lat += (result & 1) ? ~(result >> 1) : (result >> 1);
+      shift = 0; result = 0;
+      do { b = encoded.charCodeAt(index++) - 63; result |= (b & 0x1f) << shift; shift += 5; } while (b >= 0x20);
+      lng += (result & 1) ? ~(result >> 1) : (result >> 1);
+      points.push({ lat: lat / 1e5, lng: lng / 1e5 });
+    }
+    return points;
+  };
+
   if (isLoading) {
     return (
       <div className="min-h-screen bg-white flex items-center justify-center">
@@ -291,6 +382,80 @@ export default function OrderDetail() {
             <span>Estimated: {order.estimatedTime}</span>
           </div>
         </Card>
+
+        {/* Live Delivery Tracking Map */}
+        {order.status === 'on-the-way' && isMapsLoaded && driverLocation && (
+          <Card className="border-2 border-[#3B82F6] overflow-hidden">
+            <div className="bg-gradient-to-r from-[#3B82F6] to-[#2563EB] px-4 py-2.5 flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <div className="w-2 h-2 bg-green-400 rounded-full animate-pulse" />
+                <span className="text-sm font-bold text-white">Live Delivery Tracking</span>
+              </div>
+              <Navigation className="w-4 h-4 text-white/80" />
+            </div>
+            <GoogleMap
+              mapContainerStyle={{ width: '100%', height: '220px' }}
+              center={driverLocation}
+              zoom={15}
+              options={{
+                zoomControl: false,
+                fullscreenControl: false,
+                streetViewControl: false,
+                mapTypeControl: false,
+                gestureHandling: 'none',
+              }}
+            >
+              <MarkerF
+                position={driverLocation}
+                title="Driver"
+                icon={(() => {
+                  const g = (window as any)?.google;
+                  if (!g?.maps?.Size || !g?.maps?.Point) return undefined;
+                  return { url: tricycleIcon, scaledSize: new g.maps.Size(44, 44), anchor: new g.maps.Point(22, 22) };
+                })()}
+              />
+              {rideRequestData?.dropoff_lat && rideRequestData?.dropoff_lng && (
+                <MarkerF
+                  position={{ lat: rideRequestData.dropoff_lat, lng: rideRequestData.dropoff_lng }}
+                  title="Your location"
+                  icon={{
+                    url: 'data:image/svg+xml;charset=UTF-8,' + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="#E11D48" stroke="white" stroke-width="1"><path d="M12 2C8.13 2 5 5.13 5 9c0 4.95 6.1 11.53 6.36 11.81.36.39.92.39 1.28 0C13.9 20.53 20 13.95 20 9c0-3.87-3.13-7-8-7z"/><circle cx="12" cy="8.6" r="2.3" fill="#FFFFFF" stroke="none"/></svg>'),
+                    scaledSize: new (window as any).google.maps.Size(32, 32),
+                    anchor: new (window as any).google.maps.Point(16, 32),
+                  }}
+                />
+              )}
+              {rideRequestData?.pickup_lat && rideRequestData?.pickup_lng && (
+                <MarkerF
+                  position={{ lat: rideRequestData.pickup_lat, lng: rideRequestData.pickup_lng }}
+                  title="Restaurant"
+                  icon={{
+                    url: 'data:image/svg+xml;charset=UTF-8,' + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="#10B981" stroke="white" stroke-width="1"><path d="M12 2C8.13 2 5 5.13 5 9c0 4.95 6.1 11.53 6.36 11.81.36.39.92.39 1.28 0C13.9 20.53 20 13.95 20 9c0-3.87-3.13-7-8-7z"/><circle cx="12" cy="8.6" r="2.3" fill="#FFFFFF" stroke="none"/></svg>'),
+                    scaledSize: new (window as any).google.maps.Size(32, 32),
+                    anchor: new (window as any).google.maps.Point(16, 32),
+                  }}
+                />
+              )}
+              {routePath.length > 0 && (
+                <Polyline
+                  path={routePath}
+                  options={{ strokeColor: (driverStatus === 'on-the-way' || driverStatus === 'arrived' || driverStatus === 'accepted') ? '#10B981' : '#E11D48', strokeOpacity: 0.9, strokeWeight: 4, geodesic: true }}
+                />
+              )}
+            </GoogleMap>
+            <div className="px-4 py-2.5 bg-white border-t border-[#E2E8F0] flex items-center justify-between">
+              <div>
+                <p className="text-xs font-semibold text-[#121212]">
+                  {(driverStatus === 'on-the-way' || driverStatus === 'arrived' || driverStatus === 'accepted') ? '🟢 Driver heading to restaurant' : '🔴 Driver delivering to you'}
+                </p>
+                {rideRequestData?.driver_name && (
+                  <p className="text-[10px] text-[#64748B]">{rideRequestData.driver_name} • {rideRequestData.driver_plate || ''}</p>
+                )}
+              </div>
+              <div className="text-[10px] text-[#94A3B8]">● Live</div>
+            </div>
+          </Card>
+        )}
 
         {/* Restaurant Info */}
         <Card className="p-5 border-2 border-[#E2E8F0]">
