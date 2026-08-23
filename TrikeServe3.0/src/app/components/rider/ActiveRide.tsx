@@ -127,22 +127,27 @@ export default function ActiveRide() {
 
   // For delivery rides: geocode the restaurant pickup address if lat/lng are missing
   useEffect(() => {
-    if (!rideData || !isMapsLoaded || !(window as any).google) return;
+    if (!rideData) return;
     const isDelivery = Boolean(rideData.orderId || rideData.orderNumber) || String(rideData.pickup || '').startsWith('DELIVERY');
     if (!isDelivery) return;
     if (rideData.pickupLat && rideData.pickupLng) return; // Already has coordinates
-    if (!rideData.pickupAddress && !rideData.pickup) return;
+    const address = rideData.pickupAddress || rideData.pickup;
+    if (!address) return;
 
-    const Geocoder = new (window as any).google.maps.Geocoder();
-    Geocoder.geocode({ address: rideData.pickupAddress || rideData.pickup }, (results: any, status: string) => {
-      if (status === 'OK' && results?.[0]) {
-        const loc = results[0].geometry.location;
-        const updated = { ...rideData, pickupLat: loc.lat(), pickupLng: loc.lng() };
-        setRideData(updated);
-        localStorage.setItem('trikeserve_active_ride', JSON.stringify(updated));
-      }
-    });
-  }, [rideData?.pickupAddress, rideData?.pickup, rideData?.pickupLat, rideData?.pickupLng, isMapsLoaded]);
+    const apiKey = import.meta.env.VITE_GOOGLE_MAPS_API_KEY || '';
+    if (!apiKey) return;
+    fetch(`https://maps.googleapis.com/maps/api/geocode/json?address=${encodeURIComponent(address)}&key=${apiKey}`)
+      .then(res => res.json())
+      .then(data => {
+        if (data.status === 'OK' && data.results?.[0]) {
+          const loc = data.results[0].geometry.location;
+          const updated = { ...rideData, pickupLat: loc.lat, pickupLng: loc.lng };
+          setRideData(updated);
+          localStorage.setItem('trikeserve_active_ride', JSON.stringify(updated));
+        }
+      })
+      .catch(() => {});
+  }, [rideData?.pickupAddress, rideData?.pickup, rideData?.pickupLat, rideData?.pickupLng]);
 
   useEffect(() => {
     if (!rideData || !isMapsLoaded || !(window as any).google) return;

@@ -485,7 +485,7 @@ export default function OrderDetail() {
               <MapPin className="w-5 h-5 text-[#E11D48] mt-0.5 flex-shrink-0" />
               <div>
                 <h3 className="font-bold text-[#121212] mb-1">Delivery Address</h3>
-                <p className="text-[#64748B]">{order.address}</p>
+                <p className="text-[#64748B]">{order.address.split('|')[0].trim() || order.address}</p>
               </div>
             </div>
           </Card>

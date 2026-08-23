@@ -443,7 +443,11 @@ export default function BusinessOrders() {
       if (match) return { lat: parseFloat(match[1]), lng: parseFloat(match[2]) };
       return null;
     };
-    const dropoffCoords = parseCoords(order.address || '');
+    // Extract display name (before '|') and coordinates from address
+    const addressParts = (order.address || '').split('|');
+    const addressDisplayName = addressParts[0].trim();
+    const addressForCoords = addressParts.length > 1 ? addressParts[1] : order.address;
+    const dropoffCoords = parseCoords(addressForCoords);
 
     // Look up restaurant address for pickup geocoding
     let pickupLat = null;
@@ -460,6 +464,24 @@ export default function BusinessOrders() {
       }
     } catch (e) {}
 
+    // Geocode the restaurant address using Google Geocoding REST API
+    const GOOGLE_API_KEY = import.meta.env.VITE_GOOGLE_MAPS_API_KEY || '';
+    if (GOOGLE_API_KEY && pickupAddress && pickupAddress !== pickupLabel) {
+      try {
+        const geoRes = await fetch(
+          `https://maps.googleapis.com/maps/api/geocode/json?address=${encodeURIComponent(pickupAddress)}&key=${GOOGLE_API_KEY}`
+        );
+        const geoData = await geoRes.json();
+        if (geoData.status === 'OK' && geoData.results?.[0]) {
+          pickupLat = geoData.results[0].geometry.location.lat;
+          pickupLng = geoData.results[0].geometry.location.lng;
+          console.log('[BusinessOrders] ✅ Geocoded restaurant address:', pickupLat, pickupLng);
+        }
+      } catch (geoErr) {
+        console.error('[BusinessOrders] Geocoding failed:', geoErr);
+      }
+    }
+
     const { error } = await supabase
       .from('ride_requests')
       .insert([{
@@ -467,8 +489,10 @@ export default function BusinessOrders() {
         driver_id: null,  // Open request - any driver can accept
         pickup_location: taggedPickup,
         pickup_address: pickupAddress,
-        dropoff_location: order.address,
-        dropoff_address: order.address,
+        pickup_lat: pickupLat,
+        pickup_lng: pickupLng,
+        dropoff_location: addressDisplayName || order.address,
+        dropoff_address: addressDisplayName || order.address,
         dropoff_lat: dropoffCoords?.lat || null,
         dropoff_lng: dropoffCoords?.lng || null,
         status: 'pending',
@@ -834,7 +858,7 @@ export default function BusinessOrders() {
                 <div>
                   <h3 className="font-bold text-[#121212] mb-2 text-sm md:text-base">Customer</h3>
                   <p className="text-sm md:text-base text-[#64748B]">{selectedOrder.customerName}</p>
-                  <p className="text-xs md:text-sm text-[#64748B] mt-1 break-words">{selectedOrder.address}</p>
+                  <p className="text-xs md:text-sm text-[#64748B] mt-1 break-words">{selectedOrder.address.split('|')[0].trim() || selectedOrder.address}</p>
                   {selectedOrder.customerPhone && (
                     <p className="text-xs md:text-sm text-[#64748B] mt-1">Phone: {selectedOrder.customerPhone}</p>
                   )}
