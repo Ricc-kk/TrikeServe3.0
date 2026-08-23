@@ -290,18 +290,18 @@ export default function PassengerRequests() {
     const acceptedRide = { ...request, passengerDetails, driverId: user.id, driverName: user.name, driverPlate: user.todaPlate, driverRating: '4.8', status: 'accepted', acceptedAt: new Date().toISOString(), eta: '5 mins' };
 
     // Keep delivery order status in sync with the driver workflow.
-    if ((request.type === 'delivery' || request.orderId || request.orderNumber) && (request.orderId || request.orderNumber)) {
-      const { error: orderStatusError } = await supabaseHelpers.updateDeliveryOrderStatus(
-        request.orderId,
-        request.orderNumber,
-        'on-the-way'
-      );
-
-      if (orderStatusError) {
-        console.error('❌ Failed to sync delivery order status to on-the-way:', orderStatusError);
-      } else {
-        console.log('✅ Delivery order status updated to on-the-way');
+    if (request.type === 'delivery' && (request.orderId || request.orderNumber)) {
+      // Update orders table directly
+      if (request.orderId) {
+        const { error: directErr } = await supabase
+          .from('orders')
+          .update({ status: 'on-the-way', driver_name: user.name || 'Driver', updated_at: new Date().toISOString() })
+          .eq('id', request.orderId);
+        if (directErr) console.error('❌ Direct orders update failed:', directErr);
+        else console.log('✅ Orders table updated to on-the-way (direct)');
       }
+      // Also try via helper as backup
+      await supabaseHelpers.updateDeliveryOrderStatus(request.orderId, request.orderNumber, 'on-the-way');
     }
 
     navigate('/rider/active-ride', { state: { acceptedRide } });

@@ -109,9 +109,18 @@ export default function ActiveRide() {
       (pos) => {
         const loc = { lat: pos.coords.latitude, lng: pos.coords.longitude };
         setDriverLocation(loc);
-        // Save to ride_requests (private rides) or shared_ride_lobbies (share rides)
+        // Save to ride_requests (private rides), shared_ride_lobbies (share rides),
+        // or orders table (deliveries)
         if (rideData?.lobbyId) {
           supabaseHelpers.updateLobbyDriverLocation(rideData.lobbyId, loc.lat, loc.lng);
+        } else if (rideData?.orderId) {
+          // Delivery: save GPS to orders table (if columns exist)
+          supabase.from('orders').update({
+            driver_lat: loc.lat,
+            driver_lng: loc.lng,
+            driver_name: rideData.driverName || 'Driver',
+            updated_at: new Date().toISOString(),
+          }).eq('id', rideData.orderId).then(() => {}, () => {});
         } else if (rideData?.id) {
           supabaseHelpers.updateRideRequest(rideData.id, { driver_lat: loc.lat, driver_lng: loc.lng, updated_at: new Date().toISOString() });
         }
