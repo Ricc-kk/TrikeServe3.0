@@ -114,13 +114,9 @@ export default function ActiveRide() {
         if (rideData?.lobbyId) {
           supabaseHelpers.updateLobbyDriverLocation(rideData.lobbyId, loc.lat, loc.lng);
         } else if (rideData?.orderId) {
-          // Delivery: save GPS to orders table (if columns exist)
-          supabase.from('orders').update({
-            driver_lat: loc.lat,
-            driver_lng: loc.lng,
-            driver_name: rideData.driverName || 'Driver',
-            updated_at: new Date().toISOString(),
-          }).eq('id', rideData.orderId).then(() => {}, () => {});
+          // Delivery: save GPS to BOTH orders table and ride_requests
+          supabase.from('orders').update({ driver_lat: loc.lat, driver_lng: loc.lng, driver_name: rideData.driverName || 'Driver', updated_at: new Date().toISOString() }).eq('id', rideData.orderId).then(() => {}, () => {});
+          if (rideData?.id) supabaseHelpers.updateRideRequest(rideData.id, { driver_lat: loc.lat, driver_lng: loc.lng, updated_at: new Date().toISOString() });
         } else if (rideData?.id) {
           supabaseHelpers.updateRideRequest(rideData.id, { driver_lat: loc.lat, driver_lng: loc.lng, updated_at: new Date().toISOString() });
         }
