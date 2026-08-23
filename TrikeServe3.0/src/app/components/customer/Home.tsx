@@ -1906,73 +1906,130 @@ export default function CustomerHome() {
         )}
 
 
-        {/* Active Ride Card - Driver Info - ONLY when rideStatus === 'driver-found' AND activeRide exists */}
+        {/* Active Ride Card - Driver Info with embedded map */}
         {rideStatus === 'driver-found' && activeRide && (
-          <div className="absolute bottom-20 left-0 right-0 z-[1100] p-4">
-            <Card className="bg-white shadow-2xl border-2 border-[#E11D48] p-6">
-              {/* Driver Info */}
-              <div className="flex items-center gap-4 mb-4">
-                <div className="w-16 h-16 bg-[#FFF1F2] rounded-full flex items-center justify-center">
-                  <span className="text-3xl">👨‍✈️</span>
-                </div>
-                <div className="flex-1">
-                  <h3 className="font-bold text-lg text-[#121212]">{activeRide.driver}</h3>
-                  <div className="flex items-center gap-2">
-                    <Badge className="bg-green-500 text-white">Driver Found</Badge>
-                    <span className="text-sm text-[#64748B]">{activeRide.plateNumber}</span>
+          <div className="absolute bottom-16 left-0 right-0 z-[1100] p-3">
+            <Card className="bg-white shadow-2xl border-2 border-[#E11D48] rounded-2xl overflow-hidden">
+              {/* Live Tracking Map - embedded inside the card */}
+              {isMapsLoaded && driverLocation && (
+                <div className="relative">
+                  <GoogleMap
+                    mapContainerStyle={{ width: '100%', height: '220px' }}
+                    center={driverLocation}
+                    zoom={15}
+                    options={{
+                      zoomControl: false,
+                      fullscreenControl: false,
+                      streetViewControl: false,
+                      mapTypeControl: false,
+                      gestureHandling: 'none',
+                    }}
+                  >
+                    <MarkerF
+                      position={driverLocation}
+                      title="Driver Location"
+                      icon={createDriverMarkerIcon()}
+                    />
+                    {pickupCoords && (
+                      <MarkerF
+                        position={pickupCoords}
+                        title="Pickup"
+                        icon={createCustomerMarkerIcon()}
+                      />
+                    )}
+                    {dropoffCoords && (
+                      <MarkerF
+                        position={dropoffCoords}
+                        title="Drop-off"
+                        icon={createDropoffMarkerIcon()}
+                      />
+                    )}
+                    {driverRoutePath.length > 0 && (
+                      <Polyline path={driverRoutePath} options={buildNavigationRouteOptions('#3B82F6', 4)} />
+                    )}
+                  </GoogleMap>
+                  {/* Map overlay badge */}
+                  <div className="absolute top-3 left-3 bg-white/95 backdrop-blur-sm rounded-full px-3 py-1.5 shadow-lg flex items-center gap-2">
+                    <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse" />
+                    <span className="text-xs font-bold text-[#121212]">Live Tracking</span>
+                  </div>
+                  {/* Route status badge */}
+                  <div className="absolute bottom-3 left-3 right-3 flex justify-between items-center">
+                    <div className="bg-white/95 backdrop-blur-sm rounded-full px-3 py-1.5 shadow-lg">
+                      <span className="text-xs font-semibold text-[#3B82F6]">🛣️ Following route to pickup</span>
+                    </div>
                   </div>
                 </div>
-                <div className="text-right">
-                  <div className="flex items-center gap-1 text-yellow-500 mb-1">
-                    <span className="text-lg">⭐</span>
-                    <span className="font-bold text-[#121212]">{activeRide.rating}</span>
-                  </div>
-                  <p className="text-sm text-[#64748B]">ETA: {activeRide.eta}</p>
-                </div>
-              </div>
+              )}
 
-              {/* Trip Info */}
-              <div className="bg-[#F8F9FA] rounded-xl p-4 mb-4 space-y-2">
-                <div className="flex items-start gap-2">
-                  <MapPin className="w-4 h-4 text-[#121212] mt-0.5" />
+              <div className="p-4">
+                {/* Driver Info Row */}
+                <div className="flex items-center gap-3 mb-3">
+                  <div className="w-14 h-14 bg-[#FFF1F2] rounded-full flex items-center justify-center flex-shrink-0">
+                    <span className="text-2xl">👨‍✈️</span>
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <h3 className="font-bold text-base text-[#121212] truncate">{activeRide.driver}</h3>
+                    <div className="flex items-center gap-2">
+                      <Badge className="bg-green-500 text-white text-[10px]">Driver Found</Badge>
+                      <span className="text-xs text-[#64748B]">{activeRide.plateNumber}</span>
+                    </div>
+                  </div>
+                  <div className="text-right flex-shrink-0">
+                    <div className="flex items-center gap-1 text-yellow-500">
+                      <span className="text-sm">⭐</span>
+                      <span className="font-bold text-sm text-[#121212]">{activeRide.rating}</span>
+                    </div>
+                    <p className="text-xs text-[#64748B]">ETA: {activeRide.eta}</p>
+                  </div>
+                </div>
+
+                {/* Trip Info - compact */}
+                <div className="bg-[#F8F9FA] rounded-xl p-3 mb-3 space-y-1.5">
+                  <div className="flex items-start gap-2">
+                    <div className="w-5 h-5 bg-[#121212] rounded-full flex items-center justify-center flex-shrink-0 mt-0.5">
+                      <div className="w-2 h-2 bg-white rounded-full" />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-[10px] text-[#64748B] uppercase font-semibold">Pickup</p>
+                      <p className="font-semibold text-xs text-[#121212] truncate">{pickup}</p>
+                    </div>
+                  </div>
+                  <div className="flex items-start gap-2">
+                    <div className="w-5 h-5 bg-[#E11D48] rounded-full flex items-center justify-center flex-shrink-0 mt-0.5">
+                      <div className="w-2 h-2 bg-white rounded-full" />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-[10px] text-[#64748B] uppercase font-semibold">Drop-off</p>
+                      <p className="font-semibold text-xs text-[#121212] truncate">{dropoff}</p>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Payment + Actions row */}
+                <div className="flex items-center gap-3">
                   <div className="flex-1">
-                    <p className="text-xs text-[#64748B]">Pickup</p>
-                    <p className="font-semibold text-sm text-[#121212]">{pickup}</p>
+                    <p className="text-[10px] text-[#64748B] uppercase font-semibold">Fare</p>
+                    <p className="text-xl font-bold text-[#E11D48]">₱{getPrice()}</p>
+                    <p className="text-[10px] text-[#94A3B8]">{paymentMethod === 'COD' ? '💵 Cash' : '💳 Prepaid'}</p>
                   </div>
+                  <Button
+                    variant="outline"
+                    className="flex items-center gap-2 h-10"
+                    onClick={handleOpenDriverChat}
+                    disabled={openingChat}
+                  >
+                    <MessageCircle className="w-4 h-4" />
+                    {openingChat ? 'Opening...' : 'Chat'}
+                  </Button>
+                  <Button
+                    onClick={handleCancelRide}
+                    variant="outline"
+                    className="text-red-600 border-red-300 hover:bg-red-50 h-10"
+                  >
+                    Cancel
+                  </Button>
                 </div>
-                <div className="flex items-start gap-2">
-                  <MapPin className="w-4 h-4 text-[#E11D48] mt-0.5" />
-                  <div className="flex-1">
-                    <p className="text-xs text-[#64748B]">Drop-off</p>
-                    <p className="font-semibold text-sm text-[#121212]">{dropoff}</p>
-                  </div>
-                </div>
-              </div>
-
-              {/* Payment */}
-              <div className="flex items-center justify-between mb-4">
-                <span className="text-[#64748B]">Payment ({paymentMethod === 'COD' ? 'Cash' : 'Prepaid'})</span>
-                <span className="text-2xl font-bold text-[#E11D48]">₱{getPrice()}</span>
-              </div>
-
-              {/* Actions */}
-              <div className="grid grid-cols-2 gap-3">
-                <Button
-                  variant="outline"
-                  className="flex items-center gap-2"
-                  onClick={handleOpenDriverChat}
-                  disabled={openingChat}
-                >
-                  <MessageCircle className="w-4 h-4" />
-                  {openingChat ? 'Opening...' : 'Message'}
-                </Button>
-                <Button
-                  onClick={handleCancelRide}
-                  variant="outline"
-                  className="text-red-600 border-red-300 hover:bg-red-50"
-                >
-                  Cancel Ride
-                </Button>
               </div>
             </Card>
           </div>
@@ -2410,7 +2467,7 @@ export default function CustomerHome() {
             <div className="bg-[#FFF1F2] border-2 border-[#E11D48] rounded-xl p-4 mb-6">
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-3">
-                  <span className="text-4xl">{selectedVehicle === 'share' ? '🛵' : '🚙'}</span>
+                  <span className="text-4xl">{selectedVehicle === 'share' ? '👥' : '👤'}</span>
                   <div>
                     <p className="font-bold text-[#121212]">
                       {selectedVehicle === 'share' ? 'Share Ride' : 'Private Ride'}

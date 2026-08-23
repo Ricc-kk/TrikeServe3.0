@@ -109,13 +109,18 @@ export default function ActiveRide() {
       (pos) => {
         const loc = { lat: pos.coords.latitude, lng: pos.coords.longitude };
         setDriverLocation(loc);
-        if (rideData?.id) supabaseHelpers.updateRideRequest(rideData.id, { driver_lat: loc.lat, driver_lng: loc.lng, updated_at: new Date().toISOString() });
+        // Save to ride_requests (private rides) or shared_ride_lobbies (share rides)
+        if (rideData?.lobbyId) {
+          supabaseHelpers.updateLobbyDriverLocation(rideData.lobbyId, loc.lat, loc.lng);
+        } else if (rideData?.id) {
+          supabaseHelpers.updateRideRequest(rideData.id, { driver_lat: loc.lat, driver_lng: loc.lng, updated_at: new Date().toISOString() });
+        }
       },
       () => {},
       { enableHighAccuracy: true, maximumAge: 5000 }
     );
     return () => navigator.geolocation.clearWatch(watchId);
-  }, [rideData?.id]);
+  }, [rideData?.id, rideData?.lobbyId]);
 
   // Determine if we're heading to pickup or dropoff
   const isHeadingToPickup = rideData?.status === 'on-the-way' || rideData?.status === 'arrived';

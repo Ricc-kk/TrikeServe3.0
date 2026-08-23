@@ -639,6 +639,23 @@ export const supabaseHelpers = {
     return { data, error };
   },
 
+  // Save the driver's real-time GPS location to the lobby so customers
+  // can see live tracking on their map.
+  async updateLobbyDriverLocation(lobbyId: string, lat: number, lng: number) {
+    const { data, error } = await supabase
+      .from('shared_ride_lobbies')
+      .update({
+        driver_lat: lat,
+        driver_lng: lng,
+        updated_at: new Date().toISOString()
+      })
+      .eq('id', lobbyId)
+      .select()
+      .single();
+
+    return { data, error };
+  },
+
   async completeLobbyRide(lobbyId: string) {
     const timestamp = new Date().toISOString();
 

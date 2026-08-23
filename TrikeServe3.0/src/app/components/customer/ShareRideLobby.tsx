@@ -1,11 +1,14 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { useNavigate } from "react-router";
-import { MapPin, Users, Clock, X, ChevronDown, MessageCircle, User, Minimize2, Star } from "lucide-react";
+import { MapPin, Users, Clock, X, ChevronDown, MessageCircle, User, Minimize2, Star, Navigation } from "lucide-react";
 import { Button } from "../ui/button";
 import { Card } from "../ui/card";
 import { Badge } from "../ui/badge";
 import { useAuth } from "../../contexts/AuthContext";
 import { supabaseHelpers, isSimilarRoute } from "@/lib/supabase";
+import { GoogleMap, MarkerF, Polyline } from "@react-google-maps/api";
+import useMapLoader from "@/lib/mapLoader";
+import tricycleIcon from '../../../assets/0b76d1aa56b8ad6e15dd4efc8a0100b0ca5762a1.png'
 
 interface LobbyPassenger {
   id: string;
@@ -86,6 +89,10 @@ export default function ShareRideLobby({
   const [ratingSubmitting, setRatingSubmitting] = useState(false);
   const [ratingSubmitted, setRatingSubmitted] = useState(false);
   const [computedDriverRating, setComputedDriverRating] = useState<string | null>(null);
+  const { isLoaded: isMapsLoaded } = useMapLoader();
+  const [driverLocation, setDriverLocation] = useState<{ lat: number; lng: number } | null>(null);
+  const [driverRoutePath, setDriverRoutePath] = useState<Array<{ lat: number; lng: number }>>([]);
+  const driverLocationIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const handleOpenDriverChat = async () => {
     if (!user?.id || !lobby?.driver_id || openingChat) return;
@@ -455,6 +462,83 @@ export default function ShareRideLobby({
      };
    }, [lobbyId]);
 
+  // Poll for driver location in the lobby (every 3 seconds)
+  useEffect(() => {
+    if (!lobby || lobby.status !== 'driver_found') {
+      setDriverLocation(null);
+      setDriverRoutePath([]);
+      return;
+    }
+
+    const pollDriverLocation = async () => {
+      try {
+        const { data: freshLobby } = await supabaseHelpers.getLobbyById(lobby.id);
+        if (freshLobby && freshLobby.driver_lat && freshLobby.driver_lng) {
+          const loc = { lat: freshLobby.driver_lat, lng: freshLobby.driver_lng };
+          setDriverLocation(loc);
+        }
+      } catch (err) {
+        console.error('Error polling driver location:', err);
+      }
+    };
+
+    pollDriverLocation();
+    driverLocationIntervalRef.current = setInterval(pollDriverLocation, 3000);
+
+    return () => {
+      if (driverLocationIntervalRef.current) {
+        clearInterval(driverLocationIntervalRef.current);
+      }
+    };
+  }, [lobby?.id, lobby?.status]);
+
+  // Compute route from driver to pickup/dropoff
+  useEffect(() => {
+    if (!driverLocation || !isMapsLoaded || !(window as any).google) {
+      setDriverRoutePath([]);
+      return;
+    }
+
+    const isHeadingToPickup = lobby?.driver_status === 'on-the-way' || lobby?.driver_status === 'arrived';
+    let dest: { lat: number; lng: number } | null = null;
+
+    if (isHeadingToPickup && pickupCoords) {
+      dest = pickupCoords;
+    } else if (dropoffCoords) {
+      dest = dropoffCoords;
+    }
+
+    if (!dest) { setDriverRoutePath([]); return; }
+
+    const DirectionsService = new (window as any).google.maps.DirectionsService();
+    DirectionsService.route({
+      origin: new (window as any).google.maps.LatLng(driverLocation.lat, driverLocation.lng),
+      destination: new (window as any).google.maps.LatLng(dest.lat, dest.lng),
+      travelMode: (window as any).google.maps.TravelMode.DRIVING,
+    }, (result: any, status: string) => {
+      if (status === 'OK' && result?.routes?.[0]?.overview_polyline?.points) {
+        const poly = result.routes[0].overview_polyline.points;
+        const decoded = decodePolyline(poly);
+        setDriverRoutePath(decoded);
+      }
+    });
+  }, [driverLocation, isMapsLoaded, lobby?.driver_status, pickupCoords, dropoffCoords]);
+
+  const decodePolyline = (encoded: string): Array<{ lat: number; lng: number }> => {
+    const points: Array<{ lat: number; lng: number }> = [];
+    let index = 0, lat = 0, lng = 0;
+    while (index < encoded.length) {
+      let b: number, shift = 0, result = 0;
+      do { b = encoded.charCodeAt(index++) - 63; result |= (b & 0x1f) << shift; shift += 5; } while (b >= 0x20);
+      lat += (result & 1) ? ~(result >> 1) : (result >> 1);
+      shift = 0; result = 0;
+      do { b = encoded.charCodeAt(index++) - 63; result |= (b & 0x1f) << shift; shift += 5; } while (b >= 0x20);
+      lng += (result & 1) ? ~(result >> 1) : (result >> 1);
+      points.push({ lat: lat / 1e5, lng: lng / 1e5 });
+    }
+    return points;
+  };
+
   const getRandomEmoji = () => {
     const emojis = ['👤', '👨', '👩', '🧑', '👦', '👧', '👨‍💼', '👩‍💼', '👨‍🎓', '👩‍🎓'];
     return emojis[Math.floor(Math.random() * emojis.length)];
@@ -712,73 +796,71 @@ export default function ShareRideLobby({
   return (
     <>
       <div className="fixed inset-0 bg-black/50 z-[2000] flex items-end">
-        <div className="bg-white w-full rounded-t-3xl max-h-[90vh] overflow-hidden flex flex-col animate-slide-up">
-          {/* Header */}
-          <div className="p-5 border-b border-[#E2E8F0]">
-            <div className="flex items-center justify-between mb-2">
+        <div className="bg-white w-full rounded-t-3xl max-h-[92vh] overflow-hidden flex flex-col animate-slide-up">
+          {/* Header - Gradient */}
+          <div className="bg-gradient-to-r from-[#E11D48] to-[#BE123C] p-4">
+            <div className="flex items-center justify-between">
               <div className="flex items-center gap-3">
-                <div className="w-10 h-10 bg-[#FFF1F2] rounded-full flex items-center justify-center">
-                  <Users className="w-5 h-5 text-[#E11D48]" />
+                <div className="w-10 h-10 bg-white/20 rounded-full flex items-center justify-center">
+                  <Users className="w-5 h-5 text-white" />
                 </div>
                 <div>
-                  <h2 className="text-xl font-bold text-[#121212]">Share Ride Lobby</h2>
-                  <p className="text-xs text-[#64748B]">Waiting: {getWaitingTime()}</p>
+                  <h2 className="text-lg font-bold text-white">Share Ride</h2>
+                  <div className="flex items-center gap-2">
+                    <div className={`w-2 h-2 rounded-full ${lobby.status === 'driver_found' ? 'bg-green-400' : 'bg-yellow-400 animate-pulse'}`} />
+                    <p className="text-xs text-white/80">
+                      {lobby.status === 'driver_found' ? 'Driver Found!' : `Finding driver... ${getWaitingTime()}`}
+                    </p>
+                  </div>
                 </div>
               </div>
               <div className="flex items-center gap-2">
                 <button
                   onClick={() => setIsMinimized(true)}
-                  className="w-9 h-9 flex items-center justify-center rounded-full bg-[#F1F5F9] hover:bg-[#E2E8F0] transition-colors"
+                  className="w-9 h-9 flex items-center justify-center rounded-full bg-white/20 hover:bg-white/30 transition-colors"
                 >
-                  <ChevronDown className="w-5 h-5 text-[#64748B]" />
+                  <ChevronDown className="w-5 h-5 text-white" />
                 </button>
                 <button
                   onClick={() => setShowLeaveConfirm(true)}
-                  className="w-9 h-9 flex items-center justify-center rounded-full bg-[#F1F5F9] hover:bg-[#E2E8F0] transition-colors"
+                  className="w-9 h-9 flex items-center justify-center rounded-full bg-white/20 hover:bg-white/30 transition-colors"
                 >
-                  <X className="w-5 h-5 text-[#64748B]" />
+                  <X className="w-5 h-5 text-white" />
                 </button>
               </div>
             </div>
-
-            <Badge className={
-              lobby.status === 'driver_found'
-                ? 'bg-green-500 text-white'
-                : 'bg-yellow-500 text-white'
-            }>
-              {lobby.status === 'driver_found' ? '✓ Driver Found!' : '🔍 Finding Driver...'}
-            </Badge>
           </div>
 
-          {/* Route Info */}
-          <div className="px-5 py-4 bg-gradient-to-r from-[#FFF1F2] to-[#FFF7ED] border-b border-[#E2E8F0]">
-            <div className="space-y-2">
-              <div className="flex items-start gap-2">
-                <MapPin className="w-4 h-4 text-[#121212] mt-0.5 flex-shrink-0" />
-                <div className="flex-1 min-w-0">
-                  <p className="text-xs text-[#64748B] uppercase tracking-wide font-semibold">Pickup</p>
-                  <p className="font-bold text-[#121212]">{lobby.pickup_location}</p>
-                  <p className="text-xs text-[#64748B]">{lobby.pickup_address}</p>
-                </div>
+          {/* Route Info - clean design */}
+          <div className="px-4 py-3 border-b border-[#E2E8F0]">
+            <div className="flex items-stretch gap-3">
+              {/* Route dots & line */}
+              <div className="flex flex-col items-center justify-center gap-0.5 w-4 flex-shrink-0">
+                <div className="w-3 h-3 rounded-full bg-[#121212] border-2 border-white shadow-sm" />
+                <div className="w-0.5 flex-1 bg-gradient-to-b from-[#121212] to-[#E11D48] rounded-full" />
+                <div className="w-3 h-3 rounded-full bg-[#E11D48] border-2 border-white shadow-sm" />
               </div>
-              <div className="flex items-start gap-2">
-                <MapPin className="w-4 h-4 text-[#E11D48] mt-0.5 flex-shrink-0" />
-                <div className="flex-1 min-w-0">
-                  <p className="text-xs text-[#64748B] uppercase tracking-wide font-semibold">Drop-off</p>
-                  <p className="font-bold text-[#121212]">{lobby.dropoff_location}</p>
-                  <p className="text-xs text-[#64748B]">{lobby.dropoff_address}</p>
+              {/* Addresses */}
+              <div className="flex-1 space-y-3">
+                <div className="min-w-0">
+                  <p className="text-[10px] text-[#64748B] uppercase font-bold tracking-wider">Pickup</p>
+                  <p className="font-bold text-sm text-[#121212] truncate">{lobby.pickup_location}</p>
+                </div>
+                <div className="min-w-0">
+                  <p className="text-[10px] text-[#64748B] uppercase font-bold tracking-wider">Drop-off</p>
+                  <p className="font-bold text-sm text-[#121212] truncate">{lobby.dropoff_location}</p>
                 </div>
               </div>
             </div>
           </div>
 
           {/* Passengers Section */}
-          <div className="flex-1 overflow-y-auto p-5">
-            <div className="mb-4">
+          <div className="flex-1 overflow-y-auto">
+            <div className="p-4">
               <div className="flex items-center justify-between mb-3">
-                <h3 className="text-sm font-bold text-[#64748B] uppercase tracking-wide">Passengers</h3>
-                <span className="text-sm font-bold text-[#E11D48]">
-                  {passengers.length}/{lobby.max_seats} Seats
+                <h3 className="text-xs font-bold text-[#64748B] uppercase tracking-wide">Passengers</h3>
+                <span className="text-xs font-bold text-[#E11D48] bg-[#FFF1F2] px-2.5 py-1 rounded-full">
+                  {passengers.length}/{lobby.max_seats}
                 </span>
               </div>
 
@@ -844,77 +926,157 @@ export default function ShareRideLobby({
 
             {/* Driver Info (when found) */}
             {lobby.status === 'driver_found' && lobby.driver_name && (
-              <Card className="p-4 border-2 border-green-500 bg-green-50 mb-4">
+              <div className="bg-gradient-to-r from-green-50 to-emerald-50 border-2 border-green-400 rounded-xl p-3.5 mb-3">
                 <div className="flex items-center gap-3">
-                  <div className="w-14 h-14 rounded-full bg-green-200 flex items-center justify-center text-3xl">
-                    👨‍✈️
+                  <div className="w-12 h-12 rounded-full bg-green-500 flex items-center justify-center flex-shrink-0">
+                    <span className="text-2xl">👨‍✈️</span>
                   </div>
-                  <div className="flex-1">
-                    <p className="text-xs text-green-700 font-semibold uppercase tracking-wide mb-0.5">Your Driver</p>
-                    <p className="font-bold text-[#121212] text-lg">{lobby.driver_name}</p>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-[10px] text-green-600 font-bold uppercase tracking-wider">Your Driver</p>
+                    <p className="font-bold text-[#121212] truncate">{lobby.driver_name}</p>
                     <div className="flex items-center gap-2">
                       <span className="text-xs text-[#64748B]">{lobby.driver_plate}</span>
                       {(computedDriverRating || lobby.driver_rating) && (
-                        <>
-                          <span className="text-[#64748B]">•</span>
-                          <div className="flex items-center gap-1">
-                            <span className="text-yellow-500">⭐</span>
-                            <span className="text-xs font-semibold text-[#121212]">{computedDriverRating || lobby.driver_rating}</span>
-                          </div>
-                        </>
+                        <span className="flex items-center gap-0.5">
+                          <span className="text-yellow-500 text-xs">⭐</span>
+                          <span className="text-xs font-semibold text-[#121212]">{computedDriverRating || lobby.driver_rating}</span>
+                        </span>
                       )}
                     </div>
                   </div>
                   <Button
                     size="icon"
-                    className="bg-green-500 hover:bg-green-600 text-white"
+                    className="bg-green-500 hover:bg-green-600 text-white h-10 w-10"
                     onClick={handleOpenDriverChat}
                     disabled={openingChat}
                   >
                     <MessageCircle className="w-5 h-5" />
                   </Button>
                 </div>
-              </Card>
+              </div>
+            )}
+
+            {/* Live Tracking Map */}
+            {lobby.status === 'driver_found' && isMapsLoaded && driverLocation && (
+              <div className="rounded-xl overflow-hidden mb-3 border border-[#E2E8F0] shadow-sm">
+                <GoogleMap
+                  mapContainerStyle={{ width: '100%', height: '240px' }}
+                  center={driverLocation}
+                  zoom={15}
+                  options={{
+                    zoomControl: false,
+                    fullscreenControl: false,
+                    streetViewControl: false,
+                    mapTypeControl: false,
+                    gestureHandling: 'none',
+                  }}
+                >
+                  {/* Driver marker (tricycle icon) */}
+                  <MarkerF
+                    position={driverLocation}
+                    title="Driver Location"
+                    icon={(() => {
+                      const google = (window as any)?.google;
+                      if (!google?.maps?.Size || !google?.maps?.Point) return undefined;
+                      return {
+                        url: tricycleIcon,
+                        scaledSize: new google.maps.Size(44, 44),
+                        anchor: new google.maps.Point(22, 22),
+                      };
+                    })()}
+                  />
+                  {/* Pickup marker */}
+                  {pickupCoords && (
+                    <MarkerF
+                      position={pickupCoords}
+                      title="Pickup"
+                      icon={{
+                        url: 'data:image/svg+xml;charset=UTF-8,' + encodeURIComponent(
+                          '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="#3B82F6" stroke="white" stroke-width="1"><path d="M12 2C8.13 2 5 5.13 5 9c0 4.95 6.1 11.53 6.36 11.81.36.39.92.39 1.28 0C13.9 20.53 20 13.95 20 9c0-3.87-3.13-7-8-7z"/><circle cx="12" cy="8.6" r="2.3" fill="#FFFFFF" stroke="none"/></svg>'
+                        ),
+                        scaledSize: new (window as any).google.maps.Size(32, 32),
+                        anchor: new (window as any).google.maps.Point(16, 32),
+                      }}
+                    />
+                  )}
+                  {/* Dropoff marker */}
+                  {dropoffCoords && (
+                    <MarkerF
+                      position={dropoffCoords}
+                      title="Drop-off"
+                      icon={{
+                        url: 'data:image/svg+xml;charset=UTF-8,' + encodeURIComponent(
+                          '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="#E11D48" stroke="white" stroke-width="1"><path d="M12 2C8.13 2 5 5.13 5 9c0 4.95 6.1 11.53 6.36 11.81.36.39.92.39 1.28 0C13.9 20.53 20 13.95 20 9c0-3.87-3.13-7-8-7z"/><path d="M7.8 9.6l2.1 2.1 4.3-4.3" fill="none" stroke="#FFFFFF" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>'
+                        ),
+                        scaledSize: new (window as any).google.maps.Size(32, 32),
+                        anchor: new (window as any).google.maps.Point(16, 32),
+                      }}
+                    />
+                  )}
+                  {/* Route line */}
+                  {driverRoutePath.length > 0 && (
+                    <Polyline
+                      path={driverRoutePath}
+                      options={{
+                        strokeColor: (lobby.driver_status === 'on-the-way' || lobby.driver_status === 'arrived') ? '#10B981' : '#E11D48',
+                        strokeOpacity: 0.9,
+                        strokeWeight: 4,
+                        geodesic: true,
+                      }}
+                    />
+                  )}
+                </GoogleMap>
+                {/* Driver status indicator */}
+                <div className="px-3 py-2 bg-white border-t border-[#E2E8F0] flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse" />
+                    <span className="text-xs font-semibold text-[#121212]">
+                      {(lobby.driver_status === 'on-the-way' || lobby.driver_status === 'arrived') ? 'Heading to pickup' : 'On the way to destination'}
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-1">
+                    <Navigation className="w-3 h-3 text-[#94A3B8]" />
+                    <span className="text-[10px] text-[#94A3B8]">
+                      {driverLocation.lat.toFixed(4)}, {driverLocation.lng.toFixed(4)}
+                    </span>
+                  </div>
+                </div>
+              </div>
             )}
 
             {/* Waiting Animation */}
             {lobby.status === 'waiting' && (
-              <div className="text-center py-6">
-                <div className="w-16 h-16 bg-[#FFF1F2] rounded-full flex items-center justify-center mx-auto mb-3 animate-pulse">
-                  <span className="text-4xl">🔍</span>
+              <div className="text-center py-5">
+                <div className="w-14 h-14 bg-[#FFF1F2] rounded-full flex items-center justify-center mx-auto mb-3 animate-pulse">
+                  <span className="text-3xl">🔍</span>
                 </div>
-                <p className="text-sm text-[#64748B] mb-1">
+                <p className="text-sm font-semibold text-[#121212] mb-1">
                   {passengers.length < lobby.max_seats
                     ? 'Waiting for more passengers...'
                     : 'Finding the best driver for you...'}
                 </p>
-                <p className="text-xs text-[#94A3B8]">
-                  The more passengers, the faster we find a driver!
+                <p className="text-xs text-[#64748B]">
+                  More passengers = faster pickup!
                 </p>
               </div>
             )}
           </div>
 
           {/* Footer - Price Info */}
-          <div className="p-5 border-t border-[#E2E8F0] bg-white">
-            <div className="flex items-center justify-between mb-3">
+          <div className="p-4 border-t border-[#E2E8F0] bg-white">
+            <div className="flex items-center justify-between">
               <div>
-                <p className="text-sm text-[#64748B]">Your Fare</p>
-                <p className="text-3xl font-bold text-[#E11D48]">₱{(pricePerSeat / Math.max(1, passengers.length)).toFixed(2)}</p>
+                <p className="text-[10px] text-[#64748B] uppercase font-bold tracking-wider">Your Fare</p>
+                <p className="text-2xl font-bold text-[#E11D48]">₱{(pricePerSeat / Math.max(1, passengers.length)).toFixed(2)}</p>
                 {passengers.length > 1 && (
-                  <p className="text-xs text-[#94A3B8]">
+                  <p className="text-[10px] text-[#94A3B8]">
                     ₱{pricePerSeat} ÷ {passengers.length} passengers
                   </p>
                 )}
               </div>
               <div className="text-right">
-                <p className="text-sm text-[#64748B]">Total Trip Cost</p>
-                <p className="text-xl font-bold text-[#121212]">
-                  ₱{pricePerSeat}
-                </p>
-                <p className="text-xs text-[#94A3B8]">
-                  {passengers.length} × ₱{(pricePerSeat / Math.max(1, passengers.length)).toFixed(2)}
-                </p>
+                <p className="text-[10px] text-[#64748B] uppercase font-bold tracking-wider">Trip Total</p>
+                <p className="text-lg font-bold text-[#121212]">₱{pricePerSeat}</p>
               </div>
             </div>
 
