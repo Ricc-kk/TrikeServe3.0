@@ -139,51 +139,39 @@ export default function OrderDetail() {
     }
   };
 
-  // Load order only once per session
+  // Load order from Supabase
   useEffect(() => {
     if (!orderId) {
       setIsLoading(false);
       return;
     }
 
-    // Check if we've already loaded this order in this session
-    const sessionKey = `orderdetail_loaded_${orderId}`;
-    const hasLoaded = sessionStorage.getItem(sessionKey);
-
-    if (!hasLoaded) {
-      console.log('[OrderDetail] First load for order in this session:', orderId);
-      sessionStorage.setItem(sessionKey, 'true');
-
-      const fetchOrder = async () => {
-        try {
-          // First try Supabase
-          if (await refreshOrderFromSupabase()) {
-            return;
-          }
-
-          // Fall back to OrderContext (for backward compatibility)
-          const localOrder = getOrderById(orderId || "");
-          if (localOrder) {
-            setOrder(localOrder);
-            setIsLoading(false);
-            return;
-          }
-
-          // No order found
-          setError('Order not found');
-          setIsLoading(false);
-        } catch (error) {
-          console.error('[OrderDetail] Error loading order:', error);
-          setError('Failed to load order');
-          setIsLoading(false);
+    const fetchOrder = async () => {
+      try {
+        // First try Supabase
+        if (await refreshOrderFromSupabase()) {
+          return;
         }
-      };
 
-      fetchOrder();
-    } else {
-      console.log('[OrderDetail] Already loaded in this session, skipping');
-      setIsLoading(false);
-    }
+        // Fall back to OrderContext (for backward compatibility)
+        const localOrder = getOrderById(orderId || "");
+        if (localOrder) {
+          setOrder(localOrder);
+          setIsLoading(false);
+          return;
+        }
+
+        // No order found
+        setError('Order not found');
+        setIsLoading(false);
+      } catch (error) {
+        console.error('[OrderDetail] Error loading order:', error);
+        setError('Failed to load order');
+        setIsLoading(false);
+      }
+    };
+
+    fetchOrder();
   }, [orderId]);
 
   // Poll for driver location when order is on-the-way

@@ -673,7 +673,7 @@ export default function Cart() {
 
       {/* Order Confirmation Modal */}
       {showOrderConfirmation && (
-        <div className="fixed inset-0 bg-black/60 z-[2000] flex items-center justify-center p-4" onClick={() => setShowOrderConfirmation(false)}>
+        <div className="fixed inset-0 bg-black/60 z-[2000] flex items-center justify-center p-4">
           <Card 
             className="bg-white p-8 max-w-sm w-full"
             onClick={(e) => e.stopPropagation()}
