@@ -1639,6 +1639,14 @@ export default function CustomerHome() {
     setSelectedRating(0);
     setRideDriverId(null);
     setDeliveryBusiness(null);
+    // Refresh the ride page after rating is submitted
+    resetCustomerRideVisuals();
+    setRideStatus(null);
+    setCurrentRequestId(null);
+    setCompletionPopupType('ride');
+    localStorage.removeItem('trikeserve_active_ride');
+    localStorage.removeItem('trikeserve_active_share_lobby');
+    window.location.reload();
   };
 
   const filteredLocations = popularLocations.filter(loc =>
@@ -2121,6 +2129,11 @@ export default function CustomerHome() {
                       setCompletionPopupType('ride');
                       setRideDriverId(null);
                       setDeliveryBusiness(null);
+                      resetCustomerRideVisuals();
+                      localStorage.removeItem('trikeserve_active_ride');
+                      localStorage.removeItem('trikeserve_active_share_lobby');
+                      // Refresh the page to fully reset the ride page
+                      window.location.reload();
                     }}
                     className="w-full bg-blue-500 hover:bg-blue-600 text-white py-3 font-bold"
                   >

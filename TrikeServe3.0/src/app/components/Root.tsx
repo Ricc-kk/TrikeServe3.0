@@ -5,7 +5,6 @@ import { OrderProvider } from "../contexts/OrderContext";
 import { FavoritesProvider } from "../contexts/FavoritesContext";
 import { NotificationProvider } from "../contexts/NotificationContext";
 import Toast from "./ui/Toast";
-import ReturnToRideButton from "./customer/ReturnToRideButton";
 
 export default function Root() {
   return (
@@ -18,7 +17,6 @@ export default function Root() {
               <div className="min-h-screen">
                 <Outlet />
               </div>
-              <ReturnToRideButton />
             </NotificationProvider>
           </OrderProvider>
         </CartProvider>
