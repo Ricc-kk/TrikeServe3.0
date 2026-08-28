@@ -5,6 +5,7 @@ import { Button } from "../ui/button";
 import { Input } from "../ui/input";
 import PlaceSearch from "../ui/PlaceSearch";
 import { VALENZUELA_BIAS } from "@/lib/googleMaps";
+import ActiveRideButton from "./ActiveRideButton";
 
 // Get Google Maps API Key from environment variable
 const GOOGLE_MAPS_API_KEY = import.meta.env.VITE_GOOGLE_MAPS_API_KEY || "";
@@ -69,6 +70,7 @@ export default function MyDestination() {
           Set Destination
         </Button>
       </div>
+      <ActiveRideButton />
     </div>
   );
 }

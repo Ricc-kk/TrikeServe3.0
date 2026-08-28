@@ -38,6 +38,7 @@ interface Order {
 export default function BusinessOrders() {
   const [selectedTab, setSelectedTab] = useState<'active' | 'history'>('active');
   const [selectedOrder, setSelectedOrder] = useState<Order | null>(null);
+  const [confirmAction, setConfirmAction] = useState<'accept' | 'decline' | null>(null);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [selectedStatusFilter, setSelectedStatusFilter] = useState<'all' | 'pending' | 'confirmed' | 'preparing' | 'ready' | 'on-the-way'>('all');
   const [orders, setOrders] = useState<Order[]>([]);
@@ -934,19 +935,13 @@ export default function BusinessOrders() {
                 {selectedOrder.status === 'pending' && (
                   <div className="space-y-2">
                     <Button
-                      onClick={() => {
-                        updateOrderStatus(selectedOrder.id, 'preparing');
-                        setSelectedOrder(null);
-                      }}
+                      onClick={() => setConfirmAction('accept')}
                       className="w-full bg-[#10B981] hover:bg-[#059669] uppercase py-4 md:py-6 font-bold text-sm md:text-base"
                     >
                       ✓ Accept Order
                     </Button>
                     <Button
-                      onClick={async () => {
-                        await updateOrderStatus(selectedOrder.id, 'cancelled');
-                        setSelectedOrder(null);
-                      }}
+                      onClick={() => setConfirmAction('decline')}
                       variant="outline"
                       className="w-full border-[#E11D48] text-[#E11D48] uppercase py-4 md:py-6 text-sm md:text-base"
                     >
@@ -971,22 +966,12 @@ export default function BusinessOrders() {
 
                 {selectedOrder.status === 'ready' && (
                   <div className="space-y-2">
-                    {selectedOrder.deliveryMode === 'delivery' ? (
+                    {selectedOrder.deliveryMode === 'delivery' && (
                       <Button
                         onClick={() => handleReadyForDelivery(selectedOrder)}
                         className="w-full bg-[#06B6D4] hover:bg-[#0891B2] uppercase py-4 md:py-6 font-bold text-sm md:text-base"
                       >
                         → Ready for Delivery
-                      </Button>
-                    ) : (
-                      <Button
-                        onClick={() => {
-                          updateOrderStatus(selectedOrder.id, 'delivered');
-                          setSelectedOrder(null);
-                        }}
-                        className="w-full bg-[#64748B] hover:bg-[#475569] uppercase py-4 md:py-6 font-bold text-sm md:text-base"
-                      >
-                        ✓ Completed
                       </Button>
                     )}
                   </div>
@@ -1093,6 +1078,52 @@ export default function BusinessOrders() {
           </div>
         )}
       </div>
+
+      {/* Confirmation Popup */}
+      {confirmAction && selectedOrder && (
+        <div className="fixed inset-0 bg-black/60 z-[3000] flex items-center justify-center">
+          <div className="bg-white rounded-3xl p-6 mx-6 max-w-sm w-full text-center shadow-2xl animate-in fade-in zoom-in duration-300">
+            <div className={`w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4 ${
+              confirmAction === 'accept' ? 'bg-green-100' : 'bg-red-100'
+            }`}>
+              <span className="text-3xl">{confirmAction === 'accept' ? '✅' : '❌'}</span>
+            </div>
+            <h2 className="text-xl font-extrabold text-[#121212] mb-1">
+              {confirmAction === 'accept' ? 'Accept this order?' : 'Decline this order?'}
+            </h2>
+            <p className="text-sm text-[#64748B] mb-1">Order #{selectedOrder.orderNumber}</p>
+            <p className="text-sm text-[#64748B] mb-1">{selectedOrder.customerName}</p>
+            <p className="text-lg font-bold text-[#E11D48] mb-4">₱{selectedOrder.total.toFixed(2)}</p>
+            <div className="flex gap-3">
+              <Button
+                onClick={() => setConfirmAction(null)}
+                variant="outline"
+                className="flex-1 border-gray-300 text-gray-600 uppercase font-bold"
+              >
+                Cancel
+              </Button>
+              <Button
+                onClick={async () => {
+                  if (confirmAction === 'accept') {
+                    await updateOrderStatus(selectedOrder.id, 'preparing');
+                  } else {
+                    await updateOrderStatus(selectedOrder.id, 'cancelled');
+                  }
+                  setConfirmAction(null);
+                  setSelectedOrder(null);
+                }}
+                className={`flex-1 uppercase font-bold ${
+                  confirmAction === 'accept'
+                    ? 'bg-[#10B981] hover:bg-[#059669]'
+                    : 'bg-[#E11D48] hover:bg-[#BE123C]'
+                }`}
+              >
+                {confirmAction === 'accept' ? 'Accept' : 'Decline'}
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

@@ -327,15 +327,6 @@ export default function BusinessDashboard() {
                   <div className="absolute top-1 right-1 w-2 h-2 bg-[#E11D48] rounded-full" />
                 )}
               </button>
-              <button 
-                onClick={() => setShowMessages(true)}
-                className="relative p-2 hover:bg-[#F8F9FA] rounded-xl transition-all"
-              >
-                <MessageSquare className="w-5 h-5 lg:w-6 lg:h-6 text-[#64748B]" />
-                {messages.filter((m: any) => m.unread).length > 0 && (
-                  <div className="absolute top-1 right-1 w-2 h-2 bg-[#E11D48] rounded-full" />
-                )}
-              </button>
               <Link to="/business/account" className="hidden lg:flex">
                 <div className="flex items-center gap-3 px-3 py-2 hover:bg-[#F8F9FA] rounded-xl transition-all cursor-pointer">
                   <div className="w-10 h-10 bg-gradient-to-br from-[#E11D48] to-[#BE123C] rounded-full flex items-center justify-center">
@@ -764,58 +755,6 @@ export default function BusinessDashboard() {
                       </div>
                       <p className="text-sm text-[#64748B] mb-2">{notification.message}</p>
                       <p className="text-xs text-[#94A3B8]">{notification.time}</p>
-                    </div>
-                  </div>
-                </Card>
-              ))}
-            </div>
-          </div>
-        </>
-      )}
-
-      {/* Messages Panel */}
-      {showMessages && (
-        <>
-          <div 
-            className="fixed inset-0 bg-black/50 z-[2000]"
-            onClick={() => setShowMessages(false)}
-          />
-          <div className="fixed top-0 right-0 h-full w-full lg:w-[400px] bg-white z-[2001] shadow-2xl overflow-y-auto">
-            <div className="p-5 border-b-2 border-[#E2E8F0] sticky top-0 bg-white z-10">
-              <div className="flex items-center justify-between">
-                <h2 className="text-2xl font-bold text-[#121212]">Messages</h2>
-                <button 
-                  onClick={() => setShowMessages(false)}
-                  className="p-2 hover:bg-[#F8F9FA] rounded-xl transition-all"
-                >
-                  <X className="w-6 h-6 text-[#64748B]" />
-                </button>
-              </div>
-              <p className="text-sm text-[#64748B] mt-1">
-                {messages.filter(m => m.unread).length} unread messages
-              </p>
-            </div>
-            <div className="p-5 space-y-3">
-              {messages.map((message) => (
-                <Card 
-                  key={message.id}
-                  className={`p-4 border-2 transition-all cursor-pointer hover:border-[#E11D48] ${
-                    message.unread ? 'border-[#FFF1F2] bg-[#FFF1F2]' : 'border-[#E2E8F0] bg-white'
-                  }`}
-                >
-                  <div className="flex items-start gap-3">
-                    <div className="w-10 h-10 bg-gradient-to-br from-[#E11D48] to-[#BE123C] rounded-full flex items-center justify-center">
-                      <UserIcon className="w-5 h-5 text-white" />
-                    </div>
-                    <div className="flex-1">
-                      <div className="flex items-start justify-between mb-1">
-                        <h3 className="font-bold text-[#121212]">{message.customerName}</h3>
-                        {message.unread && (
-                          <div className="w-2 h-2 bg-[#E11D48] rounded-full mt-1" />
-                        )}
-                      </div>
-                      <p className="text-sm text-[#64748B] mb-2">{message.message}</p>
-                      <p className="text-xs text-[#94A3B8]">{message.time}</p>
                     </div>
                   </div>
                 </Card>

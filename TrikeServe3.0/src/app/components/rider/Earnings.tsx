@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { ArrowLeft, DollarSign, TrendingUp, Calendar, Download } from "lucide-react";
+import { ArrowLeft, DollarSign, TrendingUp, Calendar } from "lucide-react";
 import { useNavigate } from "react-router";
 import { Button } from "../ui/button";
 import { Card } from "../ui/card";
@@ -9,6 +9,7 @@ import "slick-carousel/slick/slick.css";
 import "slick-carousel/slick/slick-theme.css";
 import { useAuth } from "../../contexts/AuthContext";
 import { supabaseHelpers } from "@/lib/supabase";
+import ActiveRideButton from "./ActiveRideButton";
 
 interface CompletedTrip {
   id: string;
@@ -31,6 +32,7 @@ export default function Earnings() {
   const [isLoading, setIsLoading] = useState(true);
   const [driverRating, setDriverRating] = useState<string>('—');
   const [driverRatingCount, setDriverRatingCount] = useState(0);
+  const [filterTab, setFilterTab] = useState<'all' | 'rides' | 'deliveries'>('all');
 
   // Fetch completed rides from database and localStorage
   useEffect(() => {
@@ -45,6 +47,20 @@ export default function Earnings() {
 
         if (dbError) {
           console.error('❌ Error fetching completed rides from database:', dbError);
+        }
+
+        // Also fetch completed delivery orders assigned to this driver
+        let dbOrders: any[] = [];
+        try {
+          const { data: orders, error: ordersErr } = await supabase
+            .from('orders')
+            .select('*')
+            .eq('driver_name', user?.name || 'Driver')
+            .eq('status', 'delivered');
+          if (!ordersErr && orders) dbOrders = orders;
+          else if (ordersErr) console.warn('[Earnings] Orders query error:', ordersErr.message);
+        } catch (e) {
+          console.warn('[Earnings] Orders query failed:', e);
         }
 
         // Also check localStorage for recently completed rides
@@ -63,13 +79,33 @@ export default function Earnings() {
         const allRides = [...(dbRides || []), ...localRides];
         const uniqueRides = Array.from(new Map(allRides.map(ride => [ride.id, ride])).values());
 
+        // Convert delivery orders to trip format
+        const deliveryTrips = dbOrders.map((order: any) => ({
+          id: order.id,
+          ride_type: 'delivery',
+          type: 'delivery',
+          amount: Number(order.delivery_fee || 0),
+          payment_method: order.payment_method,
+          customer_name: order.customer_name,
+          pickup_location: order.restaurant_name || 'Restaurant',
+          dropoff_location: (order.address || '').split('|')[0].trim() || order.address || 'Customer Address',
+          status: 'completed',
+          updated_at: order.updated_at,
+          completed_at: order.updated_at,
+        }));
+
+        // Merge and deduplicate
+        const allTrips = [...uniqueRides, ...deliveryTrips];
+        const dedupedTrips = Array.from(new Map(allTrips.map(t => [t.id, t])).values());
+
         // Format rides for display
-        const formattedRides = uniqueRides
+        const formattedRides = dedupedTrips
           .map((ride: any) => {
-            let type = 'Ride';
-            if (ride.type === 'delivery') type = 'Delivery';
-            else if (ride.type === 'shared') type = 'Ride Share';
-            else if (ride.type === 'private') type = 'Private Ride';
+            let type = 'Private Ride';
+            const rt = (ride.ride_type || ride.type || '').toLowerCase();
+            const isDelivery = rt === 'delivery' || String(ride.pickup_location || '').startsWith('DELIVERY|');
+            if (isDelivery) type = 'Delivery';
+            else if (rt === 'share' || rt === 'shared') type = 'Ride Share';
 
             // Prefer the completion timestamp. The DB sets updated_at on completion and
             // may not set a dedicated completed_at column, so include it in the fallback chain.
@@ -83,14 +119,27 @@ export default function Earnings() {
               console.warn('[Earnings] Invalid trip date, using current time:', dateObj);
             }
 
+            // Parse pickup/dropoff locations
+            const rawPickup = ride.pickup_location || '';
+            const rawDropoff = ride.dropoff_location || '';
+            let pickup = rawPickup.startsWith('DELIVERY|') ? rawPickup.split('|').pop() || 'Restaurant' : rawPickup;
+            let dropoff = rawDropoff;
+            // For delivery orders, try to get restaurant name from the tag
+            if (rawPickup.startsWith('DELIVERY|')) {
+              const parts = rawPickup.split('|');
+              const restaurantName = parts.filter((p: string) => !p.startsWith('ORDER_ID:') && !p.startsWith('ORDER_NO:') && p !== 'DELIVERY').join('');
+              if (restaurantName) pickup = restaurantName;
+            }
+
             return {
               id: ride.id,
               type: type,
               date: dateISO,
               amount: Number(ride.amount) || 0,
-              // DB stores payment_method as 'COD' or 'GCASH'; show Cash for cash, Prepaid for GCash.
               payment: ((ride.payment_method || ride.payment) === 'COD' ? 'Cash' : 'Prepaid') as 'Cash' | 'Prepaid',
-              customerName: ride.customer_name || ride.customerName || 'Customer'
+              customerName: ride.customer_name || ride.customerName || 'Customer',
+              pickup: pickup || 'Pickup',
+              dropoff: dropoff || 'Drop-off',
             };
           })
           .sort((a, b) => {
@@ -182,9 +231,7 @@ export default function Earnings() {
           </h1>
           <p className="text-xs text-[#64748B]">Track your income</p>
         </div>
-        <Button variant="ghost" size="icon">
-          <Download className="w-5 h-5 text-[#64748B]" />
-        </Button>
+
       </div>
 
       <div className="p-4 space-y-4">
@@ -294,6 +341,23 @@ export default function Earnings() {
             <h3 className="font-extrabold text-[#121212]" style={{ fontSize: '18px' }}>Recent Trips</h3>
           </div>
 
+          {/* Filter Tabs */}
+          <div className="flex gap-2 mb-4 overflow-x-auto">
+            {(['all', 'rides', 'deliveries'] as const).map(tab => (
+              <button
+                key={tab}
+                onClick={() => setFilterTab(tab)}
+                className={`px-4 py-2 rounded-full text-sm font-medium whitespace-nowrap transition-all ${
+                  filterTab === tab
+                    ? 'bg-[#E11D48] text-white'
+                    : 'bg-[#F1F5F9] text-[#64748B]'
+                }`}
+              >
+                {tab === 'all' ? `All (${completedTrips.length})` : tab === 'rides' ? `Rides (${completedTrips.filter(t => t.type !== 'Delivery').length})` : `Deliveries (${completedTrips.filter(t => t.type === 'Delivery').length})`}
+              </button>
+            ))}
+          </div>
+
           {isLoading ? (
             <Card className="p-4 bg-white border-0 shadow-sm">
               <p className="text-center text-[#64748B]">Loading completed trips...</p>
@@ -304,27 +368,78 @@ export default function Earnings() {
             </Card>
           ) : (
             <div className="space-y-3">
-              {completedTrips.slice(0, 10).map((trip) => (
-                <Card key={trip.id} className="p-4 bg-white border-0 shadow-sm">
-                  <div className="flex items-start justify-between mb-2">
-                    <div>
-                      <p className="font-extrabold text-[#121212] mb-1">{trip.type}</p>
-                      <p className="text-xs text-[#0891B2]">{new Date(trip.date).toLocaleString()}</p>
+              {completedTrips
+                .filter(trip => {
+                  if (filterTab === 'rides') return trip.type !== 'Delivery';
+                  if (filterTab === 'deliveries') return trip.type === 'Delivery';
+                  return true;
+                })
+                .slice(0, 20)
+                .map((trip) => (
+                <Card key={trip.id} className={`bg-white border-0 shadow-sm overflow-hidden ${
+                  trip.type === 'Delivery' ? 'border-l-4 border-l-[#3B82F6]' :
+                  trip.type === 'Ride Share' ? 'border-l-4 border-l-[#F59E0B]' :
+                  'border-l-4 border-l-[#10B981]'
+                }`}>
+                  <div className="p-4">
+                    {/* Top row: type + amount */}
+                    <div className="flex items-center justify-between mb-3">
+                      <div className="flex items-center gap-2">
+                        <div className={`w-10 h-10 rounded-xl flex items-center justify-center text-lg ${
+                          trip.type === 'Delivery' ? 'bg-[#DBEAFE]' :
+                          trip.type === 'Ride Share' ? 'bg-[#FEF3C7]' :
+                          'bg-[#F0FDF4]'
+                        }`}>
+                          {trip.type === 'Delivery' ? '📦' : trip.type === 'Ride Share' ? '👥' : '👤'}
+                        </div>
+                        <div>
+                          <p className="font-bold text-[#121212] text-sm">{trip.type}</p>
+                          <p className="text-[10px] text-[#94A3B8]">{new Date(trip.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })} • {new Date(trip.date).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })}</p>
+                        </div>
+                      </div>
+                      <div className="text-right">
+                        <p className="font-extrabold text-lg text-[#E11D48]">₱{trip.amount.toFixed(2)}</p>
+                        <Badge
+                          variant="outline"
+                          className={`text-[10px] rounded-full ${trip.payment === 'Cash' ? 'border-[#F97316] text-[#F97316]' : 'border-green-500 text-green-500'}`}
+                        >
+                          {trip.payment === 'Cash' ? '💵 Cash' : '💳 GCash'}
+                        </Badge>
+                      </div>
                     </div>
-                    <div className="text-right">
-                      <p className="font-extrabold text-xl text-[#E11D48] mb-1">₱{trip.amount.toFixed(2)}</p>
-                      <Badge
-                        variant="outline"
-                        className={trip.payment === 'Cash' ? 'border-[#F97316] text-[#F97316] rounded-full' : 'border-green-500 text-green-500 rounded-full'}
-                      >
-                        {trip.payment}
-                      </Badge>
-                    </div>
-                  </div>
-                  <div>
-                    <Badge className="bg-[#10B981] text-white border-0 rounded-md">
-                      Completed
-                    </Badge>
+
+                    {/* Customer name */}
+                    {trip.customerName && trip.customerName !== 'Customer' && (
+                      <div className="flex items-center gap-2 mb-2 px-3 py-2 bg-[#F8FAFC] rounded-lg">
+                        <span className="text-sm">👤</span>
+                        <p className="text-xs font-semibold text-[#121212]">{trip.customerName}</p>
+                      </div>
+                    )}
+
+                    {/* Pickup & Dropoff with vertical connector */}
+                    {(trip.pickup || trip.dropoff) && (
+                      <div className="flex items-stretch gap-2 mt-1">
+                        <div className="flex flex-col items-center pt-1">
+                          <div className="w-2.5 h-2.5 rounded-full bg-green-500 shrink-0" />
+                          <div className="w-0.5 flex-1 bg-gray-200 my-0.5" />
+                          <div className="w-2.5 h-2.5 rounded-full bg-[#E11D48] shrink-0" />
+                        </div>
+                        <div className="flex-1 space-y-2 min-w-0">
+                          {trip.pickup && (
+                            <div>
+                              <p className="text-[10px] text-green-600 font-bold uppercase">Pickup</p>
+                              <p className="text-xs text-[#121212] truncate">{trip.pickup}</p>
+                            </div>
+                          )}
+                          {trip.dropoff && (
+                            <div>
+                              <p className="text-[10px] text-[#E11D48] font-bold uppercase">Drop-off</p>
+                              <p className="text-xs text-[#121212] truncate">{trip.dropoff}</p>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    )}
                   </div>
                 </Card>
               ))}
@@ -333,6 +448,9 @@ export default function Earnings() {
         </div>
 
       </div>
+
+      {/* Active Ride Floating Button */}
+      <ActiveRideButton />
     </div>
   );
 }

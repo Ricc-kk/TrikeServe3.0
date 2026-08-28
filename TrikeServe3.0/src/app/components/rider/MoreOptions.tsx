@@ -1,6 +1,7 @@
 import { useNavigate } from "react-router";
 import { ArrowLeft, Settings, Bell, Star, DollarSign, HelpCircle, FileText } from "lucide-react";
 import { Button } from "../ui/button";
+import ActiveRideButton from "./ActiveRideButton";
 
 export default function MoreOptions() {
   const navigate = useNavigate();
@@ -78,6 +79,7 @@ export default function MoreOptions() {
           </div>
         </button>
       </div>
+      <ActiveRideButton />
     </div>
   );
 }

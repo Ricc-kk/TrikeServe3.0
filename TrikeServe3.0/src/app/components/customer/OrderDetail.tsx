@@ -1,8 +1,8 @@
-import { ArrowLeft, Package, Clock, MapPin, CreditCard, User as UserIcon, Phone, X, RefreshCw, Star, Navigation } from "lucide-react";
+import { ArrowLeft, Package, Clock, MapPin, CreditCard, RefreshCw, Star, Navigation, CheckCircle, AlertCircle, Phone } from "lucide-react";
 import { useNavigate, useParams } from "react-router";
 import { Card } from "../ui/card";
 import { Button } from "../ui/button";
-import { useOrders } from "../../contexts/OrderContext";
+import { Badge } from "../ui/badge";
 import { useAuth } from "../../contexts/AuthContext";
 import { ImageWithFallback } from "../figma/ImageWithFallback";
 import { supabase } from "../../../lib/supabase";
@@ -33,13 +33,74 @@ interface OrderData {
   paymentMethod: string;
   needsCutlery: boolean;
   createdAt: string;
+  driverName?: string;
 }
+
+function buildOrderData(dbOrder: any): OrderData {
+  let parsedItems = [];
+  try {
+    parsedItems = typeof dbOrder.items === 'string' ? JSON.parse(dbOrder.items) : (Array.isArray(dbOrder.items) ? dbOrder.items : []);
+  } catch { parsedItems = []; }
+  return {
+    id: dbOrder.id,
+    orderNumber: dbOrder.order_number || 'Unknown',
+    restaurantName: dbOrder.restaurant_name || 'Restaurant',
+    businessId: dbOrder.business_id || null,
+    restaurantImage: '',
+    customerName: dbOrder.customer_name || 'Customer',
+    customerEmail: dbOrder.customer_email || '',
+    customerPhone: dbOrder.customer_phone || '',
+    date: new Date(dbOrder.created_at).toLocaleString(),
+    status: dbOrder.status || 'pending',
+    deliveryMode: dbOrder.delivery_mode || 'delivery',
+    address: dbOrder.address || '',
+    estimatedTime: dbOrder.estimated_time || '30 mins',
+    items: parsedItems,
+    subtotal: dbOrder.subtotal || 0,
+    deliveryFee: dbOrder.delivery_fee || 0,
+    total: dbOrder.total || 0,
+    paymentMethod: dbOrder.payment_method || 'cash',
+    needsCutlery: dbOrder.needs_cutlery || false,
+    createdAt: dbOrder.created_at,
+    driverName: dbOrder.driver_name || undefined,
+  };
+}
+
+// Status workflow matching the business pattern
+const statusWorkflow: Record<string, { steps: string[]; current: number }> = {
+  'pending':    { steps: ['Order Received', 'Preparing', 'Ready', 'Out for Delivery', 'Delivered'], current: 0 },
+  'preparing':  { steps: ['Order Received', 'Preparing', 'Ready', 'Out for Delivery', 'Delivered'], current: 1 },
+  'ready':      { steps: ['Order Received', 'Preparing', 'Ready', 'Out for Delivery', 'Delivered'], current: 2 },
+  'confirmed':  { steps: ['Order Received', 'Preparing', 'Ready', 'Out for Delivery', 'Delivered'], current: 3 },
+  'on-the-way': { steps: ['Order Received', 'Preparing', 'Ready', 'Out for Delivery', 'Delivered'], current: 3 },
+  'delivered':  { steps: ['Order Received', 'Preparing', 'Ready', 'Out for Delivery', 'Delivered'], current: 4 },
+  'cancelled':  { steps: ['Cancelled'], current: 0 },
+};
+
+const statusColors: Record<string, string> = {
+  'pending': 'bg-[#F59E0B] text-white',
+  'preparing': 'bg-[#3B82F6] text-white',
+  'ready': 'bg-[#10B981] text-white',
+  'confirmed': 'bg-[#06B6D4] text-white',
+  'on-the-way': 'bg-[#3B82F6] text-white',
+  'delivered': 'bg-[#10B981] text-white',
+  'cancelled': 'bg-[#EF4444] text-white',
+};
+
+const statusLabels: Record<string, string> = {
+  'pending': 'New Order',
+  'preparing': 'Preparing Your Order',
+  'ready': 'Ready for Pickup',
+  'confirmed': 'Driver Assigned',
+  'on-the-way': 'On the Way',
+  'delivered': 'Delivered',
+  'cancelled': 'Cancelled',
+};
 
 export default function OrderDetail() {
   const navigate = useNavigate();
   const { orderId } = useParams();
   const { user } = useAuth();
-  const { getOrderById } = useOrders();
   const [order, setOrder] = useState<OrderData | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
@@ -50,187 +111,111 @@ export default function OrderDetail() {
   const [error, setError] = useState<string | null>(null);
   const { isLoaded: isMapsLoaded } = useMapLoader();
   const [driverLocation, setDriverLocation] = useState<{ lat: number; lng: number } | null>(null);
-  const [driverStatus, setDriverStatus] = useState<string | null>(null);
   const [routePath, setRoutePath] = useState<Array<{ lat: number; lng: number }>>([]);
-  const [rideRequestData, setRideRequestData] = useState<any>(null);
-  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  const refreshOrderFromSupabase = async (isManualRefresh = false) => {
-    try {
-      if (isManualRefresh) {
-        setIsRefreshing(true);
-      } else {
-        setIsLoading(true);
-      }
+  // Status timeline with timestamps
+  const [statusHistory, setStatusHistory] = useState<Array<{ status: string; label: string; time: string; done: boolean }>>([]);
 
-      if (!orderId) {
-        setIsLoading(false);
-        setIsRefreshing(false);
-        return false;
-      }
-
-      const { data: dbOrder, error: dbError } = await supabase
-        .from('orders')
-        .select('*')
-        .eq('id', orderId)
-        .single();
-
-      if (dbError || !dbOrder) {
-        setIsLoading(false);
-        setIsRefreshing(false);
-        return false;
-      }
-
-      let parsedItems = [];
-      try {
-        parsedItems = typeof dbOrder.items === 'string' ? JSON.parse(dbOrder.items) : (Array.isArray(dbOrder.items) ? dbOrder.items : []);
-      } catch {
-        parsedItems = [];
-      }
-
-      // Resolve the business user id: orders.business_id may be null, but
-      // orders.restaurant_email actually stores the restaurant id, which maps
-      // to the business user via restaurants.business_user_id.
-      let resolvedBusinessId: string | null = dbOrder.business_id || null;
-      if (!resolvedBusinessId && dbOrder.restaurant_email) {
-        try {
-          const { data: restaurant } = await supabase
-            .from('restaurants')
-            .select('business_user_id')
-            .eq('id', dbOrder.restaurant_email)
-            .maybeSingle();
-          if (restaurant?.business_user_id) resolvedBusinessId = restaurant.business_user_id;
-        } catch (err) {
-          console.error('[OrderDetail] Error resolving restaurant business:', err);
-        }
-      }
-
-      setOrder({
-        id: dbOrder.id,
-        orderNumber: dbOrder.order_number || 'Unknown',
-        restaurantName: dbOrder.restaurant_name || 'Restaurant',
-        businessId: resolvedBusinessId,
-        restaurantImage: '',
-        customerName: dbOrder.customer_name || 'Customer',
-        customerEmail: dbOrder.customer_email || '',
-        customerPhone: dbOrder.customer_phone || '',
-        date: new Date(dbOrder.created_at).toLocaleString(),
-        status: dbOrder.status || 'pending',
-        deliveryMode: dbOrder.delivery_mode || 'delivery',
-        address: dbOrder.address || '',
-        estimatedTime: dbOrder.estimated_time || '30 mins',
-        items: parsedItems,
-        subtotal: dbOrder.subtotal || 0,
-        deliveryFee: dbOrder.delivery_fee || 0,
-        total: dbOrder.total || 0,
-        paymentMethod: dbOrder.payment_method || 'cash',
-        needsCutlery: dbOrder.needs_cutlery || false,
-        createdAt: dbOrder.created_at,
-      });
-
-      setIsLoading(false);
-      setIsRefreshing(false);
-      return true;
-    } catch (e) {
-      console.error('[OrderDetail] refreshOrderFromSupabase error:', e);
-      setIsLoading(false);
-      setIsRefreshing(false);
-      return false;
-    }
-  };
-
-  // Load order from Supabase
+  // ─── Load order once ───────────────────────────────────────────────
   useEffect(() => {
-    if (!orderId) {
-      setIsLoading(false);
-      return;
-    }
+    if (!orderId) { setIsLoading(false); return; }
 
     const fetchOrder = async () => {
       try {
-        // First try Supabase
-        if (await refreshOrderFromSupabase()) {
-          return;
-        }
+        const { data: dbOrder, error: dbError } = await supabase
+          .from('orders').select('*').eq('id', orderId).single();
 
-        // Fall back to OrderContext (for backward compatibility)
-        const localOrder = getOrderById(orderId || "");
-        if (localOrder) {
-          setOrder(localOrder);
+        if (dbError || !dbOrder) {
+          setError('Order not found');
           setIsLoading(false);
           return;
         }
 
-        // No order found
-        setError('Order not found');
-        setIsLoading(false);
-      } catch (error) {
-        console.error('[OrderDetail] Error loading order:', error);
+        const data = buildOrderData(dbOrder);
+        setOrder(data);
+
+        // Resolve business id
+        let resolvedBusinessId = dbOrder.business_id || null;
+        if (!resolvedBusinessId && dbOrder.restaurant_email) {
+          try {
+            const { data: restaurant } = await supabase
+              .from('restaurants').select('business_user_id').eq('id', dbOrder.restaurant_email).maybeSingle();
+            if (restaurant?.business_user_id) resolvedBusinessId = restaurant.business_user_id;
+          } catch {}
+        }
+        if (resolvedBusinessId) setOrder(prev => prev ? { ...prev, businessId: resolvedBusinessId } : prev);
+      } catch (e) {
+        console.error('[OrderDetail] Error:', e);
         setError('Failed to load order');
-        setIsLoading(false);
       }
+      setIsLoading(false);
     };
 
     fetchOrder();
   }, [orderId]);
 
-  // Poll for driver location when order is on-the-way
+  // ─── POLLING: Every 3 seconds ─────────────────────────────────────
   useEffect(() => {
-    if (!order || order.status !== 'on-the-way') {
-      if (pollRef.current) clearInterval(pollRef.current);
-      return;
-    }
+    if (!orderId) return;
 
-    const pollDriverLocation = async () => {
+    const poll = async () => {
       try {
-        // Poll driver GPS directly from orders table
-        const { data: freshOrder } = await supabase
+        const { data } = await supabase
           .from('orders')
-          .select('driver_lat, driver_lng, driver_name, status')
-          .eq('id', order.id)
+          .select('*')
+          .eq('id', orderId)
           .single();
 
-        if (freshOrder) {
-          if (freshOrder.driver_lat && freshOrder.driver_lng) {
-            setDriverLocation({ lat: freshOrder.driver_lat, lng: freshOrder.driver_lng });
-            setDriverStatus(freshOrder.status);
-          }
-          // Update order status if it changed
-          if (freshOrder.status !== order.status) {
-            setOrder((prev: any) => prev ? { ...prev, status: freshOrder.status } : prev);
-          }
+        if (!data) return;
+
+        // Update driver GPS
+        if (data.driver_lat && data.driver_lng) {
+          setDriverLocation({ lat: data.driver_lat, lng: data.driver_lng });
         }
+
+        // Build new order data and always set it
+        const newData = buildOrderData(data);
+        setOrder(prev => {
+          // Only update if status or driver changed
+          if (prev && prev.status === newData.status && prev.driverName === newData.driverName) return prev;
+          return newData;
+        });
       } catch (err) {
-        console.error('Error polling driver location:', err);
+        console.error('[OrderDetail] Poll error:', err);
       }
     };
 
-    pollDriverLocation();
-    pollRef.current = setInterval(pollDriverLocation, 3000);
-    return () => { if (pollRef.current) clearInterval(pollRef.current); };
-  }, [order?.id, order?.status]);
+    poll();
+    const interval = setInterval(poll, 3000);
+    return () => clearInterval(interval);
+  }, [orderId]);
 
-  // Compute route from driver to restaurant or customer
+  // ─── Build status timeline when order changes ─────────────────────
   useEffect(() => {
-    if (!driverLocation || !isMapsLoaded || !(window as any).google) {
+    if (!order) return;
+    const workflow = statusWorkflow[order.status] || statusWorkflow['pending'];
+    const history = workflow.steps.map((step, idx) => ({
+      status: step,
+      label: step,
+      time: idx <= workflow.current ? '✓' : '',
+      done: idx <= workflow.current,
+    }));
+    setStatusHistory(history);
+  }, [order?.status]);
+
+  // ─── Compute route from driver to customer ─────────────────────────
+  useEffect(() => {
+    if (!driverLocation || !isMapsLoaded || !(window as any).google || !order?.address) {
       setRoutePath([]);
       return;
     }
-
-    // Parse coordinates from order address (format: "name|lat,lng")
     const parseCoords = (addr: string): { lat: number; lng: number } | null => {
       const coordPart = addr.includes('|') ? addr.split('|')[1] : addr;
       const m = coordPart.match(/(\d+\.\d+)\s*,\s*(\d+\.\d+)/);
       return m ? { lat: parseFloat(m[1]), lng: parseFloat(m[2]) } : null;
     };
-
-    // Delivery: always route to customer (dropoff)
-    // The driver first goes to restaurant (pickup) then to customer (dropoff)
-    // For simplicity, route to the customer's delivery address
-    const dropoffCoords = parseCoords(order?.address || '');
-    if (!dropoffCoords) { setRoutePath([]); return; }
-
-    const dest = dropoffCoords;
+    const dest = parseCoords(order.address);
+    if (!dest) { setRoutePath([]); return; }
 
     const DirectionsService = new (window as any).google.maps.DirectionsService();
     DirectionsService.route({
@@ -239,11 +224,10 @@ export default function OrderDetail() {
       travelMode: (window as any).google.maps.TravelMode.DRIVING,
     }, (result: any, status: string) => {
       if (status === 'OK' && result?.routes?.[0]?.overview_polyline?.points) {
-        const decoded = decodePolyline(result.routes[0].overview_polyline.points);
-        setRoutePath(decoded);
+        setRoutePath(decodePolyline(result.routes[0].overview_polyline.points));
       }
     });
-  }, [driverLocation, isMapsLoaded, driverStatus, order?.address]);
+  }, [driverLocation, isMapsLoaded, order?.address]);
 
   const decodePolyline = (encoded: string): Array<{ lat: number; lng: number }> => {
     const points: Array<{ lat: number; lng: number }> = [];
@@ -260,6 +244,18 @@ export default function OrderDetail() {
     return points;
   };
 
+  // ─── Manual refresh ────────────────────────────────────────────────
+  const handleRefresh = async () => {
+    if (!orderId) return;
+    setIsRefreshing(true);
+    try {
+      const { data } = await supabase.from('orders').select('*').eq('id', orderId).single();
+      if (data) setOrder(buildOrderData(data));
+    } catch {}
+    setIsRefreshing(false);
+  };
+
+  // ─── Loading / Error states ────────────────────────────────────────
   if (isLoading) {
     return (
       <div className="min-h-screen bg-white flex items-center justify-center">
@@ -277,106 +273,75 @@ export default function OrderDetail() {
         <div className="text-center">
           <h2 className="text-xl font-bold text-[#121212] mb-2">Order Not Found</h2>
           <p className="text-[#64748B] mb-4">The order you're looking for doesn't exist.</p>
-          <Button
-            onClick={() => navigate("/customer/activity")}
-            className="bg-[#E11D48] hover:bg-[#BE123C] text-white font-bold uppercase"
-          >
-            Back to Activity
-          </Button>
+          <Button onClick={() => navigate("/customer/activity")} className="bg-[#E11D48] hover:bg-[#BE123C] text-white font-bold uppercase">Back to Activity</Button>
         </div>
       </div>
     );
   }
 
-  const getStatusColor = (status: string) => {
-    switch (status) {
-      case 'preparing':
-        return 'text-[#F59E0B] bg-[#FEF3C7]';
-      case 'ready':
-        return 'text-[#10B981] bg-[#D1FAE5]';
-      case 'confirmed':
-        return 'text-[#06B6D4] bg-[#CFFAFE]';
-      case 'on-the-way':
-        return 'text-[#3B82F6] bg-[#DBEAFE]';
-      case 'delivered':
-        return 'text-[#10B981] bg-[#D1FAE5]';
-      case 'cancelled':
-        return 'text-[#EF4444] bg-[#FEE2E2]';
-      default:
-        return 'text-[#64748B] bg-[#F1F5F9]';
-    }
-  };
-
-  const getStatusText = (status: string) => {
-    switch (status) {
-      case 'preparing':
-        return 'Preparing Your Order';
-      case 'ready':
-        return 'Ready for Pickup';
-      case 'confirmed':
-        return 'Ready for Delivery';
-      case 'on-the-way':
-        return 'On the Way';
-      case 'delivered':
-        return 'Delivered';
-      case 'cancelled':
-        return 'Cancelled';
-      default:
-        return status;
-    }
-  };
+  const workflow = statusWorkflow[order.status] || statusWorkflow['pending'];
+  const isActiveDelivery = ['confirmed', 'on-the-way'].includes(order.status);
 
   return (
     <div className="min-h-screen bg-white pb-6">
       {/* Header */}
-      <div className="sticky top-0 bg-white border-b-2 border-[#E2E8F0] px-5 py-4 z-10">
-        <div className="flex items-center gap-4">
-          <button
-            onClick={() => navigate("/customer/activity")}
-            className="p-2 hover:bg-[#F1F5F9] rounded-full transition-colors"
-          >
-            <ArrowLeft className="w-6 h-6 text-[#121212]" />
-          </button>
-          <div className="flex-1">
-            <h1 className="text-xl font-extrabold text-[#121212]">Order Details</h1>
-            <p className="text-sm text-[#64748B]">#{order.orderNumber}</p>
+      <div className="sticky top-0 bg-white border-b-2 border-[#E2E8F0] px-4 md:px-5 py-3 md:py-4 z-10">
+        <div className="flex items-center justify-between mb-2">
+          <div className="flex items-center gap-3">
+            <button onClick={() => navigate("/customer/activity")} className="p-2 hover:bg-[#F1F5F9] rounded-full transition-colors">
+              <ArrowLeft className="w-5 h-5 md:w-6 md:h-6 text-[#121212]" />
+            </button>
+            <div>
+              <h1 className="text-lg md:text-xl font-extrabold text-[#121212]">Order #{order.orderNumber}</h1>
+              <p className="text-xs text-[#64748B]">{order.date}</p>
+            </div>
           </div>
-          <button
-            onClick={() => refreshOrderFromSupabase(true)}
-            disabled={isRefreshing}
-            className="p-2 hover:bg-[#F1F5F9] rounded-full transition-colors disabled:opacity-50"
-            title="Refresh order details"
-          >
-            <RefreshCw className={`w-6 h-6 text-[#64748B] ${isRefreshing ? 'animate-spin' : ''}`} />
+          <button onClick={handleRefresh} disabled={isRefreshing} className="p-2 hover:bg-[#F1F5F9] rounded-full transition-colors disabled:opacity-50">
+            <RefreshCw className={`w-5 h-5 text-[#64748B] ${isRefreshing ? 'animate-spin' : ''}`} />
           </button>
+        </div>
+        <Badge className={`${statusColors[order.status]} text-xs`}>
+          {statusLabels[order.status]}
+        </Badge>
+
+        {/* Business-style horizontal stepper */}
+        <div className="mt-3 md:mt-4">
+          <p className="text-xs font-semibold text-[#64748B] mb-2">ORDER PROGRESS</p>
+          <div className="flex items-center gap-1 md:gap-2 overflow-x-auto pb-2">
+            {workflow.steps.map((step, idx) => (
+              <div key={idx} className="flex items-center flex-shrink-0">
+                <div
+                  className={`w-7 h-7 md:w-8 md:h-8 rounded-full flex items-center justify-center text-xs font-bold transition-all ${
+                    idx <= workflow.current
+                      ? 'bg-[#10B981] text-white'
+                      : 'bg-[#E2E8F0] text-[#64748B]'
+                  }`}
+                >
+                  {idx <= workflow.current ? '✓' : idx + 1}
+                </div>
+                {idx < workflow.steps.length - 1 && (
+                  <div
+                    className={`h-0.5 w-3 md:w-5 ml-1 md:ml-2 transition-all ${
+                      idx < workflow.current ? 'bg-[#10B981]' : 'bg-[#E2E8F0]'
+                    }`}
+                  />
+                )}
+              </div>
+            ))}
+          </div>
+          <div className="flex gap-0 overflow-x-auto pb-1">
+            {workflow.steps.map((step, idx) => (
+              <div key={idx} className="flex-shrink-0" style={{ width: `${100 / workflow.steps.length}%` }}>
+                <p className={`text-[10px] md:text-xs font-semibold truncate ${idx <= workflow.current ? 'text-[#121212]' : 'text-[#64748B]'}`}>{step}</p>
+              </div>
+            ))}
+          </div>
         </div>
       </div>
 
-      <div className="px-5 pt-6 space-y-6">
-        {/* Status Card */}
-        <Card className="p-5 border-2 border-[#E2E8F0]">
-          <div className="flex items-center justify-between mb-4">
-            <div className="flex items-center gap-3">
-              <div className="w-12 h-12 bg-[#F1F5F9] rounded-full flex items-center justify-center">
-                <Package className="w-6 h-6 text-[#E11D48]" />
-              </div>
-              <div>
-                <h3 className="font-bold text-[#121212]">{getStatusText(order.status)}</h3>
-                <p className="text-sm text-[#64748B]">{order.date}</p>
-              </div>
-            </div>
-            <span className={`inline-flex px-3 py-1.5 rounded-full text-xs font-bold ${getStatusColor(order.status)}`}>
-              {getStatusText(order.status)}
-            </span>
-          </div>
-          <div className="flex items-center gap-2 text-sm text-[#64748B]">
-            <Clock className="w-4 h-4" />
-            <span>Estimated: {order.estimatedTime}</span>
-          </div>
-        </Card>
-
-        {/* Live Delivery Tracking Map */}
-        {order.status === 'on-the-way' && isMapsLoaded && driverLocation && (
+      <div className="px-4 md:px-5 pt-4 space-y-4 md:space-y-5">
+        {/* Live Map */}
+        {isActiveDelivery && isMapsLoaded && driverLocation && (
           <Card className="border-2 border-[#3B82F6] overflow-hidden">
             <div className="bg-gradient-to-r from-[#3B82F6] to-[#2563EB] px-4 py-2.5 flex items-center justify-between">
               <div className="flex items-center gap-2">
@@ -389,194 +354,177 @@ export default function OrderDetail() {
               mapContainerStyle={{ width: '100%', height: '220px' }}
               center={driverLocation}
               zoom={15}
-              options={{
-                zoomControl: false,
-                fullscreenControl: false,
-                streetViewControl: false,
-                mapTypeControl: false,
-                gestureHandling: 'none',
-              }}
+              options={{ zoomControl: false, fullscreenControl: false, streetViewControl: false, mapTypeControl: false, gestureHandling: 'none' }}
             >
-              <MarkerF
-                position={driverLocation}
-                title="Driver"
-                icon={(() => {
-                  const g = (window as any)?.google;
-                  if (!g?.maps?.Size || !g?.maps?.Point) return undefined;
-                  return { url: tricycleIcon, scaledSize: new g.maps.Size(44, 44), anchor: new g.maps.Point(22, 22) };
-                })()}
-              />
+              <MarkerF position={driverLocation} title="Driver" icon={(() => {
+                const g = (window as any)?.google;
+                if (!g?.maps?.Size || !g?.maps?.Point) return undefined;
+                return { url: tricycleIcon, scaledSize: new g.maps.Size(44, 44), anchor: new g.maps.Point(22, 22) };
+              })()} />
               {(() => {
                 const coords = (order?.address || '').includes('|') ? order.address.split('|')[1] : (order?.address || '');
                 const m = coords.match(/(\d+\.\d+)\s*,\s*(\d+\.\d+)/);
                 if (!m) return null;
                 return (
-                <MarkerF
-                  position={{ lat: parseFloat(m[1]), lng: parseFloat(m[2]) }}
-                  title="Your delivery location"
-                  icon={{
+                  <MarkerF position={{ lat: parseFloat(m[1]), lng: parseFloat(m[2]) }} title="Your location" icon={{
                     url: 'data:image/svg+xml;charset=UTF-8,' + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="#E11D48" stroke="white" stroke-width="1"><path d="M12 2C8.13 2 5 5.13 5 9c0 4.95 6.1 11.53 6.36 11.81.36.39.92.39 1.28 0C13.9 20.53 20 13.95 20 9c0-3.87-3.13-7-8-7z"/><circle cx="12" cy="8.6" r="2.3" fill="#FFFFFF" stroke="none"/></svg>'),
                     scaledSize: new (window as any).google.maps.Size(32, 32),
                     anchor: new (window as any).google.maps.Point(16, 32),
-                  }}
-                />
-              );
+                  }} />
+                );
               })()}
               {routePath.length > 0 && (
-                <Polyline
-                  path={routePath}
-                  options={{ strokeColor: (driverStatus === 'on-the-way' || driverStatus === 'arrived' || driverStatus === 'accepted') ? '#10B981' : '#E11D48', strokeOpacity: 0.9, strokeWeight: 4, geodesic: true }}
-                />
+                <Polyline path={routePath} options={{ strokeColor: '#10B981', strokeOpacity: 0.9, strokeWeight: 4, geodesic: true }} />
               )}
             </GoogleMap>
             <div className="px-4 py-2.5 bg-white border-t border-[#E2E8F0] flex items-center justify-between">
-              <div>
-                <p className="text-xs font-semibold text-[#121212]">
-                  {(driverStatus === 'on-the-way' || driverStatus === 'arrived' || driverStatus === 'accepted') ? '🟢 Driver heading to restaurant' : '🔴 Driver delivering to you'}
-                </p>
-                {order?.driverName && (
-                  <p className="text-[10px] text-[#64748B]">{order.driverName}</p>
-                )}
-              </div>
+              <p className="text-xs font-semibold text-[#121212]">
+                {order.driverName && <span className="text-[#64748B]">Driver: {order.driverName} • </span>}
+                {order.status === 'confirmed' ? '🛵 Heading to restaurant' : '🟢 Delivering to you'}
+              </p>
               <div className="text-[10px] text-[#94A3B8]">● Live</div>
             </div>
           </Card>
         )}
 
-        {/* Restaurant Info */}
-        <Card className="p-5 border-2 border-[#E2E8F0]">
-          <div className="flex items-center gap-4">
-            <div className="w-16 h-16 rounded-xl overflow-hidden flex-shrink-0">
-              <ImageWithFallback
-                src={order.restaurantImage}
-                alt={order.restaurantName}
-                className="w-full h-full object-cover"
-              />
-            </div>
-            <div className="flex-1">
-              <h3 className="font-bold text-[#121212] mb-1">{order.restaurantName}</h3>
-              <div className="flex items-center gap-2 text-sm">
-                <span className={`px-2.5 py-1 rounded-full text-xs font-bold ${order.deliveryMode === 'delivery' ? 'bg-[#DBEAFE] text-[#3B82F6]' : 'bg-[#FEF3C7] text-[#F59E0B]'}`}>
-                  {order.deliveryMode === 'delivery' ? 'Delivery' : 'Pickup'}
-                </span>
-              </div>
-            </div>
-          </div>
-        </Card>
-
-        {/* Delivery Address */}
-        {order.deliveryMode === 'delivery' && (
-          <Card className="p-5 border-2 border-[#E2E8F0]">
-            <div className="flex items-start gap-3">
-              <MapPin className="w-5 h-5 text-[#E11D48] mt-0.5 flex-shrink-0" />
-              <div>
-                <h3 className="font-bold text-[#121212] mb-1">Delivery Address</h3>
-                <p className="text-[#64748B]">{order.address.split('|')[0].trim() || order.address}</p>
-              </div>
-            </div>
-          </Card>
-        )}
-
-        {/* Order Items */}
-        <Card className="p-5 border-2 border-[#E2E8F0]">
-          <h3 className="font-bold text-[#121212] mb-4">Order Items</h3>
-          <div className="space-y-4">
-            {order.items.map((item, index) => (
-              <div key={index} className="flex items-start gap-4 pb-4 border-b-2 border-[#F1F5F9] last:border-0 last:pb-0">
-                <div className="w-16 h-16 rounded-xl overflow-hidden flex-shrink-0">
-                  <ImageWithFallback
-                    src={item.image}
-                    alt={item.name}
-                    className="w-full h-full object-cover"
-                  />
-                </div>
-                <div className="flex-1">
-                  <h4 className="font-semibold text-[#121212] mb-1">{item.name}</h4>
-                  <p className="text-sm text-[#64748B] mb-2">Qty: {item.quantity}</p>
-                  {item.customizations && item.customizations.length > 0 && (
-                    <div className="space-y-1">
-                      {item.customizations.map((customization: any, idx: number) => (
-                        <div key={idx} className="text-xs text-[#64748B]">
-                          <span className="font-semibold">{customization.groupName}:</span> {customization.optionName}
-                          {customization.price > 0 && <span className="text-[#E11D48]"> +₱{customization.price}</span>}
-                        </div>
-                      ))}
-                    </div>
+        {/* Status Timeline — business style */}
+        <Card className="p-4 md:p-5 border-2 border-[#E2E8F0]">
+          <h3 className="font-bold text-[#121212] text-sm md:text-base mb-3">Status Updates</h3>
+          <div className="space-y-0">
+            {statusHistory.map((item, idx) => (
+              <div key={idx} className="flex items-start gap-3">
+                {/* Vertical line + circle */}
+                <div className="flex flex-col items-center">
+                  <div className={`w-6 h-6 md:w-7 md:h-7 rounded-full flex items-center justify-center text-[10px] md:text-xs font-bold shrink-0 ${
+                    item.done ? 'bg-[#10B981] text-white' : 'bg-[#E2E8F0] text-[#64748B]'
+                  }`}>
+                    {item.done ? '✓' : idx + 1}
+                  </div>
+                  {idx < statusHistory.length - 1 && (
+                    <div className={`w-0.5 h-5 ${item.done ? 'bg-[#10B981]' : 'bg-[#E2E8F0]'}`} />
                   )}
                 </div>
-                <div className="text-right">
-                  <p className="font-bold text-[#121212]">₱{(item.price * item.quantity).toFixed(2)}</p>
+                {/* Label */}
+                <div className="pt-0.5 pb-2">
+                  <p className={`text-sm font-semibold ${item.done ? 'text-[#121212]' : 'text-[#94A3B8]'}`}>
+                    {item.label}
+                  </p>
+                  {idx === workflow.current && (
+                    <p className="text-[10px] md:text-xs text-[#3B82F6] font-medium">Current</p>
+                  )}
                 </div>
               </div>
             ))}
           </div>
         </Card>
 
-        {/* Payment Details */}
-        <Card className="p-5 border-2 border-[#E2E8F0]">
-          <div className="flex items-center gap-3 mb-4">
-            <CreditCard className="w-5 h-5 text-[#E11D48]" />
-            <h3 className="font-bold text-[#121212]">Payment Method</h3>
-          </div>
-          <div className="flex items-center justify-between mb-6">
-            <span className="text-[#64748B]">{order.paymentMethod === 'cash' ? 'Cash on Delivery' : 'GCash (Prepaid)'}</span>
-            <span className="font-semibold text-[#121212] uppercase">{order.paymentMethod}</span>
-          </div>
-
-          <div className="space-y-3 pt-4 border-t-2 border-[#F1F5F9]">
-            <div className="flex justify-between text-[#64748B]">
-              <span>Subtotal</span>
-              <span>₱{order.subtotal.toFixed(2)}</span>
+        {/* Restaurant Info */}
+        <Card className="p-4 md:p-5 border-2 border-[#E2E8F0]">
+          <h3 className="font-bold text-[#121212] text-sm md:text-base mb-2">Restaurant</h3>
+          <div className="flex items-center gap-3">
+            <div className="w-12 h-12 md:w-14 md:h-14 rounded-xl overflow-hidden flex-shrink-0">
+              <ImageWithFallback src={order.restaurantImage} alt={order.restaurantName} className="w-full h-full object-cover" />
             </div>
-            <div className="flex justify-between text-[#64748B]">
-              <span>Delivery Fee</span>
-              <span>₱{order.deliveryFee.toFixed(2)}</span>
-            </div>
-            <div className="flex justify-between text-lg font-bold text-[#121212] pt-3 border-t-2 border-[#E2E8F0]">
-              <span>Total</span>
-              <span>₱{order.total.toFixed(2)}</span>
+            <div>
+              <p className="font-semibold text-[#121212] text-sm md:text-base">{order.restaurantName}</p>
+              <Badge className={`mt-1 text-[10px] md:text-xs ${order.deliveryMode === 'delivery' ? 'bg-[#DBEAFE] text-[#3B82F6]' : 'bg-[#FEF3C7] text-[#F59E0B]'}`}>
+                {order.deliveryMode === 'delivery' ? 'Delivery' : 'Pickup'}
+              </Badge>
             </div>
           </div>
         </Card>
 
-        {/* Additional Info */}
-        {order.needsCutlery && (
-          <Card className="p-4 border-2 border-[#E2E8F0] bg-[#F8FAFC]">
-            <p className="text-sm text-[#64748B] flex items-center gap-2">
-              <span className="text-base">🍴</span>
-              Cutlery requested
-            </p>
+        {/* Delivery Address */}
+        {order.deliveryMode === 'delivery' && (
+          <Card className="p-4 md:p-5 border-2 border-[#E2E8F0]">
+            <h3 className="font-bold text-[#121212] text-sm md:text-base mb-2">Delivery Address</h3>
+            <div className="flex items-start gap-2">
+              <MapPin className="w-4 h-4 text-[#E11D48] mt-0.5 flex-shrink-0" />
+              <p className="text-sm text-[#64748B]">{order.address.split('|')[0].trim() || order.address}</p>
+            </div>
           </Card>
         )}
 
-        {/* Rate the restaurant after a delivered order */}
+        {/* Order Items */}
+        <Card className="p-4 md:p-5 border-2 border-[#E2E8F0]">
+          <h3 className="font-bold text-[#121212] text-sm md:text-base mb-3">Items</h3>
+          <div className="space-y-2">
+            {order.items.map((item, index) => (
+              <div key={index} className="flex items-center justify-between p-2 md:p-3 bg-[#F8F9FA] rounded-xl">
+                <div className="min-w-0">
+                  <p className="font-semibold text-[#121212] text-sm truncate">{item.name}</p>
+                  <p className="text-xs text-[#64748B]">Qty: {item.quantity}</p>
+                  {item.customizations && item.customizations.length > 0 && (
+                    <div className="space-y-0.5 mt-1">
+                      {item.customizations.map((c: any, idx: number) => (
+                        <p key={idx} className="text-[10px] text-[#64748B]">
+                          {c.groupName}: {c.optionName}{c.price > 0 && <span className="text-[#E11D48]"> +₱{c.price}</span>}
+                        </p>
+                      ))}
+                    </div>
+                  )}
+                </div>
+                <p className="font-bold text-[#121212] text-sm flex-shrink-0">₱{(item.price * item.quantity).toFixed(2)}</p>
+              </div>
+            ))}
+          </div>
+        </Card>
+
+        {/* Payment */}
+        <Card className="p-4 md:p-5 border-2 border-[#E2E8F0]">
+          <div className="flex items-center gap-2 mb-3">
+            <CreditCard className="w-4 h-4 text-[#E11D48]" />
+            <h3 className="font-bold text-[#121212] text-sm md:text-base">Payment</h3>
+          </div>
+          <div className="flex items-center justify-between mb-4">
+            <span className="text-sm text-[#64748B]">{order.paymentMethod === 'cash' ? 'Cash on Delivery' : 'GCash (Prepaid)'}</span>
+            <Badge className={order.paymentMethod === 'gcash' ? 'bg-[#10B981] text-white text-xs' : 'bg-[#FEF3C7] text-[#F59E0B] text-xs'}>
+              {order.paymentMethod === 'gcash' ? 'GCash' : 'COD'}
+            </Badge>
+          </div>
+          <div className="space-y-2 pt-3 border-t-2 border-[#F1F5F9]">
+            <div className="flex justify-between text-sm text-[#64748B]">
+              <span>Subtotal</span>
+              <span>₱{order.subtotal.toFixed(2)}</span>
+            </div>
+            <div className="flex justify-between text-sm text-[#64748B]">
+              <span>Delivery Fee</span>
+              <span>₱{order.deliveryFee.toFixed(2)}</span>
+            </div>
+            <div className="flex justify-between text-base font-bold text-[#121212] pt-2 border-t-2 border-[#E2E8F0]">
+              <span>Total</span>
+              <span className="text-[#E11D48]">₱{order.total.toFixed(2)}</span>
+            </div>
+          </div>
+        </Card>
+
+        {/* Cutlery */}
+        {order.needsCutlery && (
+          <Card className="p-3 border-2 border-[#E2E8F0] bg-[#F8FAFC]">
+            <p className="text-sm text-[#64748B] flex items-center gap-2">🍴 Cutlery requested</p>
+          </Card>
+        )}
+
+        {/* Rate */}
         {order.status === 'delivered' && (
-          <Card className="p-5 border-2 border-[#E2E8F0]">
+          <Card className="p-4 md:p-5 border-2 border-[#E2E8F0]">
             {ratingSubmitted ? (
               <div className="text-center py-2">
-                <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-green-100 flex items-center justify-center text-3xl">🙏</div>
-                <h3 className="text-xl font-bold text-[#121212] mb-2">Thank you!</h3>
+                <div className="w-14 h-14 mx-auto mb-3 rounded-full bg-green-100 flex items-center justify-center text-2xl">🙏</div>
+                <h3 className="text-lg font-bold text-[#121212] mb-1">Thank you!</h3>
                 <p className="text-sm text-[#64748B]">Your rating for {order.restaurantName} has been saved.</p>
               </div>
             ) : (
               <>
-                <div className="flex items-center gap-3 mb-3">
+                <div className="flex items-center gap-2 mb-2">
                   <Star className="w-5 h-5 text-[#FFC107] fill-[#FFC107]" />
-                  <h3 className="font-bold text-[#121212]">Rate {order.restaurantName}</h3>
+                  <h3 className="font-bold text-[#121212] text-sm md:text-base">Rate {order.restaurantName}</h3>
                 </div>
-                <p className="text-sm text-[#64748B] mb-4">How was your order and delivery?</p>
-                <div className="flex justify-center gap-2 mb-4">
+                <p className="text-sm text-[#64748B] mb-3">How was your order and delivery?</p>
+                <div className="flex justify-center gap-2 mb-3">
                   {[1, 2, 3, 4, 5].map((star) => (
-                    <button
-                      key={star}
-                      onClick={() => setRating(star)}
-                      className="transition-transform hover:scale-110 focus:outline-none"
-                    >
-                      <Star
-                        className={`w-9 h-9 ${
-                          star <= rating ? 'fill-[#FFC107] text-[#FFC107]' : 'fill-[#E2E8F0] text-[#E2E8F0]'
-                        }`}
-                      />
+                    <button key={star} onClick={() => setRating(star)} className="transition-transform hover:scale-110">
+                      <Star className={`w-8 h-8 ${star <= rating ? 'fill-[#FFC107] text-[#FFC107]' : 'fill-[#E2E8F0] text-[#E2E8F0]'}`} />
                     </button>
                   ))}
                 </div>
@@ -586,17 +534,9 @@ export default function OrderDetail() {
                     if (!rating || !user?.id || !order.businessId) return;
                     setRatingSubmitting(true);
                     setRatingError(null);
-                    const { error } = await supabaseHelpers.rateBusiness({
-                      businessId: order.businessId,
-                      customerId: user.id,
-                      rating,
-                      orderId: order.id,
-                    });
+                    const { error } = await supabaseHelpers.rateBusiness({ businessId: order.businessId, customerId: user.id, rating, orderId: order.id });
                     setRatingSubmitting(false);
-                    if (error) {
-                      setRatingError('Failed to submit rating. Please try again.');
-                      return;
-                    }
+                    if (error) { setRatingError('Failed to submit rating.'); return; }
                     setRatingSubmitted(true);
                   }}
                   disabled={!rating || ratingSubmitting || !order.businessId}

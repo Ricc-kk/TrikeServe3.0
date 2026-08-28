@@ -36,7 +36,6 @@ import Account from "./components/customer/Account";
 import AccountManagement from "./components/customer/AccountManagement";
 import Profile from "./components/customer/Profile";
 import OrderDetail from "./components/customer/OrderDetail";
-import DeliveryTracker from "./components/customer/DeliveryTracker";
 import Favorites from "./components/customer/Favorites";
 import AdminDashboard from "./components/admin/AdminDashboard";
 import AdminUsers from "./components/admin/AdminUsers";
@@ -339,16 +338,7 @@ export const router = createBrowserRouter([
           <ProtectedRoute allowedRoles={['customer']}>
             <OrderDetail />
           </ProtectedRoute>
-        )
-      },
-      { 
-        path: "customer/delivery-tracker/:orderId", 
-        element: (
-          <ProtectedRoute allowedRoles={['customer']}>
-            <DeliveryTracker />
-          </ProtectedRoute>
-        )
-      },
+        )      }, 
       { 
         path: "customer/favorites", 
         element: (

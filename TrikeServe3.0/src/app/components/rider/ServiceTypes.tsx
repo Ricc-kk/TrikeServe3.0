@@ -4,6 +4,7 @@ import { ArrowLeft, Package, Users, Car } from "lucide-react";
 import { Button } from "../ui/button";
 import { Card } from "../ui/card";
 import { useAuth } from "../../contexts/AuthContext";
+import ActiveRideButton from "./ActiveRideButton";
 
 type ServiceCategory = 'rides' | 'delivery';
 type ServiceType = 'private' | 'shared' | 'delivery';
@@ -183,6 +184,7 @@ export default function ServiceTypes() {
           {isSaving ? 'Saving...' : 'Save Service Types'}
         </Button>
       </div>
+      <ActiveRideButton />
     </div>
   );
 }

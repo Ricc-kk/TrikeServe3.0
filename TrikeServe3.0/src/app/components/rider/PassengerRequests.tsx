@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { useNavigate } from "react-router";
-import { ArrowLeft, Navigation, Package, Users, Car, Clock, Check, X } from "lucide-react";
+import { ArrowLeft, Navigation, Package, Users, Car, Clock, Check, X, CheckCircle } from "lucide-react";
 import { GoogleMap, Marker, InfoWindow, Polyline, DirectionsRenderer } from "@react-google-maps/api";
 import { Button } from "../ui/button";
 import { Card } from "../ui/card";
@@ -10,6 +10,7 @@ import { supabaseHelpers } from "@/lib/supabase";
 import { supabase } from "../../../lib/supabase";
 import useMapLoader from "@/lib/mapLoader";
 import tricycleIcon from "../../../assets/0b76d1aa56b8ad6e15dd4efc8a0100b0ca5762a1.png";
+import ActiveRideButton from "./ActiveRideButton";
 
 interface PassengerRequest {
   id: string;
@@ -56,6 +57,9 @@ export default function PassengerRequests() {
   const [resolvedPickupCoords, setResolvedPickupCoords] = useState<{ lat: number; lng: number } | null>(null);
   const [previewMapCenter, setPreviewMapCenter] = useState<{ lat: number; lng: number }>({ lat: 14.5995, lng: 120.9842 });
   const { isLoaded: isMapsLoaded } = useMapLoader();
+  const [showAccepted, setShowAccepted] = useState(false);
+  const [showConfirmAccept, setShowConfirmAccept] = useState(false);
+  const [confirmRequest, setConfirmRequest] = useState<PassengerRequest | null>(null);
 
   const mapRideType = (rideType: string, pickupLocation?: string): PassengerRequest['type'] => {
     const normalized = (rideType || '').toLowerCase();
@@ -129,6 +133,19 @@ export default function PassengerRequests() {
       try {
         const { data: rideRequests } = await supabaseHelpers.getRideRequests({ status: 'pending' });
         const { data: waitingLobbies } = await supabaseHelpers.getWaitingLobbiesForDriver();
+        const missingNameIds = [...new Set(
+          (rideRequests || [])
+            .filter((req: any) => !req.customer_name && req.customer_id)
+            .map((req: any) => req.customer_id)
+        )];
+        const nameMap: Record<string, string> = {};
+        if (missingNameIds.length > 0) {
+          const { data: usersData } = await supabase
+            .from('users')
+            .select('id, name')
+            .in('id', missingNameIds);
+          (usersData || []).forEach((u: any) => { if (u.name) nameMap[u.id] = u.name; });
+        }
         const mappedRequests = (rideRequests || []).map((req: any) => ({
           id: req.id,
           type: mapRideType(req.ride_type, req.pickup_location),
@@ -137,7 +154,7 @@ export default function PassengerRequests() {
           payment: req.payment_method === 'GCASH' ? 'PREPAID' : 'COD',
           amount: Number(req.amount || 0),
           foodCost: Number(req.food_cost || 0),
-          customerName: req.customer_name || 'Customer',
+          customerName: req.customer_name || nameMap[req.customer_id] || 'Customer',
           customerPhoto: '👤',
           distance: '2.5 km',
           estimatedTime: '7 mins',
@@ -146,8 +163,6 @@ export default function PassengerRequests() {
           ...parseDeliveryTag(req.pickup_location),
           pickupAddress: req.pickup_address || undefined,
           dropoffAddress: req.dropoff_address || undefined,
-          // For deliveries, parse coordinates from address if lat/lng columns are empty
-          // Supports both old format ("lat, lng") and new format ("name|lat,lng")
           pickupLat: req.pickup_lat || undefined,
           pickupLng: req.pickup_lng || undefined,
           dropoffLat: req.dropoff_lat || (() => {
@@ -177,15 +192,12 @@ export default function PassengerRequests() {
             pickupLng: lobby.pickup_lng || undefined,
             dropoffLat: lobby.dropoff_lat || undefined,
             dropoffLng: lobby.dropoff_lng || undefined,
-            // The host's payment choice is stored on the lobby (COD = Cash, GCASH = Prepaid).
             payment: lobby.payment_method === 'COD' ? 'COD' : 'PREPAID',
-            // price_per_seat stores the total private-ride fare; each passenger
-            // pays fare ÷ passengers, but the driver earns the full fare.
             amount: Number(lobby.price_per_seat || 15),
             passengers: passengers.length,
             maxPassengers: Number(lobby.max_seats || 3),
-            customerName: passengers.length > 1 ? `${passengers.length} Passengers` : (passengers[0]?.name || 'Customer'),
-            customerPhoto: '🚲',
+            customerName: passengers.length > 1 ? passengers.map((p: any) => p.name || 'Passenger').join(', ') : (passengers[0]?.name || 'Customer'),
+            customerPhoto: 'shared',
             distance: '2.5 km',
             estimatedTime: '7 mins',
             customerId: lobby.customer_id,
@@ -194,7 +206,15 @@ export default function PassengerRequests() {
             created_at: lobby.created_at,
           } as PassengerRequest;
         });
-        setRequests([...mappedRequests, ...mappedLobbies]);
+        const seenOrderIds = new Set<string>();
+        const dedupedRequests = mappedRequests.filter((req: any) => {
+          if (req.orderId) {
+            if (seenOrderIds.has(req.orderId)) return false;
+            seenOrderIds.add(req.orderId);
+          }
+          return true;
+        });
+        setRequests([...dedupedRequests, ...mappedLobbies]);
       } catch (error) { console.error('❌ Error loading requests:', error); }
     };
     loadRequests();
@@ -219,18 +239,15 @@ export default function PassengerRequests() {
     const isDelivery = previewRequest.type === 'delivery';
     const DirectionsService = new (window as any).google.maps.DirectionsService();
 
-    // Set pickup coords for marker
     if (!isNaN(pLat) && !isNaN(pLng)) {
       setResolvedPickupCoords({ lat: pLat, lng: pLng });
       setPreviewMapCenter({ lat: pLat, lng: pLng });
     }
 
-    // If no pickup coords available, try geocoding the restaurant address
     const resolveAndRoute = (pickup: { lat: number; lng: number }) => {
       setResolvedPickupCoords(pickup);
       setPreviewMapCenter(pickup);
 
-      // Route 1: Driver → Pickup
       DirectionsService.route({
         origin: new (window as any).google.maps.LatLng(currentLocation.lat, currentLocation.lng),
         destination: new (window as any).google.maps.LatLng(pickup.lat, pickup.lng),
@@ -239,7 +256,6 @@ export default function PassengerRequests() {
         if (status === 'OK') setDirectionsResult(result);
       });
 
-      // Route 2 (delivery): Pickup → Dropoff
       if (isDelivery && !isNaN(dLat) && !isNaN(dLng)) {
         DirectionsService.route({
           origin: new (window as any).google.maps.LatLng(pickup.lat, pickup.lng),
@@ -254,7 +270,6 @@ export default function PassengerRequests() {
     if (!isNaN(pLat) && !isNaN(pLng)) {
       resolveAndRoute({ lat: pLat, lng: pLng });
     } else if (isDelivery) {
-      // Fallback: geocode the restaurant address using REST API
       const apiKey = import.meta.env.VITE_GOOGLE_MAPS_API_KEY || '';
       const address = previewRequest.pickupAddress || previewRequest.pickup;
       if (apiKey && address) {
@@ -289,9 +304,7 @@ export default function PassengerRequests() {
     }
     const acceptedRide = { ...request, passengerDetails, driverId: user.id, driverName: user.name, driverPlate: user.todaPlate, driverRating: '4.8', status: 'accepted', acceptedAt: new Date().toISOString(), eta: '5 mins' };
 
-    // Keep delivery order status in sync with the driver workflow.
     if (request.type === 'delivery' && (request.orderId || request.orderNumber)) {
-      // Update orders table directly
       if (request.orderId) {
         const { error: directErr } = await supabase
           .from('orders')
@@ -300,11 +313,17 @@ export default function PassengerRequests() {
         if (directErr) console.error('❌ Direct orders update failed:', directErr);
         else console.log('✅ Orders table updated to on-the-way (direct)');
       }
-      // Also try via helper as backup
       await supabaseHelpers.updateDeliveryOrderStatus(request.orderId, request.orderNumber, 'on-the-way');
+      if (request.id && !request.id.startsWith('lobby_')) {
+        await supabaseHelpers.updateRideRequest(request.id, { status: 'accepted', driver_id: user.id });
+      }
     }
 
-    navigate('/rider/active-ride', { state: { acceptedRide } });
+    setPreviewRequest(null);
+    setShowAccepted(true);
+    setTimeout(() => {
+      navigate('/rider/active-ride', { state: { acceptedRide } });
+    }, 2000);
   };
 
   const getServiceLabel = (type: string) => {
@@ -313,7 +332,6 @@ export default function PassengerRequests() {
   };
 
   const filteredRequests = requests.filter(r => selectedCategory === 'all' || r.type === selectedCategory);
-  // Drivers can SEE every request, but can only ACCEPT the ones matching their service types.
   const canAcceptRequest = (request: PassengerRequest) => (user?.serviceTypes || []).includes(request.type);
   const requestsMatchingServiceTypes = filteredRequests.filter(r => canAcceptRequest(r));
 
@@ -328,145 +346,206 @@ export default function PassengerRequests() {
 
   return (
     <div className="min-h-screen bg-[#F8F9FA] relative">
+      {/* Header */}
       <div className="bg-white border-b-2 border-[#CBD5E1] px-4 py-3 flex items-center gap-3">
         <Button variant="ghost" size="icon" onClick={() => navigate('/rider')}><ArrowLeft className="w-5 h-5" /></Button>
-        <div className="flex-1"><h1 className="text-xl font-extrabold text-[#E11D48]">Passenger Requests</h1></div>
+        <div className="flex-1"><h1 className="text-lg md:text-xl font-extrabold text-[#E11D48]">Passenger Requests</h1></div>
       </div>
-      <div className="p-4 space-y-3">
-        <div className="flex gap-2 mb-4 overflow-x-auto scrollbar-hide">
+
+      <div className="p-3 md:p-4 space-y-3">
+        {/* Filter Tabs */}
+        <div className="flex gap-2 mb-3 overflow-x-auto scrollbar-hide pb-1">
           {['all', 'shared', 'private', 'delivery'].map(cat => (
-            <button key={cat} onClick={() => setSelectedCategory(cat as any)} className={`px-4 py-2 rounded-full text-sm font-medium whitespace-nowrap transition-all ${selectedCategory === cat ? 'bg-[#E11D48] text-white' : 'bg-[#F1F5F9] text-[#64748B]'}`}>
-              {cat === 'all' ? 'All' : cat === 'shared' ? 'Share Ride' : cat === 'private' ? 'Private Ride' : 'Delivery'}
+            <button key={cat} onClick={() => setSelectedCategory(cat as any)} className={`px-3 md:px-4 py-1.5 md:py-2 rounded-full text-xs md:text-sm font-medium whitespace-nowrap transition-all ${selectedCategory === cat ? 'bg-[#E11D48] text-white shadow-md' : 'bg-[#F1F5F9] text-[#64748B]'}`}>
+              {cat === 'all' ? 'All' : cat === 'shared' ? '👥 Share' : cat === 'private' ? '👤 Private' : '📦 Delivery'}
             </button>
           ))}
         </div>
+
+        {/* Request Count */}
+        {sortedRequests.length > 0 && (
+          <p className="text-xs text-[#94A3B8] font-medium">{sortedRequests.length} request{sortedRequests.length !== 1 ? 's' : ''} available</p>
+        )}
+
+        {/* Request Cards */}
         {sortedRequests.map((request) => {
           const canAccept = canAcceptRequest(request);
           return (
-            <Card key={request.id} className={`p-4 border-2 transition-colors ${!canAccept ? 'bg-gray-50 opacity-80' : recommendedPickup && request.id === recommendedPickup.id ? 'bg-gradient-to-br from-green-50 to-emerald-50 border-green-400' : 'bg-white border-[#CBD5E1]'}`}>
-              <div className="flex items-start gap-3 mb-3">
-                <div className="text-4xl">{request.customerPhoto}</div>
-                <div className="flex-1">
-                  <div className="flex items-start justify-between mb-2">
-                    <div>
-                      <p className="font-bold">{request.customerName}</p>
-                      <div className="flex items-center gap-2 mt-1">
-                        <Badge className="bg-[#E11D48]">{getServiceLabel(request.type)}</Badge>
-                        {!canAccept && <Badge className="bg-gray-400 text-white">Not in your service types</Badge>}
-                      </div>
-                    </div>
-                    <div className="text-right"><p className="font-bold text-xl text-[#E11D48]">₱{request.amount}</p></div>
+            <Card key={request.id} className={`border-2 transition-all overflow-hidden ${
+              !canAccept ? 'bg-gray-50 opacity-70 border-gray-200' :
+              recommendedPickup && request.id === recommendedPickup.id ? 'bg-gradient-to-br from-green-50 to-emerald-50 border-green-400 shadow-md' :
+              'bg-white border-[#E2E8F0] shadow-sm'
+            }`}>
+              {/* Top: Type icon + Name + Amount */}
+              <div className="flex items-center justify-between px-4 pt-3 pb-2">
+                <div className="flex items-center gap-2.5">
+                  <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${
+                    request.type === 'delivery' ? 'bg-[#DBEAFE]' :
+                    request.type === 'shared' ? 'bg-[#FEF3C7]' : 'bg-[#F0FDF4]'
+                  }`}>
+                    {request.customerPhoto === 'shared' ? (
+                      <Users className="w-5 h-5 text-[#E11D48]" />
+                    ) : request.type === 'delivery' ? (
+                      <Package className="w-5 h-5 text-[#3B82F6]" />
+                    ) : (
+                      <span className="text-lg">👤</span>
+                    )}
                   </div>
-                  <div className="space-y-2 mb-3 text-sm">
-                    <div className="flex gap-2"><Navigation className="w-4 h-4 text-[#E11D48]" /><div className="flex-1"><p className="font-semibold">{request.pickup}</p></div></div>
-                    <div className="flex gap-2"><Navigation className="w-4 h-4 text-green-600" /><div className="flex-1"><p className="font-semibold">{request.dropoff}</p></div></div>
+                  <div className="min-w-0">
+                    <p className="font-bold text-[#121212] text-sm truncate">{request.customerName}</p>
+                    {request.type === 'shared' && request.passengerDetails && request.passengerDetails.length > 1 && (
+                      <p className="text-[10px] text-[#94A3B8] truncate">
+                        {request.passengerDetails.map((p: any) => p.name || 'Passenger').join(', ')}
+                      </p>
+                    )}
                   </div>
-                  <Button
-                    onClick={() => handleOpenPreview(request)}
-                    disabled={!canAccept}
-                    className={`w-full uppercase ${canAccept ? 'bg-[#E11D48] hover:bg-[#BE123C]' : 'bg-gray-300 text-gray-600 cursor-not-allowed'}`}
-                  >
-                    {canAccept ? (request.lobbyId ? 'View Lobby' : 'View & Accept') : 'Not in Your Service Types'}
-                  </Button>
                 </div>
+                <div className="text-right flex-shrink-0">
+                  <p className="font-extrabold text-lg text-[#E11D48]">₱{request.amount}</p>
+                  <Badge className={`text-[9px] border-0 ${
+                    request.type === 'delivery' ? 'bg-[#DBEAFE] text-[#3B82F6]' :
+                    request.type === 'shared' ? 'bg-[#FEF3C7] text-[#F59E0B]' : 'bg-[#F0FDF4] text-[#10B981]'
+                  }`}>
+                    {request.type === 'delivery' ? '📦 Delivery' : request.type === 'shared' ? '👥 Share' : '👤 Private'}
+                  </Badge>
+                </div>
+              </div>
+
+              {/* Pickup & Dropoff with connector */}
+              <div className="px-4 py-2">
+                <div className="flex items-stretch gap-2">
+                  <div className="flex flex-col items-center pt-1">
+                    <div className="w-2 h-2 rounded-full bg-green-500 shrink-0" />
+                    <div className="w-0.5 flex-1 bg-gray-200 my-0.5" />
+                    <div className="w-2 h-2 rounded-full bg-[#E11D48] shrink-0" />
+                  </div>
+                  <div className="flex-1 space-y-1.5 min-w-0">
+                    <div>
+                      <p className="text-[10px] text-green-600 font-bold uppercase">Pickup</p>
+                      <p className="text-xs font-semibold text-[#121212] truncate">{request.pickup}</p>
+                    </div>
+                    <div>
+                      <p className="text-[10px] text-[#E11D48] font-bold uppercase">Drop-off</p>
+                      <p className="text-xs font-semibold text-[#121212] truncate">{request.dropoff}</p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Action Button */}
+              <div className="px-4 pb-3 pt-1">
+                {!canAccept && (
+                  <Badge className="bg-gray-200 text-gray-500 text-[10px] mb-2">Not in your service types</Badge>
+                )}
+                <Button
+                  onClick={() => handleOpenPreview(request)}
+                  disabled={!canAccept}
+                  className={`w-full uppercase text-xs md:text-sm py-5 md:py-6 font-bold rounded-xl ${
+                    canAccept ? 'bg-[#E11D48] hover:bg-[#BE123C] shadow-lg shadow-rose-200' : 'bg-gray-300 text-gray-500 cursor-not-allowed'
+                  }`}
+                >
+                  {canAccept ? (request.lobbyId ? '👥 View Lobby' : '🛵 View & Accept') : 'Not Available'}
+                </Button>
               </div>
             </Card>
           );
         })}
-        {sortedRequests.length === 0 && <div className="text-center py-12"><Users className="w-10 h-10 text-[#94A3B8] mx-auto mb-4" /><p>No passenger requests</p></div>}
+
+        {sortedRequests.length === 0 && (
+          <div className="text-center py-16">
+            <Users className="w-12 h-12 text-[#CBD5E1] mx-auto mb-3" />
+            <p className="text-sm text-[#94A3B8] font-medium">No passenger requests</p>
+            <p className="text-xs text-[#CBD5E1] mt-1">New requests will appear here</p>
+          </div>
+        )}
       </div>
+
+      {/* Confirm Accept Popup */}
+      {showConfirmAccept && confirmRequest && (
+        <div className="fixed inset-0 bg-black/60 z-[2000] flex items-center justify-center">
+          <div className="bg-white rounded-3xl p-6 mx-6 text-center shadow-2xl animate-in fade-in zoom-in duration-300">
+            <div className="w-16 h-16 bg-rose-100 rounded-full flex items-center justify-center mx-auto mb-4">
+              <CheckCircle className="w-9 h-9 text-[#E11D48]" />
+            </div>
+            <h2 className="text-xl font-extrabold text-gray-900 mb-1">Accept this request?</h2>
+            <p className="text-gray-500 text-sm mb-1">
+              {confirmRequest.type === 'shared' ? 'Shared Ride' : confirmRequest.type === 'delivery' ? 'Delivery' : 'Private Ride'}
+            </p>
+            <p className="text-sm font-semibold text-gray-700 mb-1">{confirmRequest.pickup} → {confirmRequest.dropoff}</p>
+            <p className="text-lg font-bold text-[#E11D48] mb-4">₱{confirmRequest.amount}</p>
+            <div className="flex gap-3">
+              <Button onClick={() => { setShowConfirmAccept(false); setConfirmRequest(null); }} variant="outline" className="flex-1 border-gray-300 text-gray-600 uppercase">Cancel</Button>
+              <Button onClick={async () => { setShowConfirmAccept(false); setConfirmRequest(null); await handleAcceptRequest(confirmRequest); }} className="flex-1 bg-[#E11D48] hover:bg-[#BE123C] uppercase">Confirm</Button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Request Accepted Popup */}
+      {showAccepted && (
+        <div className="fixed inset-0 bg-black/60 z-[2000] flex items-center justify-center">
+          <div className="bg-white rounded-3xl p-8 mx-6 text-center shadow-2xl animate-in fade-in zoom-in duration-300">
+            <div className="w-20 h-20 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-4">
+              <CheckCircle className="w-12 h-12 text-green-600" />
+            </div>
+            <h2 className="text-2xl font-extrabold text-gray-900 mb-2">Request Accepted!</h2>
+            <p className="text-gray-500 text-sm">Opening your active ride...</p>
+          </div>
+        </div>
+      )}
+
+      {/* Preview Modal */}
       {previewRequest && (
         <div className="fixed inset-0 bg-black/50 z-[1000] flex items-end">
           <div className="bg-white w-full max-h-[90vh] rounded-t-3xl flex flex-col overflow-hidden">
-            <div className="bg-[#E11D48] text-white p-4 flex items-center justify-between"><h2 className="text-xl font-bold">Route Preview</h2><button onClick={() => setPreviewRequest(null)}><X className="w-6 h-6" /></button></div>
+            <div className="bg-[#E11D48] text-white px-4 py-3 flex items-center justify-between">
+              <h2 className="text-lg font-bold">Route Preview</h2>
+              <button onClick={() => setPreviewRequest(null)} className="p-1 hover:bg-white/20 rounded-lg"><X className="w-5 h-5" /></button>
+            </div>
             {isMapsLoaded ? (
-              <div className="w-full h-80">
-                <GoogleMap
-                  mapContainerStyle={{ width: '100%', height: '100%' }}
-                  center={previewMapCenter}
-                  zoom={14}
-                  options={{ zoomControl: false, streetViewControl: false, mapTypeControl: false }}
-                >
+              <div className="w-full h-64 md:h-80">
+                <GoogleMap mapContainerStyle={{ width: '100%', height: '100%' }} center={previewMapCenter} zoom={14} options={{ zoomControl: false, streetViewControl: false, mapTypeControl: false }}>
                   <Marker position={currentLocation} icon={createDriverMarkerIcon()} title="Your Location" />
-
-                  {resolvedPickupCoords && (
-                    <Marker
-                      position={resolvedPickupCoords}
-                      icon={createCustomerMarkerIcon()}
-                      title="Pickup (Restaurant)"
-                    />
-                  )}
-
+                  {resolvedPickupCoords && <Marker position={resolvedPickupCoords} icon={createCustomerMarkerIcon()} title="Pickup" />}
                   {previewRequest.dropoffLat && previewRequest.dropoffLng && (
-                    <Marker
-                      position={{ lat: Number(previewRequest.dropoffLat), lng: Number(previewRequest.dropoffLng) }}
-                      icon={createDropoffMarkerIcon()}
-                      title="Drop-off"
-                    />
+                    <Marker position={{ lat: Number(previewRequest.dropoffLat), lng: Number(previewRequest.dropoffLng) }} icon={createDropoffMarkerIcon()} title="Drop-off" />
                   )}
-
-                  {directionsResult && (
-                    <DirectionsRenderer
-                      directions={directionsResult}
-                      options={{
-                        suppressMarkers: true,
-                        polylineOptions: {
-                          strokeColor: "#10B981",
-                          strokeWeight: 5,
-                          strokeOpacity: 0.85
-                        }
-                      }}
-                    />
-                  )}
-                  {deliveryRouteResult && (
-                    <DirectionsRenderer
-                      directions={deliveryRouteResult}
-                      options={{
-                        suppressMarkers: true,
-                        polylineOptions: {
-                          strokeColor: "#E11D48",
-                          strokeWeight: 5,
-                          strokeOpacity: 0.85
-                        }
-                      }}
-                    />
-                  )}
+                  {directionsResult && <DirectionsRenderer directions={directionsResult} options={{ suppressMarkers: true, polylineOptions: { strokeColor: "#10B981", strokeWeight: 5, strokeOpacity: 0.85 } }} />}
+                  {deliveryRouteResult && <DirectionsRenderer directions={deliveryRouteResult} options={{ suppressMarkers: true, polylineOptions: { strokeColor: "#E11D48", strokeWeight: 5, strokeOpacity: 0.85 } }} />}
                 </GoogleMap>
               </div>
             ) : (
-              <div className="h-80 flex items-center justify-center"><p>Loading map...</p></div>
+              <div className="h-64 flex items-center justify-center"><p className="text-[#64748B]">Loading map...</p></div>
             )}
-            <div className="p-4 space-y-4">
-              <div className="space-y-2">
-                <div className="flex items-center gap-3 p-2 bg-green-50 rounded-lg">
-                  <div className="w-3 h-3 rounded-full bg-green-500" />
-                  <div className="flex-1 text-sm">
+            <div className="p-4 space-y-3">
+              <div className="flex items-stretch gap-2">
+                <div className="flex flex-col items-center pt-1">
+                  <div className="w-2.5 h-2.5 rounded-full bg-green-500 shrink-0" />
+                  <div className="w-0.5 flex-1 bg-gray-200 my-0.5" />
+                  <div className="w-2.5 h-2.5 rounded-full bg-[#E11D48] shrink-0" />
+                </div>
+                <div className="flex-1 space-y-2 min-w-0">
+                  <div className="p-2 bg-green-50 rounded-lg">
                     <p className="text-[10px] text-green-600 uppercase font-bold">Pickup</p>
-                    <p className="font-semibold">{previewRequest.pickup}</p>
+                    <p className="text-sm font-semibold">{previewRequest.pickup}</p>
+                  </div>
+                  <div className={`p-2 rounded-lg ${previewRequest.type === 'delivery' ? 'bg-red-50' : ''}`}>
+                    <p className={`text-[10px] uppercase font-bold ${previewRequest.type === 'delivery' ? 'text-[#E11D48]' : 'text-[#64748B]'}`}>
+                      {previewRequest.type === 'delivery' ? 'Deliver to Customer' : 'Drop-off'}
+                    </p>
+                    <p className="text-sm font-semibold">{previewRequest.dropoff}</p>
                   </div>
                 </div>
-                {previewRequest.type === 'delivery' && (
-                  <div className="flex items-center gap-3 p-2 bg-red-50 rounded-lg">
-                    <div className="w-3 h-3 rounded-full bg-[#E11D48]" />
-                    <div className="flex-1 text-sm">
-                      <p className="text-[10px] text-[#E11D48] uppercase font-bold">Deliver to Customer</p>
-                      <p className="font-semibold">{previewRequest.dropoff}</p>
-                    </div>
-                  </div>
-                )}
-                {previewRequest.type !== 'delivery' && (
-                  <div className="flex items-center gap-3 p-2">
-                    <Navigation className="w-4 h-4 text-[#E11D48]" />
-                    <div className="flex-1 text-sm"><p className="font-semibold">{previewRequest.dropoff}</p></div>
-                  </div>
-                )}
               </div>
-              <Button onClick={() => handleAcceptRequest(previewRequest)} className="w-full bg-[#E11D48] hover:bg-[#BE123C] uppercase h-12">Accept & Navigate</Button>
+              <Button onClick={() => { setConfirmRequest(previewRequest); setShowConfirmAccept(true); }} className="w-full bg-[#E11D48] hover:bg-[#BE123C] uppercase py-6 font-bold">Accept & Navigate</Button>
               <Button onClick={() => setPreviewRequest(null)} variant="outline" className="w-full border-[#E11D48] text-[#E11D48] uppercase">Cancel</Button>
             </div>
           </div>
         </div>
       )}
+
+      {/* Active Ride Floating Button */}
+      <ActiveRideButton />
     </div>
   );
 }

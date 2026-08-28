@@ -20,6 +20,7 @@ import { Card } from "../ui/card";
 import { Input } from "../ui/input";
 import { Badge } from "../ui/badge";
 import { useAuth } from "../../contexts/AuthContext";
+import ActiveRideButton from "./ActiveRideButton";
 
 export default function RiderProfile() {
   const navigate = useNavigate();
@@ -505,6 +506,7 @@ export default function RiderProfile() {
         {/* Bottom spacing for safe area */}
         <div className="h-8" />
       </div>
+      <ActiveRideButton />
     </div>
   );
 }
