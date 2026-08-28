@@ -98,12 +98,7 @@ export default function AdminSidebar({ isMobileMenuOpen, setIsMobileMenuOpen }: 
                   </p>
                 </div>
               </div>
-              <button
-                onClick={() => setIsMobileMenuOpen(false)}
-                className="lg:hidden p-2 hover:bg-[#F8F9FA] rounded-lg transition-all"
-              >
-                <X className="w-5 h-5 text-[#64748B]" />
-              </button>
+
             </div>
           </div>
 

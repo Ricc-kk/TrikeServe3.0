@@ -37,6 +37,7 @@ import { useAutoAccept } from "../../hooks/useAutoAccept";
 import { supabaseHelpers } from "@/lib/supabase";
 import tricycleIcon from "../../../assets/0b76d1aa56b8ad6e15dd4efc8a0100b0ca5762a1.png";
 import { supabase } from "../../../lib/supabase";
+import ActiveRideButton from "./ActiveRideButton";
 
 // Get Google Maps API Key from environment variable
 const GOOGLE_MAPS_API_KEY = import.meta.env.VITE_GOOGLE_MAPS_API_KEY || "";
@@ -1260,22 +1261,8 @@ export default function RiderDashboard() {
         </div>
       </div>
 
-      {/* Active Ride Floating Icon */}
-      {hasActiveRide && activeRideData && (
-        <div 
-          onClick={() => navigate('/rider/active-ride')}
-          className="fixed bottom-24 right-4 z-[1500] cursor-pointer animate-bounce hover:animate-none"
-        >
-          <div className="bg-[#E11D48] text-white rounded-full w-16 h-16 flex items-center justify-center shadow-2xl border-4 border-white hover:scale-110 transition-transform">
-            <div className="text-center">
-              <p className="text-2xl">{activeRideData.customerPhoto || '🚗'}</p>
-            </div>
-          </div>
-          <div className="absolute -top-1 -right-1 w-5 h-5 bg-[#10B981] rounded-full border-2 border-white flex items-center justify-center">
-            <div className="w-2 h-2 bg-white rounded-full animate-pulse" />
-          </div>
-        </div>
-      )}
+      {/* Active Ride Floating Button */}
+      <ActiveRideButton />
     </div>
   );
 }

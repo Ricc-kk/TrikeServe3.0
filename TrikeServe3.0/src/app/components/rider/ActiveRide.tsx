@@ -48,6 +48,8 @@ export default function ActiveRide() {
   const [mapCenter, setMapCenter] = useState<{ lat: number; lng: number }>({ lat: 14.6037, lng: 120.9793 });
 
   const isCompleting = useRef(false);
+  const [showRideComplete, setShowRideComplete] = useState(false);
+  const [resolvedName, setResolvedName] = useState<string | null>(null);
   const { isLoaded: isMapsLoaded } = useMapLoader();
 
   useEffect(() => {
@@ -74,6 +76,16 @@ export default function ActiveRide() {
       if (saved) try { setRideData(JSON.parse(saved)); } catch (e) {}
     }
   }, [location.state, user]);
+
+  // Resolve customer name from the users table if it's missing or generic
+  useEffect(() => {
+    if (!rideData || (rideData.customerName && rideData.customerName !== 'Customer')) return;
+    const cid = rideData.customerId;
+    if (!cid) return;
+    supabase.from('users').select('name').eq('id', cid).single()
+      .then(({ data }) => { if (data?.name) setResolvedName(data.name); })
+      .catch(() => {});
+  }, [rideData?.customerId, rideData?.customerName]);
 
   useEffect(() => { if (driverLocation) setMapCenter(driverLocation); }, [driverLocation]);
 
@@ -294,7 +306,10 @@ export default function ActiveRide() {
     }
 
     localStorage.removeItem('trikeserve_active_ride');
-    navigate('/rider');
+    setShowRideComplete(true);
+    setTimeout(() => {
+      navigate('/rider');
+    }, 2500);
     } finally {
       isCompleting.current = false;
     }
@@ -310,6 +325,21 @@ export default function ActiveRide() {
 
   return (
     <div className="min-h-screen bg-[#F8F9FA] pb-20 relative overflow-hidden">
+      {/* Ride Complete Popup */}
+      {showRideComplete && (
+        <div className="fixed inset-0 bg-black/60 z-[2000] flex items-center justify-center">
+          <div className="bg-white rounded-3xl p-8 mx-6 text-center shadow-2xl animate-in fade-in zoom-in duration-300">
+            <div className="w-20 h-20 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-4">
+              <CheckCircle className="w-12 h-12 text-green-600" />
+            </div>
+            <h2 className="text-2xl font-extrabold text-gray-900 mb-2">Ride Complete!</h2>
+            <p className="text-gray-500 text-sm">Thank you for completing this trip.</p>
+            <div className="mt-4 px-4 py-2 bg-green-50 rounded-xl">
+              <p className="text-green-700 font-bold text-lg">Great job! 🎉</p>
+            </div>
+          </div>
+        </div>
+      )}
       <div className="bg-[#E11D48] text-white p-4 shadow-md">
         <div className="flex items-center justify-between mb-4">
           <Button variant="ghost" size="icon" onClick={() => navigate('/rider')} className="text-white hover:bg-white/20"><ArrowLeft className="w-5 h-5" /></Button>
@@ -385,9 +415,20 @@ export default function ActiveRide() {
       <div className={isMinimized ? 'fixed bottom-0 left-0 right-0 bg-white rounded-t-3xl shadow-[0_-10px_40px_rgba(0,0,0,0.1)] p-4 h-[40vh] overflow-y-auto z-[1001]' : 'p-4 space-y-4'}>
         <Card className="p-4 border-2 border-gray-100 shadow-sm">
           <div className="flex gap-4 mb-3">
-            <div className="text-4xl">{rideData.customerPhoto}</div>
+            <div className="text-4xl">
+              {rideData.customerPhoto === 'shared' ? (
+                <Users className="w-10 h-10 text-[#E11D48]" />
+              ) : (
+                rideData.customerPhoto
+              )}
+            </div>
             <div className="flex-1">
-              <h2 className="font-bold text-lg">{rideData.customerName}</h2>
+              <h2 className="font-bold text-lg">{resolvedName || rideData.customerName}</h2>
+              {rideData.passengerDetails && rideData.passengerDetails.length > 1 && (
+                <p className="text-xs text-gray-500 mt-0.5">
+                  {rideData.passengerDetails.map((p: any) => p.name || 'Passenger').join(', ')}
+                </p>
+              )}
               <div className="flex gap-2 mt-1">
                 <Badge className="bg-[#E11D48]">₱{rideData.amount}</Badge>
                 <Badge variant="outline" className="text-gray-500">{rideData.payment === 'COD' ? 'Cash' : 'Prepaid'}</Badge>

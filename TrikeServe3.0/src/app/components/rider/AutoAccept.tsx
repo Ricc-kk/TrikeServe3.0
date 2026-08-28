@@ -6,6 +6,7 @@ import { Card } from "../ui/card";
 import { Badge } from "../ui/badge";
 import { useAuth } from "../../contexts/AuthContext";
 import { isAutoAcceptEnabled, setAutoAcceptEnabled } from "../../hooks/useAutoAccept";
+import ActiveRideButton from "./ActiveRideButton";
 
 export default function AutoAccept() {
   const navigate = useNavigate();
@@ -203,6 +204,7 @@ export default function AutoAccept() {
       </div>
 
       <div className="h-20" />
+      <ActiveRideButton />
     </div>
   );
 }

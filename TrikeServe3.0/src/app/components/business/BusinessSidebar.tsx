@@ -101,12 +101,7 @@ export default function BusinessSidebar({ isMobileMenuOpen, setIsMobileMenuOpen 
                 </div>
                 <span className="text-xl font-bold text-[#121212]">TRIKESERVE</span>
               </div>
-              <button 
-                onClick={() => setIsMobileMenuOpen(false)}
-                className="lg:hidden p-2 hover:bg-[#F8F9FA] rounded-lg transition-all"
-              >
-                <X className="w-5 h-5 text-[#64748B]" />
-              </button>
+
             </div>
           </div>
 
