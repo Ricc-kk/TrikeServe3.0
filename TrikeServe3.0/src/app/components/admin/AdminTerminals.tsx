@@ -1,9 +1,14 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import {
-  Plus, Edit2, Trash2, UserPlus, UserMinus, MapPin, Users, Menu, X
+  Plus, Edit2, Trash2, UserPlus, UserMinus, MapPin, Users, Menu, X, Navigation, Search, Loader2
 } from "lucide-react";
+import { GoogleMap, MarkerF, InfoWindow } from "@react-google-maps/api";
+import useMapLoader from "@/lib/mapLoader";
+import { autocompletePlacesNew, createPlacesSessionToken, fetchPlaceDetailsNew } from "@/lib/placesApi";
 import AdminSidebar from "./AdminSidebar";
 import { supabase } from "../../../utils/supabase";
+
+const GOOGLE_MAPS_API_KEY = import.meta.env.VITE_GOOGLE_MAPS_API_KEY || "";
 
 interface Terminal {
   id: string;
@@ -96,7 +101,15 @@ export default function AdminTerminals() {
   const [showForm, setShowForm] = useState(false);
   const [editTerminal, setEditTerminal] = useState<Terminal | null>(null);
   const [expandedId, setExpandedId] = useState<string | null>(null);
-  const [form, setForm] = useState({ name: "", boundary: "" });
+  const [form, setForm] = useState({ name: "", boundary: "", center_lat: 14.7294, center_lng: 120.9349, is_active: true });
+  const [showMapPicker, setShowMapPicker] = useState(false);
+  const { isLoaded: isMapsLoaded } = useMapLoader();
+  const formMapRef = useRef<google.maps.Map | null>(null);
+  const [mapSearchQuery, setMapSearchQuery] = useState("");
+  const [mapSearchResults, setMapSearchResults] = useState<any[]>([]);
+  const [isMapSearching, setIsMapSearching] = useState(false);
+  const [showMapSearchDropdown, setShowMapSearchDropdown] = useState(false);
+  const [placesSessionToken, setPlacesSessionToken] = useState<string>(() => createPlacesSessionToken());
 
   // Load from Supabase when available; fall back to localStorage data otherwise.
   useEffect(() => {
@@ -179,13 +192,13 @@ export default function AdminTerminals() {
   }
 
   function openCreate() {
-    setForm({ name: "", boundary: "" });
+    setForm({ name: "", boundary: "", center_lat: 14.7294, center_lng: 120.9349, is_active: true });
     setEditTerminal(null);
     setShowForm(true);
   }
 
   function openEdit(t: Terminal) {
-    setForm({ name: t.name, boundary: t.boundary });
+    setForm({ name: t.name, boundary: t.boundary, center_lat: t.center_lat, center_lng: t.center_lng, is_active: t.is_active });
     setEditTerminal(t);
     setShowForm(true);
   }
@@ -215,10 +228,78 @@ export default function AdminTerminals() {
     }
   }
 
+  const handleFormMapClick = useCallback((e: google.maps.MapMouseEvent) => {
+    if (!e.latLng) return;
+    const lat = e.latLng.lat();
+    const lng = e.latLng.lng();
+    setForm(f => ({ ...f, center_lat: lat, center_lng: lng }));
+  }, []);
+
+  const handleFormMapLoad = useCallback((map: google.maps.Map) => {
+    formMapRef.current = map;
+  }, []);
+
+  // Debounced Places autocomplete search for terminal location
+  useEffect(() => {
+    if (!mapSearchQuery.trim()) {
+      setMapSearchResults([]);
+      setShowMapSearchDropdown(false);
+      return;
+    }
+    if (!GOOGLE_MAPS_API_KEY) return;
+
+    setIsMapSearching(true);
+    const timer = setTimeout(async () => {
+      try {
+        const suggestions = await autocompletePlacesNew({
+          input: mapSearchQuery.trim(),
+          apiKey: GOOGLE_MAPS_API_KEY,
+          locationBias: { lat: form.center_lat, lng: form.center_lng },
+          restrictToCountry: "ph",
+          sessionToken: placesSessionToken,
+        });
+        setMapSearchResults(suggestions || []);
+        setShowMapSearchDropdown(true);
+      } catch (err) {
+        console.warn("[AdminTerminals] Autocomplete failed:", err);
+        setMapSearchResults([]);
+      } finally {
+        setIsMapSearching(false);
+      }
+    }, 350);
+    return () => clearTimeout(timer);
+  }, [mapSearchQuery]);
+
+  const handleMapSearchPick = async (suggestion: any) => {
+    setMapSearchQuery(suggestion.displayName);
+    setShowMapSearchDropdown(false);
+    if (!GOOGLE_MAPS_API_KEY || !suggestion.place_id) return;
+    try {
+      const place = await fetchPlaceDetailsNew({
+        placeId: suggestion.place_id,
+        apiKey: GOOGLE_MAPS_API_KEY,
+        sessionToken: placesSessionToken,
+      });
+      const lat = place?.lat;
+      const lng = place?.lng;
+      if (typeof lat === "number" && typeof lng === "number") {
+        setForm(f => ({ ...f, center_lat: lat, center_lng: lng }));
+        if (formMapRef.current) {
+          formMapRef.current.panTo({ lat, lng });
+          formMapRef.current.setZoom(16);
+        }
+      }
+    } catch (err) {
+      console.warn("[AdminTerminals] Place details failed:", err);
+    } finally {
+      setPlacesSessionToken(createPlacesSessionToken());
+    }
+  };
+
   function saveTerminal() {
     if (!form.name || !form.boundary) return;
     if (editTerminal) {
-      const updated: Terminal = { ...editTerminal, name: form.name, boundary: form.boundary };
+      const updated: Terminal = { ...editTerminal, name: form.name, boundary: form.boundary, center_lat: form.center_lat, center_lng: form.center_lng, is_active: form.is_active };
       persistTerminal(updated);
       setTerminals(ts => {
         const next = ts.map(t => (t.id === editTerminal.id ? updated : t));
@@ -230,10 +311,10 @@ export default function AdminTerminals() {
         id: `t_${Date.now()}`,
         name: form.name,
         boundary: form.boundary,
-        center_lat: 14.7294,
-        center_lng: 120.9349,
+        center_lat: form.center_lat,
+        center_lng: form.center_lng,
         radius_km: 2.0,
-        is_active: true,
+        is_active: form.is_active,
         rider_count: 0,
       };
       persistTerminal(newT);
@@ -244,6 +325,7 @@ export default function AdminTerminals() {
       });
     }
     setShowForm(false);
+    setShowMapPicker(false);
   }
 
   function deleteTerminal(id: string) {
@@ -291,7 +373,7 @@ export default function AdminTerminals() {
       saveStoredTerminals(next);
       return next;
     });
-    // Best-effort Supabase sync of the rider's terminal assignment.
+    // Best-effort Supabase sync of the rider's terminal assignment + update rider count.
     (async () => {
       try {
         const { error } = await supabase
@@ -299,6 +381,13 @@ export default function AdminTerminals() {
           .update({ terminal_id: terminalId, terminal_name: terminalName })
           .eq("id", riderId);
         if (error) console.error("Error assigning rider in Supabase:", error);
+        // Recount riders for this terminal and update rider_count in DB
+        const { data: riders } = await supabase
+          .from("users")
+          .select("id")
+          .eq("terminal_id", terminalId);
+        const count = (riders || []).length;
+        await supabase.from("terminals").update({ rider_count: count }).eq("id", terminalId);
       } catch (error) {
         console.error("Error assigning rider in Supabase:", error);
       }
@@ -318,7 +407,7 @@ export default function AdminTerminals() {
       saveStoredTerminals(next);
       return next;
     });
-    // Best-effort Supabase sync: clear the rider's terminal assignment.
+    // Best-effort Supabase sync: clear the rider's terminal assignment + update rider count.
     (async () => {
       try {
         const { error } = await supabase
@@ -326,6 +415,13 @@ export default function AdminTerminals() {
           .update({ terminal_id: null, terminal_name: null })
           .eq("id", riderId);
         if (error) console.error("Error unassigning rider in Supabase:", error);
+        // Recount remaining riders for this terminal
+        const { data: riders } = await supabase
+          .from("users")
+          .select("id")
+          .eq("terminal_id", terminalId);
+        const count = (riders || []).length;
+        await supabase.from("terminals").update({ rider_count: count }).eq("id", terminalId);
       } catch (error) {
         console.error("Error unassigning rider in Supabase:", error);
       }
@@ -334,14 +430,16 @@ export default function AdminTerminals() {
 
   return (
     <div className="min-h-screen bg-[#F8F9FA] flex">
-      {/* Sidebar Navigation */}
-      <AdminSidebar
-        isMobileMenuOpen={isMobileMenuOpen}
-        setIsMobileMenuOpen={setIsMobileMenuOpen}
-      />
+      {/* Sidebar Navigation - hidden when map picker is open */}
+      {!showMapPicker && (
+        <AdminSidebar
+          isMobileMenuOpen={isMobileMenuOpen}
+          setIsMobileMenuOpen={setIsMobileMenuOpen}
+        />
+      )}
 
       {/* Main Content */}
-      <div className="flex-1 lg:ml-64">
+      <div className={`flex-1 ${!showMapPicker ? 'lg:ml-64' : ''}`}>
         {/* Top Header */}
         <div className="bg-white border-b-2 border-[#E2E8F0] px-5 lg:px-8 py-4 lg:py-5 sticky top-0 z-50">
           <div className="flex items-center justify-between gap-4">
@@ -509,6 +607,62 @@ export default function AdminTerminals() {
                   />
                 </div>
               ))}
+
+              {/* Terminal Location on Map */}
+              <div>
+                <label className="text-xs font-semibold uppercase tracking-wide text-[#64748B] block mb-1">
+                  Terminal Location
+                </label>
+                <div
+                  className="w-full h-40 bg-[#F8F9FA] border-2 border-[#CBD5E1] rounded-xl overflow-hidden cursor-pointer relative"
+                  onClick={() => setShowMapPicker(true)}
+                >
+                  {isMapsLoaded ? (
+                    <GoogleMap
+                      mapContainerStyle={{ width: '100%', height: '100%' }}
+                      center={{ lat: form.center_lat, lng: form.center_lng }}
+                      zoom={15}
+                      options={{
+                        zoomControl: false,
+                        fullscreenControl: false,
+                        streetViewControl: false,
+                        mapTypeControl: false,
+                        scrollwheel: false,
+                        draggable: false,
+                      }}
+                    >
+                      <MarkerF position={{ lat: form.center_lat, lng: form.center_lng }} />
+                    </GoogleMap>
+                  ) : (
+                    <div className="w-full h-full flex items-center justify-center">
+                      <p className="text-xs text-[#64748B]">Loading map...</p>
+                    </div>
+                  )}
+                  <div className="absolute inset-0 flex items-center justify-center">
+                    <span className="bg-white/90 px-3 py-1 rounded-full text-xs font-semibold text-[#121212] shadow">
+                      📍 Tap to change location
+                    </span>
+                  </div>
+                </div>
+                <p className="text-xs text-[#94A3B8] mt-1">
+                  Lat: {form.center_lat.toFixed(4)}, Lng: {form.center_lng.toFixed(4)}
+                </p>
+              </div>
+
+              {/* Active/Inactive Toggle */}
+              <div className="flex items-center justify-between p-3 bg-[#F8F9FA] rounded-xl">
+                <div>
+                  <p className="text-sm font-semibold text-[#121212]">Active Terminal</p>
+                  <p className="text-xs text-[#64748B]">Visible to customers for pickup</p>
+                </div>
+                <button
+                  onClick={() => setForm(f => ({ ...f, is_active: !f.is_active }))}
+                  className={`relative w-12 h-7 rounded-full transition-colors ${form.is_active ? 'bg-[#10B981]' : 'bg-[#CBD5E1]'}`}
+                >
+                  <span className={`absolute top-0.5 left-0.5 w-6 h-6 bg-white rounded-full shadow transition-transform ${form.is_active ? 'translate-x-5' : ''}`} />
+                </button>
+              </div>
+
               <div className="flex gap-3 pt-2">
                 <button
                   onClick={() => setShowForm(false)}
@@ -522,6 +676,109 @@ export default function AdminTerminals() {
                 >
                   Save
                 </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Full-screen Map Picker */}
+      {showMapPicker && (
+        <div className="fixed inset-0 z-[500] bg-white flex flex-col">
+          <div className="bg-white border-b border-[#E2E8F0] px-4 py-3 flex items-center justify-between gap-3">
+            <button onClick={() => { setShowMapPicker(false); setShowMapSearchDropdown(false); setMapSearchQuery(""); }} className="active:scale-90 flex-shrink-0">
+              <X className="w-6 h-6 text-[#121212]" />
+            </button>
+            {/* Search Bar */}
+            <div className="flex-1 relative">
+              <div className="flex items-center gap-2 px-3 py-2 bg-[#F8F9FA] border-2 border-[#E2E8F0] rounded-xl">
+                <Search className="w-4 h-4 text-[#64748B] flex-shrink-0" />
+                <input
+                  type="text"
+                  value={mapSearchQuery}
+                  onChange={(e) => {
+                    setMapSearchQuery(e.target.value);
+                    if (e.target.value.length > 0) setShowMapSearchDropdown(true);
+                    else setShowMapSearchDropdown(false);
+                  }}
+                  onFocus={() => { if (mapSearchQuery.trim()) setShowMapSearchDropdown(true); }}
+                  placeholder="Search location..."
+                  className="flex-1 text-sm font-semibold text-[#121212] placeholder:text-[#94A3B8] placeholder:font-normal outline-none bg-transparent"
+                />
+                {isMapSearching ? (
+                  <Loader2 className="w-4 h-4 text-[#64748B] animate-spin flex-shrink-0" />
+                ) : (
+                  mapSearchQuery && (
+                    <button onClick={() => { setMapSearchQuery(""); setMapSearchResults([]); setShowMapSearchDropdown(false); }} className="flex-shrink-0">
+                      <X className="w-4 h-4 text-[#64748B]" />
+                    </button>
+                  )
+                )}
+              </div>
+              {/* Search Results Dropdown */}
+              {showMapSearchDropdown && (
+                <div className="absolute top-full left-0 right-0 mt-2 bg-white border-2 border-[#E2E8F0] rounded-xl shadow-xl max-h-60 overflow-y-auto z-[600]">
+                  {mapSearchResults.length > 0 ? (
+                    mapSearchResults.map((result: any, index: number) => (
+                      <button
+                        key={result.place_id || index}
+                        onClick={() => handleMapSearchPick(result)}
+                        className="w-full p-3 border-b border-[#E2E8F0] last:border-b-0 hover:bg-[#F8F9FA] active:bg-[#F1F5F9] transition-colors text-left"
+                      >
+                        <div className="flex items-center gap-3">
+                          <div className="w-8 h-8 bg-[#F8F9FA] rounded-full flex items-center justify-center flex-shrink-0">
+                            <MapPin className="w-4 h-4 text-[#64748B]" />
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <p className="font-semibold text-sm text-[#121212] truncate">{result.displayName}</p>
+                            {result.secondaryText && (
+                              <p className="text-xs text-[#64748B] truncate">{result.secondaryText}</p>
+                            )}
+                          </div>
+                        </div>
+                      </button>
+                    ))
+                  ) : (
+                    <div className="p-3">
+                      <p className="text-sm text-[#64748B] text-center">
+                        {isMapSearching ? "Searching..." : !GOOGLE_MAPS_API_KEY ? "Search unavailable" : "No results found"}
+                      </p>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+            <button
+              onClick={() => setShowMapPicker(false)}
+              className="px-4 py-1.5 bg-[#E11D48] text-white text-sm font-bold rounded-lg flex-shrink-0"
+            >
+              Done
+            </button>
+          </div>
+          <div className="flex-1 relative">
+            <GoogleMap
+              mapContainerStyle={{ width: '100%', height: '100%' }}
+              center={{ lat: form.center_lat, lng: form.center_lng }}
+              zoom={15}
+              onClick={handleFormMapClick}
+              onLoad={handleFormMapLoad}
+              options={{
+                zoomControl: true,
+                fullscreenControl: false,
+                streetViewControl: false,
+                mapTypeControl: false,
+              }}
+            >
+              <MarkerF position={{ lat: form.center_lat, lng: form.center_lng }} />
+            </GoogleMap>
+            {/* Center crosshair */}
+            <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-full pointer-events-none">
+              <MapPin className="w-8 h-8 text-[#E11D48] drop-shadow-lg" />
+            </div>
+            <div className="absolute bottom-4 left-4 right-4">
+              <div className="bg-white/95 backdrop-blur rounded-xl shadow-lg p-3 text-center">
+                <p className="text-sm font-semibold text-[#121212]">Tap anywhere to set terminal location</p>
+                <p className="text-xs text-[#64748B]">Current: {form.center_lat.toFixed(4)}, {form.center_lng.toFixed(4)}</p>
               </div>
             </div>
           </div>

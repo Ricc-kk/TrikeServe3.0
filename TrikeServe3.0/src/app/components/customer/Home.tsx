@@ -272,6 +272,7 @@ export default function CustomerHome() {
    const [driverStatusPopup, setDriverStatusPopup] = useState<{ status: string; message: string } | null>(null);
    const [showValidationError, setShowValidationError] = useState(false);
    const [showSameLocationError, setShowSameLocationError] = useState(false);
+   const [showCancelConfirm, setShowCancelConfirm] = useState(false);
    const [rideCompletedPopup, setRideCompletedPopup] = useState(false);
    const [completionPopupType, setCompletionPopupType] = useState<'ride' | 'delivery'>('ride');
    const [showRatingModal, setShowRatingModal] = useState(false);
@@ -299,6 +300,9 @@ export default function CustomerHome() {
      backendRouteStatus: 'idle',
    });
     const [mapsBlocked, setMapsBlocked] = useState<string | null>(null);
+   const [terminals, setTerminals] = useState<{ id: string; name: string; boundary: string; center_lat: number; center_lng: number }[]>([]);
+   const [showTerminalPicker, setShowTerminalPicker] = useState(false);
+   const [selectedTerminalId, setSelectedTerminalId] = useState<string | null>(null);
    const mapRef = useRef<any>(null);
    const hasManualPickupSelectionRef = useRef(false);
    const unsubscribeRef = useRef<(() => void) | null>(null);
@@ -376,6 +380,17 @@ export default function CustomerHome() {
       setPickup('Current Location');
     }
   }, [currentLocation]);
+
+  // Load terminals from Supabase for pickup selection
+  useEffect(() => {
+    supabase.from('terminals').select('id, name, boundary, center_lat, center_lng, is_active')
+      .then(({ data, error }) => {
+        if (!error && data) {
+          setTerminals(data.filter((t: any) => t.is_active !== false));
+        }
+      })
+      .catch(() => {});
+  }, []);
 
   // Reverse geocode pickup coords whenever Maps loads or coords change
   useEffect(() => {
@@ -739,7 +754,7 @@ export default function CustomerHome() {
         resetCustomerRideVisuals();
       }
 
-        if (normalizedStatus && normalizedStatus !== 'pending') {
+        if (normalizedStatus && normalizedStatus !== 'pending' && normalizedStatus !== 'cancelled') {
         const statusDisplayMap: { [key: string]: string } = {
           'on-the-way': 'Your driver is on the way to pick you up! 🚗',
           'arrived': 'Your driver has arrived! 📍',
@@ -1117,7 +1132,7 @@ export default function CustomerHome() {
        }
 
       // Check for other driver status updates (for popup messages)
-       if (realtimeStatus && realtimeStatus !== 'pending' && realtimeStatus !== 'completed') {
+       if (realtimeStatus && realtimeStatus !== 'pending' && realtimeStatus !== 'completed' && realtimeStatus !== 'cancelled') {
         const statusDisplayMap: { [key: string]: string } = {
           'on-the-way': 'Your driver is on the way to pick you up! 🚗',
           'arrived': 'Your driver has arrived! 📍',
@@ -1367,6 +1382,13 @@ export default function CustomerHome() {
   const handleBookRide = async () => {
     if (!selectedVehicle) return;
     
+    // Validate pickup terminal is selected (for private rides)
+    if (selectedVehicle === 'special' && !selectedTerminalId) {
+      alert('Please select a pickup terminal first.');
+      setShowTerminalPicker(true);
+      return;
+    }
+
     // Validate pickup and dropoff locations
     if (!pickup.trim() || !dropoff.trim()) {
       setShowValidationError(true);
@@ -1441,6 +1463,7 @@ export default function CustomerHome() {
            dropoff_lng: dropoffCoords?.lng || null,
            status: 'pending',
            ride_type: 'special',
+           terminal_id: selectedTerminalId || null,
            payment_method: paymentMethod === 'GCASH' ? 'GCASH' : 'COD',
            amount: getPrice(),
            passenger_count: passengerCount,
@@ -1570,6 +1593,7 @@ export default function CustomerHome() {
     setDropoffCoords(null);
     setRoutePath([]);
     setDriverLocation(null);
+    setSelectedTerminalId(null);
     setDriverRoutePath([]);
     setSelectedMarker(null);
     setLocationPreview(null);
@@ -1831,22 +1855,11 @@ export default function CustomerHome() {
                     Pick up location
                   </label>
                   
-                  {/* Current Location */}
+                  {/* Terminal Pickup Selection */}
                   <Card
                     className="p-3 border-2 border-[#E2E8F0] shadow-sm cursor-pointer hover:border-[#E11D48] transition-colors"
                     onClick={() => {
-                      setActiveLocationInput('pickup');
-                      setLocationPreview(
-                        pickupCoords
-                          ? {
-                              lat: pickupCoords.lat,
-                              lng: pickupCoords.lng,
-                              name: pickup || 'Pickup Location',
-                              fullAddress: pickupAddress || pickup || 'Current location',
-                            }
-                          : null
-                      );
-                      setShowLocationPicker(true);
+                      setShowTerminalPicker(true);
                     }}
                   >
                     <div className="flex items-start gap-3">
@@ -1854,8 +1867,12 @@ export default function CustomerHome() {
                         <MapPin className="w-4 h-4 text-[#121212]" />
                       </div>
                       <div className="flex-1 min-w-0">
-                        <p className="font-bold text-sm text-[#121212] mb-0.5">{pickup}</p>
-                        <p className="text-xs text-[#64748B] truncate">{pickupAddress}</p>
+                        <p className="font-bold text-sm text-[#121212] mb-0.5">
+                          {selectedTerminalId ? (terminals.find(t => t.id === selectedTerminalId)?.name || pickup || 'Pickup Location') : 'Select Terminal'}
+                        </p>
+                        <p className="text-xs text-[#64748B] truncate">
+                          {selectedTerminalId ? (terminals.find(t => t.id === selectedTerminalId)?.boundary || pickupAddress || 'Terminal location') : 'Choose a terminal as your pickup point'}
+                        </p>
                       </div>
                       <button className="mt-0.5 flex-shrink-0">
                         <ChevronDown className="w-4 h-4 text-[#64748B]" />
@@ -2033,7 +2050,7 @@ export default function CustomerHome() {
                     {openingChat ? 'Opening...' : 'Chat'}
                   </Button>
                   <Button
-                    onClick={handleCancelRide}
+                    onClick={() => setShowCancelConfirm(true)}
                     variant="outline"
                     className="text-red-600 border-red-300 hover:bg-red-50 h-10"
                   >
@@ -2243,6 +2260,93 @@ export default function CustomerHome() {
           </Link>
         </div>
       </div>
+
+      {/* Terminal Picker Modal */}
+      {showTerminalPicker && (
+        <div className="fixed inset-0 z-[2000] bg-white flex flex-col">
+          <div className="bg-white border-b-2 border-[#E2E8F0] px-4 py-4 sticky top-0 z-10">
+            <div className="flex items-center justify-between">
+              <div>
+                <h2 className="text-lg font-bold text-[#121212]">Select Pickup Terminal</h2>
+                <p className="text-xs text-[#64748B]">Choose a terminal as your pickup point</p>
+              </div>
+              <button
+                onClick={() => setShowTerminalPicker(false)}
+                className="w-8 h-8 rounded-full bg-[#F8F9FA] flex items-center justify-center"
+              >
+                <X className="w-5 h-5 text-[#64748B]" />
+              </button>
+            </div>
+          </div>
+          <div className="flex-1 overflow-y-auto p-4 space-y-3">
+            {terminals.length === 0 ? (
+              <div className="text-center py-12">
+                <MapPin className="w-12 h-12 text-[#CBD5E1] mx-auto mb-3" />
+                <p className="text-sm font-semibold text-[#64748B]">No terminals available</p>
+                <p className="text-xs text-[#94A3B8] mt-1">Please try again later</p>
+              </div>
+            ) : (
+              terminals.map((terminal) => (
+                <div
+                  key={terminal.id}
+                  onClick={() => {
+                    setPickup(terminal.name);
+                    setPickupAddress(terminal.boundary);
+                    setPickupCoords({ lat: terminal.center_lat, lng: terminal.center_lng });
+                    setPickupMarker({ lat: terminal.center_lat, lng: terminal.center_lng });
+                    setSelectedTerminalId(terminal.id);
+                    setShowTerminalPicker(false);
+                    hasManualPickupSelectionRef.current = true;
+                  }}
+                  className={`p-4 rounded-xl border-2 cursor-pointer transition-all active:scale-[0.98] ${
+                    selectedTerminalId === terminal.id
+                      ? 'border-[#E11D48] bg-[#FFF1F2]'
+                      : 'border-[#E2E8F0] bg-white hover:border-[#E11D48]'
+                  }`}
+                >
+                  <div className="flex items-start gap-3">
+                    <div className={`w-10 h-10 rounded-full flex items-center justify-center flex-shrink-0 ${
+                      selectedTerminalId === terminal.id ? 'bg-[#E11D48]' : 'bg-[#DBEAFE]'
+                    }`}>
+                      <span className="text-lg">🚏</span>
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2">
+                        <p className="font-bold text-sm text-[#121212]">{terminal.name}</p>
+                        {selectedTerminalId === terminal.id && (
+                          <span className="text-[10px] font-bold text-[#E11D48] bg-[#FFF1F2] px-2 py-0.5 rounded-full">
+                            SELECTED
+                          </span>
+                        )}
+                      </div>
+                      <p className="text-xs text-[#64748B] mt-0.5">📍 {terminal.boundary}</p>
+                      {isMapsLoaded && (
+                        <div className="mt-2 rounded-lg overflow-hidden border border-[#E2E8F0]" style={{ height: 120 }}>
+                          <GoogleMap
+                            mapContainerStyle={{ width: '100%', height: '100%' }}
+                            center={{ lat: terminal.center_lat, lng: terminal.center_lng }}
+                            zoom={16}
+                            options={{
+                              zoomControl: false,
+                              fullscreenControl: false,
+                              streetViewControl: false,
+                              mapTypeControl: false,
+                              scrollwheel: false,
+                              draggable: false,
+                            }}
+                          >
+                            <MarkerF position={{ lat: terminal.center_lat, lng: terminal.center_lng }} />
+                          </GoogleMap>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              ))
+            )}
+          </div>
+        </div>
+      )}
 
       {/* Location Picker Modal */}
       {showLocationPicker && (
@@ -2567,7 +2671,7 @@ export default function CustomerHome() {
             <h3 className="text-xl font-bold text-[#121212] mb-2">Finding a Driver...</h3>
             <p className="text-[#64748B] mb-6">Please wait while we find you a nearby driver</p>
             <Button
-              onClick={handleCancelRide}
+              onClick={() => setShowCancelConfirm(true)}
               variant="outline"
               className="w-full"
             >
@@ -2604,6 +2708,7 @@ export default function CustomerHome() {
           passengerCount={passengerCount}
           pricePerSeat={privateRidePrice}
           paymentMethod={paymentMethod}
+          selectedTerminalId={selectedTerminalId}
           onLobbyLoaded={(lobbyId) => {
             // Persist the active lobby as soon as it opens so the return-to-ride
             // button works even before a driver accepts.
@@ -2706,6 +2811,37 @@ export default function CustomerHome() {
            </div>
          </div>
        )}
+
+      {/* Cancel Ride Confirmation Popup */}
+      {showCancelConfirm && (
+        <div className="fixed inset-0 bg-black/50 z-[3500] flex items-center justify-center p-4">
+          <div className="bg-white w-full max-w-sm rounded-2xl shadow-2xl overflow-hidden">
+            <div className="p-6 text-center">
+              <div className="w-16 h-16 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                <span className="text-3xl">⚠️</span>
+              </div>
+              <h3 className="text-xl font-bold text-[#121212] mb-2">Cancel Ride?</h3>
+              <p className="text-sm text-[#64748B] mb-6">
+                Are you sure you want to cancel this ride request? Your driver may already be on the way.
+              </p>
+              <div className="flex gap-3">
+                <button
+                  onClick={() => setShowCancelConfirm(false)}
+                  className="flex-1 py-3 border-2 border-[#E2E8F0] text-[#64748B] font-bold uppercase text-sm rounded-xl active:scale-95"
+                >
+                  Go Back
+                </button>
+                <button
+                  onClick={() => { setShowCancelConfirm(false); handleCancelRide(); }}
+                  className="flex-1 py-3 bg-[#EF4444] hover:bg-[#DC2626] text-white font-bold uppercase text-sm rounded-xl active:scale-95"
+                >
+                  Yes, Cancel
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
      </div>
    );
  }

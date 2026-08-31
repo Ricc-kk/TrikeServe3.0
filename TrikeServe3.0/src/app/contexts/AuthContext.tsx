@@ -21,6 +21,8 @@ export interface User {
   isOnline?: boolean;
   serviceTypes?: string[];
   currentSeats?: number;
+  terminalId?: string;
+  terminalName?: string;
   // Business specific
   businessName?: string;
   businessAddress?: string;
@@ -254,6 +256,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         currentSeats: foundUser.current_seats || foundUser.currentSeats || 0,
         pickupLocation: foundUser.pickup_location || foundUser.pickupLocation,
         dropoffLocation: foundUser.dropoff_location || foundUser.dropoffLocation,
+        terminalId: foundUser.terminal_id || foundUser.terminalId,
+        terminalName: foundUser.terminal_name || foundUser.terminalName,
       };
 
       // For business users without restaurantId, fetch it from Supabase

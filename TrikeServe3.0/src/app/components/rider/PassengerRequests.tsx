@@ -43,6 +43,7 @@ interface PassengerRequest {
     joinedAt: string;
   }>;
   maxPassengers?: number;
+  terminalId?: string | null;
 }
 
 export default function PassengerRequests() {
@@ -128,6 +129,28 @@ export default function PassengerRequests() {
     return { url: 'data:image/svg+xml;charset=UTF-8,' + encodeURIComponent(svg), scaledSize: new google.maps.Size(40, 40), anchor: new google.maps.Point(20, 40) } as any;
   };
 
+  // Get driver's terminal info for filtering - fetch fresh from Supabase to avoid stale localStorage
+  const [driverTerminalId, setDriverTerminalId] = useState<string | null>(user?.terminalId || null);
+
+  // Always fetch fresh terminal assignment from DB on mount
+  useEffect(() => {
+    if (!user?.id) return;
+    supabase.from('users').select('terminal_id, terminal_name').eq('id', user.id).single()
+      .then(({ data }) => {
+        if (data?.terminal_id) {
+          setDriverTerminalId(data.terminal_id);
+          // Also update localStorage so other pages stay fresh
+          const stored = JSON.parse(localStorage.getItem('trikeserve_current_user') || '{}');
+          if (!stored.terminalId) {
+            stored.terminalId = data.terminal_id;
+            stored.terminalName = data.terminal_name;
+            localStorage.setItem('trikeserve_current_user', JSON.stringify(stored));
+          }
+        }
+      })
+      .catch(() => {});
+  }, [user?.id]);
+
   useEffect(() => {
     const loadRequests = async () => {
       try {
@@ -207,14 +230,24 @@ export default function PassengerRequests() {
           } as PassengerRequest;
         });
         const seenOrderIds = new Set<string>();
-        const dedupedRequests = mappedRequests.filter((req: any) => {
+        const dedupedRequests = mappedRequests.map((req: any) => {
+          const originalReq = (rideRequests || []).find((r: any) => r.id === req.id);
+          return { ...req, terminalId: originalReq?.terminal_id || null };
+        }).filter((req: any) => {
           if (req.orderId) {
             if (seenOrderIds.has(req.orderId)) return false;
             seenOrderIds.add(req.orderId);
           }
           return true;
         });
-        setRequests([...dedupedRequests, ...mappedLobbies]);
+
+        // Add terminal info to shared ride lobbies too
+        const lobbysWithTerminal = mappedLobbies.map((req: any) => {
+          const originalLobby = (waitingLobbies || []).find((l: any) => l.id === req.lobbyId);
+          return { ...req, terminalId: originalLobby?.terminal_id || null };
+        });
+
+        setRequests([...dedupedRequests, ...lobbysWithTerminal]);
       } catch (error) { console.error('❌ Error loading requests:', error); }
     };
     loadRequests();
@@ -222,7 +255,7 @@ export default function PassengerRequests() {
     const lobbySub = supabase.channel('lobbies').on('postgres_changes', { event: '*', schema: 'public', table: 'shared_ride_lobbies' }, () => loadRequests()).subscribe();
     const interval = setInterval(loadRequests, 3000);
     return () => { clearInterval(interval); supabase.removeChannel(rideSub); supabase.removeChannel(lobbySub); };
-  }, [user?.id]);
+  }, [user?.id, driverTerminalId]);
 
   useEffect(() => {
     if (!('geolocation' in navigator)) return;
@@ -332,7 +365,15 @@ export default function PassengerRequests() {
   };
 
   const filteredRequests = requests.filter(r => selectedCategory === 'all' || r.type === selectedCategory);
-  const canAcceptRequest = (request: PassengerRequest) => (user?.serviceTypes || []).includes(request.type);
+  const isWrongTerminal = (request: PassengerRequest) => {
+    if (!driverTerminalId || !request.terminalId) return false; // No restriction if either has no terminal
+    return request.terminalId !== driverTerminalId;
+  };
+  const canAcceptRequest = (request: PassengerRequest) => {
+    if (!(user?.serviceTypes || []).includes(request.type)) return false;
+    if (isWrongTerminal(request)) return false;
+    return true;
+  };
   const requestsMatchingServiceTypes = filteredRequests.filter(r => canAcceptRequest(r));
 
   const recommendedPickup = requestsMatchingServiceTypes.filter(r => r.type === 'private' && r.pickupLat && r.pickupLng).reduce<null | (PassengerRequest & { __distance: number; __eta: number })>((best, r) => {
@@ -370,6 +411,7 @@ export default function PassengerRequests() {
         {/* Request Cards */}
         {sortedRequests.map((request) => {
           const canAccept = canAcceptRequest(request);
+          const wrongTerminal = isWrongTerminal(request);
           return (
             <Card key={request.id} className={`border-2 transition-all overflow-hidden ${
               !canAccept ? 'bg-gray-50 opacity-70 border-gray-200' :
@@ -434,7 +476,10 @@ export default function PassengerRequests() {
 
               {/* Action Button */}
               <div className="px-4 pb-3 pt-1">
-                {!canAccept && (
+                {wrongTerminal && (
+                  <Badge className="bg-orange-100 text-orange-600 text-[10px] mb-2 border border-orange-200">🚏 Different Terminal</Badge>
+                )}
+                {!wrongTerminal && !canAccept && (
                   <Badge className="bg-gray-200 text-gray-500 text-[10px] mb-2">Not in your service types</Badge>
                 )}
                 <Button
@@ -444,7 +489,7 @@ export default function PassengerRequests() {
                     canAccept ? 'bg-[#E11D48] hover:bg-[#BE123C] shadow-lg shadow-rose-200' : 'bg-gray-300 text-gray-500 cursor-not-allowed'
                   }`}
                 >
-                  {canAccept ? (request.lobbyId ? '👥 View Lobby' : '🛵 View & Accept') : 'Not Available'}
+                  {wrongTerminal ? '🚫 Wrong Terminal' : canAccept ? (request.lobbyId ? '👥 View Lobby' : '🛵 View & Accept') : 'Not Available'}
                 </Button>
               </div>
             </Card>
