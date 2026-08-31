@@ -36,8 +36,6 @@ export default function RiderProfile() {
     phone: user?.phone || "",
     todaPlate: user?.todaPlate || "",
     licenseNumber: user?.licenseNumber || "",
-    pickupLocation: user?.pickupLocation || "",
-    dropoffLocation: user?.dropoffLocation || "",
   });
 
   const handleSave = async () => {
@@ -414,53 +412,6 @@ export default function RiderProfile() {
               </p>
             </div>
 
-            {/* Pickup Location */}
-            <div>
-              <label className="text-xs font-semibold text-[#64748B] uppercase tracking-wide mb-2 block">
-                Default Pickup Location <span className="text-[#E11D48]">*</span>
-              </label>
-              {isEditing ? (
-                <Input
-                  value={formData.pickupLocation}
-                  onChange={(e) => setFormData({ ...formData, pickupLocation: e.target.value })}
-                  className="w-full"
-                  placeholder="e.g., Tagalog Terminal, Valenzuela City"
-                  required
-                />
-              ) : (
-                <div className="flex items-start gap-2">
-                  <MapPin className="w-4 h-4 text-[#E11D48] mt-1 flex-shrink-0" />
-                  <p className="text-base text-[#121212]">
-                    {user.pickupLocation || "Not set"}
-                  </p>
-                </div>
-              )}
-              <p className="text-xs text-[#94A3B8] mt-1">Your usual starting point or home base</p>
-            </div>
-
-            {/* Dropoff Location */}
-            <div>
-              <label className="text-xs font-semibold text-[#64748B] uppercase tracking-wide mb-2 block">
-                Default Drop-off Location <span className="text-[#E11D48]">*</span>
-              </label>
-              {isEditing ? (
-                <Input
-                  value={formData.dropoffLocation}
-                  onChange={(e) => setFormData({ ...formData, dropoffLocation: e.target.value })}
-                  className="w-full"
-                  placeholder="e.g., Barangay Hall, Tagalog"
-                  required
-                />
-              ) : (
-                <div className="flex items-start gap-2">
-                  <MapPin className="w-4 h-4 text-[#10B981] mt-1 flex-shrink-0" />
-                  <p className="text-base text-[#121212]">
-                    {user.dropoffLocation || "Not set"}
-                  </p>
-                </div>
-              )}
-              <p className="text-xs text-[#94A3B8] mt-1">Your common destination or service area</p>
-            </div>
           </div>
         </Card>
 
