@@ -51,6 +51,7 @@ interface ShareRideLobbyProps {
   passengerCount?: number;
   pricePerSeat?: number;
   paymentMethod?: 'COD' | 'GCASH';
+  selectedTerminalId?: string | null;
   onDriverFound: (lobbyId: string) => void;
   onLobbyLoaded?: (lobbyId: string) => void;
   onClose: (status?: string) => void;
@@ -67,6 +68,7 @@ export default function ShareRideLobby({
   passengerCount = 1,
   pricePerSeat = 15,
   paymentMethod = 'GCASH',
+  selectedTerminalId,
   onDriverFound,
   onLobbyLoaded,
   onClose
@@ -665,6 +667,7 @@ export default function ShareRideLobby({
         max_seats: 3,
         price_per_seat: pricePerSeat,
         payment_method: paymentMethod,
+        terminal_id: selectedTerminalId || null,
         status: 'waiting'
       };
 

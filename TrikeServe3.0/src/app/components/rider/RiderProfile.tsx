@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useNavigate, Link } from "react-router";
 import {
   ArrowLeft, 
@@ -15,6 +15,9 @@ import {
   X,
   LogOut
 } from "lucide-react";
+import { GoogleMap, MarkerF } from "@react-google-maps/api";
+import useMapLoader from "@/lib/mapLoader";
+import { supabase } from "../../../utils/supabase";
 import { Button } from "../ui/button";
 import { Card } from "../ui/card";
 import { Input } from "../ui/input";
@@ -48,6 +51,46 @@ export default function RiderProfile() {
     
     setIsSaving(false);
   };
+
+  const [terminalData, setTerminalData] = useState<{ name: string; lat: number; lng: number; boundary: string } | null>(null);
+  const { isLoaded: isMapsLoaded } = useMapLoader();
+
+  // Fetch terminal details from DB - always check Supabase for fresh terminal assignment
+  useEffect(() => {
+    if (!user?.id) return;
+    // First check if user has terminal_id in localStorage
+    const terminalId = user.terminalId;
+    if (terminalId) {
+      supabase.from('terminals').select('name, center_lat, center_lng, boundary').eq('id', terminalId).single()
+        .then(({ data }) => {
+          if (data) {
+            setTerminalData({ name: data.name, lat: data.center_lat || 14.7294, lng: data.center_lng || 120.9349, boundary: data.boundary || '' });
+          }
+        })
+        .catch(() => {});
+    } else {
+      // No terminalId in localStorage - fetch fresh from DB in case it was assigned after login
+      supabase.from('users').select('terminal_id, terminal_name').eq('id', user.id).single()
+        .then(({ data }) => {
+          if (data?.terminal_id) {
+            // Update localStorage with fresh terminal info
+            const stored = JSON.parse(localStorage.getItem('trikeserve_current_user') || '{}');
+            stored.terminalId = data.terminal_id;
+            stored.terminalName = data.terminal_name;
+            localStorage.setItem('trikeserve_current_user', JSON.stringify(stored));
+            // Fetch terminal details
+            return supabase.from('terminals').select('name, center_lat, center_lng, boundary').eq('id', data.terminal_id).single();
+          }
+          return null;
+        })
+        .then(({ data }) => {
+          if (data) {
+            setTerminalData({ name: data.name, lat: data.center_lat || 14.7294, lng: data.center_lng || 120.9349, boundary: data.boundary || '' });
+          }
+        })
+        .catch(() => {});
+    }
+  }, [user?.id, user?.terminalId]);
 
   const handleCancel = () => {
     setFormData({
@@ -293,6 +336,49 @@ export default function RiderProfile() {
             </div>
           </div>
         </Card>
+
+        {/* Terminal Assignment */}
+        {(user.terminalId || terminalData) && (
+          <Card className="p-5 border-0 shadow-md">
+            <h2 className="text-lg font-bold text-[#121212] mb-4 flex items-center gap-2">
+              <MapPin className="w-5 h-5 text-[#E11D48]" />
+              Assigned Terminal
+            </h2>
+            <div className="bg-[#FFF1F2] border-2 border-[#E11D48]/20 rounded-xl p-4 mb-4">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 bg-[#E11D48] rounded-full flex items-center justify-center">
+                  <span className="text-white text-lg">🚏</span>
+                </div>
+                <div>
+                  <p className="font-bold text-[#121212] text-lg">{user.terminalName || terminalData?.name}</p>
+                  {terminalData?.boundary && (
+                    <p className="text-sm text-[#64748B]">{terminalData.boundary}</p>
+                  )}
+                </div>
+              </div>
+            </div>
+            {/* Terminal Map */}
+            {terminalData && isMapsLoaded && (
+              <div className="rounded-xl overflow-hidden border-2 border-[#E2E8F0]" style={{ height: 200 }}>
+                <GoogleMap
+                  mapContainerStyle={{ width: '100%', height: '100%' }}
+                  center={{ lat: terminalData.lat, lng: terminalData.lng }}
+                  zoom={15}
+                  options={{
+                    zoomControl: false,
+                    fullscreenControl: false,
+                    streetViewControl: false,
+                    mapTypeControl: false,
+                    scrollwheel: false,
+                    draggable: false,
+                  }}
+                >
+                  <MarkerF position={{ lat: terminalData.lat, lng: terminalData.lng }} />
+                </GoogleMap>
+              </div>
+            )}
+          </Card>
+        )}
 
         {/* Operating Locations */}
         <Card className="p-5 border-0 shadow-md">
