@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from "react";
-import { Search, MapPin, Users, User as UserIcon, ChevronDown, X, Clock, CreditCard, Utensils, Search as SearchIcon, User, Navigation, MessageCircle, Bell, Bike, Home as HomeIcon, ShoppingCart, ClipboardList, Star } from "lucide-react";
+import { Search, MapPin, Users, User as UserIcon, ChevronDown, X, Clock, Utensils, Search as SearchIcon, User, Navigation, MessageCircle, Bell, Bike, Home as HomeIcon, ShoppingCart, ClipboardList, Star } from "lucide-react";
 import { Link, useNavigate } from "react-router";
 import { Button } from "../ui/button";
 import { Card } from "../ui/card";
@@ -257,7 +257,7 @@ export default function CustomerHome() {
   const [showBookingConfirm, setShowBookingConfirm] = useState(false);
   const [showSharedRides, setShowSharedRides] = useState(false);
   const [showShareLobby, setShowShareLobby] = useState(false);
-  const [paymentMethod, setPaymentMethod] = useState<'COD' | 'GCASH'>('GCASH');
+  const [paymentMethod] = useState<'COD'>('COD');
   const [activeRide, setActiveRide] = useState<any>(null);
   const [rideStatus, setRideStatus] = useState<'searching' | 'driver-found' | 'picking-up' | 'in-transit' | null>(null);
    const [isSearchMinimized, setIsSearchMinimized] = useState(false);
@@ -608,7 +608,6 @@ export default function CustomerHome() {
         setDropoffAddress(rideData.dropoffAddress);
         setDropoffCoords(rideData.dropoffCoords || null);
         setSelectedVehicle(rideData.vehicleType);
-        setPaymentMethod(rideData.paymentMethod);
         setCurrentRequestId(restoredRequestId);
         if (rideData.activeRide) {
           setActiveRide(rideData.activeRide);
@@ -2084,8 +2083,7 @@ export default function CustomerHome() {
                 <div className="flex items-center gap-3">
                   <div className="flex-1">
                     <p className="text-[10px] text-[#64748B] uppercase font-semibold">Fare</p>
-                    <p className="text-xl font-bold text-[#E11D48]">₱{getPrice()}</p>
-                    <p className="text-[10px] text-[#94A3B8]">{paymentMethod === 'COD' ? '💵 Cash' : '💳 Prepaid'}</p>
+                    <p className="text-xl font-bold text-[#E11D48]">₱{getPrice()}</p>                     <p className="text-[10px] text-[#94A3B8]">💵 Cash</p>
                   </div>
                   <Button
                     variant="outline"
@@ -2650,33 +2648,13 @@ export default function CustomerHome() {
             {/* Payment Method */}
             <div className="mb-6">
               <p className="text-sm font-semibold text-[#64748B] mb-3">Payment Method</p>
-              <div className="grid grid-cols-2 gap-3">
-                <button
-                  onClick={() => setPaymentMethod('GCASH')}
-                  className={`p-4 border-2 rounded-xl transition-all ${
-                    paymentMethod === 'GCASH'
-                      ? 'border-[#E11D48] bg-[#FFF1F2]'
-                      : 'border-[#E2E8F0]'
-                  }`}
-                >
-                  <div className="flex flex-col items-center gap-2">
-                    <CreditCard className="w-6 h-6 text-[#0066FF]" />
-                    <span className="font-semibold text-[#121212]">GCash</span>
-                  </div>
-                </button>
-                <button
-                  onClick={() => setPaymentMethod('COD')}
-                  className={`p-4 border-2 rounded-xl transition-all ${
-                    paymentMethod === 'COD'
-                      ? 'border-[#E11D48] bg-[#FFF1F2]'
-                      : 'border-[#E2E8F0]'
-                  }`}
-                >
+              <div className="grid grid-cols-1 gap-3">
+                <div className="p-4 border-2 rounded-xl border-[#E11D48] bg-[#FFF1F2]">
                   <div className="flex flex-col items-center gap-2">
                     <span className="text-2xl">💵</span>
                     <span className="font-semibold text-[#121212]">Cash</span>
                   </div>
-                </button>
+                </div>
               </div>
             </div>
 

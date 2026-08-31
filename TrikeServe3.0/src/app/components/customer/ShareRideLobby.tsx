@@ -50,7 +50,7 @@ interface ShareRideLobbyProps {
   dropoffCoords?: { lat: number; lng: number } | null;
   passengerCount?: number;
   pricePerSeat?: number;
-  paymentMethod?: 'COD' | 'GCASH';
+  paymentMethod?: 'COD';
   selectedTerminalId?: string | null;
   onDriverFound: (lobbyId: string) => void;
   onLobbyLoaded?: (lobbyId: string) => void;
@@ -67,7 +67,7 @@ export default function ShareRideLobby({
   dropoffCoords,
   passengerCount = 1,
   pricePerSeat = 15,
-  paymentMethod = 'GCASH',
+  paymentMethod = 'COD',
   selectedTerminalId,
   onDriverFound,
   onLobbyLoaded,

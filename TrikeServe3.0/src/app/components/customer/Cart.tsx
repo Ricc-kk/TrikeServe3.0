@@ -22,10 +22,11 @@ export default function Cart() {
   const [checkoutRestaurant, setCheckoutRestaurant] = useState<any>(null);
   const [deliveryFee, setDeliveryFee] = useState(35); // Admin-set base delivery fee (default until loaded)
   const [hasSelectedAddress, setHasSelectedAddress] = useState(false);
-  const [paymentMethod, setPaymentMethod] = useState<"cash" | "gcash">("cash");
+  const [paymentMethod] = useState<"cash">("cash");
   const [needsCutlery, setNeedsCutlery] = useState(false);
   const [showOrderConfirmation, setShowOrderConfirmation] = useState(false);
   const [showMapSelector, setShowMapSelector] = useState(false);
+  const [showRemoveConfirm, setShowRemoveConfirm] = useState(false);
   const [placedOrderNumber, setPlacedOrderNumber] = useState<string | null>(null);
   const [selectedAddress, setSelectedAddress] = useState({
     name: "Select Delivery Address",
@@ -54,9 +55,14 @@ export default function Cart() {
   };
 
   const removeSelectedRestaurants = () => {
+    setShowRemoveConfirm(true);
+  };
+
+  const confirmRemoveRestaurants = () => {
     selectedRestaurants.forEach(id => removeRestaurant(id));
     setSelectedRestaurants([]);
     setIsManageMode(false);
+    setShowRemoveConfirm(false);
   };
 
   const openCheckout = (restaurant: any) => {
@@ -455,6 +461,30 @@ export default function Cart() {
             </Link>
           </div>
         </div>
+
+        {/* Remove Confirmation Modal */}
+        {showRemoveConfirm && (
+          <div className="fixed inset-0 bg-black/60 z-[2000] flex items-center justify-center p-4">
+            <Card className="bg-white p-6 max-w-sm w-full" onClick={(e) => e.stopPropagation()}>
+              <h3 className="text-xl font-bold text-[#121212] text-center mb-2">Remove Item?</h3>
+              <p className="text-[#64748B] text-center mb-6">Are you sure you want to remove items from cart?</p>
+              <div className="space-y-3">
+                <button
+                  onClick={confirmRemoveRestaurants}
+                  className="w-full py-4 bg-[#E11D48] hover:bg-[#BE123C] text-white font-bold rounded-2xl uppercase active:scale-95 transition-transform"
+                >
+                  Remove
+                </button>
+                <button
+                  onClick={() => setShowRemoveConfirm(false)}
+                  className="w-full py-4 bg-[#F8F9FA] text-[#64748B] font-bold rounded-2xl uppercase active:scale-95 transition-transform"
+                >
+                  Cancel
+                </button>
+              </div>
+            </Card>
+          </div>
+        )}
       </div>
     );
   }
@@ -590,57 +620,23 @@ export default function Cart() {
         <div className="pb-6">
           <h3 className="text-lg font-bold text-[#121212] mb-3">Payment details</h3>
           <p className="text-sm text-[#64748B] mb-4">
-            For safety, drivers prefer cashless orders. Go cashless to get one faster.
+            Pay with cash on delivery.
           </p>
 
           <div className="space-y-3">
-            <button
-              onClick={() => setPaymentMethod("gcash")}
-              className={`w-full flex items-center justify-between p-4 rounded-xl border-2 transition-all ${
-                paymentMethod === "gcash"
-                  ? 'border-[#10B981] bg-[#10B981]/5'
-                  : 'border-[#E2E8F0] bg-white'
-              }`}
-            >
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 bg-[#007DFF] rounded-lg flex items-center justify-center">
-                  <span className="text-white font-bold text-xs">💳</span>
-                </div>
-                <span className="font-semibold text-[#121212]">GCash</span>
-              </div>
-              {paymentMethod === "gcash" ? (
-                <div className="w-6 h-6 bg-[#10B981] rounded-full flex items-center justify-center">
-                  <svg className="w-4 h-4 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
-                  </svg>
-                </div>
-              ) : (
-                <span className="text-sm font-semibold text-[#3B82F6]">Add</span>
-              )}
-            </button>
-
-            <button
-              onClick={() => setPaymentMethod("cash")}
-              className={`w-full flex items-center justify-between p-4 rounded-xl border-2 transition-all ${
-                paymentMethod === "cash"
-                  ? 'border-[#10B981] bg-[#10B981]/5'
-                  : 'border-[#E2E8F0] bg-white'
-              }`}
-            >
+            <div className="w-full flex items-center justify-between p-4 rounded-xl border-2 border-[#10B981] bg-[#10B981]/5">
               <div className="flex items-center gap-3">
                 <div className="w-10 h-10 bg-[#10B981] rounded-lg flex items-center justify-center">
                   <span className="text-white font-bold text-lg">💵</span>
                 </div>
                 <span className="font-semibold text-[#121212]">Cash</span>
               </div>
-              {paymentMethod === "cash" && (
-                <div className="w-6 h-6 bg-[#10B981] rounded-full flex items-center justify-center">
-                  <svg className="w-4 h-4 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
-                  </svg>
-                </div>
-              )}
-            </button>
+              <div className="w-6 h-6 bg-[#10B981] rounded-full flex items-center justify-center">
+                <svg className="w-4 h-4 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
+                </svg>
+              </div>
+            </div>
           </div>
         </div>
 

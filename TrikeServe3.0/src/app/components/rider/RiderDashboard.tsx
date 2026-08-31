@@ -1,8 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 import { GoogleMap, Marker, InfoWindow, DirectionsRenderer } from "@react-google-maps/api";
 import useMapLoader from "@/lib/mapLoader";
-import PlaceSearch from "../ui/PlaceSearch";
-import { GOOGLE_MAPS_LIBRARIES, VALENZUELA_BIAS } from "@/lib/googleMaps";
 import {
   Home as HomeIcon, 
   Package, 
@@ -12,7 +10,6 @@ import {
   Navigation,
   Calendar,
   UserCircle,
-  MapPin,
   MoreHorizontal,
   Power,
   Car,
@@ -20,7 +17,6 @@ import {
   Bell,
   Star,
   X,
-  Zap,
   MessageCircle,
   Clock,
   Maximize,
@@ -33,7 +29,6 @@ import { Switch } from "../ui/switch";
 import { Badge } from "../ui/badge";
 import { Input } from "../ui/input";
 import { useAuth } from "../../contexts/AuthContext";
-import { useAutoAccept } from "../../hooks/useAutoAccept";
 import { supabaseHelpers } from "@/lib/supabase";
 import tricycleIcon from "../../../assets/0b76d1aa56b8ad6e15dd4efc8a0100b0ca5762a1.png";
 import { supabase } from "../../../lib/supabase";
@@ -68,13 +63,11 @@ export default function RiderDashboard() {
   const navigate = useNavigate();
   const { user, updateProfile } = useAuth();
   // Watches for private/delivery requests and auto-accepts them when enabled and the service type matches.
-  useAutoAccept();
   const [isOnline, setIsOnline] = useState(user?.isOnline || false);
   const [mode, setMode] = useState<'shared' | 'delivery'>('shared');
   const [currentSeats, setCurrentSeats] = useState(user?.currentSeats || 0);
   const [activeTrip, setActiveTrip] = useState<IncomingRequest | null>(null);
   const [showServiceTypes, setShowServiceTypes] = useState(false);
-  const [showDestination, setShowDestination] = useState(false);
   const [showMore, setShowMore] = useState(false);
   // Rides can include Ride Share and/or Private Ride; Delivery is exclusive with a single option
   const normalizeServiceSelection = (existing: string[] = []): { category: 'rides' | 'delivery'; rides: string[] } => {
@@ -89,7 +82,6 @@ export default function RiderDashboard() {
   const [selectedServices, setSelectedServices] = useState<string[]>(initialServiceSelection.category === 'delivery' ? ['delivery'] : initialServiceSelection.rides);
   const [serviceCategory, setServiceCategory] = useState<'rides' | 'delivery'>(initialServiceSelection.category);
   const [ridesSelection, setRidesSelection] = useState<string[]>(initialServiceSelection.rides);
-  const [destination, setDestination] = useState('');
   const [totalPendingRequests, setTotalPendingRequests] = useState(0);
   const [hasActiveRide, setHasActiveRide] = useState(false);
   const [activeRideData, setActiveRideData] = useState<any>(null);
@@ -784,17 +776,6 @@ export default function RiderDashboard() {
      }
    };
 
-    const handlePlaceSelected = (place: any) => {
-      if (!place) return;
-      setDestination(place.formatted_address || place.name || "");
-
-      if (place.lat && place.lng) {
-        const location = { lat: place.lat, lng: place.lng };
-        setMapCenter(location);
-        setSelectedMarker(location);
-        console.log('✅ Location selected:', place.formatted_address || place.name, location);
-      }
-    };
 
     const selectServiceCategory = (next: 'rides' | 'delivery') => {
       setServiceCategory(next);
@@ -1009,31 +990,10 @@ export default function RiderDashboard() {
         {/* Incoming Requests */}
         {/* Removed - requests only shown on Passenger Requests page */}
 
-        {/* Bottom Sheet - Always visible (Quick Actions, Service Types, Destination, Auto Accept, Passenger Requests) */}
+        {/* Bottom Sheet - Always visible (Passenger Requests, More Options) */}
         {!activeTrip && (
           <div className="absolute bottom-20 left-0 right-0 z-[999] px-4">
             <Card className="bg-white shadow-xl rounded-t-3xl max-h-[70vh] overflow-y-auto">
-              {/* Quick Actions */}
-              <div className={`p-6 grid grid-cols-3 gap-4 ${!isOnline ? 'opacity-50 pointer-events-none' : ''}`}>
-                <Link to="/rider/service-types" className="flex flex-col items-center gap-2">
-                  <div className="w-16 h-16 rounded-full bg-gray-100 flex items-center justify-center hover:bg-gray-200 transition-colors">
-                    <Car className="w-7 h-7 text-[#64748B]" />
-                  </div>
-                  <span className="text-xs font-medium text-[#121212] text-center">Service<br/>Types</span>
-                </Link>
-                <Link to="/rider/my-destination" className="flex flex-col items-center gap-2">
-                  <div className="w-16 h-16 rounded-full bg-gray-100 flex items-center justify-center hover:bg-gray-200 transition-colors">
-                    <MapPin className="w-7 h-7 text-[#64748B]" />
-                  </div>
-                  <span className="text-xs font-medium text-[#121212] text-center">My<br/>Destination</span>
-                </Link>
-                <Link to="/rider/auto-accept" className="flex flex-col items-center gap-2">
-                  <div className="w-16 h-16 rounded-full bg-gray-100 flex items-center justify-center hover:bg-gray-200 transition-colors">
-                    <Zap className="w-7 h-7 text-[#64748B]" />
-                  </div>
-                  <span className="text-xs font-medium text-[#121212] text-center">Auto<br/>Accept</span>
-                </Link>
-              </div>
 
               {/* View All Passenger Requests Card - Always visible, button disabled when offline */}
               <div className="border-t border-gray-200 px-6 py-6">
@@ -1169,38 +1129,6 @@ export default function RiderDashboard() {
                 </div>
               )}
 
-                {/* My Destination Section */}
-                {showDestination && GOOGLE_MAPS_API_KEY && (
-                  <div className="border-t border-gray-200 p-4 space-y-3">
-                    <div className="flex items-center justify-between mb-3">
-                      <h3 className="font-bold text-[#121212]">My Destination</h3>
-                      <button onClick={() => setShowDestination(false)}>
-                        <X className="w-5 h-5 text-[#64748B]" />
-                      </button>
-                    </div>
-                    <PlaceSearch
-                      value={destination}
-                      onChange={setDestination}
-                      onSelect={handlePlaceSelected}
-                      placeholder="Search location... (e.g., Gen T Deleon Valenzuela City)"
-                      className="w-full px-4 py-2 border-2 border-gray-200 rounded focus:border-[#E11D48] focus:outline-none"
-                      locationBias={VALENZUELA_BIAS}
-                      restrictToCity="Valenzuela"
-                    />
-                    <div className="text-xs text-gray-500 p-2 bg-blue-50 rounded">
-                      💡 Type a location and select from the dropdown to search and populate the map
-                    </div>
-                    <Button
-                      onClick={() => {
-                        setShowDestination(false);
-                        console.log('Destination set to:', destination);
-                      }}
-                      className="w-full bg-[#E11D48] hover:bg-[#BE123C] uppercase"
-                    >
-                      Set Destination
-                    </Button>
-                  </div>
-                )}
 
               {/* More Options Section */}
               {showMore && (
@@ -1220,6 +1148,7 @@ export default function RiderDashboard() {
                       <Bell className="w-4 h-4 mr-2" />
                       Notifications
                     </Button>
+
                   </div>
                 </div>
               )}
@@ -1239,6 +1168,12 @@ export default function RiderDashboard() {
             <Button variant="ghost" className="flex flex-col items-center gap-1">
               <DollarSign className="w-5 h-5 text-[#64748B]" />
               <span className="text-xs text-[#64748B]">Earnings</span>
+            </Button>
+          </Link>
+          <Link to="/rider/service-types">
+            <Button variant="ghost" className="flex flex-col items-center gap-1">
+              <Car className="w-5 h-5 text-[#64748B]" />
+              <span className="text-xs text-[#64748B]">Service Types</span>
             </Button>
           </Link>
           <Link to="/rider/messages">
