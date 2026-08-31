@@ -289,7 +289,8 @@ export default function PassengerRequests() {
         if (status === 'OK') setDirectionsResult(result);
       });
 
-      if (isDelivery && !isNaN(dLat) && !isNaN(dLng)) {
+      // Show drop-off route for ALL ride types, not just deliveries
+      if (!isNaN(dLat) && !isNaN(dLng)) {
         DirectionsService.route({
           origin: new (window as any).google.maps.LatLng(pickup.lat, pickup.lng),
           destination: new (window as any).google.maps.LatLng(dLat, dLng),

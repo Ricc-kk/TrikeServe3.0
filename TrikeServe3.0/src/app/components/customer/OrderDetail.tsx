@@ -112,6 +112,7 @@ export default function OrderDetail() {
   const { isLoaded: isMapsLoaded } = useMapLoader();
   const [driverLocation, setDriverLocation] = useState<{ lat: number; lng: number } | null>(null);
   const [routePath, setRoutePath] = useState<Array<{ lat: number; lng: number }>>([]);
+  const [etaToCustomer, setEtaToCustomer] = useState<string | null>(null);
 
   // Status timeline with timestamps
   const [statusHistory, setStatusHistory] = useState<Array<{ status: string; label: string; time: string; done: boolean }>>([]);
@@ -223,8 +224,15 @@ export default function OrderDetail() {
       destination: new (window as any).google.maps.LatLng(dest.lat, dest.lng),
       travelMode: (window as any).google.maps.TravelMode.DRIVING,
     }, (result: any, status: string) => {
-      if (status === 'OK' && result?.routes?.[0]?.overview_polyline?.points) {
-        setRoutePath(decodePolyline(result.routes[0].overview_polyline.points));
+      if (status === 'OK' && result?.routes?.[0]) {
+        const route = result.routes[0];
+        if (route.overview_polyline?.points) {
+          setRoutePath(decodePolyline(route.overview_polyline.points));
+        }
+        const leg = route.legs?.[0];
+        if (leg?.duration?.text) {
+          setEtaToCustomer(leg.duration.text);
+        }
       }
     });
   }, [driverLocation, isMapsLoaded, order?.address]);
@@ -382,7 +390,12 @@ export default function OrderDetail() {
                 {order.driverName && <span className="text-[#64748B]">Driver: {order.driverName} • </span>}
                 {order.status === 'confirmed' ? '🛵 Heading to restaurant' : '🟢 Delivering to you'}
               </p>
-              <div className="text-[10px] text-[#94A3B8]">● Live</div>
+              <div className="flex items-center gap-2">
+                {etaToCustomer && (
+                  <span className="text-[10px] font-bold text-[#3B82F6] bg-blue-50 px-2 py-0.5 rounded-full">🏁 {etaToCustomer}</span>
+                )}
+                <div className="text-[10px] text-[#94A3B8]">● Live</div>
+              </div>
             </div>
           </Card>
         )}

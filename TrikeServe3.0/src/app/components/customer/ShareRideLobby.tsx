@@ -94,6 +94,8 @@ export default function ShareRideLobby({
   const { isLoaded: isMapsLoaded } = useMapLoader();
   const [driverLocation, setDriverLocation] = useState<{ lat: number; lng: number } | null>(null);
   const [driverRoutePath, setDriverRoutePath] = useState<Array<{ lat: number; lng: number }>>([]);
+  const [etaToDestination, setEtaToDestination] = useState<string | null>(null);
+  const [destinationRoutePath, setDestinationRoutePath] = useState<Array<{ lat: number; lng: number }>>([]);
   const driverLocationIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const handleOpenDriverChat = async () => {
@@ -518,13 +520,33 @@ export default function ShareRideLobby({
       destination: new (window as any).google.maps.LatLng(dest.lat, dest.lng),
       travelMode: (window as any).google.maps.TravelMode.DRIVING,
     }, (result: any, status: string) => {
-      if (status === 'OK' && result?.routes?.[0]?.overview_polyline?.points) {
-        const poly = result.routes[0].overview_polyline.points;
-        const decoded = decodePolyline(poly);
-        setDriverRoutePath(decoded);
+      if (status === 'OK' && result?.routes?.[0]) {
+        const route = result.routes[0];
+        if (route.overview_polyline?.points) {
+          setDriverRoutePath(decodePolyline(route.overview_polyline.points));
+        }
+        const leg = route.legs?.[0];
+        if (leg?.duration?.text) {
+          setEtaToDestination(leg.duration.text);
+        }
       }
     });
   }, [driverLocation, isMapsLoaded, lobby?.driver_status, pickupCoords, dropoffCoords]);
+
+  // Compute pickup-to-dropoff route (destination route)
+  useEffect(() => {
+    if (!pickupCoords || !dropoffCoords || !isMapsLoaded || !(window as any).google) return;
+    const DirectionsService = new (window as any).google.maps.DirectionsService();
+    DirectionsService.route({
+      origin: new (window as any).google.maps.LatLng(pickupCoords.lat, pickupCoords.lng),
+      destination: new (window as any).google.maps.LatLng(dropoffCoords.lat, dropoffCoords.lng),
+      travelMode: (window as any).google.maps.TravelMode.DRIVING,
+    }, (result: any, status: string) => {
+      if (status === 'OK' && result?.routes?.[0]?.overview_polyline?.points) {
+        setDestinationRoutePath(decodePolyline(result.routes[0].overview_polyline.points));
+      }
+    });
+  }, [pickupCoords, dropoffCoords, isMapsLoaded]);
 
   const decodePolyline = (encoded: string): Array<{ lat: number; lng: number }> => {
     const points: Array<{ lat: number; lng: number }> = [];
@@ -849,10 +871,15 @@ export default function ShareRideLobby({
                   <p className="text-[10px] text-[#64748B] uppercase font-bold tracking-wider">Pickup</p>
                   <p className="font-bold text-sm text-[#121212] truncate">{lobby.pickup_location}</p>
                 </div>
-                <div className="min-w-0">
+                <div className="min-w-0 flex-1">
                   <p className="text-[10px] text-[#64748B] uppercase font-bold tracking-wider">Drop-off</p>
                   <p className="font-bold text-sm text-[#121212] truncate">{lobby.dropoff_location}</p>
                 </div>
+                {etaToDestination && (
+                  <div className="flex-shrink-0 bg-red-100 text-red-700 px-2 py-1 rounded-lg">
+                    <p className="text-[10px] font-bold">🏁 {etaToDestination}</p>
+                  </div>
+                )}
               </div>
             </div>
           </div>
@@ -1016,14 +1043,26 @@ export default function ShareRideLobby({
                       }}
                     />
                   )}
-                  {/* Route line */}
+                  {/* Driver route line */}
                   {driverRoutePath.length > 0 && (
                     <Polyline
                       path={driverRoutePath}
                       options={{
-                        strokeColor: (lobby.driver_status === 'on-the-way' || lobby.driver_status === 'arrived') ? '#10B981' : '#E11D48',
+                        strokeColor: (lobby.driver_status === 'on-the-way' || lobby.driver_status === 'arrived') ? '#10B981' : '#3B82F6',
                         strokeOpacity: 0.9,
                         strokeWeight: 4,
+                        geodesic: true,
+                      }}
+                    />
+                  )}
+                  {/* Destination route line (pickup to dropoff) */}
+                  {destinationRoutePath.length > 0 && (
+                    <Polyline
+                      path={destinationRoutePath}
+                      options={{
+                        strokeColor: '#E11D48',
+                        strokeOpacity: 0.9,
+                        strokeWeight: 5,
                         geodesic: true,
                       }}
                     />

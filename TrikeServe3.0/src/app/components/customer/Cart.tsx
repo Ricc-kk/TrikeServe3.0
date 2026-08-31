@@ -357,7 +357,7 @@ export default function Cart() {
                   <div className="flex-1 min-w-0">
                     <h3 className="font-bold text-[#121212] text-base mb-1">{restaurant.name}</h3>
                     <p className="text-sm text-[#64748B] mb-0">
-                      {restaurant.items.length} {restaurant.items.length === 1 ? 'item' : 'items'} • From {restaurant.estimatedTime} • {restaurant.distance}
+                      {restaurant.items.length} {restaurant.items.length === 1 ? 'item' : 'items'} • From {restaurant.estimatedTime}
                     </p>
                   </div>
 
