@@ -49,6 +49,7 @@ export default function BusinessOrders() {
   const [driverLocation, setDriverLocation] = useState<{ lat: number; lng: number } | null>(null);
   const [driverStatus, setDriverStatus] = useState<string | null>(null);
   const [routePath, setRoutePath] = useState<Array<{ lat: number; lng: number }>>([]);
+  const [etaToCustomer, setEtaToCustomer] = useState<string | null>(null);
   const [rideRequestInfo, setRideRequestInfo] = useState<any>(null);
   const trackingPollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
@@ -121,9 +122,15 @@ export default function BusinessOrders() {
       destination: new (window as any).google.maps.LatLng(dest.lat, dest.lng),
       travelMode: (window as any).google.maps.TravelMode.DRIVING,
     }, (result: any, status: string) => {
-      if (status === 'OK' && result?.routes?.[0]?.overview_polyline?.points) {
-        const decoded = decodePolyline(result.routes[0].overview_polyline.points);
-        setRoutePath(decoded);
+      if (status === 'OK' && result?.routes?.[0]) {
+        const route = result.routes[0];
+        if (route.overview_polyline?.points) {
+          setRoutePath(decodePolyline(route.overview_polyline.points));
+        }
+        const leg = route.legs?.[0];
+        if (leg?.duration?.text) {
+          setEtaToCustomer(leg.duration.text);
+        }
       }
     });
   }, [driverLocation, isMapsLoaded, driverStatus, selectedOrder?.address]);
@@ -1037,9 +1044,14 @@ export default function BusinessOrders() {
                           <span className="text-xs font-semibold text-[#121212]">
                             {(driverStatus === 'on-the-way' || driverStatus === 'arrived' || driverStatus === 'accepted') ? '🟢 Heading to restaurant' : '🔴 Delivering to customer'}
                           </span>
-                          {selectedOrder?.customerName && (
-                            <span className="text-[10px] text-[#64748B]">{selectedOrder.customerName}</span>
-                          )}
+                          <div className="flex items-center gap-2">
+                            {etaToCustomer && (
+                              <span className="text-[10px] font-bold text-[#3B82F6] bg-blue-50 px-2 py-0.5 rounded-full">🏁 {etaToCustomer}</span>
+                            )}
+                            {selectedOrder?.customerName && (
+                              <span className="text-[10px] text-[#64748B]">{selectedOrder.customerName}</span>
+                            )}
+                          </div>
                         </div>
                       </div>
                     )}

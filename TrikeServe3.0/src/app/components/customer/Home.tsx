@@ -288,6 +288,8 @@ export default function CustomerHome() {
    const [sharedRidePrice, setSharedRidePrice] = useState(15); // Default price for share rides
    const [driverLocation, setDriverLocation] = useState<{ lat: number; lng: number } | null>(null);
    const [driverRoutePath, setDriverRoutePath] = useState<LatLng[]>([]);
+   const [destinationRoutePath, setDestinationRoutePath] = useState<LatLng[]>([]);
+   const [etaToDestination, setEtaToDestination] = useState<string | null>(null);
    const [ridePassengers, setRidePassengers] = useState<any[]>([]);
    const [passengerLocations, setPassengerLocations] = useState<{ [key: string]: { lat: number; lng: number } }>({});
    const [mapsDiagnostics, setMapsDiagnostics] = useState<MapsDiagnostics>({
@@ -1226,14 +1228,43 @@ export default function CustomerHome() {
          travelMode: (window as any).google.maps.TravelMode.DRIVING,
        },
        (result: any, status: string) => {
-         if (status === 'OK' && result?.routes?.[0]?.overview_polyline?.points) {
-           const poly = result.routes[0].overview_polyline.points;
-           const decoded = decodeGooglePolyline(poly);
-           setDriverRoutePath(decoded);
+         if (status === 'OK' && result?.routes?.[0]) {
+           const route = result.routes[0];
+           if (route.overview_polyline?.points) {
+             setDriverRoutePath(decodeGooglePolyline(route.overview_polyline.points));
+           }
          }
        }
      );
    }, [driverLocation, pickupCoords, isMapsLoaded, rideStatus]);
+
+   // Compute pickup-to-dropoff route during ride tracking (like driver preview)
+   useEffect(() => {
+     if (!pickupCoords || !dropoffCoords || !isMapsLoaded || !(window as any).google) return;
+     if (!rideStatus || rideStatus === 'searching') return;
+
+     const DirectionsService = new (window as any).google.maps.DirectionsService();
+     DirectionsService.route(
+       {
+         origin: new (window as any).google.maps.LatLng(pickupCoords.lat, pickupCoords.lng),
+         destination: new (window as any).google.maps.LatLng(dropoffCoords.lat, dropoffCoords.lng),
+         travelMode: (window as any).google.maps.TravelMode.DRIVING,
+       },
+       (result: any, status: string) => {
+         if (status === 'OK' && result?.routes?.[0]) {
+           const route = result.routes[0];
+           if (route.overview_polyline?.points) {
+             setDestinationRoutePath(decodeGooglePolyline(route.overview_polyline.points));
+           }
+           // Extract ETA from legs
+           const leg = route.legs?.[0];
+           if (leg?.duration?.text) {
+             setEtaToDestination(leg.duration.text);
+           }
+         }
+       }
+     );
+   }, [pickupCoords, dropoffCoords, isMapsLoaded, rideStatus]);
 
    // Count unread messages from drivers
    useEffect(() => {
@@ -1595,6 +1626,8 @@ export default function CustomerHome() {
     setDriverLocation(null);
     setSelectedTerminalId(null);
     setDriverRoutePath([]);
+    setDestinationRoutePath([]);
+    setEtaToDestination(null);
     setSelectedMarker(null);
     setLocationPreview(null);
     setPredictions([]);
@@ -1772,6 +1805,11 @@ export default function CustomerHome() {
                 <Polyline path={driverRoutePath} options={buildNavigationRouteOptions('#3B82F6', 4)} />
               )}
 
+              {/* Destination route polyline (pickup to dropoff) */}
+              {destinationRoutePath.length > 0 && rideStatus !== 'searching' && (
+                <Polyline path={destinationRoutePath} options={buildNavigationRouteOptions('#E11D48', 5)} />
+              )}
+
              {/* Info Window for selected marker */}
              {selectedMarker && (
                <InfoWindow
@@ -1832,7 +1870,7 @@ export default function CustomerHome() {
 
                   {/* Private Ride */}
                   <button
-                    onClick={() => setSelectedVehicle('special')}
+                    onClick={() => { setSelectedVehicle('special'); setPassengerCount(1); }}
                     className={`p-3 rounded-2xl border-2 transition-all ${
                       selectedVehicle === 'special'
                         ? 'border-[#E11D48] bg-[#FFF1F2]'
@@ -1938,11 +1976,11 @@ export default function CustomerHome() {
           <div className="absolute bottom-16 left-0 right-0 z-[1100] p-3">
             <Card className="bg-white shadow-2xl border-2 border-[#E11D48] rounded-2xl overflow-hidden">
               {/* Live Tracking Map - embedded inside the card */}
-              {isMapsLoaded && driverLocation && (
+              {isMapsLoaded && (driverLocation || pickupCoords) && (
                 <div className="relative">
                   <GoogleMap
                     mapContainerStyle={{ width: '100%', height: '220px' }}
-                    center={driverLocation}
+                    center={driverLocation || pickupCoords || currentLocation}
                     zoom={15}
                     options={{
                       zoomControl: false,
@@ -1973,6 +2011,9 @@ export default function CustomerHome() {
                     )}
                     {driverRoutePath.length > 0 && (
                       <Polyline path={driverRoutePath} options={buildNavigationRouteOptions('#3B82F6', 4)} />
+                    )}
+                    {destinationRoutePath.length > 0 && (
+                      <Polyline path={destinationRoutePath} options={buildNavigationRouteOptions('#E11D48', 5)} />
                     )}
                   </GoogleMap>
                   {/* Map overlay badge */}
@@ -2021,6 +2062,7 @@ export default function CustomerHome() {
                       <p className="text-[10px] text-[#64748B] uppercase font-semibold">Pickup</p>
                       <p className="font-semibold text-xs text-[#121212] truncate">{pickup}</p>
                     </div>
+
                   </div>
                   <div className="flex items-start gap-2">
                     <div className="w-5 h-5 bg-[#E11D48] rounded-full flex items-center justify-center flex-shrink-0 mt-0.5">
@@ -2030,6 +2072,11 @@ export default function CustomerHome() {
                       <p className="text-[10px] text-[#64748B] uppercase font-semibold">Drop-off</p>
                       <p className="font-semibold text-xs text-[#121212] truncate">{dropoff}</p>
                     </div>
+                    {etaToDestination && (
+                      <div className="flex-shrink-0 bg-red-100 text-red-700 px-2 py-1 rounded-lg">
+                        <p className="text-[10px] font-bold">🏁 {etaToDestination}</p>
+                      </div>
+                    )}
                   </div>
                 </div>
 
@@ -2822,7 +2869,7 @@ export default function CustomerHome() {
               </div>
               <h3 className="text-xl font-bold text-[#121212] mb-2">Cancel Ride?</h3>
               <p className="text-sm text-[#64748B] mb-6">
-                Are you sure you want to cancel this ride request? Your driver may already be on the way.
+                Are you sure you want to cancel this ride request?
               </p>
               <div className="flex gap-3">
                 <button
