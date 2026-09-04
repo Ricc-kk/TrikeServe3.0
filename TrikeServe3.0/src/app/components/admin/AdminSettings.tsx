@@ -31,7 +31,6 @@ export default function AdminSettings() {
     platformName: "TrikeServe",
     supportEmail: "support@trikeserve.com",
     supportPhone: "+63 912 345 6789",
-    maxPassengers: 6,
     operatingHoursStart: "05:00",
     operatingHoursEnd: "22:00",
     autoVerifyCustomers: true,
@@ -309,15 +308,7 @@ export default function AdminSettings() {
                         className="border-2 border-[#E2E8F0]"
                       />
                     </div>
-                    <div>
-                      <label className="text-sm font-bold text-[#121212] mb-2 block">Max Passengers per Trike</label>
-                      <Input
-                        type="number"
-                        value={platformSettings.maxPassengers}
-                        onChange={(e) => setPlatformSettings({ ...platformSettings, maxPassengers: Number(e.target.value) })}
-                        className="border-2 border-[#E2E8F0]"
-                      />
-                    </div>
+
                   </div>
                 </div>
 
