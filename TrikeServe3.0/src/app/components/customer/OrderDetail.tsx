@@ -5,6 +5,7 @@ import { Button } from "../ui/button";
 import { Badge } from "../ui/badge";
 import { useAuth } from "../../contexts/AuthContext";
 import { ImageWithFallback } from "../figma/ImageWithFallback";
+import StoreLogo from "../figma/StoreLogo";
 import { supabase } from "../../../lib/supabase";
 import { supabaseHelpers } from "@/lib/supabase";
 import { useState, useEffect, useRef } from "react";
@@ -137,14 +138,22 @@ export default function OrderDetail() {
 
         // Resolve business id
         let resolvedBusinessId = dbOrder.business_id || null;
+        let restaurantLogo = '';
         if (!resolvedBusinessId && dbOrder.restaurant_email) {
           try {
             const { data: restaurant } = await supabase
-              .from('restaurants').select('business_user_id').eq('id', dbOrder.restaurant_email).maybeSingle();
+              .from('restaurants').select('business_user_id, logo_image').eq('id', dbOrder.restaurant_email).maybeSingle();
             if (restaurant?.business_user_id) resolvedBusinessId = restaurant.business_user_id;
+            if (restaurant?.logo_image) restaurantLogo = restaurant.logo_image;
+          } catch {}
+        } else if (dbOrder.restaurant_email) {
+          try {
+            const { data: restaurant } = await supabase
+              .from('restaurants').select('logo_image').eq('id', dbOrder.restaurant_email).maybeSingle();
+            if (restaurant?.logo_image) restaurantLogo = restaurant.logo_image;
           } catch {}
         }
-        if (resolvedBusinessId) setOrder(prev => prev ? { ...prev, businessId: resolvedBusinessId } : prev);
+        if (resolvedBusinessId || restaurantLogo) setOrder(prev => prev ? { ...prev, businessId: resolvedBusinessId || prev.businessId, restaurantImage: restaurantLogo || prev.restaurantImage } : prev);
       } catch (e) {
         console.error('[OrderDetail] Error:', e);
         setError('Failed to load order');
@@ -436,7 +445,7 @@ export default function OrderDetail() {
           <h3 className="font-bold text-[#121212] text-sm md:text-base mb-2">Restaurant</h3>
           <div className="flex items-center gap-3">
             <div className="w-12 h-12 md:w-14 md:h-14 rounded-xl overflow-hidden flex-shrink-0">
-              <ImageWithFallback src={order.restaurantImage} alt={order.restaurantName} className="w-full h-full object-cover" />
+              <StoreLogo logo={order.restaurantImage} emojiClass="text-3xl" />
             </div>
             <div>
               <p className="font-semibold text-[#121212] text-sm md:text-base">{order.restaurantName}</p>
