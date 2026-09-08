@@ -71,3 +71,13 @@ html, body {
   animation: infiniteBounce 1s infinite;
 }
 
+/* Shrink animation for auto-dismiss progress bars */
+@keyframes shrink {
+  from {
+    width: 100%;
+  }
+  to {
+    width: 0%;
+  }
+}
+

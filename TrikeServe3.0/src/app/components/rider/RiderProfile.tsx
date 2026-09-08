@@ -37,6 +37,7 @@ export default function RiderProfile() {
     todaPlate: user?.todaPlate || "",
     licenseNumber: user?.licenseNumber || "",
   });
+  const [showGoodbye, setShowGoodbye] = useState(false);
 
   const handleSave = async () => {
     setIsSaving(true);
@@ -531,8 +532,11 @@ export default function RiderProfile() {
             //   return;
             // }
             
-            logout();
-            navigate('/');
+            setShowGoodbye(true);
+            setTimeout(() => {
+              logout();
+              navigate('/');
+            }, 2000);
           }}
           className="w-full bg-[#121212] hover:bg-[#2a2a2a] text-white font-bold uppercase py-4 rounded-lg flex items-center justify-center gap-2 shadow-md"
         >
@@ -544,6 +548,24 @@ export default function RiderProfile() {
         <div className="h-8" />
       </div>
       <ActiveRideButton />
+
+      {/* Goodbye Popup */}
+      {showGoodbye && (
+        <div className="fixed inset-0 bg-black/50 z-[2000] flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl shadow-xl p-8 max-w-sm w-full text-center">
+            <div className="w-16 h-16 bg-[#DBEAFE] rounded-full flex items-center justify-center mx-auto mb-4">
+              <LogOut className="w-8 h-8 text-[#3B82F6]" />
+            </div>
+            <h3 className="text-2xl font-bold text-[#121212] mb-2">Goodbye! 👋</h3>
+            <p className="text-[#64748B] text-sm">See you soon, <span className="font-semibold text-[#121212]">{user?.name || 'there'}</span></p>
+            <div className="mt-6">
+              <div className="w-full bg-[#E2E8F0] rounded-full h-1.5">
+                <div className="bg-[#3B82F6] h-1.5 rounded-full" style={{ width: '100%', animation: 'shrink 1.8s linear forwards' }} />
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

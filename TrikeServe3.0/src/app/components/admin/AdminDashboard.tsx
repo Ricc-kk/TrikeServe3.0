@@ -11,6 +11,8 @@ import { Input } from "../ui/input";
 import { useAuth } from "../../contexts/AuthContext";
 import AdminSidebar from "./AdminSidebar";
 import { supabase } from "../../../utils/supabase";
+import { adminDeleteUser, adminVerifyUser } from "../../../lib/supabase";
+import ConfirmationModal from "../ui/confirmation-modal";
 
 interface StoredUser {
   id: string;
@@ -209,43 +211,75 @@ export default function AdminDashboard() {
     }
   };
 
+  // Modal state
+  const [modalOpen, setModalOpen] = useState(false);
+  const [modalConfig, setModalConfig] = useState<{
+    title: string;
+    message: string;
+    variant: 'danger' | 'warning' | 'success';
+    confirmLabel: string;
+    onConfirm: () => void;
+  } | null>(null);
+
+  const openModal = (config: typeof modalConfig) => {
+    setModalConfig(config);
+    setModalOpen(true);
+  };
+
+  const closeModal = () => {
+    setModalOpen(false);
+    setModalConfig(null);
+  };
+
   const handleApproveUser = async (userId: string) => {
-    try {
-      const { error } = await supabase
-        .from('users')
-        .update({ is_verified: true, updated_at: new Date().toISOString() })
-        .eq('id', userId);
-
-      if (error) {
-        console.error('Error approving user:', error);
-        return;
-      }
-
-      loadUsers();
-    } catch (error) {
-      console.error('Error in handleApproveUser:', error);
-    }
+    openModal({
+      title: "Approve User",
+      message: "Approve this user? They will be able to log in immediately.",
+      variant: "success",
+      confirmLabel: "Approve",
+      onConfirm: async () => {
+        const result = await adminVerifyUser(userId, {
+          email: user?.email || '',
+          password: user?.password || '',
+        });
+        if (!result.success) {
+          alert(`Failed to approve user: ${result.error}`);
+          return;
+        }
+        loadUsers();
+        closeModal();
+      },
+    });
   };
 
   const handleRejectUser = async (userId: string) => {
-    try {
-      const { error } = await supabase
-        .from('users')
-        .delete()
-        .eq('id', userId);
-
-      if (error) {
-        console.error('Error rejecting user:', error);
-        return;
-      }
-
-      loadUsers();
-    } catch (error) {
-      console.error('Error in handleRejectUser:', error);
-    }
+    openModal({
+      title: "Reject User",
+      message: "Reject this user? Their account will be permanently deleted.",
+      variant: "danger",
+      confirmLabel: "Reject",
+      onConfirm: async () => {
+        const result = await adminDeleteUser(userId, {
+          email: user?.email || '',
+          password: user?.password || '',
+        });
+        if (!result.success) {
+          alert(`Failed to delete user: ${result.error}`);
+          return;
+        }
+        const usersJson = localStorage.getItem('trikeserve_users');
+        if (usersJson) {
+          const allUsers = JSON.parse(usersJson);
+          localStorage.setItem('trikeserve_users', JSON.stringify(allUsers.filter((u: any) => u.id !== userId)));
+        }
+        loadUsers();
+        closeModal();
+      },
+    });
   };
 
   const handleUpdateRate = (rateType: 'sharedRide' | 'privateRide' | 'deliveryBaseFee') => {
+    if (!confirm(`Save ${rateType} rate changes?`)) return;
     // Save to localStorage for persistence
     localStorage.setItem('trikeserve_rates', JSON.stringify(rateConfig));
     alert(`${rateType} rate updated successfully!`);
@@ -625,6 +659,17 @@ export default function AdminDashboard() {
           </div>
         </>
       )}
+
+      {/* Confirmation Modal */}
+      <ConfirmationModal
+        isOpen={modalOpen}
+        onConfirm={modalConfig?.onConfirm || (() => {})}
+        onCancel={closeModal}
+        title={modalConfig?.title || ''}
+        message={modalConfig?.message || ''}
+        variant={modalConfig?.variant || 'danger'}
+        confirmLabel={modalConfig?.confirmLabel || 'Confirm'}
+      />
     </div>
   );
 }

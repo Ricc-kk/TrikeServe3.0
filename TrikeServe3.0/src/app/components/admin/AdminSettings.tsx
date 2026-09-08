@@ -11,6 +11,7 @@ import { Badge } from "../ui/badge";
 import { useAuth } from "../../contexts/AuthContext";
 import AdminSidebar from "./AdminSidebar";
 import { supabase } from "../../../utils/supabase";
+import ConfirmationModal from "../ui/confirmation-modal";
 
 export default function AdminSettings() {
   const navigate = useNavigate();
@@ -88,37 +89,70 @@ export default function AdminSettings() {
     }
   };
 
+  // Modal state
+  const [modalOpen, setModalOpen] = useState(false);
+  const [modalConfig, setModalConfig] = useState<{
+    title: string;
+    message: string;
+    variant: 'danger' | 'warning' | 'success';
+    confirmLabel: string;
+    onConfirm: () => void;
+  } | null>(null);
+
+  const openModal = (config: typeof modalConfig) => {
+    setModalConfig(config);
+    setModalOpen(true);
+  };
+
+  const closeModal = () => {
+    setModalOpen(false);
+    setModalConfig(null);
+  };
+
   const handleSaveRates = async () => {
-    try {
-      // Save to Supabase
-      const { error } = await supabase
-        .from('admin_settings')
-        .upsert({
-          setting_key: 'rates',
-          setting_value: JSON.stringify(rateConfig),
-          updated_at: new Date().toISOString()
-        }, {
-          onConflict: 'setting_key'
-        });
-
-      if (error) {
-        console.error('Error saving to Supabase:', error);
-      }
-
-      // Also save to localStorage as backup
-      localStorage.setItem('trikeserve_rates', JSON.stringify(rateConfig));
-      showSavedMessage("Rate configuration saved successfully!");
-    } catch (error) {
-      console.error('Error in handleSaveRates:', error);
-      // Fallback to localStorage only
-      localStorage.setItem('trikeserve_rates', JSON.stringify(rateConfig));
-      showSavedMessage("Rate configuration saved locally!");
-    }
+    openModal({
+      title: "Save Rates",
+      message: "Save rate configuration changes?",
+      variant: "success",
+      confirmLabel: "Save",
+      onConfirm: async () => {
+        closeModal();
+        try {
+          const { error } = await supabase
+            .from('admin_settings')
+            .upsert({
+              setting_key: 'rates',
+              setting_value: JSON.stringify(rateConfig),
+              updated_at: new Date().toISOString()
+            }, {
+              onConflict: 'setting_key'
+            });
+          if (error) {
+            console.error('Error saving to Supabase:', error);
+          }
+          localStorage.setItem('trikeserve_rates', JSON.stringify(rateConfig));
+          showSavedMessage("Rate configuration saved successfully!");
+        } catch (error) {
+          console.error('Error in handleSaveRates:', error);
+          localStorage.setItem('trikeserve_rates', JSON.stringify(rateConfig));
+          showSavedMessage("Rate configuration saved locally!");
+        }
+      },
+    });
   };
 
   const handleSavePlatformSettings = () => {
-    localStorage.setItem('trikeserve_platform_settings', JSON.stringify(platformSettings));
-    showSavedMessage("Platform settings saved successfully!");
+    openModal({
+      title: "Save Settings",
+      message: "Save platform settings changes?",
+      variant: "success",
+      confirmLabel: "Save",
+      onConfirm: () => {
+        closeModal();
+        localStorage.setItem('trikeserve_platform_settings', JSON.stringify(platformSettings));
+        showSavedMessage("Platform settings saved successfully!");
+      },
+    });
   };
 
   const showSavedMessage = (message: string) => {
@@ -340,71 +374,6 @@ export default function AdminSettings() {
                   </div>
                 </div>
 
-                {/* Verification Settings */}
-                <div className="border-t-2 border-[#E2E8F0] pt-6">
-                  <h3 className="font-bold text-lg text-[#121212] mb-4 flex items-center gap-2">
-                    <Shield className="w-5 h-5 text-[#10B981]" />
-                    Verification Requirements
-                  </h3>
-                  <div className="space-y-4">
-                    <div className="flex items-center justify-between p-4 bg-[#F8F9FA] rounded-xl">
-                      <div>
-                        <p className="font-semibold text-[#121212]">Auto-verify Customers</p>
-                        <p className="text-sm text-[#64748B]">Customers can use the platform immediately</p>
-                      </div>
-                      <button
-                        onClick={() => setPlatformSettings({ ...platformSettings, autoVerifyCustomers: !platformSettings.autoVerifyCustomers })}
-                        className={`w-16 h-9 rounded-full transition-all ${
-                          platformSettings.autoVerifyCustomers ? "bg-[#10B981]" : "bg-[#CBD5E1]"
-                        }`}
-                      >
-                        <div
-                          className={`w-7 h-7 bg-white rounded-full shadow-md transition-transform ${
-                            platformSettings.autoVerifyCustomers ? "translate-x-8" : "translate-x-1"
-                          }`}
-                        />
-                      </button>
-                    </div>
-
-                    <div className="flex items-center justify-between p-4 bg-[#F8F9FA] rounded-xl">
-                      <div>
-                        <p className="font-semibold text-[#121212]">Require Driver Verification</p>
-                        <p className="text-sm text-[#64748B]">Drivers must be verified by admin before accepting rides</p>
-                      </div>
-                      <button
-                        onClick={() => setPlatformSettings({ ...platformSettings, requireRiderVerification: !platformSettings.requireRiderVerification })}
-                        className={`w-16 h-9 rounded-full transition-all ${
-                          platformSettings.requireRiderVerification ? "bg-[#10B981]" : "bg-[#CBD5E1]"
-                        }`}
-                      >
-                        <div
-                          className={`w-7 h-7 bg-white rounded-full shadow-md transition-transform ${
-                            platformSettings.requireRiderVerification ? "translate-x-8" : "translate-x-1"
-                          }`}
-                        />
-                      </button>
-                    </div>
-
-                    <div className="flex items-center justify-between p-4 bg-[#F8F9FA] rounded-xl">
-                      <div>
-                        <p className="font-semibold text-[#121212]">Require Business Verification</p>
-                        <p className="text-sm text-[#64748B]">Businesses must be verified by admin before taking orders</p>
-                      </div>
-                      <button
-                        onClick={() => setPlatformSettings({ ...platformSettings, requireBusinessVerification: !platformSettings.requireBusinessVerification })}
-                        className={`w-16 h-9 rounded-full transition-all ${
-                          platformSettings.requireBusinessVerification ? "bg-[#10B981]" : "bg-[#CBD5E1]"
-                        }`}
-                      >
-                        <div
-                          className={`w-7 h-7 bg-white rounded-full shadow-md transition-transform ${
-                            platformSettings.requireBusinessVerification ? "translate-x-8" : "translate-x-1"
-                          }`}
-                        />
-                      </button>
-                    </div>
-                  </div>
-                </div>
               </div>
 
               <button
@@ -512,6 +481,17 @@ export default function AdminSettings() {
           </div>
         </>
       )}
+
+      {/* Confirmation Modal */}
+      <ConfirmationModal
+        isOpen={modalOpen}
+        onConfirm={modalConfig?.onConfirm || (() => {})}
+        onCancel={closeModal}
+        title={modalConfig?.title || ''}
+        message={modalConfig?.message || ''}
+        variant={modalConfig?.variant || 'danger'}
+        confirmLabel={modalConfig?.confirmLabel || 'Confirm'}
+      />
     </div>
   );
 }

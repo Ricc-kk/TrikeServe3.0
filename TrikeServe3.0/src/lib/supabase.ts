@@ -50,6 +50,120 @@ export const supabase = createClient(
   supabaseAnonKey
 );
 
+// ---------------------------------------------------------------------------
+// Admin: delete a user completely (profile row + Supabase Auth account)
+// ---------------------------------------------------------------------------
+// The anon key cannot delete from auth.users and RLS blocks profile deletes,
+// so this goes through the `delete-user` Edge Function which uses the service
+// role key server-side. The function verifies the caller is an admin.
+export async function adminDeleteUser(
+  userId: string,
+  adminCredentials?: { email: string; password: string }
+): Promise<{ success: boolean; error?: string }> {
+  try {
+    const { data: { session } } = await supabase.auth.getSession();
+
+    // Admins live in the separate `admins` table and have no Supabase Auth
+    // session, so pass their credentials for the function to verify instead.
+    if (!session && !adminCredentials) {
+      return { success: false, error: 'Not signed in' };
+    }
+
+    const response = await fetch(`${supabaseUrl}/functions/v1/delete-user`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...(session && { Authorization: `Bearer ${session.access_token}` }),
+      },
+      body: JSON.stringify({
+        userId,
+        ...(adminCredentials && { adminEmail: adminCredentials.email, adminPassword: adminCredentials.password }),
+      }),
+    });
+
+    const result = await response.json().catch(() => ({}));
+
+    if (!response.ok) {
+      return { success: false, error: result.error || `Delete failed (${response.status})` };
+    }
+
+    return { success: true };
+  } catch (error) {
+    console.error('adminDeleteUser error:', error);
+    return { success: false, error: 'Network error while deleting user' };
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Admin: verify a user (sets is_verified + confirms email in Supabase Auth)
+// ---------------------------------------------------------------------------
+export async function adminVerifyUser(
+  userId: string,
+  adminCredentials?: { email: string; password: string }
+): Promise<{ success: boolean; error?: string }> {
+  try {
+    const { data: { session } } = await supabase.auth.getSession();
+
+    const response = await fetch(`${supabaseUrl}/functions/v1/admin-verify-user`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...(session && { Authorization: `Bearer ${session.access_token}` }),
+      },
+      body: JSON.stringify({
+        userId,
+        ...(adminCredentials && { adminEmail: adminCredentials.email, adminPassword: adminCredentials.password }),
+      }),
+    });
+
+    const result = await response.json().catch(() => ({}));
+
+    if (!response.ok) {
+      return { success: false, error: result.error || `Verify failed (${response.status})` };
+    }
+
+    return { success: true };
+  } catch (error) {
+    console.error('adminVerifyUser error:', error);
+    return { success: false, error: 'Network error while verifying user' };
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Admin: unverify a user (sets is_verified = false)
+// ---------------------------------------------------------------------------
+export async function adminUnverifyUser(
+  userId: string,
+  adminCredentials?: { email: string; password: string }
+): Promise<{ success: boolean; error?: string }> {
+  try {
+    const { data: { session } } = await supabase.auth.getSession();
+
+    const response = await fetch(`${supabaseUrl}/functions/v1/admin-unverify-user`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...(session && { Authorization: `Bearer ${session.access_token}` }),
+      },
+      body: JSON.stringify({
+        userId,
+        ...(adminCredentials && { adminEmail: adminCredentials.email, adminPassword: adminCredentials.password }),
+      }),
+    });
+
+    const result = await response.json().catch(() => ({}));
+
+    if (!response.ok) {
+      return { success: false, error: result.error || `Unverify failed (${response.status})` };
+    }
+
+    return { success: true };
+  } catch (error) {
+    console.error('adminUnverifyUser error:', error);
+    return { success: false, error: 'Network error while unverifying user' };
+  }
+}
+
 // Extract a safe file extension (fallback 'jpg') so weird filenames can't break the storage path
 function safeFileExtension(file: File): string {
   const raw = file.name.split('.').pop() || '';

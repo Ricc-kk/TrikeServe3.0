@@ -42,13 +42,15 @@ function roleLabel(acc: TestAccount): string {
 
 export default function Login() {
   const navigate = useNavigate();
-  const { login } = useAuth();
+  const { login, resendVerificationEmail } = useAuth();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [showAccounts, setShowAccounts] = useState(false);
   const [accounts, setAccounts] = useState<TestAccount[]>([]);
+  const [resendStatus, setResendStatus] = useState<"idle" | "sending" | "sent" | "error">("idle");
+  const [resendMessage, setResendMessage] = useState("");
 
 
   // Load all created accounts (localStorage users + Supabase admins/users)
@@ -161,6 +163,29 @@ export default function Login() {
     }
   };
 
+  const handleResendVerification = async () => {
+    if (!email) {
+      setResendMessage("Please enter your email address above first.");
+      setResendStatus("error");
+      return;
+    }
+
+    setResendStatus("sending");
+    setResendMessage("");
+
+    const result = await resendVerificationEmail(email);
+
+    if (result.success) {
+      setResendStatus("sent");
+      setResendMessage("Verification email sent! Check your inbox.");
+    } else {
+      setResendStatus("error");
+      setResendMessage(result.error || "Failed to send verification email.");
+    }
+  };
+
+  const isVerificationError = error.includes("verify your email");
+
   return (
     <div className="min-h-screen flex">
       {/* Left Side - Background Design (hidden on mobile) */}
@@ -224,6 +249,24 @@ export default function Login() {
             {error && (
               <div className="border-2 border-red-200 rounded-lg p-4 bg-red-50">
                 <p className="text-sm text-red-800">{error}</p>
+                {isVerificationError && (
+                  <div className="mt-3 pt-3 border-t border-red-200">
+                    {resendStatus === "sent" ? (
+                      <p className="text-sm text-green-700 font-medium">{resendMessage}</p>
+                    ) : resendStatus === "error" ? (
+                      <p className="text-sm text-red-600">{resendMessage}</p>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={handleResendVerification}
+                        disabled={resendStatus === "sending"}
+                        className="text-sm text-[#E11D48] font-semibold hover:underline disabled:opacity-50"
+                      >
+                        {resendStatus === "sending" ? "Sending..." : "Resend verification email"}
+                      </button>
+                    )}
+                  </div>
+                )}
               </div>
             )}
 

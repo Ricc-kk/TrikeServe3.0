@@ -10,6 +10,8 @@ import { Input } from "../ui/input";
 import { useAuth } from "../../contexts/AuthContext";
 import AdminSidebar from "./AdminSidebar";
 import { supabase } from "../../../utils/supabase";
+import { adminDeleteUser, adminVerifyUser, adminUnverifyUser } from "../../../lib/supabase";
+import ConfirmationModal from "../ui/confirmation-modal";
 
 interface StoredUser {
   id: string;
@@ -106,54 +108,99 @@ export default function AdminUsers() {
     }
   };
 
-  const handleDeleteUser = async (userId: string) => {
-    if (confirm("Are you sure you want to delete this user? This action cannot be undone.")) {
-      try {
-        const { error } = await supabase
-          .from('users')
-          .delete()
-          .eq('id', userId);
+  // Modal state
+  const [modalOpen, setModalOpen] = useState(false);
+  const [modalConfig, setModalConfig] = useState<{
+    title: string;
+    message: string;
+    variant: 'danger' | 'warning' | 'success';
+    confirmLabel: string;
+    onConfirm: () => void;
+  } | null>(null);
 
-        if (error) {
-          console.error('Error deleting user:', error);
+  const openModal = (config: typeof modalConfig) => {
+    setModalConfig(config);
+    setModalOpen(true);
+  };
+
+  const closeModal = () => {
+    setModalOpen(false);
+    setModalConfig(null);
+  };
+
+  const handleDeleteUser = async (userId: string) => {
+    openModal({
+      title: "Delete User",
+      message: "Are you sure you want to delete this user? This action cannot be undone.",
+      variant: "danger",
+      confirmLabel: "Delete",
+      onConfirm: async () => {
+        const result = await adminDeleteUser(userId, {
+          email: user?.email || '',
+          password: user?.password || '',
+        });
+        if (!result.success) {
+          alert(`Failed to delete user: ${result.error}`);
           return;
         }
-
+        const usersJson = localStorage.getItem('trikeserve_users');
+        if (usersJson) {
+          const allUsers: StoredUser[] = JSON.parse(usersJson);
+          localStorage.setItem('trikeserve_users', JSON.stringify(allUsers.filter(u => u.id !== userId)));
+        }
         loadUsers();
-      } catch (error) {
-        console.error('Error in handleDeleteUser:', error);
-      }
-    }
+        closeModal();
+      },
+    });
   };
 
   const handleVerifyUser = async (userId: string) => {
-    try {
-      const { error } = await supabase
-        .from('users')
-        .update({ is_verified: true, updated_at: new Date().toISOString() })
-        .eq('id', userId);
-
-      if (error) {
-        console.error('Error verifying user:', error);
-        return;
-      }
-
-      loadUsers();
-    } catch (error) {
-      console.error('Error in handleVerifyUser:', error);
-    }
+    openModal({
+      title: "Verify User",
+      message: "Approve this user? They will be able to log in immediately.",
+      variant: "success",
+      confirmLabel: "Verify",
+      onConfirm: async () => {
+        const result = await adminVerifyUser(userId, {
+          email: user?.email || '',
+          password: user?.password || '',
+        });
+        if (!result.success) {
+          alert(`Failed to verify user: ${result.error}`);
+          return;
+        }
+        loadUsers();
+        closeModal();
+      },
+    });
   };
 
-  const handleUnverifyUser = (userId: string) => {
-    const usersJson = localStorage.getItem('trikeserve_users');
-    if (usersJson) {
-      const allUsers: StoredUser[] = JSON.parse(usersJson);
-      const updatedUsers = allUsers.map(u =>
-        u.id === userId ? { ...u, isVerified: false } : u
-      );
-      localStorage.setItem('trikeserve_users', JSON.stringify(updatedUsers));
-      loadUsers();
-    }
+  const handleUnverifyUser = async (userId: string) => {
+    openModal({
+      title: "Unverify User",
+      message: "Are you sure you want to unverify this user? They will not be able to log in until re-verified.",
+      variant: "warning",
+      confirmLabel: "Unverify",
+      onConfirm: async () => {
+        const result = await adminUnverifyUser(userId, {
+          email: user?.email || '',
+          password: user?.password || '',
+        });
+        if (!result.success) {
+          alert(`Failed to unverify user: ${result.error}`);
+          return;
+        }
+        const usersJson = localStorage.getItem('trikeserve_users');
+        if (usersJson) {
+          const allUsers: StoredUser[] = JSON.parse(usersJson);
+          localStorage.setItem('trikeserve_users', JSON.stringify(allUsers.map(u =>
+            u.id === userId ? { ...u, isVerified: false } : u
+          )));
+        }
+        loadUsers();
+        closeModal();
+      },
+    });
   };
 
   // Helper function to check if admin can verify a user
@@ -532,6 +579,17 @@ export default function AdminUsers() {
           </Card>
         </div>
       </div>
+
+      {/* Confirmation Modal */}
+      <ConfirmationModal
+        isOpen={modalOpen}
+        onConfirm={modalConfig?.onConfirm || (() => {})}
+        onCancel={closeModal}
+        title={modalConfig?.title || ''}
+        message={modalConfig?.message || ''}
+        variant={modalConfig?.variant || 'danger'}
+        confirmLabel={modalConfig?.confirmLabel || 'Confirm'}
+      />
     </div>
   );
 }
