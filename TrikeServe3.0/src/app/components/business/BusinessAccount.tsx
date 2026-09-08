@@ -13,6 +13,7 @@ export default function BusinessAccount() {
   const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [logoUrl, setLogoUrl] = useState<string | null>(null);
+  const [showGoodbye, setShowGoodbye] = useState(false);
 
   useEffect(() => {
     const fetchLogo = async () => {
@@ -30,8 +31,12 @@ export default function BusinessAccount() {
   }, [user?.id]);
 
   const handleLogout = () => {
-    logout();
-    navigate("/");
+    setShowLogoutConfirm(false);
+    setShowGoodbye(true);
+    setTimeout(() => {
+      logout();
+      navigate("/");
+    }, 2000);
   };
 
   const pendingOrders = 0;
@@ -260,6 +265,24 @@ export default function BusinessAccount() {
                 >
                   Cancel
                 </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Goodbye Popup */}
+        {showGoodbye && (
+          <div className="fixed inset-0 bg-black/50 z-[2000] flex items-center justify-center p-4">
+            <div className="bg-white rounded-2xl shadow-xl p-8 max-w-sm w-full text-center">
+              <div className="w-16 h-16 bg-[#DBEAFE] rounded-full flex items-center justify-center mx-auto mb-4">
+                <LogOut className="w-8 h-8 text-[#3B82F6]" />
+              </div>
+              <h3 className="text-2xl font-bold text-[#121212] mb-2">Goodbye! 👋</h3>
+              <p className="text-[#64748B] text-sm">See you soon, <span className="font-semibold text-[#121212]">{user?.name || 'there'}</span></p>
+              <div className="mt-6">
+                <div className="w-full bg-[#E2E8F0] rounded-full h-1.5">
+                  <div className="bg-[#3B82F6] h-1.5 rounded-full" style={{ width: '100%', animation: 'shrink 1.8s linear forwards' }} />
+                </div>
               </div>
             </div>
           </div>

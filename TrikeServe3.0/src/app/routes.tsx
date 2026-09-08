@@ -3,6 +3,8 @@ import Root from "./components/Root";
 import Login from "./components/Login";
 import SignUp from "./components/auth/SignUp";
 import ForgotPassword from "./components/auth/ForgotPassword";
+import VerifyEmail from "./components/auth/VerifyEmail";
+import SetPassword from "./components/auth/SetPassword";
 import ProtectedRoute from "./components/ProtectedRoute";
 import RoleRedirect from "./components/RoleRedirect";
 import RiderDashboard from "./components/rider/RiderDashboard";
@@ -50,6 +52,8 @@ export const router = createBrowserRouter([
       { index: true, Component: Login },
       { path: "signup", Component: SignUp },
       { path: "forgot-password", Component: ForgotPassword },
+      { path: "verify-email", Component: VerifyEmail },
+      { path: "set-password", Component: SetPassword },
       { 
         path: "redirect", 
         element: <RoleRedirect /> 

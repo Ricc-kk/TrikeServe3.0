@@ -10,6 +10,8 @@ import { Input } from "../ui/input";
 import { useAuth } from "../../contexts/AuthContext";
 import AdminSidebar from "./AdminSidebar";
 import { supabase } from "../../../utils/supabase";
+import { adminDeleteUser, adminVerifyUser } from "../../../lib/supabase";
+import ConfirmationModal from "../ui/confirmation-modal";
 
 interface StoredUser {
   id: string;
@@ -135,36 +137,52 @@ export default function VerifiedUsers() {
     }
   };
 
+  // Modal state
+  const [modalOpen, setModalOpen] = useState(false);
+  const [modalConfig, setModalConfig] = useState<{
+    title: string;
+    message: string;
+    variant: 'danger' | 'warning' | 'success';
+    confirmLabel: string;
+    onConfirm: () => void;
+  } | null>(null);
+
+  const openModal = (config: typeof modalConfig) => {
+    setModalConfig(config);
+    setModalOpen(true);
+  };
+
+  const closeModal = () => {
+    setModalOpen(false);
+    setModalConfig(null);
+  };
+
   const handleVerifyUser = async (userId: string) => {
-    try {
-      // Update in Supabase
-      const { error } = await supabase
-        .from('users')
-        .update({ is_verified: true, updated_at: new Date().toISOString() })
-        .eq('id', userId);
-
-      if (error) {
-        console.error('Error verifying user in Supabase:', error);
-        // Fallback to localStorage
-        handleVerifyUserLocalStorage(userId);
-        return;
-      }
-
-      // Also update localStorage as backup
-      const usersJson = localStorage.getItem('trikeserve_users');
-      if (usersJson) {
-        const allStoredUsers: StoredUser[] = JSON.parse(usersJson);
-        const updatedUsers = allStoredUsers.map(u =>
-          u.id === userId ? { ...u, isVerified: true } : u
-        );
-        localStorage.setItem('trikeserve_users', JSON.stringify(updatedUsers));
-      }
-
-      loadUsers();
-    } catch (error) {
-      console.error('Error in handleVerifyUser:', error);
-      handleVerifyUserLocalStorage(userId);
-    }
+    openModal({
+      title: "Approve User",
+      message: "Approve this user? They will be able to log in immediately.",
+      variant: "success",
+      confirmLabel: "Approve",
+      onConfirm: async () => {
+        const result = await adminVerifyUser(userId, {
+          email: user?.email || '',
+          password: user?.password || '',
+        });
+        if (!result.success) {
+          alert(`Failed to verify user: ${result.error}`);
+          return;
+        }
+        const usersJson = localStorage.getItem('trikeserve_users');
+        if (usersJson) {
+          const allStoredUsers: StoredUser[] = JSON.parse(usersJson);
+          localStorage.setItem('trikeserve_users', JSON.stringify(allStoredUsers.map(u =>
+            u.id === userId ? { ...u, isVerified: true } : u
+          )));
+        }
+        loadUsers();
+        closeModal();
+      },
+    });
   };
 
   const handleVerifyUserLocalStorage = (userId: string) => {
@@ -180,22 +198,20 @@ export default function VerifiedUsers() {
   };
 
   const handleRejectUser = async (userId: string) => {
-    if (confirm("Are you sure you want to reject this user?")) {
-      try {
-        // Delete from Supabase
-        const { error } = await supabase
-          .from('users')
-          .delete()
-          .eq('id', userId);
-
-        if (error) {
-          console.error('Error rejecting user in Supabase:', error);
-          // Fallback to localStorage
-          handleRejectUserLocalStorage(userId);
+    openModal({
+      title: "Reject User",
+      message: "Are you sure you want to reject this user? Their account will be permanently deleted.",
+      variant: "danger",
+      confirmLabel: "Reject",
+      onConfirm: async () => {
+        const result = await adminDeleteUser(userId, {
+          email: user?.email || '',
+          password: user?.password || '',
+        });
+        if (!result.success) {
+          alert(`Failed to delete user: ${result.error}`);
           return;
         }
-
-        // Also delete from localStorage as backup
         const usersJson = localStorage.getItem('trikeserve_users');
         if (usersJson) {
           const allStoredUsers: StoredUser[] = JSON.parse(usersJson);
@@ -204,11 +220,9 @@ export default function VerifiedUsers() {
         }
 
         loadUsers();
-      } catch (error) {
-        console.error('Error in handleRejectUser:', error);
-        handleRejectUserLocalStorage(userId);
-      }
-    }
+        closeModal();
+      },
+    });
   };
 
   const handleRejectUserLocalStorage = (userId: string) => {
@@ -508,6 +522,17 @@ export default function VerifiedUsers() {
           )}
         </div>
       </div>
+
+      {/* Confirmation Modal */}
+      <ConfirmationModal
+        isOpen={modalOpen}
+        onConfirm={modalConfig?.onConfirm || (() => {})}
+        onCancel={closeModal}
+        title={modalConfig?.title || ''}
+        message={modalConfig?.message || ''}
+        variant={modalConfig?.variant || 'danger'}
+        confirmLabel={modalConfig?.confirmLabel || 'Confirm'}
+      />
     </div>
   );
 }

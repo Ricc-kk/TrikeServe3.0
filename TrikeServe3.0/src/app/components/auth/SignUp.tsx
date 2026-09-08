@@ -61,8 +61,20 @@ export default function SignUp() {
       return;
     }
 
-    if (formData.password.length < 6) {
-      setError("Password must be at least 6 characters");
+    if (formData.password.length < 8) {
+      setError("Password must be at least 8 characters");
+      return;
+    }
+    if (!/[A-Z]/.test(formData.password)) {
+      setError("Password must contain at least one uppercase letter");
+      return;
+    }
+    if (!/[a-z]/.test(formData.password)) {
+      setError("Password must contain at least one lowercase letter");
+      return;
+    }
+    if (!/[0-9]/.test(formData.password)) {
+      setError("Password must contain at least one number");
       return;
     }
 
@@ -414,7 +426,7 @@ export default function SignUp() {
                     disabled={isLoading}
                   />
                 </div>
-                <p className="text-xs text-[#64748B] mt-1">Minimum 6 characters</p>
+                <p className="text-xs text-[#64748B] mt-1">At least 8 characters, 1 uppercase, 1 lowercase, 1 number</p>
               </div>
 
               <div>
@@ -441,20 +453,18 @@ export default function SignUp() {
                 </div>
               )}
 
-              {/* Show note only for rider and business */}
+              {/* Email verification note for all roles */}
+              <div className="p-3 bg-blue-50 border-2 border-blue-200 rounded-lg">
+                <p className="text-xs text-blue-800">
+                  <strong>📧 Email Verification:</strong> After registration, you'll receive a verification email. Click the link to verify your account before logging in.
+                </p>
+              </div>
+
+              {/* Show additional note for rider and business */}
               {(formData.role === "rider" || formData.role === "business") && (
                 <div className="p-3 bg-yellow-50 border-2 border-yellow-200 rounded-lg">
                   <p className="text-xs text-yellow-800">
-                    <strong>Note:</strong> After registration, you must visit the Barangay Hall for face-to-face verification before your account can be activated.
-                  </p>
-                </div>
-              )}
-
-              {/* Show different note for customers */}
-              {formData.role === "customer" && (
-                <div className="p-3 bg-green-50 border-2 border-green-200 rounded-lg">
-                  <p className="text-xs text-green-800">
-                    <strong>Note:</strong> Customer accounts are automatically activated after registration. You can login immediately!
+                    <strong>📋 Additional Step:</strong> You must also visit the Barangay Hall for face-to-face verification before your account can be fully activated.
                   </p>
                 </div>
               )}
@@ -498,12 +508,21 @@ export default function SignUp() {
                 <p className="text-[#64748B]">Your account has been created successfully.</p>
               </div>
 
-              {/* Customer: Auto-verified, can login immediately */}
+              {/* Customer: Email verification required */}
               {formData.role === "customer" && (
                 <>
-                  <div className="p-4 bg-green-50 border-2 border-green-200 rounded-lg">
-                    <p className="text-sm text-green-800">
-                      <strong>✓ Account Activated!</strong> You can now login and start using TrikeServe.
+                  <div className="p-4 bg-blue-50 border-2 border-blue-200 rounded-lg">
+                    <p className="text-sm text-blue-800 mb-2">
+                      <strong>📧 Check Your Email!</strong>
+                    </p>
+                    <p className="text-sm text-blue-800">
+                      We sent a verification link to <strong>{formData.email}</strong>. Please click the link in your email to verify your account before logging in.
+                    </p>
+                  </div>
+
+                  <div className="p-3 bg-yellow-50 border-2 border-yellow-200 rounded-lg">
+                    <p className="text-xs text-yellow-800">
+                      <strong>Didn't receive the email?</strong> Check your spam folder, or contact support if the problem persists.
                     </p>
                   </div>
 
@@ -515,15 +534,24 @@ export default function SignUp() {
                 </>
               )}
 
-              {/* Rider/Business: Need admin verification */}
+              {/* Rider/Business: Admin verification required (no email verification needed) */}
               {(formData.role === "rider" || formData.role === "business") && (
                 <>
+                  <div className="p-4 bg-blue-50 border-2 border-blue-200 rounded-lg">
+                    <p className="text-sm text-blue-800 mb-2">
+                      <strong>📧 Email Verified Automatically</strong>
+                    </p>
+                    <p className="text-sm text-blue-800">
+                      Your email has been confirmed. No need to check your inbox.
+                    </p>
+                  </div>
+
                   <div className="p-4 bg-yellow-50 border-2 border-yellow-200 rounded-lg">
                     <p className="text-sm text-yellow-800 mb-3">
                       <strong>⏳ Admin Verification Required</strong>
                     </p>
                     <p className="text-sm text-yellow-800 mb-3">
-                      Your account needs to be verified by an administrator before you can login.
+                      You must visit the Barangay Hall for face-to-face verification before you can log in.
                     </p>
                     <ol className="text-sm text-yellow-800 space-y-2 list-decimal list-inside">
                       <li>Visit the TrikeServe Office at Barangay Hall</li>
@@ -545,7 +573,7 @@ export default function SignUp() {
                       </li>
                       <li>Complete face-to-face verification with staff</li>
                       <li>Wait for admin approval (usually within 24 hours)</li>
-                      <li>You'll receive a notification once approved</li>
+                      <li>You'll receive a notification once approved — then you can log in!</li>
                     </ol>
                   </div>
 
