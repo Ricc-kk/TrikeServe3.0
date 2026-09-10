@@ -318,6 +318,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
         setUser(userToSet);
         localStorage.setItem('trikeserve_current_user', JSON.stringify(userToSet));
+        // Store admin credentials separately so Edge Functions can verify them
+        localStorage.setItem('trikeserve_admin_credentials', JSON.stringify({
+          email: adminUser.email,
+          password: adminUser.password_hash,
+        }));
         return { success: true };
       }
 

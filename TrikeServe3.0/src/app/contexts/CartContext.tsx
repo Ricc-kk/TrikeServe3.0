@@ -9,7 +9,7 @@ export interface CustomizationSelection {
 }
 
 export interface CartItem {
-  id: number;
+  id: number | string;
   name: string;
   description: string;
   price: number;
@@ -36,8 +36,8 @@ export interface CartRestaurant {
 interface CartContextType {
   cartRestaurants: CartRestaurant[];
   addToCart: (restaurantData: { id: string; name: string; location: string; distance: string; time: string; image: string; deliveryFee: number; businessUserId?: string; supabaseRestaurantId?: string }, item: CartItem) => void;
-  updateItemQuantity: (restaurantId: string, itemId: number, change: number) => void;
-  removeItem: (restaurantId: string, itemId: number) => void;
+  updateItemQuantity: (restaurantId: string, itemId: number | string, change: number) => void;
+  removeItem: (restaurantId: string, itemId: number | string) => void;
   removeRestaurant: (restaurantId: string) => void;
   clearCart: () => void;
   getTotalItems: () => number;
@@ -140,7 +140,7 @@ export function CartProvider({ children }: { children: ReactNode }) {
     });
   };
 
-  const updateItemQuantity = (restaurantId: string, itemId: number, change: number) => {
+  const updateItemQuantity = (restaurantId: string, itemId: number | string, change: number) => {
     setCartRestaurants((prev) =>
       prev.map((restaurant) => {
         if (restaurant.id === restaurantId) {
@@ -149,7 +149,7 @@ export function CartProvider({ children }: { children: ReactNode }) {
             items: restaurant.items
               .map((item) =>
                 item.id === itemId
-                  ? { ...item, quantity: Math.max(0, item.quantity + change) }
+                  ? { ...item, quantity: Math.max(0, Math.min(50, item.quantity + change)) }
                   : item
               )
               .filter((item) => item.quantity > 0), // Remove items with 0 quantity
@@ -160,7 +160,7 @@ export function CartProvider({ children }: { children: ReactNode }) {
     );
   };
 
-  const removeItem = (restaurantId: string, itemId: number) => {
+  const removeItem = (restaurantId: string, itemId: number | string) => {
     setCartRestaurants((prev) =>
       prev
         .map((restaurant) => {

@@ -51,6 +51,46 @@ export const supabase = createClient(
 );
 
 // ---------------------------------------------------------------------------
+// Helper: resolve admin credentials (email + password) from the passed-in
+// object OR from localStorage.  Admins have no Supabase Auth session, so
+// Edge Functions verify them via the admins table.
+// ---------------------------------------------------------------------------
+function resolveAdminCredentials(
+  adminCredentials?: { email: string; password: string }
+): { email: string; password: string } | undefined {
+  // Prefer explicitly passed credentials
+  if (adminCredentials?.email && adminCredentials?.password) {
+    console.log('[AdminCreds] Using passed-in credentials:', adminCredentials.email);
+    return adminCredentials;
+  }
+  // Fall back to localStorage (set during admin login)
+  try {
+    const raw = localStorage.getItem('trikeserve_admin_credentials');
+    if (raw) {
+      const stored = JSON.parse(raw);
+      if (stored?.email && stored?.password) {
+        console.log('[AdminCreds] Using localStorage credentials:', stored.email);
+        return stored;
+      }
+    }
+    console.warn('[AdminCreds] No admin credentials found in localStorage');
+  } catch (e) { console.warn('[AdminCreds] localStorage parse error:', e); }
+  // Last resort: try reading from the current user object in localStorage
+  try {
+    const userRaw = localStorage.getItem('trikeserve_current_user');
+    if (userRaw) {
+      const storedUser = JSON.parse(userRaw);
+      if (storedUser?.email && storedUser?.password && storedUser?.role === 'admin') {
+        console.log('[AdminCreds] Using current_user fallback:', storedUser.email);
+        return { email: storedUser.email, password: storedUser.password };
+      }
+    }
+  } catch { /* ignore */ }
+  console.error('[AdminCreds] No admin credentials available anywhere');
+  return undefined;
+}
+
+// ---------------------------------------------------------------------------
 // Admin: delete a user completely (profile row + Supabase Auth account)
 // ---------------------------------------------------------------------------
 // The anon key cannot delete from auth.users and RLS blocks profile deletes,
@@ -61,23 +101,16 @@ export async function adminDeleteUser(
   adminCredentials?: { email: string; password: string }
 ): Promise<{ success: boolean; error?: string }> {
   try {
-    const { data: { session } } = await supabase.auth.getSession();
-
-    // Admins live in the separate `admins` table and have no Supabase Auth
-    // session, so pass their credentials for the function to verify instead.
-    if (!session && !adminCredentials) {
-      return { success: false, error: 'Not signed in' };
-    }
+    const creds = resolveAdminCredentials(adminCredentials);
 
     const response = await fetch(`${supabaseUrl}/functions/v1/delete-user`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        ...(session && { Authorization: `Bearer ${session.access_token}` }),
       },
       body: JSON.stringify({
         userId,
-        ...(adminCredentials && { adminEmail: adminCredentials.email, adminPassword: adminCredentials.password }),
+        ...(creds && { adminEmail: creds.email, adminPassword: creds.password }),
       }),
     });
 
@@ -102,17 +135,16 @@ export async function adminVerifyUser(
   adminCredentials?: { email: string; password: string }
 ): Promise<{ success: boolean; error?: string }> {
   try {
-    const { data: { session } } = await supabase.auth.getSession();
+    const creds = resolveAdminCredentials(adminCredentials);
 
     const response = await fetch(`${supabaseUrl}/functions/v1/admin-verify-user`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        ...(session && { Authorization: `Bearer ${session.access_token}` }),
       },
       body: JSON.stringify({
         userId,
-        ...(adminCredentials && { adminEmail: adminCredentials.email, adminPassword: adminCredentials.password }),
+        ...(creds && { adminEmail: creds.email, adminPassword: creds.password }),
       }),
     });
 
@@ -137,17 +169,16 @@ export async function adminUnverifyUser(
   adminCredentials?: { email: string; password: string }
 ): Promise<{ success: boolean; error?: string }> {
   try {
-    const { data: { session } } = await supabase.auth.getSession();
+    const creds = resolveAdminCredentials(adminCredentials);
 
     const response = await fetch(`${supabaseUrl}/functions/v1/admin-unverify-user`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        ...(session && { Authorization: `Bearer ${session.access_token}` }),
       },
       body: JSON.stringify({
         userId,
-        ...(adminCredentials && { adminEmail: adminCredentials.email, adminPassword: adminCredentials.password }),
+        ...(creds && { adminEmail: creds.email, adminPassword: creds.password }),
       }),
     });
 
@@ -161,6 +192,42 @@ export async function adminUnverifyUser(
   } catch (error) {
     console.error('adminUnverifyUser error:', error);
     return { success: false, error: 'Network error while unverifying user' };
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Admin: change a user's role
+// ---------------------------------------------------------------------------
+export async function adminChangeRole(
+  userId: string,
+  newRole: string,
+  adminCredentials?: { email: string; password: string }
+): Promise<{ success: boolean; error?: string }> {
+  try {
+    const creds = resolveAdminCredentials(adminCredentials);
+
+    const response = await fetch(`${supabaseUrl}/functions/v1/admin-change-role`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        userId,
+        newRole,
+        ...(creds && { adminEmail: creds.email, adminPassword: creds.password }),
+      }),
+    });
+
+    const result = await response.json().catch(() => ({}));
+
+    if (!response.ok) {
+      return { success: false, error: result.error || `Change role failed (${response.status})` };
+    }
+
+    return { success: true };
+  } catch (error) {
+    console.error('adminChangeRole error:', error);
+    return { success: false, error: 'Network error while changing role' };
   }
 }
 

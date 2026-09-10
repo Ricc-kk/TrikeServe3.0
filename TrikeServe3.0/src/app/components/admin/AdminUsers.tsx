@@ -10,8 +10,9 @@ import { Input } from "../ui/input";
 import { useAuth } from "../../contexts/AuthContext";
 import AdminSidebar from "./AdminSidebar";
 import { supabase } from "../../../utils/supabase";
-import { adminDeleteUser, adminVerifyUser, adminUnverifyUser } from "../../../lib/supabase";
+import { adminDeleteUser, adminVerifyUser, adminUnverifyUser, adminChangeRole } from "../../../lib/supabase";
 import ConfirmationModal from "../ui/confirmation-modal";
+import Toast from "../ui/toast";
 
 interface StoredUser {
   id: string;
@@ -40,6 +41,7 @@ export default function AdminUsers() {
   const [filterStatus, setFilterStatus] = useState<string>("all");
   const [editingUserId, setEditingUserId] = useState<string | null>(null);
   const [editRole, setEditRole] = useState<string>("");
+  const [toast, setToast] = useState<{ message: string; variant?: 'success' | 'error' | 'warning' } | null>(null);
 
   useEffect(() => {
     loadUsers();
@@ -135,12 +137,9 @@ export default function AdminUsers() {
       variant: "danger",
       confirmLabel: "Delete",
       onConfirm: async () => {
-        const result = await adminDeleteUser(userId, {
-          email: user?.email || '',
-          password: user?.password || '',
-        });
+        const result = await adminDeleteUser(userId);
         if (!result.success) {
-          alert(`Failed to delete user: ${result.error}`);
+          setToast({ message: `Delete failed: ${result.error}`, variant: 'error' });
           return;
         }
         const usersJson = localStorage.getItem('trikeserve_users');
@@ -150,6 +149,7 @@ export default function AdminUsers() {
         }
         loadUsers();
         closeModal();
+        setToast({ message: 'User deleted successfully', variant: 'success' });
       },
     });
   };
@@ -161,16 +161,14 @@ export default function AdminUsers() {
       variant: "success",
       confirmLabel: "Verify",
       onConfirm: async () => {
-        const result = await adminVerifyUser(userId, {
-          email: user?.email || '',
-          password: user?.password || '',
-        });
+        const result = await adminVerifyUser(userId);
         if (!result.success) {
-          alert(`Failed to verify user: ${result.error}`);
+          setToast({ message: `Verify failed: ${result.error}`, variant: 'error' });
           return;
         }
         loadUsers();
         closeModal();
+        setToast({ message: 'User verified successfully', variant: 'success' });
       },
     });
   };
@@ -182,12 +180,9 @@ export default function AdminUsers() {
       variant: "warning",
       confirmLabel: "Unverify",
       onConfirm: async () => {
-        const result = await adminUnverifyUser(userId, {
-          email: user?.email || '',
-          password: user?.password || '',
-        });
+        const result = await adminUnverifyUser(userId);
         if (!result.success) {
-          alert(`Failed to unverify user: ${result.error}`);
+          setToast({ message: `Unverify failed: ${result.error}`, variant: 'error' });
           return;
         }
         const usersJson = localStorage.getItem('trikeserve_users');
@@ -199,6 +194,7 @@ export default function AdminUsers() {
         }
         loadUsers();
         closeModal();
+        setToast({ message: 'User unverified successfully', variant: 'warning' });
       },
     });
   };
@@ -240,16 +236,23 @@ export default function AdminUsers() {
   };
 
   const handleSaveRole = (userId: string) => {
-    const usersJson = localStorage.getItem('trikeserve_users');
-    if (usersJson) {
-      const allUsers: StoredUser[] = JSON.parse(usersJson);
-      const updatedUsers = allUsers.map(u =>
-        u.id === userId ? { ...u, role: editRole as any } : u
-      );
-      localStorage.setItem('trikeserve_users', JSON.stringify(updatedUsers));
-      loadUsers();
-      setEditingUserId(null);
-    }
+    openModal({
+      title: "Change Role",
+      message: `Change this user's role to ${editRole.toUpperCase()}?`,
+      variant: "success",
+      confirmLabel: "Change Role",
+      onConfirm: async () => {
+        const result = await adminChangeRole(userId, editRole);
+        if (!result.success) {
+          setToast({ message: `Change role failed: ${result.error}`, variant: 'error' });
+          return;
+        }
+        loadUsers();
+        setEditingUserId(null);
+        closeModal();
+        setToast({ message: `User role changed to ${editRole.toUpperCase()}`, variant: 'success' });
+      },
+    });
   };
 
   const handleCancelEdit = () => {
@@ -590,6 +593,15 @@ export default function AdminUsers() {
         variant={modalConfig?.variant || 'danger'}
         confirmLabel={modalConfig?.confirmLabel || 'Confirm'}
       />
+
+      {/* Toast Notification */}
+      {toast && (
+        <Toast
+          message={toast.message}
+          variant={toast.variant}
+          onClose={() => setToast(null)}
+        />
+      )}
     </div>
   );
 }

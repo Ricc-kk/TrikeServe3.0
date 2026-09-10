@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import {
-  Settings, Menu, Save, DollarSign, Shield, Bell,
-  MapPin, Clock, Bike, Store, CheckCircle,
+  Settings, Menu, Save, DollarSign,
+  Bike, Store, CheckCircle,
   LogOut, AlertTriangle
 } from "lucide-react";
 import { useNavigate } from "react-router";
@@ -25,18 +25,6 @@ export default function AdminSettings() {
     sharedRide: 15,
     privateRide: 50,
     deliveryBaseFee: 30,
-  });
-
-  // Platform Settings
-  const [platformSettings, setPlatformSettings] = useState({
-    platformName: "TrikeServe",
-    supportEmail: "support@trikeserve.com",
-    supportPhone: "+63 912 345 6789",
-    operatingHoursStart: "05:00",
-    operatingHoursEnd: "22:00",
-    autoVerifyCustomers: true,
-    requireRiderVerification: true,
-    requireBusinessVerification: true,
   });
 
   useEffect(() => {
@@ -67,15 +55,6 @@ export default function AdminSettings() {
       loadRatesFromLocalStorage();
     }
 
-    // Load platform settings from localStorage (can be extended to Supabase)
-    const savedPlatformSettings = localStorage.getItem('trikeserve_platform_settings');
-    if (savedPlatformSettings) {
-      try {
-        setPlatformSettings(JSON.parse(savedPlatformSettings));
-      } catch (error) {
-        console.error('Error loading platform settings:', error);
-      }
-    }
   };
 
   const loadRatesFromLocalStorage = () => {
@@ -137,20 +116,6 @@ export default function AdminSettings() {
           localStorage.setItem('trikeserve_rates', JSON.stringify(rateConfig));
           showSavedMessage("Rate configuration saved locally!");
         }
-      },
-    });
-  };
-
-  const handleSavePlatformSettings = () => {
-    openModal({
-      title: "Save Settings",
-      message: "Save platform settings changes?",
-      variant: "success",
-      confirmLabel: "Save",
-      onConfirm: () => {
-        closeModal();
-        localStorage.setItem('trikeserve_platform_settings', JSON.stringify(platformSettings));
-        showSavedMessage("Platform settings saved successfully!");
       },
     });
   };
@@ -296,95 +261,6 @@ export default function AdminSettings() {
             </button>
           </div>
           )}
-
-          {/* Platform Settings Section */}
-          <div>
-            <div className="flex items-center gap-3 mb-4">
-              <div className="w-10 h-10 bg-[#EFF6FF] rounded-xl flex items-center justify-center">
-                <Settings className="w-6 h-6 text-[#3B82F6]" />
-              </div>
-              <div>
-                <h2 className="text-xl lg:text-2xl font-bold text-[#121212]">Platform Settings</h2>
-                <p className="text-sm text-[#64748B]">General platform configuration</p>
-              </div>
-            </div>
-
-            <Card className="p-6 border-2 border-[#E2E8F0] bg-white">
-              <div className="space-y-6">
-                {/* Platform Information */}
-                <div>
-                  <h3 className="font-bold text-lg text-[#121212] mb-4">Platform Information</h3>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div>
-                      <label className="text-sm font-bold text-[#121212] mb-2 block">Platform Name</label>
-                      <Input
-                        type="text"
-                        value={platformSettings.platformName}
-                        onChange={(e) => setPlatformSettings({ ...platformSettings, platformName: e.target.value })}
-                        className="border-2 border-[#E2E8F0]"
-                      />
-                    </div>
-                    <div>
-                      <label className="text-sm font-bold text-[#121212] mb-2 block">Support Email</label>
-                      <Input
-                        type="email"
-                        value={platformSettings.supportEmail}
-                        onChange={(e) => setPlatformSettings({ ...platformSettings, supportEmail: e.target.value })}
-                        className="border-2 border-[#E2E8F0]"
-                      />
-                    </div>
-                    <div>
-                      <label className="text-sm font-bold text-[#121212] mb-2 block">Support Phone</label>
-                      <Input
-                        type="tel"
-                        value={platformSettings.supportPhone}
-                        onChange={(e) => setPlatformSettings({ ...platformSettings, supportPhone: e.target.value })}
-                        className="border-2 border-[#E2E8F0]"
-                      />
-                    </div>
-
-                  </div>
-                </div>
-
-                {/* Operating Hours */}
-                <div className="border-t-2 border-[#E2E8F0] pt-6">
-                  <h3 className="font-bold text-lg text-[#121212] mb-4 flex items-center gap-2">
-                    <Clock className="w-5 h-5 text-[#F59E0B]" />
-                    Operating Hours
-                  </h3>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div>
-                      <label className="text-sm font-bold text-[#121212] mb-2 block">Start Time</label>
-                      <Input
-                        type="time"
-                        value={platformSettings.operatingHoursStart}
-                        onChange={(e) => setPlatformSettings({ ...platformSettings, operatingHoursStart: e.target.value })}
-                        className="border-2 border-[#E2E8F0]"
-                      />
-                    </div>
-                    <div>
-                      <label className="text-sm font-bold text-[#121212] mb-2 block">End Time</label>
-                      <Input
-                        type="time"
-                        value={platformSettings.operatingHoursEnd}
-                        onChange={(e) => setPlatformSettings({ ...platformSettings, operatingHoursEnd: e.target.value })}
-                        className="border-2 border-[#E2E8F0]"
-                      />
-                    </div>
-                  </div>
-                </div>
-
-              </div>
-
-              <button
-                onClick={handleSavePlatformSettings}
-                className="mt-6 px-6 py-3 bg-[#E11D48] hover:bg-[#BE123C] text-white font-bold rounded-xl uppercase transition-all flex items-center gap-2"
-              >
-                <Save className="w-5 h-5" />
-                Save Platform Settings
-              </button>
-            </Card>
-          </div>
 
           {/* Account & Security Section */}
           <div>

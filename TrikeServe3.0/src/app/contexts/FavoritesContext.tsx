@@ -1,7 +1,7 @@
 import { createContext, useContext, useState, ReactNode, useEffect } from "react";
 
-interface Restaurant {
-  id: number;
+export interface FavoriteRestaurant {
+  id: number | string;
   name: string;
   image: string;
   rating: number;
@@ -12,17 +12,36 @@ interface Restaurant {
   priceRange?: string;
 }
 
+export interface FavoriteMenuItem {
+  id: number | string;
+  restaurantId: string;
+  restaurantName: string;
+  name: string;
+  description: string;
+  price: number;
+  image: string;
+  category: string;
+}
+
 interface FavoritesContextType {
-  favorites: Restaurant[];
-  toggleFavorite: (restaurant: Restaurant) => void;
-  isFavorite: (restaurantId: number) => boolean;
+  // Restaurant favorites
+  favorites: FavoriteRestaurant[];
+  toggleFavorite: (restaurant: FavoriteRestaurant) => void;
+  isFavorite: (restaurantId: number | string) => boolean;
   getTotalFavorites: () => number;
+
+  // Menu item favorites
+  favoriteItems: FavoriteMenuItem[];
+  toggleFavoriteItem: (item: FavoriteMenuItem) => void;
+  isFavoriteItem: (itemId: number | string) => boolean;
+  getTotalFavoriteItems: () => number;
 }
 
 const FavoritesContext = createContext<FavoritesContextType | undefined>(undefined);
 
 export function FavoritesProvider({ children }: { children: ReactNode }) {
-  const [favorites, setFavorites] = useState<Restaurant[]>([]);
+  const [favorites, setFavorites] = useState<FavoriteRestaurant[]>([]);
+  const [favoriteItems, setFavoriteItems] = useState<FavoriteMenuItem[]>([]);
   const [currentUserEmail, setCurrentUserEmail] = useState<string | null>(null);
 
   // Load favorites from localStorage on mount and when user changes
@@ -35,7 +54,7 @@ export function FavoritesProvider({ children }: { children: ReactNode }) {
           const userEmail = currentUser.email;
           setCurrentUserEmail(userEmail);
           
-          // Load user-specific favorites
+          // Load user-specific restaurant favorites
           const favoritesKey = `favorites_${userEmail}`;
           const savedFavorites = localStorage.getItem(favoritesKey);
           if (savedFavorites) {
@@ -43,12 +62,23 @@ export function FavoritesProvider({ children }: { children: ReactNode }) {
           } else {
             setFavorites([]);
           }
+
+          // Load user-specific menu item favorites
+          const itemFavoritesKey = `favorite_items_${userEmail}`;
+          const savedItemFavorites = localStorage.getItem(itemFavoritesKey);
+          if (savedItemFavorites) {
+            setFavoriteItems(JSON.parse(savedItemFavorites));
+          } else {
+            setFavoriteItems([]);
+          }
         } catch (error) {
           console.error('Error loading favorites:', error);
           setFavorites([]);
+          setFavoriteItems([]);
         }
       } else {
         setFavorites([]);
+        setFavoriteItems([]);
         setCurrentUserEmail(null);
       }
     };
@@ -61,7 +91,7 @@ export function FavoritesProvider({ children }: { children: ReactNode }) {
     return () => clearInterval(interval);
   }, []);
 
-  // Save to localStorage whenever favorites change
+  // Save restaurant favorites to localStorage whenever they change
   useEffect(() => {
     if (currentUserEmail) {
       const favoritesKey = `favorites_${currentUserEmail}`;
@@ -69,7 +99,16 @@ export function FavoritesProvider({ children }: { children: ReactNode }) {
     }
   }, [favorites, currentUserEmail]);
 
-  const toggleFavorite = (restaurant: Restaurant) => {
+  // Save menu item favorites to localStorage whenever they change
+  useEffect(() => {
+    if (currentUserEmail) {
+      const itemFavoritesKey = `favorite_items_${currentUserEmail}`;
+      localStorage.setItem(itemFavoritesKey, JSON.stringify(favoriteItems));
+    }
+  }, [favoriteItems, currentUserEmail]);
+
+  // --- Restaurant favorites ---
+  const toggleFavorite = (restaurant: FavoriteRestaurant) => {
     setFavorites((prev) => {
       const exists = prev.find((item) => item.id === restaurant.id);
       if (exists) {
@@ -82,7 +121,7 @@ export function FavoritesProvider({ children }: { children: ReactNode }) {
     });
   };
 
-  const isFavorite = (restaurantId: number) => {
+  const isFavorite = (restaurantId: number | string) => {
     return favorites.some((item) => item.id === restaurantId);
   };
 
@@ -90,8 +129,37 @@ export function FavoritesProvider({ children }: { children: ReactNode }) {
     return favorites.length;
   };
 
+  // --- Menu item favorites ---
+  const toggleFavoriteItem = (item: FavoriteMenuItem) => {
+    setFavoriteItems((prev) => {
+      const exists = prev.find((fi) => fi.id === item.id);
+      if (exists) {
+        return prev.filter((fi) => fi.id !== item.id);
+      } else {
+        return [...prev, item];
+      }
+    });
+  };
+
+  const isFavoriteItem = (itemId: number | string) => {
+    return favoriteItems.some((item) => item.id === itemId);
+  };
+
+  const getTotalFavoriteItems = () => {
+    return favoriteItems.length;
+  };
+
   return (
-    <FavoritesContext.Provider value={{ favorites, toggleFavorite, isFavorite, getTotalFavorites }}>
+    <FavoritesContext.Provider value={{
+      favorites,
+      toggleFavorite,
+      isFavorite,
+      getTotalFavorites,
+      favoriteItems,
+      toggleFavoriteItem,
+      isFavoriteItem,
+      getTotalFavoriteItems,
+    }}>
       {children}
     </FavoritesContext.Provider>
   );
