@@ -13,6 +13,7 @@ import AdminSidebar from "./AdminSidebar";
 import { supabase } from "../../../utils/supabase";
 import { adminDeleteUser, adminVerifyUser } from "../../../lib/supabase";
 import ConfirmationModal from "../ui/confirmation-modal";
+import Toast from "../ui/toast";
 
 interface StoredUser {
   id: string;
@@ -63,6 +64,7 @@ export default function AdminDashboard() {
   const [showNotifications, setShowNotifications] = useState(false);
   const [pendingVerifications, setPendingVerifications] = useState<PendingUser[]>([]);
   const [activeUsers, setActiveUsers] = useState<ActiveUser[]>([]);
+  const [toast, setToast] = useState<{ message: string; variant?: 'success' | 'error' | 'warning' } | null>(null);
 
   const [rateConfig, setRateConfig] = useState({
     sharedRide: 15,
@@ -238,16 +240,14 @@ export default function AdminDashboard() {
       variant: "success",
       confirmLabel: "Approve",
       onConfirm: async () => {
-        const result = await adminVerifyUser(userId, {
-          email: user?.email || '',
-          password: user?.password || '',
-        });
+        const result = await adminVerifyUser(userId);
         if (!result.success) {
-          alert(`Failed to approve user: ${result.error}`);
+          setToast({ message: `Approve failed: ${result.error}`, variant: 'error' });
           return;
         }
         loadUsers();
         closeModal();
+        setToast({ message: 'User approved successfully', variant: 'success' });
       },
     });
   };
@@ -259,12 +259,9 @@ export default function AdminDashboard() {
       variant: "danger",
       confirmLabel: "Reject",
       onConfirm: async () => {
-        const result = await adminDeleteUser(userId, {
-          email: user?.email || '',
-          password: user?.password || '',
-        });
+        const result = await adminDeleteUser(userId);
         if (!result.success) {
-          alert(`Failed to delete user: ${result.error}`);
+          setToast({ message: `Reject failed: ${result.error}`, variant: 'error' });
           return;
         }
         const usersJson = localStorage.getItem('trikeserve_users');
@@ -274,6 +271,7 @@ export default function AdminDashboard() {
         }
         loadUsers();
         closeModal();
+        setToast({ message: 'User rejected and deleted', variant: 'success' });
       },
     });
   };
@@ -670,6 +668,15 @@ export default function AdminDashboard() {
         variant={modalConfig?.variant || 'danger'}
         confirmLabel={modalConfig?.confirmLabel || 'Confirm'}
       />
+
+      {/* Toast Notification */}
+      {toast && (
+        <Toast
+          message={toast.message}
+          variant={toast.variant}
+          onClose={() => setToast(null)}
+        />
+      )}
     </div>
   );
 }

@@ -13,7 +13,7 @@ import MapSelector from "./MapSelector";
 
 export default function Cart() {
   const navigate = useNavigate();
-  const { cartRestaurants, updateItemQuantity, removeRestaurant, getTotalItems } = useCart();
+  const { cartRestaurants, updateItemQuantity, removeItem, removeRestaurant, getTotalItems } = useCart();
   const { addOrder } = useOrders();
   const { user } = useAuth();
   const [isManageMode, setIsManageMode] = useState(false);
@@ -66,9 +66,25 @@ export default function Cart() {
   };
 
   const openCheckout = (restaurant: any) => {
-    setCheckoutRestaurant(restaurant);
+    // Find the live version from context so it stays in sync
+    const live = cartRestaurants.find(r => r.id === restaurant.id) || restaurant;
+    setCheckoutRestaurant(live);
     setViewMode("checkout");
   };
+
+  // Keep checkoutRestaurant in sync with live cart data
+  useEffect(() => {
+    if (checkoutRestaurant && viewMode === "checkout") {
+      const live = cartRestaurants.find(r => r.id === checkoutRestaurant.id);
+      if (live) {
+        setCheckoutRestaurant(live);
+      } else {
+        // Restaurant was removed from cart, go back to list
+        setViewMode("list");
+        setCheckoutRestaurant(null);
+      }
+    }
+  }, [cartRestaurants, viewMode]);
 
   const calculateSubtotal = () => {
     if (!checkoutRestaurant) return 0;
@@ -376,6 +392,65 @@ export default function Cart() {
                     />
                   </div>
                 </div>
+
+                {/* Item List with Quantity Controls */}
+                {!isManageMode && (
+                  <div className="mt-3 space-y-2">
+                    {restaurant.items.map((item) => (
+                      <div key={item.id} className="flex items-center gap-3 py-2 border-t border-[#F1F5F9]">
+                        <div className="w-10 h-10 rounded-lg overflow-hidden flex-shrink-0">
+                          <ImageWithFallback
+                            src={item.image}
+                            alt={item.name}
+                            className="w-full h-full object-cover"
+                          />
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm font-semibold text-[#121212] truncate">{item.name}</p>
+                          <p className="text-xs text-[#64748B]">₱{item.price}.00</p>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          {item.quantity === 1 ? (
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                removeItem(restaurant.id, item.id);
+                              }}
+                              className="w-7 h-7 rounded-full border-2 border-[#EF4444] flex items-center justify-center active:scale-90 transition-all"
+                            >
+                              <Trash2 size={12} className="text-[#EF4444]" />
+                            </button>
+                          ) : (
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                updateItemQuantity(restaurant.id, item.id, -1);
+                              }}
+                              className="w-7 h-7 rounded-full border-2 border-[#E2E8F0] flex items-center justify-center active:scale-90 transition-all"
+                            >
+                              <Minus size={12} className="text-[#121212]" />
+                            </button>
+                          )}
+                          <span className="text-sm font-bold text-[#121212] min-w-[18px] text-center">{item.quantity}</span>
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              updateItemQuantity(restaurant.id, item.id, 1);
+                            }}
+                            disabled={item.quantity >= 50}
+                            className={`w-7 h-7 rounded-full border-2 flex items-center justify-center active:scale-90 transition-all ${
+                              item.quantity >= 50
+                                ? 'border-[#E2E8F0] bg-[#F8F9FA] cursor-not-allowed opacity-50'
+                                : 'border-[#10B981] bg-[#10B981]/10'
+                            }`}
+                          >
+                            <Plus size={12} className={item.quantity >= 50 ? 'text-[#94A3B8]' : 'text-[#10B981]'} />
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
             ))}
           </div>
@@ -496,7 +571,14 @@ export default function Cart() {
       <div className="px-5 py-4 border-b border-[#E2E8F0] sticky top-0 bg-white z-50">
         <div className="flex items-center gap-3">
           <button
-            onClick={() => setViewMode("list")}
+            onClick={() => {
+              setViewMode("list");
+              // Sync checkoutRestaurant from live data for next open
+              if (checkoutRestaurant) {
+                const live = cartRestaurants.find(r => r.id === checkoutRestaurant.id);
+                setCheckoutRestaurant(live || null);
+              }
+            }}
             className="active:scale-90 transition-transform"
           >
             <X className="w-6 h-6 text-[#121212]" />
@@ -515,36 +597,84 @@ export default function Cart() {
 
           <div className="space-y-4">
             {checkoutRestaurant?.items.map((item: any) => (
-              <div key={item.id} className="flex items-start gap-3">
-                {/* Item Image */}
-                <div className="w-16 h-16 rounded-xl overflow-hidden flex-shrink-0">
-                  <ImageWithFallback
-                    src={item.image}
-                    alt={item.name}
-                    className="w-full h-full object-cover"
-                  />
+              <div key={item.id} className="border border-[#F1F5F9] rounded-xl p-3">
+                <div className="flex items-start gap-3">
+                  {/* Item Image */}
+                  <div className="w-16 h-16 rounded-xl overflow-hidden flex-shrink-0">
+                    <ImageWithFallback
+                      src={item.image}
+                      alt={item.name}
+                      className="w-full h-full object-cover"
+                    />
+                  </div>
+
+                  {/* Item Details */}
+                  <div className="flex-1 min-w-0">
+                    <h4 className="font-semibold text-[#121212] text-sm mb-1">{item.name}</h4>
+                    {item.customizations && item.customizations.length > 0 && (
+                      <div className="space-y-0.5 mb-2">
+                        {item.customizations.map((customization: any, idx: number) => (
+                          <p key={idx} className="text-xs text-[#64748B]">
+                            • {customization.optionName}
+                            {customization.price > 0 && <span className="text-[#E11D48]"> +₱{customization.price}</span>}
+                          </p>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Price */}
+                  <div className="text-right">
+                    <span className="font-semibold text-[#121212]">₱{(item.price * item.quantity).toFixed(2)}</span>
+                  </div>
                 </div>
 
-                {/* Item Details */}
-                <div className="flex-1 min-w-0">
-                  <h4 className="font-semibold text-[#121212] text-sm mb-1">{item.name}</h4>
-                  {item.customizations && item.customizations.length > 0 && (
-                    <div className="space-y-0.5 mb-2">
-                      {item.customizations.map((customization: any, idx: number) => (
-                        <p key={idx} className="text-xs text-[#64748B]">
-                          • {customization.optionName}
-                          {customization.price > 0 && <span className="text-[#E11D48]"> +₱{customization.price}</span>}
-                        </p>
-                      ))}
-                    </div>
-                  )}
-                </div>
-
-                {/* Price and Quantity */}
-                <div className="flex flex-col items-end gap-2">
-                  <span className="font-semibold text-[#121212]">{item.price}.00</span>
-                  <div className="w-8 h-8 rounded-full border-2 border-[#10B981] flex items-center justify-center">
-                    <span className="text-sm font-semibold text-[#10B981]">{item.quantity}</span>
+                {/* Quantity Controls */}
+                <div className="flex items-center justify-between mt-2 pl-[76px]">
+                  <span className="text-sm text-[#64748B]">₱{item.price}.00 each</span>
+                  <div className="flex items-center gap-3">
+                    {item.quantity === 1 ? (
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          if (checkoutRestaurant) {
+                            removeItem(checkoutRestaurant.id, item.id);
+                          }
+                        }}
+                        className="w-8 h-8 rounded-full border-2 border-[#EF4444] flex items-center justify-center active:scale-90 transition-all"
+                      >
+                        <Trash2 size={14} className="text-[#EF4444]" />
+                      </button>
+                    ) : (
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          if (checkoutRestaurant) {
+                            updateItemQuantity(checkoutRestaurant.id, item.id, -1);
+                          }
+                        }}
+                        className="w-8 h-8 rounded-full border-2 border-[#E2E8F0] flex items-center justify-center active:scale-90 transition-all"
+                      >
+                        <Minus size={14} className="text-[#121212]" />
+                      </button>
+                    )}
+                    <span className="text-base font-bold text-[#121212] min-w-[20px] text-center">{item.quantity}</span>
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        if (checkoutRestaurant) {
+                          updateItemQuantity(checkoutRestaurant.id, item.id, 1);
+                        }
+                      }}
+                      disabled={item.quantity >= 50}
+                      className={`w-8 h-8 rounded-full border-2 flex items-center justify-center active:scale-90 transition-all ${
+                        item.quantity >= 50
+                          ? 'border-[#E2E8F0] bg-[#F8F9FA] cursor-not-allowed opacity-50'
+                          : 'border-[#10B981] bg-[#10B981]/10'
+                      }`}
+                    >
+                      <Plus size={14} className={item.quantity >= 50 ? 'text-[#94A3B8]' : 'text-[#10B981]'} />
+                    </button>
                   </div>
                 </div>
               </div>

@@ -481,7 +481,7 @@ export default function PassengerRequests() {
                   <Badge className="bg-orange-100 text-orange-600 text-[10px] mb-2 border border-orange-200">🚏 Different Terminal</Badge>
                 )}
                 {!wrongTerminal && !canAccept && (
-                  <Badge className="bg-gray-200 text-gray-500 text-[10px] mb-2">Not in your service types</Badge>
+                  <Badge className="bg-red-100 text-red-600 text-[10px] mb-2">Not in your service types</Badge>
                 )}
                 <Button
                   onClick={() => handleOpenPreview(request)}

@@ -1,12 +1,14 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import {
-  Plus, Edit2, Trash2, UserPlus, UserMinus, MapPin, Users, Menu, X, Navigation, Search, Loader2
+  Plus, Edit2, Trash2, UserPlus, UserMinus, MapPin, Users, Menu, X, Navigation, Search, Loader2, Save
 } from "lucide-react";
 import { GoogleMap, MarkerF, InfoWindow } from "@react-google-maps/api";
 import useMapLoader from "@/lib/mapLoader";
 import { autocompletePlacesNew, createPlacesSessionToken, fetchPlaceDetailsNew } from "@/lib/placesApi";
 import AdminSidebar from "./AdminSidebar";
 import { supabase } from "../../../utils/supabase";
+import ConfirmationModal from "../ui/confirmation-modal";
+import Toast from "../ui/toast";
 
 const GOOGLE_MAPS_API_KEY = import.meta.env.VITE_GOOGLE_MAPS_API_KEY || "";
 
@@ -110,6 +112,35 @@ export default function AdminTerminals() {
   const [isMapSearching, setIsMapSearching] = useState(false);
   const [showMapSearchDropdown, setShowMapSearchDropdown] = useState(false);
   const [placesSessionToken, setPlacesSessionToken] = useState<string>(() => createPlacesSessionToken());
+
+  // Pending rider assignment changes (not saved until user clicks Save Changes)
+  type PendingAction = { action: 'assign' | 'unassign'; terminalId: string; terminalName: string };
+  const [pendingChanges, setPendingChanges] = useState<Record<string, PendingAction>>({});
+
+  // Toast notification
+  const [toast, setToast] = useState<{ message: string; variant?: 'success' | 'error' | 'warning' } | null>(null);
+
+  // Confirmation modal
+  const [modalOpen, setModalOpen] = useState(false);
+  const [modalConfig, setModalConfig] = useState<{
+    title: string;
+    message: string;
+    variant: 'danger' | 'warning' | 'success';
+    confirmLabel: string;
+    onConfirm: () => void;
+  } | null>(null);
+
+  const openModal = (config: typeof modalConfig) => {
+    setModalConfig(config);
+    setModalOpen(true);
+  };
+
+  const closeModal = () => {
+    setModalOpen(false);
+    setModalConfig(null);
+  };
+
+  const hasPendingChanges = Object.keys(pendingChanges).length > 0;
 
   // Load from Supabase when available; fall back to localStorage data otherwise.
   useEffect(() => {
@@ -328,8 +359,20 @@ export default function AdminTerminals() {
     setShowMapPicker(false);
   }
 
+  function confirmDeleteTerminal(id: string) {
+    openModal({
+      title: "Delete Terminal",
+      message: "Delete this terminal? Assigned drivers will be unassigned.",
+      variant: "danger",
+      confirmLabel: "Delete",
+      onConfirm: () => {
+        closeModal();
+        deleteTerminal(id);
+      },
+    });
+  }
+
   function deleteTerminal(id: string) {
-    if (!confirm("Delete this terminal? Assigned drivers will be unassigned.")) return;
     const unassignIds = users.filter(u => riderTerminalId(u) === id).map(u => u.id);
     const updated = users.map(u =>
       riderTerminalId(u) === id
@@ -343,14 +386,17 @@ export default function AdminTerminals() {
       saveStoredTerminals(next);
       return next;
     });
-    // Best-effort Supabase sync: clear assignments, then remove the terminal.
+    // Also remove any pending changes for riders of this terminal
+    setPendingChanges(prev => {
+      const next = { ...prev };
+      for (const uid of unassignIds) delete next[uid];
+      return next;
+    });
+    // Best-effort Supabase sync
     (async () => {
       try {
         if (unassignIds.length > 0) {
-          await supabase
-            .from("users")
-            .update({ terminal_id: null, terminal_name: null })
-            .in("id", unassignIds);
+          await supabase.from("users").update({ terminal_id: null, terminal_name: null }).in("id", unassignIds);
         }
         const { error } = await supabase.from("terminals").delete().eq("id", id);
         if (error) console.error("Error deleting terminal in Supabase:", error);
@@ -358,74 +404,121 @@ export default function AdminTerminals() {
         console.error("Error deleting terminal in Supabase:", error);
       }
     })();
+    setToast({ message: 'Terminal deleted successfully', variant: 'success' });
   }
 
-  function assignRider(riderId: string, terminalId: string, terminalName: string) {
-    const updated = users.map(u =>
-      u.id === riderId
-        ? { ...u, terminalId, terminalName, terminal_id: terminalId, terminal_name: terminalName }
-        : u
-    );
-    setUsers(updated);
-    saveStoredUsers(updated);
-    setTerminals(ts => {
-      const next = ts.map(t => (t.id === terminalId ? { ...t, rider_count: t.rider_count + 1 } : t));
-      saveStoredTerminals(next);
-      return next;
+  // Queue a rider assignment change (not applied until Save Changes is clicked)
+  function queueAssignRider(riderId: string, terminalId: string, terminalName: string) {
+    openModal({
+      title: "Assign Driver",
+      message: `Assign this driver to ${terminalName}? This will be queued until you click Save Changes.`,
+      variant: "success",
+      confirmLabel: "Queue Assignment",
+      onConfirm: () => {
+        closeModal();
+        setPendingChanges(prev => ({
+          ...prev,
+          [riderId]: { action: 'assign', terminalId, terminalName },
+        }));
+        setToast({ message: 'Assignment queued — click Save Changes to apply', variant: 'warning' });
+      },
     });
-    // Best-effort Supabase sync of the rider's terminal assignment + update rider count.
-    (async () => {
-      try {
-        const { error } = await supabase
-          .from("users")
-          .update({ terminal_id: terminalId, terminal_name: terminalName })
-          .eq("id", riderId);
-        if (error) console.error("Error assigning rider in Supabase:", error);
-        // Recount riders for this terminal and update rider_count in DB
-        const { data: riders } = await supabase
-          .from("users")
-          .select("id")
-          .eq("terminal_id", terminalId);
-        const count = (riders || []).length;
-        await supabase.from("terminals").update({ rider_count: count }).eq("id", terminalId);
-      } catch (error) {
-        console.error("Error assigning rider in Supabase:", error);
-      }
-    })();
   }
 
-  function unassignRider(riderId: string, terminalId: string) {
-    const updated = users.map(u =>
-      u.id === riderId
-        ? { ...u, terminalId: undefined, terminalName: undefined, terminal_id: undefined, terminal_name: undefined }
-        : u
-    );
-    setUsers(updated);
-    saveStoredUsers(updated);
-    setTerminals(ts => {
-      const next = ts.map(t => (t.id === terminalId ? { ...t, rider_count: Math.max(0, t.rider_count - 1) } : t));
-      saveStoredTerminals(next);
+  // Queue a rider unassignment change
+  function queueUnassignRider(riderId: string, terminalId: string, terminalName: string) {
+    openModal({
+      title: "Unassign Driver",
+      message: `Remove this driver from ${terminalName}? This will be queued until you click Save Changes.`,
+      variant: "warning",
+      confirmLabel: "Queue Unassignment",
+      onConfirm: () => {
+        closeModal();
+        setPendingChanges(prev => ({
+          ...prev,
+          [riderId]: { action: 'unassign', terminalId, terminalName },
+        }));
+        setToast({ message: 'Unassignment queued — click Save Changes to apply', variant: 'warning' });
+      },
+    });
+  }
+
+  function cancelPendingChange(riderId: string) {
+    setPendingChanges(prev => {
+      const next = { ...prev };
+      delete next[riderId];
       return next;
     });
-    // Best-effort Supabase sync: clear the rider's terminal assignment + update rider count.
-    (async () => {
-      try {
-        const { error } = await supabase
-          .from("users")
-          .update({ terminal_id: null, terminal_name: null })
-          .eq("id", riderId);
-        if (error) console.error("Error unassigning rider in Supabase:", error);
-        // Recount remaining riders for this terminal
-        const { data: riders } = await supabase
-          .from("users")
-          .select("id")
-          .eq("terminal_id", terminalId);
-        const count = (riders || []).length;
-        await supabase.from("terminals").update({ rider_count: count }).eq("id", terminalId);
-      } catch (error) {
-        console.error("Error unassigning rider in Supabase:", error);
-      }
-    })();
+  }
+
+  function savePendingChanges() {
+    const count = Object.keys(pendingChanges).length;
+    openModal({
+      title: "Save Changes",
+      message: `Apply ${count} pending driver assignment change${count > 1 ? 's' : ''}?`,
+      variant: "success",
+      confirmLabel: "Save Changes",
+      onConfirm: async () => {
+        closeModal();
+        const changes = { ...pendingChanges };
+        setPendingChanges({});
+
+        // Apply changes locally first
+        let updatedUsers = [...users];
+        let updatedTerminals = [...terminals];
+
+        for (const [riderId, change] of Object.entries(changes)) {
+          if (change.action === 'assign') {
+            updatedUsers = updatedUsers.map(u =>
+              u.id === riderId
+                ? { ...u, terminalId: change.terminalId, terminalName: change.terminalName, terminal_id: change.terminalId, terminal_name: change.terminalName }
+                : u
+            );
+            updatedTerminals = updatedTerminals.map(t =>
+              t.id === change.terminalId ? { ...t, rider_count: t.rider_count + 1 } : t
+            );
+          } else {
+            const oldTerminalId = updatedUsers.find(u => u.id === riderId)?.terminalId || updatedUsers.find(u => u.id === riderId)?.terminal_id;
+            updatedUsers = updatedUsers.map(u =>
+              u.id === riderId
+                ? { ...u, terminalId: undefined, terminalName: undefined, terminal_id: undefined, terminal_name: undefined }
+                : u
+            );
+            if (oldTerminalId) {
+              updatedTerminals = updatedTerminals.map(t =>
+                t.id === oldTerminalId ? { ...t, rider_count: Math.max(0, t.rider_count - 1) } : t
+              );
+            }
+          }
+        }
+
+        setUsers(updatedUsers);
+        saveStoredUsers(updatedUsers);
+        setTerminals(updatedTerminals);
+        saveStoredTerminals(updatedTerminals);
+
+        // Best-effort Supabase sync
+        try {
+          for (const [riderId, change] of Object.entries(changes)) {
+            if (change.action === 'assign') {
+              await supabase.from("users").update({ terminal_id: change.terminalId, terminal_name: change.terminalName }).eq("id", riderId);
+            } else {
+              await supabase.from("users").update({ terminal_id: null, terminal_name: null }).eq("id", riderId);
+            }
+          }
+          // Recount riders for affected terminals
+          const terminalIds = [...new Set(Object.values(changes).map(c => c.action === 'assign' ? c.terminalId : c.terminalId))].filter(Boolean);
+          for (const tid of terminalIds) {
+            const { data: ridersForTerminal } = await supabase.from("users").select("id").eq("terminal_id", tid);
+            await supabase.from("terminals").update({ rider_count: (ridersForTerminal || []).length }).eq("id", tid);
+          }
+        } catch (error) {
+          console.error("Error syncing to Supabase:", error);
+        }
+
+        setToast({ message: `${count} driver assignment${count > 1 ? 's' : ''} saved successfully`, variant: 'success' });
+      },
+    });
   }
 
   return (
@@ -458,17 +551,57 @@ export default function AdminTerminals() {
                 </p>
               </div>
             </div>
-            <button
-              onClick={openCreate}
-              className="flex items-center gap-2 px-4 lg:px-5 py-2.5 bg-[#E11D48] hover:bg-[#BE123C] text-white font-bold text-sm uppercase tracking-wide rounded-xl transition-all active:scale-95 shadow-lg shadow-red-200"
-            >
-              <Plus size={16} /> New Terminal
-            </button>
+            <div className="flex items-center gap-3">
+              {hasPendingChanges && (
+                <button
+                  onClick={savePendingChanges}
+                  className="flex items-center gap-2 px-4 lg:px-5 py-2.5 bg-[#10B981] hover:bg-[#059669] text-white font-bold text-sm uppercase tracking-wide rounded-xl transition-all active:scale-95 shadow-lg shadow-green-200 animate-pulse"
+                >
+                  <Save size={16} /> Save Changes ({Object.keys(pendingChanges).length})
+                </button>
+              )}
+              <button
+                onClick={openCreate}
+                className="flex items-center gap-2 px-4 lg:px-5 py-2.5 bg-[#E11D48] hover:bg-[#BE123C] text-white font-bold text-sm uppercase tracking-wide rounded-xl transition-all active:scale-95 shadow-lg shadow-red-200"
+              >
+                <Plus size={16} /> New Terminal
+              </button>
+            </div>
           </div>
         </div>
 
         {/* Content */}
         <div className="p-5 lg:p-8">
+          {/* Pending Changes Banner */}
+          {hasPendingChanges && (
+            <div className="mb-4 p-4 bg-amber-50 border-2 border-amber-200 rounded-xl">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="font-bold text-amber-800 text-sm">
+                    ⚠️ {Object.keys(pendingChanges).length} pending change{Object.keys(pendingChanges).length > 1 ? 's' : ''}
+                  </p>
+                  <p className="text-xs text-amber-600 mt-0.5">
+                    Changes are not applied until you click "Save Changes"
+                  </p>
+                </div>
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => setPendingChanges({})}
+                    className="text-xs font-semibold text-amber-600 hover:text-amber-800 underline"
+                  >
+                    Discard All
+                  </button>
+                  <button
+                    onClick={savePendingChanges}
+                    className="flex items-center gap-1 px-3 py-1.5 bg-[#10B981] text-white text-xs font-bold rounded-lg hover:bg-[#059669] transition-all"
+                  >
+                    <Save size={12} /> Save Now
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+
           <div className="grid gap-4">
             {terminals.map(t => {
               const termRiders = getRidersForTerminal(t.id);
@@ -509,7 +642,7 @@ export default function AdminTerminals() {
                           <Edit2 size={14} className="text-[#64748B]" />
                         </button>
                         <button
-                          onClick={() => deleteTerminal(t.id)}
+                          onClick={() => confirmDeleteTerminal(t.id)}
                           className="w-8 h-8 bg-red-50 border-2 border-red-100 rounded-xl flex items-center justify-center hover:border-red-300 transition-all active:scale-90"
                         >
                           <Trash2 size={14} className="text-[#EF4444]" />
@@ -527,42 +660,86 @@ export default function AdminTerminals() {
                         {termRiders.length === 0 && (
                           <p className="text-sm text-[#64748B] italic">No drivers assigned yet</p>
                         )}
-                        {termRiders.map(r => (
-                          <div key={r.id} className="flex items-center justify-between bg-white rounded-xl border-2 border-[#E2E8F0] px-4 py-2.5">
-                            <div className="flex items-center gap-3">
-                              <div className="w-8 h-8 bg-[#DBEAFE] rounded-lg flex items-center justify-center text-[#3B82F6] font-bold text-xs">
-                                {riderName(r)[0]?.toUpperCase()}
+                        {termRiders.map(r => {
+                          const isPending = !!pendingChanges[r.id];
+                          const pendingAction = pendingChanges[r.id];
+                          return (
+                            <div key={r.id} className={`flex items-center justify-between rounded-xl border-2 px-4 py-2.5 ${
+                              isPending ? 'bg-amber-50 border-amber-200' : 'bg-white border-[#E2E8F0]'
+                            }`}>
+                              <div className="flex items-center gap-3">
+                                <div className="w-8 h-8 bg-[#DBEAFE] rounded-lg flex items-center justify-center text-[#3B82F6] font-bold text-xs">
+                                  {riderName(r)[0]?.toUpperCase()}
+                                </div>
+                                <div>
+                                  <p className="text-sm font-semibold text-[#121212]">{riderName(r)}</p>
+                                  <p className="text-xs text-[#64748B]">{riderPlate(r) || "No plate"}</p>
+                                </div>
+                                {isPending && pendingAction?.action === 'unassign' && (
+                                  <span className="text-xs font-bold text-amber-600 bg-amber-100 px-2 py-0.5 rounded-full">
+                                    ⏳ Pending removal
+                                  </span>
+                                )}
                               </div>
-                              <div>
-                                <p className="text-sm font-semibold text-[#121212]">{riderName(r)}</p>
-                                <p className="text-xs text-[#64748B]">{riderPlate(r) || "No plate"}</p>
-                              </div>
+                              {isPending ? (
+                                <button
+                                  onClick={() => cancelPendingChange(r.id)}
+                                  className="text-xs font-semibold text-amber-600 hover:text-amber-800 underline"
+                                >
+                                  Cancel
+                                </button>
+                              ) : (
+                                <button
+                                  onClick={() => queueUnassignRider(r.id, t.id, t.name)}
+                                  className="flex items-center gap-1 text-xs font-semibold text-[#EF4444] bg-red-50 border border-red-100 px-2.5 py-1.5 rounded-lg hover:bg-red-100 transition-all active:scale-95"
+                                >
+                                  <UserMinus size={12} /> Unassign
+                                </button>
+                              )}
                             </div>
-                            <button
-                              onClick={() => unassignRider(r.id, t.id)}
-                              className="flex items-center gap-1 text-xs font-semibold text-[#EF4444] bg-red-50 border border-red-100 px-2.5 py-1.5 rounded-lg hover:bg-red-100 transition-all active:scale-95"
-                            >
-                              <UserMinus size={12} /> Unassign
-                            </button>
-                          </div>
-                        ))}
+                          );
+                        })}
                       </div>
 
                       {unassigned.length > 0 && (
                         <>
                           <h4 className="text-xs font-semibold uppercase tracking-wide text-[#64748B] mb-2">Assign Driver</h4>
                           <div className="flex flex-wrap gap-2">
-                            {unassigned.map(r => (
-                              <button
-                                key={r.id}
-                                onClick={() => assignRider(r.id, t.id, t.name)}
-                                className="flex items-center gap-2 px-3 py-2 bg-white border-2 border-[#E2E8F0] hover:border-[#10B981] rounded-xl transition-all active:scale-95 text-sm font-medium"
-                              >
-                                <UserPlus size={13} className="text-[#10B981]" />
-                                {riderName(r)}
-                                {riderPlate(r) && <span className="text-xs text-[#64748B]">{riderPlate(r)}</span>}
-                              </button>
-                            ))}
+                            {unassigned.map(r => {
+                              const isPending = !!pendingChanges[r.id];
+                              const pendingAction = pendingChanges[r.id];
+                              return (
+                                <div key={r.id} className="flex items-center gap-1">
+                                  {isPending && pendingAction?.action === 'assign' ? (
+                                    <>
+                                      <button
+                                        disabled
+                                        className="flex items-center gap-2 px-3 py-2 bg-amber-50 border-2 border-amber-200 rounded-xl text-sm font-medium text-amber-700"
+                                      >
+                                        <UserPlus size={13} className="text-amber-500" />
+                                        {riderName(r)}
+                                        <span className="text-xs text-amber-500">⏳ Queued</span>
+                                      </button>
+                                      <button
+                                        onClick={() => cancelPendingChange(r.id)}
+                                        className="text-xs font-semibold text-amber-600 hover:text-amber-800 underline"
+                                      >
+                                        Cancel
+                                      </button>
+                                    </>
+                                  ) : (
+                                    <button
+                                      onClick={() => queueAssignRider(r.id, t.id, t.name)}
+                                      className="flex items-center gap-2 px-3 py-2 bg-white border-2 border-[#E2E8F0] hover:border-[#10B981] rounded-xl transition-all active:scale-95 text-sm font-medium"
+                                    >
+                                      <UserPlus size={13} className="text-[#10B981]" />
+                                      {riderName(r)}
+                                      {riderPlate(r) && <span className="text-xs text-[#64748B]">{riderPlate(r)}</span>}
+                                    </button>
+                                  )}
+                                </div>
+                              );
+                            })}
                           </div>
                         </>
                       )}
@@ -784,6 +961,24 @@ export default function AdminTerminals() {
           </div>
         </div>
       )}
+
+      {/* Confirmation Modal */}
+      <ConfirmationModal
+        isOpen={modalOpen}
+        onCancel={closeModal}
+        onConfirm={modalConfig?.onConfirm || (() => {})}
+        title={modalConfig?.title || ''}
+        message={modalConfig?.message || ''}
+        variant={modalConfig?.variant || 'danger'}
+        confirmLabel={modalConfig?.confirmLabel || 'Confirm'}
+      />
+
+      {/* Toast */}
+      <Toast
+        message={toast?.message || ''}
+        variant={toast?.variant || 'success'}
+        onClose={() => setToast(null)}
+      />
     </div>
   );
 }

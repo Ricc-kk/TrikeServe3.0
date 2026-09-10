@@ -49,7 +49,7 @@ export default function RestaurantDetail() {
   const restaurantId = searchParams.get("id");
   const restaurantName = searchParams.get("name") || "Restaurant";
   const { addToCart: addItemToCart, getTotalItems } = useCart();
-  const { toggleFavorite, isFavorite: checkIsFavorite } = useFavorites();
+  const { toggleFavorite, isFavorite: checkIsFavorite, toggleFavoriteItem, isFavoriteItem } = useFavorites();
   const { showNotification } = useNotification();
 
   const [selectedCategory, setSelectedCategory] = useState("all");
@@ -726,12 +726,35 @@ export default function RestaurantDetail() {
                     </p>
                   </div>
 
-                  <button
-                    onClick={() => handleAddToCart(item)}
-                    className="w-11 h-11 bg-gradient-to-br from-[#E11D48] to-[#BE123C] rounded-full flex items-center justify-center shadow-lg shadow-[#E11D48]/30 active:scale-90 transition-all flex-shrink-0"
-                  >
-                    <span className="text-white text-2xl font-bold leading-none">+</span>
-                  </button>
+                  <div className="flex flex-col items-center gap-2 flex-shrink-0">
+                    <button
+                      onClick={() =>
+                        toggleFavoriteItem({
+                          id: item.id,
+                          restaurantId: restaurantId || '',
+                          restaurantName: restaurantData?.name || '',
+                          name: item.name,
+                          description: item.description,
+                          price: item.price,
+                          image: item.image,
+                          category: item.category,
+                        })
+                      }
+                      className={`w-11 h-11 rounded-full flex items-center justify-center shadow-lg active:scale-90 transition-all ${
+                        isFavoriteItem(item.id)
+                          ? 'bg-[#E11D48] shadow-[#E11D48]/30'
+                          : 'bg-[#FFF7ED] shadow-[#E11D48]/10'
+                      }`}
+                    >
+                      <Heart className={`w-5 h-5 ${isFavoriteItem(item.id) ? 'text-white fill-white' : 'text-[#E11D48]'}`} />
+                    </button>
+                    <button
+                      onClick={() => handleAddToCart(item)}
+                      className="w-11 h-11 bg-gradient-to-br from-[#E11D48] to-[#BE123C] rounded-full flex items-center justify-center shadow-lg shadow-[#E11D48]/30 active:scale-90 transition-all"
+                    >
+                      <span className="text-white text-2xl font-bold leading-none">+</span>
+                    </button>
+                  </div>
                 </div>
               </Card>
             ))}
