@@ -918,6 +918,18 @@ export default function RiderDashboard() {
         )
         }
 
+        {/* Service Types Floating Button */}
+        {!activeTrip && (
+          <div className="absolute top-4 right-4 z-[1000]">
+            <button
+              onClick={() => setShowServiceTypes(true)}
+              className="w-14 h-14 bg-[#E11D48] rounded-full shadow-xl flex items-center justify-center hover:shadow-2xl active:scale-95 transition-all border-2 border-white"
+            >
+              <Settings className="w-7 h-7 text-white" />
+            </button>
+          </div>
+        )}
+
         {/* Toggle Online/Offline Button */}
         {!activeTrip && (
           <div className="absolute top-4 left-1/2 -translate-x-1/2 z-[1000]">
@@ -1048,101 +1060,105 @@ export default function RiderDashboard() {
               </div>
 
 
-               {showServiceTypes && (
-                <div className="border-t border-gray-200 p-4 space-y-4">
-                  <div className="flex items-center justify-between mb-1">
-                    <h3 className="font-bold text-[#121212]">Service Types</h3>
-                    <button onClick={() => setShowServiceTypes(false)}>
-                      <X className="w-5 h-5 text-[#64748B]" />
-                    </button>
-                  </div>
-                  <p className="text-sm text-[#64748B]">
-                    Choose a category, then select the service types you want to accept.
-                    {serviceCategory === 'rides' && ' You can select both Ride Share and Private Ride.'}
-                  </p>
-
-                  {/* Category */}
-                  <div className="grid grid-cols-2 gap-3">
-                    <div
-                      onClick={() => selectServiceCategory('rides')}
-                      className={`flex flex-col items-center gap-2 p-4 border-2 rounded-lg cursor-pointer transition-all ${
-                        serviceCategory === 'rides'
-                          ? 'border-[#E11D48] bg-red-50'
-                          : 'border-gray-200 hover:border-gray-300'
-                      }`}
-                    >
-                      <div className={`w-12 h-12 rounded-full flex items-center justify-center ${
-                        serviceCategory === 'rides' ? 'bg-[#E11D48] text-white' : 'bg-gray-100 text-[#64748B]'
-                      }`}>
-                        <Users className="w-6 h-6" />
-                      </div>
-                      <div className="text-center">
-                        <p className="font-semibold text-[#121212]">Rides</p>
-                        <p className="text-xs text-[#64748B]">Transport passengers</p>
-                      </div>
+              {showServiceTypes && (
+                <div className="fixed inset-0 bg-black/50 z-[2000] flex items-end animate-in slide-in-from-bottom duration-300">
+                  <div className="bg-white w-full rounded-t-3xl max-h-[85vh] overflow-y-auto">
+                    <div className="sticky top-0 bg-white border-b border-[#E2E8F0] px-5 py-4 flex items-center justify-between">
+                      <h2 className="text-xl font-bold text-[#121212]">Service Types</h2>
+                      <button onClick={() => setShowServiceTypes(false)}>
+                        <X className="w-6 h-6 text-[#64748B]" />
+                      </button>
                     </div>
-                    <div
-                      onClick={() => selectServiceCategory('delivery')}
-                      className={`flex flex-col items-center gap-2 p-4 border-2 rounded-lg cursor-pointer transition-all ${
-                        serviceCategory === 'delivery'
-                          ? 'border-[#E11D48] bg-red-50'
-                          : 'border-gray-200 hover:border-gray-300'
-                      }`}
-                    >
-                      <div className={`w-12 h-12 rounded-full flex items-center justify-center ${
-                        serviceCategory === 'delivery' ? 'bg-[#E11D48] text-white' : 'bg-gray-100 text-[#64748B]'
-                      }`}>
-                        <Package className="w-6 h-6" />
-                      </div>
-                      <div className="text-center">
-                        <p className="font-semibold text-[#121212]">Delivery</p>
-                        <p className="text-xs text-[#64748B]">Food & package delivery</p>
-                      </div>
-                    </div>
-                  </div>
+                    <div className="p-5 space-y-4">
+                      <p className="text-sm text-[#64748B]">
+                        Choose a category, then select the service types you want to accept.
+                        {serviceCategory === 'rides' && ' You can select both Ride Share and Private Ride.'}
+                      </p>
 
-                  {/* Service type within category */}
-                  <div className="space-y-2">
-                    {SERVICE_OPTIONS[serviceCategory].map((option) => {
-                      const active = selectedServices.includes(option.key);
-                      const isMulti = serviceCategory === 'rides';
-                      return (
+                      {/* Category */}
+                      <div className="grid grid-cols-2 gap-3">
                         <div
-                          key={option.key}
-                          onClick={() => (isMulti ? toggleServiceType(option.key) : undefined)}
-                          className={`flex items-center justify-between p-4 border-2 rounded-lg cursor-pointer transition-all ${
-                            active
+                          onClick={() => selectServiceCategory('rides')}
+                          className={`flex flex-col items-center gap-2 p-4 border-2 rounded-lg cursor-pointer transition-all ${
+                            serviceCategory === 'rides'
                               ? 'border-[#E11D48] bg-red-50'
                               : 'border-gray-200 hover:border-gray-300'
                           }`}
                         >
-                          <div className="flex items-center gap-3">
-                            <div className={`w-10 h-10 rounded-full flex items-center justify-center ${
-                              active ? 'bg-[#E11D48] text-white' : 'bg-gray-100 text-[#64748B]'
-                            }`}>
-                              {option.key === 'delivery' ? <Package className="w-5 h-5" /> : option.key === 'private' ? <Car className="w-5 h-5" /> : <Users className="w-5 h-5" />}
-                            </div>
-                            <div>
-                              <p className="font-semibold text-[#121212]">{option.name}</p>
-                              <p className="text-xs text-[#64748B]">{option.description}</p>
-                            </div>
-                          </div>
-                          <div className={`w-5 h-5 rounded border-2 flex items-center justify-center ${
-                            active ? 'bg-[#E11D48] border-[#E11D48]' : 'border-gray-300'
+                          <div className={`w-12 h-12 rounded-full flex items-center justify-center ${
+                            serviceCategory === 'rides' ? 'bg-[#E11D48] text-white' : 'bg-gray-100 text-[#64748B]'
                           }`}>
-                            {active && <div className="w-2 h-2 bg-white rounded-sm" />}
+                            <Users className="w-6 h-6" />
+                          </div>
+                          <div className="text-center">
+                            <p className="font-semibold text-[#121212]">Rides</p>
+                            <p className="text-xs text-[#64748B]">Transport passengers</p>
                           </div>
                         </div>
-                      );
-                    })}
-                  </div>
+                        <div
+                          onClick={() => selectServiceCategory('delivery')}
+                          className={`flex flex-col items-center gap-2 p-4 border-2 rounded-lg cursor-pointer transition-all ${
+                            serviceCategory === 'delivery'
+                              ? 'border-[#E11D48] bg-red-50'
+                              : 'border-gray-200 hover:border-gray-300'
+                          }`}
+                        >
+                          <div className={`w-12 h-12 rounded-full flex items-center justify-center ${
+                            serviceCategory === 'delivery' ? 'bg-[#E11D48] text-white' : 'bg-gray-100 text-[#64748B]'
+                          }`}>
+                            <Package className="w-6 h-6" />
+                          </div>
+                          <div className="text-center">
+                            <p className="font-semibold text-[#121212]">Delivery</p>
+                            <p className="text-xs text-[#64748B]">Food & package delivery</p>
+                          </div>
+                        </div>
+                      </div>
 
-                  <Button
-                    onClick={() => setShowServiceTypes(false)}
-                    className="w-full bg-[#E11D48] hover:bg-[#BE123C] uppercase"
-                  >
-                    Save Service Types
-                  </Button>
+                      {/* Service type within category */}
+                      <div className="space-y-2">
+                        {SERVICE_OPTIONS[serviceCategory].map((option) => {
+                          const active = selectedServices.includes(option.key);
+                          const isMulti = serviceCategory === 'rides';
+                          return (
+                            <div
+                              key={option.key}
+                              onClick={() => (isMulti ? toggleServiceType(option.key) : undefined)}
+                              className={`flex items-center justify-between p-4 border-2 rounded-lg cursor-pointer transition-all ${
+                                active
+                                  ? 'border-[#E11D48] bg-red-50'
+                                  : 'border-gray-200 hover:border-gray-300'
+                              }`}
+                            >
+                              <div className="flex items-center gap-3">
+                                <div className={`w-10 h-10 rounded-full flex items-center justify-center ${
+                                  active ? 'bg-[#E11D48] text-white' : 'bg-gray-100 text-[#64748B]'
+                                }`}>
+                                  {option.key === 'delivery' ? <Package className="w-5 h-5" /> : option.key === 'private' ? <Car className="w-5 h-5" /> : <Users className="w-5 h-5" />}
+                                </div>
+                                <div>
+                                  <p className="font-semibold text-[#121212]">{option.name}</p>
+                                  <p className="text-xs text-[#64748B]">{option.description}</p>
+                                </div>
+                              </div>
+                              <div className={`w-5 h-5 rounded border-2 flex items-center justify-center ${
+                                active ? 'bg-[#E11D48] border-[#E11D48]' : 'border-gray-300'
+                              }`}>
+                                {active && <div className="w-2 h-2 bg-white rounded-sm" />}
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+
+                      <Button
+                        onClick={() => setShowServiceTypes(false)}
+                        className="w-full bg-[#E11D48] hover:bg-[#BE123C] uppercase"
+                      >
+                        Save Service Types
+                      </Button>
+                    </div>
+                  </div>
                 </div>
               )}
 
@@ -1185,12 +1201,6 @@ export default function RiderDashboard() {
             <Button variant="ghost" className="flex flex-col items-center gap-1">
               <DollarSign className="w-5 h-5 text-[#64748B]" />
               <span className="text-xs text-[#64748B]">Earnings</span>
-            </Button>
-          </Link>
-          <Link to="/rider/service-types">
-            <Button variant="ghost" className="flex flex-col items-center gap-1">
-              <Car className="w-5 h-5 text-[#64748B]" />
-              <span className="text-xs text-[#64748B]">Service Types</span>
             </Button>
           </Link>
           <Link to="/rider/messages">

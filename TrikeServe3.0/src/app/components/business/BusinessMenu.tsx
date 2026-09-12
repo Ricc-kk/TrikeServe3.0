@@ -339,6 +339,9 @@ export default function BusinessMenu() {
   });
 
   const [newCategory, setNewCategory] = useState("");
+  const [categoryError, setCategoryError] = useState("");
+  const [priceError, setPriceError] = useState("");
+  const [editPriceError, setEditPriceError] = useState("");
 
   const handleUploadClick = (target: 'new' | 'edit') => {
     setUploadTarget(target);
@@ -451,16 +454,26 @@ export default function BusinessMenu() {
   };
 
   const saveEditedItem = () => {
-    if (editingItem) {
-      setMenuItems(menuItems.map(item =>
-        item.id === editingItem.id ? editingItem : item
-      ));
-      setShowEditItem(false);
-      setEditingItem(null);
+    if (!editingItem) return;
+    if (!editingItem.price || editingItem.price <= 0) {
+      setEditPriceError("Price must be greater than zero.");
+      return;
     }
+    setEditPriceError("");
+    setMenuItems(menuItems.map(item =>
+      item.id === editingItem.id ? editingItem : item
+    ));
+    setShowEditItem(false);
+    setEditingItem(null);
   };
 
   const addNewItem = () => {
+    if (!newItem.price || newItem.price <= 0) {
+      setPriceError("Price must be greater than zero.");
+      return;
+    }
+    setPriceError("");
+
     const item: MenuItem = {
       id: Date.now(),
       name: newItem.name || "",
@@ -486,7 +499,18 @@ export default function BusinessMenu() {
     if (!newCategory.trim()) return;
 
     const categoryId = newCategory.toLowerCase().replace(/\s+/g, '-');
-    const newCat = { id: categoryId, name: newCategory };
+
+    // Check for duplicate category (case-insensitive)
+    const isDuplicate = categories.some(
+      (c) => c.id.toLowerCase() === categoryId.toLowerCase() ||
+             c.name.toLowerCase() === newCategory.trim().toLowerCase()
+    );
+    if (isDuplicate) {
+      setCategoryError(`Category "${newCategory.trim()}" already exists.`);
+      return;
+    }
+
+    const newCat = { id: categoryId, name: newCategory.trim() };
 
     try {
       // If we have a restaurant ID, save to Supabase
@@ -509,6 +533,7 @@ export default function BusinessMenu() {
       // Always update local state
       setCategories([...categories, newCat]);
       setNewCategory("");
+      setCategoryError("");
       setShowAddCategory(false);
 
       // Save to localStorage as backup
@@ -1027,7 +1052,7 @@ export default function BusinessMenu() {
             <div className="bg-white w-full rounded-t-3xl max-h-[90vh] overflow-y-auto">
               <div className="sticky top-0 bg-white border-b border-[#E2E8F0] px-5 py-4 flex items-center justify-between">
                 <h2 className="text-xl font-bold text-[#121212]">Add New Item</h2>
-                <button onClick={() => setShowAddItem(false)}>
+                <button onClick={() => { setShowAddItem(false); setPriceError(""); }}>
                   <X className="w-6 h-6 text-[#64748B]" />
                 </button>
               </div>
@@ -1100,11 +1125,12 @@ export default function BusinessMenu() {
                     <input
                       type="number"
                       value={newItem.price}
-                      onChange={(e) => setNewItem({ ...newItem, price: parseFloat(e.target.value) })}
-                      className="w-full p-3 pl-10 border-2 border-[#E2E8F0] rounded-xl text-xl font-bold"
+                      onChange={(e) => { setNewItem({ ...newItem, price: parseFloat(e.target.value) }); setPriceError(""); }}
+                      className={`w-full p-3 pl-10 border-2 rounded-xl text-xl font-bold ${priceError ? 'border-[#E11D48]' : 'border-[#E2E8F0]'}`}
                       placeholder="0.00"
                     />
                   </div>
+                  {priceError && <p className="text-sm text-[#E11D48] font-semibold mt-1">{priceError}</p>}
                 </div>
 
                 <div>
@@ -1157,10 +1183,10 @@ export default function BusinessMenu() {
           <div className="fixed inset-0 bg-black/50 z-[2000] flex items-end">
             <div className="bg-white w-full rounded-t-3xl max-h-[90vh] overflow-y-auto">
               <div className="sticky top-0 bg-white border-b border-[#E2E8F0] px-5 py-4 flex items-center justify-between">
-                <h2 className="text-xl font-bold text-[#121212]">Edit Item</h2>
-                <button onClick={() => setShowEditItem(false)}>
+                <h2 className="text-xl font-bold text-[#121212]">Edit Item</h2>                <button onClick={() => { setShowEditItem(false); setEditPriceError(""); }}>
                   <X className="w-6 h-6 text-[#64748B]" />
                 </button>
+
               </div>
 
               <div className="p-5 space-y-4">
@@ -1219,10 +1245,11 @@ export default function BusinessMenu() {
                     <input
                       type="number"
                       value={editingItem.price}
-                      onChange={(e) => setEditingItem({ ...editingItem, price: parseFloat(e.target.value) })}
-                      className="w-full p-3 pl-10 border-2 border-[#E2E8F0] rounded-xl text-xl font-bold"
+                      onChange={(e) => { setEditingItem({ ...editingItem, price: parseFloat(e.target.value) }); setEditPriceError(""); }}
+                      className={`w-full p-3 pl-10 border-2 rounded-xl text-xl font-bold ${editPriceError ? 'border-[#E11D48]' : 'border-[#E2E8F0]'}`}
                     />
                   </div>
+                  {editPriceError && <p className="text-sm text-[#E11D48] font-semibold mt-1">{editPriceError}</p>}
                 </div>
 
                 <div>
@@ -1317,14 +1344,17 @@ export default function BusinessMenu() {
               <input
                 type="text"
                 value={newCategory}
-                onChange={(e) => setNewCategory(e.target.value)}
-                className="w-full p-3 border-2 border-[#E2E8F0] rounded-xl mb-4 font-semibold"
+                onChange={(e) => { setNewCategory(e.target.value); setCategoryError(""); }}
+                className={`w-full p-3 border-2 rounded-xl mb-4 font-semibold ${categoryError ? 'border-[#E11D48]' : 'border-[#E2E8F0]'}`}
                 placeholder="e.g., Breakfast Meals"
                 autoFocus
               />
+              {categoryError && (
+                <p className="text-sm text-[#E11D48] font-semibold mb-3">{categoryError}</p>
+              )}
               <div className="flex gap-2">
                 <Button
-                  onClick={() => setShowAddCategory(false)}
+                  onClick={() => { setShowAddCategory(false); setCategoryError(""); }}
                   variant="outline"
                   className="flex-1"
                 >

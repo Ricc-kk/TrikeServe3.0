@@ -9,8 +9,9 @@ import { supabase } from "../../../lib/supabase";
 
 export default function BusinessAccount() {
   const navigate = useNavigate();
-  const { user, logout } = useAuth();
+  const { user, logout, switchUiRole, restoreOriginalRole } = useAuth();
   const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
+  const [showSwitchConfirm, setShowSwitchConfirm] = useState(false);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [logoUrl, setLogoUrl] = useState<string | null>(null);
   const [showGoodbye, setShowGoodbye] = useState(false);
@@ -203,19 +204,7 @@ export default function BusinessAccount() {
               </div>
             </div>
 
-            <div className="flex items-center justify-between px-4 py-3.5 hover:bg-[#F8FAFC] transition-colors cursor-pointer">
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 bg-gradient-to-br from-[#F59E0B] to-[#D97706] rounded-xl flex items-center justify-center shadow-sm">
-                  <Bell className="w-5 h-5 text-white" />
-                </div>
-                <div>
-                  <p className="text-sm font-semibold text-[#121212]">Notifications</p>
-                  <p className="text-[11px] text-[#94A3B8]">Manage your alerts</p>
-                </div>
-              </div>
-              <ChevronRight className="w-5 h-5 text-[#CBD5E1]" />
-            </div>
-            <div className="border-t border-[#F1F5F9] mx-4" />
+
 
             <div className="flex items-center justify-between px-4 py-3.5 hover:bg-[#F8FAFC] transition-colors cursor-pointer">
               <div className="flex items-center gap-3">
@@ -231,6 +220,23 @@ export default function BusinessAccount() {
             </div>
           </div>
 
+          {/* Use Customer App / Switch Back */}
+          {localStorage.getItem('trikeserve_original_role') ? (
+            <button
+              onClick={() => setShowSwitchConfirm(true)}
+              className="w-full py-4 text-base font-semibold text-white bg-[#0f172a] hover:bg-[#111827] rounded-2xl transition-all active:scale-[0.98] flex items-center justify-center gap-2 mb-3"
+            >
+              Switch back to Business App
+            </button>
+          ) : (
+            <button
+              onClick={() => setShowSwitchConfirm(true)}
+              className="w-full py-4 text-base font-semibold text-white bg-[#065f46] hover:bg-[#047857] rounded-2xl transition-all active:scale-[0.98] flex items-center justify-center gap-2 mb-3"
+            >
+              Use Customer App
+            </button>
+          )}
+
           {/* Logout Button */}
           <button
             onClick={() => setShowLogoutConfirm(true)}
@@ -240,6 +246,49 @@ export default function BusinessAccount() {
             Logout
           </button>
         </div>
+
+        {/* Switch Confirmation Modal */}
+        {showSwitchConfirm && (
+          <div className="fixed inset-0 bg-black/50 z-[2000] flex items-center justify-center p-4">
+            <div className="bg-white p-6 max-w-sm w-full rounded-2xl shadow-xl">
+              <div className="w-16 h-16 bg-[#E0F2FE] rounded-full flex items-center justify-center mx-auto mb-4">
+                <ArrowLeft className="w-8 h-8 text-[#3B82F6]" />
+              </div>
+              <h3 className="text-xl font-bold text-[#121212] text-center mb-2">
+                {localStorage.getItem('trikeserve_original_role') ? 'Switch Back?' : 'Switch to Customer App?'}
+              </h3>
+              <p className="text-[#64748B] text-center mb-6 text-sm">
+                {localStorage.getItem('trikeserve_original_role')
+                  ? 'You will return to the Business app.'
+                  : 'You will be switched to the Customer app to browse and order food.'}
+              </p>
+              <div className="space-y-3">
+                <button
+                  onClick={async () => {
+                    setShowSwitchConfirm(false);
+                    if (localStorage.getItem('trikeserve_original_role')) {
+                      await restoreOriginalRole?.();
+                      navigate('/business/account');
+                    } else {
+                      localStorage.setItem('trikeserve_post_switch_route', '/customer/food');
+                      switchUiRole && await switchUiRole('customer');
+                      navigate('/customer/food');
+                    }
+                  }}
+                  className="w-full py-3 bg-[#3B82F6] text-white font-bold rounded-xl active:scale-95 transition-transform"
+                >
+                  Yes, Switch
+                </button>
+                <button
+                  onClick={() => setShowSwitchConfirm(false)}
+                  className="w-full py-3 bg-[#F8F9FA] text-[#64748B] font-bold rounded-xl active:scale-95 transition-transform"
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* Logout Confirmation Modal */}
         {showLogoutConfirm && (

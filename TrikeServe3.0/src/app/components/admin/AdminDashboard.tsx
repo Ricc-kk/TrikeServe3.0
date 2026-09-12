@@ -339,11 +339,7 @@ export default function AdminDashboard() {
                   <div className="absolute top-1 right-1 w-2 h-2 bg-[#E11D48] rounded-full" />
                 )}
               </button>
-              <div className="hidden lg:flex items-center gap-3 px-3 py-2 hover:bg-[#F8F9FA] rounded-xl transition-all cursor-pointer"
-                onClick={() => {
-                  logout();
-                  navigate('/');
-                }}>
+              <div className="hidden lg:flex items-center gap-3 px-3 py-2 rounded-xl">
                 <div className="w-10 h-10 bg-gradient-to-br from-[#E11D48] to-[#121212] rounded-full flex items-center justify-center">
                   <UserIcon className="w-5 h-5 text-white" />
                 </div>
