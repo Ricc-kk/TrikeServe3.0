@@ -25,6 +25,8 @@ export default function BusinessHome() {
   const [isLogoUploading, setIsLogoUploading] = useState(false);
   const logoInputRef = useRef<HTMLInputElement | null>(null);
   const [adminDeliveryFee, setAdminDeliveryFee] = useState(35); // Admin-set delivery fee (view-only for the business)
+  const [showConfirmSaveInfo, setShowConfirmSaveInfo] = useState(false);
+  const [showSaveSuccess, setShowSaveSuccess] = useState(false);
 
   // Restaurant data - initialize with user data
   const [restaurantData, setRestaurantData] = useState({
@@ -545,8 +547,11 @@ export default function BusinessHome() {
         }
       }
 
-      // Close the modal after successful save
+      // Close the modal and show success
       setShowEditInfo(false);
+      setShowConfirmSaveInfo(false);
+      setShowSaveSuccess(true);
+      setTimeout(() => setShowSaveSuccess(false), 2000);
     } catch (error) {
       console.error('Error saving store information:', error);
     }
@@ -967,7 +972,7 @@ export default function BusinessHome() {
               <div className="sticky top-0 bg-white border-b border-[#E2E8F0] px-5 py-4 flex items-center justify-between">
                 <h2 className="text-xl font-bold text-[#121212]">Edit Store Info</h2>
                 <button
-                  onClick={saveStoreInformation}
+                  onClick={() => setShowConfirmSaveInfo(true)}
                   className="px-4 py-2 bg-[#10B981] text-white rounded-lg font-semibold active:scale-95 transition-transform flex items-center gap-2"
                 >
                   <Check className="w-4 h-4" />
@@ -1048,6 +1053,48 @@ export default function BusinessHome() {
                   <p className="text-xs text-[#64748B] mt-1">Daily operating hours</p>
                 </div>
               </div>
+            </div>
+          </div>
+        )}
+
+        {/* Confirm Save Modal */}
+        {showConfirmSaveInfo && (
+          <div className="fixed inset-0 bg-black/50 z-[3000] flex items-center justify-center p-4">
+            <div className="bg-white p-6 max-w-sm w-full rounded-2xl shadow-xl">
+              <div className="w-16 h-16 bg-[#F0FDF4] rounded-full flex items-center justify-center mx-auto mb-4">
+                <Check className="w-8 h-8 text-[#10B981]" />
+              </div>
+              <h3 className="text-xl font-bold text-[#121212] text-center mb-2">Save Changes?</h3>
+              <p className="text-[#64748B] text-center mb-6 text-sm">
+                Are you sure you want to update your store information?
+              </p>
+              <div className="space-y-3">
+                <button
+                  onClick={saveStoreInformation}
+                  className="w-full py-3 bg-[#10B981] text-white font-bold rounded-xl active:scale-95 transition-transform"
+                >
+                  Yes, Save
+                </button>
+                <button
+                  onClick={() => setShowConfirmSaveInfo(false)}
+                  className="w-full py-3 bg-[#F8F9FA] text-[#64748B] font-bold rounded-xl active:scale-95 transition-transform"
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Save Success Popup */}
+        {showSaveSuccess && (
+          <div className="fixed inset-0 bg-black/50 z-[3000] flex items-center justify-center p-4">
+            <div className="bg-white rounded-2xl shadow-xl p-8 max-w-sm w-full text-center">
+              <div className="w-16 h-16 bg-[#F0FDF4] rounded-full flex items-center justify-center mx-auto mb-4">
+                <Check className="w-8 h-8 text-[#10B981]" />
+              </div>
+              <h3 className="text-2xl font-bold text-[#121212] mb-2">Saved! ✅</h3>
+              <p className="text-[#64748B] text-sm">Your store information has been updated.</p>
             </div>
           </div>
         )}

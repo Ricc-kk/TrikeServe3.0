@@ -92,6 +92,9 @@ export default function ShareRideLobby({
   const [ratingSubmitted, setRatingSubmitted] = useState(false);
   const [computedDriverRating, setComputedDriverRating] = useState<string | null>(null);
   const { isLoaded: isMapsLoaded } = useMapLoader();
+  const [showFullCapacityPopup, setShowFullCapacityPopup] = useState(false);
+  const [showLobbyFullPopup, setShowLobbyFullPopup] = useState(false);
+  const [fullLobbyInfo, setFullLobbyInfo] = useState<{ passengers: number; maxSeats: number } | null>(null);
   const [driverLocation, setDriverLocation] = useState<{ lat: number; lng: number } | null>(null);
   const [driverRoutePath, setDriverRoutePath] = useState<Array<{ lat: number; lng: number }>>([]);
   const [etaToDestination, setEtaToDestination] = useState<string | null>(null);
@@ -325,6 +328,9 @@ export default function ShareRideLobby({
                     console.log('✅ ✅ ✅ FRESH LOBBY DATA FROM DB ✅ ✅ ✅:', freshLobby);
                     const normalizedPassengers = dedupePassengers(normalizePassengers(freshLobby.passengers_json));
 
+                    const prevPassengerCount = (lobby?.passengers_json || []).length;
+                    const newPassengerCount = normalizedPassengers.length;
+
                     setLobby(prevLobby => {
                       const newLobby = {
                         ...prevLobby!,
@@ -337,6 +343,11 @@ export default function ShareRideLobby({
 
                       return newLobby;
                     });
+
+                    // Show full capacity popup when lobby becomes full
+                    if (newPassengerCount >= freshLobby.max_seats && prevPassengerCount < freshLobby.max_seats) {
+                      setShowFullCapacityPopup(true);
+                    }
 
                     handleTerminalLobbyStatus(freshLobby.status);
 
@@ -648,6 +659,11 @@ export default function ShareRideLobby({
               passengers_json: Array.isArray(updated.passengers_json) ? updated.passengers_json : []
             };
           }
+        } else {
+          // Lobby is full - show popup
+          console.log('🚫 Lobby is full:', matchingLobby.id);
+          setFullLobbyInfo({ passengers: passengers.length, maxSeats: matchingLobby.max_seats });
+          setShowLobbyFullPopup(true);
         }
       }
 
@@ -786,6 +802,37 @@ export default function ShareRideLobby({
             Close
           </Button>
         </Card>
+      </div>
+    );
+  }
+
+  // Lobby Full Popup (can show even when lobby is null)
+  if (showLobbyFullPopup) {
+    return (
+      <div className="fixed inset-0 bg-black/50 z-[2000] flex items-center justify-center p-4">
+        <div className="bg-white p-6 max-w-sm w-full rounded-2xl shadow-xl">
+          <div className="w-16 h-16 bg-[#FEF3C7] rounded-full flex items-center justify-center mx-auto mb-4">
+            <span className="text-3xl">🚫</span>
+          </div>
+          <h3 className="text-xl font-bold text-[#121212] text-center mb-2">Lobby is Full!</h3>
+          <p className="text-[#64748B] text-center mb-4 text-sm">
+            This ride already has {fullLobbyInfo?.maxSeats} passengers. No more seats available.
+          </p>
+          <div className="bg-[#F8F9FA] rounded-xl p-3 mb-6">
+            <p className="text-sm text-[#64748B] text-center">
+              A new lobby will be created for you instead.
+            </p>
+          </div>
+          <button
+            onClick={() => {
+              setShowLobbyFullPopup(false);
+              setFullLobbyInfo(null);
+            }}
+            className="w-full py-3 bg-[#E11D48] text-white font-bold rounded-xl active:scale-95 transition-transform"
+          >
+            OK
+          </button>
+        </div>
       </div>
     );
   }
@@ -1276,6 +1323,32 @@ export default function ShareRideLobby({
                 OK 👍
               </Button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Full Capacity Popup */}
+      {showFullCapacityPopup && (
+        <div className="fixed inset-0 bg-black/50 z-[2300] flex items-center justify-center p-4">
+          <div className="bg-white p-6 max-w-sm w-full rounded-2xl shadow-xl">
+            <div className="w-16 h-16 bg-[#FEF3C7] rounded-full flex items-center justify-center mx-auto mb-4">
+              <span className="text-3xl">🎉</span>
+            </div>
+            <h3 className="text-xl font-bold text-[#121212] text-center mb-2">Lobby Full!</h3>
+            <p className="text-[#64748B] text-center mb-6 text-sm">
+              All {lobby.max_seats} seats are taken! Your ride is being prioritized for faster pickup.
+            </p>
+            <div className="bg-green-50 border border-green-200 rounded-xl p-3 mb-6">
+              <p className="text-sm text-green-700 text-center font-semibold">
+                💰 You're now sharing the fare with {lobby.max_seats - 1} other passengers!
+              </p>
+            </div>
+            <button
+              onClick={() => setShowFullCapacityPopup(false)}
+              className="w-full py-3 bg-[#10B981] text-white font-bold rounded-xl active:scale-95 transition-transform"
+            >
+              Got it!
+            </button>
           </div>
         </div>
       )}

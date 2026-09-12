@@ -1,4 +1,4 @@
-import { ArrowLeft, Package, Clock, MapPin, CreditCard, RefreshCw, Star, Navigation, CheckCircle, AlertCircle, Phone } from "lucide-react";
+import { ArrowLeft, Package, Clock, MapPin, CreditCard, RefreshCw, Star, Navigation, CheckCircle, AlertCircle, Phone, MessageCircle } from "lucide-react";
 import { useNavigate, useParams } from "react-router";
 import { Card } from "../ui/card";
 import { Button } from "../ui/button";
@@ -299,6 +299,12 @@ export default function OrderDetail() {
   const workflow = statusWorkflow[order.status] || statusWorkflow['pending'];
   const isActiveDelivery = ['confirmed', 'on-the-way'].includes(order.status);
 
+  const handleChatWithBusiness = () => {
+    if (order.businessId) {
+      navigate(`/customer/messages/business/${order.businessId}`);
+    }
+  };
+
   return (
     <div className="min-h-screen bg-white pb-6">
       {/* Header */}
@@ -313,9 +319,16 @@ export default function OrderDetail() {
               <p className="text-xs text-[#64748B]">{order.date}</p>
             </div>
           </div>
-          <button onClick={handleRefresh} disabled={isRefreshing} className="p-2 hover:bg-[#F1F5F9] rounded-full transition-colors disabled:opacity-50">
-            <RefreshCw className={`w-5 h-5 text-[#64748B] ${isRefreshing ? 'animate-spin' : ''}`} />
-          </button>
+          <div className="flex items-center gap-1">
+            {isActiveDelivery && order.businessId && (
+              <button onClick={handleChatWithBusiness} className="p-2 hover:bg-[#F1F5F9] rounded-full transition-colors" title="Chat with Restaurant">
+                <MessageCircle className="w-5 h-5 text-[#E11D48]" />
+              </button>
+            )}
+            <button onClick={handleRefresh} disabled={isRefreshing} className="p-2 hover:bg-[#F1F5F9] rounded-full transition-colors disabled:opacity-50">
+              <RefreshCw className={`w-5 h-5 text-[#64748B] ${isRefreshing ? 'animate-spin' : ''}`} />
+            </button>
+          </div>
         </div>
         <Badge className={`${statusColors[order.status]} text-xs`}>
           {statusLabels[order.status]}
@@ -365,7 +378,14 @@ export default function OrderDetail() {
                 <div className="w-2 h-2 bg-green-400 rounded-full animate-pulse" />
                 <span className="text-sm font-bold text-white">Live Delivery Tracking</span>
               </div>
-              <Navigation className="w-4 h-4 text-white/80" />
+              <div className="flex items-center gap-2">
+                {order.businessId && (
+                  <button onClick={handleChatWithBusiness} className="p-1.5 rounded-full hover:bg-white/20 transition-colors" title="Chat with Restaurant">
+                    <MessageCircle className="w-4 h-4 text-white" />
+                  </button>
+                )}
+                <Navigation className="w-4 h-4 text-white/80" />
+              </div>
             </div>
             <GoogleMap
               mapContainerStyle={{ width: '100%', height: '220px' }}

@@ -1,8 +1,10 @@
-import { Camera, ChevronRight, Home as HomeIcon, MessageCircle, User, ShoppingCart, ClipboardList, ArrowLeft, LogOut, Shield, Bell, HelpCircle, Pencil, Heart } from "lucide-react";
+import { Camera, ChevronRight, Home as HomeIcon, MessageCircle, User, ShoppingCart, ClipboardList, ArrowLeft, LogOut, Shield, Bell, HelpCircle, Pencil, Heart, Check, X } from "lucide-react";
 import { Link, useNavigate } from "react-router";
-import { useState } from "react";
+import { useState, useRef } from "react";
 import { useAuth } from "../../contexts/AuthContext";
 import { Button } from "../ui/button";
+import { supabase } from "../../../utils/supabase";
+import { supabaseHelpers } from "@/lib/supabase";
 
 export default function Account() {
   const navigate = useNavigate();
@@ -13,8 +15,51 @@ export default function Account() {
     email: user?.email || "",
   });
   const [showGoodbye, setShowGoodbye] = useState(false);
+  const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
+  const [showSwitchConfirm, setShowSwitchConfirm] = useState(false);
+  const [isEditing, setIsEditing] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
+  const [showSaved, setShowSaved] = useState(false);
+  const [showConfirmSave, setShowConfirmSave] = useState(false);
+  const [uploadingPhoto, setUploadingPhoto] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const handlePhotoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file || !user?.id) return;
+
+    if (!file.type.startsWith('image/')) {
+      alert('Please select a valid image file.');
+      return;
+    }
+    if (file.size > 5 * 1024 * 1024) {
+      alert('Image is too large. Maximum size is 5MB.');
+      return;
+    }
+
+    setUploadingPhoto(true);
+    try {
+      const result = await supabaseHelpers.uploadProfilePhoto(user.id, file);
+      if (result?.data?.publicUrl) {
+        const { error } = await supabase
+          .from('users')
+          .update({ avatar_url: result.data.publicUrl, updated_at: new Date().toISOString() })
+          .eq('id', user.id);
+        if (error) throw error;
+      } else {
+        alert('Failed to upload photo. Please try again.');
+      }
+    } catch (err) {
+      console.error('Photo upload error:', err);
+      alert('Failed to upload photo. Please try again.');
+    } finally {
+      setUploadingPhoto(false);
+      if (fileInputRef.current) fileInputRef.current.value = '';
+    }
+  };
 
   const handleLogout = () => {
+    setShowLogoutConfirm(false);
     setShowGoodbye(true);
     setTimeout(() => {
       logout();
@@ -22,24 +67,75 @@ export default function Account() {
     }, 2000);
   };
 
+  const handleSaveProfile = () => {
+    setShowConfirmSave(true);
+  };
+
+  const confirmSaveProfile = async () => {
+    setShowConfirmSave(false);
+    if (!user?.id) return;
+    setIsSaving(true);
+    try {
+      const { error } = await supabase
+        .from('users')
+        .update({
+          name: formData.name,
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', user.id);
+      if (error) throw error;
+      setShowSaved(true);
+      setTimeout(() => {
+        setShowSaved(false);
+        setIsEditing(false);
+      }, 1500);
+    } catch (err) {
+      console.error('Error saving profile:', err);
+      alert('Failed to save. Please try again.');
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
   return (
     <div className="min-h-screen bg-[#F8FAFC] pb-24">
       {/* Gradient Header with Profile */}
       <div className="relative bg-gradient-to-br from-[#E11D48] via-[#BE123C] to-[#9F1239] px-5 pt-6 pb-6 rounded-b-2xl shadow-lg">
         {/* Edit Profile Button - Top Right */}
-        <Link to="/customer/profile" className="absolute top-4 right-4 flex items-center gap-1.5 bg-white/20 backdrop-blur-sm text-white text-xs font-semibold px-3 py-1.5 rounded-full hover:bg-white/30 transition-colors">
-          <Pencil className="w-3.5 h-3.5" />
-          Edit Profile
-        </Link>
+        <button
+          onClick={() => setIsEditing(!isEditing)}
+          className="absolute top-4 right-4 flex items-center gap-1.5 bg-white/20 backdrop-blur-sm text-white text-xs font-semibold px-3 py-1.5 rounded-full hover:bg-white/30 transition-colors"
+        >
+          {isEditing ? <><X className="w-3.5 h-3.5" /> Cancel</> : <><Pencil className="w-3.5 h-3.5" /> Edit Profile</>}
+        </button>
 
         <div className="relative flex flex-col items-center">
           {/* Profile Photo */}
           <div className="relative mb-2">
-            <div className="w-16 h-16 rounded-full bg-white/20 backdrop-blur-sm flex items-center justify-center border-2 border-white/30 shadow-lg">
-              <User className="w-8 h-8 text-white" />
+            <div className="w-16 h-16 rounded-full bg-white/20 backdrop-blur-sm flex items-center justify-center border-2 border-white/30 shadow-lg overflow-hidden">
+              {user?.avatarUrl ? (
+                <img src={user.avatarUrl} alt="Profile" className="w-full h-full object-cover" />
+              ) : (
+                <User className="w-8 h-8 text-white" />
+              )}
             </div>
-            <button className="absolute bottom-0 right-0 w-7 h-7 bg-[#18B5A4] rounded-full flex items-center justify-center shadow-md border-2 border-white hover:bg-[#159E8F] transition-colors active:scale-95">
-              <Camera className="w-3.5 h-3.5 text-white" />
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept="image/*"
+              className="hidden"
+              onChange={handlePhotoUpload}
+            />
+            <button
+              onClick={() => fileInputRef.current?.click()}
+              disabled={uploadingPhoto}
+              className="absolute bottom-0 right-0 w-7 h-7 bg-[#18B5A4] rounded-full flex items-center justify-center shadow-md border-2 border-white hover:bg-[#159E8F] transition-colors active:scale-95"
+            >
+              {uploadingPhoto ? (
+                <div className="w-3 h-3 border-2 border-white border-t-transparent rounded-full animate-spin" />
+              ) : (
+                <Camera className="w-3.5 h-3.5 text-white" />
+              )}
             </button>
           </div>
 
@@ -99,7 +195,8 @@ export default function Account() {
               type="text"
               value={formData.name}
               onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-              className="w-full text-base font-medium text-[#121212] pb-2 border-b border-[#E2E8F0] focus:border-[#18B5A4] outline-none transition-colors bg-transparent"
+              readOnly={!isEditing}
+              className={`w-full text-base font-medium text-[#121212] pb-2 border-b border-[#E2E8F0] outline-none transition-colors bg-transparent ${isEditing ? 'focus:border-[#18B5A4]' : 'cursor-not-allowed'}`}
             />
           </div>
 
@@ -121,13 +218,33 @@ export default function Account() {
               type="email"
               placeholder="Enter your email address"
               value={formData.email}
+              readOnly={!isEditing}
               onChange={(e) => setFormData({ ...formData, email: e.target.value })}
-              className="w-full text-base font-medium text-[#121212] placeholder:text-[#CBD5E1] pb-2 border-b border-[#E2E8F0] focus:border-[#18B5A4] outline-none transition-colors bg-transparent"
+              className={`w-full text-base font-medium text-[#121212] placeholder:text-[#CBD5E1] pb-2 border-b border-[#E2E8F0] outline-none transition-colors bg-transparent ${isEditing ? 'focus:border-[#18B5A4]' : 'cursor-not-allowed'}`}
             />
             <p className="text-xs text-[#94A3B8] mt-2 leading-relaxed">
               We'll reach out to you via email for account-related issues and product communication purposes.
             </p>
           </div>
+
+          {/* Save Button - only visible in edit mode */}
+          {isEditing && (
+            <div className="mt-5">
+              <button
+                onClick={handleSaveProfile}
+                disabled={isSaving}
+                className="w-full py-3.5 text-base font-semibold text-white bg-[#18B5A4] rounded-2xl hover:bg-[#159E8F] transition-all active:scale-[0.98] flex items-center justify-center gap-2 disabled:opacity-50"
+              >
+                {isSaving ? (
+                  <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                ) : showSaved ? (
+                  <><Check className="w-5 h-5" /> Saved!</>
+                ) : (
+                  'Save Changes'
+                )}
+              </button>
+            </div>
+          )}
         </div>
 
         {/* Help Card */}
@@ -146,14 +263,11 @@ export default function Account() {
           </div>
         </div>
 
-        {/* Switch Back to Driver Button */}
+        {/* Switch Back to Driver/Business Button */}
         {localStorage.getItem('trikeserve_original_role') === 'rider' && (
           <div className="pt-2">
             <Button
-              onClick={async () => {
-                await restoreOriginalRole?.();
-                navigate('/rider');
-              }}
+              onClick={() => setShowSwitchConfirm(true)}
               className="w-full bg-[#0f172a] hover:bg-[#111827] text-white font-bold uppercase py-4 rounded-2xl flex items-center justify-center gap-2 shadow-lg"
             >
               <ArrowLeft className="w-5 h-5" />
@@ -161,11 +275,22 @@ export default function Account() {
             </Button>
           </div>
         )}
+        {localStorage.getItem('trikeserve_original_role') === 'business' && (
+          <div className="pt-2">
+            <Button
+              onClick={() => setShowSwitchConfirm(true)}
+              className="w-full bg-[#0f172a] hover:bg-[#111827] text-white font-bold uppercase py-4 rounded-2xl flex items-center justify-center gap-2 shadow-lg"
+            >
+              <ArrowLeft className="w-5 h-5" />
+              Switch back to Business App
+            </Button>
+          </div>
+        )}
 
         {/* Logout Button */}
         <div className="pt-2 pb-4">
           <button
-            onClick={handleLogout}
+            onClick={() => setShowLogoutConfirm(true)}
             className="w-full py-4 text-base font-semibold text-[#E11D48] bg-[#FFF1F2] rounded-2xl hover:bg-[#FFE4E6] transition-all active:scale-[0.98] flex items-center justify-center gap-2"
           >
             <LogOut className="w-5 h-5" />
@@ -199,6 +324,102 @@ export default function Account() {
           </Link>
         </div>
       </div>
+
+      {/* Confirm Save Modal */}
+      {showConfirmSave && (
+        <div className="fixed inset-0 bg-black/50 z-[2000] flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl shadow-xl p-6 max-w-sm w-full">
+            <div className="text-center mb-4">
+              <div className="w-14 h-14 bg-[#FFF1F2] rounded-full flex items-center justify-center mx-auto mb-3">
+                <Check className="w-7 h-7 text-[#18B5A4]" />
+              </div>
+              <h3 className="text-lg font-bold text-[#121212]">Save Changes?</h3>
+              <p className="text-sm text-[#64748B] mt-2">
+                Are you sure you want to update your profile information?
+              </p>
+            </div>
+            <div className="flex gap-3">
+              <button
+                onClick={() => setShowConfirmSave(false)}
+                className="flex-1 py-3 text-sm font-semibold text-[#64748B] bg-[#F1F5F9] rounded-xl hover:bg-[#E2E8F0] transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={confirmSaveProfile}
+                className="flex-1 py-3 text-sm font-semibold text-white bg-[#18B5A4] rounded-xl hover:bg-[#159E8F] transition-colors"
+              >
+                Yes, Save
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Switch Confirmation Modal */}
+      {showSwitchConfirm && (
+        <div className="fixed inset-0 bg-black/50 z-[2000] flex items-center justify-center p-4">
+          <div className="bg-white p-6 max-w-sm w-full rounded-2xl shadow-xl">
+            <div className="w-16 h-16 bg-[#E0F2FE] rounded-full flex items-center justify-center mx-auto mb-4">
+              <ArrowLeft className="w-8 h-8 text-[#3B82F6]" />
+            </div>
+            <h3 className="text-xl font-bold text-[#121212] text-center mb-2">Switch Back?</h3>
+            <p className="text-[#64748B] text-center mb-6 text-sm">
+              {localStorage.getItem('trikeserve_original_role') === 'rider'
+                ? 'You will return to the Driver app.'
+                : 'You will return to the Business app.'}
+            </p>
+            <div className="space-y-3">
+              <button
+                onClick={async () => {
+                  setShowSwitchConfirm(false);
+                  const role = localStorage.getItem('trikeserve_original_role');
+                  await restoreOriginalRole?.();
+                  navigate(role === 'rider' ? '/rider' : '/business/account');
+                }}
+                className="w-full py-3 bg-[#3B82F6] text-white font-bold rounded-xl active:scale-95 transition-transform"
+              >
+                Yes, Switch
+              </button>
+              <button
+                onClick={() => setShowSwitchConfirm(false)}
+                className="w-full py-3 bg-[#F8F9FA] text-[#64748B] font-bold rounded-xl active:scale-95 transition-transform"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Logout Confirmation Modal */}
+      {showLogoutConfirm && (
+        <div className="fixed inset-0 bg-black/50 z-[2000] flex items-center justify-center p-4">
+          <div className="bg-white p-6 max-w-sm w-full rounded-2xl shadow-xl">
+            <div className="w-16 h-16 bg-[#FFF1F2] rounded-full flex items-center justify-center mx-auto mb-4">
+              <LogOut className="w-8 h-8 text-[#E11D48]" />
+            </div>
+            <h3 className="text-xl font-bold text-[#121212] text-center mb-2">Logout</h3>
+            <p className="text-[#64748B] text-center mb-6 text-sm">
+              Are you sure you want to logout?
+            </p>
+            <div className="space-y-3">
+              <button
+                onClick={handleLogout}
+                className="w-full py-3 bg-[#E11D48] text-white font-bold rounded-xl active:scale-95 transition-transform"
+              >
+                Yes, Logout
+              </button>
+              <button
+                onClick={() => setShowLogoutConfirm(false)}
+                className="w-full py-3 bg-[#F8F9FA] text-[#64748B] font-bold rounded-xl active:scale-95 transition-transform"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Goodbye Popup */}
       {showGoodbye && (

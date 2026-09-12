@@ -1415,6 +1415,35 @@ export const supabaseHelpers = {
       .maybeSingle();
 
     if (existing.data) {
+      // Update participant names/avatars if provided and different from stored values
+      const updates: Record<string, any> = {};
+      if (conversation.participantAName && existing.data.participant_a_name !== conversation.participantAName) {
+        updates.participant_a_name = conversation.participantAName;
+      }
+      if (conversation.participantBName && existing.data.participant_b_name !== conversation.participantBName) {
+        updates.participant_b_name = conversation.participantBName;
+      }
+      if (conversation.participantAAvatar && existing.data.participant_a_avatar !== conversation.participantAAvatar) {
+        updates.participant_a_avatar = conversation.participantAAvatar;
+      }
+      if (conversation.participantBAvatar && existing.data.participant_b_avatar !== conversation.participantBAvatar) {
+        updates.participant_b_avatar = conversation.participantBAvatar;
+      }
+      if (conversation.subject && existing.data.subject !== conversation.subject) {
+        updates.subject = conversation.subject;
+      }
+
+      if (Object.keys(updates).length > 0) {
+        updates.updated_at = new Date().toISOString();
+        const { data: updated } = await supabase
+          .from('chat_conversations')
+          .update(updates)
+          .eq('id', existing.data.id)
+          .select()
+          .single();
+        return { data: updated || existing.data, error: null };
+      }
+
       return { data: existing.data, error: existing.error };
     }
 
@@ -1821,23 +1850,6 @@ export const supabaseHelpers = {
   },
 
   // File uploads
-  async uploadProfilePhoto(userId: string, file: File) {
-    const fileExt = file.name.split('.').pop();
-    const filePath = `${userId}/profile.${fileExt}`;
-
-    const { data, error } = await supabase.storage
-      .from('user_profiles')
-      .upload(filePath, file, { upsert: true });
-
-    if (error) return { data: null, error };
-
-    const { data: publicUrlData } = supabase.storage
-      .from('user_profiles')
-      .getPublicUrl(filePath);
-
-    return { data: publicUrlData, error: null };
-  },
-
   async uploadRestaurantImage(restaurantId: string, file: File) {
     const fileExt = file.name.split('.').pop();
     const filePath = `${restaurantId}/image.${fileExt}`;
@@ -1882,6 +1894,22 @@ export const supabaseHelpers = {
 
     const { data: publicUrlData } = supabase.storage
       .from('restaurants')
+      .getPublicUrl(filePath);
+
+    return { data: publicUrlData, error: null };
+  },
+
+  async uploadProfilePhoto(userId: string, file: File) {
+    const filePath = `${userId}/avatar.${safeFileExtension(file)}`;
+
+    const { data, error } = await supabase.storage
+      .from('avatars')
+      .upload(filePath, file, { upsert: true });
+
+    if (error) return { data: null, error };
+
+    const { data: publicUrlData } = supabase.storage
+      .from('avatars')
       .getPublicUrl(filePath);
 
     return { data: publicUrlData, error: null };

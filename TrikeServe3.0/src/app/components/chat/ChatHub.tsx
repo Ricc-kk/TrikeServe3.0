@@ -1,6 +1,6 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router';
-import { ArrowLeft, Mail, MessageCircle, Plus, Search, Send, X } from 'lucide-react';
+import { ArrowLeft, MessageCircle, Send, X } from 'lucide-react';
 import { Button } from '../ui/button';
 import { Card } from '../ui/card';
 import { Badge } from '../ui/badge';
@@ -76,15 +76,12 @@ export default function ChatHub({
 
   const [conversations, setConversations] = useState<ChatConversation[]>([]);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
-  const [searchQuery, setSearchQuery] = useState('');
+
   const [messageText, setMessageText] = useState('');
   const [loading, setLoading] = useState(true);
   const [activeConversation, setActiveConversation] = useState<ChatConversation | null>(null);
   const [isCreatingThread, setIsCreatingThread] = useState(false);
-  const [showNewChatModal, setShowNewChatModal] = useState(false);
-  const [newChatEmail, setNewChatEmail] = useState('');
-  const [newChatLoading, setNewChatLoading] = useState(false);
-  const [newChatError, setNewChatError] = useState('');
+
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   const isDirectMode = !!directPeerId;
@@ -220,18 +217,7 @@ export default function ChatHub({
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
 
-  const filteredConversations = useMemo(() => {
-    const query = searchQuery.trim().toLowerCase();
-    if (!query) return conversations;
-    return conversations.filter((conversation) => {
-      const peer = getConversationPeer(conversation);
-      return (
-        peer.name.toLowerCase().includes(query) ||
-        (conversation.subject || '').toLowerCase().includes(query) ||
-        (conversation.last_message_preview || '').toLowerCase().includes(query)
-      );
-    });
-  }, [conversations, searchQuery]);
+
 
   function getConversationPeer(conversation: ChatConversation) {
     const participantA = {
@@ -294,71 +280,6 @@ export default function ChatHub({
     navigate(`${basePath}/thread/${conversation.id}`);
   };
 
-  const openNewChatModal = () => {
-    setNewChatEmail('');
-    setNewChatError('');
-    setShowNewChatModal(true);
-  };
-
-  const closeNewChatModal = () => {
-    if (newChatLoading) return;
-    setShowNewChatModal(false);
-    setNewChatError('');
-  };
-
-  const handleStartChat = async () => {
-    if (!user?.id || !newChatEmail.trim() || newChatLoading) return;
-    setNewChatLoading(true);
-    setNewChatError('');
-    try {
-      const { data: targetUser, error } = await supabaseHelpers.getUserByEmail(newChatEmail.trim().toLowerCase());
-      if (error || !targetUser) {
-        console.error('[ChatHub] Could not resolve chat target:', { email: newChatEmail, error, targetUser });
-        setNewChatError('Could not find a user with that email address. Please check the email or make sure the account exists.');
-        return;
-      }
-
-      if (targetUser.id === user.id) {
-        setNewChatError('You cannot start a chat with yourself.');
-        return;
-      }
-
-      const threadKey = buildChatThreadKey({
-        participantAId: user.id,
-        participantBId: targetUser.id,
-        contextType: 'direct',
-      });
-
-      const { data, error: createError } = await supabaseHelpers.ensureChatConversation({
-        threadKey,
-        threadType: 'direct',
-        contextType: 'direct',
-        participantAId: user.id,
-        participantBId: targetUser.id,
-        participantARole: user.role,
-        participantBRole: targetUser.role,
-        participantAName: user.name,
-        participantBName: targetUser.name,
-        participantAAvatar: user.name?.[0]?.toUpperCase() || '💬',
-        participantBAvatar: targetUser.name?.[0]?.toUpperCase() || '💬',
-      });
-
-      if (createError || !data) {
-        console.error('[ChatHub] Could not create or load conversation:', createError, data);
-        setNewChatError('Could not start the conversation. Please try again.');
-        return;
-      }
-
-      setShowNewChatModal(false);
-      await loadInbox();
-      setActiveConversation(data as ChatConversation);
-      await loadMessages((data as ChatConversation).id);
-      navigate(`${basePath}/thread/${(data as ChatConversation).id}`);
-    } finally {
-      setNewChatLoading(false);
-    }
-  };
-
   const sendMessage = async () => {
     if (!user?.id || !messageText.trim() || !activeConversation) return;
 
@@ -408,7 +329,11 @@ export default function ChatHub({
       );
     }
 
-    const peer = getConversationPeer(activeConversation);
+    const dbPeer = getConversationPeer(activeConversation);
+    // In direct mode, prefer the props-provided name (which is fetched fresh)
+    const peer = isDirectMode && directPeerName
+      ? { ...dbPeer, name: directPeerName, avatar: directPeerAvatar || dbPeer.avatar }
+      : dbPeer;
     const peerTheme = getRoleTheme(peer.role);
 
     return (
@@ -423,7 +348,7 @@ export default function ChatHub({
           <div className="flex-1 min-w-0">
             <h3 className="font-bold text-lg truncate leading-tight">{peer.name}</h3>
             <div className="flex items-center gap-2 mt-1 flex-wrap">
-              <Badge className={peerTheme.roleBadge}>{getRoleLabel(peer.role)}</Badge>
+              {peer.role !== 'business' && <Badge className={peerTheme.roleBadge}>{getRoleLabel(peer.role)}</Badge>}
               <span className="text-xs text-white/80 truncate">{activeConversation.subject || activeConversation.context_type || 'Chat'}</span>
             </div>
           </div>
@@ -501,37 +426,20 @@ export default function ChatHub({
               <h1 className="text-xl font-extrabold text-[#E11D48]" style={{ letterSpacing: '-0.02em' }}>{title}</h1>
               <p className="text-xs text-[#64748B]">Message customers, drivers, and business owners</p>
             </div>
-            <Button onClick={openNewChatModal} className="bg-[#E11D48] hover:bg-[#BE123C] text-white">
-              <Plus className="w-4 h-4 mr-2" /> New Chat
-            </Button>
-          </div>
 
-          <div className="p-4 border-b bg-white">
-            <div className="relative">
-              <Search className="w-4 h-4 text-[#94A3B8] absolute left-3 top-1/2 -translate-y-1/2" />
-              <input
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                placeholder="Search conversations..."
-                className="w-full pl-10 pr-4 py-3 border rounded-xl focus:outline-none focus:ring-2 focus:ring-[#E11D48]"
-              />
-            </div>
           </div>
 
           <div className="flex-1 overflow-y-auto p-4 space-y-3">
             {loading ? (
               <div className="text-center py-12 text-sm text-[#64748B]">Loading conversations...</div>
-            ) : filteredConversations.length === 0 ? (
+            ) : conversations.length === 0 ? (
               <div className="text-center py-12">
                 <MessageCircle className="w-12 h-12 text-[#CBD5E1] mx-auto mb-3" />
                 <h3 className="font-bold text-[#121212] mb-1">No conversations yet</h3>
-                <p className="text-sm text-[#64748B] mb-4">Start a chat by entering someone's email address.</p>
-                <Button onClick={openNewChatModal} className="bg-[#E11D48] hover:bg-[#BE123C]">
-                  Start Chat
-                </Button>
+                <p className="text-sm text-[#64748B]">Start a conversation from an order or ride.</p>
               </div>
             ) : (
-              filteredConversations.map((conversation) => {
+              conversations.map((conversation) => {
                 const peer = getConversationPeer(conversation);
                 const peerTheme = getRoleTheme(peer.role);
                 const unread = conversation.participant_a_id === user.id ? conversation.unread_count_a : conversation.unread_count_b;
@@ -581,74 +489,6 @@ export default function ChatHub({
         </>
       ) : renderThread()}
 
-      {/* New Chat Modal */}
-      {showNewChatModal && (
-        <div className="fixed inset-0 bg-black/50 z-[2000] flex items-end sm:items-center justify-center">
-          <div className="absolute inset-0" onClick={closeNewChatModal} />
-
-          <div className="relative bg-white w-full sm:max-w-md rounded-t-3xl sm:rounded-3xl p-6 shadow-xl">
-            <div className="flex items-start justify-between mb-4">
-              <div className="flex items-center gap-3">
-                <div className="w-11 h-11 rounded-full bg-[#FFF1F2] border border-[#FECDD3] flex items-center justify-center">
-                  <Mail className="w-5 h-5 text-[#E11D48]" />
-                </div>
-                <div>
-                  <h2 className="text-lg font-extrabold text-[#121212]">New Chat</h2>
-                  <p className="text-sm text-[#64748B] mt-0.5">Enter the email of the person you want to message.</p>
-                </div>
-              </div>
-              <button
-                onClick={closeNewChatModal}
-                disabled={newChatLoading}
-                className="p-2 hover:bg-[#F1F5F9] rounded-full transition-colors disabled:opacity-50"
-              >
-                <X className="w-5 h-5 text-[#121212]" />
-              </button>
-            </div>
-
-            <input
-              type="email"
-              value={newChatEmail}
-              onChange={(e) => {
-                setNewChatEmail(e.target.value);
-                if (newChatError) setNewChatError('');
-              }}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter' && !e.shiftKey) {
-                  e.preventDefault();
-                  handleStartChat();
-                }
-              }}
-              placeholder="person@example.com"
-              autoFocus
-              className="w-full px-4 py-3 border-2 border-[#E2E8F0] rounded-xl focus:border-[#E11D48] focus:outline-none focus:ring-2 focus:ring-[#E11D48]/20 transition-all"
-            />
-
-            {newChatError && (
-              <p className="mt-3 text-sm text-[#E11D48] bg-[#FFF1F2] border border-[#FECDD3] rounded-xl px-3 py-2">
-                {newChatError}
-              </p>
-            )}
-
-            <div className="flex gap-3 mt-6">
-              <Button
-                onClick={closeNewChatModal}
-                disabled={newChatLoading}
-                className="flex-1 bg-white hover:bg-[#F1F5F9] text-[#121212] border-2 border-[#E2E8F0] font-bold uppercase"
-              >
-                Cancel
-              </Button>
-              <Button
-                onClick={handleStartChat}
-                disabled={!newChatEmail.trim() || newChatLoading}
-                className="flex-1 bg-[#E11D48] hover:bg-[#BE123C] text-white font-bold uppercase"
-              >
-                {newChatLoading ? 'Starting...' : 'Start Chat'}
-              </Button>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 }

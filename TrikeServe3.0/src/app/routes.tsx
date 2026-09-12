@@ -33,6 +33,7 @@ import RestaurantDetail from "./components/customer/RestaurantDetail";
 import Cart from "./components/customer/Cart";
 import Activity from "./components/customer/Activity";
 import CustomerMessages from "./components/customer/CustomerMessages";
+import CustomerDirectChat from "./components/customer/CustomerDirectChat";
 import Notifications from "./components/customer/Notifications";
 import Account from "./components/customer/Account";
 import AccountManagement from "./components/customer/AccountManagement";
@@ -301,6 +302,14 @@ export const router = createBrowserRouter([
         element: (
           <ProtectedRoute allowedRoles={['customer']}>
             <CustomerMessages />
+          </ProtectedRoute>
+        )
+      },
+      {
+        path: "customer/messages/business/:businessId",
+        element: (
+          <ProtectedRoute allowedRoles={['customer']}>
+            <CustomerDirectChat />
           </ProtectedRoute>
         )
       },

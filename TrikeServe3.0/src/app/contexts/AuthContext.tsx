@@ -25,6 +25,7 @@ export interface User {
   businessAddress?: string;
   restaurantId?: string;
   address?: string;
+  avatarUrl?: string;
   // Only set for admins (from admins table) so Edge Functions can verify them
   password?: string;
 }
@@ -79,6 +80,7 @@ function mapSupabaseUser(row: any): User {
     dropoffLocation: row.dropoff_location,
     terminalId: row.terminal_id,
     terminalName: row.terminal_name,
+    avatarUrl: row.avatar_url,
   };
 }
 
@@ -641,23 +643,24 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         return { success: false, error: 'No user logged in' };
       }
 
+      const updatePayload: Record<string, any> = { updated_at: new Date().toISOString() };
+      if (data.name !== undefined) updatePayload.name = data.name;
+      if (data.phone !== undefined) updatePayload.phone = data.phone;
+      if (data.address !== undefined) updatePayload.address = data.address;
+      if (data.todaPlate !== undefined) updatePayload.toda_plate = data.todaPlate;
+      if (data.licenseNumber !== undefined) updatePayload.license_number = data.licenseNumber;
+      if (data.pickupLocation !== undefined) updatePayload.pickup_location = data.pickupLocation;
+      if (data.dropoffLocation !== undefined) updatePayload.dropoff_location = data.dropoffLocation;
+      if (data.isOnline !== undefined) updatePayload.is_online = data.isOnline;
+      if (data.serviceTypes !== undefined) updatePayload.service_types = data.serviceTypes;
+      if (data.currentSeats !== undefined) updatePayload.current_seats = data.currentSeats;
+      if (data.businessName !== undefined) updatePayload.business_name = data.businessName;
+      if (data.businessAddress !== undefined) updatePayload.business_address = data.businessAddress;
+      if (data.avatarUrl !== undefined) updatePayload.avatar_url = data.avatarUrl;
+
       const { error: updateError } = await supabase
         .from('users')
-        .update({
-          ...(data.name && { name: data.name }),
-          ...(data.phone && { phone: data.phone }),
-          ...(data.address && { address: data.address }),
-          ...(data.todaPlate && { toda_plate: data.todaPlate }),
-          ...(data.licenseNumber && { license_number: data.licenseNumber }),
-          ...(data.pickupLocation && { pickup_location: data.pickupLocation }),
-          ...(data.dropoffLocation && { dropoff_location: data.dropoffLocation }),
-          ...(data.isOnline !== undefined && { is_online: data.isOnline }),
-          ...(data.serviceTypes && { service_types: data.serviceTypes }),
-          ...(data.currentSeats !== undefined && { current_seats: data.currentSeats }),
-          ...(data.businessName && { business_name: data.businessName }),
-          ...(data.businessAddress && { business_address: data.businessAddress }),
-          updated_at: new Date().toISOString(),
-        })
+        .update(updatePayload)
         .eq('id', user.id);
 
       if (updateError) {

@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useNavigate, Link } from "react-router";
 import {
   ArrowLeft, 
@@ -13,14 +13,15 @@ import {
   Edit2,
   Save,
   X,
-  LogOut
+  LogOut,
+  Camera
 } from "lucide-react";
 import { GoogleMap, MarkerF } from "@react-google-maps/api";
 import useMapLoader from "@/lib/mapLoader";
 import { supabase } from "../../../utils/supabase";
+import { supabaseHelpers } from "@/lib/supabase";
 import { Button } from "../ui/button";
 import { Card } from "../ui/card";
-import { Input } from "../ui/input";
 import { Badge } from "../ui/badge";
 import { useAuth } from "../../contexts/AuthContext";
 import ActiveRideButton from "./ActiveRideButton";
@@ -38,8 +39,47 @@ export default function RiderProfile() {
     licenseNumber: user?.licenseNumber || "",
   });
   const [showGoodbye, setShowGoodbye] = useState(false);
+  const [showSwitchConfirm, setShowSwitchConfirm] = useState(false);
+  const [showConfirmSave, setShowConfirmSave] = useState(false);
+  const [uploadingPhoto, setUploadingPhoto] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const handlePhotoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file || !user?.id) return;
+
+    if (!file.type.startsWith('image/')) {
+      alert('Please select a valid image file.');
+      return;
+    }
+    if (file.size > 5 * 1024 * 1024) {
+      alert('Image is too large. Maximum size is 5MB.');
+      return;
+    }
+
+    setUploadingPhoto(true);
+    try {
+      const result = await supabaseHelpers.uploadProfilePhoto(user.id, file);
+      if (result?.data?.publicUrl) {
+        await updateProfile({ avatarUrl: result.data.publicUrl });
+      } else {
+        alert('Failed to upload photo. Please try again.');
+      }
+    } catch (err) {
+      console.error('Photo upload error:', err);
+      alert('Failed to upload photo. Please try again.');
+    } finally {
+      setUploadingPhoto(false);
+      if (fileInputRef.current) fileInputRef.current.value = '';
+    }
+  };
 
   const handleSave = async () => {
+    setShowConfirmSave(true);
+  };
+
+  const confirmSave = async () => {
+    setShowConfirmSave(false);
     setIsSaving(true);
     
     const result = await updateProfile(formData);
@@ -159,8 +199,32 @@ export default function RiderProfile() {
 
         {/* Profile Header */}
         <div className="flex flex-col items-center">
-          <div className="w-24 h-24 bg-white/20 backdrop-blur-sm rounded-full flex items-center justify-center border-4 border-white/30 mb-3">
-            <User className="w-12 h-12 text-white" />
+          <div className="relative mb-3">
+            <div className="w-24 h-24 bg-white/20 backdrop-blur-sm rounded-full flex items-center justify-center border-4 border-white/30 overflow-hidden">
+              {user.avatarUrl ? (
+                <img src={user.avatarUrl} alt="Profile" className="w-full h-full object-cover" />
+              ) : (
+                <User className="w-12 h-12 text-white" />
+              )}
+            </div>
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept="image/*"
+              className="hidden"
+              onChange={handlePhotoUpload}
+            />
+            <button
+              onClick={() => fileInputRef.current?.click()}
+              disabled={uploadingPhoto}
+              className="absolute bottom-0 right-0 w-9 h-9 bg-[#18B5A4] rounded-full flex items-center justify-center shadow-lg border-3 border-white hover:bg-[#159E8F] transition-colors"
+            >
+              {uploadingPhoto ? (
+                <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+              ) : (
+                <Camera className="w-5 h-5 text-white" />
+              )}
+            </button>
           </div>
           <h1 className="text-2xl font-bold text-white mb-1">
             {user.name}
@@ -199,10 +263,11 @@ export default function RiderProfile() {
                 Full Name
               </label>
               {isEditing ? (
-                <Input
+                <input
+                  type="text"
                   value={formData.name}
                   onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                  className="w-full"
+                  className="w-full p-2 border-2 border-[#E2E8F0] rounded-lg text-base font-semibold text-[#121212] focus:border-[#E11D48] outline-none"
                   placeholder="Enter your full name"
                 />
               ) : (
@@ -228,12 +293,12 @@ export default function RiderProfile() {
                 Phone Number
               </label>
               {isEditing ? (
-                <Input
+                <input
+                  type="tel"
                   value={formData.phone}
                   onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
-                  className="w-full"
+                  className="w-full p-2 border-2 border-[#E2E8F0] rounded-lg text-base text-[#121212] focus:border-[#E11D48] outline-none"
                   placeholder="09XX XXX XXXX"
-                  type="tel"
                 />
               ) : (
                 <div className="flex items-center gap-2">
@@ -258,22 +323,14 @@ export default function RiderProfile() {
               <label className="text-xs font-semibold text-[#64748B] uppercase tracking-wide mb-2 block">
                 TODA Plate Number
               </label>
-              {isEditing ? (
-                <Input
-                  value={formData.todaPlate}
-                  onChange={(e) => setFormData({ ...formData, todaPlate: e.target.value })}
-                  className="w-full"
-                  placeholder="e.g., ABC-1234"
-                />
-              ) : (
-                <div className="flex items-center gap-2">
-                  <div className="px-3 py-2 bg-[#F1F5F9] rounded-lg">
-                    <p className="text-base font-bold text-[#121212] tracking-wider">
-                      {user.todaPlate || "Not provided"}
-                    </p>
-                  </div>
+              <div className="flex items-center gap-2">
+                <div className="px-3 py-2 bg-[#F1F5F9] rounded-lg">
+                  <p className="text-base font-bold text-[#121212] tracking-wider">
+                    {user.todaPlate || "Not provided"}
+                  </p>
                 </div>
-              )}
+              </div>
+              <p className="text-xs text-[#94A3B8] mt-1">Visit the TrikeServe office to update</p>
             </div>
 
             {/* Driver's License Number */}
@@ -281,21 +338,13 @@ export default function RiderProfile() {
               <label className="text-xs font-semibold text-[#64748B] uppercase tracking-wide mb-2 block">
                 Driver's License Number
               </label>
-              {isEditing ? (
-                <Input
-                  value={formData.licenseNumber}
-                  onChange={(e) => setFormData({ ...formData, licenseNumber: e.target.value })}
-                  className="w-full"
-                  placeholder="e.g., N01-12-345678"
-                />
-              ) : (
-                <div className="flex items-center gap-2">
-                  <CreditCard className="w-4 h-4 text-[#64748B]" />
-                  <p className="text-base font-mono text-[#121212]">
-                    {user.licenseNumber || "Not provided"}
-                  </p>
-                </div>
-              )}
+              <div className="flex items-center gap-2">
+                <CreditCard className="w-4 h-4 text-[#64748B]" />
+                <p className="text-base font-mono text-[#121212]">
+                  {user.licenseNumber || "Not provided"}
+                </p>
+              </div>
+              <p className="text-xs text-[#94A3B8] mt-1">Visit the TrikeServe office to update</p>
             </div>
 
             {/* Verification Status */}
@@ -458,25 +507,15 @@ export default function RiderProfile() {
         <div>
           {user.role === 'rider' ? (
             <Button
-              onClick={async () => {
-                // Switch to customer UI so driver can place orders
-                localStorage.setItem('trikeserve_post_switch_route', '/customer/food');
-                switchUiRole && await switchUiRole('customer');
-                // Fallback navigation (guard will already route using post-switch key)
-                navigate('/customer/food');
-              }}
+              onClick={() => setShowSwitchConfirm(true)}
               className="w-full bg-[#065f46] hover:bg-[#047857] text-white font-bold uppercase py-4 rounded-lg flex items-center justify-center gap-2 shadow-md mb-3"
             >
               Use Customer App
             </Button>
           ) : (
-            // If user's UI has been switched, allow restoring original role
             localStorage.getItem('trikeserve_original_role') && (
               <Button
-                onClick={async () => {
-                  await restoreOriginalRole?.();
-                  navigate('/rider');
-                }}
+                onClick={() => setShowSwitchConfirm(true)}
                 className="w-full bg-[#0f172a] hover:bg-[#111827] text-white font-bold uppercase py-4 rounded-lg flex items-center justify-center gap-2 shadow-md mb-3"
               >
                 Switch back to Driver App
@@ -548,6 +587,80 @@ export default function RiderProfile() {
         <div className="h-8" />
       </div>
       <ActiveRideButton />
+
+      {/* Confirm Save Modal */}
+      {showConfirmSave && (
+        <div className="fixed inset-0 bg-black/50 z-[2000] flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl shadow-xl p-6 max-w-sm w-full">
+            <div className="text-center mb-4">
+              <div className="w-14 h-14 bg-[#FFF1F2] rounded-full flex items-center justify-center mx-auto mb-3">
+                <CheckCircle className="w-7 h-7 text-[#E11D48]" />
+              </div>
+              <h3 className="text-lg font-bold text-[#121212]">Save Changes?</h3>
+              <p className="text-sm text-[#64748B] mt-2">
+                Are you sure you want to update your profile information?
+              </p>
+            </div>
+            <div className="flex gap-3">
+              <button
+                onClick={() => setShowConfirmSave(false)}
+                className="flex-1 py-3 text-sm font-semibold text-[#64748B] bg-[#F1F5F9] rounded-xl hover:bg-[#E2E8F0] transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={confirmSave}
+                className="flex-1 py-3 text-sm font-semibold text-white bg-[#E11D48] rounded-xl hover:bg-[#BE123C] transition-colors"
+              >
+                Yes, Save
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Switch Confirmation Modal */}
+      {showSwitchConfirm && (
+        <div className="fixed inset-0 bg-black/50 z-[2000] flex items-center justify-center p-4">
+          <div className="bg-white p-6 max-w-sm w-full rounded-2xl shadow-xl">
+            <div className="w-16 h-16 bg-[#E0F2FE] rounded-full flex items-center justify-center mx-auto mb-4">
+              <ArrowLeft className="w-8 h-8 text-[#3B82F6]" />
+            </div>
+            <h3 className="text-xl font-bold text-[#121212] text-center mb-2">
+              {localStorage.getItem('trikeserve_original_role') ? 'Switch Back?' : 'Switch to Customer App?'}
+            </h3>
+            <p className="text-[#64748B] text-center mb-6 text-sm">
+              {localStorage.getItem('trikeserve_original_role')
+                ? 'You will return to the Driver app.'
+                : 'You will be switched to the Customer app to browse and order food.'}
+            </p>
+            <div className="space-y-3">
+              <button
+                onClick={async () => {
+                  setShowSwitchConfirm(false);
+                  if (localStorage.getItem('trikeserve_original_role')) {
+                    await restoreOriginalRole?.();
+                    navigate('/rider');
+                  } else {
+                    localStorage.setItem('trikeserve_post_switch_route', '/customer/food');
+                    switchUiRole && await switchUiRole('customer');
+                    navigate('/customer/food');
+                  }
+                }}
+                className="w-full py-3 bg-[#3B82F6] text-white font-bold rounded-xl active:scale-95 transition-transform"
+              >
+                Yes, Switch
+              </button>
+              <button
+                onClick={() => setShowSwitchConfirm(false)}
+                className="w-full py-3 bg-[#F8F9FA] text-[#64748B] font-bold rounded-xl active:scale-95 transition-transform"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Goodbye Popup */}
       {showGoodbye && (

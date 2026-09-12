@@ -27,19 +27,10 @@ export default function FoodHome() {
   const [unreadNotifications, setUnreadNotifications] = useState(0);
   const [adminDeliveryFee, setAdminDeliveryFee] = useState<number>(35); // Admin-set base delivery fee
   
-  // Filter drag state
-  const [isFilterDragging, setIsFilterDragging] = useState(false);
-  const [filterStartX, setFilterStartX] = useState(0);
-  const [filterScrollLeft, setFilterScrollLeft] = useState(0);
-  
   // Filter states
-  const [selectedSortBy, setSelectedSortBy] = useState<string>("recommended");
-  const [selectedDeliveryTime, setSelectedDeliveryTime] = useState<string[]>([]);
+  const [selectedRating, setSelectedRating] = useState<string>("");
   const [showWelcomeBack, setShowWelcomeBack] = useState(false);
   const [welcomeUserName, setWelcomeUserName] = useState("");
-  const [selectedPriceRange, setSelectedPriceRange] = useState<string[]>([]);
-  const [selectedRating, setSelectedRating] = useState<string>("");
-  const [freeDeliveryOnly, setFreeDeliveryOnly] = useState(false);
   const [searchQuery, setSearchQuery] = useState<string>("");
 
   // Function to get unread notifications count
@@ -89,7 +80,7 @@ export default function FoodHome() {
         // Compute each restaurant's rating from the business_ratings table so
         // the food page shows the real average instead of the hardcoded default.
         const withRatings = await Promise.all(restaurants.map(async (restaurant: any) => {
-          let rating = restaurant.rating || 5.0;
+          let rating = restaurant.rating || 0;
           let ratingCount = 0;
           if (restaurant.business_user_id) {
             const res = await supabaseHelpers.getBusinessRating(restaurant.business_user_id);
@@ -276,8 +267,6 @@ export default function FoodHome() {
     { id: "merienda", name: "Merienda", icon: "🥐", gradient: "from-pink-400 to-rose-400" },
     { id: "malamig", name: "Malamig", icon: "🧋", gradient: "from-purple-400 to-pink-500" },
   ];
-
-  const restaurantFilters = ["All", "Pinoy Food", "Fast Food", "Kape", "Merienda"];
 
   // Show welcome back popup after login
   useEffect(() => {
@@ -495,47 +484,6 @@ export default function FoodHome() {
              </div>
            ) : (
             <>
-              {/* Filter Pills */}
-              <style>{`
-                .filter-pills-container::-webkit-scrollbar {
-                  display: none;
-                }
-                .filter-pills-container {
-                  -ms-overflow-style: none;
-                  scrollbar-width: none;
-                }
-              `}</style>
-              <div className="flex gap-2 overflow-x-auto pb-3 mb-5 filter-pills-container"
-                onMouseDown={(e) => {
-                  setIsFilterDragging(true);
-                  setFilterStartX(e.clientX);
-                  setFilterScrollLeft(e.currentTarget.scrollLeft);
-                }}
-                onMouseUp={() => setIsFilterDragging(false)}
-                onMouseLeave={() => setIsFilterDragging(false)}
-                onMouseMove={(e) => {
-                  if (!isFilterDragging) return;
-                  e.preventDefault();
-                  const x = e.clientX;
-                  const walk = (x - filterStartX) * 1.5;
-                  e.currentTarget.scrollLeft = filterScrollLeft - walk;
-                }}
-              >
-                {restaurantFilters.map((filter) => (
-                  <button
-                    key={filter}
-                    onClick={() => setActiveCategory(filter.toLowerCase())}
-                    className={`px-4 py-2.5 rounded-full whitespace-nowrap text-sm font-bold transition-all active:scale-95 shadow-md ${
-                      activeCategory === filter.toLowerCase()
-                        ? 'bg-[#121212] text-white shadow-lg'
-                        : 'bg-white text-[#121212] hover:shadow-xl'
-                    }`}
-                  >
-                    {filter}
-                  </button>
-                ))}
-              </div>
-
                {/* Restaurant Cards with Verified Badges */}
                <div className="space-y-4">
                  {restaurants
@@ -730,7 +678,7 @@ export default function FoodHome() {
           <div className="w-full bg-white rounded-t-3xl max-h-[85vh] overflow-hidden flex flex-col animate-in slide-in-from-bottom duration-300">
             {/* Modal Header */}
             <div className="flex items-center justify-between px-5 py-4 border-b border-[#E2E8F0]">
-              <h2 className="text-xl font-bold text-[#121212]">Filters</h2>
+              <h2 className="text-xl font-bold text-[#121212]">Filter</h2>
               <button 
                 onClick={() => setShowFilterModal(false)}
                 className="w-10 h-10 flex items-center justify-center rounded-full hover:bg-[#F8F9FA] active:scale-90 transition-all"
@@ -741,78 +689,9 @@ export default function FoodHome() {
 
             {/* Modal Content - Scrollable */}
             <div className="flex-1 overflow-y-auto px-5 py-4 space-y-6">
-              {/* Sort By */}
-              <div>
-                <h3 className="text-base font-bold text-[#121212] mb-3">Sort By</h3>
-                <div className="space-y-2">
-                  {['recommended', 'rating', 'delivery-time', 'distance'].map((option) => (
-                    <button
-                      key={option}
-                      onClick={() => setSelectedSortBy(option)}
-                      className={`w-full px-4 py-3 rounded-2xl flex items-center justify-between transition-all ${
-                        selectedSortBy === option
-                          ? 'bg-[#E11D48] text-white shadow-lg'
-                          : 'bg-[#F8F9FA] text-[#121212] hover:bg-[#E2E8F0]'
-                      }`}
-                    >
-                      <span className="font-medium capitalize">{option.replace('-', ' ')}</span>
-                      {selectedSortBy === option && <Check className="w-5 h-5" />}
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              {/* Delivery Time */}
-              <div>
-                <h3 className="text-base font-bold text-[#121212] mb-3">Delivery Time</h3>
-                <div className="flex flex-wrap gap-2">
-                  {['10-20 min', '20-30 min', '30+ min'].map((time) => (
-                    <button
-                      key={time}
-                      onClick={() => {
-                        setSelectedDeliveryTime(prev =>
-                          prev.includes(time) ? prev.filter(t => t !== time) : [...prev, time]
-                        );
-                      }}
-                      className={`px-4 py-2.5 rounded-full font-medium transition-all ${
-                        selectedDeliveryTime.includes(time)
-                          ? 'bg-[#E11D48] text-white shadow-lg'
-                          : 'bg-[#F8F9FA] text-[#121212] hover:bg-[#E2E8F0]'
-                      }`}
-                    >
-                      {time}
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              {/* Price Range */}
-              <div>
-                <h3 className="text-base font-bold text-[#121212] mb-3">Price Range</h3>
-                <div className="flex flex-wrap gap-2">
-                  {['₱ (Under ₱100)', '₱₱ (₱100-₱200)', '₱₱₱ (₱200+)'].map((price) => (
-                    <button
-                      key={price}
-                      onClick={() => {
-                        setSelectedPriceRange(prev =>
-                          prev.includes(price) ? prev.filter(p => p !== price) : [...prev, price]
-                        );
-                      }}
-                      className={`px-4 py-2.5 rounded-full font-medium transition-all ${
-                        selectedPriceRange.includes(price)
-                          ? 'bg-[#E11D48] text-white shadow-lg'
-                          : 'bg-[#F8F9FA] text-[#121212] hover:bg-[#E2E8F0]'
-                      }`}
-                    >
-                      {price}
-                    </button>
-                  ))}
-                </div>
-              </div>
-
               {/* Rating */}
               <div>
-                <h3 className="text-base font-bold text-[#121212] mb-3">Minimum Rating</h3>
+                <h3 className="text-base font-bold text-[#121212] mb-3">Rating</h3>
                 <div className="flex flex-wrap gap-2">
                   {['4.0+', '4.5+', '4.8+'].map((rating) => (
                     <button
@@ -830,38 +709,13 @@ export default function FoodHome() {
                   ))}
                 </div>
               </div>
-
-              {/* Free Delivery */}
-              <div>
-                <button
-                  onClick={() => setFreeDeliveryOnly(!freeDeliveryOnly)}
-                  className={`w-full px-4 py-4 rounded-2xl flex items-center justify-between transition-all ${
-                    freeDeliveryOnly
-                      ? 'bg-[#E11D48] text-white shadow-lg'
-                      : 'bg-[#F8F9FA] text-[#121212] hover:bg-[#E2E8F0]'
-                  }`}
-                >
-                  <span className="font-bold">Free Delivery Only</span>
-                  <div className={`w-12 h-6 rounded-full transition-all relative ${
-                    freeDeliveryOnly ? 'bg-white/30' : 'bg-[#CBD5E1]'
-                  }`}>
-                    <div className={`w-5 h-5 rounded-full bg-white shadow-md absolute top-0.5 transition-all ${
-                      freeDeliveryOnly ? 'right-0.5' : 'left-0.5'
-                    }`} />
-                  </div>
-                </button>
-              </div>
             </div>
 
             {/* Modal Footer */}
             <div className="px-5 py-4 border-t border-[#E2E8F0] flex gap-3">
               <button
                 onClick={() => {
-                  setSelectedSortBy('recommended');
-                  setSelectedDeliveryTime([]);
-                  setSelectedPriceRange([]);
                   setSelectedRating('');
-                  setFreeDeliveryOnly(false);
                 }}
                 className="flex-1 py-3.5 rounded-2xl font-bold text-[#E11D48] bg-[#FEF2F2] hover:bg-[#FEE2E2] active:scale-95 transition-all uppercase text-sm tracking-wide"
               >
@@ -871,7 +725,7 @@ export default function FoodHome() {
                 onClick={() => setShowFilterModal(false)}
                 className="flex-1 py-3.5 rounded-2xl font-bold text-white bg-gradient-to-r from-[#E11D48] to-[#BE123C] hover:shadow-xl active:scale-95 transition-all shadow-lg shadow-[#E11D48]/30 uppercase text-sm tracking-wide"
               >
-                Apply Filters
+                Apply Filter
               </button>
             </div>
           </div>

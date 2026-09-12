@@ -5,7 +5,7 @@ import { Button } from "./ui/button";
 import { Input } from "./ui/input";
 import { useAuth } from "../contexts/AuthContext";
 import { supabase } from "../../utils/supabase";
-import tagalagImage from "../../assets/49624c6fb8f504041a2a91198a581a109cd5507d.png";
+import tagalagImage from "../../assets/trikserve_loginpage.jpg";
 
 interface TestAccount {
   email: string;

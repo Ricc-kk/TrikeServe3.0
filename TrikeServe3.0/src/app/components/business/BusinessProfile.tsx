@@ -13,6 +13,7 @@ export default function BusinessProfile() {
   const [isSaving, setIsSaving] = useState(false);
   const [showSaved, setShowSaved] = useState(false);
   const [showMapSelector, setShowMapSelector] = useState(false);
+  const [showConfirmSave, setShowConfirmSave] = useState(false);
 
   const [formData, setFormData] = useState({
     name: user?.name || "",
@@ -22,7 +23,12 @@ export default function BusinessProfile() {
     businessAddress: (user as any)?.businessAddress || "",
   });
 
-  const handleSave = async () => {
+  const handleSave = () => {
+    setShowConfirmSave(true);
+  };
+
+  const confirmSave = async () => {
+    setShowConfirmSave(false);
     if (!user?.id) return;
     setIsSaving(true);
     try {
@@ -293,6 +299,37 @@ export default function BusinessProfile() {
           </button>
         </div>
       </div>
+
+      {/* Confirm Save Modal */}
+      {showConfirmSave && (
+        <div className="fixed inset-0 bg-black/50 z-[2000] flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl shadow-xl p-6 max-w-sm w-full">
+            <div className="text-center mb-4">
+              <div className="w-14 h-14 bg-[#FFF1F2] rounded-full flex items-center justify-center mx-auto mb-3">
+                <Check className="w-7 h-7 text-[#E11D48]" />
+              </div>
+              <h3 className="text-lg font-bold text-[#121212]">Save Changes?</h3>
+              <p className="text-sm text-[#64748B] mt-2">
+                Are you sure you want to update your profile information?
+              </p>
+            </div>
+            <div className="flex gap-3">
+              <button
+                onClick={() => setShowConfirmSave(false)}
+                className="flex-1 py-3 text-sm font-semibold text-[#64748B] bg-[#F1F5F9] rounded-xl hover:bg-[#E2E8F0] transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={confirmSave}
+                className="flex-1 py-3 text-sm font-semibold text-white bg-[#E11D48] rounded-xl hover:bg-[#BE123C] transition-colors"
+              >
+                Yes, Save
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
