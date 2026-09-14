@@ -893,12 +893,15 @@ export default function ShareRideLobby({
                 >
                   <ChevronDown className="w-5 h-5 text-white" />
                 </button>
-                <button
-                  onClick={() => setShowLeaveConfirm(true)}
-                  className="w-9 h-9 flex items-center justify-center rounded-full bg-white/20 hover:bg-white/30 transition-colors"
-                >
-                  <X className="w-5 h-5 text-white" />
-                </button>
+                {/* Only show cancel button while still searching for a driver */}
+                {lobby.status === 'waiting' && (
+                  <button
+                    onClick={() => setShowLeaveConfirm(true)}
+                    className="w-9 h-9 flex items-center justify-center rounded-full bg-white/20 hover:bg-white/30 transition-colors"
+                  >
+                    <X className="w-5 h-5 text-white" />
+                  </button>
+                )}
               </div>
             </div>
           </div>

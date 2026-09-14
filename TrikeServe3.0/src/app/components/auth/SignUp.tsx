@@ -314,9 +314,14 @@ export default function SignUp() {
                   <Phone className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-[#64748B]" />
                   <Input
                     type="tel"
+                    inputMode="numeric"
                     placeholder="09XXXXXXXXX"
                     value={formData.phoneNumber}
-                    onChange={(e) => handleInputChange("phoneNumber", e.target.value)}
+                    onChange={(e) => {
+                      const digits = e.target.value.replace(/\D/g, '').slice(0, 11);
+                      handleInputChange("phoneNumber", digits);
+                    }}
+                    maxLength={11}
                     className="border-2 border-[#CBD5E1] focus:border-[#E11D48] pl-11"
                     required
                     disabled={isLoading}

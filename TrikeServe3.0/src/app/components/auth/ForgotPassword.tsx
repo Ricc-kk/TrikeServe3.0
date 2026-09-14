@@ -33,10 +33,13 @@ export default function ForgotPassword() {
     setError("");
 
     try {
+      // Always redirect to the hosted web app so mobile (Capacitor) users
+      // land on the web version where the token can be processed.
+      const WEB_APP_URL = import.meta.env.VITE_WEB_APP_URL || "https://trike-serve.vercel.app";
       const { error: resetError } = await supabase.auth.resetPasswordForEmail(
         confirmEmail,
         {
-          redirectTo: `${window.location.origin}/set-password`,
+          redirectTo: `${WEB_APP_URL}/set-password`,
         }
       );
 
@@ -245,6 +248,12 @@ export default function ForgotPassword() {
               <div className="p-4 bg-yellow-50 border-2 border-yellow-200 rounded-lg">
                 <p className="text-sm text-yellow-800">
                   <strong>⚠️ Check Spam/Junk Folder:</strong> Gmail and other providers may flag this email as spam. Look in your <strong>Spam</strong> or <strong>Junk</strong> folder and mark it as "Not Spam" so future emails arrive in your inbox.
+                </p>
+              </div>
+
+              <div className="p-3 bg-blue-50 border-2 border-blue-200 rounded-lg">
+                <p className="text-xs text-blue-800">
+                  <strong>📱 Mobile user?</strong> The reset link will open in your browser. After setting your new password, open the TrikeServe app to log in.
                 </p>
               </div>
 

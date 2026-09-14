@@ -27,6 +27,7 @@ export default function Cart() {
   const [showOrderConfirmation, setShowOrderConfirmation] = useState(false);
   const [showMapSelector, setShowMapSelector] = useState(false);
   const [showRemoveConfirm, setShowRemoveConfirm] = useState(false);
+  const [pendingRemoveItem, setPendingRemoveItem] = useState<{ restaurantId: string; itemId: string } | null>(null);
   const [placedOrderNumber, setPlacedOrderNumber] = useState<string | null>(null);
   const [selectedAddress, setSelectedAddress] = useState({
     name: "Select Delivery Address",
@@ -59,9 +60,16 @@ export default function Cart() {
   };
 
   const confirmRemoveRestaurants = () => {
-    selectedRestaurants.forEach(id => removeRestaurant(id));
-    setSelectedRestaurants([]);
-    setIsManageMode(false);
+    if (pendingRemoveItem) {
+      // Remove single last item
+      removeItem(pendingRemoveItem.restaurantId, pendingRemoveItem.itemId);
+      setPendingRemoveItem(null);
+    } else {
+      // Remove selected restaurants
+      selectedRestaurants.forEach(id => removeRestaurant(id));
+      setSelectedRestaurants([]);
+      setIsManageMode(false);
+    }
     setShowRemoveConfirm(false);
   };
 
@@ -414,7 +422,14 @@ export default function Cart() {
                             <button
                               onClick={(e) => {
                                 e.stopPropagation();
-                                removeItem(restaurant.id, item.id);
+                                // If this is the last item in the cart, show confirmation
+                                const isLastItem = restaurant.items.length === 1 && getTotalItems() === 1;
+                                if (isLastItem) {
+                                  setPendingRemoveItem({ restaurantId: restaurant.id, itemId: item.id });
+                                  setShowRemoveConfirm(true);
+                                } else {
+                                  removeItem(restaurant.id, item.id);
+                                }
                               }}
                               className="w-7 h-7 rounded-full border-2 border-[#EF4444] flex items-center justify-center active:scale-90 transition-all"
                             >
@@ -541,17 +556,23 @@ export default function Cart() {
         {showRemoveConfirm && (
           <div className="fixed inset-0 bg-black/60 z-[2000] flex items-center justify-center p-4">
             <Card className="bg-white p-6 max-w-sm w-full" onClick={(e) => e.stopPropagation()}>
-              <h3 className="text-xl font-bold text-[#121212] text-center mb-2">Remove Item?</h3>
-              <p className="text-[#64748B] text-center mb-6">Are you sure you want to remove items from cart?</p>
+              <h3 className="text-xl font-bold text-[#121212] text-center mb-2">
+                {pendingRemoveItem ? 'Remove Last Item?' : 'Remove Items?'}
+              </h3>
+              <p className="text-[#64748B] text-center mb-6">
+                {pendingRemoveItem
+                  ? 'This will empty your cart. Are you sure?'
+                  : `Are you sure you want to remove ${selectedRestaurants.length} item${selectedRestaurants.length > 1 ? 's' : ''} from cart?`}
+              </p>
               <div className="space-y-3">
                 <button
                   onClick={confirmRemoveRestaurants}
                   className="w-full py-4 bg-[#E11D48] hover:bg-[#BE123C] text-white font-bold rounded-2xl uppercase active:scale-95 transition-transform"
                 >
-                  Remove
+                  {pendingRemoveItem ? 'Yes, Empty Cart' : 'Remove'}
                 </button>
                 <button
-                  onClick={() => setShowRemoveConfirm(false)}
+                  onClick={() => { setShowRemoveConfirm(false); setPendingRemoveItem(null); }}
                   className="w-full py-4 bg-[#F8F9FA] text-[#64748B] font-bold rounded-2xl uppercase active:scale-95 transition-transform"
                 >
                   Cancel

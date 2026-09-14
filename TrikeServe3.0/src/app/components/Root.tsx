@@ -3,8 +3,26 @@ import { AuthProvider } from "../contexts/AuthContext";
 import { CartProvider } from "../contexts/CartContext";
 import { OrderProvider } from "../contexts/OrderContext";
 import { FavoritesProvider } from "../contexts/FavoritesContext";
-import { NotificationProvider } from "../contexts/NotificationContext";
+import { NotificationProvider, useNotification } from "../contexts/NotificationContext";
 import Toast from "./ui/Toast";
+
+function NotificationToasts() {
+  const { notifications, removeNotification } = useNotification();
+  return (
+    <>
+      {notifications.map((n, i) => (
+        <Toast
+          key={n.id}
+          message={n.message}
+          variant={n.type}
+          onClose={() => removeNotification(n.id)}
+          action={n.action}
+          style={{ top: `${24 + i * 80}px` }}
+        />
+      ))}
+    </>
+  );
+}
 
 export default function Root() {
   return (
@@ -13,7 +31,7 @@ export default function Root() {
         <CartProvider>
           <OrderProvider>
             <NotificationProvider>
-              <Toast />
+              <NotificationToasts />
               <div className="min-h-screen">
                 <Outlet />
               </div>
