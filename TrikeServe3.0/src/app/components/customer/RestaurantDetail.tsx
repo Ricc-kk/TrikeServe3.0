@@ -48,7 +48,13 @@ export default function RestaurantDetail() {
   const [searchParams] = useSearchParams();
   const restaurantId = searchParams.get("id");
   const restaurantName = searchParams.get("name") || "Restaurant";
-  const { addToCart: addItemToCart, getTotalItems } = useCart();
+  const { addToCart: addItemToCart, getTotalItems, cartRestaurants } = useCart();
+
+  // Check if this restaurant has items in the cart
+  const cartItemsForThisStore = cartRestaurants.find(
+    (r) => r.supabaseRestaurantId === restaurantId || r.id === restaurantId || r.name === restaurantName
+  );
+  const cartItemCount = cartItemsForThisStore?.items.reduce((sum, item) => sum + item.quantity, 0) || 0;
   const { toggleFavorite, isFavorite: checkIsFavorite, toggleFavoriteItem, isFavoriteItem } = useFavorites();
   const { showNotification } = useNotification();
 
@@ -425,8 +431,13 @@ export default function RestaurantDetail() {
        customizations: customizations
      });
 
-     // Show notification
-     showNotification(`${quantity} item${quantity > 1 ? 's' : ''} added to the cart`, 'success');
+     // Show notification with View Cart action
+     showNotification(
+       `${quantity} item${quantity > 1 ? 's' : ''} added to the cart`,
+       'success',
+       3000,
+       { label: 'View Cart', onClick: () => navigate('/customer/cart') }
+     );
    };
 
   const filteredItems = restaurantData?.menuItems.filter(item => {
@@ -463,6 +474,24 @@ export default function RestaurantDetail() {
 
   return (
     <div className="min-h-screen bg-[#F8F9FA] pb-20">
+      {/* Floating View Cart Bar */}
+      {cartItemCount > 0 && (
+        <Link
+          to="/customer/cart"
+          className="fixed bottom-20 left-4 right-4 z-[900] bg-[#E11D48] text-white rounded-2xl px-5 py-3 flex items-center justify-between shadow-xl shadow-[#E11D48]/30 active:scale-[0.98] transition-transform"
+        >
+          <div className="flex items-center gap-3">
+            <div className="w-8 h-8 bg-white/20 rounded-full flex items-center justify-center">
+              <ShoppingCart className="w-4 h-4 text-white" />
+            </div>
+            <span className="font-bold text-sm">
+              View Cart · {cartItemCount} item{cartItemCount > 1 ? 's' : ''}
+            </span>
+          </div>
+          <span className="text-lg font-bold">→</span>
+        </Link>
+      )}
+
       {/* Hero Image */}
       <div className="relative h-64 bg-gradient-to-b from-[#121212] to-[#2a2a2a]">
         <ImageWithFallback

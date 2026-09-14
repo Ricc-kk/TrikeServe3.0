@@ -109,10 +109,33 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           if (mounted) setIsLoading(false);
         });
       } else {
+        // No Supabase session — fall back to stored user in localStorage
+        // This keeps the user logged in on Capacitor after app restart
+        const storedUser = localStorage.getItem('trikeserve_current_user');
+        if (storedUser) {
+          try {
+            const parsed = JSON.parse(storedUser);
+            console.log('[AuthContext] No session but found stored user:', parsed.email);
+            setUser(parsed);
+          } catch (e) {
+            console.warn('[AuthContext] Failed to parse stored user:', e);
+          }
+        }
         clearTimeout(safetyTimeout);
         setIsLoading(false);
       }
     }).catch(() => {
+      // On error, try to restore from localStorage as fallback
+      const storedUser = localStorage.getItem('trikeserve_current_user');
+      if (storedUser) {
+        try {
+          const parsed = JSON.parse(storedUser);
+          console.log('[AuthContext] Session error, restoring stored user:', parsed.email);
+          setUser(parsed);
+        } catch (e) {
+          console.warn('[AuthContext] Failed to parse stored user:', e);
+        }
+      }
       clearTimeout(safetyTimeout);
       if (mounted) setIsLoading(false);
     });
@@ -503,10 +526,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       const isAutoVerified = data.role === 'customer';
 
       // Sign up with Supabase Auth
+      // Always redirect verification emails to the hosted web app so mobile
+      // (Capacitor) users can complete verification in the browser.
+      const WEB_APP_URL = import.meta.env.VITE_WEB_APP_URL || "https://trike-serve.vercel.app";
       const { data: authData, error: authError } = await supabase.auth.signUp({
         email: data.email.toLowerCase(),
         password: data.password,
         options: {
+          emailRedirectTo: `${WEB_APP_URL}/verify-email`,
           data: {
             name: data.name,
             role: data.role,

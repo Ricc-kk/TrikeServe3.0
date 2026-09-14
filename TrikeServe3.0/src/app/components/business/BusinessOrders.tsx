@@ -39,6 +39,7 @@ export default function BusinessOrders() {
   const [selectedTab, setSelectedTab] = useState<'active' | 'history'>('active');
   const [selectedOrder, setSelectedOrder] = useState<Order | null>(null);
   const [confirmAction, setConfirmAction] = useState<'accept' | 'decline' | null>(null);
+  const [statusConfirm, setStatusConfirm] = useState<'ready' | 'delivery' | null>(null);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [selectedStatusFilter, setSelectedStatusFilter] = useState<'all' | 'pending' | 'confirmed' | 'preparing' | 'ready' | 'on-the-way'>('all');
   const [orders, setOrders] = useState<Order[]>([]);
@@ -960,10 +961,7 @@ export default function BusinessOrders() {
                 {selectedOrder.status === 'preparing' && (
                   <div className="space-y-2">
                     <Button
-                      onClick={() => {
-                        updateOrderStatus(selectedOrder.id, 'ready');
-                        setSelectedOrder(null);
-                      }}
+                      onClick={() => setStatusConfirm('ready')}
                       className="w-full bg-[#F59E0B] hover:bg-[#D97706] uppercase py-4 md:py-6 font-bold text-sm md:text-base"
                     >
                       → Ready for Pickup
@@ -975,7 +973,7 @@ export default function BusinessOrders() {
                   <div className="space-y-2">
                     {selectedOrder.deliveryMode === 'delivery' && (
                       <Button
-                        onClick={() => handleReadyForDelivery(selectedOrder)}
+                        onClick={() => setStatusConfirm('delivery')}
                         className="w-full bg-[#06B6D4] hover:bg-[#0891B2] uppercase py-4 md:py-6 font-bold text-sm md:text-base"
                       >
                         → Ready for Delivery
@@ -1131,6 +1129,47 @@ export default function BusinessOrders() {
                 }`}
               >
                 {confirmAction === 'accept' ? 'Accept' : 'Decline'}
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Status Change Confirmation Popup */}
+      {statusConfirm && selectedOrder && (
+        <div className="fixed inset-0 bg-black/60 z-[3000] flex items-center justify-center">
+          <div className="bg-white rounded-3xl p-6 mx-6 max-w-sm w-full text-center shadow-2xl animate-in fade-in zoom-in duration-300">
+            <h2 className="text-xl font-extrabold text-[#121212] mb-1">
+              {statusConfirm === 'ready' ? 'Ready for Pickup?' : 'Ready for Delivery?'}
+            </h2>
+            <p className="text-sm text-[#64748B] mb-1">Order #{selectedOrder.orderNumber}</p>
+            <p className="text-sm text-[#64748B] mb-1">{selectedOrder.customerName}</p>
+            <p className="text-lg font-bold text-[#E11D48] mb-4">₱{selectedOrder.total.toFixed(2)}</p>
+            <div className="flex gap-3">
+              <Button
+                onClick={() => setStatusConfirm(null)}
+                variant="outline"
+                className="flex-1 border-gray-300 text-gray-600 uppercase font-bold"
+              >
+                Cancel
+              </Button>
+              <Button
+                onClick={async () => {
+                  if (statusConfirm === 'ready') {
+                    await updateOrderStatus(selectedOrder.id, 'ready');
+                  } else {
+                    await handleReadyForDelivery(selectedOrder);
+                  }
+                  setStatusConfirm(null);
+                  setSelectedOrder(null);
+                }}
+                className={`flex-1 uppercase font-bold ${
+                  statusConfirm === 'ready'
+                    ? 'bg-[#F59E0B] hover:bg-[#D97706]'
+                    : 'bg-[#06B6D4] hover:bg-[#0891B2]'
+                }`}
+              >
+                {statusConfirm === 'ready' ? 'Confirm Pickup' : 'Confirm Delivery'}
               </Button>
             </div>
           </div>

@@ -8,6 +8,8 @@ interface ToastProps {
   variant?: ToastVariant;
   duration?: number;
   onClose: () => void;
+  action?: { label: string; onClick: () => void };
+  style?: React.CSSProperties;
 }
 
 const variantConfig: Record<ToastVariant, {
@@ -42,8 +44,7 @@ const variantConfig: Record<ToastVariant, {
   },
 };
 
-export default function Toast({ message, variant = "success", duration = 3000, onClose }: ToastProps) {
-  // Never render without a message
+export default function Toast({ message, variant = "success", duration = 3000, onClose, action, style }: ToastProps) {
   if (!message) return null;
 
   const config = variantConfig[variant];
@@ -57,10 +58,18 @@ export default function Toast({ message, variant = "success", duration = 3000, o
   }, [duration]);
 
   return (
-    <div className="fixed top-6 right-6 z-[3000] animate-slide-in">
-      <div className={`flex items-center gap-3 px-5 py-4 ${config.bg} border-l-4 ${config.border} rounded-xl shadow-lg max-w-sm`}>
+    <div className="fixed left-4 right-4 sm:left-auto sm:right-6 z-[3000] animate-slide-in" style={style}>
+      <div className={`flex items-center gap-3 px-5 py-4 ${config.bg} border-l-4 ${config.border} rounded-xl shadow-lg max-w-sm ml-auto`}>
         <Icon className={`w-6 h-6 ${config.iconColor} flex-shrink-0`} />
         <p className="text-sm font-semibold text-[#121212] flex-1">{message}</p>
+        {action && (
+          <button
+            onClick={() => { action.onClick(); onClose(); }}
+            className="px-3 py-1.5 bg-[#E11D48] text-white text-xs font-bold rounded-lg hover:bg-[#BE123C] transition-colors whitespace-nowrap"
+          >
+            {action.label}
+          </button>
+        )}
         <button onClick={onClose} className="p-1 hover:bg-black/5 rounded-lg transition-all">
           <X className="w-4 h-4 text-[#64748B]" />
         </button>

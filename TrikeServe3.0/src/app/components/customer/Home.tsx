@@ -914,25 +914,31 @@ export default function CustomerHome() {
         }
 
         // Ensure pickup/dropoff coordinates are hydrated from DB once driver accepts.
-        // This keeps the same route-to-pickup behavior as when pickup is recommended manually.
         const dbPickupCoords = readValidCoords(rideRequest.pickup_lat, rideRequest.pickup_lng);
         if (dbPickupCoords) {
-          setPickupCoords(dbPickupCoords);
+          setPickupCoords(prev => {
+            if (prev && prev.lat === dbPickupCoords.lat && prev.lng === dbPickupCoords.lng) return prev;
+            return dbPickupCoords;
+          });
         }
 
         const dbDropoffCoords = readValidCoords(rideRequest.dropoff_lat, rideRequest.dropoff_lng);
         if (dbDropoffCoords) {
-          setDropoffCoords(dbDropoffCoords);
+          setDropoffCoords(prev => {
+            if (prev && prev.lat === dbDropoffCoords.lat && prev.lng === dbDropoffCoords.lng) return prev;
+            return dbDropoffCoords;
+          });
         }
 
-        // Update driver location from DB when available (polling fallback)
+        // Update driver location from DB only if it actually changed
         if (rideRequest.driver_lat && rideRequest.driver_lng) {
-          try {
-            const polledDriverLocation = { lat: rideRequest.driver_lat, lng: rideRequest.driver_lng };
-            setDriverLocation(polledDriverLocation);
-            console.log('📍 Driver location updated from polling:', polledDriverLocation);
-          } catch (err) {
-            console.warn('⚠️ Failed to set driver location from polling:', err);
+          const lat = Number(rideRequest.driver_lat);
+          const lng = Number(rideRequest.driver_lng);
+          if (!isNaN(lat) && !isNaN(lng)) {
+            setDriverLocation(prev => {
+              if (prev && prev.lat === lat && prev.lng === lng) return prev;
+              return { lat, lng };
+            });
           }
         }
         // Only show status popup if driver_status has been updated AND we haven't shown it yet
@@ -1072,26 +1078,34 @@ export default function CustomerHome() {
          });
        }
 
-       // Hydrate route coordinates from realtime payload so route-to-pickup is always available
-       // after acceptance (same behavior as recommended pickup routing).
+       // Hydrate route coordinates from realtime payload — only update if changed
        const realtimePickupCoords = readValidCoords(updatedRide.pickup_lat, updatedRide.pickup_lng);
        if (realtimePickupCoords) {
-         setPickupCoords(realtimePickupCoords);
+         setPickupCoords(prev => {
+           if (prev && prev.lat === realtimePickupCoords.lat && prev.lng === realtimePickupCoords.lng) return prev;
+           return realtimePickupCoords;
+         });
        }
 
        const realtimeDropoffCoords = readValidCoords(updatedRide.dropoff_lat, updatedRide.dropoff_lng);
        if (realtimeDropoffCoords) {
-         setDropoffCoords(realtimeDropoffCoords);
+         setDropoffCoords(prev => {
+           if (prev && prev.lat === realtimeDropoffCoords.lat && prev.lng === realtimeDropoffCoords.lng) return prev;
+           return realtimeDropoffCoords;
+         });
        }
 
-       // Update driver location on map (real-time tracking)
+       // Update driver location on map — only update if changed
        if (updatedRide.accepted_driver_id && updatedRide.driver_lat && updatedRide.driver_lng) {
-         const newDriverLocation = {
-           lat: updatedRide.driver_lat,
-           lng: updatedRide.driver_lng,
-         };
-         setDriverLocation(newDriverLocation);
-         console.log('📍 Driver location updated:', newDriverLocation);
+         const newLat = Number(updatedRide.driver_lat);
+         const newLng = Number(updatedRide.driver_lng);
+         if (!isNaN(newLat) && !isNaN(newLng)) {
+           setDriverLocation(prev => {
+             if (prev && prev.lat === newLat && prev.lng === newLng) return prev;
+             return { lat: newLat, lng: newLng };
+           });
+         }
+         console.log('📍 Driver location updated');
        }
 
        // Handle completion status only.
@@ -2094,13 +2108,6 @@ export default function CustomerHome() {
                     <MessageCircle className="w-4 h-4" />
                     {openingChat ? 'Opening...' : 'Chat'}
                   </Button>
-                  <Button
-                    onClick={() => setShowCancelConfirm(true)}
-                    variant="outline"
-                    className="text-red-600 border-red-300 hover:bg-red-50 h-10"
-                  >
-                    Cancel
-                  </Button>
                 </div>
               </div>
             </Card>
@@ -2434,7 +2441,7 @@ export default function CustomerHome() {
             ) : (
               <GoogleMap
                 mapContainerStyle={{ width: '100%', height: '100%' }}
-                center={locationPreview ? { lat: locationPreview.lat, lng: locationPreview.lng } : mapCenter}
+                center={locationPreview ? { lat: locationPreview.lat, lng: locationPreview.lng } : currentLocation}
                 zoom={16}
                 onClick={handleLocationPickerMapClick}
                 options={{

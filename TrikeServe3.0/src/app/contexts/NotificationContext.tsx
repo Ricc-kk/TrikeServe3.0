@@ -5,11 +5,12 @@ interface Notification {
   message: string;
   type: 'success' | 'error' | 'info';
   duration?: number;
+  action?: { label: string; onClick: () => void };
 }
 
 interface NotificationContextType {
   notifications: Notification[];
-  showNotification: (message: string, type?: 'success' | 'error' | 'info', duration?: number) => void;
+  showNotification: (message: string, type?: 'success' | 'error' | 'info', duration?: number, action?: { label: string; onClick: () => void }) => void;
   removeNotification: (id: string) => void;
 }
 
@@ -21,10 +22,11 @@ export function NotificationProvider({ children }: { children: ReactNode }) {
   const showNotification = useCallback((
     message: string,
     type: 'success' | 'error' | 'info' = 'success',
-    duration: number = 3000
+    duration: number = 3000,
+    action?: { label: string; onClick: () => void }
   ) => {
     const id = Date.now().toString();
-    const notification: Notification = { id, message, type, duration };
+    const notification: Notification = { id, message, type, duration, action };
 
     setNotifications((prev) => [...prev, notification]);
 
