@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from "react";
-import { Store, Package, Clock, User, ChevronRight, CheckCircle, XCircle, AlertCircle, Menu, Navigation } from "lucide-react";
-import { Link } from "react-router";
+import { Store, Package, Clock, User, ChevronRight, CheckCircle, XCircle, AlertCircle, Menu, Navigation, MessageCircle } from "lucide-react";
+import { Link, useNavigate } from "react-router";
 import { Card } from "../ui/card";
 import { Badge } from "../ui/badge";
 import { Button } from "../ui/button";
@@ -30,6 +30,8 @@ interface Order {
   deliveryMode: 'delivery' | 'pickup';
   needsCutlery: boolean;
   customerId?: string;
+  driverId?: string;
+  driverName?: string;
   restaurantName?: string;
   restaurantAddress?: string;
 }
@@ -45,6 +47,7 @@ export default function BusinessOrders() {
   const [orders, setOrders] = useState<Order[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [restaurantId, setRestaurantId] = useState<string | null>(null);
+  const navigate = useNavigate();
   const [isUpdatingStatus, setIsUpdatingStatus] = useState(false); // Prevent refresh during update
   const { isLoaded: isMapsLoaded } = useMapLoader();
   const [driverLocation, setDriverLocation] = useState<{ lat: number; lng: number } | null>(null);
@@ -316,7 +319,19 @@ export default function BusinessOrders() {
 
         if (rideReqs) {
           rideReqs.forEach((rr: any) => {
-            if (!rr.order_id || !rr.driver_status) return;
+            if (!rr.order_id) return;
+            const order = transformedOrders.find((o: any) => o.id === rr.order_id);
+            if (!order) return;
+
+            // Store driver info for messaging
+            if (rr.accepted_driver_id) {
+              order.driverId = rr.accepted_driver_id;
+            }
+            if (rr.driver_name) {
+              order.driverName = rr.driver_name;
+            }
+
+            if (!rr.driver_status) return;
             const statusMap: Record<string, string> = {
               'on-the-way': 'on-the-way', 'arrived': 'on-the-way',
               'picked-up': 'on-the-way', 'drop-off': 'on-the-way',
@@ -324,8 +339,7 @@ export default function BusinessOrders() {
             };
             const mapped = statusMap[rr.driver_status];
             if (mapped) {
-              const order = transformedOrders.find((o: any) => o.id === rr.order_id);
-              if (order) order.status = mapped;
+              order.status = mapped;
             }
           });
         }
@@ -1057,7 +1071,33 @@ export default function BusinessOrders() {
                     <div className="bg-[#FEF3C7] border-l-4 border-[#FFA500] p-2 md:p-3 rounded text-sm">
                       <p className="font-semibold text-[#92400E]">Status: On The Way</p>
                       <p className="text-xs text-[#92400E] mt-1">Driver is delivering the order</p>
+                      {selectedOrder.driverName && (
+                        <p className="text-xs text-[#92400E] mt-1">Driver: {selectedOrder.driverName}</p>
+                      )}
                     </div>
+
+                    {/* Message Buttons */}
+                    <div className="flex gap-2">
+                      {selectedOrder.driverId && (
+                        <Button
+                          onClick={() => navigate(`/business/messages/driver/${selectedOrder.driverId}`)}
+                          className="flex-1 bg-[#10B981] hover:bg-[#059669] uppercase py-4 font-bold text-sm md:text-base"
+                        >
+                          <MessageCircle className="w-4 h-4 mr-2" />
+                          Message Driver
+                        </Button>
+                      )}
+                      {selectedOrder.customerId && (
+                        <Button
+                          onClick={() => navigate(`/business/messages/customer/${selectedOrder.customerId}`)}
+                          className="flex-1 bg-[#3B82F6] hover:bg-[#2563EB] uppercase py-4 font-bold text-sm md:text-base"
+                        >
+                          <MessageCircle className="w-4 h-4 mr-2" />
+                          Message Customer
+                        </Button>
+                      )}
+                    </div>
+
                     <Button
                       onClick={() => {
                         updateOrderStatus(selectedOrder.id, 'delivered');

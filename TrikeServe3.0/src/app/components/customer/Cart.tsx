@@ -27,6 +27,7 @@ export default function Cart() {
   const [showOrderConfirmation, setShowOrderConfirmation] = useState(false);
   const [showMapSelector, setShowMapSelector] = useState(false);
   const [showRemoveConfirm, setShowRemoveConfirm] = useState(false);
+  const [showAddressError, setShowAddressError] = useState(false);
   const [pendingRemoveItem, setPendingRemoveItem] = useState<{ restaurantId: string; itemId: string } | null>(null);
   const [placedOrderNumber, setPlacedOrderNumber] = useState<string | null>(null);
   const [selectedAddress, setSelectedAddress] = useState({
@@ -108,7 +109,7 @@ export default function Cart() {
   const handlePlaceOrder = async () => {
     if (checkoutRestaurant) {
       if (!hasSelectedAddress) {
-        alert("Please select a delivery address first.");
+        setShowAddressError(true);
         return;
       }
       try {
@@ -581,6 +582,7 @@ export default function Cart() {
             </Card>
           </div>
         )}
+
       </div>
     );
   }
@@ -869,6 +871,36 @@ export default function Cart() {
                 Continue Shopping
               </button>
             </div>
+          </Card>
+        </div>
+      )}
+
+      {/* Address Error Modal */}
+      {showAddressError && (
+        <div className="fixed inset-0 bg-black/60 z-[2000] flex items-center justify-center p-4">
+          <Card className="bg-white p-6 max-w-sm w-full" onClick={(e) => e.stopPropagation()}>
+            <div className="text-center mb-4">
+              <div className="w-14 h-14 bg-[#FEF3C7] rounded-full flex items-center justify-center mx-auto mb-3">
+                <MapPin className="w-7 h-7 text-[#F59E0B]" />
+              </div>
+              <h3 className="text-xl font-bold text-[#121212] mb-1">Delivery Address Required</h3>
+              <p className="text-sm text-[#64748B]">Please select a delivery address before placing your order.</p>
+            </div>
+            <button
+              onClick={() => {
+                setShowAddressError(false);
+                setShowMapSelector(true);
+              }}
+              className="w-full py-3 bg-[#E11D48] hover:bg-[#BE123C] text-white font-bold rounded-2xl uppercase active:scale-95 transition-transform"
+            >
+              Select Address
+            </button>
+            <button
+              onClick={() => setShowAddressError(false)}
+              className="w-full py-3 bg-[#F8F9FA] text-[#64748B] font-bold rounded-2xl uppercase active:scale-95 transition-transform mt-2"
+            >
+              Cancel
+            </button>
           </Card>
         </div>
       )}

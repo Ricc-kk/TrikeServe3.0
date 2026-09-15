@@ -25,6 +25,7 @@ import BusinessOrders from "./components/business/BusinessOrders";
 import BusinessAccount from "./components/business/BusinessAccount";
 import BusinessProfile from "./components/business/BusinessProfile";
 import BusinessMessages from "./components/business/BusinessMessages";
+import BusinessDirectChat from "./components/business/BusinessDirectChat";
 import CustomerApp from "./components/customer/CustomerApp";
 import CustomerHome from "./components/customer/Home";
 import FoodHome from "./components/customer/FoodHome";
@@ -231,6 +232,22 @@ export const router = createBrowserRouter([
           </ProtectedRoute>
         )
       },
+      {
+        path: "business/messages/customer/:customerId",
+        element: (
+          <ProtectedRoute allowedRoles={['business']}>
+            <BusinessDirectChat />
+          </ProtectedRoute>
+        )
+      },
+      {
+        path: "business/messages/driver/:driverId",
+        element: (
+          <ProtectedRoute allowedRoles={['business']}>
+            <BusinessDirectChat />
+          </ProtectedRoute>
+        )
+      },
       { path: "business/analytics", loader: () => redirect("/business/dashboard") },
       // Customer routes - protected
       { 
@@ -307,6 +324,14 @@ export const router = createBrowserRouter([
       },
       {
         path: "customer/messages/business/:businessId",
+        element: (
+          <ProtectedRoute allowedRoles={['customer']}>
+            <CustomerDirectChat />
+          </ProtectedRoute>
+        )
+      },
+      {
+        path: "customer/messages/driver/:driverId",
         element: (
           <ProtectedRoute allowedRoles={['customer']}>
             <CustomerDirectChat />

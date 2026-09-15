@@ -35,6 +35,7 @@ interface OrderData {
   needsCutlery: boolean;
   createdAt: string;
   driverName?: string;
+  driverId?: string;
 }
 
 function buildOrderData(dbOrder: any): OrderData {
@@ -64,6 +65,7 @@ function buildOrderData(dbOrder: any): OrderData {
     needsCutlery: dbOrder.needs_cutlery || false,
     createdAt: dbOrder.created_at,
     driverName: dbOrder.driver_name || undefined,
+    driverId: undefined,
   };
 }
 
@@ -134,6 +136,25 @@ export default function OrderDetail() {
         }
 
         const data = buildOrderData(dbOrder);
+
+        // Fetch driver info from ride_requests
+        try {
+          const { data: rideReq } = await supabase
+            .from('ride_requests')
+            .select('accepted_driver_id, driver_name')
+            .eq('order_id', orderId)
+            .not('accepted_driver_id', 'is', null)
+            .limit(1)
+            .maybeSingle();
+
+          if (rideReq) {
+            if (rideReq.accepted_driver_id) data.driverId = rideReq.accepted_driver_id;
+            if (rideReq.driver_name) data.driverName = rideReq.driver_name;
+          }
+        } catch (err) {
+          console.error('[OrderDetail] Error fetching driver info:', err);
+        }
+
         setOrder(data);
 
         // Resolve business id
@@ -186,6 +207,11 @@ export default function OrderDetail() {
         // Build new order data and always set it
         const newData = buildOrderData(data);
         setOrder(prev => {
+          // Preserve driverId and businessId from previous state (not in DB order row)
+          if (prev) {
+            newData.driverId = newData.driverId || prev.driverId;
+            newData.businessId = newData.businessId || prev.businessId;
+          }
           // Only update if status or driver changed
           if (prev && prev.status === newData.status && prev.driverName === newData.driverName) return prev;
           return newData;
@@ -267,7 +293,17 @@ export default function OrderDetail() {
     setIsRefreshing(true);
     try {
       const { data } = await supabase.from('orders').select('*').eq('id', orderId).single();
-      if (data) setOrder(buildOrderData(data));
+      if (data) {
+        const newData = buildOrderData(data);
+        setOrder(prev => {
+          // Preserve driverId and businessId from previous state (not in DB order row)
+          if (prev) {
+            newData.driverId = newData.driverId || prev.driverId;
+            newData.businessId = newData.businessId || prev.businessId;
+          }
+          return newData;
+        });
+      }
     } catch {}
     setIsRefreshing(false);
   };
@@ -305,6 +341,12 @@ export default function OrderDetail() {
     }
   };
 
+  const handleChatWithDriver = () => {
+    if (order.driverId) {
+      navigate(`/customer/messages/driver/${order.driverId}`);
+    }
+  };
+
   return (
     <div className="min-h-screen bg-white pb-6">
       {/* Header */}
@@ -320,9 +362,16 @@ export default function OrderDetail() {
             </div>
           </div>
           <div className="flex items-center gap-1">
+            {isActiveDelivery && order.driverId && (
+              <button onClick={handleChatWithDriver} className="flex flex-col items-center gap-0.5 p-1.5 hover:bg-[#F1F5F9] rounded-lg transition-colors" title="Chat with Driver">
+                <MessageCircle className="w-5 h-5 text-[#10B981]" />
+                <span className="text-[9px] font-semibold text-[#10B981]">Driver</span>
+              </button>
+            )}
             {isActiveDelivery && order.businessId && (
-              <button onClick={handleChatWithBusiness} className="p-2 hover:bg-[#F1F5F9] rounded-full transition-colors" title="Chat with Restaurant">
+              <button onClick={handleChatWithBusiness} className="flex flex-col items-center gap-0.5 p-1.5 hover:bg-[#F1F5F9] rounded-lg transition-colors" title="Chat with Restaurant">
                 <MessageCircle className="w-5 h-5 text-[#E11D48]" />
+                <span className="text-[9px] font-semibold text-[#E11D48]">Restaurant</span>
               </button>
             )}
             <button onClick={handleRefresh} disabled={isRefreshing} className="p-2 hover:bg-[#F1F5F9] rounded-full transition-colors disabled:opacity-50">
@@ -378,10 +427,17 @@ export default function OrderDetail() {
                 <div className="w-2 h-2 bg-green-400 rounded-full animate-pulse" />
                 <span className="text-sm font-bold text-white">Live Delivery Tracking</span>
               </div>
-              <div className="flex items-center gap-2">
-                {order.businessId && (
-                  <button onClick={handleChatWithBusiness} className="p-1.5 rounded-full hover:bg-white/20 transition-colors" title="Chat with Restaurant">
+              <div className="flex items-center gap-1">
+                {order.driverId && (
+                  <button onClick={handleChatWithDriver} className="flex items-center gap-1 p-1.5 rounded-lg hover:bg-white/20 transition-colors" title="Chat with Driver">
                     <MessageCircle className="w-4 h-4 text-white" />
+                    <span className="text-[9px] font-semibold text-white">Driver</span>
+                  </button>
+                )}
+                {order.businessId && (
+                  <button onClick={handleChatWithBusiness} className="flex items-center gap-1 p-1.5 rounded-lg hover:bg-white/20 transition-colors" title="Chat with Restaurant">
+                    <MessageCircle className="w-4 h-4 text-white" />
+                    <span className="text-[9px] font-semibold text-white">Restaurant</span>
                   </button>
                 )}
                 <Navigation className="w-4 h-4 text-white/80" />
