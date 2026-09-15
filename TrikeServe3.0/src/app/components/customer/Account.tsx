@@ -150,21 +150,7 @@ export default function Account() {
 
         {/* Quick Actions Card */}
         <div className="bg-white rounded-2xl shadow-sm border border-[#F1F5F9] overflow-hidden">
-          <Link to="/customer/account-management">
-            <div className="flex items-center justify-between p-4 hover:bg-[#F8FAFC] transition-colors">
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 bg-gradient-to-br from-[#E11D48] to-[#BE123C] rounded-xl flex items-center justify-center shadow-sm">
-                  <User className="w-5 h-5 text-white" />
-                </div>
-                <div>
-                  <p className="text-sm font-semibold text-[#121212]">Manage Profile</p>
-                  <p className="text-xs text-[#94A3B8]">Switch between accounts</p>
-                </div>
-              </div>
-              <ChevronRight className="w-5 h-5 text-[#CBD5E1]" />
-            </div>
-          </Link>
-          <div className="border-t border-[#F1F5F9]" />
+
           <Link to="/customer/notifications">
             <div className="flex items-center justify-between p-4 hover:bg-[#F8FAFC] transition-colors">
               <div className="flex items-center gap-3">

@@ -48,6 +48,14 @@ export default function BusinessMenu() {
   const [uploadingImage, setUploadingImage] = useState(false);
   const [uploadTarget, setUploadTarget] = useState<'new' | 'edit'>('new');
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const [showDeleteItemModal, setShowDeleteItemModal] = useState(false);
+  const [itemToDelete, setItemToDelete] = useState<number | string | null>(null);
+  const [showBulkDeleteModal, setShowBulkDeleteModal] = useState(false);
+  const [showDeleteSuccess, setShowDeleteSuccess] = useState(false);
+  const [deleteSuccessMessage, setDeleteSuccessMessage] = useState("");
+  const [showToggleAvailabilityModal, setShowToggleAvailabilityModal] = useState(false);
+  const [itemToToggle, setItemToToggle] = useState<number | null>(null);
+  const [showBulkToggleModal, setShowBulkToggleModal] = useState(false);
 
   // Use media query hook to detect mobile
   const isMobile = useMediaQuery('(max-width: 1023px)');
@@ -396,28 +404,56 @@ export default function BusinessMenu() {
   });
 
   const toggleAvailability = (id: number) => {
-    setMenuItems(menuItems.map(item =>
-      item.id === id ? { ...item, available: !item.available } : item
-    ));
+    setItemToToggle(id);
+    setShowToggleAvailabilityModal(true);
   };
 
-  const deleteItem = async (id: number | string) => {
-    if (confirm("Delete this item? This action cannot be undone.")) {
-      // Delete from Supabase if it's a UUID
-      if (typeof id === 'string' && restaurantId) {
-        try {
-          await supabase
-            .from('menu_items')
-            .delete()
-            .eq('id', id)
-            .eq('restaurant_id', restaurantId);
-        } catch (error) {
-          console.error('Error deleting from Supabase:', error);
-        }
+  const confirmToggleAvailability = () => {
+    if (itemToToggle === null) return;
+
+    const item = menuItems.find(i => i.id === itemToToggle);
+    const newStatus = item ? !item.available : true;
+
+    setMenuItems(menuItems.map(i =>
+      i.id === itemToToggle ? { ...i, available: !i.available } : i
+    ));
+    setShowToggleAvailabilityModal(false);
+    setItemToToggle(null);
+
+    setDeleteSuccessMessage(`"${item?.name || 'Item'}" is now ${newStatus ? 'available' : 'hidden'}.`);
+    setShowDeleteSuccess(true);
+    setTimeout(() => setShowDeleteSuccess(false), 2500);
+  };
+
+  const deleteItem = (id: number | string) => {
+    setItemToDelete(id);
+    setShowDeleteItemModal(true);
+  };
+
+  const confirmDeleteItem = async () => {
+    if (itemToDelete === null) return;
+
+    // Delete from Supabase if it's a UUID
+    if (typeof itemToDelete === 'string' && restaurantId) {
+      try {
+        await supabase
+          .from('menu_items')
+          .delete()
+          .eq('id', itemToDelete)
+          .eq('restaurant_id', restaurantId);
+      } catch (error) {
+        console.error('Error deleting from Supabase:', error);
       }
-      // Remove from local state
-      setMenuItems(menuItems.filter(item => item.id !== id));
     }
+
+    const deletedItem = menuItems.find(i => i.id === itemToDelete);
+    setMenuItems(menuItems.filter(item => item.id !== itemToDelete));
+    setShowDeleteItemModal(false);
+    setItemToDelete(null);
+
+    setDeleteSuccessMessage(`"${deletedItem?.name || 'Item'}" has been deleted.`);
+    setShowDeleteSuccess(true);
+    setTimeout(() => setShowDeleteSuccess(false), 2500);
   };
 
   const duplicateItem = (item: MenuItem) => {
@@ -562,15 +598,31 @@ export default function BusinessMenu() {
     try {
       // Delete from Supabase if restaurant ID exists
       if (restaurantId) {
-        const { error } = await supabase
+        // Delete category record
+        const { error: catError } = await supabase
           .from('categories')
           .delete()
           .eq('restaurant_id', restaurantId)
           .eq('id', categoryToDelete);
 
-        if (error) {
-          console.error('Error deleting category from Supabase:', error);
-          // Still delete locally even if Supabase fails
+        if (catError) {
+          console.error('Error deleting category from Supabase:', catError);
+        }
+
+        // Delete all menu items in this category from Supabase
+        const itemsToDelete = menuItems.filter(i => i.category === categoryToDelete);
+        for (const item of itemsToDelete) {
+          if (typeof item.id === 'string') {
+            try {
+              await supabase
+                .from('menu_items')
+                .delete()
+                .eq('id', item.id)
+                .eq('restaurant_id', restaurantId);
+            } catch (error) {
+              console.error('Error deleting menu item from Supabase:', error);
+            }
+          }
         }
       }
 
@@ -607,19 +659,59 @@ export default function BusinessMenu() {
   };
 
   const bulkToggleAvailability = () => {
+    setShowBulkActions(false);
+    setShowBulkToggleModal(true);
+  };
+
+  const confirmBulkToggleAvailability = () => {
+    const count = selectedItems.length;
+    // Determine new status based on first selected item
+    const firstItem = menuItems.find(i => selectedItems.includes(i.id));
+    const newStatus = firstItem ? !firstItem.available : true;
+
     setMenuItems(menuItems.map(item =>
-      selectedItems.includes(item.id) ? { ...item, available: !item.available } : item
+      selectedItems.includes(item.id) ? { ...item, available: newStatus } : item
     ));
     setSelectedItems([]);
-    setShowBulkActions(false);
+    setShowBulkToggleModal(false);
+
+    setDeleteSuccessMessage(`${count} item${count !== 1 ? 's' : ''} ${newStatus ? 'made available' : 'hidden'}.`);
+    setShowDeleteSuccess(true);
+    setTimeout(() => setShowDeleteSuccess(false), 2500);
   };
 
   const bulkDelete = () => {
-    if (confirm(`Delete ${selectedItems.length} items? This action cannot be undone.`)) {
-      setMenuItems(menuItems.filter(item => !selectedItems.includes(item.id)));
-      setSelectedItems([]);
-      setShowBulkActions(false);
+    setShowBulkActions(false);
+    setShowBulkDeleteModal(true);
+  };
+
+  const confirmBulkDelete = async () => {
+    const count = selectedItems.length;
+
+    // Delete from Supabase
+    if (restaurantId) {
+      for (const id of selectedItems) {
+        if (typeof id === 'string') {
+          try {
+            await supabase
+              .from('menu_items')
+              .delete()
+              .eq('id', id)
+              .eq('restaurant_id', restaurantId);
+          } catch (error) {
+            console.error('Error deleting item from Supabase:', error);
+          }
+        }
+      }
     }
+
+    setMenuItems(menuItems.filter(item => !selectedItems.includes(item.id)));
+    setSelectedItems([]);
+    setShowBulkDeleteModal(false);
+
+    setDeleteSuccessMessage(`${count} item${count !== 1 ? 's' : ''} deleted successfully.`);
+    setShowDeleteSuccess(true);
+    setTimeout(() => setShowDeleteSuccess(false), 2500);
   };
 
   const pendingOrders = 5;
@@ -999,19 +1091,7 @@ export default function BusinessMenu() {
                             </Badge>
                           )}
                           <span className="text-[10px] lg:text-xs text-[#94A3B8]">Category: {item.category}</span>
-                          {item.customizationGroups && item.customizationGroups.length > 0 && (
-                            <Badge className="bg-[#3B82F6] text-white text-[10px] lg:text-xs px-2 lg:px-3 py-0.5 lg:py-1">
-                              {item.customizationGroups.length} {item.customizationGroups.length === 1 ? 'Group' : 'Groups'}
-                            </Badge>
-                          )}
                         </div>
-                        <button
-                          onClick={(e) => handleManageCustomizations(item, e)}
-                          className="text-[10px] lg:text-xs font-bold text-[#3B82F6] hover:text-[#2563EB] flex items-center gap-1"
-                        >
-                          <Settings className="w-3 h-3 lg:w-4 lg:h-4" />
-                          {item.customizationGroups && item.customizationGroups.length > 0 ? 'Edit Add-ons' : 'Add Add-ons'}
-                        </button>
                       </div>
                     </div>
                   </Card>
@@ -1315,12 +1395,44 @@ export default function BusinessMenu() {
                   </div>
                 </div>
 
+                <div className="flex items-center justify-between p-4 bg-[#F8F9FA] rounded-xl">
+                  <div>
+                    <p className="font-bold text-[#121212]">Available to customers</p>
+                    <p className="text-xs text-[#64748B]">Toggle visibility on the customer menu</p>
+                  </div>
+                  <button
+                    onClick={() => setEditingItem({ ...editingItem, available: !editingItem.available })}
+                    className={`w-14 h-8 rounded-full transition-all ${
+                      editingItem.available ? "bg-[#10B981]" : "bg-[#CBD5E1]"
+                    }`}
+                  >
+                    <div
+                      className={`w-6 h-6 bg-white rounded-full shadow-md transition-transform ${
+                        editingItem.available ? "translate-x-7" : "translate-x-1"
+                      }`}
+                    />
+                  </button>
+                </div>
+
                 <Button
                   onClick={saveEditedItem}
                   className="w-full bg-[#10B981] hover:bg-[#059669] uppercase py-6 text-base"
                 >
                   <Check className="w-5 h-5 mr-2" />
                   Save Changes
+                </Button>
+
+                <Button
+                  onClick={() => {
+                    setShowEditItem(false);
+                    setEditingItem(null);
+                    if (editingItem) deleteItem(editingItem.id);
+                  }}
+                  variant="outline"
+                  className="w-full border-[#E11D48] text-[#E11D48] hover:bg-[#FFF1F2] uppercase py-6 text-base"
+                >
+                  <Trash2 className="w-5 h-5 mr-2" />
+                  Delete Item
                 </Button>
               </div>
             </div>
@@ -1457,6 +1569,167 @@ export default function BusinessMenu() {
             onSave={handleSaveCustomizations}
             existingGroups={customizingItem.customizationGroups}
           />
+        )}
+
+        {/* Delete Item Confirmation Modal */}
+        {showDeleteItemModal && itemToDelete !== null && (
+          <div className="fixed inset-0 bg-black/50 z-[2000] flex items-center justify-center p-4">
+            <Card className="bg-white p-6 max-w-md w-full rounded-2xl shadow-2xl">
+              <div className="flex items-center justify-center mb-4">
+                <div className="w-12 h-12 bg-[#FEE2E2] rounded-full flex items-center justify-center">
+                  <Trash2 className="w-6 h-6 text-[#E11D48]" />
+                </div>
+              </div>
+              <h3 className="text-xl font-bold text-[#121212] text-center mb-2">
+                Delete Item?
+              </h3>
+              <p className="text-sm text-[#64748B] text-center mb-6">
+                {`"${menuItems.find(i => i.id === itemToDelete)?.name || 'This item'}" will be permanently removed. This action cannot be undone.`}
+              </p>
+              <div className="flex gap-2">
+                <Button
+                  onClick={() => {
+                    setShowDeleteItemModal(false);
+                    setItemToDelete(null);
+                  }}
+                  variant="outline"
+                  className="flex-1"
+                >
+                  Cancel
+                </Button>
+                <Button
+                  onClick={confirmDeleteItem}
+                  className="flex-1 bg-[#E11D48] hover:bg-[#BE123C] text-white uppercase font-bold"
+                >
+                  Delete
+                </Button>
+              </div>
+            </Card>
+          </div>
+        )}
+
+        {/* Bulk Delete Confirmation Modal */}
+        {showBulkDeleteModal && (
+          <div className="fixed inset-0 bg-black/50 z-[2000] flex items-center justify-center p-4">
+            <Card className="bg-white p-6 max-w-md w-full rounded-2xl shadow-2xl">
+              <div className="flex items-center justify-center mb-4">
+                <div className="w-12 h-12 bg-[#FEE2E2] rounded-full flex items-center justify-center">
+                  <Trash2 className="w-6 h-6 text-[#E11D48]" />
+                </div>
+              </div>
+              <h3 className="text-xl font-bold text-[#121212] text-center mb-2">
+                Delete {selectedItems.length} Item{selectedItems.length !== 1 ? 's' : ''}?
+              </h3>
+              <p className="text-sm text-[#64748B] text-center mb-6">
+                {selectedItems.length} item{selectedItems.length !== 1 ? 's' : ''} will be permanently removed. This action cannot be undone.
+              </p>
+              <div className="flex gap-2">
+                <Button
+                  onClick={() => setShowBulkDeleteModal(false)}
+                  variant="outline"
+                  className="flex-1"
+                >
+                  Cancel
+                </Button>
+                <Button
+                  onClick={confirmBulkDelete}
+                  className="flex-1 bg-[#E11D48] hover:bg-[#BE123C] text-white uppercase font-bold"
+                >
+                  Delete All
+                </Button>
+              </div>
+            </Card>
+          </div>
+        )}
+
+        {/* Toggle Availability Confirmation Modal */}
+        {showToggleAvailabilityModal && itemToToggle !== null && (
+          <div className="fixed inset-0 bg-black/50 z-[2000] flex items-center justify-center p-4">
+            <Card className="bg-white p-6 max-w-md w-full rounded-2xl shadow-2xl">
+              <div className="flex items-center justify-center mb-4">
+                <div className="w-12 h-12 bg-[#FEF3C7] rounded-full flex items-center justify-center">
+                  <Eye className="w-6 h-6 text-[#F59E0B]" />
+                </div>
+              </div>
+              <h3 className="text-xl font-bold text-[#121212] text-center mb-2">
+                {menuItems.find(i => i.id === itemToToggle)?.available ? 'Hide Item?' : 'Make Item Available?'}
+              </h3>
+              <p className="text-sm text-[#64748B] text-center mb-6">
+                {menuItems.find(i => i.id === itemToToggle)?.available
+                  ? `"${menuItems.find(i => i.id === itemToToggle)?.name}" will be hidden from customers.`
+                  : `"${menuItems.find(i => i.id === itemToToggle)?.name}" will be visible to customers.`
+                }
+              </p>
+              <div className="flex gap-2">
+                <Button
+                  onClick={() => {
+                    setShowToggleAvailabilityModal(false);
+                    setItemToToggle(null);
+                  }}
+                  variant="outline"
+                  className="flex-1"
+                >
+                  Cancel
+                </Button>
+                <Button
+                  onClick={confirmToggleAvailability}
+                  className="flex-1 bg-[#F59E0B] hover:bg-[#D97706] text-white uppercase font-bold"
+                >
+                  {menuItems.find(i => i.id === itemToToggle)?.available ? 'Hide' : 'Make Available'}
+                </Button>
+              </div>
+            </Card>
+          </div>
+        )}
+
+        {/* Bulk Toggle Availability Confirmation Modal */}
+        {showBulkToggleModal && (
+          <div className="fixed inset-0 bg-black/50 z-[2000] flex items-center justify-center p-4">
+            <Card className="bg-white p-6 max-w-md w-full rounded-2xl shadow-2xl">
+              <div className="flex items-center justify-center mb-4">
+                <div className="w-12 h-12 bg-[#FEF3C7] rounded-full flex items-center justify-center">
+                  <Eye className="w-6 h-6 text-[#F59E0B]" />
+                </div>
+              </div>
+              <h3 className="text-xl font-bold text-[#121212] text-center mb-2">
+                Toggle Availability?
+              </h3>
+              <p className="text-sm text-[#64748B] text-center mb-6">
+                {(() => {
+                  const firstItem = menuItems.find(i => selectedItems.includes(i.id));
+                  const newStatus = firstItem ? !firstItem.available : true;
+                  return `${selectedItems.length} item${selectedItems.length !== 1 ? 's' : ''} will be ${newStatus ? 'made available' : 'hidden'} from customers.`;
+                })()}
+              </p>
+              <div className="flex gap-2">
+                <Button
+                  onClick={() => setShowBulkToggleModal(false)}
+                  variant="outline"
+                  className="flex-1"
+                >
+                  Cancel
+                </Button>
+                <Button
+                  onClick={confirmBulkToggleAvailability}
+                  className="flex-1 bg-[#F59E0B] hover:bg-[#D97706] text-white uppercase font-bold"
+                >
+                  Confirm
+                </Button>
+              </div>
+            </Card>
+          </div>
+        )}
+
+        {/* Delete Success Toast */}
+        {showDeleteSuccess && (
+          <div className="fixed top-4 left-1/2 -translate-x-1/2 z-[3000] animate-in fade-in slide-in-from-top-2 duration-300">
+            <div className="bg-[#10B981] text-white px-5 py-3 rounded-2xl shadow-lg flex items-center gap-2">
+              <div className="w-6 h-6 bg-white/20 rounded-full flex items-center justify-center">
+                <Check className="w-4 h-4" />
+              </div>
+              <span className="text-sm font-semibold">{deleteSuccessMessage}</span>
+            </div>
+          </div>
         )}
       </div>
     </div>
