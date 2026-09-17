@@ -6,6 +6,8 @@ import { Button } from "../ui/button";
 import { Card } from "../ui/card";
 import { Badge } from "../ui/badge";
 import { useAuth } from "../../contexts/AuthContext";
+import { isQueueGatedType, useTerminalQueue } from "../../hooks/useTerminalQueue";
+import TerminalQueueCard from "./TerminalQueueCard";
 import { supabaseHelpers } from "@/lib/supabase";
 import { supabase } from "../../../lib/supabase";
 import useMapLoader from "@/lib/mapLoader";
@@ -61,6 +63,21 @@ export default function PassengerRequests() {
   const [showAccepted, setShowAccepted] = useState(false);
   const [showConfirmAccept, setShowConfirmAccept] = useState(false);
   const [confirmRequest, setConfirmRequest] = useState<PassengerRequest | null>(null);
+
+  // Terminal queue — private and share rides can only be accepted by the first
+  // driver in the terminal's queue.
+  const terminalQueueApi = useTerminalQueue();
+  const {
+    terminalId: queueTerminalId,
+    myEntry: queueEntry,
+    position: queuePosition,
+    isFirst: isFirstInQueue,
+    hasNoTerminal,
+    leave: leaveQueue,
+  } = terminalQueueApi;
+
+  // A driver with no terminal isn't part of any queue and cannot take rides yet.
+  const isUnassigned = hasNoTerminal;
 
   const mapRideType = (rideType: string, pickupLocation?: string): PassengerRequest['type'] => {
     const normalized = (rideType || '').toLowerCase();
@@ -327,6 +344,17 @@ export default function PassengerRequests() {
     if (!(user?.serviceTypes || []).includes(request.type)) {
       return alert('You can only accept requests that match your service types.');
     }
+    if (isUnassigned) {
+      return alert('You are not assigned to a terminal yet. Ask an admin to assign your terminal before accepting rides.');
+    }
+    // Only the first driver in the terminal queue may take private/share rides.
+    if (queueTerminalId && isQueueGatedType(request.type) && !isFirstInQueue) {
+      return alert(
+        queueEntry
+          ? `You're #${queuePosition} in the queue. Only the first driver in your terminal can accept this ride.`
+          : 'Join your terminal queue before accepting private or share rides.'
+      );
+    }
     const activeStatuses = ['accepted', 'on-the-way', 'arrived', 'in-progress'];
     const { data: allLobbies } = await supabaseHelpers.getLobbies();
     if (allLobbies?.some((l: any) => l.driver_id === user.id && activeStatuses.includes(l.status))) return alert('You already have an active ride.');
@@ -355,6 +383,12 @@ export default function PassengerRequests() {
 
     setPreviewRequest(null);
     setShowAccepted(true);
+    // Giving up the queue slot: shared lobbies were already recorded above
+    // (acceptLobbyAsDriver) and delivery isn't queue-gated, so those can let go
+    // now. A private ride is only recorded once ActiveRide mounts, and the
+    // database requires the driver to still be first in queue at that moment —
+    // so that path clears the slot itself.
+    if (queueEntry && request.type !== 'private') await leaveQueue();
     setTimeout(() => {
       navigate('/rider/active-ride', { state: { acceptedRide } });
     }, 2000);
@@ -370,9 +404,14 @@ export default function PassengerRequests() {
     if (!driverTerminalId || !request.terminalId) return false; // No restriction if either has no terminal
     return request.terminalId !== driverTerminalId;
   };
+  // Private and share rides require being first in the terminal queue.
+  const isQueueBlocked = (request: PassengerRequest) =>
+    !!queueTerminalId && isQueueGatedType(request.type) && !isFirstInQueue;
   const canAcceptRequest = (request: PassengerRequest) => {
+    if (isUnassigned) return false;
     if (!(user?.serviceTypes || []).includes(request.type)) return false;
     if (isWrongTerminal(request)) return false;
+    if (isQueueBlocked(request)) return false;
     return true;
   };
   const requestsMatchingServiceTypes = filteredRequests.filter(r => canAcceptRequest(r));
@@ -404,6 +443,9 @@ export default function PassengerRequests() {
           ))}
         </div>
 
+        {/* Terminal queue status — also shows the "no terminal assigned" block */}
+        <TerminalQueueCard queue={terminalQueueApi} variant="compact" />
+
         {/* Request Count */}
         {sortedRequests.length > 0 && (
           <p className="text-xs text-[#94A3B8] font-medium">{sortedRequests.length} request{sortedRequests.length !== 1 ? 's' : ''} available</p>
@@ -413,6 +455,7 @@ export default function PassengerRequests() {
         {sortedRequests.map((request) => {
           const canAccept = canAcceptRequest(request);
           const wrongTerminal = isWrongTerminal(request);
+          const queueBlocked = isQueueBlocked(request);
           return (
             <Card key={request.id} className={`border-2 transition-all overflow-hidden ${
               !canAccept ? 'bg-gray-50 opacity-70 border-gray-200' :
@@ -477,10 +520,18 @@ export default function PassengerRequests() {
 
               {/* Action Button */}
               <div className="px-4 pb-3 pt-1">
-                {wrongTerminal && (
+                {isUnassigned && (
+                  <Badge className="bg-red-100 text-red-600 text-[10px] mb-2 border border-red-200">🚏 No terminal assigned</Badge>
+                )}
+                {!isUnassigned && wrongTerminal && (
                   <Badge className="bg-orange-100 text-orange-600 text-[10px] mb-2 border border-orange-200">🚏 Different Terminal</Badge>
                 )}
-                {!wrongTerminal && !canAccept && (
+                {!isUnassigned && !wrongTerminal && queueBlocked && (
+                  <Badge className="bg-amber-100 text-amber-700 text-[10px] mb-2 border border-amber-200">
+                    {queueEntry ? `⏳ Waiting for your turn (#${queuePosition} in queue)` : '🚏 Join the terminal queue first'}
+                  </Badge>
+                )}
+                {!isUnassigned && !wrongTerminal && !queueBlocked && !canAccept && (
                   <Badge className="bg-red-100 text-red-600 text-[10px] mb-2">Not in your service types</Badge>
                 )}
                 <Button
@@ -490,7 +541,13 @@ export default function PassengerRequests() {
                     canAccept ? 'bg-[#E11D48] hover:bg-[#BE123C] shadow-lg shadow-rose-200' : 'bg-gray-300 text-gray-500 cursor-not-allowed'
                   }`}
                 >
-                  {wrongTerminal ? '🚫 Wrong Terminal' : canAccept ? (request.lobbyId ? '👥 View Lobby' : '🛵 View & Accept') : 'Not Available'}
+                  {isUnassigned
+                    ? '🚏 No Terminal Assigned'
+                    : wrongTerminal
+                      ? '🚫 Wrong Terminal'
+                      : queueBlocked
+                        ? (queueEntry ? `⏳ Wait — You're #${queuePosition}` : '🚏 Join Queue to Accept')
+                        : canAccept ? (request.lobbyId ? '👥 View Lobby' : '🛵 View & Accept') : 'Not Available'}
                 </Button>
               </div>
             </Card>

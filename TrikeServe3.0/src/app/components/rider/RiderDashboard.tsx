@@ -31,6 +31,8 @@ import { Badge } from "../ui/badge";
 import { Input } from "../ui/input";
 import { useAuth } from "../../contexts/AuthContext";
 import { supabaseHelpers } from "@/lib/supabase";
+import { useTerminalQueue } from "../../hooks/useTerminalQueue";
+import TerminalQueueCard from "./TerminalQueueCard";
 import tricycleIcon from "../../../assets/0b76d1aa56b8ad6e15dd4efc8a0100b0ca5762a1.png";
 import { supabase } from "../../../lib/supabase";
 import ActiveRideButton from "./ActiveRideButton";
@@ -109,6 +111,25 @@ export default function RiderDashboard() {
      const [locationError, setLocationError] = useState<string | null>(null);
     const [showWelcomeBack, setShowWelcomeBack] = useState(false);
     const [welcomeUserName, setWelcomeUserName] = useState('');
+
+    // Terminal queue — FIFO per terminal. Only the first driver may accept
+    // private and share rides.
+    const terminalQueueApi = useTerminalQueue();
+    const { myEntry: queueEntry, leave: leaveQueue } = terminalQueueApi;
+
+    const handleToggleOnline = async () => {
+      const next = !isOnline;
+      setIsOnline(next);
+      // Going offline removes the driver from the queue so they don't hold a
+      // position while unavailable; coming back online means re-queueing.
+      if (!next && queueEntry) await leaveQueue();
+    };
+
+    // Safety net: never hold a queue slot while already on a ride — e.g. if the app
+    // was closed between accepting and the slot being released.
+    useEffect(() => {
+      if (hasActiveRide && queueEntry) leaveQueue();
+    }, [hasActiveRide, queueEntry?.id]);
 
     // Show welcome back popup after login
     useEffect(() => {
@@ -932,10 +953,9 @@ export default function RiderDashboard() {
 
         {/* Toggle Online/Offline Button */}
         {!activeTrip && (
-          <div className="absolute top-4 left-1/2 -translate-x-1/2 z-[1000]">
-            <Button
-              onClick={() => setIsOnline(!isOnline)}
-              className={`${
+          <div className="absolute top-4 left-1/2 -translate-x-1/2 z-[1000]">                <Button
+                  onClick={handleToggleOnline}
+                  className={`${
                 isOnline 
                   ? 'bg-[#E11D48] hover:bg-[#BE123C] text-white'
                   : 'bg-[#121212] hover:bg-[#2a2a2a] text-white'
@@ -1023,6 +1043,9 @@ export default function RiderDashboard() {
         {!activeTrip && (
           <div className="absolute bottom-20 left-0 right-0 z-[999] px-4">
             <Card className="bg-white shadow-xl rounded-t-3xl max-h-[70vh] overflow-y-auto">
+
+              {/* Terminal Queue - determines which driver may accept private/share rides */}
+              <TerminalQueueCard queue={terminalQueueApi} canJoin={isOnline} />
 
               {/* View All Passenger Requests Card - Always visible, button disabled when offline */}
               <div className="border-t border-gray-200 px-6 py-6">

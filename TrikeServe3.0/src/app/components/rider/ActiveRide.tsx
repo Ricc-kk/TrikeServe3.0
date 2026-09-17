@@ -66,7 +66,16 @@ export default function ActiveRide() {
           // see the status popups.
           supabaseHelpers.updateLobbyDriverStatus(ride.lobbyId, 'on-the-way', 'Driver is on the way!');
         } else {
-          supabaseHelpers.acceptRideRequest(ride.id, user.id, user.name || 'Driver', user.user_metadata?.avatar_url, user.todaPlate || 'N/A', '4.8');
+          // Record the acceptance FIRST: the database only lets a driver who is
+          // still first in their terminal's queue be assigned, so the queue slot is
+          // given up only once the ride is actually ours.
+          supabaseHelpers
+            .acceptRideRequest(ride.id, user.id, user.name || 'Driver', user.user_metadata?.avatar_url, user.todaPlate || 'N/A', '4.8')
+            .then(({ error }) => {
+              if (error) return;
+              return supabaseHelpers.clearTerminalQueueRows(user.id);
+            })
+            .catch(() => {});
           supabaseHelpers.updateDriverRideStatus(ride.id, 'on-the-way', 'Driver is on the way!');
           notifyDeliveryStatus(ride, 'on-the-way', 'Driver is on the way!');
         }
