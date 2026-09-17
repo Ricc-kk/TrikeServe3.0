@@ -584,6 +584,118 @@ export const supabaseHelpers = {
     return { data, error };
   },
 
+  // Terminal queue operations (FIFO per terminal)
+  // Only the driver at position 1 of a terminal's queue may accept private and
+  // share rides. Delivery is not gated by the queue.
+  /**
+   * Waiting rows for one terminal, oldest first.
+   *
+   * `sinceIso` drops rows that stopped heartbeating (an app that was closed or
+   * killed), so a dead row can never hold a terminal's first position. `id` is a
+   * tiebreaker so two drivers who joined in the same instant still get a
+   * deterministic order — only one driver can ever be position 1.
+   */
+  async getTerminalQueue(terminalId: string, sinceIso?: string) {
+    let query = supabase
+      .from('terminal_queue')
+      .select('*')
+      .eq('terminal_id', terminalId)
+      .eq('status', 'waiting');
+
+    if (sinceIso) query = query.gte('updated_at', sinceIso);
+
+    const { data, error } = await query
+      .order('joined_at', { ascending: true })
+      .order('id', { ascending: true });
+
+    return { data, error };
+  },
+
+  /** Refresh a queued driver's row so it doesn't look abandoned. */
+  async heartbeatTerminalQueue(terminalId: string, driverId: string) {
+    const { error } = await supabase
+      .from('terminal_queue')
+      .update({ updated_at: new Date().toISOString() })
+      .eq('terminal_id', terminalId)
+      .eq('driver_id', driverId);
+
+    return { error };
+  },
+
+  /** Reap rows abandoned by a closed/killed app so the table doesn't grow. */
+  async deleteStaleTerminalQueue(terminalId: string, beforeIso: string) {
+    const { error } = await supabase
+      .from('terminal_queue')
+      .delete()
+      .eq('terminal_id', terminalId)
+      .lt('updated_at', beforeIso);
+
+    return { error };
+  },
+
+  /**
+   * Join the queue for a terminal. `joined_at` is always reset so re-joining
+   * puts the driver at the back of the queue.
+   */
+  async joinTerminalQueue(entry: {
+    terminalId: string;
+    driverId: string;
+    driverName?: string;
+    driverPlate?: string;
+  }) {
+    const timestamp = new Date().toISOString();
+    const { data, error } = await supabase
+      .from('terminal_queue')
+      .upsert(
+        [
+          {
+            terminal_id: entry.terminalId,
+            driver_id: entry.driverId,
+            driver_name: entry.driverName || null,
+            driver_plate: entry.driverPlate || null,
+            status: 'waiting',
+            joined_at: timestamp,
+            updated_at: timestamp,
+          },
+        ],
+        { onConflict: 'terminal_id,driver_id' }
+      )
+      .select()
+      .single();
+
+    return { data, error };
+  },
+
+  async leaveTerminalQueue(terminalId: string, driverId: string) {
+    const { error } = await supabase
+      .from('terminal_queue')
+      .delete()
+      .eq('terminal_id', terminalId)
+      .eq('driver_id', driverId);
+
+    return { error };
+  },
+
+  /**
+   * Delete a driver's queue rows, optionally keeping one terminal.
+   *
+   * `keepTerminalId` = the driver's current terminal; rows in any other terminal
+   * are ghosts that would block that terminal's first slot forever, because the
+   * driver can neither accept its rides (wrong terminal) nor re-join it. Pass
+   * nothing/null to give up every slot, e.g. when the driver accepts a ride.
+   */
+  async clearTerminalQueueRows(driverId: string, keepTerminalId?: string | null) {
+    let query = supabase
+      .from('terminal_queue')
+      .delete()
+      .eq('driver_id', driverId);
+
+    if (keepTerminalId) query = query.neq('terminal_id', keepTerminalId);
+
+    const { error } = await query;
+    return { error };
+  },
+
   async createShareRideLobby(lobby: any) {
     const timestamp = new Date().toISOString();
     const lobbyData = {
