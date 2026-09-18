@@ -45,17 +45,21 @@ const variantConfig: Record<ToastVariant, {
 };
 
 export default function Toast({ message, variant = "success", duration = 3000, onClose, action, style }: ToastProps) {
-  if (!message) return null;
-
-  const config = variantConfig[variant];
-  const Icon = config.icon;
+  // Hooks must run unconditionally: Toast is sometimes mounted with an empty
+  // message and receives one later, which would otherwise change hook order.
   const onCloseRef = useRef(onClose);
   onCloseRef.current = onClose;
 
   useEffect(() => {
+    if (!message) return;
     const timer = setTimeout(() => onCloseRef.current(), duration);
     return () => clearTimeout(timer);
-  }, [duration]);
+  }, [duration, message]);
+
+  if (!message) return null;
+
+  const config = variantConfig[variant];
+  const Icon = config.icon;
 
   return (
     <div className="fixed left-4 right-4 sm:left-auto sm:right-6 z-[3000] animate-slide-in" style={style}>

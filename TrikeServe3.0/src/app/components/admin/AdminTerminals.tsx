@@ -8,7 +8,7 @@ import { autocompletePlacesNew, createPlacesSessionToken, fetchPlaceDetailsNew }
 import AdminSidebar from "./AdminSidebar";
 import { supabase } from "../../../utils/supabase";
 import ConfirmationModal from "../ui/confirmation-modal";
-import Toast from "../ui/toast";
+import Toast from "../ui/Toast";
 
 const GOOGLE_MAPS_API_KEY = import.meta.env.VITE_GOOGLE_MAPS_API_KEY || "";
 

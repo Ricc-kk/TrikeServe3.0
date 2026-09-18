@@ -13,7 +13,7 @@ import AdminSidebar from "./AdminSidebar";
 import { supabase } from "../../../utils/supabase";
 import { adminDeleteUser, adminVerifyUser } from "../../../lib/supabase";
 import ConfirmationModal from "../ui/confirmation-modal";
-import Toast from "../ui/toast";
+import Toast from "../ui/Toast";
 
 interface StoredUser {
   id: string;
