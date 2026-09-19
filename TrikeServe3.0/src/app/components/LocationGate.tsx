@@ -9,15 +9,20 @@ import {
 type GateStatus = "checking" | "granted" | "permission-denied" | "services-off" | "unavailable";
 
 /**
- * Runs once when the app opens (mounted at the root) and:
+ * Runs once when the native app opens (mounted at the root) and:
  *  1. asks for the OS location permission,
  *  2. checks whether the device's location services (GPS) are switched on,
  *  3. prompts the user to open location services when they are off.
+ *
+ * Native only. In a browser this renders nothing and does no work, so the web
+ * build never shows a location prompt on page load - the web screens that need
+ * a position call `navigator.geolocation` themselves.
  *
  * It re-checks whenever the app returns to the foreground (e.g. after the user
  * toggles location on from the settings screen we send them to).
  */
 export default function LocationGate() {
+  const isNative = isNativeLocationSupported();
   const [status, setStatus] = useState<GateStatus>("checking");
   const [dismissed, setDismissed] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -75,27 +80,26 @@ export default function LocationGate() {
     }
   }, [checkWebLocation]);
 
+  // Only ever runs on a native build - see the note above.
   const runCheck = useCallback(
     async (requestIfNeeded: boolean) => {
-      if (isNativeLocationSupported()) {
-        await checkNativeLocation(requestIfNeeded);
-      } else {
-        await checkWebLocation();
-      }
+      if (!isNative) return;
+      await checkNativeLocation(requestIfNeeded);
     },
-    [checkNativeLocation, checkWebLocation]
+    [isNative, checkNativeLocation]
   );
 
   // Initial check when the app opens.
   useEffect(() => {
-    if (hasPromptedRef.current) return;
+    if (!isNative || hasPromptedRef.current) return;
     hasPromptedRef.current = true;
     void runCheck(true);
-  }, [runCheck]);
+  }, [isNative, runCheck]);
 
   // Re-check when the app comes back to the foreground (e.g. after enabling
   // location in the Android settings screen).
   useEffect(() => {
+    if (!isNative) return;
     const onVisibilityChange = () => {
       if (document.visibilityState === "visible") {
         void runCheck(false);
@@ -103,16 +107,12 @@ export default function LocationGate() {
     };
     document.addEventListener("visibilitychange", onVisibilityChange);
     return () => document.removeEventListener("visibilitychange", onVisibilityChange);
-  }, [runCheck]);
+  }, [isNative, runCheck]);
 
   const handleOpenSettings = async () => {
     setBusy(true);
     try {
-      if (isNativeLocationSupported()) {
-        await LocationServices.openLocationSettings();
-      } else {
-        await runCheck(true);
-      }
+      await LocationServices.openLocationSettings();
     } catch (error) {
       console.warn("[LocationGate] Could not open location settings:", error);
     } finally {
@@ -128,6 +128,9 @@ export default function LocationGate() {
       setBusy(false);
     }
   };
+
+  // Never render in a browser, whatever the status.
+  if (!isNative) return null;
 
   const isBlocking = status === "permission-denied" || status === "services-off";
   if (!isBlocking || dismissed) return null;
