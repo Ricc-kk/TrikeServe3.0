@@ -4,6 +4,7 @@ import { ArrowLeft, Lock, CheckCircle, Loader2, Eye, EyeOff, Smartphone } from "
 import { Button } from "../ui/button";
 import { Input } from "../ui/input";
 import { supabase } from "../../../lib/supabase";
+import { getAuthLinkParams, waitForSession } from "../../../lib/authLink";
 
 /** Detect if user is on a mobile device (browser on phone, not inside the app) */
 function isMobileDevice() {
@@ -23,30 +24,79 @@ export default function SetPassword() {
   const [error, setError] = useState("");
 
   useEffect(() => {
-    // Supabase password reset redirects with a hash containing access_token & type=recovery
-    const hash = window.location.hash;
-    const params = Object.fromEntries(new URLSearchParams(hash.substring(1)));
-    const accessToken = params.access_token;
-    const type = params.type;
+    let cancelled = false;
 
-    if (type === "recovery" && accessToken) {
-      // The session is already established by Supabase's magic link flow.
-      // We just need to let the user set a new password.
-      supabase.auth.getSession().then(({ data: { session } }) => {
-        if (session) {
+    const invalidLink =
+      "Invalid or expired reset link. Please request a new one from the login page.";
+
+    const fail = (message: string) => {
+      if (cancelled) return;
+      setStep("error");
+      setMessage(message);
+    };
+
+    const resolveRecoverySession = async () => {
+      // Read the callback params from the snapshot taken at module load —
+      // supabase-js clears window.location.hash while it consumes them.
+      const { kind, tokenHash, code, hasToken } = getAuthLinkParams();
+
+      // No token in the URL. Someone who already has a session can still change
+      // their password; otherwise this isn't a valid reset link.
+      if (!hasToken) {
+        const { data } = await supabase.auth.getSession();
+        if (cancelled) return;
+        if (data.session) {
           setStep("form");
         } else {
-          setStep("error");
-          setMessage("Session expired. Please request a new password reset link.");
+          fail(invalidLink);
         }
-      }).catch(() => {
-        setStep("error");
-        setMessage("Failed to establish session. Please try again.");
-      });
-    } else {
-      setStep("error");
-      setMessage("Invalid or expired reset link. Please request a new one from the login page.");
-    }
+        return;
+      }
+
+      if (kind !== "recovery" && kind !== "none") {
+        fail(invalidLink);
+        return;
+      }
+
+      // Link style A: ?token_hash=...&type=recovery (custom email templates)
+      if (tokenHash) {
+        const { error } = await supabase.auth.verifyOtp({ token_hash: tokenHash, type: "recovery" });
+        if (error) {
+          console.error("[SetPassword] verifyOtp failed:", error);
+          fail(invalidLink);
+          return;
+        }
+      }
+
+      // Link style B: ?code=... (PKCE flow)
+      if (code) {
+        const { error } = await supabase.auth.exchangeCodeForSession(code);
+        if (error) {
+          console.error("[SetPassword] exchangeCodeForSession failed:", error);
+          fail(invalidLink);
+          return;
+        }
+      }
+
+      // Link style C (Supabase's default template): #access_token=...&type=recovery
+      // supabase-js has already turned that into a session, so just wait for it.
+      const session = await waitForSession();
+      if (cancelled) return;
+      if (session) {
+        setStep("form");
+      } else {
+        fail(invalidLink);
+      }
+    };
+
+    resolveRecoverySession().catch((err) => {
+      console.error("[SetPassword] Reset link handling failed:", err);
+      fail("Failed to establish session. Please try again.");
+    });
+
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   const handleSetPassword = async (e: React.FormEvent) => {

@@ -3,6 +3,7 @@ import { ArrowLeft, Heart, Users, Calendar, Share2, Clock, Star, MapPin, Chevron
 import { Link, useNavigate, useSearchParams } from "react-router";
 import { Card } from "../ui/card";
 import { Badge } from "../ui/badge";
+import BottomNav from "../ui/BottomNav";
 import { ImageWithFallback } from "../figma/ImageWithFallback";
 import StoreLogo from "../figma/StoreLogo";
 import { useCart } from "../../contexts/CartContext";
@@ -792,35 +793,7 @@ export default function RestaurantDetail() {
       </div>
 
       {/* Bottom Navigation */}
-      <nav className="fixed bottom-0 left-0 right-0 bg-white border-t-2 border-[#E2E8F0] px-4 py-3 z-50">
-        <div className="max-w-6xl mx-auto grid grid-cols-5 gap-2">
-          <Link to="/customer/food" className="flex flex-col items-center gap-1">
-            <HomeIcon className="w-6 h-6 text-[#64748B]" />
-            <span className="text-xs text-[#64748B]">Home</span>
-          </Link>
-          <Link to="/customer/cart" className="flex flex-col items-center gap-1 relative">
-            <ShoppingCart className="w-6 h-6 text-[#64748B]" />
-            {getTotalItems() > 0 && (
-              <div className="absolute -top-1 -right-1 w-5 h-5 bg-[#E11D48] rounded-full flex items-center justify-center">
-                <span className="text-[10px] font-bold text-white">{getTotalItems()}</span>
-              </div>
-            )}
-            <span className="text-xs text-[#64748B]">Cart</span>
-          </Link>
-          <Link to="/customer/messages" className="flex flex-col items-center gap-1">
-            <MessageCircle className="w-6 h-6 text-[#64748B]" />
-            <span className="text-xs text-[#64748B]">Messages</span>
-          </Link>
-          <Link to="/customer/activity" className="flex flex-col items-center gap-1">
-            <ClipboardList className="w-6 h-6 text-[#64748B]" />
-            <span className="text-xs text-[#64748B]">Activity</span>
-          </Link>
-          <Link to="/customer/account" className="flex flex-col items-center gap-1">
-            <User className="w-6 h-6 text-[#64748B]" />
-            <span className="text-xs text-[#64748B]">Account</span>
-          </Link>
-        </div>
-      </nav>
+      <BottomNav />
 
       {/* Search Modal */}
       {showSearchModal && (

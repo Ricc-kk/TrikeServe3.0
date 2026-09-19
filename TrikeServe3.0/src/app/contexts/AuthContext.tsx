@@ -648,9 +648,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const resendVerificationEmail = async (email: string): Promise<{ success: boolean; error?: string }> => {
     try {
+      // Send the resent link to the same page as the original signup email.
+      // Without this Supabase falls back to the project Site URL and the user
+      // lands on the app root instead of the verification screen.
+      const WEB_APP_URL = import.meta.env.VITE_WEB_APP_URL || "https://trike-serve.vercel.app";
       const { error } = await supabase.auth.resend({
         type: 'signup',
         email: email.toLowerCase(),
+        options: {
+          emailRedirectTo: `${WEB_APP_URL}/verify-email`,
+        },
       });
 
       if (error) {
