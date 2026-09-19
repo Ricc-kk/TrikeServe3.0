@@ -1,9 +1,10 @@
 import { useState, useEffect } from "react";
-import { useNavigate, Link, useSearchParams } from "react-router";
+import { useNavigate, Link } from "react-router";
 import { ArrowLeft, CheckCircle, Loader2, Mail, RefreshCw, Smartphone } from "lucide-react";
 import { Button } from "../ui/button";
 import { supabase } from "../../../lib/supabase";
 import { useAuth } from "../../contexts/AuthContext";
+import { getAuthLinkParams, waitForSession } from "../../../lib/authLink";
 
 /** Detect if user is on a mobile device (browser on phone, not inside the app) */
 function isMobileDevice() {
@@ -13,7 +14,6 @@ function isMobileDevice() {
 
 export default function VerifyEmail() {
   const navigate = useNavigate();
-  const [searchParams] = useSearchParams();
   const { resendVerificationEmail } = useAuth();
   const [status, setStatus] = useState<"loading" | "success" | "error" | "waiting">("loading");
   const [message, setMessage] = useState("");
@@ -30,33 +30,19 @@ export default function VerifyEmail() {
       setMessage("Check your inbox and click the verification link to activate your account.");
     };
 
-    // Supabase sets the session from the URL asynchronously, so give it a
-    // moment before deciding the link was invalid.
-    const waitForSession = async (timeoutMs = 5000) => {
-      const deadline = Date.now() + timeoutMs;
-      while (Date.now() < deadline) {
-        const { data } = await supabase.auth.getSession();
-        if (data.session) return data.session;
-        await new Promise((resolve) => setTimeout(resolve, 250));
-      }
-      return null;
-    };
-
     const verifySignup = async () => {
-      const hashParams = new URLSearchParams(window.location.hash.replace(/^#/, ""));
-      const type = hashParams.get("type") || searchParams.get("type");
-      const accessToken = hashParams.get("access_token");
-      const tokenHash = searchParams.get("token_hash");
-      const code = searchParams.get("code");
+      // Read the callback params from the snapshot taken at module load —
+      // supabase-js clears window.location.hash while it consumes them.
+      const { kind, tokenHash, code, hasToken } = getAuthLinkParams();
 
       // Nothing in the URL — the user just opened this page directly.
-      if (!tokenHash && !code && !accessToken) {
+      if (!hasToken) {
         showWaiting();
         return;
       }
 
       // Password-recovery links belong on /set-password, not here.
-      if (type && type !== "signup") {
+      if (kind !== "signup" && kind !== "none") {
         showWaiting();
         return;
       }
