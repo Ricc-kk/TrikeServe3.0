@@ -3,6 +3,7 @@ import { Link, useNavigate } from "react-router";
 import { useState, useRef } from "react";
 import { useAuth } from "../../contexts/AuthContext";
 import { Button } from "../ui/button";
+import BottomNav from "../ui/BottomNav";
 import { supabase } from "../../../utils/supabase";
 import { supabaseHelpers } from "@/lib/supabase";
 
@@ -286,30 +287,7 @@ export default function Account() {
       </div>
 
       {/* Bottom Navigation */}
-      <div className="fixed bottom-0 left-0 right-0 bg-white border-t-2 border-[#E2E8F0] px-4 py-3 z-50">
-        <div className="max-w-6xl mx-auto grid grid-cols-5 gap-2">
-          <Link to="/customer/food" className="flex flex-col items-center gap-1">
-            <HomeIcon className="w-6 h-6 text-[#64748B]" />
-            <span className="text-xs text-[#64748B]">Home</span>
-          </Link>
-          <Link to="/customer/cart" className="flex flex-col items-center gap-1">
-            <ShoppingCart className="w-6 h-6 text-[#64748B]" />
-            <span className="text-xs text-[#64748B]">Cart</span>
-          </Link>
-          <Link to="/customer/messages" className="flex flex-col items-center gap-1">
-            <MessageCircle className="w-6 h-6 text-[#64748B]" />
-            <span className="text-xs text-[#64748B]">Messages</span>
-          </Link>
-          <Link to="/customer/activity" className="flex flex-col items-center gap-1">
-            <ClipboardList className="w-6 h-6 text-[#64748B]" />
-            <span className="text-xs text-[#64748B]">Activity</span>
-          </Link>
-          <Link to="/customer/account" className="flex flex-col items-center gap-1">
-            <User className="w-6 h-6 text-[#E11D48]" />
-            <span className="text-xs font-semibold text-[#E11D48]">Account</span>
-          </Link>
-        </div>
-      </div>
+      <BottomNav active="account" />
 
       {/* Confirm Save Modal */}
       {showConfirmSave && (

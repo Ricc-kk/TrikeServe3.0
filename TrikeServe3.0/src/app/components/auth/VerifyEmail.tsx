@@ -22,34 +22,80 @@ export default function VerifyEmail() {
   const [resendSuccess, setResendSuccess] = useState(false);
 
   useEffect(() => {
-    const hash = window.location.hash;
-    const params = Object.fromEntries(new URLSearchParams(hash.substring(1)));
-    const accessToken = params.access_token;
-    const type = params.type;
+    const invalidLink =
+      "Verification link is invalid or has expired. Please request a new one.";
 
-    if (type === "signup" && accessToken) {
-      // Verify the email confirmation token
-      supabase.auth.verifyOtp({ token_hash: accessToken, type: "signup" })
-        .then(({ error }) => {
-          if (error) {
-            console.error("[VerifyEmail] Verification error:", error);
-            setStatus("error");
-            setMessage("Verification link is invalid or has expired. Please request a new one.");
-          } else {
-            setStatus("success");
-            setMessage("Your email has been verified successfully!");
-          }
-        })
-        .catch((err) => {
-          console.error("[VerifyEmail] Network error:", err);
-          setStatus("error");
-          setMessage("An error occurred while verifying your email.");
-        });
-    } else {
-      // No verification token — show waiting state
+    const showWaiting = () => {
       setStatus("waiting");
       setMessage("Check your inbox and click the verification link to activate your account.");
-    }
+    };
+
+    // Supabase sets the session from the URL asynchronously, so give it a
+    // moment before deciding the link was invalid.
+    const waitForSession = async (timeoutMs = 5000) => {
+      const deadline = Date.now() + timeoutMs;
+      while (Date.now() < deadline) {
+        const { data } = await supabase.auth.getSession();
+        if (data.session) return data.session;
+        await new Promise((resolve) => setTimeout(resolve, 250));
+      }
+      return null;
+    };
+
+    const verifySignup = async () => {
+      const hashParams = new URLSearchParams(window.location.hash.replace(/^#/, ""));
+      const type = hashParams.get("type") || searchParams.get("type");
+      const accessToken = hashParams.get("access_token");
+      const tokenHash = searchParams.get("token_hash");
+      const code = searchParams.get("code");
+
+      // Nothing in the URL — the user just opened this page directly.
+      if (!tokenHash && !code && !accessToken) {
+        showWaiting();
+        return;
+      }
+
+      // Password-recovery links belong on /set-password, not here.
+      if (type && type !== "signup") {
+        showWaiting();
+        return;
+      }
+
+      const succeed = () => {
+        setStatus("success");
+        setMessage("Your email has been verified successfully!");
+      };
+      const fail = (error: unknown, context: string) => {
+        console.error(`[VerifyEmail] ${context}:`, error);
+        setStatus("error");
+        setMessage(invalidLink);
+      };
+
+      // Link style A: ?token_hash=...&type=signup (custom email templates)
+      if (tokenHash) {
+        const { error } = await supabase.auth.verifyOtp({ token_hash: tokenHash, type: "signup" });
+        return error ? fail(error, "verifyOtp failed") : succeed();
+      }
+
+      // Link style B: ?code=... (PKCE flow)
+      if (code) {
+        const { error } = await supabase.auth.exchangeCodeForSession(code);
+        return error ? fail(error, "exchangeCodeForSession failed") : succeed();
+      }
+
+      // Link style C (Supabase's default template): #access_token=...&type=signup
+      // supabase-js has already consumed that hash and created the session, so
+      // there is no token left to exchange — just confirm the session exists.
+      // Calling verifyOtp with the access token here would always fail.
+      const session = await waitForSession();
+      return session ? succeed() : fail(new Error("No session established"), "No session");
+    };
+
+    verifySignup().catch((err) => {
+      console.error("[VerifyEmail] Verification error:", err);
+      setStatus("error");
+      setMessage("An error occurred while verifying your email.");
+    });
   }, []);
 
   const handleResend = async (e: React.FormEvent) => {

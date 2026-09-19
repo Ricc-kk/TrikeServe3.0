@@ -382,23 +382,26 @@ export default function AccountManagement() {
       )}
 
       {/* Bottom Navigation */}
-      <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-[#E2E8F0] z-[1000]">
-        <div className="flex justify-around items-center py-2">
-          <Link to="/customer" className="flex flex-col items-center gap-1 p-2">
-            <HomeIcon className="w-5 h-5 text-[#64748B]" />
-            <span className="text-xs text-[#64748B]">Home</span>
+      <div
+        className="fixed bottom-0 left-0 right-0 bg-white border-t border-[#E2E8F0] z-[1000]"
+        style={{ paddingBottom: "max(0.5rem, env(safe-area-inset-bottom))" }}
+      >
+        <div className="mx-auto grid w-full max-w-6xl grid-cols-4 gap-1 px-2 pt-2 sm:px-4">
+          <Link to="/customer" className="flex min-w-0 flex-col items-center justify-center gap-0.5 rounded-xl py-1.5 text-center active:bg-gray-50 transition-colors">
+            <HomeIcon className="w-5 h-5 sm:w-6 sm:h-6 shrink-0 text-[#64748B]" />
+            <span className="w-full truncate text-[10px] leading-tight sm:text-xs text-[#64748B]">Home</span>
           </Link>
-          <Link to="/customer/activity" className="flex flex-col items-center gap-1 p-2">
-            <ClipboardList className="w-5 h-5 text-[#64748B]" />
-            <span className="text-xs text-[#64748B]">Activity</span>
+          <Link to="/customer/activity" className="flex min-w-0 flex-col items-center justify-center gap-0.5 rounded-xl py-1.5 text-center active:bg-gray-50 transition-colors">
+            <ClipboardList className="w-5 h-5 sm:w-6 sm:h-6 shrink-0 text-[#64748B]" />
+            <span className="w-full truncate text-[10px] leading-tight sm:text-xs text-[#64748B]">Activity</span>
           </Link>
-          <Link to="/customer/messages" className="flex flex-col items-center gap-1 p-2">
-            <MessageCircle className="w-5 h-5 text-[#64748B]" />
-            <span className="text-xs text-[#64748B]">Messages</span>
+          <Link to="/customer/messages" className="flex min-w-0 flex-col items-center justify-center gap-0.5 rounded-xl py-1.5 text-center active:bg-gray-50 transition-colors">
+            <MessageCircle className="w-5 h-5 sm:w-6 sm:h-6 shrink-0 text-[#64748B]" />
+            <span className="w-full truncate text-[10px] leading-tight sm:text-xs text-[#64748B]">Messages</span>
           </Link>
-          <Link to="/customer/account" className="flex flex-col items-center gap-1 p-2">
-            <User className="w-5 h-5 text-[#18B5A4]" />
-            <span className="text-xs text-[#18B5A4] font-semibold">Account</span>
+          <Link to="/customer/account" className="flex min-w-0 flex-col items-center justify-center gap-0.5 rounded-xl py-1.5 text-center active:bg-gray-50 transition-colors">
+            <User className="w-5 h-5 sm:w-6 sm:h-6 shrink-0 text-[#18B5A4]" />
+            <span className="w-full truncate text-[10px] leading-tight sm:text-xs text-[#18B5A4] font-semibold">Account</span>
           </Link>
         </div>
       </div>

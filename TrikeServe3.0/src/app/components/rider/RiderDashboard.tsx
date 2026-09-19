@@ -28,6 +28,7 @@ import { Button } from "../ui/button";
 import { Card } from "../ui/card";
 import { Switch } from "../ui/switch";
 import { Badge } from "../ui/badge";
+import BottomNav from "../ui/BottomNav";
 import { Input } from "../ui/input";
 import { useAuth } from "../../contexts/AuthContext";
 import { supabaseHelpers } from "@/lib/supabase";
@@ -1214,37 +1215,7 @@ export default function RiderDashboard() {
       </div>
 
       {/* Bottom Navigation - Fixed */}
-      <div className="absolute bottom-0 left-0 right-0 bg-white border-t-2 border-[#CBD5E1] z-[1000]">
-        <div className="px-4 py-3 flex justify-around items-center">
-          <Button variant="ghost" className="flex flex-col items-center gap-1">
-            <HomeIcon className="w-5 h-5 text-[#00A854]" />
-            <span className="text-xs font-semibold text-[#00A854]">Home</span>
-          </Button>
-          <Link to="/rider/earnings">
-            <Button variant="ghost" className="flex flex-col items-center gap-1">
-              <DollarSign className="w-5 h-5 text-[#64748B]" />
-              <span className="text-xs text-[#64748B]">Earnings</span>
-            </Button>
-          </Link>
-          <Link to="/rider/messages">
-            <Button variant="ghost" className="flex flex-col items-center gap-1 relative">
-              <MessageCircle className="w-5 h-5 text-[#64748B]" />
-              <span className="text-xs text-[#64748B]">Messages</span>
-              {unreadMessagesCount > 0 && (
-                <div className="absolute -top-1 -right-1 w-5 h-5 bg-[#E11D48] rounded-full border-2 border-white flex items-center justify-center">
-                  <div className="w-2 h-2 bg-white rounded-full animate-pulse" />
-                </div>
-              )}
-            </Button>
-          </Link>
-          <Link to="/rider/profile">
-            <Button variant="ghost" className="flex flex-col items-center gap-1">
-              <UserCircle className="w-5 h-5 text-[#64748B]" />
-              <span className="text-xs text-[#64748B]">Profile</span>
-            </Button>
-          </Link>
-        </div>
-      </div>
+      <BottomNav variant="rider" active="home" messagesBadge={unreadMessagesCount} />
 
       {/* Active Ride Floating Button */}
       <ActiveRideButton />

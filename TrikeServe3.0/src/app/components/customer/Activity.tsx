@@ -2,6 +2,7 @@ import { ArrowLeft, Home as HomeIcon, Calendar, MessageCircle, User, Users, Navi
 import { Link, useNavigate } from "react-router";
 import { Button } from "../ui/button";
 import { Card } from "../ui/card";
+import BottomNav from "../ui/BottomNav";
 import { useAuth } from "../../contexts/AuthContext";
 import { ImageWithFallback } from "../figma/ImageWithFallback";
 import { supabase } from "../../../lib/supabase";
@@ -411,30 +412,7 @@ export default function Activity() {
       </div>
 
       {/* Bottom Navigation */}
-      <div className="fixed bottom-0 left-0 right-0 bg-white border-t-2 border-[#E2E8F0] px-2 py-2.5 z-50" style={{ paddingBottom: 'max(0.625rem, env(safe-area-inset-bottom))' }}>
-        <div className="max-w-6xl mx-auto grid grid-cols-5 gap-1">
-          <Link to="/customer/food" className="flex flex-col items-center gap-0.5 py-1.5 rounded-xl active:bg-gray-50 transition-colors">
-            <HomeIcon className="w-5 h-5 sm:w-6 sm:h-6 text-[#64748B]" />
-            <span className="text-[10px] sm:text-xs text-[#64748B]">Home</span>
-          </Link>
-          <Link to="/customer/cart" className="flex flex-col items-center gap-0.5 py-1.5 rounded-xl active:bg-gray-50 transition-colors">
-            <ShoppingCart className="w-5 h-5 sm:w-6 sm:h-6 text-[#64748B]" />
-            <span className="text-[10px] sm:text-xs text-[#64748B]">Cart</span>
-          </Link>
-          <Link to="/customer/messages" className="flex flex-col items-center gap-0.5 py-1.5 rounded-xl active:bg-gray-50 transition-colors">
-            <MessageCircle className="w-5 h-5 sm:w-6 sm:h-6 text-[#64748B]" />
-            <span className="text-[10px] sm:text-xs text-[#64748B]">Messages</span>
-          </Link>
-          <Link to="/customer/activity" className="flex flex-col items-center gap-0.5 py-1.5 rounded-xl active:bg-gray-50 transition-colors">
-            <ClipboardList className="w-5 h-5 sm:w-6 sm:h-6 text-[#E11D48]" />
-            <span className="text-[10px] sm:text-xs font-semibold text-[#E11D48]">Activity</span>
-          </Link>
-          <Link to="/customer/account" className="flex flex-col items-center gap-0.5 py-1.5 rounded-xl active:bg-gray-50 transition-colors">
-            <User className="w-5 h-5 sm:w-6 sm:h-6 text-[#64748B]" />
-            <span className="text-[10px] sm:text-xs text-[#64748B]">Account</span>
-          </Link>
-        </div>
-      </div>
+      <BottomNav active="activity" />
     </div>
   );
 }
