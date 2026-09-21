@@ -5,6 +5,7 @@ import { GoogleMap, Marker, InfoWindow, DirectionsRenderer } from "@react-google
 import { Button } from "../ui/button";
 import { Card } from "../ui/card";
 import { Badge } from "../ui/badge";
+import LocationBanner, { type LocationProblem } from "../ui/LocationBanner";
 import { useAuth } from "../../contexts/AuthContext";
 import { supabaseHelpers } from "@/lib/supabase";
 import { supabase } from "../../../utils/supabase";
@@ -37,6 +38,27 @@ interface ActiveRideData {
   passengerDetails?: any[];
 }
 
+const toRadians = (deg: number) => (deg * Math.PI) / 180;
+
+// Great-circle distance in metres between two coordinates.
+const distanceInMeters = (a: { lat: number; lng: number }, b: { lat: number; lng: number }) => {
+  const earthRadius = 6371e3;
+  const deltaLat = toRadians(b.lat - a.lat);
+  const deltaLng = toRadians(b.lng - a.lng);
+  const lat1 = toRadians(a.lat);
+  const lat2 = toRadians(b.lat);
+  const h =
+    Math.sin(deltaLat / 2) * Math.sin(deltaLat / 2) +
+    Math.cos(lat1) * Math.cos(lat2) * Math.sin(deltaLng / 2) * Math.sin(deltaLng / 2);
+  return 2 * earthRadius * Math.asin(Math.sqrt(h));
+};
+
+// GPS fixes wobble by several metres even when the driver is parked, and each of
+// those wobbles used to re-centre the map and republish the position to customers.
+// Anything under this threshold is ignored. At the zoom this screen uses, 8 m is
+// less than two pixels, so real movement still tracks while jitter disappears.
+const MIN_LOCATION_DELTA_METERS = 8;
+
 export default function ActiveRide() {
   const navigate = useNavigate();
   const location = useLocation();
@@ -44,10 +66,13 @@ export default function ActiveRide() {
   const [rideData, setRideData] = useState<ActiveRideData | null>(null);
   const [isMinimized, setIsMinimized] = useState(false);
   const [driverLocation, setDriverLocation] = useState<{ lat: number; lng: number } | null>(null);
+  // Drives the inline location banner; null while the device can give us a position.
+  const [locationProblem, setLocationProblem] = useState<LocationProblem | null>(null);
   const [directions, setDirections] = useState<google.maps.DirectionsResult | null>(null);
   const [mapCenter, setMapCenter] = useState<{ lat: number; lng: number }>({ lat: 14.6037, lng: 120.9793 });
 
   const isCompleting = useRef(false);
+  const lastReportedLocationRef = useRef<{ lat: number; lng: number } | null>(null);
   const [showRideComplete, setShowRideComplete] = useState(false);
   const [resolvedName, setResolvedName] = useState<string | null>(null);
   const { isLoaded: isMapsLoaded } = useMapLoader();
@@ -98,7 +123,18 @@ export default function ActiveRide() {
 
   useEffect(() => { if (driverLocation) setMapCenter(driverLocation); }, [driverLocation]);
 
-
+  // Accept a GPS fix only when it has moved far enough to be worth acting on.
+  // Returns false for sub-threshold wobble so callers can skip both the map
+  // update and the database write, which is what keeps the camera steady.
+  const reportDriverLocation = (loc: { lat: number; lng: number }, options?: { force?: boolean }) => {
+    const previous = lastReportedLocationRef.current;
+    if (!options?.force && previous && distanceInMeters(previous, loc) < MIN_LOCATION_DELTA_METERS) {
+      return false;
+    }
+    lastReportedLocationRef.current = loc;
+    setDriverLocation(loc);
+    return true;
+  };
 
   // Request device GPS location
   useEffect(() => {
@@ -106,15 +142,19 @@ export default function ActiveRide() {
     navigator.geolocation.getCurrentPosition(
       (pos) => {
         console.log('[ActiveRide] Got device location:', pos.coords.latitude, pos.coords.longitude);
-        setDriverLocation({ lat: pos.coords.latitude, lng: pos.coords.longitude });
+        setLocationProblem(null);
+        reportDriverLocation({ lat: pos.coords.latitude, lng: pos.coords.longitude }, { force: true });
       },
       (err) => {
         console.error('[ActiveRide] Geolocation error:', err.message);
         // Retry once after a short delay — sometimes the first request is rushed
         setTimeout(() => {
           navigator.geolocation.getCurrentPosition(
-            (pos2) => setDriverLocation({ lat: pos2.coords.latitude, lng: pos2.coords.longitude }),
-            () => console.error('[ActiveRide] Geolocation retry also failed'),
+            (pos2) => reportDriverLocation({ lat: pos2.coords.latitude, lng: pos2.coords.longitude }, { force: true }),
+            (retryError) => {
+              console.error('[ActiveRide] Geolocation retry also failed');
+              setLocationProblem(retryError.code === retryError.PERMISSION_DENIED ? 'permission-denied' : 'services-off');
+            },
             { enableHighAccuracy: true, timeout: 15000 }
           );
         }, 2000);
@@ -129,7 +169,10 @@ export default function ActiveRide() {
     const watchId = navigator.geolocation.watchPosition(
       (pos) => {
         const loc = { lat: pos.coords.latitude, lng: pos.coords.longitude };
-        setDriverLocation(loc);
+        setLocationProblem(null);
+        // Ignore sub-threshold drift so the map does not twitch while parked and
+        // customers are not sent a stream of meaningless position updates.
+        if (!reportDriverLocation(loc)) return;
         // Save to ride_requests (private rides), shared_ride_lobbies (share rides),
         // or orders table (deliveries)
         if (rideData?.lobbyId) {
@@ -142,7 +185,11 @@ export default function ActiveRide() {
           supabaseHelpers.updateRideRequest(rideData.id, { driver_lat: loc.lat, driver_lng: loc.lng, updated_at: new Date().toISOString() });
         }
       },
-      () => {},
+      (error) => {
+        // This watch keeps firing while the problem persists and starts
+        // succeeding again once it is fixed, so it is the banner's live signal.
+        setLocationProblem(error.code === error.PERMISSION_DENIED ? 'permission-denied' : 'services-off');
+      },
       { enableHighAccuracy: true, maximumAge: 5000 }
     );
     return () => navigator.geolocation.clearWatch(watchId);
@@ -378,6 +425,11 @@ export default function ActiveRide() {
                 directions={directions}
                 options={{
                   suppressMarkers: true,
+                  // Keep the camera on the driver. Without this the renderer re-fits
+                  // the map to the whole route every time the directions refresh
+                  // (i.e. on every GPS update), so the pickup and drop-off endpoints
+                  // keep yanking the centre off the driver icon.
+                  preserveViewport: true,
                   polylineOptions: {
                     strokeColor: isHeadingToPickup ? '#10B981' : '#E11D48',
                     strokeWeight: 6,
@@ -397,7 +449,7 @@ export default function ActiveRide() {
                 <p className="text-sm text-gray-400 mb-3">Waiting for your device location...</p>
                 <Button onClick={() => {
                   navigator.geolocation.getCurrentPosition(
-                    (pos) => setDriverLocation({ lat: pos.coords.latitude, lng: pos.coords.longitude }),
+                    (pos) => reportDriverLocation({ lat: pos.coords.latitude, lng: pos.coords.longitude }, { force: true }),
                     () => alert('Please enable Location Services in your device settings to use navigation.'),
                     { enableHighAccuracy: true, timeout: 15000 }
                   );
@@ -420,6 +472,8 @@ export default function ActiveRide() {
           {isHeadingToPickup ? 'Heading to Pickup' : 'Heading to Drop-off'}
         </div>
       </div>
+
+      <LocationBanner problem={locationProblem} className="mx-3 mt-3" />
 
       <div className={isMinimized ? 'fixed bottom-0 left-0 right-0 bg-white rounded-t-3xl shadow-[0_-10px_40px_rgba(0,0,0,0.1)] p-4 h-[40vh] overflow-y-auto z-[1001]' : 'p-4 space-y-4'}>
         <Card className="p-4 border-2 border-gray-100 shadow-sm">

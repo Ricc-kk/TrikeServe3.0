@@ -5,7 +5,7 @@ import { OrderProvider } from "../contexts/OrderContext";
 import { FavoritesProvider } from "../contexts/FavoritesContext";
 import { NotificationProvider, useNotification } from "../contexts/NotificationContext";
 import Toast from "./ui/Toast";
-import LocationGate from "./LocationGate";
+import LocationPermissionPrompt from "./LocationPermissionPrompt";
 
 function NotificationToasts() {
   const { notifications, removeNotification } = useNotification();
@@ -33,7 +33,7 @@ export default function Root() {
           <OrderProvider>
             <NotificationProvider>
               <NotificationToasts />
-              <LocationGate />
+              <LocationPermissionPrompt />
               <div className="min-h-screen">
                 <Outlet />
               </div>
