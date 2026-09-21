@@ -13,8 +13,10 @@ export interface LocationServicesPlugin {
   requestPermission(): Promise<{ location: LocationPermissionState }>;
   /** Whether the device's GPS / location toggle is currently switched on. */
   isLocationEnabled(): Promise<{ enabled: boolean }>;
-  /** Opens the Android system "Location" settings screen. */
+  /** Opens the Android system "Location" settings screen (for GPS being off). */
   openLocationSettings(): Promise<void>;
+  /** Opens this app's Android settings screen (for a denied/blocked permission). */
+  openAppSettings(): Promise<void>;
 }
 
 /**

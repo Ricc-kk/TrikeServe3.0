@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { Search, MapPin, Users, User as UserIcon, ChevronDown, X, Clock, Utensils, Search as SearchIcon, User, Navigation, MessageCircle, Bell, Bike, Home as HomeIcon, ShoppingCart, ClipboardList, Star } from "lucide-react";
 import { Link, useNavigate } from "react-router";
 import { Button } from "../ui/button";
@@ -6,6 +6,7 @@ import { Card } from "../ui/card";
 import { Badge } from "../ui/badge";
 import { Input } from "../ui/input";
 import BottomNav from "../ui/BottomNav";
+import LocationBanner, { type LocationProblem } from "../ui/LocationBanner";
 import { GoogleMap, MarkerF, InfoWindow, Polyline } from "@react-google-maps/api";
 import useMapLoader from "@/lib/mapLoader";
 import { GOOGLE_MAPS_LIBRARIES } from "@/lib/googleMaps";
@@ -241,6 +242,8 @@ export default function CustomerHome() {
   const [routeApiError, setRouteApiError] = useState<string | null>(null);
   const [isLoadingLocation, setIsLoadingLocation] = useState(true);
   const [locationError, setLocationError] = useState<string | null>(null);
+  // Drives the inline location banner; null while the device can give us a position.
+  const [locationProblem, setLocationProblem] = useState<LocationProblem | null>(null);
   const [showLocationPicker, setShowLocationPicker] = useState(false);
   const [activeLocationInput, setActiveLocationInput] = useState<'pickup' | 'dropoff' | null>(null);
   const [pickup, setPickup] = useState("");
@@ -342,8 +345,9 @@ export default function CustomerHome() {
       }
     }, [isMapsLoaded, mapsLoadError, blocked, apiKeyPresent]);
 
-   // Get user's current location on component mount
-  useEffect(() => {
+   // Get the device position. Reused on mount and when the app returns to the
+   // foreground, so the location banner clears once the user fixes the problem.
+  const locateUser = useCallback(() => {
     setIsLoadingLocation(true);
     setLocationError(null);
 
@@ -352,14 +356,21 @@ export default function CustomerHome() {
         (position) => {
           const { latitude, longitude } = position.coords;
           setCurrentLocation({ lat: latitude, lng: longitude });
-          // default pickup coords to current location when available
-          setPickupCoords({ lat: latitude, lng: longitude });
+          // default pickup coords to current location when available, without
+          // clobbering a terminal the customer picked themselves
+          if (!hasManualPickupSelectionRef.current) {
+            setPickupCoords({ lat: latitude, lng: longitude });
+          }
+          setLocationProblem(null);
           setIsLoadingLocation(false);
           console.log('User location:', latitude, longitude);
         },
         (error) => {
           console.warn('Geolocation error:', error.message);
           setLocationError(error.message);
+          // A denied permission and switched-off location services are fixed in
+          // different Android screens, so the banner needs to tell them apart.
+          setLocationProblem(error.code === error.PERMISSION_DENIED ? 'permission-denied' : 'services-off');
           setIsLoadingLocation(false);
           // Keep default location (Manila) if geolocation fails
         },
@@ -375,6 +386,18 @@ export default function CustomerHome() {
       setIsLoadingLocation(false);
     }
   }, []);
+
+  useEffect(() => {
+    locateUser();
+  }, [locateUser]);
+
+  useEffect(() => {
+    const onVisibilityChange = () => {
+      if (document.visibilityState === 'visible') locateUser();
+    };
+    document.addEventListener('visibilitychange', onVisibilityChange);
+    return () => document.removeEventListener('visibilitychange', onVisibilityChange);
+  }, [locateUser]);
 
   // Keep pickup state synchronized with currentLocation unless user changes it
   useEffect(() => {
@@ -1840,6 +1863,10 @@ export default function CustomerHome() {
              )}
            </GoogleMap>
          )}
+        <LocationBanner
+          problem={locationProblem}
+          className="absolute top-20 left-4 right-4 z-[1000]"
+        />
         <div className="absolute top-4 right-4 z-[1000]">
           <div className="flex items-center gap-2">
             {/* Notifications bell - upper right of the home page */}

@@ -5,6 +5,7 @@ import { GoogleMap, Marker, InfoWindow, DirectionsRenderer } from "@react-google
 import { Button } from "../ui/button";
 import { Card } from "../ui/card";
 import { Badge } from "../ui/badge";
+import LocationBanner, { type LocationProblem } from "../ui/LocationBanner";
 import { useAuth } from "../../contexts/AuthContext";
 import { supabaseHelpers } from "@/lib/supabase";
 import { supabase } from "../../../utils/supabase";
@@ -65,6 +66,8 @@ export default function ActiveRide() {
   const [rideData, setRideData] = useState<ActiveRideData | null>(null);
   const [isMinimized, setIsMinimized] = useState(false);
   const [driverLocation, setDriverLocation] = useState<{ lat: number; lng: number } | null>(null);
+  // Drives the inline location banner; null while the device can give us a position.
+  const [locationProblem, setLocationProblem] = useState<LocationProblem | null>(null);
   const [directions, setDirections] = useState<google.maps.DirectionsResult | null>(null);
   const [mapCenter, setMapCenter] = useState<{ lat: number; lng: number }>({ lat: 14.6037, lng: 120.9793 });
 
@@ -139,6 +142,7 @@ export default function ActiveRide() {
     navigator.geolocation.getCurrentPosition(
       (pos) => {
         console.log('[ActiveRide] Got device location:', pos.coords.latitude, pos.coords.longitude);
+        setLocationProblem(null);
         reportDriverLocation({ lat: pos.coords.latitude, lng: pos.coords.longitude }, { force: true });
       },
       (err) => {
@@ -147,7 +151,10 @@ export default function ActiveRide() {
         setTimeout(() => {
           navigator.geolocation.getCurrentPosition(
             (pos2) => reportDriverLocation({ lat: pos2.coords.latitude, lng: pos2.coords.longitude }, { force: true }),
-            () => console.error('[ActiveRide] Geolocation retry also failed'),
+            (retryError) => {
+              console.error('[ActiveRide] Geolocation retry also failed');
+              setLocationProblem(retryError.code === retryError.PERMISSION_DENIED ? 'permission-denied' : 'services-off');
+            },
             { enableHighAccuracy: true, timeout: 15000 }
           );
         }, 2000);
@@ -162,6 +169,7 @@ export default function ActiveRide() {
     const watchId = navigator.geolocation.watchPosition(
       (pos) => {
         const loc = { lat: pos.coords.latitude, lng: pos.coords.longitude };
+        setLocationProblem(null);
         // Ignore sub-threshold drift so the map does not twitch while parked and
         // customers are not sent a stream of meaningless position updates.
         if (!reportDriverLocation(loc)) return;
@@ -177,7 +185,11 @@ export default function ActiveRide() {
           supabaseHelpers.updateRideRequest(rideData.id, { driver_lat: loc.lat, driver_lng: loc.lng, updated_at: new Date().toISOString() });
         }
       },
-      () => {},
+      (error) => {
+        // This watch keeps firing while the problem persists and starts
+        // succeeding again once it is fixed, so it is the banner's live signal.
+        setLocationProblem(error.code === error.PERMISSION_DENIED ? 'permission-denied' : 'services-off');
+      },
       { enableHighAccuracy: true, maximumAge: 5000 }
     );
     return () => navigator.geolocation.clearWatch(watchId);
@@ -460,6 +472,8 @@ export default function ActiveRide() {
           {isHeadingToPickup ? 'Heading to Pickup' : 'Heading to Drop-off'}
         </div>
       </div>
+
+      <LocationBanner problem={locationProblem} className="mx-3 mt-3" />
 
       <div className={isMinimized ? 'fixed bottom-0 left-0 right-0 bg-white rounded-t-3xl shadow-[0_-10px_40px_rgba(0,0,0,0.1)] p-4 h-[40vh] overflow-y-auto z-[1001]' : 'p-4 space-y-4'}>
         <Card className="p-4 border-2 border-gray-100 shadow-sm">

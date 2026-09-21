@@ -4,6 +4,7 @@ import android.Manifest;
 import android.content.Context;
 import android.content.Intent;
 import android.location.LocationManager;
+import android.net.Uri;
 import android.os.Build;
 import android.provider.Settings;
 
@@ -20,11 +21,16 @@ import com.getcapacitor.annotation.PermissionCallback;
  * Small app-local Capacitor plugin used to drive the location permission /
  * "turn on location services" flow on Android.
  *
- * The web layer calls these methods on app start:
+ * On launch the app asks for the permission here through a simple in-app prompt
+ * (LocationPermissionPrompt), then the OS shows its own dialog:
  *  - checkPermission()          -> current permission state for the location alias
- *  - requestPermission()        -> shows the native runtime permission dialog
+ *  - requestPermission()        -> Android's runtime permission dialog
+ *
+ * The location banner on the map screens falls back to the settings screens when
+ * the user has declined:
  *  - isLocationEnabled()        -> whether the device's GPS location toggle is on
- *  - openLocationSettings()     -> opens the system location settings screen
+ *  - openLocationSettings()     -> opens the system location settings screen (GPS off)
+ *  - openAppSettings()          -> opens this app's permission screen (denied)
  */
 @CapacitorPlugin(
     name = "LocationServices",
@@ -75,6 +81,15 @@ public class LocationServicesPlugin extends Plugin {
     @PluginMethod
     public void openLocationSettings(PluginCall call) {
         Intent intent = new Intent(Settings.ACTION_LOCATION_SOURCE_SETTINGS);
+        intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+        getContext().startActivity(intent);
+        call.resolve();
+    }
+
+    @PluginMethod
+    public void openAppSettings(PluginCall call) {
+        Intent intent = new Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS);
+        intent.setData(Uri.fromParts("package", getContext().getPackageName(), null));
         intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
         getContext().startActivity(intent);
         call.resolve();
