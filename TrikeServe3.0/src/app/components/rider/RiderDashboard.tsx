@@ -839,17 +839,17 @@ export default function RiderDashboard() {
       {/* Full Screen Map */}
       <div className="absolute inset-0">
         {!GOOGLE_MAPS_API_KEY ? (
-          <div className="w-full h-full flex items-center justify-center bg-gray-200">
+          <div className="w-full h-full flex items-center justify-center bg-[var(--border)]">
             <div className="text-center">
-              <p className="text-xl font-bold text-red-600 mb-4">⚠️ Google Maps API Key Missing</p>
-              <p className="text-gray-700 mb-4">To use Google Maps, please:</p>
-              <ol className="text-left text-sm text-gray-600 mb-4">
+              <p className="text-xl font-bold text-[var(--error)] mb-4">⚠️ Google Maps API Key Missing</p>
+              <p className="text-[var(--ink-soft)] mb-4">To use Google Maps, please:</p>
+              <ol className="text-left text-sm text-[var(--muted-foreground)] mb-4">
                 <li>1. Get a Google Maps API Key from Google Cloud Console</li>
                 <li>2. Create a .env.local file in the project root</li>
                 <li>3. Add: VITE_GOOGLE_MAPS_API_KEY=your_api_key</li>
                 <li>4. Restart the dev server</li>
               </ol>
-              <p className="text-xs text-gray-500">Default location shown: Manila, Philippines</p>
+              <p className="text-xs text-[var(--muted-foreground)]">Default location shown: Manila, Philippines</p>
             </div>
           </div>
                 ) : isMapsLoaded && !blocked && apiKeyPresent ? (
@@ -880,7 +880,7 @@ export default function RiderDashboard() {
                >
                  <div className="text-sm">
                    <p className="font-bold">Your current location</p>
-                   <p className="text-gray-600">
+                   <p className="text-[var(--muted-foreground)]">
                      {selectedMarker.lat.toFixed(4)}, {selectedMarker.lng.toFixed(4)}
                    </p>
                  </div>
@@ -916,10 +916,10 @@ export default function RiderDashboard() {
               )} */}
           </GoogleMap>
         ) : isMapsLoaded && blocked ? (
-          <div className="w-full h-full flex items-center justify-center bg-yellow-50">
+          <div className="w-full h-full flex items-center justify-center bg-[var(--amber-soft)]">
             <div className="text-center max-w-md px-6">
-              <p className="text-lg font-bold text-yellow-700 mb-2">⚠️ Google Maps scripts loaded but unavailable</p>
-              <p className="text-sm text-yellow-800 mb-3">The Maps SDK appears to be blocked by a browser extension or network policy (window.google is missing). Try disabling ad-blockers or allow maps.googleapis.com.</p>
+              <p className="text-lg font-bold text-[var(--amber-dark)] mb-2">⚠️ Google Maps scripts loaded but unavailable</p>
+              <p className="text-sm text-[var(--amber-dark)] mb-3">The Maps SDK appears to be blocked by a browser extension or network policy (window.google is missing). Try disabling ad-blockers or allow maps.googleapis.com.</p>
               <div className="flex gap-3 justify-center">
                 <button onClick={() => window.location.reload()} className="px-4 py-2 bg-[var(--primary)] text-white rounded-md">Retry</button>
                 <button onClick={() => window.open('about:blank', '_blank')} className="px-4 py-2 border rounded-md">Open Incognito / Disable Extensions</button>
@@ -927,15 +927,15 @@ export default function RiderDashboard() {
             </div>
           </div>
         ) : mapsLoadError ? (
-          <div className="w-full h-full flex items-center justify-center bg-red-50">
+          <div className="w-full h-full flex items-center justify-center bg-[var(--error-soft)]">
             <div className="text-center">
-              <p className="text-xl font-bold text-red-600">⚠️ Map Error</p>
-              <p className="text-sm text-red-700">{String(mapsLoadError?.message || mapsLoadError)}</p>
+              <p className="text-xl font-bold text-[var(--error)]">⚠️ Map Error</p>
+              <p className="text-sm text-[var(--error)]">{String(mapsLoadError?.message || mapsLoadError)}</p>
             </div>
           </div>
         ) : (
-          <div className="w-full h-full flex items-center justify-center bg-gray-100">
-            <p className="text-sm text-gray-600">Loading map...</p>
+          <div className="w-full h-full flex items-center justify-center bg-[var(--muted)]">
+            <p className="text-sm text-[var(--muted-foreground)]">Loading map...</p>
           </div>
         )
         }
@@ -988,7 +988,7 @@ export default function RiderDashboard() {
                   </Badge>
                   <h3 className="font-bold text-lg text-[var(--ink)]">Active Trip</h3>
                 </div>
-                <Badge variant="outline" className={activeTrip.payment === 'COD' ? 'border-orange-500 text-orange-500' : 'border-green-500 text-green-500'}>
+                <Badge variant="outline" className={activeTrip.payment === 'COD' ? 'border-[var(--amber)] text-[var(--amber)]' : 'border-[var(--success)] text-[var(--success)]'}>
                   {activeTrip.payment}
                 </Badge>
               </div>
@@ -1002,7 +1002,7 @@ export default function RiderDashboard() {
                   </div>
                 </div>
                 <div className="flex gap-2">
-                  <Navigation className="w-5 h-5 text-green-600 flex-shrink-0 mt-0.5" />
+                  <Navigation className="w-5 h-5 text-[var(--success)] flex-shrink-0 mt-0.5" />
                   <div className="flex-1">
                     <p className="text-xs text-[var(--muted-foreground)]">Drop-off</p>
                     <p className="font-semibold text-[var(--ink)]">{activeTrip.dropoff}</p>
@@ -1011,17 +1011,17 @@ export default function RiderDashboard() {
               </div>
 
               {activeTrip.type === 'delivery' && activeTrip.payment === 'COD' && Number(activeTrip.foodCost || 0) > 0 && (
-                <div className="bg-orange-50 border border-orange-200 rounded-lg p-3 mb-4">
-                  <p className="text-sm font-semibold text-orange-800 mb-1">⚠️ Pay Restaurant First</p>
-                  <p className="text-xs text-orange-700">Food Cost: ₱{activeTrip.foodCost?.toFixed(2)}</p>
-                  <p className="text-xs text-orange-700">You'll be reimbursed by customer</p>
+                <div className="bg-[var(--amber-soft)] border border-[var(--amber-soft)] rounded-lg p-3 mb-4">
+                  <p className="text-sm font-semibold text-[var(--amber-dark)] mb-1">⚠️ Pay Restaurant First</p>
+                  <p className="text-xs text-[var(--amber-dark)]">Food Cost: ₱{activeTrip.foodCost?.toFixed(2)}</p>
+                  <p className="text-xs text-[var(--amber-dark)]">You'll be reimbursed by customer</p>
                 </div>
               )}
 
               <div className="flex gap-2">
                 <Button
                   onClick={handleCompleteTrip}
-                  className="flex-1 bg-green-600 hover:bg-green-700 text-white uppercase"
+                  className="flex-1 bg-[var(--success)] hover:bg-[var(--success)] text-white uppercase"
                 >
                   <Camera className="w-4 h-4 mr-2" />
                   COMPLETE TRIP
@@ -1049,7 +1049,7 @@ export default function RiderDashboard() {
               <TerminalQueueCard queue={terminalQueueApi} canJoin={isOnline} />
 
               {/* View All Passenger Requests Card - Always visible, button disabled when offline */}
-              <div className="border-t border-gray-200 px-6 py-6">
+              <div className="border-t border-[var(--border)] px-6 py-6">
                 <div className="flex flex-col items-center text-center">
                   {/* Header */}
                   <h3 className="font-bold text-lg text-[var(--ink)] mb-6">PASSENGER REQUESTS</h3>
@@ -1076,7 +1076,7 @@ export default function RiderDashboard() {
                       </Button>
                     </Link>
                   ) : (
-                    <Button disabled className="w-full bg-gray-300 text-gray-500 font-bold cursor-not-allowed">
+                    <Button disabled className="w-full bg-[var(--border)] text-[var(--muted-foreground)] font-bold cursor-not-allowed">
                       View All Passenger Requests
                     </Button>
                   )}
@@ -1105,12 +1105,12 @@ export default function RiderDashboard() {
                           onClick={() => selectServiceCategory('rides')}
                           className={`flex flex-col items-center gap-2 p-4 border-2 rounded-lg cursor-pointer transition-all ${
                             serviceCategory === 'rides'
-                              ? 'border-[var(--primary)] bg-red-50'
-                              : 'border-gray-200 hover:border-gray-300'
+                              ? 'border-[var(--primary)] bg-[var(--error-soft)]'
+                              : 'border-[var(--border)] hover:border-[var(--border)]'
                           }`}
                         >
                           <div className={`w-12 h-12 rounded-full flex items-center justify-center ${
-                            serviceCategory === 'rides' ? 'bg-[var(--primary)] text-white' : 'bg-gray-100 text-[var(--muted-foreground)]'
+                            serviceCategory === 'rides' ? 'bg-[var(--primary)] text-white' : 'bg-[var(--muted)] text-[var(--muted-foreground)]'
                           }`}>
                             <Users className="w-6 h-6" />
                           </div>
@@ -1123,12 +1123,12 @@ export default function RiderDashboard() {
                           onClick={() => selectServiceCategory('delivery')}
                           className={`flex flex-col items-center gap-2 p-4 border-2 rounded-lg cursor-pointer transition-all ${
                             serviceCategory === 'delivery'
-                              ? 'border-[var(--primary)] bg-red-50'
-                              : 'border-gray-200 hover:border-gray-300'
+                              ? 'border-[var(--primary)] bg-[var(--error-soft)]'
+                              : 'border-[var(--border)] hover:border-[var(--border)]'
                           }`}
                         >
                           <div className={`w-12 h-12 rounded-full flex items-center justify-center ${
-                            serviceCategory === 'delivery' ? 'bg-[var(--primary)] text-white' : 'bg-gray-100 text-[var(--muted-foreground)]'
+                            serviceCategory === 'delivery' ? 'bg-[var(--primary)] text-white' : 'bg-[var(--muted)] text-[var(--muted-foreground)]'
                           }`}>
                             <Package className="w-6 h-6" />
                           </div>
@@ -1150,13 +1150,13 @@ export default function RiderDashboard() {
                               onClick={() => (isMulti ? toggleServiceType(option.key) : undefined)}
                               className={`flex items-center justify-between p-4 border-2 rounded-lg cursor-pointer transition-all ${
                                 active
-                                  ? 'border-[var(--primary)] bg-red-50'
-                                  : 'border-gray-200 hover:border-gray-300'
+                                  ? 'border-[var(--primary)] bg-[var(--error-soft)]'
+                                  : 'border-[var(--border)] hover:border-[var(--border)]'
                               }`}
                             >
                               <div className="flex items-center gap-3">
                                 <div className={`w-10 h-10 rounded-full flex items-center justify-center ${
-                                  active ? 'bg-[var(--primary)] text-white' : 'bg-gray-100 text-[var(--muted-foreground)]'
+                                  active ? 'bg-[var(--primary)] text-white' : 'bg-[var(--muted)] text-[var(--muted-foreground)]'
                                 }`}>
                                   {option.key === 'delivery' ? <Package className="w-5 h-5" /> : option.key === 'private' ? <Car className="w-5 h-5" /> : <Users className="w-5 h-5" />}
                                 </div>
@@ -1166,7 +1166,7 @@ export default function RiderDashboard() {
                                 </div>
                               </div>
                               <div className={`w-5 h-5 rounded border-2 flex items-center justify-center ${
-                                active ? 'bg-[var(--primary)] border-[var(--primary)]' : 'border-gray-300'
+                                active ? 'bg-[var(--primary)] border-[var(--primary)]' : 'border-[var(--border)]'
                               }`}>
                                 {active && <div className="w-2 h-2 bg-white rounded-sm" />}
                               </div>
@@ -1189,7 +1189,7 @@ export default function RiderDashboard() {
 
               {/* More Options Section */}
               {showMore && (
-                <div className="border-t border-gray-200 p-4 space-y-3">
+                <div className="border-t border-[var(--border)] p-4 space-y-3">
                   <div className="flex items-center justify-between mb-3">
                     <h3 className="font-bold text-[var(--ink)]">More Options</h3>
                     <button onClick={() => setShowMore(false)}>

@@ -276,7 +276,7 @@ export default function MapSelector({ onClose, onSelectLocation, currentLocation
           >
             <div className="text-sm">
               <p className="font-semibold">{pickedPin.name}</p>
-              <p className="text-gray-600 text-xs">{pickedPin.full}</p>
+              <p className="text-[var(--muted-foreground)] text-xs">{pickedPin.full}</p>
             </div>
           </InfoWindow>
         )}

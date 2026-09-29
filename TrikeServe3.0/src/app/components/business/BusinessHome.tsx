@@ -661,7 +661,7 @@ export default function BusinessHome() {
 
                 <div className="flex items-center gap-4 text-sm mb-3 flex-wrap">
                   <div className="flex items-center gap-1">
-                    <Star className="w-4 h-4 text-yellow-500 fill-yellow-500" />
+                    <Star className="w-4 h-4 text-[var(--amber)] fill-[var(--amber)]" />
                     <span className="font-semibold text-[var(--ink)]">{restaurantData.rating}</span>
                     <span className="text-[var(--muted-foreground)]">({restaurantData.ratingCount}+)</span>
                   </div>

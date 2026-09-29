@@ -654,7 +654,7 @@ export default function AdminDashboard() {
             <div className="p-5 space-y-3">
               {notifications.length === 0 && (
                 <Card className="p-12 text-center border-2 border-dashed border-[var(--border)]">
-                  <Bell className="w-16 h-16 text-gray-300 mx-auto mb-4" />
+                  <Bell className="w-16 h-16 text-[var(--border)] mx-auto mb-4" />
                   <p className="text-[var(--muted-foreground)] text-sm">No notifications yet</p>
                 </Card>
               )}

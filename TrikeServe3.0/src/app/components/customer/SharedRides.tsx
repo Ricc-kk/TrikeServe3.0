@@ -156,8 +156,8 @@ export default function SharedRides({
                   <div className="flex items-center justify-between mb-3">
                     <Badge className={
                       ride.status === 'driver-assigned' 
-                        ? 'bg-green-500 text-white' 
-                        : 'bg-yellow-500 text-white'
+                        ? 'bg-[var(--success)] text-white' 
+                        : 'bg-[var(--amber)] text-white'
                     }>
                       {ride.status === 'driver-assigned' ? '✓ Driver Found' : '🔍 Finding Driver'}
                     </Badge>
@@ -183,9 +183,9 @@ export default function SharedRides({
                       {Array.from({ length: ride.maxSeats - ride.occupiedSeats }).map((_, idx) => (
                         <div
                           key={`empty-${idx}`}
-                          className="w-8 h-8 rounded-full bg-gray-200 flex items-center justify-center text-lg border-2 border-white"
+                          className="w-8 h-8 rounded-full bg-[var(--border)] flex items-center justify-center text-lg border-2 border-white"
                         >
-                          <Users className="w-4 h-4 text-gray-400" />
+                          <Users className="w-4 h-4 text-[var(--muted-foreground)]" />
                         </div>
                       ))}
                     </div>
@@ -214,7 +214,7 @@ export default function SharedRides({
 
                   {/* Driver Info (if assigned) */}
                   {ride.status === 'driver-assigned' && ride.driverName && (
-                    <div className="bg-green-50 rounded-lg p-2 mb-3 flex items-center gap-2">
+                    <div className="bg-[var(--success-soft)] rounded-lg p-2 mb-3 flex items-center gap-2">
                       <span className="text-xl">👨‍✈️</span>
                       <div className="flex-1 text-sm">
                         <p className="font-semibold text-[var(--ink)]">{ride.driverName}</p>

@@ -202,7 +202,7 @@ export default function AccountManagement() {
               key={profile.id}
               className={`p-4 cursor-pointer transition-all ${
                 activeProfileId === profile.id
-                  ? 'border-2 border-[var(--primary)] bg-red-50'
+                  ? 'border-2 border-[var(--primary)] bg-[var(--error-soft)]'
                   : 'border border-[var(--border)] hover:border-[var(--primary)]'
               }`}
               onClick={() => handleSwitchProfile(profile.id)}
@@ -211,7 +211,7 @@ export default function AccountManagement() {
                 <div className={`w-12 h-12 rounded-full flex items-center justify-center text-2xl ${
                   activeProfileId === profile.id
                     ? 'bg-gradient-to-br from-[var(--primary)] to-[var(--primary)]'
-                    : 'bg-gray-200'
+                    : 'bg-[var(--border)]'
                 }`}>
                   {profile.emoji}
                 </div>
@@ -237,7 +237,7 @@ export default function AccountManagement() {
                       e.stopPropagation();
                       setShowDeleteConfirm(profile.id);
                     }}
-                    className="text-red-500 hover:text-red-700 hover:bg-red-50"
+                    className="text-[var(--error)] hover:text-[var(--error)] hover:bg-[var(--error-soft)]"
                   >
                     <Trash2 className="w-4 h-4" />
                   </Button>
@@ -275,7 +275,7 @@ export default function AccountManagement() {
                       className={`w-12 h-12 rounded-full flex items-center justify-center text-2xl transition-all ${
                         newProfile.emoji === emoji
                           ? 'bg-gradient-to-br from-[var(--primary)] to-[var(--primary)] scale-110'
-                          : 'bg-gray-200 hover:scale-105'
+                          : 'bg-[var(--border)] hover:scale-105'
                       }`}
                     >
                       {emoji}
@@ -344,7 +344,7 @@ export default function AccountManagement() {
                 <Button
                   onClick={handleAddProfile}
                   disabled={!newProfile.name.trim()}
-                  className="flex-1 bg-[var(--primary)] hover:bg-[var(--primary)] disabled:bg-gray-300"
+                  className="flex-1 bg-[var(--primary)] hover:bg-[var(--primary)] disabled:bg-[var(--border)]"
                 >
                   ADD PROFILE
                 </Button>
@@ -372,7 +372,7 @@ export default function AccountManagement() {
               </Button>
               <Button
                 onClick={() => handleDeleteProfile(showDeleteConfirm)}
-                className="flex-1 bg-red-500 hover:bg-red-600"
+                className="flex-1 bg-[var(--error)] hover:bg-[var(--error)]"
               >
                 DELETE
               </Button>
@@ -387,19 +387,19 @@ export default function AccountManagement() {
         style={{ paddingBottom: "max(0.5rem, env(safe-area-inset-bottom))" }}
       >
         <div className="mx-auto grid w-full max-w-6xl grid-cols-4 gap-1 px-2 pt-2 sm:px-4">
-          <Link to="/customer" className="flex min-w-0 flex-col items-center justify-center gap-0.5 rounded-xl py-1.5 text-center active:bg-gray-50 transition-colors">
+          <Link to="/customer" className="flex min-w-0 flex-col items-center justify-center gap-0.5 rounded-xl py-1.5 text-center active:bg-[var(--muted)] transition-colors">
             <HomeIcon className="w-5 h-5 sm:w-6 sm:h-6 shrink-0 text-[var(--muted-foreground)]" />
             <span className="w-full truncate text-[10px] leading-tight sm:text-xs text-[var(--muted-foreground)]">Home</span>
           </Link>
-          <Link to="/customer/activity" className="flex min-w-0 flex-col items-center justify-center gap-0.5 rounded-xl py-1.5 text-center active:bg-gray-50 transition-colors">
+          <Link to="/customer/activity" className="flex min-w-0 flex-col items-center justify-center gap-0.5 rounded-xl py-1.5 text-center active:bg-[var(--muted)] transition-colors">
             <ClipboardList className="w-5 h-5 sm:w-6 sm:h-6 shrink-0 text-[var(--muted-foreground)]" />
             <span className="w-full truncate text-[10px] leading-tight sm:text-xs text-[var(--muted-foreground)]">Activity</span>
           </Link>
-          <Link to="/customer/messages" className="flex min-w-0 flex-col items-center justify-center gap-0.5 rounded-xl py-1.5 text-center active:bg-gray-50 transition-colors">
+          <Link to="/customer/messages" className="flex min-w-0 flex-col items-center justify-center gap-0.5 rounded-xl py-1.5 text-center active:bg-[var(--muted)] transition-colors">
             <MessageCircle className="w-5 h-5 sm:w-6 sm:h-6 shrink-0 text-[var(--muted-foreground)]" />
             <span className="w-full truncate text-[10px] leading-tight sm:text-xs text-[var(--muted-foreground)]">Messages</span>
           </Link>
-          <Link to="/customer/account" className="flex min-w-0 flex-col items-center justify-center gap-0.5 rounded-xl py-1.5 text-center active:bg-gray-50 transition-colors">
+          <Link to="/customer/account" className="flex min-w-0 flex-col items-center justify-center gap-0.5 rounded-xl py-1.5 text-center active:bg-[var(--muted)] transition-colors">
             <User className="w-5 h-5 sm:w-6 sm:h-6 shrink-0 text-[var(--teal)]" />
             <span className="w-full truncate text-[10px] leading-tight sm:text-xs text-[var(--teal)] font-semibold">Account</span>
           </Link>

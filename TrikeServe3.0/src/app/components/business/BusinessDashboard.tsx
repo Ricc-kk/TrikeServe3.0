@@ -458,7 +458,7 @@ export default function BusinessDashboard() {
                   <p className="text-xs lg:text-sm text-[var(--muted-foreground)] mb-1">Rating</p>
                   <div className="flex items-center gap-2">
                     <h2 className="text-2xl lg:text-4xl font-bold text-[var(--ink)]">{stats.rating > 0 ? stats.rating.toFixed(1) : '—'}</h2>
-                    <Star className="w-5 h-5 lg:w-6 lg:h-6 text-yellow-500 fill-yellow-500" />
+                    <Star className="w-5 h-5 lg:w-6 lg:h-6 text-[var(--amber)] fill-[var(--amber)]" />
                   </div>
                   <p className="text-xs text-[var(--muted-foreground)] mt-1">{stats.ratingCount > 0 ? `${stats.ratingCount} rating${stats.ratingCount !== 1 ? 's' : ''}` : 'No ratings yet'}</p>
                 </div>
@@ -473,7 +473,7 @@ export default function BusinessDashboard() {
                     key={star}
                     className={`w-3 h-3 lg:w-4 lg:h-4 ${
                       stats.rating > 0 && star <= Math.round(stats.rating)
-                        ? 'text-yellow-500 fill-yellow-500'
+                        ? 'text-[var(--amber)] fill-[var(--amber)]'
                         : 'text-[var(--border)] fill-[var(--border)]'
                     }`}
                   />
@@ -496,7 +496,7 @@ export default function BusinessDashboard() {
               </div>
               {popularMenu.length === 0 ? (
                 <Card className="p-12 border-2 border-dashed border-[var(--border)] text-center">
-                  <Package className="w-16 h-16 text-gray-300 mx-auto mb-4" />
+                  <Package className="w-16 h-16 text-[var(--border)] mx-auto mb-4" />
                   <p className="text-[var(--muted-foreground)] text-sm mb-2">No menu items yet</p>
                   <p className="text-[var(--muted-foreground)] text-xs mb-4">Add items to your menu to start selling</p>
                   <Link to="/business/menu">
@@ -537,7 +537,7 @@ export default function BusinessDashboard() {
               <Card className="p-5 lg:p-6 border-2 border-[var(--border)] bg-white">
                 {dailySales.length === 0 ? (
                   <div className="text-center py-12">
-                    <BarChart3 className="w-16 h-16 text-gray-300 mx-auto mb-4" />
+                    <BarChart3 className="w-16 h-16 text-[var(--border)] mx-auto mb-4" />
                     <p className="text-[var(--muted-foreground)] text-sm">No sales data yet</p>
                     <p className="text-[var(--muted-foreground)] text-xs mt-1">Start receiving orders to see your sales chart</p>
                   </div>
@@ -635,7 +635,7 @@ export default function BusinessDashboard() {
             <Card className="p-5 lg:p-6 border-2 border-[var(--border)] bg-white">
               {incomeBreakdown.length === 0 ? (
                 <div className="text-center py-12">
-                  <DollarSign className="w-16 h-16 text-gray-300 mx-auto mb-4" />
+                  <DollarSign className="w-16 h-16 text-[var(--border)] mx-auto mb-4" />
                   <p className="text-[var(--muted-foreground)] text-sm">No income data yet</p>
                   <p className="text-[var(--muted-foreground)] text-xs mt-1">Income breakdown will appear when you receive orders</p>
                 </div>

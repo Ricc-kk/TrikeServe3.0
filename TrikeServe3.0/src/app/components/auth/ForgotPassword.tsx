@@ -168,13 +168,13 @@ export default function ForgotPassword() {
               </div>
 
               {error && (
-                <div className="p-3 bg-red-50 border-2 border-red-200 rounded-lg">
-                  <p className="text-sm text-red-800">{error}</p>
+                <div className="p-3 bg-[var(--error-soft)] border-2 border-[var(--error-soft)] rounded-lg">
+                  <p className="text-sm text-[var(--error)]">{error}</p>
                 </div>
               )}
 
-              <div className="p-3 bg-yellow-50 border-2 border-yellow-200 rounded-lg">
-                <p className="text-xs text-yellow-800">
+              <div className="p-3 bg-[var(--amber-soft)] border-2 border-[var(--amber-soft)] rounded-lg">
+                <p className="text-xs text-[var(--amber-dark)]">
                   <strong>⚠️ Important:</strong> The reset email may land in your <strong>spam/junk folder</strong>. If you don't see it within 2 minutes, check spam and mark it as "Not Spam".
                 </p>
               </div>
@@ -196,14 +196,14 @@ export default function ForgotPassword() {
           {/* Step 1.5: Confirm Email */}
           {step === "confirm" && (
             <div className="space-y-6">
-              <div className="p-4 bg-blue-50 border-2 border-blue-200 rounded-lg">
-                <p className="text-sm text-blue-800 mb-1">We'll send a password reset link to:</p>
-                <p className="text-base font-bold text-blue-900">{confirmEmail}</p>
+              <div className="p-4 bg-[var(--info-soft)] border-2 border-[var(--info-soft)] rounded-lg">
+                <p className="text-sm text-[var(--info)] mb-1">We'll send a password reset link to:</p>
+                <p className="text-base font-bold text-[var(--info)]">{confirmEmail}</p>
               </div>
 
               {error && (
-                <div className="p-3 bg-red-50 border-2 border-red-200 rounded-lg">
-                  <p className="text-sm text-red-800">{error}</p>
+                <div className="p-3 bg-[var(--error-soft)] border-2 border-[var(--error-soft)] rounded-lg">
+                  <p className="text-sm text-[var(--error)]">{error}</p>
                 </div>
               )}
 
@@ -233,8 +233,8 @@ export default function ForgotPassword() {
           {step === "sent" && (
             <div className="space-y-6">
               <div className="text-center">
-                <div className="w-20 h-20 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-4">
-                  <CheckCircle className="w-10 h-10 text-green-600" />
+                <div className="w-20 h-20 bg-[var(--success-soft)] rounded-full flex items-center justify-center mx-auto mb-4">
+                  <CheckCircle className="w-10 h-10 text-[var(--success)]" />
                 </div>
                 <h3 className="text-2xl font-bold text-[var(--ink)] mb-2">Email Sent!</h3>
                 <p className="text-[var(--muted-foreground)] text-sm mb-2">
@@ -245,14 +245,14 @@ export default function ForgotPassword() {
                 </p>
               </div>
 
-              <div className="p-4 bg-yellow-50 border-2 border-yellow-200 rounded-lg">
-                <p className="text-sm text-yellow-800">
+              <div className="p-4 bg-[var(--amber-soft)] border-2 border-[var(--amber-soft)] rounded-lg">
+                <p className="text-sm text-[var(--amber-dark)]">
                   <strong>⚠️ Check Spam/Junk Folder:</strong> Gmail and other providers may flag this email as spam. Look in your <strong>Spam</strong> or <strong>Junk</strong> folder and mark it as "Not Spam" so future emails arrive in your inbox.
                 </p>
               </div>
 
-              <div className="p-3 bg-blue-50 border-2 border-blue-200 rounded-lg">
-                <p className="text-xs text-blue-800">
+              <div className="p-3 bg-[var(--info-soft)] border-2 border-[var(--info-soft)] rounded-lg">
+                <p className="text-xs text-[var(--info)]">
                   <strong>📱 Mobile user?</strong> The reset link will open in your browser. After setting your new password, open the TrikeServe app to log in.
                 </p>
               </div>

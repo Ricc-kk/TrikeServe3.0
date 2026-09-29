@@ -170,9 +170,9 @@ export default function PassengerMessaging({
         <div className="flex-1 overflow-y-auto p-4 space-y-3 bg-[var(--muted)]">
           {messages.length === 0 ? (
             <div className="text-center py-12">
-              <MessageCircle className="w-12 h-12 text-gray-300 mx-auto mb-3" />
-              <p className="text-gray-500 text-sm">No messages yet</p>
-              <p className="text-gray-400 text-xs mt-1">Start the conversation!</p>
+              <MessageCircle className="w-12 h-12 text-[var(--border)] mx-auto mb-3" />
+              <p className="text-[var(--muted-foreground)] text-sm">No messages yet</p>
+              <p className="text-[var(--muted-foreground)] text-xs mt-1">Start the conversation!</p>
             </div>
           ) : (
             messages.map((msg) => (
@@ -184,12 +184,12 @@ export default function PassengerMessaging({
                   className={`max-w-[75%] rounded-2xl px-4 py-2 ${
                     msg.senderType === 'driver' 
                       ? 'bg-[var(--primary)] text-white' 
-                      : 'bg-white border border-gray-200'
+                      : 'bg-white border border-[var(--border)]'
                   }`}
                 >
                   <p className="text-sm break-words">{msg.message}</p>
                   <p className={`text-[10px] mt-1 ${
-                    msg.senderType === 'driver' ? 'text-white/70' : 'text-gray-400'
+                    msg.senderType === 'driver' ? 'text-white/70' : 'text-[var(--muted-foreground)]'
                   }`}>
                     {formatTime(msg.timestamp)}
                   </p>
@@ -201,7 +201,7 @@ export default function PassengerMessaging({
         </div>
 
         {/* Input */}
-        <div className="p-4 bg-white border-t border-gray-200">
+        <div className="p-4 bg-white border-t border-[var(--border)]">
           <div className="flex gap-2">
             <input
               type="text"
@@ -209,7 +209,7 @@ export default function PassengerMessaging({
               onChange={(e) => setNewMessage(e.target.value)}
               onKeyPress={handleKeyPress}
               placeholder="Type a message..."
-              className="flex-1 px-4 py-3 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-[var(--primary)] focus:border-transparent"
+              className="flex-1 px-4 py-3 border border-[var(--border)] rounded-xl focus:outline-none focus:ring-2 focus:ring-[var(--primary)] focus:border-transparent"
             />
             <Button
               onClick={sendMessage}

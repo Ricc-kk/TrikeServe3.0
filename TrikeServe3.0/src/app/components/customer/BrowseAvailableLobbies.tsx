@@ -208,7 +208,7 @@ export default function BrowseAvailableLobbies({
     return (
       <div className="fixed inset-0 bg-black/50 z-[2000] flex items-center justify-center p-4">
         <Card className="bg-white p-6 w-full max-w-md">
-          <h3 className="text-lg font-bold text-red-600 mb-2">Error</h3>
+          <h3 className="text-lg font-bold text-[var(--error)] mb-2">Error</h3>
           <p className="text-sm text-[var(--muted-foreground)] mb-6">{error}</p>
           <Button onClick={onClose} className="w-full">
             Close
@@ -298,7 +298,7 @@ export default function BrowseAvailableLobbies({
                           {passengers.length}/{lobby.max_seats}
                         </span>
                         {availableSeats > 0 && (
-                          <Badge variant="outline" className="border-green-500 text-green-700 ml-auto">
+                          <Badge variant="outline" className="border-[var(--success)] text-[var(--success)] ml-auto">
                             {availableSeats} seats
                           </Badge>
                         )}

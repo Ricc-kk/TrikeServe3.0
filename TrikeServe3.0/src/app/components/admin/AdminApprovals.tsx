@@ -225,10 +225,10 @@ export default function AdminApprovals() {
           </div>
 
           {loadError && (
-            <Card className="p-4 mb-6 border-2 border-amber-200 bg-amber-50">
+            <Card className="p-4 mb-6 border-2 border-[var(--amber-soft)] bg-[var(--amber-soft)]">
               <div className="flex items-start gap-3">
-                <AlertTriangle className="w-5 h-5 text-amber-600 flex-shrink-0 mt-0.5" />
-                <p className="text-sm text-amber-800">{loadError}</p>
+                <AlertTriangle className="w-5 h-5 text-[var(--amber-dark)] flex-shrink-0 mt-0.5" />
+                <p className="text-sm text-[var(--amber-dark)]">{loadError}</p>
               </div>
             </Card>
           )}
@@ -300,7 +300,7 @@ export default function AdminApprovals() {
           <h2 className="text-xl lg:text-2xl font-bold text-[var(--ink)] mb-4">Reviewed</h2>
           {history.length === 0 ? (
             <Card className="p-8 border-2 border-dashed border-[var(--border)] text-center">
-              <Clock className="w-10 h-10 text-gray-300 mx-auto mb-3" />
+              <Clock className="w-10 h-10 text-[var(--border)] mx-auto mb-3" />
               <p className="text-[var(--muted-foreground)] text-sm">No reviewed requests yet</p>
             </Card>
           ) : (

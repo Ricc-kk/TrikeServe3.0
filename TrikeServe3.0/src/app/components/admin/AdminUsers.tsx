@@ -415,7 +415,7 @@ export default function AdminUsers() {
           <Card className="border-2 border-[var(--border)] bg-white overflow-hidden">
             {filteredUsers.length === 0 ? (
               <div className="p-12 border-2 border-dashed border-[var(--border)] text-center">
-                <Users className="w-16 h-16 text-gray-300 mx-auto mb-4" />
+                <Users className="w-16 h-16 text-[var(--border)] mx-auto mb-4" />
                 <p className="text-[var(--muted-foreground)] text-sm">No users found</p>
               </div>
             ) : (

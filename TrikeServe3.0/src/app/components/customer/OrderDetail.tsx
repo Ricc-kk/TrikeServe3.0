@@ -424,7 +424,7 @@ export default function OrderDetail() {
           <Card className="border-2 border-[var(--info)] overflow-hidden">
             <div className="bg-gradient-to-r from-[var(--info)] to-[var(--info)] px-4 py-2.5 flex items-center justify-between">
               <div className="flex items-center gap-2">
-                <div className="w-2 h-2 bg-green-400 rounded-full animate-pulse" />
+                <div className="w-2 h-2 bg-[var(--success)] rounded-full animate-pulse" />
                 <span className="text-sm font-bold text-white">Live Delivery Tracking</span>
               </div>
               <div className="flex items-center gap-1">
@@ -477,7 +477,7 @@ export default function OrderDetail() {
               </p>
               <div className="flex items-center gap-2">
                 {etaToCustomer && (
-                  <span className="text-[10px] font-bold text-[var(--info)] bg-blue-50 px-2 py-0.5 rounded-full">🏁 {etaToCustomer}</span>
+                  <span className="text-[10px] font-bold text-[var(--info)] bg-[var(--info-soft)] px-2 py-0.5 rounded-full">🏁 {etaToCustomer}</span>
                 )}
                 <div className="text-[10px] text-[var(--muted-foreground)]">● Live</div>
               </div>
@@ -608,7 +608,7 @@ export default function OrderDetail() {
           <Card className="p-4 md:p-5 border-2 border-[var(--border)]">
             {ratingSubmitted ? (
               <div className="text-center py-2">
-                <div className="w-14 h-14 mx-auto mb-3 rounded-full bg-green-100 flex items-center justify-center text-2xl">🙏</div>
+                <div className="w-14 h-14 mx-auto mb-3 rounded-full bg-[var(--success-soft)] flex items-center justify-center text-2xl">🙏</div>
                 <h3 className="text-lg font-bold text-[var(--ink)] mb-1">Thank you!</h3>
                 <p className="text-sm text-[var(--muted-foreground)]">Your rating for {order.restaurantName} has been saved.</p>
               </div>
@@ -626,7 +626,7 @@ export default function OrderDetail() {
                     </button>
                   ))}
                 </div>
-                {ratingError && <p className="text-xs text-red-600 text-center mb-2">{ratingError}</p>}
+                {ratingError && <p className="text-xs text-[var(--error)] text-center mb-2">{ratingError}</p>}
                 <Button
                   onClick={async () => {
                     if (!rating || !user?.id || !order.businessId) return;

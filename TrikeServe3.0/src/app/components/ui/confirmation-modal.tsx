@@ -24,22 +24,22 @@ const variantConfig: Record<ModalVariant, {
 }> = {
   danger: {
     icon: XCircle,
-    iconBg: "bg-red-100",
-    iconColor: "text-red-600",
+    iconBg: "bg-[var(--error-soft)]",
+    iconColor: "text-[var(--error)]",
     confirmBg: "bg-[var(--error)]",
     confirmHover: "hover:bg-[var(--error)]",
   },
   warning: {
     icon: AlertTriangle,
-    iconBg: "bg-amber-100",
-    iconColor: "text-amber-600",
+    iconBg: "bg-[var(--amber-soft)]",
+    iconColor: "text-[var(--amber-dark)]",
     confirmBg: "bg-[var(--amber)]",
     confirmHover: "hover:bg-[var(--amber)]",
   },
   success: {
     icon: CheckCircle,
-    iconBg: "bg-green-100",
-    iconColor: "text-green-600",
+    iconBg: "bg-[var(--success-soft)]",
+    iconColor: "text-[var(--success)]",
     confirmBg: "bg-[var(--success)]",
     confirmHover: "hover:bg-[var(--success)]",
   },

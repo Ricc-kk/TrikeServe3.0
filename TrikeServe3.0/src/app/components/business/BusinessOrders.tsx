@@ -937,7 +937,7 @@ export default function BusinessOrders() {
                     <span className="text-lg md:text-xl font-bold text-[var(--primary)]">₱{selectedOrder.total.toFixed(2)}</span>
                   </div>
                   <div className="mt-2 md:mt-3">
-                    <Badge className={selectedOrder.paymentMethod === 'gcash' ? 'bg-[var(--success)] text-white text-xs md:text-sm' : 'border-orange-500 text-orange-500 text-xs md:text-sm'} variant={selectedOrder.paymentMethod === 'gcash' ? 'default' : 'outline'}>
+                    <Badge className={selectedOrder.paymentMethod === 'gcash' ? 'bg-[var(--success)] text-white text-xs md:text-sm' : 'border-[var(--amber)] text-[var(--amber)] text-xs md:text-sm'} variant={selectedOrder.paymentMethod === 'gcash' ? 'default' : 'outline'}>
                       {selectedOrder.paymentMethod === 'gcash' ? (
                         <>
                           <CheckCircle className="w-3 h-3 mr-1" />
@@ -1008,7 +1008,7 @@ export default function BusinessOrders() {
                       <div className="rounded-xl overflow-hidden border-2 border-[var(--info)]">
                         <div className="bg-gradient-to-r from-[var(--info)] to-[var(--info)] px-3 py-2 flex items-center justify-between">
                           <div className="flex items-center gap-2">
-                            <div className="w-2 h-2 bg-green-400 rounded-full animate-pulse" />
+                            <div className="w-2 h-2 bg-[var(--success)] rounded-full animate-pulse" />
                             <span className="text-xs font-bold text-white">Live Tracking</span>
                           </div>
                           <Navigation className="w-3.5 h-3.5 text-white/80" />
@@ -1058,7 +1058,7 @@ export default function BusinessOrders() {
                           </span>
                           <div className="flex items-center gap-2">
                             {etaToCustomer && (
-                              <span className="text-[10px] font-bold text-[var(--info)] bg-blue-50 px-2 py-0.5 rounded-full">🏁 {etaToCustomer}</span>
+                              <span className="text-[10px] font-bold text-[var(--info)] bg-[var(--info-soft)] px-2 py-0.5 rounded-full">🏁 {etaToCustomer}</span>
                             )}
                             {selectedOrder?.customerName && (
                               <span className="text-[10px] text-[var(--muted-foreground)]">{selectedOrder.customerName}</span>
@@ -1134,7 +1134,7 @@ export default function BusinessOrders() {
         <div className="fixed inset-0 bg-black/60 z-[3000] flex items-center justify-center">
           <div className="bg-white rounded-3xl p-6 mx-6 max-w-sm w-full text-center shadow-2xl animate-in fade-in zoom-in duration-300">
             <div className={`w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4 ${
-              confirmAction === 'accept' ? 'bg-green-100' : 'bg-red-100'
+              confirmAction === 'accept' ? 'bg-[var(--success-soft)]' : 'bg-[var(--error-soft)]'
             }`}>
               <span className="text-3xl">{confirmAction === 'accept' ? '✅' : '❌'}</span>
             </div>
@@ -1148,7 +1148,7 @@ export default function BusinessOrders() {
               <Button
                 onClick={() => setConfirmAction(null)}
                 variant="outline"
-                className="flex-1 border-gray-300 text-gray-600 uppercase font-bold"
+                className="flex-1 border-[var(--border)] text-[var(--muted-foreground)] uppercase font-bold"
               >
                 Cancel
               </Button>
@@ -1189,7 +1189,7 @@ export default function BusinessOrders() {
               <Button
                 onClick={() => setStatusConfirm(null)}
                 variant="outline"
-                className="flex-1 border-gray-300 text-gray-600 uppercase font-bold"
+                className="flex-1 border-[var(--border)] text-[var(--muted-foreground)] uppercase font-bold"
               >
                 Cancel
               </Button>

@@ -19,8 +19,8 @@ export default function MoreOptions() {
       </div>
 
       <div className="p-4 space-y-2">
-        <button className="w-full flex items-center gap-3 p-4 border border-gray-200 rounded-lg hover:border-[var(--primary)] transition-colors bg-white">
-          <div className="w-10 h-10 rounded-full bg-gray-100 flex items-center justify-center">
+        <button className="w-full flex items-center gap-3 p-4 border border-[var(--border)] rounded-lg hover:border-[var(--primary)] transition-colors bg-white">
+          <div className="w-10 h-10 rounded-full bg-[var(--muted)] flex items-center justify-center">
             <Settings className="w-5 h-5 text-[var(--muted-foreground)]" />
           </div>
           <div className="flex-1 text-left">
@@ -29,8 +29,8 @@ export default function MoreOptions() {
           </div>
         </button>
 
-        <button className="w-full flex items-center gap-3 p-4 border border-gray-200 rounded-lg hover:border-[var(--primary)] transition-colors bg-white">
-          <div className="w-10 h-10 rounded-full bg-gray-100 flex items-center justify-center">
+        <button className="w-full flex items-center gap-3 p-4 border border-[var(--border)] rounded-lg hover:border-[var(--primary)] transition-colors bg-white">
+          <div className="w-10 h-10 rounded-full bg-[var(--muted)] flex items-center justify-center">
             <Bell className="w-5 h-5 text-[var(--muted-foreground)]" />
           </div>
           <div className="flex-1 text-left">
@@ -39,8 +39,8 @@ export default function MoreOptions() {
           </div>
         </button>
 
-        <button className="w-full flex items-center gap-3 p-4 border border-gray-200 rounded-lg hover:border-[var(--primary)] transition-colors bg-white">
-          <div className="w-10 h-10 rounded-full bg-gray-100 flex items-center justify-center">
+        <button className="w-full flex items-center gap-3 p-4 border border-[var(--border)] rounded-lg hover:border-[var(--primary)] transition-colors bg-white">
+          <div className="w-10 h-10 rounded-full bg-[var(--muted)] flex items-center justify-center">
             <Star className="w-5 h-5 text-[var(--muted-foreground)]" />
           </div>
           <div className="flex-1 text-left">
@@ -49,8 +49,8 @@ export default function MoreOptions() {
           </div>
         </button>
 
-        <button className="w-full flex items-center gap-3 p-4 border border-gray-200 rounded-lg hover:border-[var(--primary)] transition-colors bg-white">
-          <div className="w-10 h-10 rounded-full bg-gray-100 flex items-center justify-center">
+        <button className="w-full flex items-center gap-3 p-4 border border-[var(--border)] rounded-lg hover:border-[var(--primary)] transition-colors bg-white">
+          <div className="w-10 h-10 rounded-full bg-[var(--muted)] flex items-center justify-center">
             <DollarSign className="w-5 h-5 text-[var(--muted-foreground)]" />
           </div>
           <div className="flex-1 text-left">
@@ -59,8 +59,8 @@ export default function MoreOptions() {
           </div>
         </button>
 
-        <button className="w-full flex items-center gap-3 p-4 border border-gray-200 rounded-lg hover:border-[var(--primary)] transition-colors bg-white">
-          <div className="w-10 h-10 rounded-full bg-gray-100 flex items-center justify-center">
+        <button className="w-full flex items-center gap-3 p-4 border border-[var(--border)] rounded-lg hover:border-[var(--primary)] transition-colors bg-white">
+          <div className="w-10 h-10 rounded-full bg-[var(--muted)] flex items-center justify-center">
             <HelpCircle className="w-5 h-5 text-[var(--muted-foreground)]" />
           </div>
           <div className="flex-1 text-left">
@@ -69,8 +69,8 @@ export default function MoreOptions() {
           </div>
         </button>
 
-        <button className="w-full flex items-center gap-3 p-4 border border-gray-200 rounded-lg hover:border-[var(--primary)] transition-colors bg-white">
-          <div className="w-10 h-10 rounded-full bg-gray-100 flex items-center justify-center">
+        <button className="w-full flex items-center gap-3 p-4 border border-[var(--border)] rounded-lg hover:border-[var(--primary)] transition-colors bg-white">
+          <div className="w-10 h-10 rounded-full bg-[var(--muted)] flex items-center justify-center">
             <FileText className="w-5 h-5 text-[var(--muted-foreground)]" />
           </div>
           <div className="flex-1 text-left">

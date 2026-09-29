@@ -190,8 +190,8 @@ export default function VerifyEmail() {
           {/* Loading State */}
           {status === "loading" && (
             <div className="text-center py-12">
-              <div className="w-20 h-20 bg-blue-100 rounded-full flex items-center justify-center mx-auto mb-4">
-                <Loader2 className="w-10 h-10 text-blue-600 animate-spin" />
+              <div className="w-20 h-20 bg-[var(--info-soft)] rounded-full flex items-center justify-center mx-auto mb-4">
+                <Loader2 className="w-10 h-10 text-[var(--info)] animate-spin" />
               </div>
               <p className="text-[var(--muted-foreground)]">Please wait while we verify your email...</p>
             </div>
@@ -201,8 +201,8 @@ export default function VerifyEmail() {
           {status === "success" && (
             <div className="space-y-6">
               <div className="text-center">
-                <div className="w-20 h-20 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-4">
-                  <CheckCircle className="w-10 h-10 text-green-600" />
+                <div className="w-20 h-20 bg-[var(--success-soft)] rounded-full flex items-center justify-center mx-auto mb-4">
+                  <CheckCircle className="w-10 h-10 text-[var(--success)]" />
                 </div>
                 <h3 className="text-2xl font-bold text-[var(--ink)] mb-2">Welcome Aboard!</h3>
                 <p className="text-[var(--muted-foreground)] text-sm">
@@ -212,12 +212,12 @@ export default function VerifyEmail() {
 
               {/* Mobile hint */}
               {isMobileDevice() && (
-                <div className="p-4 bg-blue-50 border-2 border-blue-200 rounded-lg">
+                <div className="p-4 bg-[var(--info-soft)] border-2 border-[var(--info-soft)] rounded-lg">
                   <div className="flex items-start gap-3">
-                    <Smartphone className="w-5 h-5 text-blue-600 mt-0.5 flex-shrink-0" />
+                    <Smartphone className="w-5 h-5 text-[var(--info)] mt-0.5 flex-shrink-0" />
                     <div>
-                      <p className="text-sm font-semibold text-blue-800">Using the mobile app?</p>
-                      <p className="text-xs text-blue-600 mt-1">
+                      <p className="text-sm font-semibold text-[var(--info)]">Using the mobile app?</p>
+                      <p className="text-xs text-[var(--info)] mt-1">
                         Open the TrikeServe app and log in with your email and password.
                       </p>
                     </div>
@@ -237,8 +237,8 @@ export default function VerifyEmail() {
           {status === "error" && (
             <div className="space-y-6">
               <div className="text-center">
-                <div className="w-20 h-20 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-4">
-                  <Mail className="w-10 h-10 text-red-600" />
+                <div className="w-20 h-20 bg-[var(--error-soft)] rounded-full flex items-center justify-center mx-auto mb-4">
+                  <Mail className="w-10 h-10 text-[var(--error)]" />
                 </div>
               </div>
 
@@ -265,8 +265,8 @@ export default function VerifyEmail() {
                 </div>
 
                 {resendSuccess && (
-                  <div className="p-3 bg-green-50 border-2 border-green-200 rounded-lg">
-                    <p className="text-sm text-green-800">✅ Verification email sent! Check your inbox.</p>
+                  <div className="p-3 bg-[var(--success-soft)] border-2 border-[var(--success-soft)] rounded-lg">
+                    <p className="text-sm text-[var(--success)]">✅ Verification email sent! Check your inbox.</p>
                   </div>
                 )}
 
@@ -298,8 +298,8 @@ export default function VerifyEmail() {
           {status === "waiting" && (
             <div className="space-y-6">
               <div className="text-center">
-                <div className="w-20 h-20 bg-blue-100 rounded-full flex items-center justify-center mx-auto mb-4">
-                  <Mail className="w-10 h-10 text-blue-600" />
+                <div className="w-20 h-20 bg-[var(--info-soft)] rounded-full flex items-center justify-center mx-auto mb-4">
+                  <Mail className="w-10 h-10 text-[var(--info)]" />
                 </div>
                 <p className="text-[var(--muted-foreground)] text-sm mb-2">
                   We've sent a verification link to your email address. Click the link to activate your account.
@@ -309,8 +309,8 @@ export default function VerifyEmail() {
                 </p>
               </div>
 
-              <div className="p-4 bg-yellow-50 border-2 border-yellow-200 rounded-lg">
-                <p className="text-sm text-yellow-800">
+              <div className="p-4 bg-[var(--amber-soft)] border-2 border-[var(--amber-soft)] rounded-lg">
+                <p className="text-sm text-[var(--amber-dark)]">
                   <strong>⚠️ Check Spam/Junk Folder:</strong> Gmail and other providers may flag this email as spam. Look in your <strong>Spam</strong> or <strong>Junk</strong> folder and mark it as "Not Spam" so future emails arrive in your inbox.
                 </p>
               </div>
@@ -338,8 +338,8 @@ export default function VerifyEmail() {
                 </div>
 
                 {resendSuccess && (
-                  <div className="p-3 bg-green-50 border-2 border-green-200 rounded-lg">
-                    <p className="text-sm text-green-800">✅ Verification email resent! Check your inbox.</p>
+                  <div className="p-3 bg-[var(--success-soft)] border-2 border-[var(--success-soft)] rounded-lg">
+                    <p className="text-sm text-[var(--success)]">✅ Verification email resent! Check your inbox.</p>
                   </div>
                 )}
 

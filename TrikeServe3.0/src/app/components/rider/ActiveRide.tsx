@@ -385,13 +385,13 @@ export default function ActiveRide() {
       {showRideComplete && (
         <div className="fixed inset-0 bg-black/60 z-[2000] flex items-center justify-center">
           <div className="bg-white rounded-3xl p-8 mx-6 text-center shadow-2xl animate-in fade-in zoom-in duration-300">
-            <div className="w-20 h-20 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-4">
-              <CheckCircle className="w-12 h-12 text-green-600" />
+            <div className="w-20 h-20 bg-[var(--success-soft)] rounded-full flex items-center justify-center mx-auto mb-4">
+              <CheckCircle className="w-12 h-12 text-[var(--success)]" />
             </div>
-            <h2 className="text-2xl font-extrabold text-gray-900 mb-2">Ride Complete!</h2>
-            <p className="text-gray-500 text-sm">Thank you for completing this trip.</p>
-            <div className="mt-4 px-4 py-2 bg-green-50 rounded-xl">
-              <p className="text-green-700 font-bold text-lg">Great job! 🎉</p>
+            <h2 className="text-2xl font-extrabold text-[var(--ink)] mb-2">Ride Complete!</h2>
+            <p className="text-[var(--muted-foreground)] text-sm">Thank you for completing this trip.</p>
+            <div className="mt-4 px-4 py-2 bg-[var(--success-soft)] rounded-xl">
+              <p className="text-[var(--success)] font-bold text-lg">Great job! 🎉</p>
             </div>
           </div>
         </div>
@@ -441,12 +441,12 @@ export default function ActiveRide() {
 
           </GoogleMap>
         ) : (
-          <div className="h-full flex flex-col items-center justify-center bg-gray-100 space-y-4 p-6">
+          <div className="h-full flex flex-col items-center justify-center bg-[var(--muted)] space-y-4 p-6">
             <Navigation className="w-12 h-12 text-[var(--primary)] animate-pulse" />
-            <p className="text-gray-500 font-bold text-center">Loading Map...</p>
+            <p className="text-[var(--muted-foreground)] font-bold text-center">Loading Map...</p>
             {!driverLocation && (
               <div className="text-center">
-                <p className="text-sm text-gray-400 mb-3">Waiting for your device location...</p>
+                <p className="text-sm text-[var(--muted-foreground)] mb-3">Waiting for your device location...</p>
                 <Button onClick={() => {
                   navigator.geolocation.getCurrentPosition(
                     (pos) => reportDriverLocation({ lat: pos.coords.latitude, lng: pos.coords.longitude }, { force: true }),
@@ -465,9 +465,9 @@ export default function ActiveRide() {
             ? { lat: rideData.pickupLat, lng: rideData.pickupLng }
             : { lat: rideData.dropoffLat, lng: rideData.dropoffLng };
           if (dest && dest.lat) window.open(`https://www.google.com/maps/dir/?api=1&origin=${driverLocation?.lat},${driverLocation?.lng}&destination=${dest.lat},${dest.lng}&travelmode=driving`, '_blank');
-        }} className="absolute top-3 right-3 bg-white text-black shadow-md hover:bg-gray-100"><Navigation className="w-4 h-4 mr-2" />Navigate</Button>
+        }} className="absolute top-3 right-3 bg-white text-black shadow-md hover:bg-[var(--muted)]"><Navigation className="w-4 h-4 mr-2" />Navigate</Button>
         {/* Route phase indicator banner */}
-        <div className={`absolute top-3 left-3 px-3 py-1.5 rounded-full text-white text-xs font-bold shadow-md flex items-center gap-1.5 ${isHeadingToPickup ? 'bg-green-500' : 'bg-[var(--primary)]'}`}>
+        <div className={`absolute top-3 left-3 px-3 py-1.5 rounded-full text-white text-xs font-bold shadow-md flex items-center gap-1.5 ${isHeadingToPickup ? 'bg-[var(--success)]' : 'bg-[var(--primary)]'}`}>
           <div className={`w-2 h-2 rounded-full ${isHeadingToPickup ? 'bg-white animate-pulse' : 'bg-white animate-pulse'}`} />
           {isHeadingToPickup ? 'Heading to Pickup' : 'Heading to Drop-off'}
         </div>
@@ -476,7 +476,7 @@ export default function ActiveRide() {
       <LocationBanner problem={locationProblem} className="mx-3 mt-3" />
 
       <div className={isMinimized ? 'fixed bottom-0 left-0 right-0 bg-white rounded-t-3xl shadow-[0_-10px_40px_rgba(0,0,0,0.1)] p-4 h-[40vh] overflow-y-auto z-[1001]' : 'p-4 space-y-4'}>
-        <Card className="p-4 border-2 border-gray-100 shadow-sm">
+        <Card className="p-4 border-2 border-[var(--muted)] shadow-sm">
           <div className="flex gap-4 mb-3">
             <div className="text-4xl">
               {rideData.customerPhoto === 'shared' ? (
@@ -488,29 +488,29 @@ export default function ActiveRide() {
             <div className="flex-1">
               <h2 className="font-bold text-lg">{resolvedName || rideData.customerName}</h2>
               {rideData.passengerDetails && rideData.passengerDetails.length > 1 && (
-                <p className="text-xs text-gray-500 mt-0.5">
+                <p className="text-xs text-[var(--muted-foreground)] mt-0.5">
                   {rideData.passengerDetails.map((p: any) => p.name || 'Passenger').join(', ')}
                 </p>
               )}
               <div className="flex gap-2 mt-1">
                 <Badge className="bg-[var(--primary)]">₱{rideData.amount}</Badge>
-                <Badge variant="outline" className="text-gray-500">{rideData.payment === 'COD' ? 'Cash' : 'Prepaid'}</Badge>
+                <Badge variant="outline" className="text-[var(--muted-foreground)]">{rideData.payment === 'COD' ? 'Cash' : 'Prepaid'}</Badge>
               </div>
             </div>
           </div>
           <div className="space-y-3 mt-4">
-            <div className={`flex gap-3 p-2 rounded-lg ${isHeadingToPickup ? 'bg-green-50 border border-green-200' : ''}`}>
-              <div className={`w-2 h-2 rounded-full mt-1.5 ${isHeadingToPickup ? 'bg-green-500' : 'bg-gray-400'}`} />
+            <div className={`flex gap-3 p-2 rounded-lg ${isHeadingToPickup ? 'bg-[var(--success-soft)] border border-[var(--success-soft)]' : ''}`}>
+              <div className={`w-2 h-2 rounded-full mt-1.5 ${isHeadingToPickup ? 'bg-[var(--success)]' : 'bg-[var(--muted-foreground)]'}`} />
               <div className="flex-1 text-sm">
-                <p className="text-gray-500 text-xs">Pickup</p>
+                <p className="text-[var(--muted-foreground)] text-xs">Pickup</p>
                 <p className="font-semibold">{rideData.pickup}</p>
               </div>
-              {isHeadingToPickup && <span className="text-[10px] bg-green-500 text-white px-2 py-0.5 rounded-full font-bold self-center">HERE</span>}
+              {isHeadingToPickup && <span className="text-[10px] bg-[var(--success)] text-white px-2 py-0.5 rounded-full font-bold self-center">HERE</span>}
             </div>
-            <div className={`flex gap-3 p-2 rounded-lg ${!isHeadingToPickup && ['pickup', 'drop-off'].includes(rideData.status) ? 'bg-red-50 border border-red-200' : ''}`}>
-              <div className={`w-2 h-2 rounded-full mt-1.5 ${!isHeadingToPickup && ['pickup', 'drop-off'].includes(rideData.status) ? 'bg-[var(--primary)]' : 'bg-gray-400'}`} />
+            <div className={`flex gap-3 p-2 rounded-lg ${!isHeadingToPickup && ['pickup', 'drop-off'].includes(rideData.status) ? 'bg-[var(--error-soft)] border border-[var(--error-soft)]' : ''}`}>
+              <div className={`w-2 h-2 rounded-full mt-1.5 ${!isHeadingToPickup && ['pickup', 'drop-off'].includes(rideData.status) ? 'bg-[var(--primary)]' : 'bg-[var(--muted-foreground)]'}`} />
               <div className="flex-1 text-sm">
-                <p className="text-gray-500 text-xs">Drop-off</p>
+                <p className="text-[var(--muted-foreground)] text-xs">Drop-off</p>
                 <p className="font-semibold">{rideData.dropoff}</p>
               </div>
               {!isHeadingToPickup && ['pickup', 'drop-off'].includes(rideData.status) && <span className="text-[10px] bg-[var(--primary)] text-white px-2 py-0.5 rounded-full font-bold self-center">HERE</span>}
@@ -518,11 +518,11 @@ export default function ActiveRide() {
           </div>
         </Card>
         <div className="grid gap-2">
-          {rideData.status === 'on-the-way' && <Button onClick={() => updateStatus('arrived')} className="bg-[var(--primary)] py-7 text-lg font-bold uppercase shadow-lg shadow-rose-200">I've Arrived</Button>}
-          {rideData.status === 'arrived' && <Button onClick={() => updateStatus('pickup')} className="bg-[var(--primary)] py-7 text-lg font-bold uppercase shadow-lg shadow-rose-200">Confirm Pickup</Button>}
-          {rideData.status === 'pickup' && <Button onClick={() => updateStatus('drop-off')} className="bg-[var(--primary)] py-7 text-lg font-bold uppercase shadow-lg shadow-rose-200">Arrived at Drop-off</Button>}
-          {rideData.status === 'drop-off' && <Button onClick={() => updateStatus('payment')} className="bg-[var(--primary)] py-7 text-lg font-bold uppercase shadow-lg shadow-rose-200">Confirm Drop-off</Button>}
-          {rideData.status === 'payment' && <Button onClick={completeRide} className="bg-green-600 py-7 text-lg font-bold uppercase shadow-lg shadow-emerald-200">Complete Ride</Button>}
+          {rideData.status === 'on-the-way' && <Button onClick={() => updateStatus('arrived')} className="bg-[var(--primary)] py-7 text-lg font-bold uppercase shadow-lg shadow-[var(--error-soft)]">I've Arrived</Button>}
+          {rideData.status === 'arrived' && <Button onClick={() => updateStatus('pickup')} className="bg-[var(--primary)] py-7 text-lg font-bold uppercase shadow-lg shadow-[var(--error-soft)]">Confirm Pickup</Button>}
+          {rideData.status === 'pickup' && <Button onClick={() => updateStatus('drop-off')} className="bg-[var(--primary)] py-7 text-lg font-bold uppercase shadow-lg shadow-[var(--error-soft)]">Arrived at Drop-off</Button>}
+          {rideData.status === 'drop-off' && <Button onClick={() => updateStatus('payment')} className="bg-[var(--primary)] py-7 text-lg font-bold uppercase shadow-lg shadow-[var(--error-soft)]">Confirm Drop-off</Button>}
+          {rideData.status === 'payment' && <Button onClick={completeRide} className="bg-[var(--success)] py-7 text-lg font-bold uppercase shadow-lg shadow-[var(--success-soft)]">Complete Ride</Button>}
         </div>
       </div>
     </div>

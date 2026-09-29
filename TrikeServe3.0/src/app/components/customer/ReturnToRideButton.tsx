@@ -36,7 +36,7 @@ export default function ReturnToRideButton() {
   return (
     <button
       onClick={() => navigate("/rider/active-ride")}
-      className="fixed bottom-6 right-6 z-[999] flex items-center gap-2 px-5 py-3 bg-[var(--primary)] hover:bg-[var(--primary)] text-white font-bold text-sm rounded-2xl shadow-xl shadow-red-200 transition-all active:scale-95"
+      className="fixed bottom-6 right-6 z-[999] flex items-center gap-2 px-5 py-3 bg-[var(--primary)] hover:bg-[var(--primary)] text-white font-bold text-sm rounded-2xl shadow-xl shadow-[var(--error-soft)] transition-all active:scale-95"
     >
       <Navigation className="w-5 h-5" />
       Return to Ride

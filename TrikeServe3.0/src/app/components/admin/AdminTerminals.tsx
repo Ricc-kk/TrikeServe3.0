@@ -737,7 +737,7 @@ export default function AdminTerminals() {
               {isRiderAdmin && hasPendingChanges && (
                 <button
                   onClick={savePendingChanges}
-                  className="flex items-center gap-2 px-4 lg:px-5 py-2.5 bg-[var(--success)] hover:bg-[var(--success)] text-white font-bold text-sm uppercase tracking-wide rounded-xl transition-all active:scale-95 shadow-lg shadow-green-200 animate-pulse"
+                  className="flex items-center gap-2 px-4 lg:px-5 py-2.5 bg-[var(--success)] hover:bg-[var(--success)] text-white font-bold text-sm uppercase tracking-wide rounded-xl transition-all active:scale-95 shadow-lg shadow-[var(--success-soft)] animate-pulse"
                 >
                   <Save size={16} /> Save Changes ({Object.keys(pendingChanges).length})
                 </button>
@@ -745,7 +745,7 @@ export default function AdminTerminals() {
               {isSuperAdmin && (
                 <button
                   onClick={openCreate}
-                  className="flex items-center gap-2 px-4 lg:px-5 py-2.5 bg-[var(--primary)] hover:bg-[var(--primary)] text-white font-bold text-sm uppercase tracking-wide rounded-xl transition-all active:scale-95 shadow-lg shadow-red-200"
+                  className="flex items-center gap-2 px-4 lg:px-5 py-2.5 bg-[var(--primary)] hover:bg-[var(--primary)] text-white font-bold text-sm uppercase tracking-wide rounded-xl transition-all active:scale-95 shadow-lg shadow-[var(--error-soft)]"
                 >
                   <Plus size={16} /> New Terminal
                 </button>
@@ -758,20 +758,20 @@ export default function AdminTerminals() {
         <div className="p-5 lg:p-8">
           {/* Pending Changes Banner */}
           {isRiderAdmin && hasPendingChanges && (
-            <div className="mb-4 p-4 bg-amber-50 border-2 border-amber-200 rounded-xl">
+            <div className="mb-4 p-4 bg-[var(--amber-soft)] border-2 border-[var(--amber-soft)] rounded-xl">
               <div className="flex items-center justify-between">
                 <div>
-                  <p className="font-bold text-amber-800 text-sm">
+                  <p className="font-bold text-[var(--amber-dark)] text-sm">
                     ⚠️ {Object.keys(pendingChanges).length} pending change{Object.keys(pendingChanges).length > 1 ? 's' : ''}
                   </p>
-                  <p className="text-xs text-amber-600 mt-0.5">
+                  <p className="text-xs text-[var(--amber-dark)] mt-0.5">
                     Changes are not applied until you click "Save Changes"
                   </p>
                 </div>
                 <div className="flex items-center gap-2">
                   <button
                     onClick={() => setPendingChanges({})}
-                    className="text-xs font-semibold text-amber-600 hover:text-amber-800 underline"
+                    className="text-xs font-semibold text-[var(--amber-dark)] hover:text-[var(--amber-dark)] underline"
                   >
                     Discard All
                   </button>
@@ -831,13 +831,13 @@ export default function AdminTerminals() {
 
           {/* Rider Admin: scope notice */}
           {isRiderAdmin && (
-            <div className={`mb-4 p-4 rounded-xl border-2 ${assignedTerminalId ? 'bg-[var(--info-soft)] border-[var(--info-soft)]' : 'bg-amber-50 border-amber-200'}`}>
-              <p className={`font-bold text-sm ${assignedTerminalId ? 'text-[var(--info)]' : 'text-amber-800'}`}>
+            <div className={`mb-4 p-4 rounded-xl border-2 ${assignedTerminalId ? 'bg-[var(--info-soft)] border-[var(--info-soft)]' : 'bg-[var(--amber-soft)] border-[var(--amber-soft)]'}`}>
+              <p className={`font-bold text-sm ${assignedTerminalId ? 'text-[var(--info)]' : 'text-[var(--amber-dark)]'}`}>
                 {assignedTerminalId
                   ? `Assigned to ${assignedTerminalName || 'your terminal'}`
                   : 'No terminal assigned'}
               </p>
-              <p className={`text-xs mt-0.5 ${assignedTerminalId ? 'text-[var(--info)]/80' : 'text-amber-600'}`}>
+              <p className={`text-xs mt-0.5 ${assignedTerminalId ? 'text-[var(--info)]/80' : 'text-[var(--amber-dark)]'}`}>
                 {assignedTerminalId
                   ? 'You can only edit this terminal and manage its drivers. Changes are sent to the Super Admin for approval.'
                   : 'Ask the Super Admin to assign you to a terminal before you can manage drivers.'}
@@ -863,24 +863,24 @@ export default function AdminTerminals() {
                     <div
                       key={req.id}
                       className={`flex items-center justify-between gap-3 px-4 py-2.5 rounded-xl border-2 ${
-                        pending ? 'bg-amber-50 border-amber-200' : approved ? 'bg-green-50 border-green-200' : 'bg-red-50 border-red-200'
+                        pending ? 'bg-[var(--amber-soft)] border-[var(--amber-soft)]' : approved ? 'bg-[var(--success-soft)] border-[var(--success-soft)]' : 'bg-[var(--error-soft)] border-[var(--error-soft)]'
                       }`}
                     >
                       <div className="flex items-center gap-3 min-w-0">
-                        {pending ? <Clock size={15} className="text-amber-600 flex-shrink-0" />
-                          : approved ? <CheckCircle size={15} className="text-green-600 flex-shrink-0" />
-                          : <XCircle size={15} className="text-red-600 flex-shrink-0" />}
+                        {pending ? <Clock size={15} className="text-[var(--amber-dark)] flex-shrink-0" />
+                          : approved ? <CheckCircle size={15} className="text-[var(--success)] flex-shrink-0" />
+                          : <XCircle size={15} className="text-[var(--error)] flex-shrink-0" />}
                         <div className="min-w-0">
                           <p className="text-sm font-semibold text-[var(--ink)] truncate">
                             {APPROVAL_REQUEST_LABELS[req.request_type]} — {summary}
                           </p>
                           {!pending && req.rejection_reason && (
-                            <p className="text-xs text-red-600 truncate">Reason: {req.rejection_reason}</p>
+                            <p className="text-xs text-[var(--error)] truncate">Reason: {req.rejection_reason}</p>
                           )}
                         </div>
                       </div>
                       <span className={`text-xs font-bold uppercase flex-shrink-0 ${
-                        pending ? 'text-amber-600' : approved ? 'text-green-600' : 'text-red-600'
+                        pending ? 'text-[var(--amber-dark)]' : approved ? 'text-[var(--success)]' : 'text-[var(--error)]'
                       }`}>
                         {pending ? 'Awaiting approval' : req.status}
                       </span>
@@ -893,7 +893,7 @@ export default function AdminTerminals() {
 
           {isRiderAdmin && visibleTerminals.length === 0 ? (
             <div className="p-12 border-2 border-dashed border-[var(--border)] rounded-2xl text-center">
-              <MapPin className="w-16 h-16 text-gray-300 mx-auto mb-4" />
+              <MapPin className="w-16 h-16 text-[var(--border)] mx-auto mb-4" />
               <p className="text-[var(--muted-foreground)] text-sm mb-2">No terminal assigned to you yet</p>
               <p className="text-[var(--muted-foreground)] text-xs">The Super Admin must assign you to a terminal</p>
             </div>
@@ -914,7 +914,7 @@ export default function AdminTerminals() {
                         <div>
                           <div className="flex items-center gap-2 flex-wrap">
                             <h3 className="font-bold text-[var(--ink)] text-lg">🚏 {t.name}</h3>
-                            <span className={`text-xs font-bold px-2 py-0.5 rounded-full ${t.is_active ? "bg-green-100 text-green-700" : "bg-[var(--muted)] text-[var(--muted-foreground)]"}`}>
+                            <span className={`text-xs font-bold px-2 py-0.5 rounded-full ${t.is_active ? "bg-[var(--success-soft)] text-[var(--success)]" : "bg-[var(--muted)] text-[var(--muted-foreground)]"}`}>
                               {t.is_active ? "● Active" : "○ Inactive"}
                             </span>
                             <span
@@ -938,7 +938,7 @@ export default function AdminTerminals() {
                       <div className="flex items-center gap-2 flex-shrink-0">
                         <button
                           onClick={() => setExpandedId(isExpanded ? null : t.id)}
-                          className="px-3 py-1.5 text-xs font-semibold text-[var(--info)] bg-[var(--info-soft)] rounded-lg hover:bg-blue-200 transition-all"
+                          className="px-3 py-1.5 text-xs font-semibold text-[var(--info)] bg-[var(--info-soft)] rounded-lg hover:bg-[var(--info-soft)] transition-all"
                         >
                           {isExpanded ? "Hide" : "Drivers"}
                         </button>
@@ -953,7 +953,7 @@ export default function AdminTerminals() {
                         {isSuperAdmin && (
                           <button
                             onClick={() => confirmDeleteTerminal(t.id)}
-                            className="w-8 h-8 bg-red-50 border-2 border-red-100 rounded-xl flex items-center justify-center hover:border-red-300 transition-all active:scale-90"
+                            className="w-8 h-8 bg-[var(--error-soft)] border-2 border-[var(--error-soft)] rounded-xl flex items-center justify-center hover:border-[var(--error)] transition-all active:scale-90"
                           >
                             <Trash2 size={14} className="text-[var(--error)]" />
                           </button>
@@ -976,7 +976,7 @@ export default function AdminTerminals() {
                           const pendingAction = pendingChanges[r.id];
                           return (
                             <div key={r.id} className={`flex items-center justify-between rounded-xl border-2 px-4 py-2.5 ${
-                              isPending ? 'bg-amber-50 border-amber-200' : 'bg-white border-[var(--border)]'
+                              isPending ? 'bg-[var(--amber-soft)] border-[var(--amber-soft)]' : 'bg-white border-[var(--border)]'
                             }`}>
                               <div className="flex items-center gap-3">
                                 <div className="w-8 h-8 bg-[var(--info-soft)] rounded-lg flex items-center justify-center text-[var(--info)] font-bold text-xs">
@@ -987,7 +987,7 @@ export default function AdminTerminals() {
                                   <p className="text-xs text-[var(--muted-foreground)]">{riderPlate(r) || "No plate"}</p>
                                 </div>
                                 {isPending && pendingAction?.action === 'unassign' && (
-                                  <span className="text-xs font-bold text-amber-600 bg-amber-100 px-2 py-0.5 rounded-full">
+                                  <span className="text-xs font-bold text-[var(--amber-dark)] bg-[var(--amber-soft)] px-2 py-0.5 rounded-full">
                                     ⏳ Pending removal
                                   </span>
                                 )}
@@ -995,14 +995,14 @@ export default function AdminTerminals() {
                               {isRiderAdmin && (isPending ? (
                                 <button
                                   onClick={() => cancelPendingChange(r.id)}
-                                  className="text-xs font-semibold text-amber-600 hover:text-amber-800 underline"
+                                  className="text-xs font-semibold text-[var(--amber-dark)] hover:text-[var(--amber-dark)] underline"
                                 >
                                   Cancel
                                 </button>
                               ) : (
                                 <button
                                   onClick={() => queueUnassignRider(r.id, t.id, t.name)}
-                                  className="flex items-center gap-1 text-xs font-semibold text-[var(--error)] bg-red-50 border border-red-100 px-2.5 py-1.5 rounded-lg hover:bg-red-100 transition-all active:scale-95"
+                                  className="flex items-center gap-1 text-xs font-semibold text-[var(--error)] bg-[var(--error-soft)] border border-[var(--error-soft)] px-2.5 py-1.5 rounded-lg hover:bg-[var(--error-soft)] transition-all active:scale-95"
                                 >
                                   <UserMinus size={12} /> Unassign
                                 </button>
@@ -1025,15 +1025,15 @@ export default function AdminTerminals() {
                                     <>
                                       <button
                                         disabled
-                                        className="flex items-center gap-2 px-3 py-2 bg-amber-50 border-2 border-amber-200 rounded-xl text-sm font-medium text-amber-700"
+                                        className="flex items-center gap-2 px-3 py-2 bg-[var(--amber-soft)] border-2 border-[var(--amber-soft)] rounded-xl text-sm font-medium text-[var(--amber-dark)]"
                                       >
-                                        <UserPlus size={13} className="text-amber-500" />
+                                        <UserPlus size={13} className="text-[var(--amber)]" />
                                         {riderName(r)}
-                                        <span className="text-xs text-amber-500">⏳ Queued</span>
+                                        <span className="text-xs text-[var(--amber)]">⏳ Queued</span>
                                       </button>
                                       <button
                                         onClick={() => cancelPendingChange(r.id)}
-                                        className="text-xs font-semibold text-amber-600 hover:text-amber-800 underline"
+                                        className="text-xs font-semibold text-[var(--amber-dark)] hover:text-[var(--amber-dark)] underline"
                                       >
                                         Cancel
                                       </button>

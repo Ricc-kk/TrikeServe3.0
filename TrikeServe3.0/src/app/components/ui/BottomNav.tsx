@@ -103,7 +103,7 @@ export default function BottomNav({
               key={item.key}
               to={item.to}
               aria-current={isActive ? "page" : undefined}
-              className="relative flex min-w-0 flex-col items-center justify-center gap-0.5 rounded-xl py-1.5 text-center transition-colors active:bg-gray-50"
+              className="relative flex min-w-0 flex-col items-center justify-center gap-0.5 rounded-xl py-1.5 text-center transition-colors active:bg-[var(--muted)]"
             >
               <Icon className="h-5 w-5 shrink-0 sm:h-6 sm:w-6" color={color} />
               <span

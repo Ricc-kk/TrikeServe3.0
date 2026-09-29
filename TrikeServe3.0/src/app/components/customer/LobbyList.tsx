@@ -180,7 +180,7 @@ export default function LobbyList({
                 >
                   {/* Status Bar */}
                   <div className="flex items-center justify-between mb-3">
-                    <Badge className="bg-yellow-500 text-white">
+                    <Badge className="bg-[var(--amber)] text-white">
                       🔍 Finding Driver
                     </Badge>
                     <div className="flex items-center gap-1 text-xs text-[var(--muted-foreground)]">
@@ -205,9 +205,9 @@ export default function LobbyList({
                       {Array.from({ length: lobby.maxSeats - lobby.passengers.length }).map((_, idx) => (
                         <div
                           key={`empty-${idx}`}
-                          className="w-8 h-8 rounded-full bg-gray-200 flex items-center justify-center border-2 border-white"
+                          className="w-8 h-8 rounded-full bg-[var(--border)] flex items-center justify-center border-2 border-white"
                         >
-                          <Users className="w-4 h-4 text-gray-400" />
+                          <Users className="w-4 h-4 text-[var(--muted-foreground)]" />
                         </div>
                       ))}
                     </div>
@@ -258,8 +258,8 @@ export default function LobbyList({
 
                   {/* Full Warning */}
                   {lobby.passengers.length === lobby.maxSeats - 1 && (
-                    <div className="mt-3 bg-orange-50 border border-orange-200 rounded-lg p-2 text-center">
-                      <p className="text-xs text-orange-700 font-semibold">
+                    <div className="mt-3 bg-[var(--amber-soft)] border border-[var(--amber-soft)] rounded-lg p-2 text-center">
+                      <p className="text-xs text-[var(--amber-dark)] font-semibold">
                         🔥 Last seat available!
                       </p>
                     </div>

@@ -1790,18 +1790,18 @@ export default function CustomerHome() {
       {/* Full Screen Map */}
       <div className="absolute inset-0">
         {!GOOGLE_MAPS_API_KEY ? (
-          <div className="w-full h-full flex items-center justify-center bg-gray-200">
+          <div className="w-full h-full flex items-center justify-center bg-[var(--border)]">
             <div className="text-center">
-              <p className="text-xl font-bold text-red-600 mb-4">⚠️ Google Maps API Key Missing</p>
-              <p className="text-gray-700 mb-4">To use Google Maps, please add your API key to .env.local</p>
+              <p className="text-xl font-bold text-[var(--error)] mb-4">⚠️ Google Maps API Key Missing</p>
+              <p className="text-[var(--ink-soft)] mb-4">To use Google Maps, please add your API key to .env.local</p>
             </div>
           </div>
          ) : mapsBlocked || mapsLoadError ? (
-            <div className="w-full h-full flex items-center justify-center bg-gray-100">
+            <div className="w-full h-full flex items-center justify-center bg-[var(--muted)]">
               <div className="text-center max-w-md px-6">
-                <p className="text-lg font-bold text-red-600 mb-3">⚠️ Map resources blocked</p>
-                <p className="text-sm text-gray-700 mb-4">Your browser or a network filter is blocking Google Maps resources (maps.googleapis.com). This commonly happens when an ad-blocker or privacy extension blocks Google domains.</p>
-                {mapsBlocked && <p className="text-xs text-gray-600 mb-3">Diagnostic: {mapsBlocked}</p>}
+                <p className="text-lg font-bold text-[var(--error)] mb-3">⚠️ Map resources blocked</p>
+                <p className="text-sm text-[var(--ink-soft)] mb-4">Your browser or a network filter is blocking Google Maps resources (maps.googleapis.com). This commonly happens when an ad-blocker or privacy extension blocks Google domains.</p>
+                {mapsBlocked && <p className="text-xs text-[var(--muted-foreground)] mb-3">Diagnostic: {mapsBlocked}</p>}
                 <div className="flex gap-3 justify-center">
                   <button
                     onClick={() => window.location.reload()}
@@ -1822,8 +1822,8 @@ export default function CustomerHome() {
               </div>
             </div>
           ) : !isMapsLoaded ? (
-            <div className="w-full h-full flex items-center justify-center bg-gray-100">
-              <p className="text-sm text-gray-600">Loading map...</p>
+            <div className="w-full h-full flex items-center justify-center bg-[var(--muted)]">
+              <p className="text-sm text-[var(--muted-foreground)]">Loading map...</p>
             </div>
           ) : (
            <GoogleMap
@@ -1881,7 +1881,7 @@ export default function CustomerHome() {
                >
                  <div className="text-sm">
                    <p className="font-bold">Your current location</p>
-                   <p className="text-gray-600">
+                   <p className="text-[var(--muted-foreground)]">
                      {selectedMarker.lat.toFixed(4)}, {selectedMarker.lng.toFixed(4)}
                    </p>
                  </div>
@@ -2085,7 +2085,7 @@ export default function CustomerHome() {
                   </GoogleMap>
                   {/* Map overlay badge */}
                   <div className="absolute top-3 left-3 bg-white/95 backdrop-blur-sm rounded-full px-3 py-1.5 shadow-lg flex items-center gap-2">
-                    <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse" />
+                    <div className="w-2 h-2 bg-[var(--success)] rounded-full animate-pulse" />
                     <span className="text-xs font-bold text-[var(--ink)]">Live Tracking</span>
                   </div>
                   {/* Route status badge */}
@@ -2106,12 +2106,12 @@ export default function CustomerHome() {
                   <div className="flex-1 min-w-0">
                     <h3 className="font-bold text-base text-[var(--ink)] truncate">{activeRide.driver}</h3>
                     <div className="flex items-center gap-2">
-                      <Badge className="bg-green-500 text-white text-[10px]">Driver Found</Badge>
+                      <Badge className="bg-[var(--success)] text-white text-[10px]">Driver Found</Badge>
                       <span className="text-xs text-[var(--muted-foreground)]">{activeRide.plateNumber}</span>
                     </div>
                   </div>
                   <div className="text-right flex-shrink-0">
-                    <div className="flex items-center gap-1 text-yellow-500">
+                    <div className="flex items-center gap-1 text-[var(--amber)]">
                       <span className="text-sm">⭐</span>
                       <span className="font-bold text-sm text-[var(--ink)]">{activeRide.rating}</span>
                     </div>
@@ -2140,7 +2140,7 @@ export default function CustomerHome() {
                       <p className="font-semibold text-xs text-[var(--ink)] truncate">{dropoff}</p>
                     </div>
                     {etaToDestination && (
-                      <div className="flex-shrink-0 bg-red-100 text-red-700 px-2 py-1 rounded-lg">
+                      <div className="flex-shrink-0 bg-[var(--error-soft)] text-[var(--error)] px-2 py-1 rounded-lg">
                         <p className="text-[10px] font-bold">🏁 {etaToDestination}</p>
                       </div>
                     )}
@@ -2172,17 +2172,17 @@ export default function CustomerHome() {
         {showValidationError && (
           <div className="fixed inset-0 bg-black/50 z-[2100] flex items-center justify-center p-4">
             <Card className="bg-white p-8 max-w-sm w-full text-center animate-infinite-bounce">
-              <div className="w-20 h-20 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-4">
+              <div className="w-20 h-20 bg-[var(--error-soft)] rounded-full flex items-center justify-center mx-auto mb-4">
                 <span className="text-4xl">⚠️</span>
               </div>
-              <h3 className="text-xl font-bold text-red-600 mb-2">Incomplete Information</h3>
+              <h3 className="text-xl font-bold text-[var(--error)] mb-2">Incomplete Information</h3>
               <p className="text-sm text-[var(--muted-foreground)] mb-6">
                 Please complete entering your <strong>pickup location</strong> and <strong>drop-off point</strong> to proceed with booking your ride.
               </p>
 
               <Button
                 onClick={() => setShowValidationError(false)}
-                className="w-full bg-red-500 hover:bg-red-600 text-white py-3 font-bold"
+                className="w-full bg-[var(--error)] hover:bg-[var(--error)] text-white py-3 font-bold"
               >
                 Understood
               </Button>
@@ -2194,17 +2194,17 @@ export default function CustomerHome() {
         {showSameLocationError && (
           <div className="fixed inset-0 bg-black/50 z-[2100] flex items-center justify-center p-4">
             <Card className="bg-white p-8 max-w-sm w-full text-center animate-infinite-bounce">
-              <div className="w-20 h-20 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-4">
+              <div className="w-20 h-20 bg-[var(--error-soft)] rounded-full flex items-center justify-center mx-auto mb-4">
                 <span className="text-4xl">⚠️</span>
               </div>
-              <h3 className="text-xl font-bold text-red-600 mb-2">Invalid Route</h3>
+              <h3 className="text-xl font-bold text-[var(--error)] mb-2">Invalid Route</h3>
               <p className="text-sm text-[var(--muted-foreground)] mb-6">
                 Your <strong>pickup location</strong> and <strong>drop-off point</strong> cannot be the same. Please select different locations.
               </p>
 
               <Button
                 onClick={() => setShowSameLocationError(false)}
-                className="w-full bg-red-500 hover:bg-red-600 text-white py-3 font-bold"
+                className="w-full bg-[var(--error)] hover:bg-[var(--error)] text-white py-3 font-bold"
               >
                 Understood
               </Button>
@@ -2216,10 +2216,10 @@ export default function CustomerHome() {
         {showOutOfBoundaryError && (
           <div className="fixed inset-0 bg-black/50 z-[2200] flex items-center justify-center p-4">
             <Card className="bg-white p-8 max-w-sm w-full text-center animate-infinite-bounce">
-              <div className="w-20 h-20 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-4">
+              <div className="w-20 h-20 bg-[var(--error-soft)] rounded-full flex items-center justify-center mx-auto mb-4">
                 <span className="text-4xl">🚧</span>
               </div>
-              <h3 className="text-xl font-bold text-red-600 mb-2">Out of boundary area</h3>
+              <h3 className="text-xl font-bold text-[var(--error)] mb-2">Out of boundary area</h3>
               <p className="text-sm text-[var(--muted-foreground)] mb-6">
                 Your <strong>drop-off point</strong> is outside the service area covered by our terminals,
                 so this ride cannot be booked. Please choose a drop-off location inside the boundary area.
@@ -2227,7 +2227,7 @@ export default function CustomerHome() {
 
               <Button
                 onClick={() => setShowOutOfBoundaryError(false)}
-                className="w-full bg-red-500 hover:bg-red-600 text-white py-3 font-bold"
+                className="w-full bg-[var(--error)] hover:bg-[var(--error)] text-white py-3 font-bold"
               >
                 Understood
               </Button>
@@ -2241,7 +2241,7 @@ export default function CustomerHome() {
           <div className="fixed inset-0 bg-black/50 z-[2100] flex items-end">
             <div className="bg-white w-full rounded-t-3xl p-6 animate-in slide-in-from-bottom duration-300">
               <div className="max-w-sm mx-auto text-center">
-                <div className="w-16 h-16 bg-blue-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                <div className="w-16 h-16 bg-[var(--info-soft)] rounded-full flex items-center justify-center mx-auto mb-4">
                   <span className="text-3xl">🎉</span>
                 </div>
                 <h3 className="text-2xl font-bold text-[var(--ink)] mb-2">
@@ -2262,7 +2262,7 @@ export default function CustomerHome() {
                       setShowRatingModal(true);
                       setCurrentRequestId(null);
                     }}
-                    className="w-full bg-white border-2 border-blue-200 text-blue-600 py-3 font-bold"
+                    className="w-full bg-white border-2 border-[var(--info-soft)] text-[var(--info)] py-3 font-bold"
                   >
                     {completionPopupType === 'delivery' ? 'Rate Restaurant' : 'Leave a Rating'}
                   </Button>
@@ -2283,7 +2283,7 @@ export default function CustomerHome() {
                       // Refresh the page to fully reset the ride page
                       window.location.reload();
                     }}
-                    className="w-full bg-blue-500 hover:bg-blue-600 text-white py-3 font-bold"
+                    className="w-full bg-[var(--info)] hover:bg-[var(--info)] text-white py-3 font-bold"
                   >
                     Done
                   </Button>
@@ -2299,7 +2299,7 @@ export default function CustomerHome() {
             <Card className="bg-white p-6 max-w-sm w-full text-center">
               {ratingSubmitted ? (
                 <>
-                  <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-green-100 flex items-center justify-center text-3xl">
+                  <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-[var(--success-soft)] flex items-center justify-center text-3xl">
                     🙏
                   </div>
                   <h3 className="text-xl font-bold text-[var(--ink)] mb-2">Thank you!</h3>
@@ -2469,9 +2469,9 @@ export default function CustomerHome() {
                <div className="mt-3">
                  <Input value={searchQuery} onChange={(e) => { fetchPredictions((e.target as HTMLInputElement).value); }} placeholder="Search restaurants, parks, hotels, terminals..." />
                  {predictions.length > 0 && (
-                   <div className="mt-2 bg-white border border-gray-200 rounded-lg max-h-48 overflow-y-auto">
+                   <div className="mt-2 bg-white border border-[var(--border)] rounded-lg max-h-48 overflow-y-auto">
                      {predictions.map((p, i) => (
-                       <button key={i} onClick={() => selectPrediction(p.place_id)} className="w-full text-left p-3 hover:bg-gray-50 border-b last:border-b-0">
+                       <button key={i} onClick={() => selectPrediction(p.place_id)} className="w-full text-left p-3 hover:bg-[var(--muted)] border-b last:border-b-0">
                          <div className="text-sm font-semibold text-[var(--ink)]">{p.displayName}</div>
                          {p.secondaryText && <div className="text-xs text-[var(--muted-foreground)] mt-0.5">{p.secondaryText}</div>}
                        </button>
@@ -2484,8 +2484,8 @@ export default function CustomerHome() {
 
           <div className="flex-1 pt-40 relative">
             {!isMapsLoaded ? (
-              <div className="h-full w-full flex items-center justify-center bg-gray-100">
-                <p className="text-sm text-gray-600">Loading picker map...</p>
+              <div className="h-full w-full flex items-center justify-center bg-[var(--muted)]">
+                <p className="text-sm text-[var(--muted-foreground)]">Loading picker map...</p>
               </div>
             ) : (
               <GoogleMap
@@ -2613,8 +2613,8 @@ export default function CustomerHome() {
 
             {/* Info Card - Only show for Share Rides */}
             {selectedVehicle !== 'special' && (
-              <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 mb-6">
-                <p className="text-xs text-blue-900">
+              <div className="bg-[var(--info-soft)] border border-[var(--info-soft)] rounded-lg p-3 mb-6">
+                <p className="text-xs text-[var(--info)]">
                   💡 <span className="font-semibold">Tip:</span> You'll join a shared lobby and wait for other passengers heading the same route. More passengers = faster match!
                 </p>
               </div>
@@ -2675,7 +2675,7 @@ export default function CustomerHome() {
                 </div>
               </div>
               <div className="flex items-start gap-3">
-                <Navigation className="w-5 h-5 text-green-600 mt-1" />
+                <Navigation className="w-5 h-5 text-[var(--success)] mt-1" />
                 <div>
                   <p className="text-sm text-[var(--muted-foreground)]">Drop-off</p>
                   <p className="font-semibold text-[var(--ink)]">{dropoff}</p>
@@ -2770,8 +2770,8 @@ export default function CustomerHome() {
         >
           <div className="relative">
             <span className="text-3xl animate-pulse">🔍</span>
-            <div className="absolute -top-1 -right-1 w-3 h-3 bg-green-500 rounded-full animate-ping"></div>
-            <div className="absolute -top-1 -right-1 w-3 h-3 bg-green-500 rounded-full"></div>
+            <div className="absolute -top-1 -right-1 w-3 h-3 bg-[var(--success)] rounded-full animate-ping"></div>
+            <div className="absolute -top-1 -right-1 w-3 h-3 bg-[var(--success)] rounded-full"></div>
           </div>
         </button>
       )}
@@ -2898,7 +2898,7 @@ export default function CustomerHome() {
         <div className="fixed inset-0 bg-black/50 z-[3500] flex items-center justify-center p-4">
           <div className="bg-white w-full max-w-sm rounded-2xl shadow-2xl overflow-hidden">
             <div className="p-6 text-center">
-              <div className="w-16 h-16 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-4">
+              <div className="w-16 h-16 bg-[var(--error-soft)] rounded-full flex items-center justify-center mx-auto mb-4">
                 <span className="text-3xl">⚠️</span>
               </div>
               <h3 className="text-xl font-bold text-[var(--ink)] mb-2">Cancel Ride?</h3>

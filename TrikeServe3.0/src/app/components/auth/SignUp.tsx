@@ -251,8 +251,8 @@ export default function SignUp() {
           {/* Registration Form */}
           {step === "form" && (
             <form onSubmit={handleSubmitForm} className="space-y-4">
-              <div className="p-3 bg-blue-50 border-2 border-blue-200 rounded-lg">
-                <p className="text-sm text-blue-800">
+              <div className="p-3 bg-[var(--info-soft)] border-2 border-[var(--info-soft)] rounded-lg">
+                <p className="text-sm text-[var(--info)]">
                   <strong>Registering as:</strong> {formData.role.charAt(0).toUpperCase() + formData.role.slice(1)}
                 </p>
               </div>
@@ -453,22 +453,22 @@ export default function SignUp() {
               </div>
 
               {error && (
-                <div className="p-3 bg-red-50 border-2 border-red-200 rounded-lg">
-                  <p className="text-sm text-red-800">{error}</p>
+                <div className="p-3 bg-[var(--error-soft)] border-2 border-[var(--error-soft)] rounded-lg">
+                  <p className="text-sm text-[var(--error)]">{error}</p>
                 </div>
               )}
 
               {/* Email verification note for all roles */}
-              <div className="p-3 bg-blue-50 border-2 border-blue-200 rounded-lg">
-                <p className="text-xs text-blue-800">
+              <div className="p-3 bg-[var(--info-soft)] border-2 border-[var(--info-soft)] rounded-lg">
+                <p className="text-xs text-[var(--info)]">
                   <strong>📧 Email Verification:</strong> After registration, you'll receive a verification email. Click the link to verify your account before logging in.
                 </p>
               </div>
 
               {/* Show additional note for rider and business */}
               {(formData.role === "rider" || formData.role === "business") && (
-                <div className="p-3 bg-yellow-50 border-2 border-yellow-200 rounded-lg">
-                  <p className="text-xs text-yellow-800">
+                <div className="p-3 bg-[var(--amber-soft)] border-2 border-[var(--amber-soft)] rounded-lg">
+                  <p className="text-xs text-[var(--amber-dark)]">
                     <strong>📋 Additional Step:</strong> You must also visit the Barangay Hall for face-to-face verification before your account can be fully activated.
                   </p>
                 </div>
@@ -506,8 +506,8 @@ export default function SignUp() {
           {step === "success" && (
             <div className="space-y-6">
               <div className="text-center">
-                <div className="w-20 h-20 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-4">
-                  <Check className="w-10 h-10 text-green-600" />
+                <div className="w-20 h-20 bg-[var(--success-soft)] rounded-full flex items-center justify-center mx-auto mb-4">
+                  <Check className="w-10 h-10 text-[var(--success)]" />
                 </div>
                 <h3 className="text-2xl font-bold text-[var(--ink)] mb-2">Registration Complete!</h3>
                 <p className="text-[var(--muted-foreground)]">Your account has been created successfully.</p>
@@ -516,17 +516,17 @@ export default function SignUp() {
               {/* Customer: Email verification required */}
               {formData.role === "customer" && (
                 <>
-                  <div className="p-4 bg-blue-50 border-2 border-blue-200 rounded-lg">
-                    <p className="text-sm text-blue-800 mb-2">
+                  <div className="p-4 bg-[var(--info-soft)] border-2 border-[var(--info-soft)] rounded-lg">
+                    <p className="text-sm text-[var(--info)] mb-2">
                       <strong>📧 Check Your Email!</strong>
                     </p>
-                    <p className="text-sm text-blue-800">
+                    <p className="text-sm text-[var(--info)]">
                       We sent a verification link to <strong>{formData.email}</strong>. Please click the link in your email to verify your account before logging in.
                     </p>
                   </div>
 
-                  <div className="p-3 bg-yellow-50 border-2 border-yellow-200 rounded-lg">
-                    <p className="text-xs text-yellow-800">
+                  <div className="p-3 bg-[var(--amber-soft)] border-2 border-[var(--amber-soft)] rounded-lg">
+                    <p className="text-xs text-[var(--amber-dark)]">
                       <strong>Didn't receive the email?</strong> Check your spam folder, or contact support if the problem persists.
                     </p>
                   </div>
@@ -542,23 +542,23 @@ export default function SignUp() {
               {/* Rider/Business: Admin verification required (no email verification needed) */}
               {(formData.role === "rider" || formData.role === "business") && (
                 <>
-                  <div className="p-4 bg-blue-50 border-2 border-blue-200 rounded-lg">
-                    <p className="text-sm text-blue-800 mb-2">
+                  <div className="p-4 bg-[var(--info-soft)] border-2 border-[var(--info-soft)] rounded-lg">
+                    <p className="text-sm text-[var(--info)] mb-2">
                       <strong>📧 Email Verified Automatically</strong>
                     </p>
-                    <p className="text-sm text-blue-800">
+                    <p className="text-sm text-[var(--info)]">
                       Your email has been confirmed. No need to check your inbox.
                     </p>
                   </div>
 
-                  <div className="p-4 bg-yellow-50 border-2 border-yellow-200 rounded-lg">
-                    <p className="text-sm text-yellow-800 mb-3">
+                  <div className="p-4 bg-[var(--amber-soft)] border-2 border-[var(--amber-soft)] rounded-lg">
+                    <p className="text-sm text-[var(--amber-dark)] mb-3">
                       <strong>⏳ Admin Verification Required</strong>
                     </p>
-                    <p className="text-sm text-yellow-800 mb-3">
+                    <p className="text-sm text-[var(--amber-dark)] mb-3">
                       You must visit the Barangay Hall for face-to-face verification before you can log in.
                     </p>
-                    <ol className="text-sm text-yellow-800 space-y-2 list-decimal list-inside">
+                    <ol className="text-sm text-[var(--amber-dark)] space-y-2 list-decimal list-inside">
                       <li>Visit the TrikeServe Office at Barangay Hall</li>
                       <li>Bring your valid ID and required documents:
                         {formData.role === "rider" && (

@@ -267,7 +267,7 @@ export default function Earnings() {
 
             {/* This Week Card */}
             <div style={{ width: '335px' }} className="pl-4 pr-1">
-              <Card className="p-4 bg-gradient-to-br from-teal-600 to-teal-700 text-white border-0 rounded-2xl">
+              <Card className="p-4 bg-gradient-to-br from-[var(--teal)] to-[var(--teal)] text-white border-0 rounded-2xl">
                 <p className="text-sm opacity-90 mb-1">This Week</p>
                 <p className="text-4xl font-extrabold mb-2">₱{weekEarnings.toFixed(2)}</p>
                 <div className="flex items-center gap-1 text-sm opacity-90">
@@ -284,7 +284,7 @@ export default function Earnings() {
 
             {/* This Month Card */}
             <div style={{ width: '335px' }} className="pl-4 pr-1">
-              <Card className="p-4 bg-gradient-to-br from-blue-600 to-blue-700 text-white border-0 rounded-2xl">
+              <Card className="p-4 bg-gradient-to-br from-[var(--info)] to-[var(--info)] text-white border-0 rounded-2xl">
                 <p className="text-sm opacity-90 mb-1">This Month</p>
                 <p className="text-4xl font-extrabold mb-2">₱{monthEarnings.toFixed(2)}</p>
                 <div className="flex items-center gap-1 text-sm opacity-90">
@@ -401,7 +401,7 @@ export default function Earnings() {
                         <p className="font-extrabold text-lg text-[var(--primary)]">₱{trip.amount.toFixed(2)}</p>
                         <Badge
                           variant="outline"
-                          className={`text-[10px] rounded-full ${trip.payment === 'Cash' ? 'border-[var(--amber)] text-[var(--amber)]' : 'border-green-500 text-green-500'}`}
+                          className={`text-[10px] rounded-full ${trip.payment === 'Cash' ? 'border-[var(--amber)] text-[var(--amber)]' : 'border-[var(--success)] text-[var(--success)]'}`}
                         >
                           {trip.payment === 'Cash' ? '💵 Cash' : '💳 GCash'}
                         </Badge>
@@ -420,14 +420,14 @@ export default function Earnings() {
                     {(trip.pickup || trip.dropoff) && (
                       <div className="flex items-stretch gap-2 mt-1">
                         <div className="flex flex-col items-center pt-1">
-                          <div className="w-2.5 h-2.5 rounded-full bg-green-500 shrink-0" />
-                          <div className="w-0.5 flex-1 bg-gray-200 my-0.5" />
+                          <div className="w-2.5 h-2.5 rounded-full bg-[var(--success)] shrink-0" />
+                          <div className="w-0.5 flex-1 bg-[var(--border)] my-0.5" />
                           <div className="w-2.5 h-2.5 rounded-full bg-[var(--primary)] shrink-0" />
                         </div>
                         <div className="flex-1 space-y-2 min-w-0">
                           {trip.pickup && (
                             <div>
-                              <p className="text-[10px] text-green-600 font-bold uppercase">Pickup</p>
+                              <p className="text-[10px] text-[var(--success)] font-bold uppercase">Pickup</p>
                               <p className="text-xs text-[var(--ink)] truncate">{trip.pickup}</p>
                             </div>
                           )}

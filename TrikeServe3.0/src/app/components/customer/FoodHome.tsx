@@ -261,12 +261,12 @@ export default function FoodHome() {
 
   // Local Valenzuela/Gen T Deleon categories
   const categories = [
-    { id: "silugan", name: "Silugan", icon: "🍳", gradient: "from-yellow-400 to-orange-400" },
-    { id: "ihawan", name: "Ihawan", icon: "🔥", gradient: "from-red-500 to-orange-500" },
-    { id: "karinderya", name: "Karinderya", icon: "🍲", gradient: "from-green-500 to-emerald-600" },
-    { id: "kape", name: "Kape & Tsaa", icon: "☕", gradient: "from-amber-700 to-yellow-600" },
-    { id: "merienda", name: "Merienda", icon: "🥐", gradient: "from-pink-400 to-rose-400" },
-    { id: "malamig", name: "Malamig", icon: "🧋", gradient: "from-purple-400 to-pink-500" },
+    { id: "silugan", name: "Silugan", icon: "🍳", gradient: "from-[var(--amber)] to-[var(--amber)]" },
+    { id: "ihawan", name: "Ihawan", icon: "🔥", gradient: "from-[var(--error)] to-[var(--amber)]" },
+    { id: "karinderya", name: "Karinderya", icon: "🍲", gradient: "from-[var(--success)] to-[var(--success)]" },
+    { id: "kape", name: "Kape & Tsaa", icon: "☕", gradient: "from-[var(--amber-dark)] to-[var(--amber-dark)]" },
+    { id: "merienda", name: "Merienda", icon: "🥐", gradient: "from-[var(--violet)] to-[var(--primary)]" },
+    { id: "malamig", name: "Malamig", icon: "🧋", gradient: "from-[var(--violet)] to-[var(--violet)]" },
   ];
 
   // Show welcome back popup after login
@@ -430,7 +430,7 @@ export default function FoodHome() {
                             <span className="text-white text-[11px] font-semibold">{restaurant.time}</span>
                           </div>
                           <div className="flex items-center gap-1 bg-white/25 backdrop-blur-sm rounded-full px-2.5 py-1">
-                            <Star className="w-3 h-3 text-yellow-300 fill-yellow-300" />
+                            <Star className="w-3 h-3 text-[var(--amber)] fill-[var(--amber)]" />
                             <span className="text-white text-[11px] font-semibold">{restaurant.rating}</span>
                           </div>
                         </div>

@@ -105,7 +105,7 @@ export default function AutoAccept() {
             <button
               onClick={toggleAutoAccept}
               className={`w-12 h-6 rounded-full transition-colors ${
-                autoAcceptEnabled ? 'bg-[var(--primary)]' : 'bg-gray-300'
+                autoAcceptEnabled ? 'bg-[var(--primary)]' : 'bg-[var(--border)]'
               }`}
             >
               <div
@@ -131,7 +131,7 @@ export default function AutoAccept() {
               <button
                 onClick={() => setSoundNotificationEnabled(!soundNotificationEnabled)}
                 className={`w-12 h-6 rounded-full transition-colors ${
-                  soundNotificationEnabled ? 'bg-[var(--primary)]' : 'bg-gray-300'
+                  soundNotificationEnabled ? 'bg-[var(--primary)]' : 'bg-[var(--border)]'
                 }`}
               >
                 <div

@@ -235,8 +235,8 @@ export default function SetPassword() {
           {/* Loading State */}
           {step === "loading" && (
             <div className="text-center py-12">
-              <div className="w-20 h-20 bg-blue-100 rounded-full flex items-center justify-center mx-auto mb-4">
-                <Loader2 className="w-10 h-10 text-blue-600 animate-spin" />
+              <div className="w-20 h-20 bg-[var(--info-soft)] rounded-full flex items-center justify-center mx-auto mb-4">
+                <Loader2 className="w-10 h-10 text-[var(--info)] animate-spin" />
               </div>
               <p className="text-[var(--muted-foreground)]">Verifying your reset link...</p>
             </div>
@@ -305,8 +305,8 @@ export default function SetPassword() {
               </div>
 
               {error && (
-                <div className="p-3 bg-red-50 border-2 border-red-200 rounded-lg">
-                  <p className="text-sm text-red-800">{error}</p>
+                <div className="p-3 bg-[var(--error-soft)] border-2 border-[var(--error-soft)] rounded-lg">
+                  <p className="text-sm text-[var(--error)]">{error}</p>
                 </div>
               )}
 
@@ -328,8 +328,8 @@ export default function SetPassword() {
           {step === "success" && (
             <div className="space-y-6">
               <div className="text-center">
-                <div className="w-20 h-20 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-4">
-                  <CheckCircle className="w-10 h-10 text-green-600" />
+                <div className="w-20 h-20 bg-[var(--success-soft)] rounded-full flex items-center justify-center mx-auto mb-4">
+                  <CheckCircle className="w-10 h-10 text-[var(--success)]" />
                 </div>
                 <h3 className="text-2xl font-bold text-[var(--ink)] mb-2">All Done!</h3>
                 <p className="text-[var(--muted-foreground)] text-sm">
@@ -339,12 +339,12 @@ export default function SetPassword() {
 
               {/* Mobile hint */}
               {isMobileDevice() && (
-                <div className="p-4 bg-blue-50 border-2 border-blue-200 rounded-lg">
+                <div className="p-4 bg-[var(--info-soft)] border-2 border-[var(--info-soft)] rounded-lg">
                   <div className="flex items-start gap-3">
-                    <Smartphone className="w-5 h-5 text-blue-600 mt-0.5 flex-shrink-0" />
+                    <Smartphone className="w-5 h-5 text-[var(--info)] mt-0.5 flex-shrink-0" />
                     <div>
-                      <p className="text-sm font-semibold text-blue-800">Using the mobile app?</p>
-                      <p className="text-xs text-blue-600 mt-1">
+                      <p className="text-sm font-semibold text-[var(--info)]">Using the mobile app?</p>
+                      <p className="text-xs text-[var(--info)] mt-1">
                         Open the TrikeServe app and log in with your new password.
                       </p>
                     </div>
@@ -364,8 +364,8 @@ export default function SetPassword() {
           {step === "error" && (
             <div className="space-y-6">
               <div className="text-center">
-                <div className="w-20 h-20 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-4">
-                  <Lock className="w-10 h-10 text-red-600" />
+                <div className="w-20 h-20 bg-[var(--error-soft)] rounded-full flex items-center justify-center mx-auto mb-4">
+                  <Lock className="w-10 h-10 text-[var(--error)]" />
                 </div>
               </div>
 

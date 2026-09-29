@@ -109,13 +109,13 @@ export default function ServiceTypes() {
                   onClick={() => selectCategory(cat.key)}
                   className={`p-4 border-2 cursor-pointer transition-all ${
                     active
-                      ? 'border-[var(--primary)] bg-red-50 shadow-sm'
-                      : 'border-gray-200 hover:border-gray-300'
+                      ? 'border-[var(--primary)] bg-[var(--error-soft)] shadow-sm'
+                      : 'border-[var(--border)] hover:border-[var(--border)]'
                   }`}
                 >
                   <div className="flex flex-col items-center gap-2 text-center">
                     <div className={`w-12 h-12 rounded-full flex items-center justify-center ${
-                      active ? 'bg-[var(--primary)] text-white' : 'bg-gray-100 text-[var(--muted-foreground)]'
+                      active ? 'bg-[var(--primary)] text-white' : 'bg-[var(--muted)] text-[var(--muted-foreground)]'
                     }`}>
                       <cat.icon className="w-6 h-6" />
                     </div>
@@ -124,7 +124,7 @@ export default function ServiceTypes() {
                       <p className="text-xs text-[var(--muted-foreground)]">{cat.description}</p>
                     </div>
                     <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center ${
-                      active ? 'border-[var(--primary)]' : 'border-gray-300'
+                      active ? 'border-[var(--primary)]' : 'border-[var(--border)]'
                     }`}>
                       {active && <div className="w-2.5 h-2.5 bg-[var(--primary)] rounded-full" />}
                     </div>
@@ -150,13 +150,13 @@ export default function ServiceTypes() {
                   onClick={() => (isMulti ? toggleRideType(option.key) : undefined)}
                   className={`flex items-center justify-between p-4 border-2 cursor-pointer transition-all ${
                     active
-                      ? 'border-[var(--primary)] bg-red-50'
-                      : 'border-gray-200 hover:border-gray-300'
+                      ? 'border-[var(--primary)] bg-[var(--error-soft)]'
+                      : 'border-[var(--border)] hover:border-[var(--border)]'
                   }`}
                 >
                   <div className="flex items-center gap-3">
                     <div className={`w-10 h-10 rounded-full flex items-center justify-center ${
-                      active ? 'bg-[var(--primary)] text-white' : 'bg-gray-100 text-[var(--muted-foreground)]'
+                      active ? 'bg-[var(--primary)] text-white' : 'bg-[var(--muted)] text-[var(--muted-foreground)]'
                     }`}>
                       <option.icon className="w-5 h-5" />
                     </div>
@@ -166,7 +166,7 @@ export default function ServiceTypes() {
                     </div>
                   </div>
                   <div className={`w-5 h-5 rounded border-2 flex items-center justify-center ${
-                    active ? 'bg-[var(--primary)] border-[var(--primary)]' : 'border-gray-300'
+                    active ? 'bg-[var(--primary)] border-[var(--primary)]' : 'border-[var(--border)]'
                   }`}>
                     {active && <div className="w-2 h-2 bg-white rounded-sm" />}
                   </div>

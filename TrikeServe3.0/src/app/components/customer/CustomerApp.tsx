@@ -130,8 +130,8 @@ export default function CustomerApp() {
                 <Card className="p-5 cursor-pointer hover:shadow-lg border-2 border-[var(--border)] hover:border-[var(--primary)]">
                   <div className="flex items-start justify-between mb-3">
                     <div className="flex items-center gap-3">
-                      <div className="w-12 h-12 bg-blue-100 rounded-xl flex items-center justify-center">
-                        <Users className="w-6 h-6 text-blue-600" />
+                      <div className="w-12 h-12 bg-[var(--info-soft)] rounded-xl flex items-center justify-center">
+                        <Users className="w-6 h-6 text-[var(--info)]" />
                       </div>
                       <div>
                         <h4 className="font-bold text-[var(--ink)]">Shared (Sasabay)</h4>
@@ -143,7 +143,7 @@ export default function CustomerApp() {
                       <p className="text-xs text-[var(--muted-foreground)]">per person</p>
                     </div>
                   </div>
-                  <Badge className="bg-green-500 mb-2">2 seats available</Badge>
+                  <Badge className="bg-[var(--success)] mb-2">2 seats available</Badge>
                   <p className="text-xs text-[var(--muted-foreground)] mb-3">May wait for other passengers</p>
                   <Button className="w-full bg-[var(--primary)] hover:bg-[var(--primary)] uppercase">
                     BOOK SHARED RIDE
@@ -153,8 +153,8 @@ export default function CustomerApp() {
                 <Card className="p-5 cursor-pointer hover:shadow-lg border-2 border-[var(--border)] hover:border-[var(--primary)]">
                   <div className="flex items-start justify-between mb-3">
                     <div className="flex items-center gap-3">
-                      <div className="w-12 h-12 bg-purple-100 rounded-xl flex items-center justify-center">
-                        <UserIcon className="w-6 h-6 text-purple-600" />
+                      <div className="w-12 h-12 bg-[var(--violet-soft)] rounded-xl flex items-center justify-center">
+                        <UserIcon className="w-6 h-6 text-[var(--violet)]" />
                       </div>
                       <div>
                         <h4 className="font-bold text-[var(--ink)]">Special</h4>
@@ -166,7 +166,7 @@ export default function CustomerApp() {
                       <p className="text-xs text-[var(--muted-foreground)]">fixed</p>
                     </div>
                   </div>
-                  <Badge className="bg-blue-500 mb-2">Instant pickup</Badge>
+                  <Badge className="bg-[var(--info)] mb-2">Instant pickup</Badge>
                   <p className="text-xs text-[var(--muted-foreground)] mb-3">Direct to destination</p>
                   <Button className="w-full bg-[var(--ink)] hover:bg-[var(--ink)] uppercase">
                     BOOK PRIVATE RIDE
@@ -235,7 +235,7 @@ export default function CustomerApp() {
                         <h3 className="font-bold text-lg text-[var(--ink)] mb-1">{restaurant.name}</h3>
                         <div className="flex items-center gap-3 text-sm text-[var(--muted-foreground)] mb-2">
                           <div className="flex items-center gap-1">
-                            <Star className="w-4 h-4 text-yellow-500 fill-yellow-500" />
+                            <Star className="w-4 h-4 text-[var(--amber)] fill-[var(--amber)]" />
                             <span>{restaurant.rating}</span>
                           </div>
                           <div className="flex items-center gap-1">
@@ -260,8 +260,8 @@ export default function CustomerApp() {
           <TabsContent value="history" className="space-y-4">
             <Card className="p-5 border-2 border-[var(--border)]">
               <div className="flex items-center gap-3 mb-3">
-                <div className="w-10 h-10 bg-green-100 rounded-lg flex items-center justify-center">
-                  <ShoppingBag className="w-5 h-5 text-green-600" />
+                <div className="w-10 h-10 bg-[var(--success-soft)] rounded-lg flex items-center justify-center">
+                  <ShoppingBag className="w-5 h-5 text-[var(--success)]" />
                 </div>
                 <div className="flex-1">
                   <h4 className="font-bold text-[var(--ink)]">Lechon Kawali + Rice</h4>
@@ -272,7 +272,7 @@ export default function CustomerApp() {
                   <p className="text-xs text-[var(--muted-foreground)]">Today, 11:30 AM</p>
                 </div>
               </div>
-              <Badge className="bg-green-500">Delivered</Badge>
+              <Badge className="bg-[var(--success)]">Delivered</Badge>
               <Button variant="outline" size="sm" className="w-full mt-3">
                 ORDER AGAIN
               </Button>
@@ -280,8 +280,8 @@ export default function CustomerApp() {
 
             <Card className="p-5 border-2 border-[var(--border)]">
               <div className="flex items-center gap-3 mb-3">
-                <div className="w-10 h-10 bg-blue-100 rounded-lg flex items-center justify-center">
-                  <Bike className="w-5 h-5 text-blue-600" />
+                <div className="w-10 h-10 bg-[var(--info-soft)] rounded-lg flex items-center justify-center">
+                  <Bike className="w-5 h-5 text-[var(--info)]" />
                 </div>
                 <div className="flex-1">
                   <h4 className="font-bold text-[var(--ink)]">Shared Ride</h4>
@@ -292,7 +292,7 @@ export default function CustomerApp() {
                   <p className="text-xs text-[var(--muted-foreground)]">Yesterday</p>
                 </div>
               </div>
-              <Badge className="bg-gray-500">Completed</Badge>
+              <Badge className="bg-[var(--muted-foreground)]">Completed</Badge>
               <Button variant="outline" size="sm" className="w-full mt-3">
                 RIDE AGAIN
               </Button>

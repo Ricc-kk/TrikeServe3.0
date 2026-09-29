@@ -36,11 +36,11 @@ const statusLabels: Record<string, string> = {
 };
 
 const statusColors: Record<string, string> = {
-  'on-the-way': 'bg-blue-50 border-blue-200',
-  'arrived': 'bg-yellow-50 border-yellow-200',
-  'pickup': 'bg-purple-50 border-purple-200',
-  'drop-off': 'bg-orange-50 border-orange-200',
-  'completed': 'bg-green-50 border-green-200'
+  'on-the-way': 'bg-[var(--info-soft)] border-[var(--info-soft)]',
+  'arrived': 'bg-[var(--amber-soft)] border-[var(--amber-soft)]',
+  'pickup': 'bg-[var(--violet-soft)] border-[var(--violet-soft)]',
+  'drop-off': 'bg-[var(--amber-soft)] border-[var(--amber-soft)]',
+  'completed': 'bg-[var(--success-soft)] border-[var(--success-soft)]'
 };
 
 export const CurrentRideTracker: React.FC<CurrentRideTrackerProps> = ({
@@ -182,7 +182,7 @@ export const CurrentRideTracker: React.FC<CurrentRideTrackerProps> = ({
                   className={`h-1.5 flex-1 rounded-full transition-all ${
                     isCompleted
                       ? 'bg-[var(--primary)]'
-                      : 'bg-gray-300'
+                      : 'bg-[var(--border)]'
                   }`}
                 />
               );

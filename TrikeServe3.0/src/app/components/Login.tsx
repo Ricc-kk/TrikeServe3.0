@@ -247,14 +247,14 @@ export default function Login() {
 
           <form onSubmit={handleManualLogin} className="space-y-5">
             {error && (
-              <div className="border-2 border-red-200 rounded-lg p-4 bg-red-50">
-                <p className="text-sm text-red-800">{error}</p>
+              <div className="border-2 border-[var(--error-soft)] rounded-lg p-4 bg-[var(--error-soft)]">
+                <p className="text-sm text-[var(--error)]">{error}</p>
                 {isVerificationError && (
-                  <div className="mt-3 pt-3 border-t border-red-200">
+                  <div className="mt-3 pt-3 border-t border-[var(--error-soft)]">
                     {resendStatus === "sent" ? (
-                      <p className="text-sm text-green-700 font-medium">{resendMessage}</p>
+                      <p className="text-sm text-[var(--success)] font-medium">{resendMessage}</p>
                     ) : resendStatus === "error" ? (
-                      <p className="text-sm text-red-600">{resendMessage}</p>
+                      <p className="text-sm text-[var(--error)]">{resendMessage}</p>
                     ) : (
                       <button
                         type="button"

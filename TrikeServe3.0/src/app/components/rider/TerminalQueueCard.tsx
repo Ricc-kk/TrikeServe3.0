@@ -164,7 +164,7 @@ export default function TerminalQueueCard({ queue, variant = "full", canJoin = t
       } ${
         canJoin
           ? "bg-[var(--primary)] hover:bg-[var(--primary)] text-white"
-          : "bg-gray-300 text-gray-500 cursor-not-allowed"
+          : "bg-[var(--border)] text-[var(--muted-foreground)] cursor-not-allowed"
       }`}
     >
       <Ticket className="w-4 h-4 mr-1.5" />
@@ -212,7 +212,7 @@ export default function TerminalQueueCard({ queue, variant = "full", canJoin = t
         <div className="flex items-center gap-3">
           <div
             className={`w-11 h-11 rounded-full flex flex-col items-center justify-center flex-shrink-0 text-white ${rankCircle} ${
-              isFirst ? "shadow-lg shadow-emerald-200" : ""
+              isFirst ? "shadow-lg shadow-[var(--success-soft)]" : ""
             }`}
           >
             {myEntry ? (
@@ -282,7 +282,7 @@ export default function TerminalQueueCard({ queue, variant = "full", canJoin = t
                 )}
                 <div
                   className={`relative w-[74px] h-[74px] rounded-full flex flex-col items-center justify-center text-white ${rankCircle} shadow-lg ${
-                    isFirst ? "shadow-emerald-200" : "shadow-amber-200"
+                    isFirst ? "shadow-[var(--success-soft)]" : "shadow-[var(--amber-soft)]"
                   }`}
                 >
                   <span className="text-[9px] font-extrabold tracking-widest leading-none opacity-90">POSITION</span>

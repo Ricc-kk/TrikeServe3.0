@@ -812,9 +812,9 @@ export default function ShareRideLobby({
     return (
       <div className="fixed inset-0 bg-black/50 z-[2000] flex items-center justify-center p-4">
         <Card className="bg-white p-6 max-w-sm w-full">
-          <h3 className="text-lg font-bold text-red-600 mb-2">Error</h3>
+          <h3 className="text-lg font-bold text-[var(--error)] mb-2">Error</h3>
           <p className="text-sm text-[var(--muted-foreground)] mb-6">{error}</p>
-          <Button onClick={onClose} className="w-full bg-red-500 hover:bg-red-600">
+          <Button onClick={onClose} className="w-full bg-[var(--error)] hover:bg-[var(--error)]">
             Close
           </Button>
         </Card>
@@ -858,10 +858,10 @@ export default function ShareRideLobby({
     return (
       <div className="fixed inset-0 bg-black/50 z-[2000] flex items-center justify-center p-4">
         <div className="bg-white p-6 max-w-sm w-full rounded-2xl shadow-xl">
-          <div className="w-16 h-16 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-4">
+          <div className="w-16 h-16 bg-[var(--error-soft)] rounded-full flex items-center justify-center mx-auto mb-4">
             <span className="text-3xl">🚧</span>
           </div>
-          <h3 className="text-xl font-bold text-red-600 text-center mb-2">Out of boundary area</h3>
+          <h3 className="text-xl font-bold text-[var(--error)] text-center mb-2">Out of boundary area</h3>
           <p className="text-[var(--muted-foreground)] text-center mb-6 text-sm">
             Your drop-off point is outside the service area covered by our terminals, so this
             shared ride cannot be booked. Please choose a drop-off location inside the boundary area.
@@ -922,7 +922,7 @@ export default function ShareRideLobby({
                 <div>
                   <h2 className="text-lg font-bold text-white">Share Ride</h2>
                   <div className="flex items-center gap-2">
-                    <div className={`w-2 h-2 rounded-full ${lobby.status === 'driver_found' ? 'bg-green-400' : 'bg-yellow-400 animate-pulse'}`} />
+                    <div className={`w-2 h-2 rounded-full ${lobby.status === 'driver_found' ? 'bg-[var(--success)]' : 'bg-[var(--amber)] animate-pulse'}`} />
                     <p className="text-xs text-white/80">
                       {lobby.status === 'driver_found' ? 'Driver Found!' : `Finding driver... ${getWaitingTime()}`}
                     </p>
@@ -969,7 +969,7 @@ export default function ShareRideLobby({
                   <p className="font-bold text-sm text-[var(--ink)] truncate">{lobby.dropoff_location}</p>
                 </div>
                 {etaToDestination && (
-                  <div className="flex-shrink-0 bg-red-100 text-red-700 px-2 py-1 rounded-lg">
+                  <div className="flex-shrink-0 bg-[var(--error-soft)] text-[var(--error)] px-2 py-1 rounded-lg">
                     <p className="text-[10px] font-bold">🏁 {etaToDestination}</p>
                   </div>
                 )}
@@ -1021,7 +1021,7 @@ export default function ShareRideLobby({
                           </p>
                         </div>
                         {index === 0 && (
-                          <Badge className="bg-purple-500 text-white text-[10px]">
+                          <Badge className="bg-[var(--violet)] text-white text-[10px]">
                             HOST
                           </Badge>
                         )}
@@ -1037,8 +1037,8 @@ export default function ShareRideLobby({
                     className="p-4 border-2 border-dashed border-[var(--border)] bg-[var(--muted)]"
                   >
                     <div className="flex items-center gap-3">
-                      <div className="w-12 h-12 rounded-full bg-gray-200 flex items-center justify-center">
-                        <Users className="w-6 h-6 text-gray-400" />
+                      <div className="w-12 h-12 rounded-full bg-[var(--border)] flex items-center justify-center">
+                        <Users className="w-6 h-6 text-[var(--muted-foreground)]" />
                       </div>
                       <p className="text-sm text-[var(--muted-foreground)] italic">Waiting for passenger...</p>
                     </div>
@@ -1049,19 +1049,19 @@ export default function ShareRideLobby({
 
             {/* Driver Info (when found) */}
             {lobby.status === 'driver_found' && lobby.driver_name && (
-              <div className="bg-gradient-to-r from-green-50 to-emerald-50 border-2 border-green-400 rounded-xl p-3.5 mb-3">
+              <div className="bg-gradient-to-r from-[var(--success-soft)] to-[var(--success-soft)] border-2 border-[var(--success)] rounded-xl p-3.5 mb-3">
                 <div className="flex items-center gap-3">
-                  <div className="w-12 h-12 rounded-full bg-green-500 flex items-center justify-center flex-shrink-0">
+                  <div className="w-12 h-12 rounded-full bg-[var(--success)] flex items-center justify-center flex-shrink-0">
                     <span className="text-2xl">👨‍✈️</span>
                   </div>
                   <div className="flex-1 min-w-0">
-                    <p className="text-[10px] text-green-600 font-bold uppercase tracking-wider">Your Driver</p>
+                    <p className="text-[10px] text-[var(--success)] font-bold uppercase tracking-wider">Your Driver</p>
                     <p className="font-bold text-[var(--ink)] truncate">{lobby.driver_name}</p>
                     <div className="flex items-center gap-2">
                       <span className="text-xs text-[var(--muted-foreground)]">{lobby.driver_plate}</span>
                       {(computedDriverRating || lobby.driver_rating) && (
                         <span className="flex items-center gap-0.5">
-                          <span className="text-yellow-500 text-xs">⭐</span>
+                          <span className="text-[var(--amber)] text-xs">⭐</span>
                           <span className="text-xs font-semibold text-[var(--ink)]">{computedDriverRating || lobby.driver_rating}</span>
                         </span>
                       )}
@@ -1069,7 +1069,7 @@ export default function ShareRideLobby({
                   </div>
                   <Button
                     size="icon"
-                    className="bg-green-500 hover:bg-green-600 text-white h-10 w-10"
+                    className="bg-[var(--success)] hover:bg-[var(--success)] text-white h-10 w-10"
                     onClick={handleOpenDriverChat}
                     disabled={openingChat}
                   >
@@ -1164,7 +1164,7 @@ export default function ShareRideLobby({
                 {/* Driver status indicator */}
                 <div className="px-3 py-2 bg-white border-t border-[var(--border)] flex items-center justify-between">
                   <div className="flex items-center gap-2">
-                    <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse" />
+                    <div className="w-2 h-2 bg-[var(--success)] rounded-full animate-pulse" />
                     <span className="text-xs font-semibold text-[var(--ink)]">
                       {(lobby.driver_status === 'on-the-way' || lobby.driver_status === 'arrived') ? 'Heading to pickup' : 'On the way to destination'}
                     </span>
@@ -1216,8 +1216,8 @@ export default function ShareRideLobby({
             </div>
 
             {passengers.length === lobby.max_seats && (
-              <div className="bg-green-50 border border-green-200 rounded-lg p-3 text-center">
-                <p className="text-sm text-green-700 font-semibold">
+              <div className="bg-[var(--success-soft)] border border-[var(--success-soft)] rounded-lg p-3 text-center">
+                <p className="text-sm text-[var(--success)] font-semibold">
                   🎉 Lobby Full! Prioritizing your ride request...
                 </p>
               </div>
@@ -1228,8 +1228,8 @@ export default function ShareRideLobby({
 
       {isTerminal && (
         <div className="fixed inset-0 bg-black/60 z-[2200] flex items-center justify-center p-4">
-          <Card className="bg-white p-6 max-w-sm w-full text-center shadow-2xl border-2 border-green-200">
-            <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-green-100 flex items-center justify-center text-3xl">
+          <Card className="bg-white p-6 max-w-sm w-full text-center shadow-2xl border-2 border-[var(--success-soft)]">
+            <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-[var(--success-soft)] flex items-center justify-center text-3xl">
               {terminalStatus === 'completed' ? '🎉' : '🛑'}
             </div>
             <h3 className="text-xl font-bold text-[var(--ink)] mb-2">
@@ -1268,7 +1268,7 @@ export default function ShareRideLobby({
           <Card className="bg-white p-6 max-w-sm w-full text-center">
             {ratingSubmitted ? (
               <>
-                <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-green-100 flex items-center justify-center text-3xl">
+                <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-[var(--success-soft)] flex items-center justify-center text-3xl">
                   🙏
                 </div>
                 <h3 className="text-xl font-bold text-[var(--ink)] mb-2">Thank you!</h3>
@@ -1384,8 +1384,8 @@ export default function ShareRideLobby({
             <p className="text-[var(--muted-foreground)] text-center mb-6 text-sm">
               All {lobby.max_seats} seats are taken! Your ride is being prioritized for faster pickup.
             </p>
-            <div className="bg-green-50 border border-green-200 rounded-xl p-3 mb-6">
-              <p className="text-sm text-green-700 text-center font-semibold">
+            <div className="bg-[var(--success-soft)] border border-[var(--success-soft)] rounded-xl p-3 mb-6">
+              <p className="text-sm text-[var(--success)] text-center font-semibold">
                 💰 You're now sharing the fare with {lobby.max_seats - 1} other passengers!
               </p>
             </div>
@@ -1417,7 +1417,7 @@ export default function ShareRideLobby({
               </Button>
               <Button
                 onClick={handleLeaveLobby}
-                className="flex-1 bg-red-500 hover:bg-red-600 text-white"
+                className="flex-1 bg-[var(--error)] hover:bg-[var(--error)] text-white"
               >
                 CANCEL RIDE
               </Button>
