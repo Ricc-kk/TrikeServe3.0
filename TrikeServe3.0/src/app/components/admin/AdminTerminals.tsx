@@ -1,12 +1,24 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import {
-  Plus, Edit2, Trash2, UserPlus, UserMinus, MapPin, Users, Menu, X, Navigation, Search, Loader2, Save
+  Plus, Edit2, Trash2, UserPlus, UserMinus, MapPin, Users, Menu, X, Navigation, Search, Loader2, Save,
+  ClipboardCheck, CheckCircle, XCircle, Clock, ShieldCheck
 } from "lucide-react";
 import { GoogleMap, MarkerF, InfoWindow } from "@react-google-maps/api";
 import useMapLoader from "@/lib/mapLoader";
 import { autocompletePlacesNew, createPlacesSessionToken, fetchPlaceDetailsNew } from "@/lib/placesApi";
 import AdminSidebar from "./AdminSidebar";
 import { supabase } from "../../../utils/supabase";
+import { useAuth } from "../../contexts/AuthContext";
+import {
+  submitApprovalRequest,
+  getApprovalRequests,
+  getRiderAdmins,
+  assignRiderAdminTerminal,
+  getAdminTerminalAssignment,
+  APPROVAL_REQUEST_LABELS,
+  type ApprovalRequest,
+  type RiderAdminSummary,
+} from "../../../lib/supabase";
 import ConfirmationModal from "../ui/confirmation-modal";
 import Toast from "../ui/Toast";
 
@@ -74,10 +86,6 @@ function getStoredTerminals(): Terminal[] {
   return [...SEED_TERMINALS];
 }
 
-function saveStoredTerminals(terminals: Terminal[]) {
-  localStorage.setItem(TERMINALS_KEY, JSON.stringify(terminals));
-}
-
 /** All known users: stored users plus demo riders, deduped by id. */
 function getAllUsers(): StoredRider[] {
   let stored: StoredRider[] = [];
@@ -92,11 +100,20 @@ function getAllUsers(): StoredRider[] {
   return [...stored, ...MOCK_RIDERS.filter(m => !stored.find(u => u.id === m.id))];
 }
 
-function saveStoredUsers(users: StoredRider[]) {
-  localStorage.setItem("trikeserve_users", JSON.stringify(users));
-}
-
 export default function AdminTerminals() {
+  const { user } = useAuth();
+  // The Super Admin manages terminals directly. A Rider Admin is scoped to the
+  // single terminal assigned to them, and their changes are staged for approval.
+  const isSuperAdmin = user?.adminType === 'business_customer';
+  const isRiderAdmin = user?.adminType === 'rider';
+
+  // Terminal the current Rider Admin is limited to
+  const [assignedTerminalId, setAssignedTerminalId] = useState<string | null>(user?.terminalId ?? null);
+  const [assignedTerminalName, setAssignedTerminalName] = useState<string | null>(user?.terminalName ?? null);
+  // Rider Admin accounts + their terminal scope (Super Admin view)
+  const [riderAdmins, setRiderAdmins] = useState<RiderAdminSummary[]>([]);
+  const [savingAssignmentId, setSavingAssignmentId] = useState<string | null>(null);
+
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [terminals, setTerminals] = useState<Terminal[]>(getStoredTerminals());
   const [users, setUsers] = useState<StoredRider[]>(getAllUsers());
@@ -116,6 +133,9 @@ export default function AdminTerminals() {
   // Pending rider assignment changes (not saved until user clicks Save Changes)
   type PendingAction = { action: 'assign' | 'unassign'; terminalId: string; terminalName: string };
   const [pendingChanges, setPendingChanges] = useState<Record<string, PendingAction>>({});
+
+  // The Rider Admin's own submitted requests, so they can see review status
+  const [myRequests, setMyRequests] = useState<ApprovalRequest[]>([]);
 
   // Toast notification
   const [toast, setToast] = useState<{ message: string; variant?: 'success' | 'error' | 'warning' } | null>(null);
@@ -145,7 +165,10 @@ export default function AdminTerminals() {
   // Load from Supabase when available; fall back to localStorage data otherwise.
   useEffect(() => {
     loadData();
-  }, []);
+    loadMyRequests();
+    loadMyAssignment();
+    loadRiderAdmins();
+  }, [user?.email]);
 
   async function loadData() {
     const [dbTerminals, dbRiders] = await Promise.all([
@@ -199,6 +222,65 @@ export default function AdminTerminals() {
     }
   }
 
+  async function loadMyRequests() {
+    if (!user?.email) return;
+    const { data } = await getApprovalRequests({ requestedByEmail: user.email });
+    setMyRequests(data);
+  }
+
+  // Read the Rider Admin's terminal scope fresh from the DB so a Super Admin
+  // assignment takes effect without the Rider Admin having to log out.
+  async function loadMyAssignment() {
+    if (!isRiderAdmin || !user?.email) return;
+    const { terminal_id, terminal_name } = await getAdminTerminalAssignment(user.email);
+    setAssignedTerminalId(terminal_id);
+    setAssignedTerminalName(terminal_name);
+  }
+
+  async function loadRiderAdmins() {
+    if (!isSuperAdmin) return;
+    const { data } = await getRiderAdmins();
+    setRiderAdmins(data);
+  }
+
+  async function handleAssignRiderAdmin(adminId: string, terminalId: string) {
+    const terminal = terminals.find(t => t.id === terminalId) || null;
+    setSavingAssignmentId(adminId);
+    const result = await assignRiderAdminTerminal(adminId, terminalId || null, terminal?.name ?? null);
+    setSavingAssignmentId(null);
+
+    if (!result.success) {
+      setToast({ message: `Assignment failed: ${result.error}`, variant: 'error' });
+      return;
+    }
+
+    await loadRiderAdmins();
+    setToast({
+      message: terminal ? `Rider admin assigned to ${terminal.name}` : 'Rider admin unassigned',
+      variant: 'success',
+    });
+  }
+
+  // Confirm before changing a Rider Admin's scope — the select stays on the old
+  // value until the Super Admin actually accepts the change.
+  function confirmAssignRiderAdmin(admin: RiderAdminSummary, terminalId: string) {
+    const terminal = terminals.find(t => t.id === terminalId) || null;
+    const label = admin.name || admin.email || 'this Rider Admin';
+
+    openModal({
+      title: terminal ? "Assign Terminal" : "Remove Assignment",
+      message: terminal
+        ? `Assign ${label} to ${terminal.name}? They will only be able to edit this terminal and manage its drivers, and their changes will still need your approval.`
+        : `Remove the terminal assignment for ${label}? They will not be able to manage any terminal until you assign them again.`,
+      variant: terminal ? 'success' : 'warning',
+      confirmLabel: terminal ? 'Assign' : 'Remove',
+      onConfirm: async () => {
+        closeModal();
+        await handleAssignRiderAdmin(admin.id, terminalId);
+      },
+    });
+  }
+
   const riders = users.filter(u => u.role === "rider");
 
   const riderTerminalId = (r: StoredRider) => r.terminalId || r.terminal_id;
@@ -222,6 +304,11 @@ export default function AdminTerminals() {
     return riders.filter(r => !riderTerminalId(r));
   }
 
+  // A Rider Admin only ever sees the terminal they are scoped to.
+  const visibleTerminals = isRiderAdmin
+    ? terminals.filter(t => t.id === assignedTerminalId)
+    : terminals;
+
   function openCreate() {
     setForm({ name: "", boundary: "", center_lat: 14.7294, center_lng: 120.9349, is_active: true });
     setEditTerminal(null);
@@ -232,31 +319,6 @@ export default function AdminTerminals() {
     setForm({ name: t.name, boundary: t.boundary, center_lat: t.center_lat, center_lng: t.center_lng, is_active: t.is_active });
     setEditTerminal(t);
     setShowForm(true);
-  }
-
-  /** Best-effort write to Supabase; the page keeps working offline via localStorage. */
-  async function persistTerminal(t: Terminal) {
-    try {
-      const { error } = await supabase
-        .from("terminals")
-        .upsert(
-          {
-            id: t.id,
-            name: t.name,
-            boundary: t.boundary,
-            center_lat: t.center_lat,
-            center_lng: t.center_lng,
-            radius_km: t.radius_km,
-            is_active: t.is_active,
-            rider_count: t.rider_count,
-            updated_at: new Date().toISOString(),
-          },
-          { onConflict: "id" }
-        );
-      if (error) console.error("Error saving terminal to Supabase:", error);
-    } catch (error) {
-      console.error("Error saving terminal to Supabase:", error);
-    }
   }
 
   const handleFormMapClick = useCallback((e: google.maps.MapMouseEvent) => {
@@ -327,36 +389,75 @@ export default function AdminTerminals() {
     }
   };
 
-  function saveTerminal() {
+  async function saveTerminal() {
     if (!form.name || !form.boundary) return;
-    if (editTerminal) {
-      const updated: Terminal = { ...editTerminal, name: form.name, boundary: form.boundary, center_lat: form.center_lat, center_lng: form.center_lng, is_active: form.is_active };
-      persistTerminal(updated);
-      setTerminals(ts => {
-        const next = ts.map(t => (t.id === editTerminal.id ? updated : t));
-        saveStoredTerminals(next);
-        return next;
-      });
-    } else {
-      const newT: Terminal = {
-        id: `t_${Date.now()}`,
-        name: form.name,
-        boundary: form.boundary,
-        center_lat: form.center_lat,
-        center_lng: form.center_lng,
-        radius_km: 2.0,
-        is_active: form.is_active,
-        rider_count: 0,
-      };
-      persistTerminal(newT);
-      setTerminals(ts => {
-        const next = [...ts, newT];
-        saveStoredTerminals(next);
-        return next;
-      });
+
+    const target: Terminal = editTerminal
+      ? { ...editTerminal, name: form.name, boundary: form.boundary, center_lat: form.center_lat, center_lng: form.center_lng, is_active: form.is_active }
+      : {
+          id: `t_${Date.now()}`,
+          name: form.name,
+          boundary: form.boundary,
+          center_lat: form.center_lat,
+          center_lng: form.center_lng,
+          radius_km: 2.0,
+          is_active: form.is_active,
+          rider_count: 0,
+        };
+
+    // Super Admin changes apply immediately.
+    if (isSuperAdmin) {
+      const { error } = await supabase.from("terminals").upsert(
+        {
+          id: target.id,
+          name: target.name,
+          boundary: target.boundary,
+          center_lat: target.center_lat,
+          center_lng: target.center_lng,
+          radius_km: target.radius_km,
+          is_active: target.is_active,
+          rider_count: target.rider_count,
+          updated_at: new Date().toISOString(),
+        },
+        { onConflict: "id" }
+      );
+
+      if (error) {
+        setToast({ message: `Save failed: ${error.message}`, variant: 'error' });
+        return;
+      }
+
+      setTerminals(ts =>
+        editTerminal ? ts.map(t => (t.id === editTerminal.id ? target : t)) : [...ts, target]
+      );
+      setShowForm(false);
+      setShowMapPicker(false);
+      setToast({ message: editTerminal ? 'Terminal updated' : 'Terminal created', variant: 'success' });
+      return;
     }
+
+    // Rider Admin: only their assigned terminal, and only as a request.
+    if (!editTerminal || editTerminal.id !== assignedTerminalId) {
+      setToast({ message: 'You can only edit the terminal assigned to you', variant: 'error' });
+      return;
+    }
+
+    const result = await submitApprovalRequest({
+      requestType: 'terminal_update',
+      payload: target,
+      requestedByEmail: user?.email,
+      requestedByName: user?.name,
+    });
+
+    if (!result.success) {
+      setToast({ message: `Request failed: ${result.error}`, variant: 'error' });
+      return;
+    }
+
     setShowForm(false);
     setShowMapPicker(false);
+    await loadMyRequests();
+    setToast({ message: 'Terminal change submitted for Super Admin approval', variant: 'warning' });
   }
 
   function confirmDeleteTerminal(id: string) {
@@ -372,39 +473,40 @@ export default function AdminTerminals() {
     });
   }
 
-  function deleteTerminal(id: string) {
-    const unassignIds = users.filter(u => riderTerminalId(u) === id).map(u => u.id);
-    const updated = users.map(u =>
-      riderTerminalId(u) === id
-        ? { ...u, terminalId: undefined, terminalName: undefined, terminal_id: undefined, terminal_name: undefined }
-        : u
-    );
-    setUsers(updated);
-    saveStoredUsers(updated);
-    setTerminals(ts => {
-      const next = ts.filter(t => t.id !== id);
-      saveStoredTerminals(next);
-      return next;
-    });
-    // Also remove any pending changes for riders of this terminal
-    setPendingChanges(prev => {
-      const next = { ...prev };
-      for (const uid of unassignIds) delete next[uid];
-      return next;
-    });
-    // Best-effort Supabase sync
-    (async () => {
-      try {
-        if (unassignIds.length > 0) {
-          await supabase.from("users").update({ terminal_id: null, terminal_name: null }).in("id", unassignIds);
-        }
-        const { error } = await supabase.from("terminals").delete().eq("id", id);
-        if (error) console.error("Error deleting terminal in Supabase:", error);
-      } catch (error) {
-        console.error("Error deleting terminal in Supabase:", error);
+  async function deleteTerminal(id: string) {
+    // Only the Super Admin may remove a terminal, and it applies immediately.
+    if (!isSuperAdmin) return;
+    const target = terminals.find(t => t.id === id);
+    if (!target) return;
+
+    try {
+      // Release drivers and unscope any Rider Admin pointed at this terminal.
+      await supabase.from("users").update({ terminal_id: null, terminal_name: null }).eq("terminal_id", id);
+      await supabase.from("admins").update({ terminal_id: null, terminal_name: null }).eq("terminal_id", id);
+
+      const { error } = await supabase.from("terminals").delete().eq("id", id);
+      if (error) {
+        setToast({ message: `Delete failed: ${error.message}`, variant: 'error' });
+        return;
       }
-    })();
-    setToast({ message: 'Terminal deleted successfully', variant: 'success' });
+
+      setTerminals(ts => ts.filter(t => t.id !== id));
+
+      // Drop any queued driver changes for riders of this terminal
+      setPendingChanges(prev => {
+        const next = { ...prev };
+        for (const u of users) {
+          if (riderTerminalId(u) === id) delete next[u.id];
+        }
+        return next;
+      });
+
+      await loadRiderAdmins();
+      setToast({ message: 'Terminal deleted', variant: 'success' });
+    } catch (error) {
+      console.error('[AdminTerminals] delete failed:', error);
+      setToast({ message: 'Network error while deleting the terminal', variant: 'error' });
+    }
   }
 
   // Queue a rider assignment change (not applied until Save Changes is clicked)
@@ -453,70 +555,49 @@ export default function AdminTerminals() {
 
   function savePendingChanges() {
     const count = Object.keys(pendingChanges).length;
+    if (count === 0 || !isRiderAdmin) return;
+
     openModal({
-      title: "Save Changes",
-      message: `Apply ${count} pending driver assignment change${count > 1 ? 's' : ''}?`,
+      title: "Submit for Approval",
+      message: `Submit ${count} driver assignment change${count > 1 ? 's' : ''} to the Super Admin? Nothing is applied until they approve it.`,
       variant: "success",
-      confirmLabel: "Save Changes",
+      confirmLabel: "Submit",
       onConfirm: async () => {
         closeModal();
         const changes = { ...pendingChanges };
         setPendingChanges({});
 
-        // Apply changes locally first
-        let updatedUsers = [...users];
-        let updatedTerminals = [...terminals];
-
+        let failures = 0;
         for (const [riderId, change] of Object.entries(changes)) {
-          if (change.action === 'assign') {
-            updatedUsers = updatedUsers.map(u =>
-              u.id === riderId
-                ? { ...u, terminalId: change.terminalId, terminalName: change.terminalName, terminal_id: change.terminalId, terminal_name: change.terminalName }
-                : u
-            );
-            updatedTerminals = updatedTerminals.map(t =>
-              t.id === change.terminalId ? { ...t, rider_count: t.rider_count + 1 } : t
-            );
-          } else {
-            const oldTerminalId = updatedUsers.find(u => u.id === riderId)?.terminalId || updatedUsers.find(u => u.id === riderId)?.terminal_id;
-            updatedUsers = updatedUsers.map(u =>
-              u.id === riderId
-                ? { ...u, terminalId: undefined, terminalName: undefined, terminal_id: undefined, terminal_name: undefined }
-                : u
-            );
-            if (oldTerminalId) {
-              updatedTerminals = updatedTerminals.map(t =>
-                t.id === oldTerminalId ? { ...t, rider_count: Math.max(0, t.rider_count - 1) } : t
-              );
-            }
+          const rider = users.find(u => u.id === riderId);
+          const previousTerminalId = rider ? riderTerminalId(rider) : undefined;
+
+          const result = await submitApprovalRequest({
+            requestType: change.action === 'assign' ? 'driver_assign' : 'driver_unassign',
+            payload: {
+              driver_id: riderId,
+              driver_name: rider ? riderName(rider) : riderId,
+              terminal_id: change.action === 'assign' ? change.terminalId : (previousTerminalId || change.terminalId),
+              terminal_name: change.terminalName,
+              previous_terminal_id: previousTerminalId,
+            },
+            requestedByEmail: user?.email,
+            requestedByName: user?.name,
+          });
+
+          if (!result.success) {
+            console.error('[AdminTerminals] approval submit failed:', result.error);
+            failures++;
           }
         }
 
-        setUsers(updatedUsers);
-        saveStoredUsers(updatedUsers);
-        setTerminals(updatedTerminals);
-        saveStoredTerminals(updatedTerminals);
+        await loadMyRequests();
 
-        // Best-effort Supabase sync
-        try {
-          for (const [riderId, change] of Object.entries(changes)) {
-            if (change.action === 'assign') {
-              await supabase.from("users").update({ terminal_id: change.terminalId, terminal_name: change.terminalName }).eq("id", riderId);
-            } else {
-              await supabase.from("users").update({ terminal_id: null, terminal_name: null }).eq("id", riderId);
-            }
-          }
-          // Recount riders for affected terminals
-          const terminalIds = [...new Set(Object.values(changes).map(c => c.action === 'assign' ? c.terminalId : c.terminalId))].filter(Boolean);
-          for (const tid of terminalIds) {
-            const { data: ridersForTerminal } = await supabase.from("users").select("id").eq("terminal_id", tid);
-            await supabase.from("terminals").update({ rider_count: (ridersForTerminal || []).length }).eq("id", tid);
-          }
-        } catch (error) {
-          console.error("Error syncing to Supabase:", error);
+        if (failures > 0) {
+          setToast({ message: `${failures} request${failures > 1 ? 's' : ''} failed to submit`, variant: 'error' });
+        } else {
+          setToast({ message: `${count} change${count > 1 ? 's' : ''} submitted for Super Admin approval`, variant: 'warning' });
         }
-
-        setToast({ message: `${count} driver assignment${count > 1 ? 's' : ''} saved successfully`, variant: 'success' });
       },
     });
   }
@@ -547,12 +628,14 @@ export default function AdminTerminals() {
               <div>
                 <h1 className="text-2xl lg:text-3xl font-extrabold text-[#121212]">Terminal Management</h1>
                 <p className="text-xs lg:text-sm text-[#64748B]">
-                  {terminals.length} terminals · {riders.length} drivers
+                  {isRiderAdmin
+                    ? (assignedTerminalName ? `Assigned to ${assignedTerminalName} · ${riders.length} drivers` : 'No terminal assigned')
+                    : `${terminals.length} terminals · ${riders.length} drivers`}
                 </p>
               </div>
             </div>
             <div className="flex items-center gap-3">
-              {hasPendingChanges && (
+              {isRiderAdmin && hasPendingChanges && (
                 <button
                   onClick={savePendingChanges}
                   className="flex items-center gap-2 px-4 lg:px-5 py-2.5 bg-[#10B981] hover:bg-[#059669] text-white font-bold text-sm uppercase tracking-wide rounded-xl transition-all active:scale-95 shadow-lg shadow-green-200 animate-pulse"
@@ -560,12 +643,14 @@ export default function AdminTerminals() {
                   <Save size={16} /> Save Changes ({Object.keys(pendingChanges).length})
                 </button>
               )}
-              <button
-                onClick={openCreate}
-                className="flex items-center gap-2 px-4 lg:px-5 py-2.5 bg-[#E11D48] hover:bg-[#BE123C] text-white font-bold text-sm uppercase tracking-wide rounded-xl transition-all active:scale-95 shadow-lg shadow-red-200"
-              >
-                <Plus size={16} /> New Terminal
-              </button>
+              {isSuperAdmin && (
+                <button
+                  onClick={openCreate}
+                  className="flex items-center gap-2 px-4 lg:px-5 py-2.5 bg-[#E11D48] hover:bg-[#BE123C] text-white font-bold text-sm uppercase tracking-wide rounded-xl transition-all active:scale-95 shadow-lg shadow-red-200"
+                >
+                  <Plus size={16} /> New Terminal
+                </button>
+              )}
             </div>
           </div>
         </div>
@@ -573,7 +658,7 @@ export default function AdminTerminals() {
         {/* Content */}
         <div className="p-5 lg:p-8">
           {/* Pending Changes Banner */}
-          {hasPendingChanges && (
+          {isRiderAdmin && hasPendingChanges && (
             <div className="mb-4 p-4 bg-amber-50 border-2 border-amber-200 rounded-xl">
               <div className="flex items-center justify-between">
                 <div>
@@ -602,8 +687,120 @@ export default function AdminTerminals() {
             </div>
           )}
 
+          {/* Super Admin: assign each Rider Admin to a terminal */}
+          {isSuperAdmin && (
+            <div className="mb-6">
+              <h2 className="text-sm font-bold uppercase tracking-wide text-[#64748B] mb-2 flex items-center gap-2">
+                <ShieldCheck size={16} /> Rider Admin Assignments
+              </h2>
+              <div className="bg-white border-2 border-[#E2E8F0] rounded-2xl p-4">
+                {riderAdmins.length === 0 ? (
+                  <p className="text-sm text-[#64748B] italic">No Rider Admin accounts found</p>
+                ) : (
+                  <div className="space-y-3">
+                    {riderAdmins.map(admin => (
+                      <div key={admin.id} className="flex items-center justify-between gap-4 flex-wrap">
+                        <div className="min-w-0">
+                          <p className="text-sm font-semibold text-[#121212] truncate">
+                            {admin.name || 'Rider Admin'}
+                          </p>
+                          <p className="text-xs text-[#64748B] truncate">{admin.email}</p>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <select
+                            value={admin.terminal_id || ''}
+                            disabled={savingAssignmentId === admin.id}
+                            onChange={(e) => confirmAssignRiderAdmin(admin, e.target.value)}
+                            className="px-3 py-2 border-2 border-[#E2E8F0] rounded-xl font-semibold text-sm disabled:opacity-50"
+                          >
+                            <option value="">No terminal</option>
+                            {terminals.map(t => (
+                              <option key={t.id} value={t.id}>{t.name}</option>
+                            ))}
+                          </select>
+                          {savingAssignmentId === admin.id && (
+                            <Loader2 size={16} className="text-[#64748B] animate-spin" />
+                          )}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* Rider Admin: scope notice */}
+          {isRiderAdmin && (
+            <div className={`mb-4 p-4 rounded-xl border-2 ${assignedTerminalId ? 'bg-[#EFF6FF] border-[#BFDBFE]' : 'bg-amber-50 border-amber-200'}`}>
+              <p className={`font-bold text-sm ${assignedTerminalId ? 'text-[#1E40AF]' : 'text-amber-800'}`}>
+                {assignedTerminalId
+                  ? `Assigned to ${assignedTerminalName || 'your terminal'}`
+                  : 'No terminal assigned'}
+              </p>
+              <p className={`text-xs mt-0.5 ${assignedTerminalId ? 'text-[#1E40AF]/80' : 'text-amber-600'}`}>
+                {assignedTerminalId
+                  ? 'You can only edit this terminal and manage its drivers. Changes are sent to the Super Admin for approval.'
+                  : 'Ask the Super Admin to assign you to a terminal before you can manage drivers.'}
+              </p>
+            </div>
+          )}
+
+          {/* Rider Admin: status of their own submitted requests */}
+          {isRiderAdmin && myRequests.length > 0 && (
+            <div className="mb-6">
+              <h2 className="text-sm font-bold uppercase tracking-wide text-[#64748B] mb-2 flex items-center gap-2">
+                <ClipboardCheck size={16} /> My Submitted Requests
+              </h2>
+              <div className="space-y-2">
+                {myRequests.slice(0, 8).map(req => {
+                  const pending = req.status === 'pending';
+                  const approved = req.status === 'approved';
+                  const p = req.payload || {};
+                  const summary = req.request_type.startsWith('terminal')
+                    ? `${p.name || p.id || 'Terminal'}`
+                    : `${p.driver_name || 'Driver'} → ${p.terminal_name || p.terminal_id || ''}`;
+                  return (
+                    <div
+                      key={req.id}
+                      className={`flex items-center justify-between gap-3 px-4 py-2.5 rounded-xl border-2 ${
+                        pending ? 'bg-amber-50 border-amber-200' : approved ? 'bg-green-50 border-green-200' : 'bg-red-50 border-red-200'
+                      }`}
+                    >
+                      <div className="flex items-center gap-3 min-w-0">
+                        {pending ? <Clock size={15} className="text-amber-600 flex-shrink-0" />
+                          : approved ? <CheckCircle size={15} className="text-green-600 flex-shrink-0" />
+                          : <XCircle size={15} className="text-red-600 flex-shrink-0" />}
+                        <div className="min-w-0">
+                          <p className="text-sm font-semibold text-[#121212] truncate">
+                            {APPROVAL_REQUEST_LABELS[req.request_type]} — {summary}
+                          </p>
+                          {!pending && req.rejection_reason && (
+                            <p className="text-xs text-red-600 truncate">Reason: {req.rejection_reason}</p>
+                          )}
+                        </div>
+                      </div>
+                      <span className={`text-xs font-bold uppercase flex-shrink-0 ${
+                        pending ? 'text-amber-600' : approved ? 'text-green-600' : 'text-red-600'
+                      }`}>
+                        {pending ? 'Awaiting approval' : req.status}
+                      </span>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+          {isRiderAdmin && visibleTerminals.length === 0 ? (
+            <div className="p-12 border-2 border-dashed border-[#E2E8F0] rounded-2xl text-center">
+              <MapPin className="w-16 h-16 text-gray-300 mx-auto mb-4" />
+              <p className="text-[#64748B] text-sm mb-2">No terminal assigned to you yet</p>
+              <p className="text-[#94A3B8] text-xs">The Super Admin must assign you to a terminal</p>
+            </div>
+          ) : (
           <div className="grid gap-4">
-            {terminals.map(t => {
+            {visibleTerminals.map(t => {
               const termRiders = getRidersForTerminal(t.id);
               const unassigned = getUnassignedRiders();
               const isExpanded = expandedId === t.id;
@@ -635,18 +832,22 @@ export default function AdminTerminals() {
                         >
                           {isExpanded ? "Hide" : "Drivers"}
                         </button>
-                        <button
-                          onClick={() => openEdit(t)}
-                          className="w-8 h-8 bg-[#F8F9FA] border-2 border-[#E2E8F0] rounded-xl flex items-center justify-center hover:border-[#3B82F6] transition-all active:scale-90"
-                        >
-                          <Edit2 size={14} className="text-[#64748B]" />
-                        </button>
-                        <button
-                          onClick={() => confirmDeleteTerminal(t.id)}
-                          className="w-8 h-8 bg-red-50 border-2 border-red-100 rounded-xl flex items-center justify-center hover:border-red-300 transition-all active:scale-90"
-                        >
-                          <Trash2 size={14} className="text-[#EF4444]" />
-                        </button>
+                        {(isSuperAdmin || (isRiderAdmin && t.id === assignedTerminalId)) && (
+                          <button
+                            onClick={() => openEdit(t)}
+                            className="w-8 h-8 bg-[#F8F9FA] border-2 border-[#E2E8F0] rounded-xl flex items-center justify-center hover:border-[#3B82F6] transition-all active:scale-90"
+                          >
+                            <Edit2 size={14} className="text-[#64748B]" />
+                          </button>
+                        )}
+                        {isSuperAdmin && (
+                          <button
+                            onClick={() => confirmDeleteTerminal(t.id)}
+                            className="w-8 h-8 bg-red-50 border-2 border-red-100 rounded-xl flex items-center justify-center hover:border-red-300 transition-all active:scale-90"
+                          >
+                            <Trash2 size={14} className="text-[#EF4444]" />
+                          </button>
+                        )}
                       </div>
                     </div>
                   </div>
@@ -681,7 +882,7 @@ export default function AdminTerminals() {
                                   </span>
                                 )}
                               </div>
-                              {isPending ? (
+                              {isRiderAdmin && (isPending ? (
                                 <button
                                   onClick={() => cancelPendingChange(r.id)}
                                   className="text-xs font-semibold text-amber-600 hover:text-amber-800 underline"
@@ -695,13 +896,13 @@ export default function AdminTerminals() {
                                 >
                                   <UserMinus size={12} /> Unassign
                                 </button>
-                              )}
+                              ))}
                             </div>
                           );
                         })}
                       </div>
 
-                      {unassigned.length > 0 && (
+                      {isRiderAdmin && unassigned.length > 0 && (
                         <>
                           <h4 className="text-xs font-semibold uppercase tracking-wide text-[#64748B] mb-2">Assign Driver</h4>
                           <div className="flex flex-wrap gap-2">
@@ -749,6 +950,7 @@ export default function AdminTerminals() {
               );
             })}
           </div>
+          )}
         </div>
       </div>
 

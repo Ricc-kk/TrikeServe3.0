@@ -44,6 +44,7 @@ import Favorites from "./components/customer/Favorites";
 import AdminDashboard from "./components/admin/AdminDashboard";
 import AdminUsers from "./components/admin/AdminUsers";
 import AdminTerminals from "./components/admin/AdminTerminals";
+import AdminApprovals from "./components/admin/AdminApprovals";
 import AdminSettings from "./components/admin/AdminSettings";
 
 export const router = createBrowserRouter([
@@ -415,6 +416,14 @@ export const router = createBrowserRouter([
         element: (
           <ProtectedRoute allowedRoles={['admin']}>
             <AdminTerminals />
+          </ProtectedRoute>
+        )
+      },
+      {
+        path: "admin/approvals",
+        element: (
+          <ProtectedRoute allowedRoles={['admin']}>
+            <AdminApprovals />
           </ProtectedRoute>
         )
       },

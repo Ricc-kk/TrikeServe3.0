@@ -79,10 +79,9 @@ export default function AdminUsers() {
       }));
 
       const adminType = user?.adminType;
+      // Super Admin sees every user; the Rider Admin only gets riders (read-only).
       let filteredUsers = allUsers.filter(u => u.role !== 'admin');
-      if (adminType === 'business_customer') {
-        filteredUsers = filteredUsers.filter(u => u.role === 'business' || u.role === 'customer');
-      } else if (adminType === 'rider') {
+      if (adminType === 'rider') {
         filteredUsers = filteredUsers.filter(u => u.role === 'rider');
       }
 
@@ -99,10 +98,9 @@ export default function AdminUsers() {
       const allUsers: StoredUser[] = JSON.parse(usersJson);
       const adminType = user?.adminType;
 
+      // Super Admin sees every user; the Rider Admin only gets riders (read-only).
       let filteredUsers = allUsers.filter(u => u.role !== 'admin');
-      if (adminType === 'business_customer') {
-        filteredUsers = filteredUsers.filter(u => u.role === 'business' || u.role === 'customer');
-      } else if (adminType === 'rider') {
+      if (adminType === 'rider') {
         filteredUsers = filteredUsers.filter(u => u.role === 'rider');
       }
 
@@ -199,36 +197,15 @@ export default function AdminUsers() {
     });
   };
 
-  // Helper function to check if admin can verify a user
-  const canVerifyUser = (userRole: string): boolean => {
-    // Business & Customer Admin can verify customer and business users, but NOT riders
-    if (user?.adminType === 'business_customer') {
-      return userRole !== 'rider';
-    }
-    // Driver Admin can verify rider users, but NOT customers or businesses
-    if (user?.adminType === 'rider') {
-      return userRole === 'rider';
-    }
-    // Super admin can verify anyone
-    return true;
-  };
+  // Only the Super Admin performs user actions; the Rider Admin gets a read-only driver list.
+  const isSuperAdmin = user?.adminType === 'business_customer';
+  const isRiderReadOnly = user?.adminType === 'rider';
 
-  // Helper function to check if admin can delete a user
-  const canDeleteUser = (userRole: string): boolean => {
-    // Same restrictions as verification
-    return canVerifyUser(userRole);
-  };
+  const canVerifyUser = (_userRole: string): boolean => isSuperAdmin;
+  const canDeleteUser = (_userRole: string): boolean => isSuperAdmin;
 
-  // Helper function to get reason why action is blocked
-  const getBlockedReason = (userRole: string): string => {
-    if (user?.adminType === 'business_customer' && userRole === 'rider') {
-      return 'Business & Customer Admin cannot manage driver users';
-    }
-    if (user?.adminType === 'rider' && (userRole === 'customer' || userRole === 'business')) {
-      return 'Driver Admin can only manage driver users';
-    }
-    return '';
-  };
+  const getBlockedReason = (_userRole: string): string =>
+    'Only the Super Admin can manage users';
 
   const handleStartEditRole = (userId: string, currentRole: string) => {
     setEditingUserId(userId);
@@ -333,8 +310,12 @@ export default function AdminUsers() {
                 <Menu className="w-6 h-6 text-[#121212]" />
               </button>
               <div>
-                <h1 className="text-2xl lg:text-3xl font-extrabold text-[#121212]">User Management</h1>
-                <p className="text-xs lg:text-sm text-[#64748B]">Manage users, roles, and verifications</p>
+                <h1 className="text-2xl lg:text-3xl font-extrabold text-[#121212]">
+                  {isRiderReadOnly ? 'Drivers' : 'User Management'}
+                </h1>
+                <p className="text-xs lg:text-sm text-[#64748B]">
+                  {isRiderReadOnly ? 'View driver accounts' : 'Manage users, roles, and verifications'}
+                </p>
               </div>
             </div>
           </div>
@@ -342,6 +323,15 @@ export default function AdminUsers() {
 
         {/* Content */}
         <div className="p-5 lg:p-8">
+          {isRiderReadOnly && (
+            <Card className="p-4 mb-6 border-2 border-[#BFDBFE] bg-[#EFF6FF]">
+              <p className="text-sm text-[#1E40AF] font-semibold">Read-only access</p>
+              <p className="text-xs text-[#1E40AF]/80 mt-0.5">
+                Verification, role changes and account management are handled by the Super Admin.
+              </p>
+            </Card>
+          )}
+
           {/* Stats Cards */}
           <div className="grid grid-cols-2 lg:grid-cols-6 gap-3 lg:gap-4 mb-6">
             <Card className="p-4 border-2 border-[#E2E8F0] bg-white">
@@ -397,6 +387,7 @@ export default function AdminUsers() {
                     <>
                       <option value="customer">Customers</option>
                       <option value="business">Businesses</option>
+                      <option value="rider">Drivers</option>
                     </>
                   )}
                   {(!user?.adminType || user?.adminType === 'rider') && (
@@ -474,6 +465,7 @@ export default function AdminUsers() {
                                   <>
                                     <option value="customer">Customer</option>
                                     <option value="business">Business</option>
+                                    <option value="rider">Driver</option>
                                   </>
                                 )}
                                 {(!user?.adminType || user?.adminType === 'rider') && (
@@ -498,12 +490,14 @@ export default function AdminUsers() {
                               <Badge className={getRoleBadgeColor(u.role)}>
                                 {u.role.toUpperCase()}
                               </Badge>
-                              <button
-                                onClick={() => handleStartEditRole(u.id, u.role)}
-                                className="p-1 hover:bg-[#F8F9FA] rounded transition-all"
-                              >
-                                <Edit2 className="w-4 h-4 text-[#64748B]" />
-                              </button>
+                              {isSuperAdmin && (
+                                <button
+                                  onClick={() => handleStartEditRole(u.id, u.role)}
+                                  className="p-1 hover:bg-[#F8F9FA] rounded transition-all"
+                                >
+                                  <Edit2 className="w-4 h-4 text-[#64748B]" />
+                                </button>
+                              )}
                             </div>
                           )}
                         </td>
