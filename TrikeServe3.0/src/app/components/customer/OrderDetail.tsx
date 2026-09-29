@@ -1,4 +1,4 @@
-import { ArrowLeft, Package, Clock, MapPin, CreditCard, RefreshCw, Star, Navigation, CheckCircle, AlertCircle, Phone, MessageCircle } from "lucide-react";
+import { ArrowLeft, Package, Clock, MapPin, CreditCard, Star, Navigation, CheckCircle, AlertCircle, Phone, MessageCircle } from "lucide-react";
 import { useNavigate, useParams } from "react-router";
 import { Card } from "../ui/card";
 import { Button } from "../ui/button";
@@ -7,6 +7,7 @@ import { useAuth } from "../../contexts/AuthContext";
 import { ImageWithFallback } from "../figma/ImageWithFallback";
 import StoreLogo from "../figma/StoreLogo";
 import { supabase } from "../../../lib/supabase";
+import ReasonPromptModal from "../ui/reason-prompt-modal";
 import { supabaseHelpers } from "@/lib/supabase";
 import { useState, useEffect, useRef } from "react";
 import { GoogleMap, MarkerF, Polyline } from "@react-google-maps/api";
@@ -36,6 +37,9 @@ interface OrderData {
   createdAt: string;
   driverName?: string;
   driverId?: string;
+  /** Why the order was cancelled, and which side cancelled it. */
+  cancelReason?: string | null;
+  cancelledBy?: string | null;
 }
 
 function buildOrderData(dbOrder: any): OrderData {
@@ -66,6 +70,8 @@ function buildOrderData(dbOrder: any): OrderData {
     createdAt: dbOrder.created_at,
     driverName: dbOrder.driver_name || undefined,
     driverId: undefined,
+    cancelReason: dbOrder.cancel_reason || null,
+    cancelledBy: dbOrder.cancelled_by || null,
   };
 }
 
@@ -106,10 +112,11 @@ export default function OrderDetail() {
   const { user } = useAuth();
   const [order, setOrder] = useState<OrderData | null>(null);
   const [isLoading, setIsLoading] = useState(true);
-  const [isRefreshing, setIsRefreshing] = useState(false);
   const [rating, setRating] = useState(0);
   const [ratingSubmitting, setRatingSubmitting] = useState(false);
   const [ratingSubmitted, setRatingSubmitted] = useState(false);
+  // Cancelling an order asks for a reason first.
+  const [showCancelOrderPrompt, setShowCancelOrderPrompt] = useState(false);
   const [ratingError, setRatingError] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const { isLoaded: isMapsLoaded } = useMapLoader();
@@ -287,25 +294,35 @@ export default function OrderDetail() {
     return points;
   };
 
-  // ─── Manual refresh ────────────────────────────────────────────────
-  const handleRefresh = async () => {
-    if (!orderId) return;
-    setIsRefreshing(true);
-    try {
-      const { data } = await supabase.from('orders').select('*').eq('id', orderId).single();
-      if (data) {
-        const newData = buildOrderData(data);
-        setOrder(prev => {
-          // Preserve driverId and businessId from previous state (not in DB order row)
-          if (prev) {
-            newData.driverId = newData.driverId || prev.driverId;
-            newData.businessId = newData.businessId || prev.businessId;
-          }
-          return newData;
-        });
-      }
-    } catch {}
-    setIsRefreshing(false);
+  /**
+   * Cancel a pending order, recording the customer's reason.
+   *
+   * Only allowed while the restaurant hasn't accepted, so the button is only
+   * rendered for `pending` orders.
+   */
+  const handleCancelOrder = async (reason: string) => {
+    if (!order) return;
+
+    const { error: cancelError } = await supabase
+      .from('orders')
+      .update({
+        status: 'cancelled',
+        cancel_reason: reason,
+        cancelled_by: 'customer',
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', order.id);
+
+    if (cancelError) {
+      console.error('[OrderDetail] Failed to cancel order:', cancelError);
+      // Not setError() — that would swap the page for the "Order not found" screen.
+      alert(`Failed to cancel the order: ${cancelError.message || 'Please try again.'}`);
+      return;
+    }
+
+    setOrder(prev => (
+      prev ? { ...prev, status: 'cancelled', cancelReason: reason, cancelledBy: 'customer' } : prev
+    ));
   };
 
   // ─── Loading / Error states ────────────────────────────────────────
@@ -368,15 +385,14 @@ export default function OrderDetail() {
                 <span className="text-[9px] font-semibold text-[#10B981]">Driver</span>
               </button>
             )}
-            {isActiveDelivery && order.businessId && (
+            {/* Available on every order status — the customer may need to reach the
+                restaurant about an order that hasn't been accepted yet. */}
+            {order.businessId && (
               <button onClick={handleChatWithBusiness} className="flex flex-col items-center gap-0.5 p-1.5 hover:bg-[#F1F5F9] rounded-lg transition-colors" title="Chat with Restaurant">
                 <MessageCircle className="w-5 h-5 text-[#E11D48]" />
                 <span className="text-[9px] font-semibold text-[#E11D48]">Restaurant</span>
               </button>
             )}
-            <button onClick={handleRefresh} disabled={isRefreshing} className="p-2 hover:bg-[#F1F5F9] rounded-full transition-colors disabled:opacity-50">
-              <RefreshCw className={`w-5 h-5 text-[#64748B] ${isRefreshing ? 'animate-spin' : ''}`} />
-            </button>
           </div>
         </div>
         <Badge className={`${statusColors[order.status]} text-xs`}>
@@ -516,6 +532,18 @@ export default function OrderDetail() {
           </div>
         </Card>
 
+        {/* Why the order was cancelled, so the customer sees the reason */}
+        {order.status === 'cancelled' && order.cancelReason && (
+          <Card className="p-4 md:p-5 border-2 border-red-200 bg-red-50">
+            <h3 className="font-bold text-red-700 text-sm md:text-base mb-1">
+              {order.cancelledBy === 'business'
+                ? `${order.restaurantName} declined this order`
+                : 'Cancellation reason'}
+            </h3>
+            <p className="text-sm text-[#7F1D1D]">{order.cancelReason}</p>
+          </Card>
+        )}
+
         {/* Restaurant Info */}
         <Card className="p-4 md:p-5 border-2 border-[#E2E8F0]">
           <h3 className="font-bold text-[#121212] text-sm md:text-base mb-2">Restaurant</h3>
@@ -596,6 +624,23 @@ export default function OrderDetail() {
           </div>
         </Card>
 
+        {/* Cancel Order — only while the restaurant hasn't accepted it yet */}
+        {order.status === 'pending' && (
+          <Card className="p-4 md:p-5 border-2 border-[#E2E8F0]">
+            <h3 className="font-bold text-[#121212] text-sm md:text-base mb-1">Need to cancel?</h3>
+            <p className="text-sm text-[#64748B] mb-3">
+              You can cancel this order until the restaurant accepts it.
+            </p>
+            <Button
+              onClick={() => setShowCancelOrderPrompt(true)}
+              variant="outline"
+              className="w-full border-[#E11D48] text-[#E11D48] uppercase font-bold py-3"
+            >
+              Cancel Order
+            </Button>
+          </Card>
+        )}
+
         {/* Cutlery */}
         {order.needsCutlery && (
           <Card className="p-3 border-2 border-[#E2E8F0] bg-[#F8FAFC]">
@@ -647,6 +692,22 @@ export default function OrderDetail() {
           </Card>
         )}
       </div>
+
+      {/* Cancel Order Popup — collects a reason before cancelling */}
+      <ReasonPromptModal
+        isOpen={showCancelOrderPrompt}
+        title="Cancel this order?"
+        description={order ? `Order #${order.orderNumber} · ${order.restaurantName}` : undefined}
+        confirmLabel="Yes, Cancel Order"
+        placeholder="e.g. Ordered by mistake, wrong address, found another store…"
+        variant="danger"
+        zIndexClassName="z-[3500]"
+        onCancel={() => setShowCancelOrderPrompt(false)}
+        onSubmit={async (reason) => {
+          setShowCancelOrderPrompt(false);
+          await handleCancelOrder(reason);
+        }}
+      />
     </div>
   );
 }

@@ -1045,8 +1045,12 @@ export default function RiderDashboard() {
           <div className="absolute bottom-20 left-0 right-0 z-[999] px-4">
             <Card className="bg-white shadow-xl rounded-t-3xl max-h-[70vh] overflow-y-auto">
 
-              {/* Terminal Queue - determines which driver may accept private/share rides */}
-              <TerminalQueueCard queue={terminalQueueApi} canJoin={isOnline} />
+              {/* Terminal Queue - determines which driver may accept private/share rides.
+                  Only shown on the Rides service type: delivery is never queue-gated, and
+                  switching back to Rides brings the queue back. */}
+              {serviceCategory === 'rides' && (
+                <TerminalQueueCard queue={terminalQueueApi} canJoin={isOnline} />
+              )}
 
               {/* View All Passenger Requests Card - Always visible, button disabled when offline */}
               <div className="border-t border-gray-200 px-6 py-6">

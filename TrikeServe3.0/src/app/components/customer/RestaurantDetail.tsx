@@ -42,6 +42,8 @@ interface RestaurantData {
   menuItems: MenuItem[];
   reviews: Review[];
   is_open: boolean;
+  /** The store owner's user id — needed to message the business and to link orders. */
+  businessUserId?: string;
 }
 
 export default function RestaurantDetail() {
@@ -187,7 +189,8 @@ export default function RestaurantDetail() {
           categories,
           menuItems: mappedMenuItems,
           reviews: [],
-          is_open: restaurant.is_open !== undefined ? restaurant.is_open : true
+          is_open: restaurant.is_open !== undefined ? restaurant.is_open : true,
+          businessUserId: restaurant.business_user_id || undefined
         };
 
         console.log('[RestaurantDetail] Loaded restaurant with', mappedMenuItems.length, 'menu items');
@@ -384,6 +387,17 @@ export default function RestaurantDetail() {
     restaurantData.reviews = [];
   }
 
+  // Open a direct chat with this store's business. Unlike the order-details chat,
+  // this works before the customer has ordered anything.
+  const handleMessageBusiness = () => {
+    const businessUserId = restaurantData?.businessUserId;
+    if (!businessUserId) {
+      showNotification("This store can't be messaged right now.", 'info');
+      return;
+    }
+    navigate(`/customer/messages/business/${businessUserId}`);
+  };
+
   const handleAddToCart = (item: MenuItem) => {
     // Check if store is open
     if (restaurantData && !restaurantData.is_open) {
@@ -404,7 +418,7 @@ export default function RestaurantDetail() {
    const addToCartWithCustomizations = (item: MenuItem, quantity: number, customizations: any[]) => {
      const restaurantInfo = {
        id: restaurantId || restaurantData.name, // Use restaurant ID
-       businessUserId: (restaurantData as any)?.business_user_id, // ✅ CRITICAL: Add business user ID for orders
+       businessUserId: restaurantData.businessUserId, // ✅ CRITICAL: Add business user ID for orders
        supabaseRestaurantId: restaurantId || undefined, // Supabase restaurant UUID
        name: restaurantData.name,
        location: restaurantData.subtitle,
@@ -511,6 +525,13 @@ export default function RestaurantDetail() {
             <ArrowLeft className="w-6 h-6 text-[#121212]" />
           </button>
           <div className="flex items-center gap-3">
+            <button
+              onClick={handleMessageBusiness}
+              title={`Message ${restaurantData?.name || 'this store'}`}
+              className="w-11 h-11 bg-white/95 backdrop-blur-sm rounded-full flex items-center justify-center shadow-lg active:scale-90 transition-all"
+            >
+              <MessageCircle className="w-6 h-6 text-[#121212]" />
+            </button>
             <button 
               onClick={() => {
                 toggleFavorite({
