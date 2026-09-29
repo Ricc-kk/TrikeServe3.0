@@ -138,10 +138,10 @@ const createDriverMarkerIcon = () => {
 const createCustomerMarkerIcon = () => {
   const google = (window as any)?.google;
   if (!google?.maps?.Size || !google?.maps?.Point) {
-    return buildNavigationMarkerIcon('#2563EB');
+    return buildNavigationMarkerIcon('#1D4ED8');
   }
 
-  const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="#2563EB" stroke="white" stroke-width="1">
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="#1D4ED8" stroke="white" stroke-width="1">
     <path d="M12 2C8.13 2 5 5.13 5 9c0 4.95 6.1 11.53 6.36 11.81.36.39.92.39 1.28 0C13.9 20.53 20 13.95 20 9c0-3.87-3.13-7-8-7z"/>
     <circle cx="12" cy="8.6" r="2.3" fill="#FFFFFF" stroke="none"/>
     <path d="M8.7 15.9c.55-2.05 2.15-3.3 3.3-3.3s2.75 1.25 3.3 3.3" fill="#FFFFFF" stroke="none"/>
@@ -157,10 +157,10 @@ const createCustomerMarkerIcon = () => {
 const createDropoffMarkerIcon = () => {
   const google = (window as any)?.google;
   if (!google?.maps?.Size || !google?.maps?.Point) {
-    return buildNavigationMarkerIcon('#E11D48');
+    return buildNavigationMarkerIcon('#BC4B1F');
   }
 
-  const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="#E11D48" stroke="white" stroke-width="1">
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="#BC4B1F" stroke="white" stroke-width="1">
     <path d="M12 2C8.13 2 5 5.13 5 9c0 4.95 6.1 11.53 6.36 11.81.36.39.92.39 1.28 0C13.9 20.53 20 13.95 20 9c0-3.87-3.13-7-8-7z"/>
     <path d="M7.8 9.6l2.1 2.1 4.3-4.3" fill="none" stroke="#FFFFFF" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>
   </svg>`;
@@ -1829,22 +1829,22 @@ export default function CustomerHome() {
       {/* Full Screen Map */}
       <div className="absolute inset-0">
         {!GOOGLE_MAPS_API_KEY ? (
-          <div className="w-full h-full flex items-center justify-center bg-gray-200">
+          <div className="w-full h-full flex items-center justify-center bg-[var(--border)]">
             <div className="text-center">
-              <p className="text-xl font-bold text-red-600 mb-4">⚠️ Google Maps API Key Missing</p>
-              <p className="text-gray-700 mb-4">To use Google Maps, please add your API key to .env.local</p>
+              <p className="text-xl font-bold text-[var(--error)] mb-4">⚠️ Google Maps API Key Missing</p>
+              <p className="text-[var(--ink-soft)] mb-4">To use Google Maps, please add your API key to .env.local</p>
             </div>
           </div>
          ) : mapsBlocked || mapsLoadError ? (
-            <div className="w-full h-full flex items-center justify-center bg-gray-100">
+            <div className="w-full h-full flex items-center justify-center bg-[var(--muted)]">
               <div className="text-center max-w-md px-6">
-                <p className="text-lg font-bold text-red-600 mb-3">⚠️ Map resources blocked</p>
-                <p className="text-sm text-gray-700 mb-4">Your browser or a network filter is blocking Google Maps resources (maps.googleapis.com). This commonly happens when an ad-blocker or privacy extension blocks Google domains.</p>
-                {mapsBlocked && <p className="text-xs text-gray-600 mb-3">Diagnostic: {mapsBlocked}</p>}
+                <p className="text-lg font-bold text-[var(--error)] mb-3">⚠️ Map resources blocked</p>
+                <p className="text-sm text-[var(--ink-soft)] mb-4">Your browser or a network filter is blocking Google Maps resources (maps.googleapis.com). This commonly happens when an ad-blocker or privacy extension blocks Google domains.</p>
+                {mapsBlocked && <p className="text-xs text-[var(--muted-foreground)] mb-3">Diagnostic: {mapsBlocked}</p>}
                 <div className="flex gap-3 justify-center">
                   <button
                     onClick={() => window.location.reload()}
-                    className="px-4 py-2 bg-[#E11D48] text-white rounded-md"
+                    className="px-4 py-2 bg-[var(--primary)] text-white rounded-md"
                   >
                     Retry
                   </button>
@@ -1861,8 +1861,8 @@ export default function CustomerHome() {
               </div>
             </div>
           ) : !isMapsLoaded ? (
-            <div className="w-full h-full flex items-center justify-center bg-gray-100">
-              <p className="text-sm text-gray-600">Loading map...</p>
+            <div className="w-full h-full flex items-center justify-center bg-[var(--muted)]">
+              <p className="text-sm text-[var(--muted-foreground)]">Loading map...</p>
             </div>
           ) : (
            <GoogleMap
@@ -1899,17 +1899,17 @@ export default function CustomerHome() {
               )}
 
               {routePath.length > 0 && (
-                <Polyline path={routePath} options={buildNavigationRouteOptions('#E11D48', 5)} />
+                <Polyline path={routePath} options={buildNavigationRouteOptions('#BC4B1F', 5)} />
               )}
 
               {/* Driver route polyline (real-time) */}
               {driverRoutePath.length > 0 && rideStatus === 'driver-found' && (
-                <Polyline path={driverRoutePath} options={buildNavigationRouteOptions('#3B82F6', 4)} />
+                <Polyline path={driverRoutePath} options={buildNavigationRouteOptions('#1D4ED8', 4)} />
               )}
 
               {/* Destination route polyline (pickup to dropoff) */}
               {destinationRoutePath.length > 0 && rideStatus !== 'searching' && (
-                <Polyline path={destinationRoutePath} options={buildNavigationRouteOptions('#E11D48', 5)} />
+                <Polyline path={destinationRoutePath} options={buildNavigationRouteOptions('#BC4B1F', 5)} />
               )}
 
              {/* Info Window for selected marker */}
@@ -1920,7 +1920,7 @@ export default function CustomerHome() {
                >
                  <div className="text-sm">
                    <p className="font-bold">Your current location</p>
-                   <p className="text-gray-600">
+                   <p className="text-[var(--muted-foreground)]">
                      {selectedMarker.lat.toFixed(4)}, {selectedMarker.lng.toFixed(4)}
                    </p>
                  </div>
@@ -1940,9 +1940,9 @@ export default function CustomerHome() {
               className="relative w-12 h-12 bg-white rounded-xl shadow-lg flex items-center justify-center active:scale-90 transition-transform"
               aria-label="Notifications"
             >
-              <Bell className="w-6 h-6 text-[#E11D48]" />
+              <Bell className="w-6 h-6 text-[var(--primary)]" />
               {unreadDeliveryNotifications > 0 && (
-                <div className="absolute -top-1.5 -right-1.5 w-5 h-5 bg-[#E11D48] rounded-full border-2 border-white flex items-center justify-center">
+                <div className="absolute -top-1.5 -right-1.5 w-5 h-5 bg-[var(--primary)] rounded-full border-2 border-white flex items-center justify-center">
                   <span className="text-[10px] font-bold text-white">{unreadDeliveryNotifications > 9 ? '9+' : unreadDeliveryNotifications}</span>
                 </div>
               )}
@@ -1962,15 +1962,16 @@ export default function CustomerHome() {
                     onClick={() => setSelectedVehicle('share')}
                     className={`p-3 rounded-2xl border-2 transition-all ${
                       selectedVehicle === 'share'
-                        ? 'border-[#E11D48] bg-[#FFF1F2]'
-                        : 'border-[#E2E8F0] bg-white'
+                        ? 'border-[var(--primary)] bg-[var(--primary-soft)]'
+                        : 'border-[var(--border)] bg-white'
                     }`}
                   >
                     <div className="flex flex-col items-center gap-2">
-                      <div className="w-20 h-20 rounded-2xl bg-white border-2 border-[#E2E8F0] flex items-center justify-center">
-                        <Users className="w-10 h-10 text-[#121212]" />
+                      <div className="w-20 h-20 rounded-2xl bg-white border-2 border-[var(--border)] flex items-center justify-center">
+                        <Users className="w-10 h-10 text-[var(--ink)]" />
                       </div>
-                      <span className="font-bold text-sm text-[#121212]">Share Ride</span>
+                      <span className="font-bold text-sm text-[var(--ink)]">Sabay / Shared Ride</span>
+                      <span className="text-xs text-[var(--muted-foreground)]">May kasabay kang pasahero</span>
                     </div>
                   </button>
 
@@ -1979,15 +1980,16 @@ export default function CustomerHome() {
                     onClick={() => { setSelectedVehicle('special'); setPassengerCount(1); }}
                     className={`p-3 rounded-2xl border-2 transition-all ${
                       selectedVehicle === 'special'
-                        ? 'border-[#E11D48] bg-[#FFF1F2]'
-                        : 'border-[#E2E8F0] bg-white'
+                        ? 'border-[var(--primary)] bg-[var(--primary-soft)]'
+                        : 'border-[var(--border)] bg-white'
                     }`}
                   >
                     <div className="flex flex-col items-center gap-2">
-                      <div className="w-20 h-20 rounded-2xl bg-white border-2 border-[#E2E8F0] flex items-center justify-center">
-                        <UserIcon className="w-10 h-10 text-[#121212]" />
+                      <div className="w-20 h-20 rounded-2xl bg-white border-2 border-[var(--border)] flex items-center justify-center">
+                        <UserIcon className="w-10 h-10 text-[var(--ink)]" />
                       </div>
-                      <span className="font-bold text-sm text-[#121212]">Private Ride</span>
+                      <span className="font-bold text-sm text-[var(--ink)]">Pribado / Private Ride</span>
+                      <span className="text-xs text-[var(--muted-foreground)]">Para sa iyo lang ang biyahe</span>
                     </div>
                   </button>
                 </div>
@@ -1995,43 +1997,43 @@ export default function CustomerHome() {
                 {/* Location Inputs */}
                 <div className="space-y-3 mb-4">
                   {/* Pick up Location Label */}
-                  <label className="text-xs font-semibold text-[#64748B] uppercase tracking-wide block mb-2">
+                  <label className="text-xs font-semibold text-[var(--muted-foreground)] uppercase tracking-wide block mb-2">
                     Pick up location
                   </label>
                   
                   {/* Terminal Pickup Selection */}
                   <Card
-                    className="p-3 border-2 border-[#E2E8F0] shadow-sm cursor-pointer hover:border-[#E11D48] transition-colors"
+                    className="p-3 border-2 border-[var(--border)] shadow-sm cursor-pointer hover:border-[var(--primary)] transition-colors"
                     onClick={() => {
                       setShowTerminalPicker(true);
                     }}
                   >
                     <div className="flex items-start gap-3">
                       <div className="mt-0.5">
-                        <MapPin className="w-4 h-4 text-[#121212]" />
+                        <MapPin className="w-4 h-4 text-[var(--ink)]" />
                       </div>
                       <div className="flex-1 min-w-0">
-                        <p className="font-bold text-sm text-[#121212] mb-0.5">
+                        <p className="font-bold text-sm text-[var(--ink)] mb-0.5">
                           {selectedTerminalId ? (terminals.find(t => t.id === selectedTerminalId)?.name || pickup || 'Pickup Location') : 'Select Terminal'}
                         </p>
-                        <p className="text-xs text-[#64748B] truncate">
+                        <p className="text-xs text-[var(--muted-foreground)] truncate">
                           {selectedTerminalId ? (terminals.find(t => t.id === selectedTerminalId)?.boundary || pickupAddress || 'Terminal location') : 'Choose a terminal as your pickup point'}
                         </p>
                       </div>
                       <button className="mt-0.5 flex-shrink-0">
-                        <ChevronDown className="w-4 h-4 text-[#64748B]" />
+                        <ChevronDown className="w-4 h-4 text-[var(--muted-foreground)]" />
                       </button>
                     </div>
                   </Card>
 
                   {/* Drop off Location Label */}
-                  <label className="text-xs font-semibold text-[#64748B] uppercase tracking-wide block mb-2 mt-4">
+                  <label className="text-xs font-semibold text-[var(--muted-foreground)] uppercase tracking-wide block mb-2 mt-4">
                     Drop off location
                   </label>
 
                   {/* Destination */}
                   <Card 
-                    className="p-3 border-2 border-[#E2E8F0] shadow-sm cursor-pointer hover:border-[#E11D48] transition-colors"
+                    className="p-3 border-2 border-[var(--border)] shadow-sm cursor-pointer hover:border-[var(--primary)] transition-colors"
                     onClick={() => {
                       setActiveLocationInput('dropoff');
                       setLocationPreview(
@@ -2049,14 +2051,14 @@ export default function CustomerHome() {
                   >
                     <div className="flex items-start gap-3">
                       <div className="mt-0.5">
-                        <MapPin className="w-4 h-4 text-[#E11D48]" />
+                        <MapPin className="w-4 h-4 text-[var(--primary)]" />
                       </div>
                       <div className="flex-1 min-w-0">
-                        <p className="font-bold text-sm text-[#121212] mb-0.5">{dropoff || 'Tap to set destination'}</p>
-                        <p className="text-xs text-[#64748B] truncate">{dropoffAddress || (dropoffCoords ? `${dropoffCoords.lat.toFixed(5)}, ${dropoffCoords.lng.toFixed(5)}` : 'Select drop-off location')}</p>
+                        <p className="font-bold text-sm text-[var(--ink)] mb-0.5">{dropoff || 'Tap to set destination'}</p>
+                        <p className="text-xs text-[var(--muted-foreground)] truncate">{dropoffAddress || (dropoffCoords ? `${dropoffCoords.lat.toFixed(5)}, ${dropoffCoords.lng.toFixed(5)}` : 'Select drop-off location')}</p>
                       </div>
                       <button className="mt-0.5 flex-shrink-0">
-                        <ChevronDown className="w-4 h-4 text-[#64748B]" />
+                        <ChevronDown className="w-4 h-4 text-[var(--muted-foreground)]" />
                       </button>
                     </div>
                   </Card>
@@ -2066,9 +2068,10 @@ export default function CustomerHome() {
                 {selectedVehicle && (
                   <Button
                     onClick={handleBookRide}
-                    className="w-full bg-[#E11D48] hover:bg-[#BE123C] text-white py-6 text-lg font-bold uppercase rounded-xl"
+                    className="w-full bg-[var(--primary)] hover:bg-[var(--coral-dark)] text-white py-6 text-lg font-bold uppercase rounded-xl"
                   >
-                    Book {selectedVehicle === 'share' ? 'Share' : 'Special'} Ride - ₱{getPrice()}
+                    <span className="block">Book this ride · ₱{getPrice()}</span>
+                    <span className="block text-xs font-semibold normal-case tracking-normal opacity-90">I-book ang sakay</span>
                   </Button>
                 )}
               </div>
@@ -2080,7 +2083,7 @@ export default function CustomerHome() {
         {/* Active Ride Card - Driver Info with embedded map */}
         {rideStatus === 'driver-found' && activeRide && (
           <div className="absolute bottom-16 left-0 right-0 z-[1100] p-3">
-            <Card className="bg-white shadow-2xl border-2 border-[#E11D48] rounded-2xl overflow-hidden">
+            <Card className="bg-white shadow-2xl border-2 border-[var(--primary)] rounded-2xl overflow-hidden">
               {/* Live Tracking Map - embedded inside the card */}
               {isMapsLoaded && (driverLocation || pickupCoords) && (
                 <div className="relative">
@@ -2116,21 +2119,21 @@ export default function CustomerHome() {
                       />
                     )}
                     {driverRoutePath.length > 0 && (
-                      <Polyline path={driverRoutePath} options={buildNavigationRouteOptions('#3B82F6', 4)} />
+                      <Polyline path={driverRoutePath} options={buildNavigationRouteOptions('#1D4ED8', 4)} />
                     )}
                     {destinationRoutePath.length > 0 && (
-                      <Polyline path={destinationRoutePath} options={buildNavigationRouteOptions('#E11D48', 5)} />
+                      <Polyline path={destinationRoutePath} options={buildNavigationRouteOptions('#BC4B1F', 5)} />
                     )}
                   </GoogleMap>
                   {/* Map overlay badge */}
                   <div className="absolute top-3 left-3 bg-white/95 backdrop-blur-sm rounded-full px-3 py-1.5 shadow-lg flex items-center gap-2">
-                    <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse" />
-                    <span className="text-xs font-bold text-[#121212]">Live Tracking</span>
+                    <div className="w-2 h-2 bg-[var(--success)] rounded-full animate-pulse" />
+                    <span className="text-xs font-bold text-[var(--ink)]">Live Tracking</span>
                   </div>
                   {/* Route status badge */}
                   <div className="absolute bottom-3 left-3 right-3 flex justify-between items-center">
                     <div className="bg-white/95 backdrop-blur-sm rounded-full px-3 py-1.5 shadow-lg">
-                      <span className="text-xs font-semibold text-[#3B82F6]">🛣️ Following route to pickup</span>
+                      <span className="text-xs font-semibold text-[var(--info)]">🛣️ Following route to pickup</span>
                     </div>
                   </div>
                 </div>
@@ -2139,47 +2142,47 @@ export default function CustomerHome() {
               <div className="p-4">
                 {/* Driver Info Row */}
                 <div className="flex items-center gap-3 mb-3">
-                  <div className="w-14 h-14 bg-[#FFF1F2] rounded-full flex items-center justify-center flex-shrink-0">
+                  <div className="w-14 h-14 bg-[var(--primary-soft)] rounded-full flex items-center justify-center flex-shrink-0">
                     <span className="text-2xl">👨‍✈️</span>
                   </div>
                   <div className="flex-1 min-w-0">
-                    <h3 className="font-bold text-base text-[#121212] truncate">{activeRide.driver}</h3>
+                    <h3 className="font-bold text-base text-[var(--ink)] truncate">{activeRide.driver}</h3>
                     <div className="flex items-center gap-2">
-                      <Badge className="bg-green-500 text-white text-[10px]">Driver Found</Badge>
-                      <span className="text-xs text-[#64748B]">{activeRide.plateNumber}</span>
+                      <Badge className="bg-[var(--success)] text-white text-[10px]">Driver Found</Badge>
+                      <span className="text-xs text-[var(--muted-foreground)]">{activeRide.plateNumber}</span>
                     </div>
                   </div>
                   <div className="text-right flex-shrink-0">
-                    <div className="flex items-center gap-1 text-yellow-500">
+                    <div className="flex items-center gap-1 text-[var(--amber)]">
                       <span className="text-sm">⭐</span>
-                      <span className="font-bold text-sm text-[#121212]">{activeRide.rating}</span>
+                      <span className="font-bold text-sm text-[var(--ink)]">{activeRide.rating}</span>
                     </div>
-                    <p className="text-xs text-[#64748B]">ETA: {activeRide.eta}</p>
+                    <p className="text-xs text-[var(--muted-foreground)]">ETA: {activeRide.eta}</p>
                   </div>
                 </div>
 
                 {/* Trip Info - compact */}
-                <div className="bg-[#F8F9FA] rounded-xl p-3 mb-3 space-y-1.5">
+                <div className="bg-[var(--muted)] rounded-xl p-3 mb-3 space-y-1.5">
                   <div className="flex items-start gap-2">
-                    <div className="w-5 h-5 bg-[#121212] rounded-full flex items-center justify-center flex-shrink-0 mt-0.5">
+                    <div className="w-5 h-5 bg-[var(--ink)] rounded-full flex items-center justify-center flex-shrink-0 mt-0.5">
                       <div className="w-2 h-2 bg-white rounded-full" />
                     </div>
                     <div className="flex-1 min-w-0">
-                      <p className="text-[10px] text-[#64748B] uppercase font-semibold">Pickup</p>
-                      <p className="font-semibold text-xs text-[#121212] truncate">{pickup}</p>
+                      <p className="text-[10px] text-[var(--muted-foreground)] uppercase font-semibold">Pickup</p>
+                      <p className="font-semibold text-xs text-[var(--ink)] truncate">{pickup}</p>
                     </div>
 
                   </div>
                   <div className="flex items-start gap-2">
-                    <div className="w-5 h-5 bg-[#E11D48] rounded-full flex items-center justify-center flex-shrink-0 mt-0.5">
+                    <div className="w-5 h-5 bg-[var(--primary)] rounded-full flex items-center justify-center flex-shrink-0 mt-0.5">
                       <div className="w-2 h-2 bg-white rounded-full" />
                     </div>
                     <div className="flex-1 min-w-0">
-                      <p className="text-[10px] text-[#64748B] uppercase font-semibold">Drop-off</p>
-                      <p className="font-semibold text-xs text-[#121212] truncate">{dropoff}</p>
+                      <p className="text-[10px] text-[var(--muted-foreground)] uppercase font-semibold">Drop-off</p>
+                      <p className="font-semibold text-xs text-[var(--ink)] truncate">{dropoff}</p>
                     </div>
                     {etaToDestination && (
-                      <div className="flex-shrink-0 bg-red-100 text-red-700 px-2 py-1 rounded-lg">
+                      <div className="flex-shrink-0 bg-[var(--error-soft)] text-[var(--error)] px-2 py-1 rounded-lg">
                         <p className="text-[10px] font-bold">🏁 {etaToDestination}</p>
                       </div>
                     )}
@@ -2189,8 +2192,8 @@ export default function CustomerHome() {
                 {/* Payment + Actions row */}
                 <div className="flex items-center gap-3">
                   <div className="flex-1">
-                    <p className="text-[10px] text-[#64748B] uppercase font-semibold">Fare</p>
-                    <p className="text-xl font-bold text-[#E11D48]">₱{getPrice()}</p>                     <p className="text-[10px] text-[#94A3B8]">💵 Cash</p>
+                    <p className="text-[10px] text-[var(--muted-foreground)] uppercase font-semibold">Fare</p>
+                    <p className="text-xl font-bold text-[var(--primary)]">₱{getPrice()}</p>                     <p className="text-[10px] text-[var(--muted-foreground)]">💵 Cash</p>
                   </div>
                   <Button
                     variant="outline"
@@ -2222,17 +2225,17 @@ export default function CustomerHome() {
         {showValidationError && (
           <div className="fixed inset-0 bg-black/50 z-[2100] flex items-center justify-center p-4">
             <Card className="bg-white p-8 max-w-sm w-full text-center animate-infinite-bounce">
-              <div className="w-20 h-20 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-4">
+              <div className="w-20 h-20 bg-[var(--error-soft)] rounded-full flex items-center justify-center mx-auto mb-4">
                 <span className="text-4xl">⚠️</span>
               </div>
-              <h3 className="text-xl font-bold text-red-600 mb-2">Incomplete Information</h3>
-              <p className="text-sm text-[#64748B] mb-6">
+              <h3 className="text-xl font-bold text-[var(--error)] mb-2">Incomplete Information</h3>
+              <p className="text-sm text-[var(--muted-foreground)] mb-6">
                 Please complete entering your <strong>pickup location</strong> and <strong>drop-off point</strong> to proceed with booking your ride.
               </p>
 
               <Button
                 onClick={() => setShowValidationError(false)}
-                className="w-full bg-red-500 hover:bg-red-600 text-white py-3 font-bold"
+                className="w-full bg-[var(--error)] hover:bg-[var(--error)] text-white py-3 font-bold"
               >
                 Understood
               </Button>
@@ -2244,17 +2247,17 @@ export default function CustomerHome() {
         {showSameLocationError && (
           <div className="fixed inset-0 bg-black/50 z-[2100] flex items-center justify-center p-4">
             <Card className="bg-white p-8 max-w-sm w-full text-center animate-infinite-bounce">
-              <div className="w-20 h-20 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-4">
+              <div className="w-20 h-20 bg-[var(--error-soft)] rounded-full flex items-center justify-center mx-auto mb-4">
                 <span className="text-4xl">⚠️</span>
               </div>
-              <h3 className="text-xl font-bold text-red-600 mb-2">Invalid Route</h3>
-              <p className="text-sm text-[#64748B] mb-6">
+              <h3 className="text-xl font-bold text-[var(--error)] mb-2">Invalid Route</h3>
+              <p className="text-sm text-[var(--muted-foreground)] mb-6">
                 Your <strong>pickup location</strong> and <strong>drop-off point</strong> cannot be the same. Please select different locations.
               </p>
 
               <Button
                 onClick={() => setShowSameLocationError(false)}
-                className="w-full bg-red-500 hover:bg-red-600 text-white py-3 font-bold"
+                className="w-full bg-[var(--error)] hover:bg-[var(--error)] text-white py-3 font-bold"
               >
                 Understood
               </Button>
@@ -2266,18 +2269,18 @@ export default function CustomerHome() {
         {showOutOfBoundaryError && (
           <div className="fixed inset-0 bg-black/50 z-[2200] flex items-center justify-center p-4">
             <Card className="bg-white p-8 max-w-sm w-full text-center animate-infinite-bounce">
-              <div className="w-20 h-20 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-4">
+              <div className="w-20 h-20 bg-[var(--error-soft)] rounded-full flex items-center justify-center mx-auto mb-4">
                 <span className="text-4xl">🚧</span>
               </div>
-              <h3 className="text-xl font-bold text-red-600 mb-2">Out of boundary area</h3>
-              <p className="text-sm text-[#64748B] mb-6">
+              <h3 className="text-xl font-bold text-[var(--error)] mb-2">Out of boundary area</h3>
+              <p className="text-sm text-[var(--muted-foreground)] mb-6">
                 Your <strong>drop-off point</strong> is outside the service area covered by our terminals,
                 so this ride cannot be booked. Please choose a drop-off location inside the boundary area.
               </p>
 
               <Button
                 onClick={() => setShowOutOfBoundaryError(false)}
-                className="w-full bg-red-500 hover:bg-red-600 text-white py-3 font-bold"
+                className="w-full bg-[var(--error)] hover:bg-[var(--error)] text-white py-3 font-bold"
               >
                 Understood
               </Button>
@@ -2291,13 +2294,13 @@ export default function CustomerHome() {
           <div className="fixed inset-0 bg-black/50 z-[2100] flex items-end">
             <div className="bg-white w-full rounded-t-3xl p-6 animate-in slide-in-from-bottom duration-300">
               <div className="max-w-sm mx-auto text-center">
-                <div className="w-16 h-16 bg-blue-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                <div className="w-16 h-16 bg-[var(--info-soft)] rounded-full flex items-center justify-center mx-auto mb-4">
                   <span className="text-3xl">🎉</span>
                 </div>
-                <h3 className="text-2xl font-bold text-[#121212] mb-2">
+                <h3 className="text-2xl font-bold text-[var(--ink)] mb-2">
                   {completionPopupType === 'delivery' ? 'Delivery Completed!' : 'Ride Completed!'}
                 </h3>
-                <p className="text-sm text-[#64748B] mb-6">
+                <p className="text-sm text-[var(--muted-foreground)] mb-6">
                   {completionPopupType === 'delivery'
                     ? 'Thank you for using TrikeServe. Your delivery has been completed!'
                     : 'Thank you for using TrikeServe. We hope you had a great ride!'}
@@ -2312,7 +2315,7 @@ export default function CustomerHome() {
                       setShowRatingModal(true);
                       setCurrentRequestId(null);
                     }}
-                    className="w-full bg-white border-2 border-blue-200 text-blue-600 py-3 font-bold"
+                    className="w-full bg-white border-2 border-[var(--info-soft)] text-[var(--info)] py-3 font-bold"
                   >
                     {completionPopupType === 'delivery' ? 'Rate Restaurant' : 'Leave a Rating'}
                   </Button>
@@ -2333,7 +2336,7 @@ export default function CustomerHome() {
                       // Refresh the page to fully reset the ride page
                       window.location.reload();
                     }}
-                    className="w-full bg-blue-500 hover:bg-blue-600 text-white py-3 font-bold"
+                    className="w-full bg-[var(--info)] hover:bg-[var(--info)] text-white py-3 font-bold"
                   >
                     Done
                   </Button>
@@ -2349,14 +2352,14 @@ export default function CustomerHome() {
             <Card className="bg-white p-6 max-w-sm w-full text-center">
               {ratingSubmitted ? (
                 <>
-                  <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-green-100 flex items-center justify-center text-3xl">
+                  <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-[var(--success-soft)] flex items-center justify-center text-3xl">
                     🙏
                   </div>
-                  <h3 className="text-xl font-bold text-[#121212] mb-2">Thank you!</h3>
-                  <p className="text-sm text-[#64748B] mb-6">Your rating has been submitted.</p>
+                  <h3 className="text-xl font-bold text-[var(--ink)] mb-2">Thank you!</h3>
+                  <p className="text-sm text-[var(--muted-foreground)] mb-6">Your rating has been submitted.</p>
                   <Button
                     onClick={closeRatingModal}
-                    className="w-full bg-[#E11D48] hover:bg-[#BE123C] text-white py-3 font-bold"
+                    className="w-full bg-[var(--primary)] hover:bg-[var(--primary)] text-white py-3 font-bold"
                   >
                     Done
                   </Button>
@@ -2365,13 +2368,13 @@ export default function CustomerHome() {
                 <>
                   {completionPopupType === 'delivery' && deliveryBusiness ? (
                     <>
-                      <h3 className="text-xl font-bold text-[#121212] mb-2">Rate {deliveryBusiness.restaurantName}</h3>
-                      <p className="text-sm text-[#64748B] mb-6">How was your order and delivery?</p>
+                      <h3 className="text-xl font-bold text-[var(--ink)] mb-2">Rate {deliveryBusiness.restaurantName}</h3>
+                      <p className="text-sm text-[var(--muted-foreground)] mb-6">How was your order and delivery?</p>
                     </>
                   ) : (
                     <>
-                      <h3 className="text-xl font-bold text-[#121212] mb-2">Rate Your Driver</h3>
-                      <p className="text-sm text-[#64748B] mb-6">How was your ride?</p>
+                      <h3 className="text-xl font-bold text-[var(--ink)] mb-2">Rate Your Driver</h3>
+                      <p className="text-sm text-[var(--muted-foreground)] mb-6">How was your ride?</p>
                     </>
                   )}
                   <div className="flex justify-center gap-2 mb-6">
@@ -2384,8 +2387,8 @@ export default function CustomerHome() {
                         <Star
                           className={`w-10 h-10 ${
                             star <= selectedRating
-                              ? 'fill-[#FFC107] text-[#FFC107]'
-                              : 'fill-[#E2E8F0] text-[#E2E8F0]'
+                              ? 'fill-[var(--amber)] text-[var(--amber)]'
+                              : 'fill-[var(--border)] text-[var(--border)]'
                           }`}
                         />
                       </button>
@@ -2394,7 +2397,7 @@ export default function CustomerHome() {
                   <Button
                     onClick={handleSubmitRating}
                     disabled={!selectedRating || ratingSubmitting}
-                    className="w-full bg-[#E11D48] hover:bg-[#BE123C] text-white py-3 font-bold disabled:opacity-50"
+                    className="w-full bg-[var(--primary)] hover:bg-[var(--primary)] text-white py-3 font-bold disabled:opacity-50"
                   >
                     {ratingSubmitting ? 'Submitting...' : 'Submit Rating'}
                   </Button>
@@ -2415,26 +2418,26 @@ export default function CustomerHome() {
       {/* Terminal Picker Modal */}
       {showTerminalPicker && (
         <div className="fixed inset-0 z-[2000] bg-white flex flex-col">
-          <div className="bg-white border-b-2 border-[#E2E8F0] px-4 py-4 sticky top-0 z-10">
+          <div className="bg-white border-b-2 border-[var(--border)] px-4 py-4 sticky top-0 z-10">
             <div className="flex items-center justify-between">
               <div>
-                <h2 className="text-lg font-bold text-[#121212]">Select Pickup Terminal</h2>
-                <p className="text-xs text-[#64748B]">Choose a terminal as your pickup point</p>
+                <h2 className="text-lg font-bold text-[var(--ink)]">Select Pickup Terminal</h2>
+                <p className="text-xs text-[var(--muted-foreground)]">Choose a terminal as your pickup point</p>
               </div>
               <button
                 onClick={() => setShowTerminalPicker(false)}
-                className="w-8 h-8 rounded-full bg-[#F8F9FA] flex items-center justify-center"
+                className="w-8 h-8 rounded-full bg-[var(--muted)] flex items-center justify-center"
               >
-                <X className="w-5 h-5 text-[#64748B]" />
+                <X className="w-5 h-5 text-[var(--muted-foreground)]" />
               </button>
             </div>
           </div>
           <div className="flex-1 overflow-y-auto p-4 space-y-3">
             {terminals.length === 0 ? (
               <div className="text-center py-12">
-                <MapPin className="w-12 h-12 text-[#CBD5E1] mx-auto mb-3" />
-                <p className="text-sm font-semibold text-[#64748B]">No terminals available</p>
-                <p className="text-xs text-[#94A3B8] mt-1">Please try again later</p>
+                <MapPin className="w-12 h-12 text-[var(--border)] mx-auto mb-3" />
+                <p className="text-sm font-semibold text-[var(--muted-foreground)]">No terminals available</p>
+                <p className="text-xs text-[var(--muted-foreground)] mt-1">Please try again later</p>
               </div>
             ) : (
               terminals.map((terminal) => (
@@ -2451,28 +2454,28 @@ export default function CustomerHome() {
                   }}
                   className={`p-4 rounded-xl border-2 cursor-pointer transition-all active:scale-[0.98] ${
                     selectedTerminalId === terminal.id
-                      ? 'border-[#E11D48] bg-[#FFF1F2]'
-                      : 'border-[#E2E8F0] bg-white hover:border-[#E11D48]'
+                      ? 'border-[var(--primary)] bg-[var(--primary-soft)]'
+                      : 'border-[var(--border)] bg-white hover:border-[var(--primary)]'
                   }`}
                 >
                   <div className="flex items-start gap-3">
                     <div className={`w-10 h-10 rounded-full flex items-center justify-center flex-shrink-0 ${
-                      selectedTerminalId === terminal.id ? 'bg-[#E11D48]' : 'bg-[#DBEAFE]'
+                      selectedTerminalId === terminal.id ? 'bg-[var(--primary)]' : 'bg-[var(--info-soft)]'
                     }`}>
                       <span className="text-lg">🚏</span>
                     </div>
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2">
-                        <p className="font-bold text-sm text-[#121212]">{terminal.name}</p>
+                        <p className="font-bold text-sm text-[var(--ink)]">{terminal.name}</p>
                         {selectedTerminalId === terminal.id && (
-                          <span className="text-[10px] font-bold text-[#E11D48] bg-[#FFF1F2] px-2 py-0.5 rounded-full">
+                          <span className="text-[10px] font-bold text-[var(--primary)] bg-[var(--primary-soft)] px-2 py-0.5 rounded-full">
                             SELECTED
                           </span>
                         )}
                       </div>
-                      <p className="text-xs text-[#64748B] mt-0.5">📍 {terminal.boundary}</p>
+                      <p className="text-xs text-[var(--muted-foreground)] mt-0.5">📍 {terminal.boundary}</p>
                       {isMapsLoaded && (
-                        <div className="mt-2 rounded-lg overflow-hidden border border-[#E2E8F0]" style={{ height: 120 }}>
+                        <div className="mt-2 rounded-lg overflow-hidden border border-[var(--border)]" style={{ height: 120 }}>
                           <GoogleMap
                             mapContainerStyle={{ width: '100%', height: '100%' }}
                             center={{ lat: terminal.center_lat, lng: terminal.center_lng }}
@@ -2506,24 +2509,24 @@ export default function CustomerHome() {
             <Card className="bg-white/95 backdrop-blur shadow-xl border-0 p-4">
               <div className="flex items-center justify-between gap-3">
                 <div className="flex-1">
-                  <p className="text-xs uppercase tracking-wide text-[#64748B] font-semibold">
+                  <p className="text-xs uppercase tracking-wide text-[var(--muted-foreground)] font-semibold">
                     {activeLocationInput === 'pickup' ? 'Pickup — search or tap map' : 'Drop-off — search or tap map'}
                   </p>
-                  <h2 className="text-lg font-bold text-[#121212]">Find a nearby place or tap the map</h2>
+                  <h2 className="text-lg font-bold text-[var(--ink)]">Find a nearby place or tap the map</h2>
                 </div>
                 <button onClick={() => { setShowLocationPicker(false); setActiveLocationInput(null); setLocationPreview(null); setPredictions([]); setSearchQuery(""); }}>
-                  <X className="w-6 h-6 text-[#64748B]" />
+                  <X className="w-6 h-6 text-[var(--muted-foreground)]" />
                 </button>
               </div>
 
                <div className="mt-3">
                  <Input value={searchQuery} onChange={(e) => { fetchPredictions((e.target as HTMLInputElement).value); }} placeholder="Search restaurants, parks, hotels, terminals..." />
                  {predictions.length > 0 && (
-                   <div className="mt-2 bg-white border border-gray-200 rounded-lg max-h-48 overflow-y-auto">
+                   <div className="mt-2 bg-white border border-[var(--border)] rounded-lg max-h-48 overflow-y-auto">
                      {predictions.map((p, i) => (
-                       <button key={i} onClick={() => selectPrediction(p.place_id)} className="w-full text-left p-3 hover:bg-gray-50 border-b last:border-b-0">
-                         <div className="text-sm font-semibold text-[#121212]">{p.displayName}</div>
-                         {p.secondaryText && <div className="text-xs text-[#64748B] mt-0.5">{p.secondaryText}</div>}
+                       <button key={i} onClick={() => selectPrediction(p.place_id)} className="w-full text-left p-3 hover:bg-[var(--muted)] border-b last:border-b-0">
+                         <div className="text-sm font-semibold text-[var(--ink)]">{p.displayName}</div>
+                         {p.secondaryText && <div className="text-xs text-[var(--muted-foreground)] mt-0.5">{p.secondaryText}</div>}
                        </button>
                      ))}
                    </div>
@@ -2534,8 +2537,8 @@ export default function CustomerHome() {
 
           <div className="flex-1 pt-40 relative">
             {!isMapsLoaded ? (
-              <div className="h-full w-full flex items-center justify-center bg-gray-100">
-                <p className="text-sm text-gray-600">Loading picker map...</p>
+              <div className="h-full w-full flex items-center justify-center bg-[var(--muted)]">
+                <p className="text-sm text-[var(--muted-foreground)]">Loading picker map...</p>
               </div>
             ) : (
               <GoogleMap
@@ -2567,9 +2570,9 @@ export default function CustomerHome() {
             {locationPreview && (
               <div className="absolute bottom-4 left-4 right-4">
                 <Card className="p-4 shadow-xl">
-                  <p className="text-xs text-[#64748B] mb-1 uppercase tracking-wide">Selected location</p>
-                  <p className="text-sm font-semibold text-[#121212] truncate">{locationPreview.fullAddress}</p>
-                  <Button onClick={applyLocationPreview} className="w-full mt-3 bg-[#E11D48] hover:bg-[#BE123C] text-white">
+                  <p className="text-xs text-[var(--muted-foreground)] mb-1 uppercase tracking-wide">Selected location</p>
+                  <p className="text-sm font-semibold text-[var(--ink)] truncate">{locationPreview.fullAddress}</p>
+                  <Button onClick={applyLocationPreview} className="w-full mt-3 bg-[var(--primary)] hover:bg-[var(--primary)] text-white">
                     Confirm {activeLocationInput === 'pickup' ? 'Pickup' : 'Drop-off'}
                   </Button>
                 </Card>
@@ -2584,8 +2587,8 @@ export default function CustomerHome() {
       {showPassengerCount && (
         <div className="fixed inset-0 bg-black/50 z-[2000] flex items-end">
           <div className="bg-white w-full rounded-t-3xl p-6">
-            <h2 className="text-2xl font-bold text-[#121212] mb-2">How many passengers?</h2>
-            <p className="text-sm text-[#64748B] mb-6">Select the number of seats you need for this trip.</p>
+            <h2 className="text-2xl font-bold text-[var(--ink)] mb-2">How many passengers?</h2>
+            <p className="text-sm text-[var(--muted-foreground)] mb-6">Select the number of seats you need for this trip.</p>
 
             {/* Passenger Count Selection */}
             <div className={`grid gap-3 mb-6 ${selectedVehicle === 'special' ? 'grid-cols-1' : 'grid-cols-3'}`}>
@@ -2596,8 +2599,8 @@ export default function CustomerHome() {
                       onClick={() => setPassengerCount(count)}
                       className={`p-6 border-2 rounded-2xl transition-all ${
                         passengerCount === count
-                          ? 'border-[#E11D48] bg-[#FFF1F2]'
-                          : 'border-[#E2E8F0] bg-white'
+                          ? 'border-[var(--primary)] bg-[var(--primary-soft)]'
+                          : 'border-[var(--border)] bg-white'
                       }`}
                     >
                       <div className="flex flex-col items-center gap-2">
@@ -2606,8 +2609,8 @@ export default function CustomerHome() {
                             <span key={i} className="text-2xl">👤</span>
                           ))}
                         </div>
-                        <span className="font-bold text-lg text-[#121212]">{count}</span>
-                        <span className="text-xs text-[#64748B]">
+                        <span className="font-bold text-lg text-[var(--ink)]">{count}</span>
+                        <span className="text-xs text-[var(--muted-foreground)]">
                           {count === 1 ? 'passenger' : 'passengers'}
                         </span>
                       </div>
@@ -2619,8 +2622,8 @@ export default function CustomerHome() {
                       onClick={() => setPassengerCount(count)}
                       className={`p-6 border-2 rounded-2xl transition-all ${
                         passengerCount === count
-                          ? 'border-[#E11D48] bg-[#FFF1F2]'
-                          : 'border-[#E2E8F0] bg-white'
+                          ? 'border-[var(--primary)] bg-[var(--primary-soft)]'
+                          : 'border-[var(--border)] bg-white'
                       }`}
                     >
                       <div className="flex flex-col items-center gap-2">
@@ -2629,8 +2632,8 @@ export default function CustomerHome() {
                             <span key={i} className="text-2xl">👤</span>
                           ))}
                         </div>
-                        <span className="font-bold text-lg text-[#121212]">{count}</span>
-                        <span className="text-xs text-[#64748B]">
+                        <span className="font-bold text-lg text-[var(--ink)]">{count}</span>
+                        <span className="text-xs text-[var(--muted-foreground)]">
                           {count === 1 ? 'passenger' : 'passengers'}
                         </span>
                       </div>
@@ -2640,21 +2643,21 @@ export default function CustomerHome() {
             </div>
 
             {/* Price Info */}
-            <div className="bg-[#FFF7ED] border-2 border-[#FED7AA] rounded-xl p-4 mb-6">
+            <div className="bg-[var(--amber-soft)] border-2 border-[var(--amber-soft)] rounded-xl p-4 mb-6">
               <div className="flex items-center justify-between">
                 <div>
-                  <p className="text-xs text-[#92400E] uppercase tracking-wide font-semibold">Your Total Fare</p>
+                  <p className="text-xs text-[var(--amber-dark)] uppercase tracking-wide font-semibold">Your Total Fare</p>
                   {selectedVehicle === 'share' ? (
                     <>
-                      <p className="text-sm text-[#78350F] mt-0.5">
+                      <p className="text-sm text-[var(--amber-dark)] mt-0.5">
                         ₱{privateRidePrice} ÷ {passengerCount} {passengerCount === 1 ? 'passenger' : 'passengers'}
                       </p>
-                      <p className="text-3xl font-bold text-[#EA580C]">₱{(privateRidePrice / passengerCount).toFixed(2)}</p>
+                      <p className="text-3xl font-bold text-[var(--amber)]">₱{(privateRidePrice / passengerCount).toFixed(2)}</p>
                     </>
                   ) : (
                     <>
-                      <p className="text-sm text-[#78350F] mt-0.5">Fixed rate (set by admin)</p>
-                      <p className="text-3xl font-bold text-[#EA580C]">₱{privateRidePrice}</p>
+                      <p className="text-sm text-[var(--amber-dark)] mt-0.5">Fixed rate (set by admin)</p>
+                      <p className="text-3xl font-bold text-[var(--amber)]">₱{privateRidePrice}</p>
                     </>
                   )}
                 </div>
@@ -2663,8 +2666,8 @@ export default function CustomerHome() {
 
             {/* Info Card - Only show for Share Rides */}
             {selectedVehicle !== 'special' && (
-              <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 mb-6">
-                <p className="text-xs text-blue-900">
+              <div className="bg-[var(--info-soft)] border border-[var(--info-soft)] rounded-lg p-3 mb-6">
+                <p className="text-xs text-[var(--info)]">
                   💡 <span className="font-semibold">Tip:</span> You'll join a shared lobby and wait for other passengers heading the same route. More passengers = faster match!
                 </p>
               </div>
@@ -2677,7 +2680,7 @@ export default function CustomerHome() {
                   setShowPassengerCount(false);
                   setShowBookingConfirm(true);
                 }}
-                className="w-full bg-[#E11D48] hover:bg-[#BE123C] text-white py-6 text-lg font-bold uppercase"
+                className="w-full bg-[var(--primary)] hover:bg-[var(--primary)] text-white py-6 text-lg font-bold uppercase"
               >
                 Continue with {passengerCount} {passengerCount === 1 ? 'Seat' : 'Seats'}
               </Button>
@@ -2688,7 +2691,7 @@ export default function CustomerHome() {
                     setShowLobbyList(true);
                   }}
                   variant="outline"
-                  className="w-full py-6 text-lg font-semibold border-2 border-[#E11D48] text-[#E11D48] hover:bg-[#FFF1F2]"
+                  className="w-full py-6 text-lg font-semibold border-2 border-[var(--primary)] text-[var(--primary)] hover:bg-[var(--primary-soft)]"
                 >
                   <Users className="w-5 h-5 mr-2" />
                   Browse Available Lobbies
@@ -2713,52 +2716,52 @@ export default function CustomerHome() {
       {showBookingConfirm && (
         <div className="fixed inset-0 bg-black/50 z-[2000] flex items-end">
           <div className="bg-white w-full rounded-t-3xl p-6">
-            <h2 className="text-2xl font-bold text-[#121212] mb-6">Confirm Booking</h2>
+            <h2 className="text-2xl font-bold text-[var(--ink)] mb-6">Confirm Booking</h2>
 
             {/* Trip Details */}
             <div className="space-y-4 mb-6">
               <div className="flex items-start gap-3">
-                <Navigation className="w-5 h-5 text-[#E11D48] mt-1" />
+                <Navigation className="w-5 h-5 text-[var(--primary)] mt-1" />
                 <div>
-                  <p className="text-sm text-[#64748B]">Pickup</p>
-                  <p className="font-semibold text-[#121212]">{pickup}</p>
+                  <p className="text-sm text-[var(--muted-foreground)]">Pickup</p>
+                  <p className="font-semibold text-[var(--ink)]">{pickup}</p>
                 </div>
               </div>
               <div className="flex items-start gap-3">
-                <Navigation className="w-5 h-5 text-green-600 mt-1" />
+                <Navigation className="w-5 h-5 text-[var(--success)] mt-1" />
                 <div>
-                  <p className="text-sm text-[#64748B]">Drop-off</p>
-                  <p className="font-semibold text-[#121212]">{dropoff}</p>
+                  <p className="text-sm text-[var(--muted-foreground)]">Drop-off</p>
+                  <p className="font-semibold text-[var(--ink)]">{dropoff}</p>
                 </div>
               </div>
             </div>
 
             {/* Ride Type */}
-            <div className="bg-[#FFF1F2] border-2 border-[#E11D48] rounded-xl p-4 mb-6">
+            <div className="bg-[var(--primary-soft)] border-2 border-[var(--primary)] rounded-xl p-4 mb-6">
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-3">
                   <span className="text-4xl">{selectedVehicle === 'share' ? '👥' : '👤'}</span>
                   <div>
-                    <p className="font-bold text-[#121212]">
+                    <p className="font-bold text-[var(--ink)]">
                       {selectedVehicle === 'share' ? 'Share Ride' : 'Private Ride'}
                     </p>
-                    <p className="text-sm text-[#64748B]">
+                    <p className="text-sm text-[var(--muted-foreground)]">
                       {selectedVehicle === 'share' ? 'Shared with others' : 'Private ride'}
                     </p>
                   </div>
                 </div>
-                <p className="text-2xl font-bold text-[#E11D48]">₱{getPrice()}</p>
+                <p className="text-2xl font-bold text-[var(--primary)]">₱{getPrice()}</p>
               </div>
             </div>
 
             {/* Payment Method */}
             <div className="mb-6">
-              <p className="text-sm font-semibold text-[#64748B] mb-3">Payment Method</p>
+              <p className="text-sm font-semibold text-[var(--muted-foreground)] mb-3">Payment Method</p>
               <div className="grid grid-cols-1 gap-3">
-                <div className="p-4 border-2 rounded-xl border-[#E11D48] bg-[#FFF1F2]">
+                <div className="p-4 border-2 rounded-xl border-[var(--primary)] bg-[var(--primary-soft)]">
                   <div className="flex flex-col items-center gap-2">
                     <span className="text-2xl">💵</span>
-                    <span className="font-semibold text-[#121212]">Cash</span>
+                    <span className="font-semibold text-[var(--ink)]">Cash / Bayad cash</span>
                   </div>
                 </div>
               </div>
@@ -2768,9 +2771,9 @@ export default function CustomerHome() {
             <div className="space-y-3">
               <Button
                 onClick={handleConfirmBooking}
-                className="w-full bg-[#E11D48] hover:bg-[#BE123C] text-white py-6 text-lg font-bold uppercase"
+                className="w-full bg-[var(--primary)] hover:bg-[var(--primary)] text-white py-6 text-lg font-bold uppercase"
               >
-                Confirm Booking
+                Confirm Booking / Kumpirmahin
               </Button>
               <Button
                 onClick={() => setShowBookingConfirm(false)}
@@ -2791,16 +2794,16 @@ export default function CustomerHome() {
             {/* Minimize Button */}
             <button
               onClick={() => setIsSearchMinimized(true)}
-              className="absolute top-4 right-4 w-8 h-8 flex items-center justify-center rounded-full bg-[#F1F5F9] hover:bg-[#E2E8F0] transition-colors"
+              className="absolute top-4 right-4 w-8 h-8 flex items-center justify-center rounded-full bg-[var(--muted)] hover:bg-[var(--border)] transition-colors"
             >
-              <ChevronDown className="w-5 h-5 text-[#64748B]" />
+              <ChevronDown className="w-5 h-5 text-[var(--muted-foreground)]" />
             </button>
 
-            <div className="w-20 h-20 bg-[#FFF1F2] rounded-full flex items-center justify-center mx-auto mb-4 animate-pulse">
+            <div className="w-20 h-20 bg-[var(--primary-soft)] rounded-full flex items-center justify-center mx-auto mb-4 animate-pulse">
               <span className="text-4xl">🔍</span>
             </div>
-            <h3 className="text-xl font-bold text-[#121212] mb-2">Finding a Driver...</h3>
-            <p className="text-[#64748B] mb-6">Please wait while we find you a nearby driver</p>
+            <h3 className="text-xl font-bold text-[var(--ink)] mb-2">Finding a Driver...</h3>
+            <p className="text-[var(--muted-foreground)] mb-6">Please wait while we find you a nearby driver</p>
             <Button
               onClick={() => setShowCancelConfirm(true)}
               variant="outline"
@@ -2816,12 +2819,12 @@ export default function CustomerHome() {
       {rideStatus === 'searching' && isSearchMinimized && (
         <button
           onClick={() => setIsSearchMinimized(false)}
-          className="fixed bottom-24 right-4 z-[2000] w-16 h-16 bg-[#E11D48] rounded-full shadow-2xl flex items-center justify-center hover:bg-[#BE123C] transition-all hover:scale-110"
+          className="fixed bottom-24 right-4 z-[2000] w-16 h-16 bg-[var(--primary)] rounded-full shadow-2xl flex items-center justify-center hover:bg-[var(--primary)] transition-all hover:scale-110"
         >
           <div className="relative">
             <span className="text-3xl animate-pulse">🔍</span>
-            <div className="absolute -top-1 -right-1 w-3 h-3 bg-green-500 rounded-full animate-ping"></div>
-            <div className="absolute -top-1 -right-1 w-3 h-3 bg-green-500 rounded-full"></div>
+            <div className="absolute -top-1 -right-1 w-3 h-3 bg-[var(--success)] rounded-full animate-ping"></div>
+            <div className="absolute -top-1 -right-1 w-3 h-3 bg-[var(--success)] rounded-full"></div>
           </div>
         </button>
       )}
@@ -2892,7 +2895,7 @@ export default function CustomerHome() {
           <div className="bg-white w-full rounded-t-3xl p-6 animate-in slide-in-from-bottom duration-300">
             <div className="max-w-sm mx-auto">
               {/* Status Icon */}
-              <div className="w-16 h-16 bg-gradient-to-br from-[#E11D48] to-[#BE123C] rounded-full flex items-center justify-center mx-auto mb-4 text-3xl">
+              <div className="w-16 h-16 bg-gradient-to-br from-[var(--primary)] to-[var(--primary)] rounded-full flex items-center justify-center mx-auto mb-4 text-3xl">
                 {driverStatusPopup.status === 'on-the-way' && '🚗'}
                 {driverStatusPopup.status === 'arrived' && '📍'}
                 {driverStatusPopup.status === 'pickup' && '🚀'}
@@ -2902,7 +2905,7 @@ export default function CustomerHome() {
               </div>
 
               {/* Status Message */}
-              <h3 className="text-2xl font-bold text-[#121212] text-center mb-2">
+              <h3 className="text-2xl font-bold text-[var(--ink)] text-center mb-2">
                 {driverStatusPopup.status === 'on-the-way' && 'Driver On The Way'}
                 {driverStatusPopup.status === 'arrived' && 'Driver Arrived'}
                 {driverStatusPopup.status === 'pickup' && 'Picked Up!'}
@@ -2911,13 +2914,13 @@ export default function CustomerHome() {
                 {driverStatusPopup.status === 'completed' && 'Ride Completed!'}
               </h3>
 
-              <p className="text-[#64748B] text-center mb-6">{driverStatusPopup.message}</p>
+              <p className="text-[var(--muted-foreground)] text-center mb-6">{driverStatusPopup.message}</p>
 
               {/* Status Details */}
-              <div className="bg-[#F8F9FA] rounded-xl p-4 mb-6">
+              <div className="bg-[var(--muted)] rounded-xl p-4 mb-6">
                 <div className="flex items-center justify-between">
-                  <span className="text-sm text-[#64748B]">Status Update</span>
-                  <span className="font-bold text-[#121212]">
+                  <span className="text-sm text-[var(--muted-foreground)]">Status Update</span>
+                  <span className="font-bold text-[var(--ink)]">
                     {driverStatusPopup.status === 'on-the-way' && 'On the way'}
                     {driverStatusPopup.status === 'arrived' && 'Arrived'}
                     {driverStatusPopup.status === 'pickup' && 'Picked up'}
@@ -2927,14 +2930,14 @@ export default function CustomerHome() {
                   </span>
                 </div>
                 <div className="flex items-center justify-between mt-3">
-                  <span className="text-sm text-[#64748B]">Time</span>
-                  <span className="text-sm text-[#121212]">Just now</span>
+                  <span className="text-sm text-[var(--muted-foreground)]">Time</span>
+                  <span className="text-sm text-[var(--ink)]">Just now</span>
                 </div>
               </div>
 
               <Button
                 onClick={() => setDriverStatusPopup(null)}
-                className="w-full bg-[#E11D48] hover:bg-[#BE123C] text-white py-3 text-lg font-bold"
+                className="w-full bg-[var(--primary)] hover:bg-[var(--primary)] text-white py-3 text-lg font-bold"
               >
                 OK 👍
               </Button>
@@ -2946,7 +2949,7 @@ export default function CustomerHome() {
       {/* Cancel Ride Popup — asks for a reason before dropping the ride */}
       <ReasonPromptModal
         isOpen={showCancelConfirm}
-        title={rideStatus === 'driver-found' ? 'Cancel this ride?' : 'Cancel Request?'}
+        title={rideStatus === 'driver-found' ? 'Cancel this ride? / Kanselahin ang biyahe?' : 'Cancel Request? / Kanselahin ang request?'}
         description={
           rideStatus === 'driver-found'
             ? 'A driver is already on the way. Let them know why you need to cancel so they are told to stop.'

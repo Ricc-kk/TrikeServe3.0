@@ -21,24 +21,24 @@ import Toast from "../ui/Toast";
 function typeIcon(type: ApprovalRequestType) {
   switch (type) {
     case "terminal_create":
-      return <MapPin className="w-5 h-5 text-[#3B82F6]" />;
+      return <MapPin className="w-5 h-5 text-[var(--info)]" />;
     case "terminal_update":
-      return <Store className="w-5 h-5 text-[#3B82F6]" />;
+      return <Store className="w-5 h-5 text-[var(--info)]" />;
     case "terminal_delete":
-      return <Trash2 className="w-5 h-5 text-[#EF4444]" />;
+      return <Trash2 className="w-5 h-5 text-[var(--error)]" />;
     case "driver_assign":
-      return <UserPlus className="w-5 h-5 text-[#10B981]" />;
+      return <UserPlus className="w-5 h-5 text-[var(--success)]" />;
     case "driver_unassign":
-      return <UserMinus className="w-5 h-5 text-[#F59E0B]" />;
+      return <UserMinus className="w-5 h-5 text-[var(--amber)]" />;
     default:
-      return <ClipboardCheck className="w-5 h-5 text-[#64748B]" />;
+      return <ClipboardCheck className="w-5 h-5 text-[var(--muted-foreground)]" />;
   }
 }
 
 function typeBadgeColor(type: ApprovalRequestType) {
-  if (type.startsWith("terminal")) return "bg-[#3B82F6]";
-  if (type === "driver_assign") return "bg-[#10B981]";
-  return "bg-[#F59E0B]";
+  if (type.startsWith("terminal")) return "bg-[var(--info)]";
+  if (type === "driver_assign") return "bg-[var(--success)]";
+  return "bg-[var(--amber)]";
 }
 
 function formatDate(value?: string | null) {
@@ -170,7 +170,7 @@ export default function AdminApprovals() {
   };
 
   return (
-    <div className="min-h-screen bg-[#F8F9FA] flex">
+    <div className="min-h-screen bg-[var(--muted)] flex">
       <AdminSidebar
         isMobileMenuOpen={isMobileMenuOpen}
         setIsMobileMenuOpen={setIsMobileMenuOpen}
@@ -178,25 +178,25 @@ export default function AdminApprovals() {
 
       <div className="flex-1 lg:ml-64">
         {/* Top Header */}
-        <div className="bg-white border-b-2 border-[#E2E8F0] px-5 lg:px-8 py-4 lg:py-5 sticky top-0 z-50">
+        <div className="bg-white border-b-2 border-[var(--border)] px-5 lg:px-8 py-4 lg:py-5 sticky top-0 z-50">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-3">
               <button
                 onClick={() => setIsMobileMenuOpen(true)}
-                className="lg:hidden p-2 hover:bg-[#F8F9FA] rounded-xl transition-all"
+                className="lg:hidden p-2 hover:bg-[var(--muted)] rounded-xl transition-all"
               >
-                <Menu className="w-6 h-6 text-[#121212]" />
+                <Menu className="w-6 h-6 text-[var(--ink)]" />
               </button>
               <div>
-                <h1 className="text-2xl lg:text-3xl font-extrabold text-[#121212]">Approvals</h1>
-                <p className="text-xs lg:text-sm text-[#64748B]">
+                <h1 className="text-2xl lg:text-3xl font-extrabold text-[var(--ink)]">Approvals</h1>
+                <p className="text-xs lg:text-sm text-[var(--muted-foreground)]">
                   Review Rider Admin terminal &amp; driver requests
                 </p>
               </div>
             </div>
             <button
               onClick={loadRequests}
-              className="flex items-center gap-2 px-3 py-2 bg-[#F8F9FA] border-2 border-[#E2E8F0] rounded-xl text-sm font-semibold text-[#64748B] hover:border-[#E11D48] transition-all"
+              className="flex items-center gap-2 px-3 py-2 bg-[var(--muted)] border-2 border-[var(--border)] rounded-xl text-sm font-semibold text-[var(--muted-foreground)] hover:border-[var(--primary)] transition-all"
             >
               <RefreshCw className="w-4 h-4" /> Refresh
             </button>
@@ -206,70 +206,70 @@ export default function AdminApprovals() {
         <div className="p-5 lg:p-8">
           {/* Stats */}
           <div className="grid grid-cols-3 gap-3 lg:gap-6 mb-6">
-            <Card className="p-4 lg:p-6 border-2 border-[#E2E8F0] bg-white">
-              <p className="text-xs lg:text-sm text-[#64748B] mb-1">Pending</p>
-              <h2 className="text-2xl lg:text-4xl font-bold text-[#F59E0B]">{pending.length}</h2>
+            <Card className="p-4 lg:p-6 border-2 border-[var(--border)] bg-white">
+              <p className="text-xs lg:text-sm text-[var(--muted-foreground)] mb-1">Pending</p>
+              <h2 className="text-2xl lg:text-4xl font-bold text-[var(--amber)]">{pending.length}</h2>
             </Card>
-            <Card className="p-4 lg:p-6 border-2 border-[#E2E8F0] bg-white">
-              <p className="text-xs lg:text-sm text-[#64748B] mb-1">Approved</p>
-              <h2 className="text-2xl lg:text-4xl font-bold text-[#10B981]">
+            <Card className="p-4 lg:p-6 border-2 border-[var(--border)] bg-white">
+              <p className="text-xs lg:text-sm text-[var(--muted-foreground)] mb-1">Approved</p>
+              <h2 className="text-2xl lg:text-4xl font-bold text-[var(--success)]">
                 {history.filter(r => r.status === "approved").length}
               </h2>
             </Card>
-            <Card className="p-4 lg:p-6 border-2 border-[#E2E8F0] bg-white">
-              <p className="text-xs lg:text-sm text-[#64748B] mb-1">Rejected</p>
-              <h2 className="text-2xl lg:text-4xl font-bold text-[#EF4444]">
+            <Card className="p-4 lg:p-6 border-2 border-[var(--border)] bg-white">
+              <p className="text-xs lg:text-sm text-[var(--muted-foreground)] mb-1">Rejected</p>
+              <h2 className="text-2xl lg:text-4xl font-bold text-[var(--error)]">
                 {history.filter(r => r.status === "rejected").length}
               </h2>
             </Card>
           </div>
 
           {loadError && (
-            <Card className="p-4 mb-6 border-2 border-amber-200 bg-amber-50">
+            <Card className="p-4 mb-6 border-2 border-[var(--amber-soft)] bg-[var(--amber-soft)]">
               <div className="flex items-start gap-3">
-                <AlertTriangle className="w-5 h-5 text-amber-600 flex-shrink-0 mt-0.5" />
-                <p className="text-sm text-amber-800">{loadError}</p>
+                <AlertTriangle className="w-5 h-5 text-[var(--amber-dark)] flex-shrink-0 mt-0.5" />
+                <p className="text-sm text-[var(--amber-dark)]">{loadError}</p>
               </div>
             </Card>
           )}
 
           {/* Pending requests */}
-          <h2 className="text-xl lg:text-2xl font-bold text-[#121212] mb-4">Pending Requests</h2>
+          <h2 className="text-xl lg:text-2xl font-bold text-[var(--ink)] mb-4">Pending Requests</h2>
           {loading ? (
-            <Card className="p-12 border-2 border-dashed border-[#E2E8F0] text-center">
-              <p className="text-[#64748B] text-sm">Loading requests…</p>
+            <Card className="p-12 border-2 border-dashed border-[var(--border)] text-center">
+              <p className="text-[var(--muted-foreground)] text-sm">Loading requests…</p>
             </Card>
           ) : pending.length === 0 ? (
-            <Card className="p-12 border-2 border-dashed border-[#E2E8F0] text-center">
-              <CheckCircle className="w-16 h-16 text-[#10B981] mx-auto mb-4" />
-              <p className="text-[#64748B] text-sm mb-2">No pending requests</p>
-              <p className="text-[#94A3B8] text-xs">Rider Admin changes will appear here for review</p>
+            <Card className="p-12 border-2 border-dashed border-[var(--border)] text-center">
+              <CheckCircle className="w-16 h-16 text-[var(--success)] mx-auto mb-4" />
+              <p className="text-[var(--muted-foreground)] text-sm mb-2">No pending requests</p>
+              <p className="text-[var(--muted-foreground)] text-xs">Rider Admin changes will appear here for review</p>
             </Card>
           ) : (
             <div className="space-y-3 mb-8">
               {pending.map(request => (
-                <Card key={request.id} className="p-4 lg:p-5 border-2 border-[#E2E8F0] bg-white">
+                <Card key={request.id} className="p-4 lg:p-5 border-2 border-[var(--border)] bg-white">
                   <div className="flex items-start justify-between gap-4">
                     <div className="flex items-start gap-3">
-                      <div className="w-11 h-11 bg-[#F8F9FA] rounded-xl flex items-center justify-center flex-shrink-0">
+                      <div className="w-11 h-11 bg-[var(--muted)] rounded-xl flex items-center justify-center flex-shrink-0">
                         {typeIcon(request.request_type)}
                       </div>
                       <div>
                         <div className="flex items-center gap-2 flex-wrap">
-                          <h3 className="font-bold text-[#121212]">
+                          <h3 className="font-bold text-[var(--ink)]">
                             {APPROVAL_REQUEST_LABELS[request.request_type]}
                           </h3>
                           <Badge className={typeBadgeColor(request.request_type)}>
                             {request.request_type.toUpperCase().replace(/_/g, ' ')}
                           </Badge>
                         </div>
-                        <p className="text-xs text-[#64748B] mt-0.5">
+                        <p className="text-xs text-[var(--muted-foreground)] mt-0.5">
                           Requested by {request.requested_by_name || request.requested_by_email || 'Rider Admin'}
                           {" · "}{formatDate(request.requested_at)}
                         </p>
                         <div className="mt-2 space-y-0.5">
                           {describePayload(request).map((line, i) => (
-                            <p key={i} className="text-sm text-[#64748B]">{line}</p>
+                            <p key={i} className="text-sm text-[var(--muted-foreground)]">{line}</p>
                           ))}
                         </div>
                       </div>
@@ -278,14 +278,14 @@ export default function AdminApprovals() {
                       <button
                         onClick={() => handleApprove(request)}
                         disabled={busyId === request.id}
-                        className="flex items-center gap-1.5 px-3 py-2 bg-[#10B981] hover:bg-[#059669] disabled:opacity-50 text-white font-bold text-xs uppercase rounded-xl transition-all"
+                        className="flex items-center gap-1.5 px-3 py-2 bg-[var(--success)] hover:bg-[var(--success)] disabled:opacity-50 text-white font-bold text-xs uppercase rounded-xl transition-all"
                       >
                         <CheckCircle className="w-4 h-4" /> Approve
                       </button>
                       <button
                         onClick={() => { setRejectTarget(request); setRejectReason(""); }}
                         disabled={busyId === request.id}
-                        className="flex items-center gap-1.5 px-3 py-2 bg-[#EF4444] hover:bg-[#DC2626] disabled:opacity-50 text-white font-bold text-xs uppercase rounded-xl transition-all"
+                        className="flex items-center gap-1.5 px-3 py-2 bg-[var(--error)] hover:bg-[var(--error)] disabled:opacity-50 text-white font-bold text-xs uppercase rounded-xl transition-all"
                       >
                         <XCircle className="w-4 h-4" /> Reject
                       </button>
@@ -297,55 +297,55 @@ export default function AdminApprovals() {
           )}
 
           {/* History */}
-          <h2 className="text-xl lg:text-2xl font-bold text-[#121212] mb-4">Reviewed</h2>
+          <h2 className="text-xl lg:text-2xl font-bold text-[var(--ink)] mb-4">Reviewed</h2>
           {history.length === 0 ? (
-            <Card className="p-8 border-2 border-dashed border-[#E2E8F0] text-center">
-              <Clock className="w-10 h-10 text-gray-300 mx-auto mb-3" />
-              <p className="text-[#64748B] text-sm">No reviewed requests yet</p>
+            <Card className="p-8 border-2 border-dashed border-[var(--border)] text-center">
+              <Clock className="w-10 h-10 text-[var(--border)] mx-auto mb-3" />
+              <p className="text-[var(--muted-foreground)] text-sm">No reviewed requests yet</p>
             </Card>
           ) : (
-            <Card className="border-2 border-[#E2E8F0] bg-white overflow-hidden">
+            <Card className="border-2 border-[var(--border)] bg-white overflow-hidden">
               <div className="overflow-x-auto">
                 <table className="w-full">
-                  <thead className="bg-[#F8F9FA] border-b-2 border-[#E2E8F0]">
+                  <thead className="bg-[var(--muted)] border-b-2 border-[var(--border)]">
                     <tr>
-                      <th className="px-4 py-3 text-left text-xs font-bold text-[#64748B] uppercase tracking-wider">Request</th>
-                      <th className="px-4 py-3 text-left text-xs font-bold text-[#64748B] uppercase tracking-wider">Details</th>
-                      <th className="px-4 py-3 text-left text-xs font-bold text-[#64748B] uppercase tracking-wider">Requested By</th>
-                      <th className="px-4 py-3 text-left text-xs font-bold text-[#64748B] uppercase tracking-wider">Status</th>
-                      <th className="px-4 py-3 text-left text-xs font-bold text-[#64748B] uppercase tracking-wider">Reviewed</th>
+                      <th className="px-4 py-3 text-left text-xs font-bold text-[var(--muted-foreground)] uppercase tracking-wider">Request</th>
+                      <th className="px-4 py-3 text-left text-xs font-bold text-[var(--muted-foreground)] uppercase tracking-wider">Details</th>
+                      <th className="px-4 py-3 text-left text-xs font-bold text-[var(--muted-foreground)] uppercase tracking-wider">Requested By</th>
+                      <th className="px-4 py-3 text-left text-xs font-bold text-[var(--muted-foreground)] uppercase tracking-wider">Status</th>
+                      <th className="px-4 py-3 text-left text-xs font-bold text-[var(--muted-foreground)] uppercase tracking-wider">Reviewed</th>
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-[#E2E8F0]">
+                  <tbody className="divide-y divide-[var(--border)]">
                     {history.map(request => (
-                      <tr key={request.id} className="hover:bg-[#F8F9FA] transition-colors">
+                      <tr key={request.id} className="hover:bg-[var(--muted)] transition-colors">
                         <td className="px-4 py-4">
                           <div className="flex items-center gap-2">
                             {typeIcon(request.request_type)}
-                            <span className="font-semibold text-sm text-[#121212]">
+                            <span className="font-semibold text-sm text-[var(--ink)]">
                               {APPROVAL_REQUEST_LABELS[request.request_type]}
                             </span>
                           </div>
                         </td>
                         <td className="px-4 py-4">
-                          <p className="text-sm text-[#64748B]">{describePayload(request).join(" · ")}</p>
+                          <p className="text-sm text-[var(--muted-foreground)]">{describePayload(request).join(" · ")}</p>
                           {request.status === "rejected" && request.rejection_reason && (
-                            <p className="text-xs text-[#EF4444] mt-1">Reason: {request.rejection_reason}</p>
+                            <p className="text-xs text-[var(--error)] mt-1">Reason: {request.rejection_reason}</p>
                           )}
                         </td>
                         <td className="px-4 py-4">
-                          <p className="text-sm text-[#64748B]">
+                          <p className="text-sm text-[var(--muted-foreground)]">
                             {request.requested_by_name || request.requested_by_email || "Rider Admin"}
                           </p>
                         </td>
                         <td className="px-4 py-4">
-                          <Badge className={request.status === "approved" ? "bg-[#10B981]" : "bg-[#EF4444]"}>
+                          <Badge className={request.status === "approved" ? "bg-[var(--success)]" : "bg-[var(--error)]"}>
                             {request.status.toUpperCase()}
                           </Badge>
                         </td>
                         <td className="px-4 py-4">
-                          <p className="text-sm text-[#64748B]">{formatDate(request.reviewed_at)}</p>
-                          <p className="text-xs text-[#94A3B8]">{request.reviewed_by_email || ""}</p>
+                          <p className="text-sm text-[var(--muted-foreground)]">{formatDate(request.reviewed_at)}</p>
+                          <p className="text-xs text-[var(--muted-foreground)]">{request.reviewed_by_email || ""}</p>
                         </td>
                       </tr>
                     ))}
@@ -360,17 +360,17 @@ export default function AdminApprovals() {
       {/* Reject reason modal */}
       {rejectTarget && (
         <div className="fixed inset-0 bg-black/50 z-[2000] flex items-center justify-center p-4">
-          <Card className="w-full max-w-md p-6 border-2 border-[#E2E8F0] bg-white">
+          <Card className="w-full max-w-md p-6 border-2 border-[var(--border)] bg-white">
             <div className="text-center mb-4">
-              <div className="w-16 h-16 bg-[#FEE2E2] rounded-full flex items-center justify-center mx-auto mb-4">
-                <XCircle className="w-8 h-8 text-[#EF4444]" />
+              <div className="w-16 h-16 bg-[var(--error-soft)] rounded-full flex items-center justify-center mx-auto mb-4">
+                <XCircle className="w-8 h-8 text-[var(--error)]" />
               </div>
-              <h2 className="text-2xl font-bold text-[#121212] mb-2">Reject Request?</h2>
-              <p className="text-[#64748B] text-sm">
+              <h2 className="text-2xl font-bold text-[var(--ink)] mb-2">Reject Request?</h2>
+              <p className="text-[var(--muted-foreground)] text-sm">
                 {APPROVAL_REQUEST_LABELS[rejectTarget.request_type]} — nothing will be applied.
               </p>
             </div>
-            <label className="text-xs font-semibold uppercase tracking-wide text-[#64748B] block mb-1">
+            <label className="text-xs font-semibold uppercase tracking-wide text-[var(--muted-foreground)] block mb-1">
               Reason (optional)
             </label>
             <textarea
@@ -378,19 +378,19 @@ export default function AdminApprovals() {
               onChange={(e) => setRejectReason(e.target.value)}
               rows={3}
               placeholder="Why is this being rejected?"
-              className="w-full px-4 py-3 border-2 border-[#CBD5E1] focus:border-[#E11D48] rounded-xl text-sm outline-none mb-4"
+              className="w-full px-4 py-3 border-2 border-[var(--border)] focus:border-[var(--primary)] rounded-xl text-sm outline-none mb-4"
             />
             <div className="flex gap-3">
               <button
                 onClick={() => { setRejectTarget(null); setRejectReason(""); }}
-                className="flex-1 px-4 py-3 bg-[#F8F9FA] hover:bg-[#E2E8F0] text-[#121212] font-bold rounded-xl uppercase transition-all"
+                className="flex-1 px-4 py-3 bg-[var(--muted)] hover:bg-[var(--border)] text-[var(--ink)] font-bold rounded-xl uppercase transition-all"
               >
                 Cancel
               </button>
               <button
                 onClick={submitRejection}
                 disabled={busyId === rejectTarget.id}
-                className="flex-1 px-4 py-3 bg-[#EF4444] hover:bg-[#DC2626] disabled:opacity-50 text-white font-bold rounded-xl uppercase transition-all"
+                className="flex-1 px-4 py-3 bg-[var(--error)] hover:bg-[var(--error)] disabled:opacity-50 text-white font-bold rounded-xl uppercase transition-all"
               >
                 Reject
               </button>

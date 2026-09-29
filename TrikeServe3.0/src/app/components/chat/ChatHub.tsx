@@ -245,31 +245,31 @@ export default function ChatHub({
     switch (role) {
       case 'customer':
         return {
-          avatarWrap: 'bg-[#EFF6FF] border-[#93C5FD] text-[#2563EB]',
-          roleBadge: 'bg-[#2563EB] text-white',
-          roleText: 'text-[#1D4ED8]',
-          unreadDot: 'bg-[#2563EB]',
+          avatarWrap: 'bg-[var(--info-soft)] border-[var(--info-soft)] text-[var(--info)]',
+          roleBadge: 'bg-[var(--info)] text-white',
+          roleText: 'text-[var(--info)]',
+          unreadDot: 'bg-[var(--info)]',
         };
       case 'rider':
         return {
-          avatarWrap: 'bg-[#ECFDF5] border-[#86EFAC] text-[#16A34A]',
-          roleBadge: 'bg-[#16A34A] text-white',
-          roleText: 'text-[#15803D]',
-          unreadDot: 'bg-[#16A34A]',
+          avatarWrap: 'bg-[var(--success-soft)] border-[var(--success-soft)] text-[var(--success)]',
+          roleBadge: 'bg-[var(--success)] text-white',
+          roleText: 'text-[var(--success)]',
+          unreadDot: 'bg-[var(--success)]',
         };
       case 'business':
         return {
-          avatarWrap: 'bg-[#F5F3FF] border-[#C4B5FD] text-[#7C3AED]',
-          roleBadge: 'bg-[#7C3AED] text-white',
-          roleText: 'text-[#6D28D9]',
-          unreadDot: 'bg-[#7C3AED]',
+          avatarWrap: 'bg-[var(--violet-soft)] border-[var(--violet-soft)] text-[var(--violet)]',
+          roleBadge: 'bg-[var(--violet)] text-white',
+          roleText: 'text-[var(--violet)]',
+          unreadDot: 'bg-[var(--violet)]',
         };
       default:
         return {
-          avatarWrap: 'bg-[#F8FAFC] border-[#CBD5E1] text-[#64748B]',
-          roleBadge: 'bg-[#64748B] text-white',
-          roleText: 'text-[#475569]',
-          unreadDot: 'bg-[#E11D48]',
+          avatarWrap: 'bg-[var(--muted)] border-[var(--border)] text-[var(--muted-foreground)]',
+          roleBadge: 'bg-[var(--muted-foreground)] text-white',
+          roleText: 'text-[var(--muted-foreground)]',
+          unreadDot: 'bg-[var(--primary)]',
         };
     }
   }
@@ -316,12 +316,12 @@ export default function ChatHub({
         <div className="flex-1 flex items-center justify-center p-6">
           <div className="text-center max-w-sm">
             {isCreatingThread ? (
-              <p className="text-sm text-[#64748B]">Creating chat thread...</p>
+              <p className="text-sm text-[var(--muted-foreground)]">Creating chat thread...</p>
             ) : (
               <>
-                <MessageCircle className="w-12 h-12 text-[#CBD5E1] mx-auto mb-3" />
-                <p className="font-semibold text-[#121212]">Select a conversation</p>
-                <p className="text-sm text-[#64748B] mt-1">Choose a chat from your inbox or start a new one.</p>
+                <MessageCircle className="w-12 h-12 text-[var(--border)] mx-auto mb-3" />
+                <p className="font-semibold text-[var(--ink)]">Select a conversation</p>
+                <p className="text-sm text-[var(--muted-foreground)] mt-1">Choose a chat from your inbox or start a new one.</p>
               </>
             )}
           </div>
@@ -338,7 +338,7 @@ export default function ChatHub({
 
     return (
       <div className="flex-1 flex flex-col min-h-0">
-        <div className="bg-[#E11D48] text-white px-4 py-4 flex items-center gap-3 sticky top-0 z-10">
+        <div className="bg-[var(--primary)] text-white px-4 py-4 flex items-center gap-3 sticky top-0 z-10">
           <Button variant="ghost" size="icon" onClick={() => navigate(backPath)} className="text-white hover:bg-white/20">
             <ArrowLeft className="w-5 h-5" />
           </Button>
@@ -354,12 +354,12 @@ export default function ChatHub({
           </div>
         </div>
 
-        <div className="flex-1 overflow-y-auto p-4 space-y-3 bg-[#F8F9FA]">
+        <div className="flex-1 overflow-y-auto p-4 space-y-3 bg-[var(--muted)]">
           {messages.length === 0 ? (
             <div className="text-center py-12">
-              <MessageCircle className="w-12 h-12 text-gray-300 mx-auto mb-3" />
-              <p className="text-gray-500 text-sm">No messages yet</p>
-              <p className="text-gray-400 text-xs mt-1">Start the conversation!</p>
+              <MessageCircle className="w-12 h-12 text-[var(--border)] mx-auto mb-3" />
+              <p className="text-[var(--muted-foreground)] text-sm">No messages yet</p>
+              <p className="text-[var(--muted-foreground)] text-xs mt-1">Start the conversation!</p>
             </div>
           ) : (
             messages.map((msg) => {
@@ -369,9 +369,9 @@ export default function ChatHub({
                                      messageDate.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
               return (
                 <div key={msg.id} className={`flex ${isMine ? 'justify-end' : 'justify-start'}`}>
-                  <div className={`max-w-[75%] rounded-2xl px-4 py-2 ${isMine ? 'bg-[#E11D48] text-white' : 'bg-white border border-gray-200'}`}>
+                  <div className={`max-w-[75%] rounded-2xl px-4 py-2 ${isMine ? 'bg-[var(--primary)] text-white' : 'bg-white border border-[var(--border)]'}`}>
                     <p className="text-sm break-words">{msg.message}</p>
-                    <p className={`text-[10px] mt-1 ${isMine ? 'text-white/70' : 'text-gray-400'}`}>
+                    <p className={`text-[10px] mt-1 ${isMine ? 'text-white/70' : 'text-[var(--muted-foreground)]'}`}>
                       {dateTimeString}
                     </p>
                   </div>
@@ -382,14 +382,14 @@ export default function ChatHub({
           <div ref={messagesEndRef} />
         </div>
 
-        <div className="bg-white border-t border-gray-200 p-4 sticky bottom-0">
+        <div className="bg-white border-t border-[var(--border)] p-4 sticky bottom-0">
           <div className="flex gap-2">
             <textarea
               value={messageText}
               onChange={(e) => setMessageText(e.target.value)}
               placeholder="Type your message..."
               rows={2}
-              className="flex-1 px-4 py-3 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-[#E11D48] focus:border-transparent resize-none"
+              className="flex-1 px-4 py-3 border border-[var(--border)] rounded-xl focus:outline-none focus:ring-2 focus:ring-[var(--primary)] focus:border-transparent resize-none"
               onKeyDown={(e) => {
                 if (e.key === 'Enter' && !e.shiftKey) {
                   e.preventDefault();
@@ -397,7 +397,7 @@ export default function ChatHub({
                 }
               }}
             />
-            <Button onClick={sendMessage} disabled={!messageText.trim()} className="bg-[#E11D48] hover:bg-[#BE123C] px-6">
+            <Button onClick={sendMessage} disabled={!messageText.trim()} className="bg-[var(--primary)] hover:bg-[var(--primary)] px-6">
               <Send className="w-5 h-5" />
             </Button>
           </div>
@@ -408,35 +408,35 @@ export default function ChatHub({
 
   if (isDirectMode) {
     return (
-      <div className="min-h-screen bg-[#F8F9FA] flex flex-col">
+      <div className="min-h-screen bg-[var(--muted)] flex flex-col">
         {renderThread()}
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-[#F8F9FA] flex flex-col">
+    <div className="min-h-screen bg-[var(--muted)] flex flex-col">
       {!activeConversationId ? (
         <>
-          <div className="bg-white border-b-2 border-[#CBD5E1] px-4 py-3 flex items-center gap-3 sticky top-0 z-10">
+          <div className="bg-white border-b-2 border-[var(--border)] px-4 py-3 flex items-center gap-3 sticky top-0 z-10">
             <Button variant="ghost" size="icon" onClick={() => navigate(backPath)}>
               <ArrowLeft className="w-5 h-5" />
             </Button>
             <div className="flex-1">
-              <h1 className="text-xl font-extrabold text-[#E11D48]" style={{ letterSpacing: '-0.02em' }}>{title}</h1>
-              <p className="text-xs text-[#64748B]">Message customers, drivers, and business owners</p>
+              <h1 className="text-xl font-extrabold text-[var(--primary)]" style={{ letterSpacing: '-0.02em' }}>{title}</h1>
+              <p className="text-xs text-[var(--muted-foreground)]">Message customers, drivers, and business owners</p>
             </div>
 
           </div>
 
           <div className="flex-1 overflow-y-auto p-4 space-y-3">
             {loading ? (
-              <div className="text-center py-12 text-sm text-[#64748B]">Loading conversations...</div>
+              <div className="text-center py-12 text-sm text-[var(--muted-foreground)]">Loading conversations...</div>
             ) : conversations.length === 0 ? (
               <div className="text-center py-12">
-                <MessageCircle className="w-12 h-12 text-[#CBD5E1] mx-auto mb-3" />
-                <h3 className="font-bold text-[#121212] mb-1">No conversations yet</h3>
-                <p className="text-sm text-[#64748B]">Start a conversation from an order or ride.</p>
+                <MessageCircle className="w-12 h-12 text-[var(--border)] mx-auto mb-3" />
+                <h3 className="font-bold text-[var(--ink)] mb-1">No conversations yet</h3>
+                <p className="text-sm text-[var(--muted-foreground)]">Start a conversation from an order or ride.</p>
               </div>
             ) : (
               conversations.map((conversation) => {
@@ -448,7 +448,7 @@ export default function ChatHub({
                 return (
                   <Card
                     key={conversation.id}
-                    className={`p-4 bg-white border-2 transition-colors cursor-pointer ${isUnread ? 'border-[#E11D48] bg-[#FFF7F8] shadow-sm' : 'border-[#CBD5E1] hover:border-[#E11D48]'}`}
+                    className={`p-4 bg-white border-2 transition-colors cursor-pointer ${isUnread ? 'border-[var(--primary)] bg-[var(--muted)] shadow-sm' : 'border-[var(--border)] hover:border-[var(--primary)]'}`}
                     onClick={() => openConversation(conversation)}
                   >
                     <div className="flex items-start gap-3">
@@ -461,20 +461,20 @@ export default function ChatHub({
                       <div className="flex-1 min-w-0">
                         <div className="flex items-start justify-between gap-2">
                           <div className="min-w-0">
-                            <p className={`font-bold truncate leading-tight ${isUnread ? 'text-[#E11D48]' : 'text-[#121212]'}`}>{peer.name}</p>
-                            <p className="text-xs text-[#64748B] mt-0.5">{getRoleLabel(peer.role)}</p>
-                            {conversation.subject && <p className="text-[11px] text-[#94A3B8] mt-1 truncate">{conversation.subject}</p>}
+                            <p className={`font-bold truncate leading-tight ${isUnread ? 'text-[var(--primary)]' : 'text-[var(--ink)]'}`}>{peer.name}</p>
+                            <p className="text-xs text-[var(--muted-foreground)] mt-0.5">{getRoleLabel(peer.role)}</p>
+                            {conversation.subject && <p className="text-[11px] text-[var(--muted-foreground)] mt-1 truncate">{conversation.subject}</p>}
                           </div>
                           {isUnread && (
-                            <Badge className="bg-[#E11D48] text-white shadow-sm">
+                            <Badge className="bg-[var(--primary)] text-white shadow-sm">
                               {unread} unread
                             </Badge>
                           )}
                         </div>
                         <div className="flex items-end justify-between gap-2 mt-2">
-                          <p className="text-sm text-[#64748B] truncate">{conversation.last_message_preview || 'No messages yet'}</p>
+                          <p className="text-sm text-[var(--muted-foreground)] truncate">{conversation.last_message_preview || 'No messages yet'}</p>
                           {conversation.last_message_at && (
-                            <p className="text-[11px] text-[#94A3B8] whitespace-nowrap">
+                            <p className="text-[11px] text-[var(--muted-foreground)] whitespace-nowrap">
                               {new Date(conversation.last_message_at).toLocaleDateString([], { month: 'short', day: 'numeric' })} {new Date(conversation.last_message_at).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}
                             </p>
                           )}

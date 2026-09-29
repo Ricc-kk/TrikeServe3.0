@@ -36,17 +36,17 @@ function AccessChips({ isFirst }: { isFirst: boolean }) {
     <div
       key={label}
       className={`flex items-center gap-1.5 rounded-lg px-2 py-1.5 border transition-colors ${
-        active ? "bg-white border-[#10B981]/50" : "bg-white/60 border-[#E2E8F0]"
+        active ? "bg-white border-[var(--success)]/50" : "bg-white/60 border-[var(--border)]"
       }`}
     >
-      <Icon className={`w-3.5 h-3.5 ${active ? "text-[#059669]" : "text-[#94A3B8]"}`} />
-      <span className={`text-[11px] font-bold ${active ? "text-[#065F46]" : "text-[#94A3B8]"}`}>
+      <Icon className={`w-3.5 h-3.5 ${active ? "text-[var(--success)]" : "text-[var(--muted-foreground)]"}`} />
+      <span className={`text-[11px] font-bold ${active ? "text-[var(--success)]" : "text-[var(--muted-foreground)]"}`}>
         {label}
       </span>
       {active ? (
-        <Unlock className="w-3 h-3 text-[#059669]" />
+        <Unlock className="w-3 h-3 text-[var(--success)]" />
       ) : (
-        <Lock className="w-3 h-3 text-[#CBD5E1]" />
+        <Lock className="w-3 h-3 text-[var(--border)]" />
       )}
     </div>
   );
@@ -65,28 +65,28 @@ function DriverRow({
 }) {
   const isNext = index === 0;
   return (
-    <div className={`flex items-center gap-3 px-3 py-2.5 ${isMe ? "bg-[#FFF1F2]" : ""}`}>
+    <div className={`flex items-center gap-3 px-3 py-2.5 ${isMe ? "bg-[var(--primary-soft)]" : ""}`}>
       <span
         className={`w-6 h-6 rounded-full flex items-center justify-center text-[11px] font-extrabold flex-shrink-0 ${
           isNext
-            ? "bg-[#10B981] text-white"
+            ? "bg-[var(--success)] text-white"
             : isMe
-              ? "bg-[#E11D48] text-white"
-              : "bg-[#F1F5F9] text-[#64748B]"
+              ? "bg-[var(--primary)] text-white"
+              : "bg-[var(--muted)] text-[var(--muted-foreground)]"
         }`}
       >
         {index + 1}
       </span>
       <div className="flex-1 min-w-0">
-        <p className={`text-xs truncate ${isMe || isNext ? "font-extrabold" : "font-semibold"} text-[#121212]`}>
+        <p className={`text-xs truncate ${isMe || isNext ? "font-extrabold" : "font-semibold"} text-[var(--ink)]`}>
           {isMe ? "You" : entry.driver_name || "Driver"}
         </p>
-        <p className="text-[10px] text-[#94A3B8] truncate">
+        <p className="text-[10px] text-[var(--muted-foreground)] truncate">
           {entry.driver_plate || "No plate"} • waiting {formatWaiting(entry.joined_at)}
         </p>
       </div>
       {isNext && (
-        <Badge className="bg-[#10B981] text-white text-[9px] font-extrabold tracking-wide border-0 flex-shrink-0">
+        <Badge className="bg-[var(--success)] text-white text-[9px] font-extrabold tracking-wide border-0 flex-shrink-0">
           NEXT
         </Badge>
       )}
@@ -144,8 +144,8 @@ export default function TerminalQueueCard({ queue, variant = "full", canJoin = t
   const hiddenDrivers = entries.length - visibleDrivers.length;
 
   const tone = isFirst
-    ? "bg-[#F0FDF4] border-[#10B981]"
-    : "bg-[#FFF7ED] border-[#FDBA74]";
+    ? "bg-[var(--success-soft)] border-[var(--success)]"
+    : "bg-[var(--amber-soft)] border-[var(--amber)]";
 
   const statusTitle = isFirst
     ? "You're first in line"
@@ -153,7 +153,7 @@ export default function TerminalQueueCard({ queue, variant = "full", canJoin = t
   const statusSubtitle = isFirst
     ? "Private and share rides are unlocked."
     : "Private and share rides unlock at #1.";
-  const rankCircle = isFirst ? "bg-[#10B981]" : "bg-[#F59E0B]";
+  const rankCircle = isFirst ? "bg-[var(--success)]" : "bg-[var(--amber)]";
 
   const joinButton = (
     <Button
@@ -163,8 +163,8 @@ export default function TerminalQueueCard({ queue, variant = "full", canJoin = t
         isCompact ? "text-[11px] px-3 h-9" : "w-full"
       } ${
         canJoin
-          ? "bg-[#E11D48] hover:bg-[#BE123C] text-white"
-          : "bg-gray-300 text-gray-500 cursor-not-allowed"
+          ? "bg-[var(--primary)] hover:bg-[var(--primary)] text-white"
+          : "bg-[var(--border)] text-[var(--muted-foreground)] cursor-not-allowed"
       }`}
     >
       <Ticket className="w-4 h-4 mr-1.5" />
@@ -177,7 +177,7 @@ export default function TerminalQueueCard({ queue, variant = "full", canJoin = t
       onClick={() => runAction(leave)}
       disabled={isMutating}
       variant="outline"
-      className={`border-[#E2E8F0] text-[#64748B] hover:border-[#E11D48] hover:text-[#E11D48] font-bold uppercase tracking-wide ${
+      className={`border-[var(--border)] text-[var(--muted-foreground)] hover:border-[var(--primary)] hover:text-[var(--primary)] font-bold uppercase tracking-wide ${
         isCompact ? "text-[11px] px-3 h-9" : "w-full"
       }`}
     >
@@ -190,13 +190,13 @@ export default function TerminalQueueCard({ queue, variant = "full", canJoin = t
   if (hasNoTerminal) {
     return (
       <div className={`px-5 ${isCompact ? "py-3" : "pt-5 pb-4"}`}>
-        <div className="flex items-start gap-3 rounded-2xl border-2 border-[#E11D48] bg-[#FFF1F2] p-3.5">
-          <div className="w-10 h-10 rounded-full bg-[#E11D48] flex items-center justify-center flex-shrink-0">
+        <div className="flex items-start gap-3 rounded-2xl border-2 border-[var(--primary)] bg-[var(--primary-soft)] p-3.5">
+          <div className="w-10 h-10 rounded-full bg-[var(--primary)] flex items-center justify-center flex-shrink-0">
             <MapPin className="w-5 h-5 text-white" />
           </div>
           <div className="min-w-0">
-            <p className="text-sm font-extrabold text-[#121212]">No terminal assigned yet</p>
-            <p className="text-xs text-[#64748B] mt-0.5">
+            <p className="text-sm font-extrabold text-[var(--ink)]">No terminal assigned yet</p>
+            <p className="text-xs text-[var(--muted-foreground)] mt-0.5">
               You can't accept rides yet. Ask an admin to assign your terminal, then go online and join the queue.
             </p>
           </div>
@@ -212,7 +212,7 @@ export default function TerminalQueueCard({ queue, variant = "full", canJoin = t
         <div className="flex items-center gap-3">
           <div
             className={`w-11 h-11 rounded-full flex flex-col items-center justify-center flex-shrink-0 text-white ${rankCircle} ${
-              isFirst ? "shadow-lg shadow-emerald-200" : ""
+              isFirst ? "shadow-lg shadow-[var(--success-soft)]" : ""
             }`}
           >
             {myEntry ? (
@@ -226,12 +226,12 @@ export default function TerminalQueueCard({ queue, variant = "full", canJoin = t
           </div>
           <div className="flex-1 min-w-0">
             <div className="flex items-center gap-1.5">
-              {isFirst && <Zap className="w-3.5 h-3.5 text-[#059669] flex-shrink-0" />}
-              <p className={`text-[13px] font-extrabold truncate ${isFirst ? "text-[#065F46]" : "text-[#92400E]"}`}>
+              {isFirst && <Zap className="w-3.5 h-3.5 text-[var(--success)] flex-shrink-0" />}
+              <p className={`text-[13px] font-extrabold truncate ${isFirst ? "text-[var(--success)]" : "text-[var(--amber-dark)]"}`}>
                 {myEntry ? statusTitle : "Not in the queue"}
               </p>
             </div>
-            <p className={`text-[11px] ${isFirst ? "text-[#047857]" : "text-[#B45309]"}`}>
+            <p className={`text-[11px] ${isFirst ? "text-[var(--success)]" : "text-[var(--amber)]"}`}>
               {myEntry
                 ? `${statusSubtitle} • ${terminalLabel}`
                 : "Get assigned to a TODA terminal to accept private and share rides."}
@@ -242,7 +242,7 @@ export default function TerminalQueueCard({ queue, variant = "full", canJoin = t
           </div>
           <div className="flex-shrink-0">{myEntry ? leaveButton : joinButton}</div>
         </div>
-        {actionError && <p className="text-[11px] text-[#E11D48] font-semibold mt-2">{actionError}</p>}
+        {actionError && <p className="text-[11px] text-[var(--primary)] font-semibold mt-2">{actionError}</p>}
       </div>
     );
   }
@@ -253,23 +253,23 @@ export default function TerminalQueueCard({ queue, variant = "full", canJoin = t
       {/* Header */}
       <div className="flex items-center justify-between mb-3">
         <div className="flex items-center gap-2.5 min-w-0">
-          <div className="w-9 h-9 rounded-xl bg-[#E11D48] flex items-center justify-center flex-shrink-0">
+          <div className="w-9 h-9 rounded-xl bg-[var(--primary)] flex items-center justify-center flex-shrink-0">
             <ListOrdered className="w-5 h-5 text-white" />
           </div>
           <div className="min-w-0">
-            <h3 className="text-[15px] font-extrabold text-[#121212] leading-none">Terminal Queue</h3>
-            <p className="text-[11px] text-[#94A3B8] truncate mt-1">{terminalLabel}</p>
+            <h3 className="text-[15px] font-extrabold text-[var(--ink)] leading-none">Terminal Queue</h3>
+            <p className="text-[11px] text-[var(--muted-foreground)] truncate mt-1">{terminalLabel}</p>
           </div>
         </div>
-        <span className="flex items-center gap-1.5 bg-[#F0FDF4] text-[#059669] text-[10px] font-extrabold px-2 py-1 rounded-full flex-shrink-0">
-          <span className="w-1.5 h-1.5 rounded-full bg-[#10B981] animate-pulse" />
+        <span className="flex items-center gap-1.5 bg-[var(--success-soft)] text-[var(--success)] text-[10px] font-extrabold px-2 py-1 rounded-full flex-shrink-0">
+          <span className="w-1.5 h-1.5 rounded-full bg-[var(--success)] animate-pulse" />
           LIVE
         </span>
       </div>
 
       {isLoadingState ? (
-        <div className="rounded-2xl border-2 border-[#E2E8F0] bg-[#F8F9FA] py-8 text-center">
-          <p className="text-xs font-semibold text-[#94A3B8]">Loading queue…</p>
+        <div className="rounded-2xl border-2 border-[var(--border)] bg-[var(--muted)] py-8 text-center">
+          <p className="text-xs font-semibold text-[var(--muted-foreground)]">Loading queue…</p>
         </div>
       ) : myEntry ? (
         <div className="space-y-3">
@@ -278,11 +278,11 @@ export default function TerminalQueueCard({ queue, variant = "full", canJoin = t
             <div className="flex items-center gap-4">
               <div className="relative flex-shrink-0">
                 {isFirst && (
-                  <span className="absolute inset-0 rounded-full bg-[#10B981] opacity-30 animate-ping" />
+                  <span className="absolute inset-0 rounded-full bg-[var(--success)] opacity-30 animate-ping" />
                 )}
                 <div
                   className={`relative w-[74px] h-[74px] rounded-full flex flex-col items-center justify-center text-white ${rankCircle} shadow-lg ${
-                    isFirst ? "shadow-emerald-200" : "shadow-amber-200"
+                    isFirst ? "shadow-[var(--success-soft)]" : "shadow-[var(--amber-soft)]"
                   }`}
                 >
                   <span className="text-[9px] font-extrabold tracking-widest leading-none opacity-90">POSITION</span>
@@ -291,15 +291,15 @@ export default function TerminalQueueCard({ queue, variant = "full", canJoin = t
               </div>
               <div className="min-w-0 flex-1">
                 <div className="flex items-center gap-1.5">
-                  {isFirst && <Zap className="w-4 h-4 text-[#059669] flex-shrink-0" />}
-                  <p className={`text-sm font-extrabold ${isFirst ? "text-[#065F46]" : "text-[#92400E]"}`}>
+                  {isFirst && <Zap className="w-4 h-4 text-[var(--success)] flex-shrink-0" />}
+                  <p className={`text-sm font-extrabold ${isFirst ? "text-[var(--success)]" : "text-[var(--amber-dark)]"}`}>
                     {statusTitle}
                   </p>
                 </div>
-                <p className={`text-xs mt-0.5 ${isFirst ? "text-[#047857]" : "text-[#B45309]"}`}>
+                <p className={`text-xs mt-0.5 ${isFirst ? "text-[var(--success)]" : "text-[var(--amber)]"}`}>
                   {statusSubtitle}
                 </p>
-                <p className="text-[10px] font-semibold text-[#94A3B8] mt-2">
+                <p className="text-[10px] font-semibold text-[var(--muted-foreground)] mt-2">
                   In line for {formatWaiting(myEntry.joined_at)} • {entries.length} waiting
                 </p>
               </div>
@@ -307,7 +307,7 @@ export default function TerminalQueueCard({ queue, variant = "full", canJoin = t
 
             <div className="mt-3 pt-3 border-t border-black/5">
               <AccessChips isFirst={isFirst} />
-              <p className="flex items-center gap-1.5 text-[10px] font-semibold text-[#94A3B8] mt-2">
+              <p className="flex items-center gap-1.5 text-[10px] font-semibold text-[var(--muted-foreground)] mt-2">
                 <Truck className="w-3.5 h-3.5" />
                 Delivery requests are always open to you.
               </p>
@@ -315,14 +315,14 @@ export default function TerminalQueueCard({ queue, variant = "full", canJoin = t
           </div>
 
           {/* Drivers in the queue */}
-          <div className="rounded-2xl border border-[#E2E8F0] overflow-hidden">
-            <div className="flex items-center justify-between px-3 py-2 bg-[#F8F9FA]">
-              <p className="text-[10px] font-extrabold tracking-wide text-[#64748B]">
+          <div className="rounded-2xl border border-[var(--border)] overflow-hidden">
+            <div className="flex items-center justify-between px-3 py-2 bg-[var(--muted)]">
+              <p className="text-[10px] font-extrabold tracking-wide text-[var(--muted-foreground)]">
                 IN QUEUE ({entries.length})
               </p>
-              <p className="text-[10px] font-semibold text-[#94A3B8]">oldest first</p>
+              <p className="text-[10px] font-semibold text-[var(--muted-foreground)]">oldest first</p>
             </div>
-            <div className="divide-y divide-[#F1F5F9]">
+            <div className="divide-y divide-[var(--muted)]">
               {visibleDrivers.map((entry, index) => (
                 <DriverRow
                   key={entry.id}
@@ -333,31 +333,31 @@ export default function TerminalQueueCard({ queue, variant = "full", canJoin = t
               ))}
             </div>
             {hiddenDrivers > 0 && (
-              <div className="flex items-center justify-center gap-1 px-3 py-2 bg-[#F8F9FA] border-t border-[#F1F5F9]">
-                <span className="text-[10px] font-bold text-[#64748B]">
+              <div className="flex items-center justify-center gap-1 px-3 py-2 bg-[var(--muted)] border-t border-[var(--muted)]">
+                <span className="text-[10px] font-bold text-[var(--muted-foreground)]">
                   +{hiddenDrivers} more driver{hiddenDrivers !== 1 ? "s" : ""}
                 </span>
-                <ChevronRight className="w-3 h-3 text-[#94A3B8]" />
+                <ChevronRight className="w-3 h-3 text-[var(--muted-foreground)]" />
               </div>
             )}
           </div>
 
           <div>
             {leaveButton}
-            <p className="text-[10px] text-[#94A3B8] text-center mt-1.5">
+            <p className="text-[10px] text-[var(--muted-foreground)] text-center mt-1.5">
               Leaving puts you at the back of the queue next time.
             </p>
           </div>
         </div>
       ) : (
         /* Not in the queue */
-        <div className="rounded-2xl border-2 border-dashed border-[#E2E8F0] bg-[#F8F9FA] p-4">
+        <div className="rounded-2xl border-2 border-dashed border-[var(--border)] bg-[var(--muted)] p-4">
           <div className="text-center mb-3">
-            <div className="w-12 h-12 rounded-full bg-white border-2 border-[#E2E8F0] flex items-center justify-center mx-auto mb-2">
-              <Ticket className="w-5 h-5 text-[#94A3B8]" />
+            <div className="w-12 h-12 rounded-full bg-white border-2 border-[var(--border)] flex items-center justify-center mx-auto mb-2">
+              <Ticket className="w-5 h-5 text-[var(--muted-foreground)]" />
             </div>
-            <p className="text-sm font-extrabold text-[#121212]">You're not in the queue</p>
-            <p className="text-xs text-[#64748B] mt-0.5">
+            <p className="text-sm font-extrabold text-[var(--ink)]">You're not in the queue</p>
+            <p className="text-xs text-[var(--muted-foreground)] mt-0.5">
               Get assigned to a TODA terminal to accept private and share rides. Delivery is always open.
             </p>
           </div>
@@ -366,7 +366,7 @@ export default function TerminalQueueCard({ queue, variant = "full", canJoin = t
           </div>
           {joinButton}
           {!canJoin && (
-            <p className="text-[10px] text-[#94A3B8] text-center mt-2">
+            <p className="text-[10px] text-[var(--muted-foreground)] text-center mt-2">
               Turn on "You're Online" above to join the queue.
             </p>
           )}
@@ -374,10 +374,10 @@ export default function TerminalQueueCard({ queue, variant = "full", canJoin = t
       )}
 
       {actionError && (
-        <p className="text-[11px] text-[#E11D48] font-semibold text-center mt-2">{actionError}</p>
+        <p className="text-[11px] text-[var(--primary)] font-semibold text-center mt-2">{actionError}</p>
       )}
       {error && !myEntry && (
-        <p className="text-[10px] text-[#94A3B8] text-center mt-2">
+        <p className="text-[10px] text-[var(--muted-foreground)] text-center mt-2">
           Queue unavailable right now — retrying automatically.
         </p>
       )}

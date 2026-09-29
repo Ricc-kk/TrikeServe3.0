@@ -149,7 +149,7 @@ export default function SetPassword() {
   return (
     <div className="min-h-screen flex">
       {/* Left Side — branding */}
-      <div className="hidden lg:flex lg:flex-1 bg-gradient-to-br from-[#E11D48] via-[#BE123C] to-[#121212] relative overflow-hidden">
+      <div className="hidden lg:flex lg:flex-1 bg-gradient-to-br from-[var(--primary)] via-[var(--primary)] to-[var(--ink)] relative overflow-hidden">
         <div className="absolute inset-0">
           <div className="absolute inset-0 opacity-10">
             <div
@@ -178,7 +178,7 @@ export default function SetPassword() {
           <div className="space-y-4">
             <div className="flex items-start gap-3">
               <div className="w-8 h-8 rounded-full bg-white flex items-center justify-center flex-shrink-0 mt-1">
-                <span className="text-sm font-bold text-[#E11D48]">1</span>
+                <span className="text-sm font-bold text-[var(--primary)]">1</span>
               </div>
               <div>
                 <p className="text-lg font-semibold">Enter New Password</p>
@@ -218,13 +218,13 @@ export default function SetPassword() {
                 Back to Sign In
               </Button>
             </Link>
-            <h2 className="text-3xl font-bold text-[#121212] mb-2">
+            <h2 className="text-3xl font-bold text-[var(--ink)] mb-2">
               {step === "loading" && "Verifying Link..."}
               {step === "form" && "Set New Password"}
               {step === "success" && "Password Updated!"}
               {step === "error" && "Reset Failed"}
             </h2>
-            <p className="text-[#64748B]">
+            <p className="text-[var(--muted-foreground)]">
               {step === "loading" && "Please wait..."}
               {step === "form" && "Create a new password for your account"}
               {step === "success" && "Your password has been updated successfully."}
@@ -235,10 +235,10 @@ export default function SetPassword() {
           {/* Loading State */}
           {step === "loading" && (
             <div className="text-center py-12">
-              <div className="w-20 h-20 bg-blue-100 rounded-full flex items-center justify-center mx-auto mb-4">
-                <Loader2 className="w-10 h-10 text-blue-600 animate-spin" />
+              <div className="w-20 h-20 bg-[var(--info-soft)] rounded-full flex items-center justify-center mx-auto mb-4">
+                <Loader2 className="w-10 h-10 text-[var(--info)] animate-spin" />
               </div>
-              <p className="text-[#64748B]">Verifying your reset link...</p>
+              <p className="text-[var(--muted-foreground)]">Verifying your reset link...</p>
             </div>
           )}
 
@@ -246,11 +246,11 @@ export default function SetPassword() {
           {step === "form" && (
             <form onSubmit={handleSetPassword} className="space-y-5">
               <div>
-                <label className="block text-sm font-semibold text-[#121212] mb-2">
+                <label className="block text-sm font-semibold text-[var(--ink)] mb-2">
                   New Password
                 </label>
                 <div className="relative">
-                  <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-[#64748B]" />
+                  <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-[var(--muted-foreground)]" />
                   <Input
                     type={showPassword ? "text" : "password"}
                     placeholder="••••••••"
@@ -259,29 +259,29 @@ export default function SetPassword() {
                       setNewPassword(e.target.value);
                       setError("");
                     }}
-                    className="border-2 border-[#CBD5E1] focus:border-[#E11D48] h-12 pl-11 pr-11"
+                    className="border-2 border-[var(--border)] focus:border-[var(--primary)] h-12 pl-11 pr-11"
                     required
                     disabled={isUpdating}
                   />
                   <button
                     type="button"
                     onClick={() => setShowPassword(!showPassword)}
-                    className="absolute right-3 top-1/2 -translate-y-1/2 text-[#64748B] hover:text-[#121212]"
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-[var(--muted-foreground)] hover:text-[var(--ink)]"
                   >
                     {showPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
                   </button>
                 </div>
-                <p className="text-xs text-[#64748B] mt-2">
+                <p className="text-xs text-[var(--muted-foreground)] mt-2">
                   At least 8 characters, 1 uppercase, 1 lowercase, 1 number
                 </p>
               </div>
 
               <div>
-                <label className="block text-sm font-semibold text-[#121212] mb-2">
+                <label className="block text-sm font-semibold text-[var(--ink)] mb-2">
                   Confirm New Password
                 </label>
                 <div className="relative">
-                  <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-[#64748B]" />
+                  <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-[var(--muted-foreground)]" />
                   <Input
                     type={showConfirm ? "text" : "password"}
                     placeholder="••••••••"
@@ -290,14 +290,14 @@ export default function SetPassword() {
                       setConfirmPassword(e.target.value);
                       setError("");
                     }}
-                    className="border-2 border-[#CBD5E1] focus:border-[#E11D48] h-12 pl-11 pr-11"
+                    className="border-2 border-[var(--border)] focus:border-[var(--primary)] h-12 pl-11 pr-11"
                     required
                     disabled={isUpdating}
                   />
                   <button
                     type="button"
                     onClick={() => setShowConfirm(!showConfirm)}
-                    className="absolute right-3 top-1/2 -translate-y-1/2 text-[#64748B] hover:text-[#121212]"
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-[var(--muted-foreground)] hover:text-[var(--ink)]"
                   >
                     {showConfirm ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
                   </button>
@@ -305,15 +305,15 @@ export default function SetPassword() {
               </div>
 
               {error && (
-                <div className="p-3 bg-red-50 border-2 border-red-200 rounded-lg">
-                  <p className="text-sm text-red-800">{error}</p>
+                <div className="p-3 bg-[var(--error-soft)] border-2 border-[var(--error-soft)] rounded-lg">
+                  <p className="text-sm text-[var(--error)]">{error}</p>
                 </div>
               )}
 
               <Button
                 type="submit"
                 disabled={isUpdating}
-                className="w-full bg-[#E11D48] hover:bg-[#BE123C] uppercase text-base py-6"
+                className="w-full bg-[var(--primary)] hover:bg-[var(--primary)] uppercase text-base py-6"
               >
                 {isUpdating ? (
                   <Loader2 className="w-5 h-5 animate-spin" />
@@ -328,23 +328,23 @@ export default function SetPassword() {
           {step === "success" && (
             <div className="space-y-6">
               <div className="text-center">
-                <div className="w-20 h-20 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-4">
-                  <CheckCircle className="w-10 h-10 text-green-600" />
+                <div className="w-20 h-20 bg-[var(--success-soft)] rounded-full flex items-center justify-center mx-auto mb-4">
+                  <CheckCircle className="w-10 h-10 text-[var(--success)]" />
                 </div>
-                <h3 className="text-2xl font-bold text-[#121212] mb-2">All Done!</h3>
-                <p className="text-[#64748B] text-sm">
+                <h3 className="text-2xl font-bold text-[var(--ink)] mb-2">All Done!</h3>
+                <p className="text-[var(--muted-foreground)] text-sm">
                   Your password has been updated. You can now log in with your new password.
                 </p>
               </div>
 
               {/* Mobile hint */}
               {isMobileDevice() && (
-                <div className="p-4 bg-blue-50 border-2 border-blue-200 rounded-lg">
+                <div className="p-4 bg-[var(--info-soft)] border-2 border-[var(--info-soft)] rounded-lg">
                   <div className="flex items-start gap-3">
-                    <Smartphone className="w-5 h-5 text-blue-600 mt-0.5 flex-shrink-0" />
+                    <Smartphone className="w-5 h-5 text-[var(--info)] mt-0.5 flex-shrink-0" />
                     <div>
-                      <p className="text-sm font-semibold text-blue-800">Using the mobile app?</p>
-                      <p className="text-xs text-blue-600 mt-1">
+                      <p className="text-sm font-semibold text-[var(--info)]">Using the mobile app?</p>
+                      <p className="text-xs text-[var(--info)] mt-1">
                         Open the TrikeServe app and log in with your new password.
                       </p>
                     </div>
@@ -353,7 +353,7 @@ export default function SetPassword() {
               )}
 
               <Link to="/">
-                <Button className="w-full bg-[#E11D48] hover:bg-[#BE123C] uppercase text-base py-6">
+                <Button className="w-full bg-[var(--primary)] hover:bg-[var(--primary)] uppercase text-base py-6">
                   GO TO LOGIN
                 </Button>
               </Link>
@@ -364,19 +364,19 @@ export default function SetPassword() {
           {step === "error" && (
             <div className="space-y-6">
               <div className="text-center">
-                <div className="w-20 h-20 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-4">
-                  <Lock className="w-10 h-10 text-red-600" />
+                <div className="w-20 h-20 bg-[var(--error-soft)] rounded-full flex items-center justify-center mx-auto mb-4">
+                  <Lock className="w-10 h-10 text-[var(--error)]" />
                 </div>
               </div>
 
               <Link to="/forgot-password">
-                <Button className="w-full bg-[#E11D48] hover:bg-[#BE123C] uppercase text-base py-6">
+                <Button className="w-full bg-[var(--primary)] hover:bg-[var(--primary)] uppercase text-base py-6">
                   REQUEST NEW RESET LINK
                 </Button>
               </Link>
 
               <Link to="/">
-                <Button variant="outline" className="w-full border-2 border-[#CBD5E1] hover:border-[#E11D48]">
+                <Button variant="outline" className="w-full border-2 border-[var(--border)] hover:border-[var(--primary)]">
                   BACK TO LOGIN
                 </Button>
               </Link>
@@ -385,9 +385,9 @@ export default function SetPassword() {
 
           {/* Footer */}
           <div className="mt-6 text-center">
-            <p className="text-sm text-[#64748B]">
+            <p className="text-sm text-[var(--muted-foreground)]">
               Remember your password?{" "}
-              <Link to="/" className="text-[#E11D48] font-semibold hover:underline">
+              <Link to="/" className="text-[var(--primary)] font-semibold hover:underline">
                 Sign In
               </Link>
             </p>

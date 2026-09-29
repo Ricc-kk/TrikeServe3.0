@@ -145,8 +145,8 @@ export default function RiderProfile() {
 
   if (!user) {
     return (
-      <div className="min-h-screen bg-[#F8F9FA] flex items-center justify-center">
-        <p className="text-[#64748B]">Loading...</p>
+      <div className="min-h-screen bg-[var(--muted)] flex items-center justify-center">
+        <p className="text-[var(--muted-foreground)]">Loading...</p>
       </div>
     );
   }
@@ -157,9 +157,9 @@ export default function RiderProfile() {
   });
 
   return (
-    <div className="min-h-screen bg-[#F8F9FA]">
+    <div className="min-h-screen bg-[var(--muted)]">
       {/* Header */}
-      <div className="bg-gradient-to-r from-[#E11D48] to-[#BE123C] px-4 py-4 sticky top-0 z-50">
+      <div className="bg-gradient-to-r from-[var(--primary)] to-[var(--primary)] px-4 py-4 sticky top-0 z-50">
         <div className="flex items-center justify-between mb-6">
           <button 
             onClick={() => navigate('/rider')}
@@ -188,7 +188,7 @@ export default function RiderProfile() {
               <Button
                 onClick={handleSave}
                 disabled={isSaving}
-                className="bg-white text-[#E11D48] hover:bg-white/90 font-bold uppercase text-sm px-4 py-2 rounded-lg flex items-center gap-2"
+                className="bg-white text-[var(--primary)] hover:bg-white/90 font-bold uppercase text-sm px-4 py-2 rounded-lg flex items-center gap-2"
               >
                 <Save className="w-4 h-4" />
                 {isSaving ? 'Saving...' : 'Save'}
@@ -217,7 +217,7 @@ export default function RiderProfile() {
             <button
               onClick={() => fileInputRef.current?.click()}
               disabled={uploadingPhoto}
-              className="absolute bottom-0 right-0 w-9 h-9 bg-[#18B5A4] rounded-full flex items-center justify-center shadow-lg border-3 border-white hover:bg-[#159E8F] transition-colors"
+              className="absolute bottom-0 right-0 w-9 h-9 bg-[var(--teal)] rounded-full flex items-center justify-center shadow-lg border-3 border-white hover:bg-[var(--teal)] transition-colors"
             >
               {uploadingPhoto ? (
                 <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
@@ -235,7 +235,7 @@ export default function RiderProfile() {
               Driver
             </Badge>
             {user.isVerified && (
-              <Badge className="bg-[#10B981] text-white border-0">
+              <Badge className="bg-[var(--success)] text-white border-0">
                 <CheckCircle className="w-3 h-3 mr-1" />
                 Verified
               </Badge>
@@ -251,15 +251,15 @@ export default function RiderProfile() {
       <div className="px-4 py-6 space-y-4">
         {/* Personal Information */}
         <Card className="p-5 border-0 shadow-md">
-          <h2 className="text-lg font-bold text-[#121212] mb-4 flex items-center gap-2">
-            <User className="w-5 h-5 text-[#E11D48]" />
+          <h2 className="text-lg font-bold text-[var(--ink)] mb-4 flex items-center gap-2">
+            <User className="w-5 h-5 text-[var(--primary)]" />
             Personal Information
           </h2>
           
           <div className="space-y-4">
             {/* Full Name */}
             <div>
-              <label className="text-xs font-semibold text-[#64748B] uppercase tracking-wide mb-2 block">
+              <label className="text-xs font-semibold text-[var(--muted-foreground)] uppercase tracking-wide mb-2 block">
                 Full Name
               </label>
               {isEditing ? (
@@ -267,29 +267,29 @@ export default function RiderProfile() {
                   type="text"
                   value={formData.name}
                   onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                  className="w-full p-2 border-2 border-[#E2E8F0] rounded-lg text-base font-semibold text-[#121212] focus:border-[#E11D48] outline-none"
+                  className="w-full p-2 border-2 border-[var(--border)] rounded-lg text-base font-semibold text-[var(--ink)] focus:border-[var(--primary)] outline-none"
                   placeholder="Enter your full name"
                 />
               ) : (
-                <p className="text-base font-semibold text-[#121212]">{user.name}</p>
+                <p className="text-base font-semibold text-[var(--ink)]">{user.name}</p>
               )}
             </div>
 
             {/* Email */}
             <div>
-              <label className="text-xs font-semibold text-[#64748B] uppercase tracking-wide mb-2 block">
+              <label className="text-xs font-semibold text-[var(--muted-foreground)] uppercase tracking-wide mb-2 block">
                 Email Address
               </label>
               <div className="flex items-center gap-2">
-                <Mail className="w-4 h-4 text-[#64748B]" />
-                <p className="text-base text-[#121212]">{user.email}</p>
+                <Mail className="w-4 h-4 text-[var(--muted-foreground)]" />
+                <p className="text-base text-[var(--ink)]">{user.email}</p>
               </div>
-              <p className="text-xs text-[#94A3B8] mt-1">Email cannot be changed</p>
+              <p className="text-xs text-[var(--muted-foreground)] mt-1">Email cannot be changed</p>
             </div>
 
             {/* Phone */}
             <div>
-              <label className="text-xs font-semibold text-[#64748B] uppercase tracking-wide mb-2 block">
+              <label className="text-xs font-semibold text-[var(--muted-foreground)] uppercase tracking-wide mb-2 block">
                 Phone Number
               </label>
               {isEditing ? (
@@ -297,13 +297,13 @@ export default function RiderProfile() {
                   type="tel"
                   value={formData.phone}
                   onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
-                  className="w-full p-2 border-2 border-[#E2E8F0] rounded-lg text-base text-[#121212] focus:border-[#E11D48] outline-none"
+                  className="w-full p-2 border-2 border-[var(--border)] rounded-lg text-base text-[var(--ink)] focus:border-[var(--primary)] outline-none"
                   placeholder="09XX XXX XXXX"
                 />
               ) : (
                 <div className="flex items-center gap-2">
-                  <Phone className="w-4 h-4 text-[#64748B]" />
-                  <p className="text-base text-[#121212]">{user.phone}</p>
+                  <Phone className="w-4 h-4 text-[var(--muted-foreground)]" />
+                  <p className="text-base text-[var(--ink)]">{user.phone}</p>
                 </div>
               )}
             </div>
@@ -312,68 +312,68 @@ export default function RiderProfile() {
 
         {/* Driver Information */}
         <Card className="p-5 border-0 shadow-md">
-          <h2 className="text-lg font-bold text-[#121212] mb-4 flex items-center gap-2">
-            <Car className="w-5 h-5 text-[#E11D48]" />
+          <h2 className="text-lg font-bold text-[var(--ink)] mb-4 flex items-center gap-2">
+            <Car className="w-5 h-5 text-[var(--primary)]" />
             Driver Information
           </h2>
           
           <div className="space-y-4">
             {/* TODA Plate Number */}
             <div>
-              <label className="text-xs font-semibold text-[#64748B] uppercase tracking-wide mb-2 block">
+              <label className="text-xs font-semibold text-[var(--muted-foreground)] uppercase tracking-wide mb-2 block">
                 TODA Plate Number
               </label>
               <div className="flex items-center gap-2">
-                <div className="px-3 py-2 bg-[#F1F5F9] rounded-lg">
-                  <p className="text-base font-bold text-[#121212] tracking-wider">
+                <div className="px-3 py-2 bg-[var(--muted)] rounded-lg">
+                  <p className="text-base font-bold text-[var(--ink)] tracking-wider">
                     {user.todaPlate || "Not provided"}
                   </p>
                 </div>
               </div>
-              <p className="text-xs text-[#94A3B8] mt-1">Visit the TrikeServe office to update</p>
+              <p className="text-xs text-[var(--muted-foreground)] mt-1">Visit the TrikeServe office to update</p>
             </div>
 
             {/* Driver's License Number */}
             <div>
-              <label className="text-xs font-semibold text-[#64748B] uppercase tracking-wide mb-2 block">
+              <label className="text-xs font-semibold text-[var(--muted-foreground)] uppercase tracking-wide mb-2 block">
                 Driver's License Number
               </label>
               <div className="flex items-center gap-2">
-                <CreditCard className="w-4 h-4 text-[#64748B]" />
-                <p className="text-base font-mono text-[#121212]">
+                <CreditCard className="w-4 h-4 text-[var(--muted-foreground)]" />
+                <p className="text-base font-mono text-[var(--ink)]">
                   {user.licenseNumber || "Not provided"}
                 </p>
               </div>
-              <p className="text-xs text-[#94A3B8] mt-1">Visit the TrikeServe office to update</p>
+              <p className="text-xs text-[var(--muted-foreground)] mt-1">Visit the TrikeServe office to update</p>
             </div>
 
             {/* Verification Status */}
             <div>
-              <label className="text-xs font-semibold text-[#64748B] uppercase tracking-wide mb-2 block">
+              <label className="text-xs font-semibold text-[var(--muted-foreground)] uppercase tracking-wide mb-2 block">
                 Verification Status
               </label>
               <div className={`px-4 py-3 rounded-lg ${
                 user.isVerified 
-                  ? 'bg-[#D1FAE5] border-2 border-[#10B981]' 
-                  : 'bg-[#FEF3C7] border-2 border-[#F59E0B]'
+                  ? 'bg-[var(--success-soft)] border-2 border-[var(--success)]' 
+                  : 'bg-[var(--amber-soft)] border-2 border-[var(--amber)]'
               }`}>
                 <div className="flex items-center gap-2">
                   {user.isVerified ? (
                     <>
-                      <CheckCircle className="w-5 h-5 text-[#10B981]" />
+                      <CheckCircle className="w-5 h-5 text-[var(--success)]" />
                       <div>
-                        <p className="text-sm font-bold text-[#10B981]">Verified Driver</p>
-                        <p className="text-xs text-[#059669] mt-0.5">
+                        <p className="text-sm font-bold text-[var(--success)]">Verified Driver</p>
+                        <p className="text-xs text-[var(--success)] mt-0.5">
                           Your account has been verified by TrikeServe admin
                         </p>
                       </div>
                     </>
                   ) : (
                     <>
-                      <Calendar className="w-5 h-5 text-[#F59E0B]" />
+                      <Calendar className="w-5 h-5 text-[var(--amber)]" />
                       <div>
-                        <p className="text-sm font-bold text-[#F59E0B]">Pending Verification</p>
-                        <p className="text-xs text-[#D97706] mt-0.5">
+                        <p className="text-sm font-bold text-[var(--amber)]">Pending Verification</p>
+                        <p className="text-xs text-[var(--amber)] mt-0.5">
                           Please visit TrikeServe office at Barangay Hall with your documents
                         </p>
                       </div>
@@ -388,26 +388,26 @@ export default function RiderProfile() {
         {/* Terminal Assignment */}
         {(user.terminalId || terminalData) && (
           <Card className="p-5 border-0 shadow-md">
-            <h2 className="text-lg font-bold text-[#121212] mb-4 flex items-center gap-2">
-              <MapPin className="w-5 h-5 text-[#E11D48]" />
+            <h2 className="text-lg font-bold text-[var(--ink)] mb-4 flex items-center gap-2">
+              <MapPin className="w-5 h-5 text-[var(--primary)]" />
               Assigned Terminal
             </h2>
-            <div className="bg-[#FFF1F2] border-2 border-[#E11D48]/20 rounded-xl p-4 mb-4">
+            <div className="bg-[var(--primary-soft)] border-2 border-[var(--primary)]/20 rounded-xl p-4 mb-4">
               <div className="flex items-center gap-3">
-                <div className="w-10 h-10 bg-[#E11D48] rounded-full flex items-center justify-center">
+                <div className="w-10 h-10 bg-[var(--primary)] rounded-full flex items-center justify-center">
                   <span className="text-white text-lg">🚏</span>
                 </div>
                 <div>
-                  <p className="font-bold text-[#121212] text-lg">{user.terminalName || terminalData?.name}</p>
+                  <p className="font-bold text-[var(--ink)] text-lg">{user.terminalName || terminalData?.name}</p>
                   {terminalData?.boundary && (
-                    <p className="text-sm text-[#64748B]">{terminalData.boundary}</p>
+                    <p className="text-sm text-[var(--muted-foreground)]">{terminalData.boundary}</p>
                   )}
                 </div>
               </div>
             </div>
             {/* Terminal Map */}
             {terminalData && isMapsLoaded && (
-              <div className="rounded-xl overflow-hidden border-2 border-[#E2E8F0]" style={{ height: 200 }}>
+              <div className="rounded-xl overflow-hidden border-2 border-[var(--border)]" style={{ height: 200 }}>
                 <GoogleMap
                   mapContainerStyle={{ width: '100%', height: '100%' }}
                   center={{ lat: terminalData.lat, lng: terminalData.lng }}
@@ -430,15 +430,15 @@ export default function RiderProfile() {
 
         {/* Operating Locations */}
         <Card className="p-5 border-0 shadow-md">
-          <h2 className="text-lg font-bold text-[#121212] mb-4 flex items-center gap-2">
-            <MapPin className="w-5 h-5 text-[#E11D48]" />
+          <h2 className="text-lg font-bold text-[var(--ink)] mb-4 flex items-center gap-2">
+            <MapPin className="w-5 h-5 text-[var(--primary)]" />
             Operating Locations & Services
           </h2>
           
           <div className="space-y-4">
             {/* Service Types */}
             <div>
-              <label className="text-xs font-semibold text-[#64748B] uppercase tracking-wide mb-3 block">
+              <label className="text-xs font-semibold text-[var(--muted-foreground)] uppercase tracking-wide mb-3 block">
                 Active Service Types
               </label>
               <div className="flex flex-wrap gap-2">
@@ -446,17 +446,17 @@ export default function RiderProfile() {
                   user.serviceTypes.map((service) => (
                     <Badge
                       key={service}
-                      className="bg-[#E11D48] text-white capitalize px-3 py-1.5"
+                      className="bg-[var(--primary)] text-white capitalize px-3 py-1.5"
                     >
                       {service === 'shared' ? '👥 Ride Share' : service === 'delivery' ? '📦 Delivery' : '🚗 Private Ride'}
                     </Badge>
                   ))
                 ) : (
-                  <p className="text-sm text-[#64748B]">No service types selected</p>
+                  <p className="text-sm text-[var(--muted-foreground)]">No service types selected</p>
                 )}
               </div>
-              <p className="text-xs text-[#94A3B8] mt-2">
-                <Link to="/rider/service-types" className="text-[#E11D48] hover:underline font-semibold">
+              <p className="text-xs text-[var(--muted-foreground)] mt-2">
+                <Link to="/rider/service-types" className="text-[var(--primary)] hover:underline font-semibold">
                   Manage Service Types
                 </Link>
               </p>
@@ -467,38 +467,38 @@ export default function RiderProfile() {
 
         {/* Account Information */}
         <Card className="p-5 border-0 shadow-md">
-          <h2 className="text-lg font-bold text-[#121212] mb-4 flex items-center gap-2">
-            <Calendar className="w-5 h-5 text-[#E11D48]" />
+          <h2 className="text-lg font-bold text-[var(--ink)] mb-4 flex items-center gap-2">
+            <Calendar className="w-5 h-5 text-[var(--primary)]" />
             Account Information
           </h2>
           
           <div className="space-y-3">
-            <div className="flex justify-between items-center py-2 border-b border-[#E2E8F0]">
-              <span className="text-sm text-[#64748B]">User ID</span>
-              <span className="text-sm font-mono text-[#121212]">{user.id.substring(0, 12)}...</span>
+            <div className="flex justify-between items-center py-2 border-b border-[var(--border)]">
+              <span className="text-sm text-[var(--muted-foreground)]">User ID</span>
+              <span className="text-sm font-mono text-[var(--ink)]">{user.id.substring(0, 12)}...</span>
             </div>
-            <div className="flex justify-between items-center py-2 border-b border-[#E2E8F0]">
-              <span className="text-sm text-[#64748B]">Account Type</span>
-              <span className="text-sm font-semibold text-[#E11D48]">Driver</span>
+            <div className="flex justify-between items-center py-2 border-b border-[var(--border)]">
+              <span className="text-sm text-[var(--muted-foreground)]">Account Type</span>
+              <span className="text-sm font-semibold text-[var(--primary)]">Driver</span>
             </div>
             <div className="flex justify-between items-center py-2">
-              <span className="text-sm text-[#64748B]">Member Since</span>
-              <span className="text-sm text-[#121212]">{joinDate}</span>
+              <span className="text-sm text-[var(--muted-foreground)]">Member Since</span>
+              <span className="text-sm text-[var(--ink)]">{joinDate}</span>
             </div>
           </div>
         </Card>
 
         {/* Help Card */}
-        <Card className="p-5 border-0 shadow-md bg-gradient-to-br from-[#E11D48]/5 to-[#BE123C]/5 border-2 border-[#E11D48]/20">
-          <h3 className="text-base font-bold text-[#121212] mb-2">Need to update your documents?</h3>
-          <p className="text-sm text-[#64748B] mb-3">
+        <Card className="p-5 border-0 shadow-md bg-gradient-to-br from-[var(--primary)]/5 to-[var(--primary)]/5 border-2 border-[var(--primary)]/20">
+          <h3 className="text-base font-bold text-[var(--ink)] mb-2">Need to update your documents?</h3>
+          <p className="text-sm text-[var(--muted-foreground)] mb-3">
             If you need to update your TODA plate number or driver's license, please visit the TrikeServe office at:
           </p>
           <div className="flex items-start gap-2 text-sm">
-            <MapPin className="w-4 h-4 text-[#E11D48] mt-0.5 flex-shrink-0" />
-            <p className="text-[#121212] font-medium">
+            <MapPin className="w-4 h-4 text-[var(--primary)] mt-0.5 flex-shrink-0" />
+            <p className="text-[var(--ink)] font-medium">
               Barangay Hall, Gen T Deleon, Valenzuela City<br />
-              <span className="text-[#64748B] font-normal">Monday-Friday, 9:00 AM - 5:00 PM</span>
+              <span className="text-[var(--muted-foreground)] font-normal">Monday-Friday, 9:00 AM - 5:00 PM</span>
             </p>
           </div>
         </Card>
@@ -508,7 +508,7 @@ export default function RiderProfile() {
           {user.role === 'rider' ? (
             <Button
               onClick={() => setShowSwitchConfirm(true)}
-              className="w-full bg-[#065f46] hover:bg-[#047857] text-white font-bold uppercase py-4 rounded-lg flex items-center justify-center gap-2 shadow-md mb-3"
+              className="w-full bg-[var(--success)] hover:bg-[var(--success)] text-white font-bold uppercase py-4 rounded-lg flex items-center justify-center gap-2 shadow-md mb-3"
             >
               Use Customer App
             </Button>
@@ -516,7 +516,7 @@ export default function RiderProfile() {
             localStorage.getItem('trikeserve_original_role') && (
               <Button
                 onClick={() => setShowSwitchConfirm(true)}
-                className="w-full bg-[#0f172a] hover:bg-[#111827] text-white font-bold uppercase py-4 rounded-lg flex items-center justify-center gap-2 shadow-md mb-3"
+                className="w-full bg-[var(--ink)] hover:bg-[var(--ink)] text-white font-bold uppercase py-4 rounded-lg flex items-center justify-center gap-2 shadow-md mb-3"
               >
                 Switch back to Driver App
               </Button>
@@ -577,7 +577,7 @@ export default function RiderProfile() {
               navigate('/');
             }, 2000);
           }}
-          className="w-full bg-[#121212] hover:bg-[#2a2a2a] text-white font-bold uppercase py-4 rounded-lg flex items-center justify-center gap-2 shadow-md"
+          className="w-full bg-[var(--ink)] hover:bg-[var(--ink)] text-white font-bold uppercase py-4 rounded-lg flex items-center justify-center gap-2 shadow-md"
         >
           <LogOut className="w-5 h-5" />
           Sign Out
@@ -593,24 +593,24 @@ export default function RiderProfile() {
         <div className="fixed inset-0 bg-black/50 z-[2000] flex items-center justify-center p-4">
           <div className="bg-white rounded-2xl shadow-xl p-6 max-w-sm w-full">
             <div className="text-center mb-4">
-              <div className="w-14 h-14 bg-[#FFF1F2] rounded-full flex items-center justify-center mx-auto mb-3">
-                <CheckCircle className="w-7 h-7 text-[#E11D48]" />
+              <div className="w-14 h-14 bg-[var(--primary-soft)] rounded-full flex items-center justify-center mx-auto mb-3">
+                <CheckCircle className="w-7 h-7 text-[var(--primary)]" />
               </div>
-              <h3 className="text-lg font-bold text-[#121212]">Save Changes?</h3>
-              <p className="text-sm text-[#64748B] mt-2">
+              <h3 className="text-lg font-bold text-[var(--ink)]">Save Changes?</h3>
+              <p className="text-sm text-[var(--muted-foreground)] mt-2">
                 Are you sure you want to update your profile information?
               </p>
             </div>
             <div className="flex gap-3">
               <button
                 onClick={() => setShowConfirmSave(false)}
-                className="flex-1 py-3 text-sm font-semibold text-[#64748B] bg-[#F1F5F9] rounded-xl hover:bg-[#E2E8F0] transition-colors"
+                className="flex-1 py-3 text-sm font-semibold text-[var(--muted-foreground)] bg-[var(--muted)] rounded-xl hover:bg-[var(--border)] transition-colors"
               >
                 Cancel
               </button>
               <button
                 onClick={confirmSave}
-                className="flex-1 py-3 text-sm font-semibold text-white bg-[#E11D48] rounded-xl hover:bg-[#BE123C] transition-colors"
+                className="flex-1 py-3 text-sm font-semibold text-white bg-[var(--primary)] rounded-xl hover:bg-[var(--primary)] transition-colors"
               >
                 Yes, Save
               </button>
@@ -623,13 +623,13 @@ export default function RiderProfile() {
       {showSwitchConfirm && (
         <div className="fixed inset-0 bg-black/50 z-[2000] flex items-center justify-center p-4">
           <div className="bg-white p-6 max-w-sm w-full rounded-2xl shadow-xl">
-            <div className="w-16 h-16 bg-[#E0F2FE] rounded-full flex items-center justify-center mx-auto mb-4">
-              <ArrowLeft className="w-8 h-8 text-[#3B82F6]" />
+            <div className="w-16 h-16 bg-[var(--info-soft)] rounded-full flex items-center justify-center mx-auto mb-4">
+              <ArrowLeft className="w-8 h-8 text-[var(--info)]" />
             </div>
-            <h3 className="text-xl font-bold text-[#121212] text-center mb-2">
+            <h3 className="text-xl font-bold text-[var(--ink)] text-center mb-2">
               {localStorage.getItem('trikeserve_original_role') ? 'Switch Back?' : 'Switch to Customer App?'}
             </h3>
-            <p className="text-[#64748B] text-center mb-6 text-sm">
+            <p className="text-[var(--muted-foreground)] text-center mb-6 text-sm">
               {localStorage.getItem('trikeserve_original_role')
                 ? 'You will return to the Driver app.'
                 : 'You will be switched to the Customer app to browse and order food.'}
@@ -647,13 +647,13 @@ export default function RiderProfile() {
                     navigate('/customer/food');
                   }
                 }}
-                className="w-full py-3 bg-[#3B82F6] text-white font-bold rounded-xl active:scale-95 transition-transform"
+                className="w-full py-3 bg-[var(--info)] text-white font-bold rounded-xl active:scale-95 transition-transform"
               >
                 Yes, Switch
               </button>
               <button
                 onClick={() => setShowSwitchConfirm(false)}
-                className="w-full py-3 bg-[#F8F9FA] text-[#64748B] font-bold rounded-xl active:scale-95 transition-transform"
+                className="w-full py-3 bg-[var(--muted)] text-[var(--muted-foreground)] font-bold rounded-xl active:scale-95 transition-transform"
               >
                 Cancel
               </button>
@@ -666,14 +666,14 @@ export default function RiderProfile() {
       {showGoodbye && (
         <div className="fixed inset-0 bg-black/50 z-[2000] flex items-center justify-center p-4">
           <div className="bg-white rounded-2xl shadow-xl p-8 max-w-sm w-full text-center">
-            <div className="w-16 h-16 bg-[#DBEAFE] rounded-full flex items-center justify-center mx-auto mb-4">
-              <LogOut className="w-8 h-8 text-[#3B82F6]" />
+            <div className="w-16 h-16 bg-[var(--info-soft)] rounded-full flex items-center justify-center mx-auto mb-4">
+              <LogOut className="w-8 h-8 text-[var(--info)]" />
             </div>
-            <h3 className="text-2xl font-bold text-[#121212] mb-2">Goodbye! 👋</h3>
-            <p className="text-[#64748B] text-sm">See you soon, <span className="font-semibold text-[#121212]">{user?.name || 'there'}</span></p>
+            <h3 className="text-2xl font-bold text-[var(--ink)] mb-2">Goodbye! 👋</h3>
+            <p className="text-[var(--muted-foreground)] text-sm">See you soon, <span className="font-semibold text-[var(--ink)]">{user?.name || 'there'}</span></p>
             <div className="mt-6">
-              <div className="w-full bg-[#E2E8F0] rounded-full h-1.5">
-                <div className="bg-[#3B82F6] h-1.5 rounded-full" style={{ width: '100%', animation: 'shrink 1.8s linear forwards' }} />
+              <div className="w-full bg-[var(--border)] rounded-full h-1.5">
+                <div className="bg-[var(--info)] h-1.5 rounded-full" style={{ width: '100%', animation: 'shrink 1.8s linear forwards' }} />
               </div>
             </div>
           </div>

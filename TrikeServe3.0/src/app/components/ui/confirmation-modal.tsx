@@ -24,24 +24,24 @@ const variantConfig: Record<ModalVariant, {
 }> = {
   danger: {
     icon: XCircle,
-    iconBg: "bg-red-100",
-    iconColor: "text-red-600",
-    confirmBg: "bg-[#EF4444]",
-    confirmHover: "hover:bg-[#DC2626]",
+    iconBg: "bg-[var(--error-soft)]",
+    iconColor: "text-[var(--error)]",
+    confirmBg: "bg-[var(--error)]",
+    confirmHover: "hover:bg-[var(--error)]",
   },
   warning: {
     icon: AlertTriangle,
-    iconBg: "bg-amber-100",
-    iconColor: "text-amber-600",
-    confirmBg: "bg-[#F59E0B]",
-    confirmHover: "hover:bg-[#D97706]",
+    iconBg: "bg-[var(--amber-soft)]",
+    iconColor: "text-[var(--amber-dark)]",
+    confirmBg: "bg-[var(--amber)]",
+    confirmHover: "hover:bg-[var(--amber)]",
   },
   success: {
     icon: CheckCircle,
-    iconBg: "bg-green-100",
-    iconColor: "text-green-600",
-    confirmBg: "bg-[#10B981]",
-    confirmHover: "hover:bg-[#059669]",
+    iconBg: "bg-[var(--success-soft)]",
+    iconColor: "text-[var(--success)]",
+    confirmBg: "bg-[var(--success)]",
+    confirmHover: "hover:bg-[var(--success)]",
   },
 };
 
@@ -84,18 +84,18 @@ export default function ConfirmationModal({
           <div className={`w-14 h-14 ${config.iconBg} rounded-full flex items-center justify-center mx-auto mb-4`}>
             <Icon className={`w-7 h-7 ${config.iconColor}`} />
           </div>
-          <h3 className="text-lg font-bold text-[#121212] mb-2">{title}</h3>
-          <p className="text-sm text-[#64748B]">{message}</p>
+          <h3 className="text-lg font-bold text-[var(--ink)] mb-2">{title}</h3>
+          <p className="text-sm text-[var(--muted-foreground)]">{message}</p>
         </div>
-        <div className="flex border-t-2 border-[#E2E8F0]">
+        <div className="flex border-t-2 border-[var(--border)]">
           <button
             ref={cancelRef}
             onClick={onCancel}
-            className="flex-1 py-3 text-sm font-semibold text-[#64748B] hover:bg-[#F8F9FA] transition-colors"
+            className="flex-1 py-3 text-sm font-semibold text-[var(--muted-foreground)] hover:bg-[var(--muted)] transition-colors"
           >
             Cancel
           </button>
-          <div className="w-px bg-[#E2E8F0]" />
+          <div className="w-px bg-[var(--border)]" />
           <button
             onClick={onConfirm}
             className={`flex-1 py-3 text-sm font-bold text-white ${config.confirmBg} ${config.confirmHover} transition-colors`}

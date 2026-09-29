@@ -219,30 +219,30 @@ export default function Notifications() {
   const getNotificationIcon = (type: string) => {
     switch (type) {
       case 'order':
-        return <Package className="w-5 h-5 text-[#E11D48]" />;
+        return <Package className="w-5 h-5 text-[var(--primary)]" />;
       case 'delivery':
-        return <Truck className="w-5 h-5 text-[#18B5A4]" />;
+        return <Truck className="w-5 h-5 text-[var(--teal)]" />;
       case 'ride':
-        return <Truck className="w-5 h-5 text-[#18B5A4]" />;
+        return <Truck className="w-5 h-5 text-[var(--teal)]" />;
       case 'system':
-        return <AlertCircle className="w-5 h-5 text-[#64748B]" />;
+        return <AlertCircle className="w-5 h-5 text-[var(--muted-foreground)]" />;
       default:
-        return <Bell className="w-5 h-5 text-[#64748B]" />;
+        return <Bell className="w-5 h-5 text-[var(--muted-foreground)]" />;
     }
   };
 
   const getNotificationBgColor = (type: string) => {
     switch (type) {
       case 'order':
-        return 'bg-[#FEF2F2]';
+        return 'bg-[var(--error-soft)]';
       case 'delivery':
-        return 'bg-[#ECFDF5]';
+        return 'bg-[var(--success-soft)]';
       case 'ride':
-        return 'bg-[#ECFDF5]';
+        return 'bg-[var(--success-soft)]';
       case 'system':
-        return 'bg-[#F8F9FA]';
+        return 'bg-[var(--muted)]';
       default:
-        return 'bg-[#F8F9FA]';
+        return 'bg-[var(--muted)]';
     }
   };
 
@@ -259,9 +259,9 @@ export default function Notifications() {
   const unreadCount = notifications.filter(n => n.unread).length;
 
   return (
-    <div className="min-h-screen bg-[#F8F9FA] pb-20">
+    <div className="min-h-screen bg-[var(--muted)] pb-20">
       {/* Header */}
-      <div className="bg-gradient-to-r from-[#E11D48] to-[#BE123C] px-5 py-4 sticky top-0 z-50 shadow-lg">
+      <div className="bg-gradient-to-r from-[var(--primary)] to-[var(--primary)] px-5 py-4 sticky top-0 z-50 shadow-lg">
         <div className="flex items-center justify-between mb-2">
           <button 
             onClick={() => navigate(-1)}
@@ -299,11 +299,11 @@ export default function Notifications() {
       {/* Notifications List */}
       {notifications.length === 0 ? (
         <div className="flex flex-col items-center justify-center py-20 px-5">
-          <div className="w-24 h-24 bg-[#F1F5F9] rounded-full flex items-center justify-center mb-4">
-            <Bell className="w-12 h-12 text-[#94A3B8]" />
+          <div className="w-24 h-24 bg-[var(--muted)] rounded-full flex items-center justify-center mb-4">
+            <Bell className="w-12 h-12 text-[var(--muted-foreground)]" />
           </div>
-          <h3 className="text-xl font-bold text-[#121212] mb-2">No Notifications</h3>
-          <p className="text-sm text-[#64748B] text-center">
+          <h3 className="text-xl font-bold text-[var(--ink)] mb-2">No Notifications</h3>
+          <p className="text-sm text-[var(--muted-foreground)] text-center">
             You're all caught up! Check back later for updates.
           </p>
         </div>
@@ -336,21 +336,21 @@ export default function Notifications() {
                 <div className="flex-1 min-w-0">
                   <div className="flex items-start justify-between gap-2 mb-1">
                     <h3 className={`text-base leading-tight ${
-                      notification.unread ? 'font-bold text-[#121212]' : 'font-semibold text-[#64748B]'
+                      notification.unread ? 'font-bold text-[var(--ink)]' : 'font-semibold text-[var(--muted-foreground)]'
                     }`}>
                       {notification.title}
                     </h3>
-                    <span className="text-xs text-[#94A3B8] whitespace-nowrap">
+                    <span className="text-xs text-[var(--muted-foreground)] whitespace-nowrap">
                       {notification.time}
                     </span>
                   </div>
                   <p className={`text-sm leading-relaxed ${
-                    notification.unread ? 'text-[#64748B]' : 'text-[#94A3B8]'
+                    notification.unread ? 'text-[var(--muted-foreground)]' : 'text-[var(--muted-foreground)]'
                   }`}>
                     {notification.message}
                   </p>
                   {notification.actionUrl && (
-                    <button className="mt-2 text-xs font-bold text-[#E11D48] hover:underline">
+                    <button className="mt-2 text-xs font-bold text-[var(--primary)] hover:underline">
                       View Details →
                     </button>
                   )}
@@ -358,7 +358,7 @@ export default function Notifications() {
 
                 {/* Unread Indicator */}
                 {notification.unread && (
-                  <div className="w-3 h-3 bg-[#E11D48] rounded-full flex-shrink-0 mt-2"></div>
+                  <div className="w-3 h-3 bg-[var(--primary)] rounded-full flex-shrink-0 mt-2"></div>
                 )}
               </div>
             </Card>

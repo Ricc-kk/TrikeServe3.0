@@ -284,16 +284,16 @@ export default function VerifiedUsers() {
   };
 
   const getRoleBadgeColor = (role: string) => {
-    if (role === 'rider') return 'bg-blue-100 text-blue-800';
-    if (role === 'business') return 'bg-purple-100 text-purple-800';
-    return 'bg-green-100 text-green-800';
+    if (role === 'rider') return 'bg-[var(--info-soft)] text-[var(--info)]';
+    if (role === 'business') return 'bg-[var(--violet-soft)] text-[var(--violet)]';
+    return 'bg-[var(--success-soft)] text-[var(--success)]';
   };
 
   const filteredVerified = getFilteredUsers(verifiedUsers);
   const filteredPending = getFilteredUsers(pendingUsers);
 
   return (
-    <div className="flex h-screen bg-gray-50">
+    <div className="flex h-screen bg-[var(--muted)]">
       {/* Sidebar */}
       <div className={`${isMobileMenuOpen ? 'block' : 'hidden'} md:block`}>
         <AdminSidebar />
@@ -302,15 +302,15 @@ export default function VerifiedUsers() {
       {/* Main Content */}
       <div className="flex-1 flex flex-col overflow-hidden">
         {/* Header */}
-        <div className="bg-white border-b border-gray-200 p-4">
+        <div className="bg-white border-b border-[var(--border)] p-4">
           <div className="flex items-center justify-between">
             <div>
-              <h1 className="text-2xl font-bold text-gray-800">User Verification</h1>
-              <p className="text-sm text-gray-600">{getAdminTypeLabel()}</p>
+              <h1 className="text-2xl font-bold text-[var(--ink)]">User Verification</h1>
+              <p className="text-sm text-[var(--muted-foreground)]">{getAdminTypeLabel()}</p>
             </div>
             <button
               onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
-              className="md:hidden p-2 hover:bg-gray-200 rounded-lg"
+              className="md:hidden p-2 hover:bg-[var(--border)] rounded-lg"
             >
               {isMobileMenuOpen ? <X /> : <Menu />}
             </button>
@@ -322,7 +322,7 @@ export default function VerifiedUsers() {
           {/* Search Bar */}
           <div className="mb-6">
             <div className="relative">
-              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" />
+              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-[var(--muted-foreground)] w-5 h-5" />
               <Input
                 placeholder="Search by name, email, or phone..."
                 value={searchQuery}
@@ -337,32 +337,32 @@ export default function VerifiedUsers() {
             <Card className="p-4 bg-white">
               <div className="flex items-center justify-between">
                 <div>
-                  <p className="text-gray-600 text-sm">Verified Users</p>
-                  <p className="text-3xl font-bold text-green-600">{filteredVerified.length}</p>
+                  <p className="text-[var(--muted-foreground)] text-sm">Verified Users</p>
+                  <p className="text-3xl font-bold text-[var(--success)]">{filteredVerified.length}</p>
                 </div>
-                <CheckCircle className="w-12 h-12 text-green-100" />
+                <CheckCircle className="w-12 h-12 text-[var(--success-soft)]" />
               </div>
             </Card>
 
             <Card className="p-4 bg-white">
               <div className="flex items-center justify-between">
                 <div>
-                  <p className="text-gray-600 text-sm">Pending Verification</p>
-                  <p className="text-3xl font-bold text-yellow-600">{filteredPending.length}</p>
+                  <p className="text-[var(--muted-foreground)] text-sm">Pending Verification</p>
+                  <p className="text-3xl font-bold text-[var(--amber-dark)]">{filteredPending.length}</p>
                 </div>
-                <Clock className="w-12 h-12 text-yellow-100" />
+                <Clock className="w-12 h-12 text-[var(--amber-soft)]" />
               </div>
             </Card>
           </div>
 
           {/* Tabs */}
-          <div className="flex gap-4 mb-4 border-b border-gray-200">
+          <div className="flex gap-4 mb-4 border-b border-[var(--border)]">
             <button
               onClick={() => setActiveTab('verified')}
               className={`px-4 py-2 font-medium text-sm border-b-2 transition-colors ${
                 activeTab === 'verified'
-                  ? 'text-green-600 border-green-600'
-                  : 'text-gray-600 border-transparent hover:text-gray-800'
+                  ? 'text-[var(--success)] border-[var(--success)]'
+                  : 'text-[var(--muted-foreground)] border-transparent hover:text-[var(--ink)]'
               }`}
             >
               <CheckCircle className="inline w-4 h-4 mr-2" />
@@ -372,8 +372,8 @@ export default function VerifiedUsers() {
               onClick={() => setActiveTab('pending')}
               className={`px-4 py-2 font-medium text-sm border-b-2 transition-colors ${
                 activeTab === 'pending'
-                  ? 'text-yellow-600 border-yellow-600'
-                  : 'text-gray-600 border-transparent hover:text-gray-800'
+                  ? 'text-[var(--amber-dark)] border-[var(--amber-dark)]'
+                  : 'text-[var(--muted-foreground)] border-transparent hover:text-[var(--ink)]'
               }`}
             >
               <Clock className="inline w-4 h-4 mr-2" />
@@ -394,33 +394,33 @@ export default function VerifiedUsers() {
                         </div>
                         <div className="flex-1">
                           <div className="flex items-center gap-2">
-                            <h3 className="font-semibold text-gray-800">{u.name}</h3>
-                            <Badge className="bg-green-100 text-green-800">
+                            <h3 className="font-semibold text-[var(--ink)]">{u.name}</h3>
+                            <Badge className="bg-[var(--success-soft)] text-[var(--success)]">
                               <CheckCircle className="w-3 h-3 mr-1" />
                               Verified
                             </Badge>
                           </div>
-                          <p className="text-sm text-gray-600">{u.email}</p>
-                          <p className="text-sm text-gray-600">{u.phone}</p>
+                          <p className="text-sm text-[var(--muted-foreground)]">{u.email}</p>
+                          <p className="text-sm text-[var(--muted-foreground)]">{u.phone}</p>
                           {u.role === 'business' && (
                             <>
-                              <p className="text-sm font-medium text-gray-700 mt-2">
+                              <p className="text-sm font-medium text-[var(--ink-soft)] mt-2">
                                 {u.businessName}
                               </p>
-                              <p className="text-xs text-gray-600">{u.businessAddress}</p>
+                              <p className="text-xs text-[var(--muted-foreground)]">{u.businessAddress}</p>
                             </>
                           )}
                           {u.role === 'rider' && (
                             <>
-                              <p className="text-sm text-gray-600 mt-2">
+                              <p className="text-sm text-[var(--muted-foreground)] mt-2">
                                 Plate: <span className="font-medium">{u.todaPlate}</span>
                               </p>
-                              <p className="text-sm text-gray-600">
+                              <p className="text-sm text-[var(--muted-foreground)]">
                                 License: <span className="font-medium">{u.licenseNumber}</span>
                               </p>
                             </>
                           )}
-                          <p className="text-xs text-gray-500 mt-2">
+                          <p className="text-xs text-[var(--muted-foreground)] mt-2">
                             Joined: {new Date(u.createdAt).toLocaleDateString()}
                           </p>
                         </div>
@@ -430,8 +430,8 @@ export default function VerifiedUsers() {
                 ))
               ) : (
                 <Card className="p-8 bg-white text-center">
-                  <CheckCircle className="w-12 h-12 text-gray-300 mx-auto mb-2" />
-                  <p className="text-gray-600">No verified users found</p>
+                  <CheckCircle className="w-12 h-12 text-[var(--border)] mx-auto mb-2" />
+                  <p className="text-[var(--muted-foreground)]">No verified users found</p>
                 </Card>
               )}
             </div>
@@ -442,7 +442,7 @@ export default function VerifiedUsers() {
             <div className="space-y-4">
               {filteredPending.length > 0 ? (
                 filteredPending.map(u => (
-                  <Card key={u.id} className="p-4 bg-white hover:shadow-lg transition-shadow border-l-4 border-yellow-500">
+                  <Card key={u.id} className="p-4 bg-white hover:shadow-lg transition-shadow border-l-4 border-[var(--amber)]">
                     <div className="flex items-start justify-between">
                       <div className="flex items-start gap-4 flex-1">
                         <div className={`p-3 rounded-lg ${getRoleBadgeColor(u.role)}`}>
@@ -450,33 +450,33 @@ export default function VerifiedUsers() {
                         </div>
                         <div className="flex-1">
                           <div className="flex items-center gap-2">
-                            <h3 className="font-semibold text-gray-800">{u.name}</h3>
-                            <Badge className="bg-yellow-100 text-yellow-800">
+                            <h3 className="font-semibold text-[var(--ink)]">{u.name}</h3>
+                            <Badge className="bg-[var(--amber-soft)] text-[var(--amber-dark)]">
                               <Clock className="w-3 h-3 mr-1" />
                               Pending
                             </Badge>
                           </div>
-                          <p className="text-sm text-gray-600">{u.email}</p>
-                          <p className="text-sm text-gray-600">{u.phone}</p>
+                          <p className="text-sm text-[var(--muted-foreground)]">{u.email}</p>
+                          <p className="text-sm text-[var(--muted-foreground)]">{u.phone}</p>
                           {u.role === 'business' && (
                             <>
-                              <p className="text-sm font-medium text-gray-700 mt-2">
+                              <p className="text-sm font-medium text-[var(--ink-soft)] mt-2">
                                 {u.businessName}
                               </p>
-                              <p className="text-xs text-gray-600">{u.businessAddress}</p>
+                              <p className="text-xs text-[var(--muted-foreground)]">{u.businessAddress}</p>
                             </>
                           )}
                           {u.role === 'rider' && (
                             <>
-                              <p className="text-sm text-gray-600 mt-2">
+                              <p className="text-sm text-[var(--muted-foreground)] mt-2">
                                 Plate: <span className="font-medium">{u.todaPlate}</span>
                               </p>
-                              <p className="text-sm text-gray-600">
+                              <p className="text-sm text-[var(--muted-foreground)]">
                                 License: <span className="font-medium">{u.licenseNumber}</span>
                               </p>
                             </>
                           )}
-                          <p className="text-xs text-gray-500 mt-2">
+                          <p className="text-xs text-[var(--muted-foreground)] mt-2">
                             Applied: {new Date(u.createdAt).toLocaleDateString()}
                           </p>
                         </div>
@@ -488,8 +488,8 @@ export default function VerifiedUsers() {
                           title={!canVerifyUser(u.role) ? getVerificationBlockedReason(u.role) : 'Approve this user'}
                           className={`px-4 py-2 rounded-lg transition-colors text-sm font-medium ${
                             canVerifyUser(u.role)
-                              ? 'bg-green-500 text-white hover:bg-green-600 cursor-pointer'
-                              : 'bg-[#D1D5DB] text-[#6B7280] cursor-not-allowed opacity-50'
+                              ? 'bg-[var(--success)] text-white hover:bg-[var(--success)] cursor-pointer'
+                              : 'bg-[var(--muted-foreground)] text-[var(--muted-foreground)] cursor-not-allowed opacity-50'
                           }`}
                         >
                           Approve
@@ -500,8 +500,8 @@ export default function VerifiedUsers() {
                           title={!canVerifyUser(u.role) ? getVerificationBlockedReason(u.role) : 'Reject this user'}
                           className={`px-4 py-2 rounded-lg transition-colors text-sm font-medium ${
                             canVerifyUser(u.role)
-                              ? 'bg-red-500 text-white hover:bg-red-600 cursor-pointer'
-                              : 'bg-[#D1D5DB] text-[#6B7280] cursor-not-allowed opacity-50'
+                              ? 'bg-[var(--error)] text-white hover:bg-[var(--error)] cursor-pointer'
+                              : 'bg-[var(--muted-foreground)] text-[var(--muted-foreground)] cursor-not-allowed opacity-50'
                           }`}
                         >
                           Reject
@@ -512,8 +512,8 @@ export default function VerifiedUsers() {
                 ))
               ) : (
                 <Card className="p-8 bg-white text-center">
-                  <Clock className="w-12 h-12 text-gray-300 mx-auto mb-2" />
-                  <p className="text-gray-600">No pending users</p>
+                  <Clock className="w-12 h-12 text-[var(--border)] mx-auto mb-2" />
+                  <p className="text-[var(--muted-foreground)]">No pending users</p>
                 </Card>
               )}
             </div>

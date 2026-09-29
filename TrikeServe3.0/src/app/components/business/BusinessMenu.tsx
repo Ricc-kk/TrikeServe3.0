@@ -718,9 +718,9 @@ export default function BusinessMenu() {
 
   const getBadgeColor = (badge?: string) => {
     switch (badge) {
-      case "most-ordered": return "bg-[#E11D48] text-white";
-      case "most-liked": return "bg-[#3B82F6] text-white";
-      case "signature": return "bg-[#F59E0B] text-white";
+      case "most-ordered": return "bg-[var(--primary)] text-white";
+      case "most-liked": return "bg-[var(--info)] text-white";
+      case "signature": return "bg-[var(--amber)] text-white";
       default: return "";
     }
   };
@@ -805,7 +805,7 @@ export default function BusinessMenu() {
   }, [restaurantId, user?.email]);
 
   return (
-    <div className="min-h-screen bg-[#F8F9FA] flex overflow-x-hidden">
+    <div className="min-h-screen bg-[var(--muted)] flex overflow-x-hidden">
       {/* Sidebar Navigation */}
       <BusinessSidebar 
         isMobileMenuOpen={isMobileMenuOpen}
@@ -813,20 +813,20 @@ export default function BusinessMenu() {
       />
 
       {/* Main Content */}
-      <div className="flex-1 lg:ml-64 bg-[#F8F9FA] w-full min-w-0">
+      <div className="flex-1 lg:ml-64 bg-[var(--muted)] w-full min-w-0">
         {/* Header */}
-        <div className="bg-white px-3 lg:px-4 py-3 lg:py-4 border-b border-[#E2E8F0]">
+        <div className="bg-white px-3 lg:px-4 py-3 lg:py-4 border-b border-[var(--border)]">
           <div className="flex items-center gap-2 lg:gap-3 mb-0.5 lg:mb-1">
             {/* Hamburger Menu - Mobile Only */}
             <button
               onClick={() => setIsMobileMenuOpen(true)}
               className="lg:hidden flex-shrink-0"
             >
-              <Menu className="w-5 h-5 lg:w-6 lg:h-6 text-[#121212]" />
+              <Menu className="w-5 h-5 lg:w-6 lg:h-6 text-[var(--ink)]" />
             </button>
-            <h1 className="text-lg lg:text-2xl xl:text-3xl font-extrabold text-[#121212]">Menu</h1>
+            <h1 className="text-lg lg:text-2xl xl:text-3xl font-extrabold text-[var(--ink)]">Menu</h1>
           </div>
-          <p className="text-xs lg:text-sm text-[#64748B] lg:ml-0 ml-7">
+          <p className="text-xs lg:text-sm text-[var(--muted-foreground)] lg:ml-0 ml-7">
             {menuItems.length} items • {menuItems.filter(i => i.available).length} available
           </p>
         </div>
@@ -834,18 +834,18 @@ export default function BusinessMenu() {
         {viewMode === "preview" ? (
           // CUSTOMER PREVIEW MODE
           <div className="min-h-screen">
-            <div className="bg-[#FFF1F2] border-b-2 border-[#E11D48] px-4 py-3">
+            <div className="bg-[var(--primary-soft)] border-b-2 border-[var(--primary)] px-4 py-3">
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2">
-                  <Eye className="w-5 h-5 text-[#E11D48]" />
+                  <Eye className="w-5 h-5 text-[var(--primary)]" />
                   <div>
-                    <p className="font-bold text-[#E11D48] text-sm">Customer Preview</p>
-                    <p className="text-xs text-[#BE123C]">How customers see your menu</p>
+                    <p className="font-bold text-[var(--primary)] text-sm">Customer Preview</p>
+                    <p className="text-xs text-[var(--primary)]">How customers see your menu</p>
                   </div>
                 </div>
                 <button
                   onClick={() => setViewMode("edit")}
-                  className="px-3 py-1.5 bg-[#E11D48] text-white rounded-lg text-sm font-semibold"
+                  className="px-3 py-1.5 bg-[var(--primary)] text-white rounded-lg text-sm font-semibold"
                 >
                   Exit
                 </button>
@@ -853,7 +853,7 @@ export default function BusinessMenu() {
             </div>
 
             {/* Customer View Categories */}
-            <div className="px-4 py-3 bg-white border-b border-[#E2E8F0] sticky top-0 z-40">
+            <div className="px-4 py-3 bg-white border-b border-[var(--border)] sticky top-0 z-40">
               <div className="flex gap-2 overflow-x-auto pb-2 scrollbar-hide">
                 {categories.map((category) => (
                   <button
@@ -861,8 +861,8 @@ export default function BusinessMenu() {
                     onClick={() => setSelectedCategory(category.id)}
                     className={`px-4 py-2 rounded-full text-sm font-semibold whitespace-nowrap transition-all ${
                       selectedCategory === category.id
-                        ? "bg-[#E11D48] text-white"
-                        : "bg-[#F8F9FA] text-[#64748B] border border-[#E2E8F0]"
+                        ? "bg-[var(--primary)] text-white"
+                        : "bg-[var(--muted)] text-[var(--muted-foreground)] border border-[var(--border)]"
                     }`}
                   >
                     {category.name}
@@ -875,7 +875,7 @@ export default function BusinessMenu() {
             <div className="p-4 space-y-3">
               {filteredItems.filter(item => item.available).length > 0 ? (
                 filteredItems.filter(item => item.available).map((item) => (
-                  <Card key={item.id} className="p-0 overflow-hidden border border-[#E2E8F0] bg-white">
+                  <Card key={item.id} className="p-0 overflow-hidden border border-[var(--border)] bg-white">
                     <div className="flex items-start gap-3 p-4">
                       <div className="w-20 h-20 rounded-xl overflow-hidden flex-shrink-0">
                         <ImageWithFallback
@@ -886,7 +886,7 @@ export default function BusinessMenu() {
                       </div>
                       <div className="flex-1 min-w-0">
                         <div className="flex items-start justify-between mb-1">
-                          <h3 className="font-bold text-[#121212] text-base">{item.name}</h3>
+                          <h3 className="font-bold text-[var(--ink)] text-base">{item.name}</h3>
                         </div>
                         {item.badge && (
                           <Badge className={`${getBadgeColor(item.badge)} text-xs mb-2 inline-flex items-center gap-1`}>
@@ -894,18 +894,18 @@ export default function BusinessMenu() {
                             {getBadgeLabel(item.badge)}
                           </Badge>
                         )}
-                        <p className="text-sm text-[#64748B] mb-2 line-clamp-2">
+                        <p className="text-sm text-[var(--muted-foreground)] mb-2 line-clamp-2">
                           {item.description}
                         </p>
-                        <p className="text-xl font-bold text-[#E11D48]">₱{item.price}</p>
+                        <p className="text-xl font-bold text-[var(--primary)]">₱{item.price}</p>
                       </div>
                     </div>
                   </Card>
                 ))
               ) : (
                 <div className="text-center py-12">
-                  <Package className="w-16 h-16 text-[#CBD5E1] mx-auto mb-3" />
-                  <p className="text-base text-[#64748B]">No available items in this category</p>
+                  <Package className="w-16 h-16 text-[var(--border)] mx-auto mb-3" />
+                  <p className="text-base text-[var(--muted-foreground)]">No available items in this category</p>
                 </div>
               )}
             </div>
@@ -920,8 +920,8 @@ export default function BusinessMenu() {
                   onClick={() => setViewMode("edit")}
                   className={`flex-1 py-3 rounded-t-xl font-bold text-sm transition-all ${
                     viewMode === "edit"
-                      ? "bg-[#E11D48] text-white"
-                      : "bg-[#F1F5F9] text-[#64748B]"
+                      ? "bg-[var(--primary)] text-white"
+                      : "bg-[var(--muted)] text-[var(--muted-foreground)]"
                   }`}
                 >
                   Edit Menu ({menuItems.length})
@@ -930,8 +930,8 @@ export default function BusinessMenu() {
                   onClick={() => setViewMode("preview")}
                   className={`flex-1 py-3 rounded-t-xl font-bold text-sm transition-all flex items-center justify-center gap-2 ${
                     viewMode === "preview"
-                      ? "bg-[#E11D48] text-white"
-                      : "bg-[#F1F5F9] text-[#64748B]"
+                      ? "bg-[var(--primary)] text-white"
+                      : "bg-[var(--muted)] text-[var(--muted-foreground)]"
                   }`}
                 >
                   <Eye className="w-4 h-4" />
@@ -941,28 +941,28 @@ export default function BusinessMenu() {
             </div>
 
             {/* Search Bar */}
-            <div className="bg-white px-4 pb-3 sticky top-[52px] z-40 border-b border-[#E2E8F0]">
+            <div className="bg-white px-4 pb-3 sticky top-[52px] z-40 border-b border-[var(--border)]">
               <div className="relative">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-[#64748B]" />
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-[var(--muted-foreground)]" />
                 <input
                   type="text"
                   placeholder="Search menu items..."
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
-                  className="w-full pl-10 pr-4 py-2.5 border-2 border-[#E2E8F0] rounded-xl text-sm bg-[#F8F9FA]"
+                  className="w-full pl-10 pr-4 py-2.5 border-2 border-[var(--border)] rounded-xl text-sm bg-[var(--muted)]"
                 />
               </div>
             </div>
 
             {/* Category Filter Pills */}
-            <div className="px-3 lg:px-4 py-3 bg-white border-b border-[#E2E8F0]">
+            <div className="px-3 lg:px-4 py-3 bg-white border-b border-[var(--border)]">
               <div className="flex gap-2 overflow-x-auto scrollbar-hide">
                 <button
                   onClick={() => setSelectedCategory("all")}
                   className={`px-4 py-2 rounded-full text-sm font-medium whitespace-nowrap transition-all flex-shrink-0 ${
                     selectedCategory === "all"
-                      ? "bg-[#E11D48] text-white"
-                      : "bg-[#F1F5F9] text-[#64748B] hover:bg-[#E2E8F0]"
+                      ? "bg-[var(--primary)] text-white"
+                      : "bg-[var(--muted)] text-[var(--muted-foreground)] hover:bg-[var(--border)]"
                   }`}
                 >
                   All Items
@@ -973,8 +973,8 @@ export default function BusinessMenu() {
                       onClick={() => setSelectedCategory(category.id)}
                       className={`px-4 py-2 pr-8 rounded-full text-sm font-medium whitespace-nowrap transition-all ${
                         selectedCategory === category.id
-                          ? "bg-[#E11D48] text-white"
-                          : "bg-[#F1F5F9] text-[#64748B] hover:bg-[#E2E8F0]"
+                          ? "bg-[var(--primary)] text-white"
+                          : "bg-[var(--muted)] text-[var(--muted-foreground)] hover:bg-[var(--border)]"
                       }`}
                     >
                       {category.name}
@@ -987,7 +987,7 @@ export default function BusinessMenu() {
                       className={`absolute right-1 top-1/2 -translate-y-1/2 p-1.5 rounded-full transition-all ${
                         selectedCategory === category.id
                           ? "bg-white/20 hover:bg-white/30 text-white"
-                          : "bg-[#E2E8F0] hover:bg-[#CBD5E1] text-[#64748B]"
+                          : "bg-[var(--border)] hover:bg-[var(--border)] text-[var(--muted-foreground)]"
                       }`}
                       title="Delete category"
                     >
@@ -998,7 +998,7 @@ export default function BusinessMenu() {
                 {/* Add Category Button */}
                 <button
                   onClick={() => setShowAddCategory(true)}
-                  className="px-4 py-2 rounded-full text-sm font-medium whitespace-nowrap transition-all flex-shrink-0 border-2 border-dashed border-[#E11D48] text-[#E11D48] hover:bg-[#FFF1F2] flex items-center gap-1.5"
+                  className="px-4 py-2 rounded-full text-sm font-medium whitespace-nowrap transition-all flex-shrink-0 border-2 border-dashed border-[var(--primary)] text-[var(--primary)] hover:bg-[var(--primary-soft)] flex items-center gap-1.5"
                 >
                   <Plus className="w-4 h-4" />
                   Add Category
@@ -1010,7 +1010,7 @@ export default function BusinessMenu() {
             <div className="px-4 py-3">
               <Button
                 onClick={() => setShowAddItem(true)}
-                className="w-full bg-[#E11D48] hover:bg-[#BE123C] uppercase py-5 text-sm font-bold rounded-xl"
+                className="w-full bg-[var(--primary)] hover:bg-[var(--primary)] uppercase py-5 text-sm font-bold rounded-xl"
               >
                 <Plus className="w-5 h-5 mr-2" />
                 Add New Menu Item
@@ -1023,7 +1023,7 @@ export default function BusinessMenu() {
                 filteredItems.map((item) => (
                   <Card 
                     key={item.id} 
-                    className={`p-0 overflow-hidden bg-white border border-[#E2E8F0] ${selectedItems.includes(item.id) ? 'ring-2 ring-[#3B82F6]' : ''}`}
+                    className={`p-0 overflow-hidden bg-white border border-[var(--border)] ${selectedItems.includes(item.id) ? 'ring-2 ring-[var(--info)]' : ''}`}
                     onClick={() => handleEditItem(item)}
                   >
                     <div className="p-3 lg:p-4">
@@ -1038,8 +1038,8 @@ export default function BusinessMenu() {
                             }}
                             className={`w-4 h-4 lg:w-5 lg:h-5 rounded border-2 flex items-center justify-center flex-shrink-0 ${
                               selectedItems.includes(item.id)
-                                ? 'bg-[#3B82F6] border-[#3B82F6]'
-                                : 'border-[#CBD5E1]'
+                                ? 'bg-[var(--info)] border-[var(--info)]'
+                                : 'border-[var(--border)]'
                             }`}
                           >
                             {selectedItems.includes(item.id) && <Check className="w-2.5 h-2.5 lg:w-3 lg:h-3 text-white" />}
@@ -1047,7 +1047,7 @@ export default function BusinessMenu() {
                           
                           <div className="flex-1 min-w-0">
                             <div className="flex items-center gap-1.5 lg:gap-2 flex-wrap">
-                              <h3 className="font-bold text-[#121212] text-sm lg:text-base">{item.name}</h3>
+                              <h3 className="font-bold text-[var(--ink)] text-sm lg:text-base">{item.name}</h3>
                               {item.badge && (
                                 <Badge className={`${getBadgeColor(item.badge)} text-[9px] lg:text-[10px] px-1.5 lg:px-2 py-0.5`}>
                                   {getBadgeLabel(item.badge)}
@@ -1058,7 +1058,7 @@ export default function BusinessMenu() {
                         </div>
                         
                         <div className="text-right ml-2 lg:ml-3">
-                          <p className="text-base lg:text-lg font-bold text-[#E11D48]">₱{item.price}</p>
+                          <p className="text-base lg:text-lg font-bold text-[var(--primary)]">₱{item.price}</p>
                         </div>
                       </div>
 
@@ -1072,7 +1072,7 @@ export default function BusinessMenu() {
                           />
                         </div>
                         <div className="flex-1 min-w-0">
-                          <p className="text-xs lg:text-sm text-[#64748B] line-clamp-3 mb-2 lg:mb-3">
+                          <p className="text-xs lg:text-sm text-[var(--muted-foreground)] line-clamp-3 mb-2 lg:mb-3">
                             {item.description}
                           </p>
                         </div>
@@ -1082,15 +1082,15 @@ export default function BusinessMenu() {
                       <div className="flex items-center justify-between mt-2 lg:mt-3 ml-5 lg:ml-7">
                         <div className="flex items-center gap-1.5 lg:gap-2 flex-wrap">
                           {item.available ? (
-                            <Badge className="bg-[#10B981] text-white text-[10px] lg:text-xs px-2 lg:px-3 py-0.5 lg:py-1">
+                            <Badge className="bg-[var(--success)] text-white text-[10px] lg:text-xs px-2 lg:px-3 py-0.5 lg:py-1">
                               Available
                             </Badge>
                           ) : (
-                            <Badge className="bg-[#64748B] text-white text-[10px] lg:text-xs px-2 lg:px-3 py-0.5 lg:py-1">
+                            <Badge className="bg-[var(--muted-foreground)] text-white text-[10px] lg:text-xs px-2 lg:px-3 py-0.5 lg:py-1">
                               Hidden
                             </Badge>
                           )}
-                          <span className="text-[10px] lg:text-xs text-[#94A3B8]">Category: {item.category}</span>
+                          <span className="text-[10px] lg:text-xs text-[var(--muted-foreground)]">Category: {item.category}</span>
                         </div>
                       </div>
                     </div>
@@ -1098,11 +1098,11 @@ export default function BusinessMenu() {
                 ))
               ) : (
                 <div className="text-center py-12">
-                  <Package className="w-16 h-16 text-[#CBD5E1] mx-auto mb-3" />
-                  <p className="text-[#64748B] mb-4">No items found</p>
+                  <Package className="w-16 h-16 text-[var(--border)] mx-auto mb-3" />
+                  <p className="text-[var(--muted-foreground)] mb-4">No items found</p>
                   <Button
                     onClick={() => setShowAddItem(true)}
-                    className="bg-[#E11D48] hover:bg-[#BE123C] uppercase"
+                    className="bg-[var(--primary)] hover:bg-[var(--primary)] uppercase"
                   >
                     <Plus className="w-4 h-4 mr-2" />
                     Add First Item
@@ -1116,7 +1116,7 @@ export default function BusinessMenu() {
               <div className="fixed bottom-6 right-6 z-50">
                 <button
                   onClick={() => setShowBulkActions(true)}
-                  className="bg-[#3B82F6] text-white rounded-full shadow-2xl px-6 py-4 font-bold text-sm flex items-center gap-2"
+                  className="bg-[var(--info)] text-white rounded-full shadow-2xl px-6 py-4 font-bold text-sm flex items-center gap-2"
                 >
                   {selectedItems.length} Selected
                   <ChevronRight className="w-5 h-5" />
@@ -1130,17 +1130,17 @@ export default function BusinessMenu() {
         {showAddItem && (
           <div className="fixed inset-0 bg-black/50 z-[2000] flex items-end">
             <div className="bg-white w-full rounded-t-3xl max-h-[90vh] overflow-y-auto">
-              <div className="sticky top-0 bg-white border-b border-[#E2E8F0] px-5 py-4 flex items-center justify-between">
-                <h2 className="text-xl font-bold text-[#121212]">Add New Item</h2>
+              <div className="sticky top-0 bg-white border-b border-[var(--border)] px-5 py-4 flex items-center justify-between">
+                <h2 className="text-xl font-bold text-[var(--ink)]">Add New Item</h2>
                 <button onClick={() => { setShowAddItem(false); setPriceError(""); }}>
-                  <X className="w-6 h-6 text-[#64748B]" />
+                  <X className="w-6 h-6 text-[var(--muted-foreground)]" />
                 </button>
               </div>
 
               <div className="p-5 space-y-4">
                 <div>
-                  <label className="text-sm font-bold text-[#121212] mb-2 block">Item Photo</label>
-                  <div className="h-48 rounded-2xl overflow-hidden mb-3 border-2 border-dashed border-[#E2E8F0] bg-[#F8F9FA] flex items-center justify-center">
+                  <label className="text-sm font-bold text-[var(--ink)] mb-2 block">Item Photo</label>
+                  <div className="h-48 rounded-2xl overflow-hidden mb-3 border-2 border-dashed border-[var(--border)] bg-[var(--muted)] flex items-center justify-center">
                     {newItem.image ? (
                       <ImageWithFallback
                         src={newItem.image}
@@ -1149,8 +1149,8 @@ export default function BusinessMenu() {
                       />
                     ) : (
                       <div className="text-center">
-                        <ImageIcon className="w-12 h-12 text-[#CBD5E1] mx-auto mb-2" />
-                        <p className="text-sm text-[#64748B]">No image selected</p>
+                        <ImageIcon className="w-12 h-12 text-[var(--border)] mx-auto mb-2" />
+                        <p className="text-sm text-[var(--muted-foreground)]">No image selected</p>
                       </div>
                     )}
                   </div>
@@ -1158,7 +1158,7 @@ export default function BusinessMenu() {
                     <Button
                       onClick={() => handleUploadClick('new')}
                       disabled={uploadingImage}
-                      className="flex-1 bg-[#E11D48] hover:bg-[#BE123C] uppercase"
+                      className="flex-1 bg-[var(--primary)] hover:bg-[var(--primary)] uppercase"
                     >
                       <Upload className="w-4 h-4 mr-2" />
                       {uploadingImage ? 'Uploading...' : 'Upload Photo'}
@@ -1167,58 +1167,58 @@ export default function BusinessMenu() {
                       <Button
                         onClick={() => setNewItem({ ...newItem, image: "" })}
                         variant="outline"
-                        className="border-[#E11D48] text-[#E11D48] hover:bg-[#FFF1F2]"
+                        className="border-[var(--primary)] text-[var(--primary)] hover:bg-[var(--primary-soft)]"
                       >
                         <X className="w-4 h-4" />
                       </Button>
                     )}
                   </div>
-                  <p className="text-xs text-[#64748B] mt-2 text-center">Recommended: 800x800px, max 5MB</p>
+                  <p className="text-xs text-[var(--muted-foreground)] mt-2 text-center">Recommended: 800x800px, max 5MB</p>
                 </div>
 
                 <div>
-                  <label className="text-sm font-bold text-[#121212] mb-2 block">Item Name *</label>
+                  <label className="text-sm font-bold text-[var(--ink)] mb-2 block">Item Name *</label>
                   <input
                     type="text"
                     value={newItem.name}
                     onChange={(e) => setNewItem({ ...newItem, name: e.target.value })}
-                    className="w-full p-3 border-2 border-[#E2E8F0] rounded-xl font-semibold"
+                    className="w-full p-3 border-2 border-[var(--border)] rounded-xl font-semibold"
                     placeholder="e.g., Chicken Adobo"
                   />
                 </div>
 
                 <div>
-                  <label className="text-sm font-bold text-[#121212] mb-2 block">Description</label>
+                  <label className="text-sm font-bold text-[var(--ink)] mb-2 block">Description</label>
                   <textarea
                     value={newItem.description}
                     onChange={(e) => setNewItem({ ...newItem, description: e.target.value })}
-                    className="w-full p-3 border-2 border-[#E2E8F0] rounded-xl min-h-[100px]"
+                    className="w-full p-3 border-2 border-[var(--border)] rounded-xl min-h-[100px]"
                     placeholder="Describe your dish, ingredients, or what makes it special"
                   />
-                  <p className="text-xs text-[#64748B] mt-1">Help customers understand what they're ordering</p>
+                  <p className="text-xs text-[var(--muted-foreground)] mt-1">Help customers understand what they're ordering</p>
                 </div>
 
                 <div>
-                  <label className="text-sm font-bold text-[#121212] mb-2 block">Price (₱) *</label>
+                  <label className="text-sm font-bold text-[var(--ink)] mb-2 block">Price (₱) *</label>
                   <div className="relative">
-                    <span className="absolute left-4 top-1/2 -translate-y-1/2 text-xl text-[#64748B]">₱</span>
+                    <span className="absolute left-4 top-1/2 -translate-y-1/2 text-xl text-[var(--muted-foreground)]">₱</span>
                     <input
                       type="number"
                       value={newItem.price}
                       onChange={(e) => { setNewItem({ ...newItem, price: parseFloat(e.target.value) }); setPriceError(""); }}
-                      className={`w-full p-3 pl-10 border-2 rounded-xl text-xl font-bold ${priceError ? 'border-[#E11D48]' : 'border-[#E2E8F0]'}`}
+                      className={`w-full p-3 pl-10 border-2 rounded-xl text-xl font-bold ${priceError ? 'border-[var(--primary)]' : 'border-[var(--border)]'}`}
                       placeholder="0.00"
                     />
                   </div>
-                  {priceError && <p className="text-sm text-[#E11D48] font-semibold mt-1">{priceError}</p>}
+                  {priceError && <p className="text-sm text-[var(--primary)] font-semibold mt-1">{priceError}</p>}
                 </div>
 
                 <div>
-                  <label className="text-sm font-bold text-[#121212] mb-2 block">Category *</label>
+                  <label className="text-sm font-bold text-[var(--ink)] mb-2 block">Category *</label>
                   <select
                     value={newItem.category}
                     onChange={(e) => setNewItem({ ...newItem, category: e.target.value })}
-                    className="w-full p-3 border-2 border-[#E2E8F0] rounded-xl font-semibold"
+                    className="w-full p-3 border-2 border-[var(--border)] rounded-xl font-semibold"
                   >
                     {categories.filter(c => c.id !== "All").map((cat) => (
                       <option key={cat.id} value={cat.id}>{cat.name}</option>
@@ -1226,15 +1226,15 @@ export default function BusinessMenu() {
                   </select>
                 </div>
 
-                <div className="flex items-center justify-between p-4 bg-[#F8F9FA] rounded-xl">
+                <div className="flex items-center justify-between p-4 bg-[var(--muted)] rounded-xl">
                   <div>
-                    <p className="font-bold text-[#121212]">Make available immediately</p>
-                    <p className="text-xs text-[#64748B]">Customers can order this item right away</p>
+                    <p className="font-bold text-[var(--ink)]">Make available immediately</p>
+                    <p className="text-xs text-[var(--muted-foreground)]">Customers can order this item right away</p>
                   </div>
                   <button
                     onClick={() => setNewItem({ ...newItem, available: !newItem.available })}
                     className={`w-14 h-8 rounded-full transition-all ${
-                      newItem.available ? "bg-[#10B981]" : "bg-[#CBD5E1]"
+                      newItem.available ? "bg-[var(--success)]" : "bg-[var(--border)]"
                     }`}
                   >
                     <div
@@ -1247,7 +1247,7 @@ export default function BusinessMenu() {
 
                 <Button
                   onClick={addNewItem}
-                  className="w-full bg-[#E11D48] hover:bg-[#BE123C] uppercase py-6 text-base"
+                  className="w-full bg-[var(--primary)] hover:bg-[var(--primary)] uppercase py-6 text-base"
                   disabled={!newItem.name || !newItem.price}
                 >
                   <Plus className="w-5 h-5 mr-2" />
@@ -1262,17 +1262,17 @@ export default function BusinessMenu() {
         {showEditItem && editingItem && (
           <div className="fixed inset-0 bg-black/50 z-[2000] flex items-end">
             <div className="bg-white w-full rounded-t-3xl max-h-[90vh] overflow-y-auto">
-              <div className="sticky top-0 bg-white border-b border-[#E2E8F0] px-5 py-4 flex items-center justify-between">
-                <h2 className="text-xl font-bold text-[#121212]">Edit Item</h2>                <button onClick={() => { setShowEditItem(false); setEditPriceError(""); }}>
-                  <X className="w-6 h-6 text-[#64748B]" />
+              <div className="sticky top-0 bg-white border-b border-[var(--border)] px-5 py-4 flex items-center justify-between">
+                <h2 className="text-xl font-bold text-[var(--ink)]">Edit Item</h2>                <button onClick={() => { setShowEditItem(false); setEditPriceError(""); }}>
+                  <X className="w-6 h-6 text-[var(--muted-foreground)]" />
                 </button>
 
               </div>
 
               <div className="p-5 space-y-4">
                 <div>
-                  <label className="text-sm font-bold text-[#121212] mb-2 block">Item Photo</label>
-                  <div className="h-48 rounded-2xl overflow-hidden mb-3 border-2 border-[#E2E8F0]">
+                  <label className="text-sm font-bold text-[var(--ink)] mb-2 block">Item Photo</label>
+                  <div className="h-48 rounded-2xl overflow-hidden mb-3 border-2 border-[var(--border)]">
                     <ImageWithFallback
                       src={editingItem.image}
                       alt={editingItem.name}
@@ -1283,7 +1283,7 @@ export default function BusinessMenu() {
                     <Button
                       onClick={() => handleUploadClick('edit')}
                       disabled={uploadingImage}
-                      className="flex-1 bg-[#E11D48] hover:bg-[#BE123C] uppercase"
+                      className="flex-1 bg-[var(--primary)] hover:bg-[var(--primary)] uppercase"
                     >
                       <Upload className="w-4 h-4 mr-2" />
                       {uploadingImage ? 'Uploading...' : 'Change Photo'}
@@ -1291,53 +1291,53 @@ export default function BusinessMenu() {
                     <Button
                       onClick={() => setEditingItem({ ...editingItem, image: "" })}
                       variant="outline"
-                      className="border-[#E11D48] text-[#E11D48] hover:bg-[#FFF1F2]"
+                      className="border-[var(--primary)] text-[var(--primary)] hover:bg-[var(--primary-soft)]"
                     >
                       <X className="w-4 h-4" />
                     </Button>
                   </div>
-                  <p className="text-xs text-[#64748B] mt-2 text-center">Recommended: 800x800px, max 5MB</p>
+                  <p className="text-xs text-[var(--muted-foreground)] mt-2 text-center">Recommended: 800x800px, max 5MB</p>
                 </div>
 
                 <div>
-                  <label className="text-sm font-bold text-[#121212] mb-2 block">Item Name *</label>
+                  <label className="text-sm font-bold text-[var(--ink)] mb-2 block">Item Name *</label>
                   <input
                     type="text"
                     value={editingItem.name}
                     onChange={(e) => setEditingItem({ ...editingItem, name: e.target.value })}
-                    className="w-full p-3 border-2 border-[#E2E8F0] rounded-xl font-semibold"
+                    className="w-full p-3 border-2 border-[var(--border)] rounded-xl font-semibold"
                   />
                 </div>
 
                 <div>
-                  <label className="text-sm font-bold text-[#121212] mb-2 block">Description</label>
+                  <label className="text-sm font-bold text-[var(--ink)] mb-2 block">Description</label>
                   <textarea
                     value={editingItem.description}
                     onChange={(e) => setEditingItem({ ...editingItem, description: e.target.value })}
-                    className="w-full p-3 border-2 border-[#E2E8F0] rounded-xl min-h-[100px]"
+                    className="w-full p-3 border-2 border-[var(--border)] rounded-xl min-h-[100px]"
                   />
                 </div>
 
                 <div>
-                  <label className="text-sm font-bold text-[#121212] mb-2 block">Price (₱) *</label>
+                  <label className="text-sm font-bold text-[var(--ink)] mb-2 block">Price (₱) *</label>
                   <div className="relative">
-                    <span className="absolute left-4 top-1/2 -translate-y-1/2 text-xl text-[#64748B]">₱</span>
+                    <span className="absolute left-4 top-1/2 -translate-y-1/2 text-xl text-[var(--muted-foreground)]">₱</span>
                     <input
                       type="number"
                       value={editingItem.price}
                       onChange={(e) => { setEditingItem({ ...editingItem, price: parseFloat(e.target.value) }); setEditPriceError(""); }}
-                      className={`w-full p-3 pl-10 border-2 rounded-xl text-xl font-bold ${editPriceError ? 'border-[#E11D48]' : 'border-[#E2E8F0]'}`}
+                      className={`w-full p-3 pl-10 border-2 rounded-xl text-xl font-bold ${editPriceError ? 'border-[var(--primary)]' : 'border-[var(--border)]'}`}
                     />
                   </div>
-                  {editPriceError && <p className="text-sm text-[#E11D48] font-semibold mt-1">{editPriceError}</p>}
+                  {editPriceError && <p className="text-sm text-[var(--primary)] font-semibold mt-1">{editPriceError}</p>}
                 </div>
 
                 <div>
-                  <label className="text-sm font-bold text-[#121212] mb-2 block">Category *</label>
+                  <label className="text-sm font-bold text-[var(--ink)] mb-2 block">Category *</label>
                   <select
                     value={editingItem.category}
                     onChange={(e) => setEditingItem({ ...editingItem, category: e.target.value })}
-                    className="w-full p-3 border-2 border-[#E2E8F0] rounded-xl font-semibold"
+                    className="w-full p-3 border-2 border-[var(--border)] rounded-xl font-semibold"
                   >
                     {categories.filter(c => c.id !== "All").map((cat) => (
                       <option key={cat.id} value={cat.id}>{cat.name}</option>
@@ -1346,15 +1346,15 @@ export default function BusinessMenu() {
                 </div>
 
                 <div>
-                  <label className="text-sm font-bold text-[#121212] mb-2 block">Badge (Optional)</label>
-                  <p className="text-xs text-[#64748B] mb-3">Highlight special items to attract customers</p>
+                  <label className="text-sm font-bold text-[var(--ink)] mb-2 block">Badge (Optional)</label>
+                  <p className="text-xs text-[var(--muted-foreground)] mb-3">Highlight special items to attract customers</p>
                   <div className="grid grid-cols-2 gap-2">
                     <button
                       onClick={() => setEditingItem({ ...editingItem, badge: undefined })}
                       className={`p-3 rounded-xl border-2 font-semibold transition-all ${
                         !editingItem.badge
-                          ? "border-[#E11D48] bg-[#FFF1F2] text-[#E11D48]"
-                          : "border-[#E2E8F0] bg-white text-[#64748B]"
+                          ? "border-[var(--primary)] bg-[var(--primary-soft)] text-[var(--primary)]"
+                          : "border-[var(--border)] bg-white text-[var(--muted-foreground)]"
                       }`}
                     >
                       No Badge
@@ -1363,8 +1363,8 @@ export default function BusinessMenu() {
                       onClick={() => setEditingItem({ ...editingItem, badge: "most-ordered" })}
                       className={`p-3 rounded-xl border-2 font-semibold transition-all flex items-center justify-center gap-2 ${
                         editingItem.badge === "most-ordered"
-                          ? "border-[#E11D48] bg-[#FFF1F2] text-[#E11D48]"
-                          : "border-[#E2E8F0] bg-white text-[#64748B]"
+                          ? "border-[var(--primary)] bg-[var(--primary-soft)] text-[var(--primary)]"
+                          : "border-[var(--border)] bg-white text-[var(--muted-foreground)]"
                       }`}
                     >
                       <TrendingUp className="w-4 h-4" />
@@ -1374,8 +1374,8 @@ export default function BusinessMenu() {
                       onClick={() => setEditingItem({ ...editingItem, badge: "most-liked" })}
                       className={`p-3 rounded-xl border-2 font-semibold transition-all flex items-center justify-center gap-2 ${
                         editingItem.badge === "most-liked"
-                          ? "border-[#3B82F6] bg-[#EFF6FF] text-[#3B82F6]"
-                          : "border-[#E2E8F0] bg-white text-[#64748B]"
+                          ? "border-[var(--info)] bg-[var(--info-soft)] text-[var(--info)]"
+                          : "border-[var(--border)] bg-white text-[var(--muted-foreground)]"
                       }`}
                     >
                       <Star className="w-4 h-4" />
@@ -1385,8 +1385,8 @@ export default function BusinessMenu() {
                       onClick={() => setEditingItem({ ...editingItem, badge: "signature" })}
                       className={`p-3 rounded-xl border-2 font-semibold transition-all flex items-center justify-center gap-2 ${
                         editingItem.badge === "signature"
-                          ? "border-[#F59E0B] bg-[#FEF3C7] text-[#F59E0B]"
-                          : "border-[#E2E8F0] bg-white text-[#64748B]"
+                          ? "border-[var(--amber)] bg-[var(--amber-soft)] text-[var(--amber)]"
+                          : "border-[var(--border)] bg-white text-[var(--muted-foreground)]"
                       }`}
                     >
                       <Award className="w-4 h-4" />
@@ -1395,15 +1395,15 @@ export default function BusinessMenu() {
                   </div>
                 </div>
 
-                <div className="flex items-center justify-between p-4 bg-[#F8F9FA] rounded-xl">
+                <div className="flex items-center justify-between p-4 bg-[var(--muted)] rounded-xl">
                   <div>
-                    <p className="font-bold text-[#121212]">Available to customers</p>
-                    <p className="text-xs text-[#64748B]">Toggle visibility on the customer menu</p>
+                    <p className="font-bold text-[var(--ink)]">Available to customers</p>
+                    <p className="text-xs text-[var(--muted-foreground)]">Toggle visibility on the customer menu</p>
                   </div>
                   <button
                     onClick={() => setEditingItem({ ...editingItem, available: !editingItem.available })}
                     className={`w-14 h-8 rounded-full transition-all ${
-                      editingItem.available ? "bg-[#10B981]" : "bg-[#CBD5E1]"
+                      editingItem.available ? "bg-[var(--success)]" : "bg-[var(--border)]"
                     }`}
                   >
                     <div
@@ -1416,7 +1416,7 @@ export default function BusinessMenu() {
 
                 <Button
                   onClick={saveEditedItem}
-                  className="w-full bg-[#10B981] hover:bg-[#059669] uppercase py-6 text-base"
+                  className="w-full bg-[var(--success)] hover:bg-[var(--success)] uppercase py-6 text-base"
                 >
                   <Check className="w-5 h-5 mr-2" />
                   Save Changes
@@ -1429,7 +1429,7 @@ export default function BusinessMenu() {
                     if (editingItem) deleteItem(editingItem.id);
                   }}
                   variant="outline"
-                  className="w-full border-[#E11D48] text-[#E11D48] hover:bg-[#FFF1F2] uppercase py-6 text-base"
+                  className="w-full border-[var(--primary)] text-[var(--primary)] hover:bg-[var(--primary-soft)] uppercase py-6 text-base"
                 >
                   <Trash2 className="w-5 h-5 mr-2" />
                   Delete Item
@@ -1452,17 +1452,17 @@ export default function BusinessMenu() {
         {showAddCategory && (
           <div className="fixed inset-0 bg-black/50 z-[2000] flex items-center justify-center p-4">
             <Card className="bg-white p-6 max-w-sm w-full">
-              <h3 className="text-xl font-bold text-[#121212] mb-4">Add Category</h3>
+              <h3 className="text-xl font-bold text-[var(--ink)] mb-4">Add Category</h3>
               <input
                 type="text"
                 value={newCategory}
                 onChange={(e) => { setNewCategory(e.target.value); setCategoryError(""); }}
-                className={`w-full p-3 border-2 rounded-xl mb-4 font-semibold ${categoryError ? 'border-[#E11D48]' : 'border-[#E2E8F0]'}`}
+                className={`w-full p-3 border-2 rounded-xl mb-4 font-semibold ${categoryError ? 'border-[var(--primary)]' : 'border-[var(--border)]'}`}
                 placeholder="e.g., Breakfast Meals"
                 autoFocus
               />
               {categoryError && (
-                <p className="text-sm text-[#E11D48] font-semibold mb-3">{categoryError}</p>
+                <p className="text-sm text-[var(--primary)] font-semibold mb-3">{categoryError}</p>
               )}
               <div className="flex gap-2">
                 <Button
@@ -1474,7 +1474,7 @@ export default function BusinessMenu() {
                 </Button>
                 <Button
                   onClick={addNewCategory}
-                  className="flex-1 bg-[#E11D48] hover:bg-[#BE123C] uppercase"
+                  className="flex-1 bg-[var(--primary)] hover:bg-[var(--primary)] uppercase"
                   disabled={!newCategory.trim()}
                 >
                   Add
@@ -1488,20 +1488,20 @@ export default function BusinessMenu() {
         {showBulkActions && (
           <div className="fixed inset-0 bg-black/50 z-[2000] flex items-end">
             <div className="bg-white w-full rounded-t-3xl p-5">
-              <h3 className="text-xl font-bold text-[#121212] mb-4">
+              <h3 className="text-xl font-bold text-[var(--ink)] mb-4">
                 Bulk Actions ({selectedItems.length} items)
               </h3>
               <div className="space-y-2">
                 <Button
                   onClick={bulkToggleAvailability}
-                  className="w-full bg-[#10B981] hover:bg-[#059669] uppercase py-4"
+                  className="w-full bg-[var(--success)] hover:bg-[var(--success)] uppercase py-4"
                 >
                   Toggle Availability
                 </Button>
                 <Button
                   onClick={bulkDelete}
                   variant="outline"
-                  className="w-full border-[#E11D48] text-[#E11D48] uppercase py-4"
+                  className="w-full border-[var(--primary)] text-[var(--primary)] uppercase py-4"
                 >
                   <Trash2 className="w-4 h-4 mr-2" />
                   Delete Selected
@@ -1526,14 +1526,14 @@ export default function BusinessMenu() {
           <div className="fixed inset-0 bg-black/50 z-[2000] flex items-center justify-center p-4">
             <Card className="bg-white p-6 max-w-md w-full rounded-2xl shadow-2xl">
               <div className="flex items-center justify-center mb-4">
-                <div className="w-12 h-12 bg-[#FEE2E2] rounded-full flex items-center justify-center">
-                  <X className="w-6 h-6 text-[#E11D48]" />
+                <div className="w-12 h-12 bg-[var(--error-soft)] rounded-full flex items-center justify-center">
+                  <X className="w-6 h-6 text-[var(--primary)]" />
                 </div>
               </div>
-              <h3 className="text-xl font-bold text-[#121212] text-center mb-2">
+              <h3 className="text-xl font-bold text-[var(--ink)] text-center mb-2">
                 Delete Category?
               </h3>
-              <p className="text-sm text-[#64748B] text-center mb-6">
+              <p className="text-sm text-[var(--muted-foreground)] text-center mb-6">
                 {`All items in "${categories.find(c => c.id === categoryToDelete)?.name}" will also be deleted. This action cannot be undone.`}
               </p>
               <div className="flex gap-2">
@@ -1549,7 +1549,7 @@ export default function BusinessMenu() {
                 </Button>
                 <Button
                   onClick={confirmDeleteCategory}
-                  className="flex-1 bg-[#E11D48] hover:bg-[#BE123C] text-white uppercase font-bold"
+                  className="flex-1 bg-[var(--primary)] hover:bg-[var(--primary)] text-white uppercase font-bold"
                 >
                   Delete
                 </Button>
@@ -1576,14 +1576,14 @@ export default function BusinessMenu() {
           <div className="fixed inset-0 bg-black/50 z-[2000] flex items-center justify-center p-4">
             <Card className="bg-white p-6 max-w-md w-full rounded-2xl shadow-2xl">
               <div className="flex items-center justify-center mb-4">
-                <div className="w-12 h-12 bg-[#FEE2E2] rounded-full flex items-center justify-center">
-                  <Trash2 className="w-6 h-6 text-[#E11D48]" />
+                <div className="w-12 h-12 bg-[var(--error-soft)] rounded-full flex items-center justify-center">
+                  <Trash2 className="w-6 h-6 text-[var(--primary)]" />
                 </div>
               </div>
-              <h3 className="text-xl font-bold text-[#121212] text-center mb-2">
+              <h3 className="text-xl font-bold text-[var(--ink)] text-center mb-2">
                 Delete Item?
               </h3>
-              <p className="text-sm text-[#64748B] text-center mb-6">
+              <p className="text-sm text-[var(--muted-foreground)] text-center mb-6">
                 {`"${menuItems.find(i => i.id === itemToDelete)?.name || 'This item'}" will be permanently removed. This action cannot be undone.`}
               </p>
               <div className="flex gap-2">
@@ -1599,7 +1599,7 @@ export default function BusinessMenu() {
                 </Button>
                 <Button
                   onClick={confirmDeleteItem}
-                  className="flex-1 bg-[#E11D48] hover:bg-[#BE123C] text-white uppercase font-bold"
+                  className="flex-1 bg-[var(--primary)] hover:bg-[var(--primary)] text-white uppercase font-bold"
                 >
                   Delete
                 </Button>
@@ -1613,14 +1613,14 @@ export default function BusinessMenu() {
           <div className="fixed inset-0 bg-black/50 z-[2000] flex items-center justify-center p-4">
             <Card className="bg-white p-6 max-w-md w-full rounded-2xl shadow-2xl">
               <div className="flex items-center justify-center mb-4">
-                <div className="w-12 h-12 bg-[#FEE2E2] rounded-full flex items-center justify-center">
-                  <Trash2 className="w-6 h-6 text-[#E11D48]" />
+                <div className="w-12 h-12 bg-[var(--error-soft)] rounded-full flex items-center justify-center">
+                  <Trash2 className="w-6 h-6 text-[var(--primary)]" />
                 </div>
               </div>
-              <h3 className="text-xl font-bold text-[#121212] text-center mb-2">
+              <h3 className="text-xl font-bold text-[var(--ink)] text-center mb-2">
                 Delete {selectedItems.length} Item{selectedItems.length !== 1 ? 's' : ''}?
               </h3>
-              <p className="text-sm text-[#64748B] text-center mb-6">
+              <p className="text-sm text-[var(--muted-foreground)] text-center mb-6">
                 {selectedItems.length} item{selectedItems.length !== 1 ? 's' : ''} will be permanently removed. This action cannot be undone.
               </p>
               <div className="flex gap-2">
@@ -1633,7 +1633,7 @@ export default function BusinessMenu() {
                 </Button>
                 <Button
                   onClick={confirmBulkDelete}
-                  className="flex-1 bg-[#E11D48] hover:bg-[#BE123C] text-white uppercase font-bold"
+                  className="flex-1 bg-[var(--primary)] hover:bg-[var(--primary)] text-white uppercase font-bold"
                 >
                   Delete All
                 </Button>
@@ -1647,14 +1647,14 @@ export default function BusinessMenu() {
           <div className="fixed inset-0 bg-black/50 z-[2000] flex items-center justify-center p-4">
             <Card className="bg-white p-6 max-w-md w-full rounded-2xl shadow-2xl">
               <div className="flex items-center justify-center mb-4">
-                <div className="w-12 h-12 bg-[#FEF3C7] rounded-full flex items-center justify-center">
-                  <Eye className="w-6 h-6 text-[#F59E0B]" />
+                <div className="w-12 h-12 bg-[var(--amber-soft)] rounded-full flex items-center justify-center">
+                  <Eye className="w-6 h-6 text-[var(--amber)]" />
                 </div>
               </div>
-              <h3 className="text-xl font-bold text-[#121212] text-center mb-2">
+              <h3 className="text-xl font-bold text-[var(--ink)] text-center mb-2">
                 {menuItems.find(i => i.id === itemToToggle)?.available ? 'Hide Item?' : 'Make Item Available?'}
               </h3>
-              <p className="text-sm text-[#64748B] text-center mb-6">
+              <p className="text-sm text-[var(--muted-foreground)] text-center mb-6">
                 {menuItems.find(i => i.id === itemToToggle)?.available
                   ? `"${menuItems.find(i => i.id === itemToToggle)?.name}" will be hidden from customers.`
                   : `"${menuItems.find(i => i.id === itemToToggle)?.name}" will be visible to customers.`
@@ -1673,7 +1673,7 @@ export default function BusinessMenu() {
                 </Button>
                 <Button
                   onClick={confirmToggleAvailability}
-                  className="flex-1 bg-[#F59E0B] hover:bg-[#D97706] text-white uppercase font-bold"
+                  className="flex-1 bg-[var(--amber)] hover:bg-[var(--amber)] text-white uppercase font-bold"
                 >
                   {menuItems.find(i => i.id === itemToToggle)?.available ? 'Hide' : 'Make Available'}
                 </Button>
@@ -1687,14 +1687,14 @@ export default function BusinessMenu() {
           <div className="fixed inset-0 bg-black/50 z-[2000] flex items-center justify-center p-4">
             <Card className="bg-white p-6 max-w-md w-full rounded-2xl shadow-2xl">
               <div className="flex items-center justify-center mb-4">
-                <div className="w-12 h-12 bg-[#FEF3C7] rounded-full flex items-center justify-center">
-                  <Eye className="w-6 h-6 text-[#F59E0B]" />
+                <div className="w-12 h-12 bg-[var(--amber-soft)] rounded-full flex items-center justify-center">
+                  <Eye className="w-6 h-6 text-[var(--amber)]" />
                 </div>
               </div>
-              <h3 className="text-xl font-bold text-[#121212] text-center mb-2">
+              <h3 className="text-xl font-bold text-[var(--ink)] text-center mb-2">
                 Toggle Availability?
               </h3>
-              <p className="text-sm text-[#64748B] text-center mb-6">
+              <p className="text-sm text-[var(--muted-foreground)] text-center mb-6">
                 {(() => {
                   const firstItem = menuItems.find(i => selectedItems.includes(i.id));
                   const newStatus = firstItem ? !firstItem.available : true;
@@ -1711,7 +1711,7 @@ export default function BusinessMenu() {
                 </Button>
                 <Button
                   onClick={confirmBulkToggleAvailability}
-                  className="flex-1 bg-[#F59E0B] hover:bg-[#D97706] text-white uppercase font-bold"
+                  className="flex-1 bg-[var(--amber)] hover:bg-[var(--amber)] text-white uppercase font-bold"
                 >
                   Confirm
                 </Button>
@@ -1723,7 +1723,7 @@ export default function BusinessMenu() {
         {/* Delete Success Toast */}
         {showDeleteSuccess && (
           <div className="fixed top-4 left-1/2 -translate-x-1/2 z-[3000] animate-in fade-in slide-in-from-top-2 duration-300">
-            <div className="bg-[#10B981] text-white px-5 py-3 rounded-2xl shadow-lg flex items-center gap-2">
+            <div className="bg-[var(--success)] text-white px-5 py-3 rounded-2xl shadow-lg flex items-center gap-2">
               <div className="w-6 h-6 bg-white/20 rounded-full flex items-center justify-center">
                 <Check className="w-4 h-4" />
               </div>

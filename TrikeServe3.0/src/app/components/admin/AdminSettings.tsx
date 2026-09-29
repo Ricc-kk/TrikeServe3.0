@@ -135,7 +135,7 @@ export default function AdminSettings() {
   const isSuperAdmin = user?.adminType === 'business_customer';
 
   return (
-    <div className="min-h-screen bg-[#F8F9FA] flex">
+    <div className="min-h-screen bg-[var(--muted)] flex">
       {/* Sidebar Navigation */}
       <AdminSidebar
         isMobileMenuOpen={isMobileMenuOpen}
@@ -145,23 +145,23 @@ export default function AdminSettings() {
       {/* Main Content */}
       <div className="flex-1 lg:ml-64">
         {/* Top Header */}
-        <div className="bg-white border-b-2 border-[#E2E8F0] px-5 lg:px-8 py-4 lg:py-5 sticky top-0 z-50">
+        <div className="bg-white border-b-2 border-[var(--border)] px-5 lg:px-8 py-4 lg:py-5 sticky top-0 z-50">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-3">
               {/* Hamburger Menu - Mobile Only */}
               <button
                 onClick={() => setIsMobileMenuOpen(true)}
-                className="lg:hidden p-2 hover:bg-[#F8F9FA] rounded-xl transition-all"
+                className="lg:hidden p-2 hover:bg-[var(--muted)] rounded-xl transition-all"
               >
-                <Menu className="w-6 h-6 text-[#121212]" />
+                <Menu className="w-6 h-6 text-[var(--ink)]" />
               </button>
               <div>
-                <h1 className="text-2xl lg:text-3xl font-extrabold text-[#121212]">Settings</h1>
-                <p className="text-xs lg:text-sm text-[#64748B]">Configure platform settings and rates</p>
+                <h1 className="text-2xl lg:text-3xl font-extrabold text-[var(--ink)]">Settings</h1>
+                <p className="text-xs lg:text-sm text-[var(--muted-foreground)]">Configure platform settings and rates</p>
               </div>
             </div>
             {savedMessage && (
-              <Badge className="bg-[#10B981] flex items-center gap-2">
+              <Badge className="bg-[var(--success)] flex items-center gap-2">
                 <CheckCircle className="w-4 h-4" />
                 {savedMessage}
               </Badge>
@@ -173,9 +173,9 @@ export default function AdminSettings() {
         <div className="p-5 lg:p-8 space-y-6 lg:space-y-8">
           {/* Rider Admin: no rate configuration, but Account & Security stays */}
           {!isSuperAdmin && (
-            <Card className="p-4 border-2 border-[#BFDBFE] bg-[#EFF6FF]">
-              <p className="text-sm text-[#1E40AF] font-semibold">Limited access</p>
-              <p className="text-xs text-[#1E40AF]/80 mt-0.5">
+            <Card className="p-4 border-2 border-[var(--info-soft)] bg-[var(--info-soft)]">
+              <p className="text-sm text-[var(--info)] font-semibold">Limited access</p>
+              <p className="text-xs text-[var(--info)]/80 mt-0.5">
                 Rate and platform configuration is managed by the Super Admin. You can still manage your account below.
               </p>
             </Card>
@@ -185,37 +185,37 @@ export default function AdminSettings() {
           {isSuperAdmin && (
             <div>
               <div className="flex items-center gap-3 mb-4">
-                <div className="w-10 h-10 bg-[#D1FAE5] rounded-xl flex items-center justify-center">
-                  <Store className="w-6 h-6 text-[#10B981]" />
+                <div className="w-10 h-10 bg-[var(--success-soft)] rounded-xl flex items-center justify-center">
+                  <Store className="w-6 h-6 text-[var(--success)]" />
                 </div>
                 <div>
-                  <h2 className="text-xl lg:text-2xl font-bold text-[#121212]">Delivery Fee Configuration</h2>
-                  <p className="text-sm text-[#64748B]">Set the base delivery fee for food orders</p>
+                  <h2 className="text-xl lg:text-2xl font-bold text-[var(--ink)]">Delivery Fee Configuration</h2>
+                  <p className="text-sm text-[var(--muted-foreground)]">Set the base delivery fee for food orders</p>
                 </div>
               </div>
 
-              <Card className="p-5 lg:p-6 border-2 border-[#E2E8F0] bg-white max-w-md">
+              <Card className="p-5 lg:p-6 border-2 border-[var(--border)] bg-white max-w-md">
                 <div className="flex items-start justify-between mb-4">
                   <div>
-                    <Store className="w-8 h-8 lg:w-10 lg:h-10 text-[#10B981] mb-2" />
-                    <h3 className="font-bold text-base lg:text-lg text-[#121212]">Delivery Fee</h3>
-                    <p className="text-xs text-[#64748B]">Food delivery (base rate)</p>
+                    <Store className="w-8 h-8 lg:w-10 lg:h-10 text-[var(--success)] mb-2" />
+                    <h3 className="font-bold text-base lg:text-lg text-[var(--ink)]">Delivery Fee</h3>
+                    <p className="text-xs text-[var(--muted-foreground)]">Food delivery (base rate)</p>
                   </div>
                 </div>
                 <div className="flex items-center gap-2 mb-3">
-                  <span className="text-lg text-[#64748B] font-bold">₱</span>
+                  <span className="text-lg text-[var(--muted-foreground)] font-bold">₱</span>
                   <Input
                     type="number"
                     value={rateConfig.deliveryBaseFee}
                     onChange={(e) => setRateConfig({ ...rateConfig, deliveryBaseFee: Number(e.target.value) })}
-                    className="text-2xl lg:text-3xl font-bold text-center border-2 border-[#E2E8F0]"
+                    className="text-2xl lg:text-3xl font-bold text-center border-2 border-[var(--border)]"
                   />
                 </div>
               </Card>
 
               <button
                 onClick={handleSaveRates}
-                className="mt-4 px-6 py-3 bg-[#E11D48] hover:bg-[#BE123C] text-white font-bold rounded-xl uppercase transition-all flex items-center gap-2"
+                className="mt-4 px-6 py-3 bg-[var(--primary)] hover:bg-[var(--primary)] text-white font-bold rounded-xl uppercase transition-all flex items-center gap-2"
               >
                 <Save className="w-5 h-5" />
                 Save Delivery Fee
@@ -227,32 +227,32 @@ export default function AdminSettings() {
           {isSuperAdmin && (
             <div>
               <div className="flex items-center gap-3 mb-4">
-                <div className="w-10 h-10 bg-[#FFF1F2] rounded-xl flex items-center justify-center">
-                  <DollarSign className="w-6 h-6 text-[#E11D48]" />
+                <div className="w-10 h-10 bg-[var(--primary-soft)] rounded-xl flex items-center justify-center">
+                  <DollarSign className="w-6 h-6 text-[var(--primary)]" />
                 </div>
                 <div>
-                  <h2 className="text-xl lg:text-2xl font-bold text-[#121212]">Fixed Rate Configuration</h2>
-                  <p className="text-sm text-[#64748B]">Set base rates for different service types</p>
+                  <h2 className="text-xl lg:text-2xl font-bold text-[var(--ink)]">Fixed Rate Configuration</h2>
+                  <p className="text-sm text-[var(--muted-foreground)]">Set base rates for different service types</p>
                 </div>
               </div>
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4 lg:gap-6">
               {/* Private Ride Rate */}
-              <Card className="p-5 lg:p-6 border-2 border-[#E2E8F0] bg-white">
+              <Card className="p-5 lg:p-6 border-2 border-[var(--border)] bg-white">
                 <div className="flex items-start justify-between mb-4">
                   <div>
-                    <Bike className="w-8 h-8 lg:w-10 lg:h-10 text-[#9333EA] mb-2" />
-                    <h3 className="font-bold text-base lg:text-lg text-[#121212]">Private Ride</h3>
-                    <p className="text-xs text-[#64748B]">Solo Ride (Entire tricycle)</p>
+                    <Bike className="w-8 h-8 lg:w-10 lg:h-10 text-[var(--violet)] mb-2" />
+                    <h3 className="font-bold text-base lg:text-lg text-[var(--ink)]">Private Ride</h3>
+                    <p className="text-xs text-[var(--muted-foreground)]">Solo Ride (Entire tricycle)</p>
                   </div>
                 </div>
                 <div className="flex items-center gap-2 mb-3">
-                  <span className="text-lg text-[#64748B] font-bold">₱</span>
+                  <span className="text-lg text-[var(--muted-foreground)] font-bold">₱</span>
                   <Input
                     type="number"
                     value={rateConfig.privateRide}
                     onChange={(e) => setRateConfig({ ...rateConfig, privateRide: Number(e.target.value) })}
-                    className="text-2xl lg:text-3xl font-bold text-center border-2 border-[#E2E8F0]"
+                    className="text-2xl lg:text-3xl font-bold text-center border-2 border-[var(--border)]"
                   />
                 </div>
               </Card>
@@ -262,7 +262,7 @@ export default function AdminSettings() {
 
             <button
               onClick={handleSaveRates}
-              className="mt-4 px-6 py-3 bg-[#E11D48] hover:bg-[#BE123C] text-white font-bold rounded-xl uppercase transition-all flex items-center gap-2"
+              className="mt-4 px-6 py-3 bg-[var(--primary)] hover:bg-[var(--primary)] text-white font-bold rounded-xl uppercase transition-all flex items-center gap-2"
             >
               <Save className="w-5 h-5" />
               Save Rate Configuration
@@ -273,32 +273,32 @@ export default function AdminSettings() {
           {/* Account & Security Section */}
           <div>
             <div className="flex items-center gap-3 mb-4">
-              <div className="w-10 h-10 bg-[#FEF3C7] rounded-xl flex items-center justify-center">
-                <AlertTriangle className="w-6 h-6 text-[#F59E0B]" />
+              <div className="w-10 h-10 bg-[var(--amber-soft)] rounded-xl flex items-center justify-center">
+                <AlertTriangle className="w-6 h-6 text-[var(--amber)]" />
               </div>
               <div>
-                <h2 className="text-xl lg:text-2xl font-bold text-[#121212]">Account & Security</h2>
-                <p className="text-sm text-[#64748B]">Manage your admin account</p>
+                <h2 className="text-xl lg:text-2xl font-bold text-[var(--ink)]">Account & Security</h2>
+                <p className="text-sm text-[var(--muted-foreground)]">Manage your admin account</p>
               </div>
             </div>
 
-            <Card className="p-6 border-2 border-[#E2E8F0] bg-white">
+            <Card className="p-6 border-2 border-[var(--border)] bg-white">
               <div className="space-y-4">
                 {/* Admin Info */}
-                <div className="pb-4 border-b-2 border-[#E2E8F0]">
-                  <h3 className="font-bold text-lg text-[#121212] mb-3">Administrator Information</h3>
+                <div className="pb-4 border-b-2 border-[var(--border)]">
+                  <h3 className="font-bold text-lg text-[var(--ink)] mb-3">Administrator Information</h3>
                   <div className="space-y-2">
                     <div className="flex items-center justify-between py-2">
-                      <span className="text-[#64748B]">Name</span>
-                      <span className="font-semibold text-[#121212]">{user?.name || 'Admin'}</span>
+                      <span className="text-[var(--muted-foreground)]">Name</span>
+                      <span className="font-semibold text-[var(--ink)]">{user?.name || 'Admin'}</span>
                     </div>
                     <div className="flex items-center justify-between py-2">
-                      <span className="text-[#64748B]">Email</span>
-                      <span className="font-semibold text-[#121212]">{user?.email || 'admin@trikeserve.com'}</span>
+                      <span className="text-[var(--muted-foreground)]">Email</span>
+                      <span className="font-semibold text-[var(--ink)]">{user?.email || 'admin@trikeserve.com'}</span>
                     </div>
                     <div className="flex items-center justify-between py-2">
-                      <span className="text-[#64748B]">Role</span>
-                      <Badge className="bg-gradient-to-br from-[#E11D48] to-[#121212]">
+                      <span className="text-[var(--muted-foreground)]">Role</span>
+                      <Badge className="bg-gradient-to-br from-[var(--primary)] to-[var(--ink)]">
                         ADMINISTRATOR
                       </Badge>
                     </div>
@@ -307,16 +307,16 @@ export default function AdminSettings() {
 
                 {/* Sign Out Button */}
                 <div>
-                  <h3 className="font-bold text-lg text-[#121212] mb-3 flex items-center gap-2">
-                    <LogOut className="w-5 h-5 text-[#EF4444]" />
+                  <h3 className="font-bold text-lg text-[var(--ink)] mb-3 flex items-center gap-2">
+                    <LogOut className="w-5 h-5 text-[var(--error)]" />
                     Sign Out
                   </h3>
-                  <p className="text-sm text-[#64748B] mb-4">
+                  <p className="text-sm text-[var(--muted-foreground)] mb-4">
                     End your current admin session and return to the login page
                   </p>
                   <button
                     onClick={() => setShowLogoutConfirm(true)}
-                    className="px-6 py-3 bg-[#EF4444] hover:bg-[#DC2626] text-white font-bold rounded-xl uppercase transition-all flex items-center gap-2"
+                    className="px-6 py-3 bg-[var(--error)] hover:bg-[var(--error)] text-white font-bold rounded-xl uppercase transition-all flex items-center gap-2"
                   >
                     <LogOut className="w-5 h-5" />
                     Sign Out of Admin Panel
@@ -336,26 +336,26 @@ export default function AdminSettings() {
             onClick={() => setShowLogoutConfirm(false)}
           />
           <div className="fixed inset-0 z-[2001] flex items-center justify-center p-4">
-            <Card className="w-full max-w-md p-6 border-2 border-[#E2E8F0] bg-white">
+            <Card className="w-full max-w-md p-6 border-2 border-[var(--border)] bg-white">
               <div className="text-center mb-6">
-                <div className="w-16 h-16 bg-[#FEE2E2] rounded-full flex items-center justify-center mx-auto mb-4">
-                  <LogOut className="w-8 h-8 text-[#EF4444]" />
+                <div className="w-16 h-16 bg-[var(--error-soft)] rounded-full flex items-center justify-center mx-auto mb-4">
+                  <LogOut className="w-8 h-8 text-[var(--error)]" />
                 </div>
-                <h2 className="text-2xl font-bold text-[#121212] mb-2">Sign Out?</h2>
-                <p className="text-[#64748B]">
+                <h2 className="text-2xl font-bold text-[var(--ink)] mb-2">Sign Out?</h2>
+                <p className="text-[var(--muted-foreground)]">
                   Are you sure you want to sign out of the admin panel?
                 </p>
               </div>
               <div className="flex gap-3">
                 <button
                   onClick={() => setShowLogoutConfirm(false)}
-                  className="flex-1 px-4 py-3 bg-[#F8F9FA] hover:bg-[#E2E8F0] text-[#121212] font-bold rounded-xl uppercase transition-all"
+                  className="flex-1 px-4 py-3 bg-[var(--muted)] hover:bg-[var(--border)] text-[var(--ink)] font-bold rounded-xl uppercase transition-all"
                 >
                   Cancel
                 </button>
                 <button
                   onClick={handleLogout}
-                  className="flex-1 px-4 py-3 bg-[#EF4444] hover:bg-[#DC2626] text-white font-bold rounded-xl uppercase transition-all flex items-center justify-center gap-2"
+                  className="flex-1 px-4 py-3 bg-[var(--error)] hover:bg-[var(--error)] text-white font-bold rounded-xl uppercase transition-all flex items-center justify-center gap-2"
                 >
                   <LogOut className="w-5 h-5" />
                   Sign Out

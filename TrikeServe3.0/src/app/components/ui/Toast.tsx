@@ -20,27 +20,27 @@ const variantConfig: Record<ToastVariant, {
 }> = {
   success: {
     icon: CheckCircle,
-    bg: "bg-[#ECFDF5]",
-    border: "border-[#10B981]",
-    iconColor: "text-[#10B981]",
+    bg: "bg-[var(--success-soft)]",
+    border: "border-[var(--success)]",
+    iconColor: "text-[var(--success)]",
   },
   error: {
     icon: XCircle,
-    bg: "bg-[#FEF2F2]",
-    border: "border-[#EF4444]",
-    iconColor: "text-[#EF4444]",
+    bg: "bg-[var(--error-soft)]",
+    border: "border-[var(--error)]",
+    iconColor: "text-[var(--error)]",
   },
   warning: {
     icon: AlertTriangle,
-    bg: "bg-[#FFFBEB]",
-    border: "border-[#F59E0B]",
-    iconColor: "text-[#F59E0B]",
+    bg: "bg-[var(--amber-soft)]",
+    border: "border-[var(--amber)]",
+    iconColor: "text-[var(--amber)]",
   },
   info: {
     icon: Info,
-    bg: "bg-[#EFF6FF]",
-    border: "border-[#3B82F6]",
-    iconColor: "text-[#3B82F6]",
+    bg: "bg-[var(--info-soft)]",
+    border: "border-[var(--info)]",
+    iconColor: "text-[var(--info)]",
   },
 };
 
@@ -65,17 +65,17 @@ export default function Toast({ message, variant = "success", duration = 3000, o
     <div className="fixed left-4 right-4 sm:left-auto sm:right-6 z-[3000] animate-slide-in" style={style}>
       <div className={`flex items-center gap-3 px-5 py-4 ${config.bg} border-l-4 ${config.border} rounded-xl shadow-lg max-w-sm ml-auto`}>
         <Icon className={`w-6 h-6 ${config.iconColor} flex-shrink-0`} />
-        <p className="text-sm font-semibold text-[#121212] flex-1">{message}</p>
+        <p className="text-sm font-semibold text-[var(--ink)] flex-1">{message}</p>
         {action && (
           <button
             onClick={() => { action.onClick(); onClose(); }}
-            className="px-3 py-1.5 bg-[#E11D48] text-white text-xs font-bold rounded-lg hover:bg-[#BE123C] transition-colors whitespace-nowrap"
+            className="px-3 py-1.5 bg-[var(--primary)] text-white text-xs font-bold rounded-lg hover:bg-[var(--primary)] transition-colors whitespace-nowrap"
           >
             {action.label}
           </button>
         )}
         <button onClick={onClose} className="p-1 hover:bg-black/5 rounded-lg transition-all">
-          <X className="w-4 h-4 text-[#64748B]" />
+          <X className="w-4 h-4 text-[var(--muted-foreground)]" />
         </button>
       </div>
     </div>

@@ -125,7 +125,7 @@ export default function SignUp() {
   return (
     <div className="min-h-screen flex">
       {/* Left Side - Background Design (hidden on mobile) */}
-      <div className="hidden lg:flex lg:flex-1 bg-gradient-to-br from-[#E11D48] via-[#BE123C] to-[#121212] relative overflow-hidden">
+      <div className="hidden lg:flex lg:flex-1 bg-gradient-to-br from-[var(--primary)] via-[var(--primary)] to-[var(--ink)] relative overflow-hidden">
         <div className="absolute inset-0">
           <div className="absolute inset-0 opacity-10">
             <div className="absolute inset-0" style={{
@@ -190,8 +190,8 @@ export default function SignUp() {
                 Back to Sign In
               </Button>
             </Link>
-            <h2 className="text-3xl font-bold text-[#121212] mb-2">Create Account</h2>
-            <p className="text-[#64748B]">
+            <h2 className="text-3xl font-bold text-[var(--ink)] mb-2">Create Account</h2>
+            <p className="text-[var(--muted-foreground)]">
               {step === "role" && "Choose your account type"}
               {step === "form" && "Fill in your information"}
               {step === "success" && "Registration successful!"}
@@ -203,45 +203,45 @@ export default function SignUp() {
             <div className="space-y-4">
               <button
                 onClick={() => handleRoleSelect("customer")}
-                className="w-full p-6 border-2 border-[#CBD5E1] hover:border-[#E11D48] rounded-xl text-left transition-all group"
+                className="w-full p-6 border-2 border-[var(--border)] hover:border-[var(--primary)] rounded-xl text-left transition-all group"
               >
                 <div className="flex items-center gap-4">
-                  <div className="w-14 h-14 bg-[#FFF1F2] rounded-xl flex items-center justify-center group-hover:bg-[#E11D48] transition-colors">
-                    <UserCircle className="w-8 h-8 text-[#E11D48] group-hover:text-white" />
+                  <div className="w-14 h-14 bg-[var(--primary-soft)] rounded-xl flex items-center justify-center group-hover:bg-[var(--primary)] transition-colors">
+                    <UserCircle className="w-8 h-8 text-[var(--primary)] group-hover:text-white" />
                   </div>
                   <div>
-                    <h3 className="font-bold text-lg text-[#121212]">Customer</h3>
-                    <p className="text-sm text-[#64748B]">Book rides & order food</p>
+                    <h3 className="font-bold text-lg text-[var(--ink)]">Customer</h3>
+                    <p className="text-sm text-[var(--muted-foreground)]">Book rides & order food</p>
                   </div>
                 </div>
               </button>
 
               <button
                 onClick={() => handleRoleSelect("rider")}
-                className="w-full p-6 border-2 border-[#CBD5E1] hover:border-[#E11D48] rounded-xl text-left transition-all group"
+                className="w-full p-6 border-2 border-[var(--border)] hover:border-[var(--primary)] rounded-xl text-left transition-all group"
               >
                 <div className="flex items-center gap-4">
-                  <div className="w-14 h-14 bg-[#F0F9FF] rounded-xl flex items-center justify-center group-hover:bg-[#3B82F6] transition-colors">
-                    <Bike className="w-8 h-8 text-[#3B82F6] group-hover:text-white" />
+                  <div className="w-14 h-14 bg-[var(--info-soft)] rounded-xl flex items-center justify-center group-hover:bg-[var(--info)] transition-colors">
+                    <Bike className="w-8 h-8 text-[var(--info)] group-hover:text-white" />
                   </div>
                   <div>
-                    <h3 className="font-bold text-lg text-[#121212]">Driver</h3>
-                    <p className="text-sm text-[#64748B]">Accept deliveries & rides</p>
+                    <h3 className="font-bold text-lg text-[var(--ink)]">Driver</h3>
+                    <p className="text-sm text-[var(--muted-foreground)]">Accept deliveries & rides</p>
                   </div>
                 </div>
               </button>
 
               <button
                 onClick={() => handleRoleSelect("business")}
-                className="w-full p-6 border-2 border-[#CBD5E1] hover:border-[#E11D48] rounded-xl text-left transition-all group"
+                className="w-full p-6 border-2 border-[var(--border)] hover:border-[var(--primary)] rounded-xl text-left transition-all group"
               >
                 <div className="flex items-center gap-4">
-                  <div className="w-14 h-14 bg-[#FEF3C7] rounded-xl flex items-center justify-center group-hover:bg-[#F59E0B] transition-colors">
-                    <Store className="w-8 h-8 text-[#F59E0B] group-hover:text-white" />
+                  <div className="w-14 h-14 bg-[var(--amber-soft)] rounded-xl flex items-center justify-center group-hover:bg-[var(--amber)] transition-colors">
+                    <Store className="w-8 h-8 text-[var(--amber)] group-hover:text-white" />
                   </div>
                   <div>
-                    <h3 className="font-bold text-lg text-[#121212]">Business Owner</h3>
-                    <p className="text-sm text-[#64748B]">Manage menu & orders</p>
+                    <h3 className="font-bold text-lg text-[var(--ink)]">Business Owner</h3>
+                    <p className="text-sm text-[var(--muted-foreground)]">Manage menu & orders</p>
                   </div>
                 </div>
               </button>
@@ -251,15 +251,15 @@ export default function SignUp() {
           {/* Registration Form */}
           {step === "form" && (
             <form onSubmit={handleSubmitForm} className="space-y-4">
-              <div className="p-3 bg-blue-50 border-2 border-blue-200 rounded-lg">
-                <p className="text-sm text-blue-800">
+              <div className="p-3 bg-[var(--info-soft)] border-2 border-[var(--info-soft)] rounded-lg">
+                <p className="text-sm text-[var(--info)]">
                   <strong>Registering as:</strong> {formData.role.charAt(0).toUpperCase() + formData.role.slice(1)}
                 </p>
               </div>
 
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-sm font-semibold text-[#121212] mb-2">
+                  <label className="block text-sm font-semibold text-[var(--ink)] mb-2">
                     First Name
                   </label>
                   <Input
@@ -267,13 +267,13 @@ export default function SignUp() {
                     placeholder="Juan"
                     value={formData.firstName}
                     onChange={(e) => handleInputChange("firstName", e.target.value)}
-                    className="border-2 border-[#CBD5E1] focus:border-[#E11D48]"
+                    className="border-2 border-[var(--border)] focus:border-[var(--primary)]"
                     required
                     disabled={isLoading}
                   />
                 </div>
                 <div>
-                  <label className="block text-sm font-semibold text-[#121212] mb-2">
+                  <label className="block text-sm font-semibold text-[var(--ink)] mb-2">
                     Last Name
                   </label>
                   <Input
@@ -281,7 +281,7 @@ export default function SignUp() {
                     placeholder="Dela Cruz"
                     value={formData.lastName}
                     onChange={(e) => handleInputChange("lastName", e.target.value)}
-                    className="border-2 border-[#CBD5E1] focus:border-[#E11D48]"
+                    className="border-2 border-[var(--border)] focus:border-[var(--primary)]"
                     required
                     disabled={isLoading}
                   />
@@ -289,17 +289,17 @@ export default function SignUp() {
               </div>
 
               <div>
-                <label className="block text-sm font-semibold text-[#121212] mb-2">
+                <label className="block text-sm font-semibold text-[var(--ink)] mb-2">
                   Email Address
                 </label>
                 <div className="relative">
-                  <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-[#64748B]" />
+                  <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-[var(--muted-foreground)]" />
                   <Input
                     type="email"
                     placeholder="your.email@example.com"
                     value={formData.email}
                     onChange={(e) => handleInputChange("email", e.target.value)}
-                    className="border-2 border-[#CBD5E1] focus:border-[#E11D48] pl-11"
+                    className="border-2 border-[var(--border)] focus:border-[var(--primary)] pl-11"
                     required
                     disabled={isLoading}
                   />
@@ -307,11 +307,11 @@ export default function SignUp() {
               </div>
 
               <div>
-                <label className="block text-sm font-semibold text-[#121212] mb-2">
+                <label className="block text-sm font-semibold text-[var(--ink)] mb-2">
                   Phone Number
                 </label>
                 <div className="relative">
-                  <Phone className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-[#64748B]" />
+                  <Phone className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-[var(--muted-foreground)]" />
                   <Input
                     type="tel"
                     inputMode="numeric"
@@ -322,19 +322,19 @@ export default function SignUp() {
                       handleInputChange("phoneNumber", digits);
                     }}
                     maxLength={11}
-                    className="border-2 border-[#CBD5E1] focus:border-[#E11D48] pl-11"
+                    className="border-2 border-[var(--border)] focus:border-[var(--primary)] pl-11"
                     required
                     disabled={isLoading}
                   />
                 </div>
-                <p className="text-xs text-[#64748B] mt-1">Format: 09XXXXXXXXX</p>
+                <p className="text-xs text-[var(--muted-foreground)] mt-1">Format: 09XXXXXXXXX</p>
               </div>
 
               {/* Rider-specific fields */}
               {formData.role === "rider" && (
                 <>
                   <div>
-                    <label className="block text-sm font-semibold text-[#121212] mb-2">
+                    <label className="block text-sm font-semibold text-[var(--ink)] mb-2">
                       TODA Plate Number
                     </label>
                     <Input
@@ -342,13 +342,13 @@ export default function SignUp() {
                       placeholder="ABC 1234"
                       value={formData.todaPlate || ""}
                       onChange={(e) => handleInputChange("todaPlate", e.target.value)}
-                      className="border-2 border-[#CBD5E1] focus:border-[#E11D48]"
+                      className="border-2 border-[var(--border)] focus:border-[var(--primary)]"
                       required
                       disabled={isLoading}
                     />
                   </div>
                   <div>
-                    <label className="block text-sm font-semibold text-[#121212] mb-2">
+                    <label className="block text-sm font-semibold text-[var(--ink)] mb-2">
                       License Number
                     </label>
                     <Input
@@ -356,7 +356,7 @@ export default function SignUp() {
                       placeholder="N01-23-456789"
                       value={formData.licenseNumber || ""}
                       onChange={(e) => handleInputChange("licenseNumber", e.target.value)}
-                      className="border-2 border-[#CBD5E1] focus:border-[#E11D48]"
+                      className="border-2 border-[var(--border)] focus:border-[var(--primary)]"
                       required
                       disabled={isLoading}
                     />
@@ -368,7 +368,7 @@ export default function SignUp() {
               {formData.role === "business" && (
                 <>
                   <div>
-                    <label className="block text-sm font-semibold text-[#121212] mb-2">
+                    <label className="block text-sm font-semibold text-[var(--ink)] mb-2">
                       Business Name
                     </label>
                     <Input
@@ -376,13 +376,13 @@ export default function SignUp() {
                       placeholder="Kuya J's Eatery"
                       value={formData.businessName || ""}
                       onChange={(e) => handleInputChange("businessName", e.target.value)}
-                      className="border-2 border-[#CBD5E1] focus:border-[#E11D48]"
+                      className="border-2 border-[var(--border)] focus:border-[var(--primary)]"
                       required
                       disabled={isLoading}
                     />
                   </div>
                   <div>
-                    <label className="block text-sm font-semibold text-[#121212] mb-2">
+                    <label className="block text-sm font-semibold text-[var(--ink)] mb-2">
                       Business Address
                     </label>
                     <Input
@@ -390,7 +390,7 @@ export default function SignUp() {
                       placeholder="123 Main St, Gen T Deleon"
                       value={formData.businessAddress || ""}
                       onChange={(e) => handleInputChange("businessAddress", e.target.value)}
-                      className="border-2 border-[#CBD5E1] focus:border-[#E11D48]"
+                      className="border-2 border-[var(--border)] focus:border-[var(--primary)]"
                       required
                       disabled={isLoading}
                     />
@@ -401,7 +401,7 @@ export default function SignUp() {
               {/* Customer-specific fields */}
               {formData.role === "customer" && (
                 <div>
-                  <label className="block text-sm font-semibold text-[#121212] mb-2">
+                  <label className="block text-sm font-semibold text-[var(--ink)] mb-2">
                     Address (Optional)
                   </label>
                   <Input
@@ -409,43 +409,43 @@ export default function SignUp() {
                     placeholder="123 Main St, Gen T Deleon"
                     value={formData.address || ""}
                     onChange={(e) => handleInputChange("address", e.target.value)}
-                    className="border-2 border-[#CBD5E1] focus:border-[#E11D48]"
+                    className="border-2 border-[var(--border)] focus:border-[var(--primary)]"
                     disabled={isLoading}
                   />
                 </div>
               )}
 
               <div>
-                <label className="block text-sm font-semibold text-[#121212] mb-2">
+                <label className="block text-sm font-semibold text-[var(--ink)] mb-2">
                   Password
                 </label>
                 <div className="relative">
-                  <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-[#64748B]" />
+                  <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-[var(--muted-foreground)]" />
                   <Input
                     type="password"
                     placeholder="••••••••"
                     value={formData.password}
                     onChange={(e) => handleInputChange("password", e.target.value)}
-                    className="border-2 border-[#CBD5E1] focus:border-[#E11D48] pl-11"
+                    className="border-2 border-[var(--border)] focus:border-[var(--primary)] pl-11"
                     required
                     disabled={isLoading}
                   />
                 </div>
-                <p className="text-xs text-[#64748B] mt-1">At least 8 characters, 1 uppercase, 1 lowercase, 1 number</p>
+                <p className="text-xs text-[var(--muted-foreground)] mt-1">At least 8 characters, 1 uppercase, 1 lowercase, 1 number</p>
               </div>
 
               <div>
-                <label className="block text-sm font-semibold text-[#121212] mb-2">
+                <label className="block text-sm font-semibold text-[var(--ink)] mb-2">
                   Confirm Password
                 </label>
                 <div className="relative">
-                  <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-[#64748B]" />
+                  <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-[var(--muted-foreground)]" />
                   <Input
                     type="password"
                     placeholder="••••••••"
                     value={formData.confirmPassword}
                     onChange={(e) => handleInputChange("confirmPassword", e.target.value)}
-                    className="border-2 border-[#CBD5E1] focus:border-[#E11D48] pl-11"
+                    className="border-2 border-[var(--border)] focus:border-[var(--primary)] pl-11"
                     required
                     disabled={isLoading}
                   />
@@ -453,22 +453,22 @@ export default function SignUp() {
               </div>
 
               {error && (
-                <div className="p-3 bg-red-50 border-2 border-red-200 rounded-lg">
-                  <p className="text-sm text-red-800">{error}</p>
+                <div className="p-3 bg-[var(--error-soft)] border-2 border-[var(--error-soft)] rounded-lg">
+                  <p className="text-sm text-[var(--error)]">{error}</p>
                 </div>
               )}
 
               {/* Email verification note for all roles */}
-              <div className="p-3 bg-blue-50 border-2 border-blue-200 rounded-lg">
-                <p className="text-xs text-blue-800">
+              <div className="p-3 bg-[var(--info-soft)] border-2 border-[var(--info-soft)] rounded-lg">
+                <p className="text-xs text-[var(--info)]">
                   <strong>📧 Email Verification:</strong> After registration, you'll receive a verification email. Click the link to verify your account before logging in.
                 </p>
               </div>
 
               {/* Show additional note for rider and business */}
               {(formData.role === "rider" || formData.role === "business") && (
-                <div className="p-3 bg-yellow-50 border-2 border-yellow-200 rounded-lg">
-                  <p className="text-xs text-yellow-800">
+                <div className="p-3 bg-[var(--amber-soft)] border-2 border-[var(--amber-soft)] rounded-lg">
+                  <p className="text-xs text-[var(--amber-dark)]">
                     <strong>📋 Additional Step:</strong> You must also visit the Barangay Hall for face-to-face verification before your account can be fully activated.
                   </p>
                 </div>
@@ -479,14 +479,14 @@ export default function SignUp() {
                   type="button"
                   onClick={() => setStep("role")}
                   variant="outline"
-                  className="flex-1 border-2 border-[#CBD5E1] hover:border-[#E11D48]"
+                  className="flex-1 border-2 border-[var(--border)] hover:border-[var(--primary)]"
                   disabled={isLoading}
                 >
                   BACK
                 </Button>
                 <Button
                   type="submit"
-                  className="flex-1 bg-[#E11D48] hover:bg-[#BE123C] uppercase text-base"
+                  className="flex-1 bg-[var(--primary)] hover:bg-[var(--primary)] uppercase text-base"
                   disabled={isLoading}
                 >
                   {isLoading ? (
@@ -506,33 +506,33 @@ export default function SignUp() {
           {step === "success" && (
             <div className="space-y-6">
               <div className="text-center">
-                <div className="w-20 h-20 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-4">
-                  <Check className="w-10 h-10 text-green-600" />
+                <div className="w-20 h-20 bg-[var(--success-soft)] rounded-full flex items-center justify-center mx-auto mb-4">
+                  <Check className="w-10 h-10 text-[var(--success)]" />
                 </div>
-                <h3 className="text-2xl font-bold text-[#121212] mb-2">Registration Complete!</h3>
-                <p className="text-[#64748B]">Your account has been created successfully.</p>
+                <h3 className="text-2xl font-bold text-[var(--ink)] mb-2">Registration Complete!</h3>
+                <p className="text-[var(--muted-foreground)]">Your account has been created successfully.</p>
               </div>
 
               {/* Customer: Email verification required */}
               {formData.role === "customer" && (
                 <>
-                  <div className="p-4 bg-blue-50 border-2 border-blue-200 rounded-lg">
-                    <p className="text-sm text-blue-800 mb-2">
+                  <div className="p-4 bg-[var(--info-soft)] border-2 border-[var(--info-soft)] rounded-lg">
+                    <p className="text-sm text-[var(--info)] mb-2">
                       <strong>📧 Check Your Email!</strong>
                     </p>
-                    <p className="text-sm text-blue-800">
+                    <p className="text-sm text-[var(--info)]">
                       We sent a verification link to <strong>{formData.email}</strong>. Please click the link in your email to verify your account before logging in.
                     </p>
                   </div>
 
-                  <div className="p-3 bg-yellow-50 border-2 border-yellow-200 rounded-lg">
-                    <p className="text-xs text-yellow-800">
+                  <div className="p-3 bg-[var(--amber-soft)] border-2 border-[var(--amber-soft)] rounded-lg">
+                    <p className="text-xs text-[var(--amber-dark)]">
                       <strong>Didn't receive the email?</strong> Check your spam folder, or contact support if the problem persists.
                     </p>
                   </div>
 
                   <Link to="/">
-                    <Button className="w-full bg-[#E11D48] hover:bg-[#BE123C] uppercase">
+                    <Button className="w-full bg-[var(--primary)] hover:bg-[var(--primary)] uppercase">
                       GO TO LOGIN
                     </Button>
                   </Link>
@@ -542,23 +542,23 @@ export default function SignUp() {
               {/* Rider/Business: Admin verification required (no email verification needed) */}
               {(formData.role === "rider" || formData.role === "business") && (
                 <>
-                  <div className="p-4 bg-blue-50 border-2 border-blue-200 rounded-lg">
-                    <p className="text-sm text-blue-800 mb-2">
+                  <div className="p-4 bg-[var(--info-soft)] border-2 border-[var(--info-soft)] rounded-lg">
+                    <p className="text-sm text-[var(--info)] mb-2">
                       <strong>📧 Email Verified Automatically</strong>
                     </p>
-                    <p className="text-sm text-blue-800">
+                    <p className="text-sm text-[var(--info)]">
                       Your email has been confirmed. No need to check your inbox.
                     </p>
                   </div>
 
-                  <div className="p-4 bg-yellow-50 border-2 border-yellow-200 rounded-lg">
-                    <p className="text-sm text-yellow-800 mb-3">
+                  <div className="p-4 bg-[var(--amber-soft)] border-2 border-[var(--amber-soft)] rounded-lg">
+                    <p className="text-sm text-[var(--amber-dark)] mb-3">
                       <strong>⏳ Admin Verification Required</strong>
                     </p>
-                    <p className="text-sm text-yellow-800 mb-3">
+                    <p className="text-sm text-[var(--amber-dark)] mb-3">
                       You must visit the Barangay Hall for face-to-face verification before you can log in.
                     </p>
-                    <ol className="text-sm text-yellow-800 space-y-2 list-decimal list-inside">
+                    <ol className="text-sm text-[var(--amber-dark)] space-y-2 list-decimal list-inside">
                       <li>Visit the TrikeServe Office at Barangay Hall</li>
                       <li>Bring your valid ID and required documents:
                         {formData.role === "rider" && (
@@ -583,7 +583,7 @@ export default function SignUp() {
                   </div>
 
                   <Link to="/">
-                    <Button className="w-full bg-[#E11D48] hover:bg-[#BE123C] uppercase">
+                    <Button className="w-full bg-[var(--primary)] hover:bg-[var(--primary)] uppercase">
                       BACK TO LOGIN
                     </Button>
                   </Link>
@@ -595,9 +595,9 @@ export default function SignUp() {
           {/* Footer */}
           {step !== "success" && (
             <div className="mt-6 text-center">
-              <p className="text-sm text-[#64748B]">
+              <p className="text-sm text-[var(--muted-foreground)]">
                 Already have an account?{" "}
-                <Link to="/" className="text-[#E11D48] font-semibold hover:underline">
+                <Link to="/" className="text-[var(--primary)] font-semibold hover:underline">
                   Sign In
                 </Link>
               </p>

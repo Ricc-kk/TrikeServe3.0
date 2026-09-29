@@ -801,8 +801,8 @@ export default function ShareRideLobby({
     return (
       <div className="fixed inset-0 bg-black/50 z-[2000] flex items-center justify-center">
         <div className="bg-white rounded-lg p-8 text-center">
-          <div className="animate-spin w-12 h-12 border-4 border-[#E11D48] border-t-transparent rounded-full mx-auto mb-4"></div>
-          <p className="text-[#64748B]">Creating lobby...</p>
+          <div className="animate-spin w-12 h-12 border-4 border-[var(--primary)] border-t-transparent rounded-full mx-auto mb-4"></div>
+          <p className="text-[var(--muted-foreground)]">Creating lobby...</p>
         </div>
       </div>
     );
@@ -812,9 +812,9 @@ export default function ShareRideLobby({
     return (
       <div className="fixed inset-0 bg-black/50 z-[2000] flex items-center justify-center p-4">
         <Card className="bg-white p-6 max-w-sm w-full">
-          <h3 className="text-lg font-bold text-red-600 mb-2">Error</h3>
-          <p className="text-sm text-[#64748B] mb-6">{error}</p>
-          <Button onClick={onClose} className="w-full bg-red-500 hover:bg-red-600">
+          <h3 className="text-lg font-bold text-[var(--error)] mb-2">Error</h3>
+          <p className="text-sm text-[var(--muted-foreground)] mb-6">{error}</p>
+          <Button onClick={onClose} className="w-full bg-[var(--error)] hover:bg-[var(--error)]">
             Close
           </Button>
         </Card>
@@ -827,15 +827,15 @@ export default function ShareRideLobby({
     return (
       <div className="fixed inset-0 bg-black/50 z-[2000] flex items-center justify-center p-4">
         <div className="bg-white p-6 max-w-sm w-full rounded-2xl shadow-xl">
-          <div className="w-16 h-16 bg-[#FEF3C7] rounded-full flex items-center justify-center mx-auto mb-4">
+          <div className="w-16 h-16 bg-[var(--amber-soft)] rounded-full flex items-center justify-center mx-auto mb-4">
             <span className="text-3xl">🚫</span>
           </div>
-          <h3 className="text-xl font-bold text-[#121212] text-center mb-2">Lobby is Full!</h3>
-          <p className="text-[#64748B] text-center mb-4 text-sm">
+          <h3 className="text-xl font-bold text-[var(--ink)] text-center mb-2">Lobby is Full!</h3>
+          <p className="text-[var(--muted-foreground)] text-center mb-4 text-sm">
             This ride already has {fullLobbyInfo?.maxSeats} passengers. No more seats available.
           </p>
-          <div className="bg-[#F8F9FA] rounded-xl p-3 mb-6">
-            <p className="text-sm text-[#64748B] text-center">
+          <div className="bg-[var(--muted)] rounded-xl p-3 mb-6">
+            <p className="text-sm text-[var(--muted-foreground)] text-center">
               A new lobby will be created for you instead.
             </p>
           </div>
@@ -844,7 +844,7 @@ export default function ShareRideLobby({
               setShowLobbyFullPopup(false);
               setFullLobbyInfo(null);
             }}
-            className="w-full py-3 bg-[#E11D48] text-white font-bold rounded-xl active:scale-95 transition-transform"
+            className="w-full py-3 bg-[var(--primary)] text-white font-bold rounded-xl active:scale-95 transition-transform"
           >
             OK
           </button>
@@ -858,11 +858,11 @@ export default function ShareRideLobby({
     return (
       <div className="fixed inset-0 bg-black/50 z-[2000] flex items-center justify-center p-4">
         <div className="bg-white p-6 max-w-sm w-full rounded-2xl shadow-xl">
-          <div className="w-16 h-16 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-4">
+          <div className="w-16 h-16 bg-[var(--error-soft)] rounded-full flex items-center justify-center mx-auto mb-4">
             <span className="text-3xl">🚧</span>
           </div>
-          <h3 className="text-xl font-bold text-red-600 text-center mb-2">Out of boundary area</h3>
-          <p className="text-[#64748B] text-center mb-6 text-sm">
+          <h3 className="text-xl font-bold text-[var(--error)] text-center mb-2">Out of boundary area</h3>
+          <p className="text-[var(--muted-foreground)] text-center mb-6 text-sm">
             Your drop-off point is outside the service area covered by our terminals, so this
             shared ride cannot be booked. Please choose a drop-off location inside the boundary area.
           </p>
@@ -871,7 +871,7 @@ export default function ShareRideLobby({
               setShowOutOfBoundaryPopup(false);
               onClose();
             }}
-            className="w-full py-3 bg-[#E11D48] text-white font-bold rounded-xl active:scale-95 transition-transform"
+            className="w-full py-3 bg-[var(--primary)] text-white font-bold rounded-xl active:scale-95 transition-transform"
           >
             Understood
           </button>
@@ -890,15 +890,15 @@ export default function ShareRideLobby({
         className="fixed bottom-24 right-4 z-[2000] shadow-2xl"
       >
         <div className="relative">
-          <div className="w-16 h-16 bg-[#E11D48] rounded-full flex items-center justify-center hover:bg-[#BE123C] transition-all hover:scale-110">
+          <div className="w-16 h-16 bg-[var(--primary)] rounded-full flex items-center justify-center hover:bg-[var(--primary)] transition-all hover:scale-110">
             <Users className="w-8 h-8 text-white" />
           </div>
-          <div className="absolute -top-1 -right-1 w-7 h-7 bg-white rounded-full border-2 border-[#E11D48] flex items-center justify-center">
-            <span className="text-xs font-bold text-[#E11D48]">
+          <div className="absolute -top-1 -right-1 w-7 h-7 bg-white rounded-full border-2 border-[var(--primary)] flex items-center justify-center">
+            <span className="text-xs font-bold text-[var(--primary)]">
               {(lobby.passengers_json || []).length}/{lobby.max_seats}
             </span>
           </div>
-          <div className="absolute inset-0 bg-[#E11D48] rounded-full animate-ping opacity-20"></div>
+          <div className="absolute inset-0 bg-[var(--primary)] rounded-full animate-ping opacity-20"></div>
         </div>
       </button>
     );
@@ -913,7 +913,7 @@ export default function ShareRideLobby({
       <div className="fixed inset-0 bg-black/50 z-[2000] flex items-end">
         <div className="bg-white w-full rounded-t-3xl max-h-[92vh] overflow-hidden flex flex-col animate-slide-up">
           {/* Header - Gradient */}
-          <div className="bg-gradient-to-r from-[#E11D48] to-[#BE123C] p-4">
+          <div className="bg-gradient-to-r from-[var(--primary)] to-[var(--primary)] p-4">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-3">
                 <div className="w-10 h-10 bg-white/20 rounded-full flex items-center justify-center">
@@ -922,7 +922,7 @@ export default function ShareRideLobby({
                 <div>
                   <h2 className="text-lg font-bold text-white">Share Ride</h2>
                   <div className="flex items-center gap-2">
-                    <div className={`w-2 h-2 rounded-full ${lobby.status === 'driver_found' ? 'bg-green-400' : 'bg-yellow-400 animate-pulse'}`} />
+                    <div className={`w-2 h-2 rounded-full ${lobby.status === 'driver_found' ? 'bg-[var(--success)]' : 'bg-[var(--amber)] animate-pulse'}`} />
                     <p className="text-xs text-white/80">
                       {lobby.status === 'driver_found' ? 'Driver Found!' : `Finding driver... ${getWaitingTime()}`}
                     </p>
@@ -950,26 +950,26 @@ export default function ShareRideLobby({
           </div>
 
           {/* Route Info - clean design */}
-          <div className="px-4 py-3 border-b border-[#E2E8F0]">
+          <div className="px-4 py-3 border-b border-[var(--border)]">
             <div className="flex items-stretch gap-3">
               {/* Route dots & line */}
               <div className="flex flex-col items-center justify-center gap-0.5 w-4 flex-shrink-0">
-                <div className="w-3 h-3 rounded-full bg-[#121212] border-2 border-white shadow-sm" />
-                <div className="w-0.5 flex-1 bg-gradient-to-b from-[#121212] to-[#E11D48] rounded-full" />
-                <div className="w-3 h-3 rounded-full bg-[#E11D48] border-2 border-white shadow-sm" />
+                <div className="w-3 h-3 rounded-full bg-[var(--ink)] border-2 border-white shadow-sm" />
+                <div className="w-0.5 flex-1 bg-gradient-to-b from-[var(--ink)] to-[var(--primary)] rounded-full" />
+                <div className="w-3 h-3 rounded-full bg-[var(--primary)] border-2 border-white shadow-sm" />
               </div>
               {/* Addresses */}
               <div className="flex-1 space-y-3">
                 <div className="min-w-0">
-                  <p className="text-[10px] text-[#64748B] uppercase font-bold tracking-wider">Pickup</p>
-                  <p className="font-bold text-sm text-[#121212] truncate">{lobby.pickup_location}</p>
+                  <p className="text-[10px] text-[var(--muted-foreground)] uppercase font-bold tracking-wider">Pickup</p>
+                  <p className="font-bold text-sm text-[var(--ink)] truncate">{lobby.pickup_location}</p>
                 </div>
                 <div className="min-w-0 flex-1">
-                  <p className="text-[10px] text-[#64748B] uppercase font-bold tracking-wider">Drop-off</p>
-                  <p className="font-bold text-sm text-[#121212] truncate">{lobby.dropoff_location}</p>
+                  <p className="text-[10px] text-[var(--muted-foreground)] uppercase font-bold tracking-wider">Drop-off</p>
+                  <p className="font-bold text-sm text-[var(--ink)] truncate">{lobby.dropoff_location}</p>
                 </div>
                 {etaToDestination && (
-                  <div className="flex-shrink-0 bg-red-100 text-red-700 px-2 py-1 rounded-lg">
+                  <div className="flex-shrink-0 bg-[var(--error-soft)] text-[var(--error)] px-2 py-1 rounded-lg">
                     <p className="text-[10px] font-bold">🏁 {etaToDestination}</p>
                   </div>
                 )}
@@ -981,8 +981,8 @@ export default function ShareRideLobby({
           <div className="flex-1 overflow-y-auto">
             <div className="p-4">
               <div className="flex items-center justify-between mb-3">
-                <h3 className="text-xs font-bold text-[#64748B] uppercase tracking-wide">Passengers</h3>
-                <span className="text-xs font-bold text-[#E11D48] bg-[#FFF1F2] px-2.5 py-1 rounded-full">
+                <h3 className="text-xs font-bold text-[var(--muted-foreground)] uppercase tracking-wide">Passengers</h3>
+                <span className="text-xs font-bold text-[var(--primary)] bg-[var(--primary-soft)] px-2.5 py-1 rounded-full">
                   {passengers.length}/{lobby.max_seats}
                 </span>
               </div>
@@ -999,29 +999,29 @@ export default function ShareRideLobby({
                       key={passenger.id}
                       className={`p-4 border-2 transition-all ${
                         isCurrentUserOrCompanion
-                          ? 'border-[#E11D48] bg-[#FFF1F2]' 
-                          : 'border-[#E2E8F0] bg-white'
+                          ? 'border-[var(--primary)] bg-[var(--primary-soft)]' 
+                          : 'border-[var(--border)] bg-white'
                       }`}
                     >
                       <div className="flex items-center gap-3">
-                        <div className="w-12 h-12 rounded-full bg-gradient-to-br from-[#E11D48] to-[#BE123C] flex items-center justify-center text-2xl">
+                        <div className="w-12 h-12 rounded-full bg-gradient-to-br from-[var(--primary)] to-[var(--primary)] flex items-center justify-center text-2xl">
                           {passenger.emoji || '👤'}
                         </div>
                         <div className="flex-1">
                           <div className="flex items-center gap-2">
-                            <p className="font-bold text-[#121212]">{passenger.name}</p>
+                            <p className="font-bold text-[var(--ink)]">{passenger.name}</p>
                             {passenger.id === user?.id && (
-                              <Badge variant="outline" className="border-[#E11D48] text-[#E11D48] text-[10px]">
+                              <Badge variant="outline" className="border-[var(--primary)] text-[var(--primary)] text-[10px]">
                                 YOU
                               </Badge>
                             )}
                           </div>
-                          <p className="text-xs text-[#64748B]">
+                          <p className="text-xs text-[var(--muted-foreground)]">
                             Joined {new Date(passenger.joinedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                           </p>
                         </div>
                         {index === 0 && (
-                          <Badge className="bg-purple-500 text-white text-[10px]">
+                          <Badge className="bg-[var(--violet)] text-white text-[10px]">
                             HOST
                           </Badge>
                         )}
@@ -1034,13 +1034,13 @@ export default function ShareRideLobby({
                 {Array.from({ length: lobby.max_seats - passengers.length }).map((_, index) => (
                   <Card
                     key={`empty-${index}`}
-                    className="p-4 border-2 border-dashed border-[#E2E8F0] bg-[#F8F9FA]"
+                    className="p-4 border-2 border-dashed border-[var(--border)] bg-[var(--muted)]"
                   >
                     <div className="flex items-center gap-3">
-                      <div className="w-12 h-12 rounded-full bg-gray-200 flex items-center justify-center">
-                        <Users className="w-6 h-6 text-gray-400" />
+                      <div className="w-12 h-12 rounded-full bg-[var(--border)] flex items-center justify-center">
+                        <Users className="w-6 h-6 text-[var(--muted-foreground)]" />
                       </div>
-                      <p className="text-sm text-[#94A3B8] italic">Waiting for passenger...</p>
+                      <p className="text-sm text-[var(--muted-foreground)] italic">Waiting for passenger...</p>
                     </div>
                   </Card>
                 ))}
@@ -1049,27 +1049,27 @@ export default function ShareRideLobby({
 
             {/* Driver Info (when found) */}
             {lobby.status === 'driver_found' && lobby.driver_name && (
-              <div className="bg-gradient-to-r from-green-50 to-emerald-50 border-2 border-green-400 rounded-xl p-3.5 mb-3">
+              <div className="bg-gradient-to-r from-[var(--success-soft)] to-[var(--success-soft)] border-2 border-[var(--success)] rounded-xl p-3.5 mb-3">
                 <div className="flex items-center gap-3">
-                  <div className="w-12 h-12 rounded-full bg-green-500 flex items-center justify-center flex-shrink-0">
+                  <div className="w-12 h-12 rounded-full bg-[var(--success)] flex items-center justify-center flex-shrink-0">
                     <span className="text-2xl">👨‍✈️</span>
                   </div>
                   <div className="flex-1 min-w-0">
-                    <p className="text-[10px] text-green-600 font-bold uppercase tracking-wider">Your Driver</p>
-                    <p className="font-bold text-[#121212] truncate">{lobby.driver_name}</p>
+                    <p className="text-[10px] text-[var(--success)] font-bold uppercase tracking-wider">Your Driver</p>
+                    <p className="font-bold text-[var(--ink)] truncate">{lobby.driver_name}</p>
                     <div className="flex items-center gap-2">
-                      <span className="text-xs text-[#64748B]">{lobby.driver_plate}</span>
+                      <span className="text-xs text-[var(--muted-foreground)]">{lobby.driver_plate}</span>
                       {(computedDriverRating || lobby.driver_rating) && (
                         <span className="flex items-center gap-0.5">
-                          <span className="text-yellow-500 text-xs">⭐</span>
-                          <span className="text-xs font-semibold text-[#121212]">{computedDriverRating || lobby.driver_rating}</span>
+                          <span className="text-[var(--amber)] text-xs">⭐</span>
+                          <span className="text-xs font-semibold text-[var(--ink)]">{computedDriverRating || lobby.driver_rating}</span>
                         </span>
                       )}
                     </div>
                   </div>
                   <Button
                     size="icon"
-                    className="bg-green-500 hover:bg-green-600 text-white h-10 w-10"
+                    className="bg-[var(--success)] hover:bg-[var(--success)] text-white h-10 w-10"
                     onClick={handleOpenDriverChat}
                     disabled={openingChat}
                   >
@@ -1081,7 +1081,7 @@ export default function ShareRideLobby({
 
             {/* Live Tracking Map */}
             {lobby.status === 'driver_found' && isMapsLoaded && driverLocation && (
-              <div className="rounded-xl overflow-hidden mb-3 border border-[#E2E8F0] shadow-sm">
+              <div className="rounded-xl overflow-hidden mb-3 border border-[var(--border)] shadow-sm">
                 <GoogleMap
                   mapContainerStyle={{ width: '100%', height: '240px' }}
                   center={driverLocation}
@@ -1115,7 +1115,7 @@ export default function ShareRideLobby({
                       title="Pickup"
                       icon={{
                         url: 'data:image/svg+xml;charset=UTF-8,' + encodeURIComponent(
-                          '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="#3B82F6" stroke="white" stroke-width="1"><path d="M12 2C8.13 2 5 5.13 5 9c0 4.95 6.1 11.53 6.36 11.81.36.39.92.39 1.28 0C13.9 20.53 20 13.95 20 9c0-3.87-3.13-7-8-7z"/><circle cx="12" cy="8.6" r="2.3" fill="#FFFFFF" stroke="none"/></svg>'
+                          '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="var(--info)" stroke="white" stroke-width="1"><path d="M12 2C8.13 2 5 5.13 5 9c0 4.95 6.1 11.53 6.36 11.81.36.39.92.39 1.28 0C13.9 20.53 20 13.95 20 9c0-3.87-3.13-7-8-7z"/><circle cx="12" cy="8.6" r="2.3" fill="#FFFFFF" stroke="none"/></svg>'
                         ),
                         scaledSize: new (window as any).google.maps.Size(32, 32),
                         anchor: new (window as any).google.maps.Point(16, 32),
@@ -1129,7 +1129,7 @@ export default function ShareRideLobby({
                       title="Drop-off"
                       icon={{
                         url: 'data:image/svg+xml;charset=UTF-8,' + encodeURIComponent(
-                          '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="#E11D48" stroke="white" stroke-width="1"><path d="M12 2C8.13 2 5 5.13 5 9c0 4.95 6.1 11.53 6.36 11.81.36.39.92.39 1.28 0C13.9 20.53 20 13.95 20 9c0-3.87-3.13-7-8-7z"/><path d="M7.8 9.6l2.1 2.1 4.3-4.3" fill="none" stroke="#FFFFFF" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>'
+                          '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="var(--primary)" stroke="white" stroke-width="1"><path d="M12 2C8.13 2 5 5.13 5 9c0 4.95 6.1 11.53 6.36 11.81.36.39.92.39 1.28 0C13.9 20.53 20 13.95 20 9c0-3.87-3.13-7-8-7z"/><path d="M7.8 9.6l2.1 2.1 4.3-4.3" fill="none" stroke="#FFFFFF" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>'
                         ),
                         scaledSize: new (window as any).google.maps.Size(32, 32),
                         anchor: new (window as any).google.maps.Point(16, 32),
@@ -1141,7 +1141,7 @@ export default function ShareRideLobby({
                     <Polyline
                       path={driverRoutePath}
                       options={{
-                        strokeColor: (lobby.driver_status === 'on-the-way' || lobby.driver_status === 'arrived') ? '#10B981' : '#3B82F6',
+                        strokeColor: (lobby.driver_status === 'on-the-way' || lobby.driver_status === 'arrived') ? 'var(--success)' : 'var(--info)',
                         strokeOpacity: 0.9,
                         strokeWeight: 4,
                         geodesic: true,
@@ -1153,7 +1153,7 @@ export default function ShareRideLobby({
                     <Polyline
                       path={destinationRoutePath}
                       options={{
-                        strokeColor: '#E11D48',
+                        strokeColor: 'var(--primary)',
                         strokeOpacity: 0.9,
                         strokeWeight: 5,
                         geodesic: true,
@@ -1162,16 +1162,16 @@ export default function ShareRideLobby({
                   )}
                 </GoogleMap>
                 {/* Driver status indicator */}
-                <div className="px-3 py-2 bg-white border-t border-[#E2E8F0] flex items-center justify-between">
+                <div className="px-3 py-2 bg-white border-t border-[var(--border)] flex items-center justify-between">
                   <div className="flex items-center gap-2">
-                    <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse" />
-                    <span className="text-xs font-semibold text-[#121212]">
+                    <div className="w-2 h-2 bg-[var(--success)] rounded-full animate-pulse" />
+                    <span className="text-xs font-semibold text-[var(--ink)]">
                       {(lobby.driver_status === 'on-the-way' || lobby.driver_status === 'arrived') ? 'Heading to pickup' : 'On the way to destination'}
                     </span>
                   </div>
                   <div className="flex items-center gap-1">
-                    <Navigation className="w-3 h-3 text-[#94A3B8]" />
-                    <span className="text-[10px] text-[#94A3B8]">
+                    <Navigation className="w-3 h-3 text-[var(--muted-foreground)]" />
+                    <span className="text-[10px] text-[var(--muted-foreground)]">
                       {driverLocation.lat.toFixed(4)}, {driverLocation.lng.toFixed(4)}
                     </span>
                   </div>
@@ -1182,15 +1182,15 @@ export default function ShareRideLobby({
             {/* Waiting Animation */}
             {lobby.status === 'waiting' && (
               <div className="text-center py-5">
-                <div className="w-14 h-14 bg-[#FFF1F2] rounded-full flex items-center justify-center mx-auto mb-3 animate-pulse">
+                <div className="w-14 h-14 bg-[var(--primary-soft)] rounded-full flex items-center justify-center mx-auto mb-3 animate-pulse">
                   <span className="text-3xl">🔍</span>
                 </div>
-                <p className="text-sm font-semibold text-[#121212] mb-1">
+                <p className="text-sm font-semibold text-[var(--ink)] mb-1">
                   {passengers.length < lobby.max_seats
                     ? 'Waiting for more passengers...'
                     : 'Finding the best driver for you...'}
                 </p>
-                <p className="text-xs text-[#64748B]">
+                <p className="text-xs text-[var(--muted-foreground)]">
                   More passengers = faster pickup!
                 </p>
               </div>
@@ -1198,26 +1198,26 @@ export default function ShareRideLobby({
           </div>
 
           {/* Footer - Price Info */}
-          <div className="p-4 border-t border-[#E2E8F0] bg-white">
+          <div className="p-4 border-t border-[var(--border)] bg-white">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-[10px] text-[#64748B] uppercase font-bold tracking-wider">Your Fare</p>
-                <p className="text-2xl font-bold text-[#E11D48]">₱{(pricePerSeat / Math.max(1, passengers.length)).toFixed(2)}</p>
+                <p className="text-[10px] text-[var(--muted-foreground)] uppercase font-bold tracking-wider">Your Fare</p>
+                <p className="text-2xl font-bold text-[var(--primary)]">₱{(pricePerSeat / Math.max(1, passengers.length)).toFixed(2)}</p>
                 {passengers.length > 1 && (
-                  <p className="text-[10px] text-[#94A3B8]">
+                  <p className="text-[10px] text-[var(--muted-foreground)]">
                     ₱{pricePerSeat} ÷ {passengers.length} passengers
                   </p>
                 )}
               </div>
               <div className="text-right">
-                <p className="text-[10px] text-[#64748B] uppercase font-bold tracking-wider">Trip Total</p>
-                <p className="text-lg font-bold text-[#121212]">₱{pricePerSeat}</p>
+                <p className="text-[10px] text-[var(--muted-foreground)] uppercase font-bold tracking-wider">Trip Total</p>
+                <p className="text-lg font-bold text-[var(--ink)]">₱{pricePerSeat}</p>
               </div>
             </div>
 
             {passengers.length === lobby.max_seats && (
-              <div className="bg-green-50 border border-green-200 rounded-lg p-3 text-center">
-                <p className="text-sm text-green-700 font-semibold">
+              <div className="bg-[var(--success-soft)] border border-[var(--success-soft)] rounded-lg p-3 text-center">
+                <p className="text-sm text-[var(--success)] font-semibold">
                   🎉 Lobby Full! Prioritizing your ride request...
                 </p>
               </div>
@@ -1228,14 +1228,14 @@ export default function ShareRideLobby({
 
       {isTerminal && (
         <div className="fixed inset-0 bg-black/60 z-[2200] flex items-center justify-center p-4">
-          <Card className="bg-white p-6 max-w-sm w-full text-center shadow-2xl border-2 border-green-200">
-            <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-green-100 flex items-center justify-center text-3xl">
+          <Card className="bg-white p-6 max-w-sm w-full text-center shadow-2xl border-2 border-[var(--success-soft)]">
+            <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-[var(--success-soft)] flex items-center justify-center text-3xl">
               {terminalStatus === 'completed' ? '🎉' : '🛑'}
             </div>
-            <h3 className="text-xl font-bold text-[#121212] mb-2">
+            <h3 className="text-xl font-bold text-[var(--ink)] mb-2">
               {terminalStatus === 'completed' ? 'Ride Completed' : 'Ride Cancelled'}
             </h3>
-            <p className="text-sm text-[#64748B] mb-6">
+            <p className="text-sm text-[var(--muted-foreground)] mb-6">
               {terminalStatus === 'completed'
                 ? 'Your driver has completed the ride. Thank you for using TrikeServe!'
                 : 'This ride has been cancelled. Returning you to the customer screen...'}
@@ -1244,7 +1244,7 @@ export default function ShareRideLobby({
               <div className="grid grid-cols-2 gap-3">
                 <Button
                   onClick={openRatingModal}
-                  className="w-full bg-white border-2 border-[#E11D48] text-[#E11D48] py-3 font-bold"
+                  className="w-full bg-white border-2 border-[var(--primary)] text-[var(--primary)] py-3 font-bold"
                 >
                   ⭐ Leave a Rating
                 </Button>
@@ -1252,7 +1252,7 @@ export default function ShareRideLobby({
                   onClick={() => {
                     if (typeof onClose === 'function') onClose(terminalStatus || undefined);
                   }}
-                  className="w-full bg-[#E11D48] hover:bg-[#BE123C] text-white py-3 font-bold"
+                  className="w-full bg-[var(--primary)] hover:bg-[var(--primary)] text-white py-3 font-bold"
                 >
                   Done
                 </Button>
@@ -1268,22 +1268,22 @@ export default function ShareRideLobby({
           <Card className="bg-white p-6 max-w-sm w-full text-center">
             {ratingSubmitted ? (
               <>
-                <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-green-100 flex items-center justify-center text-3xl">
+                <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-[var(--success-soft)] flex items-center justify-center text-3xl">
                   🙏
                 </div>
-                <h3 className="text-xl font-bold text-[#121212] mb-2">Thank you!</h3>
-                <p className="text-sm text-[#64748B] mb-6">Your rating has been submitted.</p>
+                <h3 className="text-xl font-bold text-[var(--ink)] mb-2">Thank you!</h3>
+                <p className="text-sm text-[var(--muted-foreground)] mb-6">Your rating has been submitted.</p>
                 <Button
                   onClick={closeAfterRating}
-                  className="w-full bg-[#E11D48] hover:bg-[#BE123C] text-white py-3 font-bold"
+                  className="w-full bg-[var(--primary)] hover:bg-[var(--primary)] text-white py-3 font-bold"
                 >
                   Done
                 </Button>
               </>
             ) : (
               <>
-                <h3 className="text-xl font-bold text-[#121212] mb-2">Rate Your Driver</h3>
-                <p className="text-sm text-[#64748B] mb-6">
+                <h3 className="text-xl font-bold text-[var(--ink)] mb-2">Rate Your Driver</h3>
+                <p className="text-sm text-[var(--muted-foreground)] mb-6">
                   How was your ride with {lobby.driver_name || 'your driver'}?
                 </p>
                 <div className="flex justify-center gap-2 mb-6">
@@ -1296,8 +1296,8 @@ export default function ShareRideLobby({
                       <Star
                         className={`w-10 h-10 ${
                           star <= selectedRating
-                            ? 'fill-[#FFC107] text-[#FFC107]'
-                            : 'fill-[#E2E8F0] text-[#E2E8F0]'
+                            ? 'fill-[var(--amber)] text-[var(--amber)]'
+                            : 'fill-[var(--border)] text-[var(--border)]'
                         }`}
                       />
                     </button>
@@ -1306,7 +1306,7 @@ export default function ShareRideLobby({
                 <Button
                   onClick={handleSubmitRating}
                   disabled={!selectedRating || ratingSubmitting}
-                  className="w-full bg-[#E11D48] hover:bg-[#BE123C] text-white py-3 font-bold disabled:opacity-50"
+                  className="w-full bg-[var(--primary)] hover:bg-[var(--primary)] text-white py-3 font-bold disabled:opacity-50"
                 >
                   {ratingSubmitting ? 'Submitting...' : 'Submit Rating'}
                 </Button>
@@ -1322,7 +1322,7 @@ export default function ShareRideLobby({
           <div className="bg-white w-full rounded-t-3xl p-6 animate-in slide-in-from-bottom duration-300">
             <div className="max-w-sm mx-auto">
               {/* Status Icon */}
-              <div className="w-16 h-16 bg-gradient-to-br from-[#E11D48] to-[#BE123C] rounded-full flex items-center justify-center mx-auto mb-4 text-3xl">
+              <div className="w-16 h-16 bg-gradient-to-br from-[var(--primary)] to-[var(--primary)] rounded-full flex items-center justify-center mx-auto mb-4 text-3xl">
                 {driverStatusPopup.status === 'on-the-way' && '🚗'}
                 {driverStatusPopup.status === 'arrived' && '📍'}
                 {driverStatusPopup.status === 'pickup' && '🚀'}
@@ -1332,7 +1332,7 @@ export default function ShareRideLobby({
               </div>
 
               {/* Status Message */}
-              <h3 className="text-2xl font-bold text-[#121212] text-center mb-2">
+              <h3 className="text-2xl font-bold text-[var(--ink)] text-center mb-2">
                 {driverStatusPopup.status === 'on-the-way' && 'Driver On The Way'}
                 {driverStatusPopup.status === 'arrived' && 'Driver Arrived'}
                 {driverStatusPopup.status === 'pickup' && 'Picked Up!'}
@@ -1341,13 +1341,13 @@ export default function ShareRideLobby({
                 {driverStatusPopup.status === 'completed' && 'Ride Completed!'}
               </h3>
 
-              <p className="text-[#64748B] text-center mb-6">{driverStatusPopup.message}</p>
+              <p className="text-[var(--muted-foreground)] text-center mb-6">{driverStatusPopup.message}</p>
 
               {/* Status Details */}
-              <div className="bg-[#F8F9FA] rounded-xl p-4 mb-6">
+              <div className="bg-[var(--muted)] rounded-xl p-4 mb-6">
                 <div className="flex items-center justify-between">
-                  <span className="text-sm text-[#64748B]">Status Update</span>
-                  <span className="font-bold text-[#121212]">
+                  <span className="text-sm text-[var(--muted-foreground)]">Status Update</span>
+                  <span className="font-bold text-[var(--ink)]">
                     {driverStatusPopup.status === 'on-the-way' && 'On the way'}
                     {driverStatusPopup.status === 'arrived' && 'Arrived'}
                     {driverStatusPopup.status === 'pickup' && 'Picked up'}
@@ -1357,14 +1357,14 @@ export default function ShareRideLobby({
                   </span>
                 </div>
                 <div className="flex items-center justify-between mt-3">
-                  <span className="text-sm text-[#64748B]">Time</span>
-                  <span className="text-sm text-[#121212]">Just now</span>
+                  <span className="text-sm text-[var(--muted-foreground)]">Time</span>
+                  <span className="text-sm text-[var(--ink)]">Just now</span>
                 </div>
               </div>
 
               <Button
                 onClick={() => setDriverStatusPopup(null)}
-                className="w-full bg-[#E11D48] hover:bg-[#BE123C] text-white py-3 text-lg font-bold"
+                className="w-full bg-[var(--primary)] hover:bg-[var(--primary)] text-white py-3 text-lg font-bold"
               >
                 OK 👍
               </Button>
@@ -1377,21 +1377,21 @@ export default function ShareRideLobby({
       {showFullCapacityPopup && (
         <div className="fixed inset-0 bg-black/50 z-[2300] flex items-center justify-center p-4">
           <div className="bg-white p-6 max-w-sm w-full rounded-2xl shadow-xl">
-            <div className="w-16 h-16 bg-[#FEF3C7] rounded-full flex items-center justify-center mx-auto mb-4">
+            <div className="w-16 h-16 bg-[var(--amber-soft)] rounded-full flex items-center justify-center mx-auto mb-4">
               <span className="text-3xl">🎉</span>
             </div>
-            <h3 className="text-xl font-bold text-[#121212] text-center mb-2">Lobby Full!</h3>
-            <p className="text-[#64748B] text-center mb-6 text-sm">
+            <h3 className="text-xl font-bold text-[var(--ink)] text-center mb-2">Lobby Full!</h3>
+            <p className="text-[var(--muted-foreground)] text-center mb-6 text-sm">
               All {lobby.max_seats} seats are taken! Your ride is being prioritized for faster pickup.
             </p>
-            <div className="bg-green-50 border border-green-200 rounded-xl p-3 mb-6">
-              <p className="text-sm text-green-700 text-center font-semibold">
+            <div className="bg-[var(--success-soft)] border border-[var(--success-soft)] rounded-xl p-3 mb-6">
+              <p className="text-sm text-[var(--success)] text-center font-semibold">
                 💰 You're now sharing the fare with {lobby.max_seats - 1} other passengers!
               </p>
             </div>
             <button
               onClick={() => setShowFullCapacityPopup(false)}
-              className="w-full py-3 bg-[#10B981] text-white font-bold rounded-xl active:scale-95 transition-transform"
+              className="w-full py-3 bg-[var(--success)] text-white font-bold rounded-xl active:scale-95 transition-transform"
             >
               Got it!
             </button>
@@ -1403,8 +1403,8 @@ export default function ShareRideLobby({
       {showLeaveConfirm && (
         <div className="fixed inset-0 bg-black/70 z-[2100] flex items-center justify-center p-4">
           <Card className="bg-white p-6 max-w-sm w-full">
-            <h3 className="text-lg font-bold text-[#121212] mb-2">Cancel Ride?</h3>
-            <p className="text-sm text-[#64748B] mb-6">
+            <h3 className="text-lg font-bold text-[var(--ink)] mb-2">Cancel Ride?</h3>
+            <p className="text-sm text-[var(--muted-foreground)] mb-6">
               Are you sure you want to cancel this ride? You'll need to find a new ride.
             </p>
             <div className="flex gap-3">
@@ -1417,7 +1417,7 @@ export default function ShareRideLobby({
               </Button>
               <Button
                 onClick={handleLeaveLobby}
-                className="flex-1 bg-red-500 hover:bg-red-600 text-white"
+                className="flex-1 bg-[var(--error)] hover:bg-[var(--error)] text-white"
               >
                 CANCEL RIDE
               </Button>

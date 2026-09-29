@@ -86,20 +86,20 @@ export default function BusinessSidebar({ isMobileMenuOpen, setIsMobileMenuOpen 
 
       {/* Sidebar */}
       <div className={`
-        fixed top-0 left-0 h-screen w-64 bg-white border-r-2 border-[#E2E8F0] z-[1001]
+        fixed top-0 left-0 h-screen w-64 bg-white border-r-2 border-[var(--border)] z-[1001]
         transition-transform duration-300 ease-in-out
         lg:translate-x-0
         ${isMobileMenuOpen ? 'translate-x-0' : '-translate-x-full'}
       `}>
         <div className="flex flex-col h-full">
           {/* Header */}
-          <div className="p-6 border-b-2 border-[#E2E8F0]">
+          <div className="p-6 border-b-2 border-[var(--border)]">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-3">
-                <div className="w-10 h-10 bg-[#E11D48] rounded-xl flex items-center justify-center">
+                <div className="w-10 h-10 bg-[var(--primary)] rounded-xl flex items-center justify-center">
                   <Store className="w-6 h-6 text-white" />
                 </div>
-                <span className="text-xl font-bold text-[#121212]">TRIKESERVE</span>
+                <span className="text-xl font-bold text-[var(--ink)]">TRIKESERVE</span>
               </div>
 
             </div>
@@ -116,14 +116,14 @@ export default function BusinessSidebar({ isMobileMenuOpen, setIsMobileMenuOpen 
                 <button
                   className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all relative ${
                     isActive(item.path)
-                      ? "bg-[#FFF1F2] text-[#E11D48]"
-                      : "text-[#64748B] hover:bg-[#F8F9FA]"
+                      ? "bg-[var(--primary-soft)] text-[var(--primary)]"
+                      : "text-[var(--muted-foreground)] hover:bg-[var(--muted)]"
                   }`}
                 >
                   <item.icon className="w-5 h-5" />
                   <span className="font-semibold">{item.label}</span>
                   {item.path === "/business/orders" && pendingOrdersCount > 0 && (
-                    <div className="ml-auto w-6 h-6 bg-[#E11D48] rounded-full flex items-center justify-center">
+                    <div className="ml-auto w-6 h-6 bg-[var(--primary)] rounded-full flex items-center justify-center">
                       <span className="text-xs font-bold text-white">{pendingOrdersCount}</span>
                     </div>
                   )}

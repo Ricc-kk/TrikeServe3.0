@@ -302,7 +302,7 @@ export default function CategoryFood() {
   return (
     <div className="min-h-screen bg-white flex flex-col pb-20">
       {/* Header with Back Button */}
-      <div className="bg-gradient-to-b from-[#E11D48] to-[#BE123C] px-5 pt-6 pb-8 shadow-xl relative overflow-hidden">
+      <div className="bg-gradient-to-b from-[var(--primary)] to-[var(--primary)] px-5 pt-6 pb-8 shadow-xl relative overflow-hidden">
         {/* Background pattern */}
         <div className="absolute inset-0 opacity-10">
           <div className="absolute top-0 right-0 w-64 h-64 bg-white rounded-full blur-3xl -translate-y-32 translate-x-32" />
@@ -325,13 +325,13 @@ export default function CategoryFood() {
 
           {/* Search Bar */}
           <div className="relative">
-            <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-[#94A3B8]" />
+            <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-[var(--muted-foreground)]" />
             <input
               type="text"
               placeholder={`Maghanap ng ${categoryName.toLowerCase()}...`}
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full pl-12 pr-4 py-3.5 bg-white rounded-2xl shadow-xl border-0 text-base text-[#121212] placeholder:text-[#94A3B8]"
+              className="w-full pl-12 pr-4 py-3.5 bg-white rounded-2xl shadow-xl border-0 text-base text-[var(--ink)] placeholder:text-[var(--muted-foreground)]"
               style={{ outline: 'none' }}
             />
           </div>
@@ -340,14 +340,14 @@ export default function CategoryFood() {
 
       {/* Food Items List */}
       <div className="px-5 py-6">
-        <p className="text-sm text-[#64748B] mb-4">
+        <p className="text-sm text-[var(--muted-foreground)] mb-4">
           {filteredFood.length} {filteredFood.length === 1 ? 'item' : 'items'} available
         </p>
 
         {filteredFood.length === 0 ? (
           <div className="text-center py-12">
-            <p className="text-[#64748B] text-lg">Walang makitang food items</p>
-            <p className="text-[#94A3B8] text-sm mt-2">Subukan ang ibang search term</p>
+            <p className="text-[var(--muted-foreground)] text-lg">Walang makitang food items</p>
+            <p className="text-[var(--muted-foreground)] text-sm mt-2">Subukan ang ibang search term</p>
           </div>
         ) : (
           <div className="space-y-4">
@@ -364,8 +364,8 @@ export default function CategoryFood() {
                     {/* Gradient overlay */}
                     <div className="absolute inset-0 bg-gradient-to-t from-black/30 to-transparent" />
                     {/* Rating badge */}
-                    <div className="absolute bottom-2 left-2 bg-white/95 backdrop-blur-sm text-[#121212] px-2 py-1 rounded-full flex items-center gap-1 shadow-lg">
-                      <Star className="w-3 h-3 fill-[#FFC107] text-[#FFC107]" />
+                    <div className="absolute bottom-2 left-2 bg-white/95 backdrop-blur-sm text-[var(--ink)] px-2 py-1 rounded-full flex items-center gap-1 shadow-lg">
+                      <Star className="w-3 h-3 fill-[var(--amber)] text-[var(--amber)]" />
                       <span className="text-xs font-bold">{food.rating}</span>
                     </div>
                   </div>
@@ -375,39 +375,39 @@ export default function CategoryFood() {
                     <div className="flex items-start justify-between mb-2">
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-2 mb-1">
-                          <h4 className="font-bold text-[#121212] text-base truncate">
+                          <h4 className="font-bold text-[var(--ink)] text-base truncate">
                             {food.name}
                           </h4>
                           {/* Verified Merchant Badge */}
                           {food.verified && (
-                            <div className="flex-shrink-0 w-5 h-5 bg-[#121212] rounded-full flex items-center justify-center shadow-md">
+                            <div className="flex-shrink-0 w-5 h-5 bg-[var(--ink)] rounded-full flex items-center justify-center shadow-md">
                               <Shield className="w-3 h-3 text-white" fill="white" />
                             </div>
                           )}
                         </div>
-                        <p className="text-xs text-[#64748B] font-semibold mb-0.5">
+                        <p className="text-xs text-[var(--muted-foreground)] font-semibold mb-0.5">
                           {food.restaurant}
                         </p>
-                        <p className="text-xs text-[#94A3B8] flex items-center gap-1">
+                        <p className="text-xs text-[var(--muted-foreground)] flex items-center gap-1">
                           <MapPin className="w-3 h-3" />
                           {food.location}
                         </p>
                       </div>
-                      <button className="flex-shrink-0 ml-2 w-8 h-8 bg-[#FFF7ED] rounded-full flex items-center justify-center active:scale-90 transition-transform shadow-md">
-                        <Heart className="w-4 h-4 text-[#E11D48]" />
+                      <button className="flex-shrink-0 ml-2 w-8 h-8 bg-[var(--amber-soft)] rounded-full flex items-center justify-center active:scale-90 transition-transform shadow-md">
+                        <Heart className="w-4 h-4 text-[var(--primary)]" />
                       </button>
                     </div>
 
                     <div className="flex items-center justify-between gap-2 mt-3">
-                      <div className="flex items-center gap-2 text-xs text-[#64748B]">
-                        <span className="flex items-center gap-1 bg-[#F8F9FA] px-2.5 py-1.5 rounded-lg shadow-sm">
+                      <div className="flex items-center gap-2 text-xs text-[var(--muted-foreground)]">
+                        <span className="flex items-center gap-1 bg-[var(--muted)] px-2.5 py-1.5 rounded-lg shadow-sm">
                           <Clock className="w-3 h-3" />
                           {food.time}
                         </span>
                       </div>
                       <div className="flex items-baseline gap-1">
-                        <span className="text-[12px] text-[#E11D48] font-bold">₱</span>
-                        <span className="text-xl font-bold text-[#E11D48]">{food.price}</span>
+                        <span className="text-[12px] text-[var(--primary)] font-bold">₱</span>
+                        <span className="text-xl font-bold text-[var(--primary)]">{food.price}</span>
                       </div>
                     </div>
                   </div>
@@ -415,7 +415,7 @@ export default function CategoryFood() {
 
                 {/* Add to Cart Button */}
                 <div className="px-4 pb-4">
-                  <button className="w-full bg-gradient-to-r from-[#E11D48] to-[#BE123C] text-white font-bold py-3.5 rounded-2xl hover:shadow-xl transition-all duration-200 active:scale-95 shadow-lg shadow-[#E11D48]/30 uppercase text-sm tracking-wide">
+                  <button className="w-full bg-gradient-to-r from-[var(--primary)] to-[var(--primary)] text-white font-bold py-3.5 rounded-2xl hover:shadow-xl transition-all duration-200 active:scale-95 shadow-lg shadow-[var(--primary)]/30 uppercase text-sm tracking-wide">
                     Ilagay sa Cart
                   </button>
                 </div>

@@ -99,9 +99,9 @@ export default function Account() {
   };
 
   return (
-    <div className="min-h-screen bg-[#F8FAFC] pb-24">
+    <div className="min-h-screen bg-[var(--muted)] pb-24">
       {/* Gradient Header with Profile */}
-      <div className="relative bg-gradient-to-br from-[#E11D48] via-[#BE123C] to-[#9F1239] px-5 pt-6 pb-6 rounded-b-2xl shadow-lg">
+      <div className="relative bg-gradient-to-br from-[var(--primary)] via-[var(--primary)] to-[var(--primary)] px-5 pt-6 pb-6 rounded-b-2xl shadow-lg">
         {/* Edit Profile Button - Top Right */}
         <button
           onClick={() => setIsEditing(!isEditing)}
@@ -130,7 +130,7 @@ export default function Account() {
             <button
               onClick={() => fileInputRef.current?.click()}
               disabled={uploadingPhoto}
-              className="absolute bottom-0 right-0 w-7 h-7 bg-[#18B5A4] rounded-full flex items-center justify-center shadow-md border-2 border-white hover:bg-[#159E8F] transition-colors active:scale-95"
+              className="absolute bottom-0 right-0 w-7 h-7 bg-[var(--teal)] rounded-full flex items-center justify-center shadow-md border-2 border-white hover:bg-[var(--teal)] transition-colors active:scale-95"
             >
               {uploadingPhoto ? (
                 <div className="w-3 h-3 border-2 border-white border-t-transparent rounded-full animate-spin" />
@@ -150,66 +150,66 @@ export default function Account() {
       <div className="px-5 mt-2 space-y-4">
 
         {/* Quick Actions Card */}
-        <div className="bg-white rounded-2xl shadow-sm border border-[#F1F5F9] overflow-hidden">
+        <div className="bg-white rounded-2xl shadow-sm border border-[var(--muted)] overflow-hidden">
 
           <Link to="/customer/notifications">
-            <div className="flex items-center justify-between p-4 hover:bg-[#F8FAFC] transition-colors">
+            <div className="flex items-center justify-between p-4 hover:bg-[var(--muted)] transition-colors">
               <div className="flex items-center gap-3">
-                <div className="w-10 h-10 bg-gradient-to-br from-[#F59E0B] to-[#D97706] rounded-xl flex items-center justify-center shadow-sm">
+                <div className="w-10 h-10 bg-gradient-to-br from-[var(--amber)] to-[var(--amber)] rounded-xl flex items-center justify-center shadow-sm">
                   <Bell className="w-5 h-5 text-white" />
                 </div>
                 <div>
-                  <p className="text-sm font-semibold text-[#121212]">Notifications</p>
-                  <p className="text-xs text-[#94A3B8]">Manage your alerts</p>
+                  <p className="text-sm font-semibold text-[var(--ink)]">Notifications</p>
+                  <p className="text-xs text-[var(--muted-foreground)]">Manage your alerts</p>
                 </div>
               </div>
-              <ChevronRight className="w-5 h-5 text-[#CBD5E1]" />
+              <ChevronRight className="w-5 h-5 text-[var(--border)]" />
             </div>
           </Link>
         </div>
 
         {/* Personal Information Card */}
-        <div className="bg-white rounded-2xl shadow-sm border border-[#F1F5F9] p-5">
+        <div className="bg-white rounded-2xl shadow-sm border border-[var(--muted)] p-5">
           <div className="flex items-center gap-2 mb-5">
-            <Shield className="w-4 h-4 text-[#64748B]" />
-            <h3 className="text-sm font-semibold text-[#64748B] uppercase tracking-wider">Personal Information</h3>
+            <Shield className="w-4 h-4 text-[var(--muted-foreground)]" />
+            <h3 className="text-sm font-semibold text-[var(--muted-foreground)] uppercase tracking-wider">Personal Information</h3>
           </div>
 
           {/* Name */}
           <div className="mb-5">
-            <label className="block text-xs font-medium text-[#94A3B8] mb-2 uppercase tracking-wider">Name</label>
+            <label className="block text-xs font-medium text-[var(--muted-foreground)] mb-2 uppercase tracking-wider">Name</label>
             <input
               type="text"
               value={formData.name}
               onChange={(e) => setFormData({ ...formData, name: e.target.value })}
               readOnly={!isEditing}
-              className={`w-full text-base font-medium text-[#121212] pb-2 border-b border-[#E2E8F0] outline-none transition-colors bg-transparent ${isEditing ? 'focus:border-[#18B5A4]' : 'cursor-not-allowed'}`}
+              className={`w-full text-base font-medium text-[var(--ink)] pb-2 border-b border-[var(--border)] outline-none transition-colors bg-transparent ${isEditing ? 'focus:border-[var(--teal)]' : 'cursor-not-allowed'}`}
             />
           </div>
 
           {/* Mobile Number */}
           <div className="mb-5">
-            <label className="block text-xs font-medium text-[#94A3B8] mb-2 uppercase tracking-wider">Mobile Number</label>
+            <label className="block text-xs font-medium text-[var(--muted-foreground)] mb-2 uppercase tracking-wider">Mobile Number</label>
             <input
               type="text"
               value={formData.mobile}
               readOnly
-              className="w-full text-base font-medium text-[#121212] pb-2 border-b border-[#E2E8F0] bg-transparent cursor-not-allowed"
+              className="w-full text-base font-medium text-[var(--ink)] pb-2 border-b border-[var(--border)] bg-transparent cursor-not-allowed"
             />
           </div>
 
           {/* Email */}
           <div>
-            <label className="block text-xs font-medium text-[#94A3B8] mb-2 uppercase tracking-wider">Email</label>
+            <label className="block text-xs font-medium text-[var(--muted-foreground)] mb-2 uppercase tracking-wider">Email</label>
             <input
               type="email"
               placeholder="Enter your email address"
               value={formData.email}
               readOnly={!isEditing}
               onChange={(e) => setFormData({ ...formData, email: e.target.value })}
-              className={`w-full text-base font-medium text-[#121212] placeholder:text-[#CBD5E1] pb-2 border-b border-[#E2E8F0] outline-none transition-colors bg-transparent ${isEditing ? 'focus:border-[#18B5A4]' : 'cursor-not-allowed'}`}
+              className={`w-full text-base font-medium text-[var(--ink)] placeholder:text-[var(--border)] pb-2 border-b border-[var(--border)] outline-none transition-colors bg-transparent ${isEditing ? 'focus:border-[var(--teal)]' : 'cursor-not-allowed'}`}
             />
-            <p className="text-xs text-[#94A3B8] mt-2 leading-relaxed">
+            <p className="text-xs text-[var(--muted-foreground)] mt-2 leading-relaxed">
               We'll reach out to you via email for account-related issues and product communication purposes.
             </p>
           </div>
@@ -220,7 +220,7 @@ export default function Account() {
               <button
                 onClick={handleSaveProfile}
                 disabled={isSaving}
-                className="w-full py-3.5 text-base font-semibold text-white bg-[#18B5A4] rounded-2xl hover:bg-[#159E8F] transition-all active:scale-[0.98] flex items-center justify-center gap-2 disabled:opacity-50"
+                className="w-full py-3.5 text-base font-semibold text-white bg-[var(--teal)] rounded-2xl hover:bg-[var(--teal)] transition-all active:scale-[0.98] flex items-center justify-center gap-2 disabled:opacity-50"
               >
                 {isSaving ? (
                   <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" />
@@ -235,18 +235,18 @@ export default function Account() {
         </div>
 
         {/* Help Card */}
-        <div className="bg-white rounded-2xl shadow-sm border border-[#F1F5F9] overflow-hidden">
-          <div className="flex items-center justify-between p-4 hover:bg-[#F8FAFC] transition-colors cursor-pointer">
+        <div className="bg-white rounded-2xl shadow-sm border border-[var(--muted)] overflow-hidden">
+          <div className="flex items-center justify-between p-4 hover:bg-[var(--muted)] transition-colors cursor-pointer">
             <div className="flex items-center gap-3">
-              <div className="w-10 h-10 bg-gradient-to-br from-[#18B5A4] to-[#159E8F] rounded-xl flex items-center justify-center shadow-sm">
+              <div className="w-10 h-10 bg-gradient-to-br from-[var(--teal)] to-[var(--teal)] rounded-xl flex items-center justify-center shadow-sm">
                 <HelpCircle className="w-5 h-5 text-white" />
               </div>
               <div>
-                <p className="text-sm font-semibold text-[#121212]">Help & Support</p>
-                <p className="text-xs text-[#94A3B8]">FAQs and contact us</p>
+                <p className="text-sm font-semibold text-[var(--ink)]">Help & Support</p>
+                <p className="text-xs text-[var(--muted-foreground)]">FAQs and contact us</p>
               </div>
             </div>
-            <ChevronRight className="w-5 h-5 text-[#CBD5E1]" />
+            <ChevronRight className="w-5 h-5 text-[var(--border)]" />
           </div>
         </div>
 
@@ -255,7 +255,7 @@ export default function Account() {
           <div className="pt-2">
             <Button
               onClick={() => setShowSwitchConfirm(true)}
-              className="w-full bg-[#0f172a] hover:bg-[#111827] text-white font-bold uppercase py-4 rounded-2xl flex items-center justify-center gap-2 shadow-lg"
+              className="w-full bg-[var(--ink)] hover:bg-[var(--ink)] text-white font-bold uppercase py-4 rounded-2xl flex items-center justify-center gap-2 shadow-lg"
             >
               <ArrowLeft className="w-5 h-5" />
               Switch back to Driver App
@@ -266,7 +266,7 @@ export default function Account() {
           <div className="pt-2">
             <Button
               onClick={() => setShowSwitchConfirm(true)}
-              className="w-full bg-[#0f172a] hover:bg-[#111827] text-white font-bold uppercase py-4 rounded-2xl flex items-center justify-center gap-2 shadow-lg"
+              className="w-full bg-[var(--ink)] hover:bg-[var(--ink)] text-white font-bold uppercase py-4 rounded-2xl flex items-center justify-center gap-2 shadow-lg"
             >
               <ArrowLeft className="w-5 h-5" />
               Switch back to Business App
@@ -278,7 +278,7 @@ export default function Account() {
         <div className="pt-2 pb-4">
           <button
             onClick={() => setShowLogoutConfirm(true)}
-            className="w-full py-4 text-base font-semibold text-[#E11D48] bg-[#FFF1F2] rounded-2xl hover:bg-[#FFE4E6] transition-all active:scale-[0.98] flex items-center justify-center gap-2"
+            className="w-full py-4 text-base font-semibold text-[var(--primary)] bg-[var(--primary-soft)] rounded-2xl hover:bg-[var(--primary-soft)] transition-all active:scale-[0.98] flex items-center justify-center gap-2"
           >
             <LogOut className="w-5 h-5" />
             Log out
@@ -294,24 +294,24 @@ export default function Account() {
         <div className="fixed inset-0 bg-black/50 z-[2000] flex items-center justify-center p-4">
           <div className="bg-white rounded-2xl shadow-xl p-6 max-w-sm w-full">
             <div className="text-center mb-4">
-              <div className="w-14 h-14 bg-[#FFF1F2] rounded-full flex items-center justify-center mx-auto mb-3">
-                <Check className="w-7 h-7 text-[#18B5A4]" />
+              <div className="w-14 h-14 bg-[var(--primary-soft)] rounded-full flex items-center justify-center mx-auto mb-3">
+                <Check className="w-7 h-7 text-[var(--teal)]" />
               </div>
-              <h3 className="text-lg font-bold text-[#121212]">Save Changes?</h3>
-              <p className="text-sm text-[#64748B] mt-2">
+              <h3 className="text-lg font-bold text-[var(--ink)]">Save Changes?</h3>
+              <p className="text-sm text-[var(--muted-foreground)] mt-2">
                 Are you sure you want to update your profile information?
               </p>
             </div>
             <div className="flex gap-3">
               <button
                 onClick={() => setShowConfirmSave(false)}
-                className="flex-1 py-3 text-sm font-semibold text-[#64748B] bg-[#F1F5F9] rounded-xl hover:bg-[#E2E8F0] transition-colors"
+                className="flex-1 py-3 text-sm font-semibold text-[var(--muted-foreground)] bg-[var(--muted)] rounded-xl hover:bg-[var(--border)] transition-colors"
               >
                 Cancel
               </button>
               <button
                 onClick={confirmSaveProfile}
-                className="flex-1 py-3 text-sm font-semibold text-white bg-[#18B5A4] rounded-xl hover:bg-[#159E8F] transition-colors"
+                className="flex-1 py-3 text-sm font-semibold text-white bg-[var(--teal)] rounded-xl hover:bg-[var(--teal)] transition-colors"
               >
                 Yes, Save
               </button>
@@ -324,11 +324,11 @@ export default function Account() {
       {showSwitchConfirm && (
         <div className="fixed inset-0 bg-black/50 z-[2000] flex items-center justify-center p-4">
           <div className="bg-white p-6 max-w-sm w-full rounded-2xl shadow-xl">
-            <div className="w-16 h-16 bg-[#E0F2FE] rounded-full flex items-center justify-center mx-auto mb-4">
-              <ArrowLeft className="w-8 h-8 text-[#3B82F6]" />
+            <div className="w-16 h-16 bg-[var(--info-soft)] rounded-full flex items-center justify-center mx-auto mb-4">
+              <ArrowLeft className="w-8 h-8 text-[var(--info)]" />
             </div>
-            <h3 className="text-xl font-bold text-[#121212] text-center mb-2">Switch Back?</h3>
-            <p className="text-[#64748B] text-center mb-6 text-sm">
+            <h3 className="text-xl font-bold text-[var(--ink)] text-center mb-2">Switch Back?</h3>
+            <p className="text-[var(--muted-foreground)] text-center mb-6 text-sm">
               {localStorage.getItem('trikeserve_original_role') === 'rider'
                 ? 'You will return to the Driver app.'
                 : 'You will return to the Business app.'}
@@ -341,13 +341,13 @@ export default function Account() {
                   await restoreOriginalRole?.();
                   navigate(role === 'rider' ? '/rider' : '/business/account');
                 }}
-                className="w-full py-3 bg-[#3B82F6] text-white font-bold rounded-xl active:scale-95 transition-transform"
+                className="w-full py-3 bg-[var(--info)] text-white font-bold rounded-xl active:scale-95 transition-transform"
               >
                 Yes, Switch
               </button>
               <button
                 onClick={() => setShowSwitchConfirm(false)}
-                className="w-full py-3 bg-[#F8F9FA] text-[#64748B] font-bold rounded-xl active:scale-95 transition-transform"
+                className="w-full py-3 bg-[var(--muted)] text-[var(--muted-foreground)] font-bold rounded-xl active:scale-95 transition-transform"
               >
                 Cancel
               </button>
@@ -360,23 +360,23 @@ export default function Account() {
       {showLogoutConfirm && (
         <div className="fixed inset-0 bg-black/50 z-[2000] flex items-center justify-center p-4">
           <div className="bg-white p-6 max-w-sm w-full rounded-2xl shadow-xl">
-            <div className="w-16 h-16 bg-[#FFF1F2] rounded-full flex items-center justify-center mx-auto mb-4">
-              <LogOut className="w-8 h-8 text-[#E11D48]" />
+            <div className="w-16 h-16 bg-[var(--primary-soft)] rounded-full flex items-center justify-center mx-auto mb-4">
+              <LogOut className="w-8 h-8 text-[var(--primary)]" />
             </div>
-            <h3 className="text-xl font-bold text-[#121212] text-center mb-2">Logout</h3>
-            <p className="text-[#64748B] text-center mb-6 text-sm">
+            <h3 className="text-xl font-bold text-[var(--ink)] text-center mb-2">Logout</h3>
+            <p className="text-[var(--muted-foreground)] text-center mb-6 text-sm">
               Are you sure you want to logout?
             </p>
             <div className="space-y-3">
               <button
                 onClick={handleLogout}
-                className="w-full py-3 bg-[#E11D48] text-white font-bold rounded-xl active:scale-95 transition-transform"
+                className="w-full py-3 bg-[var(--primary)] text-white font-bold rounded-xl active:scale-95 transition-transform"
               >
                 Yes, Logout
               </button>
               <button
                 onClick={() => setShowLogoutConfirm(false)}
-                className="w-full py-3 bg-[#F8F9FA] text-[#64748B] font-bold rounded-xl active:scale-95 transition-transform"
+                className="w-full py-3 bg-[var(--muted)] text-[var(--muted-foreground)] font-bold rounded-xl active:scale-95 transition-transform"
               >
                 Cancel
               </button>
@@ -389,14 +389,14 @@ export default function Account() {
       {showGoodbye && (
         <div className="fixed inset-0 bg-black/50 z-[2000] flex items-center justify-center p-4">
           <div className="bg-white rounded-2xl shadow-xl p-8 max-w-sm w-full text-center">
-            <div className="w-16 h-16 bg-[#FFF1F2] rounded-full flex items-center justify-center mx-auto mb-4">
-              <Heart className="w-8 h-8 text-[#E11D48]" />
+            <div className="w-16 h-16 bg-[var(--primary-soft)] rounded-full flex items-center justify-center mx-auto mb-4">
+              <Heart className="w-8 h-8 text-[var(--primary)]" />
             </div>
-            <h3 className="text-2xl font-bold text-[#121212] mb-2">Goodbye!</h3>
-            <p className="text-[#64748B] text-sm">See you again soon, <span className="font-semibold text-[#121212]">{formData.name}</span>! 👋</p>
+            <h3 className="text-2xl font-bold text-[var(--ink)] mb-2">Goodbye!</h3>
+            <p className="text-[var(--muted-foreground)] text-sm">See you again soon, <span className="font-semibold text-[var(--ink)]">{formData.name}</span>! 👋</p>
             <div className="mt-6">
-              <div className="w-full bg-[#E2E8F0] rounded-full h-1.5">
-                <div className="bg-[#E11D48] h-1.5 rounded-full" style={{ width: '100%', animation: 'shrink 2s linear forwards' }} />
+              <div className="w-full bg-[var(--border)] rounded-full h-1.5">
+                <div className="bg-[var(--primary)] h-1.5 rounded-full" style={{ width: '100%', animation: 'shrink 2s linear forwards' }} />
               </div>
             </div>
           </div>

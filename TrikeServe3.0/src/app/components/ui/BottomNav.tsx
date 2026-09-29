@@ -52,8 +52,8 @@ export default function BottomNav({
 }: BottomNavProps) {
   const { getTotalItems } = useCart();
   const isRider = variant === "rider";
-  const accent = isRider ? "#00A854" : "#E11D48";
-  const inactive = "#64748B";
+  const accent = isRider ? "var(--rider)" : "var(--primary)";
+  const inactive = "var(--muted-foreground)";
   const cartCount = isRider ? 0 : getTotalItems();
 
   const items: NavItem[] = isRider
@@ -85,7 +85,7 @@ export default function BottomNav({
 
   return (
     <nav
-      className={`fixed bottom-0 left-0 right-0 bg-white border-t-2 border-[#E2E8F0] z-[1500] ${className}`}
+      className={`fixed bottom-0 left-0 right-0 bg-white border-t-2 border-[var(--border)] z-[1500] ${className}`}
       style={{ paddingBottom: "max(0.5rem, env(safe-area-inset-bottom))" }}
     >
       <div
@@ -103,7 +103,7 @@ export default function BottomNav({
               key={item.key}
               to={item.to}
               aria-current={isActive ? "page" : undefined}
-              className="relative flex min-w-0 flex-col items-center justify-center gap-0.5 rounded-xl py-1.5 text-center transition-colors active:bg-gray-50"
+              className="relative flex min-w-0 flex-col items-center justify-center gap-0.5 rounded-xl py-1.5 text-center transition-colors active:bg-[var(--muted)]"
             >
               <Icon className="h-5 w-5 shrink-0 sm:h-6 sm:w-6" color={color} />
               <span
@@ -116,7 +116,7 @@ export default function BottomNav({
               </span>
 
               {item.badge && item.badge > 0 ? (
-                <div className="absolute right-[22%] top-0 flex h-5 min-w-5 items-center justify-center rounded-full border-2 border-white bg-[#E11D48] px-1">
+                <div className="absolute right-[22%] top-0 flex h-5 min-w-5 items-center justify-center rounded-full border-2 border-white bg-[var(--primary)] px-1">
                   <span className="text-[10px] font-bold leading-none text-white">
                     {item.badge > 99 ? "99+" : item.badge}
                   </span>
