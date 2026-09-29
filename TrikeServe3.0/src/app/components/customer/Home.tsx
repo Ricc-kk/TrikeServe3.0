@@ -14,6 +14,7 @@ import { autocompletePlacesNew, createPlacesSessionToken, fetchPlaceDetailsNew, 
 import tricycleIcon from '../../../assets/0b76d1aa56b8ad6e15dd4efc8a0100b0ca5762a1.png';
 import { useAuth } from "../../contexts/AuthContext";
 import { supabaseHelpers, isDropoffWithinAnyTerminalBoundary } from "@/lib/supabase";
+import ReasonPromptModal from "../ui/reason-prompt-modal";
 import { supabase } from "../../../utils/supabase";
 import SharedRides from "./SharedRides";
 import ShareRideLobby from "./ShareRideLobby";
@@ -1601,7 +1602,7 @@ export default function CustomerHome() {
     }
   };
 
-  const handleCancelRide = async () => {
+  const handleCancelRide = async (reason?: string) => {
     const storedRequestId = currentRequestId || (() => {
       try {
         const savedRideData = localStorage.getItem('trikeserve_active_ride');
@@ -1620,11 +1621,21 @@ export default function CustomerHome() {
     })();
 
     try {
-      if (storedRequestId) {
+      // A lobby id ("lobby_…") isn't a ride_requests row — a shared ride is left
+      // from the lobby screen instead.
+      if (storedRequestId && !storedRequestId.startsWith('lobby_')) {
+        // Read the row first so a cancelled delivery can cancel its order too.
+        const { data: rideRequest } = await supabaseHelpers.getRideRequest(storedRequestId);
+
         const { error } = await supabaseHelpers.updateRideRequest(storedRequestId, {
           status: 'cancelled',
           driver_status: 'cancelled',
-          driver_status_message: 'Customer cancelled the ride request.',
+          // Include the customer's reason so the rider can see why it was dropped.
+          driver_status_message: reason
+            ? `Customer cancelled the ride: ${reason}`
+            : 'Customer cancelled the ride request.',
+          cancel_reason: reason || null,
+          cancelled_by: 'customer',
           updated_at: new Date().toISOString(),
         });
 
@@ -1632,6 +1643,34 @@ export default function CustomerHome() {
           console.error('❌ Failed to cancel ride request:', error);
           alert(`❌ Failed to cancel ride: ${error.message || 'Please try again.'}`);
           return;
+        }
+
+        // A delivery ride is backed by an orders row — cancel that too so the
+        // business sees the order as cancelled and can read the customer's reason.
+        const linkedOrderId =
+          rideRequest?.order_id ||
+          supabaseHelpers.parseOrderIdFromDeliveryPickup(
+            rideRequest?.pickup_location || rideRequest?.pickup || ''
+          );
+
+        if (linkedOrderId) {
+          const { error: orderError } = await supabase
+            .from('orders')
+            .update({
+              status: 'cancelled',
+              cancel_reason: reason || null,
+              cancelled_by: 'customer',
+              updated_at: new Date().toISOString(),
+            })
+            .eq('id', linkedOrderId)
+            // Never walk back an order that was already delivered.
+            .neq('status', 'delivered');
+
+          if (orderError) {
+            console.error('⚠️ Ride cancelled but the linked order was not:', orderError);
+          } else {
+            console.log('✅ Linked order cancelled with the customer\'s reason:', linkedOrderId);
+          }
         }
       }
 
@@ -2165,6 +2204,17 @@ export default function CustomerHome() {
                     <MessageCircle className="w-4 h-4" />
                     {openingChat ? 'Opening...' : 'Chat'}
                   </Button>
+                  {/* Cancel an in-progress ride/delivery (shared rides are left from the lobby) */}
+                  {currentRequestId && !currentRequestId.startsWith('lobby_') && (
+                    <Button
+                      variant="outline"
+                      onClick={() => setShowCancelConfirm(true)}
+                      className="flex items-center gap-1.5 h-10 px-3 border-[#E11D48] text-[#E11D48] hover:bg-[#FFF1F2]"
+                    >
+                      <X className="w-4 h-4" />
+                      Cancel
+                    </Button>
+                  )}
                 </div>
               </div>
             </Card>
@@ -2896,36 +2946,25 @@ export default function CustomerHome() {
          </div>
        )}
 
-      {/* Cancel Ride Confirmation Popup */}
-      {showCancelConfirm && (
-        <div className="fixed inset-0 bg-black/50 z-[3500] flex items-center justify-center p-4">
-          <div className="bg-white w-full max-w-sm rounded-2xl shadow-2xl overflow-hidden">
-            <div className="p-6 text-center">
-              <div className="w-16 h-16 bg-[var(--error-soft)] rounded-full flex items-center justify-center mx-auto mb-4">
-                <span className="text-3xl">⚠️</span>
-              </div>
-              <h3 className="text-xl font-bold text-[var(--ink)] mb-2">Cancel Ride?</h3>
-              <p className="text-sm text-[var(--muted-foreground)] mb-6">
-                Are you sure you want to cancel this ride request?
-              </p>
-              <div className="flex gap-3">
-                <button
-                  onClick={() => setShowCancelConfirm(false)}
-                  className="flex-1 py-3 border-2 border-[var(--border)] text-[var(--muted-foreground)] font-bold uppercase text-sm rounded-xl active:scale-95"
-                >
-                  Go Back
-                </button>
-                <button
-                  onClick={() => { setShowCancelConfirm(false); handleCancelRide(); }}
-                  className="flex-1 py-3 bg-[var(--error)] hover:bg-[var(--error)] text-white font-bold uppercase text-sm rounded-xl active:scale-95"
-                >
-                  Yes, Cancel
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
+      {/* Cancel Ride Popup — asks for a reason before dropping the ride */}
+      <ReasonPromptModal
+        isOpen={showCancelConfirm}
+        title={rideStatus === 'driver-found' ? 'Cancel this ride? / Kanselahin ang biyahe?' : 'Cancel Request? / Kanselahin ang request?'}
+        description={
+          rideStatus === 'driver-found'
+            ? 'A driver is already on the way. Let them know why you need to cancel so they are told to stop.'
+            : 'Are you sure you want to cancel this ride request?'
+        }
+        confirmLabel={rideStatus === 'driver-found' ? 'Yes, Cancel Ride' : 'Yes, Cancel'}
+        placeholder="e.g. Changed my mind, found another ride, wrong pickup point…"
+        variant="danger"
+        zIndexClassName="z-[3500]"
+        onCancel={() => setShowCancelConfirm(false)}
+        onSubmit={async (reason) => {
+          setShowCancelConfirm(false);
+          await handleCancelRide(reason);
+        }}
+      />
      </div>
    );
  }

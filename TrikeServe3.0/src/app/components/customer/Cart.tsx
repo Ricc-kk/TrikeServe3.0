@@ -31,6 +31,9 @@ export default function Cart() {
   const [showAddressError, setShowAddressError] = useState(false);
   const [pendingRemoveItem, setPendingRemoveItem] = useState<{ restaurantId: string; itemId: string } | null>(null);
   const [placedOrderNumber, setPlacedOrderNumber] = useState<string | null>(null);
+  // Supabase orders.id of the order just placed, so "Track Order" can open its
+  // detail page directly (order-detail looks the order up by that id).
+  const [placedOrderId, setPlacedOrderId] = useState<string | null>(null);
   const [selectedAddress, setSelectedAddress] = useState({
     name: "Select Delivery Address",
     full: "Tap to choose your delivery location",
@@ -113,6 +116,9 @@ export default function Cart() {
         setShowAddressError(true);
         return;
       }
+      // Don't let a previous order's ids leak into this confirmation.
+      setPlacedOrderNumber(null);
+      setPlacedOrderId(null);
       try {
         // CRITICAL: Get the actual Supabase restaurant.id for RLS isolation
         let businessUserId = checkoutRestaurant.businessUserId;
@@ -263,6 +269,9 @@ export default function Cart() {
             return;
           } else {
             console.log('[Cart] ✅ Order saved successfully to Supabase:', savedOrder);
+
+            // Remember the DB id so the confirmation can jump to the order details.
+            setPlacedOrderId(savedOrder?.id || null);
 
             // ONLY add to localStorage AFTER successful Supabase save
             addOrder(order);
@@ -827,7 +836,13 @@ export default function Cart() {
                 onClick={() => {
                   setShowOrderConfirmation(false);
                   removeRestaurant(checkoutRestaurant.id);
-                  navigate("/customer/activity");
+                  // Go straight to this order's details. Only fall back to the
+                  // order list if the order never reached the database.
+                  navigate(
+                    placedOrderId
+                      ? `/customer/order-detail/${placedOrderId}`
+                      : "/customer/activity"
+                  );
                 }}
                 className="w-full py-4 bg-[var(--success)] text-white font-bold rounded-2xl uppercase active:scale-95 transition-transform"
               >

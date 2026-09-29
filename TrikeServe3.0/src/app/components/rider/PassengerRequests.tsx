@@ -6,13 +6,14 @@ import { Button } from "../ui/button";
 import { Card } from "../ui/card";
 import { Badge } from "../ui/badge";
 import { useAuth } from "../../contexts/AuthContext";
-import { isQueueGatedType, useTerminalQueue } from "../../hooks/useTerminalQueue";
+import { isDeliveryServiceMode, isQueueGatedType, useTerminalQueue } from "../../hooks/useTerminalQueue";
 import TerminalQueueCard from "./TerminalQueueCard";
 import { supabaseHelpers } from "@/lib/supabase";
 import { supabase } from "../../../lib/supabase";
 import useMapLoader from "@/lib/mapLoader";
 import tricycleIcon from "../../../assets/0b76d1aa56b8ad6e15dd4efc8a0100b0ca5762a1.png";
 import ActiveRideButton from "./ActiveRideButton";
+import ReasonPromptModal from "../ui/reason-prompt-modal";
 
 interface PassengerRequest {
   id: string;
@@ -63,6 +64,9 @@ export default function PassengerRequests() {
   const [showAccepted, setShowAccepted] = useState(false);
   const [showConfirmAccept, setShowConfirmAccept] = useState(false);
   const [confirmRequest, setConfirmRequest] = useState<PassengerRequest | null>(null);
+  // Declining asks for a reason first; the request is then hidden for this rider only.
+  const [showDeclinePrompt, setShowDeclinePrompt] = useState(false);
+  const [declineTarget, setDeclineTarget] = useState<PassengerRequest | null>(null);
 
   // Terminal queue — private and share rides can only be accepted by the first
   // driver in the terminal's queue.
@@ -186,7 +190,16 @@ export default function PassengerRequests() {
             .in('id', missingNameIds);
           (usersData || []).forEach((u: any) => { if (u.name) nameMap[u.id] = u.name; });
         }
-        const mappedRequests = (rideRequests || []).map((req: any) => ({
+        // Requests this rider already declined are hidden from them — they stay
+        // available to every other rider, so the customer is unaffected.
+        const visibleRideRequests = (rideRequests || []).filter(
+          (req: any) => !supabaseHelpers.isDeclinedByDriver(req, user?.id)
+        );
+        const visibleLobbies = (waitingLobbies || []).filter(
+          (lobby: any) => !supabaseHelpers.isDeclinedByDriver(lobby, user?.id)
+        );
+
+        const mappedRequests = visibleRideRequests.map((req: any) => ({
           id: req.id,
           type: mapRideType(req.ride_type, req.pickup_location),
           pickup: formatPickup(req.pickup_location),
@@ -219,7 +232,7 @@ export default function PassengerRequests() {
           })(),
           created_at: req.created_at,
         }));
-        const mappedLobbies = (waitingLobbies || []).map((lobby: any) => {
+        const mappedLobbies = visibleLobbies.map((lobby: any) => {
           const passengers = Array.isArray(lobby.passengers_json) ? lobby.passengers_json : [];
           return {
             id: `lobby_${lobby.id}`,
@@ -248,7 +261,7 @@ export default function PassengerRequests() {
         });
         const seenOrderIds = new Set<string>();
         const dedupedRequests = mappedRequests.map((req: any) => {
-          const originalReq = (rideRequests || []).find((r: any) => r.id === req.id);
+          const originalReq = visibleRideRequests.find((r: any) => r.id === req.id);
           return { ...req, terminalId: originalReq?.terminal_id || null };
         }).filter((req: any) => {
           if (req.orderId) {
@@ -260,7 +273,7 @@ export default function PassengerRequests() {
 
         // Add terminal info to shared ride lobbies too
         const lobbysWithTerminal = mappedLobbies.map((req: any) => {
-          const originalLobby = (waitingLobbies || []).find((l: any) => l.id === req.lobbyId);
+          const originalLobby = visibleLobbies.find((l: any) => l.id === req.lobbyId);
           return { ...req, terminalId: originalLobby?.terminal_id || null };
         });
 
@@ -338,6 +351,32 @@ export default function PassengerRequests() {
   }, [previewRequest, isMapsLoaded, currentLocation]);
 
   const handleOpenPreview = (request: PassengerRequest) => { setDirectionsResult(null); setDeliveryRouteResult(null); setResolvedPickupCoords(null); setPreviewRequest(request); };
+
+  /**
+   * Decline a request, recording the rider's reason against them.
+   *
+   * The decline is per-rider: the request stays in every other rider's list and
+   * the customer sees no change.
+   */
+  const handleDeclineRequest = async (request: PassengerRequest, reason: string) => {
+    if (!user?.id) return;
+
+    const lobbyId = request.lobbyId;
+    const { error } = lobbyId
+      ? await supabaseHelpers.declineLobby(lobbyId, user.id, reason)
+      : await supabaseHelpers.declineRideRequest(request.id, user.id, reason);
+
+    if (error) {
+      console.error('❌ Failed to record decline:', error);
+      alert(`Failed to decline the request: ${(error as any)?.message || 'Please try again.'}`);
+      return;
+    }
+
+    // Drop it from this rider's list straight away.
+    setRequests(prev => prev.filter(r => r.id !== request.id));
+    setPreviewRequest(null);
+    console.log('🚫 Declined request with reason:', reason);
+  };
 
   const handleAcceptRequest = async (request: PassengerRequest) => {
     if (!user?.id) return alert('You must be logged in as a driver.');
@@ -443,8 +482,11 @@ export default function PassengerRequests() {
           ))}
         </div>
 
-        {/* Terminal queue status — also shows the "no terminal assigned" block */}
-        <TerminalQueueCard queue={terminalQueueApi} variant="compact" />
+        {/* Terminal queue status — also shows the "no terminal assigned" block.
+            Hidden on the Delivery service type, where the queue never applies. */}
+        {!isDeliveryServiceMode(user?.serviceTypes) && (
+          <TerminalQueueCard queue={terminalQueueApi} variant="compact" />
+        )}
 
         {/* Request Count */}
         {sortedRequests.length > 0 && (
@@ -641,11 +683,41 @@ export default function PassengerRequests() {
                 </div>
               </div>
               <Button onClick={() => { setConfirmRequest(previewRequest); setShowConfirmAccept(true); }} className="w-full bg-[var(--primary)] hover:bg-[var(--primary)] uppercase py-6 font-bold">Accept & Navigate</Button>
-              <Button onClick={() => setPreviewRequest(null)} variant="outline" className="w-full border-[var(--primary)] text-[var(--primary)] uppercase">Cancel</Button>
+              <Button
+                onClick={() => { setDeclineTarget(previewRequest); setShowDeclinePrompt(true); }}
+                variant="outline"
+                className="w-full border-[var(--primary)] text-[var(--primary)] uppercase"
+              >
+                Decline Request
+              </Button>
+              <Button onClick={() => setPreviewRequest(null)} variant="outline" className="w-full border-[var(--border)] text-[var(--muted-foreground)] uppercase">Close</Button>
             </div>
           </div>
         </div>
       )}
+
+      {/* Decline Popup — collects a reason before hiding the request for this rider */}
+      <ReasonPromptModal
+        isOpen={showDeclinePrompt}
+        title="Decline this request?"
+        description={
+          declineTarget
+            ? `${declineTarget.type === 'delivery' ? 'Delivery' : declineTarget.type === 'shared' ? 'Shared ride' : 'Private ride'} · ${declineTarget.pickup} → ${declineTarget.dropoff}`
+            : undefined
+        }
+        confirmLabel="Decline Request"
+        placeholder="e.g. Too far, not my route, already on a trip…"
+        variant="warning"
+        zIndexClassName="z-[3500]"
+        onCancel={() => { setShowDeclinePrompt(false); setDeclineTarget(null); }}
+        onSubmit={async (reason) => {
+          const target = declineTarget;
+          setShowDeclinePrompt(false);
+          setDeclineTarget(null);
+          if (!target) return;
+          await handleDeclineRequest(target, reason);
+        }}
+      />
 
       {/* Active Ride Floating Button */}
       <ActiveRideButton />
