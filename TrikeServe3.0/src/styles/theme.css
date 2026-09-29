@@ -18,12 +18,19 @@
   --coral-soft: #fbe9e0; /* coral tint for selected states */
   --amber: #ffc857; /* warm highlight + focus ring */
   --amber-soft: #fff3d6;
+  --amber-dark: #8a5a06;
   --mint: #9de0c8;
   --mint-soft: #e3f5ed;
   --success: #2f9e77;
+  --success-soft: #e2f6ec;
+  --info: #1d4ed8; /* blues consolidated: statuses, markers, info chips */
+  --info-soft: #e3edfb;
+  --violet: #6d28d9; /* specialty badges */
+  --violet-soft: #f0eaf8;
   --rider: #0f7b5f; /* rider-role accent (was #00A854) */
   --rider-soft: #e1f3ec;
   --error: #b3261e;
+  --error-soft: #fdeceb;
   /* Typography */
   --font-family-base: 'Atkinson Hyperlegible', system-ui, -apple-system, 'Segoe UI', sans-serif;
 
@@ -151,9 +158,16 @@
   --color-mint: var(--mint);
   --color-mint-soft: var(--mint-soft);
   --color-success: var(--success);
+  --color-success-soft: var(--success-soft);
+  --color-info: var(--info);
+  --color-info-soft: var(--info-soft);
+  --color-violet: var(--violet);
+  --color-violet-soft: var(--violet-soft);
+  --color-amber-dark: var(--amber-dark);
   --color-rider: var(--rider);
   --color-rider-soft: var(--rider-soft);
   --color-error: var(--error);
+  --color-error-soft: var(--error-soft);
   --radius-sm: calc(var(--radius) - 4px);
   --radius-md: calc(var(--radius) - 2px);
   --radius-lg: var(--radius);
