@@ -1,4 +1,4 @@
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
+@import './fonts.css';
 @import './tailwind.css';
 @import './theme.css';
 @import 'leaflet/dist/leaflet.css';
@@ -41,7 +41,7 @@ html, body {
   animation: slideDown 0.3s ease-out;
 }
 
-/* Animation for slide up (existing if needed) */
+/* Animation for slide up */
 @keyframes slideUp {
   from {
     opacity: 0;
@@ -97,3 +97,49 @@ html, body {
   animation: slideIn 0.3s ease-out;
 }
 
+/* Restrained entrance motion for redesigned panels */
+@keyframes rise {
+  from {
+    opacity: 0;
+    transform: translateY(0.5rem);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-rise {
+  animation: rise 320ms ease-out both;
+}
+
+/* Safe-area helpers for notched phones and gesture bars */
+.pb-safe {
+  padding-bottom: max(0.25rem, env(safe-area-inset-bottom));
+}
+
+.pt-safe {
+  padding-top: max(0.25rem, env(safe-area-inset-top));
+}
+
+/* Visible keyboard focus — high-contrast amber ring, never removed */
+:focus-visible {
+  outline: 3px solid var(--amber);
+  outline-offset: 2px;
+}
+
+/* Respect users who prefer reduced motion */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+
+  img {
+    transition: none !important;
+  }
+}
