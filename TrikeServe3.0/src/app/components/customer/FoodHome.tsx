@@ -297,72 +297,87 @@ export default function FoodHome() {
   };
 
   return (
-    <div className="min-h-screen bg-[var(--primary)] flex flex-col pb-20">
-      {/* Header - Clean and Simple */}
-      <div className="bg-gradient-to-b from-[var(--primary)] to-[var(--primary)] px-5 pt-6 pb-5">
+    <div className="min-h-screen bg-[var(--background)] flex flex-col pb-20">
+      {/* Header — TrikeServe brand, service area, trust strip */}
+      <div className="bg-[var(--ink)] px-5 pt-safe sm:pt-6 pb-5">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <MapPin className="w-7 h-7 text-white" />
+            <div className="grid size-11 place-items-center rounded-2xl bg-[var(--amber)] shadow-md">
+              <span className="text-lg font-bold text-[var(--ink)]" aria-hidden="true">TS</span>
+            </div>
             <div>
-              <h1 className="text-white font-bold text-2xl leading-tight">Gen T Deleon</h1>
-              <p className="text-white/90 text-sm">Valenzuela City</p>
+              <h1 className="text-white font-bold text-2xl leading-tight">TrikeServe</h1>
+              <p className="text-white/80 text-sm">Gen T Deleon, Valenzuela City</p>
             </div>
           </div>
           <div className="flex items-center gap-3">
-            <button 
+            <button
               onClick={() => navigate('/customer/notifications')}
-              className="active:scale-90 transition-transform relative"
+              className="relative grid size-11 place-items-center rounded-xl bg-white/10 active:scale-90 transition-transform"
+              aria-label="Notifications"
             >
-              <Bell className="w-7 h-7 text-white" />
+              <Bell className="w-6 h-6 text-white" />
               {/* Notification badge (delivery status updates + local notifications) */}
               {unreadNotifications > 0 && (
-                <div className="absolute -top-1 -right-1 w-5 h-5 bg-white rounded-full flex items-center justify-center">
-                  <span className="text-[10px] font-bold text-[var(--primary)]">{unreadNotifications > 9 ? '9+' : unreadNotifications}</span>
+                <div className="absolute -top-1 -right-1 w-5 h-5 bg-[var(--amber)] rounded-full flex items-center justify-center">
+                  <span className="text-[10px] font-bold text-[var(--ink)]">{unreadNotifications > 9 ? '9+' : unreadNotifications}</span>
                 </div>
               )}
             </button>
-            <button 
+            <button
               onClick={() => navigate('/customer/favorites')}
-              className="active:scale-90 transition-transform relative"
+              className="relative grid size-11 place-items-center rounded-xl bg-white/10 active:scale-90 transition-transform"
+              aria-label="Favorites"
             >
-              <Heart className="w-7 h-7 text-white" />
+              <Heart className="w-6 h-6 text-white" />
               {getTotalFavorites() > 0 && (
-                <div className="absolute -top-1 -right-1 w-5 h-5 bg-white rounded-full flex items-center justify-center">
-                  <span className="text-[10px] font-bold text-[var(--primary)]">{getTotalFavorites()}</span>
+                <div className="absolute -top-1 -right-1 w-5 h-5 bg-[var(--amber)] rounded-full flex items-center justify-center">
+                  <span className="text-[10px] font-bold text-[var(--ink)]">{getTotalFavorites()}</span>
                 </div>
               )}
             </button>
           </div>
         </div>
+        <div className="mt-4 flex items-center gap-2 rounded-2xl border border-white/10 bg-white/10 px-4 py-3">
+          <BadgeCheck className="w-5 h-5 shrink-0 text-[var(--mint)]" />
+          <p className="text-sm text-white/85">
+            <span className="font-bold">Fixed local fares.</span>{' '}
+            <span className="text-white/70">Tulong ng pamayanan — sakay at pagkain mula sa Gen T Deleon.</span>
+          </p>
+        </div>
       </div>
 
-       {/* Search Bar - Clean White */}
-       <div className="bg-gradient-to-b from-[var(--primary)] to-[var(--primary)]/95 px-5 pb-6">
-         <div className="flex items-center gap-3">
-           <div className="relative flex-1">
-             <Search className="absolute left-5 top-1/2 -translate-y-1/2 w-6 h-6 text-[var(--muted-foreground)]" />
-             <input
-               type="text"
-               placeholder="Search for Restaurants"
-               value={searchQuery}
-               onChange={(e) => setSearchQuery(e.target.value)}
-               className="w-full pl-16 pr-5 py-4 bg-white rounded-full shadow-sm border-0 text-base text-[var(--ink)] placeholder:text-[var(--muted-foreground)]"
-               style={{ outline: 'none' }}
-             />
-           </div>
-           <button
-             onClick={() => setShowFilterModal(true)}
-             className="w-12 h-12 bg-white/20 backdrop-blur-sm rounded-2xl flex items-center justify-center active:scale-90 transition-transform flex-shrink-0"
-           >
-             <SlidersHorizontal className="w-5 h-5 text-white" />
-           </button>
-         </div>
-       </div>
+      {/* Search — large, explicit, bilingual */}
+      <div className="bg-[var(--ink)] px-5 pb-6">
+        <div className="flex items-center gap-3">
+          <div className="relative flex-1">
+            <Search className="absolute left-5 top-1/2 -translate-y-1/2 w-6 h-6 text-[var(--muted-foreground)]" />
+            <input
+              type="text"
+              placeholder="Search food or restaurant"
+              aria-label="Search food or restaurant"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="w-full pl-16 pr-5 py-4 bg-white rounded-2xl shadow-sm border-0 text-base text-[var(--ink)] placeholder:text-[var(--muted-foreground)]"
+              style={{ outline: 'none' }}
+            />
+          </div>
+          <button
+            onClick={() => setShowFilterModal(true)}
+            className="size-12 bg-white/15 rounded-2xl flex flex-col items-center justify-center gap-0.5 active:scale-90 transition-transform flex-shrink-0"
+            aria-label="Filter restaurants"
+          >
+            <SlidersHorizontal className="w-5 h-5 text-white" />
+            <span className="text-[9px] font-bold leading-none text-white/85">Filter</span>
+          </button>
+        </div>
+        <p className="mt-2 text-xs text-white/60">Maghanap ng pagkain o tindahan</p>
+      </div>
 
-      {/* Restaurant Carousel - Extended Crimson Background */}
+      {/* Restaurant Carousel — deep ink band */}
       {restaurants.length > 0 && (
-        <div 
-          className="pt-6 pb-10 bg-gradient-to-b from-[var(--primary)]/95 to-[var(--primary)]/80"
+        <div
+          className="pt-6 pb-10 bg-[var(--ink)]"
         >
           <style>{`
             .restaurant-carousel .slick-dots {
@@ -591,7 +606,7 @@ export default function FoodHome() {
                     {/* Quick Action Button */}
                     <div className="px-4 pb-4">
                       <button className="w-full bg-gradient-to-r from-[var(--primary)] to-[var(--primary)] text-white font-bold py-3.5 rounded-2xl hover:shadow-xl transition-all duration-200 active:scale-95 shadow-lg shadow-[var(--primary)]/30 uppercase text-sm tracking-wide">
-                        Order Na!
+                        Order Na! / Order now
                       </button>
                     </div>
                   </Card>

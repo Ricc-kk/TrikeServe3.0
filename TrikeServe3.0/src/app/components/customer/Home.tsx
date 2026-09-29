@@ -1931,7 +1931,8 @@ export default function CustomerHome() {
                       <div className="w-20 h-20 rounded-2xl bg-white border-2 border-[var(--border)] flex items-center justify-center">
                         <Users className="w-10 h-10 text-[var(--ink)]" />
                       </div>
-                      <span className="font-bold text-sm text-[var(--ink)]">Share Ride</span>
+                      <span className="font-bold text-sm text-[var(--ink)]">Sabay / Shared Ride</span>
+                      <span className="text-xs text-[var(--muted-foreground)]">May kasabay kang pasahero</span>
                     </div>
                   </button>
 
@@ -1948,7 +1949,8 @@ export default function CustomerHome() {
                       <div className="w-20 h-20 rounded-2xl bg-white border-2 border-[var(--border)] flex items-center justify-center">
                         <UserIcon className="w-10 h-10 text-[var(--ink)]" />
                       </div>
-                      <span className="font-bold text-sm text-[var(--ink)]">Private Ride</span>
+                      <span className="font-bold text-sm text-[var(--ink)]">Pribado / Private Ride</span>
+                      <span className="text-xs text-[var(--muted-foreground)]">Para sa iyo lang ang biyahe</span>
                     </div>
                   </button>
                 </div>
@@ -2027,9 +2029,10 @@ export default function CustomerHome() {
                 {selectedVehicle && (
                   <Button
                     onClick={handleBookRide}
-                    className="w-full bg-[var(--primary)] hover:bg-[var(--primary)] text-white py-6 text-lg font-bold uppercase rounded-xl"
+                    className="w-full bg-[var(--primary)] hover:bg-[var(--coral-dark)] text-white py-6 text-lg font-bold uppercase rounded-xl"
                   >
-                    Book {selectedVehicle === 'share' ? 'Share' : 'Special'} Ride - ₱{getPrice()}
+                    <span className="block">Book this ride · ₱{getPrice()}</span>
+                    <span className="block text-xs font-semibold normal-case tracking-normal opacity-90">I-book ang sakay</span>
                   </Button>
                 )}
               </div>
@@ -2708,7 +2711,7 @@ export default function CustomerHome() {
                 <div className="p-4 border-2 rounded-xl border-[var(--primary)] bg-[var(--primary-soft)]">
                   <div className="flex flex-col items-center gap-2">
                     <span className="text-2xl">💵</span>
-                    <span className="font-semibold text-[var(--ink)]">Cash</span>
+                    <span className="font-semibold text-[var(--ink)]">Cash / Bayad cash</span>
                   </div>
                 </div>
               </div>
@@ -2720,7 +2723,7 @@ export default function CustomerHome() {
                 onClick={handleConfirmBooking}
                 className="w-full bg-[var(--primary)] hover:bg-[var(--primary)] text-white py-6 text-lg font-bold uppercase"
               >
-                Confirm Booking
+                Confirm Booking / Kumpirmahin
               </Button>
               <Button
                 onClick={() => setShowBookingConfirm(false)}
