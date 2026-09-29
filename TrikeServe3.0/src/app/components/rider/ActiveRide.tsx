@@ -75,6 +75,9 @@ export default function ActiveRide() {
   const lastReportedLocationRef = useRef<{ lat: number; lng: number } | null>(null);
   const [showRideComplete, setShowRideComplete] = useState(false);
   const [resolvedName, setResolvedName] = useState<string | null>(null);
+  // Set when the customer cancels out from under an accepted ride, so the rider
+  // isn't left driving to a pickup that no longer exists.
+  const [customerCancellation, setCustomerCancellation] = useState<{ reason: string | null } | null>(null);
   const { isLoaded: isMapsLoaded } = useMapLoader();
 
   useEffect(() => {
@@ -371,6 +374,29 @@ export default function ActiveRide() {
     }
   };
 
+  // Watch for the customer cancelling the accepted ride. Lobbies manage their own
+  // lifecycle, so only private/delivery requests (which carry an id) are polled.
+  useEffect(() => {
+    const requestId = rideData?.id;
+    if (!requestId || rideData?.lobbyId || customerCancellation) return;
+
+    let cancelled = false;
+    const checkForCancellation = async () => {
+      const { data } = await supabaseHelpers.getRideRequest(requestId);
+      if (cancelled || !data) return;
+      if (data.status === 'cancelled') {
+        console.log('🚫 Customer cancelled the ride:', data.cancel_reason);
+        setCustomerCancellation({ reason: data.cancel_reason || null });
+      }
+    };
+
+    const interval = setInterval(checkForCancellation, 5000);
+    return () => {
+      cancelled = true;
+      clearInterval(interval);
+    };
+  }, [rideData?.id, rideData?.lobbyId, customerCancellation]);
+
   const markerIcon = (color: string) => ({
     url: `data:image/svg+xml;charset=UTF-8,${encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="${color}" stroke="white" stroke-width="1"><path d="M12 2C8.13 2 5 5.13 5 9c0 4.95 6.1 11.53 6.36 11.81.36.39.92.39 1.28 0C13.9 20.53 20 13.95 20 9c0-3.87-3.13-7-8-7z"/><circle cx="12" cy="8.5" r="2.5" fill="white"/></svg>`)}`,
     scaledSize: new (window as any).google.maps.Size(40, 40),
@@ -378,6 +404,33 @@ export default function ActiveRide() {
   });
 
   if (!rideData) return null;
+
+  // The customer cancelled — say so, and show the reason they gave.
+  if (customerCancellation) {
+    return (
+      <div className="fixed inset-0 bg-black/60 z-[4000] flex items-center justify-center p-4">
+        <Card className="bg-white p-6 max-w-sm w-full rounded-2xl shadow-2xl text-center">
+          <div className="w-16 h-16 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-4">
+            <span className="text-3xl">🚫</span>
+          </div>
+          <h3 className="text-xl font-bold text-[#121212] mb-2">Ride cancelled</h3>
+          <p className="text-sm text-[#64748B] mb-4">The customer cancelled this ride request.</p>
+          {customerCancellation.reason && (
+            <div className="p-3 rounded-xl border-2 border-red-200 bg-red-50 text-left mb-4">
+              <p className="text-xs font-bold uppercase tracking-wide text-red-600 mb-1">Reason</p>
+              <p className="text-sm text-[#7F1D1D]">{customerCancellation.reason}</p>
+            </div>
+          )}
+          <Button
+            onClick={() => navigate('/rider')}
+            className="w-full bg-[#E11D48] hover:bg-[#BE123C] text-white font-bold uppercase"
+          >
+            Back to Dashboard
+          </Button>
+        </Card>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-[#F8F9FA] pb-20 relative overflow-hidden">

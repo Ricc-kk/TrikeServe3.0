@@ -708,6 +708,48 @@ export function isSimilarRoute(
   return pickupMatch && dropoffMatch;
 }
 
+/**
+ * Append a decline to a row's `declined_by` JSON column.
+ *
+ * Shared by ride requests and shared ride lobbies. An earlier decline from the
+ * same driver is replaced rather than stacked, so the array can never grow a
+ * duplicate entry for one driver. Requires ADD_CANCELLATION_REASONS.sql.
+ */
+async function appendDecline(
+  table: 'ride_requests' | 'shared_ride_lobbies',
+  rowId: string,
+  driverId: string,
+  reason: string
+) {
+  try {
+    const { data: current, error: readError } = await supabase
+      .from(table)
+      .select('declined_by')
+      .eq('id', rowId)
+      .maybeSingle();
+
+    if (readError) return { data: null, error: readError };
+
+    const existing = Array.isArray(current?.declined_by) ? (current!.declined_by as any[]) : [];
+    const next = [
+      ...existing.filter((entry: any) => entry?.driver_id !== driverId),
+      { driver_id: driverId, reason, at: new Date().toISOString() },
+    ];
+
+    const { data, error } = await supabase
+      .from(table)
+      .update({ declined_by: next, updated_at: new Date().toISOString() })
+      .eq('id', rowId)
+      .select()
+      .single();
+
+    return { data, error };
+  } catch (error) {
+    console.error(`[appendDecline] ${table} ${rowId}:`, error);
+    return { data: null, error: error as any };
+  }
+}
+
 // Helper functions for common operations
 export const supabaseHelpers = {
   // User operations
@@ -922,6 +964,29 @@ export const supabaseHelpers = {
       .select()
       .single();
     return { data, error };
+  },
+
+  /**
+   * Record a rider declining a ride request, with the reason they gave.
+   *
+   * The decline is stored against that rider only (inside `declined_by`), so the
+   * request stays available to every other rider and the customer is unaffected.
+   * Requires ADD_CANCELLATION_REASONS.sql.
+   */
+  async declineRideRequest(requestId: string, driverId: string, reason: string) {
+    return appendDecline('ride_requests', requestId, driverId, reason);
+  },
+
+  /** Same as declineRideRequest, for a shared ride lobby. */
+  async declineLobby(lobbyId: string, driverId: string, reason: string) {
+    return appendDecline('shared_ride_lobbies', lobbyId, driverId, reason);
+  },
+
+  /** True when this rider has already declined the request/lobby. */
+  isDeclinedByDriver(row: any, driverId?: string | null): boolean {
+    if (!driverId) return false;
+    const declines = Array.isArray(row?.declined_by) ? row.declined_by : [];
+    return declines.some((entry: any) => entry?.driver_id === driverId);
   },
 
   // Shared ride lobby operations

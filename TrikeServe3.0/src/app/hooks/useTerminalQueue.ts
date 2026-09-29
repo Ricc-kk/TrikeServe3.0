@@ -31,6 +31,16 @@ export function isQueueGatedType(type?: string): boolean {
 }
 
 /**
+ * True when the driver's selected service type is Delivery.
+ *
+ * Delivery is exclusive with Rides (see ServiceTypes/normalizeServiceSelection),
+ * so any selection containing 'delivery' means the driver is on Delivery.
+ */
+export function isDeliveryServiceMode(serviceTypes?: string[] | null): boolean {
+  return (serviceTypes || []).includes("delivery");
+}
+
+/**
  * Live view of the driver's terminal queue.
  *
  * The queue is FIFO per terminal (`joined_at` ascending) and only the driver at
@@ -225,6 +235,14 @@ export function useTerminalQueue() {
 
     return { error: leaveError };
   }, [driverId, terminalId, refresh]);
+
+  // Delivery is never queue-gated, so a driver on the Delivery service type must
+  // not hold a terminal queue slot — whether they switched to it, logged in with
+  // it already selected, or are on their way to the Passenger Requests page.
+  const isDeliveryService = isDeliveryServiceMode(user?.serviceTypes);
+  useEffect(() => {
+    if (isDeliveryService && myEntry) leave();
+  }, [isDeliveryService, myEntry?.id, leave]);
 
   return {
     terminalId,

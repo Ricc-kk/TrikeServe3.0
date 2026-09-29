@@ -7,6 +7,7 @@ import { Button } from "../ui/button";
 import BusinessSidebar from "./BusinessSidebar";
     import { supabase } from "../../../lib/supabase";
     import { supabaseHelpers } from "@/lib/supabase";
+import ReasonPromptModal from "../ui/reason-prompt-modal";
 import { GoogleMap, MarkerF, Polyline } from "@react-google-maps/api";
 import useMapLoader from "@/lib/mapLoader";
 import tricycleIcon from '../../../assets/0b76d1aa56b8ad6e15dd4efc8a0100b0ca5762a1.png'
@@ -34,13 +35,18 @@ interface Order {
   driverName?: string;
   restaurantName?: string;
   restaurantAddress?: string;
+  /** Why the order was cancelled, and which side cancelled it. */
+  cancelReason?: string | null;
+  cancelledBy?: string | null;
 }
 
 
 export default function BusinessOrders() {
   const [selectedTab, setSelectedTab] = useState<'active' | 'history'>('active');
   const [selectedOrder, setSelectedOrder] = useState<Order | null>(null);
-  const [confirmAction, setConfirmAction] = useState<'accept' | 'decline' | null>(null);
+  const [confirmAction, setConfirmAction] = useState<'accept' | null>(null);
+  // Decline collects a reason before the order is cancelled.
+  const [showDeclinePrompt, setShowDeclinePrompt] = useState(false);
   const [statusConfirm, setStatusConfirm] = useState<'ready' | 'delivery' | null>(null);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [selectedStatusFilter, setSelectedStatusFilter] = useState<'all' | 'pending' | 'confirmed' | 'preparing' | 'ready' | 'on-the-way'>('all');
@@ -303,6 +309,8 @@ export default function BusinessOrders() {
           customerId: dbOrder.customer_id || undefined,
           restaurantName: dbOrder.restaurant_name || undefined,
           restaurantAddress: dbOrder.restaurant_address || undefined,
+          cancelReason: dbOrder.cancel_reason || null,
+          cancelledBy: dbOrder.cancelled_by || null,
         };
       });
 
@@ -361,6 +369,53 @@ export default function BusinessOrders() {
   const filteredActiveOrders = selectedStatusFilter === 'all' 
     ? activeOrders 
     : activeOrders.filter(o => o.status === selectedStatusFilter);
+
+  /** Decline a pending order, recording the reason the business gave. */
+  const declineOrder = async (orderId: string, reason: string) => {
+    const order = orders.find(o => o.id === orderId);
+    if (!order) return;
+
+    setIsUpdatingStatus(true);
+    const previousStatus = order.status;
+
+    try {
+      const update = {
+        status: 'cancelled' as const,
+        cancel_reason: reason,
+        cancelled_by: 'business',
+        updated_at: new Date().toISOString(),
+      };
+
+      // Optimistic update so the list reflects the decline immediately.
+      setOrders(prev => prev.map(o => (
+        o.id === orderId
+          ? { ...o, status: 'cancelled', cancelReason: reason, cancelledBy: 'business' }
+          : o
+      )));
+
+      const { error } = await supabase.from('orders').update(update).eq('id', orderId);
+
+      if (error) {
+        // Same backup as the other status changes: match on the order number.
+        const { error: backupError } = await supabase
+          .from('orders')
+          .update(update)
+          .eq('order_number', order.orderNumber);
+
+        if (backupError) {
+          console.error('[BusinessOrders] Decline failed:', backupError);
+          // Roll the optimistic update back.
+          setOrders(prev => prev.map(o => (o.id === orderId ? { ...o, status: previousStatus } : o)));
+          alert(`Failed to decline order: ${backupError.message}`);
+          return;
+        }
+      }
+
+      console.log('[BusinessOrders] Order declined with reason:', reason);
+    } finally {
+      setIsUpdatingStatus(false);
+    }
+  };
 
   const updateOrderStatus = async (orderId: string, newStatus: Order['status']) => {
     console.log('[BusinessOrders] ========== STATUS UPDATE START ==========');
@@ -803,7 +858,8 @@ export default function BusinessOrders() {
               historyOrders.map((order) => (
                 <Card
                   key={order.id}
-                  className="p-3 md:p-4 border-2 border-[#E2E8F0] opacity-75"
+                  onClick={() => setSelectedOrder(order)}
+                  className="p-3 md:p-4 border-2 border-[#E2E8F0] opacity-75 active:scale-[0.98] transition-transform cursor-pointer"
                 >
                   <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 md:gap-3 mb-3">
                     <div className="min-w-0">
@@ -831,6 +887,16 @@ export default function BusinessOrders() {
                       <p className="text-xs text-[#64748B]">+{order.items.length - 2} more items</p>
                     )}
                   </div>
+
+                  {/* Cancellation reason, readable straight from the history list */}
+                  {order.status === 'cancelled' && order.cancelReason && (
+                    <div className="mt-3 p-2.5 rounded-xl border-2 border-red-200 bg-red-50">
+                      <p className="text-[10px] font-bold uppercase tracking-wide text-red-600 mb-0.5">
+                        {order.cancelledBy === 'customer' ? 'Cancelled by customer' : 'Declined'}
+                      </p>
+                      <p className="text-xs text-[#7F1D1D]">{order.cancelReason}</p>
+                    </div>
+                  )}
                 </Card>
               ))
             ) : (
@@ -896,6 +962,16 @@ export default function BusinessOrders() {
               </div>
 
               <div className="p-3 md:p-5 space-y-3 md:space-y-4">
+                {/* Why the order was cancelled, so the reason is never buried */}
+                {selectedOrder.status === 'cancelled' && selectedOrder.cancelReason && (
+                  <div className="p-3 rounded-xl border-2 border-red-200 bg-red-50">
+                    <p className="text-xs font-bold uppercase tracking-wide text-red-600 mb-1">
+                      {selectedOrder.cancelledBy === 'customer' ? 'Cancelled by customer' : 'Order declined'}
+                    </p>
+                    <p className="text-sm text-[#7F1D1D]">{selectedOrder.cancelReason}</p>
+                  </div>
+                )}
+
                 {/* Customer Info */}
                 <div>
                   <h3 className="font-bold text-[#121212] mb-2 text-sm md:text-base">Customer</h3>
@@ -963,7 +1039,7 @@ export default function BusinessOrders() {
                       ✓ Accept Order
                     </Button>
                     <Button
-                      onClick={() => setConfirmAction('decline')}
+                      onClick={() => setShowDeclinePrompt(true)}
                       variant="outline"
                       className="w-full border-[#E11D48] text-[#E11D48] uppercase py-4 md:py-6 text-sm md:text-base"
                     >
@@ -1129,17 +1205,15 @@ export default function BusinessOrders() {
         )}
       </div>
 
-      {/* Confirmation Popup */}
-      {confirmAction && selectedOrder && (
+      {/* Accept Confirmation Popup */}
+      {confirmAction === 'accept' && selectedOrder && (
         <div className="fixed inset-0 bg-black/60 z-[3000] flex items-center justify-center">
           <div className="bg-white rounded-3xl p-6 mx-6 max-w-sm w-full text-center shadow-2xl animate-in fade-in zoom-in duration-300">
-            <div className={`w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4 ${
-              confirmAction === 'accept' ? 'bg-green-100' : 'bg-red-100'
-            }`}>
-              <span className="text-3xl">{confirmAction === 'accept' ? '✅' : '❌'}</span>
+            <div className="w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4 bg-green-100">
+              <span className="text-3xl">✅</span>
             </div>
             <h2 className="text-xl font-extrabold text-[#121212] mb-1">
-              {confirmAction === 'accept' ? 'Accept this order?' : 'Decline this order?'}
+              Accept this order?
             </h2>
             <p className="text-sm text-[#64748B] mb-1">Order #{selectedOrder.orderNumber}</p>
             <p className="text-sm text-[#64748B] mb-1">{selectedOrder.customerName}</p>
@@ -1154,26 +1228,41 @@ export default function BusinessOrders() {
               </Button>
               <Button
                 onClick={async () => {
-                  if (confirmAction === 'accept') {
-                    await updateOrderStatus(selectedOrder.id, 'preparing');
-                  } else {
-                    await updateOrderStatus(selectedOrder.id, 'cancelled');
-                  }
+                  await updateOrderStatus(selectedOrder.id, 'preparing');
                   setConfirmAction(null);
                   setSelectedOrder(null);
                 }}
-                className={`flex-1 uppercase font-bold ${
-                  confirmAction === 'accept'
-                    ? 'bg-[#10B981] hover:bg-[#059669]'
-                    : 'bg-[#E11D48] hover:bg-[#BE123C]'
-                }`}
+                className="flex-1 uppercase font-bold bg-[#10B981] hover:bg-[#059669]"
               >
-                {confirmAction === 'accept' ? 'Accept' : 'Decline'}
+                Accept
               </Button>
             </div>
           </div>
         </div>
       )}
+
+      {/* Decline Popup — collects a reason before the order is cancelled */}
+      <ReasonPromptModal
+        isOpen={showDeclinePrompt}
+        title="Decline this order?"
+        description={
+          selectedOrder
+            ? `Order #${selectedOrder.orderNumber} · ${selectedOrder.customerName}`
+            : undefined
+        }
+        confirmLabel="Decline Order"
+        placeholder="e.g. Store is closing, items unavailable, address out of range…"
+        variant="danger"
+        zIndexClassName="z-[3500]"
+        onCancel={() => setShowDeclinePrompt(false)}
+        onSubmit={async (reason) => {
+          const orderId = selectedOrder?.id;
+          setShowDeclinePrompt(false);
+          if (!orderId) return;
+          await declineOrder(orderId, reason);
+          setSelectedOrder(null);
+        }}
+      />
 
       {/* Status Change Confirmation Popup */}
       {statusConfirm && selectedOrder && (
