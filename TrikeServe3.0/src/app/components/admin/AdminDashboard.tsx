@@ -317,7 +317,7 @@ export default function AdminDashboard() {
               </button>
               <div>
                 <h1 className="text-2xl lg:text-3xl font-extrabold text-[var(--ink)]">
-                  Welcome, {user?.name || 'Admin'}!
+                  Welcome, {user?.name || 'Admin'}! / Maligayang pagdating
                 </h1>
                 <p className="text-xs lg:text-sm text-[var(--muted-foreground)]">
                   {user?.adminType === 'business_customer' ? 'Super Admin - Full Platform Control' :

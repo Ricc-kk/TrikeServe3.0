@@ -329,8 +329,8 @@ export default function BusinessDashboard() {
                 <Menu className="w-6 h-6 text-[var(--ink)]" />
               </button>
               <div>
-                <h1 className="text-2xl lg:text-3xl font-extrabold text-[var(--ink)]">Welcome, {user?.name?.split(' ')[0] || 'Business Owner'}!</h1>
-                <p className="text-xs lg:text-sm text-[var(--muted-foreground)]">Here's what's happening with your store today</p>
+                <h1 className="text-2xl lg:text-3xl font-extrabold text-[var(--ink)]">Welcome, {user?.name?.split(' ')[0] || 'Business Owner'}! / Maligayang pagdating</h1>
+                <p className="text-xs lg:text-sm text-[var(--muted-foreground)]">Here's what's happening with your store today / Heto ang balita sa tindahan mo ngayon</p>
               </div>
             </div>
             <div className="flex items-center gap-2 lg:gap-4">

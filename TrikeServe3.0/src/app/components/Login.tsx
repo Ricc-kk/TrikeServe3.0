@@ -241,8 +241,8 @@ export default function Login() {
           </div>
 
           <div className="mb-6">
-            <h2 className="text-3xl font-bold text-[var(--ink)] mb-2">Welcome Back</h2>
-            <p className="text-[var(--muted-foreground)]">Sign in to your TrikeServe account</p>
+            <h2 className="text-3xl font-bold text-[var(--ink)] mb-2">Welcome Back / Muli, maligayang pagdating</h2>
+            <p className="text-[var(--muted-foreground)]">Sign in to your TrikeServe account / Mag-sign in sa iyong account</p>
           </div>
 
           <form onSubmit={handleManualLogin} className="space-y-5">
@@ -316,7 +316,7 @@ export default function Login() {
                   SIGNING IN...
                 </div>
               ) : (
-                'SIGN IN'
+                'SIGN IN / MAG-LOG IN'
               )}
             </Button>
           </form>

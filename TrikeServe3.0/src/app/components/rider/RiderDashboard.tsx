@@ -965,12 +965,12 @@ export default function RiderDashboard() {
               {isOnline ? (
                 <>
                   <div className="w-3 h-3 rounded-full bg-white animate-pulse" />
-                  <span>You're Online</span>
+                  <span>Kasama ka na / You're Online</span>
                 </>
               ) : (
                 <>
                   <Power className="w-5 h-5" />
-                  <span>Go Online</span>
+                  <span>Go Online / Sumama na</span>
                 </>
               )}
             </Button>
