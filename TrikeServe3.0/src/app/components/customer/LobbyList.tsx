@@ -134,22 +134,22 @@ export default function LobbyList({
     <div className="fixed inset-0 bg-black/50 z-[2000] flex items-end">
       <div className="bg-white w-full rounded-t-3xl max-h-[85vh] overflow-hidden flex flex-col">
         {/* Header */}
-        <div className="p-5 border-b border-[#E2E8F0]">
+        <div className="p-5 border-b border-[var(--border)]">
           <div className="flex items-center justify-between mb-2">
             <div>
-              <h2 className="text-xl font-bold text-[#121212]">Available Share Rides</h2>
-              <p className="text-sm text-[#64748B]">Join an existing lobby going your way</p>
+              <h2 className="text-xl font-bold text-[var(--ink)]">Available Share Rides</h2>
+              <p className="text-sm text-[var(--muted-foreground)]">Join an existing lobby going your way</p>
             </div>
             <button onClick={onClose}>
-              <X className="w-6 h-6 text-[#64748B]" />
+              <X className="w-6 h-6 text-[var(--muted-foreground)]" />
             </button>
           </div>
           
           {dropoff && (
-            <div className="mt-3 flex items-center gap-2 text-sm bg-[#FFF1F2] p-3 rounded-lg">
-              <MapPin className="w-4 h-4 text-[#E11D48]" />
-              <span className="text-[#64748B]">Heading to:</span>
-              <span className="font-semibold text-[#121212]">{dropoff}</span>
+            <div className="mt-3 flex items-center gap-2 text-sm bg-[var(--primary-soft)] p-3 rounded-lg">
+              <MapPin className="w-4 h-4 text-[var(--primary)]" />
+              <span className="text-[var(--muted-foreground)]">Heading to:</span>
+              <span className="font-semibold text-[var(--ink)]">{dropoff}</span>
             </div>
           )}
         </div>
@@ -158,16 +158,16 @@ export default function LobbyList({
         <div className="flex-1 overflow-y-auto p-5">
           {lobbies.length === 0 ? (
             <div className="text-center py-12">
-              <div className="w-20 h-20 bg-[#F8F9FA] rounded-full flex items-center justify-center mx-auto mb-4">
-                <Users className="w-10 h-10 text-[#94A3B8]" />
+              <div className="w-20 h-20 bg-[var(--muted)] rounded-full flex items-center justify-center mx-auto mb-4">
+                <Users className="w-10 h-10 text-[var(--muted-foreground)]" />
               </div>
-              <h3 className="text-lg font-bold text-[#121212] mb-2">No Active Lobbies</h3>
-              <p className="text-sm text-[#64748B] mb-6">
+              <h3 className="text-lg font-bold text-[var(--ink)] mb-2">No Active Lobbies</h3>
+              <p className="text-sm text-[var(--muted-foreground)] mb-6">
                 {dropoff 
                   ? `No one is heading to ${dropoff} right now.` 
                   : 'No active share ride lobbies at the moment.'}
               </p>
-              <p className="text-xs text-[#94A3B8]">
+              <p className="text-xs text-[var(--muted-foreground)]">
                 Create a new share ride to get started!
               </p>
             </div>
@@ -176,14 +176,14 @@ export default function LobbyList({
               {lobbies.map((lobby) => (
                 <Card
                   key={lobby.id}
-                  className="p-4 border-2 border-[#E2E8F0] hover:border-[#E11D48] transition-colors"
+                  className="p-4 border-2 border-[var(--border)] hover:border-[var(--primary)] transition-colors"
                 >
                   {/* Status Bar */}
                   <div className="flex items-center justify-between mb-3">
                     <Badge className="bg-yellow-500 text-white">
                       🔍 Finding Driver
                     </Badge>
-                    <div className="flex items-center gap-1 text-xs text-[#64748B]">
+                    <div className="flex items-center gap-1 text-xs text-[var(--muted-foreground)]">
                       <Clock className="w-3 h-3" />
                       <span>Waiting {getWaitingTime(lobby.createdAt)}</span>
                     </div>
@@ -195,7 +195,7 @@ export default function LobbyList({
                       {lobby.passengers.map((passenger) => (
                         <div
                           key={passenger.id}
-                          className="w-8 h-8 rounded-full bg-gradient-to-br from-[#E11D48] to-[#BE123C] flex items-center justify-center text-sm border-2 border-white"
+                          className="w-8 h-8 rounded-full bg-gradient-to-br from-[var(--primary)] to-[var(--primary)] flex items-center justify-center text-sm border-2 border-white"
                           title={passenger.name}
                         >
                           {passenger.emoji}
@@ -211,31 +211,31 @@ export default function LobbyList({
                         </div>
                       ))}
                     </div>
-                    <span className="text-sm font-semibold text-[#E11D48]">
+                    <span className="text-sm font-semibold text-[var(--primary)]">
                       {lobby.passengers.length}/{lobby.maxSeats} seats
                     </span>
                   </div>
 
                   {/* Route Details */}
-                  <div className="bg-[#F8F9FA] rounded-lg p-3 mb-3">
+                  <div className="bg-[var(--muted)] rounded-lg p-3 mb-3">
                     <div className="space-y-2 text-sm">
                       <div className="flex items-start gap-2">
-                        <MapPin className="w-4 h-4 text-[#121212] mt-0.5 flex-shrink-0" />
+                        <MapPin className="w-4 h-4 text-[var(--ink)] mt-0.5 flex-shrink-0" />
                         <div className="flex-1 min-w-0">
-                          <p className="text-xs text-[#64748B] uppercase tracking-wide font-semibold">Pickup</p>
-                          <p className="font-semibold text-[#121212]">{lobby.pickup}</p>
-                          <p className="text-xs text-[#64748B] truncate">{lobby.pickupAddress}</p>
+                          <p className="text-xs text-[var(--muted-foreground)] uppercase tracking-wide font-semibold">Pickup</p>
+                          <p className="font-semibold text-[var(--ink)]">{lobby.pickup}</p>
+                          <p className="text-xs text-[var(--muted-foreground)] truncate">{lobby.pickupAddress}</p>
                         </div>
                       </div>
                       <div className="flex items-center gap-2 pl-6">
-                        <div className="h-6 w-0.5 bg-[#E2E8F0]"></div>
+                        <div className="h-6 w-0.5 bg-[var(--border)]"></div>
                       </div>
                       <div className="flex items-start gap-2">
-                        <MapPin className="w-4 h-4 text-[#E11D48] mt-0.5 flex-shrink-0" />
+                        <MapPin className="w-4 h-4 text-[var(--primary)] mt-0.5 flex-shrink-0" />
                         <div className="flex-1 min-w-0">
-                          <p className="text-xs text-[#64748B] uppercase tracking-wide font-semibold">Drop-off</p>
-                          <p className="font-semibold text-[#E11D48]">{lobby.dropoff}</p>
-                          <p className="text-xs text-[#64748B] truncate">{lobby.dropoffAddress}</p>
+                          <p className="text-xs text-[var(--muted-foreground)] uppercase tracking-wide font-semibold">Drop-off</p>
+                          <p className="font-semibold text-[var(--primary)]">{lobby.dropoff}</p>
+                          <p className="text-xs text-[var(--muted-foreground)] truncate">{lobby.dropoffAddress}</p>
                         </div>
                       </div>
                     </div>
@@ -244,12 +244,12 @@ export default function LobbyList({
                   {/* Price and Join Button */}
                   <div className="flex items-center justify-between">
                     <div>
-                      <p className="text-2xl font-bold text-[#E11D48]">₱{lobby.pricePerSeat}</p>
-                      <p className="text-xs text-[#64748B]">per seat</p>
+                      <p className="text-2xl font-bold text-[var(--primary)]">₱{lobby.pricePerSeat}</p>
+                      <p className="text-xs text-[var(--muted-foreground)]">per seat</p>
                     </div>
                     <Button
                       onClick={() => onJoinLobby(lobby)}
-                      className="bg-[#E11D48] hover:bg-[#BE123C] text-white"
+                      className="bg-[var(--primary)] hover:bg-[var(--primary)] text-white"
                     >
                       <Users className="w-4 h-4 mr-1" />
                       JOIN LOBBY
@@ -271,8 +271,8 @@ export default function LobbyList({
         </div>
 
         {/* Footer Info */}
-        <div className="p-5 border-t border-[#E2E8F0] bg-[#F8F9FA]">
-          <p className="text-xs text-center text-[#64748B]">
+        <div className="p-5 border-t border-[var(--border)] bg-[var(--muted)]">
+          <p className="text-xs text-center text-[var(--muted-foreground)]">
             💡 Tip: Fuller lobbies get drivers faster!
           </p>
         </div>

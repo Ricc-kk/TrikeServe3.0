@@ -197,8 +197,8 @@ export default function BrowseAvailableLobbies({
     return (
       <div className="fixed inset-0 bg-black/50 z-[2000] flex items-center justify-center p-4">
         <Card className="bg-white p-8 w-full max-w-md text-center">
-          <div className="animate-spin w-12 h-12 border-4 border-[#E11D48] border-t-transparent rounded-full mx-auto mb-4"></div>
-          <p className="text-[#64748B]">Loading available lobbies...</p>
+          <div className="animate-spin w-12 h-12 border-4 border-[var(--primary)] border-t-transparent rounded-full mx-auto mb-4"></div>
+          <p className="text-[var(--muted-foreground)]">Loading available lobbies...</p>
         </Card>
       </div>
     );
@@ -209,7 +209,7 @@ export default function BrowseAvailableLobbies({
       <div className="fixed inset-0 bg-black/50 z-[2000] flex items-center justify-center p-4">
         <Card className="bg-white p-6 w-full max-w-md">
           <h3 className="text-lg font-bold text-red-600 mb-2">Error</h3>
-          <p className="text-sm text-[#64748B] mb-6">{error}</p>
+          <p className="text-sm text-[var(--muted-foreground)] mb-6">{error}</p>
           <Button onClick={onClose} className="w-full">
             Close
           </Button>
@@ -222,18 +222,18 @@ export default function BrowseAvailableLobbies({
     <div className="fixed inset-0 bg-black/50 z-[2000] flex items-end">
       <div className="bg-white w-full rounded-t-3xl max-h-[90vh] overflow-hidden flex flex-col animate-slide-up">
         {/* Header */}
-        <div className="p-5 border-b border-[#E2E8F0] flex items-center justify-between">
+        <div className="p-5 border-b border-[var(--border)] flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 bg-[#FFF1F2] rounded-full flex items-center justify-center">
-              <Users className="w-5 h-5 text-[#E11D48]" />
+            <div className="w-10 h-10 bg-[var(--primary-soft)] rounded-full flex items-center justify-center">
+              <Users className="w-5 h-5 text-[var(--primary)]" />
             </div>
-            <h2 className="text-xl font-bold text-[#121212]">Available Lobbies</h2>
+            <h2 className="text-xl font-bold text-[var(--ink)]">Available Lobbies</h2>
           </div>
           <button
             onClick={onClose}
-            className="w-9 h-9 flex items-center justify-center rounded-full bg-[#F1F5F9] hover:bg-[#E2E8F0] transition-colors"
+            className="w-9 h-9 flex items-center justify-center rounded-full bg-[var(--muted)] hover:bg-[var(--border)] transition-colors"
           >
-            <X className="w-5 h-5 text-[#64748B]" />
+            <X className="w-5 h-5 text-[var(--muted-foreground)]" />
           </button>
         </div>
 
@@ -241,11 +241,11 @@ export default function BrowseAvailableLobbies({
         <div className="flex-1 overflow-y-auto p-5">
           {lobbies.length === 0 ? (
             <div className="text-center py-12">
-              <div className="w-16 h-16 bg-[#FFF1F2] rounded-full flex items-center justify-center mx-auto mb-3">
-                <Users className="w-8 h-8 text-[#E11D48]" />
+              <div className="w-16 h-16 bg-[var(--primary-soft)] rounded-full flex items-center justify-center mx-auto mb-3">
+                <Users className="w-8 h-8 text-[var(--primary)]" />
               </div>
-              <p className="text-lg font-semibold text-[#121212] mb-1">No lobbies available</p>
-              <p className="text-sm text-[#64748B]">
+              <p className="text-lg font-semibold text-[var(--ink)] mb-1">No lobbies available</p>
+              <p className="text-sm text-[var(--muted-foreground)]">
                 Be the first to create a lobby for this route!
               </p>
             </div>
@@ -260,8 +260,8 @@ export default function BrowseAvailableLobbies({
                     key={lobby.id}
                     className={`p-4 border-2 cursor-pointer transition-all ${
                       selectedLobby === lobby.id
-                        ? 'border-[#E11D48] bg-[#FFF1F2]'
-                        : 'border-[#E2E8F0] hover:border-[#E11D48]'
+                        ? 'border-[var(--primary)] bg-[var(--primary-soft)]'
+                        : 'border-[var(--border)] hover:border-[var(--primary)]'
                     }`}
                     onClick={() => setSelectedLobby(lobby.id)}
                   >
@@ -269,10 +269,10 @@ export default function BrowseAvailableLobbies({
                       {/* Route Info */}
                       <div className="space-y-2">
                         <div className="flex items-start gap-2">
-                          <MapPin className="w-4 h-4 text-[#121212] mt-0.5 flex-shrink-0" />
+                          <MapPin className="w-4 h-4 text-[var(--ink)] mt-0.5 flex-shrink-0" />
                           <div className="flex-1 min-w-0">
-                            <p className="text-xs text-[#64748B] uppercase tracking-wide font-semibold">Drop-off</p>
-                            <p className="font-bold text-[#121212]">{lobby.dropoff_location}</p>
+                            <p className="text-xs text-[var(--muted-foreground)] uppercase tracking-wide font-semibold">Drop-off</p>
+                            <p className="font-bold text-[var(--ink)]">{lobby.dropoff_location}</p>
                           </div>
                         </div>
                       </div>
@@ -283,18 +283,18 @@ export default function BrowseAvailableLobbies({
                           {passengers.slice(0, 3).map(passenger => (
                             <div
                               key={passenger.id}
-                              className="w-7 h-7 rounded-full bg-gradient-to-br from-[#E11D48] to-[#BE123C] flex items-center justify-center text-xs border-2 border-white"
+                              className="w-7 h-7 rounded-full bg-gradient-to-br from-[var(--primary)] to-[var(--primary)] flex items-center justify-center text-xs border-2 border-white"
                             >
                               {passenger.emoji}
                             </div>
                           ))}
                           {passengers.length > 3 && (
-                            <div className="w-7 h-7 rounded-full bg-[#E2E8F0] flex items-center justify-center text-xs border-2 border-white font-semibold text-[#121212]">
+                            <div className="w-7 h-7 rounded-full bg-[var(--border)] flex items-center justify-center text-xs border-2 border-white font-semibold text-[var(--ink)]">
                               +{passengers.length - 3}
                             </div>
                           )}
                         </div>
-                        <span className="text-sm font-semibold text-[#121212]">
+                        <span className="text-sm font-semibold text-[var(--ink)]">
                           {passengers.length}/{lobby.max_seats}
                         </span>
                         {availableSeats > 0 && (
@@ -307,13 +307,13 @@ export default function BrowseAvailableLobbies({
                       {/* Price and Time */}
                       <div className="flex items-center justify-between">
                         <div>
-                          <p className="text-xs text-[#64748B]">Your fare</p>
-                          <p className="text-lg font-bold text-[#E11D48]">₱{(lobby.price_per_seat / (passengers.length + 1)).toFixed(2)}</p>
-                          <p className="text-[10px] text-[#94A3B8]">₱{lobby.price_per_seat} trip ÷ {passengers.length + 1} passengers</p>
+                          <p className="text-xs text-[var(--muted-foreground)]">Your fare</p>
+                          <p className="text-lg font-bold text-[var(--primary)]">₱{(lobby.price_per_seat / (passengers.length + 1)).toFixed(2)}</p>
+                          <p className="text-[10px] text-[var(--muted-foreground)]">₱{lobby.price_per_seat} trip ÷ {passengers.length + 1} passengers</p>
                         </div>
                         <div className="text-right">
-                          <p className="text-xs text-[#64748B]">{getTimeWaiting(lobby.created_at)}</p>
-                          <Badge variant="outline" className="border-[#64748B] text-[#64748B]">
+                          <p className="text-xs text-[var(--muted-foreground)]">{getTimeWaiting(lobby.created_at)}</p>
+                          <Badge variant="outline" className="border-[var(--muted-foreground)] text-[var(--muted-foreground)]">
                             Waiting
                           </Badge>
                         </div>
@@ -324,7 +324,7 @@ export default function BrowseAvailableLobbies({
                         <Button
                           onClick={() => handleJoinLobby(lobby.id)}
                           disabled={joiningLobby || availableSeats === 0}
-                          className="w-full bg-[#E11D48] hover:bg-[#BE123C] text-white"
+                          className="w-full bg-[var(--primary)] hover:bg-[var(--primary)] text-white"
                         >
                           {joiningLobby ? (
                             <>
@@ -350,8 +350,8 @@ export default function BrowseAvailableLobbies({
         </div>
 
         {/* Info Footer */}
-        <div className="p-5 border-t border-[#E2E8F0] bg-[#F8F9FA]">
-          <p className="text-xs text-[#64748B] text-center">
+        <div className="p-5 border-t border-[var(--border)] bg-[var(--muted)]">
+          <p className="text-xs text-[var(--muted-foreground)] text-center">
             💡 Joining a shared ride lobby saves you up to 30% on fares!
           </p>
         </div>

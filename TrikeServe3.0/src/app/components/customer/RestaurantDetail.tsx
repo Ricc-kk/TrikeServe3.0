@@ -474,12 +474,12 @@ export default function RestaurantDetail() {
   const selectedCategoryName = restaurantData?.categories.find(cat => cat.id === selectedCategory)?.name || "All Items";
 
   return (
-    <div className="min-h-screen bg-[#F8F9FA] pb-20">
+    <div className="min-h-screen bg-[var(--muted)] pb-20">
       {/* Floating View Cart Bar */}
       {cartItemCount > 0 && (
         <Link
           to="/customer/cart"
-          className="fixed bottom-20 left-4 right-4 z-[900] bg-[#E11D48] text-white rounded-2xl px-5 py-3 flex items-center justify-between shadow-xl shadow-[#E11D48]/30 active:scale-[0.98] transition-transform"
+          className="fixed bottom-20 left-4 right-4 z-[900] bg-[var(--primary)] text-white rounded-2xl px-5 py-3 flex items-center justify-between shadow-xl shadow-[var(--primary)]/30 active:scale-[0.98] transition-transform"
         >
           <div className="flex items-center gap-3">
             <div className="w-8 h-8 bg-white/20 rounded-full flex items-center justify-center">
@@ -494,7 +494,7 @@ export default function RestaurantDetail() {
       )}
 
       {/* Hero Image */}
-      <div className="relative h-64 bg-gradient-to-b from-[#121212] to-[#2a2a2a]">
+      <div className="relative h-64 bg-gradient-to-b from-[var(--ink)] to-[var(--ink)]">
         <ImageWithFallback
           src={restaurantData?.heroImage}
           alt={restaurantData?.name}
@@ -508,7 +508,7 @@ export default function RestaurantDetail() {
             onClick={() => navigate(-1)}
             className="w-11 h-11 bg-white/95 backdrop-blur-sm rounded-full flex items-center justify-center shadow-lg active:scale-90 transition-all"
           >
-            <ArrowLeft className="w-6 h-6 text-[#121212]" />
+            <ArrowLeft className="w-6 h-6 text-[var(--ink)]" />
           </button>
           <div className="flex items-center gap-3">
             <button 
@@ -527,7 +527,7 @@ export default function RestaurantDetail() {
               }}
               className="w-11 h-11 bg-white/95 backdrop-blur-sm rounded-full flex items-center justify-center shadow-lg active:scale-90 transition-all"
             >
-              <Heart className={`w-6 h-6 ${checkIsFavorite(restaurantId || restaurantName) ? 'fill-[#E11D48] text-[#E11D48]' : 'text-[#121212]'}`} />
+              <Heart className={`w-6 h-6 ${checkIsFavorite(restaurantId || restaurantName) ? 'fill-[var(--primary)] text-[var(--primary)]' : 'text-[var(--ink)]'}`} />
             </button>
           </div>
         </div>
@@ -536,7 +536,7 @@ export default function RestaurantDetail() {
       {/* Restaurant Info Card */}
       <div className="bg-white mx-5 -mt-6 relative z-10 rounded-3xl shadow-2xl p-5">
         <div className="flex items-start gap-4">
-          <div className="w-20 h-20 rounded-2xl bg-gradient-to-br from-[#E11D48] to-[#BE123C] flex items-center justify-center shadow-lg flex-shrink-0 overflow-hidden">
+          <div className="w-20 h-20 rounded-2xl bg-gradient-to-br from-[var(--primary)] to-[var(--primary)] flex items-center justify-center shadow-lg flex-shrink-0 overflow-hidden">
             <StoreLogo logo={restaurantData?.logo} emojiClass="text-4xl" />
           </div>
           
@@ -544,30 +544,30 @@ export default function RestaurantDetail() {
             <div className="flex items-start justify-between mb-2">
               <div>
                 {restaurantData?.goodService && (
-                  <div className="flex items-center gap-1 text-[#18B5A4] mb-1">
+                  <div className="flex items-center gap-1 text-[var(--teal)] mb-1">
                     <BadgeCheck className="w-4 h-4" />
                     <span className="text-xs font-bold">Good Service</span>
                     <ChevronRight className="w-3 h-3" />
                   </div>
                 )}
-                <h1 className="text-2xl font-bold text-[#121212]">{restaurantData?.name}</h1>
-                <p className="text-sm text-[#64748B]">- {restaurantData?.subtitle}</p>
+                <h1 className="text-2xl font-bold text-[var(--ink)]">{restaurantData?.name}</h1>
+                <p className="text-sm text-[var(--muted-foreground)]">- {restaurantData?.subtitle}</p>
               </div>
             </div>
             
             <div className="flex items-center gap-2 mb-2">
               <div className="flex items-center gap-1">
-                <Star className="w-4 h-4 fill-[#FFC107] text-[#FFC107]" />
-                <span className="text-sm font-bold text-[#121212]">{restaurantData?.rating}</span>
-                <span className="text-xs text-[#64748B]">({restaurantData?.ratingCount.toLocaleString()}+)</span>
+                <Star className="w-4 h-4 fill-[var(--amber)] text-[var(--amber)]" />
+                <span className="text-sm font-bold text-[var(--ink)]">{restaurantData?.rating}</span>
+                <span className="text-xs text-[var(--muted-foreground)]">({restaurantData?.ratingCount.toLocaleString()}+)</span>
               </div>
             </div>
             
             <div className="flex items-center gap-2 text-sm">
-              <span className="text-[#E11D48] font-bold">
+              <span className="text-[var(--primary)] font-bold">
                 <span className="text-xs">₱</span>{restaurantData?.deliveryFee.toFixed(2)}
               </span>
-              <span className="text-[#64748B]">• From {restaurantData?.deliveryTime}</span>
+              <span className="text-[var(--muted-foreground)]">• From {restaurantData?.deliveryTime}</span>
             </div>
           </div>
         </div>
@@ -584,8 +584,8 @@ export default function RestaurantDetail() {
                 onClick={() => setSelectedCategory(category.id)}
                 className={`px-4 py-2 rounded-full text-sm font-semibold whitespace-nowrap transition-all flex-shrink-0 ${
                   selectedCategory === category.id
-                    ? "bg-[#E11D48] text-white"
-                    : "bg-[#F1F5F9] text-[#64748B] hover:bg-[#E2E8F0]"
+                    ? "bg-[var(--primary)] text-white"
+                    : "bg-[var(--muted)] text-[var(--muted-foreground)] hover:bg-[var(--border)]"
                 }`}
               >
                 {category.name}
@@ -599,8 +599,8 @@ export default function RestaurantDetail() {
               onClick={() => setSelectedBudget("all")}
               className={`px-4 py-2 rounded-full text-sm font-semibold whitespace-nowrap transition-all flex-shrink-0 ${
                 selectedBudget === "all"
-                  ? "bg-[#E11D48] text-white"
-                  : "bg-[#F1F5F9] text-[#64748B] hover:bg-[#E2E8F0]"
+                  ? "bg-[var(--primary)] text-white"
+                  : "bg-[var(--muted)] text-[var(--muted-foreground)] hover:bg-[var(--border)]"
               }`}
             >
               All Budgets
@@ -609,8 +609,8 @@ export default function RestaurantDetail() {
               onClick={() => setSelectedBudget("under100")}
               className={`px-4 py-2 rounded-full text-sm font-semibold whitespace-nowrap transition-all flex-shrink-0 ${
                 selectedBudget === "under100"
-                  ? "bg-[#E11D48] text-white"
-                  : "bg-[#F1F5F9] text-[#64748B] hover:bg-[#E2E8F0]"
+                  ? "bg-[var(--primary)] text-white"
+                  : "bg-[var(--muted)] text-[var(--muted-foreground)] hover:bg-[var(--border)]"
               }`}
             >
               Less than ₱100
@@ -619,8 +619,8 @@ export default function RestaurantDetail() {
               onClick={() => setSelectedBudget("100-149")}
               className={`px-4 py-2 rounded-full text-sm font-semibold whitespace-nowrap transition-all flex-shrink-0 ${
                 selectedBudget === "100-149"
-                  ? "bg-[#E11D48] text-white"
-                  : "bg-[#F1F5F9] text-[#64748B] hover:bg-[#E2E8F0]"
+                  ? "bg-[var(--primary)] text-white"
+                  : "bg-[var(--muted)] text-[var(--muted-foreground)] hover:bg-[var(--border)]"
               }`}
             >
               ₱100
@@ -629,8 +629,8 @@ export default function RestaurantDetail() {
               onClick={() => setSelectedBudget("150-199")}
               className={`px-4 py-2 rounded-full text-sm font-semibold whitespace-nowrap transition-all flex-shrink-0 ${
                 selectedBudget === "150-199"
-                  ? "bg-[#E11D48] text-white"
-                  : "bg-[#F1F5F9] text-[#64748B] hover:bg-[#E2E8F0]"
+                  ? "bg-[var(--primary)] text-white"
+                  : "bg-[var(--muted)] text-[var(--muted-foreground)] hover:bg-[var(--border)]"
               }`}
             >
               ₱150
@@ -639,8 +639,8 @@ export default function RestaurantDetail() {
               onClick={() => setSelectedBudget("200-249")}
               className={`px-4 py-2 rounded-full text-sm font-semibold whitespace-nowrap transition-all flex-shrink-0 ${
                 selectedBudget === "200-249"
-                  ? "bg-[#E11D48] text-white"
-                  : "bg-[#F1F5F9] text-[#64748B] hover:bg-[#E2E8F0]"
+                  ? "bg-[var(--primary)] text-white"
+                  : "bg-[var(--muted)] text-[var(--muted-foreground)] hover:bg-[var(--border)]"
               }`}
             >
               ₱200
@@ -649,8 +649,8 @@ export default function RestaurantDetail() {
               onClick={() => setSelectedBudget("250-299")}
               className={`px-4 py-2 rounded-full text-sm font-semibold whitespace-nowrap transition-all flex-shrink-0 ${
                 selectedBudget === "250-299"
-                  ? "bg-[#E11D48] text-white"
-                  : "bg-[#F1F5F9] text-[#64748B] hover:bg-[#E2E8F0]"
+                  ? "bg-[var(--primary)] text-white"
+                  : "bg-[var(--muted)] text-[var(--muted-foreground)] hover:bg-[var(--border)]"
               }`}
             >
               ₱250
@@ -659,8 +659,8 @@ export default function RestaurantDetail() {
               onClick={() => setSelectedBudget("300+")}
               className={`px-4 py-2 rounded-full text-sm font-semibold whitespace-nowrap transition-all flex-shrink-0 ${
                 selectedBudget === "300+"
-                  ? "bg-[#E11D48] text-white"
-                  : "bg-[#F1F5F9] text-[#64748B] hover:bg-[#E2E8F0]"
+                  ? "bg-[var(--primary)] text-white"
+                  : "bg-[var(--muted)] text-[var(--muted-foreground)] hover:bg-[var(--border)]"
               }`}
             >
               ₱300
@@ -670,14 +670,14 @@ export default function RestaurantDetail() {
           {/* Search Bar */}
           <div className="flex items-center gap-2">
             <div className="relative flex-1">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-[#64748B]" />
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-[var(--muted-foreground)]" />
               <input
                 type="text"
                 placeholder="Search menu items..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 onClick={() => setShowSearchModal(true)}
-                className="w-full pl-10 pr-4 py-2.5 border-2 border-[#E2E8F0] rounded-2xl text-sm bg-[#F8F9FA]"
+                className="w-full pl-10 pr-4 py-2.5 border-2 border-[var(--border)] rounded-2xl text-sm bg-[var(--muted)]"
               />
             </div>
           </div>
@@ -692,19 +692,19 @@ export default function RestaurantDetail() {
             className="w-full text-left"
           >
             <div className="flex items-center justify-between mb-3">
-              <h2 className="text-xl font-bold text-[#121212]">What people say</h2>
-              <ChevronRight className="w-6 h-6 text-[#64748B]" />
+              <h2 className="text-xl font-bold text-[var(--ink)]">What people say</h2>
+              <ChevronRight className="w-6 h-6 text-[var(--muted-foreground)]" />
             </div>
             
-            <div className="bg-white rounded-2xl p-4 shadow-sm border-2 border-[#F1F5F9] active:bg-[#F8F9FA] transition-colors">
-              <p className="text-[#121212] text-sm mb-2 line-clamp-2">{restaurantData.reviews[0].text}</p>
+            <div className="bg-white rounded-2xl p-4 shadow-sm border-2 border-[var(--muted)] active:bg-[var(--muted)] transition-colors">
+              <p className="text-[var(--ink)] text-sm mb-2 line-clamp-2">{restaurantData.reviews[0].text}</p>
               <div className="flex items-center gap-2">
                 <div className="flex">
                   {[1, 2, 3, 4, 5].map((star) => (
-                    <Star key={star} className={`w-4 h-4 ${star <= restaurantData.reviews[0].rating ? 'fill-[#FFC107] text-[#FFC107]' : 'text-[#E2E8F0]'}`} />
+                    <Star key={star} className={`w-4 h-4 ${star <= restaurantData.reviews[0].rating ? 'fill-[var(--amber)] text-[var(--amber)]' : 'text-[var(--border)]'}`} />
                   ))}
                 </div>
-                <span className="text-xs text-[#64748B]">• {restaurantData.reviews[0].author}</span>
+                <span className="text-xs text-[var(--muted-foreground)]">• {restaurantData.reviews[0].author}</span>
               </div>
             </div>
           </button>
@@ -713,14 +713,14 @@ export default function RestaurantDetail() {
 
       {/* Menu Items */}
       <div className="px-5 pb-6">
-        <h2 className="text-xl font-bold text-[#121212] mb-4">
+        <h2 className="text-xl font-bold text-[var(--ink)] mb-4">
           {selectedCategory === "all" ? "For You" : selectedCategoryName}
         </h2>
         
         {filteredItems.length === 0 ? (
           <div className="text-center py-12">
-            <p className="text-[#64748B] text-lg">No items found</p>
-            <p className="text-[#94A3B8] text-sm mt-2">Try adjusting your filters</p>
+            <p className="text-[var(--muted-foreground)] text-lg">No items found</p>
+            <p className="text-[var(--muted-foreground)] text-sm mt-2">Try adjusting your filters</p>
           </div>
         ) : (
           <div className="space-y-4">
@@ -735,9 +735,9 @@ export default function RestaurantDetail() {
                     />
                     {item.badge && (
                       <div className={`absolute top-2 left-2 px-2 py-1 rounded-full text-[10px] font-bold text-white ${
-                        item.badge === "most-ordered" ? "bg-[#E11D48]" :
-                        item.badge === "most-liked" ? "bg-[#18B5A4]" :
-                        "bg-[#121212]"
+                        item.badge === "most-ordered" ? "bg-[var(--primary)]" :
+                        item.badge === "most-liked" ? "bg-[var(--teal)]" :
+                        "bg-[var(--ink)]"
                       }`}>
                         {item.badge === "most-ordered" ? "Most ordered" :
                          item.badge === "most-liked" ? "Most liked" :
@@ -747,11 +747,11 @@ export default function RestaurantDetail() {
                   </div>
 
                   <div className="flex-1 min-w-0">
-                    <h3 className="font-bold text-[#121212] text-base mb-1 line-clamp-1">{item.name}</h3>
+                    <h3 className="font-bold text-[var(--ink)] text-base mb-1 line-clamp-1">{item.name}</h3>
                     {item.description && (
-                      <p className="text-xs text-[#64748B] mb-2 line-clamp-2">{item.description}</p>
+                      <p className="text-xs text-[var(--muted-foreground)] mb-2 line-clamp-2">{item.description}</p>
                     )}
-                    <p className="text-lg font-bold text-[#121212]">
+                    <p className="text-lg font-bold text-[var(--ink)]">
                       <span className="text-sm">₱</span>{item.price.toFixed(2)}
                     </p>
                   </div>
@@ -772,15 +772,15 @@ export default function RestaurantDetail() {
                       }
                       className={`w-11 h-11 rounded-full flex items-center justify-center shadow-lg active:scale-90 transition-all ${
                         isFavoriteItem(item.id)
-                          ? 'bg-[#E11D48] shadow-[#E11D48]/30'
-                          : 'bg-[#FFF7ED] shadow-[#E11D48]/10'
+                          ? 'bg-[var(--primary)] shadow-[var(--primary)]/30'
+                          : 'bg-[var(--amber-soft)] shadow-[var(--primary)]/10'
                       }`}
                     >
-                      <Heart className={`w-5 h-5 ${isFavoriteItem(item.id) ? 'text-white fill-white' : 'text-[#E11D48]'}`} />
+                      <Heart className={`w-5 h-5 ${isFavoriteItem(item.id) ? 'text-white fill-white' : 'text-[var(--primary)]'}`} />
                     </button>
                     <button
                       onClick={() => handleAddToCart(item)}
-                      className="w-11 h-11 bg-gradient-to-br from-[#E11D48] to-[#BE123C] rounded-full flex items-center justify-center shadow-lg shadow-[#E11D48]/30 active:scale-90 transition-all"
+                      className="w-11 h-11 bg-gradient-to-br from-[var(--primary)] to-[var(--primary)] rounded-full flex items-center justify-center shadow-lg shadow-[var(--primary)]/30 active:scale-90 transition-all"
                     >
                       <span className="text-white text-2xl font-bold leading-none">+</span>
                     </button>
@@ -799,15 +799,15 @@ export default function RestaurantDetail() {
       {showSearchModal && (
         <div className="fixed inset-0 bg-black/50 z-[2000] flex items-end">
           <div className="w-full bg-white rounded-t-3xl max-h-[85vh] overflow-hidden flex flex-col animate-in slide-in-from-bottom duration-300">
-            <div className="flex items-center gap-3 px-5 py-4 border-b border-[#E2E8F0]">
+            <div className="flex items-center gap-3 px-5 py-4 border-b border-[var(--border)]">
               <div className="relative flex-1">
-                <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-[#94A3B8]" />
+                <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-[var(--muted-foreground)]" />
                 <input
                   type="text"
                   placeholder="Search menu items..."
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
-                  className="w-full pl-12 pr-4 py-3 bg-[#F8F9FA] rounded-2xl text-base text-[#121212] placeholder:text-[#94A3B8] border-2 border-transparent focus:border-[#E11D48] outline-none"
+                  className="w-full pl-12 pr-4 py-3 bg-[var(--muted)] rounded-2xl text-base text-[var(--ink)] placeholder:text-[var(--muted-foreground)] border-2 border-transparent focus:border-[var(--primary)] outline-none"
                   autoFocus
                 />
               </div>
@@ -816,15 +816,15 @@ export default function RestaurantDetail() {
                   setShowSearchModal(false);
                   setSearchQuery("");
                 }}
-                className="w-10 h-10 flex items-center justify-center rounded-full hover:bg-[#F8F9FA] active:scale-90 transition-all"
+                className="w-10 h-10 flex items-center justify-center rounded-full hover:bg-[var(--muted)] active:scale-90 transition-all"
               >
-                <X className="w-6 h-6 text-[#64748B]" />
+                <X className="w-6 h-6 text-[var(--muted-foreground)]" />
               </button>
             </div>
             <div className="p-5">
               <button
                 onClick={() => setShowSearchModal(false)}
-                className="w-full py-3.5 rounded-2xl font-bold text-white bg-gradient-to-r from-[#E11D48] to-[#BE123C] hover:shadow-xl active:scale-95 transition-all shadow-lg shadow-[#E11D48]/30 uppercase text-sm tracking-wide"
+                className="w-full py-3.5 rounded-2xl font-bold text-white bg-gradient-to-r from-[var(--primary)] to-[var(--primary)] hover:shadow-xl active:scale-95 transition-all shadow-lg shadow-[var(--primary)]/30 uppercase text-sm tracking-wide"
               >
                 Search
               </button>
@@ -837,29 +837,29 @@ export default function RestaurantDetail() {
       {showRatingsModal && (
         <div className="fixed inset-0 bg-white z-[2000] overflow-y-auto">
           {/* Header */}
-          <div className="sticky top-0 bg-white border-b border-[#E2E8F0] px-5 py-4 flex items-center gap-4 z-10">
+          <div className="sticky top-0 bg-white border-b border-[var(--border)] px-5 py-4 flex items-center gap-4 z-10">
             <button 
               onClick={() => setShowRatingsModal(false)}
-              className="w-10 h-10 flex items-center justify-center rounded-full hover:bg-[#F8F9FA] active:scale-90 transition-all"
+              className="w-10 h-10 flex items-center justify-center rounded-full hover:bg-[var(--muted)] active:scale-90 transition-all"
             >
-              <X className="w-6 h-6 text-[#121212]" />
+              <X className="w-6 h-6 text-[var(--ink)]" />
             </button>
-            <h2 className="text-xl font-bold text-[#121212]">Ratings and reviews</h2>
+            <h2 className="text-xl font-bold text-[var(--ink)]">Ratings and reviews</h2>
           </div>
 
           {/* Rating Summary */}
           <div className="px-5 py-6">
-            <div className="bg-white border-2 border-[#E2E8F0] rounded-3xl p-6">
+            <div className="bg-white border-2 border-[var(--border)] rounded-3xl p-6">
               <div className="flex items-start gap-6">
                 {/* Overall Rating */}
                 <div className="flex flex-col items-center">
-                  <div className="text-5xl font-bold text-[#121212] mb-2">{restaurantData?.rating}</div>
+                  <div className="text-5xl font-bold text-[var(--ink)] mb-2">{restaurantData?.rating}</div>
                   <div className="flex gap-1 mb-2">
                     {[1, 2, 3, 4, 5].map((star) => (
-                      <Star key={star} className={`w-5 h-5 ${star <= Math.floor(restaurantData?.rating) ? 'fill-[#FFC107] text-[#FFC107]' : star <= restaurantData?.rating ? 'fill-[#FFC107]/50 text-[#FFC107]/50' : 'fill-[#E2E8F0] text-[#E2E8F0]'}`} />
+                      <Star key={star} className={`w-5 h-5 ${star <= Math.floor(restaurantData?.rating) ? 'fill-[var(--amber)] text-[var(--amber)]' : star <= restaurantData?.rating ? 'fill-[var(--amber)]/50 text-[var(--amber)]/50' : 'fill-[var(--border)] text-[var(--border)]'}`} />
                     ))}
                   </div>
-                  <div className="text-sm text-[#64748B]">{restaurantData?.ratingCount.toLocaleString()} ratings</div>
+                  <div className="text-sm text-[var(--muted-foreground)]">{restaurantData?.ratingCount.toLocaleString()} ratings</div>
                 </div>
 
                 {/* Rating Breakdown */}
@@ -868,10 +868,10 @@ export default function RestaurantDetail() {
                     const percentage = rating === 5 ? 75 : rating === 4 ? 15 : rating === 3 ? 5 : rating === 2 ? 3 : 2;
                     return (
                       <div key={rating} className="flex items-center gap-2">
-                        <span className="text-sm text-[#64748B] w-3">{rating}</span>
-                        <div className="flex-1 h-2 bg-[#E2E8F0] rounded-full overflow-hidden">
+                        <span className="text-sm text-[var(--muted-foreground)] w-3">{rating}</span>
+                        <div className="flex-1 h-2 bg-[var(--border)] rounded-full overflow-hidden">
                           <div 
-                            className={`h-full rounded-full ${rating === 5 ? 'bg-[#FFC107]' : 'bg-[#E2E8F0]'}`}
+                            className={`h-full rounded-full ${rating === 5 ? 'bg-[var(--amber)]' : 'bg-[var(--border)]'}`}
                             style={{ width: `${percentage}%` }}
                           />
                         </div>
@@ -885,7 +885,7 @@ export default function RestaurantDetail() {
 
           {/* Top Picks */}
           <div className="px-5 pb-6">
-            <h3 className="text-lg font-bold text-[#121212] mb-4">Top picks</h3>
+            <h3 className="text-lg font-bold text-[var(--ink)] mb-4">Top picks</h3>
             <div className="flex gap-3 overflow-x-auto pb-2 -mx-5 px-5">
               {restaurantData?.menuItems.filter(item => item.badge && item.available).slice(0, 4).map((item) => (
                 <div key={item.id} className="flex-shrink-0 w-32">
@@ -899,30 +899,30 @@ export default function RestaurantDetail() {
                   <div className="flex items-center gap-1 mb-1">
                     {item.badge === "most-ordered" && (
                       <>
-                        <div className="w-4 h-4 bg-[#18B5A4] rounded-full flex items-center justify-center">
+                        <div className="w-4 h-4 bg-[var(--teal)] rounded-full flex items-center justify-center">
                           <Check className="w-3 h-3 text-white" />
                         </div>
-                        <span className="text-xs font-bold text-[#18B5A4]">Most ordered</span>
+                        <span className="text-xs font-bold text-[var(--teal)]">Most ordered</span>
                       </>
                     )}
                     {item.badge === "most-liked" && (
                       <>
-                        <div className="w-4 h-4 bg-[#18B5A4] rounded-full flex items-center justify-center">
+                        <div className="w-4 h-4 bg-[var(--teal)] rounded-full flex items-center justify-center">
                           <Heart className="w-2.5 h-2.5 fill-white text-white" />
                         </div>
-                        <span className="text-xs font-bold text-[#18B5A4]">Most liked</span>
+                        <span className="text-xs font-bold text-[var(--teal)]">Most liked</span>
                       </>
                     )}
                     {item.badge === "signature" && (
                       <>
-                        <div className="w-4 h-4 bg-[#18B5A4] rounded-full flex items-center justify-center">
+                        <div className="w-4 h-4 bg-[var(--teal)] rounded-full flex items-center justify-center">
                           <Check className="w-3 h-3 text-white" />
                         </div>
-                        <span className="text-xs font-bold text-[#18B5A4]">Signature dish</span>
+                        <span className="text-xs font-bold text-[var(--teal)]">Signature dish</span>
                       </>
                     )}
                   </div>
-                  <p className="text-sm font-bold text-[#121212] line-clamp-2">{item.name}</p>
+                  <p className="text-sm font-bold text-[var(--ink)] line-clamp-2">{item.name}</p>
                 </div>
               ))}
             </div>
@@ -930,49 +930,49 @@ export default function RestaurantDetail() {
 
           {/* Reviews Section */}
           <div className="px-5 pb-6">
-            <h3 className="text-lg font-bold text-[#121212] mb-4">Reviews</h3>
+            <h3 className="text-lg font-bold text-[var(--ink)] mb-4">Reviews</h3>
             
             {/* AI Summary */}
-            <div className="bg-[#F8F9FA] rounded-2xl p-4 mb-6">
+            <div className="bg-[var(--muted)] rounded-2xl p-4 mb-6">
               <div className="flex items-center gap-2 mb-2">
-                <span className="text-sm font-bold text-[#121212]">Summarised by AI</span>
-                <div className="w-5 h-5 bg-[#18B5A4] rounded-full flex items-center justify-center">
+                <span className="text-sm font-bold text-[var(--ink)]">Summarised by AI</span>
+                <div className="w-5 h-5 bg-[var(--teal)] rounded-full flex items-center justify-center">
                   <span className="text-white text-xs">✓</span>
                 </div>
               </div>
-              <p className="text-sm text-[#64748B] mb-3">
+              <p className="text-sm text-[var(--muted-foreground)] mb-3">
                 Customers enjoy tasty, fresh food; some note order accuracy and portion size issues.
               </p>
               <div className="space-y-2">
                 <div className="flex gap-2">
-                  <span className="text-sm font-bold text-[#121212]">• Taste:</span>
-                  <span className="text-sm text-[#64748B]">Many enjoy the delicious taste, cheesy burgers, and crispy fries.</span>
+                  <span className="text-sm font-bold text-[var(--ink)]">• Taste:</span>
+                  <span className="text-sm text-[var(--muted-foreground)]">Many enjoy the delicious taste, cheesy burgers, and crispy fries.</span>
                 </div>
                 <div className="flex gap-2">
-                  <span className="text-sm font-bold text-[#121212]">• Freshness:</span>
-                  <span className="text-sm text-[#64748B]">Food is often fresh, with hot meals and fresh buns appreciated.</span>
+                  <span className="text-sm font-bold text-[var(--ink)]">• Freshness:</span>
+                  <span className="text-sm text-[var(--muted-foreground)]">Food is often fresh, with hot meals and fresh buns appreciated.</span>
                 </div>
                 <div className="flex gap-2">
-                  <span className="text-sm font-bold text-[#121212]">• Order accuracy:</span>
-                  <span className="text-sm text-[#64748B]">Orders are sometimes incomplete or incorrect; check items upon receipt.</span>
+                  <span className="text-sm font-bold text-[var(--ink)]">• Order accuracy:</span>
+                  <span className="text-sm text-[var(--muted-foreground)]">Orders are sometimes incomplete or incorrect; check items upon receipt.</span>
                 </div>
               </div>
             </div>
 
             {/* Filter Buttons */}
             <div className="flex gap-2 mb-6 overflow-x-auto pb-2">
-              <button className="px-4 py-2 bg-white border-2 border-[#18B5A4] text-[#18B5A4] rounded-full font-bold text-sm flex items-center gap-2 whitespace-nowrap">
+              <button className="px-4 py-2 bg-white border-2 border-[var(--teal)] text-[var(--teal)] rounded-full font-bold text-sm flex items-center gap-2 whitespace-nowrap">
                 <span>↑↓</span>
                 Most relevant
               </button>
-              <button className="px-4 py-2 bg-white border-2 border-[#E2E8F0] text-[#121212] rounded-full font-bold text-sm flex items-center gap-2 whitespace-nowrap">
+              <button className="px-4 py-2 bg-white border-2 border-[var(--border)] text-[var(--ink)] rounded-full font-bold text-sm flex items-center gap-2 whitespace-nowrap">
                 Topics
                 <ChevronDown className="w-4 h-4" />
               </button>
-              <button className="px-4 py-2 bg-white border-2 border-[#E2E8F0] text-[#121212] rounded-full font-bold text-sm whitespace-nowrap">
+              <button className="px-4 py-2 bg-white border-2 border-[var(--border)] text-[var(--ink)] rounded-full font-bold text-sm whitespace-nowrap">
                 Photos
               </button>
-              <button className="px-4 py-2 bg-white border-2 border-[#E2E8F0] text-[#121212] rounded-full font-bold text-sm whitespace-nowrap">
+              <button className="px-4 py-2 bg-white border-2 border-[var(--border)] text-[var(--ink)] rounded-full font-bold text-sm whitespace-nowrap">
                 Order type
               </button>
             </div>
@@ -980,34 +980,34 @@ export default function RestaurantDetail() {
             {/* Individual Reviews */}
             <div className="space-y-4">
               {restaurantData?.reviews && restaurantData.reviews.length > 0 ? restaurantData.reviews.map((review) => (
-                <div key={review.id} className="bg-white border-2 border-[#E2E8F0] rounded-2xl p-4">
+                <div key={review.id} className="bg-white border-2 border-[var(--border)] rounded-2xl p-4">
                   <div className="flex items-start justify-between mb-2">
                     <div className="flex items-center gap-3">
-                      <div className="w-10 h-10 bg-gradient-to-br from-[#E11D48] to-[#BE123C] rounded-full flex items-center justify-center text-white font-bold">
+                      <div className="w-10 h-10 bg-gradient-to-br from-[var(--primary)] to-[var(--primary)] rounded-full flex items-center justify-center text-white font-bold">
                         {review.author.charAt(0).toUpperCase()}
                       </div>
                       <div>
-                        <p className="font-bold text-[#121212]">{review.author}</p>
+                        <p className="font-bold text-[var(--ink)]">{review.author}</p>
                         <div className="flex items-center gap-2">
                           <div className="flex">
                             {[1, 2, 3, 4, 5].map((star) => (
-                              <Star key={star} className={`w-4 h-4 ${star <= review.rating ? 'fill-[#FFC107] text-[#FFC107]' : 'text-[#E2E8F0]'}`} />
+                              <Star key={star} className={`w-4 h-4 ${star <= review.rating ? 'fill-[var(--amber)] text-[var(--amber)]' : 'text-[var(--border)]'}`} />
                             ))}
                           </div>
-                          <span className="text-xs text-[#64748B]">{review.date}</span>
+                          <span className="text-xs text-[var(--muted-foreground)]">{review.date}</span>
                         </div>
                       </div>
                     </div>
                   </div>
-                  <p className="text-sm text-[#121212] mb-3">{review.text}</p>
-                  <button className="text-sm text-[#64748B] flex items-center gap-2">
+                  <p className="text-sm text-[var(--ink)] mb-3">{review.text}</p>
+                  <button className="text-sm text-[var(--muted-foreground)] flex items-center gap-2">
                     <span>👍</span>
                     Helpful?
                   </button>
                 </div>
               )) : (
                 <div className="text-center py-12">
-                  <p className="text-[#64748B]">No reviews yet.</p>
+                  <p className="text-[var(--muted-foreground)]">No reviews yet.</p>
                 </div>
               )}
             </div>
@@ -1033,19 +1033,19 @@ export default function RestaurantDetail() {
          <div className="fixed inset-0 bg-black/50 z-[2000] flex items-center justify-center px-4">
            <div className="bg-white rounded-3xl p-6 max-w-sm w-full shadow-2xl animate-in zoom-in duration-300">
              <div className="flex flex-col items-center text-center">
-               <div className="w-16 h-16 bg-[#FEE2E2] rounded-full flex items-center justify-center mb-4">
+               <div className="w-16 h-16 bg-[var(--error-soft)] rounded-full flex items-center justify-center mb-4">
                  <span className="text-3xl">🔒</span>
                </div>
 
-               <h2 className="text-xl font-bold text-[#121212] mb-2">Store Closed</h2>
+               <h2 className="text-xl font-bold text-[var(--ink)] mb-2">Store Closed</h2>
 
-               <p className="text-[#64748B] text-base mb-6">
+               <p className="text-[var(--muted-foreground)] text-base mb-6">
                  Store not accepting orders at the moment
                </p>
 
                <button
                  onClick={() => setShowStoreClosedModal(false)}
-                 className="w-full py-3 rounded-2xl font-bold text-white bg-gradient-to-br from-[#E11D48] to-[#BE123C] hover:shadow-xl active:scale-95 transition-all shadow-lg shadow-[#E11D48]/30"
+                 className="w-full py-3 rounded-2xl font-bold text-white bg-gradient-to-br from-[var(--primary)] to-[var(--primary)] hover:shadow-xl active:scale-95 transition-all shadow-lg shadow-[var(--primary)]/30"
                >
                  Got it
                </button>

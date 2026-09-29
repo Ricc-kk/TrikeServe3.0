@@ -46,13 +46,13 @@ export default function LocationPermissionPrompt() {
   return (
     <div className="fixed inset-0 z-[5000] flex items-center justify-center bg-black/60 p-4">
       <div className="w-full max-w-sm rounded-2xl bg-white p-6 text-center shadow-2xl">
-        <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-[#FFF1F2]">
-          <MapPin className="h-8 w-8 text-[#E11D48]" />
+        <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-[var(--primary-soft)]">
+          <MapPin className="h-8 w-8 text-[var(--primary)]" />
         </div>
 
-        <h2 className="mb-2 text-xl font-bold text-[#121212]">Allow Location</h2>
+        <h2 className="mb-2 text-xl font-bold text-[var(--ink)]">Allow Location</h2>
 
-        <p className="mb-6 text-sm text-[#64748B]">
+        <p className="mb-6 text-sm text-[var(--muted-foreground)]">
           TrikeServe needs your location to set your pickup point and track your ride.
         </p>
 
@@ -60,7 +60,7 @@ export default function LocationPermissionPrompt() {
           type="button"
           onClick={handleAllow}
           disabled={busy}
-          className="mb-3 flex w-full items-center justify-center gap-2 rounded-2xl bg-[#E11D48] px-5 py-3.5 font-bold uppercase text-white shadow-lg transition-all hover:bg-[#BE123C] active:scale-95 disabled:opacity-60"
+          className="mb-3 flex w-full items-center justify-center gap-2 rounded-2xl bg-[var(--primary)] px-5 py-3.5 font-bold uppercase text-white shadow-lg transition-all hover:bg-[var(--primary)] active:scale-95 disabled:opacity-60"
         >
           <Navigation className="h-5 w-5" />
           Allow Location
@@ -70,7 +70,7 @@ export default function LocationPermissionPrompt() {
           type="button"
           onClick={() => setShow(false)}
           disabled={busy}
-          className="w-full text-xs font-medium text-[#94A3B8] underline-offset-2 hover:underline disabled:opacity-60"
+          className="w-full text-xs font-medium text-[var(--muted-foreground)] underline-offset-2 hover:underline disabled:opacity-60"
         >
           Not now
         </button>

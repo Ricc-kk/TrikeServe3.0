@@ -201,9 +201,9 @@ export default function RiderMessageChat() {
   }
 
   return (
-    <div className="min-h-screen bg-[#F8F9FA] flex flex-col">
+    <div className="min-h-screen bg-[var(--muted)] flex flex-col">
       {/* Header */}
-      <div className="bg-[#E11D48] text-white px-4 py-4 flex items-center gap-3 sticky top-0 z-10">
+      <div className="bg-[var(--primary)] text-white px-4 py-4 flex items-center gap-3 sticky top-0 z-10">
         <Button 
           variant="ghost" 
           size="icon" 
@@ -236,7 +236,7 @@ export default function RiderMessageChat() {
               <div 
                 className={`max-w-[75%] rounded-2xl px-4 py-2 ${
                   msg.senderType === 'driver' 
-                    ? 'bg-[#E11D48] text-white' 
+                    ? 'bg-[var(--primary)] text-white' 
                     : 'bg-white border border-gray-200'
                 }`}
               >
@@ -261,14 +261,14 @@ export default function RiderMessageChat() {
             onChange={(e) => setNewMessage(e.target.value)}
             onKeyPress={handleKeyPress}
             placeholder="Type a message..."
-            className="flex-1 px-4 py-2 border border-gray-300 rounded-xl resize-none focus:outline-none focus:ring-2 focus:ring-[#E11D48] focus:border-transparent"
+            className="flex-1 px-4 py-2 border border-gray-300 rounded-xl resize-none focus:outline-none focus:ring-2 focus:ring-[var(--primary)] focus:border-transparent"
             rows={1}
             style={{ minHeight: '42px', maxHeight: '120px' }}
           />
           <Button
             onClick={sendMessage}
             disabled={!newMessage.trim()}
-            className="bg-[#E11D48] hover:bg-[#BE123C] text-white px-6 rounded-xl uppercase font-bold disabled:opacity-50 disabled:cursor-not-allowed"
+            className="bg-[var(--primary)] hover:bg-[var(--primary)] text-white px-6 rounded-xl uppercase font-bold disabled:opacity-50 disabled:cursor-not-allowed"
           >
             <Send className="w-5 h-5" />
           </Button>

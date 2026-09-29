@@ -50,11 +50,11 @@ export default function LocationBanner({ problem, className = "" }: LocationBann
     <button
       type="button"
       onClick={openSettings}
-      className={`flex w-full items-center gap-2.5 rounded-xl border border-[#FECDD3] bg-[#FFF1F2] px-3.5 py-2.5 text-left shadow-sm transition-transform active:scale-[0.99] ${className}`}
+      className={`flex w-full items-center gap-2.5 rounded-xl border border-[var(--error-soft)] bg-[var(--primary-soft)] px-3.5 py-2.5 text-left shadow-sm transition-transform active:scale-[0.99] ${className}`}
     >
-      <MapPin className="h-4 w-4 shrink-0 text-[#E11D48]" />
-      <span className="flex-1 text-xs font-semibold leading-snug text-[#9F1239]">{MESSAGES[problem]}</span>
-      <ChevronRight className="h-4 w-4 shrink-0 text-[#E11D48]" />
+      <MapPin className="h-4 w-4 shrink-0 text-[var(--primary)]" />
+      <span className="flex-1 text-xs font-semibold leading-snug text-[var(--primary)]">{MESSAGES[problem]}</span>
+      <ChevronRight className="h-4 w-4 shrink-0 text-[var(--primary)]" />
     </button>
   );
 }

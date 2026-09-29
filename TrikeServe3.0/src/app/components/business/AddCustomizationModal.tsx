@@ -127,16 +127,16 @@ export default function AddCustomizationModal({
 
       <div className="relative bg-white w-full sm:max-w-3xl sm:rounded-3xl max-h-[90vh] flex flex-col rounded-t-3xl">
         {/* Header */}
-        <div className="sticky top-0 bg-white border-b-2 border-[#E2E8F0] px-5 py-4 z-10 rounded-t-3xl">
+        <div className="sticky top-0 bg-white border-b-2 border-[var(--border)] px-5 py-4 z-10 rounded-t-3xl">
           <div className="flex items-center justify-between">
-            <h2 className="text-xl font-extrabold text-[#121212]">
+            <h2 className="text-xl font-extrabold text-[var(--ink)]">
               Manage Customizations
             </h2>
             <button
               onClick={onClose}
-              className="p-2 hover:bg-[#F1F5F9] rounded-full transition-colors"
+              className="p-2 hover:bg-[var(--muted)] rounded-full transition-colors"
             >
-              <X className="w-6 h-6 text-[#121212]" />
+              <X className="w-6 h-6 text-[var(--ink)]" />
             </button>
           </div>
         </div>
@@ -145,13 +145,13 @@ export default function AddCustomizationModal({
         <div className="flex-1 overflow-y-auto">
           <div className="p-5 space-y-6">
             {groups.length === 0 ? (
-              <Card className="p-8 border-2 border-[#E2E8F0] text-center">
-                <p className="text-[#64748B] mb-4">
+              <Card className="p-8 border-2 border-[var(--border)] text-center">
+                <p className="text-[var(--muted-foreground)] mb-4">
                   No customization groups added yet. Click "Add Group" to get started.
                 </p>
                 <Button
                   onClick={addGroup}
-                  className="bg-[#E11D48] hover:bg-[#BE123C] text-white font-bold uppercase"
+                  className="bg-[var(--primary)] hover:bg-[var(--primary)] text-white font-bold uppercase"
                 >
                   <Plus className="w-4 h-4 mr-2" />
                   Add Group
@@ -160,22 +160,22 @@ export default function AddCustomizationModal({
             ) : (
               <>
                 {groups.map((group, groupIndex) => (
-                  <Card key={group.id} className="p-5 border-2 border-[#E2E8F0]">
+                  <Card key={group.id} className="p-5 border-2 border-[var(--border)]">
                     <div className="flex items-start justify-between mb-4">
-                      <h3 className="font-bold text-[#121212]">
+                      <h3 className="font-bold text-[var(--ink)]">
                         Group {groupIndex + 1}
                       </h3>
                       <button
                         onClick={() => removeGroup(group.id)}
-                        className="p-2 hover:bg-[#FEE2E2] rounded-full transition-colors"
+                        className="p-2 hover:bg-[var(--error-soft)] rounded-full transition-colors"
                       >
-                        <Trash2 className="w-4 h-4 text-[#E11D48]" />
+                        <Trash2 className="w-4 h-4 text-[var(--primary)]" />
                       </button>
                     </div>
 
                     {/* Group Name */}
                     <div className="mb-4">
-                      <label className="block text-sm font-semibold text-[#121212] mb-2">
+                      <label className="block text-sm font-semibold text-[var(--ink)] mb-2">
                         Group Name
                       </label>
                       <input
@@ -185,14 +185,14 @@ export default function AddCustomizationModal({
                           updateGroup(group.id, { name: e.target.value })
                         }
                         placeholder="e.g. Choose your Drink - Pick 1"
-                        className="w-full px-4 py-3 border-2 border-[#E2E8F0] rounded-xl focus:border-[#E11D48] focus:outline-none"
+                        className="w-full px-4 py-3 border-2 border-[var(--border)] rounded-xl focus:border-[var(--primary)] focus:outline-none"
                       />
                     </div>
 
                     {/* Group Settings */}
                     <div className="grid grid-cols-2 gap-4 mb-4">
                       <div>
-                        <label className="block text-sm font-semibold text-[#121212] mb-2">
+                        <label className="block text-sm font-semibold text-[var(--ink)] mb-2">
                           Min Selections
                         </label>
                         <input
@@ -204,11 +204,11 @@ export default function AddCustomizationModal({
                               minSelections: parseInt(e.target.value) || 0,
                             })
                           }
-                          className="w-full px-4 py-3 border-2 border-[#E2E8F0] rounded-xl focus:border-[#E11D48] focus:outline-none"
+                          className="w-full px-4 py-3 border-2 border-[var(--border)] rounded-xl focus:border-[var(--primary)] focus:outline-none"
                         />
                       </div>
                       <div>
-                        <label className="block text-sm font-semibold text-[#121212] mb-2">
+                        <label className="block text-sm font-semibold text-[var(--ink)] mb-2">
                           Max Selections
                         </label>
                         <input
@@ -220,7 +220,7 @@ export default function AddCustomizationModal({
                               maxSelections: parseInt(e.target.value) || 1,
                             })
                           }
-                          className="w-full px-4 py-3 border-2 border-[#E2E8F0] rounded-xl focus:border-[#E11D48] focus:outline-none"
+                          className="w-full px-4 py-3 border-2 border-[var(--border)] rounded-xl focus:border-[var(--primary)] focus:outline-none"
                         />
                       </div>
                     </div>
@@ -232,7 +232,7 @@ export default function AddCustomizationModal({
                           updateGroup(group.id, { required: !group.required })
                         }
                         className={`w-12 h-6 rounded-full transition-colors ${
-                          group.required ? "bg-[#E11D48]" : "bg-[#CBD5E1]"
+                          group.required ? "bg-[var(--primary)]" : "bg-[var(--border)]"
                         }`}
                       >
                         <div
@@ -243,7 +243,7 @@ export default function AddCustomizationModal({
                           }`}
                         />
                       </div>
-                      <span className="text-sm font-semibold text-[#121212]">
+                      <span className="text-sm font-semibold text-[var(--ink)]">
                         Required
                       </span>
                     </label>
@@ -251,12 +251,12 @@ export default function AddCustomizationModal({
                     {/* Options */}
                     <div className="mb-4">
                       <div className="flex items-center justify-between mb-3">
-                        <label className="text-sm font-semibold text-[#121212]">
+                        <label className="text-sm font-semibold text-[var(--ink)]">
                           Options
                         </label>
                         <button
                           onClick={() => addOption(group.id)}
-                          className="text-sm font-bold text-[#E11D48] hover:text-[#BE123C] flex items-center gap-1"
+                          className="text-sm font-bold text-[var(--primary)] hover:text-[var(--primary)] flex items-center gap-1"
                         >
                           <Plus className="w-4 h-4" />
                           Add Option
@@ -264,7 +264,7 @@ export default function AddCustomizationModal({
                       </div>
 
                       {group.options.length === 0 ? (
-                        <p className="text-sm text-[#64748B] text-center py-4">
+                        <p className="text-sm text-[var(--muted-foreground)] text-center py-4">
                           No options added yet
                         </p>
                       ) : (
@@ -283,10 +283,10 @@ export default function AddCustomizationModal({
                                   })
                                 }
                                 placeholder="Option name"
-                                className="flex-1 px-3 py-2 border-2 border-[#E2E8F0] rounded-xl focus:border-[#E11D48] focus:outline-none text-sm"
+                                className="flex-1 px-3 py-2 border-2 border-[var(--border)] rounded-xl focus:border-[var(--primary)] focus:outline-none text-sm"
                               />
                               <div className="flex items-center gap-1">
-                                <span className="text-sm text-[#64748B]">+₱</span>
+                                <span className="text-sm text-[var(--muted-foreground)]">+₱</span>
                                 <input
                                   type="number"
                                   min="0"
@@ -298,14 +298,14 @@ export default function AddCustomizationModal({
                                     })
                                   }
                                   placeholder="0"
-                                  className="w-20 px-3 py-2 border-2 border-[#E2E8F0] rounded-xl focus:border-[#E11D48] focus:outline-none text-sm"
+                                  className="w-20 px-3 py-2 border-2 border-[var(--border)] rounded-xl focus:border-[var(--primary)] focus:outline-none text-sm"
                                 />
                               </div>
                               <button
                                 onClick={() => removeOption(group.id, option.id)}
-                                className="p-2 hover:bg-[#FEE2E2] rounded-full transition-colors"
+                                className="p-2 hover:bg-[var(--error-soft)] rounded-full transition-colors"
                               >
-                                <X className="w-4 h-4 text-[#E11D48]" />
+                                <X className="w-4 h-4 text-[var(--primary)]" />
                               </button>
                             </div>
                           ))}
@@ -317,7 +317,7 @@ export default function AddCustomizationModal({
 
                 <Button
                   onClick={addGroup}
-                  className="w-full bg-[#F8F9FA] hover:bg-[#E2E8F0] text-[#121212] font-bold uppercase border-2 border-[#E2E8F0]"
+                  className="w-full bg-[var(--muted)] hover:bg-[var(--border)] text-[var(--ink)] font-bold uppercase border-2 border-[var(--border)]"
                 >
                   <Plus className="w-4 h-4 mr-2" />
                   Add Another Group
@@ -328,17 +328,17 @@ export default function AddCustomizationModal({
         </div>
 
         {/* Footer */}
-        <div className="sticky bottom-0 bg-white border-t-2 border-[#E2E8F0] px-5 py-4">
+        <div className="sticky bottom-0 bg-white border-t-2 border-[var(--border)] px-5 py-4">
           <div className="flex gap-3">
             <Button
               onClick={onClose}
-              className="flex-1 bg-white hover:bg-[#F1F5F9] text-[#121212] border-2 border-[#E2E8F0] font-bold uppercase"
+              className="flex-1 bg-white hover:bg-[var(--muted)] text-[var(--ink)] border-2 border-[var(--border)] font-bold uppercase"
             >
               Cancel
             </Button>
             <Button
               onClick={handleSave}
-              className="flex-1 bg-[#E11D48] hover:bg-[#BE123C] text-white font-bold uppercase"
+              className="flex-1 bg-[var(--primary)] hover:bg-[var(--primary)] text-white font-bold uppercase"
             >
               Save Customizations
             </Button>

@@ -702,7 +702,7 @@ export default function AdminTerminals() {
   }
 
   return (
-    <div className="min-h-screen bg-[#F8F9FA] flex">
+    <div className="min-h-screen bg-[var(--muted)] flex">
       {/* Sidebar Navigation - hidden when map picker is open */}
       {!showMapPicker && (
         <AdminSidebar
@@ -714,19 +714,19 @@ export default function AdminTerminals() {
       {/* Main Content */}
       <div className={`flex-1 ${!showMapPicker ? 'lg:ml-64' : ''}`}>
         {/* Top Header */}
-        <div className="bg-white border-b-2 border-[#E2E8F0] px-5 lg:px-8 py-4 lg:py-5 sticky top-0 z-50">
+        <div className="bg-white border-b-2 border-[var(--border)] px-5 lg:px-8 py-4 lg:py-5 sticky top-0 z-50">
           <div className="flex items-center justify-between gap-4">
             <div className="flex items-center gap-3">
               {/* Hamburger Menu - Mobile Only */}
               <button
                 onClick={() => setIsMobileMenuOpen(true)}
-                className="lg:hidden p-2 hover:bg-[#F8F9FA] rounded-xl transition-all"
+                className="lg:hidden p-2 hover:bg-[var(--muted)] rounded-xl transition-all"
               >
-                <Menu className="w-6 h-6 text-[#121212]" />
+                <Menu className="w-6 h-6 text-[var(--ink)]" />
               </button>
               <div>
-                <h1 className="text-2xl lg:text-3xl font-extrabold text-[#121212]">Terminal Management</h1>
-                <p className="text-xs lg:text-sm text-[#64748B]">
+                <h1 className="text-2xl lg:text-3xl font-extrabold text-[var(--ink)]">Terminal Management</h1>
+                <p className="text-xs lg:text-sm text-[var(--muted-foreground)]">
                   {isRiderAdmin
                     ? (assignedTerminalName ? `Assigned to ${assignedTerminalName} · ${riders.length} drivers` : 'No terminal assigned')
                     : `${terminals.length} terminals · ${riders.length} drivers`}
@@ -737,7 +737,7 @@ export default function AdminTerminals() {
               {isRiderAdmin && hasPendingChanges && (
                 <button
                   onClick={savePendingChanges}
-                  className="flex items-center gap-2 px-4 lg:px-5 py-2.5 bg-[#10B981] hover:bg-[#059669] text-white font-bold text-sm uppercase tracking-wide rounded-xl transition-all active:scale-95 shadow-lg shadow-green-200 animate-pulse"
+                  className="flex items-center gap-2 px-4 lg:px-5 py-2.5 bg-[var(--success)] hover:bg-[var(--success)] text-white font-bold text-sm uppercase tracking-wide rounded-xl transition-all active:scale-95 shadow-lg shadow-green-200 animate-pulse"
                 >
                   <Save size={16} /> Save Changes ({Object.keys(pendingChanges).length})
                 </button>
@@ -745,7 +745,7 @@ export default function AdminTerminals() {
               {isSuperAdmin && (
                 <button
                   onClick={openCreate}
-                  className="flex items-center gap-2 px-4 lg:px-5 py-2.5 bg-[#E11D48] hover:bg-[#BE123C] text-white font-bold text-sm uppercase tracking-wide rounded-xl transition-all active:scale-95 shadow-lg shadow-red-200"
+                  className="flex items-center gap-2 px-4 lg:px-5 py-2.5 bg-[var(--primary)] hover:bg-[var(--primary)] text-white font-bold text-sm uppercase tracking-wide rounded-xl transition-all active:scale-95 shadow-lg shadow-red-200"
                 >
                   <Plus size={16} /> New Terminal
                 </button>
@@ -777,7 +777,7 @@ export default function AdminTerminals() {
                   </button>
                   <button
                     onClick={savePendingChanges}
-                    className="flex items-center gap-1 px-3 py-1.5 bg-[#10B981] text-white text-xs font-bold rounded-lg hover:bg-[#059669] transition-all"
+                    className="flex items-center gap-1 px-3 py-1.5 bg-[var(--success)] text-white text-xs font-bold rounded-lg hover:bg-[var(--success)] transition-all"
                   >
                     <Save size={12} /> Save Now
                   </button>
@@ -789,28 +789,28 @@ export default function AdminTerminals() {
           {/* Super Admin: assign each Rider Admin to a terminal */}
           {isSuperAdmin && (
             <div className="mb-6">
-              <h2 className="text-sm font-bold uppercase tracking-wide text-[#64748B] mb-2 flex items-center gap-2">
+              <h2 className="text-sm font-bold uppercase tracking-wide text-[var(--muted-foreground)] mb-2 flex items-center gap-2">
                 <ShieldCheck size={16} /> Rider Admin Assignments
               </h2>
-              <div className="bg-white border-2 border-[#E2E8F0] rounded-2xl p-4">
+              <div className="bg-white border-2 border-[var(--border)] rounded-2xl p-4">
                 {riderAdmins.length === 0 ? (
-                  <p className="text-sm text-[#64748B] italic">No Rider Admin accounts found</p>
+                  <p className="text-sm text-[var(--muted-foreground)] italic">No Rider Admin accounts found</p>
                 ) : (
                   <div className="space-y-3">
                     {riderAdmins.map(admin => (
                       <div key={admin.id} className="flex items-center justify-between gap-4 flex-wrap">
                         <div className="min-w-0">
-                          <p className="text-sm font-semibold text-[#121212] truncate">
+                          <p className="text-sm font-semibold text-[var(--ink)] truncate">
                             {admin.name || 'Rider Admin'}
                           </p>
-                          <p className="text-xs text-[#64748B] truncate">{admin.email}</p>
+                          <p className="text-xs text-[var(--muted-foreground)] truncate">{admin.email}</p>
                         </div>
                         <div className="flex items-center gap-2">
                           <select
                             value={admin.terminal_id || ''}
                             disabled={savingAssignmentId === admin.id}
                             onChange={(e) => confirmAssignRiderAdmin(admin, e.target.value)}
-                            className="px-3 py-2 border-2 border-[#E2E8F0] rounded-xl font-semibold text-sm disabled:opacity-50"
+                            className="px-3 py-2 border-2 border-[var(--border)] rounded-xl font-semibold text-sm disabled:opacity-50"
                           >
                             <option value="">No terminal</option>
                             {terminals.map(t => (
@@ -818,7 +818,7 @@ export default function AdminTerminals() {
                             ))}
                           </select>
                           {savingAssignmentId === admin.id && (
-                            <Loader2 size={16} className="text-[#64748B] animate-spin" />
+                            <Loader2 size={16} className="text-[var(--muted-foreground)] animate-spin" />
                           )}
                         </div>
                       </div>
@@ -831,13 +831,13 @@ export default function AdminTerminals() {
 
           {/* Rider Admin: scope notice */}
           {isRiderAdmin && (
-            <div className={`mb-4 p-4 rounded-xl border-2 ${assignedTerminalId ? 'bg-[#EFF6FF] border-[#BFDBFE]' : 'bg-amber-50 border-amber-200'}`}>
-              <p className={`font-bold text-sm ${assignedTerminalId ? 'text-[#1E40AF]' : 'text-amber-800'}`}>
+            <div className={`mb-4 p-4 rounded-xl border-2 ${assignedTerminalId ? 'bg-[var(--info-soft)] border-[var(--info-soft)]' : 'bg-amber-50 border-amber-200'}`}>
+              <p className={`font-bold text-sm ${assignedTerminalId ? 'text-[var(--info)]' : 'text-amber-800'}`}>
                 {assignedTerminalId
                   ? `Assigned to ${assignedTerminalName || 'your terminal'}`
                   : 'No terminal assigned'}
               </p>
-              <p className={`text-xs mt-0.5 ${assignedTerminalId ? 'text-[#1E40AF]/80' : 'text-amber-600'}`}>
+              <p className={`text-xs mt-0.5 ${assignedTerminalId ? 'text-[var(--info)]/80' : 'text-amber-600'}`}>
                 {assignedTerminalId
                   ? 'You can only edit this terminal and manage its drivers. Changes are sent to the Super Admin for approval.'
                   : 'Ask the Super Admin to assign you to a terminal before you can manage drivers.'}
@@ -848,7 +848,7 @@ export default function AdminTerminals() {
           {/* Rider Admin: status of their own submitted requests */}
           {isRiderAdmin && myRequests.length > 0 && (
             <div className="mb-6">
-              <h2 className="text-sm font-bold uppercase tracking-wide text-[#64748B] mb-2 flex items-center gap-2">
+              <h2 className="text-sm font-bold uppercase tracking-wide text-[var(--muted-foreground)] mb-2 flex items-center gap-2">
                 <ClipboardCheck size={16} /> My Submitted Requests
               </h2>
               <div className="space-y-2">
@@ -871,7 +871,7 @@ export default function AdminTerminals() {
                           : approved ? <CheckCircle size={15} className="text-green-600 flex-shrink-0" />
                           : <XCircle size={15} className="text-red-600 flex-shrink-0" />}
                         <div className="min-w-0">
-                          <p className="text-sm font-semibold text-[#121212] truncate">
+                          <p className="text-sm font-semibold text-[var(--ink)] truncate">
                             {APPROVAL_REQUEST_LABELS[req.request_type]} — {summary}
                           </p>
                           {!pending && req.rejection_reason && (
@@ -892,10 +892,10 @@ export default function AdminTerminals() {
           )}
 
           {isRiderAdmin && visibleTerminals.length === 0 ? (
-            <div className="p-12 border-2 border-dashed border-[#E2E8F0] rounded-2xl text-center">
+            <div className="p-12 border-2 border-dashed border-[var(--border)] rounded-2xl text-center">
               <MapPin className="w-16 h-16 text-gray-300 mx-auto mb-4" />
-              <p className="text-[#64748B] text-sm mb-2">No terminal assigned to you yet</p>
-              <p className="text-[#94A3B8] text-xs">The Super Admin must assign you to a terminal</p>
+              <p className="text-[var(--muted-foreground)] text-sm mb-2">No terminal assigned to you yet</p>
+              <p className="text-[var(--muted-foreground)] text-xs">The Super Admin must assign you to a terminal</p>
             </div>
           ) : (
           <div className="grid gap-4">
@@ -904,24 +904,24 @@ export default function AdminTerminals() {
               const unassigned = getUnassignedRiders();
               const isExpanded = expandedId === t.id;
               return (
-                <div key={t.id} className="bg-white rounded-2xl border-2 border-[#E2E8F0] overflow-hidden">
+                <div key={t.id} className="bg-white rounded-2xl border-2 border-[var(--border)] overflow-hidden">
                   <div className="p-5">
                     <div className="flex items-start justify-between gap-4">
                       <div className="flex items-start gap-3">
-                        <div className="w-11 h-11 bg-[#DBEAFE] rounded-xl flex items-center justify-center flex-shrink-0">
-                          <MapPin size={20} className="text-[#3B82F6]" />
+                        <div className="w-11 h-11 bg-[var(--info-soft)] rounded-xl flex items-center justify-center flex-shrink-0">
+                          <MapPin size={20} className="text-[var(--info)]" />
                         </div>
                         <div>
                           <div className="flex items-center gap-2 flex-wrap">
-                            <h3 className="font-bold text-[#121212] text-lg">🚏 {t.name}</h3>
-                            <span className={`text-xs font-bold px-2 py-0.5 rounded-full ${t.is_active ? "bg-green-100 text-green-700" : "bg-[#F8F9FA] text-[#64748B]"}`}>
+                            <h3 className="font-bold text-[var(--ink)] text-lg">🚏 {t.name}</h3>
+                            <span className={`text-xs font-bold px-2 py-0.5 rounded-full ${t.is_active ? "bg-green-100 text-green-700" : "bg-[var(--muted)] text-[var(--muted-foreground)]"}`}>
                               {t.is_active ? "● Active" : "○ Inactive"}
                             </span>
                             <span
                               className={`text-xs font-bold px-2 py-0.5 rounded-full ${
                                 t.boundary_polygon && t.boundary_polygon.length >= 3
-                                  ? "bg-[#FFF1F2] text-[#E11D48]"
-                                  : "bg-[#F8F9FA] text-[#94A3B8]"
+                                  ? "bg-[var(--primary-soft)] text-[var(--primary)]"
+                                  : "bg-[var(--muted)] text-[var(--muted-foreground)]"
                               }`}
                             >
                               {t.boundary_polygon && t.boundary_polygon.length >= 3
@@ -929,8 +929,8 @@ export default function AdminTerminals() {
                                 : "No boundary"}
                             </span>
                           </div>
-                          <p className="text-[#64748B] text-sm mt-0.5">📍 {t.boundary}</p>
-                          <div className="flex items-center gap-4 mt-2 text-xs text-[#64748B]">
+                          <p className="text-[var(--muted-foreground)] text-sm mt-0.5">📍 {t.boundary}</p>
+                          <div className="flex items-center gap-4 mt-2 text-xs text-[var(--muted-foreground)]">
                             <span className="flex items-center gap-1"><Users size={12} />{termRiders.length} drivers</span>
                           </div>
                         </div>
@@ -938,16 +938,16 @@ export default function AdminTerminals() {
                       <div className="flex items-center gap-2 flex-shrink-0">
                         <button
                           onClick={() => setExpandedId(isExpanded ? null : t.id)}
-                          className="px-3 py-1.5 text-xs font-semibold text-[#3B82F6] bg-[#DBEAFE] rounded-lg hover:bg-blue-200 transition-all"
+                          className="px-3 py-1.5 text-xs font-semibold text-[var(--info)] bg-[var(--info-soft)] rounded-lg hover:bg-blue-200 transition-all"
                         >
                           {isExpanded ? "Hide" : "Drivers"}
                         </button>
                         {(isSuperAdmin || (isRiderAdmin && t.id === assignedTerminalId)) && (
                           <button
                             onClick={() => openEdit(t)}
-                            className="w-8 h-8 bg-[#F8F9FA] border-2 border-[#E2E8F0] rounded-xl flex items-center justify-center hover:border-[#3B82F6] transition-all active:scale-90"
+                            className="w-8 h-8 bg-[var(--muted)] border-2 border-[var(--border)] rounded-xl flex items-center justify-center hover:border-[var(--info)] transition-all active:scale-90"
                           >
-                            <Edit2 size={14} className="text-[#64748B]" />
+                            <Edit2 size={14} className="text-[var(--muted-foreground)]" />
                           </button>
                         )}
                         {isSuperAdmin && (
@@ -955,7 +955,7 @@ export default function AdminTerminals() {
                             onClick={() => confirmDeleteTerminal(t.id)}
                             className="w-8 h-8 bg-red-50 border-2 border-red-100 rounded-xl flex items-center justify-center hover:border-red-300 transition-all active:scale-90"
                           >
-                            <Trash2 size={14} className="text-[#EF4444]" />
+                            <Trash2 size={14} className="text-[var(--error)]" />
                           </button>
                         )}
                       </div>
@@ -963,28 +963,28 @@ export default function AdminTerminals() {
                   </div>
 
                   {isExpanded && (
-                    <div className="border-t-2 border-[#E2E8F0] p-5 bg-[#F8F9FA]">
-                      <h4 className="text-xs font-semibold uppercase tracking-wide text-[#64748B] mb-3">
+                    <div className="border-t-2 border-[var(--border)] p-5 bg-[var(--muted)]">
+                      <h4 className="text-xs font-semibold uppercase tracking-wide text-[var(--muted-foreground)] mb-3">
                         Assigned Drivers ({termRiders.length})
                       </h4>
                       <div className="space-y-2 mb-4">
                         {termRiders.length === 0 && (
-                          <p className="text-sm text-[#64748B] italic">No drivers assigned yet</p>
+                          <p className="text-sm text-[var(--muted-foreground)] italic">No drivers assigned yet</p>
                         )}
                         {termRiders.map(r => {
                           const isPending = !!pendingChanges[r.id];
                           const pendingAction = pendingChanges[r.id];
                           return (
                             <div key={r.id} className={`flex items-center justify-between rounded-xl border-2 px-4 py-2.5 ${
-                              isPending ? 'bg-amber-50 border-amber-200' : 'bg-white border-[#E2E8F0]'
+                              isPending ? 'bg-amber-50 border-amber-200' : 'bg-white border-[var(--border)]'
                             }`}>
                               <div className="flex items-center gap-3">
-                                <div className="w-8 h-8 bg-[#DBEAFE] rounded-lg flex items-center justify-center text-[#3B82F6] font-bold text-xs">
+                                <div className="w-8 h-8 bg-[var(--info-soft)] rounded-lg flex items-center justify-center text-[var(--info)] font-bold text-xs">
                                   {riderName(r)[0]?.toUpperCase()}
                                 </div>
                                 <div>
-                                  <p className="text-sm font-semibold text-[#121212]">{riderName(r)}</p>
-                                  <p className="text-xs text-[#64748B]">{riderPlate(r) || "No plate"}</p>
+                                  <p className="text-sm font-semibold text-[var(--ink)]">{riderName(r)}</p>
+                                  <p className="text-xs text-[var(--muted-foreground)]">{riderPlate(r) || "No plate"}</p>
                                 </div>
                                 {isPending && pendingAction?.action === 'unassign' && (
                                   <span className="text-xs font-bold text-amber-600 bg-amber-100 px-2 py-0.5 rounded-full">
@@ -1002,7 +1002,7 @@ export default function AdminTerminals() {
                               ) : (
                                 <button
                                   onClick={() => queueUnassignRider(r.id, t.id, t.name)}
-                                  className="flex items-center gap-1 text-xs font-semibold text-[#EF4444] bg-red-50 border border-red-100 px-2.5 py-1.5 rounded-lg hover:bg-red-100 transition-all active:scale-95"
+                                  className="flex items-center gap-1 text-xs font-semibold text-[var(--error)] bg-red-50 border border-red-100 px-2.5 py-1.5 rounded-lg hover:bg-red-100 transition-all active:scale-95"
                                 >
                                   <UserMinus size={12} /> Unassign
                                 </button>
@@ -1014,7 +1014,7 @@ export default function AdminTerminals() {
 
                       {isRiderAdmin && unassigned.length > 0 && (
                         <>
-                          <h4 className="text-xs font-semibold uppercase tracking-wide text-[#64748B] mb-2">Assign Driver</h4>
+                          <h4 className="text-xs font-semibold uppercase tracking-wide text-[var(--muted-foreground)] mb-2">Assign Driver</h4>
                           <div className="flex flex-wrap gap-2">
                             {unassigned.map(r => {
                               const isPending = !!pendingChanges[r.id];
@@ -1041,11 +1041,11 @@ export default function AdminTerminals() {
                                   ) : (
                                     <button
                                       onClick={() => queueAssignRider(r.id, t.id, t.name)}
-                                      className="flex items-center gap-2 px-3 py-2 bg-white border-2 border-[#E2E8F0] hover:border-[#10B981] rounded-xl transition-all active:scale-95 text-sm font-medium"
+                                      className="flex items-center gap-2 px-3 py-2 bg-white border-2 border-[var(--border)] hover:border-[var(--success)] rounded-xl transition-all active:scale-95 text-sm font-medium"
                                     >
-                                      <UserPlus size={13} className="text-[#10B981]" />
+                                      <UserPlus size={13} className="text-[var(--success)]" />
                                       {riderName(r)}
-                                      {riderPlate(r) && <span className="text-xs text-[#64748B]">{riderPlate(r)}</span>}
+                                      {riderPlate(r) && <span className="text-xs text-[var(--muted-foreground)]">{riderPlate(r)}</span>}
                                     </button>
                                   )}
                                 </div>
@@ -1068,15 +1068,15 @@ export default function AdminTerminals() {
       {showForm && (
         <div className="fixed inset-0 bg-black/50 z-[300] flex items-center justify-center p-4">
           <div className="w-full max-w-md max-h-[90vh] overflow-y-auto bg-white rounded-2xl shadow-2xl">
-            <div className="flex items-center justify-between p-5 border-b-2 border-[#E2E8F0] sticky top-0 bg-white z-10">
-              <h3 className="font-extrabold text-lg text-[#121212]">
+            <div className="flex items-center justify-between p-5 border-b-2 border-[var(--border)] sticky top-0 bg-white z-10">
+              <h3 className="font-extrabold text-lg text-[var(--ink)]">
                 {editTerminal ? "Edit Terminal" : "New Terminal"}
               </h3>
               <button
                 onClick={() => setShowForm(false)}
-                className="w-8 h-8 rounded-full bg-[#F8F9FA] flex items-center justify-center"
+                className="w-8 h-8 rounded-full bg-[var(--muted)] flex items-center justify-center"
               >
-                <X size={16} className="text-[#64748B]" />
+                <X size={16} className="text-[var(--muted-foreground)]" />
               </button>
             </div>
             <div className="p-5 space-y-4">
@@ -1085,25 +1085,25 @@ export default function AdminTerminals() {
                 ["boundary", "Boundary / Area", "e.g. Main Road, Valenzuela City"],
               ] as const).map(([k, label, placeholder]) => (
                 <div key={k}>
-                  <label className="text-xs font-semibold uppercase tracking-wide text-[#64748B] block mb-1">
+                  <label className="text-xs font-semibold uppercase tracking-wide text-[var(--muted-foreground)] block mb-1">
                     {label}
                   </label>
                   <input
                     value={form[k]}
                     onChange={e => setForm(f => ({ ...f, [k]: e.target.value }))}
                     placeholder={placeholder}
-                    className="w-full h-11 px-4 border-2 border-[#CBD5E1] focus:border-[#E11D48] rounded-xl text-sm outline-none"
+                    className="w-full h-11 px-4 border-2 border-[var(--border)] focus:border-[var(--primary)] rounded-xl text-sm outline-none"
                   />
                 </div>
               ))}
 
               {/* Terminal Location on Map */}
               <div>
-                <label className="text-xs font-semibold uppercase tracking-wide text-[#64748B] block mb-1">
+                <label className="text-xs font-semibold uppercase tracking-wide text-[var(--muted-foreground)] block mb-1">
                   Terminal Location
                 </label>
                 <div
-                  className="w-full h-40 bg-[#F8F9FA] border-2 border-[#CBD5E1] rounded-xl overflow-hidden cursor-pointer relative"
+                  className="w-full h-40 bg-[var(--muted)] border-2 border-[var(--border)] rounded-xl overflow-hidden cursor-pointer relative"
                   onClick={() => setShowMapPicker(true)}
                 >
                   {isMapsLoaded ? (
@@ -1124,9 +1124,9 @@ export default function AdminTerminals() {
                         <Polygon
                           path={form.boundary_polygon}
                           options={{
-                            fillColor: '#E11D48',
+                            fillColor: 'var(--primary)',
                             fillOpacity: 0.2,
-                            strokeColor: '#E11D48',
+                            strokeColor: 'var(--primary)',
                             strokeWeight: 2,
                             clickable: false,
                           }}
@@ -1136,24 +1136,24 @@ export default function AdminTerminals() {
                     </GoogleMap>
                   ) : (
                     <div className="w-full h-full flex items-center justify-center">
-                      <p className="text-xs text-[#64748B]">Loading map...</p>
+                      <p className="text-xs text-[var(--muted-foreground)]">Loading map...</p>
                     </div>
                   )}
                   <div className="absolute inset-0 flex items-center justify-center">
-                    <span className="bg-white/90 px-3 py-1 rounded-full text-xs font-semibold text-[#121212] shadow">
+                    <span className="bg-white/90 px-3 py-1 rounded-full text-xs font-semibold text-[var(--ink)] shadow">
                       📍 Tap to set location & boundary
                     </span>
                   </div>
                 </div>
-                <p className="text-xs text-[#94A3B8] mt-1">
+                <p className="text-xs text-[var(--muted-foreground)] mt-1">
                   Lat: {form.center_lat.toFixed(4)}, Lng: {form.center_lng.toFixed(4)}
                 </p>
 
                 {/* Boundary area status */}
-                <div className="flex items-center justify-between mt-2 p-2.5 bg-[#F8F9FA] rounded-xl">
+                <div className="flex items-center justify-between mt-2 p-2.5 bg-[var(--muted)] rounded-xl">
                   <div className="min-w-0">
-                    <p className="text-xs font-semibold text-[#121212]">Boundary Area</p>
-                    <p className="text-xs text-[#64748B]">
+                    <p className="text-xs font-semibold text-[var(--ink)]">Boundary Area</p>
+                    <p className="text-xs text-[var(--muted-foreground)]">
                       {form.boundary_polygon.length >= 3
                         ? `${form.boundary_polygon.length} points plotted — drop-offs outside every terminal's area are rejected`
                         : form.boundary_polygon.length > 0
@@ -1164,7 +1164,7 @@ export default function AdminTerminals() {
                   {form.boundary_polygon.length > 0 && (
                     <button
                       onClick={confirmClearBoundary}
-                      className="ml-3 flex-shrink-0 text-xs font-bold text-[#E11D48] uppercase active:scale-95"
+                      className="ml-3 flex-shrink-0 text-xs font-bold text-[var(--primary)] uppercase active:scale-95"
                     >
                       Clear
                     </button>
@@ -1173,14 +1173,14 @@ export default function AdminTerminals() {
               </div>
 
               {/* Active/Inactive Toggle */}
-              <div className="flex items-center justify-between p-3 bg-[#F8F9FA] rounded-xl">
+              <div className="flex items-center justify-between p-3 bg-[var(--muted)] rounded-xl">
                 <div>
-                  <p className="text-sm font-semibold text-[#121212]">Active Terminal</p>
-                  <p className="text-xs text-[#64748B]">Visible to customers for pickup</p>
+                  <p className="text-sm font-semibold text-[var(--ink)]">Active Terminal</p>
+                  <p className="text-xs text-[var(--muted-foreground)]">Visible to customers for pickup</p>
                 </div>
                 <button
                   onClick={() => setForm(f => ({ ...f, is_active: !f.is_active }))}
-                  className={`relative w-12 h-7 rounded-full transition-colors ${form.is_active ? 'bg-[#10B981]' : 'bg-[#CBD5E1]'}`}
+                  className={`relative w-12 h-7 rounded-full transition-colors ${form.is_active ? 'bg-[var(--success)]' : 'bg-[var(--border)]'}`}
                 >
                   <span className={`absolute top-0.5 left-0.5 w-6 h-6 bg-white rounded-full shadow transition-transform ${form.is_active ? 'translate-x-5' : ''}`} />
                 </button>
@@ -1189,13 +1189,13 @@ export default function AdminTerminals() {
               <div className="flex gap-3 pt-2">
                 <button
                   onClick={() => setShowForm(false)}
-                  className="flex-1 h-11 border-2 border-[#CBD5E1] text-[#64748B] font-bold uppercase text-sm rounded-xl active:scale-95"
+                  className="flex-1 h-11 border-2 border-[var(--border)] text-[var(--muted-foreground)] font-bold uppercase text-sm rounded-xl active:scale-95"
                 >
                   Cancel
                 </button>
                 <button
                   onClick={confirmSaveTerminal}
-                  className="flex-1 h-11 bg-[#E11D48] text-white font-bold uppercase text-sm rounded-xl active:scale-95 hover:bg-[#BE123C] transition-all"
+                  className="flex-1 h-11 bg-[var(--primary)] text-white font-bold uppercase text-sm rounded-xl active:scale-95 hover:bg-[var(--primary)] transition-all"
                 >
                   Save
                 </button>
@@ -1208,14 +1208,14 @@ export default function AdminTerminals() {
       {/* Full-screen Map Picker */}
       {showMapPicker && (
         <div className="fixed inset-0 z-[500] bg-white flex flex-col">
-          <div className="bg-white border-b border-[#E2E8F0] px-4 py-3 flex items-center justify-between gap-3">
+          <div className="bg-white border-b border-[var(--border)] px-4 py-3 flex items-center justify-between gap-3">
             <button onClick={() => { setShowMapPicker(false); setShowMapSearchDropdown(false); setMapSearchQuery(""); }} className="active:scale-90 flex-shrink-0">
-              <X className="w-6 h-6 text-[#121212]" />
+              <X className="w-6 h-6 text-[var(--ink)]" />
             </button>
             {/* Search Bar */}
             <div className="flex-1 relative">
-              <div className="flex items-center gap-2 px-3 py-2 bg-[#F8F9FA] border-2 border-[#E2E8F0] rounded-xl">
-                <Search className="w-4 h-4 text-[#64748B] flex-shrink-0" />
+              <div className="flex items-center gap-2 px-3 py-2 bg-[var(--muted)] border-2 border-[var(--border)] rounded-xl">
+                <Search className="w-4 h-4 text-[var(--muted-foreground)] flex-shrink-0" />
                 <input
                   type="text"
                   value={mapSearchQuery}
@@ -1226,36 +1226,36 @@ export default function AdminTerminals() {
                   }}
                   onFocus={() => { if (mapSearchQuery.trim()) setShowMapSearchDropdown(true); }}
                   placeholder="Search location..."
-                  className="flex-1 text-sm font-semibold text-[#121212] placeholder:text-[#94A3B8] placeholder:font-normal outline-none bg-transparent"
+                  className="flex-1 text-sm font-semibold text-[var(--ink)] placeholder:text-[var(--muted-foreground)] placeholder:font-normal outline-none bg-transparent"
                 />
                 {isMapSearching ? (
-                  <Loader2 className="w-4 h-4 text-[#64748B] animate-spin flex-shrink-0" />
+                  <Loader2 className="w-4 h-4 text-[var(--muted-foreground)] animate-spin flex-shrink-0" />
                 ) : (
                   mapSearchQuery && (
                     <button onClick={() => { setMapSearchQuery(""); setMapSearchResults([]); setShowMapSearchDropdown(false); }} className="flex-shrink-0">
-                      <X className="w-4 h-4 text-[#64748B]" />
+                      <X className="w-4 h-4 text-[var(--muted-foreground)]" />
                     </button>
                   )
                 )}
               </div>
               {/* Search Results Dropdown */}
               {showMapSearchDropdown && (
-                <div className="absolute top-full left-0 right-0 mt-2 bg-white border-2 border-[#E2E8F0] rounded-xl shadow-xl max-h-60 overflow-y-auto z-[600]">
+                <div className="absolute top-full left-0 right-0 mt-2 bg-white border-2 border-[var(--border)] rounded-xl shadow-xl max-h-60 overflow-y-auto z-[600]">
                   {mapSearchResults.length > 0 ? (
                     mapSearchResults.map((result: any, index: number) => (
                       <button
                         key={result.place_id || index}
                         onClick={() => handleMapSearchPick(result)}
-                        className="w-full p-3 border-b border-[#E2E8F0] last:border-b-0 hover:bg-[#F8F9FA] active:bg-[#F1F5F9] transition-colors text-left"
+                        className="w-full p-3 border-b border-[var(--border)] last:border-b-0 hover:bg-[var(--muted)] active:bg-[var(--muted)] transition-colors text-left"
                       >
                         <div className="flex items-center gap-3">
-                          <div className="w-8 h-8 bg-[#F8F9FA] rounded-full flex items-center justify-center flex-shrink-0">
-                            <MapPin className="w-4 h-4 text-[#64748B]" />
+                          <div className="w-8 h-8 bg-[var(--muted)] rounded-full flex items-center justify-center flex-shrink-0">
+                            <MapPin className="w-4 h-4 text-[var(--muted-foreground)]" />
                           </div>
                           <div className="flex-1 min-w-0">
-                            <p className="font-semibold text-sm text-[#121212] truncate">{result.displayName}</p>
+                            <p className="font-semibold text-sm text-[var(--ink)] truncate">{result.displayName}</p>
                             {result.secondaryText && (
-                              <p className="text-xs text-[#64748B] truncate">{result.secondaryText}</p>
+                              <p className="text-xs text-[var(--muted-foreground)] truncate">{result.secondaryText}</p>
                             )}
                           </div>
                         </div>
@@ -1263,7 +1263,7 @@ export default function AdminTerminals() {
                     ))
                   ) : (
                     <div className="p-3">
-                      <p className="text-sm text-[#64748B] text-center">
+                      <p className="text-sm text-[var(--muted-foreground)] text-center">
                         {isMapSearching ? "Searching..." : !GOOGLE_MAPS_API_KEY ? "Search unavailable" : "No results found"}
                       </p>
                     </div>
@@ -1273,14 +1273,14 @@ export default function AdminTerminals() {
             </div>
             <button
               onClick={() => setShowMapPicker(false)}
-              className="px-4 py-1.5 bg-[#E11D48] text-white text-sm font-bold rounded-lg flex-shrink-0"
+              className="px-4 py-1.5 bg-[var(--primary)] text-white text-sm font-bold rounded-lg flex-shrink-0"
             >
               Done
             </button>
           </div>
 
           {/* Move the pin, or draw the coverage area */}
-          <div className="flex gap-2 px-4 py-2 bg-white border-b border-[#E2E8F0]">
+          <div className="flex gap-2 px-4 py-2 bg-white border-b border-[var(--border)]">
             {([
               ['location', 'Terminal Location'],
               ['boundary', 'Boundary Area'],
@@ -1289,7 +1289,7 @@ export default function AdminTerminals() {
                 key={mode}
                 onClick={() => setMapPickerMode(mode)}
                 className={`flex-1 h-9 rounded-lg text-xs font-bold uppercase tracking-wide transition-colors ${
-                  mapPickerMode === mode ? 'bg-[#E11D48] text-white' : 'bg-[#F8F9FA] text-[#64748B]'
+                  mapPickerMode === mode ? 'bg-[var(--primary)] text-white' : 'bg-[var(--muted)] text-[var(--muted-foreground)]'
                 }`}
               >
                 {label}
@@ -1317,9 +1317,9 @@ export default function AdminTerminals() {
                 <Polygon
                   path={form.boundary_polygon}
                   options={{
-                    fillColor: '#E11D48',
+                    fillColor: 'var(--primary)',
                     fillOpacity: 0.2,
-                    strokeColor: '#E11D48',
+                    strokeColor: 'var(--primary)',
                     strokeWeight: 2,
                     clickable: false,
                   }}
@@ -1337,17 +1337,17 @@ export default function AdminTerminals() {
             {/* Center crosshair — only while positioning the terminal pin */}
             {mapPickerMode === 'location' && (
               <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-full pointer-events-none">
-                <MapPin className="w-8 h-8 text-[#E11D48] drop-shadow-lg" />
+                <MapPin className="w-8 h-8 text-[var(--primary)] drop-shadow-lg" />
               </div>
             )}
             <div className="absolute bottom-4 left-4 right-4">
               <div className="bg-white/95 backdrop-blur rounded-xl shadow-lg p-3">
                 {mapPickerMode === 'boundary' ? (
                   <>
-                    <p className="text-sm font-semibold text-[#121212] text-center">
+                    <p className="text-sm font-semibold text-[var(--ink)] text-center">
                       Tap the map to plot the boundary area
                     </p>
-                    <p className="text-xs text-[#64748B] text-center mt-0.5">
+                    <p className="text-xs text-[var(--muted-foreground)] text-center mt-0.5">
                       {form.boundary_polygon.length === 0
                         ? 'Add at least 3 points to close the area'
                         : form.boundary_polygon.length < 3
@@ -1358,13 +1358,13 @@ export default function AdminTerminals() {
                       <div className="flex gap-2 mt-3">
                         <button
                           onClick={() => setForm(f => ({ ...f, boundary_polygon: f.boundary_polygon.slice(0, -1) }))}
-                          className="flex-1 h-9 border-2 border-[#CBD5E1] text-[#64748B] text-xs font-bold uppercase rounded-lg active:scale-95"
+                          className="flex-1 h-9 border-2 border-[var(--border)] text-[var(--muted-foreground)] text-xs font-bold uppercase rounded-lg active:scale-95"
                         >
                           Undo Point
                         </button>
                         <button
                           onClick={confirmClearBoundary}
-                          className="flex-1 h-9 border-2 border-[#E11D48] text-[#E11D48] text-xs font-bold uppercase rounded-lg active:scale-95"
+                          className="flex-1 h-9 border-2 border-[var(--primary)] text-[var(--primary)] text-xs font-bold uppercase rounded-lg active:scale-95"
                         >
                           Clear Area
                         </button>
@@ -1373,10 +1373,10 @@ export default function AdminTerminals() {
                   </>
                 ) : (
                   <>
-                    <p className="text-sm font-semibold text-[#121212] text-center">
+                    <p className="text-sm font-semibold text-[var(--ink)] text-center">
                       Tap anywhere to set terminal location
                     </p>
-                    <p className="text-xs text-[#64748B] text-center mt-0.5">
+                    <p className="text-xs text-[var(--muted-foreground)] text-center mt-0.5">
                       Current: {form.center_lat.toFixed(4)}, {form.center_lng.toFixed(4)}
                     </p>
                   </>

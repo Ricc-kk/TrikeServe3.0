@@ -219,17 +219,17 @@ export default function Earnings() {
   const totalEarnings = completedTrips.reduce((sum, trip) => sum + (trip.amount || 0), 0);
 
   return (
-    <div className="min-h-screen bg-[#F8F9FA] pb-20">
+    <div className="min-h-screen bg-[var(--muted)] pb-20">
       {/* Header */}
-      <div className="bg-white border-b-2 border-[#CBD5E1] px-4 py-3 flex items-center gap-3">
+      <div className="bg-white border-b-2 border-[var(--border)] px-4 py-3 flex items-center gap-3">
         <Button variant="ghost" size="icon" onClick={() => navigate('/rider')}>
           <ArrowLeft className="w-5 h-5" />
         </Button>
         <div className="flex-1">
-          <h1 className="text-xl font-extrabold text-[#E11D48]" style={{ letterSpacing: '-0.02em' }}>
+          <h1 className="text-xl font-extrabold text-[var(--primary)]" style={{ letterSpacing: '-0.02em' }}>
             My Earnings
           </h1>
-          <p className="text-xs text-[#64748B]">Track your income</p>
+          <p className="text-xs text-[var(--muted-foreground)]">Track your income</p>
         </div>
 
       </div>
@@ -251,7 +251,7 @@ export default function Earnings() {
           >
             {/* Today Card */}
             <div style={{ width: '335px' }} className="pl-4 pr-1">
-              <Card className="p-4 bg-gradient-to-br from-[#E11D48] to-[#BE123C] text-white border-0 rounded-2xl">
+              <Card className="p-4 bg-gradient-to-br from-[var(--primary)] to-[var(--primary)] text-white border-0 rounded-2xl">
                 <p className="text-sm opacity-90 mb-1">Today</p>
                 <p className="text-4xl font-extrabold mb-2">₱{todayEarnings.toFixed(2)}</p>
                 <div className="flex items-center gap-1 text-sm opacity-90">
@@ -303,32 +303,32 @@ export default function Earnings() {
 
         {/* Quick Stats */}
         <Card className="p-5 bg-white border-0 shadow-sm">
-          <h3 className="font-extrabold text-[#121212] mb-4" style={{ fontSize: '18px' }}>Overall Performance</h3>
+          <h3 className="font-extrabold text-[var(--ink)] mb-4" style={{ fontSize: '18px' }}>Overall Performance</h3>
           <div className="grid grid-cols-2 gap-x-4 gap-y-4">
             <div>
-              <p className="text-sm text-[#0891B2] mb-1">Trips Completed</p>
-              <p className="text-2xl font-extrabold text-[#E11D48]">{tripsCompletedCount}</p>
+              <p className="text-sm text-[var(--info)] mb-1">Trips Completed</p>
+              <p className="text-2xl font-extrabold text-[var(--primary)]">{tripsCompletedCount}</p>
             </div>
             <div>
-              <p className="text-sm text-[#0891B2] mb-1">Total Earnings</p>
-              <p className="text-2xl font-extrabold text-[#E11D48]">₱{totalEarnings.toFixed(2)}</p>
+              <p className="text-sm text-[var(--info)] mb-1">Total Earnings</p>
+              <p className="text-2xl font-extrabold text-[var(--primary)]">₱{totalEarnings.toFixed(2)}</p>
             </div>
             <div>
-              <p className="text-sm text-[#0891B2] mb-1">Avg. per Trip</p>
-              <p className="text-2xl font-extrabold text-[#E11D48]">
+              <p className="text-sm text-[var(--info)] mb-1">Avg. per Trip</p>
+              <p className="text-2xl font-extrabold text-[var(--primary)]">
                 {tripsCompletedCount > 0 ? `₱${(totalEarnings / tripsCompletedCount).toFixed(2)}` : '₱0'}
               </p>
             </div>
             <div>
-              <p className="text-sm text-[#0891B2] mb-1">Today's Total</p>
-              <p className="text-2xl font-extrabold text-[#E11D48]">₱{todayEarnings.toFixed(2)}</p>
+              <p className="text-sm text-[var(--info)] mb-1">Today's Total</p>
+              <p className="text-2xl font-extrabold text-[var(--primary)]">₱{todayEarnings.toFixed(2)}</p>
             </div>
             <div>
-              <p className="text-sm text-[#0891B2] mb-1">Driver Rating</p>
-              <p className="text-2xl font-extrabold text-[#E11D48]">
+              <p className="text-sm text-[var(--info)] mb-1">Driver Rating</p>
+              <p className="text-2xl font-extrabold text-[var(--primary)]">
                 {driverRating === '—' ? '—' : `⭐ ${driverRating}`}
               </p>
-              <p className="text-xs text-[#64748B]">
+              <p className="text-xs text-[var(--muted-foreground)]">
                 {driverRatingCount > 0 ? `${driverRatingCount} rating${driverRatingCount > 1 ? 's' : ''}` : 'No ratings yet'}
               </p>
             </div>
@@ -338,7 +338,7 @@ export default function Earnings() {
         {/* Recent Trips */}
         <div>
           <div className="flex items-center justify-between mb-3">
-            <h3 className="font-extrabold text-[#121212]" style={{ fontSize: '18px' }}>Recent Trips</h3>
+            <h3 className="font-extrabold text-[var(--ink)]" style={{ fontSize: '18px' }}>Recent Trips</h3>
           </div>
 
           {/* Filter Tabs */}
@@ -349,8 +349,8 @@ export default function Earnings() {
                 onClick={() => setFilterTab(tab)}
                 className={`px-4 py-2 rounded-full text-sm font-medium whitespace-nowrap transition-all ${
                   filterTab === tab
-                    ? 'bg-[#E11D48] text-white'
-                    : 'bg-[#F1F5F9] text-[#64748B]'
+                    ? 'bg-[var(--primary)] text-white'
+                    : 'bg-[var(--muted)] text-[var(--muted-foreground)]'
                 }`}
               >
                 {tab === 'all' ? `All (${completedTrips.length})` : tab === 'rides' ? `Rides (${completedTrips.filter(t => t.type !== 'Delivery').length})` : `Deliveries (${completedTrips.filter(t => t.type === 'Delivery').length})`}
@@ -360,11 +360,11 @@ export default function Earnings() {
 
           {isLoading ? (
             <Card className="p-4 bg-white border-0 shadow-sm">
-              <p className="text-center text-[#64748B]">Loading completed trips...</p>
+              <p className="text-center text-[var(--muted-foreground)]">Loading completed trips...</p>
             </Card>
           ) : completedTrips.length === 0 ? (
             <Card className="p-4 bg-white border-0 shadow-sm">
-              <p className="text-center text-[#64748B]">No completed trips yet. Start accepting rides to see your recent trips here!</p>
+              <p className="text-center text-[var(--muted-foreground)]">No completed trips yet. Start accepting rides to see your recent trips here!</p>
             </Card>
           ) : (
             <div className="space-y-3">
@@ -377,31 +377,31 @@ export default function Earnings() {
                 .slice(0, 20)
                 .map((trip) => (
                 <Card key={trip.id} className={`bg-white border-0 shadow-sm overflow-hidden ${
-                  trip.type === 'Delivery' ? 'border-l-4 border-l-[#3B82F6]' :
-                  trip.type === 'Ride Share' ? 'border-l-4 border-l-[#F59E0B]' :
-                  'border-l-4 border-l-[#10B981]'
+                  trip.type === 'Delivery' ? 'border-l-4 border-l-[var(--info)]' :
+                  trip.type === 'Ride Share' ? 'border-l-4 border-l-[var(--amber)]' :
+                  'border-l-4 border-l-[var(--success)]'
                 }`}>
                   <div className="p-4">
                     {/* Top row: type + amount */}
                     <div className="flex items-center justify-between mb-3">
                       <div className="flex items-center gap-2">
                         <div className={`w-10 h-10 rounded-xl flex items-center justify-center text-lg ${
-                          trip.type === 'Delivery' ? 'bg-[#DBEAFE]' :
-                          trip.type === 'Ride Share' ? 'bg-[#FEF3C7]' :
-                          'bg-[#F0FDF4]'
+                          trip.type === 'Delivery' ? 'bg-[var(--info-soft)]' :
+                          trip.type === 'Ride Share' ? 'bg-[var(--amber-soft)]' :
+                          'bg-[var(--success-soft)]'
                         }`}>
                           {trip.type === 'Delivery' ? '📦' : trip.type === 'Ride Share' ? '👥' : '👤'}
                         </div>
                         <div>
-                          <p className="font-bold text-[#121212] text-sm">{trip.type}</p>
-                          <p className="text-[10px] text-[#94A3B8]">{new Date(trip.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })} • {new Date(trip.date).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })}</p>
+                          <p className="font-bold text-[var(--ink)] text-sm">{trip.type}</p>
+                          <p className="text-[10px] text-[var(--muted-foreground)]">{new Date(trip.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })} • {new Date(trip.date).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })}</p>
                         </div>
                       </div>
                       <div className="text-right">
-                        <p className="font-extrabold text-lg text-[#E11D48]">₱{trip.amount.toFixed(2)}</p>
+                        <p className="font-extrabold text-lg text-[var(--primary)]">₱{trip.amount.toFixed(2)}</p>
                         <Badge
                           variant="outline"
-                          className={`text-[10px] rounded-full ${trip.payment === 'Cash' ? 'border-[#F97316] text-[#F97316]' : 'border-green-500 text-green-500'}`}
+                          className={`text-[10px] rounded-full ${trip.payment === 'Cash' ? 'border-[var(--amber)] text-[var(--amber)]' : 'border-green-500 text-green-500'}`}
                         >
                           {trip.payment === 'Cash' ? '💵 Cash' : '💳 GCash'}
                         </Badge>
@@ -410,9 +410,9 @@ export default function Earnings() {
 
                     {/* Customer name */}
                     {trip.customerName && trip.customerName !== 'Customer' && (
-                      <div className="flex items-center gap-2 mb-2 px-3 py-2 bg-[#F8FAFC] rounded-lg">
+                      <div className="flex items-center gap-2 mb-2 px-3 py-2 bg-[var(--muted)] rounded-lg">
                         <span className="text-sm">👤</span>
-                        <p className="text-xs font-semibold text-[#121212]">{trip.customerName}</p>
+                        <p className="text-xs font-semibold text-[var(--ink)]">{trip.customerName}</p>
                       </div>
                     )}
 
@@ -422,19 +422,19 @@ export default function Earnings() {
                         <div className="flex flex-col items-center pt-1">
                           <div className="w-2.5 h-2.5 rounded-full bg-green-500 shrink-0" />
                           <div className="w-0.5 flex-1 bg-gray-200 my-0.5" />
-                          <div className="w-2.5 h-2.5 rounded-full bg-[#E11D48] shrink-0" />
+                          <div className="w-2.5 h-2.5 rounded-full bg-[var(--primary)] shrink-0" />
                         </div>
                         <div className="flex-1 space-y-2 min-w-0">
                           {trip.pickup && (
                             <div>
                               <p className="text-[10px] text-green-600 font-bold uppercase">Pickup</p>
-                              <p className="text-xs text-[#121212] truncate">{trip.pickup}</p>
+                              <p className="text-xs text-[var(--ink)] truncate">{trip.pickup}</p>
                             </div>
                           )}
                           {trip.dropoff && (
                             <div>
-                              <p className="text-[10px] text-[#E11D48] font-bold uppercase">Drop-off</p>
-                              <p className="text-xs text-[#121212] truncate">{trip.dropoff}</p>
+                              <p className="text-[10px] text-[var(--primary)] font-bold uppercase">Drop-off</p>
+                              <p className="text-xs text-[var(--ink)] truncate">{trip.dropoff}</p>
                             </div>
                           )}
                         </div>

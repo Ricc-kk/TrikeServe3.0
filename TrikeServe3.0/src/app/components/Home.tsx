@@ -8,52 +8,52 @@ export default function Home() {
       title: "Customer",
       description: "Book rides & order food",
       icon: User,
-      gradient: "from-[#E11D48] to-[#BE123C]",
-      bgAccent: "bg-[#E11D48]/5"
+      gradient: "from-[var(--primary)] to-[var(--primary)]",
+      bgAccent: "bg-[var(--primary)]/5"
     },
     {
       path: "/rider",
       title: "Driver",
       description: "Accept deliveries & rides",
       icon: Bike,
-      gradient: "from-[#121212] to-[#2a2a2a]",
-      bgAccent: "bg-[#121212]/5"
+      gradient: "from-[var(--ink)] to-[var(--ink)]",
+      bgAccent: "bg-[var(--ink)]/5"
     },
     {
       path: "/business",
       title: "Business Owner",
       description: "Manage menu & orders",
       icon: Store,
-      gradient: "from-[#E11D48] to-[#121212]",
-      bgAccent: "bg-gradient-to-br from-[#E11D48]/5 to-[#121212]/5"
+      gradient: "from-[var(--primary)] to-[var(--ink)]",
+      bgAccent: "bg-gradient-to-br from-[var(--primary)]/5 to-[var(--ink)]/5"
     },
     {
       path: "/admin",
       title: "Admin",
       description: "System monitoring & control",
       icon: Shield,
-      gradient: "from-[#121212] to-[#E11D48]",
-      bgAccent: "bg-gradient-to-br from-[#121212]/5 to-[#E11D48]/5"
+      gradient: "from-[var(--ink)] to-[var(--primary)]",
+      bgAccent: "bg-gradient-to-br from-[var(--ink)]/5 to-[var(--primary)]/5"
     },
   ];
 
   return (
-    <div className="min-h-screen bg-[#121212] flex flex-col items-center justify-center p-6 relative overflow-hidden">
+    <div className="min-h-screen bg-[var(--ink)] flex flex-col items-center justify-center p-6 relative overflow-hidden">
       {/* Animated Background Pattern */}
       <div className="absolute inset-0 opacity-10">
-        <div className="absolute top-0 left-0 w-96 h-96 bg-[#E11D48] rounded-full blur-3xl animate-pulse"></div>
-        <div className="absolute bottom-0 right-0 w-96 h-96 bg-[#E11D48] rounded-full blur-3xl animate-pulse delay-1000"></div>
+        <div className="absolute top-0 left-0 w-96 h-96 bg-[var(--primary)] rounded-full blur-3xl animate-pulse"></div>
+        <div className="absolute bottom-0 right-0 w-96 h-96 bg-[var(--primary)] rounded-full blur-3xl animate-pulse delay-1000"></div>
       </div>
 
       <div className="max-w-5xl w-full relative z-10">
         {/* Header Section */}
         <div className="text-center mb-16">
           <div className="inline-block mb-6">
-            <div className="w-20 h-20 bg-gradient-to-br from-[#E11D48] to-[#BE123C] rounded-2xl flex items-center justify-center shadow-2xl shadow-[#E11D48]/30">
+            <div className="w-20 h-20 bg-gradient-to-br from-[var(--primary)] to-[var(--primary)] rounded-2xl flex items-center justify-center shadow-2xl shadow-[var(--primary)]/30">
               <Bike className="w-10 h-10 text-white" />
             </div>
           </div>
-          <h1 className="text-6xl font-extrabold mb-4 bg-gradient-to-r from-white to-[#E11D48] bg-clip-text text-transparent" style={{ letterSpacing: '-0.02em' }}>
+          <h1 className="text-6xl font-extrabold mb-4 bg-gradient-to-r from-white to-[var(--primary)] bg-clip-text text-transparent" style={{ letterSpacing: '-0.02em' }}>
             TrikeServe
           </h1>
           <p className="text-xl text-white/60 font-medium">
@@ -61,15 +61,15 @@ export default function Home() {
           </p>
           <div className="mt-6 flex items-center justify-center gap-4 text-sm text-white/40">
             <span className="flex items-center gap-2">
-              <div className="w-2 h-2 bg-[#E11D48] rounded-full"></div>
+              <div className="w-2 h-2 bg-[var(--primary)] rounded-full"></div>
               Fixed rates
             </span>
             <span className="flex items-center gap-2">
-              <div className="w-2 h-2 bg-[#E11D48] rounded-full"></div>
+              <div className="w-2 h-2 bg-[var(--primary)] rounded-full"></div>
               Face-to-face verification
             </span>
             <span className="flex items-center gap-2">
-              <div className="w-2 h-2 bg-[#E11D48] rounded-full"></div>
+              <div className="w-2 h-2 bg-[var(--primary)] rounded-full"></div>
               Community trust
             </span>
           </div>
@@ -83,7 +83,7 @@ export default function Home() {
               <Link
                 key={module.path}
                 to={module.path}
-                className="group relative overflow-hidden rounded-2xl bg-white/5 backdrop-blur-xl p-8 hover:bg-white/10 transition-all duration-300 border-2 border-white/10 hover:border-[#E11D48] hover:shadow-2xl hover:shadow-[#E11D48]/20"
+                className="group relative overflow-hidden rounded-2xl bg-white/5 backdrop-blur-xl p-8 hover:bg-white/10 transition-all duration-300 border-2 border-white/10 hover:border-[var(--primary)] hover:shadow-2xl hover:shadow-[var(--primary)]/20"
                 style={{
                   backdropFilter: 'blur(16px)',
                   WebkitBackdropFilter: 'blur(16px)'
@@ -100,7 +100,7 @@ export default function Home() {
                     
                     {/* Arrow Indicator */}
                     <div className="w-10 h-10 rounded-full bg-white/5 border border-white/10 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-all duration-300 group-hover:translate-x-1">
-                      <span className="text-[#E11D48] text-xl font-bold">→</span>
+                      <span className="text-[var(--primary)] text-xl font-bold">→</span>
                     </div>
                   </div>
                   
@@ -113,7 +113,7 @@ export default function Home() {
                 </div>
 
                 {/* Hover Glow Effect */}
-                <div className="absolute -bottom-20 -right-20 w-40 h-40 bg-[#E11D48] rounded-full blur-3xl opacity-0 group-hover:opacity-20 transition-opacity duration-500" />
+                <div className="absolute -bottom-20 -right-20 w-40 h-40 bg-[var(--primary)] rounded-full blur-3xl opacity-0 group-hover:opacity-20 transition-opacity duration-500" />
               </Link>
             );
           })}

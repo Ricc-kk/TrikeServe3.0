@@ -407,7 +407,7 @@ export default function RiderDashboard() {
     const google = (window as any)?.google;
     if (!google?.maps?.Size || !google?.maps?.Point) return undefined;
 
-    const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="#2563EB" stroke="white" stroke-width="1">
+    const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="var(--info)" stroke="white" stroke-width="1">
       <path d="M12 2C8.13 2 5 5.13 5 9c0 4.95 6.1 11.53 6.36 11.81.36.39.92.39 1.28 0C13.9 20.53 20 13.95 20 9c0-3.87-3.13-7-8-7z"/>
       <circle cx="12" cy="8.6" r="2.3" fill="#FFFFFF" stroke="none"/>
       <path d="M8.7 15.9c.55-2.05 2.15-3.3 3.3-3.3s2.75 1.25 3.3 3.3" fill="#FFFFFF" stroke="none"/>
@@ -835,7 +835,7 @@ export default function RiderDashboard() {
     };
 
   return (
-    <div className="h-screen flex flex-col bg-[#F8F9FA] relative">
+    <div className="h-screen flex flex-col bg-[var(--muted)] relative">
       {/* Full Screen Map */}
       <div className="absolute inset-0">
         {!GOOGLE_MAPS_API_KEY ? (
@@ -897,7 +897,7 @@ export default function RiderDashboard() {
                       visible: false,
                     },
                     polylineOptions: {
-                      strokeColor: '#E11D48',
+                      strokeColor: 'var(--primary)',
                       strokeOpacity: 0.92,
                       strokeWeight: 5,
                     },
@@ -921,7 +921,7 @@ export default function RiderDashboard() {
               <p className="text-lg font-bold text-yellow-700 mb-2">⚠️ Google Maps scripts loaded but unavailable</p>
               <p className="text-sm text-yellow-800 mb-3">The Maps SDK appears to be blocked by a browser extension or network policy (window.google is missing). Try disabling ad-blockers or allow maps.googleapis.com.</p>
               <div className="flex gap-3 justify-center">
-                <button onClick={() => window.location.reload()} className="px-4 py-2 bg-[#E11D48] text-white rounded-md">Retry</button>
+                <button onClick={() => window.location.reload()} className="px-4 py-2 bg-[var(--primary)] text-white rounded-md">Retry</button>
                 <button onClick={() => window.open('about:blank', '_blank')} className="px-4 py-2 border rounded-md">Open Incognito / Disable Extensions</button>
               </div>
             </div>
@@ -945,7 +945,7 @@ export default function RiderDashboard() {
           <div className="absolute top-4 right-4 z-[1000]">
             <button
               onClick={() => setShowServiceTypes(true)}
-              className="w-14 h-14 bg-[#E11D48] rounded-full shadow-xl flex items-center justify-center hover:shadow-2xl active:scale-95 transition-all border-2 border-white"
+              className="w-14 h-14 bg-[var(--primary)] rounded-full shadow-xl flex items-center justify-center hover:shadow-2xl active:scale-95 transition-all border-2 border-white"
             >
               <Settings className="w-7 h-7 text-white" />
             </button>
@@ -958,8 +958,8 @@ export default function RiderDashboard() {
                   onClick={handleToggleOnline}
                   className={`${
                 isOnline 
-                  ? 'bg-[#E11D48] hover:bg-[#BE123C] text-white'
-                  : 'bg-[#121212] hover:bg-[#2a2a2a] text-white'
+                  ? 'bg-[var(--primary)] hover:bg-[var(--primary)] text-white'
+                  : 'bg-[var(--ink)] hover:bg-[var(--ink)] text-white'
               } px-8 py-3 rounded-full font-bold shadow-xl flex items-center gap-2`}
             >
               {isOnline ? (
@@ -980,13 +980,13 @@ export default function RiderDashboard() {
         {/* Active Trip Card */}
         {activeTrip && (
           <div className="absolute bottom-20 left-0 right-0 z-[1000] p-4">
-            <Card className="p-6 bg-white shadow-2xl border-2 border-[#E11D48]">
+            <Card className="p-6 bg-white shadow-2xl border-2 border-[var(--primary)]">
               <div className="flex items-start justify-between mb-4">
                 <div>
-                  <Badge className="mb-2 bg-[#E11D48]">
+                  <Badge className="mb-2 bg-[var(--primary)]">
                     {activeTrip.type === 'delivery' ? 'DELIVERY' : activeTrip.type.toUpperCase()}
                   </Badge>
-                  <h3 className="font-bold text-lg text-[#121212]">Active Trip</h3>
+                  <h3 className="font-bold text-lg text-[var(--ink)]">Active Trip</h3>
                 </div>
                 <Badge variant="outline" className={activeTrip.payment === 'COD' ? 'border-orange-500 text-orange-500' : 'border-green-500 text-green-500'}>
                   {activeTrip.payment}
@@ -995,17 +995,17 @@ export default function RiderDashboard() {
 
               <div className="space-y-3 mb-4">
                 <div className="flex gap-2">
-                  <Navigation className="w-5 h-5 text-[#E11D48] flex-shrink-0 mt-0.5" />
+                  <Navigation className="w-5 h-5 text-[var(--primary)] flex-shrink-0 mt-0.5" />
                   <div className="flex-1">
-                    <p className="text-xs text-[#64748B]">Pickup</p>
-                    <p className="font-semibold text-[#121212]">{activeTrip.pickup}</p>
+                    <p className="text-xs text-[var(--muted-foreground)]">Pickup</p>
+                    <p className="font-semibold text-[var(--ink)]">{activeTrip.pickup}</p>
                   </div>
                 </div>
                 <div className="flex gap-2">
                   <Navigation className="w-5 h-5 text-green-600 flex-shrink-0 mt-0.5" />
                   <div className="flex-1">
-                    <p className="text-xs text-[#64748B]">Drop-off</p>
-                    <p className="font-semibold text-[#121212]">{activeTrip.dropoff}</p>
+                    <p className="text-xs text-[var(--muted-foreground)]">Drop-off</p>
+                    <p className="font-semibold text-[var(--ink)]">{activeTrip.dropoff}</p>
                   </div>
                 </div>
               </div>
@@ -1029,8 +1029,8 @@ export default function RiderDashboard() {
               </div>
 
               <div className="mt-3 text-center">
-                <p className="text-sm text-[#64748B]">
-                  Delivery Fee: <span className="font-bold text-[#E11D48]">₱{activeTrip.amount.toFixed(2)}</span>
+                <p className="text-sm text-[var(--muted-foreground)]">
+                  Delivery Fee: <span className="font-bold text-[var(--primary)]">₱{activeTrip.amount.toFixed(2)}</span>
                 </p>
               </div>
             </Card>
@@ -1052,26 +1052,26 @@ export default function RiderDashboard() {
               <div className="border-t border-gray-200 px-6 py-6">
                 <div className="flex flex-col items-center text-center">
                   {/* Header */}
-                  <h3 className="font-bold text-lg text-[#121212] mb-6">PASSENGER REQUESTS</h3>
+                  <h3 className="font-bold text-lg text-[var(--ink)] mb-6">PASSENGER REQUESTS</h3>
 
                   {/* Icon and Text Section */}
                   <div className={`flex items-center justify-center gap-4 mb-6 ${!isOnline ? 'opacity-50' : ''}`}>
                     {/* Green Icon Circle */}
-                    <div className="w-16 h-16 rounded-full bg-[#10B981] flex items-center justify-center flex-shrink-0">
+                    <div className="w-16 h-16 rounded-full bg-[var(--success)] flex items-center justify-center flex-shrink-0">
                       <Users className="w-8 h-8 text-white" />
                     </div>
 
                     {/* Text Content */}
                     <div className="text-left">
-                      <p className="text-sm font-semibold text-[#121212] mb-1">{totalPendingRequests} passengers waiting</p>
-                      <p className="text-xs text-[#64748B]">Looking for tricycle<br/>service nearby</p>
+                      <p className="text-sm font-semibold text-[var(--ink)] mb-1">{totalPendingRequests} passengers waiting</p>
+                      <p className="text-xs text-[var(--muted-foreground)]">Looking for tricycle<br/>service nearby</p>
                     </div>
                   </div>
 
                   {/* View All Button - Disabled when offline */}
                   {isOnline ? (
                     <Link to="/rider/passenger-requests" className="w-full">
-                      <Button className="w-full bg-[#E11D48] hover:bg-[#BE123C] text-white font-bold">
+                      <Button className="w-full bg-[var(--primary)] hover:bg-[var(--primary)] text-white font-bold">
                         View All Passenger Requests
                       </Button>
                     </Link>
@@ -1087,14 +1087,14 @@ export default function RiderDashboard() {
               {showServiceTypes && (
                 <div className="fixed inset-0 bg-black/50 z-[2000] flex items-end animate-in slide-in-from-bottom duration-300">
                   <div className="bg-white w-full rounded-t-3xl max-h-[85vh] overflow-y-auto">
-                    <div className="sticky top-0 bg-white border-b border-[#E2E8F0] px-5 py-4 flex items-center justify-between">
-                      <h2 className="text-xl font-bold text-[#121212]">Service Types</h2>
+                    <div className="sticky top-0 bg-white border-b border-[var(--border)] px-5 py-4 flex items-center justify-between">
+                      <h2 className="text-xl font-bold text-[var(--ink)]">Service Types</h2>
                       <button onClick={() => setShowServiceTypes(false)}>
-                        <X className="w-6 h-6 text-[#64748B]" />
+                        <X className="w-6 h-6 text-[var(--muted-foreground)]" />
                       </button>
                     </div>
                     <div className="p-5 space-y-4">
-                      <p className="text-sm text-[#64748B]">
+                      <p className="text-sm text-[var(--muted-foreground)]">
                         Choose a category, then select the service types you want to accept.
                         {serviceCategory === 'rides' && ' You can select both Ride Share and Private Ride.'}
                       </p>
@@ -1105,36 +1105,36 @@ export default function RiderDashboard() {
                           onClick={() => selectServiceCategory('rides')}
                           className={`flex flex-col items-center gap-2 p-4 border-2 rounded-lg cursor-pointer transition-all ${
                             serviceCategory === 'rides'
-                              ? 'border-[#E11D48] bg-red-50'
+                              ? 'border-[var(--primary)] bg-red-50'
                               : 'border-gray-200 hover:border-gray-300'
                           }`}
                         >
                           <div className={`w-12 h-12 rounded-full flex items-center justify-center ${
-                            serviceCategory === 'rides' ? 'bg-[#E11D48] text-white' : 'bg-gray-100 text-[#64748B]'
+                            serviceCategory === 'rides' ? 'bg-[var(--primary)] text-white' : 'bg-gray-100 text-[var(--muted-foreground)]'
                           }`}>
                             <Users className="w-6 h-6" />
                           </div>
                           <div className="text-center">
-                            <p className="font-semibold text-[#121212]">Rides</p>
-                            <p className="text-xs text-[#64748B]">Transport passengers</p>
+                            <p className="font-semibold text-[var(--ink)]">Rides</p>
+                            <p className="text-xs text-[var(--muted-foreground)]">Transport passengers</p>
                           </div>
                         </div>
                         <div
                           onClick={() => selectServiceCategory('delivery')}
                           className={`flex flex-col items-center gap-2 p-4 border-2 rounded-lg cursor-pointer transition-all ${
                             serviceCategory === 'delivery'
-                              ? 'border-[#E11D48] bg-red-50'
+                              ? 'border-[var(--primary)] bg-red-50'
                               : 'border-gray-200 hover:border-gray-300'
                           }`}
                         >
                           <div className={`w-12 h-12 rounded-full flex items-center justify-center ${
-                            serviceCategory === 'delivery' ? 'bg-[#E11D48] text-white' : 'bg-gray-100 text-[#64748B]'
+                            serviceCategory === 'delivery' ? 'bg-[var(--primary)] text-white' : 'bg-gray-100 text-[var(--muted-foreground)]'
                           }`}>
                             <Package className="w-6 h-6" />
                           </div>
                           <div className="text-center">
-                            <p className="font-semibold text-[#121212]">Delivery</p>
-                            <p className="text-xs text-[#64748B]">Food & package delivery</p>
+                            <p className="font-semibold text-[var(--ink)]">Delivery</p>
+                            <p className="text-xs text-[var(--muted-foreground)]">Food & package delivery</p>
                           </div>
                         </div>
                       </div>
@@ -1150,23 +1150,23 @@ export default function RiderDashboard() {
                               onClick={() => (isMulti ? toggleServiceType(option.key) : undefined)}
                               className={`flex items-center justify-between p-4 border-2 rounded-lg cursor-pointer transition-all ${
                                 active
-                                  ? 'border-[#E11D48] bg-red-50'
+                                  ? 'border-[var(--primary)] bg-red-50'
                                   : 'border-gray-200 hover:border-gray-300'
                               }`}
                             >
                               <div className="flex items-center gap-3">
                                 <div className={`w-10 h-10 rounded-full flex items-center justify-center ${
-                                  active ? 'bg-[#E11D48] text-white' : 'bg-gray-100 text-[#64748B]'
+                                  active ? 'bg-[var(--primary)] text-white' : 'bg-gray-100 text-[var(--muted-foreground)]'
                                 }`}>
                                   {option.key === 'delivery' ? <Package className="w-5 h-5" /> : option.key === 'private' ? <Car className="w-5 h-5" /> : <Users className="w-5 h-5" />}
                                 </div>
                                 <div>
-                                  <p className="font-semibold text-[#121212]">{option.name}</p>
-                                  <p className="text-xs text-[#64748B]">{option.description}</p>
+                                  <p className="font-semibold text-[var(--ink)]">{option.name}</p>
+                                  <p className="text-xs text-[var(--muted-foreground)]">{option.description}</p>
                                 </div>
                               </div>
                               <div className={`w-5 h-5 rounded border-2 flex items-center justify-center ${
-                                active ? 'bg-[#E11D48] border-[#E11D48]' : 'border-gray-300'
+                                active ? 'bg-[var(--primary)] border-[var(--primary)]' : 'border-gray-300'
                               }`}>
                                 {active && <div className="w-2 h-2 bg-white rounded-sm" />}
                               </div>
@@ -1177,7 +1177,7 @@ export default function RiderDashboard() {
 
                       <Button
                         onClick={() => setShowServiceTypes(false)}
-                        className="w-full bg-[#E11D48] hover:bg-[#BE123C] uppercase"
+                        className="w-full bg-[var(--primary)] hover:bg-[var(--primary)] uppercase"
                       >
                         Save Service Types
                       </Button>
@@ -1191,9 +1191,9 @@ export default function RiderDashboard() {
               {showMore && (
                 <div className="border-t border-gray-200 p-4 space-y-3">
                   <div className="flex items-center justify-between mb-3">
-                    <h3 className="font-bold text-[#121212]">More Options</h3>
+                    <h3 className="font-bold text-[var(--ink)]">More Options</h3>
                     <button onClick={() => setShowMore(false)}>
-                      <X className="w-5 h-5 text-[#64748B]" />
+                      <X className="w-5 h-5 text-[var(--muted-foreground)]" />
                     </button>
                   </div>
                   <div className="space-y-2">
@@ -1224,14 +1224,14 @@ export default function RiderDashboard() {
       {showWelcomeBack && (
         <div className="fixed inset-0 bg-black/50 z-[2000] flex items-center justify-center p-4">
           <div className="bg-white rounded-2xl shadow-xl p-8 max-w-sm w-full text-center">
-            <div className="w-16 h-16 bg-[#D1FAE5] rounded-full flex items-center justify-center mx-auto mb-4">
-              <Check className="w-8 h-8 text-[#10B981]" />
+            <div className="w-16 h-16 bg-[var(--success-soft)] rounded-full flex items-center justify-center mx-auto mb-4">
+              <Check className="w-8 h-8 text-[var(--success)]" />
             </div>
-            <h3 className="text-2xl font-bold text-[#121212] mb-2">Welcome Back!</h3>
-            <p className="text-[#64748B] text-sm">Good to see you again, <span className="font-semibold text-[#121212]">{welcomeUserName}</span></p>
+            <h3 className="text-2xl font-bold text-[var(--ink)] mb-2">Welcome Back!</h3>
+            <p className="text-[var(--muted-foreground)] text-sm">Good to see you again, <span className="font-semibold text-[var(--ink)]">{welcomeUserName}</span></p>
             <div className="mt-6">
-              <div className="w-full bg-[#E2E8F0] rounded-full h-1.5">
-                <div className="bg-[#10B981] h-1.5 rounded-full" style={{ width: '100%', animation: 'shrink 2.5s linear forwards' }} />
+              <div className="w-full bg-[var(--border)] rounded-full h-1.5">
+                <div className="bg-[var(--success)] h-1.5 rounded-full" style={{ width: '100%', animation: 'shrink 2.5s linear forwards' }} />
               </div>
             </div>
           </div>

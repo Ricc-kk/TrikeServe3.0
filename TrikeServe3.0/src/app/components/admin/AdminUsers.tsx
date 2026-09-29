@@ -256,26 +256,26 @@ export default function AdminUsers() {
   const getRoleIcon = (role: string) => {
     switch (role) {
       case 'customer':
-        return <Users className="w-5 h-5 text-[#10B981]" />;
+        return <Users className="w-5 h-5 text-[var(--success)]" />;
       case 'rider':
-        return <Bike className="w-5 h-5 text-[#3B82F6]" />;
+        return <Bike className="w-5 h-5 text-[var(--info)]" />;
       case 'business':
-        return <Store className="w-5 h-5 text-[#9333EA]" />;
+        return <Store className="w-5 h-5 text-[var(--violet)]" />;
       default:
-        return <UserIcon className="w-5 h-5 text-[#64748B]" />;
+        return <UserIcon className="w-5 h-5 text-[var(--muted-foreground)]" />;
     }
   };
 
   const getRoleBadgeColor = (role: string) => {
     switch (role) {
       case 'customer':
-        return 'bg-[#10B981]';
+        return 'bg-[var(--success)]';
       case 'rider':
-        return 'bg-[#3B82F6]';
+        return 'bg-[var(--info)]';
       case 'business':
-        return 'bg-[#9333EA]';
+        return 'bg-[var(--violet)]';
       default:
-        return 'bg-[#64748B]';
+        return 'bg-[var(--muted-foreground)]';
     }
   };
 
@@ -289,7 +289,7 @@ export default function AdminUsers() {
   };
 
   return (
-    <div className="min-h-screen bg-[#F8F9FA] flex">
+    <div className="min-h-screen bg-[var(--muted)] flex">
       {/* Sidebar Navigation */}
       <AdminSidebar
         isMobileMenuOpen={isMobileMenuOpen}
@@ -299,21 +299,21 @@ export default function AdminUsers() {
       {/* Main Content */}
       <div className="flex-1 lg:ml-64">
         {/* Top Header */}
-        <div className="bg-white border-b-2 border-[#E2E8F0] px-5 lg:px-8 py-4 lg:py-5 sticky top-0 z-50">
+        <div className="bg-white border-b-2 border-[var(--border)] px-5 lg:px-8 py-4 lg:py-5 sticky top-0 z-50">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-3">
               {/* Hamburger Menu - Mobile Only */}
               <button
                 onClick={() => setIsMobileMenuOpen(true)}
-                className="lg:hidden p-2 hover:bg-[#F8F9FA] rounded-xl transition-all"
+                className="lg:hidden p-2 hover:bg-[var(--muted)] rounded-xl transition-all"
               >
-                <Menu className="w-6 h-6 text-[#121212]" />
+                <Menu className="w-6 h-6 text-[var(--ink)]" />
               </button>
               <div>
-                <h1 className="text-2xl lg:text-3xl font-extrabold text-[#121212]">
+                <h1 className="text-2xl lg:text-3xl font-extrabold text-[var(--ink)]">
                   {isRiderReadOnly ? 'Drivers' : 'User Management'}
                 </h1>
-                <p className="text-xs lg:text-sm text-[#64748B]">
+                <p className="text-xs lg:text-sm text-[var(--muted-foreground)]">
                   {isRiderReadOnly ? 'View driver accounts' : 'Manage users, roles, and verifications'}
                 </p>
               </div>
@@ -324,9 +324,9 @@ export default function AdminUsers() {
         {/* Content */}
         <div className="p-5 lg:p-8">
           {isRiderReadOnly && (
-            <Card className="p-4 mb-6 border-2 border-[#BFDBFE] bg-[#EFF6FF]">
-              <p className="text-sm text-[#1E40AF] font-semibold">Read-only access</p>
-              <p className="text-xs text-[#1E40AF]/80 mt-0.5">
+            <Card className="p-4 mb-6 border-2 border-[var(--info-soft)] bg-[var(--info-soft)]">
+              <p className="text-sm text-[var(--info)] font-semibold">Read-only access</p>
+              <p className="text-xs text-[var(--info)]/80 mt-0.5">
                 Verification, role changes and account management are handled by the Super Admin.
               </p>
             </Card>
@@ -334,44 +334,44 @@ export default function AdminUsers() {
 
           {/* Stats Cards */}
           <div className="grid grid-cols-2 lg:grid-cols-6 gap-3 lg:gap-4 mb-6">
-            <Card className="p-4 border-2 border-[#E2E8F0] bg-white">
-              <p className="text-xs text-[#64748B] mb-1">Total Users</p>
-              <p className="text-2xl font-bold text-[#121212]">{stats.total}</p>
+            <Card className="p-4 border-2 border-[var(--border)] bg-white">
+              <p className="text-xs text-[var(--muted-foreground)] mb-1">Total Users</p>
+              <p className="text-2xl font-bold text-[var(--ink)]">{stats.total}</p>
             </Card>
-            <Card className="p-4 border-2 border-[#E2E8F0] bg-white">
-              <p className="text-xs text-[#64748B] mb-1">Customers</p>
-              <p className="text-2xl font-bold text-[#10B981]">{stats.customers}</p>
+            <Card className="p-4 border-2 border-[var(--border)] bg-white">
+              <p className="text-xs text-[var(--muted-foreground)] mb-1">Customers</p>
+              <p className="text-2xl font-bold text-[var(--success)]">{stats.customers}</p>
             </Card>
-            <Card className="p-4 border-2 border-[#E2E8F0] bg-white">
-              <p className="text-xs text-[#64748B] mb-1">Drivers</p>
-              <p className="text-2xl font-bold text-[#3B82F6]">{stats.riders}</p>
+            <Card className="p-4 border-2 border-[var(--border)] bg-white">
+              <p className="text-xs text-[var(--muted-foreground)] mb-1">Drivers</p>
+              <p className="text-2xl font-bold text-[var(--info)]">{stats.riders}</p>
             </Card>
-            <Card className="p-4 border-2 border-[#E2E8F0] bg-white">
-              <p className="text-xs text-[#64748B] mb-1">Businesses</p>
-              <p className="text-2xl font-bold text-[#9333EA]">{stats.businesses}</p>
+            <Card className="p-4 border-2 border-[var(--border)] bg-white">
+              <p className="text-xs text-[var(--muted-foreground)] mb-1">Businesses</p>
+              <p className="text-2xl font-bold text-[var(--violet)]">{stats.businesses}</p>
             </Card>
-            <Card className="p-4 border-2 border-[#E2E8F0] bg-white">
-              <p className="text-xs text-[#64748B] mb-1">Verified</p>
-              <p className="text-2xl font-bold text-[#10B981]">{stats.verified}</p>
+            <Card className="p-4 border-2 border-[var(--border)] bg-white">
+              <p className="text-xs text-[var(--muted-foreground)] mb-1">Verified</p>
+              <p className="text-2xl font-bold text-[var(--success)]">{stats.verified}</p>
             </Card>
-            <Card className="p-4 border-2 border-[#E2E8F0] bg-white">
-              <p className="text-xs text-[#64748B] mb-1">Pending</p>
-              <p className="text-2xl font-bold text-[#F59E0B]">{stats.pending}</p>
+            <Card className="p-4 border-2 border-[var(--border)] bg-white">
+              <p className="text-xs text-[var(--muted-foreground)] mb-1">Pending</p>
+              <p className="text-2xl font-bold text-[var(--amber)]">{stats.pending}</p>
             </Card>
           </div>
 
           {/* Search and Filters */}
-          <Card className="p-5 border-2 border-[#E2E8F0] bg-white mb-6">
+          <Card className="p-5 border-2 border-[var(--border)] bg-white mb-6">
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
               {/* Search */}
               <div className="relative">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-[#64748B]" />
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-[var(--muted-foreground)]" />
                 <Input
                   type="text"
                   placeholder="Search by name, email, or phone..."
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
-                  className="pl-10 border-2 border-[#E2E8F0]"
+                  className="pl-10 border-2 border-[var(--border)]"
                 />
               </div>
 
@@ -380,7 +380,7 @@ export default function AdminUsers() {
                 <select
                   value={filterRole}
                   onChange={(e) => setFilterRole(e.target.value)}
-                  className="w-full p-3 border-2 border-[#E2E8F0] rounded-xl font-semibold"
+                  className="w-full p-3 border-2 border-[var(--border)] rounded-xl font-semibold"
                 >
                   <option value="all">All Roles</option>
                   {(!user?.adminType || user?.adminType === 'business_customer') && (
@@ -401,7 +401,7 @@ export default function AdminUsers() {
                 <select
                   value={filterStatus}
                   onChange={(e) => setFilterStatus(e.target.value)}
-                  className="w-full p-3 border-2 border-[#E2E8F0] rounded-xl font-semibold"
+                  className="w-full p-3 border-2 border-[var(--border)] rounded-xl font-semibold"
                 >
                   <option value="all">All Status</option>
                   <option value="verified">Verified Only</option>
@@ -412,41 +412,41 @@ export default function AdminUsers() {
           </Card>
 
           {/* Users List */}
-          <Card className="border-2 border-[#E2E8F0] bg-white overflow-hidden">
+          <Card className="border-2 border-[var(--border)] bg-white overflow-hidden">
             {filteredUsers.length === 0 ? (
-              <div className="p-12 border-2 border-dashed border-[#E2E8F0] text-center">
+              <div className="p-12 border-2 border-dashed border-[var(--border)] text-center">
                 <Users className="w-16 h-16 text-gray-300 mx-auto mb-4" />
-                <p className="text-[#64748B] text-sm">No users found</p>
+                <p className="text-[var(--muted-foreground)] text-sm">No users found</p>
               </div>
             ) : (
               <div className="overflow-x-auto">
                 <table className="w-full">
-                  <thead className="bg-[#F8F9FA] border-b-2 border-[#E2E8F0]">
+                  <thead className="bg-[var(--muted)] border-b-2 border-[var(--border)]">
                     <tr>
-                      <th className="px-4 py-3 text-left text-xs font-bold text-[#64748B] uppercase tracking-wider">User</th>
-                      <th className="px-4 py-3 text-left text-xs font-bold text-[#64748B] uppercase tracking-wider">Role</th>
-                      <th className="px-4 py-3 text-left text-xs font-bold text-[#64748B] uppercase tracking-wider">Status</th>
-                      <th className="px-4 py-3 text-left text-xs font-bold text-[#64748B] uppercase tracking-wider">Email</th>
-                      <th className="px-4 py-3 text-left text-xs font-bold text-[#64748B] uppercase tracking-wider">Phone</th>
-                      <th className="px-4 py-3 text-left text-xs font-bold text-[#64748B] uppercase tracking-wider">Details</th>
-                      <th className="px-4 py-3 text-center text-xs font-bold text-[#64748B] uppercase tracking-wider">Actions</th>
+                      <th className="px-4 py-3 text-left text-xs font-bold text-[var(--muted-foreground)] uppercase tracking-wider">User</th>
+                      <th className="px-4 py-3 text-left text-xs font-bold text-[var(--muted-foreground)] uppercase tracking-wider">Role</th>
+                      <th className="px-4 py-3 text-left text-xs font-bold text-[var(--muted-foreground)] uppercase tracking-wider">Status</th>
+                      <th className="px-4 py-3 text-left text-xs font-bold text-[var(--muted-foreground)] uppercase tracking-wider">Email</th>
+                      <th className="px-4 py-3 text-left text-xs font-bold text-[var(--muted-foreground)] uppercase tracking-wider">Phone</th>
+                      <th className="px-4 py-3 text-left text-xs font-bold text-[var(--muted-foreground)] uppercase tracking-wider">Details</th>
+                      <th className="px-4 py-3 text-center text-xs font-bold text-[var(--muted-foreground)] uppercase tracking-wider">Actions</th>
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-[#E2E8F0]">
+                  <tbody className="divide-y divide-[var(--border)]">
                     {filteredUsers.map((u) => (
-                      <tr key={u.id} className="hover:bg-[#F8F9FA] transition-colors">
+                      <tr key={u.id} className="hover:bg-[var(--muted)] transition-colors">
                         <td className="px-4 py-4">
                           <div className="flex items-center gap-3">
                             <div className={`w-10 h-10 ${
-                              u.role === 'customer' ? 'bg-[#D1FAE5]' :
-                              u.role === 'rider' ? 'bg-[#DBEAFE]' :
-                              'bg-[#F3E8FF]'
+                              u.role === 'customer' ? 'bg-[var(--success-soft)]' :
+                              u.role === 'rider' ? 'bg-[var(--info-soft)]' :
+                              'bg-[var(--violet-soft)]'
                             } rounded-xl flex items-center justify-center flex-shrink-0`}>
                               {getRoleIcon(u.role)}
                             </div>
                             <div>
                               <div className="flex items-center gap-2">
-                                <p className="font-bold text-[#121212]">
+                                <p className="font-bold text-[var(--ink)]">
                                   {u.role === 'business' ? (u.businessName || u.name) : u.name}
                                 </p>
                               </div>
@@ -459,7 +459,7 @@ export default function AdminUsers() {
                               <select
                                 value={editRole}
                                 onChange={(e) => setEditRole(e.target.value)}
-                                className="px-3 py-1 border-2 border-[#E11D48] rounded-lg font-semibold text-sm"
+                                className="px-3 py-1 border-2 border-[var(--primary)] rounded-lg font-semibold text-sm"
                               >
                                 {(!user?.adminType || user?.adminType === 'business_customer') && (
                                   <>
@@ -474,13 +474,13 @@ export default function AdminUsers() {
                               </select>
                               <button
                                 onClick={() => handleSaveRole(u.id)}
-                                className="p-1.5 bg-[#10B981] hover:bg-[#059669] rounded-lg transition-all"
+                                className="p-1.5 bg-[var(--success)] hover:bg-[var(--success)] rounded-lg transition-all"
                               >
                                 <CheckCircle className="w-4 h-4 text-white" />
                               </button>
                               <button
                                 onClick={handleCancelEdit}
-                                className="p-1.5 bg-[#64748B] hover:bg-[#475569] rounded-lg transition-all"
+                                className="p-1.5 bg-[var(--muted-foreground)] hover:bg-[var(--muted-foreground)] rounded-lg transition-all"
                               >
                                 <XCircle className="w-4 h-4 text-white" />
                               </button>
@@ -493,9 +493,9 @@ export default function AdminUsers() {
                               {isSuperAdmin && (
                                 <button
                                   onClick={() => handleStartEditRole(u.id, u.role)}
-                                  className="p-1 hover:bg-[#F8F9FA] rounded transition-all"
+                                  className="p-1 hover:bg-[var(--muted)] rounded transition-all"
                                 >
-                                  <Edit2 className="w-4 h-4 text-[#64748B]" />
+                                  <Edit2 className="w-4 h-4 text-[var(--muted-foreground)]" />
                                 </button>
                               )}
                             </div>
@@ -505,25 +505,25 @@ export default function AdminUsers() {
                           <div className="flex items-center gap-2">
                             {u.isVerified ? (
                               <>
-                                <CheckCircle className="w-5 h-5 text-[#10B981]" />
-                                <span className="font-semibold text-[#10B981]">Verified</span>
+                                <CheckCircle className="w-5 h-5 text-[var(--success)]" />
+                                <span className="font-semibold text-[var(--success)]">Verified</span>
                               </>
                             ) : (
                               <>
-                                <XCircle className="w-5 h-5 text-[#F59E0B]" />
-                                <span className="font-semibold text-[#F59E0B]">Pending</span>
+                                <XCircle className="w-5 h-5 text-[var(--amber)]" />
+                                <span className="font-semibold text-[var(--amber)]">Pending</span>
                               </>
                             )}
                           </div>
                         </td>
                         <td className="px-4 py-4">
-                          <p className="text-sm text-[#64748B]">{u.email}</p>
+                          <p className="text-sm text-[var(--muted-foreground)]">{u.email}</p>
                         </td>
                         <td className="px-4 py-4">
-                          <p className="text-sm text-[#64748B]">{u.phone}</p>
+                          <p className="text-sm text-[var(--muted-foreground)]">{u.phone}</p>
                         </td>
                         <td className="px-4 py-4">
-                          <div className="text-sm text-[#64748B]">
+                          <div className="text-sm text-[var(--muted-foreground)]">
                             {u.role === 'rider' && u.todaPlate && (
                               <p><span className="font-semibold">TODA:</span> {u.todaPlate}</p>
                             )}
@@ -544,9 +544,9 @@ export default function AdminUsers() {
                               className={`px-3 py-1.5 rounded-lg transition-all flex items-center gap-1.5 font-semibold text-xs ${
                                 canVerifyUser(u.role)
                                   ? u.isVerified
-                                    ? 'bg-[#F59E0B] hover:bg-[#D97706] text-white cursor-pointer'
-                                    : 'bg-[#10B981] hover:bg-[#059669] text-white cursor-pointer'
-                                  : 'bg-[#D1D5DB] text-[#6B7280] cursor-not-allowed opacity-50'
+                                    ? 'bg-[var(--amber)] hover:bg-[var(--amber)] text-white cursor-pointer'
+                                    : 'bg-[var(--success)] hover:bg-[var(--success)] text-white cursor-pointer'
+                                  : 'bg-[var(--muted-foreground)] text-[var(--muted-foreground)] cursor-not-allowed opacity-50'
                               }`}
                             >
                               {u.isVerified ? <XCircle className="w-4 h-4" /> : <CheckCircle className="w-4 h-4" />}
@@ -558,8 +558,8 @@ export default function AdminUsers() {
                               title={!canDeleteUser(u.role) ? getBlockedReason(u.role) : 'Delete this user'}
                               className={`px-3 py-1.5 rounded-lg transition-all flex items-center gap-1.5 font-semibold text-xs ${
                                 canDeleteUser(u.role)
-                                  ? 'bg-[#EF4444] hover:bg-[#DC2626] text-white cursor-pointer'
-                                  : 'bg-[#D1D5DB] text-[#6B7280] cursor-not-allowed opacity-50'
+                                  ? 'bg-[var(--error)] hover:bg-[var(--error)] text-white cursor-pointer'
+                                  : 'bg-[var(--muted-foreground)] text-[var(--muted-foreground)] cursor-not-allowed opacity-50'
                               }`}
                             >
                               <Trash2 className="w-4 h-4" />

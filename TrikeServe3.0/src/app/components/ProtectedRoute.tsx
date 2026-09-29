@@ -11,10 +11,10 @@ export default function ProtectedRoute({ children, allowedRoles }: ProtectedRout
 
   if (isLoading) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-[#F8F9FA]">
+      <div className="min-h-screen flex items-center justify-center bg-[var(--muted)]">
         <div className="text-center">
-          <div className="w-16 h-16 border-4 border-[#E11D48] border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
-          <p className="text-[#64748B] font-medium">Loading...</p>
+          <div className="w-16 h-16 border-4 border-[var(--primary)] border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
+          <p className="text-[var(--muted-foreground)] font-medium">Loading...</p>
         </div>
       </div>
     );

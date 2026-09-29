@@ -332,21 +332,21 @@ export default function Cart() {
     return (
       <div className="min-h-screen bg-white pb-32">
         {/* Header */}
-        <div className="px-5 py-4 border-b border-[#E2E8F0] flex items-center justify-between sticky top-0 bg-white z-50">
+        <div className="px-5 py-4 border-b border-[var(--border)] flex items-center justify-between sticky top-0 bg-white z-50">
           <div className="flex items-center gap-3">
             <Link to="/customer/food">
               <button className="active:scale-90 transition-transform">
-                <X className="w-6 h-6 text-[#121212]" />
+                <X className="w-6 h-6 text-[var(--ink)]" />
               </button>
             </Link>
-            <h1 className="text-xl font-bold text-[#121212]">My Cart</h1>
+            <h1 className="text-xl font-bold text-[var(--ink)]">My Cart</h1>
           </div>
           <button
             onClick={() => {
               setIsManageMode(!isManageMode);
               setSelectedRestaurants([]);
             }}
-            className="text-base font-semibold text-[#3B82F6] active:scale-95 transition-transform"
+            className="text-base font-semibold text-[var(--info)] active:scale-95 transition-transform"
           >
             {isManageMode ? "Cancel" : "Manage"}
           </button>
@@ -359,7 +359,7 @@ export default function Cart() {
               <div
                 key={restaurant.id}
                 onClick={() => !isManageMode && openCheckout(restaurant)}
-                className={`bg-white border-2 border-[#E2E8F0] rounded-2xl p-4 ${!isManageMode ? 'active:scale-[0.98]' : ''} transition-all`}
+                className={`bg-white border-2 border-[var(--border)] rounded-2xl p-4 ${!isManageMode ? 'active:scale-[0.98]' : ''} transition-all`}
               >
                 <div className="flex items-start gap-3">
                   {/* Checkbox in manage mode */}
@@ -373,8 +373,8 @@ export default function Cart() {
                     >
                       <div className={`w-6 h-6 rounded border-2 flex items-center justify-center transition-all ${
                         selectedRestaurants.includes(restaurant.id)
-                          ? 'bg-[#10B981] border-[#10B981]'
-                          : 'border-[#CBD5E1] bg-white'
+                          ? 'bg-[var(--success)] border-[var(--success)]'
+                          : 'border-[var(--border)] bg-white'
                       }`}>
                         {selectedRestaurants.includes(restaurant.id) && (
                           <svg className="w-4 h-4 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -387,8 +387,8 @@ export default function Cart() {
 
                   {/* Restaurant Info */}
                   <div className="flex-1 min-w-0">
-                    <h3 className="font-bold text-[#121212] text-base mb-1">{restaurant.name}</h3>
-                    <p className="text-sm text-[#64748B] mb-0">
+                    <h3 className="font-bold text-[var(--ink)] text-base mb-1">{restaurant.name}</h3>
+                    <p className="text-sm text-[var(--muted-foreground)] mb-0">
                       {restaurant.items.length} {restaurant.items.length === 1 ? 'item' : 'items'} • From {restaurant.estimatedTime}
                     </p>
                   </div>
@@ -407,7 +407,7 @@ export default function Cart() {
                 {!isManageMode && (
                   <div className="mt-3 space-y-2">
                     {restaurant.items.map((item) => (
-                      <div key={item.id} className="flex items-center gap-3 py-2 border-t border-[#F1F5F9]">
+                      <div key={item.id} className="flex items-center gap-3 py-2 border-t border-[var(--muted)]">
                         <div className="w-10 h-10 rounded-lg overflow-hidden flex-shrink-0">
                           <ImageWithFallback
                             src={item.image}
@@ -416,8 +416,8 @@ export default function Cart() {
                           />
                         </div>
                         <div className="flex-1 min-w-0">
-                          <p className="text-sm font-semibold text-[#121212] truncate">{item.name}</p>
-                          <p className="text-xs text-[#64748B]">₱{item.price}.00</p>
+                          <p className="text-sm font-semibold text-[var(--ink)] truncate">{item.name}</p>
+                          <p className="text-xs text-[var(--muted-foreground)]">₱{item.price}.00</p>
                         </div>
                         <div className="flex items-center gap-2">
                           {item.quantity === 1 ? (
@@ -433,9 +433,9 @@ export default function Cart() {
                                   removeItem(restaurant.id, item.id);
                                 }
                               }}
-                              className="w-7 h-7 rounded-full border-2 border-[#EF4444] flex items-center justify-center active:scale-90 transition-all"
+                              className="w-7 h-7 rounded-full border-2 border-[var(--error)] flex items-center justify-center active:scale-90 transition-all"
                             >
-                              <Trash2 size={12} className="text-[#EF4444]" />
+                              <Trash2 size={12} className="text-[var(--error)]" />
                             </button>
                           ) : (
                             <button
@@ -443,12 +443,12 @@ export default function Cart() {
                                 e.stopPropagation();
                                 updateItemQuantity(restaurant.id, item.id, -1);
                               }}
-                              className="w-7 h-7 rounded-full border-2 border-[#E2E8F0] flex items-center justify-center active:scale-90 transition-all"
+                              className="w-7 h-7 rounded-full border-2 border-[var(--border)] flex items-center justify-center active:scale-90 transition-all"
                             >
-                              <Minus size={12} className="text-[#121212]" />
+                              <Minus size={12} className="text-[var(--ink)]" />
                             </button>
                           )}
-                          <span className="text-sm font-bold text-[#121212] min-w-[18px] text-center">{item.quantity}</span>
+                          <span className="text-sm font-bold text-[var(--ink)] min-w-[18px] text-center">{item.quantity}</span>
                           <button
                             onClick={(e) => {
                               e.stopPropagation();
@@ -457,11 +457,11 @@ export default function Cart() {
                             disabled={item.quantity >= 50}
                             className={`w-7 h-7 rounded-full border-2 flex items-center justify-center active:scale-90 transition-all ${
                               item.quantity >= 50
-                                ? 'border-[#E2E8F0] bg-[#F8F9FA] cursor-not-allowed opacity-50'
-                                : 'border-[#10B981] bg-[#10B981]/10'
+                                ? 'border-[var(--border)] bg-[var(--muted)] cursor-not-allowed opacity-50'
+                                : 'border-[var(--success)] bg-[var(--success)]/10'
                             }`}
                           >
-                            <Plus size={12} className={item.quantity >= 50 ? 'text-[#94A3B8]' : 'text-[#10B981]'} />
+                            <Plus size={12} className={item.quantity >= 50 ? 'text-[var(--muted-foreground)]' : 'text-[var(--success)]'} />
                           </button>
                         </div>
                       </div>
@@ -473,13 +473,13 @@ export default function Cart() {
           </div>
         ) : (
           <div className="flex flex-col items-center justify-center py-20">
-            <div className="w-24 h-24 bg-[#F8F9FA] rounded-full flex items-center justify-center mb-4">
-              <ShoppingCart className="w-12 h-12 text-[#CBD5E1]" />
+            <div className="w-24 h-24 bg-[var(--muted)] rounded-full flex items-center justify-center mb-4">
+              <ShoppingCart className="w-12 h-12 text-[var(--border)]" />
             </div>
-            <h3 className="text-xl font-bold text-[#121212] mb-2">Your cart is empty</h3>
-            <p className="text-[#64748B] mb-6">Add items to get started</p>
+            <h3 className="text-xl font-bold text-[var(--ink)] mb-2">Your cart is empty</h3>
+            <p className="text-[var(--muted-foreground)] mb-6">Add items to get started</p>
             <Link to="/customer/food">
-              <Button className="bg-[#E11D48] hover:bg-[#BE123C] uppercase">
+              <Button className="bg-[var(--primary)] hover:bg-[var(--primary)] uppercase">
                 Browse Food
               </Button>
             </Link>
@@ -488,7 +488,7 @@ export default function Cart() {
 
         {/* Manage Mode Bottom Actions */}
         {isManageMode && cartRestaurants.length > 0 && (
-          <div className="fixed bottom-16 left-0 right-0 bg-white border-t-2 border-[#E2E8F0] px-5 py-4 z-[1400]">
+          <div className="fixed bottom-16 left-0 right-0 bg-white border-t-2 border-[var(--border)] px-5 py-4 z-[1400]">
             <div className="flex items-center justify-between gap-4">
               <button
                 onClick={toggleSelectAll}
@@ -496,8 +496,8 @@ export default function Cart() {
               >
                 <div className={`w-6 h-6 rounded border-2 flex items-center justify-center transition-all ${
                   selectedRestaurants.length === cartRestaurants.length
-                    ? 'bg-[#10B981] border-[#10B981]'
-                    : 'border-[#CBD5E1] bg-white'
+                    ? 'bg-[var(--success)] border-[var(--success)]'
+                    : 'border-[var(--border)] bg-white'
                 }`}>
                   {selectedRestaurants.length === cartRestaurants.length && (
                     <svg className="w-4 h-4 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -505,7 +505,7 @@ export default function Cart() {
                     </svg>
                   )}
                 </div>
-                <span className="font-semibold text-[#121212]">Select all</span>
+                <span className="font-semibold text-[var(--ink)]">Select all</span>
               </button>
 
               <button
@@ -513,8 +513,8 @@ export default function Cart() {
                 disabled={selectedRestaurants.length === 0}
                 className={`px-8 py-3 rounded-full font-bold text-white uppercase transition-all ${
                   selectedRestaurants.length > 0
-                    ? 'bg-[#E11D48] active:scale-95'
-                    : 'bg-[#CBD5E1] cursor-not-allowed'
+                    ? 'bg-[var(--primary)] active:scale-95'
+                    : 'bg-[var(--border)] cursor-not-allowed'
                 }`}
               >
                 Remove ({selectedRestaurants.length})
@@ -530,10 +530,10 @@ export default function Cart() {
         {showRemoveConfirm && (
           <div className="fixed inset-0 bg-black/60 z-[2000] flex items-center justify-center p-4">
             <Card className="bg-white p-6 max-w-sm w-full" onClick={(e) => e.stopPropagation()}>
-              <h3 className="text-xl font-bold text-[#121212] text-center mb-2">
+              <h3 className="text-xl font-bold text-[var(--ink)] text-center mb-2">
                 {pendingRemoveItem ? 'Remove Last Item?' : 'Remove Items?'}
               </h3>
-              <p className="text-[#64748B] text-center mb-6">
+              <p className="text-[var(--muted-foreground)] text-center mb-6">
                 {pendingRemoveItem
                   ? 'This will empty your cart. Are you sure?'
                   : `Are you sure you want to remove ${selectedRestaurants.length} item${selectedRestaurants.length > 1 ? 's' : ''} from cart?`}
@@ -541,13 +541,13 @@ export default function Cart() {
               <div className="space-y-3">
                 <button
                   onClick={confirmRemoveRestaurants}
-                  className="w-full py-4 bg-[#E11D48] hover:bg-[#BE123C] text-white font-bold rounded-2xl uppercase active:scale-95 transition-transform"
+                  className="w-full py-4 bg-[var(--primary)] hover:bg-[var(--primary)] text-white font-bold rounded-2xl uppercase active:scale-95 transition-transform"
                 >
                   {pendingRemoveItem ? 'Yes, Empty Cart' : 'Remove'}
                 </button>
                 <button
                   onClick={() => { setShowRemoveConfirm(false); setPendingRemoveItem(null); }}
-                  className="w-full py-4 bg-[#F8F9FA] text-[#64748B] font-bold rounded-2xl uppercase active:scale-95 transition-transform"
+                  className="w-full py-4 bg-[var(--muted)] text-[var(--muted-foreground)] font-bold rounded-2xl uppercase active:scale-95 transition-transform"
                 >
                   Cancel
                 </button>
@@ -564,7 +564,7 @@ export default function Cart() {
   return (
     <div className="min-h-screen bg-white pb-24">
       {/* Header */}
-      <div className="px-5 py-4 border-b border-[#E2E8F0] sticky top-0 bg-white z-50">
+      <div className="px-5 py-4 border-b border-[var(--border)] sticky top-0 bg-white z-50">
         <div className="flex items-center gap-3">
           <button
             onClick={() => {
@@ -577,9 +577,9 @@ export default function Cart() {
             }}
             className="active:scale-90 transition-transform"
           >
-            <X className="w-6 h-6 text-[#121212]" />
+            <X className="w-6 h-6 text-[var(--ink)]" />
           </button>
-          <h2 className="font-bold text-[#121212] text-base flex-1">{checkoutRestaurant?.name}</h2>
+          <h2 className="font-bold text-[var(--ink)] text-base flex-1">{checkoutRestaurant?.name}</h2>
         </div>
       </div>
 
@@ -587,13 +587,13 @@ export default function Cart() {
         {/* Order Summary */}
         <div>
           <div className="flex items-center justify-between mb-4">
-            <h3 className="text-lg font-bold text-[#121212]">Order summary</h3>
-            <button className="text-sm font-semibold text-[#3B82F6]">Add items</button>
+            <h3 className="text-lg font-bold text-[var(--ink)]">Order summary</h3>
+            <button className="text-sm font-semibold text-[var(--info)]">Add items</button>
           </div>
 
           <div className="space-y-4">
             {checkoutRestaurant?.items.map((item: any) => (
-              <div key={item.id} className="border border-[#F1F5F9] rounded-xl p-3">
+              <div key={item.id} className="border border-[var(--muted)] rounded-xl p-3">
                 <div className="flex items-start gap-3">
                   {/* Item Image */}
                   <div className="w-16 h-16 rounded-xl overflow-hidden flex-shrink-0">
@@ -606,13 +606,13 @@ export default function Cart() {
 
                   {/* Item Details */}
                   <div className="flex-1 min-w-0">
-                    <h4 className="font-semibold text-[#121212] text-sm mb-1">{item.name}</h4>
+                    <h4 className="font-semibold text-[var(--ink)] text-sm mb-1">{item.name}</h4>
                     {item.customizations && item.customizations.length > 0 && (
                       <div className="space-y-0.5 mb-2">
                         {item.customizations.map((customization: any, idx: number) => (
-                          <p key={idx} className="text-xs text-[#64748B]">
+                          <p key={idx} className="text-xs text-[var(--muted-foreground)]">
                             • {customization.optionName}
-                            {customization.price > 0 && <span className="text-[#E11D48]"> +₱{customization.price}</span>}
+                            {customization.price > 0 && <span className="text-[var(--primary)]"> +₱{customization.price}</span>}
                           </p>
                         ))}
                       </div>
@@ -621,13 +621,13 @@ export default function Cart() {
 
                   {/* Price */}
                   <div className="text-right">
-                    <span className="font-semibold text-[#121212]">₱{(item.price * item.quantity).toFixed(2)}</span>
+                    <span className="font-semibold text-[var(--ink)]">₱{(item.price * item.quantity).toFixed(2)}</span>
                   </div>
                 </div>
 
                 {/* Quantity Controls */}
                 <div className="flex items-center justify-between mt-2 pl-[76px]">
-                  <span className="text-sm text-[#64748B]">₱{item.price}.00 each</span>
+                  <span className="text-sm text-[var(--muted-foreground)]">₱{item.price}.00 each</span>
                   <div className="flex items-center gap-3">
                     {item.quantity === 1 ? (
                       <button
@@ -637,9 +637,9 @@ export default function Cart() {
                             removeItem(checkoutRestaurant.id, item.id);
                           }
                         }}
-                        className="w-8 h-8 rounded-full border-2 border-[#EF4444] flex items-center justify-center active:scale-90 transition-all"
+                        className="w-8 h-8 rounded-full border-2 border-[var(--error)] flex items-center justify-center active:scale-90 transition-all"
                       >
-                        <Trash2 size={14} className="text-[#EF4444]" />
+                        <Trash2 size={14} className="text-[var(--error)]" />
                       </button>
                     ) : (
                       <button
@@ -649,12 +649,12 @@ export default function Cart() {
                             updateItemQuantity(checkoutRestaurant.id, item.id, -1);
                           }
                         }}
-                        className="w-8 h-8 rounded-full border-2 border-[#E2E8F0] flex items-center justify-center active:scale-90 transition-all"
+                        className="w-8 h-8 rounded-full border-2 border-[var(--border)] flex items-center justify-center active:scale-90 transition-all"
                       >
-                        <Minus size={14} className="text-[#121212]" />
+                        <Minus size={14} className="text-[var(--ink)]" />
                       </button>
                     )}
-                    <span className="text-base font-bold text-[#121212] min-w-[20px] text-center">{item.quantity}</span>
+                    <span className="text-base font-bold text-[var(--ink)] min-w-[20px] text-center">{item.quantity}</span>
                     <button
                       onClick={(e) => {
                         e.stopPropagation();
@@ -665,11 +665,11 @@ export default function Cart() {
                       disabled={item.quantity >= 50}
                       className={`w-8 h-8 rounded-full border-2 flex items-center justify-center active:scale-90 transition-all ${
                         item.quantity >= 50
-                          ? 'border-[#E2E8F0] bg-[#F8F9FA] cursor-not-allowed opacity-50'
-                          : 'border-[#10B981] bg-[#10B981]/10'
+                          ? 'border-[var(--border)] bg-[var(--muted)] cursor-not-allowed opacity-50'
+                          : 'border-[var(--success)] bg-[var(--success)]/10'
                       }`}
                     >
-                      <Plus size={14} className={item.quantity >= 50 ? 'text-[#94A3B8]' : 'text-[#10B981]'} />
+                      <Plus size={14} className={item.quantity >= 50 ? 'text-[var(--muted-foreground)]' : 'text-[var(--success)]'} />
                     </button>
                   </div>
                 </div>
@@ -679,18 +679,18 @@ export default function Cart() {
         </div>
 
         {/* Cutlery */}
-        <div className="flex items-center justify-between py-4 border-y border-[#E2E8F0]">
+        <div className="flex items-center justify-between py-4 border-y border-[var(--border)]">
           <div>
-            <h4 className="font-bold text-[#121212] mb-1">Cutlery</h4>
-            <p className="text-sm text-[#64748B]">Request for cutlery only if you need it.</p>
+            <h4 className="font-bold text-[var(--ink)] mb-1">Cutlery</h4>
+            <p className="text-sm text-[var(--muted-foreground)]">Request for cutlery only if you need it.</p>
           </div>
           <button
             onClick={() => setNeedsCutlery(!needsCutlery)}
             className="flex-shrink-0"
           >
-            <div className={`w-12 h-12 rounded-xl border-2 flex items-center justify-center transition-all ${needsCutlery ? 'border-[#10B981] bg-[#10B981]/10' : 'border-[#E2E8F0]'}`}>
+            <div className={`w-12 h-12 rounded-xl border-2 flex items-center justify-center transition-all ${needsCutlery ? 'border-[var(--success)] bg-[var(--success)]/10' : 'border-[var(--border)]'}`}>
               {needsCutlery && (
-                <svg className="w-6 h-6 text-[#10B981]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <svg className="w-6 h-6 text-[var(--success)]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
                 </svg>
               )}
@@ -702,62 +702,62 @@ export default function Cart() {
           {/* Address */}
           <button
             onClick={() => setShowMapSelector(true)}
-            className="w-full flex items-center gap-3 p-4 bg-white border border-[#E2E8F0] rounded-xl mb-2 active:scale-[0.98] transition-transform"
+            className="w-full flex items-center gap-3 p-4 bg-white border border-[var(--border)] rounded-xl mb-2 active:scale-[0.98] transition-transform"
           >
-            <MapPin className="w-5 h-5 text-[#E11D48] flex-shrink-0" />
+            <MapPin className="w-5 h-5 text-[var(--primary)] flex-shrink-0" />
             <div className="flex-1 text-left">
-              <p className={`font-semibold mb-0.5 ${hasSelectedAddress ? 'text-[#121212]' : 'text-[#94A3B8]'}`}>
+              <p className={`font-semibold mb-0.5 ${hasSelectedAddress ? 'text-[var(--ink)]' : 'text-[var(--muted-foreground)]'}`}>
                 {selectedAddress.name}
               </p>
-              <p className="text-sm text-[#64748B]">{selectedAddress.full}</p>
+              <p className="text-sm text-[var(--muted-foreground)]">{selectedAddress.full}</p>
             </div>
-            <ChevronRight className="w-5 h-5 text-[#64748B] flex-shrink-0" />
+            <ChevronRight className="w-5 h-5 text-[var(--muted-foreground)] flex-shrink-0" />
           </button>
 
           {/* Floor/Unit Number */}
-          <div className="flex items-center gap-2 p-4 bg-white border border-[#E2E8F0] rounded-xl mb-4">
+          <div className="flex items-center gap-2 p-4 bg-white border border-[var(--border)] rounded-xl mb-4">
             <input
               type="text"
               placeholder="Floor / unit no."
-              className="flex-1 text-sm text-[#121212] placeholder:text-[#94A3B8] outline-none"
+              className="flex-1 text-sm text-[var(--ink)] placeholder:text-[var(--muted-foreground)] outline-none"
             />
-            <span className="text-sm text-[#3B82F6] font-semibold">Helps with delivery</span>
-            <button className="text-sm font-semibold text-[#3B82F6]">Add</button>
+            <span className="text-sm text-[var(--info)] font-semibold">Helps with delivery</span>
+            <button className="text-sm font-semibold text-[var(--info)]">Add</button>
           </div>
         </div>
 
         {/* Delivery Fee (set by the admin) */}
         <div>
           <div className="flex items-center gap-2 mb-3">
-            <Info className="w-5 h-5 text-[#F59E0B]" />
+            <Info className="w-5 h-5 text-[var(--amber)]" />
             <div>
-              <h4 className="font-bold text-[#121212] text-sm">Delivery fee</h4>
-              <p className="text-xs text-[#64748B]">Food delivery (base rate)</p>
+              <h4 className="font-bold text-[var(--ink)] text-sm">Delivery fee</h4>
+              <p className="text-xs text-[var(--muted-foreground)]">Food delivery (base rate)</p>
             </div>
           </div>
 
-          <div className="w-full flex items-center justify-between p-4 rounded-xl border-2 border-[#E2E8F0] bg-white">
-            <span className="font-semibold text-[#121212]">Delivery</span>
-            <span className="font-bold text-[#121212]">₱{getDeliveryFee().toFixed(2)}</span>
+          <div className="w-full flex items-center justify-between p-4 rounded-xl border-2 border-[var(--border)] bg-white">
+            <span className="font-semibold text-[var(--ink)]">Delivery</span>
+            <span className="font-bold text-[var(--ink)]">₱{getDeliveryFee().toFixed(2)}</span>
           </div>
         </div>
 
         {/* Payment Details */}
         <div className="pb-6">
-          <h3 className="text-lg font-bold text-[#121212] mb-3">Payment details</h3>
-          <p className="text-sm text-[#64748B] mb-4">
+          <h3 className="text-lg font-bold text-[var(--ink)] mb-3">Payment details</h3>
+          <p className="text-sm text-[var(--muted-foreground)] mb-4">
             Pay with cash on delivery.
           </p>
 
           <div className="space-y-3">
-            <div className="w-full flex items-center justify-between p-4 rounded-xl border-2 border-[#10B981] bg-[#10B981]/5">
+            <div className="w-full flex items-center justify-between p-4 rounded-xl border-2 border-[var(--success)] bg-[var(--success)]/5">
               <div className="flex items-center gap-3">
-                <div className="w-10 h-10 bg-[#10B981] rounded-lg flex items-center justify-center">
+                <div className="w-10 h-10 bg-[var(--success)] rounded-lg flex items-center justify-center">
                   <span className="text-white font-bold text-lg">💵</span>
                 </div>
-                <span className="font-semibold text-[#121212]">Cash</span>
+                <span className="font-semibold text-[var(--ink)]">Cash</span>
               </div>
-              <div className="w-6 h-6 bg-[#10B981] rounded-full flex items-center justify-center">
+              <div className="w-6 h-6 bg-[var(--success)] rounded-full flex items-center justify-center">
                 <svg className="w-4 h-4 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
                 </svg>
@@ -767,27 +767,27 @@ export default function Cart() {
         </div>
 
         {/* Subtotal Summary */}
-        <div className="space-y-2 pt-4 border-t border-[#E2E8F0]">
+        <div className="space-y-2 pt-4 border-t border-[var(--border)]">
           <div className="flex items-center justify-between text-sm">
-            <span className="text-[#64748B]">Subtotal</span>
-            <span className="font-semibold text-[#121212]">₱{calculateSubtotal()}.00</span>
+            <span className="text-[var(--muted-foreground)]">Subtotal</span>
+            <span className="font-semibold text-[var(--ink)]">₱{calculateSubtotal()}.00</span>
           </div>
           <div className="flex items-center justify-between text-sm">
-            <span className="text-[#64748B]">Delivery fee</span>
-            <span className="font-semibold text-[#121212]">₱{getDeliveryFee().toFixed(2)}</span>
+            <span className="text-[var(--muted-foreground)]">Delivery fee</span>
+            <span className="font-semibold text-[var(--ink)]">₱{getDeliveryFee().toFixed(2)}</span>
           </div>
         </div>
       </div>
 
       {/* Fixed Bottom - Total and Place Order */}
-      <div className="fixed bottom-0 left-0 right-0 bg-white border-t-2 border-[#E2E8F0] px-5 py-4 z-50">
+      <div className="fixed bottom-0 left-0 right-0 bg-white border-t-2 border-[var(--border)] px-5 py-4 z-50">
         <div className="flex items-center justify-between mb-4">
-          <span className="text-lg font-bold text-[#121212]">Total</span>
-          <span className="text-2xl font-bold text-[#121212]">₱{calculateTotal()}.00</span>
+          <span className="text-lg font-bold text-[var(--ink)]">Total</span>
+          <span className="text-2xl font-bold text-[var(--ink)]">₱{calculateTotal()}.00</span>
         </div>
         <button
           onClick={handlePlaceOrder}
-          className="w-full bg-[#10B981] hover:bg-[#059669] text-white font-bold py-4 rounded-2xl transition-all active:scale-95 shadow-lg"
+          className="w-full bg-[var(--success)] hover:bg-[var(--success)] text-white font-bold py-4 rounded-2xl transition-all active:scale-95 shadow-lg"
         >
           Place Order
         </button>
@@ -801,21 +801,21 @@ export default function Cart() {
             onClick={(e) => e.stopPropagation()}
           >
             {/* Success Icon */}
-            <div className="w-20 h-20 bg-[#10B981]/10 rounded-full flex items-center justify-center mx-auto mb-6">
-              <div className="w-16 h-16 bg-[#10B981] rounded-full flex items-center justify-center">
+            <div className="w-20 h-20 bg-[var(--success)]/10 rounded-full flex items-center justify-center mx-auto mb-6">
+              <div className="w-16 h-16 bg-[var(--success)] rounded-full flex items-center justify-center">
                 <Check className="w-10 h-10 text-white" strokeWidth={3} />
               </div>
             </div>
 
             {/* Message */}
-            <h3 className="text-2xl font-bold text-[#121212] text-center mb-3">
+            <h3 className="text-2xl font-bold text-[var(--ink)] text-center mb-3">
               Order Placed!
             </h3>
-            <p className="text-[#64748B] text-center mb-2">
+            <p className="text-[var(--muted-foreground)] text-center mb-2">
               Your order has been successfully placed and is being prepared.
             </p>
             {placedOrderNumber && (
-              <p className="text-sm text-[#64748B] text-center mb-8">
+              <p className="text-sm text-[var(--muted-foreground)] text-center mb-8">
                 Order #{placedOrderNumber}
               </p>
             )}
@@ -829,7 +829,7 @@ export default function Cart() {
                   removeRestaurant(checkoutRestaurant.id);
                   navigate("/customer/activity");
                 }}
-                className="w-full py-4 bg-[#10B981] text-white font-bold rounded-2xl uppercase active:scale-95 transition-transform"
+                className="w-full py-4 bg-[var(--success)] text-white font-bold rounded-2xl uppercase active:scale-95 transition-transform"
               >
                 Track Order
               </button>
@@ -839,7 +839,7 @@ export default function Cart() {
                   removeRestaurant(checkoutRestaurant.id);
                   navigate("/customer/food");
                 }}
-                className="w-full py-4 bg-[#F8F9FA] text-[#64748B] font-bold rounded-2xl uppercase active:scale-95 transition-transform"
+                className="w-full py-4 bg-[var(--muted)] text-[var(--muted-foreground)] font-bold rounded-2xl uppercase active:scale-95 transition-transform"
               >
                 Continue Shopping
               </button>
@@ -853,24 +853,24 @@ export default function Cart() {
         <div className="fixed inset-0 bg-black/60 z-[2000] flex items-center justify-center p-4">
           <Card className="bg-white p-6 max-w-sm w-full" onClick={(e) => e.stopPropagation()}>
             <div className="text-center mb-4">
-              <div className="w-14 h-14 bg-[#FEF3C7] rounded-full flex items-center justify-center mx-auto mb-3">
-                <MapPin className="w-7 h-7 text-[#F59E0B]" />
+              <div className="w-14 h-14 bg-[var(--amber-soft)] rounded-full flex items-center justify-center mx-auto mb-3">
+                <MapPin className="w-7 h-7 text-[var(--amber)]" />
               </div>
-              <h3 className="text-xl font-bold text-[#121212] mb-1">Delivery Address Required</h3>
-              <p className="text-sm text-[#64748B]">Please select a delivery address before placing your order.</p>
+              <h3 className="text-xl font-bold text-[var(--ink)] mb-1">Delivery Address Required</h3>
+              <p className="text-sm text-[var(--muted-foreground)]">Please select a delivery address before placing your order.</p>
             </div>
             <button
               onClick={() => {
                 setShowAddressError(false);
                 setShowMapSelector(true);
               }}
-              className="w-full py-3 bg-[#E11D48] hover:bg-[#BE123C] text-white font-bold rounded-2xl uppercase active:scale-95 transition-transform"
+              className="w-full py-3 bg-[var(--primary)] hover:bg-[var(--primary)] text-white font-bold rounded-2xl uppercase active:scale-95 transition-transform"
             >
               Select Address
             </button>
             <button
               onClick={() => setShowAddressError(false)}
-              className="w-full py-3 bg-[#F8F9FA] text-[#64748B] font-bold rounded-2xl uppercase active:scale-95 transition-transform mt-2"
+              className="w-full py-3 bg-[var(--muted)] text-[var(--muted-foreground)] font-bold rounded-2xl uppercase active:scale-95 transition-transform mt-2"
             >
               Cancel
             </button>

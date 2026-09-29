@@ -17,10 +17,10 @@ interface TestAccount {
 
 // Styling per role (matches the admin panel's role colors)
 const ROLE_BADGE: Record<string, string> = {
-  admin: "bg-[#FFF1F2] text-[#E11D48]",
-  rider: "bg-[#DBEAFE] text-[#3B82F6]",
-  business: "bg-[#F3E8FF] text-[#9333EA]",
-  customer: "bg-[#D1FAE5] text-[#10B981]",
+  admin: "bg-[var(--primary-soft)] text-[var(--primary)]",
+  rider: "bg-[var(--info-soft)] text-[var(--info)]",
+  business: "bg-[var(--violet-soft)] text-[var(--violet)]",
+  customer: "bg-[var(--success-soft)] text-[var(--success)]",
 };
 
 const ROLE_ORDER: Record<string, number> = {
@@ -198,7 +198,7 @@ export default function Login() {
         />
         
         {/* Overlay */}
-        <div className="absolute inset-0 bg-gradient-to-br from-[#E11D48]/90 via-[#BE123C]/85 to-[#121212]/90" />
+        <div className="absolute inset-0 bg-gradient-to-br from-[var(--primary)]/90 via-[var(--primary)]/85 to-[var(--ink)]/90" />
 
         {/* Content */}
         <div className="relative z-10 flex flex-col justify-center px-16 text-white">
@@ -234,15 +234,15 @@ export default function Login() {
         <div className="w-full max-w-md">
           {/* Mobile Logo */}
           <div className="lg:hidden text-center mb-8">
-            <h1 className="text-5xl font-extrabold mb-2" style={{ letterSpacing: '-0.02em', color: '#E11D48' }}>
+            <h1 className="text-5xl font-extrabold mb-2" style={{ letterSpacing: '-0.02em', color: 'var(--primary)' }}>
               TrikeServe
             </h1>
-            <p className="text-sm text-[#64748B]">Community-Based Tricycle Platform</p>
+            <p className="text-sm text-[var(--muted-foreground)]">Community-Based Tricycle Platform</p>
           </div>
 
           <div className="mb-6">
-            <h2 className="text-3xl font-bold text-[#121212] mb-2">Welcome Back</h2>
-            <p className="text-[#64748B]">Sign in to your TrikeServe account</p>
+            <h2 className="text-3xl font-bold text-[var(--ink)] mb-2">Welcome Back</h2>
+            <p className="text-[var(--muted-foreground)]">Sign in to your TrikeServe account</p>
           </div>
 
           <form onSubmit={handleManualLogin} className="space-y-5">
@@ -260,7 +260,7 @@ export default function Login() {
                         type="button"
                         onClick={handleResendVerification}
                         disabled={resendStatus === "sending"}
-                        className="text-sm text-[#E11D48] font-semibold hover:underline disabled:opacity-50"
+                        className="text-sm text-[var(--primary)] font-semibold hover:underline disabled:opacity-50"
                       >
                         {resendStatus === "sending" ? "Sending..." : "Resend verification email"}
                       </button>
@@ -271,7 +271,7 @@ export default function Login() {
             )}
 
             <div>
-              <label className="block text-sm font-semibold text-[#121212] mb-2">
+              <label className="block text-sm font-semibold text-[var(--ink)] mb-2">
                 Email Address
               </label>
               <Input
@@ -279,14 +279,14 @@ export default function Login() {
                 placeholder="your.email@example.com"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
-                className="border-2 border-[#CBD5E1] focus:border-[#E11D48] h-12"
+                className="border-2 border-[var(--border)] focus:border-[var(--primary)] h-12"
                 required
                 disabled={isLoading}
               />
             </div>
 
             <div>
-              <label className="block text-sm font-semibold text-[#121212] mb-2">
+              <label className="block text-sm font-semibold text-[var(--ink)] mb-2">
                 Password
               </label>
               <Input
@@ -294,12 +294,12 @@ export default function Login() {
                 placeholder="••••••••"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
-                className="border-2 border-[#CBD5E1] focus:border-[#E11D48] h-12"
+                className="border-2 border-[var(--border)] focus:border-[var(--primary)] h-12"
                 required
                 disabled={isLoading}
               />
               <div className="mt-2 text-right">
-                <Link to="/forgot-password" className="text-xs text-[#E11D48] font-semibold hover:underline">
+                <Link to="/forgot-password" className="text-xs text-[var(--primary)] font-semibold hover:underline">
                   Forgot Password?
                 </Link>
               </div>
@@ -307,7 +307,7 @@ export default function Login() {
 
             <Button
               type="submit"
-              className="w-full bg-[#E11D48] hover:bg-[#BE123C] uppercase text-base py-6"
+              className="w-full bg-[var(--primary)] hover:bg-[var(--primary)] uppercase text-base py-6"
               disabled={isLoading}
             >
               {isLoading ? (
@@ -327,22 +327,22 @@ export default function Login() {
               type="button"
               onClick={() => setShowAccounts(!showAccounts)}
               disabled={isLoading}
-              className="w-full flex items-center justify-between px-4 py-3 border-2 border-[#CBD5E1] rounded-xl hover:border-[#E11D48] transition-all bg-[#F8F9FA]"
+              className="w-full flex items-center justify-between px-4 py-3 border-2 border-[var(--border)] rounded-xl hover:border-[var(--primary)] transition-all bg-[var(--muted)]"
             >
-              <span className="flex items-center gap-2 text-sm font-semibold text-[#121212]">
-                <Users size={16} className="text-[#E11D48]" />
+              <span className="flex items-center gap-2 text-sm font-semibold text-[var(--ink)]">
+                <Users size={16} className="text-[var(--primary)]" />
                 Quick Access — Test Accounts ({accounts.length})
               </span>
               <ChevronDown
                 size={16}
-                className={`text-[#64748B] transition-transform ${showAccounts ? "rotate-180" : ""}`}
+                className={`text-[var(--muted-foreground)] transition-transform ${showAccounts ? "rotate-180" : ""}`}
               />
             </button>
 
             {showAccounts && (
-              <div className="mt-2 border-2 border-[#E2E8F0] rounded-xl bg-white max-h-72 overflow-y-auto divide-y divide-[#E2E8F0]">
+              <div className="mt-2 border-2 border-[var(--border)] rounded-xl bg-white max-h-72 overflow-y-auto divide-y divide-[var(--border)]">
                 {accounts.length === 0 && (
-                  <p className="p-4 text-sm text-[#64748B] italic">
+                  <p className="p-4 text-sm text-[var(--muted-foreground)] italic">
                     No accounts found yet — create one via Sign Up.
                   </p>
                 )}
@@ -351,27 +351,27 @@ export default function Login() {
                     key={acc.email}
                     type="button"
                     onClick={() => useAccount(acc)}
-                    className="w-full flex items-center justify-between gap-3 px-4 py-3 hover:bg-[#F8F9FA] transition-all text-left"
+                    className="w-full flex items-center justify-between gap-3 px-4 py-3 hover:bg-[var(--muted)] transition-all text-left"
                   >
                     <div className="flex items-center gap-3 min-w-0">
                       <div
-                        className={`w-9 h-9 rounded-lg flex items-center justify-center text-xs font-bold flex-shrink-0 ${ROLE_BADGE[acc.role] || "bg-[#F8F9FA] text-[#64748B]"}`}
+                        className={`w-9 h-9 rounded-lg flex items-center justify-center text-xs font-bold flex-shrink-0 ${ROLE_BADGE[acc.role] || "bg-[var(--muted)] text-[var(--muted-foreground)]"}`}
                       >
                         {(acc.name || "?")[0]?.toUpperCase()}
                       </div>
                       <div className="min-w-0">
-                        <p className="text-sm font-semibold text-[#121212] truncate">{acc.name}</p>
-                        <p className="text-xs text-[#64748B] truncate">{acc.email}</p>
+                        <p className="text-sm font-semibold text-[var(--ink)] truncate">{acc.name}</p>
+                        <p className="text-xs text-[var(--muted-foreground)] truncate">{acc.email}</p>
                       </div>
                     </div>
                     <div className="flex items-center gap-2 flex-shrink-0">
                       <span
-                        className={`text-[10px] font-bold uppercase tracking-wide px-2 py-0.5 rounded-full ${ROLE_BADGE[acc.role] || "bg-[#F8F9FA] text-[#64748B]"}`}
+                        className={`text-[10px] font-bold uppercase tracking-wide px-2 py-0.5 rounded-full ${ROLE_BADGE[acc.role] || "bg-[var(--muted)] text-[var(--muted-foreground)]"}`}
                       >
                         {roleLabel(acc)}
                       </span>
                       {acc.password && (
-                        <span className="text-[10px] text-[#64748B]">pw: {acc.password}</span>
+                        <span className="text-[10px] text-[var(--muted-foreground)]">pw: {acc.password}</span>
                       )}
                     </div>
                   </button>
@@ -380,14 +380,14 @@ export default function Login() {
             )}
           </div>
 
-          <div className="mt-6 pt-6 border-t-2 border-[#CBD5E1]">
-            <p className="text-sm text-[#64748B] text-center mb-3">
+          <div className="mt-6 pt-6 border-t-2 border-[var(--border)]">
+            <p className="text-sm text-[var(--muted-foreground)] text-center mb-3">
               New to TrikeServe?
             </p>
             <Link to="/signup">
               <Button
                 variant="outline"
-                className="w-full border-2 border-[#CBD5E1] hover:border-[#E11D48]"
+                className="w-full border-2 border-[var(--border)] hover:border-[var(--primary)]"
                 disabled={isLoading}
               >
                 Create Account
@@ -396,7 +396,7 @@ export default function Login() {
           </div>
 
           <div className="mt-6 text-center">
-            <p className="text-xs text-[#64748B]">
+            <p className="text-xs text-[var(--muted-foreground)]">
               TODA-regulated pricing • Community trust system
             </p>
           </div>

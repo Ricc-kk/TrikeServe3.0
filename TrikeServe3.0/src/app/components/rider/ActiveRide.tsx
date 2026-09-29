@@ -380,7 +380,7 @@ export default function ActiveRide() {
   if (!rideData) return null;
 
   return (
-    <div className="min-h-screen bg-[#F8F9FA] pb-20 relative overflow-hidden">
+    <div className="min-h-screen bg-[var(--muted)] pb-20 relative overflow-hidden">
       {/* Ride Complete Popup */}
       {showRideComplete && (
         <div className="fixed inset-0 bg-black/60 z-[2000] flex items-center justify-center">
@@ -396,7 +396,7 @@ export default function ActiveRide() {
           </div>
         </div>
       )}
-      <div className="bg-[#E11D48] text-white p-4 shadow-md">
+      <div className="bg-[var(--primary)] text-white p-4 shadow-md">
         <div className="flex items-center justify-between mb-4">
           <Button variant="ghost" size="icon" onClick={() => navigate('/rider')} className="text-white hover:bg-white/20"><ArrowLeft className="w-5 h-5" /></Button>
           <h1 className="text-lg font-bold">Active Ride</h1>
@@ -412,11 +412,11 @@ export default function ActiveRide() {
             )}
             {/* Pickup marker: only show when heading to pickup */}
             {isHeadingToPickup && rideData.pickupLat && (
-              <Marker position={{ lat: Number(rideData.pickupLat), lng: Number(rideData.pickupLng) }} icon={markerIcon('#10B981')} title="Pickup" />
+              <Marker position={{ lat: Number(rideData.pickupLat), lng: Number(rideData.pickupLng) }} icon={markerIcon('var(--success)')} title="Pickup" />
             )}
             {/* Dropoff marker: only show when heading to dropoff */}
             {!isHeadingToPickup && rideData.dropoffLat && (
-              <Marker position={{ lat: Number(rideData.dropoffLat), lng: Number(rideData.dropoffLng) }} icon={markerIcon('#E11D48')} title="Drop-off" />
+              <Marker position={{ lat: Number(rideData.dropoffLat), lng: Number(rideData.dropoffLng) }} icon={markerIcon('var(--primary)')} title="Drop-off" />
             )}
 
             {/* Google Directions route line */}
@@ -431,7 +431,7 @@ export default function ActiveRide() {
                   // keep yanking the centre off the driver icon.
                   preserveViewport: true,
                   polylineOptions: {
-                    strokeColor: isHeadingToPickup ? '#10B981' : '#E11D48',
+                    strokeColor: isHeadingToPickup ? 'var(--success)' : 'var(--primary)',
                     strokeWeight: 6,
                     strokeOpacity: 0.9,
                   },
@@ -442,7 +442,7 @@ export default function ActiveRide() {
           </GoogleMap>
         ) : (
           <div className="h-full flex flex-col items-center justify-center bg-gray-100 space-y-4 p-6">
-            <Navigation className="w-12 h-12 text-[#E11D48] animate-pulse" />
+            <Navigation className="w-12 h-12 text-[var(--primary)] animate-pulse" />
             <p className="text-gray-500 font-bold text-center">Loading Map...</p>
             {!driverLocation && (
               <div className="text-center">
@@ -453,7 +453,7 @@ export default function ActiveRide() {
                     () => alert('Please enable Location Services in your device settings to use navigation.'),
                     { enableHighAccuracy: true, timeout: 15000 }
                   );
-                }} className="bg-[#E11D48]">
+                }} className="bg-[var(--primary)]">
                   <MapPin className="w-4 h-4 mr-2" />Enable Location
                 </Button>
               </div>
@@ -467,7 +467,7 @@ export default function ActiveRide() {
           if (dest && dest.lat) window.open(`https://www.google.com/maps/dir/?api=1&origin=${driverLocation?.lat},${driverLocation?.lng}&destination=${dest.lat},${dest.lng}&travelmode=driving`, '_blank');
         }} className="absolute top-3 right-3 bg-white text-black shadow-md hover:bg-gray-100"><Navigation className="w-4 h-4 mr-2" />Navigate</Button>
         {/* Route phase indicator banner */}
-        <div className={`absolute top-3 left-3 px-3 py-1.5 rounded-full text-white text-xs font-bold shadow-md flex items-center gap-1.5 ${isHeadingToPickup ? 'bg-green-500' : 'bg-[#E11D48]'}`}>
+        <div className={`absolute top-3 left-3 px-3 py-1.5 rounded-full text-white text-xs font-bold shadow-md flex items-center gap-1.5 ${isHeadingToPickup ? 'bg-green-500' : 'bg-[var(--primary)]'}`}>
           <div className={`w-2 h-2 rounded-full ${isHeadingToPickup ? 'bg-white animate-pulse' : 'bg-white animate-pulse'}`} />
           {isHeadingToPickup ? 'Heading to Pickup' : 'Heading to Drop-off'}
         </div>
@@ -480,7 +480,7 @@ export default function ActiveRide() {
           <div className="flex gap-4 mb-3">
             <div className="text-4xl">
               {rideData.customerPhoto === 'shared' ? (
-                <Users className="w-10 h-10 text-[#E11D48]" />
+                <Users className="w-10 h-10 text-[var(--primary)]" />
               ) : (
                 rideData.customerPhoto
               )}
@@ -493,7 +493,7 @@ export default function ActiveRide() {
                 </p>
               )}
               <div className="flex gap-2 mt-1">
-                <Badge className="bg-[#E11D48]">₱{rideData.amount}</Badge>
+                <Badge className="bg-[var(--primary)]">₱{rideData.amount}</Badge>
                 <Badge variant="outline" className="text-gray-500">{rideData.payment === 'COD' ? 'Cash' : 'Prepaid'}</Badge>
               </div>
             </div>
@@ -508,20 +508,20 @@ export default function ActiveRide() {
               {isHeadingToPickup && <span className="text-[10px] bg-green-500 text-white px-2 py-0.5 rounded-full font-bold self-center">HERE</span>}
             </div>
             <div className={`flex gap-3 p-2 rounded-lg ${!isHeadingToPickup && ['pickup', 'drop-off'].includes(rideData.status) ? 'bg-red-50 border border-red-200' : ''}`}>
-              <div className={`w-2 h-2 rounded-full mt-1.5 ${!isHeadingToPickup && ['pickup', 'drop-off'].includes(rideData.status) ? 'bg-[#E11D48]' : 'bg-gray-400'}`} />
+              <div className={`w-2 h-2 rounded-full mt-1.5 ${!isHeadingToPickup && ['pickup', 'drop-off'].includes(rideData.status) ? 'bg-[var(--primary)]' : 'bg-gray-400'}`} />
               <div className="flex-1 text-sm">
                 <p className="text-gray-500 text-xs">Drop-off</p>
                 <p className="font-semibold">{rideData.dropoff}</p>
               </div>
-              {!isHeadingToPickup && ['pickup', 'drop-off'].includes(rideData.status) && <span className="text-[10px] bg-[#E11D48] text-white px-2 py-0.5 rounded-full font-bold self-center">HERE</span>}
+              {!isHeadingToPickup && ['pickup', 'drop-off'].includes(rideData.status) && <span className="text-[10px] bg-[var(--primary)] text-white px-2 py-0.5 rounded-full font-bold self-center">HERE</span>}
             </div>
           </div>
         </Card>
         <div className="grid gap-2">
-          {rideData.status === 'on-the-way' && <Button onClick={() => updateStatus('arrived')} className="bg-[#E11D48] py-7 text-lg font-bold uppercase shadow-lg shadow-rose-200">I've Arrived</Button>}
-          {rideData.status === 'arrived' && <Button onClick={() => updateStatus('pickup')} className="bg-[#E11D48] py-7 text-lg font-bold uppercase shadow-lg shadow-rose-200">Confirm Pickup</Button>}
-          {rideData.status === 'pickup' && <Button onClick={() => updateStatus('drop-off')} className="bg-[#E11D48] py-7 text-lg font-bold uppercase shadow-lg shadow-rose-200">Arrived at Drop-off</Button>}
-          {rideData.status === 'drop-off' && <Button onClick={() => updateStatus('payment')} className="bg-[#E11D48] py-7 text-lg font-bold uppercase shadow-lg shadow-rose-200">Confirm Drop-off</Button>}
+          {rideData.status === 'on-the-way' && <Button onClick={() => updateStatus('arrived')} className="bg-[var(--primary)] py-7 text-lg font-bold uppercase shadow-lg shadow-rose-200">I've Arrived</Button>}
+          {rideData.status === 'arrived' && <Button onClick={() => updateStatus('pickup')} className="bg-[var(--primary)] py-7 text-lg font-bold uppercase shadow-lg shadow-rose-200">Confirm Pickup</Button>}
+          {rideData.status === 'pickup' && <Button onClick={() => updateStatus('drop-off')} className="bg-[var(--primary)] py-7 text-lg font-bold uppercase shadow-lg shadow-rose-200">Arrived at Drop-off</Button>}
+          {rideData.status === 'drop-off' && <Button onClick={() => updateStatus('payment')} className="bg-[var(--primary)] py-7 text-lg font-bold uppercase shadow-lg shadow-rose-200">Confirm Drop-off</Button>}
           {rideData.status === 'payment' && <Button onClick={completeRide} className="bg-green-600 py-7 text-lg font-bold uppercase shadow-lg shadow-emerald-200">Complete Ride</Button>}
         </div>
       </div>

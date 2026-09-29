@@ -22,7 +22,7 @@ const createSelectedPinIcon = () => {
   const google = (window as any)?.google;
   if (!google?.maps?.Size || !google?.maps?.Point) return undefined;
 
-  const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="#E11D48" stroke="white" stroke-width="1">
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="var(--primary)" stroke="white" stroke-width="1">
     <path d="M12 2C8.13 2 5 5.13 5 9c0 4.95 6.1 11.53 6.36 11.81.36.39.92.39 1.28 0C13.9 20.53 20 13.95 20 9c0-3.87-3.13-7-8-7z"/>
     <circle cx="12" cy="9" r="2.4" fill="#FFFFFF" stroke="none"/>
   </svg>`;
@@ -195,10 +195,10 @@ export default function BusinessMapSelector({ onClose, onSelectLocation, current
   const renderMap = () => {
     if (!apiKeyPresent) {
       return (
-        <div className="w-full h-full flex items-center justify-center bg-[#F8F9FA] px-6">
+        <div className="w-full h-full flex items-center justify-center bg-[var(--muted)] px-6">
           <div className="text-center">
-            <p className="text-lg font-bold text-[#121212] mb-2">⚠️ Google Maps API key missing</p>
-            <p className="text-sm text-[#64748B]">
+            <p className="text-lg font-bold text-[var(--ink)] mb-2">⚠️ Google Maps API key missing</p>
+            <p className="text-sm text-[var(--muted-foreground)]">
               Add VITE_GOOGLE_MAPS_API_KEY to your .env.local file to enable the map.
             </p>
           </div>
@@ -207,8 +207,8 @@ export default function BusinessMapSelector({ onClose, onSelectLocation, current
     }
     if (blocked) {
       return (
-        <div className="w-full h-full flex items-center justify-center bg-[#F8F9FA] px-6">
-          <p className="text-sm text-[#64748B] text-center">
+        <div className="w-full h-full flex items-center justify-center bg-[var(--muted)] px-6">
+          <p className="text-sm text-[var(--muted-foreground)] text-center">
             Unable to load Google Maps (scripts may be blocked). Check your connection and try again.
           </p>
         </div>
@@ -216,8 +216,8 @@ export default function BusinessMapSelector({ onClose, onSelectLocation, current
     }
     if (loadError) {
       return (
-        <div className="w-full h-full flex items-center justify-center bg-[#F8F9FA] px-6">
-          <p className="text-sm text-[#64748B] text-center">
+        <div className="w-full h-full flex items-center justify-center bg-[var(--muted)] px-6">
+          <p className="text-sm text-[var(--muted-foreground)] text-center">
             Failed to load Google Maps. Please check your API key and try again.
           </p>
         </div>
@@ -225,10 +225,10 @@ export default function BusinessMapSelector({ onClose, onSelectLocation, current
     }
     if (!isLoaded) {
       return (
-        <div className="w-full h-full flex items-center justify-center bg-[#F8F9FA]">
+        <div className="w-full h-full flex items-center justify-center bg-[var(--muted)]">
           <div className="flex items-center gap-2">
-            <Loader2 className="w-5 h-5 text-[#E11D48] animate-spin" />
-            <p className="text-sm text-[#64748B]">Loading map...</p>
+            <Loader2 className="w-5 h-5 text-[var(--primary)] animate-spin" />
+            <p className="text-sm text-[var(--muted-foreground)]">Loading map...</p>
           </div>
         </div>
       );
@@ -280,15 +280,15 @@ export default function BusinessMapSelector({ onClose, onSelectLocation, current
   return (
     <div className="fixed inset-0 bg-white z-[4000]">
       {/* Header */}
-      <div className="absolute top-0 left-0 right-0 bg-white/95 backdrop-blur-sm z-[4002] px-4 py-3 border-b border-[#E2E8F0]">
+      <div className="absolute top-0 left-0 right-0 bg-white/95 backdrop-blur-sm z-[4002] px-4 py-3 border-b border-[var(--border)]">
         <div className="flex items-center justify-between">
           <button onClick={onClose} className="active:scale-90 transition-transform">
-            <ArrowLeft className="w-6 h-6 text-[#121212]" />
+            <ArrowLeft className="w-6 h-6 text-[var(--ink)]" />
           </button>
 
           <div className="flex-1 mx-3 relative">
-            <div className="w-full flex items-center gap-2 px-4 py-2 bg-white border-2 border-[#E2E8F0] rounded-full">
-              <MapPin className="w-4 h-4 text-[#E11D48] flex-shrink-0" />
+            <div className="w-full flex items-center gap-2 px-4 py-2 bg-white border-2 border-[var(--border)] rounded-full">
+              <MapPin className="w-4 h-4 text-[var(--primary)] flex-shrink-0" />
               <input
                 type="text"
                 value={searchQuery}
@@ -309,10 +309,10 @@ export default function BusinessMapSelector({ onClose, onSelectLocation, current
                   }
                 }}
                 placeholder="Search for a place or address..."
-                className="flex-1 text-sm font-semibold text-[#121212] placeholder:text-[#94A3B8] placeholder:font-normal outline-none bg-transparent"
+                className="flex-1 text-sm font-semibold text-[var(--ink)] placeholder:text-[var(--muted-foreground)] placeholder:font-normal outline-none bg-transparent"
               />
               {isSearching ? (
-                <Loader2 className="w-4 h-4 text-[#64748B] animate-spin flex-shrink-0" />
+                <Loader2 className="w-4 h-4 text-[var(--muted-foreground)] animate-spin flex-shrink-0" />
               ) : (
                 searchQuery && (
                   <button
@@ -324,7 +324,7 @@ export default function BusinessMapSelector({ onClose, onSelectLocation, current
                     }}
                     className="flex-shrink-0 active:scale-90 transition-transform"
                   >
-                    <X className="w-4 h-4 text-[#64748B]" />
+                    <X className="w-4 h-4 text-[var(--muted-foreground)]" />
                   </button>
                 )
               )}
@@ -332,22 +332,22 @@ export default function BusinessMapSelector({ onClose, onSelectLocation, current
 
             {/* Search Results Dropdown */}
             {showSearchDropdown && (
-              <div className="absolute top-full left-0 right-0 mt-2 bg-white border-2 border-[#E2E8F0] rounded-2xl shadow-xl max-h-80 overflow-y-auto">
+              <div className="absolute top-full left-0 right-0 mt-2 bg-white border-2 border-[var(--border)] rounded-2xl shadow-xl max-h-80 overflow-y-auto">
                 {searchResults.length > 0 ? (
                   searchResults.map((result, index) => (
                     <button
                       key={result.place_id || index}
                       onClick={() => handleSearchResultPick(result)}
-                      className="w-full p-4 border-b border-[#E2E8F0] last:border-b-0 hover:bg-[#F8F9FA] active:bg-[#F1F5F9] transition-colors text-left"
+                      className="w-full p-4 border-b border-[var(--border)] last:border-b-0 hover:bg-[var(--muted)] active:bg-[var(--muted)] transition-colors text-left"
                     >
                       <div className="flex items-center gap-3">
-                        <div className="w-10 h-10 bg-[#F8F9FA] rounded-full flex items-center justify-center flex-shrink-0">
-                          <Search className="w-5 h-5 text-[#64748B]" />
+                        <div className="w-10 h-10 bg-[var(--muted)] rounded-full flex items-center justify-center flex-shrink-0">
+                          <Search className="w-5 h-5 text-[var(--muted-foreground)]" />
                         </div>
                         <div className="flex-1 min-w-0">
-                          <p className="font-semibold text-[#121212]">{result.displayName}</p>
+                          <p className="font-semibold text-[var(--ink)]">{result.displayName}</p>
                           {result.secondaryText && (
-                            <p className="text-sm text-[#64748B] truncate">{result.secondaryText}</p>
+                            <p className="text-sm text-[var(--muted-foreground)] truncate">{result.secondaryText}</p>
                           )}
                         </div>
                       </div>
@@ -355,7 +355,7 @@ export default function BusinessMapSelector({ onClose, onSelectLocation, current
                   ))
                 ) : (
                   <div className="p-4">
-                    <p className="text-sm text-[#64748B] text-center">
+                    <p className="text-sm text-[var(--muted-foreground)] text-center">
                       {isSearching ? "Searching..." : !GOOGLE_MAPS_API_KEY ? "Location search is unavailable" : "No locations found"}
                     </p>
                   </div>
@@ -373,7 +373,7 @@ export default function BusinessMapSelector({ onClose, onSelectLocation, current
         {/* Hint chip for tap-to-place */}
         {!pickedPin && (
           <div className="absolute top-20 left-0 right-0 flex justify-center z-[4003] pointer-events-none">
-            <div className="bg-white/95 backdrop-blur-sm border border-[#E2E8F0] shadow-lg rounded-full px-4 py-2 text-xs font-semibold text-[#121212]">
+            <div className="bg-white/95 backdrop-blur-sm border border-[var(--border)] shadow-lg rounded-full px-4 py-2 text-xs font-semibold text-[var(--ink)]">
               📍 Tap anywhere on the map to set your business pickup location
             </div>
           </div>
@@ -384,7 +384,7 @@ export default function BusinessMapSelector({ onClose, onSelectLocation, current
           onClick={handleRecenterMap}
           className="absolute bottom-44 right-4 w-12 h-12 bg-white rounded-full shadow-lg flex items-center justify-center active:scale-95 transition-transform z-[4003]"
         >
-          <Navigation className="w-5 h-5 text-[#E11D48]" />
+          <Navigation className="w-5 h-5 text-[var(--primary)]" />
         </button>
       </div>
 
@@ -392,40 +392,40 @@ export default function BusinessMapSelector({ onClose, onSelectLocation, current
       {showAddressList && (
         <div className="absolute bottom-0 left-0 right-0 bg-white rounded-t-3xl shadow-2xl z-[4004] max-h-[50vh] flex flex-col">
           {/* Drag Handle */}
-          <div className="flex justify-center py-3 border-b border-[#E2E8F0]">
-            <div className="w-12 h-1 bg-[#CBD5E1] rounded-full"></div>
+          <div className="flex justify-center py-3 border-b border-[var(--border)]">
+            <div className="w-12 h-1 bg-[var(--border)] rounded-full"></div>
           </div>
 
           <div className="flex-1 overflow-y-auto px-5 py-4 space-y-3">
             {/* Current pickup location context */}
             {currentAddress && (
-              <div className="rounded-xl border border-[#E2E8F0] bg-[#F8F9FA] p-4">
-                <p className="text-xs font-bold text-[#64748B] uppercase tracking-wide mb-1">Current Pickup Location</p>
-                <p className="font-semibold text-[#121212] text-sm">{currentAddress}</p>
+              <div className="rounded-xl border border-[var(--border)] bg-[var(--muted)] p-4">
+                <p className="text-xs font-bold text-[var(--muted-foreground)] uppercase tracking-wide mb-1">Current Pickup Location</p>
+                <p className="font-semibold text-[var(--ink)] text-sm">{currentAddress}</p>
               </div>
             )}
 
             {/* Selected pin preview */}
             {pickedPin && (
-              <div className="rounded-xl border-2 border-[#10B981] bg-[#10B981]/5 p-4">
-                <p className="text-xs font-bold text-[#10B981] uppercase tracking-wide mb-1">
+              <div className="rounded-xl border-2 border-[var(--success)] bg-[var(--success)]/5 p-4">
+                <p className="text-xs font-bold text-[var(--success)] uppercase tracking-wide mb-1">
                   {isGeocoding ? "Looking up address..." : "Selected Location"}
                 </p>
-                <p className="font-bold text-[#121212]">{pickedPin.name}</p>
-                <p className="text-sm text-[#64748B]">{pickedPin.full}</p>
+                <p className="font-bold text-[var(--ink)]">{pickedPin.name}</p>
+                <p className="text-sm text-[var(--muted-foreground)]">{pickedPin.full}</p>
               </div>
             )}
           </div>
 
           {/* Choose Location Button */}
-          <div className="px-5 py-4 border-t border-[#E2E8F0]">
+          <div className="px-5 py-4 border-t border-[var(--border)]">
             <button
               onClick={handleChooseLocation}
               disabled={!pickedPin}
               className={`w-full py-4 font-bold rounded-2xl uppercase active:scale-95 transition-all shadow-lg ${
                 pickedPin
-                  ? "bg-[#10B981] hover:bg-[#059669] text-white"
-                  : "bg-[#E2E8F0] text-[#94A3B8] cursor-not-allowed"
+                  ? "bg-[var(--success)] hover:bg-[var(--success)] text-white"
+                  : "bg-[var(--border)] text-[var(--muted-foreground)] cursor-not-allowed"
               }`}
             >
               {pickedPin ? "Choose This Location" : "Tap the map to select a location"}

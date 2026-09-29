@@ -489,7 +489,7 @@ export default function VerifiedUsers() {
                           className={`px-4 py-2 rounded-lg transition-colors text-sm font-medium ${
                             canVerifyUser(u.role)
                               ? 'bg-green-500 text-white hover:bg-green-600 cursor-pointer'
-                              : 'bg-[#D1D5DB] text-[#6B7280] cursor-not-allowed opacity-50'
+                              : 'bg-[var(--muted-foreground)] text-[var(--muted-foreground)] cursor-not-allowed opacity-50'
                           }`}
                         >
                           Approve
@@ -501,7 +501,7 @@ export default function VerifiedUsers() {
                           className={`px-4 py-2 rounded-lg transition-colors text-sm font-medium ${
                             canVerifyUser(u.role)
                               ? 'bg-red-500 text-white hover:bg-red-600 cursor-pointer'
-                              : 'bg-[#D1D5DB] text-[#6B7280] cursor-not-allowed opacity-50'
+                              : 'bg-[var(--muted-foreground)] text-[var(--muted-foreground)] cursor-not-allowed opacity-50'
                           }`}
                         >
                           Reject

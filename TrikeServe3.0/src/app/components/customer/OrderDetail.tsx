@@ -81,13 +81,13 @@ const statusWorkflow: Record<string, { steps: string[]; current: number }> = {
 };
 
 const statusColors: Record<string, string> = {
-  'pending': 'bg-[#F59E0B] text-white',
-  'preparing': 'bg-[#3B82F6] text-white',
-  'ready': 'bg-[#10B981] text-white',
-  'confirmed': 'bg-[#06B6D4] text-white',
-  'on-the-way': 'bg-[#3B82F6] text-white',
-  'delivered': 'bg-[#10B981] text-white',
-  'cancelled': 'bg-[#EF4444] text-white',
+  'pending': 'bg-[var(--amber)] text-white',
+  'preparing': 'bg-[var(--info)] text-white',
+  'ready': 'bg-[var(--success)] text-white',
+  'confirmed': 'bg-[var(--info)] text-white',
+  'on-the-way': 'bg-[var(--info)] text-white',
+  'delivered': 'bg-[var(--success)] text-white',
+  'cancelled': 'bg-[var(--error)] text-white',
 };
 
 const statusLabels: Record<string, string> = {
@@ -313,8 +313,8 @@ export default function OrderDetail() {
     return (
       <div className="min-h-screen bg-white flex items-center justify-center">
         <div className="text-center">
-          <Package className="w-12 h-12 text-[#0EA5E9] mx-auto mb-4 animate-bounce" />
-          <p className="text-[#64748B]">Loading order details...</p>
+          <Package className="w-12 h-12 text-[var(--info)] mx-auto mb-4 animate-bounce" />
+          <p className="text-[var(--muted-foreground)]">Loading order details...</p>
         </div>
       </div>
     );
@@ -324,9 +324,9 @@ export default function OrderDetail() {
     return (
       <div className="min-h-screen bg-white flex items-center justify-center">
         <div className="text-center">
-          <h2 className="text-xl font-bold text-[#121212] mb-2">Order Not Found</h2>
-          <p className="text-[#64748B] mb-4">The order you're looking for doesn't exist.</p>
-          <Button onClick={() => navigate("/customer/activity")} className="bg-[#E11D48] hover:bg-[#BE123C] text-white font-bold uppercase">Back to Activity</Button>
+          <h2 className="text-xl font-bold text-[var(--ink)] mb-2">Order Not Found</h2>
+          <p className="text-[var(--muted-foreground)] mb-4">The order you're looking for doesn't exist.</p>
+          <Button onClick={() => navigate("/customer/activity")} className="bg-[var(--primary)] hover:bg-[var(--primary)] text-white font-bold uppercase">Back to Activity</Button>
         </div>
       </div>
     );
@@ -350,32 +350,32 @@ export default function OrderDetail() {
   return (
     <div className="min-h-screen bg-white pb-6">
       {/* Header */}
-      <div className="sticky top-0 bg-white border-b-2 border-[#E2E8F0] px-4 md:px-5 py-3 md:py-4 z-10">
+      <div className="sticky top-0 bg-white border-b-2 border-[var(--border)] px-4 md:px-5 py-3 md:py-4 z-10">
         <div className="flex items-center justify-between mb-2">
           <div className="flex items-center gap-3">
-            <button onClick={() => navigate("/customer/activity")} className="p-2 hover:bg-[#F1F5F9] rounded-full transition-colors">
-              <ArrowLeft className="w-5 h-5 md:w-6 md:h-6 text-[#121212]" />
+            <button onClick={() => navigate("/customer/activity")} className="p-2 hover:bg-[var(--muted)] rounded-full transition-colors">
+              <ArrowLeft className="w-5 h-5 md:w-6 md:h-6 text-[var(--ink)]" />
             </button>
             <div>
-              <h1 className="text-lg md:text-xl font-extrabold text-[#121212]">Order #{order.orderNumber}</h1>
-              <p className="text-xs text-[#64748B]">{order.date}</p>
+              <h1 className="text-lg md:text-xl font-extrabold text-[var(--ink)]">Order #{order.orderNumber}</h1>
+              <p className="text-xs text-[var(--muted-foreground)]">{order.date}</p>
             </div>
           </div>
           <div className="flex items-center gap-1">
             {isActiveDelivery && order.driverId && (
-              <button onClick={handleChatWithDriver} className="flex flex-col items-center gap-0.5 p-1.5 hover:bg-[#F1F5F9] rounded-lg transition-colors" title="Chat with Driver">
-                <MessageCircle className="w-5 h-5 text-[#10B981]" />
-                <span className="text-[9px] font-semibold text-[#10B981]">Driver</span>
+              <button onClick={handleChatWithDriver} className="flex flex-col items-center gap-0.5 p-1.5 hover:bg-[var(--muted)] rounded-lg transition-colors" title="Chat with Driver">
+                <MessageCircle className="w-5 h-5 text-[var(--success)]" />
+                <span className="text-[9px] font-semibold text-[var(--success)]">Driver</span>
               </button>
             )}
             {isActiveDelivery && order.businessId && (
-              <button onClick={handleChatWithBusiness} className="flex flex-col items-center gap-0.5 p-1.5 hover:bg-[#F1F5F9] rounded-lg transition-colors" title="Chat with Restaurant">
-                <MessageCircle className="w-5 h-5 text-[#E11D48]" />
-                <span className="text-[9px] font-semibold text-[#E11D48]">Restaurant</span>
+              <button onClick={handleChatWithBusiness} className="flex flex-col items-center gap-0.5 p-1.5 hover:bg-[var(--muted)] rounded-lg transition-colors" title="Chat with Restaurant">
+                <MessageCircle className="w-5 h-5 text-[var(--primary)]" />
+                <span className="text-[9px] font-semibold text-[var(--primary)]">Restaurant</span>
               </button>
             )}
-            <button onClick={handleRefresh} disabled={isRefreshing} className="p-2 hover:bg-[#F1F5F9] rounded-full transition-colors disabled:opacity-50">
-              <RefreshCw className={`w-5 h-5 text-[#64748B] ${isRefreshing ? 'animate-spin' : ''}`} />
+            <button onClick={handleRefresh} disabled={isRefreshing} className="p-2 hover:bg-[var(--muted)] rounded-full transition-colors disabled:opacity-50">
+              <RefreshCw className={`w-5 h-5 text-[var(--muted-foreground)] ${isRefreshing ? 'animate-spin' : ''}`} />
             </button>
           </div>
         </div>
@@ -385,15 +385,15 @@ export default function OrderDetail() {
 
         {/* Business-style horizontal stepper */}
         <div className="mt-3 md:mt-4">
-          <p className="text-xs font-semibold text-[#64748B] mb-2">ORDER PROGRESS</p>
+          <p className="text-xs font-semibold text-[var(--muted-foreground)] mb-2">ORDER PROGRESS</p>
           <div className="flex items-center gap-1 md:gap-2 overflow-x-auto pb-2">
             {workflow.steps.map((step, idx) => (
               <div key={idx} className="flex items-center flex-shrink-0">
                 <div
                   className={`w-7 h-7 md:w-8 md:h-8 rounded-full flex items-center justify-center text-xs font-bold transition-all ${
                     idx <= workflow.current
-                      ? 'bg-[#10B981] text-white'
-                      : 'bg-[#E2E8F0] text-[#64748B]'
+                      ? 'bg-[var(--success)] text-white'
+                      : 'bg-[var(--border)] text-[var(--muted-foreground)]'
                   }`}
                 >
                   {idx <= workflow.current ? '✓' : idx + 1}
@@ -401,7 +401,7 @@ export default function OrderDetail() {
                 {idx < workflow.steps.length - 1 && (
                   <div
                     className={`h-0.5 w-3 md:w-5 ml-1 md:ml-2 transition-all ${
-                      idx < workflow.current ? 'bg-[#10B981]' : 'bg-[#E2E8F0]'
+                      idx < workflow.current ? 'bg-[var(--success)]' : 'bg-[var(--border)]'
                     }`}
                   />
                 )}
@@ -411,7 +411,7 @@ export default function OrderDetail() {
           <div className="flex gap-0 overflow-x-auto pb-1">
             {workflow.steps.map((step, idx) => (
               <div key={idx} className="flex-shrink-0" style={{ width: `${100 / workflow.steps.length}%` }}>
-                <p className={`text-[10px] md:text-xs font-semibold truncate ${idx <= workflow.current ? 'text-[#121212]' : 'text-[#64748B]'}`}>{step}</p>
+                <p className={`text-[10px] md:text-xs font-semibold truncate ${idx <= workflow.current ? 'text-[var(--ink)]' : 'text-[var(--muted-foreground)]'}`}>{step}</p>
               </div>
             ))}
           </div>
@@ -421,8 +421,8 @@ export default function OrderDetail() {
       <div className="px-4 md:px-5 pt-4 space-y-4 md:space-y-5">
         {/* Live Map */}
         {isActiveDelivery && isMapsLoaded && driverLocation && (
-          <Card className="border-2 border-[#3B82F6] overflow-hidden">
-            <div className="bg-gradient-to-r from-[#3B82F6] to-[#2563EB] px-4 py-2.5 flex items-center justify-between">
+          <Card className="border-2 border-[var(--info)] overflow-hidden">
+            <div className="bg-gradient-to-r from-[var(--info)] to-[var(--info)] px-4 py-2.5 flex items-center justify-between">
               <div className="flex items-center gap-2">
                 <div className="w-2 h-2 bg-green-400 rounded-full animate-pulse" />
                 <span className="text-sm font-bold text-white">Live Delivery Tracking</span>
@@ -460,55 +460,55 @@ export default function OrderDetail() {
                 if (!m) return null;
                 return (
                   <MarkerF position={{ lat: parseFloat(m[1]), lng: parseFloat(m[2]) }} title="Your location" icon={{
-                    url: 'data:image/svg+xml;charset=UTF-8,' + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="#E11D48" stroke="white" stroke-width="1"><path d="M12 2C8.13 2 5 5.13 5 9c0 4.95 6.1 11.53 6.36 11.81.36.39.92.39 1.28 0C13.9 20.53 20 13.95 20 9c0-3.87-3.13-7-8-7z"/><circle cx="12" cy="8.6" r="2.3" fill="#FFFFFF" stroke="none"/></svg>'),
+                    url: 'data:image/svg+xml;charset=UTF-8,' + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="var(--primary)" stroke="white" stroke-width="1"><path d="M12 2C8.13 2 5 5.13 5 9c0 4.95 6.1 11.53 6.36 11.81.36.39.92.39 1.28 0C13.9 20.53 20 13.95 20 9c0-3.87-3.13-7-8-7z"/><circle cx="12" cy="8.6" r="2.3" fill="#FFFFFF" stroke="none"/></svg>'),
                     scaledSize: new (window as any).google.maps.Size(32, 32),
                     anchor: new (window as any).google.maps.Point(16, 32),
                   }} />
                 );
               })()}
               {routePath.length > 0 && (
-                <Polyline path={routePath} options={{ strokeColor: '#10B981', strokeOpacity: 0.9, strokeWeight: 4, geodesic: true }} />
+                <Polyline path={routePath} options={{ strokeColor: 'var(--success)', strokeOpacity: 0.9, strokeWeight: 4, geodesic: true }} />
               )}
             </GoogleMap>
-            <div className="px-4 py-2.5 bg-white border-t border-[#E2E8F0] flex items-center justify-between">
-              <p className="text-xs font-semibold text-[#121212]">
-                {order.driverName && <span className="text-[#64748B]">Driver: {order.driverName} • </span>}
+            <div className="px-4 py-2.5 bg-white border-t border-[var(--border)] flex items-center justify-between">
+              <p className="text-xs font-semibold text-[var(--ink)]">
+                {order.driverName && <span className="text-[var(--muted-foreground)]">Driver: {order.driverName} • </span>}
                 {order.status === 'confirmed' ? '🛵 Heading to restaurant' : '🟢 Delivering to you'}
               </p>
               <div className="flex items-center gap-2">
                 {etaToCustomer && (
-                  <span className="text-[10px] font-bold text-[#3B82F6] bg-blue-50 px-2 py-0.5 rounded-full">🏁 {etaToCustomer}</span>
+                  <span className="text-[10px] font-bold text-[var(--info)] bg-blue-50 px-2 py-0.5 rounded-full">🏁 {etaToCustomer}</span>
                 )}
-                <div className="text-[10px] text-[#94A3B8]">● Live</div>
+                <div className="text-[10px] text-[var(--muted-foreground)]">● Live</div>
               </div>
             </div>
           </Card>
         )}
 
         {/* Status Timeline — business style */}
-        <Card className="p-4 md:p-5 border-2 border-[#E2E8F0]">
-          <h3 className="font-bold text-[#121212] text-sm md:text-base mb-3">Status Updates</h3>
+        <Card className="p-4 md:p-5 border-2 border-[var(--border)]">
+          <h3 className="font-bold text-[var(--ink)] text-sm md:text-base mb-3">Status Updates</h3>
           <div className="space-y-0">
             {statusHistory.map((item, idx) => (
               <div key={idx} className="flex items-start gap-3">
                 {/* Vertical line + circle */}
                 <div className="flex flex-col items-center">
                   <div className={`w-6 h-6 md:w-7 md:h-7 rounded-full flex items-center justify-center text-[10px] md:text-xs font-bold shrink-0 ${
-                    item.done ? 'bg-[#10B981] text-white' : 'bg-[#E2E8F0] text-[#64748B]'
+                    item.done ? 'bg-[var(--success)] text-white' : 'bg-[var(--border)] text-[var(--muted-foreground)]'
                   }`}>
                     {item.done ? '✓' : idx + 1}
                   </div>
                   {idx < statusHistory.length - 1 && (
-                    <div className={`w-0.5 h-5 ${item.done ? 'bg-[#10B981]' : 'bg-[#E2E8F0]'}`} />
+                    <div className={`w-0.5 h-5 ${item.done ? 'bg-[var(--success)]' : 'bg-[var(--border)]'}`} />
                   )}
                 </div>
                 {/* Label */}
                 <div className="pt-0.5 pb-2">
-                  <p className={`text-sm font-semibold ${item.done ? 'text-[#121212]' : 'text-[#94A3B8]'}`}>
+                  <p className={`text-sm font-semibold ${item.done ? 'text-[var(--ink)]' : 'text-[var(--muted-foreground)]'}`}>
                     {item.label}
                   </p>
                   {idx === workflow.current && (
-                    <p className="text-[10px] md:text-xs text-[#3B82F6] font-medium">Current</p>
+                    <p className="text-[10px] md:text-xs text-[var(--info)] font-medium">Current</p>
                   )}
                 </div>
               </div>
@@ -517,15 +517,15 @@ export default function OrderDetail() {
         </Card>
 
         {/* Restaurant Info */}
-        <Card className="p-4 md:p-5 border-2 border-[#E2E8F0]">
-          <h3 className="font-bold text-[#121212] text-sm md:text-base mb-2">Restaurant</h3>
+        <Card className="p-4 md:p-5 border-2 border-[var(--border)]">
+          <h3 className="font-bold text-[var(--ink)] text-sm md:text-base mb-2">Restaurant</h3>
           <div className="flex items-center gap-3">
             <div className="w-12 h-12 md:w-14 md:h-14 rounded-xl overflow-hidden flex-shrink-0">
               <StoreLogo logo={order.restaurantImage} emojiClass="text-3xl" />
             </div>
             <div>
-              <p className="font-semibold text-[#121212] text-sm md:text-base">{order.restaurantName}</p>
-              <Badge className={`mt-1 text-[10px] md:text-xs ${order.deliveryMode === 'delivery' ? 'bg-[#DBEAFE] text-[#3B82F6]' : 'bg-[#FEF3C7] text-[#F59E0B]'}`}>
+              <p className="font-semibold text-[var(--ink)] text-sm md:text-base">{order.restaurantName}</p>
+              <Badge className={`mt-1 text-[10px] md:text-xs ${order.deliveryMode === 'delivery' ? 'bg-[var(--info-soft)] text-[var(--info)]' : 'bg-[var(--amber-soft)] text-[var(--amber)]'}`}>
                 {order.deliveryMode === 'delivery' ? 'Delivery' : 'Pickup'}
               </Badge>
             </div>
@@ -534,95 +534,95 @@ export default function OrderDetail() {
 
         {/* Delivery Address */}
         {order.deliveryMode === 'delivery' && (
-          <Card className="p-4 md:p-5 border-2 border-[#E2E8F0]">
-            <h3 className="font-bold text-[#121212] text-sm md:text-base mb-2">Delivery Address</h3>
+          <Card className="p-4 md:p-5 border-2 border-[var(--border)]">
+            <h3 className="font-bold text-[var(--ink)] text-sm md:text-base mb-2">Delivery Address</h3>
             <div className="flex items-start gap-2">
-              <MapPin className="w-4 h-4 text-[#E11D48] mt-0.5 flex-shrink-0" />
-              <p className="text-sm text-[#64748B]">{order.address.split('|')[0].trim() || order.address}</p>
+              <MapPin className="w-4 h-4 text-[var(--primary)] mt-0.5 flex-shrink-0" />
+              <p className="text-sm text-[var(--muted-foreground)]">{order.address.split('|')[0].trim() || order.address}</p>
             </div>
           </Card>
         )}
 
         {/* Order Items */}
-        <Card className="p-4 md:p-5 border-2 border-[#E2E8F0]">
-          <h3 className="font-bold text-[#121212] text-sm md:text-base mb-3">Items</h3>
+        <Card className="p-4 md:p-5 border-2 border-[var(--border)]">
+          <h3 className="font-bold text-[var(--ink)] text-sm md:text-base mb-3">Items</h3>
           <div className="space-y-2">
             {order.items.map((item, index) => (
-              <div key={index} className="flex items-center justify-between p-2 md:p-3 bg-[#F8F9FA] rounded-xl">
+              <div key={index} className="flex items-center justify-between p-2 md:p-3 bg-[var(--muted)] rounded-xl">
                 <div className="min-w-0">
-                  <p className="font-semibold text-[#121212] text-sm truncate">{item.name}</p>
-                  <p className="text-xs text-[#64748B]">Qty: {item.quantity}</p>
+                  <p className="font-semibold text-[var(--ink)] text-sm truncate">{item.name}</p>
+                  <p className="text-xs text-[var(--muted-foreground)]">Qty: {item.quantity}</p>
                   {item.customizations && item.customizations.length > 0 && (
                     <div className="space-y-0.5 mt-1">
                       {item.customizations.map((c: any, idx: number) => (
-                        <p key={idx} className="text-[10px] text-[#64748B]">
-                          {c.groupName}: {c.optionName}{c.price > 0 && <span className="text-[#E11D48]"> +₱{c.price}</span>}
+                        <p key={idx} className="text-[10px] text-[var(--muted-foreground)]">
+                          {c.groupName}: {c.optionName}{c.price > 0 && <span className="text-[var(--primary)]"> +₱{c.price}</span>}
                         </p>
                       ))}
                     </div>
                   )}
                 </div>
-                <p className="font-bold text-[#121212] text-sm flex-shrink-0">₱{(item.price * item.quantity).toFixed(2)}</p>
+                <p className="font-bold text-[var(--ink)] text-sm flex-shrink-0">₱{(item.price * item.quantity).toFixed(2)}</p>
               </div>
             ))}
           </div>
         </Card>
 
         {/* Payment */}
-        <Card className="p-4 md:p-5 border-2 border-[#E2E8F0]">
+        <Card className="p-4 md:p-5 border-2 border-[var(--border)]">
           <div className="flex items-center gap-2 mb-3">
-            <CreditCard className="w-4 h-4 text-[#E11D48]" />
-            <h3 className="font-bold text-[#121212] text-sm md:text-base">Payment</h3>
+            <CreditCard className="w-4 h-4 text-[var(--primary)]" />
+            <h3 className="font-bold text-[var(--ink)] text-sm md:text-base">Payment</h3>
           </div>
           <div className="flex items-center justify-between mb-4">
-            <span className="text-sm text-[#64748B]">{order.paymentMethod === 'cash' ? 'Cash on Delivery' : 'GCash (Prepaid)'}</span>
-            <Badge className={order.paymentMethod === 'gcash' ? 'bg-[#10B981] text-white text-xs' : 'bg-[#FEF3C7] text-[#F59E0B] text-xs'}>
+            <span className="text-sm text-[var(--muted-foreground)]">{order.paymentMethod === 'cash' ? 'Cash on Delivery' : 'GCash (Prepaid)'}</span>
+            <Badge className={order.paymentMethod === 'gcash' ? 'bg-[var(--success)] text-white text-xs' : 'bg-[var(--amber-soft)] text-[var(--amber)] text-xs'}>
               {order.paymentMethod === 'gcash' ? 'GCash' : 'COD'}
             </Badge>
           </div>
-          <div className="space-y-2 pt-3 border-t-2 border-[#F1F5F9]">
-            <div className="flex justify-between text-sm text-[#64748B]">
+          <div className="space-y-2 pt-3 border-t-2 border-[var(--muted)]">
+            <div className="flex justify-between text-sm text-[var(--muted-foreground)]">
               <span>Subtotal</span>
               <span>₱{order.subtotal.toFixed(2)}</span>
             </div>
-            <div className="flex justify-between text-sm text-[#64748B]">
+            <div className="flex justify-between text-sm text-[var(--muted-foreground)]">
               <span>Delivery Fee</span>
               <span>₱{order.deliveryFee.toFixed(2)}</span>
             </div>
-            <div className="flex justify-between text-base font-bold text-[#121212] pt-2 border-t-2 border-[#E2E8F0]">
+            <div className="flex justify-between text-base font-bold text-[var(--ink)] pt-2 border-t-2 border-[var(--border)]">
               <span>Total</span>
-              <span className="text-[#E11D48]">₱{order.total.toFixed(2)}</span>
+              <span className="text-[var(--primary)]">₱{order.total.toFixed(2)}</span>
             </div>
           </div>
         </Card>
 
         {/* Cutlery */}
         {order.needsCutlery && (
-          <Card className="p-3 border-2 border-[#E2E8F0] bg-[#F8FAFC]">
-            <p className="text-sm text-[#64748B] flex items-center gap-2">🍴 Cutlery requested</p>
+          <Card className="p-3 border-2 border-[var(--border)] bg-[var(--muted)]">
+            <p className="text-sm text-[var(--muted-foreground)] flex items-center gap-2">🍴 Cutlery requested</p>
           </Card>
         )}
 
         {/* Rate */}
         {order.status === 'delivered' && (
-          <Card className="p-4 md:p-5 border-2 border-[#E2E8F0]">
+          <Card className="p-4 md:p-5 border-2 border-[var(--border)]">
             {ratingSubmitted ? (
               <div className="text-center py-2">
                 <div className="w-14 h-14 mx-auto mb-3 rounded-full bg-green-100 flex items-center justify-center text-2xl">🙏</div>
-                <h3 className="text-lg font-bold text-[#121212] mb-1">Thank you!</h3>
-                <p className="text-sm text-[#64748B]">Your rating for {order.restaurantName} has been saved.</p>
+                <h3 className="text-lg font-bold text-[var(--ink)] mb-1">Thank you!</h3>
+                <p className="text-sm text-[var(--muted-foreground)]">Your rating for {order.restaurantName} has been saved.</p>
               </div>
             ) : (
               <>
                 <div className="flex items-center gap-2 mb-2">
-                  <Star className="w-5 h-5 text-[#FFC107] fill-[#FFC107]" />
-                  <h3 className="font-bold text-[#121212] text-sm md:text-base">Rate {order.restaurantName}</h3>
+                  <Star className="w-5 h-5 text-[var(--amber)] fill-[var(--amber)]" />
+                  <h3 className="font-bold text-[var(--ink)] text-sm md:text-base">Rate {order.restaurantName}</h3>
                 </div>
-                <p className="text-sm text-[#64748B] mb-3">How was your order and delivery?</p>
+                <p className="text-sm text-[var(--muted-foreground)] mb-3">How was your order and delivery?</p>
                 <div className="flex justify-center gap-2 mb-3">
                   {[1, 2, 3, 4, 5].map((star) => (
                     <button key={star} onClick={() => setRating(star)} className="transition-transform hover:scale-110">
-                      <Star className={`w-8 h-8 ${star <= rating ? 'fill-[#FFC107] text-[#FFC107]' : 'fill-[#E2E8F0] text-[#E2E8F0]'}`} />
+                      <Star className={`w-8 h-8 ${star <= rating ? 'fill-[var(--amber)] text-[var(--amber)]' : 'fill-[var(--border)] text-[var(--border)]'}`} />
                     </button>
                   ))}
                 </div>
@@ -638,7 +638,7 @@ export default function OrderDetail() {
                     setRatingSubmitted(true);
                   }}
                   disabled={!rating || ratingSubmitting || !order.businessId}
-                  className="w-full bg-[#E11D48] hover:bg-[#BE123C] text-white py-3 font-bold disabled:opacity-50"
+                  className="w-full bg-[var(--primary)] hover:bg-[var(--primary)] text-white py-3 font-bold disabled:opacity-50"
                 >
                   {ratingSubmitting ? 'Submitting...' : 'Submit Rating'}
                 </Button>

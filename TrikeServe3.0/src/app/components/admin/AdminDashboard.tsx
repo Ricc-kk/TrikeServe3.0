@@ -295,7 +295,7 @@ export default function AdminDashboard() {
   const isRiderAdmin = user?.adminType === 'rider';
 
   return (
-    <div className="min-h-screen bg-[#F8F9FA] flex">
+    <div className="min-h-screen bg-[var(--muted)] flex">
       {/* Sidebar Navigation */}
       <AdminSidebar
         isMobileMenuOpen={isMobileMenuOpen}
@@ -305,21 +305,21 @@ export default function AdminDashboard() {
       {/* Main Content */}
       <div className="flex-1 lg:ml-64">
         {/* Top Header */}
-        <div className="bg-white border-b-2 border-[#E2E8F0] px-5 lg:px-8 py-4 lg:py-5 sticky top-0 z-50">
+        <div className="bg-white border-b-2 border-[var(--border)] px-5 lg:px-8 py-4 lg:py-5 sticky top-0 z-50">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-3">
               {/* Hamburger Menu - Mobile Only */}
               <button
                 onClick={() => setIsMobileMenuOpen(true)}
-                className="lg:hidden p-2 hover:bg-[#F8F9FA] rounded-xl transition-all"
+                className="lg:hidden p-2 hover:bg-[var(--muted)] rounded-xl transition-all"
               >
-                <Menu className="w-6 h-6 text-[#121212]" />
+                <Menu className="w-6 h-6 text-[var(--ink)]" />
               </button>
               <div>
-                <h1 className="text-2xl lg:text-3xl font-extrabold text-[#121212]">
+                <h1 className="text-2xl lg:text-3xl font-extrabold text-[var(--ink)]">
                   Welcome, {user?.name || 'Admin'}!
                 </h1>
-                <p className="text-xs lg:text-sm text-[#64748B]">
+                <p className="text-xs lg:text-sm text-[var(--muted-foreground)]">
                   {user?.adminType === 'business_customer' ? 'Super Admin - Full Platform Control' :
                    user?.adminType === 'rider' ? 'Rider Admin - Terminal Management' :
                    'TrikeServe Control Panel - System Overview'}
@@ -329,20 +329,20 @@ export default function AdminDashboard() {
             <div className="flex items-center gap-2 lg:gap-4">
               <button
                 onClick={() => setShowNotifications(true)}
-                className="relative p-2 hover:bg-[#F8F9FA] rounded-xl transition-all"
+                className="relative p-2 hover:bg-[var(--muted)] rounded-xl transition-all"
               >
-                <Bell className="w-5 h-5 lg:w-6 lg:h-6 text-[#64748B]" />
+                <Bell className="w-5 h-5 lg:w-6 lg:h-6 text-[var(--muted-foreground)]" />
                 {notifications.filter((n: any) => !n.read).length > 0 && (
-                  <div className="absolute top-1 right-1 w-2 h-2 bg-[#E11D48] rounded-full" />
+                  <div className="absolute top-1 right-1 w-2 h-2 bg-[var(--primary)] rounded-full" />
                 )}
               </button>
               <div className="hidden lg:flex items-center gap-3 px-3 py-2 rounded-xl">
-                <div className="w-10 h-10 bg-gradient-to-br from-[#E11D48] to-[#121212] rounded-full flex items-center justify-center">
+                <div className="w-10 h-10 bg-gradient-to-br from-[var(--primary)] to-[var(--ink)] rounded-full flex items-center justify-center">
                   <UserIcon className="w-5 h-5 text-white" />
                 </div>
                 <div>
-                  <p className="font-bold text-[#121212] text-sm">{user?.name || 'Admin'}</p>
-                  <p className="text-xs text-[#64748B]">Administrator</p>
+                  <p className="font-bold text-[var(--ink)] text-sm">{user?.name || 'Admin'}</p>
+                  <p className="text-xs text-[var(--muted-foreground)]">Administrator</p>
                 </div>
               </div>
             </div>
@@ -354,21 +354,21 @@ export default function AdminDashboard() {
           {/* Stats Cards */}
           <div className="grid grid-cols-2 lg:grid-cols-5 gap-3 lg:gap-6 mb-6 lg:mb-8">
             {/* Total Customers */}
-            <Card className="p-4 lg:p-6 border-2 border-[#E2E8F0] bg-white">
+            <Card className="p-4 lg:p-6 border-2 border-[var(--border)] bg-white">
               <div className="flex items-start justify-between mb-3 lg:mb-4">
                 <div>
-                  <p className="text-xs lg:text-sm text-[#64748B] mb-1">Customers</p>
-                  <h2 className="text-2xl lg:text-4xl font-bold text-[#121212]">{stats.totalCustomers}</h2>
+                  <p className="text-xs lg:text-sm text-[var(--muted-foreground)] mb-1">Customers</p>
+                  <h2 className="text-2xl lg:text-4xl font-bold text-[var(--ink)]">{stats.totalCustomers}</h2>
                 </div>
-                <div className="w-10 h-10 lg:w-12 lg:h-12 bg-[#D1FAE5] rounded-xl flex items-center justify-center">
-                  <Users className="w-5 h-5 lg:w-6 lg:h-6 text-[#10B981]" />
+                <div className="w-10 h-10 lg:w-12 lg:h-12 bg-[var(--success-soft)] rounded-xl flex items-center justify-center">
+                  <Users className="w-5 h-5 lg:w-6 lg:h-6 text-[var(--success)]" />
                 </div>
               </div>
               <div className="flex items-end gap-0.5 lg:gap-1 h-8 lg:h-12">
                 {[40, 60, 35, 80, 45, 90, 70, 55, 85, 65, 75, 95].map((height, i) => (
                   <div
                     key={i}
-                    className={`flex-1 rounded-t ${i === 11 ? 'bg-[#10B981]' : 'bg-[#E2E8F0]'}`}
+                    className={`flex-1 rounded-t ${i === 11 ? 'bg-[var(--success)]' : 'bg-[var(--border)]'}`}
                     style={{ height: `${height}%` }}
                   />
                 ))}
@@ -376,21 +376,21 @@ export default function AdminDashboard() {
             </Card>
 
             {/* Total Drivers */}
-            <Card className="p-4 lg:p-6 border-2 border-[#E2E8F0] bg-white">
+            <Card className="p-4 lg:p-6 border-2 border-[var(--border)] bg-white">
               <div className="flex items-start justify-between mb-3 lg:mb-4">
                 <div>
-                  <p className="text-xs lg:text-sm text-[#64748B] mb-1">Drivers</p>
-                  <h2 className="text-2xl lg:text-4xl font-bold text-[#121212]">{stats.totalRiders}</h2>
+                  <p className="text-xs lg:text-sm text-[var(--muted-foreground)] mb-1">Drivers</p>
+                  <h2 className="text-2xl lg:text-4xl font-bold text-[var(--ink)]">{stats.totalRiders}</h2>
                 </div>
-                <div className="w-10 h-10 lg:w-12 lg:h-12 bg-[#DBEAFE] rounded-xl flex items-center justify-center">
-                  <Bike className="w-5 h-5 lg:w-6 lg:h-6 text-[#3B82F6]" />
+                <div className="w-10 h-10 lg:w-12 lg:h-12 bg-[var(--info-soft)] rounded-xl flex items-center justify-center">
+                  <Bike className="w-5 h-5 lg:w-6 lg:h-6 text-[var(--info)]" />
                 </div>
               </div>
               <div className="flex items-end gap-0.5 lg:gap-1 h-8 lg:h-12">
                 {[45, 55, 70, 50, 85, 60, 75, 90, 65, 80, 70, 95].map((height, i) => (
                   <div
                     key={i}
-                    className={`flex-1 rounded-t ${i === 11 ? 'bg-[#3B82F6]' : 'bg-[#E2E8F0]'}`}
+                    className={`flex-1 rounded-t ${i === 11 ? 'bg-[var(--info)]' : 'bg-[var(--border)]'}`}
                     style={{ height: `${height}%` }}
                   />
                 ))}
@@ -398,21 +398,21 @@ export default function AdminDashboard() {
             </Card>
 
             {/* Total Businesses */}
-            <Card className="p-4 lg:p-6 border-2 border-[#E2E8F0] bg-white">
+            <Card className="p-4 lg:p-6 border-2 border-[var(--border)] bg-white">
               <div className="flex items-start justify-between mb-3 lg:mb-4">
                 <div>
-                  <p className="text-xs lg:text-sm text-[#64748B] mb-1">Businesses</p>
-                  <h2 className="text-2xl lg:text-4xl font-bold text-[#121212]">{stats.totalBusinesses}</h2>
+                  <p className="text-xs lg:text-sm text-[var(--muted-foreground)] mb-1">Businesses</p>
+                  <h2 className="text-2xl lg:text-4xl font-bold text-[var(--ink)]">{stats.totalBusinesses}</h2>
                 </div>
-                <div className="w-10 h-10 lg:w-12 lg:h-12 bg-[#F3E8FF] rounded-xl flex items-center justify-center">
-                  <Store className="w-5 h-5 lg:w-6 lg:h-6 text-[#9333EA]" />
+                <div className="w-10 h-10 lg:w-12 lg:h-12 bg-[var(--violet-soft)] rounded-xl flex items-center justify-center">
+                  <Store className="w-5 h-5 lg:w-6 lg:h-6 text-[var(--violet)]" />
                 </div>
               </div>
               <div className="flex items-end gap-0.5 lg:gap-1 h-8 lg:h-12">
                 {[60, 70, 55, 85, 65, 75, 90, 70, 80, 65, 75, 95].map((height, i) => (
                   <div
                     key={i}
-                    className={`flex-1 rounded-t ${i === 11 ? 'bg-[#9333EA]' : 'bg-[#E2E8F0]'}`}
+                    className={`flex-1 rounded-t ${i === 11 ? 'bg-[var(--violet)]' : 'bg-[var(--border)]'}`}
                     style={{ height: `${height}%` }}
                   />
                 ))}
@@ -420,21 +420,21 @@ export default function AdminDashboard() {
             </Card>
 
             {/* Pending Verifications */}
-            <Card className="p-4 lg:p-6 border-2 border-[#E2E8F0] bg-white">
+            <Card className="p-4 lg:p-6 border-2 border-[var(--border)] bg-white">
               <div className="flex items-start justify-between mb-3 lg:mb-4">
                 <div>
-                  <p className="text-xs lg:text-sm text-[#64748B] mb-1">Pending</p>
-                  <h2 className="text-2xl lg:text-4xl font-bold text-[#E11D48]">{stats.pendingCount}</h2>
+                  <p className="text-xs lg:text-sm text-[var(--muted-foreground)] mb-1">Pending</p>
+                  <h2 className="text-2xl lg:text-4xl font-bold text-[var(--primary)]">{stats.pendingCount}</h2>
                 </div>
-                <div className="w-10 h-10 lg:w-12 lg:h-12 bg-[#FEF3C7] rounded-xl flex items-center justify-center">
-                  <AlertTriangle className="w-5 h-5 lg:w-6 lg:h-6 text-[#F59E0B]" />
+                <div className="w-10 h-10 lg:w-12 lg:h-12 bg-[var(--amber-soft)] rounded-xl flex items-center justify-center">
+                  <AlertTriangle className="w-5 h-5 lg:w-6 lg:h-6 text-[var(--amber)]" />
                 </div>
               </div>
               <div className="flex items-end gap-0.5 lg:gap-1 h-8 lg:h-12">
                 {[50, 65, 75, 60, 85, 70, 90, 75, 85, 70, 80, 95].map((height, i) => (
                   <div
                     key={i}
-                    className={`flex-1 rounded-t ${i === 11 ? 'bg-[#F59E0B]' : 'bg-[#E2E8F0]'}`}
+                    className={`flex-1 rounded-t ${i === 11 ? 'bg-[var(--amber)]' : 'bg-[var(--border)]'}`}
                     style={{ height: `${height}%` }}
                   />
                 ))}
@@ -442,21 +442,21 @@ export default function AdminDashboard() {
             </Card>
 
             {/* Total Users */}
-            <Card className="p-4 lg:p-6 border-2 border-[#E2E8F0] bg-white">
+            <Card className="p-4 lg:p-6 border-2 border-[var(--border)] bg-white">
               <div className="flex items-start justify-between mb-3 lg:mb-4">
                 <div>
-                  <p className="text-xs lg:text-sm text-[#64748B] mb-1">Total Users</p>
-                  <h2 className="text-2xl lg:text-4xl font-bold text-[#121212]">{stats.totalUsers}</h2>
+                  <p className="text-xs lg:text-sm text-[var(--muted-foreground)] mb-1">Total Users</p>
+                  <h2 className="text-2xl lg:text-4xl font-bold text-[var(--ink)]">{stats.totalUsers}</h2>
                 </div>
-                <div className="w-10 h-10 lg:w-12 lg:h-12 bg-[#FFF1F2] rounded-xl flex items-center justify-center">
-                  <Users className="w-5 h-5 lg:w-6 lg:h-6 text-[#E11D48]" />
+                <div className="w-10 h-10 lg:w-12 lg:h-12 bg-[var(--primary-soft)] rounded-xl flex items-center justify-center">
+                  <Users className="w-5 h-5 lg:w-6 lg:h-6 text-[var(--primary)]" />
                 </div>
               </div>
               <div className="flex items-end gap-0.5 lg:gap-1 h-8 lg:h-12">
                 {[55, 60, 70, 65, 80, 75, 85, 80, 90, 75, 85, 95].map((height, i) => (
                   <div
                     key={i}
-                    className={`flex-1 rounded-t ${i === 11 ? 'bg-[#E11D48]' : 'bg-[#E2E8F0]'}`}
+                    className={`flex-1 rounded-t ${i === 11 ? 'bg-[var(--primary)]' : 'bg-[var(--border)]'}`}
                     style={{ height: `${height}%` }}
                   />
                 ))}
@@ -468,87 +468,87 @@ export default function AdminDashboard() {
             {/* Pending Verifications */}
             <div>
               <div className="flex items-center justify-between mb-4">
-                <h2 className="text-xl lg:text-2xl font-bold text-[#121212]">Pending Verifications</h2>
+                <h2 className="text-xl lg:text-2xl font-bold text-[var(--ink)]">Pending Verifications</h2>
               </div>
               {isRiderAdmin && (
-                <Card className="p-4 mb-4 border-2 border-[#BFDBFE] bg-[#EFF6FF]">
-                  <p className="text-sm text-[#1E40AF] font-semibold">Read-only</p>
-                  <p className="text-xs text-[#1E40AF]/80 mt-0.5">
+                <Card className="p-4 mb-4 border-2 border-[var(--info-soft)] bg-[var(--info-soft)]">
+                  <p className="text-sm text-[var(--info)] font-semibold">Read-only</p>
+                  <p className="text-xs text-[var(--info)]/80 mt-0.5">
                     Account verification is handled by the Super Admin. Manage terminals and driver assignments instead.
                   </p>
                 </Card>
               )}
               {pendingVerifications.length === 0 ? (
-                <Card className="p-12 border-2 border-dashed border-[#E2E8F0] text-center">
-                  <CheckCircle className="w-16 h-16 text-[#10B981] mx-auto mb-4" />
-                  <p className="text-[#64748B] text-sm mb-2">All verifications completed!</p>
-                  <p className="text-[#94A3B8] text-xs">No pending users awaiting verification</p>
+                <Card className="p-12 border-2 border-dashed border-[var(--border)] text-center">
+                  <CheckCircle className="w-16 h-16 text-[var(--success)] mx-auto mb-4" />
+                  <p className="text-[var(--muted-foreground)] text-sm mb-2">All verifications completed!</p>
+                  <p className="text-[var(--muted-foreground)] text-xs">No pending users awaiting verification</p>
                 </Card>
               ) : (
-                <Card className="border-2 border-[#E2E8F0] bg-white overflow-hidden">
+                <Card className="border-2 border-[var(--border)] bg-white overflow-hidden">
                   <div className="overflow-x-auto">
                     <table className="w-full">
-                      <thead className="bg-[#F8F9FA] border-b-2 border-[#E2E8F0]">
+                      <thead className="bg-[var(--muted)] border-b-2 border-[var(--border)]">
                         <tr>
-                          <th className="px-4 py-3 text-left text-xs font-bold text-[#64748B] uppercase tracking-wider">User</th>
-                          <th className="px-4 py-3 text-left text-xs font-bold text-[#64748B] uppercase tracking-wider">Type</th>
-                          <th className="px-4 py-3 text-left text-xs font-bold text-[#64748B] uppercase tracking-wider">Email</th>
-                          <th className="px-4 py-3 text-left text-xs font-bold text-[#64748B] uppercase tracking-wider">Phone</th>
-                          <th className="px-4 py-3 text-left text-xs font-bold text-[#64748B] uppercase tracking-wider">Submitted</th>
-                          <th className="px-4 py-3 text-center text-xs font-bold text-[#64748B] uppercase tracking-wider">Actions</th>
+                          <th className="px-4 py-3 text-left text-xs font-bold text-[var(--muted-foreground)] uppercase tracking-wider">User</th>
+                          <th className="px-4 py-3 text-left text-xs font-bold text-[var(--muted-foreground)] uppercase tracking-wider">Type</th>
+                          <th className="px-4 py-3 text-left text-xs font-bold text-[var(--muted-foreground)] uppercase tracking-wider">Email</th>
+                          <th className="px-4 py-3 text-left text-xs font-bold text-[var(--muted-foreground)] uppercase tracking-wider">Phone</th>
+                          <th className="px-4 py-3 text-left text-xs font-bold text-[var(--muted-foreground)] uppercase tracking-wider">Submitted</th>
+                          <th className="px-4 py-3 text-center text-xs font-bold text-[var(--muted-foreground)] uppercase tracking-wider">Actions</th>
                         </tr>
                       </thead>
-                      <tbody className="divide-y divide-[#E2E8F0]">
+                      <tbody className="divide-y divide-[var(--border)]">
                         {pendingVerifications.map((user) => (
-                          <tr key={user.id} className="hover:bg-[#F8F9FA] transition-colors">
+                          <tr key={user.id} className="hover:bg-[var(--muted)] transition-colors">
                             <td className="px-4 py-4">
                               <div className="flex items-center gap-3">
-                                <div className={`w-10 h-10 ${user.type === 'rider' ? 'bg-[#DBEAFE]' : 'bg-[#F3E8FF]'} rounded-lg flex items-center justify-center flex-shrink-0`}>
+                                <div className={`w-10 h-10 ${user.type === 'rider' ? 'bg-[var(--info-soft)]' : 'bg-[var(--violet-soft)]'} rounded-lg flex items-center justify-center flex-shrink-0`}>
                                   {user.type === 'rider' ? (
-                                    <Bike className="w-5 h-5 text-[#3B82F6]" />
+                                    <Bike className="w-5 h-5 text-[var(--info)]" />
                                   ) : (
-                                    <Store className="w-5 h-5 text-[#9333EA]" />
+                                    <Store className="w-5 h-5 text-[var(--violet)]" />
                                   )}
                                 </div>
                                 <div>
-                                  <p className="font-bold text-[#121212]">{user.name}</p>
+                                  <p className="font-bold text-[var(--ink)]">{user.name}</p>
                                 </div>
                               </div>
                             </td>
                             <td className="px-4 py-4">
-                              <Badge className={user.type === 'rider' ? 'bg-[#3B82F6]' : 'bg-[#9333EA]'}>
+                              <Badge className={user.type === 'rider' ? 'bg-[var(--info)]' : 'bg-[var(--violet)]'}>
                                 {user.type.toUpperCase()}
                               </Badge>
                             </td>
                             <td className="px-4 py-4">
-                              <p className="text-sm text-[#64748B]">{user.email}</p>
+                              <p className="text-sm text-[var(--muted-foreground)]">{user.email}</p>
                             </td>
                             <td className="px-4 py-4">
-                              <p className="text-sm text-[#64748B]">{user.phone}</p>
+                              <p className="text-sm text-[var(--muted-foreground)]">{user.phone}</p>
                             </td>
                             <td className="px-4 py-4">
-                              <p className="text-sm text-[#64748B]">{user.submittedDate}</p>
+                              <p className="text-sm text-[var(--muted-foreground)]">{user.submittedDate}</p>
                             </td>
                             <td className="px-4 py-4">
                               {isSuperAdmin ? (
                                 <div className="flex items-center justify-center gap-2">
                                   <button
                                     onClick={() => handleApproveUser(user.id)}
-                                    className="p-2 bg-[#10B981] hover:bg-[#059669] rounded-lg transition-all"
+                                    className="p-2 bg-[var(--success)] hover:bg-[var(--success)] rounded-lg transition-all"
                                     title="Approve"
                                   >
                                     <CheckCircle className="w-5 h-5 text-white" />
                                   </button>
                                   <button
                                     onClick={() => handleRejectUser(user.id)}
-                                    className="p-2 bg-[#EF4444] hover:bg-[#DC2626] rounded-lg transition-all"
+                                    className="p-2 bg-[var(--error)] hover:bg-[var(--error)] rounded-lg transition-all"
                                     title="Reject"
                                   >
                                     <XCircle className="w-5 h-5 text-white" />
                                   </button>
                                 </div>
                               ) : (
-                                <p className="text-xs text-[#94A3B8] text-center">Super Admin only</p>
+                                <p className="text-xs text-[var(--muted-foreground)] text-center">Super Admin only</p>
                               )}
                             </td>
                           </tr>
@@ -564,27 +564,27 @@ export default function AdminDashboard() {
           {/* Delivery Fee Configuration - Super Admin */}
           {isSuperAdmin && (
             <div>
-              <h2 className="text-xl lg:text-2xl font-bold text-[#121212] mb-4">Delivery Fee Configuration</h2>
-              <Card className="p-5 lg:p-6 border-2 border-[#E2E8F0] bg-white max-w-md">
+              <h2 className="text-xl lg:text-2xl font-bold text-[var(--ink)] mb-4">Delivery Fee Configuration</h2>
+              <Card className="p-5 lg:p-6 border-2 border-[var(--border)] bg-white max-w-md">
                 <div className="flex items-start justify-between mb-4">
                   <div>
-                    <Store className="w-8 h-8 lg:w-10 lg:h-10 text-[#10B981] mb-2" />
-                    <h3 className="font-bold text-base lg:text-lg text-[#121212]">Delivery Fee</h3>
-                    <p className="text-xs text-[#64748B]">Food delivery (base rate)</p>
+                    <Store className="w-8 h-8 lg:w-10 lg:h-10 text-[var(--success)] mb-2" />
+                    <h3 className="font-bold text-base lg:text-lg text-[var(--ink)]">Delivery Fee</h3>
+                    <p className="text-xs text-[var(--muted-foreground)]">Food delivery (base rate)</p>
                   </div>
                 </div>
                 <div className="flex items-center gap-2 mb-3">
-                  <span className="text-lg text-[#64748B] font-bold">₱</span>
+                  <span className="text-lg text-[var(--muted-foreground)] font-bold">₱</span>
                   <Input
                     type="number"
                     value={rateConfig.deliveryBaseFee}
                     onChange={(e) => setRateConfig({ ...rateConfig, deliveryBaseFee: Number(e.target.value) })}
-                    className="text-2xl lg:text-3xl font-bold text-center border-2 border-[#E2E8F0]"
+                    className="text-2xl lg:text-3xl font-bold text-center border-2 border-[var(--border)]"
                   />
                 </div>
                 <button
                   onClick={() => handleUpdateRate('deliveryBaseFee')}
-                  className="w-full py-3 bg-[#E11D48] hover:bg-[#BE123C] text-white font-bold rounded-xl uppercase transition-all"
+                  className="w-full py-3 bg-[var(--primary)] hover:bg-[var(--primary)] text-white font-bold rounded-xl uppercase transition-all"
                 >
                   Update Rate
                 </button>
@@ -595,28 +595,28 @@ export default function AdminDashboard() {
           {/* Fixed Rate Configuration - Super Admin */}
           {isSuperAdmin && (
             <div>
-              <h2 className="text-xl lg:text-2xl font-bold text-[#121212] mb-4">Fixed Rate Configuration</h2>
+              <h2 className="text-xl lg:text-2xl font-bold text-[var(--ink)] mb-4">Fixed Rate Configuration</h2>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4 lg:gap-6">
-                <Card className="p-5 lg:p-6 border-2 border-[#E2E8F0] bg-white">
+                <Card className="p-5 lg:p-6 border-2 border-[var(--border)] bg-white">
                   <div className="flex items-start justify-between mb-4">
                     <div>
-                      <Bike className="w-8 h-8 lg:w-10 lg:h-10 text-[#9333EA] mb-2" />
-                      <h3 className="font-bold text-base lg:text-lg text-[#121212]">Private Ride</h3>
-                      <p className="text-xs text-[#64748B]">Special</p>
+                      <Bike className="w-8 h-8 lg:w-10 lg:h-10 text-[var(--violet)] mb-2" />
+                      <h3 className="font-bold text-base lg:text-lg text-[var(--ink)]">Private Ride</h3>
+                      <p className="text-xs text-[var(--muted-foreground)]">Special</p>
                     </div>
                   </div>
                   <div className="flex items-center gap-2 mb-3">
-                    <span className="text-lg text-[#64748B] font-bold">₱</span>
+                    <span className="text-lg text-[var(--muted-foreground)] font-bold">₱</span>
                     <Input
                       type="number"
                       value={rateConfig.privateRide}
                       onChange={(e) => setRateConfig({ ...rateConfig, privateRide: Number(e.target.value) })}
-                      className="text-2xl lg:text-3xl font-bold text-center border-2 border-[#E2E8F0]"
+                      className="text-2xl lg:text-3xl font-bold text-center border-2 border-[var(--border)]"
                     />
                   </div>
                   <button
                     onClick={() => handleUpdateRate('privateRide')}
-                    className="w-full py-3 bg-[#E11D48] hover:bg-[#BE123C] text-white font-bold rounded-xl uppercase transition-all"
+                    className="w-full py-3 bg-[var(--primary)] hover:bg-[var(--primary)] text-white font-bold rounded-xl uppercase transition-all"
                   >
                     Update Rate
                   </button>
@@ -637,25 +637,25 @@ export default function AdminDashboard() {
             onClick={() => setShowNotifications(false)}
           />
           <div className="fixed top-0 right-0 h-full w-full lg:w-[400px] bg-white z-[2001] shadow-2xl overflow-y-auto">
-            <div className="p-5 border-b-2 border-[#E2E8F0] sticky top-0 bg-white z-10">
+            <div className="p-5 border-b-2 border-[var(--border)] sticky top-0 bg-white z-10">
               <div className="flex items-center justify-between">
-                <h2 className="text-2xl font-bold text-[#121212]">Notifications</h2>
+                <h2 className="text-2xl font-bold text-[var(--ink)]">Notifications</h2>
                 <button
                   onClick={() => setShowNotifications(false)}
-                  className="p-2 hover:bg-[#F8F9FA] rounded-xl transition-all"
+                  className="p-2 hover:bg-[var(--muted)] rounded-xl transition-all"
                 >
-                  <X className="w-6 h-6 text-[#64748B]" />
+                  <X className="w-6 h-6 text-[var(--muted-foreground)]" />
                 </button>
               </div>
-              <p className="text-sm text-[#64748B] mt-1">
+              <p className="text-sm text-[var(--muted-foreground)] mt-1">
                 {notifications.filter(n => !n.read).length} unread notifications
               </p>
             </div>
             <div className="p-5 space-y-3">
               {notifications.length === 0 && (
-                <Card className="p-12 text-center border-2 border-dashed border-[#E2E8F0]">
+                <Card className="p-12 text-center border-2 border-dashed border-[var(--border)]">
                   <Bell className="w-16 h-16 text-gray-300 mx-auto mb-4" />
-                  <p className="text-[#64748B] text-sm">No notifications yet</p>
+                  <p className="text-[var(--muted-foreground)] text-sm">No notifications yet</p>
                 </Card>
               )}
             </div>

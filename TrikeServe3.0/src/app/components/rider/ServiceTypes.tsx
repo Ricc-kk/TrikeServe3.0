@@ -80,26 +80,26 @@ export default function ServiceTypes() {
   };
 
   return (
-    <div className="min-h-screen bg-[#F8F9FA]">
+    <div className="min-h-screen bg-[var(--muted)]">
       {/* Header */}
-      <div className="bg-white border-b-2 border-[#CBD5E1] px-4 py-3 flex items-center gap-3">
+      <div className="bg-white border-b-2 border-[var(--border)] px-4 py-3 flex items-center gap-3">
         <Button variant="ghost" size="icon" onClick={() => navigate('/rider')}>
           <ArrowLeft className="w-5 h-5" />
         </Button>
-        <h1 className="text-xl font-extrabold text-[#E11D48]" style={{ letterSpacing: '-0.02em' }}>
+        <h1 className="text-xl font-extrabold text-[var(--primary)]" style={{ letterSpacing: '-0.02em' }}>
           Service Types
         </h1>
       </div>
 
       <div className="p-4 space-y-5">
-        <p className="text-sm text-[#64748B]">
+        <p className="text-sm text-[var(--muted-foreground)]">
           Choose a category, then select the service types you want to accept.
           {category === 'rides' && ' You can select both Ride Share and Private Ride.'}
         </p>
 
         {/* Step 1: Category */}
         <div>
-          <h2 className="text-sm font-bold text-[#121212] mb-2 uppercase tracking-wide">1. Choose a category</h2>
+          <h2 className="text-sm font-bold text-[var(--ink)] mb-2 uppercase tracking-wide">1. Choose a category</h2>
           <div className="grid grid-cols-2 gap-3">
             {CATEGORIES.map((cat) => {
               const active = category === cat.key;
@@ -109,24 +109,24 @@ export default function ServiceTypes() {
                   onClick={() => selectCategory(cat.key)}
                   className={`p-4 border-2 cursor-pointer transition-all ${
                     active
-                      ? 'border-[#E11D48] bg-red-50 shadow-sm'
+                      ? 'border-[var(--primary)] bg-red-50 shadow-sm'
                       : 'border-gray-200 hover:border-gray-300'
                   }`}
                 >
                   <div className="flex flex-col items-center gap-2 text-center">
                     <div className={`w-12 h-12 rounded-full flex items-center justify-center ${
-                      active ? 'bg-[#E11D48] text-white' : 'bg-gray-100 text-[#64748B]'
+                      active ? 'bg-[var(--primary)] text-white' : 'bg-gray-100 text-[var(--muted-foreground)]'
                     }`}>
                       <cat.icon className="w-6 h-6" />
                     </div>
                     <div>
-                      <p className="font-semibold text-[#121212]">{cat.name}</p>
-                      <p className="text-xs text-[#64748B]">{cat.description}</p>
+                      <p className="font-semibold text-[var(--ink)]">{cat.name}</p>
+                      <p className="text-xs text-[var(--muted-foreground)]">{cat.description}</p>
                     </div>
                     <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center ${
-                      active ? 'border-[#E11D48]' : 'border-gray-300'
+                      active ? 'border-[var(--primary)]' : 'border-gray-300'
                     }`}>
-                      {active && <div className="w-2.5 h-2.5 bg-[#E11D48] rounded-full" />}
+                      {active && <div className="w-2.5 h-2.5 bg-[var(--primary)] rounded-full" />}
                     </div>
                   </div>
                 </Card>
@@ -137,7 +137,7 @@ export default function ServiceTypes() {
 
         {/* Step 2: Service type within category */}
         <div>
-          <h2 className="text-sm font-bold text-[#121212] mb-2 uppercase tracking-wide">
+          <h2 className="text-sm font-bold text-[var(--ink)] mb-2 uppercase tracking-wide">
             2. Select service types
           </h2>
           <div className="space-y-2">
@@ -150,23 +150,23 @@ export default function ServiceTypes() {
                   onClick={() => (isMulti ? toggleRideType(option.key) : undefined)}
                   className={`flex items-center justify-between p-4 border-2 cursor-pointer transition-all ${
                     active
-                      ? 'border-[#E11D48] bg-red-50'
+                      ? 'border-[var(--primary)] bg-red-50'
                       : 'border-gray-200 hover:border-gray-300'
                   }`}
                 >
                   <div className="flex items-center gap-3">
                     <div className={`w-10 h-10 rounded-full flex items-center justify-center ${
-                      active ? 'bg-[#E11D48] text-white' : 'bg-gray-100 text-[#64748B]'
+                      active ? 'bg-[var(--primary)] text-white' : 'bg-gray-100 text-[var(--muted-foreground)]'
                     }`}>
                       <option.icon className="w-5 h-5" />
                     </div>
                     <div>
-                      <p className="font-semibold text-[#121212]">{option.name}</p>
-                      <p className="text-xs text-[#64748B]">{option.description}</p>
+                      <p className="font-semibold text-[var(--ink)]">{option.name}</p>
+                      <p className="text-xs text-[var(--muted-foreground)]">{option.description}</p>
                     </div>
                   </div>
                   <div className={`w-5 h-5 rounded border-2 flex items-center justify-center ${
-                    active ? 'bg-[#E11D48] border-[#E11D48]' : 'border-gray-300'
+                    active ? 'bg-[var(--primary)] border-[var(--primary)]' : 'border-gray-300'
                   }`}>
                     {active && <div className="w-2 h-2 bg-white rounded-sm" />}
                   </div>
@@ -179,7 +179,7 @@ export default function ServiceTypes() {
         <Button
           onClick={handleSave}
           disabled={isSaving}
-          className="w-full bg-[#E11D48] hover:bg-[#BE123C] uppercase"
+          className="w-full bg-[var(--primary)] hover:bg-[var(--primary)] uppercase"
         >
           {isSaving ? 'Saving...' : 'Save Service Types'}
         </Button>

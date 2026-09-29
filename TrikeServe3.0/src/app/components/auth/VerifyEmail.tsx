@@ -109,7 +109,7 @@ export default function VerifyEmail() {
   return (
     <div className="min-h-screen flex">
       {/* Left Side — branding */}
-      <div className="hidden lg:flex lg:flex-1 bg-gradient-to-br from-[#E11D48] via-[#BE123C] to-[#121212] relative overflow-hidden">
+      <div className="hidden lg:flex lg:flex-1 bg-gradient-to-br from-[var(--primary)] via-[var(--primary)] to-[var(--ink)] relative overflow-hidden">
         <div className="absolute inset-0">
           <div className="absolute inset-0 opacity-10">
             <div
@@ -138,7 +138,7 @@ export default function VerifyEmail() {
           <div className="space-y-4">
             <div className="flex items-start gap-3">
               <div className="w-8 h-8 rounded-full bg-white flex items-center justify-center flex-shrink-0 mt-1">
-                <span className="text-sm font-bold text-[#E11D48]">1</span>
+                <span className="text-sm font-bold text-[var(--primary)]">1</span>
               </div>
               <div>
                 <p className="text-lg font-semibold">Check Your Inbox</p>
@@ -178,13 +178,13 @@ export default function VerifyEmail() {
                 Back to Sign In
               </Button>
             </Link>
-            <h2 className="text-3xl font-bold text-[#121212] mb-2">
+            <h2 className="text-3xl font-bold text-[var(--ink)] mb-2">
               {status === "loading" && "Verifying Email..."}
               {status === "success" && "Email Verified!"}
               {status === "error" && "Verification Failed"}
               {status === "waiting" && "Check Your Email"}
             </h2>
-            <p className="text-[#64748B]">{message}</p>
+            <p className="text-[var(--muted-foreground)]">{message}</p>
           </div>
 
           {/* Loading State */}
@@ -193,7 +193,7 @@ export default function VerifyEmail() {
               <div className="w-20 h-20 bg-blue-100 rounded-full flex items-center justify-center mx-auto mb-4">
                 <Loader2 className="w-10 h-10 text-blue-600 animate-spin" />
               </div>
-              <p className="text-[#64748B]">Please wait while we verify your email...</p>
+              <p className="text-[var(--muted-foreground)]">Please wait while we verify your email...</p>
             </div>
           )}
 
@@ -204,8 +204,8 @@ export default function VerifyEmail() {
                 <div className="w-20 h-20 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-4">
                   <CheckCircle className="w-10 h-10 text-green-600" />
                 </div>
-                <h3 className="text-2xl font-bold text-[#121212] mb-2">Welcome Aboard!</h3>
-                <p className="text-[#64748B] text-sm">
+                <h3 className="text-2xl font-bold text-[var(--ink)] mb-2">Welcome Aboard!</h3>
+                <p className="text-[var(--muted-foreground)] text-sm">
                   Your email is now verified. You can log in to your account.
                 </p>
               </div>
@@ -226,7 +226,7 @@ export default function VerifyEmail() {
               )}
 
               <Link to="/">
-                <Button className="w-full bg-[#E11D48] hover:bg-[#BE123C] uppercase text-base py-6">
+                <Button className="w-full bg-[var(--primary)] hover:bg-[var(--primary)] uppercase text-base py-6">
                   GO TO LOGIN
                 </Button>
               </Link>
@@ -244,11 +244,11 @@ export default function VerifyEmail() {
 
               <form onSubmit={handleResend} className="space-y-4">
                 <div>
-                  <label className="block text-sm font-semibold text-[#121212] mb-2">
+                  <label className="block text-sm font-semibold text-[var(--ink)] mb-2">
                     Email Address
                   </label>
                   <div className="relative">
-                    <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-[#64748B]" />
+                    <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-[var(--muted-foreground)]" />
                     <input
                       type="email"
                       placeholder="your.email@example.com"
@@ -258,7 +258,7 @@ export default function VerifyEmail() {
                         setResendEmail(e.target.value);
                         setResendSuccess(false);
                       }}
-                      className="w-full border-2 border-[#CBD5E1] focus:border-[#E11D48] rounded-lg h-12 pl-11 pr-4 text-sm outline-none"
+                      className="w-full border-2 border-[var(--border)] focus:border-[var(--primary)] rounded-lg h-12 pl-11 pr-4 text-sm outline-none"
                       required
                     />
                   </div>
@@ -273,7 +273,7 @@ export default function VerifyEmail() {
                 <Button
                   type="submit"
                   disabled={isResending}
-                  className="w-full bg-[#E11D48] hover:bg-[#BE123C] uppercase text-base py-6"
+                  className="w-full bg-[var(--primary)] hover:bg-[var(--primary)] uppercase text-base py-6"
                 >
                   {isResending ? (
                     <Loader2 className="w-5 h-5 animate-spin" />
@@ -287,7 +287,7 @@ export default function VerifyEmail() {
               </form>
 
               <Link to="/">
-                <Button variant="outline" className="w-full border-2 border-[#CBD5E1] hover:border-[#E11D48]">
+                <Button variant="outline" className="w-full border-2 border-[var(--border)] hover:border-[var(--primary)]">
                   BACK TO LOGIN
                 </Button>
               </Link>
@@ -301,10 +301,10 @@ export default function VerifyEmail() {
                 <div className="w-20 h-20 bg-blue-100 rounded-full flex items-center justify-center mx-auto mb-4">
                   <Mail className="w-10 h-10 text-blue-600" />
                 </div>
-                <p className="text-[#64748B] text-sm mb-2">
+                <p className="text-[var(--muted-foreground)] text-sm mb-2">
                   We've sent a verification link to your email address. Click the link to activate your account.
                 </p>
-                <p className="text-[#64748B] text-xs">
+                <p className="text-[var(--muted-foreground)] text-xs">
                   The link may take a few minutes to arrive. Check your spam folder if needed.
                 </p>
               </div>
@@ -317,11 +317,11 @@ export default function VerifyEmail() {
 
               <form onSubmit={handleResend} className="space-y-4">
                 <div>
-                  <label className="block text-sm font-semibold text-[#121212] mb-2">
+                  <label className="block text-sm font-semibold text-[var(--ink)] mb-2">
                     Didn't receive the email? Enter your email to resend:
                   </label>
                   <div className="relative">
-                    <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-[#64748B]" />
+                    <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-[var(--muted-foreground)]" />
                     <input
                       type="email"
                       placeholder="your.email@example.com"
@@ -331,7 +331,7 @@ export default function VerifyEmail() {
                         setResendEmail(e.target.value);
                         setResendSuccess(false);
                       }}
-                      className="w-full border-2 border-[#CBD5E1] focus:border-[#E11D48] rounded-lg h-12 pl-11 pr-4 text-sm outline-none"
+                      className="w-full border-2 border-[var(--border)] focus:border-[var(--primary)] rounded-lg h-12 pl-11 pr-4 text-sm outline-none"
                       required
                     />
                   </div>
@@ -346,7 +346,7 @@ export default function VerifyEmail() {
                 <Button
                   type="submit"
                   disabled={isResending}
-                  className="w-full bg-[#E11D48] hover:bg-[#BE123C] uppercase text-base py-6"
+                  className="w-full bg-[var(--primary)] hover:bg-[var(--primary)] uppercase text-base py-6"
                 >
                   {isResending ? (
                     <Loader2 className="w-5 h-5 animate-spin" />
@@ -360,7 +360,7 @@ export default function VerifyEmail() {
               </form>
 
               <Link to="/">
-                <Button variant="outline" className="w-full border-2 border-[#CBD5E1] hover:border-[#E11D48]">
+                <Button variant="outline" className="w-full border-2 border-[var(--border)] hover:border-[var(--primary)]">
                   BACK TO LOGIN
                 </Button>
               </Link>
@@ -369,9 +369,9 @@ export default function VerifyEmail() {
 
           {/* Footer */}
           <div className="mt-6 text-center">
-            <p className="text-sm text-[#64748B]">
+            <p className="text-sm text-[var(--muted-foreground)]">
               Already verified?{" "}
-              <Link to="/" className="text-[#E11D48] font-semibold hover:underline">
+              <Link to="/" className="text-[var(--primary)] font-semibold hover:underline">
                 Sign In
               </Link>
             </p>

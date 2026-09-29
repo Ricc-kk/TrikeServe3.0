@@ -122,7 +122,7 @@ export default function PassengerMessagingDB({ passengerId, passengerName, passe
   return (
     <div className="fixed inset-0 bg-black/50 z-50 flex items-end md:items-center md:justify-center">
       <div className="bg-white w-full md:w-[500px] md:rounded-2xl rounded-t-3xl max-h-[90vh] flex flex-col">
-        <div className="bg-[#E11D48] text-white px-4 py-4 flex items-center justify-between rounded-t-3xl md:rounded-t-2xl">
+        <div className="bg-[var(--primary)] text-white px-4 py-4 flex items-center justify-between rounded-t-3xl md:rounded-t-2xl">
           <div className="flex items-center gap-3">
             <span className="text-3xl">{passengerEmoji}</span>
             <div>
@@ -135,7 +135,7 @@ export default function PassengerMessagingDB({ passengerId, passengerName, passe
           </Button>
         </div>
 
-        <div className="flex-1 overflow-y-auto p-4 space-y-3 bg-[#F8F9FA]">
+        <div className="flex-1 overflow-y-auto p-4 space-y-3 bg-[var(--muted)]">
           {messages.length === 0 ? (
             <div className="text-center py-12">
               <MessageCircle className="w-12 h-12 text-gray-300 mx-auto mb-3" />
@@ -147,7 +147,7 @@ export default function PassengerMessagingDB({ passengerId, passengerName, passe
               const isMine = msg.sender_id === user.id;
               return (
                 <div key={msg.id} className={`flex ${isMine ? 'justify-end' : 'justify-start'}`}>
-                  <div className={`max-w-[75%] rounded-2xl px-4 py-2 ${isMine ? 'bg-[#E11D48] text-white' : 'bg-white border border-gray-200'}`}>
+                  <div className={`max-w-[75%] rounded-2xl px-4 py-2 ${isMine ? 'bg-[var(--primary)] text-white' : 'bg-white border border-gray-200'}`}>
                     <p className="text-sm break-words">{msg.message}</p>
                     <p className={`text-[10px] mt-1 ${isMine ? 'text-white/70' : 'text-gray-400'}`}>
                       {new Date(msg.created_at).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}
@@ -173,9 +173,9 @@ export default function PassengerMessagingDB({ passengerId, passengerName, passe
                 }
               }}
               placeholder="Type a message..."
-              className="flex-1 px-4 py-3 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-[#E11D48] focus:border-transparent"
+              className="flex-1 px-4 py-3 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-[var(--primary)] focus:border-transparent"
             />
-            <Button onClick={sendMessage} disabled={!newMessage.trim()} className="bg-[#E11D48] hover:bg-[#BE123C] px-6">
+            <Button onClick={sendMessage} disabled={!newMessage.trim()} className="bg-[var(--primary)] hover:bg-[var(--primary)] px-6">
               <Send className="w-5 h-5" />
             </Button>
           </div>

@@ -135,14 +135,14 @@ export default function PassengerRequests() {
   const createCustomerMarkerIcon = () => {
     const google = (window as any)?.google;
     if (!google?.maps?.Size || !google?.maps?.Point) return undefined;
-    const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="#2563EB" stroke="white" stroke-width="1"><path d="M12 2C8.13 2 5 5.13 5 9c0 4.95 6.1 11.53 6.36 11.81.36.39.92.39 1.28 0C13.9 20.53 20 13.95 20 9c0-3.87-3.13-7-8-7z"/><circle cx="12" cy="8.6" r="2.3" fill="#FFFFFF" stroke="none"/><path d="M8.7 15.9c.55-2.05 2.15-3.3 3.3-3.3s2.75 1.25 3.3 3.3" fill="#FFFFFF" stroke="none"/></svg>`;
+    const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="var(--info)" stroke="white" stroke-width="1"><path d="M12 2C8.13 2 5 5.13 5 9c0 4.95 6.1 11.53 6.36 11.81.36.39.92.39 1.28 0C13.9 20.53 20 13.95 20 9c0-3.87-3.13-7-8-7z"/><circle cx="12" cy="8.6" r="2.3" fill="#FFFFFF" stroke="none"/><path d="M8.7 15.9c.55-2.05 2.15-3.3 3.3-3.3s2.75 1.25 3.3 3.3" fill="#FFFFFF" stroke="none"/></svg>`;
     return { url: 'data:image/svg+xml;charset=UTF-8,' + encodeURIComponent(svg), scaledSize: new google.maps.Size(40, 40), anchor: new google.maps.Point(20, 40) } as any;
   };
 
   const createDropoffMarkerIcon = () => {
     const google = (window as any)?.google;
     if (!google?.maps?.Size || !google?.maps?.Point) return undefined;
-    const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="#E11D48" stroke="white" stroke-width="1"><path d="M12 2C8.13 2 5 5.13 5 9c0 4.95 6.1 11.53 6.36 11.81.36.39.92.39 1.28 0C13.9 20.53 20 13.95 20 9c0-3.87-3.13-7-8-7z"/><path d="M7.8 9.6l2.1 2.1 4.3-4.3" fill="none" stroke="#FFFFFF" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
+    const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="var(--primary)" stroke="white" stroke-width="1"><path d="M12 2C8.13 2 5 5.13 5 9c0 4.95 6.1 11.53 6.36 11.81.36.39.92.39 1.28 0C13.9 20.53 20 13.95 20 9c0-3.87-3.13-7-8-7z"/><path d="M7.8 9.6l2.1 2.1 4.3-4.3" fill="none" stroke="#FFFFFF" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
     return { url: 'data:image/svg+xml;charset=UTF-8,' + encodeURIComponent(svg), scaledSize: new google.maps.Size(40, 40), anchor: new google.maps.Point(20, 40) } as any;
   };
 
@@ -426,18 +426,18 @@ export default function PassengerRequests() {
     : filteredRequests;
 
   return (
-    <div className="min-h-screen bg-[#F8F9FA] relative">
+    <div className="min-h-screen bg-[var(--muted)] relative">
       {/* Header */}
-      <div className="bg-white border-b-2 border-[#CBD5E1] px-4 py-3 flex items-center gap-3">
+      <div className="bg-white border-b-2 border-[var(--border)] px-4 py-3 flex items-center gap-3">
         <Button variant="ghost" size="icon" onClick={() => navigate('/rider')}><ArrowLeft className="w-5 h-5" /></Button>
-        <div className="flex-1"><h1 className="text-lg md:text-xl font-extrabold text-[#E11D48]">Passenger Requests</h1></div>
+        <div className="flex-1"><h1 className="text-lg md:text-xl font-extrabold text-[var(--primary)]">Passenger Requests</h1></div>
       </div>
 
       <div className="p-3 md:p-4 space-y-3">
         {/* Filter Tabs */}
         <div className="flex gap-2 mb-3 overflow-x-auto scrollbar-hide pb-1">
           {['all', 'shared', 'private', 'delivery'].map(cat => (
-            <button key={cat} onClick={() => setSelectedCategory(cat as any)} className={`px-3 md:px-4 py-1.5 md:py-2 rounded-full text-xs md:text-sm font-medium whitespace-nowrap transition-all ${selectedCategory === cat ? 'bg-[#E11D48] text-white shadow-md' : 'bg-[#F1F5F9] text-[#64748B]'}`}>
+            <button key={cat} onClick={() => setSelectedCategory(cat as any)} className={`px-3 md:px-4 py-1.5 md:py-2 rounded-full text-xs md:text-sm font-medium whitespace-nowrap transition-all ${selectedCategory === cat ? 'bg-[var(--primary)] text-white shadow-md' : 'bg-[var(--muted)] text-[var(--muted-foreground)]'}`}>
               {cat === 'all' ? 'All' : cat === 'shared' ? '👥 Share' : cat === 'private' ? '👤 Private' : '📦 Delivery'}
             </button>
           ))}
@@ -448,7 +448,7 @@ export default function PassengerRequests() {
 
         {/* Request Count */}
         {sortedRequests.length > 0 && (
-          <p className="text-xs text-[#94A3B8] font-medium">{sortedRequests.length} request{sortedRequests.length !== 1 ? 's' : ''} available</p>
+          <p className="text-xs text-[var(--muted-foreground)] font-medium">{sortedRequests.length} request{sortedRequests.length !== 1 ? 's' : ''} available</p>
         )}
 
         {/* Request Cards */}
@@ -460,37 +460,37 @@ export default function PassengerRequests() {
             <Card key={request.id} className={`border-2 transition-all overflow-hidden ${
               !canAccept ? 'bg-gray-50 opacity-70 border-gray-200' :
               recommendedPickup && request.id === recommendedPickup.id ? 'bg-gradient-to-br from-green-50 to-emerald-50 border-green-400 shadow-md' :
-              'bg-white border-[#E2E8F0] shadow-sm'
+              'bg-white border-[var(--border)] shadow-sm'
             }`}>
               {/* Top: Type icon + Name + Amount */}
               <div className="flex items-center justify-between px-4 pt-3 pb-2">
                 <div className="flex items-center gap-2.5">
                   <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${
-                    request.type === 'delivery' ? 'bg-[#DBEAFE]' :
-                    request.type === 'shared' ? 'bg-[#FEF3C7]' : 'bg-[#F0FDF4]'
+                    request.type === 'delivery' ? 'bg-[var(--info-soft)]' :
+                    request.type === 'shared' ? 'bg-[var(--amber-soft)]' : 'bg-[var(--success-soft)]'
                   }`}>
                     {request.customerPhoto === 'shared' ? (
-                      <Users className="w-5 h-5 text-[#E11D48]" />
+                      <Users className="w-5 h-5 text-[var(--primary)]" />
                     ) : request.type === 'delivery' ? (
-                      <Package className="w-5 h-5 text-[#3B82F6]" />
+                      <Package className="w-5 h-5 text-[var(--info)]" />
                     ) : (
                       <span className="text-lg">👤</span>
                     )}
                   </div>
                   <div className="min-w-0">
-                    <p className="font-bold text-[#121212] text-sm truncate">{request.customerName}</p>
+                    <p className="font-bold text-[var(--ink)] text-sm truncate">{request.customerName}</p>
                     {request.type === 'shared' && request.passengerDetails && request.passengerDetails.length > 1 && (
-                      <p className="text-[10px] text-[#94A3B8] truncate">
+                      <p className="text-[10px] text-[var(--muted-foreground)] truncate">
                         {request.passengerDetails.map((p: any) => p.name || 'Passenger').join(', ')}
                       </p>
                     )}
                   </div>
                 </div>
                 <div className="text-right flex-shrink-0">
-                  <p className="font-extrabold text-lg text-[#E11D48]">₱{request.amount}</p>
+                  <p className="font-extrabold text-lg text-[var(--primary)]">₱{request.amount}</p>
                   <Badge className={`text-[9px] border-0 ${
-                    request.type === 'delivery' ? 'bg-[#DBEAFE] text-[#3B82F6]' :
-                    request.type === 'shared' ? 'bg-[#FEF3C7] text-[#F59E0B]' : 'bg-[#F0FDF4] text-[#10B981]'
+                    request.type === 'delivery' ? 'bg-[var(--info-soft)] text-[var(--info)]' :
+                    request.type === 'shared' ? 'bg-[var(--amber-soft)] text-[var(--amber)]' : 'bg-[var(--success-soft)] text-[var(--success)]'
                   }`}>
                     {request.type === 'delivery' ? '📦 Delivery' : request.type === 'shared' ? '👥 Share' : '👤 Private'}
                   </Badge>
@@ -503,16 +503,16 @@ export default function PassengerRequests() {
                   <div className="flex flex-col items-center pt-1">
                     <div className="w-2 h-2 rounded-full bg-green-500 shrink-0" />
                     <div className="w-0.5 flex-1 bg-gray-200 my-0.5" />
-                    <div className="w-2 h-2 rounded-full bg-[#E11D48] shrink-0" />
+                    <div className="w-2 h-2 rounded-full bg-[var(--primary)] shrink-0" />
                   </div>
                   <div className="flex-1 space-y-1.5 min-w-0">
                     <div>
                       <p className="text-[10px] text-green-600 font-bold uppercase">Pickup</p>
-                      <p className="text-xs font-semibold text-[#121212] truncate">{request.pickup}</p>
+                      <p className="text-xs font-semibold text-[var(--ink)] truncate">{request.pickup}</p>
                     </div>
                     <div>
-                      <p className="text-[10px] text-[#E11D48] font-bold uppercase">Drop-off</p>
-                      <p className="text-xs font-semibold text-[#121212] truncate">{request.dropoff}</p>
+                      <p className="text-[10px] text-[var(--primary)] font-bold uppercase">Drop-off</p>
+                      <p className="text-xs font-semibold text-[var(--ink)] truncate">{request.dropoff}</p>
                     </div>
                   </div>
                 </div>
@@ -538,7 +538,7 @@ export default function PassengerRequests() {
                   onClick={() => handleOpenPreview(request)}
                   disabled={!canAccept}
                   className={`w-full uppercase text-xs md:text-sm py-5 md:py-6 font-bold rounded-xl ${
-                    canAccept ? 'bg-[#E11D48] hover:bg-[#BE123C] shadow-lg shadow-rose-200' : 'bg-gray-300 text-gray-500 cursor-not-allowed'
+                    canAccept ? 'bg-[var(--primary)] hover:bg-[var(--primary)] shadow-lg shadow-rose-200' : 'bg-gray-300 text-gray-500 cursor-not-allowed'
                   }`}
                 >
                   {isUnassigned
@@ -556,9 +556,9 @@ export default function PassengerRequests() {
 
         {sortedRequests.length === 0 && (
           <div className="text-center py-16">
-            <Users className="w-12 h-12 text-[#CBD5E1] mx-auto mb-3" />
-            <p className="text-sm text-[#94A3B8] font-medium">No passenger requests</p>
-            <p className="text-xs text-[#CBD5E1] mt-1">New requests will appear here</p>
+            <Users className="w-12 h-12 text-[var(--border)] mx-auto mb-3" />
+            <p className="text-sm text-[var(--muted-foreground)] font-medium">No passenger requests</p>
+            <p className="text-xs text-[var(--border)] mt-1">New requests will appear here</p>
           </div>
         )}
       </div>
@@ -568,17 +568,17 @@ export default function PassengerRequests() {
         <div className="fixed inset-0 bg-black/60 z-[2000] flex items-center justify-center">
           <div className="bg-white rounded-3xl p-6 mx-6 text-center shadow-2xl animate-in fade-in zoom-in duration-300">
             <div className="w-16 h-16 bg-rose-100 rounded-full flex items-center justify-center mx-auto mb-4">
-              <CheckCircle className="w-9 h-9 text-[#E11D48]" />
+              <CheckCircle className="w-9 h-9 text-[var(--primary)]" />
             </div>
             <h2 className="text-xl font-extrabold text-gray-900 mb-1">Accept this request?</h2>
             <p className="text-gray-500 text-sm mb-1">
               {confirmRequest.type === 'shared' ? 'Shared Ride' : confirmRequest.type === 'delivery' ? 'Delivery' : 'Private Ride'}
             </p>
             <p className="text-sm font-semibold text-gray-700 mb-1">{confirmRequest.pickup} → {confirmRequest.dropoff}</p>
-            <p className="text-lg font-bold text-[#E11D48] mb-4">₱{confirmRequest.amount}</p>
+            <p className="text-lg font-bold text-[var(--primary)] mb-4">₱{confirmRequest.amount}</p>
             <div className="flex gap-3">
               <Button onClick={() => { setShowConfirmAccept(false); setConfirmRequest(null); }} variant="outline" className="flex-1 border-gray-300 text-gray-600 uppercase">Cancel</Button>
-              <Button onClick={async () => { setShowConfirmAccept(false); setConfirmRequest(null); await handleAcceptRequest(confirmRequest); }} className="flex-1 bg-[#E11D48] hover:bg-[#BE123C] uppercase">Confirm</Button>
+              <Button onClick={async () => { setShowConfirmAccept(false); setConfirmRequest(null); await handleAcceptRequest(confirmRequest); }} className="flex-1 bg-[var(--primary)] hover:bg-[var(--primary)] uppercase">Confirm</Button>
             </div>
           </div>
         </div>
@@ -601,7 +601,7 @@ export default function PassengerRequests() {
       {previewRequest && (
         <div className="fixed inset-0 bg-black/50 z-[1000] flex items-end">
           <div className="bg-white w-full max-h-[90vh] rounded-t-3xl flex flex-col overflow-hidden">
-            <div className="bg-[#E11D48] text-white px-4 py-3 flex items-center justify-between">
+            <div className="bg-[var(--primary)] text-white px-4 py-3 flex items-center justify-between">
               <h2 className="text-lg font-bold">Route Preview</h2>
               <button onClick={() => setPreviewRequest(null)} className="p-1 hover:bg-white/20 rounded-lg"><X className="w-5 h-5" /></button>
             </div>
@@ -613,19 +613,19 @@ export default function PassengerRequests() {
                   {previewRequest.dropoffLat && previewRequest.dropoffLng && (
                     <Marker position={{ lat: Number(previewRequest.dropoffLat), lng: Number(previewRequest.dropoffLng) }} icon={createDropoffMarkerIcon()} title="Drop-off" />
                   )}
-                  {directionsResult && <DirectionsRenderer directions={directionsResult} options={{ suppressMarkers: true, polylineOptions: { strokeColor: "#10B981", strokeWeight: 5, strokeOpacity: 0.85 } }} />}
-                  {deliveryRouteResult && <DirectionsRenderer directions={deliveryRouteResult} options={{ suppressMarkers: true, polylineOptions: { strokeColor: "#E11D48", strokeWeight: 5, strokeOpacity: 0.85 } }} />}
+                  {directionsResult && <DirectionsRenderer directions={directionsResult} options={{ suppressMarkers: true, polylineOptions: { strokeColor: "var(--success)", strokeWeight: 5, strokeOpacity: 0.85 } }} />}
+                  {deliveryRouteResult && <DirectionsRenderer directions={deliveryRouteResult} options={{ suppressMarkers: true, polylineOptions: { strokeColor: "var(--primary)", strokeWeight: 5, strokeOpacity: 0.85 } }} />}
                 </GoogleMap>
               </div>
             ) : (
-              <div className="h-64 flex items-center justify-center"><p className="text-[#64748B]">Loading map...</p></div>
+              <div className="h-64 flex items-center justify-center"><p className="text-[var(--muted-foreground)]">Loading map...</p></div>
             )}
             <div className="p-4 space-y-3">
               <div className="flex items-stretch gap-2">
                 <div className="flex flex-col items-center pt-1">
                   <div className="w-2.5 h-2.5 rounded-full bg-green-500 shrink-0" />
                   <div className="w-0.5 flex-1 bg-gray-200 my-0.5" />
-                  <div className="w-2.5 h-2.5 rounded-full bg-[#E11D48] shrink-0" />
+                  <div className="w-2.5 h-2.5 rounded-full bg-[var(--primary)] shrink-0" />
                 </div>
                 <div className="flex-1 space-y-2 min-w-0">
                   <div className="p-2 bg-green-50 rounded-lg">
@@ -633,15 +633,15 @@ export default function PassengerRequests() {
                     <p className="text-sm font-semibold">{previewRequest.pickup}</p>
                   </div>
                   <div className={`p-2 rounded-lg ${previewRequest.type === 'delivery' ? 'bg-red-50' : ''}`}>
-                    <p className={`text-[10px] uppercase font-bold ${previewRequest.type === 'delivery' ? 'text-[#E11D48]' : 'text-[#64748B]'}`}>
+                    <p className={`text-[10px] uppercase font-bold ${previewRequest.type === 'delivery' ? 'text-[var(--primary)]' : 'text-[var(--muted-foreground)]'}`}>
                       {previewRequest.type === 'delivery' ? 'Deliver to Customer' : 'Drop-off'}
                     </p>
                     <p className="text-sm font-semibold">{previewRequest.dropoff}</p>
                   </div>
                 </div>
               </div>
-              <Button onClick={() => { setConfirmRequest(previewRequest); setShowConfirmAccept(true); }} className="w-full bg-[#E11D48] hover:bg-[#BE123C] uppercase py-6 font-bold">Accept & Navigate</Button>
-              <Button onClick={() => setPreviewRequest(null)} variant="outline" className="w-full border-[#E11D48] text-[#E11D48] uppercase">Cancel</Button>
+              <Button onClick={() => { setConfirmRequest(previewRequest); setShowConfirmAccept(true); }} className="w-full bg-[var(--primary)] hover:bg-[var(--primary)] uppercase py-6 font-bold">Accept & Navigate</Button>
+              <Button onClick={() => setPreviewRequest(null)} variant="outline" className="w-full border-[var(--primary)] text-[var(--primary)] uppercase">Cancel</Button>
             </div>
           </div>
         </div>
