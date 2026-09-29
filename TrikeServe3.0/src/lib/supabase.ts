@@ -312,6 +312,103 @@ export async function getAdminTerminalAssignment(
 }
 
 // ---------------------------------------------------------------------------
+// Terminal boundary area
+// ---------------------------------------------------------------------------
+// A terminal's coverage area is a polygon plotted on the map
+// (terminals.boundary_polygon, added by ADD_TERMINAL_BOUNDARY_POLYGON.sql).
+// A booking is rejected only when the drop-off point falls outside EVERY active
+// terminal that has a plotted area — terminals often share or overlap routes, so
+// being inside any one of them is enough. Terminals without a plotted boundary
+// are ignored, which keeps bookings working until the first area is drawn.
+// ---------------------------------------------------------------------------
+
+export interface LatLngPoint {
+  lat: number;
+  lng: number;
+}
+
+/** Coerce a raw JSON value from Supabase into a list of valid vertices. */
+export function normalizeBoundaryPolygon(raw: any): LatLngPoint[] | null {
+  if (!raw) return null;
+
+  let value = raw;
+  if (typeof value === 'string') {
+    try {
+      value = JSON.parse(value);
+    } catch {
+      return null;
+    }
+  }
+
+  if (!Array.isArray(value)) return null;
+
+  const points: LatLngPoint[] = [];
+  for (const entry of value) {
+    const lat = Number(entry?.lat);
+    const lng = Number(entry?.lng);
+    if (Number.isFinite(lat) && Number.isFinite(lng)) points.push({ lat, lng });
+  }
+
+  // A polygon needs at least three corners to enclose an area.
+  return points.length >= 3 ? points : null;
+}
+
+/**
+ * Ray-casting point-in-polygon test. The polygon is always treated as closed, so
+ * the last vertex connects back to the first.
+ */
+export function isPointInPolygon(lat: number, lng: number, polygon: LatLngPoint[]): boolean {
+  if (!Array.isArray(polygon) || polygon.length < 3) return false;
+
+  let inside = false;
+  for (let i = 0, j = polygon.length - 1; i < polygon.length; j = i++) {
+    const yi = polygon[i].lat;
+    const xi = polygon[i].lng;
+    const yj = polygon[j].lat;
+    const xj = polygon[j].lng;
+
+    // Does the edge (j -> i) cross the horizontal ray cast from the point?
+    const crosses = (yi > lat) !== (yj > lat);
+    if (crosses && lng < ((xj - xi) * (lat - yi)) / (yj - yi) + xi) {
+      inside = !inside;
+    }
+  }
+
+  return inside;
+}
+
+/**
+ * Check a drop-off point against every active terminal boundary.
+ *
+ * `allowed` is true when the point sits inside at least one plotted area, or when
+ * no terminal has a plotted area yet (so the feature never blocks bookings before
+ * boundaries are configured). A failed lookup also fails open.
+ */
+export async function isDropoffWithinAnyTerminalBoundary(
+  lat: number,
+  lng: number
+): Promise<{ allowed: boolean; checkedCount: number }> {
+  try {
+    // `select('*')` keeps this working even before the boundary migration runs.
+    const { data, error } = await supabase.from('terminals').select('*');
+    if (error || !data) return { allowed: true, checkedCount: 0 };
+
+    const polygons = data
+      .filter((t: any) => t.is_active !== false)
+      .map((t: any) => normalizeBoundaryPolygon(t.boundary_polygon))
+      .filter((p: LatLngPoint[] | null): p is LatLngPoint[] => Array.isArray(p));
+
+    if (polygons.length === 0) return { allowed: true, checkedCount: 0 };
+
+    const allowed = polygons.some(polygon => isPointInPolygon(lat, lng, polygon));
+    return { allowed, checkedCount: polygons.length };
+  } catch (error) {
+    console.warn('[isDropoffWithinAnyTerminalBoundary] check failed, allowing booking:', error);
+    return { allowed: true, checkedCount: 0 };
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Admin approval workflow
 // ---------------------------------------------------------------------------
 // The Rider Admin can only *propose* terminal/driver changes; the Super Admin
@@ -389,6 +486,8 @@ async function applyApprovalRequest(
             radius_km: payload.radius_km ?? 2.0,
             is_active: payload.is_active ?? true,
             rider_count: payload.rider_count ?? 0,
+            // Carried through so a Rider Admin's plotted coverage area survives approval.
+            boundary_polygon: payload.boundary_polygon ?? null,
             updated_at: new Date().toISOString(),
           },
           { onConflict: 'id' }
