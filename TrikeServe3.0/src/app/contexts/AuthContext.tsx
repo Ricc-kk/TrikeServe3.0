@@ -336,6 +336,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           isVerified: adminUser.is_verified,
           createdAt: adminUser.created_at,
           adminType: adminUser.admin_type,
+          // Rider Admins are scoped to the terminal the Super Admin assigned.
+          terminalId: adminUser.terminal_id,
+          terminalName: adminUser.terminal_name,
           // Kept so admin-only Edge Functions (e.g. delete-user) can verify
           // the caller, since admins have no Supabase Auth session.
           password: adminUser.password_hash,

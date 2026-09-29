@@ -231,6 +231,328 @@ export async function adminChangeRole(
   }
 }
 
+// ---------------------------------------------------------------------------
+// Rider Admin terminal assignment
+// ---------------------------------------------------------------------------
+// A Rider Admin is scoped to exactly one terminal. They may only edit that
+// terminal and manage its driver assignments; the Super Admin sets the scope.
+// ---------------------------------------------------------------------------
+
+export interface RiderAdminSummary {
+  id: string;
+  name: string;
+  email: string;
+  terminal_id?: string | null;
+  terminal_name?: string | null;
+}
+
+/** All Rider Admin accounts (admins.admin_type = 'rider'). */
+export async function getRiderAdmins(): Promise<{ data: RiderAdminSummary[]; error?: string }> {
+  try {
+    const { data, error } = await supabase
+      .from('admins')
+      .select('id, name, email, terminal_id, terminal_name')
+      .eq('admin_type', 'rider')
+      .order('name', { ascending: true });
+
+    if (error) return { data: [], error: error.message };
+    return { data: (data || []) as RiderAdminSummary[] };
+  } catch (error) {
+    console.error('[getRiderAdmins] error:', error);
+    return { data: [], error: 'Network error while loading rider admins' };
+  }
+}
+
+/** Super Admin: scope a Rider Admin to one terminal (pass null to unassign). */
+export async function assignRiderAdminTerminal(
+  adminId: string,
+  terminalId: string | null,
+  terminalName?: string | null
+): Promise<{ success: boolean; error?: string }> {
+  try {
+    const { error } = await supabase
+      .from('admins')
+      .update({
+        terminal_id: terminalId,
+        terminal_name: terminalId ? (terminalName ?? null) : null,
+      })
+      .eq('id', adminId);
+
+    if (error) {
+      if (error.code === '42703') {
+        return { success: false, error: 'Run ASSIGN_RIDER_ADMIN_TO_TERMINAL.sql in Supabase first.' };
+      }
+      return { success: false, error: error.message };
+    }
+    return { success: true };
+  } catch (error) {
+    console.error('[assignRiderAdminTerminal] error:', error);
+    return { success: false, error: 'Network error while assigning the terminal' };
+  }
+}
+
+/** The terminal a Rider Admin is currently scoped to (read fresh from the DB). */
+export async function getAdminTerminalAssignment(
+  email: string
+): Promise<{ terminal_id: string | null; terminal_name: string | null }> {
+  try {
+    const { data } = await supabase
+      .from('admins')
+      .select('terminal_id, terminal_name')
+      .eq('email', email.toLowerCase())
+      .maybeSingle();
+
+    return {
+      terminal_id: data?.terminal_id ?? null,
+      terminal_name: data?.terminal_name ?? null,
+    };
+  } catch {
+    return { terminal_id: null, terminal_name: null };
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Admin approval workflow
+// ---------------------------------------------------------------------------
+// The Rider Admin can only *propose* terminal/driver changes; the Super Admin
+// (admin_type = 'business_customer') reviews them here. Submitting a request
+// never touches the terminals/users tables — only approving one does.
+// ---------------------------------------------------------------------------
+
+export type ApprovalRequestType =
+  | 'terminal_create'
+  | 'terminal_update'
+  | 'terminal_delete'
+  | 'driver_assign'
+  | 'driver_unassign';
+
+export type ApprovalRequestStatus = 'pending' | 'approved' | 'rejected';
+
+export interface ApprovalRequest {
+  id: string;
+  request_type: ApprovalRequestType;
+  payload: any;
+  status: ApprovalRequestStatus;
+  requested_by_email?: string | null;
+  requested_by_name?: string | null;
+  requested_at?: string | null;
+  reviewed_by_email?: string | null;
+  reviewed_at?: string | null;
+  rejection_reason?: string | null;
+}
+
+export const APPROVAL_REQUEST_LABELS: Record<ApprovalRequestType, string> = {
+  terminal_create: 'Add terminal',
+  terminal_update: 'Edit terminal',
+  terminal_delete: 'Delete terminal',
+  driver_assign: 'Assign driver',
+  driver_unassign: 'Unassign driver',
+};
+
+function describeApprovalError(error: any): string {
+  if (!error) return 'Unknown error';
+  // PGRST205 = table not found in schema cache; 42P01 = undefined_table
+  if (error.code === 'PGRST205' || error.code === '42P01') {
+    return 'Approval queue table is missing. Run ADMIN_APPROVAL_REQUESTS.sql in Supabase.';
+  }
+  return error.message || String(error);
+}
+
+/** Recalculate a terminal's rider_count from the users table. */
+async function recountTerminalRiders(terminalId: string) {
+  const { data } = await supabase
+    .from('users')
+    .select('id')
+    .eq('terminal_id', terminalId);
+  await supabase
+    .from('terminals')
+    .update({ rider_count: (data || []).length })
+    .eq('id', terminalId);
+}
+
+/** Apply an approved request's side effect to terminals/users. */
+async function applyApprovalRequest(
+  request: ApprovalRequest
+): Promise<{ success: boolean; error?: string }> {
+  const payload = request.payload || {};
+  try {
+    switch (request.request_type) {
+      case 'terminal_create':
+      case 'terminal_update': {
+        const { error } = await supabase.from('terminals').upsert(
+          {
+            id: payload.id,
+            name: payload.name,
+            boundary: payload.boundary,
+            center_lat: payload.center_lat,
+            center_lng: payload.center_lng,
+            radius_km: payload.radius_km ?? 2.0,
+            is_active: payload.is_active ?? true,
+            rider_count: payload.rider_count ?? 0,
+            updated_at: new Date().toISOString(),
+          },
+          { onConflict: 'id' }
+        );
+        if (error) return { success: false, error: describeApprovalError(error) };
+        return { success: true };
+      }
+
+      case 'terminal_delete': {
+        // Unassign every driver still on the terminal, then delete it.
+        const { error: unassignError } = await supabase
+          .from('users')
+          .update({ terminal_id: null, terminal_name: null })
+          .eq('terminal_id', payload.id);
+        if (unassignError) return { success: false, error: describeApprovalError(unassignError) };
+
+        const { error } = await supabase.from('terminals').delete().eq('id', payload.id);
+        if (error) return { success: false, error: describeApprovalError(error) };
+        return { success: true };
+      }
+
+      case 'driver_assign': {
+        const { error } = await supabase
+          .from('users')
+          .update({ terminal_id: payload.terminal_id, terminal_name: payload.terminal_name })
+          .eq('id', payload.driver_id);
+        if (error) return { success: false, error: describeApprovalError(error) };
+        if (payload.terminal_id) await recountTerminalRiders(payload.terminal_id);
+        if (payload.previous_terminal_id) await recountTerminalRiders(payload.previous_terminal_id);
+        return { success: true };
+      }
+
+      case 'driver_unassign': {
+        const { error } = await supabase
+          .from('users')
+          .update({ terminal_id: null, terminal_name: null })
+          .eq('id', payload.driver_id);
+        if (error) return { success: false, error: describeApprovalError(error) };
+        if (payload.terminal_id) await recountTerminalRiders(payload.terminal_id);
+        return { success: true };
+      }
+
+      default:
+        return { success: false, error: `Unknown request type: ${request.request_type}` };
+    }
+  } catch (error) {
+    console.error('[applyApprovalRequest] error:', error);
+    return { success: false, error: 'Network error while applying the request' };
+  }
+}
+
+/** Rider Admin: stage a change for Super Admin review. */
+export async function submitApprovalRequest(params: {
+  requestType: ApprovalRequestType;
+  payload: any;
+  requestedByEmail?: string | null;
+  requestedByName?: string | null;
+}): Promise<{ success: boolean; data?: ApprovalRequest; error?: string }> {
+  try {
+    const { data, error } = await supabase
+      .from('admin_approval_requests')
+      .insert([{
+        request_type: params.requestType,
+        payload: params.payload,
+        status: 'pending',
+        requested_by_email: params.requestedByEmail || null,
+        requested_by_name: params.requestedByName || null,
+        requested_at: new Date().toISOString(),
+      }])
+      .select()
+      .single();
+
+    if (error) return { success: false, error: describeApprovalError(error) };
+    return { success: true, data: data as ApprovalRequest };
+  } catch (error) {
+    console.error('[submitApprovalRequest] error:', error);
+    return { success: false, error: 'Network error while submitting for approval' };
+  }
+}
+
+/** Fetch approval requests, newest first. */
+export async function getApprovalRequests(filters?: {
+  status?: ApprovalRequestStatus;
+  requestedByEmail?: string;
+}): Promise<{ data: ApprovalRequest[]; error?: string }> {
+  try {
+    let query = supabase
+      .from('admin_approval_requests')
+      .select('*')
+      .order('requested_at', { ascending: false });
+
+    if (filters?.status) query = query.eq('status', filters.status);
+    if (filters?.requestedByEmail) query = query.eq('requested_by_email', filters.requestedByEmail);
+
+    const { data, error } = await query;
+    if (error) return { data: [], error: describeApprovalError(error) };
+    return { data: (data || []) as ApprovalRequest[] };
+  } catch (error) {
+    console.error('[getApprovalRequests] error:', error);
+    return { data: [], error: 'Network error while loading approval requests' };
+  }
+}
+
+/** Super Admin: apply a request's change, then mark it approved. */
+export async function approveApprovalRequest(
+  request: ApprovalRequest,
+  reviewedByEmail?: string | null
+): Promise<{ success: boolean; error?: string }> {
+  const applied = await applyApprovalRequest(request);
+  if (!applied.success) return applied;
+
+  const { error } = await supabase
+    .from('admin_approval_requests')
+    .update({
+      status: 'approved',
+      reviewed_by_email: reviewedByEmail || null,
+      reviewed_at: new Date().toISOString(),
+      rejection_reason: null,
+    })
+    .eq('id', request.id);
+
+  if (error) return { success: false, error: describeApprovalError(error) };
+  return { success: true };
+}
+
+/** Super Admin: reject a request without applying anything. */
+export async function rejectApprovalRequest(
+  requestId: string,
+  reviewedByEmail?: string | null,
+  reason?: string
+): Promise<{ success: boolean; error?: string }> {
+  try {
+    const { error } = await supabase
+      .from('admin_approval_requests')
+      .update({
+        status: 'rejected',
+        reviewed_by_email: reviewedByEmail || null,
+        reviewed_at: new Date().toISOString(),
+        rejection_reason: reason || null,
+      })
+      .eq('id', requestId);
+
+    if (error) return { success: false, error: describeApprovalError(error) };
+    return { success: true };
+  } catch (error) {
+    console.error('[rejectApprovalRequest] error:', error);
+    return { success: false, error: 'Network error while rejecting the request' };
+  }
+}
+
+/** How many requests are waiting for the Super Admin. */
+export async function getPendingApprovalCount(): Promise<number> {
+  try {
+    const { count, error } = await supabase
+      .from('admin_approval_requests')
+      .select('id', { count: 'exact', head: true })
+      .eq('status', 'pending');
+    if (error) return 0;
+    return count || 0;
+  } catch {
+    return 0;
+  }
+}
+
 // Extract a safe file extension (fallback 'jpg') so weird filenames can't break the storage path
 function safeFileExtension(file: File): string {
   const raw = file.name.split('.').pop() || '';

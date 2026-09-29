@@ -122,10 +122,9 @@ export default function AdminDashboard() {
       }));
 
       const adminType = user?.adminType;
+      // Super Admin sees every pending account; Rider Admin only sees riders (read-only).
       let filteredUsers = users;
-      if (adminType === 'business_customer') {
-        filteredUsers = users.filter(u => u.role === 'business' || u.role === 'customer');
-      } else if (adminType === 'rider') {
+      if (adminType === 'rider') {
         filteredUsers = users.filter(u => u.role === 'rider');
       }
 
@@ -291,11 +290,9 @@ export default function AdminDashboard() {
     totalUsers: activeUsers.length,
   };
 
-  // Check if user is Driver Admin (only they can see rate configuration)
-  const isDriverAdmin = user?.adminType === 'rider';
-
-  // Check if user is Business & Customer Admin
-  const isBusinessCustomerAdmin = user?.adminType === 'business_customer';
+  // Super Admin performs every admin action; Rider Admin is read-only here.
+  const isSuperAdmin = user?.adminType === 'business_customer';
+  const isRiderAdmin = user?.adminType === 'rider';
 
   return (
     <div className="min-h-screen bg-[#F8F9FA] flex">
@@ -323,8 +320,8 @@ export default function AdminDashboard() {
                   Welcome, {user?.name || 'Admin'}!
                 </h1>
                 <p className="text-xs lg:text-sm text-[#64748B]">
-                  {user?.adminType === 'business_customer' ? 'Business & Customer Management' :
-                   user?.adminType === 'rider' ? 'Driver Management' :
+                  {user?.adminType === 'business_customer' ? 'Super Admin - Full Platform Control' :
+                   user?.adminType === 'rider' ? 'Rider Admin - Terminal Management' :
                    'TrikeServe Control Panel - System Overview'}
                 </p>
               </div>
@@ -473,6 +470,14 @@ export default function AdminDashboard() {
               <div className="flex items-center justify-between mb-4">
                 <h2 className="text-xl lg:text-2xl font-bold text-[#121212]">Pending Verifications</h2>
               </div>
+              {isRiderAdmin && (
+                <Card className="p-4 mb-4 border-2 border-[#BFDBFE] bg-[#EFF6FF]">
+                  <p className="text-sm text-[#1E40AF] font-semibold">Read-only</p>
+                  <p className="text-xs text-[#1E40AF]/80 mt-0.5">
+                    Account verification is handled by the Super Admin. Manage terminals and driver assignments instead.
+                  </p>
+                </Card>
+              )}
               {pendingVerifications.length === 0 ? (
                 <Card className="p-12 border-2 border-dashed border-[#E2E8F0] text-center">
                   <CheckCircle className="w-16 h-16 text-[#10B981] mx-auto mb-4" />
@@ -525,22 +530,26 @@ export default function AdminDashboard() {
                               <p className="text-sm text-[#64748B]">{user.submittedDate}</p>
                             </td>
                             <td className="px-4 py-4">
-                              <div className="flex items-center justify-center gap-2">
-                                <button
-                                  onClick={() => handleApproveUser(user.id)}
-                                  className="p-2 bg-[#10B981] hover:bg-[#059669] rounded-lg transition-all"
-                                  title="Approve"
-                                >
-                                  <CheckCircle className="w-5 h-5 text-white" />
-                                </button>
-                                <button
-                                  onClick={() => handleRejectUser(user.id)}
-                                  className="p-2 bg-[#EF4444] hover:bg-[#DC2626] rounded-lg transition-all"
-                                  title="Reject"
-                                >
-                                  <XCircle className="w-5 h-5 text-white" />
-                                </button>
-                              </div>
+                              {isSuperAdmin ? (
+                                <div className="flex items-center justify-center gap-2">
+                                  <button
+                                    onClick={() => handleApproveUser(user.id)}
+                                    className="p-2 bg-[#10B981] hover:bg-[#059669] rounded-lg transition-all"
+                                    title="Approve"
+                                  >
+                                    <CheckCircle className="w-5 h-5 text-white" />
+                                  </button>
+                                  <button
+                                    onClick={() => handleRejectUser(user.id)}
+                                    className="p-2 bg-[#EF4444] hover:bg-[#DC2626] rounded-lg transition-all"
+                                    title="Reject"
+                                  >
+                                    <XCircle className="w-5 h-5 text-white" />
+                                  </button>
+                                </div>
+                              ) : (
+                                <p className="text-xs text-[#94A3B8] text-center">Super Admin only</p>
+                              )}
                             </td>
                           </tr>
                         ))}
@@ -552,8 +561,8 @@ export default function AdminDashboard() {
             </div>
           </div>
 
-          {/* Delivery Fee Configuration - Business & Customer Admin */}
-          {isBusinessCustomerAdmin && (
+          {/* Delivery Fee Configuration - Super Admin */}
+          {isSuperAdmin && (
             <div>
               <h2 className="text-xl lg:text-2xl font-bold text-[#121212] mb-4">Delivery Fee Configuration</h2>
               <Card className="p-5 lg:p-6 border-2 border-[#E2E8F0] bg-white max-w-md">
@@ -583,8 +592,8 @@ export default function AdminDashboard() {
             </div>
           )}
 
-          {/* Rate Configuration - Only for Driver Admin */}
-          {isDriverAdmin && (
+          {/* Fixed Rate Configuration - Super Admin */}
+          {isSuperAdmin && (
             <div>
               <h2 className="text-xl lg:text-2xl font-bold text-[#121212] mb-4">Fixed Rate Configuration</h2>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4 lg:gap-6">

@@ -1,9 +1,11 @@
 import { useState, useEffect } from "react";
 import {
-  Shield, X, Users, Settings, MapPin
+  Shield, Users, Settings, MapPin, ClipboardCheck
 } from "lucide-react";
 import { Link, useLocation } from "react-router";
 import { useAuth } from "../../contexts/AuthContext";
+import { supabase } from "../../../utils/supabase";
+import { getApprovalRequests } from "../../../lib/supabase";
 
 interface AdminSidebarProps {
   isMobileMenuOpen: boolean;
@@ -14,55 +16,63 @@ export default function AdminSidebar({ isMobileMenuOpen, setIsMobileMenuOpen }: 
   const location = useLocation();
   const { user } = useAuth();
   const [pendingVerificationsCount, setPendingVerificationsCount] = useState(0);
+  const [pendingApprovalsCount, setPendingApprovalsCount] = useState(0);
 
-  // Load pending verifications count
+  const isSuperAdmin = user?.adminType === 'business_customer';
+
+  // Poll badge counts. Super Admin tracks unverified accounts + approval queue;
+  // Rider Admin tracks how many of their own requests are awaiting review.
   useEffect(() => {
-    loadPendingVerificationsCount();
-
-    // Auto-refresh every 3 seconds
-    const interval = setInterval(loadPendingVerificationsCount, 3000);
+    if (!user) return;
+    loadBadgeCounts();
+    const interval = setInterval(loadBadgeCounts, 5000);
     return () => clearInterval(interval);
   }, [user]);
 
-  const loadPendingVerificationsCount = () => {
-    const usersJson = localStorage.getItem('trikeserve_users');
-    if (usersJson) {
-      const users = JSON.parse(usersJson);
-
-      // Get current admin's type
-      const adminType = user?.adminType;
-
-      // Filter pending users based on admin type
-      let pendingUsers = users.filter(
-        (u: any) => !u.isVerified && (u.role === 'rider' || u.role === 'business')
-      );
-
-      if (adminType === 'business_customer') {
-        pendingUsers = pendingUsers.filter((u: any) => u.role === 'business');
-      } else if (adminType === 'rider') {
-        pendingUsers = pendingUsers.filter((u: any) => u.role === 'rider');
+  const loadBadgeCounts = async () => {
+    if (isSuperAdmin) {
+      try {
+        const { count } = await supabase
+          .from('users')
+          .select('id', { count: 'exact', head: true })
+          .eq('is_verified', false)
+          .in('role', ['rider', 'business']);
+        setPendingVerificationsCount(count || 0);
+      } catch {
+        setPendingVerificationsCount(0);
       }
 
-      setPendingVerificationsCount(pendingUsers.length);
+      const { data } = await getApprovalRequests({ status: 'pending' });
+      setPendingApprovalsCount(data.length);
     } else {
+      // Rider Admin: only their own requests
+      const { data } = await getApprovalRequests({
+        status: 'pending',
+        requestedByEmail: user?.email || undefined,
+      });
+      setPendingApprovalsCount(data.length);
       setPendingVerificationsCount(0);
     }
   };
 
-  const isActive = (path: string) => {
-    return location.pathname === path;
-  };
+  const isActive = (path: string) => location.pathname === path;
 
-  const allMenuItems = [
-    { path: "/admin/dashboard", icon: Shield, label: "Overview" },
-    { path: "/admin/users", icon: Users, label: "Users" },
-    { path: "/admin/terminals", icon: MapPin, label: "Terminals" },
-    { path: "/admin/settings", icon: Settings, label: "Settings" }
-  ];
-
-  const menuItems = user?.adminType === 'business_customer'
-    ? allMenuItems.filter(item => item.path !== '/admin/terminals')
-    : allMenuItems;
+  // Super Admin: all admin actions, plus the approval queue.
+  // Rider Admin: terminal management + read-only driver list only.
+  const allMenuItems = isSuperAdmin
+    ? [
+        { path: "/admin/dashboard", icon: Shield, label: "Overview", badge: pendingVerificationsCount },
+        { path: "/admin/users", icon: Users, label: "Users", badge: 0 },
+        { path: "/admin/terminals", icon: MapPin, label: "Terminals", badge: 0 },
+        { path: "/admin/approvals", icon: ClipboardCheck, label: "Approvals", badge: pendingApprovalsCount },
+        { path: "/admin/settings", icon: Settings, label: "Settings", badge: 0 },
+      ]
+    : [
+        { path: "/admin/dashboard", icon: Shield, label: "Overview", badge: 0 },
+        { path: "/admin/terminals", icon: MapPin, label: "Terminals", badge: pendingApprovalsCount },
+        { path: "/admin/users", icon: Users, label: "Drivers", badge: 0 },
+        { path: "/admin/settings", icon: Settings, label: "Settings", badge: 0 },
+      ];
 
   return (
     <>
@@ -92,9 +102,7 @@ export default function AdminSidebar({ isMobileMenuOpen, setIsMobileMenuOpen }: 
                 <div>
                   <span className="text-xl font-bold text-[#121212]">ADMIN</span>
                   <p className="text-xs text-[#64748B]">
-                    {user?.adminType === 'business_customer' ? 'Business & Customer' :
-                     user?.adminType === 'rider' ? 'Driver Management' :
-                     'Control Panel'}
+                    {isSuperAdmin ? 'Super Admin' : user?.adminType === 'rider' ? 'Rider Admin' : 'Control Panel'}
                   </p>
                 </div>
               </div>
@@ -104,7 +112,7 @@ export default function AdminSidebar({ isMobileMenuOpen, setIsMobileMenuOpen }: 
 
           {/* Navigation */}
           <nav className="flex-1 p-4 space-y-1 overflow-y-auto">
-            {menuItems.map((item) => (
+            {allMenuItems.map((item) => (
               <Link
                 key={item.path}
                 to={item.path}
@@ -119,9 +127,9 @@ export default function AdminSidebar({ isMobileMenuOpen, setIsMobileMenuOpen }: 
                 >
                   <item.icon className="w-5 h-5" />
                   <span className="font-semibold">{item.label}</span>
-                  {pendingVerificationsCount > 0 && item.path === "/admin/dashboard" && (
+                  {item.badge > 0 && (
                     <div className="ml-auto w-6 h-6 bg-[#E11D48] rounded-full flex items-center justify-center">
-                      <span className="text-xs font-bold text-white">{pendingVerificationsCount}</span>
+                      <span className="text-xs font-bold text-white">{item.badge}</span>
                     </div>
                   )}
                 </button>

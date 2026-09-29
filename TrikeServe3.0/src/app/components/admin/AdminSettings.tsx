@@ -130,11 +130,9 @@ export default function AdminSettings() {
     navigate('/');
   };
 
-  // Check if user is Driver Admin (only they can view rate configuration)
-  const isDriverAdmin = user?.adminType === 'rider';
-
-  // Check if user is Business & Customer Admin (not allowed to see rate configuration)
-  const isBusinessCustomerAdmin = user?.adminType === 'business_customer';
+  // Rate/platform configuration is Super Admin only, but every admin still
+  // needs the Account & Security section below (it holds Sign Out).
+  const isSuperAdmin = user?.adminType === 'business_customer';
 
   return (
     <div className="min-h-screen bg-[#F8F9FA] flex">
@@ -173,8 +171,18 @@ export default function AdminSettings() {
 
         {/* Content */}
         <div className="p-5 lg:p-8 space-y-6 lg:space-y-8">
-          {/* Delivery Fee Configuration - Business & Customer Admin */}
-          {isBusinessCustomerAdmin && (
+          {/* Rider Admin: no rate configuration, but Account & Security stays */}
+          {!isSuperAdmin && (
+            <Card className="p-4 border-2 border-[#BFDBFE] bg-[#EFF6FF]">
+              <p className="text-sm text-[#1E40AF] font-semibold">Limited access</p>
+              <p className="text-xs text-[#1E40AF]/80 mt-0.5">
+                Rate and platform configuration is managed by the Super Admin. You can still manage your account below.
+              </p>
+            </Card>
+          )}
+
+          {/* Delivery Fee Configuration - Super Admin */}
+          {isSuperAdmin && (
             <div>
               <div className="flex items-center gap-3 mb-4">
                 <div className="w-10 h-10 bg-[#D1FAE5] rounded-xl flex items-center justify-center">
@@ -215,8 +223,8 @@ export default function AdminSettings() {
             </div>
           )}
 
-          {/* Rate Configuration Section - Only for Driver Admin */}
-          {isDriverAdmin && (
+          {/* Fixed Rate Configuration - Super Admin */}
+          {isSuperAdmin && (
             <div>
               <div className="flex items-center gap-3 mb-4">
                 <div className="w-10 h-10 bg-[#FFF1F2] rounded-xl flex items-center justify-center">
