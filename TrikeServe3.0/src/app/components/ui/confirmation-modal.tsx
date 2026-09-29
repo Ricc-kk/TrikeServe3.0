@@ -11,6 +11,8 @@ interface ConfirmationModalProps {
   message: string;
   variant?: ModalVariant;
   confirmLabel?: string;
+  /** Stacking class, raised when confirming over a full-screen overlay (e.g. a map picker). */
+  zIndexClassName?: string;
 }
 
 const variantConfig: Record<ModalVariant, {
@@ -51,6 +53,7 @@ export default function ConfirmationModal({
   message,
   variant = "danger",
   confirmLabel = "Confirm",
+  zIndexClassName = "z-[400]",
 }: ConfirmationModalProps) {
   const cancelRef = useRef<HTMLButtonElement>(null);
 
@@ -74,7 +77,7 @@ export default function ConfirmationModal({
   const Icon = config.icon;
 
   return (
-    <div className="fixed inset-0 z-[400] flex items-center justify-center p-4">
+    <div className={`fixed inset-0 ${zIndexClassName} flex items-center justify-center p-4`}>
       <div className="absolute inset-0 bg-black/50" onClick={onCancel} />
       <div className="relative w-full max-w-sm bg-white rounded-2xl shadow-2xl overflow-hidden">
         <div className="p-6 text-center">

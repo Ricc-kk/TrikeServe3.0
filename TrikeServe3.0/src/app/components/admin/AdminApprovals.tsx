@@ -63,6 +63,11 @@ function describePayload(request: ApprovalRequest): string[] {
         `Boundary: ${p.boundary || "—"}`,
         `Location: ${Number(p.center_lat ?? 0).toFixed(4)}, ${Number(p.center_lng ?? 0).toFixed(4)}`,
         `Status: ${p.is_active ? "Active" : "Inactive"}`,
+        `Area: ${
+          Array.isArray(p.boundary_polygon) && p.boundary_polygon.length >= 3
+            ? `${p.boundary_polygon.length} plotted points`
+            : "not plotted"
+        }`,
       ];
     case "terminal_delete":
       return [`Terminal: ${p.name || p.id || "—"}`, `Boundary: ${p.boundary || "—"}`];

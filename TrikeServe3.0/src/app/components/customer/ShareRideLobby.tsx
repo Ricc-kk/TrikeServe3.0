@@ -5,7 +5,7 @@ import { Button } from "../ui/button";
 import { Card } from "../ui/card";
 import { Badge } from "../ui/badge";
 import { useAuth } from "../../contexts/AuthContext";
-import { supabaseHelpers, isSimilarRoute } from "@/lib/supabase";
+import { supabaseHelpers, isSimilarRoute, isDropoffWithinAnyTerminalBoundary } from "@/lib/supabase";
 import { GoogleMap, MarkerF, Polyline } from "@react-google-maps/api";
 import useMapLoader from "@/lib/mapLoader";
 import tricycleIcon from '../../../assets/0b76d1aa56b8ad6e15dd4efc8a0100b0ca5762a1.png'
@@ -94,6 +94,7 @@ export default function ShareRideLobby({
   const { isLoaded: isMapsLoaded } = useMapLoader();
   const [showFullCapacityPopup, setShowFullCapacityPopup] = useState(false);
   const [showLobbyFullPopup, setShowLobbyFullPopup] = useState(false);
+  const [showOutOfBoundaryPopup, setShowOutOfBoundaryPopup] = useState(false);
   const [fullLobbyInfo, setFullLobbyInfo] = useState<{ passengers: number; maxSeats: number } | null>(null);
   const [driverLocation, setDriverLocation] = useState<{ lat: number; lng: number } | null>(null);
   const [driverRoutePath, setDriverRoutePath] = useState<Array<{ lat: number; lng: number }>>([]);
@@ -581,6 +582,21 @@ export default function ShareRideLobby({
 
   const findOrCreateLobby = async (): Promise<ShareRideLobby | null> => {
     try {
+      // Refuse a lobby whose drop-off is outside every terminal's plotted
+      // coverage area — the booking screen blocks this too, but a lobby can
+      // also be opened directly from the shared-rides browser.
+      if (dropoffCoords) {
+        const { allowed } = await isDropoffWithinAnyTerminalBoundary(
+          dropoffCoords.lat,
+          dropoffCoords.lng
+        );
+        if (!allowed) {
+          console.log('🚫 Share ride drop-off outside all terminal boundaries:', dropoffCoords);
+          setShowOutOfBoundaryPopup(true);
+          return null;
+        }
+      }
+
       // First, check if user is already in a waiting lobby
       const { data: userLobbies, error: userError } = await supabaseHelpers.getAvailableLobbies();
       if (!userError && userLobbies) {
@@ -831,6 +847,33 @@ export default function ShareRideLobby({
             className="w-full py-3 bg-[#E11D48] text-white font-bold rounded-xl active:scale-95 transition-transform"
           >
             OK
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  // Out of boundary area popup (can show even when lobby is null)
+  if (showOutOfBoundaryPopup) {
+    return (
+      <div className="fixed inset-0 bg-black/50 z-[2000] flex items-center justify-center p-4">
+        <div className="bg-white p-6 max-w-sm w-full rounded-2xl shadow-xl">
+          <div className="w-16 h-16 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-4">
+            <span className="text-3xl">🚧</span>
+          </div>
+          <h3 className="text-xl font-bold text-red-600 text-center mb-2">Out of boundary area</h3>
+          <p className="text-[#64748B] text-center mb-6 text-sm">
+            Your drop-off point is outside the service area covered by our terminals, so this
+            shared ride cannot be booked. Please choose a drop-off location inside the boundary area.
+          </p>
+          <button
+            onClick={() => {
+              setShowOutOfBoundaryPopup(false);
+              onClose();
+            }}
+            className="w-full py-3 bg-[#E11D48] text-white font-bold rounded-xl active:scale-95 transition-transform"
+          >
+            Understood
           </button>
         </div>
       </div>

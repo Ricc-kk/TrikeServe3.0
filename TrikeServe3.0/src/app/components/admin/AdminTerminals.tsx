@@ -3,7 +3,7 @@ import {
   Plus, Edit2, Trash2, UserPlus, UserMinus, MapPin, Users, Menu, X, Navigation, Search, Loader2, Save,
   ClipboardCheck, CheckCircle, XCircle, Clock, ShieldCheck
 } from "lucide-react";
-import { GoogleMap, MarkerF, InfoWindow } from "@react-google-maps/api";
+import { GoogleMap, MarkerF, InfoWindow, Polygon } from "@react-google-maps/api";
 import useMapLoader from "@/lib/mapLoader";
 import { autocompletePlacesNew, createPlacesSessionToken, fetchPlaceDetailsNew } from "@/lib/placesApi";
 import AdminSidebar from "./AdminSidebar";
@@ -15,9 +15,11 @@ import {
   getRiderAdmins,
   assignRiderAdminTerminal,
   getAdminTerminalAssignment,
+  normalizeBoundaryPolygon,
   APPROVAL_REQUEST_LABELS,
   type ApprovalRequest,
   type RiderAdminSummary,
+  type LatLngPoint,
 } from "../../../lib/supabase";
 import ConfirmationModal from "../ui/confirmation-modal";
 import Toast from "../ui/Toast";
@@ -33,6 +35,8 @@ interface Terminal {
   radius_km: number;
   is_active: boolean;
   rider_count: number;
+  // Coverage area plotted on the map; null when no area has been drawn yet.
+  boundary_polygon: LatLngPoint[] | null;
 }
 
 interface StoredRider {
@@ -59,9 +63,9 @@ interface StoredRider {
 const TERMINALS_KEY = "trikeserve_terminals";
 
 const SEED_TERMINALS: Terminal[] = [
-  { id: "t1", name: "Valenzuela Terminal", boundary: "Main Road, Valenzuela City", center_lat: 14.7294, center_lng: 120.9349, radius_km: 2.0, is_active: true, rider_count: 2 },
-  { id: "t2", name: "Malinta Terminal", boundary: "Malinta, Valenzuela City", center_lat: 14.7150, center_lng: 120.9500, radius_km: 1.5, is_active: true, rider_count: 1 },
-  { id: "t3", name: "Paso de Blas Terminal", boundary: "Paso de Blas, Valenzuela City", center_lat: 14.6950, center_lng: 120.9600, radius_km: 1.8, is_active: false, rider_count: 0 },
+  { id: "t1", name: "Valenzuela Terminal", boundary: "Main Road, Valenzuela City", center_lat: 14.7294, center_lng: 120.9349, radius_km: 2.0, is_active: true, rider_count: 2, boundary_polygon: null },
+  { id: "t2", name: "Malinta Terminal", boundary: "Malinta, Valenzuela City", center_lat: 14.7150, center_lng: 120.9500, radius_km: 1.5, is_active: true, rider_count: 1, boundary_polygon: null },
+  { id: "t3", name: "Paso de Blas Terminal", boundary: "Paso de Blas, Valenzuela City", center_lat: 14.6950, center_lng: 120.9600, radius_km: 1.8, is_active: false, rider_count: 0, boundary_polygon: null },
 ];
 
 // Demo riders so driver assignment works out of the box, mirroring the mock
@@ -120,8 +124,17 @@ export default function AdminTerminals() {
   const [showForm, setShowForm] = useState(false);
   const [editTerminal, setEditTerminal] = useState<Terminal | null>(null);
   const [expandedId, setExpandedId] = useState<string | null>(null);
-  const [form, setForm] = useState({ name: "", boundary: "", center_lat: 14.7294, center_lng: 120.9349, is_active: true });
+  const [form, setForm] = useState({
+    name: "",
+    boundary: "",
+    center_lat: 14.7294,
+    center_lng: 120.9349,
+    is_active: true,
+    boundary_polygon: [] as LatLngPoint[],
+  });
   const [showMapPicker, setShowMapPicker] = useState(false);
+  // The map picker either moves the terminal pin or draws the coverage area.
+  const [mapPickerMode, setMapPickerMode] = useState<'location' | 'boundary'>('location');
   const { isLoaded: isMapsLoaded } = useMapLoader();
   const formMapRef = useRef<google.maps.Map | null>(null);
   const [mapSearchQuery, setMapSearchQuery] = useState("");
@@ -148,6 +161,7 @@ export default function AdminTerminals() {
     variant: 'danger' | 'warning' | 'success';
     confirmLabel: string;
     onConfirm: () => void;
+    zIndexClassName?: string;
   } | null>(null);
 
   const openModal = (config: typeof modalConfig) => {
@@ -192,6 +206,7 @@ export default function AdminTerminals() {
         radius_km: t.radius_km ?? 2.0,
         is_active: t.is_active ?? true,
         rider_count: t.rider_count ?? 0,
+        boundary_polygon: normalizeBoundaryPolygon(t.boundary_polygon),
       }));
     } catch {
       return null;
@@ -310,14 +325,23 @@ export default function AdminTerminals() {
     : terminals;
 
   function openCreate() {
-    setForm({ name: "", boundary: "", center_lat: 14.7294, center_lng: 120.9349, is_active: true });
+    setForm({ name: "", boundary: "", center_lat: 14.7294, center_lng: 120.9349, is_active: true, boundary_polygon: [] });
     setEditTerminal(null);
+    setMapPickerMode('location');
     setShowForm(true);
   }
 
   function openEdit(t: Terminal) {
-    setForm({ name: t.name, boundary: t.boundary, center_lat: t.center_lat, center_lng: t.center_lng, is_active: t.is_active });
+    setForm({
+      name: t.name,
+      boundary: t.boundary,
+      center_lat: t.center_lat,
+      center_lng: t.center_lng,
+      is_active: t.is_active,
+      boundary_polygon: t.boundary_polygon ? [...t.boundary_polygon] : [],
+    });
     setEditTerminal(t);
+    setMapPickerMode('location');
     setShowForm(true);
   }
 
@@ -325,8 +349,15 @@ export default function AdminTerminals() {
     if (!e.latLng) return;
     const lat = e.latLng.lat();
     const lng = e.latLng.lng();
-    setForm(f => ({ ...f, center_lat: lat, center_lng: lng }));
-  }, []);
+
+    // In boundary mode every tap adds a corner of the coverage area; otherwise
+    // the tap just moves the terminal pin.
+    setForm(f =>
+      mapPickerMode === 'boundary'
+        ? { ...f, boundary_polygon: [...f.boundary_polygon, { lat, lng }] }
+        : { ...f, center_lat: lat, center_lng: lng }
+    );
+  }, [mapPickerMode]);
 
   const handleFormMapLoad = useCallback((map: google.maps.Map) => {
     formMapRef.current = map;
@@ -389,11 +420,77 @@ export default function AdminTerminals() {
     }
   };
 
-  async function saveTerminal() {
+  /** Error message when the plotted area can't be saved as-is, else null. */
+  function boundaryValidationError(): string | null {
+    // A started-but-unfinished shape (1–2 corners) can't enclose an area.
+    if (form.boundary_polygon.length > 0 && form.boundary_polygon.length < 3) {
+      return 'Add at least 3 points to the boundary area, or clear it.';
+    }
+    return null;
+  }
+
+  // Confirm before applying a coverage area — it decides which customer
+  // drop-offs this terminal accepts.
+  function confirmSaveTerminal() {
     if (!form.name || !form.boundary) return;
 
+    const validationError = boundaryValidationError();
+    if (validationError) {
+      setToast({ message: validationError, variant: 'error' });
+      return;
+    }
+
+    const points = form.boundary_polygon.length;
+    const hadArea = (editTerminal?.boundary_polygon?.length ?? 0) >= 3;
+
+    // Nothing area-related to confirm when no area was ever or is being plotted.
+    if (points < 3 && !hadArea) {
+      saveTerminal();
+      return;
+    }
+
+    openModal({
+      title: points >= 3 ? 'Confirm Boundary Area' : 'Remove Boundary Area',
+      message:
+        points >= 3
+          ? `Save ${form.name} with this coverage area? It has ${points} plotted points, and ride requests whose drop-off falls outside every terminal's area will be rejected.${isRiderAdmin ? ' Your change will be sent to the Super Admin for approval.' : ''}`
+          : `Save ${form.name} without a coverage area? Its boundary will no longer restrict customer drop-offs.`,
+      variant: points >= 3 ? 'success' : 'warning',
+      confirmLabel: points >= 3 ? 'Save Area' : 'Save',
+      onConfirm: async () => {
+        closeModal();
+        await saveTerminal();
+      },
+    });
+  }
+
+  // Confirm before wiping the plotted area (available from the form and the map picker).
+  function confirmClearBoundary() {
+    const points = form.boundary_polygon.length;
+    if (points === 0) return;
+
+    openModal({
+      title: 'Clear Boundary Area',
+      message: `Remove all ${points} plotted point${points === 1 ? '' : 's'}? This terminal will have no coverage area until you plot one again, so its drop-offs will not be checked.`,
+      variant: 'warning',
+      confirmLabel: 'Clear Area',
+      // The map picker sits at z-[500], so the dialog has to outrank it.
+      zIndexClassName: 'z-[600]',
+      onConfirm: () => {
+        closeModal();
+        setForm(f => ({ ...f, boundary_polygon: [] }));
+      },
+    });
+  }
+
+  async function saveTerminal() {
+    if (!form.name || !form.boundary) return;
+    if (boundaryValidationError()) return;
+
+    const boundaryPolygon = form.boundary_polygon.length >= 3 ? form.boundary_polygon : null;
+
     const target: Terminal = editTerminal
-      ? { ...editTerminal, name: form.name, boundary: form.boundary, center_lat: form.center_lat, center_lng: form.center_lng, is_active: form.is_active }
+      ? { ...editTerminal, name: form.name, boundary: form.boundary, center_lat: form.center_lat, center_lng: form.center_lng, is_active: form.is_active, boundary_polygon: boundaryPolygon }
       : {
           id: `t_${Date.now()}`,
           name: form.name,
@@ -403,6 +500,7 @@ export default function AdminTerminals() {
           radius_km: 2.0,
           is_active: form.is_active,
           rider_count: 0,
+          boundary_polygon: boundaryPolygon,
         };
 
     // Super Admin changes apply immediately.
@@ -417,6 +515,7 @@ export default function AdminTerminals() {
           radius_km: target.radius_km,
           is_active: target.is_active,
           rider_count: target.rider_count,
+          boundary_polygon: target.boundary_polygon,
           updated_at: new Date().toISOString(),
         },
         { onConflict: "id" }
@@ -818,6 +917,17 @@ export default function AdminTerminals() {
                             <span className={`text-xs font-bold px-2 py-0.5 rounded-full ${t.is_active ? "bg-green-100 text-green-700" : "bg-[#F8F9FA] text-[#64748B]"}`}>
                               {t.is_active ? "● Active" : "○ Inactive"}
                             </span>
+                            <span
+                              className={`text-xs font-bold px-2 py-0.5 rounded-full ${
+                                t.boundary_polygon && t.boundary_polygon.length >= 3
+                                  ? "bg-[#FFF1F2] text-[#E11D48]"
+                                  : "bg-[#F8F9FA] text-[#94A3B8]"
+                              }`}
+                            >
+                              {t.boundary_polygon && t.boundary_polygon.length >= 3
+                                ? `Boundary: ${t.boundary_polygon.length} pts`
+                                : "No boundary"}
+                            </span>
                           </div>
                           <p className="text-[#64748B] text-sm mt-0.5">📍 {t.boundary}</p>
                           <div className="flex items-center gap-4 mt-2 text-xs text-[#64748B]">
@@ -957,8 +1067,8 @@ export default function AdminTerminals() {
       {/* Form modal */}
       {showForm && (
         <div className="fixed inset-0 bg-black/50 z-[300] flex items-center justify-center p-4">
-          <div className="w-full max-w-md bg-white rounded-2xl shadow-2xl">
-            <div className="flex items-center justify-between p-5 border-b-2 border-[#E2E8F0]">
+          <div className="w-full max-w-md max-h-[90vh] overflow-y-auto bg-white rounded-2xl shadow-2xl">
+            <div className="flex items-center justify-between p-5 border-b-2 border-[#E2E8F0] sticky top-0 bg-white z-10">
               <h3 className="font-extrabold text-lg text-[#121212]">
                 {editTerminal ? "Edit Terminal" : "New Terminal"}
               </h3>
@@ -1010,6 +1120,18 @@ export default function AdminTerminals() {
                         draggable: false,
                       }}
                     >
+                      {form.boundary_polygon.length >= 3 && (
+                        <Polygon
+                          path={form.boundary_polygon}
+                          options={{
+                            fillColor: '#E11D48',
+                            fillOpacity: 0.2,
+                            strokeColor: '#E11D48',
+                            strokeWeight: 2,
+                            clickable: false,
+                          }}
+                        />
+                      )}
                       <MarkerF position={{ lat: form.center_lat, lng: form.center_lng }} />
                     </GoogleMap>
                   ) : (
@@ -1019,13 +1141,35 @@ export default function AdminTerminals() {
                   )}
                   <div className="absolute inset-0 flex items-center justify-center">
                     <span className="bg-white/90 px-3 py-1 rounded-full text-xs font-semibold text-[#121212] shadow">
-                      📍 Tap to change location
+                      📍 Tap to set location & boundary
                     </span>
                   </div>
                 </div>
                 <p className="text-xs text-[#94A3B8] mt-1">
                   Lat: {form.center_lat.toFixed(4)}, Lng: {form.center_lng.toFixed(4)}
                 </p>
+
+                {/* Boundary area status */}
+                <div className="flex items-center justify-between mt-2 p-2.5 bg-[#F8F9FA] rounded-xl">
+                  <div className="min-w-0">
+                    <p className="text-xs font-semibold text-[#121212]">Boundary Area</p>
+                    <p className="text-xs text-[#64748B]">
+                      {form.boundary_polygon.length >= 3
+                        ? `${form.boundary_polygon.length} points plotted — drop-offs outside every terminal's area are rejected`
+                        : form.boundary_polygon.length > 0
+                          ? `${form.boundary_polygon.length} point${form.boundary_polygon.length === 1 ? '' : 's'} — add at least 3`
+                          : 'Not set — tap the map to plot an area'}
+                    </p>
+                  </div>
+                  {form.boundary_polygon.length > 0 && (
+                    <button
+                      onClick={confirmClearBoundary}
+                      className="ml-3 flex-shrink-0 text-xs font-bold text-[#E11D48] uppercase active:scale-95"
+                    >
+                      Clear
+                    </button>
+                  )}
+                </div>
               </div>
 
               {/* Active/Inactive Toggle */}
@@ -1050,7 +1194,7 @@ export default function AdminTerminals() {
                   Cancel
                 </button>
                 <button
-                  onClick={saveTerminal}
+                  onClick={confirmSaveTerminal}
                   className="flex-1 h-11 bg-[#E11D48] text-white font-bold uppercase text-sm rounded-xl active:scale-95 hover:bg-[#BE123C] transition-all"
                 >
                   Save
@@ -1134,6 +1278,25 @@ export default function AdminTerminals() {
               Done
             </button>
           </div>
+
+          {/* Move the pin, or draw the coverage area */}
+          <div className="flex gap-2 px-4 py-2 bg-white border-b border-[#E2E8F0]">
+            {([
+              ['location', 'Terminal Location'],
+              ['boundary', 'Boundary Area'],
+            ] as const).map(([mode, label]) => (
+              <button
+                key={mode}
+                onClick={() => setMapPickerMode(mode)}
+                className={`flex-1 h-9 rounded-lg text-xs font-bold uppercase tracking-wide transition-colors ${
+                  mapPickerMode === mode ? 'bg-[#E11D48] text-white' : 'bg-[#F8F9FA] text-[#64748B]'
+                }`}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+
           <div className="flex-1 relative">
             <GoogleMap
               mapContainerStyle={{ width: '100%', height: '100%' }}
@@ -1149,15 +1312,75 @@ export default function AdminTerminals() {
               }}
             >
               <MarkerF position={{ lat: form.center_lat, lng: form.center_lng }} />
+              {/* Plotted coverage area */}
+              {form.boundary_polygon.length >= 3 && (
+                <Polygon
+                  path={form.boundary_polygon}
+                  options={{
+                    fillColor: '#E11D48',
+                    fillOpacity: 0.2,
+                    strokeColor: '#E11D48',
+                    strokeWeight: 2,
+                    clickable: false,
+                  }}
+                />
+              )}
+              {mapPickerMode === 'boundary' &&
+                form.boundary_polygon.map((point, index) => (
+                  <MarkerF
+                    key={`${point.lat}_${point.lng}_${index}`}
+                    position={point}
+                    label={`${index + 1}`}
+                  />
+                ))}
             </GoogleMap>
-            {/* Center crosshair */}
-            <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-full pointer-events-none">
-              <MapPin className="w-8 h-8 text-[#E11D48] drop-shadow-lg" />
-            </div>
+            {/* Center crosshair — only while positioning the terminal pin */}
+            {mapPickerMode === 'location' && (
+              <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-full pointer-events-none">
+                <MapPin className="w-8 h-8 text-[#E11D48] drop-shadow-lg" />
+              </div>
+            )}
             <div className="absolute bottom-4 left-4 right-4">
-              <div className="bg-white/95 backdrop-blur rounded-xl shadow-lg p-3 text-center">
-                <p className="text-sm font-semibold text-[#121212]">Tap anywhere to set terminal location</p>
-                <p className="text-xs text-[#64748B]">Current: {form.center_lat.toFixed(4)}, {form.center_lng.toFixed(4)}</p>
+              <div className="bg-white/95 backdrop-blur rounded-xl shadow-lg p-3">
+                {mapPickerMode === 'boundary' ? (
+                  <>
+                    <p className="text-sm font-semibold text-[#121212] text-center">
+                      Tap the map to plot the boundary area
+                    </p>
+                    <p className="text-xs text-[#64748B] text-center mt-0.5">
+                      {form.boundary_polygon.length === 0
+                        ? 'Add at least 3 points to close the area'
+                        : form.boundary_polygon.length < 3
+                          ? `${form.boundary_polygon.length} point${form.boundary_polygon.length === 1 ? '' : 's'} — add ${3 - form.boundary_polygon.length} more to enclose the area`
+                          : `${form.boundary_polygon.length} points — area closed`}
+                    </p>
+                    {form.boundary_polygon.length > 0 && (
+                      <div className="flex gap-2 mt-3">
+                        <button
+                          onClick={() => setForm(f => ({ ...f, boundary_polygon: f.boundary_polygon.slice(0, -1) }))}
+                          className="flex-1 h-9 border-2 border-[#CBD5E1] text-[#64748B] text-xs font-bold uppercase rounded-lg active:scale-95"
+                        >
+                          Undo Point
+                        </button>
+                        <button
+                          onClick={confirmClearBoundary}
+                          className="flex-1 h-9 border-2 border-[#E11D48] text-[#E11D48] text-xs font-bold uppercase rounded-lg active:scale-95"
+                        >
+                          Clear Area
+                        </button>
+                      </div>
+                    )}
+                  </>
+                ) : (
+                  <>
+                    <p className="text-sm font-semibold text-[#121212] text-center">
+                      Tap anywhere to set terminal location
+                    </p>
+                    <p className="text-xs text-[#64748B] text-center mt-0.5">
+                      Current: {form.center_lat.toFixed(4)}, {form.center_lng.toFixed(4)}
+                    </p>
+                  </>
+                )}
               </div>
             </div>
           </div>
@@ -1173,6 +1396,7 @@ export default function AdminTerminals() {
         message={modalConfig?.message || ''}
         variant={modalConfig?.variant || 'danger'}
         confirmLabel={modalConfig?.confirmLabel || 'Confirm'}
+        zIndexClassName={modalConfig?.zIndexClassName}
       />
 
       {/* Toast */}

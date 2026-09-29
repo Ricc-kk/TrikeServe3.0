@@ -13,7 +13,7 @@ import { GOOGLE_MAPS_LIBRARIES } from "@/lib/googleMaps";
 import { autocompletePlacesNew, createPlacesSessionToken, fetchPlaceDetailsNew, type PlaceResult, type PlacesAutocompleteSuggestion } from "@/lib/placesApi";
 import tricycleIcon from '../../../assets/0b76d1aa56b8ad6e15dd4efc8a0100b0ca5762a1.png';
 import { useAuth } from "../../contexts/AuthContext";
-import { supabaseHelpers } from "@/lib/supabase";
+import { supabaseHelpers, isDropoffWithinAnyTerminalBoundary } from "@/lib/supabase";
 import { supabase } from "../../../utils/supabase";
 import SharedRides from "./SharedRides";
 import ShareRideLobby from "./ShareRideLobby";
@@ -276,6 +276,7 @@ export default function CustomerHome() {
    const [driverStatusPopup, setDriverStatusPopup] = useState<{ status: string; message: string } | null>(null);
    const [showValidationError, setShowValidationError] = useState(false);
    const [showSameLocationError, setShowSameLocationError] = useState(false);
+   const [showOutOfBoundaryError, setShowOutOfBoundaryError] = useState(false);
    const [showCancelConfirm, setShowCancelConfirm] = useState(false);
    const [rideCompletedPopup, setRideCompletedPopup] = useState(false);
    const [completionPopupType, setCompletionPopupType] = useState<'ride' | 'delivery'>('ride');
@@ -1447,6 +1448,27 @@ export default function CustomerHome() {
     setLocationPreview(null);
   };
 
+  // Rejects a booking whose drop-off falls outside every active terminal's
+  // plotted coverage area. Terminals often overlap, so being inside any one of
+  // them is enough; terminals with no plotted area are ignored.
+  const checkDropoffBoundary = async (): Promise<boolean> => {
+    // Nothing to validate without coordinates.
+    if (!dropoffCoords) return true;
+
+    const { allowed, checkedCount } = await isDropoffWithinAnyTerminalBoundary(
+      dropoffCoords.lat,
+      dropoffCoords.lng
+    );
+
+    if (!allowed) {
+      console.log('🚫 Drop-off outside all terminal boundaries:', dropoffCoords, { checkedCount });
+      setShowOutOfBoundaryError(true);
+      return false;
+    }
+
+    return true;
+  };
+
   const handleBookRide = async () => {
     if (!selectedVehicle) return;
     
@@ -1501,9 +1523,13 @@ export default function CustomerHome() {
     
     // For share rides, open the lobby system
     if (selectedVehicle === 'share') {
+      if (!(await checkDropoffBoundary())) return;
+
       setActiveShareLobbyId(null);
       setShowShareLobby(true);
     } else {
+      if (!(await checkDropoffBoundary())) return;
+
       // For private rides, save to Supabase database
       setRideStatus('searching');
       
@@ -2178,6 +2204,29 @@ export default function CustomerHome() {
 
               <Button
                 onClick={() => setShowSameLocationError(false)}
+                className="w-full bg-red-500 hover:bg-red-600 text-white py-3 font-bold"
+              >
+                Understood
+              </Button>
+            </Card>
+          </div>
+        )}
+
+        {/* Out of Boundary Area Popup */}
+        {showOutOfBoundaryError && (
+          <div className="fixed inset-0 bg-black/50 z-[2200] flex items-center justify-center p-4">
+            <Card className="bg-white p-8 max-w-sm w-full text-center animate-infinite-bounce">
+              <div className="w-20 h-20 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                <span className="text-4xl">🚧</span>
+              </div>
+              <h3 className="text-xl font-bold text-red-600 mb-2">Out of boundary area</h3>
+              <p className="text-sm text-[#64748B] mb-6">
+                Your <strong>drop-off point</strong> is outside the service area covered by our terminals,
+                so this ride cannot be booked. Please choose a drop-off location inside the boundary area.
+              </p>
+
+              <Button
+                onClick={() => setShowOutOfBoundaryError(false)}
                 className="w-full bg-red-500 hover:bg-red-600 text-white py-3 font-bold"
               >
                 Understood
