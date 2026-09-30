@@ -369,7 +369,7 @@ export default function ChatHub({
                                      messageDate.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
               return (
                 <div key={msg.id} className={`flex ${isMine ? 'justify-end' : 'justify-start'}`}>
-                  <div className={`max-w-[75%] rounded-2xl px-4 py-2 ${isMine ? 'bg-[var(--primary)] text-white' : 'bg-white border border-[var(--border)]'}`}>
+                  <div className={`max-w-[75%] rounded-2xl px-4 py-2 ${isMine ? 'bg-[var(--primary)] text-white' : 'bg-surface border border-[var(--border)]'}`}>
                     <p className="text-sm break-words">{msg.message}</p>
                     <p className={`text-[10px] mt-1 ${isMine ? 'text-white/70' : 'text-[var(--muted-foreground)]'}`}>
                       {dateTimeString}
@@ -382,7 +382,7 @@ export default function ChatHub({
           <div ref={messagesEndRef} />
         </div>
 
-        <div className="bg-white border-t border-[var(--border)] p-4 sticky bottom-0">
+        <div className="bg-surface border-t border-[var(--border)] p-4 sticky bottom-0">
           <div className="flex gap-2">
             <textarea
               value={messageText}
@@ -418,7 +418,7 @@ export default function ChatHub({
     <div className="min-h-screen bg-[var(--muted)] flex flex-col">
       {!activeConversationId ? (
         <>
-          <div className="bg-white border-b-2 border-[var(--border)] px-4 py-3 flex items-center gap-3 sticky top-0 z-10">
+          <div className="bg-surface border-b-2 border-[var(--border)] px-4 py-3 flex items-center gap-3 sticky top-0 z-10">
             <Button variant="ghost" size="icon" onClick={() => navigate(backPath)}>
               <ArrowLeft className="w-5 h-5" />
             </Button>
@@ -448,7 +448,7 @@ export default function ChatHub({
                 return (
                   <Card
                     key={conversation.id}
-                    className={`p-4 bg-white border-2 transition-colors cursor-pointer ${isUnread ? 'border-[var(--primary)] bg-[var(--muted)] shadow-sm' : 'border-[var(--border)] hover:border-[var(--primary)]'}`}
+                    className={`p-4 bg-surface border-2 transition-colors cursor-pointer ${isUnread ? 'border-[var(--primary)] bg-[var(--muted)] shadow-sm' : 'border-[var(--border)] hover:border-[var(--primary)]'}`}
                     onClick={() => openConversation(conversation)}
                   >
                     <div className="flex items-start gap-3">

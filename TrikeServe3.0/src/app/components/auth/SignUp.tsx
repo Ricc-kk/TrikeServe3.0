@@ -180,7 +180,7 @@ export default function SignUp() {
       </div>
 
       {/* Right Side - Sign Up Form */}
-      <div className="flex-1 lg:max-w-xl flex items-center justify-center p-6 bg-white overflow-y-auto">
+      <div className="flex-1 lg:max-w-xl flex items-center justify-center p-6 bg-surface overflow-y-auto">
         <div className="w-full max-w-md">
           {/* Header */}
           <div className="mb-6">
@@ -203,7 +203,7 @@ export default function SignUp() {
             <div className="space-y-4">
               <button
                 onClick={() => handleRoleSelect("customer")}
-                className="w-full p-6 border-2 border-[var(--border)] hover:border-[var(--primary)] rounded-xl text-left transition-all group"
+                className="w-full p-6 border border-line hover:border-[var(--primary)] rounded-xl text-left transition-all group"
               >
                 <div className="flex items-center gap-4">
                   <div className="w-14 h-14 bg-[var(--primary-soft)] rounded-xl flex items-center justify-center group-hover:bg-[var(--primary)] transition-colors">
@@ -218,7 +218,7 @@ export default function SignUp() {
 
               <button
                 onClick={() => handleRoleSelect("rider")}
-                className="w-full p-6 border-2 border-[var(--border)] hover:border-[var(--primary)] rounded-xl text-left transition-all group"
+                className="w-full p-6 border border-line hover:border-[var(--primary)] rounded-xl text-left transition-all group"
               >
                 <div className="flex items-center gap-4">
                   <div className="w-14 h-14 bg-[var(--info-soft)] rounded-xl flex items-center justify-center group-hover:bg-[var(--info)] transition-colors">
@@ -233,7 +233,7 @@ export default function SignUp() {
 
               <button
                 onClick={() => handleRoleSelect("business")}
-                className="w-full p-6 border-2 border-[var(--border)] hover:border-[var(--primary)] rounded-xl text-left transition-all group"
+                className="w-full p-6 border border-line hover:border-[var(--primary)] rounded-xl text-left transition-all group"
               >
                 <div className="flex items-center gap-4">
                   <div className="w-14 h-14 bg-[var(--amber-soft)] rounded-xl flex items-center justify-center group-hover:bg-[var(--amber)] transition-colors">
@@ -267,7 +267,7 @@ export default function SignUp() {
                     placeholder="Juan"
                     value={formData.firstName}
                     onChange={(e) => handleInputChange("firstName", e.target.value)}
-                    className="border-2 border-[var(--border)] focus:border-[var(--primary)]"
+                    className="border border-line focus:border-[var(--primary)]"
                     required
                     disabled={isLoading}
                   />
@@ -281,7 +281,7 @@ export default function SignUp() {
                     placeholder="Dela Cruz"
                     value={formData.lastName}
                     onChange={(e) => handleInputChange("lastName", e.target.value)}
-                    className="border-2 border-[var(--border)] focus:border-[var(--primary)]"
+                    className="border border-line focus:border-[var(--primary)]"
                     required
                     disabled={isLoading}
                   />
@@ -299,7 +299,7 @@ export default function SignUp() {
                     placeholder="your.email@example.com"
                     value={formData.email}
                     onChange={(e) => handleInputChange("email", e.target.value)}
-                    className="border-2 border-[var(--border)] focus:border-[var(--primary)] pl-11"
+                    className="border border-line focus:border-[var(--primary)] pl-11"
                     required
                     disabled={isLoading}
                   />
@@ -322,7 +322,7 @@ export default function SignUp() {
                       handleInputChange("phoneNumber", digits);
                     }}
                     maxLength={11}
-                    className="border-2 border-[var(--border)] focus:border-[var(--primary)] pl-11"
+                    className="border border-line focus:border-[var(--primary)] pl-11"
                     required
                     disabled={isLoading}
                   />
@@ -342,7 +342,7 @@ export default function SignUp() {
                       placeholder="ABC 1234"
                       value={formData.todaPlate || ""}
                       onChange={(e) => handleInputChange("todaPlate", e.target.value)}
-                      className="border-2 border-[var(--border)] focus:border-[var(--primary)]"
+                      className="border border-line focus:border-[var(--primary)]"
                       required
                       disabled={isLoading}
                     />
@@ -356,7 +356,7 @@ export default function SignUp() {
                       placeholder="N01-23-456789"
                       value={formData.licenseNumber || ""}
                       onChange={(e) => handleInputChange("licenseNumber", e.target.value)}
-                      className="border-2 border-[var(--border)] focus:border-[var(--primary)]"
+                      className="border border-line focus:border-[var(--primary)]"
                       required
                       disabled={isLoading}
                     />
@@ -376,7 +376,7 @@ export default function SignUp() {
                       placeholder="Kuya J's Eatery"
                       value={formData.businessName || ""}
                       onChange={(e) => handleInputChange("businessName", e.target.value)}
-                      className="border-2 border-[var(--border)] focus:border-[var(--primary)]"
+                      className="border border-line focus:border-[var(--primary)]"
                       required
                       disabled={isLoading}
                     />
@@ -390,7 +390,7 @@ export default function SignUp() {
                       placeholder="123 Main St, Gen T Deleon"
                       value={formData.businessAddress || ""}
                       onChange={(e) => handleInputChange("businessAddress", e.target.value)}
-                      className="border-2 border-[var(--border)] focus:border-[var(--primary)]"
+                      className="border border-line focus:border-[var(--primary)]"
                       required
                       disabled={isLoading}
                     />
@@ -409,7 +409,7 @@ export default function SignUp() {
                     placeholder="123 Main St, Gen T Deleon"
                     value={formData.address || ""}
                     onChange={(e) => handleInputChange("address", e.target.value)}
-                    className="border-2 border-[var(--border)] focus:border-[var(--primary)]"
+                    className="border border-line focus:border-[var(--primary)]"
                     disabled={isLoading}
                   />
                 </div>
@@ -426,7 +426,7 @@ export default function SignUp() {
                     placeholder="••••••••"
                     value={formData.password}
                     onChange={(e) => handleInputChange("password", e.target.value)}
-                    className="border-2 border-[var(--border)] focus:border-[var(--primary)] pl-11"
+                    className="border border-line focus:border-[var(--primary)] pl-11"
                     required
                     disabled={isLoading}
                   />
@@ -445,7 +445,7 @@ export default function SignUp() {
                     placeholder="••••••••"
                     value={formData.confirmPassword}
                     onChange={(e) => handleInputChange("confirmPassword", e.target.value)}
-                    className="border-2 border-[var(--border)] focus:border-[var(--primary)] pl-11"
+                    className="border border-line focus:border-[var(--primary)] pl-11"
                     required
                     disabled={isLoading}
                   />
@@ -479,14 +479,14 @@ export default function SignUp() {
                   type="button"
                   onClick={() => setStep("role")}
                   variant="outline"
-                  className="flex-1 border-2 border-[var(--border)] hover:border-[var(--primary)]"
+                  className="flex-1 border border-line hover:border-[var(--primary)]"
                   disabled={isLoading}
                 >
                   BACK
                 </Button>
                 <Button
                   type="submit"
-                  className="flex-1 bg-[var(--primary)] hover:bg-[var(--primary)] uppercase text-base"
+                  className="flex-1 bg-[var(--primary)] hover:bg-[var(--primary)] text-base"
                   disabled={isLoading}
                 >
                   {isLoading ? (
@@ -532,7 +532,7 @@ export default function SignUp() {
                   </div>
 
                   <Link to="/">
-                    <Button className="w-full bg-[var(--primary)] hover:bg-[var(--primary)] uppercase">
+                    <Button className="w-full bg-[var(--primary)] hover:bg-[var(--primary)]">
                       GO TO LOGIN
                     </Button>
                   </Link>
@@ -583,7 +583,7 @@ export default function SignUp() {
                   </div>
 
                   <Link to="/">
-                    <Button className="w-full bg-[var(--primary)] hover:bg-[var(--primary)] uppercase">
+                    <Button className="w-full bg-[var(--primary)] hover:bg-[var(--primary)]">
                       BACK TO LOGIN
                     </Button>
                   </Link>

@@ -278,7 +278,7 @@ export default function BusinessMapSelector({ onClose, onSelectLocation, current
   };
 
   return (
-    <div className="fixed inset-0 bg-white z-[4000]">
+    <div className="fixed inset-0 bg-surface z-[4000]">
       {/* Header */}
       <div className="absolute top-0 left-0 right-0 bg-white/95 backdrop-blur-sm z-[4002] px-4 py-3 border-b border-[var(--border)]">
         <div className="flex items-center justify-between">
@@ -287,7 +287,7 @@ export default function BusinessMapSelector({ onClose, onSelectLocation, current
           </button>
 
           <div className="flex-1 mx-3 relative">
-            <div className="w-full flex items-center gap-2 px-4 py-2 bg-white border-2 border-[var(--border)] rounded-full">
+            <div className="w-full flex items-center gap-2 px-4 py-2 bg-surface border border-line rounded-full">
               <MapPin className="w-4 h-4 text-[var(--primary)] flex-shrink-0" />
               <input
                 type="text"
@@ -332,7 +332,7 @@ export default function BusinessMapSelector({ onClose, onSelectLocation, current
 
             {/* Search Results Dropdown */}
             {showSearchDropdown && (
-              <div className="absolute top-full left-0 right-0 mt-2 bg-white border-2 border-[var(--border)] rounded-2xl shadow-xl max-h-80 overflow-y-auto">
+              <div className="absolute top-full left-0 right-0 mt-2 bg-surface border border-line rounded-2xl shadow-xl max-h-80 overflow-y-auto">
                 {searchResults.length > 0 ? (
                   searchResults.map((result, index) => (
                     <button
@@ -382,7 +382,7 @@ export default function BusinessMapSelector({ onClose, onSelectLocation, current
         {/* Recenter Button */}
         <button
           onClick={handleRecenterMap}
-          className="absolute bottom-44 right-4 w-12 h-12 bg-white rounded-full shadow-lg flex items-center justify-center active:scale-95 transition-transform z-[4003]"
+          className="absolute bottom-44 right-4 w-12 h-12 bg-surface rounded-full shadow-lg flex items-center justify-center active:scale-95 transition-transform z-[4003]"
         >
           <Navigation className="w-5 h-5 text-[var(--primary)]" />
         </button>
@@ -390,7 +390,7 @@ export default function BusinessMapSelector({ onClose, onSelectLocation, current
 
       {/* Bottom Panel - Selected Address */}
       {showAddressList && (
-        <div className="absolute bottom-0 left-0 right-0 bg-white rounded-t-3xl shadow-2xl z-[4004] max-h-[50vh] flex flex-col">
+        <div className="absolute bottom-0 left-0 right-0 bg-surface rounded-t-3xl shadow-2xl z-[4004] max-h-[50vh] flex flex-col">
           {/* Drag Handle */}
           <div className="flex justify-center py-3 border-b border-[var(--border)]">
             <div className="w-12 h-1 bg-[var(--border)] rounded-full"></div>
@@ -400,7 +400,7 @@ export default function BusinessMapSelector({ onClose, onSelectLocation, current
             {/* Current pickup location context */}
             {currentAddress && (
               <div className="rounded-xl border border-[var(--border)] bg-[var(--muted)] p-4">
-                <p className="text-xs font-bold text-[var(--muted-foreground)] uppercase tracking-wide mb-1">Current Pickup Location</p>
+                <p className="text-xs font-bold text-[var(--muted-foreground)] uppercase tracking-widest mb-1">Current Pickup Location</p>
                 <p className="font-semibold text-[var(--ink)] text-sm">{currentAddress}</p>
               </div>
             )}
@@ -408,7 +408,7 @@ export default function BusinessMapSelector({ onClose, onSelectLocation, current
             {/* Selected pin preview */}
             {pickedPin && (
               <div className="rounded-xl border-2 border-[var(--success)] bg-[var(--success)]/5 p-4">
-                <p className="text-xs font-bold text-[var(--success)] uppercase tracking-wide mb-1">
+                <p className="text-xs font-bold text-[var(--success)] uppercase tracking-widest mb-1">
                   {isGeocoding ? "Looking up address..." : "Selected Location"}
                 </p>
                 <p className="font-bold text-[var(--ink)]">{pickedPin.name}</p>
@@ -422,7 +422,7 @@ export default function BusinessMapSelector({ onClose, onSelectLocation, current
             <button
               onClick={handleChooseLocation}
               disabled={!pickedPin}
-              className={`w-full py-4 font-bold rounded-2xl uppercase active:scale-95 transition-all shadow-lg ${
+              className={`w-full py-4 font-bold rounded-2xl active:scale-95 transition-all shadow-lg ${
                 pickedPin
                   ? "bg-[var(--success)] hover:bg-[var(--success)] text-white"
                   : "bg-[var(--border)] text-[var(--muted-foreground)] cursor-not-allowed"

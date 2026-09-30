@@ -300,12 +300,12 @@ export default function CategoryFood() {
   });
 
   return (
-    <div className="min-h-screen bg-white flex flex-col pb-20">
+    <div className="min-h-screen bg-surface flex flex-col pb-20">
       {/* Header with Back Button */}
-      <div className="bg-gradient-to-b from-[var(--primary)] to-[var(--primary)] px-5 pt-6 pb-8 shadow-xl relative overflow-hidden">
+      <div className="bg-[var(--primary)] px-5 pt-6 pb-8 shadow-xl relative overflow-hidden">
         {/* Background pattern */}
         <div className="absolute inset-0 opacity-10">
-          <div className="absolute top-0 right-0 w-64 h-64 bg-white rounded-full blur-3xl -translate-y-32 translate-x-32" />
+          <div className="absolute top-0 right-0 w-64 h-64 bg-surface rounded-full blur-3xl -translate-y-32 translate-x-32" />
         </div>
 
         <div className="relative z-10">
@@ -331,7 +331,7 @@ export default function CategoryFood() {
               placeholder={`Maghanap ng ${categoryName.toLowerCase()}...`}
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full pl-12 pr-4 py-3.5 bg-white rounded-2xl shadow-xl border-0 text-base text-[var(--ink)] placeholder:text-[var(--muted-foreground)]"
+              className="w-full pl-12 pr-4 py-3.5 bg-surface rounded-2xl shadow-xl border-0 text-base text-[var(--ink)] placeholder:text-[var(--muted-foreground)]"
               style={{ outline: 'none' }}
             />
           </div>
@@ -352,7 +352,7 @@ export default function CategoryFood() {
         ) : (
           <div className="space-y-4">
             {filteredFood.map((food) => (
-              <Card key={food.id} className="overflow-hidden shadow-xl hover:shadow-2xl transition-all duration-300 border-0 rounded-3xl bg-white active:scale-[0.98]">
+              <Card key={food.id} className="overflow-hidden shadow-xl hover:shadow-2xl transition-all duration-300 border-0 rounded-3xl bg-surface active:scale-[0.98]">
                 <div className="flex items-center gap-0">
                   {/* Image Thumbnail */}
                   <div className="w-32 h-32 flex-shrink-0 relative overflow-hidden">
@@ -415,7 +415,7 @@ export default function CategoryFood() {
 
                 {/* Add to Cart Button */}
                 <div className="px-4 pb-4">
-                  <button className="w-full bg-gradient-to-r from-[var(--primary)] to-[var(--primary)] text-white font-bold py-3.5 rounded-2xl hover:shadow-xl transition-all duration-200 active:scale-95 shadow-lg shadow-[var(--primary)]/30 uppercase text-sm tracking-wide">
+                  <button className="w-full bg-[var(--primary)] text-white font-bold py-3.5 rounded-2xl hover:shadow-xl transition-all duration-200 active:scale-95 shadow-lg shadow-[var(--primary)]/30 text-sm tracking-wide">
                     Ilagay sa Cart
                   </button>
                 </div>

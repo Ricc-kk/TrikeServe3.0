@@ -221,7 +221,7 @@ export default function Earnings() {
   return (
     <div className="min-h-screen bg-[var(--muted)] pb-20">
       {/* Header */}
-      <div className="bg-white border-b-2 border-[var(--border)] px-4 py-3 flex items-center gap-3">
+      <div className="bg-surface border-b-2 border-[var(--border)] px-4 py-3 flex items-center gap-3">
         <Button variant="ghost" size="icon" onClick={() => navigate('/rider')}>
           <ArrowLeft className="w-5 h-5" />
         </Button>
@@ -251,7 +251,7 @@ export default function Earnings() {
           >
             {/* Today Card */}
             <div style={{ width: '335px' }} className="pl-4 pr-1">
-              <Card className="p-4 bg-gradient-to-br from-[var(--primary)] to-[var(--primary)] text-white border-0 rounded-2xl">
+              <Card className="p-4 bg-[var(--primary)] text-white border-0 rounded-2xl">
                 <p className="text-sm opacity-90 mb-1">Today</p>
                 <p className="text-4xl font-extrabold mb-2">₱{todayEarnings.toFixed(2)}</p>
                 <div className="flex items-center gap-1 text-sm opacity-90">
@@ -302,7 +302,7 @@ export default function Earnings() {
         </div>
 
         {/* Quick Stats */}
-        <Card className="p-5 bg-white border-0 shadow-sm">
+        <Card className="p-5 bg-surface border-0 shadow-sm">
           <h3 className="font-extrabold text-[var(--ink)] mb-4" style={{ fontSize: '18px' }}>Overall Performance</h3>
           <div className="grid grid-cols-2 gap-x-4 gap-y-4">
             <div>
@@ -359,11 +359,11 @@ export default function Earnings() {
           </div>
 
           {isLoading ? (
-            <Card className="p-4 bg-white border-0 shadow-sm">
+            <Card className="p-4 bg-surface border-0 shadow-sm">
               <p className="text-center text-[var(--muted-foreground)]">Loading completed trips...</p>
             </Card>
           ) : completedTrips.length === 0 ? (
-            <Card className="p-4 bg-white border-0 shadow-sm">
+            <Card className="p-4 bg-surface border-0 shadow-sm">
               <p className="text-center text-[var(--muted-foreground)]">No completed trips yet. Start accepting rides to see your recent trips here!</p>
             </Card>
           ) : (
@@ -376,7 +376,7 @@ export default function Earnings() {
                 })
                 .slice(0, 20)
                 .map((trip) => (
-                <Card key={trip.id} className={`bg-white border-0 shadow-sm overflow-hidden ${
+                <Card key={trip.id} className={`bg-surface border-0 shadow-sm overflow-hidden ${
                   trip.type === 'Delivery' ? 'border-l-4 border-l-[var(--info)]' :
                   trip.type === 'Ride Share' ? 'border-l-4 border-l-[var(--amber)]' :
                   'border-l-4 border-l-[var(--success)]'
@@ -427,13 +427,13 @@ export default function Earnings() {
                         <div className="flex-1 space-y-2 min-w-0">
                           {trip.pickup && (
                             <div>
-                              <p className="text-[10px] text-[var(--success)] font-bold uppercase">Pickup</p>
+                              <p className="text-[10px] text-[var(--success)] font-bold">Pickup</p>
                               <p className="text-xs text-[var(--ink)] truncate">{trip.pickup}</p>
                             </div>
                           )}
                           {trip.dropoff && (
                             <div>
-                              <p className="text-[10px] text-[var(--primary)] font-bold uppercase">Drop-off</p>
+                              <p className="text-[10px] text-[var(--primary)] font-bold">Drop-off</p>
                               <p className="text-xs text-[var(--ink)] truncate">{trip.dropoff}</p>
                             </div>
                           )}

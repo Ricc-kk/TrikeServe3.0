@@ -558,7 +558,7 @@ export default function BusinessHome() {
   };
 
   return (
-    <div className="min-h-screen bg-white flex">
+    <div className="min-h-screen bg-surface flex">
       {/* Sidebar Navigation */}
       <BusinessSidebar 
         isMobileMenuOpen={isMobileMenuOpen}
@@ -568,7 +568,7 @@ export default function BusinessHome() {
       {/* Main Content */}
       <div className="flex-1 lg:ml-64">
         {/* Header with Preview Toggle */}
-        <div className="px-5 py-4 border-b border-[var(--border)] sticky top-0 bg-white z-50">
+        <div className="px-5 py-4 border-b border-[var(--border)] sticky top-0 bg-surface z-50">
           <div className="flex items-center justify-between mb-2">
             <div className="flex items-center gap-3">
               {/* Hamburger Menu - Mobile Only */}
@@ -588,7 +588,7 @@ export default function BusinessHome() {
               className={`px-4 py-2 rounded-xl font-semibold transition-all flex items-center gap-2 ${
                 previewMode
                   ? "bg-[var(--primary)] text-white"
-                  : "bg-[var(--muted)] text-[var(--muted-foreground)] border-2 border-[var(--border)]"
+                  : "bg-[var(--muted)] text-[var(--muted-foreground)] border border-line"
               }`}
             >
               <Eye className="w-4 h-4" />
@@ -632,7 +632,7 @@ export default function BusinessHome() {
                 
                 {/* Logo */}
                 <div className="absolute bottom-4 left-4">
-                  <div className="w-16 h-16 bg-white rounded-2xl flex items-center justify-center text-3xl shadow-lg overflow-hidden">
+                  <div className="w-16 h-16 bg-surface rounded-2xl flex items-center justify-center text-3xl shadow-lg overflow-hidden">
                     <StoreLogo logo={restaurantData.logo} emojiClass="text-3xl" />
                   </div>
                 </div>
@@ -646,7 +646,7 @@ export default function BusinessHome() {
               </div>
 
               {/* Store Info */}
-              <Card className="p-5 border-2 border-[var(--border)] mb-4">
+              <Card className="p-5 border border-line mb-4">
                 <div className="flex items-start justify-between mb-3">
                   <div>
                     <div className="flex items-center gap-2 mb-1">
@@ -682,14 +682,14 @@ export default function BusinessHome() {
               </Card>
 
               {/* Menu Preview */}
-              <Card className="p-5 border-2 border-[var(--border)]">
+              <Card className="p-5 border border-line">
                 <h3 className="font-bold text-[var(--ink)] mb-3">Menu Items</h3>
                 
                 {menuItems.length > 0 ? (
                   <div className="space-y-3">
                     {menuItems.filter(item => item.available).map((item) => (
                       <div key={item.id} className="flex items-center gap-3 p-3 bg-[var(--muted)] rounded-xl">
-                        <div className="w-16 h-16 rounded-xl overflow-hidden flex-shrink-0 border-2 border-[var(--border)]">
+                        <div className="w-16 h-16 rounded-xl overflow-hidden flex-shrink-0 border border-line">
                           <ImageWithFallback
                             src={item.image}
                             alt={item.name}
@@ -714,7 +714,7 @@ export default function BusinessHome() {
                     <Package className="w-12 h-12 text-[var(--border)] mx-auto mb-2" />
                     <p className="text-sm text-[var(--muted-foreground)] mb-3">No menu items yet</p>
                     <Link to="/business/menu">
-                      <Button className="w-full bg-[var(--primary)] hover:bg-[var(--primary)] uppercase">
+                      <Button className="w-full bg-[var(--primary)] hover:bg-[var(--primary)]">
                         Add Menu Items
                       </Button>
                     </Link>
@@ -742,7 +742,7 @@ export default function BusinessHome() {
                   }`}
                 >
                   <div
-                    className={`w-7 h-7 bg-white rounded-full shadow-md transition-transform ${
+                    className={`w-7 h-7 bg-surface rounded-full shadow-md transition-transform ${
                       isStoreOpen ? "translate-x-8" : "translate-x-1"
                     }`}
                   />
@@ -756,14 +756,14 @@ export default function BusinessHome() {
               <h3 className="font-bold text-[var(--ink)] mb-3">⚡ Quick Actions</h3>
               <div className="grid grid-cols-2 gap-3 mb-4">
                 <Link to="/business/menu">
-                  <Card className="p-5 text-center border-2 border-[var(--border)] hover:border-[var(--primary)] transition-all active:scale-95 bg-gradient-to-br from-[var(--primary-soft)] to-white">
+                  <Card className="p-5 text-center border border-line hover:border-[var(--primary)] transition-all active:scale-95 bg-gradient-to-br from-[var(--primary-soft)] to-white">
                     <Package className="w-10 h-10 text-[var(--primary)] mx-auto mb-2" />
                     <p className="font-bold text-[var(--ink)] mb-1">Menu</p>
                     <p className="text-xs text-[var(--muted-foreground)]">Add & edit items</p>
                   </Card>
                 </Link>
                 <Link to="/business/orders">
-                  <Card className="p-5 text-center border-2 border-[var(--border)] hover:border-[var(--info)] transition-all active:scale-95 bg-gradient-to-br from-[var(--info-soft)] to-white">
+                  <Card className="p-5 text-center border border-line hover:border-[var(--info)] transition-all active:scale-95 bg-gradient-to-br from-[var(--info-soft)] to-white">
                     <Clock className="w-10 h-10 text-[var(--info)] mx-auto mb-2" />
                     <p className="font-bold text-[var(--ink)] mb-1">Orders</p>
                     <p className="text-xs text-[var(--muted-foreground)]">Manage orders</p>
@@ -783,7 +783,7 @@ export default function BusinessHome() {
               </div>
 
               {/* Hero Banner Editor */}
-              <Card className="p-4 border-2 border-[var(--border)] mb-3">
+              <Card className="p-4 border border-line mb-3">
                 <div className="flex items-center justify-between mb-2">
                   <p className="font-semibold text-[var(--ink)]">Hero Banner & Logo</p>
                   <button
@@ -800,7 +800,7 @@ export default function BusinessHome() {
                     className="w-full h-full object-cover"
                   />
                   <div className="absolute bottom-2 left-2">
-                    <div className="w-12 h-12 bg-white rounded-xl flex items-center justify-center text-xl shadow-lg overflow-hidden">
+                    <div className="w-12 h-12 bg-surface rounded-xl flex items-center justify-center text-xl shadow-lg overflow-hidden">
                       <StoreLogo logo={restaurantData.logo} emojiClass="text-xl" />
                     </div>
                   </div>
@@ -816,7 +816,7 @@ export default function BusinessHome() {
               </Card>
 
               {/* Store Info Editor */}
-              <Card className="p-4 border-2 border-[var(--border)]">
+              <Card className="p-4 border border-line">
                 <div className="flex items-center justify-between mb-3">
                   <p className="font-semibold text-[var(--ink)]">Store Information</p>
                   <button
@@ -868,8 +868,8 @@ export default function BusinessHome() {
         {/* Edit Banner Modal */}
         {showEditBanner && (
           <div className="fixed inset-0 bg-black/50 z-[2000] flex items-end animate-in slide-in-from-bottom">
-            <div className="bg-white w-full rounded-t-3xl max-h-[85vh] overflow-y-auto">
-              <div className="sticky top-0 bg-white border-b border-[var(--border)] px-5 py-4 flex items-center justify-between">
+            <div className="bg-surface w-full rounded-t-3xl max-h-[85vh] overflow-y-auto">
+              <div className="sticky top-0 bg-surface border-b border-[var(--border)] px-5 py-4 flex items-center justify-between">
                 <h2 className="text-xl font-bold text-[var(--ink)]">Edit Banner & Logo</h2>
                 <button
                   onClick={() => setShowEditBanner(false)}
@@ -883,7 +883,7 @@ export default function BusinessHome() {
               <div className="p-5 space-y-5">
                 <div>
                   <label className="text-sm font-bold text-[var(--ink)] mb-2 block">Hero Banner Image</label>
-                  <div className="h-44 rounded-2xl overflow-hidden mb-3 border-2 border-[var(--border)]">
+                  <div className="h-44 rounded-2xl overflow-hidden mb-3 border border-line">
                     <ImageWithFallback
                       src={restaurantData.heroImage}
                       alt="Banner"
@@ -893,7 +893,7 @@ export default function BusinessHome() {
                   <Button
                     onClick={() => bannerInputRef.current?.click()}
                     disabled={isBannerUploading}
-                    className="w-full bg-[var(--primary)] hover:bg-[var(--primary)] uppercase text-sm py-5 disabled:opacity-60"
+                    className="w-full bg-[var(--primary)] hover:bg-[var(--primary)] text-sm py-5 disabled:opacity-60"
                   >
                     {isBannerUploading ? (
                       <>
@@ -924,7 +924,7 @@ export default function BusinessHome() {
                   <label className="text-sm font-bold text-[var(--ink)] mb-2 block">Store Logo</label>
                   <p className="text-xs text-[var(--muted-foreground)] mb-3">Upload your store logo (square image works best)</p>
                   <div className="flex items-center gap-3">
-                    <div className="w-20 h-20 bg-white border-2 border-[var(--border)] rounded-2xl flex items-center justify-center text-4xl overflow-hidden flex-shrink-0">
+                    <div className="w-20 h-20 bg-surface border border-line rounded-2xl flex items-center justify-center text-4xl overflow-hidden flex-shrink-0">
                       <StoreLogo logo={restaurantData.logo} emojiClass="text-4xl" />
                     </div>
                     <div className="flex-1">
@@ -968,8 +968,8 @@ export default function BusinessHome() {
         {/* Edit Info Modal */}
         {showEditInfo && (
           <div className="fixed inset-0 bg-black/50 z-[2000] flex items-end animate-in slide-in-from-bottom">
-            <div className="bg-white w-full rounded-t-3xl max-h-[85vh] overflow-y-auto">
-              <div className="sticky top-0 bg-white border-b border-[var(--border)] px-5 py-4 flex items-center justify-between">
+            <div className="bg-surface w-full rounded-t-3xl max-h-[85vh] overflow-y-auto">
+              <div className="sticky top-0 bg-surface border-b border-[var(--border)] px-5 py-4 flex items-center justify-between">
                 <h2 className="text-xl font-bold text-[var(--ink)]">Edit Store Info</h2>
                 <button
                   onClick={() => setShowConfirmSaveInfo(true)}
@@ -987,7 +987,7 @@ export default function BusinessHome() {
                     type="text"
                     value={restaurantData.name}
                     onChange={(e) => setRestaurantData({ ...restaurantData, name: e.target.value })}
-                    className="w-full p-3 border-2 border-[var(--border)] rounded-xl font-semibold"
+                    className="w-full p-3 border border-line rounded-xl font-semibold"
                     placeholder="e.g., Mang Inasal"
                   />
                 </div>
@@ -998,7 +998,7 @@ export default function BusinessHome() {
                     type="text"
                     value={restaurantData.subtitle}
                     onChange={(e) => setRestaurantData({ ...restaurantData, subtitle: e.target.value })}
-                    className="w-full p-3 border-2 border-[var(--border)] rounded-xl"
+                    className="w-full p-3 border border-line rounded-xl"
                     placeholder="e.g., Gen T Deleon Center"
                   />
                   <p className="text-xs text-[var(--muted-foreground)] mt-1">Branch location or tagline</p>
@@ -1009,7 +1009,7 @@ export default function BusinessHome() {
                   <textarea
                     value={restaurantData.address}
                     onChange={(e) => setRestaurantData({ ...restaurantData, address: e.target.value })}
-                    className="w-full p-3 border-2 border-[var(--border)] rounded-xl min-h-[80px]"
+                    className="w-full p-3 border border-line rounded-xl min-h-[80px]"
                     placeholder="Full address with barangay and city"
                   />
                 </div>
@@ -1021,7 +1021,7 @@ export default function BusinessHome() {
                       type="text"
                       value={restaurantData.deliveryTime}
                       onChange={(e) => setRestaurantData({ ...restaurantData, deliveryTime: e.target.value })}
-                      className="w-full p-3 border-2 border-[var(--border)] rounded-xl"
+                      className="w-full p-3 border border-line rounded-xl"
                       placeholder="15-25 min"
                     />
                   </div>
@@ -1034,7 +1034,7 @@ export default function BusinessHome() {
                         type="number"
                         value={adminDeliveryFee}
                         disabled
-                        className="w-full p-3 pl-7 border-2 border-[var(--border)] rounded-xl bg-[var(--muted)] text-[var(--muted-foreground)] cursor-not-allowed"
+                        className="w-full p-3 pl-7 border border-line rounded-xl bg-[var(--muted)] text-[var(--muted-foreground)] cursor-not-allowed"
                       />
                     </div>
                     <p className="text-xs text-[var(--muted-foreground)] mt-1">Set by the admin. Contact the admin to change the delivery fee.</p>
@@ -1047,7 +1047,7 @@ export default function BusinessHome() {
                     type="text"
                     value={restaurantData.operatingHours}
                     onChange={(e) => setRestaurantData({ ...restaurantData, operatingHours: e.target.value })}
-                    className="w-full p-3 border-2 border-[var(--border)] rounded-xl"
+                    className="w-full p-3 border border-line rounded-xl"
                     placeholder="8:00 AM - 10:00 PM"
                   />
                   <p className="text-xs text-[var(--muted-foreground)] mt-1">Daily operating hours</p>
@@ -1060,7 +1060,7 @@ export default function BusinessHome() {
         {/* Confirm Save Modal */}
         {showConfirmSaveInfo && (
           <div className="fixed inset-0 bg-black/50 z-[3000] flex items-center justify-center p-4">
-            <div className="bg-white p-6 max-w-sm w-full rounded-2xl shadow-xl">
+            <div className="bg-surface p-6 max-w-sm w-full rounded-2xl shadow-xl">
               <div className="w-16 h-16 bg-[var(--success-soft)] rounded-full flex items-center justify-center mx-auto mb-4">
                 <Check className="w-8 h-8 text-[var(--success)]" />
               </div>
@@ -1089,7 +1089,7 @@ export default function BusinessHome() {
         {/* Save Success Popup */}
         {showSaveSuccess && (
           <div className="fixed inset-0 bg-black/50 z-[3000] flex items-center justify-center p-4">
-            <div className="bg-white rounded-2xl shadow-xl p-8 max-w-sm w-full text-center">
+            <div className="bg-surface rounded-2xl shadow-xl p-8 max-w-sm w-full text-center">
               <div className="w-16 h-16 bg-[var(--success-soft)] rounded-full flex items-center justify-center mx-auto mb-4">
                 <Check className="w-8 h-8 text-[var(--success)]" />
               </div>

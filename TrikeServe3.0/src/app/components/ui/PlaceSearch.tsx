@@ -124,7 +124,7 @@ export default function PlaceSearch({ value, onChange, onSelect, placeholder, cl
   return (
 	<div className="relative">
 	  <input
-		className={className || 'w-full px-4 py-2 border-2 border-[var(--border)] rounded-lg'}
+		className={className || 'w-full px-4 py-2 border border-line rounded-lg'}
 		placeholder={placeholder || 'Search location'}
 		value={value}
 		onChange={(e) => onChange(e.target.value)}
@@ -138,7 +138,7 @@ export default function PlaceSearch({ value, onChange, onSelect, placeholder, cl
 	  )}
 
 	  {predictions && predictions.length > 0 && (
-		<div className="absolute left-0 right-0 bg-white border border-[var(--border)] mt-1 rounded shadow-lg z-[3000] max-h-60 overflow-auto">
+		<div className="absolute left-0 right-0 bg-surface border border-[var(--border)] mt-1 rounded shadow-lg z-[3000] max-h-60 overflow-auto">
 		  {predictions.map((p) => (
 			<button
 			  key={p.place_id}

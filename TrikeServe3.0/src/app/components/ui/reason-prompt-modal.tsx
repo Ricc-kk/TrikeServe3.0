@@ -25,8 +25,8 @@ const MAX_REASON_LENGTH = 300;
 
 const variantConfig: Record<ReasonVariant, { iconBg: string; iconColor: string; button: string }> = {
   danger: {
-    iconBg: "bg-red-100",
-    iconColor: "text-red-600",
+    iconBg: "bg-[var(--error-soft)]",
+    iconColor: "text-[var(--error)]",
     button: "bg-[#EF4444] hover:bg-[#DC2626]",
   },
   warning: {
@@ -107,7 +107,7 @@ export default function ReasonPromptModal({
         className="absolute inset-0 bg-black/60"
         onClick={() => { if (!isSubmitting) onCancel(); }}
       />
-      <div className="relative w-full max-w-sm bg-white rounded-2xl shadow-2xl overflow-hidden">
+      <div className="relative w-full max-w-sm bg-surface rounded-2xl shadow-2xl overflow-hidden">
         <div className="p-6">
           <div className="flex items-start justify-between mb-4">
             <div className={`w-14 h-14 ${config.iconBg} rounded-full flex items-center justify-center`}>
@@ -125,7 +125,7 @@ export default function ReasonPromptModal({
           {description && <p className="text-sm text-[#64748B] mb-4">{description}</p>}
 
           <label className="text-xs font-semibold uppercase tracking-wide text-[#64748B] block mb-1.5">
-            Reason <span className="text-[#E11D48]">*</span>
+            Reason <span className="text-[var(--error)]">*</span>
           </label>
           <textarea
             ref={textareaRef}
@@ -138,7 +138,7 @@ export default function ReasonPromptModal({
             rows={3}
             placeholder={placeholder}
             className={`w-full px-3 py-2.5 border-2 rounded-xl text-sm outline-none resize-none transition-colors ${
-              error ? "border-[#EF4444]" : "border-[#CBD5E1] focus:border-[#E11D48]"
+              error ? "border-[#EF4444]" : "border-[#CBD5E1] focus:border-[var(--error)]"
             }`}
           />
 

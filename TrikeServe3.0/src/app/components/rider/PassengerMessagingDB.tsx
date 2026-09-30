@@ -121,7 +121,7 @@ export default function PassengerMessagingDB({ passengerId, passengerName, passe
 
   return (
     <div className="fixed inset-0 bg-black/50 z-50 flex items-end md:items-center md:justify-center">
-      <div className="bg-white w-full md:w-[500px] md:rounded-2xl rounded-t-3xl max-h-[90vh] flex flex-col">
+      <div className="bg-surface w-full md:w-[500px] md:rounded-2xl rounded-t-3xl max-h-[90vh] flex flex-col">
         <div className="bg-[var(--primary)] text-white px-4 py-4 flex items-center justify-between rounded-t-3xl md:rounded-t-2xl">
           <div className="flex items-center gap-3">
             <span className="text-3xl">{passengerEmoji}</span>
@@ -147,7 +147,7 @@ export default function PassengerMessagingDB({ passengerId, passengerName, passe
               const isMine = msg.sender_id === user.id;
               return (
                 <div key={msg.id} className={`flex ${isMine ? 'justify-end' : 'justify-start'}`}>
-                  <div className={`max-w-[75%] rounded-2xl px-4 py-2 ${isMine ? 'bg-[var(--primary)] text-white' : 'bg-white border border-[var(--border)]'}`}>
+                  <div className={`max-w-[75%] rounded-2xl px-4 py-2 ${isMine ? 'bg-[var(--primary)] text-white' : 'bg-surface border border-[var(--border)]'}`}>
                     <p className="text-sm break-words">{msg.message}</p>
                     <p className={`text-[10px] mt-1 ${isMine ? 'text-white/70' : 'text-[var(--muted-foreground)]'}`}>
                       {new Date(msg.created_at).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}
@@ -160,7 +160,7 @@ export default function PassengerMessagingDB({ passengerId, passengerName, passe
           <div ref={messagesEndRef} />
         </div>
 
-        <div className="p-4 bg-white border-t border-[var(--border)]">
+        <div className="p-4 bg-surface border-t border-[var(--border)]">
           <div className="flex gap-2">
             <input
               type="text"

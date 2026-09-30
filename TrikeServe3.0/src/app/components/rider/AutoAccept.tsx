@@ -71,7 +71,7 @@ export default function AutoAccept() {
   return (
     <div className="min-h-screen bg-[var(--muted)]">
       {/* Header */}
-      <div className="bg-white border-b-2 border-[var(--border)] px-4 py-3 flex items-center gap-3">
+      <div className="bg-surface border-b-2 border-[var(--border)] px-4 py-3 flex items-center gap-3">
         <Button variant="ghost" size="icon" onClick={() => navigate('/rider')}>
           <ArrowLeft className="w-5 h-5" />
         </Button>
@@ -109,7 +109,7 @@ export default function AutoAccept() {
               }`}
             >
               <div
-                className={`w-5 h-5 rounded-full bg-white transition-transform ${
+                className={`w-5 h-5 rounded-full bg-surface transition-transform ${
                   autoAcceptEnabled ? 'translate-x-6' : 'translate-x-0.5'
                 }`}
               />
@@ -135,7 +135,7 @@ export default function AutoAccept() {
                 }`}
               >
                 <div
-                  className={`w-5 h-5 rounded-full bg-white transition-transform ${
+                  className={`w-5 h-5 rounded-full bg-surface transition-transform ${
                     soundNotificationEnabled ? 'translate-x-6' : 'translate-x-0.5'
                   }`}
                 />
@@ -194,10 +194,10 @@ export default function AutoAccept() {
       </div>
 
       {/* Footer Button */}
-      <div className="fixed bottom-0 left-0 right-0 bg-white border-t-2 border-[var(--border)] p-4">
+      <div className="fixed bottom-0 left-0 right-0 bg-surface border-t-2 border-[var(--border)] p-4">
         <Button
           onClick={() => navigate('/rider')}
-          className="w-full bg-[var(--primary)] hover:bg-[var(--primary)] text-white font-bold uppercase"
+          className="w-full bg-[var(--primary)] hover:bg-[var(--primary)] text-white font-bold"
         >
           Done
         </Button>

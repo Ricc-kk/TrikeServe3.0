@@ -82,7 +82,7 @@ export default function ServiceTypes() {
   return (
     <div className="min-h-screen bg-[var(--muted)]">
       {/* Header */}
-      <div className="bg-white border-b-2 border-[var(--border)] px-4 py-3 flex items-center gap-3">
+      <div className="bg-surface border-b-2 border-[var(--border)] px-4 py-3 flex items-center gap-3">
         <Button variant="ghost" size="icon" onClick={() => navigate('/rider')}>
           <ArrowLeft className="w-5 h-5" />
         </Button>
@@ -99,7 +99,7 @@ export default function ServiceTypes() {
 
         {/* Step 1: Category */}
         <div>
-          <h2 className="text-sm font-bold text-[var(--ink)] mb-2 uppercase tracking-wide">1. Choose a category</h2>
+          <h2 className="text-sm font-bold text-[var(--ink)] mb-2 uppercase tracking-widest">1. Choose a category</h2>
           <div className="grid grid-cols-2 gap-3">
             {CATEGORIES.map((cat) => {
               const active = category === cat.key;
@@ -137,7 +137,7 @@ export default function ServiceTypes() {
 
         {/* Step 2: Service type within category */}
         <div>
-          <h2 className="text-sm font-bold text-[var(--ink)] mb-2 uppercase tracking-wide">
+          <h2 className="text-sm font-bold text-[var(--ink)] mb-2 uppercase tracking-widest">
             2. Select service types
           </h2>
           <div className="space-y-2">
@@ -168,7 +168,7 @@ export default function ServiceTypes() {
                   <div className={`w-5 h-5 rounded border-2 flex items-center justify-center ${
                     active ? 'bg-[var(--primary)] border-[var(--primary)]' : 'border-[var(--border)]'
                   }`}>
-                    {active && <div className="w-2 h-2 bg-white rounded-sm" />}
+                    {active && <div className="w-2 h-2 bg-surface rounded-sm" />}
                   </div>
                 </Card>
               );
@@ -179,7 +179,7 @@ export default function ServiceTypes() {
         <Button
           onClick={handleSave}
           disabled={isSaving}
-          className="w-full bg-[var(--primary)] hover:bg-[var(--primary)] uppercase"
+          className="w-full bg-[var(--primary)] hover:bg-[var(--primary)]"
         >
           {isSaving ? 'Saving...' : 'Save Service Types'}
         </Button>

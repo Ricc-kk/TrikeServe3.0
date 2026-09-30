@@ -145,7 +145,7 @@ export default function AccountManagement() {
   return (
     <div className="min-h-screen bg-[var(--muted)] pb-20">
       {/* Header */}
-      <div className="bg-white px-4 py-4 border-b border-[var(--border)]">
+      <div className="bg-surface px-4 py-4 border-b border-[var(--border)]">
         <div className="flex items-center justify-between">
           <h1 className="text-xl font-extrabold text-[var(--ink)]">Manage Accounts</h1>
           <Button
@@ -163,7 +163,7 @@ export default function AccountManagement() {
       {/* Active Profile Card */}
       {activeProfile && (
         <div className="p-4">
-          <Card className="p-4 border-2 border-[var(--primary)] bg-white">
+          <Card className="p-4 border-2 border-[var(--primary)] bg-surface">
             <div className="flex items-center justify-between mb-2">
               <Badge className="bg-[var(--primary)] text-white">ACTIVE PROFILE</Badge>
               {activeProfile.isPrimary && (
@@ -171,7 +171,7 @@ export default function AccountManagement() {
               )}
             </div>
             <div className="flex items-center gap-3 mt-3">
-              <div className="w-16 h-16 rounded-full bg-gradient-to-br from-[var(--primary)] to-[var(--primary)] flex items-center justify-center text-3xl">
+              <div className="w-16 h-16 rounded-full bg-[var(--primary)] flex items-center justify-center text-3xl">
                 {activeProfile.emoji}
               </div>
               <div className="flex-1">
@@ -195,7 +195,7 @@ export default function AccountManagement() {
 
       {/* All Profiles List */}
       <div className="px-4 pb-4">
-        <h2 className="text-sm font-bold text-[var(--muted-foreground)] uppercase mb-3 tracking-wide">All Profiles</h2>
+        <h2 className="text-sm font-bold text-[var(--muted-foreground)] mb-3 tracking-wide">All Profiles</h2>
         <div className="space-y-2">
           {profiles.map((profile) => (
             <Card
@@ -210,7 +210,7 @@ export default function AccountManagement() {
               <div className="flex items-center gap-3">
                 <div className={`w-12 h-12 rounded-full flex items-center justify-center text-2xl ${
                   activeProfileId === profile.id
-                    ? 'bg-gradient-to-br from-[var(--primary)] to-[var(--primary)]'
+                    ? 'bg-[var(--primary)]'
                     : 'bg-[var(--border)]'
                 }`}>
                   {profile.emoji}
@@ -251,7 +251,7 @@ export default function AccountManagement() {
       {/* Add Profile Modal */}
       {showAddProfile && (
         <div className="fixed inset-0 bg-black/50 z-[2000] flex items-end">
-          <div className="bg-white w-full rounded-t-3xl p-6 animate-slide-up max-h-[90vh] overflow-y-auto">
+          <div className="bg-surface w-full rounded-t-3xl p-6 animate-slide-up max-h-[90vh] overflow-y-auto">
             <div className="flex items-center justify-between mb-6">
               <h2 className="text-xl font-bold text-[var(--ink)]">Add New Profile</h2>
               <Button
@@ -274,7 +274,7 @@ export default function AccountManagement() {
                       onClick={() => setNewProfile({ ...newProfile, emoji })}
                       className={`w-12 h-12 rounded-full flex items-center justify-center text-2xl transition-all ${
                         newProfile.emoji === emoji
-                          ? 'bg-gradient-to-br from-[var(--primary)] to-[var(--primary)] scale-110'
+                          ? 'bg-[var(--primary)] scale-110'
                           : 'bg-[var(--border)] hover:scale-105'
                       }`}
                     >
@@ -357,7 +357,7 @@ export default function AccountManagement() {
       {/* Delete Confirmation Modal */}
       {showDeleteConfirm && (
         <div className="fixed inset-0 bg-black/50 z-[2000] flex items-center justify-center p-4">
-          <Card className="bg-white p-6 max-w-sm w-full">
+          <Card className="bg-surface p-6 max-w-sm w-full">
             <h3 className="text-lg font-bold text-[var(--ink)] mb-2">Delete Profile?</h3>
             <p className="text-sm text-[var(--muted-foreground)] mb-6">
               This action cannot be undone. All data associated with this profile will be removed.
@@ -383,7 +383,7 @@ export default function AccountManagement() {
 
       {/* Bottom Navigation */}
       <div
-        className="fixed bottom-0 left-0 right-0 bg-white border-t border-[var(--border)] z-[1000]"
+        className="fixed bottom-0 left-0 right-0 bg-surface border-t border-[var(--border)] z-[1000]"
         style={{ paddingBottom: "max(0.5rem, env(safe-area-inset-bottom))" }}
       >
         <div className="mx-auto grid w-full max-w-6xl grid-cols-4 gap-1 px-2 pt-2 sm:px-4">

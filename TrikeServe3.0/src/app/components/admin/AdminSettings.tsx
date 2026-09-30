@@ -146,7 +146,7 @@ export default function AdminSettings() {
       {/* Main Content */}
       <div className="flex-1 lg:ml-64">
         {/* Top Header */}
-        <div className="bg-white border-b-2 border-[var(--border)] px-5 lg:px-8 py-4 lg:py-5 sticky top-0 z-50">
+        <div className="bg-surface border-b-2 border-[var(--border)] px-5 lg:px-8 py-4 lg:py-5 sticky top-0 z-50">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-3">
               {/* Hamburger Menu - Mobile Only */}
@@ -190,7 +190,7 @@ export default function AdminSettings() {
                 </div>
               </div>
 
-              <Card className="p-5 lg:p-6 border-2 border-[var(--border)] bg-white max-w-md">
+              <Card className="p-5 lg:p-6 border border-line bg-surface max-w-md">
                 <div className="flex items-start justify-between mb-4">
                   <div>
                     <Store className="w-8 h-8 lg:w-10 lg:h-10 text-[var(--success)] mb-2" />
@@ -204,14 +204,14 @@ export default function AdminSettings() {
                     type="number"
                     value={rateConfig.deliveryBaseFee}
                     onChange={(e) => setRateConfig({ ...rateConfig, deliveryBaseFee: Number(e.target.value) })}
-                    className="text-2xl lg:text-3xl font-bold text-center border-2 border-[var(--border)]"
+                    className="text-2xl lg:text-3xl font-bold text-center border border-line"
                   />
                 </div>
               </Card>
 
               <button
                 onClick={handleSaveRates}
-                className="mt-4 px-6 py-3 bg-[var(--primary)] hover:bg-[var(--primary)] text-white font-bold rounded-xl uppercase transition-all flex items-center gap-2"
+                className="mt-4 px-6 py-3 bg-[var(--primary)] hover:bg-[var(--primary)] text-white font-bold rounded-xl transition-all flex items-center gap-2"
               >
                 <Save className="w-5 h-5" />
                 Save Delivery Fee
@@ -234,7 +234,7 @@ export default function AdminSettings() {
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4 lg:gap-6">
               {/* Base Fare */}
-              <Card className="p-5 lg:p-6 border-2 border-[var(--border)] bg-white">
+              <Card className="p-5 lg:p-6 border border-line bg-surface">
                 <div className="flex items-start justify-between mb-4">
                   <div>
                     <DollarSign className="w-8 h-8 lg:w-10 lg:h-10 text-[var(--violet)] mb-2" />
@@ -248,13 +248,13 @@ export default function AdminSettings() {
                     type="number"
                     value={rateConfig.baseFare}
                     onChange={(e) => setRateConfig({ ...rateConfig, baseFare: Number(e.target.value) })}
-                    className="text-2xl lg:text-3xl font-bold text-center border-2 border-[var(--border)]"
+                    className="text-2xl lg:text-3xl font-bold text-center border border-line"
                   />
                 </div>
               </Card>
 
               {/* Rate per Kilometer */}
-              <Card className="p-5 lg:p-6 border-2 border-[var(--border)] bg-white">
+              <Card className="p-5 lg:p-6 border border-line bg-surface">
                 <div className="flex items-start justify-between mb-4">
                   <div>
                     <Bike className="w-8 h-8 lg:w-10 lg:h-10 text-[var(--violet)] mb-2" />
@@ -268,14 +268,14 @@ export default function AdminSettings() {
                     type="number"
                     value={rateConfig.perKm}
                     onChange={(e) => setRateConfig({ ...rateConfig, perKm: Number(e.target.value) })}
-                    className="text-2xl lg:text-3xl font-bold text-center border-2 border-[var(--border)]"
+                    className="text-2xl lg:text-3xl font-bold text-center border border-line"
                   />
                   <span className="text-sm text-[var(--muted-foreground)] font-semibold">/km</span>
                 </div>
               </Card>
 
               {/* Delivery Base Fee */}
-              <Card className="p-5 lg:p-6 border-2 border-[var(--border)] bg-white">
+              <Card className="p-5 lg:p-6 border border-line bg-surface">
                 <div className="flex items-start justify-between mb-4">
                   <div>
                     <Store className="w-8 h-8 lg:w-10 lg:h-10 text-[var(--info)] mb-2" />
@@ -289,7 +289,7 @@ export default function AdminSettings() {
                     type="number"
                     value={rateConfig.deliveryBaseFee}
                     onChange={(e) => setRateConfig({ ...rateConfig, deliveryBaseFee: Number(e.target.value) })}
-                    className="text-2xl lg:text-3xl font-bold text-center border-2 border-[var(--border)]"
+                    className="text-2xl lg:text-3xl font-bold text-center border border-line"
                   />
                 </div>
               </Card>
@@ -299,7 +299,7 @@ export default function AdminSettings() {
 
             <button
               onClick={handleSaveRates}
-              className="mt-4 px-6 py-3 bg-[var(--primary)] hover:bg-[var(--primary)] text-white font-bold rounded-xl uppercase transition-all flex items-center gap-2"
+              className="mt-4 px-6 py-3 bg-[var(--primary)] hover:bg-[var(--primary)] text-white font-bold rounded-xl transition-all flex items-center gap-2"
             >
               <Save className="w-5 h-5" />
               Save Rate Configuration
@@ -319,7 +319,7 @@ export default function AdminSettings() {
               </div>
             </div>
 
-            <Card className="p-6 border-2 border-[var(--border)] bg-white">
+            <Card className="p-6 border border-line bg-surface">
               <div className="space-y-4">
                 {/* Admin Info */}
                 <div className="pb-4 border-b-2 border-[var(--border)]">
@@ -353,7 +353,7 @@ export default function AdminSettings() {
                   </p>
                   <button
                     onClick={() => setShowLogoutConfirm(true)}
-                    className="px-6 py-3 bg-[var(--error)] hover:bg-[var(--error)] text-white font-bold rounded-xl uppercase transition-all flex items-center gap-2"
+                    className="px-6 py-3 bg-[var(--error)] hover:bg-[var(--error)] text-white font-bold rounded-xl transition-all flex items-center gap-2"
                   >
                     <LogOut className="w-5 h-5" />
                     Sign Out of Admin Panel
@@ -373,7 +373,7 @@ export default function AdminSettings() {
             onClick={() => setShowLogoutConfirm(false)}
           />
           <div className="fixed inset-0 z-[2001] flex items-center justify-center p-4">
-            <Card className="w-full max-w-md p-6 border-2 border-[var(--border)] bg-white">
+            <Card className="w-full max-w-md p-6 border border-line bg-surface">
               <div className="text-center mb-6">
                 <div className="w-16 h-16 bg-[var(--error-soft)] rounded-full flex items-center justify-center mx-auto mb-4">
                   <LogOut className="w-8 h-8 text-[var(--error)]" />
@@ -386,13 +386,13 @@ export default function AdminSettings() {
               <div className="flex gap-3">
                 <button
                   onClick={() => setShowLogoutConfirm(false)}
-                  className="flex-1 px-4 py-3 bg-[var(--muted)] hover:bg-[var(--border)] text-[var(--ink)] font-bold rounded-xl uppercase transition-all"
+                  className="flex-1 px-4 py-3 bg-[var(--muted)] hover:bg-[var(--border)] text-[var(--ink)] font-bold rounded-xl transition-all"
                 >
                   Cancel
                 </button>
                 <button
                   onClick={handleLogout}
-                  className="flex-1 px-4 py-3 bg-[var(--error)] hover:bg-[var(--error)] text-white font-bold rounded-xl uppercase transition-all flex items-center justify-center gap-2"
+                  className="flex-1 px-4 py-3 bg-[var(--error)] hover:bg-[var(--error)] text-white font-bold rounded-xl transition-all flex items-center justify-center gap-2"
                 >
                   <LogOut className="w-5 h-5" />
                   Sign Out

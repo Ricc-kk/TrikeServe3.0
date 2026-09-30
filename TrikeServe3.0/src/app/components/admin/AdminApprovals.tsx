@@ -178,7 +178,7 @@ export default function AdminApprovals() {
 
       <div className="flex-1 lg:ml-64">
         {/* Top Header */}
-        <div className="bg-white border-b-2 border-[var(--border)] px-5 lg:px-8 py-4 lg:py-5 sticky top-0 z-50">
+        <div className="bg-surface border-b-2 border-[var(--border)] px-5 lg:px-8 py-4 lg:py-5 sticky top-0 z-50">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-3">
               <button
@@ -196,7 +196,7 @@ export default function AdminApprovals() {
             </div>
             <button
               onClick={loadRequests}
-              className="flex items-center gap-2 px-3 py-2 bg-[var(--muted)] border-2 border-[var(--border)] rounded-xl text-sm font-semibold text-[var(--muted-foreground)] hover:border-[var(--primary)] transition-all"
+              className="flex items-center gap-2 px-3 py-2 bg-[var(--muted)] border border-line rounded-xl text-sm font-semibold text-[var(--muted-foreground)] hover:border-[var(--primary)] transition-all"
             >
               <RefreshCw className="w-4 h-4" /> Refresh
             </button>
@@ -206,17 +206,17 @@ export default function AdminApprovals() {
         <div className="p-5 lg:p-8">
           {/* Stats */}
           <div className="grid grid-cols-3 gap-3 lg:gap-6 mb-6">
-            <Card className="p-4 lg:p-6 border-2 border-[var(--border)] bg-white">
+            <Card className="p-4 lg:p-6 border border-line bg-surface">
               <p className="text-xs lg:text-sm text-[var(--muted-foreground)] mb-1">Pending</p>
               <h2 className="text-2xl lg:text-4xl font-bold text-[var(--amber)]">{pending.length}</h2>
             </Card>
-            <Card className="p-4 lg:p-6 border-2 border-[var(--border)] bg-white">
+            <Card className="p-4 lg:p-6 border border-line bg-surface">
               <p className="text-xs lg:text-sm text-[var(--muted-foreground)] mb-1">Approved</p>
               <h2 className="text-2xl lg:text-4xl font-bold text-[var(--success)]">
                 {history.filter(r => r.status === "approved").length}
               </h2>
             </Card>
-            <Card className="p-4 lg:p-6 border-2 border-[var(--border)] bg-white">
+            <Card className="p-4 lg:p-6 border border-line bg-surface">
               <p className="text-xs lg:text-sm text-[var(--muted-foreground)] mb-1">Rejected</p>
               <h2 className="text-2xl lg:text-4xl font-bold text-[var(--error)]">
                 {history.filter(r => r.status === "rejected").length}
@@ -248,7 +248,7 @@ export default function AdminApprovals() {
           ) : (
             <div className="space-y-3 mb-8">
               {pending.map(request => (
-                <Card key={request.id} className="p-4 lg:p-5 border-2 border-[var(--border)] bg-white">
+                <Card key={request.id} className="p-4 lg:p-5 border border-line bg-surface">
                   <div className="flex items-start justify-between gap-4">
                     <div className="flex items-start gap-3">
                       <div className="w-11 h-11 bg-[var(--muted)] rounded-xl flex items-center justify-center flex-shrink-0">
@@ -278,14 +278,14 @@ export default function AdminApprovals() {
                       <button
                         onClick={() => handleApprove(request)}
                         disabled={busyId === request.id}
-                        className="flex items-center gap-1.5 px-3 py-2 bg-[var(--success)] hover:bg-[var(--success)] disabled:opacity-50 text-white font-bold text-xs uppercase rounded-xl transition-all"
+                        className="flex items-center gap-1.5 px-3 py-2 bg-[var(--success)] hover:bg-[var(--success)] disabled:opacity-50 text-white font-bold text-xs rounded-xl transition-all"
                       >
                         <CheckCircle className="w-4 h-4" /> Approve
                       </button>
                       <button
                         onClick={() => { setRejectTarget(request); setRejectReason(""); }}
                         disabled={busyId === request.id}
-                        className="flex items-center gap-1.5 px-3 py-2 bg-[var(--error)] hover:bg-[var(--error)] disabled:opacity-50 text-white font-bold text-xs uppercase rounded-xl transition-all"
+                        className="flex items-center gap-1.5 px-3 py-2 bg-[var(--error)] hover:bg-[var(--error)] disabled:opacity-50 text-white font-bold text-xs rounded-xl transition-all"
                       >
                         <XCircle className="w-4 h-4" /> Reject
                       </button>
@@ -304,16 +304,16 @@ export default function AdminApprovals() {
               <p className="text-[var(--muted-foreground)] text-sm">No reviewed requests yet</p>
             </Card>
           ) : (
-            <Card className="border-2 border-[var(--border)] bg-white overflow-hidden">
+            <Card className="border border-line bg-surface overflow-hidden">
               <div className="overflow-x-auto">
                 <table className="w-full">
                   <thead className="bg-[var(--muted)] border-b-2 border-[var(--border)]">
                     <tr>
-                      <th className="px-4 py-3 text-left text-xs font-bold text-[var(--muted-foreground)] uppercase tracking-wider">Request</th>
-                      <th className="px-4 py-3 text-left text-xs font-bold text-[var(--muted-foreground)] uppercase tracking-wider">Details</th>
-                      <th className="px-4 py-3 text-left text-xs font-bold text-[var(--muted-foreground)] uppercase tracking-wider">Requested By</th>
-                      <th className="px-4 py-3 text-left text-xs font-bold text-[var(--muted-foreground)] uppercase tracking-wider">Status</th>
-                      <th className="px-4 py-3 text-left text-xs font-bold text-[var(--muted-foreground)] uppercase tracking-wider">Reviewed</th>
+                      <th className="px-4 py-3 text-left text-xs font-bold text-[var(--muted-foreground)] tracking-wider">Request</th>
+                      <th className="px-4 py-3 text-left text-xs font-bold text-[var(--muted-foreground)] tracking-wider">Details</th>
+                      <th className="px-4 py-3 text-left text-xs font-bold text-[var(--muted-foreground)] tracking-wider">Requested By</th>
+                      <th className="px-4 py-3 text-left text-xs font-bold text-[var(--muted-foreground)] tracking-wider">Status</th>
+                      <th className="px-4 py-3 text-left text-xs font-bold text-[var(--muted-foreground)] tracking-wider">Reviewed</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-[var(--border)]">
@@ -360,7 +360,7 @@ export default function AdminApprovals() {
       {/* Reject reason modal */}
       {rejectTarget && (
         <div className="fixed inset-0 bg-black/50 z-[2000] flex items-center justify-center p-4">
-          <Card className="w-full max-w-md p-6 border-2 border-[var(--border)] bg-white">
+          <Card className="w-full max-w-md p-6 border border-line bg-surface">
             <div className="text-center mb-4">
               <div className="w-16 h-16 bg-[var(--error-soft)] rounded-full flex items-center justify-center mx-auto mb-4">
                 <XCircle className="w-8 h-8 text-[var(--error)]" />
@@ -370,7 +370,7 @@ export default function AdminApprovals() {
                 {APPROVAL_REQUEST_LABELS[rejectTarget.request_type]} — nothing will be applied.
               </p>
             </div>
-            <label className="text-xs font-semibold uppercase tracking-wide text-[var(--muted-foreground)] block mb-1">
+            <label className="text-xs font-semibold uppercase tracking-widest text-[var(--muted-foreground)] block mb-1">
               Reason (optional)
             </label>
             <textarea
@@ -378,19 +378,19 @@ export default function AdminApprovals() {
               onChange={(e) => setRejectReason(e.target.value)}
               rows={3}
               placeholder="Why is this being rejected?"
-              className="w-full px-4 py-3 border-2 border-[var(--border)] focus:border-[var(--primary)] rounded-xl text-sm outline-none mb-4"
+              className="w-full px-4 py-3 border border-line focus:border-[var(--primary)] rounded-xl text-sm outline-none mb-4"
             />
             <div className="flex gap-3">
               <button
                 onClick={() => { setRejectTarget(null); setRejectReason(""); }}
-                className="flex-1 px-4 py-3 bg-[var(--muted)] hover:bg-[var(--border)] text-[var(--ink)] font-bold rounded-xl uppercase transition-all"
+                className="flex-1 px-4 py-3 bg-[var(--muted)] hover:bg-[var(--border)] text-[var(--ink)] font-bold rounded-xl transition-all"
               >
                 Cancel
               </button>
               <button
                 onClick={submitRejection}
                 disabled={busyId === rejectTarget.id}
-                className="flex-1 px-4 py-3 bg-[var(--error)] hover:bg-[var(--error)] disabled:opacity-50 text-white font-bold rounded-xl uppercase transition-all"
+                className="flex-1 px-4 py-3 bg-[var(--error)] hover:bg-[var(--error)] disabled:opacity-50 text-white font-bold rounded-xl transition-all"
               >
                 Reject
               </button>

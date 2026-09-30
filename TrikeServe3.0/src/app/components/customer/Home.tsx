@@ -6,6 +6,8 @@ import { Card } from "../ui/card";
 import { Badge } from "../ui/badge";
 import { Input } from "../ui/input";
 import BottomNav from "../ui/BottomNav";
+import ChoiceCard from "../ui/ChoiceCard";
+import SectionHeading from "../ui/SectionHeading";
 import LocationBanner, { type LocationProblem } from "../ui/LocationBanner";
 import { GoogleMap, MarkerF, InfoWindow, Polyline } from "@react-google-maps/api";
 import useMapLoader from "@/lib/mapLoader";
@@ -1842,7 +1844,7 @@ export default function CustomerHome() {
   );
 
   return (
-    <div className="min-h-screen bg-white flex flex-col relative">
+    <div className="min-h-screen bg-surface flex flex-col relative">
       {/* Full Screen Map */}
       <div className="absolute inset-0">
         {!GOOGLE_MAPS_API_KEY ? (
@@ -1954,7 +1956,7 @@ export default function CustomerHome() {
             {/* Notifications bell - upper right of the home page */}
             <button
               onClick={() => navigate('/customer/notifications')}
-              className="relative w-12 h-12 bg-white rounded-xl shadow-lg flex items-center justify-center active:scale-90 transition-transform"
+              className="relative w-12 h-12 bg-surface rounded-xl shadow-lg flex items-center justify-center active:scale-90 transition-transform"
               aria-label="Notifications"
             >
               <Bell className="w-6 h-6 text-[var(--primary)]" />
@@ -1970,57 +1972,48 @@ export default function CustomerHome() {
         {/* Bottom Sheet - Main Booking Interface */}
         {!activeRide && (
           <div className="absolute bottom-20 left-0 right-0 z-[999] px-4">
-            <Card className="bg-white shadow-2xl rounded-t-3xl">
+            <Card className="bg-surface shadow-2xl rounded-t-3xl">
               <div className="px-5 pb-6 pt-6">
-                {/* Vehicle Type Selection */}
-                <div className="grid grid-cols-2 gap-4 mb-6">
-                  {/* Share Ride */}
-                  <button
-                    onClick={() => setSelectedVehicle('share')}
-                    className={`p-3 rounded-2xl border-2 transition-all ${
-                      selectedVehicle === 'share'
-                        ? 'border-[var(--primary)] bg-[var(--primary-soft)]'
-                        : 'border-[var(--border)] bg-white'
-                    }`}
-                  >
-                    <div className="flex flex-col items-center gap-2">
-                      <div className="w-20 h-20 rounded-2xl bg-white border-2 border-[var(--border)] flex items-center justify-center">
-                        <Users className="w-10 h-10 text-[var(--ink)]" />
-                      </div>
-                      <span className="font-bold text-sm text-[var(--ink)]">Sabay / Shared Ride</span>
-                      <span className="text-xs text-[var(--muted-foreground)]">May kasabay kang pasahero</span>
-                    </div>
-                  </button>
-
-                  {/* Private Ride */}
-                  <button
-                    onClick={() => { setSelectedVehicle('special'); setPassengerCount(1); }}
-                    className={`p-3 rounded-2xl border-2 transition-all ${
-                      selectedVehicle === 'special'
-                        ? 'border-[var(--primary)] bg-[var(--primary-soft)]'
-                        : 'border-[var(--border)] bg-white'
-                    }`}
-                  >
-                    <div className="flex flex-col items-center gap-2">
-                      <div className="w-20 h-20 rounded-2xl bg-white border-2 border-[var(--border)] flex items-center justify-center">
-                        <UserIcon className="w-10 h-10 text-[var(--ink)]" />
-                      </div>
-                      <span className="font-bold text-sm text-[var(--ink)]">Pribado / Private Ride</span>
-                      <span className="text-xs text-[var(--muted-foreground)]">Para sa iyo lang ang biyahe</span>
-                    </div>
-                  </button>
+                {/* Ride type — Sabay / Pribado */}
+                <SectionHeading
+                  eyebrow="Easy booking"
+                  title="Pumili ng sakay"
+                  filipino="Piliin kung sasabay ka o mag-iisa."
+                  as="h3"
+                  className="mb-3"
+                />
+                <div className="mb-3 grid gap-3 sm:grid-cols-2">
+                  <ChoiceCard
+                    selected={selectedVehicle === 'share'}
+                    onSelect={() => setSelectedVehicle('share')}
+                    label="Shared ride"
+                    filipino="Sabay"
+                    description="May kasabay kang pasahero. Mas mura ang bayad."
+                    icon={Users}
+                  />
+                  <ChoiceCard
+                    selected={selectedVehicle === 'special'}
+                    onSelect={() => {
+                      setSelectedVehicle('special');
+                      setPassengerCount(1);
+                    }}
+                    label="Private ride"
+                    filipino="Pribado"
+                    description="Para sa iyo lang ang biyahe."
+                    icon={UserIcon}
+                  />
                 </div>
 
                 {/* Location Inputs */}
                 <div className="space-y-3 mb-4">
                   {/* Pick up Location Label */}
-                  <label className="text-xs font-semibold text-[var(--muted-foreground)] uppercase tracking-wide block mb-2">
+                  <label className="text-xs font-semibold text-[var(--muted-foreground)] uppercase tracking-widest block mb-2">
                     Pick up location
                   </label>
                   
                   {/* Terminal Pickup Selection */}
                   <Card
-                    className="p-3 border-2 border-[var(--border)] shadow-sm cursor-pointer hover:border-[var(--primary)] transition-colors"
+                    className="p-3 border border-line shadow-sm cursor-pointer hover:border-[var(--primary)] transition-colors"
                     onClick={() => {
                       setShowTerminalPicker(true);
                     }}
@@ -2044,13 +2037,13 @@ export default function CustomerHome() {
                   </Card>
 
                   {/* Drop off Location Label */}
-                  <label className="text-xs font-semibold text-[var(--muted-foreground)] uppercase tracking-wide block mb-2 mt-4">
+                  <label className="text-xs font-semibold text-[var(--muted-foreground)] uppercase tracking-widest block mb-2 mt-4">
                     Drop off location
                   </label>
 
                   {/* Destination */}
                   <Card 
-                    className="p-3 border-2 border-[var(--border)] shadow-sm cursor-pointer hover:border-[var(--primary)] transition-colors"
+                    className="p-3 border border-line shadow-sm cursor-pointer hover:border-[var(--primary)] transition-colors"
                     onClick={() => {
                       setActiveLocationInput('dropoff');
                       setLocationPreview(
@@ -2081,16 +2074,28 @@ export default function CustomerHome() {
                   </Card>
                 </div>
 
-                {/* Book Ride Button */}
-                {selectedVehicle && (
-                  <Button
-                    onClick={handleBookRide}
-                    className="w-full bg-[var(--primary)] hover:bg-[var(--coral-dark)] text-white py-6 text-lg font-bold uppercase rounded-xl"
-                  >
-                    <span className="block">Book this ride · ₱{getPrice()}</span>
-                    <span className="block text-xs font-semibold normal-case tracking-normal opacity-90">I-book ang sakay</span>
-                  </Button>
-                )}
+                {/* Book Ride Button — stays visible but disabled until the ride is complete */}
+                <Button
+                  onClick={handleBookRide}
+                  disabled={!selectedVehicle || !dropoff}
+                  className="min-h-14 w-full rounded-2xl bg-[var(--primary)] py-4 text-lg font-bold text-white hover:bg-[var(--coral-dark)] disabled:bg-[var(--border)] disabled:text-[var(--muted-foreground)]"
+                >
+                  <span className="block">
+                    {selectedVehicle
+                      ? `Book this ride · ₱${getPrice()}`
+                      : 'Choose a ride first'}
+                  </span>
+                  <span className="block text-xs font-semibold tracking-normal opacity-90">
+                    I-book ang sakay
+                  </span>
+                </Button>
+                {!selectedVehicle || !dropoff ? (
+                  <p className="mt-2 text-center text-sm text-[var(--muted-foreground)]">
+                    {!selectedVehicle
+                      ? 'Pumili muna ng klase ng sakay para makapag-book.'
+                      : 'Itakda muna ang pupuntahan para makapag-book.'}
+                  </p>
+                ) : null}
               </div>
             </Card>
           </div>
@@ -2100,7 +2105,7 @@ export default function CustomerHome() {
         {/* Active Ride Card - Driver Info with embedded map */}
         {rideStatus === 'driver-found' && activeRide && (
           <div className="absolute bottom-16 left-0 right-0 z-[1100] p-3">
-            <Card className="bg-white shadow-2xl border-2 border-[var(--primary)] rounded-2xl overflow-hidden">
+            <Card className="bg-surface shadow-2xl border-2 border-[var(--primary)] rounded-2xl overflow-hidden">
               {/* Live Tracking Map - embedded inside the card */}
               {isMapsLoaded && (driverLocation || pickupCoords) && (
                 <div className="relative">
@@ -2182,20 +2187,20 @@ export default function CustomerHome() {
                 <div className="bg-[var(--muted)] rounded-xl p-3 mb-3 space-y-1.5">
                   <div className="flex items-start gap-2">
                     <div className="w-5 h-5 bg-[var(--ink)] rounded-full flex items-center justify-center flex-shrink-0 mt-0.5">
-                      <div className="w-2 h-2 bg-white rounded-full" />
+                      <div className="w-2 h-2 bg-surface rounded-full" />
                     </div>
                     <div className="flex-1 min-w-0">
-                      <p className="text-[10px] text-[var(--muted-foreground)] uppercase font-semibold">Pickup</p>
+                      <p className="text-[10px] text-[var(--muted-foreground)] font-semibold">Pickup</p>
                       <p className="font-semibold text-xs text-[var(--ink)] truncate">{pickup}</p>
                     </div>
 
                   </div>
                   <div className="flex items-start gap-2">
                     <div className="w-5 h-5 bg-[var(--primary)] rounded-full flex items-center justify-center flex-shrink-0 mt-0.5">
-                      <div className="w-2 h-2 bg-white rounded-full" />
+                      <div className="w-2 h-2 bg-surface rounded-full" />
                     </div>
                     <div className="flex-1 min-w-0">
-                      <p className="text-[10px] text-[var(--muted-foreground)] uppercase font-semibold">Drop-off</p>
+                      <p className="text-[10px] text-[var(--muted-foreground)] font-semibold">Drop-off</p>
                       <p className="font-semibold text-xs text-[var(--ink)] truncate">{dropoff}</p>
                     </div>
                     {etaToDestination && (
@@ -2209,7 +2214,7 @@ export default function CustomerHome() {
                 {/* Payment + Actions row */}
                 <div className="flex items-center gap-3">
                   <div className="flex-1">
-                    <p className="text-[10px] text-[var(--muted-foreground)] uppercase font-semibold">Fare</p>
+                    <p className="text-[10px] text-[var(--muted-foreground)] font-semibold">Fare</p>
                     <p className="text-xl font-bold text-[var(--primary)]">₱{getPrice()}</p>                     <p className="text-[10px] text-[var(--muted-foreground)]">💵 Cash</p>
                   </div>
                   <Button
@@ -2226,7 +2231,7 @@ export default function CustomerHome() {
                     <Button
                       variant="outline"
                       onClick={() => setShowCancelConfirm(true)}
-                      className="flex items-center gap-1.5 h-10 px-3 border-[#E11D48] text-[#E11D48] hover:bg-[#FFF1F2]"
+                      className="flex items-center gap-1.5 h-10 px-3 border-[var(--error)] text-[var(--error)] hover:bg-[var(--error-soft)]"
                     >
                       <X className="w-4 h-4" />
                       Cancel
@@ -2241,7 +2246,7 @@ export default function CustomerHome() {
         {/* Validation Error Popup */}
         {showValidationError && (
           <div className="fixed inset-0 bg-black/50 z-[2100] flex items-center justify-center p-4">
-            <Card className="bg-white p-8 max-w-sm w-full text-center animate-infinite-bounce">
+            <Card className="bg-surface p-8 max-w-sm w-full text-center animate-infinite-bounce">
               <div className="w-20 h-20 bg-[var(--error-soft)] rounded-full flex items-center justify-center mx-auto mb-4">
                 <span className="text-4xl">⚠️</span>
               </div>
@@ -2263,7 +2268,7 @@ export default function CustomerHome() {
         {/* Same Location Error Popup */}
         {showSameLocationError && (
           <div className="fixed inset-0 bg-black/50 z-[2100] flex items-center justify-center p-4">
-            <Card className="bg-white p-8 max-w-sm w-full text-center animate-infinite-bounce">
+            <Card className="bg-surface p-8 max-w-sm w-full text-center animate-infinite-bounce">
               <div className="w-20 h-20 bg-[var(--error-soft)] rounded-full flex items-center justify-center mx-auto mb-4">
                 <span className="text-4xl">⚠️</span>
               </div>
@@ -2285,7 +2290,7 @@ export default function CustomerHome() {
         {/* Out of Boundary Area Popup */}
         {showOutOfBoundaryError && (
           <div className="fixed inset-0 bg-black/50 z-[2200] flex items-center justify-center p-4">
-            <Card className="bg-white p-8 max-w-sm w-full text-center animate-infinite-bounce">
+            <Card className="bg-surface p-8 max-w-sm w-full text-center animate-infinite-bounce">
               <div className="w-20 h-20 bg-[var(--error-soft)] rounded-full flex items-center justify-center mx-auto mb-4">
                 <span className="text-4xl">🚧</span>
               </div>
@@ -2309,7 +2314,7 @@ export default function CustomerHome() {
         {/* Ride Completed Popup */}
         {rideCompletedPopup && (
           <div className="fixed inset-0 bg-black/50 z-[2100] flex items-end">
-            <div className="bg-white w-full rounded-t-3xl p-6 animate-in slide-in-from-bottom duration-300">
+            <div className="bg-surface w-full rounded-t-3xl p-6 animate-in slide-in-from-bottom duration-300">
               <div className="max-w-sm mx-auto text-center">
                 <div className="w-16 h-16 bg-[var(--info-soft)] rounded-full flex items-center justify-center mx-auto mb-4">
                   <span className="text-3xl">🎉</span>
@@ -2332,7 +2337,7 @@ export default function CustomerHome() {
                       setShowRatingModal(true);
                       setCurrentRequestId(null);
                     }}
-                    className="w-full bg-white border-2 border-[var(--info-soft)] text-[var(--info)] py-3 font-bold"
+                    className="w-full bg-surface border-2 border-[var(--info-soft)] text-[var(--info)] py-3 font-bold"
                   >
                     {completionPopupType === 'delivery' ? 'Rate Restaurant' : 'Leave a Rating'}
                   </Button>
@@ -2366,7 +2371,7 @@ export default function CustomerHome() {
         {/* Leave a Rating Modal (private rides) */}
         {showRatingModal && (
           <div className="fixed inset-0 bg-black/70 z-[2400] flex items-center justify-center p-4">
-            <Card className="bg-white p-6 max-w-sm w-full text-center">
+            <Card className="bg-surface p-6 max-w-sm w-full text-center">
               {ratingSubmitted ? (
                 <>
                   <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-[var(--success-soft)] flex items-center justify-center text-3xl">
@@ -2434,8 +2439,8 @@ export default function CustomerHome() {
 
       {/* Terminal Picker Modal */}
       {showTerminalPicker && (
-        <div className="fixed inset-0 z-[2000] bg-white flex flex-col">
-          <div className="bg-white border-b-2 border-[var(--border)] px-4 py-4 sticky top-0 z-10">
+        <div className="fixed inset-0 z-[2000] bg-surface flex flex-col">
+          <div className="bg-surface border-b-2 border-[var(--border)] px-4 py-4 sticky top-0 z-10">
             <div className="flex items-center justify-between">
               <div>
                 <h2 className="text-lg font-bold text-[var(--ink)]">Select Pickup Terminal</h2>
@@ -2472,7 +2477,7 @@ export default function CustomerHome() {
                   className={`p-4 rounded-xl border-2 cursor-pointer transition-all active:scale-[0.98] ${
                     selectedTerminalId === terminal.id
                       ? 'border-[var(--primary)] bg-[var(--primary-soft)]'
-                      : 'border-[var(--border)] bg-white hover:border-[var(--primary)]'
+                      : 'border-[var(--border)] bg-surface hover:border-[var(--primary)]'
                   }`}
                 >
                   <div className="flex items-start gap-3">
@@ -2521,12 +2526,12 @@ export default function CustomerHome() {
 
       {/* Location Picker Modal */}
       {showLocationPicker && (
-        <div className="fixed inset-0 z-[2000] bg-white flex flex-col">
+        <div className="fixed inset-0 z-[2000] bg-surface flex flex-col">
           <div className="absolute top-4 left-4 right-4 z-[2010]">
             <Card className="bg-white/95 backdrop-blur shadow-xl border-0 p-4">
               <div className="flex items-center justify-between gap-3">
                 <div className="flex-1">
-                  <p className="text-xs uppercase tracking-wide text-[var(--muted-foreground)] font-semibold">
+                  <p className="text-xs uppercase tracking-widest text-[var(--muted-foreground)] font-semibold">
                     {activeLocationInput === 'pickup' ? 'Pickup — search or tap map' : 'Drop-off — search or tap map'}
                   </p>
                   <h2 className="text-lg font-bold text-[var(--ink)]">Find a nearby place or tap the map</h2>
@@ -2539,7 +2544,7 @@ export default function CustomerHome() {
                <div className="mt-3">
                  <Input value={searchQuery} onChange={(e) => { fetchPredictions((e.target as HTMLInputElement).value); }} placeholder="Search restaurants, parks, hotels, terminals..." />
                  {predictions.length > 0 && (
-                   <div className="mt-2 bg-white border border-[var(--border)] rounded-lg max-h-48 overflow-y-auto">
+                   <div className="mt-2 bg-surface border border-[var(--border)] rounded-lg max-h-48 overflow-y-auto">
                      {predictions.map((p, i) => (
                        <button key={i} onClick={() => selectPrediction(p.place_id)} className="w-full text-left p-3 hover:bg-[var(--muted)] border-b last:border-b-0">
                          <div className="text-sm font-semibold text-[var(--ink)]">{p.displayName}</div>
@@ -2587,7 +2592,7 @@ export default function CustomerHome() {
             {locationPreview && (
               <div className="absolute bottom-4 left-4 right-4">
                 <Card className="p-4 shadow-xl">
-                  <p className="text-xs text-[var(--muted-foreground)] mb-1 uppercase tracking-wide">Selected location</p>
+                  <p className="text-xs text-[var(--muted-foreground)] mb-1 uppercase tracking-widest">Selected location</p>
                   <p className="text-sm font-semibold text-[var(--ink)] truncate">{locationPreview.fullAddress}</p>
                   <Button onClick={applyLocationPreview} className="w-full mt-3 bg-[var(--primary)] hover:bg-[var(--primary)] text-white">
                     Confirm {activeLocationInput === 'pickup' ? 'Pickup' : 'Drop-off'}
@@ -2603,7 +2608,7 @@ export default function CustomerHome() {
       {/* Passenger Count Modal (for Share Rides) */}
       {showPassengerCount && (
         <div className="fixed inset-0 bg-black/50 z-[2000] flex items-end">
-          <div className="bg-white w-full rounded-t-3xl p-6">
+          <div className="bg-surface w-full rounded-t-3xl p-6">
             <h2 className="text-2xl font-bold text-[var(--ink)] mb-2">How many passengers?</h2>
             <p className="text-sm text-[var(--muted-foreground)] mb-6">Select the number of seats you need for this trip.</p>
 
@@ -2617,7 +2622,7 @@ export default function CustomerHome() {
                       className={`p-6 border-2 rounded-2xl transition-all ${
                         passengerCount === count
                           ? 'border-[var(--primary)] bg-[var(--primary-soft)]'
-                          : 'border-[var(--border)] bg-white'
+                          : 'border-[var(--border)] bg-surface'
                       }`}
                     >
                       <div className="flex flex-col items-center gap-2">
@@ -2640,7 +2645,7 @@ export default function CustomerHome() {
                       className={`p-6 border-2 rounded-2xl transition-all ${
                         passengerCount === count
                           ? 'border-[var(--primary)] bg-[var(--primary-soft)]'
-                          : 'border-[var(--border)] bg-white'
+                          : 'border-[var(--border)] bg-surface'
                       }`}
                     >
                       <div className="flex flex-col items-center gap-2">
@@ -2663,7 +2668,7 @@ export default function CustomerHome() {
             <div className="bg-[var(--amber-soft)] border-2 border-[var(--amber-soft)] rounded-xl p-4 mb-6">
               <div className="flex items-center justify-between">
                 <div>
-                  <p className="text-xs text-[var(--amber-dark)] uppercase tracking-wide font-semibold">Your Total Fare</p>
+                  <p className="text-xs text-[var(--amber-dark)] uppercase tracking-widest font-semibold">Your Total Fare</p>
                   {selectedVehicle === 'share' ? (
                     <>
                       <p className="text-sm text-[var(--amber-dark)] mt-0.5">
@@ -2698,7 +2703,7 @@ export default function CustomerHome() {
                   setShowPassengerCount(false);
                   setShowBookingConfirm(true);
                 }}
-                className="w-full bg-[var(--primary)] hover:bg-[var(--primary)] text-white py-6 text-lg font-bold uppercase"
+                className="w-full bg-[var(--primary)] hover:bg-[var(--primary)] text-white py-6 text-lg font-bold"
               >
                 Continue with {passengerCount} {passengerCount === 1 ? 'Seat' : 'Seats'}
               </Button>
@@ -2733,7 +2738,7 @@ export default function CustomerHome() {
       {/* Booking Confirmation Modal */}
       {showBookingConfirm && (
         <div className="fixed inset-0 bg-black/50 z-[2000] flex items-end">
-          <div className="bg-white w-full rounded-t-3xl p-6">
+          <div className="bg-surface w-full rounded-t-3xl p-6">
             <h2 className="text-2xl font-bold text-[var(--ink)] mb-6">Confirm Booking</h2>
 
             {/* Trip Details */}
@@ -2789,7 +2794,7 @@ export default function CustomerHome() {
             <div className="space-y-3">
               <Button
                 onClick={handleConfirmBooking}
-                className="w-full bg-[var(--primary)] hover:bg-[var(--primary)] text-white py-6 text-lg font-bold uppercase"
+                className="w-full bg-[var(--primary)] hover:bg-[var(--primary)] text-white py-6 text-lg font-bold"
               >
                 Confirm Booking / Kumpirmahin
               </Button>
@@ -2808,7 +2813,7 @@ export default function CustomerHome() {
       {/* Searching for Driver Modal */}
       {rideStatus === 'searching' && !isSearchMinimized && (
         <div className="fixed inset-0 bg-black/50 z-[2000] flex items-center justify-center p-4">
-          <Card className="bg-white p-8 max-w-sm w-full text-center relative">
+          <Card className="bg-surface p-8 max-w-sm w-full text-center relative">
             {/* Minimize Button */}
             <button
               onClick={() => setIsSearchMinimized(true)}
@@ -2910,10 +2915,10 @@ export default function CustomerHome() {
       {/* Driver Status Update Popup */}
       {driverStatusPopup && (
         <div className="fixed inset-0 bg-black/50 z-[3000] flex items-end">
-          <div className="bg-white w-full rounded-t-3xl p-6 animate-in slide-in-from-bottom duration-300">
+          <div className="bg-surface w-full rounded-t-3xl p-6 animate-in slide-in-from-bottom duration-300">
             <div className="max-w-sm mx-auto">
               {/* Status Icon */}
-              <div className="w-16 h-16 bg-gradient-to-br from-[var(--primary)] to-[var(--primary)] rounded-full flex items-center justify-center mx-auto mb-4 text-3xl">
+              <div className="w-16 h-16 bg-[var(--primary)] rounded-full flex items-center justify-center mx-auto mb-4 text-3xl">
                 {driverStatusPopup.status === 'on-the-way' && '🚗'}
                 {driverStatusPopup.status === 'arrived' && '📍'}
                 {driverStatusPopup.status === 'pickup' && '🚀'}

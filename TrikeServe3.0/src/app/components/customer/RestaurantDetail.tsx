@@ -555,9 +555,9 @@ export default function RestaurantDetail() {
       </div>
 
       {/* Restaurant Info Card */}
-      <div className="bg-white mx-5 -mt-6 relative z-10 rounded-3xl shadow-2xl p-5">
+      <div className="bg-surface mx-5 -mt-6 relative z-10 rounded-3xl shadow-2xl p-5">
         <div className="flex items-start gap-4">
-          <div className="w-20 h-20 rounded-2xl bg-gradient-to-br from-[var(--primary)] to-[var(--primary)] flex items-center justify-center shadow-lg flex-shrink-0 overflow-hidden">
+          <div className="w-20 h-20 rounded-2xl bg-[var(--primary)] flex items-center justify-center shadow-lg flex-shrink-0 overflow-hidden">
             <StoreLogo logo={restaurantData?.logo} emojiClass="text-4xl" />
           </div>
           
@@ -595,7 +595,7 @@ export default function RestaurantDetail() {
       </div>
 
       {/* Sticky Category Header with Visible Pills */}
-      <div className={`sticky top-0 z-40 bg-white transition-all mt-4 ${isScrolled ? 'shadow-lg' : ''}`}>
+      <div className={`sticky top-0 z-40 bg-surface transition-all mt-4 ${isScrolled ? 'shadow-lg' : ''}`}>
         <div className="px-5 py-4 space-y-3">
           {/* Category Pills */}
           <div className="flex gap-2 overflow-x-auto pb-2 scrollbar-hide">
@@ -698,7 +698,7 @@ export default function RestaurantDetail() {
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 onClick={() => setShowSearchModal(true)}
-                className="w-full pl-10 pr-4 py-2.5 border-2 border-[var(--border)] rounded-2xl text-sm bg-[var(--muted)]"
+                className="w-full pl-10 pr-4 py-2.5 border border-line rounded-2xl text-sm bg-[var(--muted)]"
               />
             </div>
           </div>
@@ -717,7 +717,7 @@ export default function RestaurantDetail() {
               <ChevronRight className="w-6 h-6 text-[var(--muted-foreground)]" />
             </div>
             
-            <div className="bg-white rounded-2xl p-4 shadow-sm border-2 border-[var(--muted)] active:bg-[var(--muted)] transition-colors">
+            <div className="bg-surface rounded-2xl p-4 shadow-sm border-2 border-[var(--muted)] active:bg-[var(--muted)] transition-colors">
               <p className="text-[var(--ink)] text-sm mb-2 line-clamp-2">{restaurantData.reviews[0].text}</p>
               <div className="flex items-center gap-2">
                 <div className="flex">
@@ -746,7 +746,7 @@ export default function RestaurantDetail() {
         ) : (
           <div className="space-y-4">
             {filteredItems.map((item) => (
-              <Card key={item.id} className="overflow-hidden border-0 shadow-lg rounded-2xl bg-white">
+              <Card key={item.id} className="overflow-hidden border-0 shadow-lg rounded-2xl bg-surface">
                 <div className="flex items-center gap-4 p-4">
                   <div className="relative w-24 h-24 flex-shrink-0 rounded-2xl overflow-hidden">
                     <ImageWithFallback
@@ -801,7 +801,7 @@ export default function RestaurantDetail() {
                     </button>
                     <button
                       onClick={() => handleAddToCart(item)}
-                      className="w-11 h-11 bg-gradient-to-br from-[var(--primary)] to-[var(--primary)] rounded-full flex items-center justify-center shadow-lg shadow-[var(--primary)]/30 active:scale-90 transition-all"
+                      className="w-11 h-11 bg-[var(--primary)] rounded-full flex items-center justify-center shadow-lg shadow-[var(--primary)]/30 active:scale-90 transition-all"
                     >
                       <span className="text-white text-2xl font-bold leading-none">+</span>
                     </button>
@@ -819,7 +819,7 @@ export default function RestaurantDetail() {
       {/* Search Modal */}
       {showSearchModal && (
         <div className="fixed inset-0 bg-black/50 z-[2000] flex items-end">
-          <div className="w-full bg-white rounded-t-3xl max-h-[85vh] overflow-hidden flex flex-col animate-in slide-in-from-bottom duration-300">
+          <div className="w-full bg-surface rounded-t-3xl max-h-[85vh] overflow-hidden flex flex-col animate-in slide-in-from-bottom duration-300">
             <div className="flex items-center gap-3 px-5 py-4 border-b border-[var(--border)]">
               <div className="relative flex-1">
                 <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-[var(--muted-foreground)]" />
@@ -845,7 +845,7 @@ export default function RestaurantDetail() {
             <div className="p-5">
               <button
                 onClick={() => setShowSearchModal(false)}
-                className="w-full py-3.5 rounded-2xl font-bold text-white bg-gradient-to-r from-[var(--primary)] to-[var(--primary)] hover:shadow-xl active:scale-95 transition-all shadow-lg shadow-[var(--primary)]/30 uppercase text-sm tracking-wide"
+                className="w-full py-3.5 rounded-2xl font-bold text-white bg-[var(--primary)] hover:shadow-xl active:scale-95 transition-all shadow-lg shadow-[var(--primary)]/30 text-sm tracking-wide"
               >
                 Search
               </button>
@@ -856,9 +856,9 @@ export default function RestaurantDetail() {
 
       {/* Ratings and Reviews Modal */}
       {showRatingsModal && (
-        <div className="fixed inset-0 bg-white z-[2000] overflow-y-auto">
+        <div className="fixed inset-0 bg-surface z-[2000] overflow-y-auto">
           {/* Header */}
-          <div className="sticky top-0 bg-white border-b border-[var(--border)] px-5 py-4 flex items-center gap-4 z-10">
+          <div className="sticky top-0 bg-surface border-b border-[var(--border)] px-5 py-4 flex items-center gap-4 z-10">
             <button 
               onClick={() => setShowRatingsModal(false)}
               className="w-10 h-10 flex items-center justify-center rounded-full hover:bg-[var(--muted)] active:scale-90 transition-all"
@@ -870,7 +870,7 @@ export default function RestaurantDetail() {
 
           {/* Rating Summary */}
           <div className="px-5 py-6">
-            <div className="bg-white border-2 border-[var(--border)] rounded-3xl p-6">
+            <div className="bg-surface border border-line rounded-3xl p-6">
               <div className="flex items-start gap-6">
                 {/* Overall Rating */}
                 <div className="flex flex-col items-center">
@@ -982,18 +982,18 @@ export default function RestaurantDetail() {
 
             {/* Filter Buttons */}
             <div className="flex gap-2 mb-6 overflow-x-auto pb-2">
-              <button className="px-4 py-2 bg-white border-2 border-[var(--teal)] text-[var(--teal)] rounded-full font-bold text-sm flex items-center gap-2 whitespace-nowrap">
+              <button className="px-4 py-2 bg-surface border-2 border-[var(--teal)] text-[var(--teal)] rounded-full font-bold text-sm flex items-center gap-2 whitespace-nowrap">
                 <span>↑↓</span>
                 Most relevant
               </button>
-              <button className="px-4 py-2 bg-white border-2 border-[var(--border)] text-[var(--ink)] rounded-full font-bold text-sm flex items-center gap-2 whitespace-nowrap">
+              <button className="px-4 py-2 bg-surface border border-line text-[var(--ink)] rounded-full font-bold text-sm flex items-center gap-2 whitespace-nowrap">
                 Topics
                 <ChevronDown className="w-4 h-4" />
               </button>
-              <button className="px-4 py-2 bg-white border-2 border-[var(--border)] text-[var(--ink)] rounded-full font-bold text-sm whitespace-nowrap">
+              <button className="px-4 py-2 bg-surface border border-line text-[var(--ink)] rounded-full font-bold text-sm whitespace-nowrap">
                 Photos
               </button>
-              <button className="px-4 py-2 bg-white border-2 border-[var(--border)] text-[var(--ink)] rounded-full font-bold text-sm whitespace-nowrap">
+              <button className="px-4 py-2 bg-surface border border-line text-[var(--ink)] rounded-full font-bold text-sm whitespace-nowrap">
                 Order type
               </button>
             </div>
@@ -1001,10 +1001,10 @@ export default function RestaurantDetail() {
             {/* Individual Reviews */}
             <div className="space-y-4">
               {restaurantData?.reviews && restaurantData.reviews.length > 0 ? restaurantData.reviews.map((review) => (
-                <div key={review.id} className="bg-white border-2 border-[var(--border)] rounded-2xl p-4">
+                <div key={review.id} className="bg-surface border border-line rounded-2xl p-4">
                   <div className="flex items-start justify-between mb-2">
                     <div className="flex items-center gap-3">
-                      <div className="w-10 h-10 bg-gradient-to-br from-[var(--primary)] to-[var(--primary)] rounded-full flex items-center justify-center text-white font-bold">
+                      <div className="w-10 h-10 bg-[var(--primary)] rounded-full flex items-center justify-center text-white font-bold">
                         {review.author.charAt(0).toUpperCase()}
                       </div>
                       <div>
@@ -1052,7 +1052,7 @@ export default function RestaurantDetail() {
        {/* Store Closed Modal */}
        {showStoreClosedModal && (
          <div className="fixed inset-0 bg-black/50 z-[2000] flex items-center justify-center px-4">
-           <div className="bg-white rounded-3xl p-6 max-w-sm w-full shadow-2xl animate-in zoom-in duration-300">
+           <div className="bg-surface rounded-3xl p-6 max-w-sm w-full shadow-2xl animate-in zoom-in duration-300">
              <div className="flex flex-col items-center text-center">
                <div className="w-16 h-16 bg-[var(--error-soft)] rounded-full flex items-center justify-center mb-4">
                  <span className="text-3xl">🔒</span>
@@ -1066,7 +1066,7 @@ export default function RestaurantDetail() {
 
                <button
                  onClick={() => setShowStoreClosedModal(false)}
-                 className="w-full py-3 rounded-2xl font-bold text-white bg-gradient-to-br from-[var(--primary)] to-[var(--primary)] hover:shadow-xl active:scale-95 transition-all shadow-lg shadow-[var(--primary)]/30"
+                 className="w-full py-3 rounded-2xl font-bold text-white bg-[var(--primary)] hover:shadow-xl active:scale-95 transition-all shadow-lg shadow-[var(--primary)]/30"
                >
                  Got it
                </button>

@@ -261,7 +261,7 @@ export default function Notifications() {
   return (
     <div className="min-h-screen bg-[var(--muted)] pb-20">
       {/* Header */}
-      <div className="bg-gradient-to-r from-[var(--primary)] to-[var(--primary)] px-5 py-4 sticky top-0 z-50 shadow-lg">
+      <div className="bg-[var(--primary)] px-5 py-4 sticky top-0 z-50 shadow-lg">
         <div className="flex items-center justify-between mb-2">
           <button 
             onClick={() => navigate(-1)}
@@ -322,7 +322,7 @@ export default function Notifications() {
                 notification.actionUrl ? 'cursor-pointer active:scale-[0.98]' : ''
               } ${
                 notification.unread 
-                  ? 'bg-white shadow-lg' 
+                  ? 'bg-surface shadow-lg' 
                   : 'bg-white/60'
               }`}
             >

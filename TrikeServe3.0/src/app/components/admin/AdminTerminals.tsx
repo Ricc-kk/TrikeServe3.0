@@ -751,7 +751,7 @@ export default function AdminTerminals() {
       {/* Main Content */}
       <div className={`flex-1 ${!showMapPicker ? 'lg:ml-64' : ''}`}>
         {/* Top Header */}
-        <div className="bg-white border-b-2 border-[var(--border)] px-5 lg:px-8 py-4 lg:py-5 sticky top-0 z-50">
+        <div className="bg-surface border-b-2 border-[var(--border)] px-5 lg:px-8 py-4 lg:py-5 sticky top-0 z-50">
           <div className="flex items-center justify-between gap-4">
             <div className="flex items-center gap-3">
               {/* Hamburger Menu - Mobile Only */}
@@ -774,7 +774,7 @@ export default function AdminTerminals() {
               {isRiderAdmin && hasPendingChanges && (
                 <button
                   onClick={savePendingChanges}
-                  className="flex items-center gap-2 px-4 lg:px-5 py-2.5 bg-[var(--success)] hover:bg-[var(--success)] text-white font-bold text-sm uppercase tracking-wide rounded-xl transition-all active:scale-95 shadow-lg shadow-[var(--success-soft)] animate-pulse"
+                  className="flex items-center gap-2 px-4 lg:px-5 py-2.5 bg-[var(--success)] hover:bg-[var(--success)] text-white font-bold text-sm uppercase tracking-widest rounded-xl transition-all active:scale-95 shadow-lg shadow-[var(--success-soft)] animate-pulse"
                 >
                   <Save size={16} /> Save Changes ({Object.keys(pendingChanges).length})
                 </button>
@@ -782,7 +782,7 @@ export default function AdminTerminals() {
               {isSuperAdmin && (
                 <button
                   onClick={openCreate}
-                  className="flex items-center gap-2 px-4 lg:px-5 py-2.5 bg-[var(--primary)] hover:bg-[var(--primary)] text-white font-bold text-sm uppercase tracking-wide rounded-xl transition-all active:scale-95 shadow-lg shadow-[var(--error-soft)]"
+                  className="flex items-center gap-2 px-4 lg:px-5 py-2.5 bg-[var(--primary)] hover:bg-[var(--primary)] text-white font-bold text-sm uppercase tracking-widest rounded-xl transition-all active:scale-95 shadow-lg shadow-[var(--error-soft)]"
                 >
                   <Plus size={16} /> New Terminal
                 </button>
@@ -826,10 +826,10 @@ export default function AdminTerminals() {
           {/* Super Admin: assign each Rider Admin to a terminal */}
           {isSuperAdmin && (
             <div className="mb-6">
-              <h2 className="text-sm font-bold uppercase tracking-wide text-[var(--muted-foreground)] mb-2 flex items-center gap-2">
+              <h2 className="text-sm font-bold uppercase tracking-widest text-[var(--muted-foreground)] mb-2 flex items-center gap-2">
                 <ShieldCheck size={16} /> Rider Admin Assignments
               </h2>
-              <div className="bg-white border-2 border-[var(--border)] rounded-2xl p-4">
+              <div className="bg-surface border border-line rounded-2xl p-4">
                 {riderAdmins.length === 0 ? (
                   <p className="text-sm text-[var(--muted-foreground)] italic">No Rider Admin accounts found</p>
                 ) : (
@@ -847,7 +847,7 @@ export default function AdminTerminals() {
                             value={admin.terminal_id || ''}
                             disabled={savingAssignmentId === admin.id}
                             onChange={(e) => confirmAssignRiderAdmin(admin, e.target.value)}
-                            className="px-3 py-2 border-2 border-[var(--border)] rounded-xl font-semibold text-sm disabled:opacity-50"
+                            className="px-3 py-2 border border-line rounded-xl font-semibold text-sm disabled:opacity-50"
                           >
                             <option value="">No terminal</option>
                             {terminals.map(t => (
@@ -885,7 +885,7 @@ export default function AdminTerminals() {
           {/* Rider Admin: status of their own submitted requests */}
           {isRiderAdmin && myRequests.length > 0 && (
             <div className="mb-6">
-              <h2 className="text-sm font-bold uppercase tracking-wide text-[var(--muted-foreground)] mb-2 flex items-center gap-2">
+              <h2 className="text-sm font-bold uppercase tracking-widest text-[var(--muted-foreground)] mb-2 flex items-center gap-2">
                 <ClipboardCheck size={16} /> My Submitted Requests
               </h2>
               <div className="space-y-2">
@@ -916,7 +916,7 @@ export default function AdminTerminals() {
                           )}
                         </div>
                       </div>
-                      <span className={`text-xs font-bold uppercase flex-shrink-0 ${
+                      <span className={`text-xs font-bold flex-shrink-0 ${
                         pending ? 'text-[var(--amber-dark)]' : approved ? 'text-[var(--success)]' : 'text-[var(--error)]'
                       }`}>
                         {pending ? 'Awaiting approval' : req.status}
@@ -941,7 +941,7 @@ export default function AdminTerminals() {
               const unassigned = getUnassignedRiders();
               const isExpanded = expandedId === t.id;
               return (
-                <div key={t.id} className="bg-white rounded-2xl border-2 border-[var(--border)] overflow-hidden">
+                <div key={t.id} className="bg-surface rounded-2xl border border-line overflow-hidden">
                   <div className="p-5">
                     <div className="flex items-start justify-between gap-4">
                       <div className="flex items-start gap-3">
@@ -982,7 +982,7 @@ export default function AdminTerminals() {
                         {(isSuperAdmin || (isRiderAdmin && t.id === assignedTerminalId)) && (
                           <button
                             onClick={() => openEdit(t)}
-                            className="w-8 h-8 bg-[var(--muted)] border-2 border-[var(--border)] rounded-xl flex items-center justify-center hover:border-[var(--info)] transition-all active:scale-90"
+                            className="w-8 h-8 bg-[var(--muted)] border border-line rounded-xl flex items-center justify-center hover:border-[var(--info)] transition-all active:scale-90"
                           >
                             <Edit2 size={14} className="text-[var(--muted-foreground)]" />
                           </button>
@@ -1001,7 +1001,7 @@ export default function AdminTerminals() {
 
                   {isExpanded && (
                     <div className="border-t-2 border-[var(--border)] p-5 bg-[var(--muted)]">
-                      <h4 className="text-xs font-semibold uppercase tracking-wide text-[var(--muted-foreground)] mb-3">
+                      <h4 className="text-xs font-semibold uppercase tracking-widest text-[var(--muted-foreground)] mb-3">
                         Assigned Drivers ({termRiders.length})
                       </h4>
                       <div className="space-y-2 mb-4">
@@ -1013,7 +1013,7 @@ export default function AdminTerminals() {
                           const pendingAction = pendingChanges[r.id];
                           return (
                             <div key={r.id} className={`flex items-center justify-between rounded-xl border-2 px-4 py-2.5 ${
-                              isPending ? 'bg-[var(--amber-soft)] border-[var(--amber-soft)]' : 'bg-white border-[var(--border)]'
+                              isPending ? 'bg-[var(--amber-soft)] border-[var(--amber-soft)]' : 'bg-surface border-[var(--border)]'
                             }`}>
                               <div className="flex items-center gap-3">
                                 <div className="w-8 h-8 bg-[var(--info-soft)] rounded-lg flex items-center justify-center text-[var(--info)] font-bold text-xs">
@@ -1051,7 +1051,7 @@ export default function AdminTerminals() {
 
                       {isRiderAdmin && unassigned.length > 0 && (
                         <>
-                          <h4 className="text-xs font-semibold uppercase tracking-wide text-[var(--muted-foreground)] mb-2">Assign Driver</h4>
+                          <h4 className="text-xs font-semibold uppercase tracking-widest text-[var(--muted-foreground)] mb-2">Assign Driver</h4>
                           <div className="flex flex-wrap gap-2">
                             {unassigned.map(r => {
                               const isPending = !!pendingChanges[r.id];
@@ -1078,7 +1078,7 @@ export default function AdminTerminals() {
                                   ) : (
                                     <button
                                       onClick={() => queueAssignRider(r.id, t.id, t.name)}
-                                      className="flex items-center gap-2 px-3 py-2 bg-white border-2 border-[var(--border)] hover:border-[var(--success)] rounded-xl transition-all active:scale-95 text-sm font-medium"
+                                      className="flex items-center gap-2 px-3 py-2 bg-surface border border-line hover:border-[var(--success)] rounded-xl transition-all active:scale-95 text-sm font-medium"
                                     >
                                       <UserPlus size={13} className="text-[var(--success)]" />
                                       {riderName(r)}
@@ -1104,8 +1104,8 @@ export default function AdminTerminals() {
       {/* Form modal */}
       {showForm && (
         <div className="fixed inset-0 bg-black/50 z-[300] flex items-center justify-center p-4">
-          <div className="w-full max-w-md max-h-[90vh] overflow-y-auto bg-white rounded-2xl shadow-2xl">
-            <div className="flex items-center justify-between p-5 border-b-2 border-[var(--border)] sticky top-0 bg-white z-10">
+          <div className="w-full max-w-md max-h-[90vh] overflow-y-auto bg-surface rounded-2xl shadow-2xl">
+            <div className="flex items-center justify-between p-5 border-b-2 border-[var(--border)] sticky top-0 bg-surface z-10">
               <h3 className="font-extrabold text-lg text-[var(--ink)]">
                 {editTerminal ? "Edit Terminal" : "New Terminal"}
               </h3>
@@ -1122,25 +1122,25 @@ export default function AdminTerminals() {
                 ["boundary", "Boundary / Area", "e.g. Main Road, Valenzuela City"],
               ] as const).map(([k, label, placeholder]) => (
                 <div key={k}>
-                  <label className="text-xs font-semibold uppercase tracking-wide text-[var(--muted-foreground)] block mb-1">
+                  <label className="text-xs font-semibold uppercase tracking-widest text-[var(--muted-foreground)] block mb-1">
                     {label}
                   </label>
                   <input
                     value={form[k]}
                     onChange={e => setForm(f => ({ ...f, [k]: e.target.value }))}
                     placeholder={placeholder}
-                    className="w-full h-11 px-4 border-2 border-[var(--border)] focus:border-[var(--primary)] rounded-xl text-sm outline-none"
+                    className="w-full h-11 px-4 border border-line focus:border-[var(--primary)] rounded-xl text-sm outline-none"
                   />
                 </div>
               ))}
 
               {/* Terminal Location on Map */}
               <div>
-                <label className="text-xs font-semibold uppercase tracking-wide text-[var(--muted-foreground)] block mb-1">
+                <label className="text-xs font-semibold uppercase tracking-widest text-[var(--muted-foreground)] block mb-1">
                   Terminal Location
                 </label>
                 <div
-                  className="w-full h-40 bg-[var(--muted)] border-2 border-[var(--border)] rounded-xl overflow-hidden cursor-pointer relative"
+                  className="w-full h-40 bg-[var(--muted)] border border-line rounded-xl overflow-hidden cursor-pointer relative"
                   onClick={openMapPicker}
                 >
                   {isMapsLoaded ? (
@@ -1201,7 +1201,7 @@ export default function AdminTerminals() {
                   {form.boundary_polygon.length > 0 && (
                     <button
                       onClick={confirmClearBoundary}
-                      className="ml-3 flex-shrink-0 text-xs font-bold text-[var(--primary)] uppercase active:scale-95"
+                      className="ml-3 flex-shrink-0 text-xs font-bold text-[var(--primary)] active:scale-95"
                     >
                       Clear
                     </button>
@@ -1219,20 +1219,20 @@ export default function AdminTerminals() {
                   onClick={() => setForm(f => ({ ...f, is_active: !f.is_active }))}
                   className={`relative w-12 h-7 rounded-full transition-colors ${form.is_active ? 'bg-[var(--success)]' : 'bg-[var(--border)]'}`}
                 >
-                  <span className={`absolute top-0.5 left-0.5 w-6 h-6 bg-white rounded-full shadow transition-transform ${form.is_active ? 'translate-x-5' : ''}`} />
+                  <span className={`absolute top-0.5 left-0.5 w-6 h-6 bg-surface rounded-full shadow transition-transform ${form.is_active ? 'translate-x-5' : ''}`} />
                 </button>
               </div>
 
               <div className="flex gap-3 pt-2">
                 <button
                   onClick={() => setShowForm(false)}
-                  className="flex-1 h-11 border-2 border-[var(--border)] text-[var(--muted-foreground)] font-bold uppercase text-sm rounded-xl active:scale-95"
+                  className="flex-1 h-11 border border-line text-[var(--muted-foreground)] font-bold text-sm rounded-xl active:scale-95"
                 >
                   Cancel
                 </button>
                 <button
                   onClick={confirmSaveTerminal}
-                  className="flex-1 h-11 bg-[var(--primary)] text-white font-bold uppercase text-sm rounded-xl active:scale-95 hover:bg-[var(--primary)] transition-all"
+                  className="flex-1 h-11 bg-[var(--primary)] text-white font-bold text-sm rounded-xl active:scale-95 hover:bg-[var(--primary)] transition-all"
                 >
                   Save
                 </button>
@@ -1244,14 +1244,14 @@ export default function AdminTerminals() {
 
       {/* Full-screen Map Picker */}
       {showMapPicker && (
-        <div className="fixed inset-0 z-[500] bg-white flex flex-col">
-          <div className="bg-white border-b border-[var(--border)] px-4 py-3 flex items-center justify-between gap-3">
+        <div className="fixed inset-0 z-[500] bg-surface flex flex-col">
+          <div className="bg-surface border-b border-[var(--border)] px-4 py-3 flex items-center justify-between gap-3">
             <button onClick={() => { setShowMapPicker(false); setShowMapSearchDropdown(false); setMapSearchQuery(""); }} className="active:scale-90 flex-shrink-0">
               <X className="w-6 h-6 text-[var(--ink)]" />
             </button>
             {/* Search Bar */}
             <div className="flex-1 relative">
-              <div className="flex items-center gap-2 px-3 py-2 bg-[var(--muted)] border-2 border-[var(--border)] rounded-xl">
+              <div className="flex items-center gap-2 px-3 py-2 bg-[var(--muted)] border border-line rounded-xl">
                 <Search className="w-4 h-4 text-[var(--muted-foreground)] flex-shrink-0" />
                 <input
                   type="text"
@@ -1277,7 +1277,7 @@ export default function AdminTerminals() {
               </div>
               {/* Search Results Dropdown */}
               {showMapSearchDropdown && (
-                <div className="absolute top-full left-0 right-0 mt-2 bg-white border-2 border-[var(--border)] rounded-xl shadow-xl max-h-60 overflow-y-auto z-[600]">
+                <div className="absolute top-full left-0 right-0 mt-2 bg-surface border border-line rounded-xl shadow-xl max-h-60 overflow-y-auto z-[600]">
                   {mapSearchResults.length > 0 ? (
                     mapSearchResults.map((result: any, index: number) => (
                       <button
@@ -1317,7 +1317,7 @@ export default function AdminTerminals() {
           </div>
 
           {/* Move the pin, or draw the coverage area */}
-          <div className="flex gap-2 px-4 py-2 bg-white border-b border-[var(--border)]">
+          <div className="flex gap-2 px-4 py-2 bg-surface border-b border-[var(--border)]">
             {([
               ['location', 'Terminal Location'],
               ['boundary', 'Boundary Area'],
@@ -1325,7 +1325,7 @@ export default function AdminTerminals() {
               <button
                 key={mode}
                 onClick={() => setMapPickerMode(mode)}
-                className={`flex-1 h-9 rounded-lg text-xs font-bold uppercase tracking-wide transition-colors ${
+                className={`flex-1 h-9 rounded-lg text-xs font-bold uppercase tracking-widest transition-colors ${
                   mapPickerMode === mode ? 'bg-[var(--primary)] text-white' : 'bg-[var(--muted)] text-[var(--muted-foreground)]'
                 }`}
               >
@@ -1395,13 +1395,13 @@ export default function AdminTerminals() {
                       <div className="flex gap-2 mt-3">
                         <button
                           onClick={() => setForm(f => ({ ...f, boundary_polygon: f.boundary_polygon.slice(0, -1) }))}
-                          className="flex-1 h-9 border-2 border-[var(--border)] text-[var(--muted-foreground)] text-xs font-bold uppercase rounded-lg active:scale-95"
+                          className="flex-1 h-9 border border-line text-[var(--muted-foreground)] text-xs font-bold rounded-lg active:scale-95"
                         >
                           Undo Point
                         </button>
                         <button
                           onClick={confirmClearBoundary}
-                          className="flex-1 h-9 border-2 border-[var(--primary)] text-[var(--primary)] text-xs font-bold uppercase rounded-lg active:scale-95"
+                          className="flex-1 h-9 border-2 border-[var(--primary)] text-[var(--primary)] text-xs font-bold rounded-lg active:scale-95"
                         >
                           Clear Area
                         </button>

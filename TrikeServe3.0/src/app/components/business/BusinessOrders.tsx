@@ -677,7 +677,7 @@ export default function BusinessOrders() {
   };
 
   return (
-    <div className="min-h-screen bg-white flex">
+    <div className="min-h-screen bg-surface flex">
       {/* Sidebar Navigation */}
       <BusinessSidebar 
         isMobileMenuOpen={isMobileMenuOpen}
@@ -704,7 +704,7 @@ export default function BusinessOrders() {
         </div>
 
         {/* Tabs */}
-        <div className="px-3 md:px-5 py-3 border-b border-[var(--border)] sticky top-0 bg-white z-50 space-y-2 md:space-y-3 overflow-x-auto">
+        <div className="px-3 md:px-5 py-3 border-b border-[var(--border)] sticky top-0 bg-surface z-50 space-y-2 md:space-y-3 overflow-x-auto">
           <div className="flex gap-2 min-w-max md:min-w-0">
             <button
               onClick={() => setSelectedTab('active')}
@@ -805,7 +805,7 @@ export default function BusinessOrders() {
                 <Card
                   key={order.id}
                   onClick={() => setSelectedOrder(order)}
-                  className="p-3 md:p-4 border-2 border-[var(--border)] active:scale-[0.98] transition-transform cursor-pointer"
+                  className="p-3 md:p-4 border border-line active:scale-[0.98] transition-transform cursor-pointer"
                 >
                   <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 md:gap-3 mb-3">
                     <div className="min-w-0">
@@ -835,7 +835,7 @@ export default function BusinessOrders() {
                   </div>
 
                   <div className="flex flex-wrap items-center gap-2">
-                    <Badge className={order.paymentMethod === 'gcash' ? 'bg-[var(--success)] text-white text-xs' : 'bg-white border border-[var(--border)] text-[var(--muted-foreground)] text-xs'}>
+                    <Badge className={order.paymentMethod === 'gcash' ? 'bg-[var(--success)] text-white text-xs' : 'bg-surface border border-[var(--border)] text-[var(--muted-foreground)] text-xs'}>
                       {order.paymentMethod === 'gcash' ? 'GCash' : 'COD'}
                     </Badge>
                     {order.estimatedTime && (
@@ -859,7 +859,7 @@ export default function BusinessOrders() {
                 <Card
                   key={order.id}
                   onClick={() => setSelectedOrder(order)}
-                  className="p-3 md:p-4 border-2 border-[var(--border)] opacity-75 active:scale-[0.98] transition-transform cursor-pointer"
+                  className="p-3 md:p-4 border border-line opacity-75 active:scale-[0.98] transition-transform cursor-pointer"
                 >
                   <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 md:gap-3 mb-3">
                     <div className="min-w-0">
@@ -890,11 +890,11 @@ export default function BusinessOrders() {
 
                   {/* Cancellation reason, readable straight from the history list */}
                   {order.status === 'cancelled' && order.cancelReason && (
-                    <div className="mt-3 p-2.5 rounded-xl border-2 border-red-200 bg-red-50">
-                      <p className="text-[10px] font-bold uppercase tracking-wide text-red-600 mb-0.5">
+                    <div className="mt-3 p-2.5 rounded-xl border border-[var(--error)] bg-[var(--error-soft)]">
+                      <p className="text-[10px] font-bold uppercase tracking-widest text-[var(--error)] mb-0.5">
                         {order.cancelledBy === 'customer' ? 'Cancelled by customer' : 'Declined'}
                       </p>
-                      <p className="text-xs text-[#7F1D1D]">{order.cancelReason}</p>
+                      <p className="text-xs text-[var(--error)]">{order.cancelReason}</p>
                     </div>
                   )}
                 </Card>
@@ -911,8 +911,8 @@ export default function BusinessOrders() {
         {/* Order Detail Modal */}
         {selectedOrder && (
           <div className="fixed inset-0 bg-black/50 z-[2000] flex items-end">
-            <div className="bg-white w-full h-full md:h-auto md:rounded-t-3xl md:max-h-[85vh] overflow-y-auto">
-              <div className="sticky top-0 bg-white border-b border-[var(--border)] px-4 md:px-5 py-3 md:py-4">
+            <div className="bg-surface w-full h-full md:h-auto md:rounded-t-3xl md:max-h-[85vh] overflow-y-auto">
+              <div className="sticky top-0 bg-surface border-b border-[var(--border)] px-4 md:px-5 py-3 md:py-4">
                 <div className="flex items-center justify-between mb-2">
                   <h2 className="text-lg md:text-xl font-bold text-[var(--ink)]">#{selectedOrder.orderNumber}</h2>
                   <button onClick={() => setSelectedOrder(null)} className="text-lg font-semibold text-[var(--info)]">
@@ -964,11 +964,11 @@ export default function BusinessOrders() {
               <div className="p-3 md:p-5 space-y-3 md:space-y-4">
                 {/* Why the order was cancelled, so the reason is never buried */}
                 {selectedOrder.status === 'cancelled' && selectedOrder.cancelReason && (
-                  <div className="p-3 rounded-xl border-2 border-red-200 bg-red-50">
-                    <p className="text-xs font-bold uppercase tracking-wide text-red-600 mb-1">
+                  <div className="p-3 rounded-xl border border-[var(--error)] bg-[var(--error-soft)]">
+                    <p className="text-xs font-bold uppercase tracking-widest text-[var(--error)] mb-1">
                       {selectedOrder.cancelledBy === 'customer' ? 'Cancelled by customer' : 'Order declined'}
                     </p>
-                    <p className="text-sm text-[#7F1D1D]">{selectedOrder.cancelReason}</p>
+                    <p className="text-sm text-[var(--error)]">{selectedOrder.cancelReason}</p>
                   </div>
                 )}
 
@@ -1034,14 +1034,14 @@ export default function BusinessOrders() {
                   <div className="space-y-2">
                     <Button
                       onClick={() => setConfirmAction('accept')}
-                      className="w-full bg-[var(--success)] hover:bg-[var(--success)] uppercase py-4 md:py-6 font-bold text-sm md:text-base"
+                      className="w-full bg-[var(--success)] hover:bg-[var(--success)] py-4 md:py-6 font-bold text-sm md:text-base"
                     >
                       ✓ Accept Order
                     </Button>
                     <Button
                       onClick={() => setShowDeclinePrompt(true)}
                       variant="outline"
-                      className="w-full border-[var(--primary)] text-[var(--primary)] uppercase py-4 md:py-6 text-sm md:text-base"
+                      className="w-full border-[var(--primary)] text-[var(--primary)] py-4 md:py-6 text-sm md:text-base"
                     >
                       ✗ Decline Order
                     </Button>
@@ -1052,7 +1052,7 @@ export default function BusinessOrders() {
                   <div className="space-y-2">
                     <Button
                       onClick={() => setStatusConfirm('ready')}
-                      className="w-full bg-[var(--amber)] hover:bg-[var(--amber)] uppercase py-4 md:py-6 font-bold text-sm md:text-base"
+                      className="w-full bg-[var(--amber)] hover:bg-[var(--amber)] py-4 md:py-6 font-bold text-sm md:text-base"
                     >
                       → Ready for Pickup
                     </Button>
@@ -1064,7 +1064,7 @@ export default function BusinessOrders() {
                     {selectedOrder.deliveryMode === 'delivery' && (
                       <Button
                         onClick={() => setStatusConfirm('delivery')}
-                        className="w-full bg-[var(--info)] hover:bg-[var(--info)] uppercase py-4 md:py-6 font-bold text-sm md:text-base"
+                        className="w-full bg-[var(--info)] hover:bg-[var(--info)] py-4 md:py-6 font-bold text-sm md:text-base"
                       >
                         → Ready for Delivery
                       </Button>
@@ -1128,7 +1128,7 @@ export default function BusinessOrders() {
                             />
                           )}
                         </GoogleMap>
-                        <div className="px-3 py-2 bg-white border-t border-[var(--border)] flex items-center justify-between">
+                        <div className="px-3 py-2 bg-surface border-t border-[var(--border)] flex items-center justify-between">
                           <span className="text-xs font-semibold text-[var(--ink)]">
                             {(driverStatus === 'on-the-way' || driverStatus === 'arrived' || driverStatus === 'accepted') ? '🟢 Heading to restaurant' : '🔴 Delivering to customer'}
                           </span>
@@ -1157,7 +1157,7 @@ export default function BusinessOrders() {
                       {selectedOrder.driverId && (
                         <Button
                           onClick={() => navigate(`/business/messages/driver/${selectedOrder.driverId}`)}
-                          className="flex-1 bg-[var(--success)] hover:bg-[var(--success)] uppercase py-4 font-bold text-sm md:text-base"
+                          className="flex-1 bg-[var(--success)] hover:bg-[var(--success)] py-4 font-bold text-sm md:text-base"
                         >
                           <MessageCircle className="w-4 h-4 mr-2" />
                           Message Driver
@@ -1166,7 +1166,7 @@ export default function BusinessOrders() {
                       {selectedOrder.customerId && (
                         <Button
                           onClick={() => navigate(`/business/messages/customer/${selectedOrder.customerId}`)}
-                          className="flex-1 bg-[var(--info)] hover:bg-[var(--info)] uppercase py-4 font-bold text-sm md:text-base"
+                          className="flex-1 bg-[var(--info)] hover:bg-[var(--info)] py-4 font-bold text-sm md:text-base"
                         >
                           <MessageCircle className="w-4 h-4 mr-2" />
                           Message Customer
@@ -1179,7 +1179,7 @@ export default function BusinessOrders() {
                         updateOrderStatus(selectedOrder.id, 'delivered');
                         setSelectedOrder(null);
                       }}
-                      className="w-full bg-[var(--muted-foreground)] hover:bg-[var(--muted-foreground)] uppercase py-4 md:py-6 font-bold text-sm md:text-base"
+                      className="w-full bg-[var(--muted-foreground)] hover:bg-[var(--muted-foreground)] py-4 md:py-6 font-bold text-sm md:text-base"
                     >
                       ✓ Delivered - Complete Order
                     </Button>
@@ -1208,7 +1208,7 @@ export default function BusinessOrders() {
       {/* Accept Confirmation Popup */}
       {confirmAction === 'accept' && selectedOrder && (
         <div className="fixed inset-0 bg-black/60 z-[3000] flex items-center justify-center">
-          <div className="bg-white rounded-3xl p-6 mx-6 max-w-sm w-full text-center shadow-2xl animate-in fade-in zoom-in duration-300">
+          <div className="bg-surface rounded-3xl p-6 mx-6 max-w-sm w-full text-center shadow-2xl animate-in fade-in zoom-in duration-300">
             <div className={`w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4 ${
               confirmAction === 'accept' ? 'bg-[var(--success-soft)]' : 'bg-[var(--error-soft)]'
             }`}>
@@ -1224,7 +1224,7 @@ export default function BusinessOrders() {
               <Button
                 onClick={() => setConfirmAction(null)}
                 variant="outline"
-                className="flex-1 border-[var(--border)] text-[var(--muted-foreground)] uppercase font-bold"
+                className="flex-1 border-[var(--border)] text-[var(--muted-foreground)] font-bold"
               >
                 Cancel
               </Button>
@@ -1234,7 +1234,7 @@ export default function BusinessOrders() {
                   setConfirmAction(null);
                   setSelectedOrder(null);
                 }}
-                className={`flex-1 uppercase font-bold ${
+                className={`flex-1 font-bold ${
                   confirmAction === 'accept'
                     ? 'bg-[var(--success)] hover:bg-[var(--success)]'
                     : 'bg-[var(--primary)] hover:bg-[var(--primary)]'
@@ -1273,7 +1273,7 @@ export default function BusinessOrders() {
       {/* Status Change Confirmation Popup */}
       {statusConfirm && selectedOrder && (
         <div className="fixed inset-0 bg-black/60 z-[3000] flex items-center justify-center">
-          <div className="bg-white rounded-3xl p-6 mx-6 max-w-sm w-full text-center shadow-2xl animate-in fade-in zoom-in duration-300">
+          <div className="bg-surface rounded-3xl p-6 mx-6 max-w-sm w-full text-center shadow-2xl animate-in fade-in zoom-in duration-300">
             <h2 className="text-xl font-extrabold text-[var(--ink)] mb-1">
               {statusConfirm === 'ready' ? 'Ready for Pickup?' : 'Ready for Delivery?'}
             </h2>
@@ -1284,7 +1284,7 @@ export default function BusinessOrders() {
               <Button
                 onClick={() => setStatusConfirm(null)}
                 variant="outline"
-                className="flex-1 border-[var(--border)] text-[var(--muted-foreground)] uppercase font-bold"
+                className="flex-1 border-[var(--border)] text-[var(--muted-foreground)] font-bold"
               >
                 Cancel
               </Button>
@@ -1298,7 +1298,7 @@ export default function BusinessOrders() {
                   setStatusConfirm(null);
                   setSelectedOrder(null);
                 }}
-                className={`flex-1 uppercase font-bold ${
+                className={`flex-1 font-bold ${
                   statusConfirm === 'ready'
                     ? 'bg-[var(--amber)] hover:bg-[var(--amber)]'
                     : 'bg-[var(--info)] hover:bg-[var(--info)]'

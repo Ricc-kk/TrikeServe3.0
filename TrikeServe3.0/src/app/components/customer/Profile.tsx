@@ -88,9 +88,9 @@ export default function Profile() {
   };
 
   return (
-    <div className="min-h-screen bg-white">
+    <div className="min-h-screen bg-surface">
       {/* Header */}
-      <div className="sticky top-0 bg-white z-10 px-5 py-4">
+      <div className="sticky top-0 bg-surface z-10 px-5 py-4">
         <button 
           onClick={() => navigate(-1)}
           className="w-10 h-10 flex items-center justify-center -ml-2"
@@ -179,7 +179,7 @@ export default function Profile() {
          <div className="px-5 py-6">
            <Button
              onClick={() => setShowSwitchConfirm(true)}
-             className="w-full bg-[var(--ink)] hover:bg-[var(--ink)] text-white font-bold uppercase py-4 rounded-lg flex items-center justify-center gap-2"
+             className="w-full bg-[var(--ink)] hover:bg-[var(--ink)] text-white font-bold py-4 rounded-lg flex items-center justify-center gap-2"
            >
              <ArrowLeft className="w-5 h-5" />
              Switch back to Driver App
@@ -190,7 +190,7 @@ export default function Profile() {
          <div className="px-5 py-6">
            <Button
              onClick={() => setShowSwitchConfirm(true)}
-             className="w-full bg-[var(--ink)] hover:bg-[var(--ink)] text-white font-bold uppercase py-4 rounded-lg flex items-center justify-center gap-2"
+             className="w-full bg-[var(--ink)] hover:bg-[var(--ink)] text-white font-bold py-4 rounded-lg flex items-center justify-center gap-2"
            >
              <ArrowLeft className="w-5 h-5" />
              Switch back to Business App
@@ -234,7 +234,7 @@ export default function Profile() {
       {/* Switch Confirmation Modal */}
       {showSwitchConfirm && (
         <div className="fixed inset-0 bg-black/50 z-[2000] flex items-center justify-center p-4">
-          <div className="bg-white p-6 max-w-sm w-full rounded-2xl shadow-xl">
+          <div className="bg-surface p-6 max-w-sm w-full rounded-2xl shadow-xl">
             <div className="w-16 h-16 bg-[var(--info-soft)] rounded-full flex items-center justify-center mx-auto mb-4">
               <ArrowLeft className="w-8 h-8 text-[var(--info)]" />
             </div>
@@ -270,7 +270,7 @@ export default function Profile() {
       {/* Confirm Save Modal */}
       {showConfirmSave && (
         <div className="fixed inset-0 bg-black/50 z-[2000] flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl shadow-xl p-6 max-w-sm w-full">
+          <div className="bg-surface rounded-2xl shadow-xl p-6 max-w-sm w-full">
             <div className="text-center mb-4">
               <div className="w-14 h-14 bg-[var(--success-soft)] rounded-full flex items-center justify-center mx-auto mb-3">
                 <Check className="w-7 h-7 text-[var(--teal)]" />

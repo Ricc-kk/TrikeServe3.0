@@ -101,7 +101,7 @@ function AccessChips({ isFirst }: { isFirst: boolean }) {
     <div
       key={label}
       className={`flex items-center gap-1.5 rounded-lg px-2 py-1.5 border transition-colors ${
-        active ? "bg-white border-[var(--success)]/50" : "bg-white/60 border-[var(--border)]"
+        active ? "bg-surface border-[var(--success)]/50" : "bg-white/60 border-[var(--border)]"
       }`}
     >
       <Icon className={`w-3.5 h-3.5 ${active ? "text-[var(--success)]" : "text-[var(--muted-foreground)]"}`} />
@@ -229,7 +229,7 @@ export default function TerminalQueueCard({ queue, variant = "full", canJoin = t
     <Button
       onClick={() => runAction(join)}
       disabled={isMutating || !canJoin}
-      className={`font-bold uppercase tracking-wide ${
+      className={`font-bold uppercase tracking-widest ${
         isCompact ? "text-[11px] px-3 h-9" : "w-full"
       } ${
         canJoin
@@ -247,7 +247,7 @@ export default function TerminalQueueCard({ queue, variant = "full", canJoin = t
       onClick={() => runAction(leave)}
       disabled={isMutating}
       variant="outline"
-      className={`border-[var(--border)] text-[var(--muted-foreground)] hover:border-[var(--primary)] hover:text-[var(--primary)] font-bold uppercase tracking-wide ${
+      className={`border-[var(--border)] text-[var(--muted-foreground)] hover:border-[var(--primary)] hover:text-[var(--primary)] font-bold uppercase tracking-widest ${
         isCompact ? "text-[11px] px-3 h-9" : "w-full"
       }`}
     >
@@ -360,7 +360,7 @@ export default function TerminalQueueCard({ queue, variant = "full", canJoin = t
       </div>
 
       {isLoadingState ? (
-        <div className="rounded-2xl border-2 border-[var(--border)] bg-[var(--muted)] py-8 text-center">
+        <div className="rounded-2xl border border-line bg-[var(--muted)] py-8 text-center">
           <p className="text-xs font-semibold text-[var(--muted-foreground)]">Loading queue…</p>
         </div>
       ) : myEntry ? (
@@ -445,7 +445,7 @@ export default function TerminalQueueCard({ queue, variant = "full", canJoin = t
         /* Not in the queue */
         <div className="rounded-2xl border-2 border-dashed border-[var(--border)] bg-[var(--muted)] p-4">
           <div className="text-center mb-3">
-            <div className="w-12 h-12 rounded-full bg-white border-2 border-[var(--border)] flex items-center justify-center mx-auto mb-2">
+            <div className="w-12 h-12 rounded-full bg-surface border border-line flex items-center justify-center mx-auto mb-2">
               <Ticket className="w-5 h-5 text-[var(--muted-foreground)]" />
             </div>
             <p className="text-sm font-extrabold text-[var(--ink)]">You're not in the queue</p>

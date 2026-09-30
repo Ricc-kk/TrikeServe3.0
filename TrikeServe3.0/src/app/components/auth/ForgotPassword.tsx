@@ -87,7 +87,7 @@ export default function ForgotPassword() {
           </p>
           <div className="space-y-4">
             <div className="flex items-start gap-3">
-              <div className="w-8 h-8 rounded-full bg-white flex items-center justify-center flex-shrink-0 mt-1">
+              <div className="w-8 h-8 rounded-full bg-surface flex items-center justify-center flex-shrink-0 mt-1">
                 <span className="text-sm font-bold text-[var(--primary)]">1</span>
               </div>
               <div>
@@ -118,7 +118,7 @@ export default function ForgotPassword() {
       </div>
 
       {/* Right Side — form */}
-      <div className="flex-1 lg:max-w-xl flex items-center justify-center p-6 bg-white">
+      <div className="flex-1 lg:max-w-xl flex items-center justify-center p-6 bg-surface">
         <div className="w-full max-w-md">
           {/* Header */}
           <div className="mb-6">
@@ -158,7 +158,7 @@ export default function ForgotPassword() {
                       setEmail(e.target.value);
                       setError("");
                     }}
-                    className="border-2 border-[var(--border)] focus:border-[var(--primary)] h-12 pl-11"
+                    className="border border-line focus:border-[var(--primary)] h-12 pl-11"
                     required
                   />
                 </div>
@@ -182,7 +182,7 @@ export default function ForgotPassword() {
               <Button
                 type="submit"
                 disabled={isLoading}
-                className="w-full bg-[var(--primary)] hover:bg-[var(--primary)] uppercase text-base py-6"
+                className="w-full bg-[var(--primary)] hover:bg-[var(--primary)] text-base py-6"
               >
                 {isLoading ? (
                   <Loader2 className="w-5 h-5 animate-spin" />
@@ -210,7 +210,7 @@ export default function ForgotPassword() {
               <Button
                 onClick={handleSendReset}
                 disabled={isLoading}
-                className="w-full bg-[var(--primary)] hover:bg-[var(--primary)] uppercase text-base py-6"
+                className="w-full bg-[var(--primary)] hover:bg-[var(--primary)] text-base py-6"
               >
                 {isLoading ? (
                   <Loader2 className="w-5 h-5 animate-spin" />
@@ -222,7 +222,7 @@ export default function ForgotPassword() {
               <Button
                 onClick={() => { setStep("email"); setError(""); }}
                 variant="outline"
-                className="w-full border-2 border-[var(--border)] hover:border-[var(--primary)]"
+                className="w-full border border-line hover:border-[var(--primary)]"
               >
                 Go Back & Edit Email
               </Button>
@@ -264,13 +264,13 @@ export default function ForgotPassword() {
                   setError("");
                 }}
                 variant="outline"
-                className="w-full border-2 border-[var(--border)] hover:border-[var(--primary)]"
+                className="w-full border border-line hover:border-[var(--primary)]"
               >
                 Try a Different Email
               </Button>
 
               <Link to="/">
-                <Button className="w-full bg-[var(--primary)] hover:bg-[var(--primary)] uppercase">
+                <Button className="w-full bg-[var(--primary)] hover:bg-[var(--primary)]">
                   BACK TO LOGIN
                 </Button>
               </Link>

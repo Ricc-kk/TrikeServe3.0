@@ -146,7 +146,7 @@ export default function PassengerMessaging({
 
   return (
     <div className="fixed inset-0 bg-black/50 z-50 flex items-end md:items-center md:justify-center">
-      <div className="bg-white w-full md:w-[500px] md:rounded-2xl rounded-t-3xl max-h-[90vh] flex flex-col">
+      <div className="bg-surface w-full md:w-[500px] md:rounded-2xl rounded-t-3xl max-h-[90vh] flex flex-col">
         {/* Header */}
         <div className="bg-[var(--primary)] text-white px-4 py-4 flex items-center justify-between rounded-t-3xl md:rounded-t-2xl">
           <div className="flex items-center gap-3">
@@ -184,7 +184,7 @@ export default function PassengerMessaging({
                   className={`max-w-[75%] rounded-2xl px-4 py-2 ${
                     msg.senderType === 'driver' 
                       ? 'bg-[var(--primary)] text-white' 
-                      : 'bg-white border border-[var(--border)]'
+                      : 'bg-surface border border-[var(--border)]'
                   }`}
                 >
                   <p className="text-sm break-words">{msg.message}</p>
@@ -201,7 +201,7 @@ export default function PassengerMessaging({
         </div>
 
         {/* Input */}
-        <div className="p-4 bg-white border-t border-[var(--border)]">
+        <div className="p-4 bg-surface border-t border-[var(--border)]">
           <div className="flex gap-2">
             <input
               type="text"

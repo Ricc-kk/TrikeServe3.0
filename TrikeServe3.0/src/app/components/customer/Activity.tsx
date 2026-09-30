@@ -210,7 +210,7 @@ export default function Activity() {
   };
 
   return (
-    <div className="min-h-screen bg-white pb-24">
+    <div className="min-h-screen bg-surface pb-24">
       {/* Header */}
       <div className="px-4 sm:px-5 pt-4 sm:pt-5 pb-3">
         <h1 className="text-2xl sm:text-3xl font-extrabold text-[var(--ink)]">Activity</h1>
@@ -224,7 +224,7 @@ export default function Activity() {
             className={`flex-1 flex items-center justify-center gap-1.5 sm:gap-2 py-3.5 sm:py-4 rounded-xl sm:rounded-2xl text-xs sm:text-sm font-bold transition-all duration-200 active:scale-[0.97] ${
               activeTab === 'rides'
                 ? 'bg-[var(--primary)] text-white shadow-lg shadow-[var(--primary)]/25'
-                : 'bg-[var(--muted)] text-[var(--muted-foreground)] border-2 border-[var(--border)]'
+                : 'bg-[var(--muted)] text-[var(--muted-foreground)] border border-line'
             }`}
           >
             <Navigation className={`w-5 h-5 ${activeTab === 'rides' ? 'text-white' : 'text-[var(--info)]'}`} />
@@ -242,7 +242,7 @@ export default function Activity() {
             className={`flex-1 flex items-center justify-center gap-1.5 sm:gap-2 py-3.5 sm:py-4 rounded-xl sm:rounded-2xl text-xs sm:text-sm font-bold transition-all duration-200 active:scale-[0.97] ${
               activeTab === 'deliveries'
                 ? 'bg-[var(--primary)] text-white shadow-lg shadow-[var(--primary)]/25'
-                : 'bg-[var(--muted)] text-[var(--muted-foreground)] border-2 border-[var(--border)]'
+                : 'bg-[var(--muted)] text-[var(--muted-foreground)] border border-line'
             }`}
           >
             <Package className={`w-5 h-5 ${activeTab === 'deliveries' ? 'text-white' : 'text-[var(--success)]'}`} />
@@ -270,7 +270,7 @@ export default function Activity() {
             {displayRides.length > 0 ? (
               <div className="space-y-3">
                 {displayRides.map((ride) => (
-                  <Card key={ride.id} className="p-3.5 sm:p-4 border-2 border-[var(--border)] shadow-sm">
+                  <Card key={ride.id} className="p-3.5 sm:p-4 border border-line shadow-sm">
                     <div className="flex items-start gap-3">
                       {/* Ride Icon */}
                       <div className={`w-12 h-12 rounded-lg flex items-center justify-center flex-shrink-0 ${ride.rideType === 'share' ? 'bg-[var(--info-soft)]' : 'bg-[var(--primary-soft)]'}`}>
@@ -343,7 +343,7 @@ export default function Activity() {
                 <h3 className="text-lg font-bold text-[var(--ink)] mb-2">No Rides Yet</h3>
                 <p className="text-[var(--muted-foreground)] mb-6">Book a ride to see your ride history here.</p>
                 <Link to="/customer">
-                  <Button className="bg-[var(--primary)] hover:bg-[var(--primary)] text-white font-bold py-3 px-6 rounded-2xl uppercase">
+                  <Button className="bg-[var(--primary)] hover:bg-[var(--primary)] text-white font-bold py-3 px-6 rounded-2xl">
                     Book a Ride
                   </Button>
                 </Link>
@@ -355,7 +355,7 @@ export default function Activity() {
             {displayOrders.length > 0 ? (
               <div className="space-y-3">
                 {displayOrders.map((order) => (
-                  <Card key={order.id} className="p-3.5 sm:p-4 border-2 border-[var(--border)] shadow-sm cursor-pointer active:scale-[0.98] transition-transform">
+                  <Card key={order.id} className="p-3.5 sm:p-4 border border-line shadow-sm cursor-pointer active:scale-[0.98] transition-transform">
                     <div onClick={() => navigate(`/customer/order-detail/${order.id}`)} className="flex items-start gap-3">
                       {/* Restaurant Image */}
                       <div className="w-12 h-12 rounded-lg overflow-hidden flex-shrink-0">
@@ -401,7 +401,7 @@ export default function Activity() {
                 <h3 className="text-lg font-bold text-[var(--ink)] mb-2">No Orders Yet</h3>
                 <p className="text-[var(--muted-foreground)] mb-6">Order food to see your delivery history here.</p>
                 <Link to="/customer/food">
-                  <Button className="bg-[var(--primary)] hover:bg-[var(--primary)] text-white font-bold py-3 px-6 rounded-2xl uppercase">
+                  <Button className="bg-[var(--primary)] hover:bg-[var(--primary)] text-white font-bold py-3 px-6 rounded-2xl">
                     Browse Food
                   </Button>
                 </Link>

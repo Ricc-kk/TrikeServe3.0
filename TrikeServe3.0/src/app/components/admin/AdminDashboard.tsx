@@ -9,7 +9,9 @@ import { Card } from "../ui/card";
 import { Badge } from "../ui/badge";
 import { Input } from "../ui/input";
 import { useAuth } from "../../contexts/AuthContext";
-import AdminSidebar from "./AdminSidebar";
+import AppHeader from "../ui/AppHeader";
+import AppShell from "../ui/AppShell";
+import BottomNav from "../ui/BottomNav";
 import { supabase } from "../../../utils/supabase";
 import { adminDeleteUser, adminVerifyUser } from "../../../lib/supabase";
 import { normalizeRates } from "@/lib/pricing";
@@ -350,66 +352,33 @@ export default function AdminDashboard() {
   const isRiderAdmin = user?.adminType === 'rider';
 
   return (
-    <div className="min-h-screen bg-[var(--muted)] flex">
-      {/* Sidebar Navigation */}
-      <AdminSidebar
-        isMobileMenuOpen={isMobileMenuOpen}
-        setIsMobileMenuOpen={setIsMobileMenuOpen}
-      />
-
-      {/* Main Content */}
-      <div className="flex-1 lg:ml-64">
-        {/* Top Header */}
-        <div className="bg-white border-b-2 border-[var(--border)] px-5 lg:px-8 py-4 lg:py-5 sticky top-0 z-50">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              {/* Hamburger Menu - Mobile Only */}
-              <button
-                onClick={() => setIsMobileMenuOpen(true)}
-                className="lg:hidden p-2 hover:bg-[var(--muted)] rounded-xl transition-all"
-              >
-                <Menu className="w-6 h-6 text-[var(--ink)]" />
-              </button>
-              <div>
-                <h1 className="text-2xl lg:text-3xl font-extrabold text-[var(--ink)]">
-                  Welcome, {user?.name || 'Admin'}! / Maligayang pagdating
-                </h1>
-                <p className="text-xs lg:text-sm text-[var(--muted-foreground)]">
-                  {user?.adminType === 'business_customer' ? 'Super Admin - Full Platform Control' :
-                   user?.adminType === 'rider' ? 'Rider Admin - Terminal Management' :
-                   'TrikeServe Control Panel - System Overview'}
-                </p>
-              </div>
-            </div>
-            <div className="flex items-center gap-2 lg:gap-4">
-              <button
-                onClick={() => setShowNotifications(true)}
-                className="relative p-2 hover:bg-[var(--muted)] rounded-xl transition-all"
-              >
-                <Bell className="w-5 h-5 lg:w-6 lg:h-6 text-[var(--muted-foreground)]" />
-                {notifications.filter((n: any) => !n.read).length > 0 && (
-                  <div className="absolute top-1 right-1 w-2 h-2 bg-[var(--primary)] rounded-full" />
-                )}
-              </button>
-              <div className="hidden lg:flex items-center gap-3 px-3 py-2 rounded-xl">
-                <div className="w-10 h-10 bg-gradient-to-br from-[var(--primary)] to-[var(--ink)] rounded-full flex items-center justify-center">
-                  <UserIcon className="w-5 h-5 text-white" />
-                </div>
-                <div>
-                  <p className="font-bold text-[var(--ink)] text-sm">{user?.name || 'Admin'}</p>
-                  <p className="text-xs text-[var(--muted-foreground)]">Administrator</p>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        {/* Content */}
-        <div className="p-5 lg:p-8">
+    <AppShell
+      header={
+        <AppHeader
+          notificationCount={notifications.filter((n: any) => !n.read).length}
+          onNotificationsClick={() => setShowNotifications(true)}
+          hint={
+            user?.adminType === 'business_customer'
+              ? 'Super Admin — buong kontrol ng plataporma.'
+              : user?.adminType === 'rider'
+                ? 'Rider Admin — pamamahala ng terminal.'
+                : 'TrikeServe control panel.'
+          }
+        />
+      }
+      bottomNav={
+        <BottomNav
+          variant="admin"
+          adminVariant={isSuperAdmin ? 'super' : 'rider'}
+          active="overview"
+        />
+      }
+    >
+      <div className="space-y-6">
           {/* Stats Cards */}
           <div className="grid grid-cols-2 lg:grid-cols-5 gap-3 lg:gap-6 mb-6 lg:mb-8">
             {/* Total Customers */}
-            <Card className="p-4 lg:p-6 border-2 border-[var(--border)] bg-white">
+            <Card className="p-4 lg:p-6 border border-line bg-surface">
               <div className="flex items-start justify-between mb-3 lg:mb-4">
                 <div>
                   <p className="text-xs lg:text-sm text-[var(--muted-foreground)] mb-1">Customers</p>
@@ -431,7 +400,7 @@ export default function AdminDashboard() {
             </Card>
 
             {/* Total Drivers */}
-            <Card className="p-4 lg:p-6 border-2 border-[var(--border)] bg-white">
+            <Card className="p-4 lg:p-6 border border-line bg-surface">
               <div className="flex items-start justify-between mb-3 lg:mb-4">
                 <div>
                   <p className="text-xs lg:text-sm text-[var(--muted-foreground)] mb-1">Drivers</p>
@@ -453,7 +422,7 @@ export default function AdminDashboard() {
             </Card>
 
             {/* Total Businesses */}
-            <Card className="p-4 lg:p-6 border-2 border-[var(--border)] bg-white">
+            <Card className="p-4 lg:p-6 border border-line bg-surface">
               <div className="flex items-start justify-between mb-3 lg:mb-4">
                 <div>
                   <p className="text-xs lg:text-sm text-[var(--muted-foreground)] mb-1">Businesses</p>
@@ -475,7 +444,7 @@ export default function AdminDashboard() {
             </Card>
 
             {/* Pending Verifications */}
-            <Card className="p-4 lg:p-6 border-2 border-[var(--border)] bg-white">
+            <Card className="p-4 lg:p-6 border border-line bg-surface">
               <div className="flex items-start justify-between mb-3 lg:mb-4">
                 <div>
                   <p className="text-xs lg:text-sm text-[var(--muted-foreground)] mb-1">Pending</p>
@@ -497,7 +466,7 @@ export default function AdminDashboard() {
             </Card>
 
             {/* Total Users */}
-            <Card className="p-4 lg:p-6 border-2 border-[var(--border)] bg-white">
+            <Card className="p-4 lg:p-6 border border-line bg-surface">
               <div className="flex items-start justify-between mb-3 lg:mb-4">
                 <div>
                   <p className="text-xs lg:text-sm text-[var(--muted-foreground)] mb-1">Total Users</p>
@@ -540,17 +509,17 @@ export default function AdminDashboard() {
                   <p className="text-[var(--muted-foreground)] text-xs">No pending users awaiting verification</p>
                 </Card>
               ) : (
-                <Card className="border-2 border-[var(--border)] bg-white overflow-hidden">
+                <Card className="border border-line bg-surface overflow-hidden">
                   <div className="overflow-x-auto">
                     <table className="w-full">
                       <thead className="bg-[var(--muted)] border-b-2 border-[var(--border)]">
                         <tr>
-                          <th className="px-4 py-3 text-left text-xs font-bold text-[var(--muted-foreground)] uppercase tracking-wider">User</th>
-                          <th className="px-4 py-3 text-left text-xs font-bold text-[var(--muted-foreground)] uppercase tracking-wider">Type</th>
-                          <th className="px-4 py-3 text-left text-xs font-bold text-[var(--muted-foreground)] uppercase tracking-wider">Email</th>
-                          <th className="px-4 py-3 text-left text-xs font-bold text-[var(--muted-foreground)] uppercase tracking-wider">Phone</th>
-                          <th className="px-4 py-3 text-left text-xs font-bold text-[var(--muted-foreground)] uppercase tracking-wider">Submitted</th>
-                          <th className="px-4 py-3 text-center text-xs font-bold text-[var(--muted-foreground)] uppercase tracking-wider">Actions</th>
+                          <th className="px-4 py-3 text-left text-xs font-bold text-[var(--muted-foreground)] tracking-wider">User</th>
+                          <th className="px-4 py-3 text-left text-xs font-bold text-[var(--muted-foreground)] tracking-wider">Type</th>
+                          <th className="px-4 py-3 text-left text-xs font-bold text-[var(--muted-foreground)] tracking-wider">Email</th>
+                          <th className="px-4 py-3 text-left text-xs font-bold text-[var(--muted-foreground)] tracking-wider">Phone</th>
+                          <th className="px-4 py-3 text-left text-xs font-bold text-[var(--muted-foreground)] tracking-wider">Submitted</th>
+                          <th className="px-4 py-3 text-center text-xs font-bold text-[var(--muted-foreground)] tracking-wider">Actions</th>
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-[var(--border)]">
@@ -620,7 +589,7 @@ export default function AdminDashboard() {
           {isSuperAdmin && (
             <div>
               <h2 className="text-xl lg:text-2xl font-bold text-[var(--ink)] mb-4">Delivery Fee Configuration</h2>
-              <Card className="p-5 lg:p-6 border-2 border-[var(--border)] bg-white max-w-md">
+              <Card className="p-5 lg:p-6 border border-line bg-surface max-w-md">
                 <div className="flex items-start justify-between mb-4">
                   <div>
                     <Store className="w-8 h-8 lg:w-10 lg:h-10 text-[var(--success)] mb-2" />
@@ -634,12 +603,12 @@ export default function AdminDashboard() {
                     type="number"
                     value={rateConfig.deliveryBaseFee}
                     onChange={(e) => setRateConfig({ ...rateConfig, deliveryBaseFee: Number(e.target.value) })}
-                    className="text-2xl lg:text-3xl font-bold text-center border-2 border-[var(--border)]"
+                    className="text-2xl lg:text-3xl font-bold text-center border border-line"
                   />
                 </div>
                 <button
                   onClick={() => handleUpdateRate('deliveryBaseFee')}
-                  className="w-full py-3 bg-[var(--primary)] hover:bg-[var(--primary)] text-white font-bold rounded-xl uppercase transition-all"
+                  className="w-full py-3 bg-[var(--primary)] hover:bg-[var(--primary)] text-white font-bold rounded-xl transition-all"
                 >
                   Update Rate
                 </button>
@@ -652,7 +621,7 @@ export default function AdminDashboard() {
             <div>
               <h2 className="text-xl lg:text-2xl font-bold text-[var(--ink)] mb-4">Fixed Rate Configuration</h2>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4 lg:gap-6">
-                <Card className="p-5 lg:p-6 border-2 border-[var(--border)] bg-white">
+                <Card className="p-5 lg:p-6 border border-line bg-surface">
                   <div className="flex items-start justify-between mb-4">
                     <div>
                       <Store className="w-8 h-8 lg:w-10 lg:h-10 text-[var(--violet)] mb-2" />
@@ -666,18 +635,18 @@ export default function AdminDashboard() {
                       type="number"
                       value={rateConfig.baseFare}
                       onChange={(e) => setRateConfig({ ...rateConfig, baseFare: Number(e.target.value) })}
-                      className="text-2xl lg:text-3xl font-bold text-center border-2 border-[var(--border)]"
+                      className="text-2xl lg:text-3xl font-bold text-center border border-line"
                     />
                   </div>
                   <button
                     onClick={() => handleUpdateRate('baseFare')}
-                    className="w-full py-3 bg-[var(--primary)] hover:bg-[var(--primary)] text-white font-bold rounded-xl uppercase transition-all"
+                    className="w-full py-3 bg-[var(--primary)] hover:bg-[var(--primary)] text-white font-bold rounded-xl transition-all"
                   >
                     Update Rate
                   </button>
                 </Card>
 
-                <Card className="p-5 lg:p-6 border-2 border-[var(--border)] bg-white">
+                <Card className="p-5 lg:p-6 border border-line bg-surface">
                   <div className="flex items-start justify-between mb-4">
                     <div>
                       <Bike className="w-8 h-8 lg:w-10 lg:h-10 text-[var(--violet)] mb-2" />
@@ -691,13 +660,13 @@ export default function AdminDashboard() {
                       type="number"
                       value={rateConfig.perKm}
                       onChange={(e) => setRateConfig({ ...rateConfig, perKm: Number(e.target.value) })}
-                      className="text-2xl lg:text-3xl font-bold text-center border-2 border-[var(--border)]"
+                      className="text-2xl lg:text-3xl font-bold text-center border border-line"
                     />
                     <span className="text-sm text-[var(--muted-foreground)] font-semibold">/km</span>
                   </div>
                   <button
                     onClick={() => handleUpdateRate('perKm')}
-                    className="w-full py-3 bg-[var(--primary)] hover:bg-[var(--primary)] text-white font-bold rounded-xl uppercase transition-all"
+                    className="w-full py-3 bg-[var(--primary)] hover:bg-[var(--primary)] text-white font-bold rounded-xl transition-all"
                   >
                     Update Rate
                   </button>
@@ -708,7 +677,6 @@ export default function AdminDashboard() {
             </div>
           )}
         </div>
-      </div>
 
       {/* Notifications Panel */}
       {showNotifications && (
@@ -717,8 +685,8 @@ export default function AdminDashboard() {
             className="fixed inset-0 bg-black/50 z-[2000]"
             onClick={() => setShowNotifications(false)}
           />
-          <div className="fixed top-0 right-0 h-full w-full lg:w-[400px] bg-white z-[2001] shadow-2xl overflow-y-auto">
-            <div className="p-5 border-b-2 border-[var(--border)] sticky top-0 bg-white z-10">
+          <div className="fixed top-0 right-0 h-full w-full lg:w-[400px] bg-surface z-[2001] shadow-2xl overflow-y-auto">
+            <div className="p-5 border-b-2 border-[var(--border)] sticky top-0 bg-surface z-10">
               <div className="flex items-center justify-between">
                 <h2 className="text-2xl font-bold text-[var(--ink)]">Notifications</h2>
                 <button
@@ -763,6 +731,6 @@ export default function AdminDashboard() {
           onClose={() => setToast(null)}
         />
       )}
-    </div>
+    </AppShell>
   );
 }

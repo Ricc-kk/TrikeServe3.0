@@ -299,7 +299,7 @@ export default function AdminUsers() {
       {/* Main Content */}
       <div className="flex-1 lg:ml-64">
         {/* Top Header */}
-        <div className="bg-white border-b-2 border-[var(--border)] px-5 lg:px-8 py-4 lg:py-5 sticky top-0 z-50">
+        <div className="bg-surface border-b-2 border-[var(--border)] px-5 lg:px-8 py-4 lg:py-5 sticky top-0 z-50">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-3">
               {/* Hamburger Menu - Mobile Only */}
@@ -334,34 +334,34 @@ export default function AdminUsers() {
 
           {/* Stats Cards */}
           <div className="grid grid-cols-2 lg:grid-cols-6 gap-3 lg:gap-4 mb-6">
-            <Card className="p-4 border-2 border-[var(--border)] bg-white">
+            <Card className="p-4 border border-line bg-surface">
               <p className="text-xs text-[var(--muted-foreground)] mb-1">Total Users</p>
               <p className="text-2xl font-bold text-[var(--ink)]">{stats.total}</p>
             </Card>
-            <Card className="p-4 border-2 border-[var(--border)] bg-white">
+            <Card className="p-4 border border-line bg-surface">
               <p className="text-xs text-[var(--muted-foreground)] mb-1">Customers</p>
               <p className="text-2xl font-bold text-[var(--success)]">{stats.customers}</p>
             </Card>
-            <Card className="p-4 border-2 border-[var(--border)] bg-white">
+            <Card className="p-4 border border-line bg-surface">
               <p className="text-xs text-[var(--muted-foreground)] mb-1">Drivers</p>
               <p className="text-2xl font-bold text-[var(--info)]">{stats.riders}</p>
             </Card>
-            <Card className="p-4 border-2 border-[var(--border)] bg-white">
+            <Card className="p-4 border border-line bg-surface">
               <p className="text-xs text-[var(--muted-foreground)] mb-1">Businesses</p>
               <p className="text-2xl font-bold text-[var(--violet)]">{stats.businesses}</p>
             </Card>
-            <Card className="p-4 border-2 border-[var(--border)] bg-white">
+            <Card className="p-4 border border-line bg-surface">
               <p className="text-xs text-[var(--muted-foreground)] mb-1">Verified</p>
               <p className="text-2xl font-bold text-[var(--success)]">{stats.verified}</p>
             </Card>
-            <Card className="p-4 border-2 border-[var(--border)] bg-white">
+            <Card className="p-4 border border-line bg-surface">
               <p className="text-xs text-[var(--muted-foreground)] mb-1">Pending</p>
               <p className="text-2xl font-bold text-[var(--amber)]">{stats.pending}</p>
             </Card>
           </div>
 
           {/* Search and Filters */}
-          <Card className="p-5 border-2 border-[var(--border)] bg-white mb-6">
+          <Card className="p-5 border border-line bg-surface mb-6">
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
               {/* Search */}
               <div className="relative">
@@ -371,7 +371,7 @@ export default function AdminUsers() {
                   placeholder="Search by name, email, or phone..."
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
-                  className="pl-10 border-2 border-[var(--border)]"
+                  className="pl-10 border border-line"
                 />
               </div>
 
@@ -380,7 +380,7 @@ export default function AdminUsers() {
                 <select
                   value={filterRole}
                   onChange={(e) => setFilterRole(e.target.value)}
-                  className="w-full p-3 border-2 border-[var(--border)] rounded-xl font-semibold"
+                  className="w-full p-3 border border-line rounded-xl font-semibold"
                 >
                   <option value="all">All Roles</option>
                   {(!user?.adminType || user?.adminType === 'business_customer') && (
@@ -401,7 +401,7 @@ export default function AdminUsers() {
                 <select
                   value={filterStatus}
                   onChange={(e) => setFilterStatus(e.target.value)}
-                  className="w-full p-3 border-2 border-[var(--border)] rounded-xl font-semibold"
+                  className="w-full p-3 border border-line rounded-xl font-semibold"
                 >
                   <option value="all">All Status</option>
                   <option value="verified">Verified Only</option>
@@ -412,7 +412,7 @@ export default function AdminUsers() {
           </Card>
 
           {/* Users List */}
-          <Card className="border-2 border-[var(--border)] bg-white overflow-hidden">
+          <Card className="border border-line bg-surface overflow-hidden">
             {filteredUsers.length === 0 ? (
               <div className="p-12 border-2 border-dashed border-[var(--border)] text-center">
                 <Users className="w-16 h-16 text-[var(--border)] mx-auto mb-4" />
@@ -423,13 +423,13 @@ export default function AdminUsers() {
                 <table className="w-full">
                   <thead className="bg-[var(--muted)] border-b-2 border-[var(--border)]">
                     <tr>
-                      <th className="px-4 py-3 text-left text-xs font-bold text-[var(--muted-foreground)] uppercase tracking-wider">User</th>
-                      <th className="px-4 py-3 text-left text-xs font-bold text-[var(--muted-foreground)] uppercase tracking-wider">Role</th>
-                      <th className="px-4 py-3 text-left text-xs font-bold text-[var(--muted-foreground)] uppercase tracking-wider">Status</th>
-                      <th className="px-4 py-3 text-left text-xs font-bold text-[var(--muted-foreground)] uppercase tracking-wider">Email</th>
-                      <th className="px-4 py-3 text-left text-xs font-bold text-[var(--muted-foreground)] uppercase tracking-wider">Phone</th>
-                      <th className="px-4 py-3 text-left text-xs font-bold text-[var(--muted-foreground)] uppercase tracking-wider">Details</th>
-                      <th className="px-4 py-3 text-center text-xs font-bold text-[var(--muted-foreground)] uppercase tracking-wider">Actions</th>
+                      <th className="px-4 py-3 text-left text-xs font-bold text-[var(--muted-foreground)] tracking-wider">User</th>
+                      <th className="px-4 py-3 text-left text-xs font-bold text-[var(--muted-foreground)] tracking-wider">Role</th>
+                      <th className="px-4 py-3 text-left text-xs font-bold text-[var(--muted-foreground)] tracking-wider">Status</th>
+                      <th className="px-4 py-3 text-left text-xs font-bold text-[var(--muted-foreground)] tracking-wider">Email</th>
+                      <th className="px-4 py-3 text-left text-xs font-bold text-[var(--muted-foreground)] tracking-wider">Phone</th>
+                      <th className="px-4 py-3 text-left text-xs font-bold text-[var(--muted-foreground)] tracking-wider">Details</th>
+                      <th className="px-4 py-3 text-center text-xs font-bold text-[var(--muted-foreground)] tracking-wider">Actions</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-[var(--border)]">
