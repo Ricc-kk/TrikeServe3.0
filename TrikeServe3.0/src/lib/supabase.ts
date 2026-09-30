@@ -378,6 +378,30 @@ export function isPointInPolygon(lat: number, lng: number, polygon: LatLngPoint[
 }
 
 /**
+ * Great-circle distance in metres between two coordinates.
+ *
+ * Used to compare a driver's position against a terminal's given radius
+ * (terminals.radius_km) when they queue up.
+ */
+export function haversineDistanceMeters(
+  a: LatLngPoint,
+  b: LatLngPoint
+): number {
+  const toRad = (x: number) => (x * Math.PI) / 180;
+  const earthRadius = 6371e3; // metres
+  const phi1 = toRad(a.lat);
+  const phi2 = toRad(b.lat);
+  const deltaPhi = toRad(b.lat - a.lat);
+  const deltaLambda = toRad(b.lng - a.lng);
+
+  const h =
+    Math.sin(deltaPhi / 2) * Math.sin(deltaPhi / 2) +
+    Math.cos(phi1) * Math.cos(phi2) * Math.sin(deltaLambda / 2) * Math.sin(deltaLambda / 2);
+
+  return 2 * earthRadius * Math.asin(Math.sqrt(h));
+}
+
+/**
  * Check a drop-off point against every active terminal boundary.
  *
  * `allowed` is true when the point sits inside at least one plotted area, or when
@@ -1066,6 +1090,22 @@ export const supabaseHelpers = {
       .select('*')
       .eq('status', 'waiting')
       .order('created_at', { ascending: true });
+
+    return { data, error };
+  },
+
+  /**
+   * Terminal coverage used for the queue hint: the boundary area the admin
+   * plotted (terminals.boundary_polygon) plus the centre/radius fallback.
+   *
+   * `select('*')` keeps this working even before the boundary migration runs.
+   */
+  async getTerminalGeofence(terminalId: string) {
+    const { data, error } = await supabase
+      .from('terminals')
+      .select('*')
+      .eq('id', terminalId)
+      .maybeSingle();
 
     return { data, error };
   },

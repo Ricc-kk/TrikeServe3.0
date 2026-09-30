@@ -1,6 +1,26 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { supabase, supabaseHelpers } from "@/lib/supabase";
+import {
+  haversineDistanceMeters,
+  isPointInPolygon,
+  normalizeBoundaryPolygon,
+  supabase,
+  supabaseHelpers,
+  type LatLngPoint,
+} from "@/lib/supabase";
 import { useAuth } from "../contexts/AuthContext";
+
+export interface TerminalGeometry {
+  /**
+   * Coverage area the admin plotted on the map (terminals.boundary_polygon).
+   * This is the terminal's "given radius" — whatever the admin draws is what
+   * drivers are told about when they queue.
+   */
+  boundary: LatLngPoint[] | null;
+  /** Terminal centre — only used as a fallback when no area is plotted. */
+  center: { lat: number; lng: number } | null;
+  /** Fallback radius (km) used only when no boundary area exists. */
+  radiusKm: number | null;
+}
 
 export interface TerminalQueueEntry {
   id: string;
@@ -58,6 +78,16 @@ export function useTerminalQueue() {
   const [isResolvingTerminal, setIsResolvingTerminal] = useState(true);
   const [isMutating, setIsMutating] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Terminal geometry + the driver's live position, so the queue card can show
+  // whether the driver is inside the terminal's given radius. This is shown only
+  // — it never gates joining the queue.
+  const [terminalGeometry, setTerminalGeometry] = useState<TerminalGeometry>({
+    boundary: null,
+    center: null,
+    radiusKm: null,
+  });
+  const [driverLocation, setDriverLocation] = useState<{ lat: number; lng: number } | null>(null);
+  const [isLocating, setIsLocating] = useState(true);
 
   const driverId = user?.id;
 
@@ -113,6 +143,55 @@ export function useTerminalQueue() {
       cancelled = true;
     };
   }, [driverId]);
+
+  // The terminal's coverage area changes only when an admin edits it, so this is
+  // fetched whenever the driver's terminal assignment settles.
+  useEffect(() => {
+    if (!terminalId) {
+      setTerminalGeometry({ boundary: null, center: null, radiusKm: null });
+      return;
+    }
+    let cancelled = false;
+
+    supabaseHelpers.getTerminalGeofence(terminalId).then(({ data }) => {
+      if (cancelled) return;
+      const lat = Number(data?.center_lat);
+      const lng = Number(data?.center_lng);
+      const radius = Number(data?.radius_km);
+      setTerminalGeometry({
+        boundary: normalizeBoundaryPolygon(data?.boundary_polygon),
+        center:
+          Number.isFinite(lat) && Number.isFinite(lng) ? { lat, lng } : null,
+        radiusKm: Number.isFinite(radius) ? radius : null,
+      });
+    }).catch(() => {});
+
+    return () => {
+      cancelled = true;
+    };
+  }, [terminalId]);
+
+  // One-shot location read; a denial just leaves the distance unknown rather than
+  // blocking anything (the radius hint is informational).
+  const refreshLocation = useCallback(() => {
+    if (!('geolocation' in navigator)) {
+      setIsLocating(false);
+      return;
+    }
+    setIsLocating(true);
+    navigator.geolocation.getCurrentPosition(
+      (position) => {
+        setDriverLocation({ lat: position.coords.latitude, lng: position.coords.longitude });
+        setIsLocating(false);
+      },
+      () => setIsLocating(false),
+      { enableHighAccuracy: true, timeout: 10000, maximumAge: 60_000 }
+    );
+  }, []);
+
+  useEffect(() => {
+    refreshLocation();
+  }, [refreshLocation]);
 
   const refresh = useCallback(async () => {
     if (!terminalId) {
@@ -200,6 +279,30 @@ export function useTerminalQueue() {
 
   const aheadCount = position > 0 ? position - 1 : 0;
   const isFirst = position === 1;
+
+  // Distance to the terminal centre — context for the fallback radius circle.
+  const distanceMeters = useMemo(() => {
+    if (!terminalGeometry.center || !driverLocation) return null;
+    return haversineDistanceMeters(driverLocation, terminalGeometry.center);
+  }, [terminalGeometry.center, driverLocation]);
+
+  // Whether the driver sits inside the terminal's coverage. The admin's plotted
+  // boundary area wins; the centre + radius circle is only a fallback for
+  // terminals that have no area drawn yet. Null when we can't tell.
+  const isWithinBoundary = useMemo(() => {
+    if (!driverLocation) return null;
+
+    if (terminalGeometry.boundary) {
+      return isPointInPolygon(driverLocation.lat, driverLocation.lng, terminalGeometry.boundary);
+    }
+    if (terminalGeometry.center && terminalGeometry.radiusKm != null) {
+      return (
+        haversineDistanceMeters(driverLocation, terminalGeometry.center) <=
+        terminalGeometry.radiusKm * 1000
+      );
+    }
+    return null;
+  }, [driverLocation, terminalGeometry]);
   // Definitive "this driver has no terminal" — only once the DB lookup settled.
   const hasNoTerminal = !isResolvingTerminal && !terminalId;
 
@@ -247,6 +350,12 @@ export function useTerminalQueue() {
   return {
     terminalId,
     terminalName,
+    terminalBoundary: terminalGeometry.boundary,
+    terminalRadiusKm: terminalGeometry.radiusKm,
+    distanceMeters,
+    isWithinBoundary,
+    isLocating,
+    refreshLocation,
     queue,
     myEntry,
     position,

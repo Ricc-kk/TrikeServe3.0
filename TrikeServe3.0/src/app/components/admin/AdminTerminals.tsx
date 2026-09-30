@@ -26,6 +26,10 @@ import Toast from "../ui/Toast";
 
 const GOOGLE_MAPS_API_KEY = import.meta.env.VITE_GOOGLE_MAPS_API_KEY || "";
 
+// Default centre for a new terminal's location / boundary picker — Gen T Deleon,
+// Valenzuela City (same point the customer/business map selectors default to).
+const DEFAULT_TERMINAL_CENTER = { lat: 14.7244, lng: 120.9668 };
+
 interface Terminal {
   id: string;
   name: string;
@@ -127,8 +131,8 @@ export default function AdminTerminals() {
   const [form, setForm] = useState({
     name: "",
     boundary: "",
-    center_lat: 14.7294,
-    center_lng: 120.9349,
+    center_lat: DEFAULT_TERMINAL_CENTER.lat,
+    center_lng: DEFAULT_TERMINAL_CENTER.lng,
     is_active: true,
     boundary_polygon: [] as LatLngPoint[],
   });
@@ -137,6 +141,27 @@ export default function AdminTerminals() {
   const [mapPickerMode, setMapPickerMode] = useState<'location' | 'boundary'>('location');
   const { isLoaded: isMapsLoaded } = useMapLoader();
   const formMapRef = useRef<google.maps.Map | null>(null);
+  // The admin's live GPS position — the map picker opens here so a terminal is
+  // placed relative to where the admin actually is, not a hardcoded city.
+  const [adminLocation, setAdminLocation] = useState<{ lat: number; lng: number } | null>(null);
+
+  const refreshAdminLocation = useCallback(() => {
+    if (!('geolocation' in navigator)) return;
+    navigator.geolocation.getCurrentPosition(
+      (position) => setAdminLocation({ lat: position.coords.latitude, lng: position.coords.longitude }),
+      () => {},
+      { enableHighAccuracy: true, timeout: 10000, maximumAge: 60_000 }
+    );
+  }, []);
+
+  useEffect(() => {
+    refreshAdminLocation();
+  }, [refreshAdminLocation]);
+
+  function openMapPicker() {
+    refreshAdminLocation();
+    setShowMapPicker(true);
+  }
   const [mapSearchQuery, setMapSearchQuery] = useState("");
   const [mapSearchResults, setMapSearchResults] = useState<any[]>([]);
   const [isMapSearching, setIsMapSearching] = useState(false);
@@ -201,8 +226,8 @@ export default function AdminTerminals() {
         id: t.id,
         name: t.name,
         boundary: t.boundary,
-        center_lat: t.center_lat ?? 14.7294,
-        center_lng: t.center_lng ?? 120.9349,
+        center_lat: t.center_lat ?? DEFAULT_TERMINAL_CENTER.lat,
+        center_lng: t.center_lng ?? DEFAULT_TERMINAL_CENTER.lng,
         radius_km: t.radius_km ?? 2.0,
         is_active: t.is_active ?? true,
         rider_count: t.rider_count ?? 0,
@@ -325,7 +350,7 @@ export default function AdminTerminals() {
     : terminals;
 
   function openCreate() {
-    setForm({ name: "", boundary: "", center_lat: 14.7294, center_lng: 120.9349, is_active: true, boundary_polygon: [] });
+    setForm({ name: "", boundary: "", center_lat: DEFAULT_TERMINAL_CENTER.lat, center_lng: DEFAULT_TERMINAL_CENTER.lng, is_active: true, boundary_polygon: [] });
     setEditTerminal(null);
     setMapPickerMode('location');
     setShowForm(true);
@@ -361,7 +386,19 @@ export default function AdminTerminals() {
 
   const handleFormMapLoad = useCallback((map: google.maps.Map) => {
     formMapRef.current = map;
-  }, []);
+    // Open on the admin's current position; fall back to the terminal's pin and
+    // then the Gen T Deleon default when GPS isn't available.
+    map.setCenter(adminLocation ?? { lat: form.center_lat, lng: form.center_lng });
+    map.setZoom(15);
+  }, [adminLocation, form.center_lat, form.center_lng]);
+
+  // GPS can resolve after the map mounts; once it does, move the picker to it.
+  useEffect(() => {
+    if (showMapPicker && adminLocation && formMapRef.current) {
+      formMapRef.current.setCenter(adminLocation);
+      formMapRef.current.setZoom(15);
+    }
+  }, [showMapPicker, adminLocation]);
 
   // Debounced Places autocomplete search for terminal location
   useEffect(() => {
@@ -1104,7 +1141,7 @@ export default function AdminTerminals() {
                 </label>
                 <div
                   className="w-full h-40 bg-[var(--muted)] border-2 border-[var(--border)] rounded-xl overflow-hidden cursor-pointer relative"
-                  onClick={() => setShowMapPicker(true)}
+                  onClick={openMapPicker}
                 >
                   {isMapsLoaded ? (
                     <GoogleMap
@@ -1300,7 +1337,7 @@ export default function AdminTerminals() {
           <div className="flex-1 relative">
             <GoogleMap
               mapContainerStyle={{ width: '100%', height: '100%' }}
-              center={{ lat: form.center_lat, lng: form.center_lng }}
+              center={adminLocation ?? { lat: form.center_lat, lng: form.center_lng }}
               zoom={15}
               onClick={handleFormMapClick}
               onLoad={handleFormMapLoad}

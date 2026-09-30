@@ -6,6 +6,7 @@ import {
   Lock,
   LogOut,
   MapPin,
+  Navigation,
   Ticket,
   Truck,
   Unlock,
@@ -15,8 +16,72 @@ import {
 import { Badge } from "../ui/badge";
 import { Button } from "../ui/button";
 import { useTerminalQueue } from "../../hooks/useTerminalQueue";
+import type { LatLngPoint } from "@/lib/supabase";
 
 const MAX_VISIBLE_DRIVERS = 5;
+
+/** Short "350 m" / "1.2 km" label. */
+function formatDistance(meters: number): string {
+  if (meters < 1000) return `${Math.round(meters)} m`;
+  return `${(meters / 1000).toFixed(1)} km`;
+}
+
+/**
+ * Informational hint showing the terminal's given service radius and how far the
+ * driver currently is from its centre. Display only — it never blocks joining.
+ */
+function RadiusNote({
+  terminalName,
+  boundary,
+  radiusKm,
+  distanceMeters,
+  isWithinBoundary,
+  isLocating,
+  compact = false,
+}: {
+  terminalName: string;
+  boundary: LatLngPoint[] | null;
+  radiusKm: number | null;
+  distanceMeters: number | null;
+  isWithinBoundary: boolean | null;
+  isLocating: boolean;
+  compact?: boolean;
+}) {
+  // The admin's plotted boundary area is the terminal's coverage / radius; the
+  // centre + radius circle only stands in for terminals with no area drawn yet.
+  const hasBoundary = (boundary?.length ?? 0) >= 3;
+  if (!hasBoundary && radiusKm == null) return null;
+
+  const unknown = isWithinBoundary == null;
+  const inside = isWithinBoundary === true;
+  const tone = unknown
+    ? "bg-[var(--muted)] border-[var(--border)] text-[var(--muted-foreground)]"
+    : inside
+      ? "bg-[var(--success-soft)] border-[var(--success)]/40 text-[var(--success)]"
+      : "bg-[var(--amber-soft)] border-[var(--amber)]/40 text-[var(--amber-dark)]";
+
+  const coverageLabel = hasBoundary ? "Boundary area" : `${radiusKm} km radius`;
+  const status = unknown
+    ? isLocating
+      ? "checking your position…"
+      : "location unavailable."
+    : hasBoundary
+      ? inside
+        ? `you're inside ${terminalName}'s coverage area.`
+        : `you're outside ${terminalName}'s coverage area.`
+      : inside
+        ? `you're ${formatDistance(distanceMeters || 0)} away — inside the radius.`
+        : `you're ${formatDistance(distanceMeters || 0)} away — outside the radius.`;
+
+  return (
+    <div className={`flex items-start gap-1.5 rounded-lg border px-2 py-1.5 ${tone}`}>
+      <Navigation className="w-3.5 h-3.5 flex-shrink-0 mt-[1px]" />
+      <p className={`${compact ? "text-[10px]" : "text-[11px]"} font-semibold leading-snug`}>
+        <span className="font-extrabold">{coverageLabel}</span> · {status}
+      </p>
+    </div>
+  );
+}
 
 /** Compact "waiting 4m" label for a queue entry. */
 function formatWaiting(joinedAt?: string): string {
@@ -113,6 +178,11 @@ export default function TerminalQueueCard({ queue, variant = "full", canJoin = t
   const {
     terminalId,
     terminalName,
+    terminalBoundary,
+    terminalRadiusKm,
+    distanceMeters,
+    isWithinBoundary,
+    isLocating,
     queue: entries,
     myEntry,
     position,
@@ -239,6 +309,17 @@ export default function TerminalQueueCard({ queue, variant = "full", canJoin = t
             <div className="mt-1.5">
               <AccessChips isFirst={isFirst} />
             </div>
+            <div className="mt-1.5">
+              <RadiusNote
+                terminalName={terminalLabel}
+                boundary={terminalBoundary}
+                radiusKm={terminalRadiusKm}
+                distanceMeters={distanceMeters}
+                isWithinBoundary={isWithinBoundary}
+                isLocating={isLocating}
+                compact
+              />
+            </div>
           </div>
           <div className="flex-shrink-0">{myEntry ? leaveButton : joinButton}</div>
         </div>
@@ -265,6 +346,17 @@ export default function TerminalQueueCard({ queue, variant = "full", canJoin = t
           <span className="w-1.5 h-1.5 rounded-full bg-[var(--success)] animate-pulse" />
           LIVE
         </span>
+      </div>
+
+      <div className="mb-3">
+        <RadiusNote
+          terminalName={terminalLabel}
+          boundary={terminalBoundary}
+          radiusKm={terminalRadiusKm}
+          distanceMeters={distanceMeters}
+          isWithinBoundary={isWithinBoundary}
+          isLocating={isLocating}
+        />
       </div>
 
       {isLoadingState ? (

@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import {
   Settings, Menu, Save, DollarSign,
-  Bike, Store, CheckCircle,
+  Bike, Store,
   LogOut, AlertTriangle
 } from "lucide-react";
 import { useNavigate } from "react-router";
@@ -11,17 +11,21 @@ import { Badge } from "../ui/badge";
 import { useAuth } from "../../contexts/AuthContext";
 import AdminSidebar from "./AdminSidebar";
 import { supabase } from "../../../utils/supabase";
+import { normalizeRates } from "@/lib/pricing";
 import ConfirmationModal from "../ui/confirmation-modal";
+import Toast from "../ui/Toast";
 
 export default function AdminSettings() {
   const navigate = useNavigate();
   const { user, logout } = useAuth();
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
-  const [savedMessage, setSavedMessage] = useState("");
+  const [toast, setToast] = useState<{ message: string; variant?: 'success' | 'error' | 'warning' } | null>(null);
   const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
 
   // Rate Configuration
   const [rateConfig, setRateConfig] = useState({
+    baseFare: 20,
+    perKm: 10,
     sharedRide: 15,
     privateRide: 50,
     deliveryBaseFee: 30,
@@ -42,7 +46,7 @@ export default function AdminSettings() {
 
       if (!error && ratesData) {
         try {
-          setRateConfig(JSON.parse(ratesData.setting_value));
+          setRateConfig(normalizeRates(JSON.parse(ratesData.setting_value)));
         } catch (e) {
           console.error('Error parsing rates:', e);
           loadRatesFromLocalStorage();
@@ -61,7 +65,7 @@ export default function AdminSettings() {
     const savedRates = localStorage.getItem('trikeserve_rates');
     if (savedRates) {
       try {
-        setRateConfig(JSON.parse(savedRates));
+        setRateConfig(normalizeRates(JSON.parse(savedRates)));
       } catch (error) {
         console.error('Error loading rates:', error);
       }
@@ -106,23 +110,20 @@ export default function AdminSettings() {
             }, {
               onConflict: 'setting_key'
             });
+          localStorage.setItem('trikeserve_rates', JSON.stringify(rateConfig));
           if (error) {
             console.error('Error saving to Supabase:', error);
+            setToast({ message: 'Saved on this device — cloud sync failed.', variant: 'warning' });
+          } else {
+            setToast({ message: 'Rate configuration saved successfully!', variant: 'success' });
           }
-          localStorage.setItem('trikeserve_rates', JSON.stringify(rateConfig));
-          showSavedMessage("Rate configuration saved successfully!");
         } catch (error) {
           console.error('Error in handleSaveRates:', error);
           localStorage.setItem('trikeserve_rates', JSON.stringify(rateConfig));
-          showSavedMessage("Rate configuration saved locally!");
+          setToast({ message: 'Rate configuration saved on this device.', variant: 'success' });
         }
       },
     });
-  };
-
-  const showSavedMessage = (message: string) => {
-    setSavedMessage(message);
-    setTimeout(() => setSavedMessage(""), 3000);
   };
 
   const handleLogout = () => {
@@ -160,12 +161,7 @@ export default function AdminSettings() {
                 <p className="text-xs lg:text-sm text-[var(--muted-foreground)]">Configure platform settings and rates</p>
               </div>
             </div>
-            {savedMessage && (
-              <Badge className="bg-[var(--success)] flex items-center gap-2">
-                <CheckCircle className="w-4 h-4" />
-                {savedMessage}
-              </Badge>
-            )}
+
           </div>
         </div>
 
@@ -232,26 +228,67 @@ export default function AdminSettings() {
                 </div>
                 <div>
                   <h2 className="text-xl lg:text-2xl font-bold text-[var(--ink)]">Fixed Rate Configuration</h2>
-                  <p className="text-sm text-[var(--muted-foreground)]">Set base rates for different service types</p>
+                  <p className="text-sm text-[var(--muted-foreground)]">Rides are charged per kilometer: base fare + rate × distance</p>
                 </div>
               </div>
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4 lg:gap-6">
-              {/* Private Ride Rate */}
+              {/* Base Fare */}
               <Card className="p-5 lg:p-6 border-2 border-[var(--border)] bg-white">
                 <div className="flex items-start justify-between mb-4">
                   <div>
-                    <Bike className="w-8 h-8 lg:w-10 lg:h-10 text-[var(--violet)] mb-2" />
-                    <h3 className="font-bold text-base lg:text-lg text-[var(--ink)]">Private Ride</h3>
-                    <p className="text-xs text-[var(--muted-foreground)]">Solo Ride (Entire tricycle)</p>
+                    <DollarSign className="w-8 h-8 lg:w-10 lg:h-10 text-[var(--violet)] mb-2" />
+                    <h3 className="font-bold text-base lg:text-lg text-[var(--ink)]">Base Fare</h3>
+                    <p className="text-xs text-[var(--muted-foreground)]">Flat amount added to every ride</p>
                   </div>
                 </div>
                 <div className="flex items-center gap-2 mb-3">
                   <span className="text-lg text-[var(--muted-foreground)] font-bold">₱</span>
                   <Input
                     type="number"
-                    value={rateConfig.privateRide}
-                    onChange={(e) => setRateConfig({ ...rateConfig, privateRide: Number(e.target.value) })}
+                    value={rateConfig.baseFare}
+                    onChange={(e) => setRateConfig({ ...rateConfig, baseFare: Number(e.target.value) })}
+                    className="text-2xl lg:text-3xl font-bold text-center border-2 border-[var(--border)]"
+                  />
+                </div>
+              </Card>
+
+              {/* Rate per Kilometer */}
+              <Card className="p-5 lg:p-6 border-2 border-[var(--border)] bg-white">
+                <div className="flex items-start justify-between mb-4">
+                  <div>
+                    <Bike className="w-8 h-8 lg:w-10 lg:h-10 text-[var(--violet)] mb-2" />
+                    <h3 className="font-bold text-base lg:text-lg text-[var(--ink)]">Rate per Kilometer</h3>
+                    <p className="text-xs text-[var(--muted-foreground)]">Charged for each km the customer travels</p>
+                  </div>
+                </div>
+                <div className="flex items-center gap-2 mb-3">
+                  <span className="text-lg text-[var(--muted-foreground)] font-bold">₱</span>
+                  <Input
+                    type="number"
+                    value={rateConfig.perKm}
+                    onChange={(e) => setRateConfig({ ...rateConfig, perKm: Number(e.target.value) })}
+                    className="text-2xl lg:text-3xl font-bold text-center border-2 border-[var(--border)]"
+                  />
+                  <span className="text-sm text-[var(--muted-foreground)] font-semibold">/km</span>
+                </div>
+              </Card>
+
+              {/* Delivery Base Fee */}
+              <Card className="p-5 lg:p-6 border-2 border-[var(--border)] bg-white">
+                <div className="flex items-start justify-between mb-4">
+                  <div>
+                    <Store className="w-8 h-8 lg:w-10 lg:h-10 text-[var(--info)] mb-2" />
+                    <h3 className="font-bold text-base lg:text-lg text-[var(--ink)]">Delivery Fee</h3>
+                    <p className="text-xs text-[var(--muted-foreground)]">Flat fee per delivery</p>
+                  </div>
+                </div>
+                <div className="flex items-center gap-2 mb-3">
+                  <span className="text-lg text-[var(--muted-foreground)] font-bold">₱</span>
+                  <Input
+                    type="number"
+                    value={rateConfig.deliveryBaseFee}
+                    onChange={(e) => setRateConfig({ ...rateConfig, deliveryBaseFee: Number(e.target.value) })}
                     className="text-2xl lg:text-3xl font-bold text-center border-2 border-[var(--border)]"
                   />
                 </div>
@@ -376,6 +413,11 @@ export default function AdminSettings() {
         variant={modalConfig?.variant || 'danger'}
         confirmLabel={modalConfig?.confirmLabel || 'Confirm'}
       />
+
+      {/* Save feedback popup */}
+      {toast && (
+        <Toast message={toast.message} variant={toast.variant} onClose={() => setToast(null)} />
+      )}
     </div>
   );
 }
