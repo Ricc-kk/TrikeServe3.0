@@ -177,7 +177,7 @@ export default function SetPassword() {
           </p>
           <div className="space-y-4">
             <div className="flex items-start gap-3">
-              <div className="w-8 h-8 rounded-full bg-white flex items-center justify-center flex-shrink-0 mt-1">
+              <div className="w-8 h-8 rounded-full bg-surface flex items-center justify-center flex-shrink-0 mt-1">
                 <span className="text-sm font-bold text-[var(--primary)]">1</span>
               </div>
               <div>
@@ -208,7 +208,7 @@ export default function SetPassword() {
       </div>
 
       {/* Right Side — form */}
-      <div className="flex-1 lg:max-w-xl flex items-center justify-center p-6 bg-white">
+      <div className="flex-1 lg:max-w-xl flex items-center justify-center p-6 bg-surface">
         <div className="w-full max-w-md">
           {/* Header */}
           <div className="mb-6">
@@ -259,7 +259,7 @@ export default function SetPassword() {
                       setNewPassword(e.target.value);
                       setError("");
                     }}
-                    className="border-2 border-[var(--border)] focus:border-[var(--primary)] h-12 pl-11 pr-11"
+                    className="border border-line focus:border-[var(--primary)] h-12 pl-11 pr-11"
                     required
                     disabled={isUpdating}
                   />
@@ -290,7 +290,7 @@ export default function SetPassword() {
                       setConfirmPassword(e.target.value);
                       setError("");
                     }}
-                    className="border-2 border-[var(--border)] focus:border-[var(--primary)] h-12 pl-11 pr-11"
+                    className="border border-line focus:border-[var(--primary)] h-12 pl-11 pr-11"
                     required
                     disabled={isUpdating}
                   />
@@ -313,7 +313,7 @@ export default function SetPassword() {
               <Button
                 type="submit"
                 disabled={isUpdating}
-                className="w-full bg-[var(--primary)] hover:bg-[var(--primary)] uppercase text-base py-6"
+                className="w-full bg-[var(--primary)] hover:bg-[var(--primary)] text-base py-6"
               >
                 {isUpdating ? (
                   <Loader2 className="w-5 h-5 animate-spin" />
@@ -353,7 +353,7 @@ export default function SetPassword() {
               )}
 
               <Link to="/">
-                <Button className="w-full bg-[var(--primary)] hover:bg-[var(--primary)] uppercase text-base py-6">
+                <Button className="w-full bg-[var(--primary)] hover:bg-[var(--primary)] text-base py-6">
                   GO TO LOGIN
                 </Button>
               </Link>
@@ -370,13 +370,13 @@ export default function SetPassword() {
               </div>
 
               <Link to="/forgot-password">
-                <Button className="w-full bg-[var(--primary)] hover:bg-[var(--primary)] uppercase text-base py-6">
+                <Button className="w-full bg-[var(--primary)] hover:bg-[var(--primary)] text-base py-6">
                   REQUEST NEW RESET LINK
                 </Button>
               </Link>
 
               <Link to="/">
-                <Button variant="outline" className="w-full border-2 border-[var(--border)] hover:border-[var(--primary)]">
+                <Button variant="outline" className="w-full border border-line hover:border-[var(--primary)]">
                   BACK TO LOGIN
                 </Button>
               </Link>

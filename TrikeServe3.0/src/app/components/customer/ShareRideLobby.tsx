@@ -800,7 +800,7 @@ export default function ShareRideLobby({
   if (loading) {
     return (
       <div className="fixed inset-0 bg-black/50 z-[2000] flex items-center justify-center">
-        <div className="bg-white rounded-lg p-8 text-center">
+        <div className="bg-surface rounded-lg p-8 text-center">
           <div className="animate-spin w-12 h-12 border-4 border-[var(--primary)] border-t-transparent rounded-full mx-auto mb-4"></div>
           <p className="text-[var(--muted-foreground)]">Creating lobby...</p>
         </div>
@@ -811,7 +811,7 @@ export default function ShareRideLobby({
   if (error) {
     return (
       <div className="fixed inset-0 bg-black/50 z-[2000] flex items-center justify-center p-4">
-        <Card className="bg-white p-6 max-w-sm w-full">
+        <Card className="bg-surface p-6 max-w-sm w-full">
           <h3 className="text-lg font-bold text-[var(--error)] mb-2">Error</h3>
           <p className="text-sm text-[var(--muted-foreground)] mb-6">{error}</p>
           <Button onClick={onClose} className="w-full bg-[var(--error)] hover:bg-[var(--error)]">
@@ -826,7 +826,7 @@ export default function ShareRideLobby({
   if (showLobbyFullPopup) {
     return (
       <div className="fixed inset-0 bg-black/50 z-[2000] flex items-center justify-center p-4">
-        <div className="bg-white p-6 max-w-sm w-full rounded-2xl shadow-xl">
+        <div className="bg-surface p-6 max-w-sm w-full rounded-2xl shadow-xl">
           <div className="w-16 h-16 bg-[var(--amber-soft)] rounded-full flex items-center justify-center mx-auto mb-4">
             <span className="text-3xl">🚫</span>
           </div>
@@ -857,7 +857,7 @@ export default function ShareRideLobby({
   if (showOutOfBoundaryPopup) {
     return (
       <div className="fixed inset-0 bg-black/50 z-[2000] flex items-center justify-center p-4">
-        <div className="bg-white p-6 max-w-sm w-full rounded-2xl shadow-xl">
+        <div className="bg-surface p-6 max-w-sm w-full rounded-2xl shadow-xl">
           <div className="w-16 h-16 bg-[var(--error-soft)] rounded-full flex items-center justify-center mx-auto mb-4">
             <span className="text-3xl">🚧</span>
           </div>
@@ -893,7 +893,7 @@ export default function ShareRideLobby({
           <div className="w-16 h-16 bg-[var(--primary)] rounded-full flex items-center justify-center hover:bg-[var(--primary)] transition-all hover:scale-110">
             <Users className="w-8 h-8 text-white" />
           </div>
-          <div className="absolute -top-1 -right-1 w-7 h-7 bg-white rounded-full border-2 border-[var(--primary)] flex items-center justify-center">
+          <div className="absolute -top-1 -right-1 w-7 h-7 bg-surface rounded-full border-2 border-[var(--primary)] flex items-center justify-center">
             <span className="text-xs font-bold text-[var(--primary)]">
               {(lobby.passengers_json || []).length}/{lobby.max_seats}
             </span>
@@ -911,9 +911,9 @@ export default function ShareRideLobby({
   return (
     <>
       <div className="fixed inset-0 bg-black/50 z-[2000] flex items-end">
-        <div className="bg-white w-full rounded-t-3xl max-h-[92vh] overflow-hidden flex flex-col animate-slide-up">
+        <div className="bg-surface w-full rounded-t-3xl max-h-[92vh] overflow-hidden flex flex-col animate-slide-up">
           {/* Header - Gradient */}
-          <div className="bg-gradient-to-r from-[var(--primary)] to-[var(--primary)] p-4">
+          <div className="bg-[var(--primary)] p-4">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-3">
                 <div className="w-10 h-10 bg-white/20 rounded-full flex items-center justify-center">
@@ -961,11 +961,11 @@ export default function ShareRideLobby({
               {/* Addresses */}
               <div className="flex-1 space-y-3">
                 <div className="min-w-0">
-                  <p className="text-[10px] text-[var(--muted-foreground)] uppercase font-bold tracking-wider">Pickup</p>
+                  <p className="text-[10px] text-[var(--muted-foreground)] font-bold tracking-wider">Pickup</p>
                   <p className="font-bold text-sm text-[var(--ink)] truncate">{lobby.pickup_location}</p>
                 </div>
                 <div className="min-w-0 flex-1">
-                  <p className="text-[10px] text-[var(--muted-foreground)] uppercase font-bold tracking-wider">Drop-off</p>
+                  <p className="text-[10px] text-[var(--muted-foreground)] font-bold tracking-wider">Drop-off</p>
                   <p className="font-bold text-sm text-[var(--ink)] truncate">{lobby.dropoff_location}</p>
                 </div>
                 {etaToDestination && (
@@ -981,7 +981,7 @@ export default function ShareRideLobby({
           <div className="flex-1 overflow-y-auto">
             <div className="p-4">
               <div className="flex items-center justify-between mb-3">
-                <h3 className="text-xs font-bold text-[var(--muted-foreground)] uppercase tracking-wide">Passengers</h3>
+                <h3 className="text-xs font-bold text-[var(--muted-foreground)] uppercase tracking-widest">Passengers</h3>
                 <span className="text-xs font-bold text-[var(--primary)] bg-[var(--primary-soft)] px-2.5 py-1 rounded-full">
                   {passengers.length}/{lobby.max_seats}
                 </span>
@@ -1000,11 +1000,11 @@ export default function ShareRideLobby({
                       className={`p-4 border-2 transition-all ${
                         isCurrentUserOrCompanion
                           ? 'border-[var(--primary)] bg-[var(--primary-soft)]' 
-                          : 'border-[var(--border)] bg-white'
+                          : 'border-[var(--border)] bg-surface'
                       }`}
                     >
                       <div className="flex items-center gap-3">
-                        <div className="w-12 h-12 rounded-full bg-gradient-to-br from-[var(--primary)] to-[var(--primary)] flex items-center justify-center text-2xl">
+                        <div className="w-12 h-12 rounded-full bg-[var(--primary)] flex items-center justify-center text-2xl">
                           {passenger.emoji || '👤'}
                         </div>
                         <div className="flex-1">
@@ -1055,7 +1055,7 @@ export default function ShareRideLobby({
                     <span className="text-2xl">👨‍✈️</span>
                   </div>
                   <div className="flex-1 min-w-0">
-                    <p className="text-[10px] text-[var(--success)] font-bold uppercase tracking-wider">Your Driver</p>
+                    <p className="text-[10px] text-[var(--success)] font-bold tracking-wider">Your Driver</p>
                     <p className="font-bold text-[var(--ink)] truncate">{lobby.driver_name}</p>
                     <div className="flex items-center gap-2">
                       <span className="text-xs text-[var(--muted-foreground)]">{lobby.driver_plate}</span>
@@ -1162,7 +1162,7 @@ export default function ShareRideLobby({
                   )}
                 </GoogleMap>
                 {/* Driver status indicator */}
-                <div className="px-3 py-2 bg-white border-t border-[var(--border)] flex items-center justify-between">
+                <div className="px-3 py-2 bg-surface border-t border-[var(--border)] flex items-center justify-between">
                   <div className="flex items-center gap-2">
                     <div className="w-2 h-2 bg-[var(--success)] rounded-full animate-pulse" />
                     <span className="text-xs font-semibold text-[var(--ink)]">
@@ -1198,10 +1198,10 @@ export default function ShareRideLobby({
           </div>
 
           {/* Footer - Price Info */}
-          <div className="p-4 border-t border-[var(--border)] bg-white">
+          <div className="p-4 border-t border-[var(--border)] bg-surface">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-[10px] text-[var(--muted-foreground)] uppercase font-bold tracking-wider">Your Fare</p>
+                <p className="text-[10px] text-[var(--muted-foreground)] font-bold tracking-wider">Your Fare</p>
                 <p className="text-2xl font-bold text-[var(--primary)]">₱{(pricePerSeat / Math.max(1, passengers.length)).toFixed(2)}</p>
                 {passengers.length > 1 && (
                   <p className="text-[10px] text-[var(--muted-foreground)]">
@@ -1210,7 +1210,7 @@ export default function ShareRideLobby({
                 )}
               </div>
               <div className="text-right">
-                <p className="text-[10px] text-[var(--muted-foreground)] uppercase font-bold tracking-wider">Trip Total</p>
+                <p className="text-[10px] text-[var(--muted-foreground)] font-bold tracking-wider">Trip Total</p>
                 <p className="text-lg font-bold text-[var(--ink)]">₱{pricePerSeat}</p>
               </div>
             </div>
@@ -1228,7 +1228,7 @@ export default function ShareRideLobby({
 
       {isTerminal && (
         <div className="fixed inset-0 bg-black/60 z-[2200] flex items-center justify-center p-4">
-          <Card className="bg-white p-6 max-w-sm w-full text-center shadow-2xl border-2 border-[var(--success-soft)]">
+          <Card className="bg-surface p-6 max-w-sm w-full text-center shadow-2xl border-2 border-[var(--success-soft)]">
             <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-[var(--success-soft)] flex items-center justify-center text-3xl">
               {terminalStatus === 'completed' ? '🎉' : '🛑'}
             </div>
@@ -1244,7 +1244,7 @@ export default function ShareRideLobby({
               <div className="grid grid-cols-2 gap-3">
                 <Button
                   onClick={openRatingModal}
-                  className="w-full bg-white border-2 border-[var(--primary)] text-[var(--primary)] py-3 font-bold"
+                  className="w-full bg-surface border-2 border-[var(--primary)] text-[var(--primary)] py-3 font-bold"
                 >
                   ⭐ Leave a Rating
                 </Button>
@@ -1265,7 +1265,7 @@ export default function ShareRideLobby({
       {/* Leave a Rating Modal */}
       {showRatingModal && (
         <div className="fixed inset-0 bg-black/70 z-[2400] flex items-center justify-center p-4">
-          <Card className="bg-white p-6 max-w-sm w-full text-center">
+          <Card className="bg-surface p-6 max-w-sm w-full text-center">
             {ratingSubmitted ? (
               <>
                 <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-[var(--success-soft)] flex items-center justify-center text-3xl">
@@ -1319,10 +1319,10 @@ export default function ShareRideLobby({
       {/* Driver Status Update Popup (same as private rides) */}
       {driverStatusPopup && (
         <div className="fixed inset-0 bg-black/50 z-[2300] flex items-end">
-          <div className="bg-white w-full rounded-t-3xl p-6 animate-in slide-in-from-bottom duration-300">
+          <div className="bg-surface w-full rounded-t-3xl p-6 animate-in slide-in-from-bottom duration-300">
             <div className="max-w-sm mx-auto">
               {/* Status Icon */}
-              <div className="w-16 h-16 bg-gradient-to-br from-[var(--primary)] to-[var(--primary)] rounded-full flex items-center justify-center mx-auto mb-4 text-3xl">
+              <div className="w-16 h-16 bg-[var(--primary)] rounded-full flex items-center justify-center mx-auto mb-4 text-3xl">
                 {driverStatusPopup.status === 'on-the-way' && '🚗'}
                 {driverStatusPopup.status === 'arrived' && '📍'}
                 {driverStatusPopup.status === 'pickup' && '🚀'}
@@ -1376,7 +1376,7 @@ export default function ShareRideLobby({
       {/* Full Capacity Popup */}
       {showFullCapacityPopup && (
         <div className="fixed inset-0 bg-black/50 z-[2300] flex items-center justify-center p-4">
-          <div className="bg-white p-6 max-w-sm w-full rounded-2xl shadow-xl">
+          <div className="bg-surface p-6 max-w-sm w-full rounded-2xl shadow-xl">
             <div className="w-16 h-16 bg-[var(--amber-soft)] rounded-full flex items-center justify-center mx-auto mb-4">
               <span className="text-3xl">🎉</span>
             </div>
@@ -1402,7 +1402,7 @@ export default function ShareRideLobby({
       {/* Leave Confirmation Modal */}
       {showLeaveConfirm && (
         <div className="fixed inset-0 bg-black/70 z-[2100] flex items-center justify-center p-4">
-          <Card className="bg-white p-6 max-w-sm w-full">
+          <Card className="bg-surface p-6 max-w-sm w-full">
             <h3 className="text-lg font-bold text-[var(--ink)] mb-2">Cancel Ride?</h3>
             <p className="text-sm text-[var(--muted-foreground)] mb-6">
               Are you sure you want to cancel this ride? You'll need to find a new ride.

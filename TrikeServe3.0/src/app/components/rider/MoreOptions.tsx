@@ -9,7 +9,7 @@ export default function MoreOptions() {
   return (
     <div className="min-h-screen bg-[var(--muted)]">
       {/* Header */}
-      <div className="bg-white border-b-2 border-[var(--border)] px-4 py-3 flex items-center gap-3">
+      <div className="bg-surface border-b-2 border-[var(--border)] px-4 py-3 flex items-center gap-3">
         <Button variant="ghost" size="icon" onClick={() => navigate('/rider')}>
           <ArrowLeft className="w-5 h-5" />
         </Button>
@@ -19,7 +19,7 @@ export default function MoreOptions() {
       </div>
 
       <div className="p-4 space-y-2">
-        <button className="w-full flex items-center gap-3 p-4 border border-[var(--border)] rounded-lg hover:border-[var(--primary)] transition-colors bg-white">
+        <button className="w-full flex items-center gap-3 p-4 border border-[var(--border)] rounded-lg hover:border-[var(--primary)] transition-colors bg-surface">
           <div className="w-10 h-10 rounded-full bg-[var(--muted)] flex items-center justify-center">
             <Settings className="w-5 h-5 text-[var(--muted-foreground)]" />
           </div>
@@ -29,7 +29,7 @@ export default function MoreOptions() {
           </div>
         </button>
 
-        <button className="w-full flex items-center gap-3 p-4 border border-[var(--border)] rounded-lg hover:border-[var(--primary)] transition-colors bg-white">
+        <button className="w-full flex items-center gap-3 p-4 border border-[var(--border)] rounded-lg hover:border-[var(--primary)] transition-colors bg-surface">
           <div className="w-10 h-10 rounded-full bg-[var(--muted)] flex items-center justify-center">
             <Bell className="w-5 h-5 text-[var(--muted-foreground)]" />
           </div>
@@ -39,7 +39,7 @@ export default function MoreOptions() {
           </div>
         </button>
 
-        <button className="w-full flex items-center gap-3 p-4 border border-[var(--border)] rounded-lg hover:border-[var(--primary)] transition-colors bg-white">
+        <button className="w-full flex items-center gap-3 p-4 border border-[var(--border)] rounded-lg hover:border-[var(--primary)] transition-colors bg-surface">
           <div className="w-10 h-10 rounded-full bg-[var(--muted)] flex items-center justify-center">
             <Star className="w-5 h-5 text-[var(--muted-foreground)]" />
           </div>
@@ -49,7 +49,7 @@ export default function MoreOptions() {
           </div>
         </button>
 
-        <button className="w-full flex items-center gap-3 p-4 border border-[var(--border)] rounded-lg hover:border-[var(--primary)] transition-colors bg-white">
+        <button className="w-full flex items-center gap-3 p-4 border border-[var(--border)] rounded-lg hover:border-[var(--primary)] transition-colors bg-surface">
           <div className="w-10 h-10 rounded-full bg-[var(--muted)] flex items-center justify-center">
             <DollarSign className="w-5 h-5 text-[var(--muted-foreground)]" />
           </div>
@@ -59,7 +59,7 @@ export default function MoreOptions() {
           </div>
         </button>
 
-        <button className="w-full flex items-center gap-3 p-4 border border-[var(--border)] rounded-lg hover:border-[var(--primary)] transition-colors bg-white">
+        <button className="w-full flex items-center gap-3 p-4 border border-[var(--border)] rounded-lg hover:border-[var(--primary)] transition-colors bg-surface">
           <div className="w-10 h-10 rounded-full bg-[var(--muted)] flex items-center justify-center">
             <HelpCircle className="w-5 h-5 text-[var(--muted-foreground)]" />
           </div>
@@ -69,7 +69,7 @@ export default function MoreOptions() {
           </div>
         </button>
 
-        <button className="w-full flex items-center gap-3 p-4 border border-[var(--border)] rounded-lg hover:border-[var(--primary)] transition-colors bg-white">
+        <button className="w-full flex items-center gap-3 p-4 border border-[var(--border)] rounded-lg hover:border-[var(--primary)] transition-colors bg-surface">
           <div className="w-10 h-10 rounded-full bg-[var(--muted)] flex items-center justify-center">
             <FileText className="w-5 h-5 text-[var(--muted-foreground)]" />
           </div>

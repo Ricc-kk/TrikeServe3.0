@@ -108,7 +108,7 @@ export const CurrentRideTracker: React.FC<CurrentRideTrackerProps> = ({
     return (
       <button
         onClick={() => setIsMinimized(false)}
-        className="fixed bottom-6 right-6 z-[999] w-16 h-16 bg-gradient-to-br from-[var(--primary)] to-[var(--primary)] rounded-full shadow-2xl flex items-center justify-center hover:scale-110 transition-transform"
+        className="fixed bottom-6 right-6 z-[999] w-16 h-16 bg-[var(--primary)] rounded-full shadow-2xl flex items-center justify-center hover:scale-110 transition-transform"
       >
         <div className="text-2xl">{statusIcons[rideUpdate.status]}</div>
       </button>

@@ -49,7 +49,7 @@ export default function Home() {
         {/* Header Section */}
         <div className="text-center mb-16">
           <div className="inline-block mb-6">
-            <div className="w-20 h-20 bg-gradient-to-br from-[var(--primary)] to-[var(--primary)] rounded-2xl flex items-center justify-center shadow-2xl shadow-[var(--primary)]/30">
+            <div className="w-20 h-20 bg-[var(--primary)] rounded-2xl flex items-center justify-center shadow-2xl shadow-[var(--primary)]/30">
               <Bike className="w-10 h-10 text-white" />
             </div>
           </div>
@@ -104,7 +104,7 @@ export default function Home() {
                     </div>
                   </div>
                   
-                  <h3 className="text-2xl font-bold text-white mb-2 tracking-tight uppercase" style={{ letterSpacing: '-0.01em' }}>
+                  <h3 className="text-2xl font-bold text-white mb-2 tracking-tight" style={{ letterSpacing: '-0.01em' }}>
                     {module.title}
                   </h3>
                   <p className="text-white/60 font-medium">

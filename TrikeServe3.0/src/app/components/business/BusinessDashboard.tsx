@@ -8,7 +8,9 @@ import { Link, useNavigate } from "react-router";
 import { Card } from "../ui/card";
 import { Badge } from "../ui/badge";
 import { ImageWithFallback } from "../figma/ImageWithFallback";
-import BusinessSidebar from "./BusinessSidebar";
+import AppHeader from "../ui/AppHeader";
+import AppShell from "../ui/AppShell";
+import BottomNav from "../ui/BottomNav";
 import { useAuth } from "../../contexts/AuthContext";
 import { supabase } from "../../../lib/supabase";
 import { supabaseHelpers } from "@/lib/supabase";
@@ -275,7 +277,7 @@ export default function BusinessDashboard() {
   if (!user?.isVerified) {
     return (
       <div className="min-h-screen bg-[var(--muted)] flex items-center justify-center p-6">
-        <Card className="max-w-md w-full p-8 text-center border-2 border-[var(--border)]">
+        <Card className="max-w-md w-full p-8 text-center border border-line">
           <div className="w-20 h-20 bg-[var(--amber-soft)] rounded-full flex items-center justify-center mx-auto mb-4">
             <Clock className="w-10 h-10 text-[var(--amber)]" />
           </div>
@@ -293,7 +295,7 @@ export default function BusinessDashboard() {
             </ul>
           </div>
           <Link to="/">
-            <button className="w-full py-3 bg-[var(--primary)] text-white font-bold rounded-xl uppercase">
+            <button className="w-full py-3 bg-[var(--primary)] text-white font-bold rounded-xl">
               Back to Login
             </button>
           </Link>
@@ -308,62 +310,21 @@ export default function BusinessDashboard() {
     : 1;
 
   return (
-    <div className="min-h-screen bg-[var(--muted)] flex">
-      {/* Sidebar Navigation */}
-      <BusinessSidebar 
-        isMobileMenuOpen={isMobileMenuOpen}
-        setIsMobileMenuOpen={setIsMobileMenuOpen}
-      />
-
-      {/* Main Content */}
-      <div className="flex-1 lg:ml-64">
-        {/* Top Header */}
-        <div className="bg-white border-b-2 border-[var(--border)] px-5 lg:px-8 py-4 lg:py-5 sticky top-0 z-50">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              {/* Hamburger Menu - Mobile Only */}
-              <button
-                onClick={() => setIsMobileMenuOpen(true)}
-                className="lg:hidden p-2 hover:bg-[var(--muted)] rounded-xl transition-all"
-              >
-                <Menu className="w-6 h-6 text-[var(--ink)]" />
-              </button>
-              <div>
-                <h1 className="text-2xl lg:text-3xl font-extrabold text-[var(--ink)]">Welcome, {user?.name?.split(' ')[0] || 'Business Owner'}! / Maligayang pagdating</h1>
-                <p className="text-xs lg:text-sm text-[var(--muted-foreground)]">Here's what's happening with your store today / Heto ang balita sa tindahan mo ngayon</p>
-              </div>
-            </div>
-            <div className="flex items-center gap-2 lg:gap-4">
-              <button 
-                onClick={() => setShowNotifications(true)}
-                className="relative p-2 hover:bg-[var(--muted)] rounded-xl transition-all"
-              >
-                <Bell className="w-5 h-5 lg:w-6 lg:h-6 text-[var(--muted-foreground)]" />
-                {notifications.filter((n: any) => !n.read).length > 0 && (
-                  <div className="absolute top-1 right-1 w-2 h-2 bg-[var(--primary)] rounded-full" />
-                )}
-              </button>
-              <Link to="/business/account" className="hidden lg:flex">
-                <div className="flex items-center gap-3 px-3 py-2 hover:bg-[var(--muted)] rounded-xl transition-all cursor-pointer">
-                  <div className="w-10 h-10 bg-gradient-to-br from-[var(--primary)] to-[var(--primary)] rounded-full flex items-center justify-center">
-                    <UserIcon className="w-5 h-5 text-white" />
-                  </div>
-                  <div>
-                    <p className="font-bold text-[var(--ink)] text-sm">{user?.name || 'Business Owner'}</p>
-                    <p className="text-xs text-[var(--muted-foreground)]">Business Owner</p>
-                  </div>
-                </div>
-              </Link>
-            </div>
-          </div>
-        </div>
-
-        {/* Content */}
-        <div className="p-5 lg:p-8">
+    <AppShell
+      header={
+        <AppHeader
+          notificationCount={notifications.filter((n: any) => !n.read).length}
+          onNotificationsClick={() => setShowNotifications(true)}
+          hint="Heto ang balita sa tindahan mo ngayon."
+        />
+      }
+      bottomNav={<BottomNav variant="business" active="home" />}
+    >
+      <div className="space-y-6">
           {/* Stats Cards */}
           <div className="grid grid-cols-2 lg:grid-cols-5 gap-3 lg:gap-4 mb-6 lg:mb-8">
             {/* Total Orders */}
-            <Card className="p-4 lg:p-6 border-2 border-[var(--border)] bg-white">
+            <Card className="p-4 lg:p-6 border border-line bg-surface">
               <div className="flex items-start justify-between mb-3 lg:mb-4">
                 <div>
                   <p className="text-xs lg:text-sm text-[var(--muted-foreground)] mb-1">Total Orders</p>
@@ -386,7 +347,7 @@ export default function BusinessDashboard() {
             </Card>
 
             {/* Total Revenue */}
-            <Card className="p-4 lg:p-6 border-2 border-[var(--border)] bg-white">
+            <Card className="p-4 lg:p-6 border border-line bg-surface">
               <div className="flex items-start justify-between mb-3 lg:mb-4">
                 <div>
                   <p className="text-xs lg:text-sm text-[var(--muted-foreground)] mb-1">Total Revenue</p>
@@ -408,7 +369,7 @@ export default function BusinessDashboard() {
             </Card>
 
             {/* Total Items */}
-            <Card className="p-4 lg:p-6 border-2 border-[var(--border)] bg-white">
+            <Card className="p-4 lg:p-6 border border-line bg-surface">
               <div className="flex items-start justify-between mb-3 lg:mb-4">
                 <div>
                   <p className="text-xs lg:text-sm text-[var(--muted-foreground)] mb-1">Total Items</p>
@@ -430,7 +391,7 @@ export default function BusinessDashboard() {
             </Card>
 
             {/* Earnings */}
-            <Card className="p-4 lg:p-6 border-2 border-[var(--border)] bg-white">
+            <Card className="p-4 lg:p-6 border border-line bg-surface">
               <div className="flex items-start justify-between mb-3 lg:mb-4">
                 <div>
                   <p className="text-xs lg:text-sm text-[var(--muted-foreground)] mb-1">Today's Earnings</p>
@@ -452,7 +413,7 @@ export default function BusinessDashboard() {
             </Card>
 
             {/* Rating */}
-            <Card className="p-4 lg:p-6 border-2 border-[var(--border)] bg-white">
+            <Card className="p-4 lg:p-6 border border-line bg-surface">
               <div className="flex items-start justify-between mb-3 lg:mb-4">
                 <div>
                   <p className="text-xs lg:text-sm text-[var(--muted-foreground)] mb-1">Rating</p>
@@ -500,7 +461,7 @@ export default function BusinessDashboard() {
                   <p className="text-[var(--muted-foreground)] text-sm mb-2">No menu items yet</p>
                   <p className="text-[var(--muted-foreground)] text-xs mb-4">Add items to your menu to start selling</p>
                   <Link to="/business/menu">
-                    <button className="px-6 py-2 bg-[var(--primary)] text-white font-bold rounded-xl uppercase text-sm">
+                    <button className="px-6 py-2 bg-[var(--primary)] text-white font-bold rounded-xl text-sm">
                       ADD MENU ITEMS
                     </button>
                   </Link>
@@ -508,7 +469,7 @@ export default function BusinessDashboard() {
               ) : (
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-3 lg:gap-4">
                   {popularMenu.map((item) => (
-                    <Card key={item.id} className="p-3 lg:p-4 border-2 border-[var(--border)] bg-white group hover:border-[var(--primary)] transition-all">
+                    <Card key={item.id} className="p-3 lg:p-4 border border-line bg-surface group hover:border-[var(--primary)] transition-all">
                       <div className="relative h-28 lg:h-32 rounded-xl overflow-hidden mb-3">
                         <ImageWithFallback
                           src={item.image}
@@ -534,7 +495,7 @@ export default function BusinessDashboard() {
             {/* Daily Sales Chart */}
             <div>
               <h2 className="text-xl lg:text-2xl font-bold text-[var(--ink)] mb-4">Daily Sales</h2>
-              <Card className="p-5 lg:p-6 border-2 border-[var(--border)] bg-white">
+              <Card className="p-5 lg:p-6 border border-line bg-surface">
                 {dailySales.length === 0 ? (
                   <div className="text-center py-12">
                     <BarChart3 className="w-16 h-16 text-[var(--border)] mx-auto mb-4" />
@@ -632,7 +593,7 @@ export default function BusinessDashboard() {
           {/* Total Income */}
           <div>
             <h2 className="text-xl lg:text-2xl font-bold text-[var(--ink)] mb-4">Total Income</h2>
-            <Card className="p-5 lg:p-6 border-2 border-[var(--border)] bg-white">
+            <Card className="p-5 lg:p-6 border border-line bg-surface">
               {incomeBreakdown.length === 0 ? (
                 <div className="text-center py-12">
                   <DollarSign className="w-16 h-16 text-[var(--border)] mx-auto mb-4" />
@@ -718,7 +679,6 @@ export default function BusinessDashboard() {
             </Card>
           </div>
         </div>
-      </div>
 
       {/* Notifications Panel */}
       {showNotifications && (
@@ -727,8 +687,8 @@ export default function BusinessDashboard() {
             className="fixed inset-0 bg-black/50 z-[2000]"
             onClick={() => setShowNotifications(false)}
           />
-          <div className="fixed top-0 right-0 h-full w-full lg:w-[400px] bg-white z-[2001] shadow-2xl overflow-y-auto">
-            <div className="p-5 border-b-2 border-[var(--border)] sticky top-0 bg-white z-10">
+          <div className="fixed top-0 right-0 h-full w-full lg:w-[400px] bg-surface z-[2001] shadow-2xl overflow-y-auto">
+            <div className="p-5 border-b-2 border-[var(--border)] sticky top-0 bg-surface z-10">
               <div className="flex items-center justify-between">
                 <h2 className="text-2xl font-bold text-[var(--ink)]">Notifications</h2>
                 <button 
@@ -747,7 +707,7 @@ export default function BusinessDashboard() {
                 <Card 
                   key={notification.id}
                   className={`p-4 border transition-all cursor-pointer hover:border-[var(--primary)] ${
-                    notification.read ? 'border-[var(--border)] bg-white' : 'border-[var(--border)] bg-white'
+                    notification.read ? 'border-[var(--border)] bg-surface' : 'border-[var(--border)] bg-surface'
                   }`}
                 >
                   <div className="flex items-start gap-3">
@@ -783,7 +743,7 @@ export default function BusinessDashboard() {
       {/* Welcome Back Popup */}
       {showWelcomeBack && (
         <div className="fixed inset-0 bg-black/50 z-[2000] flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl shadow-xl p-8 max-w-sm w-full text-center">
+          <div className="bg-surface rounded-2xl shadow-xl p-8 max-w-sm w-full text-center">
             <div className="w-16 h-16 bg-[var(--success-soft)] rounded-full flex items-center justify-center mx-auto mb-4">
               <Check className="w-8 h-8 text-[var(--success)]" />
             </div>
@@ -797,6 +757,6 @@ export default function BusinessDashboard() {
           </div>
         </div>
       )}
-    </div>
+    </AppShell>
   );
 }

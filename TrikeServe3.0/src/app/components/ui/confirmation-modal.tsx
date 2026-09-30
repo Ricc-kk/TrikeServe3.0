@@ -79,7 +79,7 @@ export default function ConfirmationModal({
   return (
     <div className={`fixed inset-0 ${zIndexClassName} flex items-center justify-center p-4`}>
       <div className="absolute inset-0 bg-black/50" onClick={onCancel} />
-      <div className="relative w-full max-w-sm bg-white rounded-2xl shadow-2xl overflow-hidden">
+      <div className="relative w-full max-w-sm bg-surface rounded-2xl shadow-2xl overflow-hidden">
         <div className="p-6 text-center">
           <div className={`w-14 h-14 ${config.iconBg} rounded-full flex items-center justify-center mx-auto mb-4`}>
             <Icon className={`w-7 h-7 ${config.iconColor}`} />

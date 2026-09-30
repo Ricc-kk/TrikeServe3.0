@@ -159,7 +159,7 @@ export default function RiderProfile() {
   return (
     <div className="min-h-screen bg-[var(--muted)]">
       {/* Header */}
-      <div className="bg-gradient-to-r from-[var(--primary)] to-[var(--primary)] px-4 py-4 sticky top-0 z-50">
+      <div className="bg-[var(--primary)] px-4 py-4 sticky top-0 z-50">
         <div className="flex items-center justify-between mb-6">
           <button 
             onClick={() => navigate('/rider')}
@@ -171,7 +171,7 @@ export default function RiderProfile() {
           {!isEditing ? (
             <Button
               onClick={() => setIsEditing(true)}
-              className="bg-white/20 backdrop-blur-sm hover:bg-white/30 text-white font-bold uppercase text-sm px-4 py-2 rounded-lg flex items-center gap-2"
+              className="bg-white/20 backdrop-blur-sm hover:bg-white/30 text-white font-bold text-sm px-4 py-2 rounded-lg flex items-center gap-2"
             >
               <Edit2 className="w-4 h-4" />
               Edit Profile
@@ -181,14 +181,14 @@ export default function RiderProfile() {
               <Button
                 onClick={handleCancel}
                 variant="ghost"
-                className="bg-white/20 backdrop-blur-sm hover:bg-white/30 text-white font-bold uppercase text-sm px-4 py-2 rounded-lg"
+                className="bg-white/20 backdrop-blur-sm hover:bg-white/30 text-white font-bold text-sm px-4 py-2 rounded-lg"
               >
                 <X className="w-4 h-4" />
               </Button>
               <Button
                 onClick={handleSave}
                 disabled={isSaving}
-                className="bg-white text-[var(--primary)] hover:bg-white/90 font-bold uppercase text-sm px-4 py-2 rounded-lg flex items-center gap-2"
+                className="bg-surface text-[var(--primary)] hover:bg-white/90 font-bold text-sm px-4 py-2 rounded-lg flex items-center gap-2"
               >
                 <Save className="w-4 h-4" />
                 {isSaving ? 'Saving...' : 'Save'}
@@ -259,7 +259,7 @@ export default function RiderProfile() {
           <div className="space-y-4">
             {/* Full Name */}
             <div>
-              <label className="text-xs font-semibold text-[var(--muted-foreground)] uppercase tracking-wide mb-2 block">
+              <label className="text-xs font-semibold text-[var(--muted-foreground)] uppercase tracking-widest mb-2 block">
                 Full Name
               </label>
               {isEditing ? (
@@ -267,7 +267,7 @@ export default function RiderProfile() {
                   type="text"
                   value={formData.name}
                   onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                  className="w-full p-2 border-2 border-[var(--border)] rounded-lg text-base font-semibold text-[var(--ink)] focus:border-[var(--primary)] outline-none"
+                  className="w-full p-2 border border-line rounded-lg text-base font-semibold text-[var(--ink)] focus:border-[var(--primary)] outline-none"
                   placeholder="Enter your full name"
                 />
               ) : (
@@ -277,7 +277,7 @@ export default function RiderProfile() {
 
             {/* Email */}
             <div>
-              <label className="text-xs font-semibold text-[var(--muted-foreground)] uppercase tracking-wide mb-2 block">
+              <label className="text-xs font-semibold text-[var(--muted-foreground)] uppercase tracking-widest mb-2 block">
                 Email Address
               </label>
               <div className="flex items-center gap-2">
@@ -289,7 +289,7 @@ export default function RiderProfile() {
 
             {/* Phone */}
             <div>
-              <label className="text-xs font-semibold text-[var(--muted-foreground)] uppercase tracking-wide mb-2 block">
+              <label className="text-xs font-semibold text-[var(--muted-foreground)] uppercase tracking-widest mb-2 block">
                 Phone Number
               </label>
               {isEditing ? (
@@ -297,7 +297,7 @@ export default function RiderProfile() {
                   type="tel"
                   value={formData.phone}
                   onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
-                  className="w-full p-2 border-2 border-[var(--border)] rounded-lg text-base text-[var(--ink)] focus:border-[var(--primary)] outline-none"
+                  className="w-full p-2 border border-line rounded-lg text-base text-[var(--ink)] focus:border-[var(--primary)] outline-none"
                   placeholder="09XX XXX XXXX"
                 />
               ) : (
@@ -320,7 +320,7 @@ export default function RiderProfile() {
           <div className="space-y-4">
             {/* TODA Plate Number */}
             <div>
-              <label className="text-xs font-semibold text-[var(--muted-foreground)] uppercase tracking-wide mb-2 block">
+              <label className="text-xs font-semibold text-[var(--muted-foreground)] uppercase tracking-widest mb-2 block">
                 TODA Plate Number
               </label>
               <div className="flex items-center gap-2">
@@ -335,7 +335,7 @@ export default function RiderProfile() {
 
             {/* Driver's License Number */}
             <div>
-              <label className="text-xs font-semibold text-[var(--muted-foreground)] uppercase tracking-wide mb-2 block">
+              <label className="text-xs font-semibold text-[var(--muted-foreground)] uppercase tracking-widest mb-2 block">
                 Driver's License Number
               </label>
               <div className="flex items-center gap-2">
@@ -349,7 +349,7 @@ export default function RiderProfile() {
 
             {/* Verification Status */}
             <div>
-              <label className="text-xs font-semibold text-[var(--muted-foreground)] uppercase tracking-wide mb-2 block">
+              <label className="text-xs font-semibold text-[var(--muted-foreground)] uppercase tracking-widest mb-2 block">
                 Verification Status
               </label>
               <div className={`px-4 py-3 rounded-lg ${
@@ -407,7 +407,7 @@ export default function RiderProfile() {
             </div>
             {/* Terminal Map */}
             {terminalData && isMapsLoaded && (
-              <div className="rounded-xl overflow-hidden border-2 border-[var(--border)]" style={{ height: 200 }}>
+              <div className="rounded-xl overflow-hidden border border-line" style={{ height: 200 }}>
                 <GoogleMap
                   mapContainerStyle={{ width: '100%', height: '100%' }}
                   center={{ lat: terminalData.lat, lng: terminalData.lng }}
@@ -438,7 +438,7 @@ export default function RiderProfile() {
           <div className="space-y-4">
             {/* Service Types */}
             <div>
-              <label className="text-xs font-semibold text-[var(--muted-foreground)] uppercase tracking-wide mb-3 block">
+              <label className="text-xs font-semibold text-[var(--muted-foreground)] uppercase tracking-widest mb-3 block">
                 Active Service Types
               </label>
               <div className="flex flex-wrap gap-2">
@@ -508,7 +508,7 @@ export default function RiderProfile() {
           {user.role === 'rider' ? (
             <Button
               onClick={() => setShowSwitchConfirm(true)}
-              className="w-full bg-[var(--success)] hover:bg-[var(--success)] text-white font-bold uppercase py-4 rounded-lg flex items-center justify-center gap-2 shadow-md mb-3"
+              className="w-full bg-[var(--success)] hover:bg-[var(--success)] text-white font-bold py-4 rounded-lg flex items-center justify-center gap-2 shadow-md mb-3"
             >
               Use Customer App
             </Button>
@@ -516,7 +516,7 @@ export default function RiderProfile() {
             localStorage.getItem('trikeserve_original_role') && (
               <Button
                 onClick={() => setShowSwitchConfirm(true)}
-                className="w-full bg-[var(--ink)] hover:bg-[var(--ink)] text-white font-bold uppercase py-4 rounded-lg flex items-center justify-center gap-2 shadow-md mb-3"
+                className="w-full bg-[var(--ink)] hover:bg-[var(--ink)] text-white font-bold py-4 rounded-lg flex items-center justify-center gap-2 shadow-md mb-3"
               >
                 Switch back to Driver App
               </Button>
@@ -577,7 +577,7 @@ export default function RiderProfile() {
               navigate('/');
             }, 2000);
           }}
-          className="w-full bg-[var(--ink)] hover:bg-[var(--ink)] text-white font-bold uppercase py-4 rounded-lg flex items-center justify-center gap-2 shadow-md"
+          className="w-full bg-[var(--ink)] hover:bg-[var(--ink)] text-white font-bold py-4 rounded-lg flex items-center justify-center gap-2 shadow-md"
         >
           <LogOut className="w-5 h-5" />
           Sign Out
@@ -591,7 +591,7 @@ export default function RiderProfile() {
       {/* Confirm Save Modal */}
       {showConfirmSave && (
         <div className="fixed inset-0 bg-black/50 z-[2000] flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl shadow-xl p-6 max-w-sm w-full">
+          <div className="bg-surface rounded-2xl shadow-xl p-6 max-w-sm w-full">
             <div className="text-center mb-4">
               <div className="w-14 h-14 bg-[var(--primary-soft)] rounded-full flex items-center justify-center mx-auto mb-3">
                 <CheckCircle className="w-7 h-7 text-[var(--primary)]" />
@@ -622,7 +622,7 @@ export default function RiderProfile() {
       {/* Switch Confirmation Modal */}
       {showSwitchConfirm && (
         <div className="fixed inset-0 bg-black/50 z-[2000] flex items-center justify-center p-4">
-          <div className="bg-white p-6 max-w-sm w-full rounded-2xl shadow-xl">
+          <div className="bg-surface p-6 max-w-sm w-full rounded-2xl shadow-xl">
             <div className="w-16 h-16 bg-[var(--info-soft)] rounded-full flex items-center justify-center mx-auto mb-4">
               <ArrowLeft className="w-8 h-8 text-[var(--info)]" />
             </div>
@@ -665,7 +665,7 @@ export default function RiderProfile() {
       {/* Goodbye Popup */}
       {showGoodbye && (
         <div className="fixed inset-0 bg-black/50 z-[2000] flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl shadow-xl p-8 max-w-sm w-full text-center">
+          <div className="bg-surface rounded-2xl shadow-xl p-8 max-w-sm w-full text-center">
             <div className="w-16 h-16 bg-[var(--info-soft)] rounded-full flex items-center justify-center mx-auto mb-4">
               <LogOut className="w-8 h-8 text-[var(--info)]" />
             </div>

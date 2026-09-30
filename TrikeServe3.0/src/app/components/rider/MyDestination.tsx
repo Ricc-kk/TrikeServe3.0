@@ -25,7 +25,7 @@ export default function MyDestination() {
   return (
     <div className="min-h-screen bg-[var(--muted)]">
       {/* Header */}
-      <div className="bg-white border-b-2 border-[var(--border)] px-4 py-3 flex items-center gap-3">
+      <div className="bg-surface border-b-2 border-[var(--border)] px-4 py-3 flex items-center gap-3">
         <Button variant="ghost" size="icon" onClick={() => navigate('/rider')}>
           <ArrowLeft className="w-5 h-5" />
         </Button>
@@ -51,7 +51,7 @@ export default function MyDestination() {
             onChange={setDestination}
             onSelect={handleSelectDestination}
             placeholder="Search for an address, landmark, or destination (e.g., Gen T Deleon Valenzuela City)"
-            className="w-full px-4 py-3 border-2 border-[var(--border)] rounded-lg focus:border-[var(--primary)] focus:outline-none"
+            className="w-full px-4 py-3 border border-line rounded-lg focus:border-[var(--primary)] focus:outline-none"
             locationBias={VALENZUELA_BIAS}
             restrictToCity="Valenzuela"
           />
@@ -65,7 +65,7 @@ export default function MyDestination() {
 
         <Button 
           onClick={handleSetDestination}
-          className="w-full bg-[var(--primary)] hover:bg-[var(--primary)] uppercase mt-4"
+          className="w-full bg-[var(--primary)] hover:bg-[var(--primary)] mt-4"
         >
           Set Destination
         </Button>

@@ -53,7 +53,7 @@ export default function BusinessAccount() {
       {/* Main Content */}
       <div className="flex-1 lg:ml-64 w-full min-w-0">
         {/* Header with Back Button */}
-        <div className="bg-white px-3 lg:px-4 py-3 lg:py-4 border-b border-[var(--border)]">
+        <div className="bg-surface px-3 lg:px-4 py-3 lg:py-4 border-b border-[var(--border)]">
           <div className="flex items-center gap-2 lg:gap-3">
             {/* Hamburger Menu - Mobile Only */}
             <button
@@ -74,7 +74,7 @@ export default function BusinessAccount() {
             <div className="flex-1 min-w-0">
               <h1 className="text-lg lg:text-2xl xl:text-3xl font-extrabold text-[var(--ink)]">Account</h1>
             </div>
-            <Link to="/business/profile" className="flex-shrink-0 flex items-center gap-1.5 px-3 py-1.5 bg-white/80 backdrop-blur-sm rounded-full text-[var(--primary)] text-xs font-semibold hover:bg-white transition-colors shadow-sm">
+            <Link to="/business/profile" className="flex-shrink-0 flex items-center gap-1.5 px-3 py-1.5 bg-white/80 backdrop-blur-sm rounded-full text-[var(--primary)] text-xs font-semibold hover:bg-surface transition-colors shadow-sm">
               <Pencil className="w-3.5 h-3.5" />
               Edit Profile
             </Link>
@@ -83,7 +83,7 @@ export default function BusinessAccount() {
         </div>
 
         {/* Profile Section - Gradient Header */}
-        <div className="relative bg-gradient-to-br from-[var(--primary)] via-[var(--primary)] to-[var(--primary)] px-4 lg:px-6 py-6 lg:py-8">
+        <div className="relative bg-[var(--primary)] px-4 lg:px-6 py-6 lg:py-8">
           <div className="flex items-center gap-4">
             <div className="w-16 h-16 lg:w-20 lg:h-20 bg-white/20 backdrop-blur-sm rounded-2xl flex items-center justify-center border-2 border-white/30 shadow-lg overflow-hidden">
               {logoUrl ? (
@@ -107,7 +107,7 @@ export default function BusinessAccount() {
 
         {/* Contact Info Card */}
         <div className="px-4 lg:px-6 mt-4 relative z-10">
-          <div className="bg-white rounded-2xl shadow-sm border border-[var(--muted)] p-4">
+          <div className="bg-surface rounded-2xl shadow-sm border border-[var(--muted)] p-4">
             <div className="space-y-3">
               <div className="flex items-center gap-3">
                 <div className="w-8 h-8 bg-[var(--success-soft)] rounded-lg flex items-center justify-center">
@@ -134,18 +134,18 @@ export default function BusinessAccount() {
         {/* Menu Sections */}
         <div className="px-4 lg:px-6 py-5 space-y-5">
           {/* Business Management */}
-          <div className="bg-white rounded-2xl shadow-sm border border-[var(--muted)] overflow-hidden">
+          <div className="bg-surface rounded-2xl shadow-sm border border-[var(--muted)] overflow-hidden">
             <div className="px-4 pt-4 pb-2">
               <div className="flex items-center gap-2">
                 <Shield className="w-4 h-4 text-[var(--muted-foreground)]" />
-                <h3 className="text-xs font-semibold text-[var(--muted-foreground)] uppercase tracking-wider">Business Management</h3>
+                <h3 className="text-xs font-semibold text-[var(--muted-foreground)] tracking-wider">Business Management</h3>
               </div>
             </div>
             
             <Link to="/business/menu">
               <div className="flex items-center justify-between px-4 py-3.5 hover:bg-[var(--muted)] transition-colors">
                 <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 bg-gradient-to-br from-[var(--primary)] to-[var(--primary)] rounded-xl flex items-center justify-center shadow-sm">
+                  <div className="w-10 h-10 bg-[var(--primary)] rounded-xl flex items-center justify-center shadow-sm">
                     <Package className="w-5 h-5 text-white" />
                   </div>
                   <div>
@@ -196,11 +196,11 @@ export default function BusinessAccount() {
           </div>
 
           {/* Quick Links Card */}
-          <div className="bg-white rounded-2xl shadow-sm border border-[var(--muted)] overflow-hidden">
+          <div className="bg-surface rounded-2xl shadow-sm border border-[var(--muted)] overflow-hidden">
             <div className="px-4 pt-4 pb-2">
               <div className="flex items-center gap-2">
                 <Bell className="w-4 h-4 text-[var(--muted-foreground)]" />
-                <h3 className="text-xs font-semibold text-[var(--muted-foreground)] uppercase tracking-wider">Settings</h3>
+                <h3 className="text-xs font-semibold text-[var(--muted-foreground)] tracking-wider">Settings</h3>
               </div>
             </div>
 
@@ -250,7 +250,7 @@ export default function BusinessAccount() {
         {/* Switch Confirmation Modal */}
         {showSwitchConfirm && (
           <div className="fixed inset-0 bg-black/50 z-[2000] flex items-center justify-center p-4">
-            <div className="bg-white p-6 max-w-sm w-full rounded-2xl shadow-xl">
+            <div className="bg-surface p-6 max-w-sm w-full rounded-2xl shadow-xl">
               <div className="w-16 h-16 bg-[var(--info-soft)] rounded-full flex items-center justify-center mx-auto mb-4">
                 <ArrowLeft className="w-8 h-8 text-[var(--info)]" />
               </div>
@@ -293,7 +293,7 @@ export default function BusinessAccount() {
         {/* Logout Confirmation Modal */}
         {showLogoutConfirm && (
           <div className="fixed inset-0 bg-black/50 z-[2000] flex items-center justify-center p-4">
-            <div className="bg-white p-6 max-w-sm w-full rounded-2xl shadow-xl">
+            <div className="bg-surface p-6 max-w-sm w-full rounded-2xl shadow-xl">
               <div className="w-16 h-16 bg-[var(--primary-soft)] rounded-full flex items-center justify-center mx-auto mb-4">
                 <LogOut className="w-8 h-8 text-[var(--primary)]" />
               </div>
@@ -322,7 +322,7 @@ export default function BusinessAccount() {
         {/* Goodbye Popup */}
         {showGoodbye && (
           <div className="fixed inset-0 bg-black/50 z-[2000] flex items-center justify-center p-4">
-            <div className="bg-white rounded-2xl shadow-xl p-8 max-w-sm w-full text-center">
+            <div className="bg-surface rounded-2xl shadow-xl p-8 max-w-sm w-full text-center">
               <div className="w-16 h-16 bg-[var(--info-soft)] rounded-full flex items-center justify-center mx-auto mb-4">
                 <LogOut className="w-8 h-8 text-[var(--info)]" />
               </div>

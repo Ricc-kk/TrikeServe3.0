@@ -302,7 +302,7 @@ export default function VerifiedUsers() {
       {/* Main Content */}
       <div className="flex-1 flex flex-col overflow-hidden">
         {/* Header */}
-        <div className="bg-white border-b border-[var(--border)] p-4">
+        <div className="bg-surface border-b border-[var(--border)] p-4">
           <div className="flex items-center justify-between">
             <div>
               <h1 className="text-2xl font-bold text-[var(--ink)]">User Verification</h1>
@@ -334,7 +334,7 @@ export default function VerifiedUsers() {
 
           {/* Statistics */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
-            <Card className="p-4 bg-white">
+            <Card className="p-4 bg-surface">
               <div className="flex items-center justify-between">
                 <div>
                   <p className="text-[var(--muted-foreground)] text-sm">Verified Users</p>
@@ -344,7 +344,7 @@ export default function VerifiedUsers() {
               </div>
             </Card>
 
-            <Card className="p-4 bg-white">
+            <Card className="p-4 bg-surface">
               <div className="flex items-center justify-between">
                 <div>
                   <p className="text-[var(--muted-foreground)] text-sm">Pending Verification</p>
@@ -386,7 +386,7 @@ export default function VerifiedUsers() {
             <div className="space-y-4">
               {filteredVerified.length > 0 ? (
                 filteredVerified.map(u => (
-                  <Card key={u.id} className="p-4 bg-white hover:shadow-lg transition-shadow">
+                  <Card key={u.id} className="p-4 bg-surface hover:shadow-lg transition-shadow">
                     <div className="flex items-start justify-between">
                       <div className="flex items-start gap-4 flex-1">
                         <div className={`p-3 rounded-lg ${getRoleBadgeColor(u.role)}`}>
@@ -429,7 +429,7 @@ export default function VerifiedUsers() {
                   </Card>
                 ))
               ) : (
-                <Card className="p-8 bg-white text-center">
+                <Card className="p-8 bg-surface text-center">
                   <CheckCircle className="w-12 h-12 text-[var(--border)] mx-auto mb-2" />
                   <p className="text-[var(--muted-foreground)]">No verified users found</p>
                 </Card>
@@ -442,7 +442,7 @@ export default function VerifiedUsers() {
             <div className="space-y-4">
               {filteredPending.length > 0 ? (
                 filteredPending.map(u => (
-                  <Card key={u.id} className="p-4 bg-white hover:shadow-lg transition-shadow border-l-4 border-[var(--amber)]">
+                  <Card key={u.id} className="p-4 bg-surface hover:shadow-lg transition-shadow border-l-4 border-[var(--amber)]">
                     <div className="flex items-start justify-between">
                       <div className="flex items-start gap-4 flex-1">
                         <div className={`p-3 rounded-lg ${getRoleBadgeColor(u.role)}`}>
@@ -511,7 +511,7 @@ export default function VerifiedUsers() {
                   </Card>
                 ))
               ) : (
-                <Card className="p-8 bg-white text-center">
+                <Card className="p-8 bg-surface text-center">
                   <Clock className="w-12 h-12 text-[var(--border)] mx-auto mb-2" />
                   <p className="text-[var(--muted-foreground)]">No pending users</p>
                 </Card>

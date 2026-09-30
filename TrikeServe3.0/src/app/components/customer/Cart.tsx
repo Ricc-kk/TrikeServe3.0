@@ -339,9 +339,9 @@ export default function Cart() {
   // LIST VIEW
   if (viewMode === "list") {
     return (
-      <div className="min-h-screen bg-white pb-32">
+      <div className="min-h-screen bg-surface pb-32">
         {/* Header */}
-        <div className="px-5 py-4 border-b border-[var(--border)] flex items-center justify-between sticky top-0 bg-white z-50">
+        <div className="px-5 py-4 border-b border-[var(--border)] flex items-center justify-between sticky top-0 bg-surface z-50">
           <div className="flex items-center gap-3">
             <Link to="/customer/food">
               <button className="active:scale-90 transition-transform">
@@ -368,7 +368,7 @@ export default function Cart() {
               <div
                 key={restaurant.id}
                 onClick={() => !isManageMode && openCheckout(restaurant)}
-                className={`bg-white border-2 border-[var(--border)] rounded-2xl p-4 ${!isManageMode ? 'active:scale-[0.98]' : ''} transition-all`}
+                className={`bg-surface border border-line rounded-2xl p-4 ${!isManageMode ? 'active:scale-[0.98]' : ''} transition-all`}
               >
                 <div className="flex items-start gap-3">
                   {/* Checkbox in manage mode */}
@@ -383,7 +383,7 @@ export default function Cart() {
                       <div className={`w-6 h-6 rounded border-2 flex items-center justify-center transition-all ${
                         selectedRestaurants.includes(restaurant.id)
                           ? 'bg-[var(--success)] border-[var(--success)]'
-                          : 'border-[var(--border)] bg-white'
+                          : 'border-[var(--border)] bg-surface'
                       }`}>
                         {selectedRestaurants.includes(restaurant.id) && (
                           <svg className="w-4 h-4 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -452,7 +452,7 @@ export default function Cart() {
                                 e.stopPropagation();
                                 updateItemQuantity(restaurant.id, item.id, -1);
                               }}
-                              className="w-7 h-7 rounded-full border-2 border-[var(--border)] flex items-center justify-center active:scale-90 transition-all"
+                              className="w-7 h-7 rounded-full border border-line flex items-center justify-center active:scale-90 transition-all"
                             >
                               <Minus size={12} className="text-[var(--ink)]" />
                             </button>
@@ -488,7 +488,7 @@ export default function Cart() {
             <h3 className="text-xl font-bold text-[var(--ink)] mb-2">Your cart is empty</h3>
             <p className="text-[var(--muted-foreground)] mb-6">Add items to get started</p>
             <Link to="/customer/food">
-              <Button className="bg-[var(--primary)] hover:bg-[var(--primary)] uppercase">
+              <Button className="bg-[var(--primary)] hover:bg-[var(--primary)]">
                 Browse Food
               </Button>
             </Link>
@@ -497,7 +497,7 @@ export default function Cart() {
 
         {/* Manage Mode Bottom Actions */}
         {isManageMode && cartRestaurants.length > 0 && (
-          <div className="fixed bottom-16 left-0 right-0 bg-white border-t-2 border-[var(--border)] px-5 py-4 z-[1400]">
+          <div className="fixed bottom-16 left-0 right-0 bg-surface border-t-2 border-[var(--border)] px-5 py-4 z-[1400]">
             <div className="flex items-center justify-between gap-4">
               <button
                 onClick={toggleSelectAll}
@@ -506,7 +506,7 @@ export default function Cart() {
                 <div className={`w-6 h-6 rounded border-2 flex items-center justify-center transition-all ${
                   selectedRestaurants.length === cartRestaurants.length
                     ? 'bg-[var(--success)] border-[var(--success)]'
-                    : 'border-[var(--border)] bg-white'
+                    : 'border-[var(--border)] bg-surface'
                 }`}>
                   {selectedRestaurants.length === cartRestaurants.length && (
                     <svg className="w-4 h-4 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -520,7 +520,7 @@ export default function Cart() {
               <button
                 onClick={removeSelectedRestaurants}
                 disabled={selectedRestaurants.length === 0}
-                className={`px-8 py-3 rounded-full font-bold text-white uppercase transition-all ${
+                className={`px-8 py-3 rounded-full font-bold text-white transition-all ${
                   selectedRestaurants.length > 0
                     ? 'bg-[var(--primary)] active:scale-95'
                     : 'bg-[var(--border)] cursor-not-allowed'
@@ -538,7 +538,7 @@ export default function Cart() {
         {/* Remove Confirmation Modal */}
         {showRemoveConfirm && (
           <div className="fixed inset-0 bg-black/60 z-[2000] flex items-center justify-center p-4">
-            <Card className="bg-white p-6 max-w-sm w-full" onClick={(e) => e.stopPropagation()}>
+            <Card className="bg-surface p-6 max-w-sm w-full" onClick={(e) => e.stopPropagation()}>
               <h3 className="text-xl font-bold text-[var(--ink)] text-center mb-2">
                 {pendingRemoveItem ? 'Remove Last Item?' : 'Remove Items?'}
               </h3>
@@ -550,13 +550,13 @@ export default function Cart() {
               <div className="space-y-3">
                 <button
                   onClick={confirmRemoveRestaurants}
-                  className="w-full py-4 bg-[var(--primary)] hover:bg-[var(--primary)] text-white font-bold rounded-2xl uppercase active:scale-95 transition-transform"
+                  className="w-full py-4 bg-[var(--primary)] hover:bg-[var(--primary)] text-white font-bold rounded-2xl active:scale-95 transition-transform"
                 >
                   {pendingRemoveItem ? 'Yes, Empty Cart' : 'Remove'}
                 </button>
                 <button
                   onClick={() => { setShowRemoveConfirm(false); setPendingRemoveItem(null); }}
-                  className="w-full py-4 bg-[var(--muted)] text-[var(--muted-foreground)] font-bold rounded-2xl uppercase active:scale-95 transition-transform"
+                  className="w-full py-4 bg-[var(--muted)] text-[var(--muted-foreground)] font-bold rounded-2xl active:scale-95 transition-transform"
                 >
                   Cancel
                 </button>
@@ -571,9 +571,9 @@ export default function Cart() {
 
   // CHECKOUT VIEW
   return (
-    <div className="min-h-screen bg-white pb-24">
+    <div className="min-h-screen bg-surface pb-24">
       {/* Header */}
-      <div className="px-5 py-4 border-b border-[var(--border)] sticky top-0 bg-white z-50">
+      <div className="px-5 py-4 border-b border-[var(--border)] sticky top-0 bg-surface z-50">
         <div className="flex items-center gap-3">
           <button
             onClick={() => {
@@ -658,7 +658,7 @@ export default function Cart() {
                             updateItemQuantity(checkoutRestaurant.id, item.id, -1);
                           }
                         }}
-                        className="w-8 h-8 rounded-full border-2 border-[var(--border)] flex items-center justify-center active:scale-90 transition-all"
+                        className="w-8 h-8 rounded-full border border-line flex items-center justify-center active:scale-90 transition-all"
                       >
                         <Minus size={14} className="text-[var(--ink)]" />
                       </button>
@@ -711,7 +711,7 @@ export default function Cart() {
           {/* Address */}
           <button
             onClick={() => setShowMapSelector(true)}
-            className="w-full flex items-center gap-3 p-4 bg-white border border-[var(--border)] rounded-xl mb-2 active:scale-[0.98] transition-transform"
+            className="w-full flex items-center gap-3 p-4 bg-surface border border-[var(--border)] rounded-xl mb-2 active:scale-[0.98] transition-transform"
           >
             <MapPin className="w-5 h-5 text-[var(--primary)] flex-shrink-0" />
             <div className="flex-1 text-left">
@@ -724,7 +724,7 @@ export default function Cart() {
           </button>
 
           {/* Floor/Unit Number */}
-          <div className="flex items-center gap-2 p-4 bg-white border border-[var(--border)] rounded-xl mb-4">
+          <div className="flex items-center gap-2 p-4 bg-surface border border-[var(--border)] rounded-xl mb-4">
             <input
               type="text"
               placeholder="Floor / unit no."
@@ -745,7 +745,7 @@ export default function Cart() {
             </div>
           </div>
 
-          <div className="w-full flex items-center justify-between p-4 rounded-xl border-2 border-[var(--border)] bg-white">
+          <div className="w-full flex items-center justify-between p-4 rounded-xl border border-line bg-surface">
             <span className="font-semibold text-[var(--ink)]">Delivery</span>
             <span className="font-bold text-[var(--ink)]">₱{getDeliveryFee().toFixed(2)}</span>
           </div>
@@ -789,7 +789,7 @@ export default function Cart() {
       </div>
 
       {/* Fixed Bottom - Total and Place Order */}
-      <div className="fixed bottom-0 left-0 right-0 bg-white border-t-2 border-[var(--border)] px-5 py-4 z-50">
+      <div className="fixed bottom-0 left-0 right-0 bg-surface border-t-2 border-[var(--border)] px-5 py-4 z-50">
         <div className="flex items-center justify-between mb-4">
           <span className="text-lg font-bold text-[var(--ink)]">Total</span>
           <span className="text-2xl font-bold text-[var(--ink)]">₱{calculateTotal()}.00</span>
@@ -806,7 +806,7 @@ export default function Cart() {
       {showOrderConfirmation && (
         <div className="fixed inset-0 bg-black/60 z-[2000] flex items-center justify-center p-4">
           <Card 
-            className="bg-white p-8 max-w-sm w-full"
+            className="bg-surface p-8 max-w-sm w-full"
             onClick={(e) => e.stopPropagation()}
           >
             {/* Success Icon */}
@@ -844,7 +844,7 @@ export default function Cart() {
                       : "/customer/activity"
                   );
                 }}
-                className="w-full py-4 bg-[var(--success)] text-white font-bold rounded-2xl uppercase active:scale-95 transition-transform"
+                className="w-full py-4 bg-[var(--success)] text-white font-bold rounded-2xl active:scale-95 transition-transform"
               >
                 Track Order
               </button>
@@ -854,7 +854,7 @@ export default function Cart() {
                   removeRestaurant(checkoutRestaurant.id);
                   navigate("/customer/food");
                 }}
-                className="w-full py-4 bg-[var(--muted)] text-[var(--muted-foreground)] font-bold rounded-2xl uppercase active:scale-95 transition-transform"
+                className="w-full py-4 bg-[var(--muted)] text-[var(--muted-foreground)] font-bold rounded-2xl active:scale-95 transition-transform"
               >
                 Continue Shopping
               </button>
@@ -866,7 +866,7 @@ export default function Cart() {
       {/* Address Error Modal */}
       {showAddressError && (
         <div className="fixed inset-0 bg-black/60 z-[2000] flex items-center justify-center p-4">
-          <Card className="bg-white p-6 max-w-sm w-full" onClick={(e) => e.stopPropagation()}>
+          <Card className="bg-surface p-6 max-w-sm w-full" onClick={(e) => e.stopPropagation()}>
             <div className="text-center mb-4">
               <div className="w-14 h-14 bg-[var(--amber-soft)] rounded-full flex items-center justify-center mx-auto mb-3">
                 <MapPin className="w-7 h-7 text-[var(--amber)]" />
@@ -879,13 +879,13 @@ export default function Cart() {
                 setShowAddressError(false);
                 setShowMapSelector(true);
               }}
-              className="w-full py-3 bg-[var(--primary)] hover:bg-[var(--primary)] text-white font-bold rounded-2xl uppercase active:scale-95 transition-transform"
+              className="w-full py-3 bg-[var(--primary)] hover:bg-[var(--primary)] text-white font-bold rounded-2xl active:scale-95 transition-transform"
             >
               Select Address
             </button>
             <button
               onClick={() => setShowAddressError(false)}
-              className="w-full py-3 bg-[var(--muted)] text-[var(--muted-foreground)] font-bold rounded-2xl uppercase active:scale-95 transition-transform mt-2"
+              className="w-full py-3 bg-[var(--muted)] text-[var(--muted-foreground)] font-bold rounded-2xl active:scale-95 transition-transform mt-2"
             >
               Cancel
             </button>

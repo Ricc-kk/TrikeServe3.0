@@ -409,21 +409,21 @@ export default function ActiveRide() {
   if (customerCancellation) {
     return (
       <div className="fixed inset-0 bg-black/60 z-[4000] flex items-center justify-center p-4">
-        <Card className="bg-white p-6 max-w-sm w-full rounded-2xl shadow-2xl text-center">
-          <div className="w-16 h-16 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-4">
+        <Card className="bg-surface p-6 max-w-sm w-full rounded-2xl shadow-2xl text-center">
+          <div className="w-16 h-16 bg-[var(--error-soft)] rounded-full flex items-center justify-center mx-auto mb-4">
             <span className="text-3xl">🚫</span>
           </div>
           <h3 className="text-xl font-bold text-[#121212] mb-2">Ride cancelled</h3>
           <p className="text-sm text-[#64748B] mb-4">The customer cancelled this ride request.</p>
           {customerCancellation.reason && (
-            <div className="p-3 rounded-xl border-2 border-red-200 bg-red-50 text-left mb-4">
-              <p className="text-xs font-bold uppercase tracking-wide text-red-600 mb-1">Reason</p>
-              <p className="text-sm text-[#7F1D1D]">{customerCancellation.reason}</p>
+            <div className="p-3 rounded-xl border border-[var(--error)] bg-[var(--error-soft)] text-left mb-4">
+              <p className="text-xs font-bold uppercase tracking-widest text-[var(--error)] mb-1">Reason</p>
+              <p className="text-sm text-[var(--error)]">{customerCancellation.reason}</p>
             </div>
           )}
           <Button
             onClick={() => navigate('/rider')}
-            className="w-full bg-[#E11D48] hover:bg-[#BE123C] text-white font-bold uppercase"
+            className="w-full bg-[var(--error)] hover:opacity-90 text-white font-bold"
           >
             Back to Dashboard
           </Button>
@@ -437,7 +437,7 @@ export default function ActiveRide() {
       {/* Ride Complete Popup */}
       {showRideComplete && (
         <div className="fixed inset-0 bg-black/60 z-[2000] flex items-center justify-center">
-          <div className="bg-white rounded-3xl p-8 mx-6 text-center shadow-2xl animate-in fade-in zoom-in duration-300">
+          <div className="bg-surface rounded-3xl p-8 mx-6 text-center shadow-2xl animate-in fade-in zoom-in duration-300">
             <div className="w-20 h-20 bg-[var(--success-soft)] rounded-full flex items-center justify-center mx-auto mb-4">
               <CheckCircle className="w-12 h-12 text-[var(--success)]" />
             </div>
@@ -518,17 +518,17 @@ export default function ActiveRide() {
             ? { lat: rideData.pickupLat, lng: rideData.pickupLng }
             : { lat: rideData.dropoffLat, lng: rideData.dropoffLng };
           if (dest && dest.lat) window.open(`https://www.google.com/maps/dir/?api=1&origin=${driverLocation?.lat},${driverLocation?.lng}&destination=${dest.lat},${dest.lng}&travelmode=driving`, '_blank');
-        }} className="absolute top-3 right-3 bg-white text-black shadow-md hover:bg-[var(--muted)]"><Navigation className="w-4 h-4 mr-2" />Navigate</Button>
+        }} className="absolute top-3 right-3 bg-surface text-black shadow-md hover:bg-[var(--muted)]"><Navigation className="w-4 h-4 mr-2" />Navigate</Button>
         {/* Route phase indicator banner */}
         <div className={`absolute top-3 left-3 px-3 py-1.5 rounded-full text-white text-xs font-bold shadow-md flex items-center gap-1.5 ${isHeadingToPickup ? 'bg-[var(--success)]' : 'bg-[var(--primary)]'}`}>
-          <div className={`w-2 h-2 rounded-full ${isHeadingToPickup ? 'bg-white animate-pulse' : 'bg-white animate-pulse'}`} />
+          <div className={`w-2 h-2 rounded-full ${isHeadingToPickup ? 'bg-surface animate-pulse' : 'bg-surface animate-pulse'}`} />
           {isHeadingToPickup ? 'Heading to Pickup' : 'Heading to Drop-off'}
         </div>
       </div>
 
       <LocationBanner problem={locationProblem} className="mx-3 mt-3" />
 
-      <div className={isMinimized ? 'fixed bottom-0 left-0 right-0 bg-white rounded-t-3xl shadow-[0_-10px_40px_rgba(0,0,0,0.1)] p-4 h-[40vh] overflow-y-auto z-[1001]' : 'p-4 space-y-4'}>
+      <div className={isMinimized ? 'fixed bottom-0 left-0 right-0 bg-surface rounded-t-3xl shadow-[0_-10px_40px_rgba(0,0,0,0.1)] p-4 h-[40vh] overflow-y-auto z-[1001]' : 'p-4 space-y-4'}>
         <Card className="p-4 border-2 border-[var(--muted)] shadow-sm">
           <div className="flex gap-4 mb-3">
             <div className="text-4xl">
@@ -571,11 +571,11 @@ export default function ActiveRide() {
           </div>
         </Card>
         <div className="grid gap-2">
-          {rideData.status === 'on-the-way' && <Button onClick={() => updateStatus('arrived')} className="bg-[var(--primary)] py-7 text-lg font-bold uppercase shadow-lg shadow-[var(--error-soft)]">I've Arrived</Button>}
-          {rideData.status === 'arrived' && <Button onClick={() => updateStatus('pickup')} className="bg-[var(--primary)] py-7 text-lg font-bold uppercase shadow-lg shadow-[var(--error-soft)]">Confirm Pickup</Button>}
-          {rideData.status === 'pickup' && <Button onClick={() => updateStatus('drop-off')} className="bg-[var(--primary)] py-7 text-lg font-bold uppercase shadow-lg shadow-[var(--error-soft)]">Arrived at Drop-off</Button>}
-          {rideData.status === 'drop-off' && <Button onClick={() => updateStatus('payment')} className="bg-[var(--primary)] py-7 text-lg font-bold uppercase shadow-lg shadow-[var(--error-soft)]">Confirm Drop-off</Button>}
-          {rideData.status === 'payment' && <Button onClick={completeRide} className="bg-[var(--success)] py-7 text-lg font-bold uppercase shadow-lg shadow-[var(--success-soft)]">Complete Ride</Button>}
+          {rideData.status === 'on-the-way' && <Button onClick={() => updateStatus('arrived')} className="bg-[var(--primary)] py-7 text-lg font-bold shadow-lg shadow-[var(--error-soft)]">I've Arrived</Button>}
+          {rideData.status === 'arrived' && <Button onClick={() => updateStatus('pickup')} className="bg-[var(--primary)] py-7 text-lg font-bold shadow-lg shadow-[var(--error-soft)]">Confirm Pickup</Button>}
+          {rideData.status === 'pickup' && <Button onClick={() => updateStatus('drop-off')} className="bg-[var(--primary)] py-7 text-lg font-bold shadow-lg shadow-[var(--error-soft)]">Arrived at Drop-off</Button>}
+          {rideData.status === 'drop-off' && <Button onClick={() => updateStatus('payment')} className="bg-[var(--primary)] py-7 text-lg font-bold shadow-lg shadow-[var(--error-soft)]">Confirm Drop-off</Button>}
+          {rideData.status === 'payment' && <Button onClick={completeRide} className="bg-[var(--success)] py-7 text-lg font-bold shadow-lg shadow-[var(--success-soft)]">Complete Ride</Button>}
         </div>
       </div>
     </div>

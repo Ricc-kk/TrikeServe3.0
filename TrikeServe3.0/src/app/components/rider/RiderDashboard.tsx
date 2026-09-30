@@ -964,7 +964,7 @@ export default function RiderDashboard() {
             >
               {isOnline ? (
                 <>
-                  <div className="w-3 h-3 rounded-full bg-white animate-pulse" />
+                  <div className="w-3 h-3 rounded-full bg-surface animate-pulse" />
                   <span>Kasama ka na / You're Online</span>
                 </>
               ) : (
@@ -980,7 +980,7 @@ export default function RiderDashboard() {
         {/* Active Trip Card */}
         {activeTrip && (
           <div className="absolute bottom-20 left-0 right-0 z-[1000] p-4">
-            <Card className="p-6 bg-white shadow-2xl border-2 border-[var(--primary)]">
+            <Card className="p-6 bg-surface shadow-2xl border-2 border-[var(--primary)]">
               <div className="flex items-start justify-between mb-4">
                 <div>
                   <Badge className="mb-2 bg-[var(--primary)]">
@@ -1021,7 +1021,7 @@ export default function RiderDashboard() {
               <div className="flex gap-2">
                 <Button
                   onClick={handleCompleteTrip}
-                  className="flex-1 bg-[var(--success)] hover:bg-[var(--success)] text-white uppercase"
+                  className="flex-1 bg-[var(--success)] hover:bg-[var(--success)] text-white"
                 >
                   <Camera className="w-4 h-4 mr-2" />
                   COMPLETE TRIP
@@ -1043,7 +1043,7 @@ export default function RiderDashboard() {
         {/* Bottom Sheet - Always visible (Passenger Requests, More Options) */}
         {!activeTrip && (
           <div className="absolute bottom-20 left-0 right-0 z-[999] px-4">
-            <Card className="bg-white shadow-xl rounded-t-3xl max-h-[70vh] overflow-y-auto">
+            <Card className="bg-surface shadow-xl rounded-t-3xl max-h-[70vh] overflow-y-auto">
 
               {/* Terminal Queue - determines which driver may accept private/share rides.
                   Only shown on the Rides service type: delivery is never queue-gated, and
@@ -1090,8 +1090,8 @@ export default function RiderDashboard() {
 
               {showServiceTypes && (
                 <div className="fixed inset-0 bg-black/50 z-[2000] flex items-end animate-in slide-in-from-bottom duration-300">
-                  <div className="bg-white w-full rounded-t-3xl max-h-[85vh] overflow-y-auto">
-                    <div className="sticky top-0 bg-white border-b border-[var(--border)] px-5 py-4 flex items-center justify-between">
+                  <div className="bg-surface w-full rounded-t-3xl max-h-[85vh] overflow-y-auto">
+                    <div className="sticky top-0 bg-surface border-b border-[var(--border)] px-5 py-4 flex items-center justify-between">
                       <h2 className="text-xl font-bold text-[var(--ink)]">Service Types</h2>
                       <button onClick={() => setShowServiceTypes(false)}>
                         <X className="w-6 h-6 text-[var(--muted-foreground)]" />
@@ -1172,7 +1172,7 @@ export default function RiderDashboard() {
                               <div className={`w-5 h-5 rounded border-2 flex items-center justify-center ${
                                 active ? 'bg-[var(--primary)] border-[var(--primary)]' : 'border-[var(--border)]'
                               }`}>
-                                {active && <div className="w-2 h-2 bg-white rounded-sm" />}
+                                {active && <div className="w-2 h-2 bg-surface rounded-sm" />}
                               </div>
                             </div>
                           );
@@ -1181,7 +1181,7 @@ export default function RiderDashboard() {
 
                       <Button
                         onClick={() => setShowServiceTypes(false)}
-                        className="w-full bg-[var(--primary)] hover:bg-[var(--primary)] uppercase"
+                        className="w-full bg-[var(--primary)] hover:bg-[var(--primary)]"
                       >
                         Save Service Types
                       </Button>
@@ -1227,7 +1227,7 @@ export default function RiderDashboard() {
       {/* Welcome Back Popup */}
       {showWelcomeBack && (
         <div className="fixed inset-0 bg-black/50 z-[2000] flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl shadow-xl p-8 max-w-sm w-full text-center">
+          <div className="bg-surface rounded-2xl shadow-xl p-8 max-w-sm w-full text-center">
             <div className="w-16 h-16 bg-[var(--success-soft)] rounded-full flex items-center justify-center mx-auto mb-4">
               <Check className="w-8 h-8 text-[var(--success)]" />
             </div>

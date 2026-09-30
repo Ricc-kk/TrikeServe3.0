@@ -101,7 +101,7 @@ export default function Account() {
   return (
     <div className="min-h-screen bg-[var(--muted)] pb-24">
       {/* Gradient Header with Profile */}
-      <div className="relative bg-gradient-to-br from-[var(--primary)] via-[var(--primary)] to-[var(--primary)] px-5 pt-6 pb-6 rounded-b-2xl shadow-lg">
+      <div className="relative bg-[var(--primary)] px-5 pt-6 pb-6 rounded-b-2xl shadow-lg">
         {/* Edit Profile Button - Top Right */}
         <button
           onClick={() => setIsEditing(!isEditing)}
@@ -150,7 +150,7 @@ export default function Account() {
       <div className="px-5 mt-2 space-y-4">
 
         {/* Quick Actions Card */}
-        <div className="bg-white rounded-2xl shadow-sm border border-[var(--muted)] overflow-hidden">
+        <div className="bg-surface rounded-2xl shadow-sm border border-[var(--muted)] overflow-hidden">
 
           <Link to="/customer/notifications">
             <div className="flex items-center justify-between p-4 hover:bg-[var(--muted)] transition-colors">
@@ -169,15 +169,15 @@ export default function Account() {
         </div>
 
         {/* Personal Information Card */}
-        <div className="bg-white rounded-2xl shadow-sm border border-[var(--muted)] p-5">
+        <div className="bg-surface rounded-2xl shadow-sm border border-[var(--muted)] p-5">
           <div className="flex items-center gap-2 mb-5">
             <Shield className="w-4 h-4 text-[var(--muted-foreground)]" />
-            <h3 className="text-sm font-semibold text-[var(--muted-foreground)] uppercase tracking-wider">Personal Information</h3>
+            <h3 className="text-sm font-semibold text-[var(--muted-foreground)] tracking-wider">Personal Information</h3>
           </div>
 
           {/* Name */}
           <div className="mb-5">
-            <label className="block text-xs font-medium text-[var(--muted-foreground)] mb-2 uppercase tracking-wider">Name</label>
+            <label className="block text-xs font-medium text-[var(--muted-foreground)] mb-2 tracking-wider">Name</label>
             <input
               type="text"
               value={formData.name}
@@ -189,7 +189,7 @@ export default function Account() {
 
           {/* Mobile Number */}
           <div className="mb-5">
-            <label className="block text-xs font-medium text-[var(--muted-foreground)] mb-2 uppercase tracking-wider">Mobile Number</label>
+            <label className="block text-xs font-medium text-[var(--muted-foreground)] mb-2 tracking-wider">Mobile Number</label>
             <input
               type="text"
               value={formData.mobile}
@@ -200,7 +200,7 @@ export default function Account() {
 
           {/* Email */}
           <div>
-            <label className="block text-xs font-medium text-[var(--muted-foreground)] mb-2 uppercase tracking-wider">Email</label>
+            <label className="block text-xs font-medium text-[var(--muted-foreground)] mb-2 tracking-wider">Email</label>
             <input
               type="email"
               placeholder="Enter your email address"
@@ -235,7 +235,7 @@ export default function Account() {
         </div>
 
         {/* Help Card */}
-        <div className="bg-white rounded-2xl shadow-sm border border-[var(--muted)] overflow-hidden">
+        <div className="bg-surface rounded-2xl shadow-sm border border-[var(--muted)] overflow-hidden">
           <div className="flex items-center justify-between p-4 hover:bg-[var(--muted)] transition-colors cursor-pointer">
             <div className="flex items-center gap-3">
               <div className="w-10 h-10 bg-gradient-to-br from-[var(--teal)] to-[var(--teal)] rounded-xl flex items-center justify-center shadow-sm">
@@ -255,7 +255,7 @@ export default function Account() {
           <div className="pt-2">
             <Button
               onClick={() => setShowSwitchConfirm(true)}
-              className="w-full bg-[var(--ink)] hover:bg-[var(--ink)] text-white font-bold uppercase py-4 rounded-2xl flex items-center justify-center gap-2 shadow-lg"
+              className="w-full bg-[var(--ink)] hover:bg-[var(--ink)] text-white font-bold py-4 rounded-2xl flex items-center justify-center gap-2 shadow-lg"
             >
               <ArrowLeft className="w-5 h-5" />
               Switch back to Driver App
@@ -266,7 +266,7 @@ export default function Account() {
           <div className="pt-2">
             <Button
               onClick={() => setShowSwitchConfirm(true)}
-              className="w-full bg-[var(--ink)] hover:bg-[var(--ink)] text-white font-bold uppercase py-4 rounded-2xl flex items-center justify-center gap-2 shadow-lg"
+              className="w-full bg-[var(--ink)] hover:bg-[var(--ink)] text-white font-bold py-4 rounded-2xl flex items-center justify-center gap-2 shadow-lg"
             >
               <ArrowLeft className="w-5 h-5" />
               Switch back to Business App
@@ -292,7 +292,7 @@ export default function Account() {
       {/* Confirm Save Modal */}
       {showConfirmSave && (
         <div className="fixed inset-0 bg-black/50 z-[2000] flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl shadow-xl p-6 max-w-sm w-full">
+          <div className="bg-surface rounded-2xl shadow-xl p-6 max-w-sm w-full">
             <div className="text-center mb-4">
               <div className="w-14 h-14 bg-[var(--primary-soft)] rounded-full flex items-center justify-center mx-auto mb-3">
                 <Check className="w-7 h-7 text-[var(--teal)]" />
@@ -323,7 +323,7 @@ export default function Account() {
       {/* Switch Confirmation Modal */}
       {showSwitchConfirm && (
         <div className="fixed inset-0 bg-black/50 z-[2000] flex items-center justify-center p-4">
-          <div className="bg-white p-6 max-w-sm w-full rounded-2xl shadow-xl">
+          <div className="bg-surface p-6 max-w-sm w-full rounded-2xl shadow-xl">
             <div className="w-16 h-16 bg-[var(--info-soft)] rounded-full flex items-center justify-center mx-auto mb-4">
               <ArrowLeft className="w-8 h-8 text-[var(--info)]" />
             </div>
@@ -359,7 +359,7 @@ export default function Account() {
       {/* Logout Confirmation Modal */}
       {showLogoutConfirm && (
         <div className="fixed inset-0 bg-black/50 z-[2000] flex items-center justify-center p-4">
-          <div className="bg-white p-6 max-w-sm w-full rounded-2xl shadow-xl">
+          <div className="bg-surface p-6 max-w-sm w-full rounded-2xl shadow-xl">
             <div className="w-16 h-16 bg-[var(--primary-soft)] rounded-full flex items-center justify-center mx-auto mb-4">
               <LogOut className="w-8 h-8 text-[var(--primary)]" />
             </div>
@@ -388,7 +388,7 @@ export default function Account() {
       {/* Goodbye Popup */}
       {showGoodbye && (
         <div className="fixed inset-0 bg-black/50 z-[2000] flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl shadow-xl p-8 max-w-sm w-full text-center">
+          <div className="bg-surface rounded-2xl shadow-xl p-8 max-w-sm w-full text-center">
             <div className="w-16 h-16 bg-[var(--primary-soft)] rounded-full flex items-center justify-center mx-auto mb-4">
               <Heart className="w-8 h-8 text-[var(--primary)]" />
             </div>

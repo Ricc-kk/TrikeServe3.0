@@ -237,7 +237,7 @@ export default function RiderMessageChat() {
                 className={`max-w-[75%] rounded-2xl px-4 py-2 ${
                   msg.senderType === 'driver' 
                     ? 'bg-[var(--primary)] text-white' 
-                    : 'bg-white border border-[var(--border)]'
+                    : 'bg-surface border border-[var(--border)]'
                 }`}
               >
                 <p className="text-sm break-words">{msg.message}</p>
@@ -254,7 +254,7 @@ export default function RiderMessageChat() {
       </div>
 
       {/* Input */}
-      <div className="bg-white border-t border-[var(--border)] p-4 sticky bottom-0">
+      <div className="bg-surface border-t border-[var(--border)] p-4 sticky bottom-0">
         <div className="flex gap-2">
           <textarea
             value={newMessage}
@@ -268,7 +268,7 @@ export default function RiderMessageChat() {
           <Button
             onClick={sendMessage}
             disabled={!newMessage.trim()}
-            className="bg-[var(--primary)] hover:bg-[var(--primary)] text-white px-6 rounded-xl uppercase font-bold disabled:opacity-50 disabled:cursor-not-allowed"
+            className="bg-[var(--primary)] hover:bg-[var(--primary)] text-white px-6 rounded-xl font-bold disabled:opacity-50 disabled:cursor-not-allowed"
           >
             <Send className="w-5 h-5" />
           </Button>

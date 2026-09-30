@@ -125,9 +125,9 @@ export default function AddCustomizationModal({
     <div className="fixed inset-0 bg-black/50 z-50 flex items-end sm:items-center justify-center">
       <div className="absolute inset-0" onClick={onClose} />
 
-      <div className="relative bg-white w-full sm:max-w-3xl sm:rounded-3xl max-h-[90vh] flex flex-col rounded-t-3xl">
+      <div className="relative bg-surface w-full sm:max-w-3xl sm:rounded-3xl max-h-[90vh] flex flex-col rounded-t-3xl">
         {/* Header */}
-        <div className="sticky top-0 bg-white border-b-2 border-[var(--border)] px-5 py-4 z-10 rounded-t-3xl">
+        <div className="sticky top-0 bg-surface border-b-2 border-[var(--border)] px-5 py-4 z-10 rounded-t-3xl">
           <div className="flex items-center justify-between">
             <h2 className="text-xl font-extrabold text-[var(--ink)]">
               Manage Customizations
@@ -145,13 +145,13 @@ export default function AddCustomizationModal({
         <div className="flex-1 overflow-y-auto">
           <div className="p-5 space-y-6">
             {groups.length === 0 ? (
-              <Card className="p-8 border-2 border-[var(--border)] text-center">
+              <Card className="p-8 border border-line text-center">
                 <p className="text-[var(--muted-foreground)] mb-4">
                   No customization groups added yet. Click "Add Group" to get started.
                 </p>
                 <Button
                   onClick={addGroup}
-                  className="bg-[var(--primary)] hover:bg-[var(--primary)] text-white font-bold uppercase"
+                  className="bg-[var(--primary)] hover:bg-[var(--primary)] text-white font-bold"
                 >
                   <Plus className="w-4 h-4 mr-2" />
                   Add Group
@@ -160,7 +160,7 @@ export default function AddCustomizationModal({
             ) : (
               <>
                 {groups.map((group, groupIndex) => (
-                  <Card key={group.id} className="p-5 border-2 border-[var(--border)]">
+                  <Card key={group.id} className="p-5 border border-line">
                     <div className="flex items-start justify-between mb-4">
                       <h3 className="font-bold text-[var(--ink)]">
                         Group {groupIndex + 1}
@@ -185,7 +185,7 @@ export default function AddCustomizationModal({
                           updateGroup(group.id, { name: e.target.value })
                         }
                         placeholder="e.g. Choose your Drink - Pick 1"
-                        className="w-full px-4 py-3 border-2 border-[var(--border)] rounded-xl focus:border-[var(--primary)] focus:outline-none"
+                        className="w-full px-4 py-3 border border-line rounded-xl focus:border-[var(--primary)] focus:outline-none"
                       />
                     </div>
 
@@ -204,7 +204,7 @@ export default function AddCustomizationModal({
                               minSelections: parseInt(e.target.value) || 0,
                             })
                           }
-                          className="w-full px-4 py-3 border-2 border-[var(--border)] rounded-xl focus:border-[var(--primary)] focus:outline-none"
+                          className="w-full px-4 py-3 border border-line rounded-xl focus:border-[var(--primary)] focus:outline-none"
                         />
                       </div>
                       <div>
@@ -220,7 +220,7 @@ export default function AddCustomizationModal({
                               maxSelections: parseInt(e.target.value) || 1,
                             })
                           }
-                          className="w-full px-4 py-3 border-2 border-[var(--border)] rounded-xl focus:border-[var(--primary)] focus:outline-none"
+                          className="w-full px-4 py-3 border border-line rounded-xl focus:border-[var(--primary)] focus:outline-none"
                         />
                       </div>
                     </div>
@@ -236,7 +236,7 @@ export default function AddCustomizationModal({
                         }`}
                       >
                         <div
-                          className={`w-5 h-5 bg-white rounded-full shadow-md transition-transform ${
+                          className={`w-5 h-5 bg-surface rounded-full shadow-md transition-transform ${
                             group.required
                               ? "translate-x-6 mt-0.5"
                               : "translate-x-0.5 mt-0.5"
@@ -283,7 +283,7 @@ export default function AddCustomizationModal({
                                   })
                                 }
                                 placeholder="Option name"
-                                className="flex-1 px-3 py-2 border-2 border-[var(--border)] rounded-xl focus:border-[var(--primary)] focus:outline-none text-sm"
+                                className="flex-1 px-3 py-2 border border-line rounded-xl focus:border-[var(--primary)] focus:outline-none text-sm"
                               />
                               <div className="flex items-center gap-1">
                                 <span className="text-sm text-[var(--muted-foreground)]">+₱</span>
@@ -298,7 +298,7 @@ export default function AddCustomizationModal({
                                     })
                                   }
                                   placeholder="0"
-                                  className="w-20 px-3 py-2 border-2 border-[var(--border)] rounded-xl focus:border-[var(--primary)] focus:outline-none text-sm"
+                                  className="w-20 px-3 py-2 border border-line rounded-xl focus:border-[var(--primary)] focus:outline-none text-sm"
                                 />
                               </div>
                               <button
@@ -317,7 +317,7 @@ export default function AddCustomizationModal({
 
                 <Button
                   onClick={addGroup}
-                  className="w-full bg-[var(--muted)] hover:bg-[var(--border)] text-[var(--ink)] font-bold uppercase border-2 border-[var(--border)]"
+                  className="w-full bg-[var(--muted)] hover:bg-[var(--border)] text-[var(--ink)] font-bold border border-line"
                 >
                   <Plus className="w-4 h-4 mr-2" />
                   Add Another Group
@@ -328,17 +328,17 @@ export default function AddCustomizationModal({
         </div>
 
         {/* Footer */}
-        <div className="sticky bottom-0 bg-white border-t-2 border-[var(--border)] px-5 py-4">
+        <div className="sticky bottom-0 bg-surface border-t-2 border-[var(--border)] px-5 py-4">
           <div className="flex gap-3">
             <Button
               onClick={onClose}
-              className="flex-1 bg-white hover:bg-[var(--muted)] text-[var(--ink)] border-2 border-[var(--border)] font-bold uppercase"
+              className="flex-1 bg-surface hover:bg-[var(--muted)] text-[var(--ink)] border border-line font-bold"
             >
               Cancel
             </Button>
             <Button
               onClick={handleSave}
-              className="flex-1 bg-[var(--primary)] hover:bg-[var(--primary)] text-white font-bold uppercase"
+              className="flex-1 bg-[var(--primary)] hover:bg-[var(--primary)] text-white font-bold"
             >
               Save Customizations
             </Button>

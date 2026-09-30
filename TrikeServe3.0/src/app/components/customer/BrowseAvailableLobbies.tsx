@@ -196,7 +196,7 @@ export default function BrowseAvailableLobbies({
   if (loading) {
     return (
       <div className="fixed inset-0 bg-black/50 z-[2000] flex items-center justify-center p-4">
-        <Card className="bg-white p-8 w-full max-w-md text-center">
+        <Card className="bg-surface p-8 w-full max-w-md text-center">
           <div className="animate-spin w-12 h-12 border-4 border-[var(--primary)] border-t-transparent rounded-full mx-auto mb-4"></div>
           <p className="text-[var(--muted-foreground)]">Loading available lobbies...</p>
         </Card>
@@ -207,7 +207,7 @@ export default function BrowseAvailableLobbies({
   if (error) {
     return (
       <div className="fixed inset-0 bg-black/50 z-[2000] flex items-center justify-center p-4">
-        <Card className="bg-white p-6 w-full max-w-md">
+        <Card className="bg-surface p-6 w-full max-w-md">
           <h3 className="text-lg font-bold text-[var(--error)] mb-2">Error</h3>
           <p className="text-sm text-[var(--muted-foreground)] mb-6">{error}</p>
           <Button onClick={onClose} className="w-full">
@@ -220,7 +220,7 @@ export default function BrowseAvailableLobbies({
 
   return (
     <div className="fixed inset-0 bg-black/50 z-[2000] flex items-end">
-      <div className="bg-white w-full rounded-t-3xl max-h-[90vh] overflow-hidden flex flex-col animate-slide-up">
+      <div className="bg-surface w-full rounded-t-3xl max-h-[90vh] overflow-hidden flex flex-col animate-slide-up">
         {/* Header */}
         <div className="p-5 border-b border-[var(--border)] flex items-center justify-between">
           <div className="flex items-center gap-3">
@@ -271,7 +271,7 @@ export default function BrowseAvailableLobbies({
                         <div className="flex items-start gap-2">
                           <MapPin className="w-4 h-4 text-[var(--ink)] mt-0.5 flex-shrink-0" />
                           <div className="flex-1 min-w-0">
-                            <p className="text-xs text-[var(--muted-foreground)] uppercase tracking-wide font-semibold">Drop-off</p>
+                            <p className="text-xs text-[var(--muted-foreground)] uppercase tracking-widest font-semibold">Drop-off</p>
                             <p className="font-bold text-[var(--ink)]">{lobby.dropoff_location}</p>
                           </div>
                         </div>
@@ -283,7 +283,7 @@ export default function BrowseAvailableLobbies({
                           {passengers.slice(0, 3).map(passenger => (
                             <div
                               key={passenger.id}
-                              className="w-7 h-7 rounded-full bg-gradient-to-br from-[var(--primary)] to-[var(--primary)] flex items-center justify-center text-xs border-2 border-white"
+                              className="w-7 h-7 rounded-full bg-[var(--primary)] flex items-center justify-center text-xs border-2 border-white"
                             >
                               {passenger.emoji}
                             </div>

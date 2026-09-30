@@ -210,15 +210,15 @@ export default function Login() {
           </p>
           <div className="space-y-3 mb-8">
             <div className="flex items-center gap-3">
-              <div className="w-2 h-2 bg-white rounded-full" />
+              <div className="w-2 h-2 bg-surface rounded-full" />
               <p className="text-lg text-white/80">Shared & Private Rides</p>
             </div>
             <div className="flex items-center gap-3">
-              <div className="w-2 h-2 bg-white rounded-full" />
+              <div className="w-2 h-2 bg-surface rounded-full" />
               <p className="text-lg text-white/80">Food Delivery Service</p>
             </div>
             <div className="flex items-center gap-3">
-              <div className="w-2 h-2 bg-white rounded-full" />
+              <div className="w-2 h-2 bg-surface rounded-full" />
               <p className="text-lg text-white/80">Fixed TODA Rates</p>
             </div>
           </div>
@@ -230,7 +230,7 @@ export default function Login() {
       </div>
 
       {/* Right Side - Login Form */}
-      <div className="flex-1 lg:max-w-xl flex items-center justify-center p-6 bg-white">
+      <div className="flex-1 lg:max-w-xl flex items-center justify-center p-6 bg-surface">
         <div className="w-full max-w-md">
           {/* Mobile Logo */}
           <div className="lg:hidden text-center mb-8">
@@ -279,7 +279,7 @@ export default function Login() {
                 placeholder="your.email@example.com"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
-                className="border-2 border-[var(--border)] focus:border-[var(--primary)] h-12"
+                className="border border-line focus:border-[var(--primary)] h-12"
                 required
                 disabled={isLoading}
               />
@@ -294,7 +294,7 @@ export default function Login() {
                 placeholder="••••••••"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
-                className="border-2 border-[var(--border)] focus:border-[var(--primary)] h-12"
+                className="border border-line focus:border-[var(--primary)] h-12"
                 required
                 disabled={isLoading}
               />
@@ -307,7 +307,7 @@ export default function Login() {
 
             <Button
               type="submit"
-              className="w-full bg-[var(--primary)] hover:bg-[var(--primary)] uppercase text-base py-6"
+              className="w-full bg-[var(--primary)] hover:bg-[var(--primary)] text-base py-6"
               disabled={isLoading}
             >
               {isLoading ? (
@@ -327,7 +327,7 @@ export default function Login() {
               type="button"
               onClick={() => setShowAccounts(!showAccounts)}
               disabled={isLoading}
-              className="w-full flex items-center justify-between px-4 py-3 border-2 border-[var(--border)] rounded-xl hover:border-[var(--primary)] transition-all bg-[var(--muted)]"
+              className="w-full flex items-center justify-between px-4 py-3 border border-line rounded-xl hover:border-[var(--primary)] transition-all bg-[var(--muted)]"
             >
               <span className="flex items-center gap-2 text-sm font-semibold text-[var(--ink)]">
                 <Users size={16} className="text-[var(--primary)]" />
@@ -340,7 +340,7 @@ export default function Login() {
             </button>
 
             {showAccounts && (
-              <div className="mt-2 border-2 border-[var(--border)] rounded-xl bg-white max-h-72 overflow-y-auto divide-y divide-[var(--border)]">
+              <div className="mt-2 border border-line rounded-xl bg-surface max-h-72 overflow-y-auto divide-y divide-[var(--border)]">
                 {accounts.length === 0 && (
                   <p className="p-4 text-sm text-[var(--muted-foreground)] italic">
                     No accounts found yet — create one via Sign Up.
@@ -366,7 +366,7 @@ export default function Login() {
                     </div>
                     <div className="flex items-center gap-2 flex-shrink-0">
                       <span
-                        className={`text-[10px] font-bold uppercase tracking-wide px-2 py-0.5 rounded-full ${ROLE_BADGE[acc.role] || "bg-[var(--muted)] text-[var(--muted-foreground)]"}`}
+                        className={`text-[10px] font-bold uppercase tracking-widest px-2 py-0.5 rounded-full ${ROLE_BADGE[acc.role] || "bg-[var(--muted)] text-[var(--muted-foreground)]"}`}
                       >
                         {roleLabel(acc)}
                       </span>
@@ -387,7 +387,7 @@ export default function Login() {
             <Link to="/signup">
               <Button
                 variant="outline"
-                className="w-full border-2 border-[var(--border)] hover:border-[var(--primary)]"
+                className="w-full border border-line hover:border-[var(--primary)]"
                 disabled={isLoading}
               >
                 Create Account

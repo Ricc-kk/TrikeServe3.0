@@ -103,7 +103,7 @@ export default function BusinessProfile() {
       {/* Main Content */}
       <div className="flex-1 lg:ml-64 w-full min-w-0">
         {/* Header */}
-        <div className="bg-white px-3 lg:px-4 py-3 lg:py-4 border-b border-[var(--border)]">
+        <div className="bg-surface px-3 lg:px-4 py-3 lg:py-4 border-b border-[var(--border)]">
           <div className="flex items-center gap-2 lg:gap-3">
             {/* Hamburger Menu - Mobile Only */}
             <button
@@ -129,7 +129,7 @@ export default function BusinessProfile() {
         </div>
 
         {/* Profile Header Section */}
-        <div className="relative bg-gradient-to-br from-[var(--primary)] via-[var(--primary)] to-[var(--primary)] px-4 lg:px-6 py-6 lg:py-8">
+        <div className="relative bg-[var(--primary)] px-4 lg:px-6 py-6 lg:py-8">
           <div className="flex items-center gap-4">
             <div className="w-16 h-16 lg:w-20 lg:h-20 bg-white/20 backdrop-blur-sm rounded-2xl flex items-center justify-center border-2 border-white/30 shadow-lg">
               <User className="w-8 h-8 lg:w-10 lg:h-10 text-white" />
@@ -144,11 +144,11 @@ export default function BusinessProfile() {
         {/* Form Fields */}
         <div className="px-4 lg:px-6 py-5 space-y-5">
           {/* Personal Information */}
-          <div className="bg-white rounded-2xl shadow-sm border border-[var(--muted)] overflow-hidden">
+          <div className="bg-surface rounded-2xl shadow-sm border border-[var(--muted)] overflow-hidden">
             <div className="px-4 pt-4 pb-2">
               <div className="flex items-center gap-2">
                 <User className="w-4 h-4 text-[var(--muted-foreground)]" />
-                <h3 className="text-xs font-semibold text-[var(--muted-foreground)] uppercase tracking-wider">Personal Information</h3>
+                <h3 className="text-xs font-semibold text-[var(--muted-foreground)] tracking-wider">Personal Information</h3>
               </div>
             </div>
 
@@ -164,7 +164,7 @@ export default function BusinessProfile() {
                     type="text"
                     value={formData.name}
                     onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                    className="w-full pl-14 pr-4 py-3 border-2 border-[var(--border)] rounded-xl text-sm font-semibold text-[var(--ink)] focus:border-[var(--primary)] focus:outline-none transition-colors"
+                    className="w-full pl-14 pr-4 py-3 border border-line rounded-xl text-sm font-semibold text-[var(--ink)] focus:border-[var(--primary)] focus:outline-none transition-colors"
                     placeholder="Enter your full name"
                   />
                 </div>
@@ -181,7 +181,7 @@ export default function BusinessProfile() {
                     type="email"
                     value={formData.email}
                     readOnly
-                    className="w-full pl-14 pr-4 py-3 border-2 border-[var(--border)] rounded-xl text-sm text-[var(--muted-foreground)] bg-[var(--muted)] cursor-not-allowed"
+                    className="w-full pl-14 pr-4 py-3 border border-line rounded-xl text-sm text-[var(--muted-foreground)] bg-[var(--muted)] cursor-not-allowed"
                   />
                 </div>
                 <p className="text-xs text-[var(--muted-foreground)] mt-1">Email cannot be changed</p>
@@ -198,7 +198,7 @@ export default function BusinessProfile() {
                     type="tel"
                     value={formData.phone}
                     onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
-                    className="w-full pl-14 pr-4 py-3 border-2 border-[var(--border)] rounded-xl text-sm font-semibold text-[var(--ink)] focus:border-[var(--primary)] focus:outline-none transition-colors"
+                    className="w-full pl-14 pr-4 py-3 border border-line rounded-xl text-sm font-semibold text-[var(--ink)] focus:border-[var(--primary)] focus:outline-none transition-colors"
                     placeholder="Enter your phone number"
                   />
                 </div>
@@ -207,11 +207,11 @@ export default function BusinessProfile() {
           </div>
 
           {/* Business Information */}
-          <div className="bg-white rounded-2xl shadow-sm border border-[var(--muted)] overflow-hidden">
+          <div className="bg-surface rounded-2xl shadow-sm border border-[var(--muted)] overflow-hidden">
             <div className="px-4 pt-4 pb-2">
               <div className="flex items-center gap-2">
                 <Store className="w-4 h-4 text-[var(--muted-foreground)]" />
-                <h3 className="text-xs font-semibold text-[var(--muted-foreground)] uppercase tracking-wider">Business Information</h3>
+                <h3 className="text-xs font-semibold text-[var(--muted-foreground)] tracking-wider">Business Information</h3>
               </div>
             </div>
 
@@ -227,7 +227,7 @@ export default function BusinessProfile() {
                     type="text"
                     value={formData.businessName}
                     onChange={(e) => setFormData({ ...formData, businessName: e.target.value })}
-                    className="w-full pl-14 pr-4 py-3 border-2 border-[var(--border)] rounded-xl text-sm font-semibold text-[var(--ink)] focus:border-[var(--primary)] focus:outline-none transition-colors"
+                    className="w-full pl-14 pr-4 py-3 border border-line rounded-xl text-sm font-semibold text-[var(--ink)] focus:border-[var(--primary)] focus:outline-none transition-colors"
                     placeholder="e.g., Mang Inasal"
                   />
                 </div>
@@ -246,7 +246,7 @@ export default function BusinessProfile() {
                   <div className="absolute left-3 top-3 w-8 h-8 bg-[var(--info-soft)] rounded-lg flex items-center justify-center">
                     <MapPin className="w-4 h-4 text-[var(--info)]" />
                   </div>
-                  <div className="w-full pl-14 pr-4 py-3 border-2 border-[var(--border)] rounded-xl text-sm font-semibold text-[var(--ink)] min-h-[80px] bg-white hover:border-[var(--primary)] transition-colors">
+                  <div className="w-full pl-14 pr-4 py-3 border border-line rounded-xl text-sm font-semibold text-[var(--ink)] min-h-[80px] bg-surface hover:border-[var(--primary)] transition-colors">
                     {formData.businessAddress ? (
                       <span className="text-[var(--ink)]">{formData.businessAddress}</span>
                     ) : (
@@ -303,7 +303,7 @@ export default function BusinessProfile() {
       {/* Confirm Save Modal */}
       {showConfirmSave && (
         <div className="fixed inset-0 bg-black/50 z-[2000] flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl shadow-xl p-6 max-w-sm w-full">
+          <div className="bg-surface rounded-2xl shadow-xl p-6 max-w-sm w-full">
             <div className="text-center mb-4">
               <div className="w-14 h-14 bg-[var(--primary-soft)] rounded-full flex items-center justify-center mx-auto mb-3">
                 <Check className="w-7 h-7 text-[var(--primary)]" />

@@ -358,7 +358,7 @@ export default function FoodHome() {
               aria-label="Search food or restaurant"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full pl-16 pr-5 py-4 bg-white rounded-2xl shadow-sm border-0 text-base text-[var(--ink)] placeholder:text-[var(--muted-foreground)]"
+              className="w-full pl-16 pr-5 py-4 bg-surface rounded-2xl shadow-sm border-0 text-base text-[var(--ink)] placeholder:text-[var(--muted-foreground)]"
               style={{ outline: 'none' }}
             />
           </div>
@@ -421,7 +421,7 @@ export default function FoodHome() {
                       )}
                       {/* Store logo badge (hidden for the default placeholder) */}
                       {restaurant.logo && restaurant.logo !== "🍽️" && (
-                        <div className="absolute top-2 right-2 w-8 h-8 rounded-full bg-white shadow-md overflow-hidden flex items-center justify-center border border-white/60">
+                        <div className="absolute top-2 right-2 w-8 h-8 rounded-full bg-surface shadow-md overflow-hidden flex items-center justify-center border border-white/60">
                           <StoreLogo logo={restaurant.logo} emojiClass="text-base" />
                         </div>
                       )}
@@ -465,7 +465,7 @@ export default function FoodHome() {
       )}
 
       {/* Categories and Restaurant List - Combined Section */}
-      <div className="px-5 py-6 bg-white rounded-t-[32px] -mt-2 relative z-10">
+      <div className="px-5 py-6 bg-surface rounded-t-[32px] -mt-2 relative z-10">
         {/* Popular Restaurants - Enhanced Cards */}
         <div className="pt-2">
           <h3 className="text-xl font-bold text-[var(--ink)] mb-4">All Available Restaurants</h3>
@@ -515,7 +515,7 @@ export default function FoodHome() {
                    })
                    .map((restaurant, idx) => (
                   <Link key={idx} to={`/customer/restaurant-detail?id=${encodeURIComponent(restaurant.id)}&name=${encodeURIComponent(restaurant.name)}`}>
-                    <Card className="overflow-hidden shadow-xl hover:shadow-2xl transition-all duration-300 border-0 rounded-3xl bg-white active:scale-[0.98]">
+                    <Card className="overflow-hidden shadow-xl hover:shadow-2xl transition-all duration-300 border-0 rounded-3xl bg-surface active:scale-[0.98]">
                     <div className="flex items-center gap-0">
                       {/* Image Thumbnail */}
                       <div className="w-32 h-32 flex-shrink-0 relative overflow-hidden">
@@ -528,7 +528,7 @@ export default function FoodHome() {
                         <div className="absolute inset-0 bg-gradient-to-t from-black/30 to-transparent" />
                         {/* Store logo badge (hidden for the default placeholder) */}
                         {restaurant.logo && restaurant.logo !== "🍽️" && (
-                          <div className="absolute top-2 left-2 w-9 h-9 rounded-full bg-white shadow-md overflow-hidden flex items-center justify-center border border-[var(--border)]">
+                          <div className="absolute top-2 left-2 w-9 h-9 rounded-full bg-surface shadow-md overflow-hidden flex items-center justify-center border border-[var(--border)]">
                             <StoreLogo logo={restaurant.logo} emojiClass="text-lg" />
                           </div>
                         )}
@@ -605,7 +605,7 @@ export default function FoodHome() {
 
                     {/* Quick Action Button */}
                     <div className="px-4 pb-4">
-                      <button className="w-full bg-gradient-to-r from-[var(--primary)] to-[var(--primary)] text-white font-bold py-3.5 rounded-2xl hover:shadow-xl transition-all duration-200 active:scale-95 shadow-lg shadow-[var(--primary)]/30 uppercase text-sm tracking-wide">
+                      <button className="w-full bg-[var(--primary)] text-white font-bold py-3.5 rounded-2xl hover:shadow-xl transition-all duration-200 active:scale-95 shadow-lg shadow-[var(--primary)]/30 text-sm tracking-wide">
                         Order Na! / Order now
                       </button>
                     </div>
@@ -632,7 +632,7 @@ export default function FoodHome() {
       {/* Floating Tricycle Ride Button - Bottom Right */}
       <Link to="/customer">
         <div
-          className={`fixed bottom-24 right-5 bg-gradient-to-br from-[var(--primary)] to-[var(--primary)] rounded-full flex items-center justify-center shadow-2xl shadow-[var(--primary)]/50 hover:shadow-3xl transition-all duration-300 z-[1600] border-4 border-white active:scale-95 ${
+          className={`fixed bottom-24 right-5 bg-[var(--primary)] rounded-full flex items-center justify-center shadow-2xl shadow-[var(--primary)]/50 hover:shadow-3xl transition-all duration-300 z-[1600] border-4 border-white active:scale-95 ${
             fabExpanded ? 'px-5 py-3 gap-2' : 'w-16 h-16'
           }`}
         >
@@ -663,7 +663,7 @@ export default function FoodHome() {
       {/* Filter Modal */}
       {showFilterModal && (
         <div className="fixed inset-0 bg-black/50 z-[2000] flex items-end">
-          <div className="w-full bg-white rounded-t-3xl max-h-[85vh] overflow-hidden flex flex-col animate-in slide-in-from-bottom duration-300">
+          <div className="w-full bg-surface rounded-t-3xl max-h-[85vh] overflow-hidden flex flex-col animate-in slide-in-from-bottom duration-300">
             {/* Modal Header */}
             <div className="flex items-center justify-between px-5 py-4 border-b border-[var(--border)]">
               <h2 className="text-xl font-bold text-[var(--ink)]">Filter</h2>
@@ -705,13 +705,13 @@ export default function FoodHome() {
                 onClick={() => {
                   setSelectedRating('');
                 }}
-                className="flex-1 py-3.5 rounded-2xl font-bold text-[var(--primary)] bg-[var(--error-soft)] hover:bg-[var(--error-soft)] active:scale-95 transition-all uppercase text-sm tracking-wide"
+                className="flex-1 py-3.5 rounded-2xl font-bold text-[var(--primary)] bg-[var(--error-soft)] hover:bg-[var(--error-soft)] active:scale-95 transition-all text-sm tracking-wide"
               >
                 Clear All
               </button>
               <button
                 onClick={() => setShowFilterModal(false)}
-                className="flex-1 py-3.5 rounded-2xl font-bold text-white bg-gradient-to-r from-[var(--primary)] to-[var(--primary)] hover:shadow-xl active:scale-95 transition-all shadow-lg shadow-[var(--primary)]/30 uppercase text-sm tracking-wide"
+                className="flex-1 py-3.5 rounded-2xl font-bold text-white bg-[var(--primary)] hover:shadow-xl active:scale-95 transition-all shadow-lg shadow-[var(--primary)]/30 text-sm tracking-wide"
               >
                 Apply Filter
               </button>
@@ -723,7 +723,7 @@ export default function FoodHome() {
       {/* Welcome Back Popup */}
       {showWelcomeBack && (
         <div className="fixed inset-0 bg-black/50 z-[2000] flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl shadow-xl p-8 max-w-sm w-full text-center">
+          <div className="bg-surface rounded-2xl shadow-xl p-8 max-w-sm w-full text-center">
             <div className="w-16 h-16 bg-[var(--success-soft)] rounded-full flex items-center justify-center mx-auto mb-4">
               <CheckCircle className="w-8 h-8 text-[var(--success)]" />
             </div>

@@ -519,7 +519,7 @@ export default function PassengerRequests() {
   return (
     <div className="min-h-screen bg-[var(--muted)] relative">
       {/* Header */}
-      <div className="bg-white border-b-2 border-[var(--border)] px-4 py-3 flex items-center gap-3">
+      <div className="bg-surface border-b-2 border-[var(--border)] px-4 py-3 flex items-center gap-3">
         <Button variant="ghost" size="icon" onClick={() => navigate('/rider')}><ArrowLeft className="w-5 h-5" /></Button>
         <div className="flex-1"><h1 className="text-lg md:text-xl font-extrabold text-[var(--primary)]">Passenger Requests</h1></div>
       </div>
@@ -542,7 +542,7 @@ export default function PassengerRequests() {
 
         {/* TODA boundary map — the coverage area the driver's assigned terminal serves */}
         {driverTerminalId && (
-          <Card className="border-2 border-[var(--border)] overflow-hidden">
+          <Card className="border border-line overflow-hidden">
             <button
               onClick={() => setShowTodaMap((v) => !v)}
               className="w-full flex items-center justify-between px-4 py-3"
@@ -625,7 +625,7 @@ export default function PassengerRequests() {
             <Card key={request.id} className={`border-2 transition-all overflow-hidden ${
               !canAccept ? 'bg-[var(--muted)] opacity-70 border-[var(--border)]' :
               recommendedPickup && request.id === recommendedPickup.id ? 'bg-gradient-to-br from-[var(--success-soft)] to-[var(--success-soft)] border-[var(--success)] shadow-md' :
-              'bg-white border-[var(--border)] shadow-sm'
+              'bg-surface border-[var(--border)] shadow-sm'
             }`}>
               {/* Top: Type icon + Name + Amount */}
               <div className="flex items-center justify-between px-4 pt-3 pb-2">
@@ -672,11 +672,11 @@ export default function PassengerRequests() {
                   </div>
                   <div className="flex-1 space-y-1.5 min-w-0">
                     <div>
-                      <p className="text-[10px] text-[var(--success)] font-bold uppercase">Pickup</p>
+                      <p className="text-[10px] text-[var(--success)] font-bold">Pickup</p>
                       <p className="text-xs font-semibold text-[var(--ink)] truncate">{request.pickup}</p>
                     </div>
                     <div>
-                      <p className="text-[10px] text-[var(--primary)] font-bold uppercase">Drop-off</p>
+                      <p className="text-[10px] text-[var(--primary)] font-bold">Drop-off</p>
                       <p className="text-xs font-semibold text-[var(--ink)] truncate">{request.dropoff}</p>
                     </div>
                   </div>
@@ -699,7 +699,7 @@ export default function PassengerRequests() {
                 <Button
                   onClick={() => handleOpenPreview(request)}
                   disabled={!canAccept}
-                  className={`w-full uppercase text-xs md:text-sm py-5 md:py-6 font-bold rounded-xl ${
+                  className={`w-full text-xs md:text-sm py-5 md:py-6 font-bold rounded-xl ${
                     canAccept ? 'bg-[var(--primary)] hover:bg-[var(--primary)] shadow-lg shadow-[var(--error-soft)]' : 'bg-[var(--border)] text-[var(--muted-foreground)] cursor-not-allowed'
                   }`}
                 >
@@ -726,7 +726,7 @@ export default function PassengerRequests() {
       {/* Confirm Accept Popup */}
       {showConfirmAccept && confirmRequest && (
         <div className="fixed inset-0 bg-black/60 z-[2000] flex items-center justify-center">
-          <div className="bg-white rounded-3xl p-6 mx-6 text-center shadow-2xl animate-in fade-in zoom-in duration-300">
+          <div className="bg-surface rounded-3xl p-6 mx-6 text-center shadow-2xl animate-in fade-in zoom-in duration-300">
             <div className="w-16 h-16 bg-[var(--error-soft)] rounded-full flex items-center justify-center mx-auto mb-4">
               <CheckCircle className="w-9 h-9 text-[var(--primary)]" />
             </div>
@@ -737,8 +737,8 @@ export default function PassengerRequests() {
             <p className="text-sm font-semibold text-[var(--ink-soft)] mb-1">{confirmRequest.pickup} → {confirmRequest.dropoff}</p>
             <p className="text-lg font-bold text-[var(--primary)] mb-4">₱{confirmRequest.amount}</p>
             <div className="flex gap-3">
-              <Button onClick={() => { setShowConfirmAccept(false); setConfirmRequest(null); }} variant="outline" className="flex-1 border-[var(--border)] text-[var(--muted-foreground)] uppercase">Cancel</Button>
-              <Button onClick={async () => { setShowConfirmAccept(false); setConfirmRequest(null); await handleAcceptRequest(confirmRequest); }} className="flex-1 bg-[var(--primary)] hover:bg-[var(--primary)] uppercase">Confirm</Button>
+              <Button onClick={() => { setShowConfirmAccept(false); setConfirmRequest(null); }} variant="outline" className="flex-1 border-[var(--border)] text-[var(--muted-foreground)]">Cancel</Button>
+              <Button onClick={async () => { setShowConfirmAccept(false); setConfirmRequest(null); await handleAcceptRequest(confirmRequest); }} className="flex-1 bg-[var(--primary)] hover:bg-[var(--primary)]">Confirm</Button>
             </div>
           </div>
         </div>
@@ -747,7 +747,7 @@ export default function PassengerRequests() {
       {/* Request Accepted Popup */}
       {showAccepted && (
         <div className="fixed inset-0 bg-black/60 z-[2000] flex items-center justify-center">
-          <div className="bg-white rounded-3xl p-8 mx-6 text-center shadow-2xl animate-in fade-in zoom-in duration-300">
+          <div className="bg-surface rounded-3xl p-8 mx-6 text-center shadow-2xl animate-in fade-in zoom-in duration-300">
             <div className="w-20 h-20 bg-[var(--success-soft)] rounded-full flex items-center justify-center mx-auto mb-4">
               <CheckCircle className="w-12 h-12 text-[var(--success)]" />
             </div>
@@ -760,7 +760,7 @@ export default function PassengerRequests() {
       {/* Preview Modal */}
       {previewRequest && (
         <div className="fixed inset-0 bg-black/50 z-[1000] flex items-end">
-          <div className="bg-white w-full max-h-[90vh] rounded-t-3xl flex flex-col overflow-hidden">
+          <div className="bg-surface w-full max-h-[90vh] rounded-t-3xl flex flex-col overflow-hidden">
             <div className="bg-[var(--primary)] text-white px-4 py-3 flex items-center justify-between">
               <h2 className="text-lg font-bold">Route Preview</h2>
               <button onClick={() => setPreviewRequest(null)} className="p-1 hover:bg-white/20 rounded-lg"><X className="w-5 h-5" /></button>
@@ -789,26 +789,26 @@ export default function PassengerRequests() {
                 </div>
                 <div className="flex-1 space-y-2 min-w-0">
                   <div className="p-2 bg-[var(--success-soft)] rounded-lg">
-                    <p className="text-[10px] text-[var(--success)] uppercase font-bold">Pickup</p>
+                    <p className="text-[10px] text-[var(--success)] font-bold">Pickup</p>
                     <p className="text-sm font-semibold">{previewRequest.pickup}</p>
                   </div>
                   <div className={`p-2 rounded-lg ${previewRequest.type === 'delivery' ? 'bg-[var(--error-soft)]' : ''}`}>
-                    <p className={`text-[10px] uppercase font-bold ${previewRequest.type === 'delivery' ? 'text-[var(--primary)]' : 'text-[var(--muted-foreground)]'}`}>
+                    <p className={`text-[10px] font-bold ${previewRequest.type === 'delivery' ? 'text-[var(--primary)]' : 'text-[var(--muted-foreground)]'}`}>
                       {previewRequest.type === 'delivery' ? 'Deliver to Customer' : 'Drop-off'}
                     </p>
                     <p className="text-sm font-semibold">{previewRequest.dropoff}</p>
                   </div>
                 </div>
               </div>
-              <Button onClick={() => { setConfirmRequest(previewRequest); setShowConfirmAccept(true); }} className="w-full bg-[var(--primary)] hover:bg-[var(--primary)] uppercase py-6 font-bold">Accept & Navigate</Button>
+              <Button onClick={() => { setConfirmRequest(previewRequest); setShowConfirmAccept(true); }} className="w-full bg-[var(--primary)] hover:bg-[var(--primary)] py-6 font-bold">Accept & Navigate</Button>
               <Button
                 onClick={() => { setDeclineTarget(previewRequest); setShowDeclinePrompt(true); }}
                 variant="outline"
-                className="w-full border-[var(--primary)] text-[var(--primary)] uppercase"
+                className="w-full border-[var(--primary)] text-[var(--primary)]"
               >
                 Decline Request
               </Button>
-              <Button onClick={() => setPreviewRequest(null)} variant="outline" className="w-full border-[var(--border)] text-[var(--muted-foreground)] uppercase">Close</Button>
+              <Button onClick={() => setPreviewRequest(null)} variant="outline" className="w-full border-[var(--border)] text-[var(--muted-foreground)]">Close</Button>
             </div>
           </div>
         </div>

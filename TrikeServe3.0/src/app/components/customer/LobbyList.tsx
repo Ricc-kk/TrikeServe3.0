@@ -132,7 +132,7 @@ export default function LobbyList({
 
   return (
     <div className="fixed inset-0 bg-black/50 z-[2000] flex items-end">
-      <div className="bg-white w-full rounded-t-3xl max-h-[85vh] overflow-hidden flex flex-col">
+      <div className="bg-surface w-full rounded-t-3xl max-h-[85vh] overflow-hidden flex flex-col">
         {/* Header */}
         <div className="p-5 border-b border-[var(--border)]">
           <div className="flex items-center justify-between mb-2">
@@ -176,7 +176,7 @@ export default function LobbyList({
               {lobbies.map((lobby) => (
                 <Card
                   key={lobby.id}
-                  className="p-4 border-2 border-[var(--border)] hover:border-[var(--primary)] transition-colors"
+                  className="p-4 border border-line hover:border-[var(--primary)] transition-colors"
                 >
                   {/* Status Bar */}
                   <div className="flex items-center justify-between mb-3">
@@ -195,7 +195,7 @@ export default function LobbyList({
                       {lobby.passengers.map((passenger) => (
                         <div
                           key={passenger.id}
-                          className="w-8 h-8 rounded-full bg-gradient-to-br from-[var(--primary)] to-[var(--primary)] flex items-center justify-center text-sm border-2 border-white"
+                          className="w-8 h-8 rounded-full bg-[var(--primary)] flex items-center justify-center text-sm border-2 border-white"
                           title={passenger.name}
                         >
                           {passenger.emoji}
@@ -222,7 +222,7 @@ export default function LobbyList({
                       <div className="flex items-start gap-2">
                         <MapPin className="w-4 h-4 text-[var(--ink)] mt-0.5 flex-shrink-0" />
                         <div className="flex-1 min-w-0">
-                          <p className="text-xs text-[var(--muted-foreground)] uppercase tracking-wide font-semibold">Pickup</p>
+                          <p className="text-xs text-[var(--muted-foreground)] uppercase tracking-widest font-semibold">Pickup</p>
                           <p className="font-semibold text-[var(--ink)]">{lobby.pickup}</p>
                           <p className="text-xs text-[var(--muted-foreground)] truncate">{lobby.pickupAddress}</p>
                         </div>
@@ -233,7 +233,7 @@ export default function LobbyList({
                       <div className="flex items-start gap-2">
                         <MapPin className="w-4 h-4 text-[var(--primary)] mt-0.5 flex-shrink-0" />
                         <div className="flex-1 min-w-0">
-                          <p className="text-xs text-[var(--muted-foreground)] uppercase tracking-wide font-semibold">Drop-off</p>
+                          <p className="text-xs text-[var(--muted-foreground)] uppercase tracking-widest font-semibold">Drop-off</p>
                           <p className="font-semibold text-[var(--primary)]">{lobby.dropoff}</p>
                           <p className="text-xs text-[var(--muted-foreground)] truncate">{lobby.dropoffAddress}</p>
                         </div>

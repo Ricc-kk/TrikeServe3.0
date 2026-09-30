@@ -166,9 +166,9 @@ export default function CustomizationModal({
         onClick={onClose}
       />
       
-      <div className="relative bg-white w-full sm:max-w-2xl sm:rounded-3xl max-h-[90vh] flex flex-col rounded-t-3xl">
+      <div className="relative bg-surface w-full sm:max-w-2xl sm:rounded-3xl max-h-[90vh] flex flex-col rounded-t-3xl">
         {/* Header */}
-        <div className="sticky top-0 bg-white border-b-2 border-[var(--border)] px-5 py-4 z-10 rounded-t-3xl">
+        <div className="sticky top-0 bg-surface border-b-2 border-[var(--border)] px-5 py-4 z-10 rounded-t-3xl">
           <div className="flex items-center justify-between">
             <h2 className="text-xl font-extrabold text-[var(--ink)]">Customize Your Order</h2>
             <button
@@ -184,7 +184,7 @@ export default function CustomizationModal({
         <div className="flex-1 overflow-y-auto">
           <div className="p-5 space-y-6">
             {/* Item Info */}
-            <Card className="p-5 border-2 border-[var(--border)]">
+            <Card className="p-5 border border-line">
               <div className="flex gap-4">
                 <div className="w-24 h-24 rounded-xl overflow-hidden flex-shrink-0">
                   <ImageWithFallback
@@ -207,7 +207,7 @@ export default function CustomizationModal({
             {item.customizationGroups && item.customizationGroups.length > 0 ? (
               <div className="space-y-6">
                 {item.customizationGroups.map((group) => (
-                  <Card key={group.id} className="p-5 border-2 border-[var(--border)]">
+                  <Card key={group.id} className="p-5 border border-line">
                     <div className="mb-4">
                       <div className="flex items-start justify-between mb-1">
                         <h3 className="font-bold text-[var(--ink)] text-base">
@@ -253,7 +253,7 @@ export default function CustomizationModal({
                                 }`}
                               >
                                 {isSelected && (
-                                  <div className="w-2 h-2 bg-white rounded-full" />
+                                  <div className="w-2 h-2 bg-surface rounded-full" />
                                 )}
                               </div>
                               <span className="font-semibold text-[var(--ink)] text-left">
@@ -273,13 +273,13 @@ export default function CustomizationModal({
                 ))}
               </div>
             ) : (
-              <Card className="p-8 border-2 border-[var(--border)] text-center">
+              <Card className="p-8 border border-line text-center">
                 <p className="text-[var(--muted-foreground)]">No customization options available for this item.</p>
               </Card>
             )}
 
             {/* Quantity Selector */}
-            <Card className="p-5 border-2 border-[var(--border)]">
+            <Card className="p-5 border border-line">
               <div className="flex items-center justify-between">
                 <span className="font-bold text-[var(--ink)]">Quantity</span>
                 <div className="flex items-center gap-4">
@@ -310,10 +310,10 @@ export default function CustomizationModal({
         </div>
 
         {/* Footer - Add to Cart Button */}
-        <div className="sticky bottom-0 bg-white border-t-2 border-[var(--border)] p-5">
+        <div className="sticky bottom-0 bg-surface border-t-2 border-[var(--border)] p-5">
           <Button
             onClick={handleAddToCart}
-            className="w-full bg-[var(--primary)] hover:bg-[var(--primary)] text-white font-bold py-4 rounded-2xl uppercase text-base flex items-center justify-between"
+            className="w-full bg-[var(--primary)] hover:bg-[var(--primary)] text-white font-bold py-4 rounded-2xl text-base flex items-center justify-between"
           >
             <span>Add to Cart</span>
             <span>

@@ -64,6 +64,8 @@ type AppHeaderProps = {
   notificationCount?: number;
   /** Route for the notification control; defaults per role. */
   notificationsHref?: string;
+  /** When set, the notification control becomes a button running this action. */
+  onNotificationsClick?: () => void;
   /** Extra content rendered under the header (search bars, service switcher). */
   children?: ReactNode;
   className?: string;
@@ -85,6 +87,7 @@ export default function AppHeader({
   hint,
   notificationCount = 0,
   notificationsHref,
+  onNotificationsClick,
   children,
   className,
 }: AppHeaderProps) {
@@ -118,6 +121,20 @@ export default function AppHeader({
       ? `Notifications, ${notificationCount} unread`
       : "Notifications";
 
+  const notificationClasses =
+    "relative grid size-12 shrink-0 place-items-center rounded-2xl bg-white/10 transition-colors hover:bg-white/20";
+
+  const notificationInner = (
+    <>
+      <Bell className="size-6" aria-hidden="true" />
+      {notificationCount > 0 ? (
+        <span className="absolute -right-1 -top-1 grid min-w-5 place-items-center rounded-full bg-error px-1 text-[10px] font-bold leading-none text-white">
+          {notificationCount > 9 ? "9+" : notificationCount}
+        </span>
+      ) : null}
+    </>
+  );
+
   return (
     <header
       className={cn(
@@ -147,18 +164,24 @@ export default function AppHeader({
           </div>
         </div>
 
-        <Link
-          to={resolvedHref}
-          aria-label={notificationLabel}
-          className="relative grid size-12 shrink-0 place-items-center rounded-2xl bg-white/10 transition-colors hover:bg-white/20"
-        >
-          <Bell className="size-6" aria-hidden="true" />
-          {notificationCount > 0 ? (
-            <span className="absolute -right-1 -top-1 grid min-w-5 place-items-center rounded-full bg-error px-1 text-[10px] font-bold leading-none text-white">
-              {notificationCount > 9 ? "9+" : notificationCount}
-            </span>
-          ) : null}
-        </Link>
+        {onNotificationsClick ? (
+          <button
+            type="button"
+            onClick={onNotificationsClick}
+            aria-label={notificationLabel}
+            className={notificationClasses}
+          >
+            {notificationInner}
+          </button>
+        ) : (
+          <Link
+            to={resolvedHref}
+            aria-label={notificationLabel}
+            className={notificationClasses}
+          >
+            {notificationInner}
+          </Link>
+        )}
       </div>
 
       {hint ? (

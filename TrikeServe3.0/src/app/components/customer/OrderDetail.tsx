@@ -328,7 +328,7 @@ export default function OrderDetail() {
   // ─── Loading / Error states ────────────────────────────────────────
   if (isLoading) {
     return (
-      <div className="min-h-screen bg-white flex items-center justify-center">
+      <div className="min-h-screen bg-surface flex items-center justify-center">
         <div className="text-center">
           <Package className="w-12 h-12 text-[var(--info)] mx-auto mb-4 animate-bounce" />
           <p className="text-[var(--muted-foreground)]">Loading order details...</p>
@@ -339,11 +339,11 @@ export default function OrderDetail() {
 
   if (error || !order) {
     return (
-      <div className="min-h-screen bg-white flex items-center justify-center">
+      <div className="min-h-screen bg-surface flex items-center justify-center">
         <div className="text-center">
           <h2 className="text-xl font-bold text-[var(--ink)] mb-2">Order Not Found</h2>
           <p className="text-[var(--muted-foreground)] mb-4">The order you're looking for doesn't exist.</p>
-          <Button onClick={() => navigate("/customer/activity")} className="bg-[var(--primary)] hover:bg-[var(--primary)] text-white font-bold uppercase">Back to Activity</Button>
+          <Button onClick={() => navigate("/customer/activity")} className="bg-[var(--primary)] hover:bg-[var(--primary)] text-white font-bold">Back to Activity</Button>
         </div>
       </div>
     );
@@ -365,9 +365,9 @@ export default function OrderDetail() {
   };
 
   return (
-    <div className="min-h-screen bg-white pb-6">
+    <div className="min-h-screen bg-surface pb-6">
       {/* Header */}
-      <div className="sticky top-0 bg-white border-b-2 border-[var(--border)] px-4 md:px-5 py-3 md:py-4 z-10">
+      <div className="sticky top-0 bg-surface border-b-2 border-[var(--border)] px-4 md:px-5 py-3 md:py-4 z-10">
         <div className="flex items-center justify-between mb-2">
           <div className="flex items-center gap-3">
             <button onClick={() => navigate("/customer/activity")} className="p-2 hover:bg-[var(--muted)] rounded-full transition-colors">
@@ -489,7 +489,7 @@ export default function OrderDetail() {
                 <Polyline path={routePath} options={{ strokeColor: 'var(--success)', strokeOpacity: 0.9, strokeWeight: 4, geodesic: true }} />
               )}
             </GoogleMap>
-            <div className="px-4 py-2.5 bg-white border-t border-[var(--border)] flex items-center justify-between">
+            <div className="px-4 py-2.5 bg-surface border-t border-[var(--border)] flex items-center justify-between">
               <p className="text-xs font-semibold text-[var(--ink)]">
                 {order.driverName && <span className="text-[var(--muted-foreground)]">Driver: {order.driverName} • </span>}
                 {order.status === 'confirmed' ? '🛵 Heading to restaurant' : '🟢 Delivering to you'}
@@ -505,7 +505,7 @@ export default function OrderDetail() {
         )}
 
         {/* Status Timeline — business style */}
-        <Card className="p-4 md:p-5 border-2 border-[var(--border)]">
+        <Card className="p-4 md:p-5 border border-line">
           <h3 className="font-bold text-[var(--ink)] text-sm md:text-base mb-3">Status Updates</h3>
           <div className="space-y-0">
             {statusHistory.map((item, idx) => (
@@ -537,18 +537,18 @@ export default function OrderDetail() {
 
         {/* Why the order was cancelled, so the customer sees the reason */}
         {order.status === 'cancelled' && order.cancelReason && (
-          <Card className="p-4 md:p-5 border-2 border-red-200 bg-red-50">
-            <h3 className="font-bold text-red-700 text-sm md:text-base mb-1">
+          <Card className="p-4 md:p-5 border border-[var(--error)] bg-[var(--error-soft)]">
+            <h3 className="font-bold text-[var(--error)] text-sm md:text-base mb-1">
               {order.cancelledBy === 'business'
                 ? `${order.restaurantName} declined this order`
                 : 'Cancellation reason'}
             </h3>
-            <p className="text-sm text-[#7F1D1D]">{order.cancelReason}</p>
+            <p className="text-sm text-[var(--error)]">{order.cancelReason}</p>
           </Card>
         )}
 
         {/* Restaurant Info */}
-        <Card className="p-4 md:p-5 border-2 border-[var(--border)]">
+        <Card className="p-4 md:p-5 border border-line">
           <h3 className="font-bold text-[var(--ink)] text-sm md:text-base mb-2">Restaurant</h3>
           <div className="flex items-center gap-3">
             <div className="w-12 h-12 md:w-14 md:h-14 rounded-xl overflow-hidden flex-shrink-0">
@@ -565,7 +565,7 @@ export default function OrderDetail() {
 
         {/* Delivery Address */}
         {order.deliveryMode === 'delivery' && (
-          <Card className="p-4 md:p-5 border-2 border-[var(--border)]">
+          <Card className="p-4 md:p-5 border border-line">
             <h3 className="font-bold text-[var(--ink)] text-sm md:text-base mb-2">Delivery Address</h3>
             <div className="flex items-start gap-2">
               <MapPin className="w-4 h-4 text-[var(--primary)] mt-0.5 flex-shrink-0" />
@@ -575,7 +575,7 @@ export default function OrderDetail() {
         )}
 
         {/* Order Items */}
-        <Card className="p-4 md:p-5 border-2 border-[var(--border)]">
+        <Card className="p-4 md:p-5 border border-line">
           <h3 className="font-bold text-[var(--ink)] text-sm md:text-base mb-3">Items</h3>
           <div className="space-y-2">
             {order.items.map((item, index) => (
@@ -600,7 +600,7 @@ export default function OrderDetail() {
         </Card>
 
         {/* Payment */}
-        <Card className="p-4 md:p-5 border-2 border-[var(--border)]">
+        <Card className="p-4 md:p-5 border border-line">
           <div className="flex items-center gap-2 mb-3">
             <CreditCard className="w-4 h-4 text-[var(--primary)]" />
             <h3 className="font-bold text-[var(--ink)] text-sm md:text-base">Payment</h3>
@@ -637,7 +637,7 @@ export default function OrderDetail() {
             <Button
               onClick={() => setShowCancelOrderPrompt(true)}
               variant="outline"
-              className="w-full border-[#E11D48] text-[#E11D48] uppercase font-bold py-3"
+              className="w-full border-[var(--error)] text-[var(--error)] font-bold py-3"
             >
               Cancel Order
             </Button>
@@ -646,14 +646,14 @@ export default function OrderDetail() {
 
         {/* Cutlery */}
         {order.needsCutlery && (
-          <Card className="p-3 border-2 border-[var(--border)] bg-[var(--muted)]">
+          <Card className="p-3 border border-line bg-[var(--muted)]">
             <p className="text-sm text-[var(--muted-foreground)] flex items-center gap-2">🍴 Cutlery requested</p>
           </Card>
         )}
 
         {/* Rate */}
         {order.status === 'delivered' && (
-          <Card className="p-4 md:p-5 border-2 border-[var(--border)]">
+          <Card className="p-4 md:p-5 border border-line">
             {ratingSubmitted ? (
               <div className="text-center py-2">
                 <div className="w-14 h-14 mx-auto mb-3 rounded-full bg-[var(--success-soft)] flex items-center justify-center text-2xl">🙏</div>

@@ -112,7 +112,7 @@ export default function SharedRides({
 
   return (
     <div className="fixed inset-0 bg-black/50 z-[2000] flex items-end">
-      <div className="bg-white w-full rounded-t-3xl max-h-[85vh] overflow-hidden flex flex-col">
+      <div className="bg-surface w-full rounded-t-3xl max-h-[85vh] overflow-hidden flex flex-col">
         {/* Header */}
         <div className="p-5 border-b border-[var(--border)]">
           <div className="flex items-center justify-between mb-2">
@@ -150,7 +150,7 @@ export default function SharedRides({
               {availableRides.map((ride) => (
                 <Card
                   key={ride.id}
-                  className="p-4 border-2 border-[var(--border)] hover:border-[var(--primary)] transition-colors"
+                  className="p-4 border border-line hover:border-[var(--primary)] transition-colors"
                 >
                   {/* Ride Status */}
                   <div className="flex items-center justify-between mb-3">
@@ -173,7 +173,7 @@ export default function SharedRides({
                       {ride.passengers.map((passenger, idx) => (
                         <div
                           key={idx}
-                          className="w-8 h-8 rounded-full bg-gradient-to-br from-[var(--primary)] to-[var(--primary)] flex items-center justify-center text-sm border-2 border-white"
+                          className="w-8 h-8 rounded-full bg-[var(--primary)] flex items-center justify-center text-sm border-2 border-white"
                           title={passenger.name}
                         >
                           {passenger.emoji}
@@ -244,10 +244,10 @@ export default function SharedRides({
         </div>
 
         {/* Create New Ride Button */}
-        <div className="p-5 border-t border-[var(--border)] bg-white">
+        <div className="p-5 border-t border-[var(--border)] bg-surface">
           <Button
             onClick={onCreateNewRide}
-            className="w-full bg-[var(--ink)] hover:bg-[var(--ink)] text-white py-6 text-base font-bold uppercase"
+            className="w-full bg-[var(--ink)] hover:bg-[var(--ink)] text-white py-6 text-base font-bold"
           >
             <Users className="w-5 h-5 mr-2" />
             Start New Share Ride

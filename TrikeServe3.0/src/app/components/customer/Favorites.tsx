@@ -13,9 +13,9 @@ export default function Favorites() {
   const [activeTab, setActiveTab] = useState<"restaurants" | "items">("restaurants");
 
   return (
-    <div className="min-h-screen bg-white pb-20">
+    <div className="min-h-screen bg-surface pb-20">
       {/* Header */}
-      <div className="px-5 py-4 border-b border-[var(--border)] flex items-center gap-3 sticky top-0 bg-white z-50">
+      <div className="px-5 py-4 border-b border-[var(--border)] flex items-center gap-3 sticky top-0 bg-surface z-50">
         <button
           onClick={() => navigate(-1)}
           className="active:scale-90 transition-transform"
@@ -35,7 +35,7 @@ export default function Favorites() {
             onClick={() => setActiveTab("restaurants")}
             className={`flex-1 py-2.5 rounded-xl text-sm font-bold transition-all ${
               activeTab === "restaurants"
-                ? "bg-white text-[var(--primary)] shadow-md"
+                ? "bg-surface text-[var(--primary)] shadow-md"
                 : "text-[var(--muted-foreground)]"
             }`}
           >
@@ -45,7 +45,7 @@ export default function Favorites() {
             onClick={() => setActiveTab("items")}
             className={`flex-1 py-2.5 rounded-xl text-sm font-bold transition-all ${
               activeTab === "items"
-                ? "bg-white text-[var(--primary)] shadow-md"
+                ? "bg-surface text-[var(--primary)] shadow-md"
                 : "text-[var(--muted-foreground)]"
             }`}
           >
@@ -63,7 +63,7 @@ export default function Favorites() {
               {favorites.map((restaurant) => (
                 <div
                   key={restaurant.id}
-                  className="bg-white border-2 border-[var(--border)] rounded-2xl overflow-hidden active:scale-[0.98] transition-transform"
+                  className="bg-surface border border-line rounded-2xl overflow-hidden active:scale-[0.98] transition-transform"
                 >
                   {/* Restaurant Image */}
                   <div className="relative h-48">
@@ -129,7 +129,7 @@ export default function Favorites() {
                 Tap the heart icon on a restaurant to save it here
               </p>
               <Link to="/customer/food">
-                <button className="px-8 py-3 bg-[var(--primary)] hover:bg-[var(--primary)] text-white font-bold rounded-full uppercase active:scale-95 transition-all">
+                <button className="px-8 py-3 bg-[var(--primary)] hover:bg-[var(--primary)] text-white font-bold rounded-full active:scale-95 transition-all">
                   Browse Restaurants
                 </button>
               </Link>
@@ -144,7 +144,7 @@ export default function Favorites() {
               {favoriteItems.map((item) => (
                 <div
                   key={item.id}
-                  className="flex items-center gap-3 bg-white border-2 border-[var(--border)] rounded-2xl p-3 active:scale-[0.98] transition-transform"
+                  className="flex items-center gap-3 bg-surface border border-line rounded-2xl p-3 active:scale-[0.98] transition-transform"
                 >
                   {/* Item Image */}
                   <div className="w-20 h-20 rounded-xl overflow-hidden flex-shrink-0">
@@ -187,7 +187,7 @@ export default function Favorites() {
                 Tap the heart icon on a menu item to save it here
               </p>
               <Link to="/customer/food">
-                <button className="px-8 py-3 bg-[var(--primary)] hover:bg-[var(--primary)] text-white font-bold rounded-full uppercase active:scale-95 transition-all">
+                <button className="px-8 py-3 bg-[var(--primary)] hover:bg-[var(--primary)] text-white font-bold rounded-full active:scale-95 transition-all">
                   Browse Restaurants
                 </button>
               </Link>

@@ -83,7 +83,7 @@ export default function CustomerApp() {
   return (
     <div className="min-h-screen bg-[var(--muted)]">
       {/* Header */}
-      <div className="bg-gradient-to-r from-[var(--primary)] to-[var(--primary)] px-4 py-4 sticky top-0 z-50 shadow-lg">
+      <div className="bg-[var(--primary)] px-4 py-4 sticky top-0 z-50 shadow-lg">
         <div className="max-w-6xl mx-auto">
           <div className="flex items-center gap-3 mb-4">
             <Link to="/">
@@ -105,7 +105,7 @@ export default function CustomerApp() {
               placeholder="Search food or destinations..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="pl-10 bg-white border-0 shadow-lg"
+              className="pl-10 bg-surface border-0 shadow-lg"
             />
           </div>
         </div>
@@ -116,8 +116,8 @@ export default function CustomerApp() {
         <div className="grid grid-cols-2 gap-4 mb-6">
           <Dialog>
             <DialogTrigger asChild>
-              <Card className="p-6 cursor-pointer hover:shadow-xl transition-all border-2 border-[var(--border)] hover:border-[var(--primary)]">
-                <div className="w-14 h-14 bg-gradient-to-br from-[var(--primary)] to-[var(--primary)] rounded-2xl flex items-center justify-center mb-3 mx-auto">
+              <Card className="p-6 cursor-pointer hover:shadow-xl transition-all border border-line hover:border-[var(--primary)]">
+                <div className="w-14 h-14 bg-[var(--primary)] rounded-2xl flex items-center justify-center mb-3 mx-auto">
                   <Bike className="w-7 h-7 text-white" />
                 </div>
                 <h3 className="font-bold text-center text-[var(--ink)]">Book a Ride</h3>
@@ -129,7 +129,7 @@ export default function CustomerApp() {
                 <DialogTitle>Choose Ride Type</DialogTitle>
               </DialogHeader>
               <div className="space-y-3 py-4">
-                <Card className="p-5 cursor-pointer hover:shadow-lg border-2 border-[var(--border)] hover:border-[var(--primary)]">
+                <Card className="p-5 cursor-pointer hover:shadow-lg border border-line hover:border-[var(--primary)]">
                   <div className="flex items-start justify-between mb-3">
                     <div className="flex items-center gap-3">
                       <div className="w-12 h-12 bg-[var(--info-soft)] rounded-xl flex items-center justify-center">
@@ -147,12 +147,12 @@ export default function CustomerApp() {
                   </div>
                   <Badge className="bg-[var(--success)] mb-2">2 seats available</Badge>
                   <p className="text-xs text-[var(--muted-foreground)] mb-3">May wait for other passengers</p>
-                  <Button className="w-full bg-[var(--primary)] hover:bg-[var(--primary)] uppercase">
+                  <Button className="w-full bg-[var(--primary)] hover:bg-[var(--primary)]">
                     BOOK SHARED RIDE
                   </Button>
                 </Card>
 
-                <Card className="p-5 cursor-pointer hover:shadow-lg border-2 border-[var(--border)] hover:border-[var(--primary)]">
+                <Card className="p-5 cursor-pointer hover:shadow-lg border border-line hover:border-[var(--primary)]">
                   <div className="flex items-start justify-between mb-3">
                     <div className="flex items-center gap-3">
                       <div className="w-12 h-12 bg-[var(--violet-soft)] rounded-xl flex items-center justify-center">
@@ -170,7 +170,7 @@ export default function CustomerApp() {
                   </div>
                   <Badge className="bg-[var(--info)] mb-2">Instant pickup</Badge>
                   <p className="text-xs text-[var(--muted-foreground)] mb-3">Direct to destination</p>
-                  <Button className="w-full bg-[var(--ink)] hover:bg-[var(--ink)] uppercase">
+                  <Button className="w-full bg-[var(--ink)] hover:bg-[var(--ink)]">
                     BOOK PRIVATE RIDE
                   </Button>
                 </Card>
@@ -178,7 +178,7 @@ export default function CustomerApp() {
             </DialogContent>
           </Dialog>
 
-          <Card className="p-6 cursor-pointer hover:shadow-xl transition-all border-2 border-[var(--border)] hover:border-[var(--primary)]">
+          <Card className="p-6 cursor-pointer hover:shadow-xl transition-all border border-line hover:border-[var(--primary)]">
             <div className="w-14 h-14 bg-gradient-to-br from-[var(--ink)] to-[var(--ink)] rounded-2xl flex items-center justify-center mb-3 mx-auto">
               <ShoppingBag className="w-7 h-7 text-white" />
             </div>
@@ -201,7 +201,7 @@ export default function CustomerApp() {
               <h2 className="text-xl font-bold text-[var(--ink)] mb-4">Popular Items</h2>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 {popularItems.map((item) => (
-                  <Card key={item.id} className="p-4 border-2 border-[var(--border)] hover:border-[var(--primary)] transition-colors">
+                  <Card key={item.id} className="p-4 border border-line hover:border-[var(--primary)] transition-colors">
                     <div className="flex items-start justify-between mb-2">
                       <div className="flex-1">
                         <h3 className="font-bold text-lg text-[var(--ink)] tracking-tight mb-1">
@@ -217,7 +217,7 @@ export default function CustomerApp() {
                     <Button
                       onClick={() => addToCart(item)}
                       size="sm"
-                      className="w-full bg-[var(--primary)] hover:bg-[var(--primary)] uppercase mt-2"
+                      className="w-full bg-[var(--primary)] hover:bg-[var(--primary)] mt-2"
                     >
                       ADD TO CART
                     </Button>
@@ -231,7 +231,7 @@ export default function CustomerApp() {
               <h2 className="text-xl font-bold text-[var(--ink)] mb-4">Restaurants Near You</h2>
               <div className="space-y-3">
                 {restaurants.map((restaurant) => (
-                  <Card key={restaurant.id} className="p-5 border-2 border-[var(--border)] hover:border-[var(--primary)] transition-colors cursor-pointer">
+                  <Card key={restaurant.id} className="p-5 border border-line hover:border-[var(--primary)] transition-colors cursor-pointer">
                     <div className="flex items-start justify-between">
                       <div className="flex-1">
                         <h3 className="font-bold text-lg text-[var(--ink)] mb-1">{restaurant.name}</h3>
@@ -260,7 +260,7 @@ export default function CustomerApp() {
 
           {/* History Tab */}
           <TabsContent value="history" className="space-y-4">
-            <Card className="p-5 border-2 border-[var(--border)]">
+            <Card className="p-5 border border-line">
               <div className="flex items-center gap-3 mb-3">
                 <div className="w-10 h-10 bg-[var(--success-soft)] rounded-lg flex items-center justify-center">
                   <ShoppingBag className="w-5 h-5 text-[var(--success)]" />
@@ -280,7 +280,7 @@ export default function CustomerApp() {
               </Button>
             </Card>
 
-            <Card className="p-5 border-2 border-[var(--border)]">
+            <Card className="p-5 border border-line">
               <div className="flex items-center gap-3 mb-3">
                 <div className="w-10 h-10 bg-[var(--info-soft)] rounded-lg flex items-center justify-center">
                   <Bike className="w-5 h-5 text-[var(--info)]" />
@@ -306,13 +306,13 @@ export default function CustomerApp() {
       {/* Floating Cart */}
       {cart.length > 0 && (
         <div className="fixed bottom-4 left-4 right-4 z-50 max-w-6xl mx-auto">
-          <Card className="p-4 bg-white shadow-2xl border-2 border-[var(--primary)]">
+          <Card className="p-4 bg-surface shadow-2xl border-2 border-[var(--primary)]">
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-sm text-[var(--muted-foreground)]">{cart.length} item(s)</p>
                 <p className="text-xl font-bold text-[var(--primary)]">₱{cartTotal.toFixed(2)}</p>
               </div>
-              <Button className="bg-[var(--primary)] hover:bg-[var(--primary)] uppercase px-8">
+              <Button className="bg-[var(--primary)] hover:bg-[var(--primary)] px-8">
                 VIEW CART
               </Button>
             </div>
