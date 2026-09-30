@@ -102,7 +102,7 @@ export default function FoodHome() {
           time: restaurant.delivery_time || "25-35 min",
           rating: restaurant.rating,
           ratingCount: restaurant.ratingCount,
-          bgColor: "#FFF7ED",
+          bgColor: "var(--amber-soft)",
           promo: restaurant.is_open ? "Open for Orders!" : "Closed",
           verified: true,
           category: "restaurant",
@@ -151,7 +151,7 @@ export default function FoodHome() {
             time: restaurantData.deliveryTime || "25-35 min",
             rating: restaurantData.rating || 0,
             ratingCount: restaurantData.ratingCount || 0,
-            bgColor: "#FFF7ED",
+            bgColor: "var(--amber-soft)",
             promo: hasMenu ? "Open for Orders!" : "Coming Soon",
             verified: business.isVerified || false,
             category: "restaurant",
@@ -261,12 +261,12 @@ export default function FoodHome() {
 
   // Local Valenzuela/Gen T Deleon categories
   const categories = [
-    { id: "silugan", name: "Silugan", icon: "🍳", gradient: "from-yellow-400 to-orange-400" },
-    { id: "ihawan", name: "Ihawan", icon: "🔥", gradient: "from-red-500 to-orange-500" },
-    { id: "karinderya", name: "Karinderya", icon: "🍲", gradient: "from-green-500 to-emerald-600" },
-    { id: "kape", name: "Kape & Tsaa", icon: "☕", gradient: "from-amber-700 to-yellow-600" },
-    { id: "merienda", name: "Merienda", icon: "🥐", gradient: "from-pink-400 to-rose-400" },
-    { id: "malamig", name: "Malamig", icon: "🧋", gradient: "from-purple-400 to-pink-500" },
+    { id: "silugan", name: "Silugan", icon: "🍳", gradient: "from-[var(--amber)] to-[var(--amber)]" },
+    { id: "ihawan", name: "Ihawan", icon: "🔥", gradient: "from-[var(--error)] to-[var(--amber)]" },
+    { id: "karinderya", name: "Karinderya", icon: "🍲", gradient: "from-[var(--success)] to-[var(--success)]" },
+    { id: "kape", name: "Kape & Tsaa", icon: "☕", gradient: "from-[var(--amber-dark)] to-[var(--amber-dark)]" },
+    { id: "merienda", name: "Merienda", icon: "🥐", gradient: "from-[var(--violet)] to-[var(--primary)]" },
+    { id: "malamig", name: "Malamig", icon: "🧋", gradient: "from-[var(--violet)] to-[var(--violet)]" },
   ];
 
   // Show welcome back popup after login
@@ -297,72 +297,87 @@ export default function FoodHome() {
   };
 
   return (
-    <div className="min-h-screen bg-[#BE123C] flex flex-col pb-20">
-      {/* Header - Clean and Simple */}
-      <div className="bg-gradient-to-b from-[#E11D48] to-[#BE123C] px-5 pt-6 pb-5">
+    <div className="min-h-screen bg-[var(--background)] flex flex-col pb-20">
+      {/* Header — TrikeServe brand, service area, trust strip */}
+      <div className="bg-[var(--ink)] px-5 pt-safe sm:pt-6 pb-5">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <MapPin className="w-7 h-7 text-white" />
+            <div className="grid size-11 place-items-center rounded-2xl bg-[var(--amber)] shadow-md">
+              <span className="text-lg font-bold text-[var(--ink)]" aria-hidden="true">TS</span>
+            </div>
             <div>
-              <h1 className="text-white font-bold text-2xl leading-tight">Gen T Deleon</h1>
-              <p className="text-white/90 text-sm">Valenzuela City</p>
+              <h1 className="text-white font-bold text-2xl leading-tight">TrikeServe</h1>
+              <p className="text-white/80 text-sm">Gen T Deleon, Valenzuela City</p>
             </div>
           </div>
           <div className="flex items-center gap-3">
-            <button 
+            <button
               onClick={() => navigate('/customer/notifications')}
-              className="active:scale-90 transition-transform relative"
+              className="relative grid size-11 place-items-center rounded-xl bg-white/10 active:scale-90 transition-transform"
+              aria-label="Notifications"
             >
-              <Bell className="w-7 h-7 text-white" />
+              <Bell className="w-6 h-6 text-white" />
               {/* Notification badge (delivery status updates + local notifications) */}
               {unreadNotifications > 0 && (
-                <div className="absolute -top-1 -right-1 w-5 h-5 bg-white rounded-full flex items-center justify-center">
-                  <span className="text-[10px] font-bold text-[#E11D48]">{unreadNotifications > 9 ? '9+' : unreadNotifications}</span>
+                <div className="absolute -top-1 -right-1 w-5 h-5 bg-[var(--amber)] rounded-full flex items-center justify-center">
+                  <span className="text-[10px] font-bold text-[var(--ink)]">{unreadNotifications > 9 ? '9+' : unreadNotifications}</span>
                 </div>
               )}
             </button>
-            <button 
+            <button
               onClick={() => navigate('/customer/favorites')}
-              className="active:scale-90 transition-transform relative"
+              className="relative grid size-11 place-items-center rounded-xl bg-white/10 active:scale-90 transition-transform"
+              aria-label="Favorites"
             >
-              <Heart className="w-7 h-7 text-white" />
+              <Heart className="w-6 h-6 text-white" />
               {getTotalFavorites() > 0 && (
-                <div className="absolute -top-1 -right-1 w-5 h-5 bg-white rounded-full flex items-center justify-center">
-                  <span className="text-[10px] font-bold text-[#E11D48]">{getTotalFavorites()}</span>
+                <div className="absolute -top-1 -right-1 w-5 h-5 bg-[var(--amber)] rounded-full flex items-center justify-center">
+                  <span className="text-[10px] font-bold text-[var(--ink)]">{getTotalFavorites()}</span>
                 </div>
               )}
             </button>
           </div>
         </div>
+        <div className="mt-4 flex items-center gap-2 rounded-2xl border border-white/10 bg-white/10 px-4 py-3">
+          <BadgeCheck className="w-5 h-5 shrink-0 text-[var(--mint)]" />
+          <p className="text-sm text-white/85">
+            <span className="font-bold">Fixed local fares.</span>{' '}
+            <span className="text-white/70">Tulong ng pamayanan — sakay at pagkain mula sa Gen T Deleon.</span>
+          </p>
+        </div>
       </div>
 
-       {/* Search Bar - Clean White */}
-       <div className="bg-gradient-to-b from-[#BE123C] to-[#BE123C]/95 px-5 pb-6">
-         <div className="flex items-center gap-3">
-           <div className="relative flex-1">
-             <Search className="absolute left-5 top-1/2 -translate-y-1/2 w-6 h-6 text-[#94A3B8]" />
-             <input
-               type="text"
-               placeholder="Search for Restaurants"
-               value={searchQuery}
-               onChange={(e) => setSearchQuery(e.target.value)}
-               className="w-full pl-16 pr-5 py-4 bg-white rounded-full shadow-sm border-0 text-base text-[#121212] placeholder:text-[#94A3B8]"
-               style={{ outline: 'none' }}
-             />
-           </div>
-           <button
-             onClick={() => setShowFilterModal(true)}
-             className="w-12 h-12 bg-white/20 backdrop-blur-sm rounded-2xl flex items-center justify-center active:scale-90 transition-transform flex-shrink-0"
-           >
-             <SlidersHorizontal className="w-5 h-5 text-white" />
-           </button>
-         </div>
-       </div>
+      {/* Search — large, explicit, bilingual */}
+      <div className="bg-[var(--ink)] px-5 pb-6">
+        <div className="flex items-center gap-3">
+          <div className="relative flex-1">
+            <Search className="absolute left-5 top-1/2 -translate-y-1/2 w-6 h-6 text-[var(--muted-foreground)]" />
+            <input
+              type="text"
+              placeholder="Search food or restaurant"
+              aria-label="Search food or restaurant"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="w-full pl-16 pr-5 py-4 bg-white rounded-2xl shadow-sm border-0 text-base text-[var(--ink)] placeholder:text-[var(--muted-foreground)]"
+              style={{ outline: 'none' }}
+            />
+          </div>
+          <button
+            onClick={() => setShowFilterModal(true)}
+            className="size-12 bg-white/15 rounded-2xl flex flex-col items-center justify-center gap-0.5 active:scale-90 transition-transform flex-shrink-0"
+            aria-label="Filter restaurants"
+          >
+            <SlidersHorizontal className="w-5 h-5 text-white" />
+            <span className="text-[9px] font-bold leading-none text-white/85">Filter</span>
+          </button>
+        </div>
+        <p className="mt-2 text-xs text-white/60">Maghanap ng pagkain o tindahan</p>
+      </div>
 
-      {/* Restaurant Carousel - Extended Crimson Background */}
+      {/* Restaurant Carousel — deep ink band */}
       {restaurants.length > 0 && (
-        <div 
-          className="pt-6 pb-10 bg-gradient-to-b from-[#BE123C]/95 to-[#BE123C]/80"
+        <div
+          className="pt-6 pb-10 bg-[var(--ink)]"
         >
           <style>{`
             .restaurant-carousel .slick-dots {
@@ -400,7 +415,7 @@ export default function FoodHome() {
                       <div className="absolute inset-0 bg-gradient-to-t from-black/40 to-transparent" />
                       {/* Verified badge */}
                       {restaurant.verified && (
-                        <div className="absolute top-2 left-2 bg-[#121212] text-white p-1 rounded-full">
+                        <div className="absolute top-2 left-2 bg-[var(--ink)] text-white p-1 rounded-full">
                           <BadgeCheck className="w-3 h-3" fill="white" />
                         </div>
                       )}
@@ -430,7 +445,7 @@ export default function FoodHome() {
                             <span className="text-white text-[11px] font-semibold">{restaurant.time}</span>
                           </div>
                           <div className="flex items-center gap-1 bg-white/25 backdrop-blur-sm rounded-full px-2.5 py-1">
-                            <Star className="w-3 h-3 text-yellow-300 fill-yellow-300" />
+                            <Star className="w-3 h-3 text-[var(--amber)] fill-[var(--amber)]" />
                             <span className="text-white text-[11px] font-semibold">{restaurant.rating}</span>
                           </div>
                         </div>
@@ -453,16 +468,16 @@ export default function FoodHome() {
       <div className="px-5 py-6 bg-white rounded-t-[32px] -mt-2 relative z-10">
         {/* Popular Restaurants - Enhanced Cards */}
         <div className="pt-2">
-          <h3 className="text-xl font-bold text-[#121212] mb-4">All Available Restaurants</h3>
+          <h3 className="text-xl font-bold text-[var(--ink)] mb-4">All Available Restaurants</h3>
           
            {restaurants.length === 0 ? (
              // Empty State
              <div className="text-center py-12">
-               <div className="w-24 h-24 bg-[#F1F5F9] rounded-full flex items-center justify-center mx-auto mb-4">
-                 <Store className="w-12 h-12 text-[#94A3B8]" />
+               <div className="w-24 h-24 bg-[var(--muted)] rounded-full flex items-center justify-center mx-auto mb-4">
+                 <Store className="w-12 h-12 text-[var(--muted-foreground)]" />
                </div>
-               <h3 className="text-xl font-bold text-[#121212] mb-2">Walang Available na Tindahan</h3>
-               <p className="text-sm text-[#64748B] mb-4 px-8">
+               <h3 className="text-xl font-bold text-[var(--ink)] mb-2">Walang Available na Tindahan</h3>
+               <p className="text-sm text-[var(--muted-foreground)] mb-4 px-8">
                  No verified restaurants yet. Check back soon!
                </p>
              </div>
@@ -475,11 +490,11 @@ export default function FoodHome() {
            }).length === 0 ? (
              // No search results
              <div className="text-center py-12">
-               <div className="w-24 h-24 bg-[#F1F5F9] rounded-full flex items-center justify-center mx-auto mb-4">
-                 <Search className="w-12 h-12 text-[#94A3B8]" />
+               <div className="w-24 h-24 bg-[var(--muted)] rounded-full flex items-center justify-center mx-auto mb-4">
+                 <Search className="w-12 h-12 text-[var(--muted-foreground)]" />
                </div>
-               <h3 className="text-xl font-bold text-[#121212] mb-2">Walang Nakitang Tindahan</h3>
-               <p className="text-sm text-[#64748B] mb-4 px-8">
+               <h3 className="text-xl font-bold text-[var(--ink)] mb-2">Walang Nakitang Tindahan</h3>
+               <p className="text-sm text-[var(--muted-foreground)] mb-4 px-8">
                  No restaurants match your search "{searchQuery}". Try a different name or location.
                </p>
              </div>
@@ -513,13 +528,13 @@ export default function FoodHome() {
                         <div className="absolute inset-0 bg-gradient-to-t from-black/30 to-transparent" />
                         {/* Store logo badge (hidden for the default placeholder) */}
                         {restaurant.logo && restaurant.logo !== "🍽️" && (
-                          <div className="absolute top-2 left-2 w-9 h-9 rounded-full bg-white shadow-md overflow-hidden flex items-center justify-center border border-[#E2E8F0]">
+                          <div className="absolute top-2 left-2 w-9 h-9 rounded-full bg-white shadow-md overflow-hidden flex items-center justify-center border border-[var(--border)]">
                             <StoreLogo logo={restaurant.logo} emojiClass="text-lg" />
                           </div>
                         )}
                         {/* Rating badge */}
-                        <div className="absolute bottom-2 left-2 bg-white/95 backdrop-blur-sm text-[#121212] px-2 py-1 rounded-full flex items-center gap-1 shadow-lg">
-                          <Star className="w-3 h-3 fill-[#FFC107] text-[#FFC107]" />
+                        <div className="absolute bottom-2 left-2 bg-white/95 backdrop-blur-sm text-[var(--ink)] px-2 py-1 rounded-full flex items-center gap-1 shadow-lg">
+                          <Star className="w-3 h-3 fill-[var(--amber)] text-[var(--amber)]" />
                           <span className="text-xs font-bold">{restaurant.rating}</span>
                         </div>
                       </div>
@@ -529,17 +544,17 @@ export default function FoodHome() {
                         <div className="flex items-start justify-between mb-2">
                           <div className="flex-1 min-w-0">
                             <div className="flex items-center gap-2 mb-1">
-                              <h4 className="font-bold text-[#121212] text-base truncate">
+                              <h4 className="font-bold text-[var(--ink)] text-base truncate">
                                 {restaurant.name}
                               </h4>
                               {/* Verified Merchant Badge */}
                               {restaurant.verified && (
-                                <div className="flex-shrink-0 w-5 h-5 bg-[#121212] rounded-full flex items-center justify-center shadow-md">
+                                <div className="flex-shrink-0 w-5 h-5 bg-[var(--ink)] rounded-full flex items-center justify-center shadow-md">
                                   <Shield className="w-3 h-3 text-white" fill="white" />
                                 </div>
                               )}
                             </div>
-                            <p className="text-xs text-[#64748B] flex items-center gap-1">
+                            <p className="text-xs text-[var(--muted-foreground)] flex items-center gap-1">
                               <MapPin className="w-3 h-3" />
                               {restaurant.subtitle}
                             </p>
@@ -561,27 +576,27 @@ export default function FoodHome() {
                               });
                             }}
                             className={`flex-shrink-0 ml-2 w-8 h-8 rounded-full flex items-center justify-center active:scale-90 transition-transform shadow-md ${
-                              isFavorite(restaurant.id) ? 'bg-[#E11D48]' : 'bg-[#FFF7ED]'
+                              isFavorite(restaurant.id) ? 'bg-[var(--primary)]' : 'bg-[var(--amber-soft)]'
                             }`}
                           >
-                            <Heart className={`w-4 h-4 ${isFavorite(restaurant.id) ? 'text-white fill-white' : 'text-[#E11D48]'}`} />
+                            <Heart className={`w-4 h-4 ${isFavorite(restaurant.id) ? 'text-white fill-white' : 'text-[var(--primary)]'}`} />
                           </button>
                         </div>
 
-                        <div className="flex items-center gap-2 text-xs text-[#64748B] mb-3">
-                          <span className="flex items-center gap-1 bg-[#F8F9FA] px-2.5 py-1.5 rounded-lg shadow-sm">
+                        <div className="flex items-center gap-2 text-xs text-[var(--muted-foreground)] mb-3">
+                          <span className="flex items-center gap-1 bg-[var(--muted)] px-2.5 py-1.5 rounded-lg shadow-sm">
                             <Clock className="w-3 h-3" />
                             {restaurant.time}
                           </span>
-                          <span className="flex items-center gap-1 bg-[#F8F9FA] px-2.5 py-1.5 rounded-lg shadow-sm">
+                          <span className="flex items-center gap-1 bg-[var(--muted)] px-2.5 py-1.5 rounded-lg shadow-sm">
                             <span className="text-[10px]">₱</span>
                             {adminDeliveryFee}
                           </span>
                         </div>
 
                         {/* Promo Badge */}
-                        <div className="bg-gradient-to-r from-[#FFF7ED] to-[#FEF2F2] border-2 border-[#E11D48]/20 rounded-xl px-3 py-2 shadow-sm">
-                          <p className="text-[#E11D48] text-xs font-bold">
+                        <div className="bg-gradient-to-r from-[var(--amber-soft)] to-[var(--error-soft)] border-2 border-[var(--primary)]/20 rounded-xl px-3 py-2 shadow-sm">
+                          <p className="text-[var(--primary)] text-xs font-bold">
                             🎉 {restaurant.promo}
                           </p>
                         </div>
@@ -590,8 +605,8 @@ export default function FoodHome() {
 
                     {/* Quick Action Button */}
                     <div className="px-4 pb-4">
-                      <button className="w-full bg-gradient-to-r from-[#E11D48] to-[#BE123C] text-white font-bold py-3.5 rounded-2xl hover:shadow-xl transition-all duration-200 active:scale-95 shadow-lg shadow-[#E11D48]/30 uppercase text-sm tracking-wide">
-                        Order Na!
+                      <button className="w-full bg-gradient-to-r from-[var(--primary)] to-[var(--primary)] text-white font-bold py-3.5 rounded-2xl hover:shadow-xl transition-all duration-200 active:scale-95 shadow-lg shadow-[var(--primary)]/30 uppercase text-sm tracking-wide">
+                        Order Na! / Order now
                       </button>
                     </div>
                   </Card>
@@ -607,17 +622,17 @@ export default function FoodHome() {
       {showBackToTop && (
         <button
           onClick={scrollToTop}
-          className="fixed left-1/2 -translate-x-1/2 bottom-28 bg-white/95 backdrop-blur-sm rounded-full px-5 py-3 flex items-center justify-center gap-2 shadow-2xl shadow-[#121212]/20 hover:shadow-3xl active:scale-90 transition-all duration-300 z-[1600] border-2 border-[#E11D48]"
+          className="fixed left-1/2 -translate-x-1/2 bottom-28 bg-white/95 backdrop-blur-sm rounded-full px-5 py-3 flex items-center justify-center gap-2 shadow-2xl shadow-[var(--ink)]/20 hover:shadow-3xl active:scale-90 transition-all duration-300 z-[1600] border-2 border-[var(--primary)]"
         >
-          <ArrowUp className="w-5 h-5 text-[#E11D48]" />
-          <span className="text-[#E11D48] font-bold text-sm whitespace-nowrap">Back to Top</span>
+          <ArrowUp className="w-5 h-5 text-[var(--primary)]" />
+          <span className="text-[var(--primary)] font-bold text-sm whitespace-nowrap">Back to Top</span>
         </button>
       )}
 
       {/* Floating Tricycle Ride Button - Bottom Right */}
       <Link to="/customer">
         <div
-          className={`fixed bottom-24 right-5 bg-gradient-to-br from-[#E11D48] to-[#BE123C] rounded-full flex items-center justify-center shadow-2xl shadow-[#E11D48]/50 hover:shadow-3xl transition-all duration-300 z-[1600] border-4 border-white active:scale-95 ${
+          className={`fixed bottom-24 right-5 bg-gradient-to-br from-[var(--primary)] to-[var(--primary)] rounded-full flex items-center justify-center shadow-2xl shadow-[var(--primary)]/50 hover:shadow-3xl transition-all duration-300 z-[1600] border-4 border-white active:scale-95 ${
             fabExpanded ? 'px-5 py-3 gap-2' : 'w-16 h-16'
           }`}
         >
@@ -650,13 +665,13 @@ export default function FoodHome() {
         <div className="fixed inset-0 bg-black/50 z-[2000] flex items-end">
           <div className="w-full bg-white rounded-t-3xl max-h-[85vh] overflow-hidden flex flex-col animate-in slide-in-from-bottom duration-300">
             {/* Modal Header */}
-            <div className="flex items-center justify-between px-5 py-4 border-b border-[#E2E8F0]">
-              <h2 className="text-xl font-bold text-[#121212]">Filter</h2>
+            <div className="flex items-center justify-between px-5 py-4 border-b border-[var(--border)]">
+              <h2 className="text-xl font-bold text-[var(--ink)]">Filter</h2>
               <button 
                 onClick={() => setShowFilterModal(false)}
-                className="w-10 h-10 flex items-center justify-center rounded-full hover:bg-[#F8F9FA] active:scale-90 transition-all"
+                className="w-10 h-10 flex items-center justify-center rounded-full hover:bg-[var(--muted)] active:scale-90 transition-all"
               >
-                <X className="w-6 h-6 text-[#64748B]" />
+                <X className="w-6 h-6 text-[var(--muted-foreground)]" />
               </button>
             </div>
 
@@ -664,7 +679,7 @@ export default function FoodHome() {
             <div className="flex-1 overflow-y-auto px-5 py-4 space-y-6">
               {/* Rating */}
               <div>
-                <h3 className="text-base font-bold text-[#121212] mb-3">Rating</h3>
+                <h3 className="text-base font-bold text-[var(--ink)] mb-3">Rating</h3>
                 <div className="flex flex-wrap gap-2">
                   {['4.0+', '4.5+', '4.8+'].map((rating) => (
                     <button
@@ -672,11 +687,11 @@ export default function FoodHome() {
                       onClick={() => setSelectedRating(selectedRating === rating ? '' : rating)}
                       className={`px-4 py-2.5 rounded-full font-medium flex items-center gap-1 transition-all ${
                         selectedRating === rating
-                          ? 'bg-[#E11D48] text-white shadow-lg'
-                          : 'bg-[#F8F9FA] text-[#121212] hover:bg-[#E2E8F0]'
+                          ? 'bg-[var(--primary)] text-white shadow-lg'
+                          : 'bg-[var(--muted)] text-[var(--ink)] hover:bg-[var(--border)]'
                       }`}
                     >
-                      <Star className={`w-4 h-4 ${selectedRating === rating ? 'fill-white' : 'fill-[#FFC107]'}`} />
+                      <Star className={`w-4 h-4 ${selectedRating === rating ? 'fill-white' : 'fill-[var(--amber)]'}`} />
                       {rating}
                     </button>
                   ))}
@@ -685,18 +700,18 @@ export default function FoodHome() {
             </div>
 
             {/* Modal Footer */}
-            <div className="px-5 py-4 border-t border-[#E2E8F0] flex gap-3">
+            <div className="px-5 py-4 border-t border-[var(--border)] flex gap-3">
               <button
                 onClick={() => {
                   setSelectedRating('');
                 }}
-                className="flex-1 py-3.5 rounded-2xl font-bold text-[#E11D48] bg-[#FEF2F2] hover:bg-[#FEE2E2] active:scale-95 transition-all uppercase text-sm tracking-wide"
+                className="flex-1 py-3.5 rounded-2xl font-bold text-[var(--primary)] bg-[var(--error-soft)] hover:bg-[var(--error-soft)] active:scale-95 transition-all uppercase text-sm tracking-wide"
               >
                 Clear All
               </button>
               <button
                 onClick={() => setShowFilterModal(false)}
-                className="flex-1 py-3.5 rounded-2xl font-bold text-white bg-gradient-to-r from-[#E11D48] to-[#BE123C] hover:shadow-xl active:scale-95 transition-all shadow-lg shadow-[#E11D48]/30 uppercase text-sm tracking-wide"
+                className="flex-1 py-3.5 rounded-2xl font-bold text-white bg-gradient-to-r from-[var(--primary)] to-[var(--primary)] hover:shadow-xl active:scale-95 transition-all shadow-lg shadow-[var(--primary)]/30 uppercase text-sm tracking-wide"
               >
                 Apply Filter
               </button>
@@ -709,14 +724,14 @@ export default function FoodHome() {
       {showWelcomeBack && (
         <div className="fixed inset-0 bg-black/50 z-[2000] flex items-center justify-center p-4">
           <div className="bg-white rounded-2xl shadow-xl p-8 max-w-sm w-full text-center">
-            <div className="w-16 h-16 bg-[#D1FAE5] rounded-full flex items-center justify-center mx-auto mb-4">
-              <CheckCircle className="w-8 h-8 text-[#10B981]" />
+            <div className="w-16 h-16 bg-[var(--success-soft)] rounded-full flex items-center justify-center mx-auto mb-4">
+              <CheckCircle className="w-8 h-8 text-[var(--success)]" />
             </div>
-            <h3 className="text-2xl font-bold text-[#121212] mb-2">Welcome Back!</h3>
-            <p className="text-[#64748B] text-sm">Good to see you again, <span className="font-semibold text-[#121212]">{welcomeUserName}</span></p>
+            <h3 className="text-2xl font-bold text-[var(--ink)] mb-2">Welcome Back!</h3>
+            <p className="text-[var(--muted-foreground)] text-sm">Good to see you again, <span className="font-semibold text-[var(--ink)]">{welcomeUserName}</span></p>
             <div className="mt-6">
-              <div className="w-full bg-[#E2E8F0] rounded-full h-1.5">
-                <div className="bg-[#10B981] h-1.5 rounded-full" style={{ width: '100%', animation: 'shrink 2.5s linear forwards' }} />
+              <div className="w-full bg-[var(--border)] rounded-full h-1.5">
+                <div className="bg-[var(--success)] h-1.5 rounded-full" style={{ width: '100%', animation: 'shrink 2.5s linear forwards' }} />
               </div>
             </div>
           </div>

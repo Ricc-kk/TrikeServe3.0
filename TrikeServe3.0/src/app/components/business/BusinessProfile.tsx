@@ -93,7 +93,7 @@ export default function BusinessProfile() {
   };
 
   return (
-    <div className="min-h-screen bg-[#F8F9FA] flex overflow-x-hidden">
+    <div className="min-h-screen bg-[var(--muted)] flex overflow-x-hidden">
       {/* Sidebar Navigation */}
       <BusinessSidebar
         isMobileMenuOpen={isMobileMenuOpen}
@@ -103,14 +103,14 @@ export default function BusinessProfile() {
       {/* Main Content */}
       <div className="flex-1 lg:ml-64 w-full min-w-0">
         {/* Header */}
-        <div className="bg-white px-3 lg:px-4 py-3 lg:py-4 border-b border-[#E2E8F0]">
+        <div className="bg-white px-3 lg:px-4 py-3 lg:py-4 border-b border-[var(--border)]">
           <div className="flex items-center gap-2 lg:gap-3">
             {/* Hamburger Menu - Mobile Only */}
             <button
               onClick={() => setIsMobileMenuOpen(true)}
               className="lg:hidden flex-shrink-0"
             >
-              <Menu className="w-5 h-5 text-[#121212]" />
+              <Menu className="w-5 h-5 text-[var(--ink)]" />
             </button>
 
             {/* Back Button */}
@@ -118,18 +118,18 @@ export default function BusinessProfile() {
               onClick={() => navigate(-1)}
               className="flex-shrink-0"
             >
-              <ArrowLeft className="w-5 h-5 lg:w-6 lg:h-6 text-[#121212]" />
+              <ArrowLeft className="w-5 h-5 lg:w-6 lg:h-6 text-[var(--ink)]" />
             </button>
 
             <div className="flex-1 min-w-0">
-              <h1 className="text-lg lg:text-2xl xl:text-3xl font-extrabold text-[#121212]">Edit Profile</h1>
+              <h1 className="text-lg lg:text-2xl xl:text-3xl font-extrabold text-[var(--ink)]">Edit Profile</h1>
             </div>
           </div>
-          <p className="text-xs lg:text-sm text-[#64748B] ml-7 lg:ml-11">Update your business and personal information</p>
+          <p className="text-xs lg:text-sm text-[var(--muted-foreground)] ml-7 lg:ml-11">Update your business and personal information</p>
         </div>
 
         {/* Profile Header Section */}
-        <div className="relative bg-gradient-to-br from-[#E11D48] via-[#BE123C] to-[#9F1239] px-4 lg:px-6 py-6 lg:py-8">
+        <div className="relative bg-gradient-to-br from-[var(--primary)] via-[var(--primary)] to-[var(--primary)] px-4 lg:px-6 py-6 lg:py-8">
           <div className="flex items-center gap-4">
             <div className="w-16 h-16 lg:w-20 lg:h-20 bg-white/20 backdrop-blur-sm rounded-2xl flex items-center justify-center border-2 border-white/30 shadow-lg">
               <User className="w-8 h-8 lg:w-10 lg:h-10 text-white" />
@@ -144,27 +144,27 @@ export default function BusinessProfile() {
         {/* Form Fields */}
         <div className="px-4 lg:px-6 py-5 space-y-5">
           {/* Personal Information */}
-          <div className="bg-white rounded-2xl shadow-sm border border-[#F1F5F9] overflow-hidden">
+          <div className="bg-white rounded-2xl shadow-sm border border-[var(--muted)] overflow-hidden">
             <div className="px-4 pt-4 pb-2">
               <div className="flex items-center gap-2">
-                <User className="w-4 h-4 text-[#64748B]" />
-                <h3 className="text-xs font-semibold text-[#64748B] uppercase tracking-wider">Personal Information</h3>
+                <User className="w-4 h-4 text-[var(--muted-foreground)]" />
+                <h3 className="text-xs font-semibold text-[var(--muted-foreground)] uppercase tracking-wider">Personal Information</h3>
               </div>
             </div>
 
             <div className="px-4 pb-4 space-y-4">
               {/* Full Name */}
               <div>
-                <label className="block text-sm font-semibold text-[#121212] mb-1.5">Full Name</label>
+                <label className="block text-sm font-semibold text-[var(--ink)] mb-1.5">Full Name</label>
                 <div className="relative">
-                  <div className="absolute left-3 top-1/2 -translate-y-1/2 w-8 h-8 bg-[#FFF1F2] rounded-lg flex items-center justify-center">
-                    <User className="w-4 h-4 text-[#E11D48]" />
+                  <div className="absolute left-3 top-1/2 -translate-y-1/2 w-8 h-8 bg-[var(--primary-soft)] rounded-lg flex items-center justify-center">
+                    <User className="w-4 h-4 text-[var(--primary)]" />
                   </div>
                   <input
                     type="text"
                     value={formData.name}
                     onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                    className="w-full pl-14 pr-4 py-3 border-2 border-[#E2E8F0] rounded-xl text-sm font-semibold text-[#121212] focus:border-[#E11D48] focus:outline-none transition-colors"
+                    className="w-full pl-14 pr-4 py-3 border-2 border-[var(--border)] rounded-xl text-sm font-semibold text-[var(--ink)] focus:border-[var(--primary)] focus:outline-none transition-colors"
                     placeholder="Enter your full name"
                   />
                 </div>
@@ -172,33 +172,33 @@ export default function BusinessProfile() {
 
               {/* Email */}
               <div>
-                <label className="block text-sm font-semibold text-[#121212] mb-1.5">Email</label>
+                <label className="block text-sm font-semibold text-[var(--ink)] mb-1.5">Email</label>
                 <div className="relative">
-                  <div className="absolute left-3 top-1/2 -translate-y-1/2 w-8 h-8 bg-[#F0FDF4] rounded-lg flex items-center justify-center">
-                    <Mail className="w-4 h-4 text-[#10B981]" />
+                  <div className="absolute left-3 top-1/2 -translate-y-1/2 w-8 h-8 bg-[var(--success-soft)] rounded-lg flex items-center justify-center">
+                    <Mail className="w-4 h-4 text-[var(--success)]" />
                   </div>
                   <input
                     type="email"
                     value={formData.email}
                     readOnly
-                    className="w-full pl-14 pr-4 py-3 border-2 border-[#E2E8F0] rounded-xl text-sm text-[#64748B] bg-[#F8F9FA] cursor-not-allowed"
+                    className="w-full pl-14 pr-4 py-3 border-2 border-[var(--border)] rounded-xl text-sm text-[var(--muted-foreground)] bg-[var(--muted)] cursor-not-allowed"
                   />
                 </div>
-                <p className="text-xs text-[#94A3B8] mt-1">Email cannot be changed</p>
+                <p className="text-xs text-[var(--muted-foreground)] mt-1">Email cannot be changed</p>
               </div>
 
               {/* Phone */}
               <div>
-                <label className="block text-sm font-semibold text-[#121212] mb-1.5">Phone Number</label>
+                <label className="block text-sm font-semibold text-[var(--ink)] mb-1.5">Phone Number</label>
                 <div className="relative">
-                  <div className="absolute left-3 top-1/2 -translate-y-1/2 w-8 h-8 bg-[#DBEAFE] rounded-lg flex items-center justify-center">
-                    <Phone className="w-4 h-4 text-[#3B82F6]" />
+                  <div className="absolute left-3 top-1/2 -translate-y-1/2 w-8 h-8 bg-[var(--info-soft)] rounded-lg flex items-center justify-center">
+                    <Phone className="w-4 h-4 text-[var(--info)]" />
                   </div>
                   <input
                     type="tel"
                     value={formData.phone}
                     onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
-                    className="w-full pl-14 pr-4 py-3 border-2 border-[#E2E8F0] rounded-xl text-sm font-semibold text-[#121212] focus:border-[#E11D48] focus:outline-none transition-colors"
+                    className="w-full pl-14 pr-4 py-3 border-2 border-[var(--border)] rounded-xl text-sm font-semibold text-[var(--ink)] focus:border-[var(--primary)] focus:outline-none transition-colors"
                     placeholder="Enter your phone number"
                   />
                 </div>
@@ -207,27 +207,27 @@ export default function BusinessProfile() {
           </div>
 
           {/* Business Information */}
-          <div className="bg-white rounded-2xl shadow-sm border border-[#F1F5F9] overflow-hidden">
+          <div className="bg-white rounded-2xl shadow-sm border border-[var(--muted)] overflow-hidden">
             <div className="px-4 pt-4 pb-2">
               <div className="flex items-center gap-2">
-                <Store className="w-4 h-4 text-[#64748B]" />
-                <h3 className="text-xs font-semibold text-[#64748B] uppercase tracking-wider">Business Information</h3>
+                <Store className="w-4 h-4 text-[var(--muted-foreground)]" />
+                <h3 className="text-xs font-semibold text-[var(--muted-foreground)] uppercase tracking-wider">Business Information</h3>
               </div>
             </div>
 
             <div className="px-4 pb-4 space-y-4">
               {/* Business Name */}
               <div>
-                <label className="block text-sm font-semibold text-[#121212] mb-1.5">Business Name</label>
+                <label className="block text-sm font-semibold text-[var(--ink)] mb-1.5">Business Name</label>
                 <div className="relative">
-                  <div className="absolute left-3 top-1/2 -translate-y-1/2 w-8 h-8 bg-[#FFF1F2] rounded-lg flex items-center justify-center">
-                    <Store className="w-4 h-4 text-[#E11D48]" />
+                  <div className="absolute left-3 top-1/2 -translate-y-1/2 w-8 h-8 bg-[var(--primary-soft)] rounded-lg flex items-center justify-center">
+                    <Store className="w-4 h-4 text-[var(--primary)]" />
                   </div>
                   <input
                     type="text"
                     value={formData.businessName}
                     onChange={(e) => setFormData({ ...formData, businessName: e.target.value })}
-                    className="w-full pl-14 pr-4 py-3 border-2 border-[#E2E8F0] rounded-xl text-sm font-semibold text-[#121212] focus:border-[#E11D48] focus:outline-none transition-colors"
+                    className="w-full pl-14 pr-4 py-3 border-2 border-[var(--border)] rounded-xl text-sm font-semibold text-[var(--ink)] focus:border-[var(--primary)] focus:outline-none transition-colors"
                     placeholder="e.g., Mang Inasal"
                   />
                 </div>
@@ -235,26 +235,26 @@ export default function BusinessProfile() {
 
               {/* Business Address (Pickup Location) */}
               <div>
-                <label className="block text-sm font-semibold text-[#121212] mb-1.5">
-                  Pickup Location <span className="text-[#94A3B8] font-normal">(for food deliveries)</span>
+                <label className="block text-sm font-semibold text-[var(--ink)] mb-1.5">
+                  Pickup Location <span className="text-[var(--muted-foreground)] font-normal">(for food deliveries)</span>
                 </label>
                 <button
                   type="button"
                   onClick={() => setShowMapSelector(true)}
                   className="w-full text-left relative"
                 >
-                  <div className="absolute left-3 top-3 w-8 h-8 bg-[#DBEAFE] rounded-lg flex items-center justify-center">
-                    <MapPin className="w-4 h-4 text-[#3B82F6]" />
+                  <div className="absolute left-3 top-3 w-8 h-8 bg-[var(--info-soft)] rounded-lg flex items-center justify-center">
+                    <MapPin className="w-4 h-4 text-[var(--info)]" />
                   </div>
-                  <div className="w-full pl-14 pr-4 py-3 border-2 border-[#E2E8F0] rounded-xl text-sm font-semibold text-[#121212] min-h-[80px] bg-white hover:border-[#E11D48] transition-colors">
+                  <div className="w-full pl-14 pr-4 py-3 border-2 border-[var(--border)] rounded-xl text-sm font-semibold text-[var(--ink)] min-h-[80px] bg-white hover:border-[var(--primary)] transition-colors">
                     {formData.businessAddress ? (
-                      <span className="text-[#121212]">{formData.businessAddress}</span>
+                      <span className="text-[var(--ink)]">{formData.businessAddress}</span>
                     ) : (
-                      <span className="text-[#94A3B8] font-normal">Tap to select pickup location on map</span>
+                      <span className="text-[var(--muted-foreground)] font-normal">Tap to select pickup location on map</span>
                     )}
                   </div>
                 </button>
-                <p className="text-xs text-[#94A3B8] mt-1 flex items-center gap-1">
+                <p className="text-xs text-[var(--muted-foreground)] mt-1 flex items-center gap-1">
                   <MapPin className="w-3 h-3" />
                   Click to open map and select your business pickup point
                 </p>
@@ -278,7 +278,7 @@ export default function BusinessProfile() {
           <button
             onClick={handleSave}
             disabled={isSaving}
-            className="w-full py-4 text-base font-bold text-white bg-[#E11D48] rounded-2xl hover:bg-[#BE123C] transition-all active:scale-[0.98] flex items-center justify-center gap-2 disabled:opacity-50 shadow-lg"
+            className="w-full py-4 text-base font-bold text-white bg-[var(--primary)] rounded-2xl hover:bg-[var(--primary)] transition-all active:scale-[0.98] flex items-center justify-center gap-2 disabled:opacity-50 shadow-lg"
           >
             {isSaving ? (
               <>
@@ -305,24 +305,24 @@ export default function BusinessProfile() {
         <div className="fixed inset-0 bg-black/50 z-[2000] flex items-center justify-center p-4">
           <div className="bg-white rounded-2xl shadow-xl p-6 max-w-sm w-full">
             <div className="text-center mb-4">
-              <div className="w-14 h-14 bg-[#FFF1F2] rounded-full flex items-center justify-center mx-auto mb-3">
-                <Check className="w-7 h-7 text-[#E11D48]" />
+              <div className="w-14 h-14 bg-[var(--primary-soft)] rounded-full flex items-center justify-center mx-auto mb-3">
+                <Check className="w-7 h-7 text-[var(--primary)]" />
               </div>
-              <h3 className="text-lg font-bold text-[#121212]">Save Changes?</h3>
-              <p className="text-sm text-[#64748B] mt-2">
+              <h3 className="text-lg font-bold text-[var(--ink)]">Save Changes?</h3>
+              <p className="text-sm text-[var(--muted-foreground)] mt-2">
                 Are you sure you want to update your profile information?
               </p>
             </div>
             <div className="flex gap-3">
               <button
                 onClick={() => setShowConfirmSave(false)}
-                className="flex-1 py-3 text-sm font-semibold text-[#64748B] bg-[#F1F5F9] rounded-xl hover:bg-[#E2E8F0] transition-colors"
+                className="flex-1 py-3 text-sm font-semibold text-[var(--muted-foreground)] bg-[var(--muted)] rounded-xl hover:bg-[var(--border)] transition-colors"
               >
                 Cancel
               </button>
               <button
                 onClick={confirmSave}
-                className="flex-1 py-3 text-sm font-semibold text-white bg-[#E11D48] rounded-xl hover:bg-[#BE123C] transition-colors"
+                className="flex-1 py-3 text-sm font-semibold text-white bg-[var(--primary)] rounded-xl hover:bg-[var(--primary)] transition-colors"
               >
                 Yes, Save
               </button>

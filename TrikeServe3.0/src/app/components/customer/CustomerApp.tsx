@@ -8,6 +8,7 @@ import { Badge } from "../ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "../ui/tabs";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "../ui/dialog";
 import { supabase } from "../../../utils/supabase";
+import { normalizeRates } from "@/lib/pricing";
 
 interface Restaurant {
   id: string;
@@ -29,8 +30,9 @@ export default function CustomerApp() {
   const [searchQuery, setSearchQuery] = useState("");
   const [cart, setCart] = useState<MenuItem[]>([]);
   const [rideType, setRideType] = useState<'shared' | 'private' | null>(null);
-  const [sharedPrice, setSharedPrice] = useState(15); // Default until admin rates load
-  const [privatePrice, setPrivatePrice] = useState(50); // Default until admin rates load
+  // Per-km ride rates: fare = base + rate × distance. Defaults until admin rates load.
+  const [baseFare, setBaseFare] = useState(20);
+  const [perKm, setPerKm] = useState(10);
 
   // Load admin-set ride rates so the booking cards always show the admin price
   useEffect(() => {
@@ -48,9 +50,9 @@ export default function CustomerApp() {
         }
 
         if (data?.setting_value) {
-          const settings = JSON.parse(data.setting_value);
-          setSharedPrice(settings.sharedRide || 15);
-          setPrivatePrice(settings.privateRide || 50);
+          const settings = normalizeRates(JSON.parse(data.setting_value));
+          setBaseFare(settings.baseFare);
+          setPerKm(settings.perKm);
         }
       } catch (error) {
         console.error('Error parsing pricing settings:', error);
@@ -79,9 +81,9 @@ export default function CustomerApp() {
   const cartTotal = cart.reduce((sum, item) => sum + item.price, 0);
 
   return (
-    <div className="min-h-screen bg-[#F8F9FA]">
+    <div className="min-h-screen bg-[var(--muted)]">
       {/* Header */}
-      <div className="bg-gradient-to-r from-[#E11D48] to-[#BE123C] px-4 py-4 sticky top-0 z-50 shadow-lg">
+      <div className="bg-gradient-to-r from-[var(--primary)] to-[var(--primary)] px-4 py-4 sticky top-0 z-50 shadow-lg">
         <div className="max-w-6xl mx-auto">
           <div className="flex items-center gap-3 mb-4">
             <Link to="/">
@@ -98,7 +100,7 @@ export default function CustomerApp() {
           </div>
 
           <div className="relative">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-[#64748B]" />
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-[var(--muted-foreground)]" />
             <Input
               placeholder="Search food or destinations..."
               value={searchQuery}
@@ -114,12 +116,12 @@ export default function CustomerApp() {
         <div className="grid grid-cols-2 gap-4 mb-6">
           <Dialog>
             <DialogTrigger asChild>
-              <Card className="p-6 cursor-pointer hover:shadow-xl transition-all border-2 border-[#CBD5E1] hover:border-[#E11D48]">
-                <div className="w-14 h-14 bg-gradient-to-br from-[#E11D48] to-[#BE123C] rounded-2xl flex items-center justify-center mb-3 mx-auto">
+              <Card className="p-6 cursor-pointer hover:shadow-xl transition-all border-2 border-[var(--border)] hover:border-[var(--primary)]">
+                <div className="w-14 h-14 bg-gradient-to-br from-[var(--primary)] to-[var(--primary)] rounded-2xl flex items-center justify-center mb-3 mx-auto">
                   <Bike className="w-7 h-7 text-white" />
                 </div>
-                <h3 className="font-bold text-center text-[#121212]">Book a Ride</h3>
-                <p className="text-xs text-center text-[#64748B] mt-1">Shared or Private</p>
+                <h3 className="font-bold text-center text-[var(--ink)]">Book a Ride</h3>
+                <p className="text-xs text-center text-[var(--muted-foreground)] mt-1">Shared or Private</p>
               </Card>
             </DialogTrigger>
             <DialogContent className="max-w-md">
@@ -127,48 +129,48 @@ export default function CustomerApp() {
                 <DialogTitle>Choose Ride Type</DialogTitle>
               </DialogHeader>
               <div className="space-y-3 py-4">
-                <Card className="p-5 cursor-pointer hover:shadow-lg border-2 border-[#CBD5E1] hover:border-[#E11D48]">
+                <Card className="p-5 cursor-pointer hover:shadow-lg border-2 border-[var(--border)] hover:border-[var(--primary)]">
                   <div className="flex items-start justify-between mb-3">
                     <div className="flex items-center gap-3">
-                      <div className="w-12 h-12 bg-blue-100 rounded-xl flex items-center justify-center">
-                        <Users className="w-6 h-6 text-blue-600" />
+                      <div className="w-12 h-12 bg-[var(--info-soft)] rounded-xl flex items-center justify-center">
+                        <Users className="w-6 h-6 text-[var(--info)]" />
                       </div>
                       <div>
-                        <h4 className="font-bold text-[#121212]">Shared (Sasabay)</h4>
-                        <p className="text-xs text-[#64748B]">Split the cost</p>
+                        <h4 className="font-bold text-[var(--ink)]">Shared (Sasabay)</h4>
+                        <p className="text-xs text-[var(--muted-foreground)]">Split the cost</p>
                       </div>
                     </div>
                     <div className="text-right">
-                      <p className="text-xl font-bold text-[#E11D48]">₱{sharedPrice}</p>
-                      <p className="text-xs text-[#64748B]">per person</p>
+                      <p className="text-xl font-bold text-[var(--primary)]">₱{baseFare}<span className="text-sm"> + ₱{perKm}/km</span></p>
+                      <p className="text-xs text-[var(--muted-foreground)]">base + distance, split</p>
                     </div>
                   </div>
-                  <Badge className="bg-green-500 mb-2">2 seats available</Badge>
-                  <p className="text-xs text-[#64748B] mb-3">May wait for other passengers</p>
-                  <Button className="w-full bg-[#E11D48] hover:bg-[#BE123C] uppercase">
+                  <Badge className="bg-[var(--success)] mb-2">2 seats available</Badge>
+                  <p className="text-xs text-[var(--muted-foreground)] mb-3">May wait for other passengers</p>
+                  <Button className="w-full bg-[var(--primary)] hover:bg-[var(--primary)] uppercase">
                     BOOK SHARED RIDE
                   </Button>
                 </Card>
 
-                <Card className="p-5 cursor-pointer hover:shadow-lg border-2 border-[#CBD5E1] hover:border-[#E11D48]">
+                <Card className="p-5 cursor-pointer hover:shadow-lg border-2 border-[var(--border)] hover:border-[var(--primary)]">
                   <div className="flex items-start justify-between mb-3">
                     <div className="flex items-center gap-3">
-                      <div className="w-12 h-12 bg-purple-100 rounded-xl flex items-center justify-center">
-                        <UserIcon className="w-6 h-6 text-purple-600" />
+                      <div className="w-12 h-12 bg-[var(--violet-soft)] rounded-xl flex items-center justify-center">
+                        <UserIcon className="w-6 h-6 text-[var(--violet)]" />
                       </div>
                       <div>
-                        <h4 className="font-bold text-[#121212]">Special</h4>
-                        <p className="text-xs text-[#64748B]">Special ride</p>
+                        <h4 className="font-bold text-[var(--ink)]">Special</h4>
+                        <p className="text-xs text-[var(--muted-foreground)]">Special ride</p>
                       </div>
                     </div>
                     <div className="text-right">
-                      <p className="text-xl font-bold text-[#E11D48]">₱{privatePrice}</p>
-                      <p className="text-xs text-[#64748B]">fixed</p>
+                      <p className="text-xl font-bold text-[var(--primary)]">₱{baseFare}<span className="text-sm"> + ₱{perKm}/km</span></p>
+                      <p className="text-xs text-[var(--muted-foreground)]">base + distance</p>
                     </div>
                   </div>
-                  <Badge className="bg-blue-500 mb-2">Instant pickup</Badge>
-                  <p className="text-xs text-[#64748B] mb-3">Direct to destination</p>
-                  <Button className="w-full bg-[#121212] hover:bg-[#2a2a2a] uppercase">
+                  <Badge className="bg-[var(--info)] mb-2">Instant pickup</Badge>
+                  <p className="text-xs text-[var(--muted-foreground)] mb-3">Direct to destination</p>
+                  <Button className="w-full bg-[var(--ink)] hover:bg-[var(--ink)] uppercase">
                     BOOK PRIVATE RIDE
                   </Button>
                 </Card>
@@ -176,12 +178,12 @@ export default function CustomerApp() {
             </DialogContent>
           </Dialog>
 
-          <Card className="p-6 cursor-pointer hover:shadow-xl transition-all border-2 border-[#CBD5E1] hover:border-[#E11D48]">
-            <div className="w-14 h-14 bg-gradient-to-br from-[#121212] to-[#2a2a2a] rounded-2xl flex items-center justify-center mb-3 mx-auto">
+          <Card className="p-6 cursor-pointer hover:shadow-xl transition-all border-2 border-[var(--border)] hover:border-[var(--primary)]">
+            <div className="w-14 h-14 bg-gradient-to-br from-[var(--ink)] to-[var(--ink)] rounded-2xl flex items-center justify-center mb-3 mx-auto">
               <ShoppingBag className="w-7 h-7 text-white" />
             </div>
-            <h3 className="font-bold text-center text-[#121212]">Order Food</h3>
-            <p className="text-xs text-center text-[#64748B] mt-1">Local delivery</p>
+            <h3 className="font-bold text-center text-[var(--ink)]">Order Food</h3>
+            <p className="text-xs text-center text-[var(--muted-foreground)] mt-1">Local delivery</p>
           </Card>
         </div>
 
@@ -196,26 +198,26 @@ export default function CustomerApp() {
           <TabsContent value="food" className="space-y-6">
             {/* Popular Items */}
             <div>
-              <h2 className="text-xl font-bold text-[#121212] mb-4">Popular Items</h2>
+              <h2 className="text-xl font-bold text-[var(--ink)] mb-4">Popular Items</h2>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 {popularItems.map((item) => (
-                  <Card key={item.id} className="p-4 border-2 border-[#CBD5E1] hover:border-[#E11D48] transition-colors">
+                  <Card key={item.id} className="p-4 border-2 border-[var(--border)] hover:border-[var(--primary)] transition-colors">
                     <div className="flex items-start justify-between mb-2">
                       <div className="flex-1">
-                        <h3 className="font-bold text-lg text-[#121212] tracking-tight mb-1">
+                        <h3 className="font-bold text-lg text-[var(--ink)] tracking-tight mb-1">
                           {item.name}
                         </h3>
-                        <p className="text-xs text-[#64748B]">{item.restaurant}</p>
+                        <p className="text-xs text-[var(--muted-foreground)]">{item.restaurant}</p>
                       </div>
                       <div className="text-right">
-                        <p className="text-sm text-[#64748B]">₱</p>
-                        <p className="text-xl font-bold text-[#E11D48]">{item.price.toFixed(2)}</p>
+                        <p className="text-sm text-[var(--muted-foreground)]">₱</p>
+                        <p className="text-xl font-bold text-[var(--primary)]">{item.price.toFixed(2)}</p>
                       </div>
                     </div>
                     <Button
                       onClick={() => addToCart(item)}
                       size="sm"
-                      className="w-full bg-[#E11D48] hover:bg-[#BE123C] uppercase mt-2"
+                      className="w-full bg-[var(--primary)] hover:bg-[var(--primary)] uppercase mt-2"
                     >
                       ADD TO CART
                     </Button>
@@ -226,16 +228,16 @@ export default function CustomerApp() {
 
             {/* Restaurants */}
             <div>
-              <h2 className="text-xl font-bold text-[#121212] mb-4">Restaurants Near You</h2>
+              <h2 className="text-xl font-bold text-[var(--ink)] mb-4">Restaurants Near You</h2>
               <div className="space-y-3">
                 {restaurants.map((restaurant) => (
-                  <Card key={restaurant.id} className="p-5 border-2 border-[#CBD5E1] hover:border-[#E11D48] transition-colors cursor-pointer">
+                  <Card key={restaurant.id} className="p-5 border-2 border-[var(--border)] hover:border-[var(--primary)] transition-colors cursor-pointer">
                     <div className="flex items-start justify-between">
                       <div className="flex-1">
-                        <h3 className="font-bold text-lg text-[#121212] mb-1">{restaurant.name}</h3>
-                        <div className="flex items-center gap-3 text-sm text-[#64748B] mb-2">
+                        <h3 className="font-bold text-lg text-[var(--ink)] mb-1">{restaurant.name}</h3>
+                        <div className="flex items-center gap-3 text-sm text-[var(--muted-foreground)] mb-2">
                           <div className="flex items-center gap-1">
-                            <Star className="w-4 h-4 text-yellow-500 fill-yellow-500" />
+                            <Star className="w-4 h-4 text-[var(--amber)] fill-[var(--amber)]" />
                             <span>{restaurant.rating}</span>
                           </div>
                           <div className="flex items-center gap-1">
@@ -243,11 +245,11 @@ export default function CustomerApp() {
                             <span>{restaurant.distance}</span>
                           </div>
                         </div>
-                        <Badge variant="outline" className="bg-[#F8F9FA]">{restaurant.category}</Badge>
+                        <Badge variant="outline" className="bg-[var(--muted)]">{restaurant.category}</Badge>
                       </div>
                       <div className="text-right">
-                        <p className="text-xs text-[#64748B]">Delivery</p>
-                        <p className="font-bold text-[#E11D48]">₱{restaurant.deliveryFee}</p>
+                        <p className="text-xs text-[var(--muted-foreground)]">Delivery</p>
+                        <p className="font-bold text-[var(--primary)]">₱{restaurant.deliveryFee}</p>
                       </div>
                     </div>
                   </Card>
@@ -258,41 +260,41 @@ export default function CustomerApp() {
 
           {/* History Tab */}
           <TabsContent value="history" className="space-y-4">
-            <Card className="p-5 border-2 border-[#CBD5E1]">
+            <Card className="p-5 border-2 border-[var(--border)]">
               <div className="flex items-center gap-3 mb-3">
-                <div className="w-10 h-10 bg-green-100 rounded-lg flex items-center justify-center">
-                  <ShoppingBag className="w-5 h-5 text-green-600" />
+                <div className="w-10 h-10 bg-[var(--success-soft)] rounded-lg flex items-center justify-center">
+                  <ShoppingBag className="w-5 h-5 text-[var(--success)]" />
                 </div>
                 <div className="flex-1">
-                  <h4 className="font-bold text-[#121212]">Lechon Kawali + Rice</h4>
-                  <p className="text-sm text-[#64748B]">Kuya J's Eatery</p>
+                  <h4 className="font-bold text-[var(--ink)]">Lechon Kawali + Rice</h4>
+                  <p className="text-sm text-[var(--muted-foreground)]">Kuya J's Eatery</p>
                 </div>
                 <div className="text-right">
-                  <p className="font-bold text-[#E11D48]">₱150</p>
-                  <p className="text-xs text-[#64748B]">Today, 11:30 AM</p>
+                  <p className="font-bold text-[var(--primary)]">₱150</p>
+                  <p className="text-xs text-[var(--muted-foreground)]">Today, 11:30 AM</p>
                 </div>
               </div>
-              <Badge className="bg-green-500">Delivered</Badge>
+              <Badge className="bg-[var(--success)]">Delivered</Badge>
               <Button variant="outline" size="sm" className="w-full mt-3">
                 ORDER AGAIN
               </Button>
             </Card>
 
-            <Card className="p-5 border-2 border-[#CBD5E1]">
+            <Card className="p-5 border-2 border-[var(--border)]">
               <div className="flex items-center gap-3 mb-3">
-                <div className="w-10 h-10 bg-blue-100 rounded-lg flex items-center justify-center">
-                  <Bike className="w-5 h-5 text-blue-600" />
+                <div className="w-10 h-10 bg-[var(--info-soft)] rounded-lg flex items-center justify-center">
+                  <Bike className="w-5 h-5 text-[var(--info)]" />
                 </div>
                 <div className="flex-1">
-                  <h4 className="font-bold text-[#121212]">Shared Ride</h4>
-                  <p className="text-sm text-[#64748B]">Gen T Deleon Terminal → Barangay Hall</p>
+                  <h4 className="font-bold text-[var(--ink)]">Shared Ride</h4>
+                  <p className="text-sm text-[var(--muted-foreground)]">Gen T Deleon Terminal → Barangay Hall</p>
                 </div>
                 <div className="text-right">
-                  <p className="font-bold text-[#E11D48]">₱15</p>
-                  <p className="text-xs text-[#64748B]">Yesterday</p>
+                  <p className="font-bold text-[var(--primary)]">₱15</p>
+                  <p className="text-xs text-[var(--muted-foreground)]">Yesterday</p>
                 </div>
               </div>
-              <Badge className="bg-gray-500">Completed</Badge>
+              <Badge className="bg-[var(--muted-foreground)]">Completed</Badge>
               <Button variant="outline" size="sm" className="w-full mt-3">
                 RIDE AGAIN
               </Button>
@@ -304,13 +306,13 @@ export default function CustomerApp() {
       {/* Floating Cart */}
       {cart.length > 0 && (
         <div className="fixed bottom-4 left-4 right-4 z-50 max-w-6xl mx-auto">
-          <Card className="p-4 bg-white shadow-2xl border-2 border-[#E11D48]">
+          <Card className="p-4 bg-white shadow-2xl border-2 border-[var(--primary)]">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-sm text-[#64748B]">{cart.length} item(s)</p>
-                <p className="text-xl font-bold text-[#E11D48]">₱{cartTotal.toFixed(2)}</p>
+                <p className="text-sm text-[var(--muted-foreground)]">{cart.length} item(s)</p>
+                <p className="text-xl font-bold text-[var(--primary)]">₱{cartTotal.toFixed(2)}</p>
               </div>
-              <Button className="bg-[#E11D48] hover:bg-[#BE123C] uppercase px-8">
+              <Button className="bg-[var(--primary)] hover:bg-[var(--primary)] uppercase px-8">
                 VIEW CART
               </Button>
             </div>

@@ -7,6 +7,7 @@ import { Button } from "../ui/button";
 import BusinessSidebar from "./BusinessSidebar";
     import { supabase } from "../../../lib/supabase";
     import { supabaseHelpers } from "@/lib/supabase";
+import ReasonPromptModal from "../ui/reason-prompt-modal";
 import { GoogleMap, MarkerF, Polyline } from "@react-google-maps/api";
 import useMapLoader from "@/lib/mapLoader";
 import tricycleIcon from '../../../assets/0b76d1aa56b8ad6e15dd4efc8a0100b0ca5762a1.png'
@@ -34,13 +35,18 @@ interface Order {
   driverName?: string;
   restaurantName?: string;
   restaurantAddress?: string;
+  /** Why the order was cancelled, and which side cancelled it. */
+  cancelReason?: string | null;
+  cancelledBy?: string | null;
 }
 
 
 export default function BusinessOrders() {
   const [selectedTab, setSelectedTab] = useState<'active' | 'history'>('active');
   const [selectedOrder, setSelectedOrder] = useState<Order | null>(null);
-  const [confirmAction, setConfirmAction] = useState<'accept' | 'decline' | null>(null);
+  const [confirmAction, setConfirmAction] = useState<'accept' | null>(null);
+  // Decline collects a reason before the order is cancelled.
+  const [showDeclinePrompt, setShowDeclinePrompt] = useState(false);
   const [statusConfirm, setStatusConfirm] = useState<'ready' | 'delivery' | null>(null);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [selectedStatusFilter, setSelectedStatusFilter] = useState<'all' | 'pending' | 'confirmed' | 'preparing' | 'ready' | 'on-the-way'>('all');
@@ -303,6 +309,8 @@ export default function BusinessOrders() {
           customerId: dbOrder.customer_id || undefined,
           restaurantName: dbOrder.restaurant_name || undefined,
           restaurantAddress: dbOrder.restaurant_address || undefined,
+          cancelReason: dbOrder.cancel_reason || null,
+          cancelledBy: dbOrder.cancelled_by || null,
         };
       });
 
@@ -361,6 +369,53 @@ export default function BusinessOrders() {
   const filteredActiveOrders = selectedStatusFilter === 'all' 
     ? activeOrders 
     : activeOrders.filter(o => o.status === selectedStatusFilter);
+
+  /** Decline a pending order, recording the reason the business gave. */
+  const declineOrder = async (orderId: string, reason: string) => {
+    const order = orders.find(o => o.id === orderId);
+    if (!order) return;
+
+    setIsUpdatingStatus(true);
+    const previousStatus = order.status;
+
+    try {
+      const update = {
+        status: 'cancelled' as const,
+        cancel_reason: reason,
+        cancelled_by: 'business',
+        updated_at: new Date().toISOString(),
+      };
+
+      // Optimistic update so the list reflects the decline immediately.
+      setOrders(prev => prev.map(o => (
+        o.id === orderId
+          ? { ...o, status: 'cancelled', cancelReason: reason, cancelledBy: 'business' }
+          : o
+      )));
+
+      const { error } = await supabase.from('orders').update(update).eq('id', orderId);
+
+      if (error) {
+        // Same backup as the other status changes: match on the order number.
+        const { error: backupError } = await supabase
+          .from('orders')
+          .update(update)
+          .eq('order_number', order.orderNumber);
+
+        if (backupError) {
+          console.error('[BusinessOrders] Decline failed:', backupError);
+          // Roll the optimistic update back.
+          setOrders(prev => prev.map(o => (o.id === orderId ? { ...o, status: previousStatus } : o)));
+          alert(`Failed to decline order: ${backupError.message}`);
+          return;
+        }
+      }
+
+      console.log('[BusinessOrders] Order declined with reason:', reason);
+    } finally {
+      setIsUpdatingStatus(false);
+    }
+  };
 
   const updateOrderStatus = async (orderId: string, newStatus: Order['status']) => {
     console.log('[BusinessOrders] ========== STATUS UPDATE START ==========');
@@ -572,19 +627,19 @@ export default function BusinessOrders() {
   const getStatusColor = (status: Order['status']) => {
     switch (status) {
       case 'pending':
-        return 'bg-[#F59E0B]';
+        return 'bg-[var(--amber)]';
       case 'preparing':
-        return 'bg-[#3B82F6]';
+        return 'bg-[var(--info)]';
       case 'confirmed':
-        return 'bg-[#06B6D4]';
+        return 'bg-[var(--info)]';
       case 'ready':
-        return 'bg-[#10B981]';
+        return 'bg-[var(--success)]';
       case 'on-the-way':
-        return 'bg-[#FFA500]';
+        return 'bg-[var(--amber)]';
       case 'delivered':
-        return 'bg-[#10B981]';
+        return 'bg-[var(--success)]';
       case 'cancelled':
-        return 'bg-[#E11D48]';
+        return 'bg-[var(--primary)]';
     }
   };
 
@@ -632,31 +687,31 @@ export default function BusinessOrders() {
       {/* Main Content */}
       <div className="flex-1 lg:ml-64 w-full">
         {/* Header */}
-        <div className="px-3 md:px-5 py-4 border-b border-[#E2E8F0]">
+        <div className="px-3 md:px-5 py-4 border-b border-[var(--border)]">
           <div className="flex items-center gap-3">
             {/* Hamburger Menu - Mobile Only */}
             <button
               onClick={() => setIsMobileMenuOpen(true)}
-              className="lg:hidden p-2 hover:bg-[#F8F9FA] rounded-xl transition-all"
+              className="lg:hidden p-2 hover:bg-[var(--muted)] rounded-xl transition-all"
             >
-              <Menu className="w-6 h-6 text-[#121212]" />
+              <Menu className="w-6 h-6 text-[var(--ink)]" />
             </button>
             <div>
-              <h1 className="text-2xl md:text-3xl font-extrabold text-[#121212] mb-1 md:mb-2">Orders</h1>
-              <p className="text-xs md:text-sm text-[#64748B]">{activeOrders.length} active orders</p>
+              <h1 className="text-2xl md:text-3xl font-extrabold text-[var(--ink)] mb-1 md:mb-2">Orders</h1>
+              <p className="text-xs md:text-sm text-[var(--muted-foreground)]">{activeOrders.length} active orders</p>
             </div>
           </div>
         </div>
 
         {/* Tabs */}
-        <div className="px-3 md:px-5 py-3 border-b border-[#E2E8F0] sticky top-0 bg-white z-50 space-y-2 md:space-y-3 overflow-x-auto">
+        <div className="px-3 md:px-5 py-3 border-b border-[var(--border)] sticky top-0 bg-white z-50 space-y-2 md:space-y-3 overflow-x-auto">
           <div className="flex gap-2 min-w-max md:min-w-0">
             <button
               onClick={() => setSelectedTab('active')}
               className={`flex-1 md:flex-1 py-2.5 px-3 md:px-4 rounded-xl font-semibold transition-all text-sm md:text-base whitespace-nowrap ${
                 selectedTab === 'active'
-                  ? 'bg-[#E11D48] text-white'
-                  : 'bg-[#F8F9FA] text-[#64748B]'
+                  ? 'bg-[var(--primary)] text-white'
+                  : 'bg-[var(--muted)] text-[var(--muted-foreground)]'
               }`}
             >
               Active ({activeOrders.length})
@@ -665,8 +720,8 @@ export default function BusinessOrders() {
               onClick={() => setSelectedTab('history')}
               className={`flex-1 md:flex-1 py-2.5 px-3 md:px-4 rounded-xl font-semibold transition-all text-sm md:text-base whitespace-nowrap ${
                 selectedTab === 'history'
-                  ? 'bg-[#E11D48] text-white'
-                  : 'bg-[#F8F9FA] text-[#64748B]'
+                  ? 'bg-[var(--primary)] text-white'
+                  : 'bg-[var(--muted)] text-[var(--muted-foreground)]'
               }`}
             >
               History ({historyOrders.length})
@@ -680,8 +735,8 @@ export default function BusinessOrders() {
                  onClick={() => setSelectedStatusFilter('all')}
                  className={`px-3 md:px-4 py-2 rounded-full text-xs md:text-sm font-medium whitespace-nowrap transition-all flex-shrink-0 ${
                    selectedStatusFilter === 'all'
-                     ? 'bg-[#E11D48] text-white'
-                     : 'bg-[#F1F5F9] text-[#64748B] hover:bg-[#E2E8F0]'
+                     ? 'bg-[var(--primary)] text-white'
+                     : 'bg-[var(--muted)] text-[var(--muted-foreground)] hover:bg-[var(--border)]'
                  }`}
                >
                  All ({activeOrders.length})
@@ -690,8 +745,8 @@ export default function BusinessOrders() {
                  onClick={() => setSelectedStatusFilter('pending')}
                  className={`px-3 md:px-4 py-2 rounded-full text-xs md:text-sm font-medium whitespace-nowrap transition-all flex-shrink-0 ${
                    selectedStatusFilter === 'pending'
-                     ? 'bg-[#E11D48] text-white'
-                     : 'bg-[#F1F5F9] text-[#64748B] hover:bg-[#E2E8F0]'
+                     ? 'bg-[var(--primary)] text-white'
+                     : 'bg-[var(--muted)] text-[var(--muted-foreground)] hover:bg-[var(--border)]'
                  }`}
                >
                  New ({activeOrders.filter(o => o.status === 'pending').length})
@@ -700,8 +755,8 @@ export default function BusinessOrders() {
                  onClick={() => setSelectedStatusFilter('preparing')}
                  className={`px-3 md:px-4 py-2 rounded-full text-xs md:text-sm font-medium whitespace-nowrap transition-all flex-shrink-0 ${
                    selectedStatusFilter === 'preparing'
-                     ? 'bg-[#E11D48] text-white'
-                     : 'bg-[#F1F5F9] text-[#64748B] hover:bg-[#E2E8F0]'
+                     ? 'bg-[var(--primary)] text-white'
+                     : 'bg-[var(--muted)] text-[var(--muted-foreground)] hover:bg-[var(--border)]'
                  }`}
                >
                  Preparing ({activeOrders.filter(o => o.status === 'preparing').length})
@@ -710,8 +765,8 @@ export default function BusinessOrders() {
                  onClick={() => setSelectedStatusFilter('ready')}
                  className={`px-3 md:px-4 py-2 rounded-full text-xs md:text-sm font-medium whitespace-nowrap transition-all flex-shrink-0 ${
                    selectedStatusFilter === 'ready'
-                     ? 'bg-[#E11D48] text-white'
-                     : 'bg-[#F1F5F9] text-[#64748B] hover:bg-[#E2E8F0]'
+                     ? 'bg-[var(--primary)] text-white'
+                     : 'bg-[var(--muted)] text-[var(--muted-foreground)] hover:bg-[var(--border)]'
                  }`}
                >
                  Ready ({activeOrders.filter(o => o.status === 'ready').length})
@@ -720,8 +775,8 @@ export default function BusinessOrders() {
                  onClick={() => setSelectedStatusFilter('confirmed')}
                  className={`px-3 md:px-4 py-2 rounded-full text-xs md:text-sm font-medium whitespace-nowrap transition-all flex-shrink-0 ${
                    selectedStatusFilter === 'confirmed'
-                     ? 'bg-[#E11D48] text-white'
-                     : 'bg-[#F1F5F9] text-[#64748B] hover:bg-[#E2E8F0]'
+                     ? 'bg-[var(--primary)] text-white'
+                     : 'bg-[var(--muted)] text-[var(--muted-foreground)] hover:bg-[var(--border)]'
                  }`}
                >
                  Delivery ({activeOrders.filter(o => o.status === 'confirmed').length})
@@ -730,8 +785,8 @@ export default function BusinessOrders() {
                  onClick={() => setSelectedStatusFilter('on-the-way')}
                  className={`px-3 md:px-4 py-2 rounded-full text-xs md:text-sm font-medium whitespace-nowrap transition-all flex-shrink-0 ${
                    selectedStatusFilter === 'on-the-way'
-                     ? 'bg-[#E11D48] text-white'
-                     : 'bg-[#F1F5F9] text-[#64748B] hover:bg-[#E2E8F0]'
+                     ? 'bg-[var(--primary)] text-white'
+                     : 'bg-[var(--muted)] text-[var(--muted-foreground)] hover:bg-[var(--border)]'
                  }`}
                >
                  On The Way ({activeOrders.filter(o => o.status === 'on-the-way').length})
@@ -750,37 +805,37 @@ export default function BusinessOrders() {
                 <Card
                   key={order.id}
                   onClick={() => setSelectedOrder(order)}
-                  className="p-3 md:p-4 border-2 border-[#E2E8F0] active:scale-[0.98] transition-transform cursor-pointer"
+                  className="p-3 md:p-4 border-2 border-[var(--border)] active:scale-[0.98] transition-transform cursor-pointer"
                 >
                   <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 md:gap-3 mb-3">
                     <div className="min-w-0">
                       <div className="flex items-center gap-2 mb-1 flex-wrap">
-                        <h3 className="font-bold text-[#121212] text-sm md:text-base">#{order.orderNumber}</h3>
+                        <h3 className="font-bold text-[var(--ink)] text-sm md:text-base">#{order.orderNumber}</h3>
                         <Badge className={`${getStatusColor(order.status)} text-white text-xs`}>
                           {getStatusLabel(order.status)}
                         </Badge>
                       </div>
-                      <p className="text-xs md:text-sm text-[#64748B] truncate">{order.customerName}</p>
+                      <p className="text-xs md:text-sm text-[var(--muted-foreground)] truncate">{order.customerName}</p>
                     </div>
                     <div className="text-right flex-shrink-0">
-                      <p className="text-base md:text-lg font-bold text-[#E11D48]">₱{order.total.toFixed(2)}</p>
-                      <p className="text-xs text-[#64748B]">{order.date}</p>
+                      <p className="text-base md:text-lg font-bold text-[var(--primary)]">₱{order.total.toFixed(2)}</p>
+                      <p className="text-xs text-[var(--muted-foreground)]">{order.date}</p>
                     </div>
                   </div>
 
                   <div className="space-y-1 mb-3 text-xs md:text-sm">
                     {order.items.slice(0, 2).map((item, idx) => (
-                      <p key={idx} className="text-xs md:text-sm text-[#64748B] truncate">
+                      <p key={idx} className="text-xs md:text-sm text-[var(--muted-foreground)] truncate">
                         {item.quantity}x {item.name}
                       </p>
                     ))}
                     {order.items.length > 2 && (
-                      <p className="text-xs text-[#64748B]">+{order.items.length - 2} more items</p>
+                      <p className="text-xs text-[var(--muted-foreground)]">+{order.items.length - 2} more items</p>
                     )}
                   </div>
 
                   <div className="flex flex-wrap items-center gap-2">
-                    <Badge className={order.paymentMethod === 'gcash' ? 'bg-[#10B981] text-white text-xs' : 'bg-white border border-[#E2E8F0] text-[#64748B] text-xs'}>
+                    <Badge className={order.paymentMethod === 'gcash' ? 'bg-[var(--success)] text-white text-xs' : 'bg-white border border-[var(--border)] text-[var(--muted-foreground)] text-xs'}>
                       {order.paymentMethod === 'gcash' ? 'GCash' : 'COD'}
                     </Badge>
                     {order.estimatedTime && (
@@ -794,8 +849,8 @@ export default function BusinessOrders() {
               ))
             ) : (
               <div className="text-center py-12">
-                <Clock className="w-12 md:w-16 h-12 md:h-16 text-[#CBD5E1] mx-auto mb-3" />
-                <p className="text-sm md:text-base text-[#64748B]">No active orders</p>
+                <Clock className="w-12 md:w-16 h-12 md:h-16 text-[var(--border)] mx-auto mb-3" />
+                <p className="text-sm md:text-base text-[var(--muted-foreground)]">No active orders</p>
               </div>
             )
           ) : (
@@ -803,40 +858,51 @@ export default function BusinessOrders() {
               historyOrders.map((order) => (
                 <Card
                   key={order.id}
-                  className="p-3 md:p-4 border-2 border-[#E2E8F0] opacity-75"
+                  onClick={() => setSelectedOrder(order)}
+                  className="p-3 md:p-4 border-2 border-[var(--border)] opacity-75 active:scale-[0.98] transition-transform cursor-pointer"
                 >
                   <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 md:gap-3 mb-3">
                     <div className="min-w-0">
                       <div className="flex items-center gap-2 mb-1 flex-wrap">
-                        <h3 className="font-bold text-[#121212] text-sm md:text-base">#{order.orderNumber}</h3>
+                        <h3 className="font-bold text-[var(--ink)] text-sm md:text-base">#{order.orderNumber}</h3>
                         <Badge className={`${getStatusColor(order.status)} text-white text-xs`}>
                           {getStatusLabel(order.status)}
                         </Badge>
                       </div>
-                      <p className="text-xs md:text-sm text-[#64748B] truncate">{order.customerName}</p>
+                      <p className="text-xs md:text-sm text-[var(--muted-foreground)] truncate">{order.customerName}</p>
                     </div>
                     <div className="text-right flex-shrink-0">
-                      <p className="text-base md:text-lg font-bold text-[#121212]">₱{order.total}</p>
-                      <p className="text-xs text-[#64748B]">{order.date}</p>
+                      <p className="text-base md:text-lg font-bold text-[var(--ink)]">₱{order.total}</p>
+                      <p className="text-xs text-[var(--muted-foreground)]">{order.date}</p>
                     </div>
                   </div>
 
                   <div className="space-y-1 text-xs md:text-sm">
                     {order.items.slice(0, 2).map((item, idx) => (
-                      <p key={idx} className="text-xs md:text-sm text-[#64748B] truncate">
+                      <p key={idx} className="text-xs md:text-sm text-[var(--muted-foreground)] truncate">
                         {item.quantity}x {item.name}
                       </p>
                     ))}
                     {order.items.length > 2 && (
-                      <p className="text-xs text-[#64748B]">+{order.items.length - 2} more items</p>
+                      <p className="text-xs text-[var(--muted-foreground)]">+{order.items.length - 2} more items</p>
                     )}
                   </div>
+
+                  {/* Cancellation reason, readable straight from the history list */}
+                  {order.status === 'cancelled' && order.cancelReason && (
+                    <div className="mt-3 p-2.5 rounded-xl border-2 border-red-200 bg-red-50">
+                      <p className="text-[10px] font-bold uppercase tracking-wide text-red-600 mb-0.5">
+                        {order.cancelledBy === 'customer' ? 'Cancelled by customer' : 'Declined'}
+                      </p>
+                      <p className="text-xs text-[#7F1D1D]">{order.cancelReason}</p>
+                    </div>
+                  )}
                 </Card>
               ))
             ) : (
               <div className="text-center py-12">
-                <Package className="w-12 md:w-16 h-12 md:h-16 text-[#CBD5E1] mx-auto mb-3" />
-                <p className="text-sm md:text-base text-[#64748B]">No order history</p>
+                <Package className="w-12 md:w-16 h-12 md:h-16 text-[var(--border)] mx-auto mb-3" />
+                <p className="text-sm md:text-base text-[var(--muted-foreground)]">No order history</p>
               </div>
             )
           )}
@@ -846,10 +912,10 @@ export default function BusinessOrders() {
         {selectedOrder && (
           <div className="fixed inset-0 bg-black/50 z-[2000] flex items-end">
             <div className="bg-white w-full h-full md:h-auto md:rounded-t-3xl md:max-h-[85vh] overflow-y-auto">
-              <div className="sticky top-0 bg-white border-b border-[#E2E8F0] px-4 md:px-5 py-3 md:py-4">
+              <div className="sticky top-0 bg-white border-b border-[var(--border)] px-4 md:px-5 py-3 md:py-4">
                 <div className="flex items-center justify-between mb-2">
-                  <h2 className="text-lg md:text-xl font-bold text-[#121212]">#{selectedOrder.orderNumber}</h2>
-                  <button onClick={() => setSelectedOrder(null)} className="text-lg font-semibold text-[#3B82F6]">
+                  <h2 className="text-lg md:text-xl font-bold text-[var(--ink)]">#{selectedOrder.orderNumber}</h2>
+                  <button onClick={() => setSelectedOrder(null)} className="text-lg font-semibold text-[var(--info)]">
                     <span className="hidden md:inline">Close</span>
                     <span className="md:hidden">✕</span>
                   </button>
@@ -860,15 +926,15 @@ export default function BusinessOrders() {
 
                 {/* Status Progress Bar - Responsive */}
                 <div className="mt-3 md:mt-4">
-                  <p className="text-xs font-semibold text-[#64748B] mb-2">ORDER PROGRESS</p>
+                  <p className="text-xs font-semibold text-[var(--muted-foreground)] mb-2">ORDER PROGRESS</p>
                   <div className="flex items-center gap-1 md:gap-2 overflow-x-auto pb-2">
                     {getStatusWorkflow(selectedOrder.status).steps.map((step, idx) => (
                       <div key={idx} className="flex items-center flex-shrink-0">
                         <div
                           className={`w-6 md:w-8 h-6 md:h-8 rounded-full flex items-center justify-center text-xs font-bold transition-all ${
                             idx <= getStatusWorkflow(selectedOrder.status).current
-                              ? 'bg-[#10B981] text-white'
-                              : 'bg-[#E2E8F0] text-[#64748B]'
+                              ? 'bg-[var(--success)] text-white'
+                              : 'bg-[var(--border)] text-[var(--muted-foreground)]'
                           }`}
                         >
                           {idx <= getStatusWorkflow(selectedOrder.status).current ? '✓' : idx + 1}
@@ -877,15 +943,15 @@ export default function BusinessOrders() {
                           <div
                             className={`h-0.5 w-2 md:w-4 ml-1 md:ml-2 transition-all ${
                               idx < getStatusWorkflow(selectedOrder.status).current
-                                ? 'bg-[#10B981]'
-                                : 'bg-[#E2E8F0]'
+                                ? 'bg-[var(--success)]'
+                                : 'bg-[var(--border)]'
                             }`}
                           />
                         )}
                       </div>
                     ))}
                   </div>
-                  <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 text-xs text-[#64748B] mt-2 gap-1">
+                  <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 text-xs text-[var(--muted-foreground)] mt-2 gap-1">
                     {getStatusWorkflow(selectedOrder.status).steps.map((step, idx) => (
                       <div key={idx} className="min-w-0">
                         <p className="font-semibold truncate text-[10px] md:text-xs">{step}</p>
@@ -896,48 +962,58 @@ export default function BusinessOrders() {
               </div>
 
               <div className="p-3 md:p-5 space-y-3 md:space-y-4">
+                {/* Why the order was cancelled, so the reason is never buried */}
+                {selectedOrder.status === 'cancelled' && selectedOrder.cancelReason && (
+                  <div className="p-3 rounded-xl border-2 border-red-200 bg-red-50">
+                    <p className="text-xs font-bold uppercase tracking-wide text-red-600 mb-1">
+                      {selectedOrder.cancelledBy === 'customer' ? 'Cancelled by customer' : 'Order declined'}
+                    </p>
+                    <p className="text-sm text-[#7F1D1D]">{selectedOrder.cancelReason}</p>
+                  </div>
+                )}
+
                 {/* Customer Info */}
                 <div>
-                  <h3 className="font-bold text-[#121212] mb-2 text-sm md:text-base">Customer</h3>
-                  <p className="text-sm md:text-base text-[#64748B]">{selectedOrder.customerName}</p>
-                  <p className="text-xs md:text-sm text-[#64748B] mt-1 break-words">{selectedOrder.address.split('|')[0].trim() || selectedOrder.address}</p>
+                  <h3 className="font-bold text-[var(--ink)] mb-2 text-sm md:text-base">Customer</h3>
+                  <p className="text-sm md:text-base text-[var(--muted-foreground)]">{selectedOrder.customerName}</p>
+                  <p className="text-xs md:text-sm text-[var(--muted-foreground)] mt-1 break-words">{selectedOrder.address.split('|')[0].trim() || selectedOrder.address}</p>
                   {selectedOrder.customerPhone && (
-                    <p className="text-xs md:text-sm text-[#64748B] mt-1">Phone: {selectedOrder.customerPhone}</p>
+                    <p className="text-xs md:text-sm text-[var(--muted-foreground)] mt-1">Phone: {selectedOrder.customerPhone}</p>
                   )}
                 </div>
 
                 {/* Order Items */}
                 <div>
-                  <h3 className="font-bold text-[#121212] mb-2 text-sm md:text-base">Items</h3>
+                  <h3 className="font-bold text-[var(--ink)] mb-2 text-sm md:text-base">Items</h3>
                   <div className="space-y-2">
                     {selectedOrder.items.map((item, idx) => (
-                      <div key={idx} className="flex items-center justify-between p-2 md:p-3 bg-[#F8F9FA] rounded-xl">
+                      <div key={idx} className="flex items-center justify-between p-2 md:p-3 bg-[var(--muted)] rounded-xl">
                         <div className="min-w-0">
-                          <p className="font-semibold text-[#121212] text-sm md:text-base truncate">{item.name}</p>
-                          <p className="text-xs md:text-sm text-[#64748B]">Qty: {item.quantity}</p>
+                          <p className="font-semibold text-[var(--ink)] text-sm md:text-base truncate">{item.name}</p>
+                          <p className="text-xs md:text-sm text-[var(--muted-foreground)]">Qty: {item.quantity}</p>
                         </div>
-                        <p className="font-bold text-[#121212] text-sm md:text-base flex-shrink-0">₱{(item.price * item.quantity).toFixed(2)}</p>
+                        <p className="font-bold text-[var(--ink)] text-sm md:text-base flex-shrink-0">₱{(item.price * item.quantity).toFixed(2)}</p>
                       </div>
                     ))}
                   </div>
                 </div>
 
                 {/* Payment Summary */}
-                <div className="border-t border-[#E2E8F0] pt-3 md:pt-4">
+                <div className="border-t border-[var(--border)] pt-3 md:pt-4">
                   <div className="flex items-center justify-between mb-2 text-sm md:text-base">
-                    <span className="text-[#64748B]">Subtotal</span>
-                    <span className="font-semibold text-[#121212]">₱{(selectedOrder.total - selectedOrder.deliveryFee).toFixed(2)}</span>
+                    <span className="text-[var(--muted-foreground)]">Subtotal</span>
+                    <span className="font-semibold text-[var(--ink)]">₱{(selectedOrder.total - selectedOrder.deliveryFee).toFixed(2)}</span>
                   </div>
                   <div className="flex items-center justify-between mb-2 text-sm md:text-base">
-                    <span className="text-[#64748B]">Delivery Fee</span>
-                    <span className="font-semibold text-[#121212]">₱{selectedOrder.deliveryFee.toFixed(2)}</span>
+                    <span className="text-[var(--muted-foreground)]">Delivery Fee</span>
+                    <span className="font-semibold text-[var(--ink)]">₱{selectedOrder.deliveryFee.toFixed(2)}</span>
                   </div>
-                  <div className="flex items-center justify-between pt-2 md:pt-3 border-t border-[#E2E8F0]">
-                    <span className="font-bold text-[#121212] md:text-base">Total</span>
-                    <span className="text-lg md:text-xl font-bold text-[#E11D48]">₱{selectedOrder.total.toFixed(2)}</span>
+                  <div className="flex items-center justify-between pt-2 md:pt-3 border-t border-[var(--border)]">
+                    <span className="font-bold text-[var(--ink)] md:text-base">Total</span>
+                    <span className="text-lg md:text-xl font-bold text-[var(--primary)]">₱{selectedOrder.total.toFixed(2)}</span>
                   </div>
                   <div className="mt-2 md:mt-3">
-                    <Badge className={selectedOrder.paymentMethod === 'gcash' ? 'bg-[#10B981] text-white text-xs md:text-sm' : 'border-orange-500 text-orange-500 text-xs md:text-sm'} variant={selectedOrder.paymentMethod === 'gcash' ? 'default' : 'outline'}>
+                    <Badge className={selectedOrder.paymentMethod === 'gcash' ? 'bg-[var(--success)] text-white text-xs md:text-sm' : 'border-[var(--amber)] text-[var(--amber)] text-xs md:text-sm'} variant={selectedOrder.paymentMethod === 'gcash' ? 'default' : 'outline'}>
                       {selectedOrder.paymentMethod === 'gcash' ? (
                         <>
                           <CheckCircle className="w-3 h-3 mr-1" />
@@ -958,14 +1034,14 @@ export default function BusinessOrders() {
                   <div className="space-y-2">
                     <Button
                       onClick={() => setConfirmAction('accept')}
-                      className="w-full bg-[#10B981] hover:bg-[#059669] uppercase py-4 md:py-6 font-bold text-sm md:text-base"
+                      className="w-full bg-[var(--success)] hover:bg-[var(--success)] uppercase py-4 md:py-6 font-bold text-sm md:text-base"
                     >
                       ✓ Accept Order
                     </Button>
                     <Button
-                      onClick={() => setConfirmAction('decline')}
+                      onClick={() => setShowDeclinePrompt(true)}
                       variant="outline"
-                      className="w-full border-[#E11D48] text-[#E11D48] uppercase py-4 md:py-6 text-sm md:text-base"
+                      className="w-full border-[var(--primary)] text-[var(--primary)] uppercase py-4 md:py-6 text-sm md:text-base"
                     >
                       ✗ Decline Order
                     </Button>
@@ -976,7 +1052,7 @@ export default function BusinessOrders() {
                   <div className="space-y-2">
                     <Button
                       onClick={() => setStatusConfirm('ready')}
-                      className="w-full bg-[#F59E0B] hover:bg-[#D97706] uppercase py-4 md:py-6 font-bold text-sm md:text-base"
+                      className="w-full bg-[var(--amber)] hover:bg-[var(--amber)] uppercase py-4 md:py-6 font-bold text-sm md:text-base"
                     >
                       → Ready for Pickup
                     </Button>
@@ -988,7 +1064,7 @@ export default function BusinessOrders() {
                     {selectedOrder.deliveryMode === 'delivery' && (
                       <Button
                         onClick={() => setStatusConfirm('delivery')}
-                        className="w-full bg-[#06B6D4] hover:bg-[#0891B2] uppercase py-4 md:py-6 font-bold text-sm md:text-base"
+                        className="w-full bg-[var(--info)] hover:bg-[var(--info)] uppercase py-4 md:py-6 font-bold text-sm md:text-base"
                       >
                         → Ready for Delivery
                       </Button>
@@ -1005,10 +1081,10 @@ export default function BusinessOrders() {
                   <div className="space-y-3">
                     {/* Live Tracking Map */}
                     {isMapsLoaded && driverLocation && (
-                      <div className="rounded-xl overflow-hidden border-2 border-[#3B82F6]">
-                        <div className="bg-gradient-to-r from-[#3B82F6] to-[#2563EB] px-3 py-2 flex items-center justify-between">
+                      <div className="rounded-xl overflow-hidden border-2 border-[var(--info)]">
+                        <div className="bg-gradient-to-r from-[var(--info)] to-[var(--info)] px-3 py-2 flex items-center justify-between">
                           <div className="flex items-center gap-2">
-                            <div className="w-2 h-2 bg-green-400 rounded-full animate-pulse" />
+                            <div className="w-2 h-2 bg-[var(--success)] rounded-full animate-pulse" />
                             <span className="text-xs font-bold text-white">Live Tracking</span>
                           </div>
                           <Navigation className="w-3.5 h-3.5 text-white/80" />
@@ -1038,7 +1114,7 @@ export default function BusinessOrders() {
                               position={{ lat: parseFloat(cm[1]), lng: parseFloat(cm[2]) }}
                               title="Customer"
                               icon={{
-                                url: 'data:image/svg+xml;charset=UTF-8,' + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="#E11D48" stroke="white" stroke-width="1"><path d="M12 2C8.13 2 5 5.13 5 9c0 4.95 6.1 11.53 6.36 11.81.36.39.92.39 1.28 0C13.9 20.53 20 13.95 20 9c0-3.87-3.13-7-8-7z"/><circle cx="12" cy="8.6" r="2.3" fill="#FFFFFF" stroke="none"/></svg>'),
+                                url: 'data:image/svg+xml;charset=UTF-8,' + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="var(--primary)" stroke="white" stroke-width="1"><path d="M12 2C8.13 2 5 5.13 5 9c0 4.95 6.1 11.53 6.36 11.81.36.39.92.39 1.28 0C13.9 20.53 20 13.95 20 9c0-3.87-3.13-7-8-7z"/><circle cx="12" cy="8.6" r="2.3" fill="#FFFFFF" stroke="none"/></svg>'),
                                 scaledSize: new (window as any).google.maps.Size(32, 32),
                                 anchor: new (window as any).google.maps.Point(16, 32),
                               }}
@@ -1048,31 +1124,31 @@ export default function BusinessOrders() {
                           {routePath.length > 0 && (
                             <Polyline
                               path={routePath}
-                              options={{ strokeColor: (driverStatus === 'on-the-way' || driverStatus === 'arrived' || driverStatus === 'accepted') ? '#10B981' : '#E11D48', strokeOpacity: 0.9, strokeWeight: 4, geodesic: true }}
+                              options={{ strokeColor: (driverStatus === 'on-the-way' || driverStatus === 'arrived' || driverStatus === 'accepted') ? 'var(--success)' : 'var(--primary)', strokeOpacity: 0.9, strokeWeight: 4, geodesic: true }}
                             />
                           )}
                         </GoogleMap>
-                        <div className="px-3 py-2 bg-white border-t border-[#E2E8F0] flex items-center justify-between">
-                          <span className="text-xs font-semibold text-[#121212]">
+                        <div className="px-3 py-2 bg-white border-t border-[var(--border)] flex items-center justify-between">
+                          <span className="text-xs font-semibold text-[var(--ink)]">
                             {(driverStatus === 'on-the-way' || driverStatus === 'arrived' || driverStatus === 'accepted') ? '🟢 Heading to restaurant' : '🔴 Delivering to customer'}
                           </span>
                           <div className="flex items-center gap-2">
                             {etaToCustomer && (
-                              <span className="text-[10px] font-bold text-[#3B82F6] bg-blue-50 px-2 py-0.5 rounded-full">🏁 {etaToCustomer}</span>
+                              <span className="text-[10px] font-bold text-[var(--info)] bg-[var(--info-soft)] px-2 py-0.5 rounded-full">🏁 {etaToCustomer}</span>
                             )}
                             {selectedOrder?.customerName && (
-                              <span className="text-[10px] text-[#64748B]">{selectedOrder.customerName}</span>
+                              <span className="text-[10px] text-[var(--muted-foreground)]">{selectedOrder.customerName}</span>
                             )}
                           </div>
                         </div>
                       </div>
                     )}
 
-                    <div className="bg-[#FEF3C7] border-l-4 border-[#FFA500] p-2 md:p-3 rounded text-sm">
-                      <p className="font-semibold text-[#92400E]">Status: On The Way</p>
-                      <p className="text-xs text-[#92400E] mt-1">Driver is delivering the order</p>
+                    <div className="bg-[var(--amber-soft)] border-l-4 border-[var(--amber)] p-2 md:p-3 rounded text-sm">
+                      <p className="font-semibold text-[var(--amber-dark)]">Status: On The Way</p>
+                      <p className="text-xs text-[var(--amber-dark)] mt-1">Driver is delivering the order</p>
                       {selectedOrder.driverName && (
-                        <p className="text-xs text-[#92400E] mt-1">Driver: {selectedOrder.driverName}</p>
+                        <p className="text-xs text-[var(--amber-dark)] mt-1">Driver: {selectedOrder.driverName}</p>
                       )}
                     </div>
 
@@ -1081,7 +1157,7 @@ export default function BusinessOrders() {
                       {selectedOrder.driverId && (
                         <Button
                           onClick={() => navigate(`/business/messages/driver/${selectedOrder.driverId}`)}
-                          className="flex-1 bg-[#10B981] hover:bg-[#059669] uppercase py-4 font-bold text-sm md:text-base"
+                          className="flex-1 bg-[var(--success)] hover:bg-[var(--success)] uppercase py-4 font-bold text-sm md:text-base"
                         >
                           <MessageCircle className="w-4 h-4 mr-2" />
                           Message Driver
@@ -1090,7 +1166,7 @@ export default function BusinessOrders() {
                       {selectedOrder.customerId && (
                         <Button
                           onClick={() => navigate(`/business/messages/customer/${selectedOrder.customerId}`)}
-                          className="flex-1 bg-[#3B82F6] hover:bg-[#2563EB] uppercase py-4 font-bold text-sm md:text-base"
+                          className="flex-1 bg-[var(--info)] hover:bg-[var(--info)] uppercase py-4 font-bold text-sm md:text-base"
                         >
                           <MessageCircle className="w-4 h-4 mr-2" />
                           Message Customer
@@ -1103,7 +1179,7 @@ export default function BusinessOrders() {
                         updateOrderStatus(selectedOrder.id, 'delivered');
                         setSelectedOrder(null);
                       }}
-                      className="w-full bg-[#64748B] hover:bg-[#475569] uppercase py-4 md:py-6 font-bold text-sm md:text-base"
+                      className="w-full bg-[var(--muted-foreground)] hover:bg-[var(--muted-foreground)] uppercase py-4 md:py-6 font-bold text-sm md:text-base"
                     >
                       ✓ Delivered - Complete Order
                     </Button>
@@ -1111,16 +1187,16 @@ export default function BusinessOrders() {
                 )}
 
                 {selectedOrder.status === 'delivered' && (
-                  <div className="bg-[#D1FAE5] border-l-4 border-[#10B981] p-2 md:p-3 rounded text-sm">
-                    <p className="font-semibold text-[#065F46]">✓ Order Completed</p>
-                    <p className="text-xs text-[#065F46] mt-1">Order has been successfully delivered</p>
+                  <div className="bg-[var(--success-soft)] border-l-4 border-[var(--success)] p-2 md:p-3 rounded text-sm">
+                    <p className="font-semibold text-[var(--success)]">✓ Order Completed</p>
+                    <p className="text-xs text-[var(--success)] mt-1">Order has been successfully delivered</p>
                   </div>
                 )}
 
                 {selectedOrder.status === 'cancelled' && (
-                  <div className="bg-[#FEE2E2] border-l-4 border-[#E11D48] p-2 md:p-3 rounded text-sm">
-                    <p className="font-semibold text-[#991B1B]">✗ Order Cancelled</p>
-                    <p className="text-xs text-[#991B1B] mt-1">This order has been cancelled</p>
+                  <div className="bg-[var(--error-soft)] border-l-4 border-[var(--primary)] p-2 md:p-3 rounded text-sm">
+                    <p className="font-semibold text-[var(--error)]">✗ Order Cancelled</p>
+                    <p className="text-xs text-[var(--error)] mt-1">This order has been cancelled</p>
                   </div>
                 )}
               </div>
@@ -1129,67 +1205,86 @@ export default function BusinessOrders() {
         )}
       </div>
 
-      {/* Confirmation Popup */}
-      {confirmAction && selectedOrder && (
+      {/* Accept Confirmation Popup */}
+      {confirmAction === 'accept' && selectedOrder && (
         <div className="fixed inset-0 bg-black/60 z-[3000] flex items-center justify-center">
           <div className="bg-white rounded-3xl p-6 mx-6 max-w-sm w-full text-center shadow-2xl animate-in fade-in zoom-in duration-300">
             <div className={`w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4 ${
-              confirmAction === 'accept' ? 'bg-green-100' : 'bg-red-100'
+              confirmAction === 'accept' ? 'bg-[var(--success-soft)]' : 'bg-[var(--error-soft)]'
             }`}>
               <span className="text-3xl">{confirmAction === 'accept' ? '✅' : '❌'}</span>
             </div>
-            <h2 className="text-xl font-extrabold text-[#121212] mb-1">
+            <h2 className="text-xl font-extrabold text-[var(--ink)] mb-1">
               {confirmAction === 'accept' ? 'Accept this order?' : 'Decline this order?'}
             </h2>
-            <p className="text-sm text-[#64748B] mb-1">Order #{selectedOrder.orderNumber}</p>
-            <p className="text-sm text-[#64748B] mb-1">{selectedOrder.customerName}</p>
-            <p className="text-lg font-bold text-[#E11D48] mb-4">₱{selectedOrder.total.toFixed(2)}</p>
+            <p className="text-sm text-[var(--muted-foreground)] mb-1">Order #{selectedOrder.orderNumber}</p>
+            <p className="text-sm text-[var(--muted-foreground)] mb-1">{selectedOrder.customerName}</p>
+            <p className="text-lg font-bold text-[var(--primary)] mb-4">₱{selectedOrder.total.toFixed(2)}</p>
             <div className="flex gap-3">
               <Button
                 onClick={() => setConfirmAction(null)}
                 variant="outline"
-                className="flex-1 border-gray-300 text-gray-600 uppercase font-bold"
+                className="flex-1 border-[var(--border)] text-[var(--muted-foreground)] uppercase font-bold"
               >
                 Cancel
               </Button>
               <Button
                 onClick={async () => {
-                  if (confirmAction === 'accept') {
-                    await updateOrderStatus(selectedOrder.id, 'preparing');
-                  } else {
-                    await updateOrderStatus(selectedOrder.id, 'cancelled');
-                  }
+                  await updateOrderStatus(selectedOrder.id, 'preparing');
                   setConfirmAction(null);
                   setSelectedOrder(null);
                 }}
                 className={`flex-1 uppercase font-bold ${
                   confirmAction === 'accept'
-                    ? 'bg-[#10B981] hover:bg-[#059669]'
-                    : 'bg-[#E11D48] hover:bg-[#BE123C]'
+                    ? 'bg-[var(--success)] hover:bg-[var(--success)]'
+                    : 'bg-[var(--primary)] hover:bg-[var(--primary)]'
                 }`}
               >
-                {confirmAction === 'accept' ? 'Accept' : 'Decline'}
+                Accept
               </Button>
             </div>
           </div>
         </div>
       )}
 
+      {/* Decline Popup — collects a reason before the order is cancelled */}
+      <ReasonPromptModal
+        isOpen={showDeclinePrompt}
+        title="Decline this order?"
+        description={
+          selectedOrder
+            ? `Order #${selectedOrder.orderNumber} · ${selectedOrder.customerName}`
+            : undefined
+        }
+        confirmLabel="Decline Order"
+        placeholder="e.g. Store is closing, items unavailable, address out of range…"
+        variant="danger"
+        zIndexClassName="z-[3500]"
+        onCancel={() => setShowDeclinePrompt(false)}
+        onSubmit={async (reason) => {
+          const orderId = selectedOrder?.id;
+          setShowDeclinePrompt(false);
+          if (!orderId) return;
+          await declineOrder(orderId, reason);
+          setSelectedOrder(null);
+        }}
+      />
+
       {/* Status Change Confirmation Popup */}
       {statusConfirm && selectedOrder && (
         <div className="fixed inset-0 bg-black/60 z-[3000] flex items-center justify-center">
           <div className="bg-white rounded-3xl p-6 mx-6 max-w-sm w-full text-center shadow-2xl animate-in fade-in zoom-in duration-300">
-            <h2 className="text-xl font-extrabold text-[#121212] mb-1">
+            <h2 className="text-xl font-extrabold text-[var(--ink)] mb-1">
               {statusConfirm === 'ready' ? 'Ready for Pickup?' : 'Ready for Delivery?'}
             </h2>
-            <p className="text-sm text-[#64748B] mb-1">Order #{selectedOrder.orderNumber}</p>
-            <p className="text-sm text-[#64748B] mb-1">{selectedOrder.customerName}</p>
-            <p className="text-lg font-bold text-[#E11D48] mb-4">₱{selectedOrder.total.toFixed(2)}</p>
+            <p className="text-sm text-[var(--muted-foreground)] mb-1">Order #{selectedOrder.orderNumber}</p>
+            <p className="text-sm text-[var(--muted-foreground)] mb-1">{selectedOrder.customerName}</p>
+            <p className="text-lg font-bold text-[var(--primary)] mb-4">₱{selectedOrder.total.toFixed(2)}</p>
             <div className="flex gap-3">
               <Button
                 onClick={() => setStatusConfirm(null)}
                 variant="outline"
-                className="flex-1 border-gray-300 text-gray-600 uppercase font-bold"
+                className="flex-1 border-[var(--border)] text-[var(--muted-foreground)] uppercase font-bold"
               >
                 Cancel
               </Button>
@@ -1205,8 +1300,8 @@ export default function BusinessOrders() {
                 }}
                 className={`flex-1 uppercase font-bold ${
                   statusConfirm === 'ready'
-                    ? 'bg-[#F59E0B] hover:bg-[#D97706]'
-                    : 'bg-[#06B6D4] hover:bg-[#0891B2]'
+                    ? 'bg-[var(--amber)] hover:bg-[var(--amber)]'
+                    : 'bg-[var(--info)] hover:bg-[var(--info)]'
                 }`}
               >
                 {statusConfirm === 'ready' ? 'Confirm Pickup' : 'Confirm Delivery'}

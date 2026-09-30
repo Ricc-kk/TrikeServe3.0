@@ -143,50 +143,50 @@ export default function AccountManagement() {
   const activeProfile = profiles.find(p => p.id === activeProfileId);
 
   return (
-    <div className="min-h-screen bg-[#F8F9FA] pb-20">
+    <div className="min-h-screen bg-[var(--muted)] pb-20">
       {/* Header */}
-      <div className="bg-white px-4 py-4 border-b border-[#E2E8F0]">
+      <div className="bg-white px-4 py-4 border-b border-[var(--border)]">
         <div className="flex items-center justify-between">
-          <h1 className="text-xl font-extrabold text-[#121212]">Manage Accounts</h1>
+          <h1 className="text-xl font-extrabold text-[var(--ink)]">Manage Accounts</h1>
           <Button
             onClick={() => setShowAddProfile(true)}
             size="sm"
-            className="bg-[#E11D48] hover:bg-[#BE123C]"
+            className="bg-[var(--primary)] hover:bg-[var(--primary)]"
           >
             <Plus className="w-4 h-4 mr-1" />
             ADD
           </Button>
         </div>
-        <p className="text-sm text-[#64748B] mt-1">Switch between different profiles</p>
+        <p className="text-sm text-[var(--muted-foreground)] mt-1">Switch between different profiles</p>
       </div>
 
       {/* Active Profile Card */}
       {activeProfile && (
         <div className="p-4">
-          <Card className="p-4 border-2 border-[#E11D48] bg-white">
+          <Card className="p-4 border-2 border-[var(--primary)] bg-white">
             <div className="flex items-center justify-between mb-2">
-              <Badge className="bg-[#E11D48] text-white">ACTIVE PROFILE</Badge>
+              <Badge className="bg-[var(--primary)] text-white">ACTIVE PROFILE</Badge>
               {activeProfile.isPrimary && (
-                <Badge variant="outline" className="border-[#10B981] text-[#10B981]">PRIMARY</Badge>
+                <Badge variant="outline" className="border-[var(--success)] text-[var(--success)]">PRIMARY</Badge>
               )}
             </div>
             <div className="flex items-center gap-3 mt-3">
-              <div className="w-16 h-16 rounded-full bg-gradient-to-br from-[#E11D48] to-[#BE123C] flex items-center justify-center text-3xl">
+              <div className="w-16 h-16 rounded-full bg-gradient-to-br from-[var(--primary)] to-[var(--primary)] flex items-center justify-center text-3xl">
                 {activeProfile.emoji}
               </div>
               <div className="flex-1">
-                <h3 className="text-lg font-bold text-[#121212]">{activeProfile.name}</h3>
+                <h3 className="text-lg font-bold text-[var(--ink)]">{activeProfile.name}</h3>
                 {activeProfile.phone && (
-                  <p className="text-sm text-[#64748B]">📱 {activeProfile.phone}</p>
+                  <p className="text-sm text-[var(--muted-foreground)]">📱 {activeProfile.phone}</p>
                 )}
                 {activeProfile.email && (
-                  <p className="text-xs text-[#64748B]">📧 {activeProfile.email}</p>
+                  <p className="text-xs text-[var(--muted-foreground)]">📧 {activeProfile.email}</p>
                 )}
               </div>
             </div>
             {activeProfile.address && (
-              <div className="mt-3 p-2 bg-[#F8F9FA] rounded-lg">
-                <p className="text-xs text-[#64748B]">📍 {activeProfile.address}</p>
+              <div className="mt-3 p-2 bg-[var(--muted)] rounded-lg">
+                <p className="text-xs text-[var(--muted-foreground)]">📍 {activeProfile.address}</p>
               </div>
             )}
           </Card>
@@ -195,39 +195,39 @@ export default function AccountManagement() {
 
       {/* All Profiles List */}
       <div className="px-4 pb-4">
-        <h2 className="text-sm font-bold text-[#64748B] uppercase mb-3 tracking-wide">All Profiles</h2>
+        <h2 className="text-sm font-bold text-[var(--muted-foreground)] uppercase mb-3 tracking-wide">All Profiles</h2>
         <div className="space-y-2">
           {profiles.map((profile) => (
             <Card
               key={profile.id}
               className={`p-4 cursor-pointer transition-all ${
                 activeProfileId === profile.id
-                  ? 'border-2 border-[#E11D48] bg-red-50'
-                  : 'border border-[#E2E8F0] hover:border-[#E11D48]'
+                  ? 'border-2 border-[var(--primary)] bg-[var(--error-soft)]'
+                  : 'border border-[var(--border)] hover:border-[var(--primary)]'
               }`}
               onClick={() => handleSwitchProfile(profile.id)}
             >
               <div className="flex items-center gap-3">
                 <div className={`w-12 h-12 rounded-full flex items-center justify-center text-2xl ${
                   activeProfileId === profile.id
-                    ? 'bg-gradient-to-br from-[#E11D48] to-[#BE123C]'
-                    : 'bg-gray-200'
+                    ? 'bg-gradient-to-br from-[var(--primary)] to-[var(--primary)]'
+                    : 'bg-[var(--border)]'
                 }`}>
                   {profile.emoji}
                 </div>
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2">
-                    <h3 className="font-bold text-[#121212]">{profile.name}</h3>
+                    <h3 className="font-bold text-[var(--ink)]">{profile.name}</h3>
                     {profile.isPrimary && (
-                      <Badge variant="outline" className="border-[#10B981] text-[#10B981] text-[10px]">
+                      <Badge variant="outline" className="border-[var(--success)] text-[var(--success)] text-[10px]">
                         PRIMARY
                       </Badge>
                     )}
                     {activeProfileId === profile.id && (
-                      <Check className="w-5 h-5 text-[#E11D48]" />
+                      <Check className="w-5 h-5 text-[var(--primary)]" />
                     )}
                   </div>
-                  <p className="text-xs text-[#64748B] truncate">{profile.phone || profile.email}</p>
+                  <p className="text-xs text-[var(--muted-foreground)] truncate">{profile.phone || profile.email}</p>
                 </div>
                 {!profile.isPrimary && (
                   <Button
@@ -237,7 +237,7 @@ export default function AccountManagement() {
                       e.stopPropagation();
                       setShowDeleteConfirm(profile.id);
                     }}
-                    className="text-red-500 hover:text-red-700 hover:bg-red-50"
+                    className="text-[var(--error)] hover:text-[var(--error)] hover:bg-[var(--error-soft)]"
                   >
                     <Trash2 className="w-4 h-4" />
                   </Button>
@@ -253,7 +253,7 @@ export default function AccountManagement() {
         <div className="fixed inset-0 bg-black/50 z-[2000] flex items-end">
           <div className="bg-white w-full rounded-t-3xl p-6 animate-slide-up max-h-[90vh] overflow-y-auto">
             <div className="flex items-center justify-between mb-6">
-              <h2 className="text-xl font-bold text-[#121212]">Add New Profile</h2>
+              <h2 className="text-xl font-bold text-[var(--ink)]">Add New Profile</h2>
               <Button
                 variant="ghost"
                 size="icon"
@@ -266,7 +266,7 @@ export default function AccountManagement() {
             <div className="space-y-4">
               {/* Emoji Selector */}
               <div>
-                <label className="block text-sm font-semibold text-[#121212] mb-2">Choose Avatar</label>
+                <label className="block text-sm font-semibold text-[var(--ink)] mb-2">Choose Avatar</label>
                 <div className="flex flex-wrap gap-2">
                   {emojis.map((emoji) => (
                     <button
@@ -274,8 +274,8 @@ export default function AccountManagement() {
                       onClick={() => setNewProfile({ ...newProfile, emoji })}
                       className={`w-12 h-12 rounded-full flex items-center justify-center text-2xl transition-all ${
                         newProfile.emoji === emoji
-                          ? 'bg-gradient-to-br from-[#E11D48] to-[#BE123C] scale-110'
-                          : 'bg-gray-200 hover:scale-105'
+                          ? 'bg-gradient-to-br from-[var(--primary)] to-[var(--primary)] scale-110'
+                          : 'bg-[var(--border)] hover:scale-105'
                       }`}
                     >
                       {emoji}
@@ -286,49 +286,49 @@ export default function AccountManagement() {
 
               {/* Name */}
               <div>
-                <label className="block text-sm font-semibold text-[#121212] mb-2">Profile Name *</label>
+                <label className="block text-sm font-semibold text-[var(--ink)] mb-2">Profile Name *</label>
                 <input
                   type="text"
                   value={newProfile.name}
                   onChange={(e) => setNewProfile({ ...newProfile, name: e.target.value })}
                   placeholder="e.g., Work, Family, Shopping"
-                  className="w-full px-4 py-3 border border-[#E2E8F0] rounded-lg focus:border-[#E11D48] focus:ring-2 focus:ring-[#E11D48]/20 outline-none"
+                  className="w-full px-4 py-3 border border-[var(--border)] rounded-lg focus:border-[var(--primary)] focus:ring-2 focus:ring-[var(--primary)]/20 outline-none"
                 />
               </div>
 
               {/* Phone */}
               <div>
-                <label className="block text-sm font-semibold text-[#121212] mb-2">Phone Number</label>
+                <label className="block text-sm font-semibold text-[var(--ink)] mb-2">Phone Number</label>
                 <input
                   type="tel"
                   value={newProfile.phone}
                   onChange={(e) => setNewProfile({ ...newProfile, phone: e.target.value })}
                   placeholder="+63 XXX XXX XXXX"
-                  className="w-full px-4 py-3 border border-[#E2E8F0] rounded-lg focus:border-[#E11D48] focus:ring-2 focus:ring-[#E11D48]/20 outline-none"
+                  className="w-full px-4 py-3 border border-[var(--border)] rounded-lg focus:border-[var(--primary)] focus:ring-2 focus:ring-[var(--primary)]/20 outline-none"
                 />
               </div>
 
               {/* Email */}
               <div>
-                <label className="block text-sm font-semibold text-[#121212] mb-2">Email</label>
+                <label className="block text-sm font-semibold text-[var(--ink)] mb-2">Email</label>
                 <input
                   type="email"
                   value={newProfile.email}
                   onChange={(e) => setNewProfile({ ...newProfile, email: e.target.value })}
                   placeholder="email@example.com"
-                  className="w-full px-4 py-3 border border-[#E2E8F0] rounded-lg focus:border-[#E11D48] focus:ring-2 focus:ring-[#E11D48]/20 outline-none"
+                  className="w-full px-4 py-3 border border-[var(--border)] rounded-lg focus:border-[var(--primary)] focus:ring-2 focus:ring-[var(--primary)]/20 outline-none"
                 />
               </div>
 
               {/* Address */}
               <div>
-                <label className="block text-sm font-semibold text-[#121212] mb-2">Default Address</label>
+                <label className="block text-sm font-semibold text-[var(--ink)] mb-2">Default Address</label>
                 <input
                   type="text"
                   value={newProfile.address}
                   onChange={(e) => setNewProfile({ ...newProfile, address: e.target.value })}
                   placeholder="Street, Barangay, City"
-                  className="w-full px-4 py-3 border border-[#E2E8F0] rounded-lg focus:border-[#E11D48] focus:ring-2 focus:ring-[#E11D48]/20 outline-none"
+                  className="w-full px-4 py-3 border border-[var(--border)] rounded-lg focus:border-[var(--primary)] focus:ring-2 focus:ring-[var(--primary)]/20 outline-none"
                 />
               </div>
 
@@ -344,7 +344,7 @@ export default function AccountManagement() {
                 <Button
                   onClick={handleAddProfile}
                   disabled={!newProfile.name.trim()}
-                  className="flex-1 bg-[#E11D48] hover:bg-[#BE123C] disabled:bg-gray-300"
+                  className="flex-1 bg-[var(--primary)] hover:bg-[var(--primary)] disabled:bg-[var(--border)]"
                 >
                   ADD PROFILE
                 </Button>
@@ -358,8 +358,8 @@ export default function AccountManagement() {
       {showDeleteConfirm && (
         <div className="fixed inset-0 bg-black/50 z-[2000] flex items-center justify-center p-4">
           <Card className="bg-white p-6 max-w-sm w-full">
-            <h3 className="text-lg font-bold text-[#121212] mb-2">Delete Profile?</h3>
-            <p className="text-sm text-[#64748B] mb-6">
+            <h3 className="text-lg font-bold text-[var(--ink)] mb-2">Delete Profile?</h3>
+            <p className="text-sm text-[var(--muted-foreground)] mb-6">
               This action cannot be undone. All data associated with this profile will be removed.
             </p>
             <div className="flex gap-2">
@@ -372,7 +372,7 @@ export default function AccountManagement() {
               </Button>
               <Button
                 onClick={() => handleDeleteProfile(showDeleteConfirm)}
-                className="flex-1 bg-red-500 hover:bg-red-600"
+                className="flex-1 bg-[var(--error)] hover:bg-[var(--error)]"
               >
                 DELETE
               </Button>
@@ -383,25 +383,25 @@ export default function AccountManagement() {
 
       {/* Bottom Navigation */}
       <div
-        className="fixed bottom-0 left-0 right-0 bg-white border-t border-[#E2E8F0] z-[1000]"
+        className="fixed bottom-0 left-0 right-0 bg-white border-t border-[var(--border)] z-[1000]"
         style={{ paddingBottom: "max(0.5rem, env(safe-area-inset-bottom))" }}
       >
         <div className="mx-auto grid w-full max-w-6xl grid-cols-4 gap-1 px-2 pt-2 sm:px-4">
-          <Link to="/customer" className="flex min-w-0 flex-col items-center justify-center gap-0.5 rounded-xl py-1.5 text-center active:bg-gray-50 transition-colors">
-            <HomeIcon className="w-5 h-5 sm:w-6 sm:h-6 shrink-0 text-[#64748B]" />
-            <span className="w-full truncate text-[10px] leading-tight sm:text-xs text-[#64748B]">Home</span>
+          <Link to="/customer" className="flex min-w-0 flex-col items-center justify-center gap-0.5 rounded-xl py-1.5 text-center active:bg-[var(--muted)] transition-colors">
+            <HomeIcon className="w-5 h-5 sm:w-6 sm:h-6 shrink-0 text-[var(--muted-foreground)]" />
+            <span className="w-full truncate text-[10px] leading-tight sm:text-xs text-[var(--muted-foreground)]">Home</span>
           </Link>
-          <Link to="/customer/activity" className="flex min-w-0 flex-col items-center justify-center gap-0.5 rounded-xl py-1.5 text-center active:bg-gray-50 transition-colors">
-            <ClipboardList className="w-5 h-5 sm:w-6 sm:h-6 shrink-0 text-[#64748B]" />
-            <span className="w-full truncate text-[10px] leading-tight sm:text-xs text-[#64748B]">Activity</span>
+          <Link to="/customer/activity" className="flex min-w-0 flex-col items-center justify-center gap-0.5 rounded-xl py-1.5 text-center active:bg-[var(--muted)] transition-colors">
+            <ClipboardList className="w-5 h-5 sm:w-6 sm:h-6 shrink-0 text-[var(--muted-foreground)]" />
+            <span className="w-full truncate text-[10px] leading-tight sm:text-xs text-[var(--muted-foreground)]">Activity</span>
           </Link>
-          <Link to="/customer/messages" className="flex min-w-0 flex-col items-center justify-center gap-0.5 rounded-xl py-1.5 text-center active:bg-gray-50 transition-colors">
-            <MessageCircle className="w-5 h-5 sm:w-6 sm:h-6 shrink-0 text-[#64748B]" />
-            <span className="w-full truncate text-[10px] leading-tight sm:text-xs text-[#64748B]">Messages</span>
+          <Link to="/customer/messages" className="flex min-w-0 flex-col items-center justify-center gap-0.5 rounded-xl py-1.5 text-center active:bg-[var(--muted)] transition-colors">
+            <MessageCircle className="w-5 h-5 sm:w-6 sm:h-6 shrink-0 text-[var(--muted-foreground)]" />
+            <span className="w-full truncate text-[10px] leading-tight sm:text-xs text-[var(--muted-foreground)]">Messages</span>
           </Link>
-          <Link to="/customer/account" className="flex min-w-0 flex-col items-center justify-center gap-0.5 rounded-xl py-1.5 text-center active:bg-gray-50 transition-colors">
-            <User className="w-5 h-5 sm:w-6 sm:h-6 shrink-0 text-[#18B5A4]" />
-            <span className="w-full truncate text-[10px] leading-tight sm:text-xs text-[#18B5A4] font-semibold">Account</span>
+          <Link to="/customer/account" className="flex min-w-0 flex-col items-center justify-center gap-0.5 rounded-xl py-1.5 text-center active:bg-[var(--muted)] transition-colors">
+            <User className="w-5 h-5 sm:w-6 sm:h-6 shrink-0 text-[var(--teal)]" />
+            <span className="w-full truncate text-[10px] leading-tight sm:text-xs text-[var(--teal)] font-semibold">Account</span>
           </Link>
         </div>
       </div>

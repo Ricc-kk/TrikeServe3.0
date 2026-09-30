@@ -182,15 +182,15 @@ export default function Activity() {
   const getStatusColor = (status: string) => {
     switch (status) {
       case 'preparing':
-        return 'text-[#F59E0B] bg-[#FEF3C7]';
+        return 'text-[var(--amber)] bg-[var(--amber-soft)]';
       case 'on-the-way':
-        return 'text-[#3B82F6] bg-[#DBEAFE]';
+        return 'text-[var(--info)] bg-[var(--info-soft)]';
       case 'delivered':
-        return 'text-[#10B981] bg-[#D1FAE5]';
+        return 'text-[var(--success)] bg-[var(--success-soft)]';
       case 'cancelled':
-        return 'text-[#EF4444] bg-[#FEE2E2]';
+        return 'text-[var(--error)] bg-[var(--error-soft)]';
       default:
-        return 'text-[#64748B] bg-[#F1F5F9]';
+        return 'text-[var(--muted-foreground)] bg-[var(--muted)]';
     }
   };
 
@@ -213,7 +213,7 @@ export default function Activity() {
     <div className="min-h-screen bg-white pb-24">
       {/* Header */}
       <div className="px-4 sm:px-5 pt-4 sm:pt-5 pb-3">
-        <h1 className="text-2xl sm:text-3xl font-extrabold text-[#121212]">Activity</h1>
+        <h1 className="text-2xl sm:text-3xl font-extrabold text-[var(--ink)]">Activity</h1>
       </div>
 
       {/* Tab Buttons */}
@@ -223,15 +223,15 @@ export default function Activity() {
             onClick={() => setActiveTab('rides')}
             className={`flex-1 flex items-center justify-center gap-1.5 sm:gap-2 py-3.5 sm:py-4 rounded-xl sm:rounded-2xl text-xs sm:text-sm font-bold transition-all duration-200 active:scale-[0.97] ${
               activeTab === 'rides'
-                ? 'bg-[#E11D48] text-white shadow-lg shadow-[#E11D48]/25'
-                : 'bg-[#F8FAFC] text-[#64748B] border-2 border-[#E2E8F0]'
+                ? 'bg-[var(--primary)] text-white shadow-lg shadow-[var(--primary)]/25'
+                : 'bg-[var(--muted)] text-[var(--muted-foreground)] border-2 border-[var(--border)]'
             }`}
           >
-            <Navigation className={`w-5 h-5 ${activeTab === 'rides' ? 'text-white' : 'text-[#0EA5E9]'}`} />
+            <Navigation className={`w-5 h-5 ${activeTab === 'rides' ? 'text-white' : 'text-[var(--info)]'}`} />
             <span>Rides</span>
             {displayRides.length > 0 && (
               <span className={`ml-1 px-2 py-0.5 rounded-full text-[10px] font-bold ${
-                activeTab === 'rides' ? 'bg-white/20 text-white' : 'bg-[#E2E8F0] text-[#64748B]'
+                activeTab === 'rides' ? 'bg-white/20 text-white' : 'bg-[var(--border)] text-[var(--muted-foreground)]'
               }`}>
                 {displayRides.length}
               </span>
@@ -241,15 +241,15 @@ export default function Activity() {
             onClick={() => setActiveTab('deliveries')}
             className={`flex-1 flex items-center justify-center gap-1.5 sm:gap-2 py-3.5 sm:py-4 rounded-xl sm:rounded-2xl text-xs sm:text-sm font-bold transition-all duration-200 active:scale-[0.97] ${
               activeTab === 'deliveries'
-                ? 'bg-[#E11D48] text-white shadow-lg shadow-[#E11D48]/25'
-                : 'bg-[#F8FAFC] text-[#64748B] border-2 border-[#E2E8F0]'
+                ? 'bg-[var(--primary)] text-white shadow-lg shadow-[var(--primary)]/25'
+                : 'bg-[var(--muted)] text-[var(--muted-foreground)] border-2 border-[var(--border)]'
             }`}
           >
-            <Package className={`w-5 h-5 ${activeTab === 'deliveries' ? 'text-white' : 'text-[#10B981]'}`} />
+            <Package className={`w-5 h-5 ${activeTab === 'deliveries' ? 'text-white' : 'text-[var(--success)]'}`} />
             <span>Deliveries</span>
             {displayOrders.length > 0 && (
               <span className={`ml-1 px-2 py-0.5 rounded-full text-[10px] font-bold ${
-                activeTab === 'deliveries' ? 'bg-white/20 text-white' : 'bg-[#E2E8F0] text-[#64748B]'
+                activeTab === 'deliveries' ? 'bg-white/20 text-white' : 'bg-[var(--border)] text-[var(--muted-foreground)]'
               }`}>
                 {displayOrders.length}
               </span>
@@ -262,22 +262,22 @@ export default function Activity() {
       <div className="px-4 sm:px-5">
         {isLoading ? (
           <div className="text-center py-8">
-            <Package className="w-8 h-8 text-[#0EA5E9] mx-auto animate-bounce" />
-            <p className="text-[#64748B] mt-2">Loading activity...</p>
+            <Package className="w-8 h-8 text-[var(--info)] mx-auto animate-bounce" />
+            <p className="text-[var(--muted-foreground)] mt-2">Loading activity...</p>
           </div>
         ) : activeTab === 'rides' ? (
           <div>
             {displayRides.length > 0 ? (
               <div className="space-y-3">
                 {displayRides.map((ride) => (
-                  <Card key={ride.id} className="p-3.5 sm:p-4 border-2 border-[#E2E8F0] shadow-sm">
+                  <Card key={ride.id} className="p-3.5 sm:p-4 border-2 border-[var(--border)] shadow-sm">
                     <div className="flex items-start gap-3">
                       {/* Ride Icon */}
-                      <div className={`w-12 h-12 rounded-lg flex items-center justify-center flex-shrink-0 ${ride.rideType === 'share' ? 'bg-[#F0F9FF]' : 'bg-[#FFF1F2]'}`}>
+                      <div className={`w-12 h-12 rounded-lg flex items-center justify-center flex-shrink-0 ${ride.rideType === 'share' ? 'bg-[var(--info-soft)]' : 'bg-[var(--primary-soft)]'}`}>
                         {ride.rideType === 'share' ? (
-                          <Users className="w-6 h-6 text-[#0EA5E9]" />
+                          <Users className="w-6 h-6 text-[var(--info)]" />
                         ) : (
-                          <Navigation className="w-6 h-6 text-[#E11D48]" />
+                          <Navigation className="w-6 h-6 text-[var(--primary)]" />
                         )}
                       </div>
 
@@ -285,24 +285,24 @@ export default function Activity() {
                       <div className="flex-1 min-w-0">
                         <div className="flex items-start justify-between gap-2">
                           <div>
-                            <h3 className="font-semibold text-[#121212] text-xs sm:text-sm mb-1 line-clamp-2">
+                            <h3 className="font-semibold text-[var(--ink)] text-xs sm:text-sm mb-1 line-clamp-2">
                               {ride.pickupLocation} → {ride.dropoffLocation}
                             </h3>
                             <div className="flex items-center gap-2 mb-2">
-                              <p className="text-xs text-[#64748B]">{ride.date}</p>
-                              <span className={`inline-flex px-2 py-0.5 rounded-full text-[10px] font-bold ${ride.rideType === 'share' ? 'text-[#0EA5E9] bg-[#DBEAFE]' : 'text-[#E11D48] bg-[#FFF1F2]'}`}>
+                              <p className="text-xs text-[var(--muted-foreground)]">{ride.date}</p>
+                              <span className={`inline-flex px-2 py-0.5 rounded-full text-[10px] font-bold ${ride.rideType === 'share' ? 'text-[var(--info)] bg-[var(--info-soft)]' : 'text-[var(--primary)] bg-[var(--primary-soft)]'}`}>
                                 {ride.rideType === 'share' ? 'Share Ride' : 'Private Ride'}
                               </span>
                             </div>
                           </div>
                           <div className="text-right flex-shrink-0">
-                            <p className="text-lg font-bold text-[#121212]">₱{ride.amount}</p>
-                            <p className="text-xs text-[#10B981] font-semibold">Completed</p>
+                            <p className="text-lg font-bold text-[var(--ink)]">₱{ride.amount}</p>
+                            <p className="text-xs text-[var(--success)] font-semibold">Completed</p>
                           </div>
                         </div>
 
                         {/* Ride Details */}
-                        <div className="flex items-center gap-3 mb-2 text-xs text-[#64748B]">
+                        <div className="flex items-center gap-3 mb-2 text-xs text-[var(--muted-foreground)]">
                           <span className="flex items-center gap-1">
                             {ride.paymentMethod === 'GCASH' ? '💳' : '💵'} {ride.paymentMethod === 'GCASH' ? 'Prepaid' : 'Cash'}
                           </span>
@@ -314,20 +314,20 @@ export default function Activity() {
                         </div>
 
                         {/* Location Details */}
-                        <div className="space-y-1 text-xs text-[#64748B] mb-2">
+                        <div className="space-y-1 text-xs text-[var(--muted-foreground)] mb-2">
                           <p className="flex items-start gap-2">
-                            <MapPin className="w-3 h-3 mt-0.5 flex-shrink-0 text-[#121212]" />
-                            <span><span className="font-semibold text-[#121212]">Pickup:</span> {ride.pickupAddress || ride.pickupLocation}</span>
+                            <MapPin className="w-3 h-3 mt-0.5 flex-shrink-0 text-[var(--ink)]" />
+                            <span><span className="font-semibold text-[var(--ink)]">Pickup:</span> {ride.pickupAddress || ride.pickupLocation}</span>
                           </p>
                           <p className="flex items-start gap-2">
-                            <MapPin className="w-3 h-3 mt-0.5 flex-shrink-0 text-[#E11D48]" />
-                            <span><span className="font-semibold text-[#121212]">Drop-off:</span> {ride.dropoffAddress || ride.dropoffLocation}</span>
+                            <MapPin className="w-3 h-3 mt-0.5 flex-shrink-0 text-[var(--primary)]" />
+                            <span><span className="font-semibold text-[var(--ink)]">Drop-off:</span> {ride.dropoffAddress || ride.dropoffLocation}</span>
                           </p>
                         </div>
 
                         {/* Driver Info */}
-                        <p className="text-xs text-[#64748B]">
-                          👤 Driver: <span className="font-semibold text-[#121212]">{ride.driverName || 'Driver'}</span>
+                        <p className="text-xs text-[var(--muted-foreground)]">
+                          👤 Driver: <span className="font-semibold text-[var(--ink)]">{ride.driverName || 'Driver'}</span>
                           {ride.driverRating && ride.driverRating !== 'Driver' && <span> • ⭐ {ride.driverRating}</span>}
                         </p>
                       </div>
@@ -337,13 +337,13 @@ export default function Activity() {
               </div>
             ) : (
               <div className="text-center py-16">
-                <div className="w-24 h-24 bg-[#F1F5F9] rounded-full flex items-center justify-center mx-auto mb-4">
-                  <Navigation className="w-12 h-12 text-[#94A3B8]" />
+                <div className="w-24 h-24 bg-[var(--muted)] rounded-full flex items-center justify-center mx-auto mb-4">
+                  <Navigation className="w-12 h-12 text-[var(--muted-foreground)]" />
                 </div>
-                <h3 className="text-lg font-bold text-[#121212] mb-2">No Rides Yet</h3>
-                <p className="text-[#64748B] mb-6">Book a ride to see your ride history here.</p>
+                <h3 className="text-lg font-bold text-[var(--ink)] mb-2">No Rides Yet</h3>
+                <p className="text-[var(--muted-foreground)] mb-6">Book a ride to see your ride history here.</p>
                 <Link to="/customer">
-                  <Button className="bg-[#E11D48] hover:bg-[#BE123C] text-white font-bold py-3 px-6 rounded-2xl uppercase">
+                  <Button className="bg-[var(--primary)] hover:bg-[var(--primary)] text-white font-bold py-3 px-6 rounded-2xl uppercase">
                     Book a Ride
                   </Button>
                 </Link>
@@ -355,7 +355,7 @@ export default function Activity() {
             {displayOrders.length > 0 ? (
               <div className="space-y-3">
                 {displayOrders.map((order) => (
-                  <Card key={order.id} className="p-3.5 sm:p-4 border-2 border-[#E2E8F0] shadow-sm cursor-pointer active:scale-[0.98] transition-transform">
+                  <Card key={order.id} className="p-3.5 sm:p-4 border-2 border-[var(--border)] shadow-sm cursor-pointer active:scale-[0.98] transition-transform">
                     <div onClick={() => navigate(`/customer/order-detail/${order.id}`)} className="flex items-start gap-3">
                       {/* Restaurant Image */}
                       <div className="w-12 h-12 rounded-lg overflow-hidden flex-shrink-0">
@@ -369,24 +369,24 @@ export default function Activity() {
                       {/* Content */}
                       <div className="flex-1 min-w-0">
                         <div className="flex items-start justify-between gap-2">
-                          <div className="flex-1">                            <h3 className="font-semibold text-[#121212] text-xs sm:text-sm mb-1 line-clamp-1">
+                          <div className="flex-1">                            <h3 className="font-semibold text-[var(--ink)] text-xs sm:text-sm mb-1 line-clamp-1">
                                 {order.restaurantName}
                               </h3>
-                            <p className="text-xs text-[#64748B] mb-2">{order.date}</p>
+                            <p className="text-xs text-[var(--muted-foreground)] mb-2">{order.date}</p>
                             <div className="flex items-center gap-2">
                               <span className={`inline-flex px-2 py-0.5 rounded-full text-xs font-bold ${getStatusColor(order.status)}`}>
                                 {getStatusText(order.status)}
                               </span>
-                              <span className="text-xs text-[#64748B]">• {order.items.length} {order.items.length === 1 ? 'item' : 'items'}</span>
+                              <span className="text-xs text-[var(--muted-foreground)]">• {order.items.length} {order.items.length === 1 ? 'item' : 'items'}</span>
                             </div>
                           </div>
                           <div className="text-right flex-shrink-0">
-                            <p className="text-lg font-bold text-[#121212]">₱{order.total}</p>
-                            <p className="text-xs text-[#64748B]">#{order.orderNumber}</p>
+                            <p className="text-lg font-bold text-[var(--ink)]">₱{order.total}</p>
+                            <p className="text-xs text-[var(--muted-foreground)]">#{order.orderNumber}</p>
                           </div>
                         </div>
                         {order.status === 'delivered' && (
-                          <p className="text-xs font-bold text-[#E11D48] mt-2">⭐ Tap to rate this restaurant</p>
+                          <p className="text-xs font-bold text-[var(--primary)] mt-2">⭐ Tap to rate this restaurant</p>
                         )}
                       </div>
                     </div>
@@ -395,13 +395,13 @@ export default function Activity() {
               </div>
             ) : (
               <div className="text-center py-16">
-                <div className="w-24 h-24 bg-[#F1F5F9] rounded-full flex items-center justify-center mx-auto mb-4">
-                  <Package className="w-12 h-12 text-[#94A3B8]" />
+                <div className="w-24 h-24 bg-[var(--muted)] rounded-full flex items-center justify-center mx-auto mb-4">
+                  <Package className="w-12 h-12 text-[var(--muted-foreground)]" />
                 </div>
-                <h3 className="text-lg font-bold text-[#121212] mb-2">No Orders Yet</h3>
-                <p className="text-[#64748B] mb-6">Order food to see your delivery history here.</p>
+                <h3 className="text-lg font-bold text-[var(--ink)] mb-2">No Orders Yet</h3>
+                <p className="text-[var(--muted-foreground)] mb-6">Order food to see your delivery history here.</p>
                 <Link to="/customer/food">
-                  <Button className="bg-[#E11D48] hover:bg-[#BE123C] text-white font-bold py-3 px-6 rounded-2xl uppercase">
+                  <Button className="bg-[var(--primary)] hover:bg-[var(--primary)] text-white font-bold py-3 px-6 rounded-2xl uppercase">
                     Browse Food
                   </Button>
                 </Link>
