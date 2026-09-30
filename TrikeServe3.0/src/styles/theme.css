@@ -9,6 +9,9 @@
 
   /* Brand foundations */
   --canvas: #efede6; /* warm canvas tint behind the app shell */
+  --surface: var(--background); /* app panel surface — adapts with .dark */
+  --soft: var(--muted); /* soft inset surface for nested blocks */
+  --line: var(--border); /* hairline borders for cards and dividers */
   --ink: #122724; /* deep ink — primary structure/text */
   --ink-soft: #3a4a46; /* softened ink for secondary structure */
   --teal: #176b60; /* deep teal — structure accent */
@@ -146,6 +149,9 @@
   --color-chart-4: var(--chart-4);
   --color-chart-5: var(--chart-5);
   --color-canvas: var(--canvas);
+  --color-surface: var(--surface);
+  --color-soft: var(--soft);
+  --color-line: var(--line);
   --color-ink: var(--ink);
   --color-ink-soft: var(--ink-soft);
   --color-teal: var(--teal);
@@ -172,6 +178,19 @@
   --radius-md: calc(var(--radius) - 2px);
   --radius-lg: var(--radius);
   --radius-xl: calc(var(--radius) + 4px);
+  /* Extended radius scale — cards and pills used by the shared kit */
+  --radius-card: 1.5rem;
+  --radius-pill: 9999px;
+  /* Elevation scale — use these instead of ad-hoc shadows */
+  --shadow-soft: 0 0.5rem 1.5rem rgb(18 39 36 / 0.1);
+  --shadow-card: 0 0.75rem 2rem rgb(18 39 36 / 0.08);
+  --shadow-app: 0 2rem 4rem rgb(18 39 36 / 0.14);
+  /* Shared type scale (html base size is --font-size: 17px) */
+  --text-caption: 0.8125rem;
+  --text-body: 1rem;
+  --text-lead: 1.125rem;
+  --text-title: 1.5rem;
+  --text-display: 1.875rem;
   --color-sidebar: var(--sidebar);
   --color-sidebar-foreground: var(--sidebar-foreground);
   --color-sidebar-primary: var(--sidebar-primary);
