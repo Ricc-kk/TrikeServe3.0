@@ -1,14 +1,14 @@
 import { useState, useEffect } from "react";
 import { useNavigate } from "react-router";
-import { ArrowLeft, Navigation, Package, Users, Car, Clock, Check, X, CheckCircle } from "lucide-react";
-import { GoogleMap, Marker, InfoWindow, Polyline, DirectionsRenderer } from "@react-google-maps/api";
+import { ArrowLeft, Navigation, Package, Users, Car, Clock, Check, X, CheckCircle, MapPin, ChevronDown } from "lucide-react";
+import { GoogleMap, Marker, InfoWindow, Polyline, Polygon, DirectionsRenderer } from "@react-google-maps/api";
 import { Button } from "../ui/button";
 import { Card } from "../ui/card";
 import { Badge } from "../ui/badge";
 import { useAuth } from "../../contexts/AuthContext";
 import { isDeliveryServiceMode, isQueueGatedType, useTerminalQueue } from "../../hooks/useTerminalQueue";
 import TerminalQueueCard from "./TerminalQueueCard";
-import { supabaseHelpers } from "@/lib/supabase";
+import { isPointInPolygon, normalizeBoundaryPolygon, supabaseHelpers, type LatLngPoint } from "@/lib/supabase";
 import { supabase } from "../../../lib/supabase";
 import useMapLoader from "@/lib/mapLoader";
 import tricycleIcon from "../../../assets/0b76d1aa56b8ad6e15dd4efc8a0100b0ca5762a1.png";
@@ -152,6 +152,12 @@ export default function PassengerRequests() {
 
   // Get driver's terminal info for filtering - fetch fresh from Supabase to avoid stale localStorage
   const [driverTerminalId, setDriverTerminalId] = useState<string | null>(user?.terminalId || null);
+  // The assigned TODA's plotted boundary, shown as a map so the driver can see
+  // the area their terminal covers.
+  const [todaBoundary, setTodaBoundary] = useState<LatLngPoint[] | null>(null);
+  const [todaCenter, setTodaCenter] = useState<{ lat: number; lng: number } | null>(null);
+  const [todaName, setTodaName] = useState<string | null>(user?.terminalName || null);
+  const [showTodaMap, setShowTodaMap] = useState(true);
 
   // Always fetch fresh terminal assignment from DB on mount
   useEffect(() => {
@@ -171,6 +177,45 @@ export default function PassengerRequests() {
       })
       .catch(() => {});
   }, [user?.id]);
+
+  // Load the assigned terminal's boundary area whenever the assignment changes.
+  useEffect(() => {
+    if (!driverTerminalId) {
+      setTodaBoundary(null);
+      setTodaCenter(null);
+      return;
+    }
+    let cancelled = false;
+
+    supabaseHelpers
+      .getTerminalGeofence(driverTerminalId)
+      .then(({ data }) => {
+        if (cancelled) return;
+        setTodaBoundary(normalizeBoundaryPolygon(data?.boundary_polygon));
+        const lat = Number(data?.center_lat);
+        const lng = Number(data?.center_lng);
+        setTodaCenter(Number.isFinite(lat) && Number.isFinite(lng) ? { lat, lng } : null);
+        if (data?.name) setTodaName(data.name);
+      })
+      .catch(() => {});
+
+    return () => {
+      cancelled = true;
+    };
+  }, [driverTerminalId]);
+
+  // Centre the boundary map on the terminal centre, or the polygon's centroid,
+  // or the driver when neither is available.
+  const todaMapCenter = todaCenter ?? (todaBoundary
+    ? {
+        lat: todaBoundary.reduce((sum, p) => sum + p.lat, 0) / todaBoundary.length,
+        lng: todaBoundary.reduce((sum, p) => sum + p.lng, 0) / todaBoundary.length,
+      }
+    : currentLocation);
+
+  const insideToda = todaBoundary
+    ? isPointInPolygon(currentLocation.lat, currentLocation.lng, todaBoundary)
+    : null;
 
   useEffect(() => {
     const loadRequests = async () => {
@@ -438,11 +483,18 @@ export default function PassengerRequests() {
     return labels[type] || type.toUpperCase();
   };
 
-  const filteredRequests = requests.filter(r => selectedCategory === 'all' || r.type === selectedCategory);
+  // A request tagged to another TODA isn't this driver's to serve. Only rides are
+  // terminal-scoped — delivery reaches any rider, so it's never restricted.
   const isWrongTerminal = (request: PassengerRequest) => {
+    if (!isQueueGatedType(request.type)) return false;
     if (!driverTerminalId || !request.terminalId) return false; // No restriction if either has no terminal
     return request.terminalId !== driverTerminalId;
   };
+  // Rides from another terminal are hidden entirely rather than listed as
+  // un-acceptable, so the driver only ever sees their own TODA's requests.
+  const filteredRequests = requests.filter(r =>
+    (selectedCategory === 'all' || r.type === selectedCategory) && !isWrongTerminal(r)
+  );
   // Private and share rides require being first in the terminal queue.
   const isQueueBlocked = (request: PassengerRequest) =>
     !!queueTerminalId && isQueueGatedType(request.type) && !isFirstInQueue;
@@ -488,6 +540,78 @@ export default function PassengerRequests() {
           <TerminalQueueCard queue={terminalQueueApi} variant="compact" />
         )}
 
+        {/* TODA boundary map — the coverage area the driver's assigned terminal serves */}
+        {driverTerminalId && (
+          <Card className="border-2 border-[var(--border)] overflow-hidden">
+            <button
+              onClick={() => setShowTodaMap((v) => !v)}
+              className="w-full flex items-center justify-between px-4 py-3"
+            >
+              <div className="flex items-center gap-2.5 min-w-0">
+                <div className="w-9 h-9 rounded-xl bg-[var(--primary)] flex items-center justify-center flex-shrink-0">
+                  <MapPin className="w-5 h-5 text-white" />
+                </div>
+                <div className="min-w-0 text-left">
+                  <p className="text-sm font-extrabold text-[var(--ink)] truncate">Your TODA Boundary</p>
+                  <p className="text-[11px] text-[var(--muted-foreground)] truncate">
+                    {todaName || "Assigned terminal"}
+                    {todaBoundary ? ` • ${todaBoundary.length} plotted points` : " • no area set yet"}
+                  </p>
+                </div>
+              </div>
+              <ChevronDown
+                className={`w-5 h-5 text-[var(--muted-foreground)] flex-shrink-0 transition-transform ${showTodaMap ? "rotate-180" : ""}`}
+              />
+            </button>
+
+            {showTodaMap && (
+              <div className="border-t border-[var(--border)]">
+                {todaBoundary ? (
+                  <div className="relative w-full h-56 md:h-64">
+                    {isMapsLoaded ? (
+                      <GoogleMap
+                        mapContainerStyle={{ width: "100%", height: "100%" }}
+                        center={todaMapCenter}
+                        zoom={14}
+                        options={{ zoomControl: true, streetViewControl: false, mapTypeControl: false, fullscreenControl: false }}
+                      >
+                        <Polygon
+                          path={todaBoundary}
+                          options={{
+                            fillColor: "#bc4b1f",
+                            fillOpacity: 0.18,
+                            strokeColor: "#bc4b1f",
+                            strokeWeight: 2,
+                            clickable: false,
+                          }}
+                        />
+                        <Marker position={currentLocation} icon={createDriverMarkerIcon()} title="Your Location" />
+                      </GoogleMap>
+                    ) : (
+                      <div className="w-full h-full flex items-center justify-center">
+                        <p className="text-xs text-[var(--muted-foreground)]">Loading map...</p>
+                      </div>
+                    )}
+                    {insideToda != null && (
+                      <span
+                        className={`absolute top-2 left-2 px-2.5 py-1 rounded-full text-[10px] font-extrabold shadow ${
+                          insideToda ? "bg-[var(--success)] text-white" : "bg-[var(--amber)] text-[var(--amber-dark)]"
+                        }`}
+                      >
+                        {insideToda ? "Inside TODA boundary" : "Outside TODA boundary"}
+                      </span>
+                    )}
+                  </div>
+                ) : (
+                  <p className="px-4 py-6 text-center text-xs text-[var(--muted-foreground)]">
+                    {todaName || "Your terminal"} has no boundary area set yet.
+                  </p>
+                )}
+              </div>
+            )}
+          </Card>
+        )}
+
         {/* Request Count */}
         {sortedRequests.length > 0 && (
           <p className="text-xs text-[var(--muted-foreground)] font-medium">{sortedRequests.length} request{sortedRequests.length !== 1 ? 's' : ''} available</p>
@@ -496,7 +620,6 @@ export default function PassengerRequests() {
         {/* Request Cards */}
         {sortedRequests.map((request) => {
           const canAccept = canAcceptRequest(request);
-          const wrongTerminal = isWrongTerminal(request);
           const queueBlocked = isQueueBlocked(request);
           return (
             <Card key={request.id} className={`border-2 transition-all overflow-hidden ${
@@ -565,15 +688,12 @@ export default function PassengerRequests() {
                 {isUnassigned && (
                   <Badge className="bg-[var(--error-soft)] text-[var(--error)] text-[10px] mb-2 border border-[var(--error-soft)]">🚏 No terminal assigned</Badge>
                 )}
-                {!isUnassigned && wrongTerminal && (
-                  <Badge className="bg-[var(--amber-soft)] text-[var(--amber-dark)] text-[10px] mb-2 border border-[var(--amber-soft)]">🚏 Different Terminal</Badge>
-                )}
-                {!isUnassigned && !wrongTerminal && queueBlocked && (
+                {!isUnassigned && queueBlocked && (
                   <Badge className="bg-[var(--amber-soft)] text-[var(--amber-dark)] text-[10px] mb-2 border border-[var(--amber-soft)]">
                     {queueEntry ? `⏳ Waiting for your turn (#${queuePosition} in queue)` : '🚏 Join the terminal queue first'}
                   </Badge>
                 )}
-                {!isUnassigned && !wrongTerminal && !queueBlocked && !canAccept && (
+                {!isUnassigned && !queueBlocked && !canAccept && (
                   <Badge className="bg-[var(--error-soft)] text-[var(--error)] text-[10px] mb-2">Not in your service types</Badge>
                 )}
                 <Button
@@ -585,11 +705,9 @@ export default function PassengerRequests() {
                 >
                   {isUnassigned
                     ? '🚏 No Terminal Assigned'
-                    : wrongTerminal
-                      ? '🚫 Wrong Terminal'
-                      : queueBlocked
-                        ? (queueEntry ? `⏳ Wait — You're #${queuePosition}` : '🚏 Join Queue to Accept')
-                        : canAccept ? (request.lobbyId ? '👥 View Lobby' : '🛵 View & Accept') : 'Not Available'}
+                    : queueBlocked
+                      ? (queueEntry ? `⏳ Wait — You're #${queuePosition}` : '🚏 Join Queue to Accept')
+                      : canAccept ? (request.lobbyId ? '👥 View Lobby' : '🛵 View & Accept') : 'Not Available'}
                 </Button>
               </div>
             </Card>

@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { Search, MapPin, Users, User as UserIcon, ChevronDown, X, Clock, Utensils, Search as SearchIcon, User, Navigation, MessageCircle, Bell, Bike, Home as HomeIcon, ShoppingCart, ClipboardList, Star } from "lucide-react";
 import { Link, useNavigate } from "react-router";
 import { Button } from "../ui/button";
@@ -14,6 +14,7 @@ import { autocompletePlacesNew, createPlacesSessionToken, fetchPlaceDetailsNew, 
 import tricycleIcon from '../../../assets/0b76d1aa56b8ad6e15dd4efc8a0100b0ca5762a1.png';
 import { useAuth } from "../../contexts/AuthContext";
 import { supabaseHelpers, isDropoffWithinAnyTerminalBoundary } from "@/lib/supabase";
+import { computeRideFare, normalizeRates } from "@/lib/pricing";
 import ReasonPromptModal from "../ui/reason-prompt-modal";
 import { supabase } from "../../../utils/supabase";
 import SharedRides from "./SharedRides";
@@ -290,8 +291,11 @@ export default function CustomerHome() {
    // Business info captured when a delivery completes so the customer can rate the restaurant.
    const [deliveryBusiness, setDeliveryBusiness] = useState<{ businessId: string; restaurantName: string; orderId?: string } | null>(null);
    const [unreadDeliveryNotifications, setUnreadDeliveryNotifications] = useState(0);
-   const [privateRidePrice, setPrivateRidePrice] = useState(50); // Default price for private rides
-   const [sharedRidePrice, setSharedRidePrice] = useState(15); // Default price for share rides
+   const [privateRidePrice, setPrivateRidePrice] = useState(50); // Legacy fixed private fare (fallback when distance is unknown)
+   const [sharedRidePrice, setSharedRidePrice] = useState(15); // Legacy fixed share fare (fallback when distance is unknown)
+   // Per-km pricing set by the admin: fare = baseFare + perKm × distance.
+   const [baseFare, setBaseFare] = useState(20);
+   const [perKm, setPerKm] = useState(10);
    const [driverLocation, setDriverLocation] = useState<{ lat: number; lng: number } | null>(null);
    const [driverRoutePath, setDriverRoutePath] = useState<LatLng[]>([]);
    const [destinationRoutePath, setDestinationRoutePath] = useState<LatLng[]>([]);
@@ -734,10 +738,12 @@ export default function CustomerHome() {
         }
 
         if (data?.setting_value) {
-          const settings = JSON.parse(data.setting_value);
-          setSharedRidePrice(settings.sharedRide || 15);
-          setPrivateRidePrice(settings.privateRide || 50);
-          console.log('✅ Loaded admin pricing - Shared: ₱' + settings.sharedRide + ', Private: ₱' + settings.privateRide);
+          const settings = normalizeRates(JSON.parse(data.setting_value));
+          setSharedRidePrice(settings.sharedRide);
+          setPrivateRidePrice(settings.privateRide);
+          setBaseFare(settings.baseFare);
+          setPerKm(settings.perKm);
+          console.log(`✅ Loaded admin pricing - ₱${settings.baseFare} base + ₱${settings.perKm}/km`);
         }
       } catch (error) {
         console.error('Error parsing pricing settings:', error);
@@ -1711,9 +1717,20 @@ export default function CustomerHome() {
     }
   };
 
+  // Fare is per kilometer: base + (rate × straight-line km between pickup and drop-off).
+  const fareInfo = useMemo(
+    () => computeRideFare({ baseFare, perKm }, pickupCoords, dropoffCoords),
+    [baseFare, perKm, pickupCoords, dropoffCoords]
+  );
+  // Falls back to the legacy fixed fare when the two points have no coordinates yet.
+  const rideTotal = fareInfo.distanceKm != null ? fareInfo.total : privateRidePrice;
+  const fareBreakdown = fareInfo.distanceKm != null
+    ? `₱${baseFare} base + ₱${perKm}/km × ${fareInfo.distanceKm.toFixed(1)} km`
+    : 'Fixed rate (set by admin)';
+
   const getPrice = () => {
-    if (selectedVehicle === 'share') return passengerCount > 0 ? Math.round((privateRidePrice / passengerCount) * 100) / 100 : sharedRidePrice;
-    if (selectedVehicle === 'special') return privateRidePrice;
+    if (selectedVehicle === 'share') return passengerCount > 0 ? Math.round((rideTotal / passengerCount) * 100) / 100 : sharedRidePrice;
+    if (selectedVehicle === 'special') return rideTotal;
     return 0;
   };
 
@@ -2650,14 +2667,15 @@ export default function CustomerHome() {
                   {selectedVehicle === 'share' ? (
                     <>
                       <p className="text-sm text-[var(--amber-dark)] mt-0.5">
-                        ₱{privateRidePrice} ÷ {passengerCount} {passengerCount === 1 ? 'passenger' : 'passengers'}
+                        ₱{rideTotal} trip ÷ {passengerCount} {passengerCount === 1 ? 'passenger' : 'passengers'}
                       </p>
-                      <p className="text-3xl font-bold text-[var(--amber)]">₱{(privateRidePrice / passengerCount).toFixed(2)}</p>
+                      <p className="text-3xl font-bold text-[var(--amber)]">₱{(rideTotal / passengerCount).toFixed(2)}</p>
+                      <p className="text-[10px] text-[var(--amber-dark)] mt-0.5">{fareBreakdown}</p>
                     </>
                   ) : (
                     <>
-                      <p className="text-sm text-[var(--amber-dark)] mt-0.5">Fixed rate (set by admin)</p>
-                      <p className="text-3xl font-bold text-[var(--amber)]">₱{privateRidePrice}</p>
+                      <p className="text-sm text-[var(--amber-dark)] mt-0.5">{fareBreakdown}</p>
+                      <p className="text-3xl font-bold text-[var(--amber)]">₱{rideTotal}</p>
                     </>
                   )}
                 </div>
@@ -2840,7 +2858,7 @@ export default function CustomerHome() {
           pickupCoords={pickupCoords}
           dropoffCoords={dropoffCoords}
           passengerCount={passengerCount}
-          pricePerSeat={privateRidePrice}
+          pricePerSeat={rideTotal}
           paymentMethod={paymentMethod}
           selectedTerminalId={selectedTerminalId}
           onLobbyLoaded={(lobbyId) => {

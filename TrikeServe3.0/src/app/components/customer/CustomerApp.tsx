@@ -8,6 +8,7 @@ import { Badge } from "../ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "../ui/tabs";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "../ui/dialog";
 import { supabase } from "../../../utils/supabase";
+import { normalizeRates } from "@/lib/pricing";
 
 interface Restaurant {
   id: string;
@@ -29,8 +30,9 @@ export default function CustomerApp() {
   const [searchQuery, setSearchQuery] = useState("");
   const [cart, setCart] = useState<MenuItem[]>([]);
   const [rideType, setRideType] = useState<'shared' | 'private' | null>(null);
-  const [sharedPrice, setSharedPrice] = useState(15); // Default until admin rates load
-  const [privatePrice, setPrivatePrice] = useState(50); // Default until admin rates load
+  // Per-km ride rates: fare = base + rate × distance. Defaults until admin rates load.
+  const [baseFare, setBaseFare] = useState(20);
+  const [perKm, setPerKm] = useState(10);
 
   // Load admin-set ride rates so the booking cards always show the admin price
   useEffect(() => {
@@ -48,9 +50,9 @@ export default function CustomerApp() {
         }
 
         if (data?.setting_value) {
-          const settings = JSON.parse(data.setting_value);
-          setSharedPrice(settings.sharedRide || 15);
-          setPrivatePrice(settings.privateRide || 50);
+          const settings = normalizeRates(JSON.parse(data.setting_value));
+          setBaseFare(settings.baseFare);
+          setPerKm(settings.perKm);
         }
       } catch (error) {
         console.error('Error parsing pricing settings:', error);
@@ -139,8 +141,8 @@ export default function CustomerApp() {
                       </div>
                     </div>
                     <div className="text-right">
-                      <p className="text-xl font-bold text-[var(--primary)]">₱{sharedPrice}</p>
-                      <p className="text-xs text-[var(--muted-foreground)]">per person</p>
+                      <p className="text-xl font-bold text-[var(--primary)]">₱{baseFare}<span className="text-sm"> + ₱{perKm}/km</span></p>
+                      <p className="text-xs text-[var(--muted-foreground)]">base + distance, split</p>
                     </div>
                   </div>
                   <Badge className="bg-[var(--success)] mb-2">2 seats available</Badge>
@@ -162,8 +164,8 @@ export default function CustomerApp() {
                       </div>
                     </div>
                     <div className="text-right">
-                      <p className="text-xl font-bold text-[var(--primary)]">₱{privatePrice}</p>
-                      <p className="text-xs text-[var(--muted-foreground)]">fixed</p>
+                      <p className="text-xl font-bold text-[var(--primary)]">₱{baseFare}<span className="text-sm"> + ₱{perKm}/km</span></p>
+                      <p className="text-xs text-[var(--muted-foreground)]">base + distance</p>
                     </div>
                   </div>
                   <Badge className="bg-[var(--info)] mb-2">Instant pickup</Badge>
