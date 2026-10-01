@@ -15,8 +15,8 @@ import { GOOGLE_MAPS_LIBRARIES } from "@/lib/googleMaps";
 import { autocompletePlacesNew, createPlacesSessionToken, fetchPlaceDetailsNew, type PlaceResult, type PlacesAutocompleteSuggestion } from "@/lib/placesApi";
 import tricycleIcon from '../../../assets/0b76d1aa56b8ad6e15dd4efc8a0100b0ca5762a1.png';
 import { useAuth } from "../../contexts/AuthContext";
-import { supabaseHelpers, isDropoffWithinAnyTerminalBoundary } from "@/lib/supabase";
-import { computeRideFare, normalizeRates } from "@/lib/pricing";
+import { supabaseHelpers, isDropoffWithinAnyTerminalBoundary, logAudit } from "@/lib/supabase";
+import { computeRideFare, normalizeRates, terminalRates } from "@/lib/pricing";
 import ReasonPromptModal from "../ui/reason-prompt-modal";
 import { supabase } from "../../../utils/supabase";
 import SharedRides from "./SharedRides";
@@ -298,6 +298,11 @@ export default function CustomerHome() {
    const [unreadDeliveryNotifications, setUnreadDeliveryNotifications] = useState(0);
    const [privateRidePrice, setPrivateRidePrice] = useState(50); // Legacy fixed private fare (fallback when distance is unknown)
    const [sharedRidePrice, setSharedRidePrice] = useState(15); // Legacy fixed share fare (fallback when distance is unknown)
+   // The fare captured when the ride was booked — the terminal fare at that
+   // moment. The active-ride card shows this instead of re-deriving the fare, so
+   // it can't drift from the amount stored on the request when booking state is
+   // recomputed or restored from storage.
+   const [bookedFare, setBookedFare] = useState<number | null>(null);
    // Per-km pricing set by the admin: fare = baseFare + perKm × distance.
    const [baseFare, setBaseFare] = useState(20);
    const [perKm, setPerKm] = useState(10);
@@ -317,7 +322,7 @@ export default function CustomerHome() {
      backendRouteStatus: 'idle',
    });
     const [mapsBlocked, setMapsBlocked] = useState<string | null>(null);
-   const [terminals, setTerminals] = useState<{ id: string; name: string; boundary: string; center_lat: number; center_lng: number }[]>([]);
+   const [terminals, setTerminals] = useState<{ id: string; name: string; boundary: string; center_lat: number; center_lng: number; base_fare?: number | null; per_km?: number | null }[]>([]);
    const [showTerminalPicker, setShowTerminalPicker] = useState(false);
    const [selectedTerminalId, setSelectedTerminalId] = useState<string | null>(null);
    const mapRef = useRef<any>(null);
@@ -421,9 +426,10 @@ export default function CustomerHome() {
     }
   }, [currentLocation]);
 
-  // Load terminals from Supabase for pickup selection
+  // Load terminals from Supabase for pickup selection. `select('*')` keeps this
+  // working before ADD_TERMINAL_FARES.sql adds the per-terminal fare columns.
   useEffect(() => {
-    supabase.from('terminals').select('id, name, boundary, center_lat, center_lng, is_active')
+    supabase.from('terminals').select('*')
       .then(({ data, error }) => {
         if (!error && data) {
           setTerminals(data.filter((t: any) => t.is_active !== false));
@@ -649,6 +655,9 @@ export default function CustomerHome() {
         setCurrentRequestId(restoredRequestId);
         if (rideData.activeRide) {
           setActiveRide(rideData.activeRide);
+        }
+        if (rideData.bookedFare != null) {
+          setBookedFare(Number(rideData.bookedFare));
         }
       } catch (error) {
         console.error('Error loading ride data:', error);
@@ -970,6 +979,11 @@ export default function CustomerHome() {
           });
         }
 
+        // Follow the amount stored on the request (the terminal fare captured
+        // at booking) so the displayed fare survives a reload.
+        const dbAmount = Number(rideRequest.amount);
+        if (Number.isFinite(dbAmount) && dbAmount > 0) setBookedFare(dbAmount);
+
         // Update driver location from DB only if it actually changed
         if (rideRequest.driver_lat && rideRequest.driver_lng) {
           const lat = Number(rideRequest.driver_lat);
@@ -1079,6 +1093,10 @@ export default function CustomerHome() {
 
       console.log('🔍 REALTIME STATUS NORMALIZATION:');
       console.log('   Normalized realtimeStatus:', realtimeStatus);
+
+       // Follow the amount stored on the request (the terminal fare).
+       const realtimeAmount = Number(updatedRide.amount);
+       if (Number.isFinite(realtimeAmount) && realtimeAmount > 0) setBookedFare(realtimeAmount);
 
        // Check if driver was accepted - THIS IS THE KEY!
        // Don't show acceptance if the ride is already completed.
@@ -1258,12 +1276,13 @@ export default function CustomerHome() {
         paymentMethod,
         activeRide,
         requestId: currentRequestId,
+        bookedFare,
       };
       localStorage.setItem('trikeserve_active_ride', JSON.stringify(rideData));
     } else {
       localStorage.removeItem('trikeserve_active_ride');
     }
-   }, [rideStatus, pickup, pickupAddress, pickupCoords, dropoff, dropoffAddress, dropoffCoords, selectedVehicle, paymentMethod, activeRide, currentRequestId]);
+   }, [rideStatus, pickup, pickupAddress, pickupCoords, dropoff, dropoffAddress, dropoffCoords, selectedVehicle, paymentMethod, activeRide, currentRequestId, bookedFare]);
 
    // Compute driver's route to pickup/dropoff location (real-time tracking)
    useEffect(() => {
@@ -1588,6 +1607,11 @@ export default function CustomerHome() {
 
         console.log('📋 Booking ride for user:', user.id);
 
+        // Capture the terminal fare at booking time so the request, the
+        // active-ride card, and any restored state all agree.
+        const fareAmount = getPrice();
+        setBookedFare(fareAmount);
+
          // Create ride request data in correct database format
          const rideRequest = {
            customer_id: user.id,
@@ -1603,7 +1627,7 @@ export default function CustomerHome() {
            ride_type: 'special',
            terminal_id: selectedTerminalId || null,
            payment_method: paymentMethod === 'GCASH' ? 'GCASH' : 'COD',
-           amount: getPrice(),
+           amount: fareAmount,
            passenger_count: passengerCount,
            created_at: new Date().toISOString(),
            updated_at: new Date().toISOString(),
@@ -1630,6 +1654,16 @@ export default function CustomerHome() {
           console.log('✅ Ride request saved to database:', savedRequest);
           console.log('📱 Request ID:', savedRequest.id);
           console.log('🗄️ Saved in Supabase ride_requests table');
+          logAudit({
+            action: 'create_ride',
+            actorRole: 'customer',
+            entityType: 'ride_request',
+            entityId: savedRequest.id,
+            summary: `Booked a private ride: ${pickup} → ${dropoff}`,
+            details: { amount: fareAmount, terminal_id: selectedTerminalId },
+            actorEmail: user?.email,
+            actorName: user?.name,
+          });
         } else {
           console.error('❌ No data returned from database');
           alert('❌ Error: No response from database. Please try again.');
@@ -1687,6 +1721,17 @@ export default function CustomerHome() {
           alert(`❌ Failed to cancel ride: ${error.message || 'Please try again.'}`);
           return;
         }
+
+        logAudit({
+          action: 'cancel_ride',
+          actorRole: 'customer',
+          entityType: 'ride_request',
+          entityId: storedRequestId,
+          summary: `Cancelled a ride request${reason ? `: ${reason}` : ''}`,
+          details: { reason: reason || null },
+          actorEmail: user?.email,
+          actorName: user?.name,
+        });
 
         // A delivery ride is backed by an orders row — cancel that too so the
         // business sees the order as cancelled and can read the customer's reason.
@@ -1754,16 +1799,28 @@ export default function CustomerHome() {
     }
   };
 
+  // Each terminal sets the fare for its own rides. The admin-wide rate is only a
+  // fallback for a terminal that hasn't set a fare (or before one is picked).
+  const selectedTerminal = useMemo(
+    () => terminals.find(t => t.id === selectedTerminalId) || null,
+    [terminals, selectedTerminalId]
+  );
+  const terminalFare = useMemo(() => terminalRates(selectedTerminal), [selectedTerminal]);
+  const activeRates = {
+    baseFare: selectedTerminal?.base_fare != null ? terminalFare.baseFare : baseFare,
+    perKm: selectedTerminal?.per_km != null ? terminalFare.perKm : perKm,
+  };
+
   // Fare is per kilometer: base + (rate × straight-line km between pickup and drop-off).
   const fareInfo = useMemo(
-    () => computeRideFare({ baseFare, perKm }, pickupCoords, dropoffCoords),
-    [baseFare, perKm, pickupCoords, dropoffCoords]
+    () => computeRideFare(activeRates, pickupCoords, dropoffCoords),
+    [activeRates.baseFare, activeRates.perKm, pickupCoords, dropoffCoords]
   );
   // Falls back to the legacy fixed fare when the two points have no coordinates yet.
   const rideTotal = fareInfo.distanceKm != null ? fareInfo.total : privateRidePrice;
   const fareBreakdown = fareInfo.distanceKm != null
-    ? `₱${baseFare} base + ₱${perKm}/km × ${fareInfo.distanceKm.toFixed(1)} km`
-    : 'Fixed rate (set by admin)';
+    ? `₱${activeRates.baseFare} base + ₱${activeRates.perKm}/km × ${fareInfo.distanceKm.toFixed(1)} km${selectedTerminal ? ` · ${selectedTerminal.name}` : ''}`
+    : `Fixed rate${selectedTerminal ? ` · ${selectedTerminal.name}` : ''}`;
 
   const getPrice = () => {
     if (selectedVehicle === 'share') return passengerCount > 0 ? Math.round((rideTotal / passengerCount) * 100) / 100 : sharedRidePrice;
@@ -1789,6 +1846,7 @@ export default function CustomerHome() {
     setPredictions([]);
     setSearchQuery('');
     setActiveRide(null);
+    setBookedFare(null);
     setSelectedVehicle(null);
     setIsSearchMinimized(false);
     // A finished ride drops the customer back on the plain map + Book a Ride.
@@ -2365,7 +2423,7 @@ export default function CustomerHome() {
                 <div className="flex items-center gap-3">
                   <div className="flex-1">
                     <p className="text-[10px] text-[var(--muted-foreground)] font-semibold">Fare</p>
-                    <p className="text-xl font-bold text-[var(--primary)]">₱{getPrice()}</p>                     <p className="text-[10px] text-[var(--muted-foreground)]">💵 Cash</p>
+                    <p className="text-xl font-bold text-[var(--primary)]">₱{bookedFare ?? getPrice()}</p>                     <p className="text-[10px] text-[var(--muted-foreground)]">💵 Cash</p>
                   </div>
                   <Button
                     variant="outline"
@@ -2658,6 +2716,9 @@ export default function CustomerHome() {
                         )}
                       </div>
                       <p className="text-xs text-[var(--muted-foreground)] mt-0.5">📍 {terminal.boundary}</p>
+                      <p className="text-xs font-semibold text-[var(--primary)] mt-0.5">
+                        Fare: ₱{terminal.base_fare ?? activeRates.baseFare} base + ₱{terminal.per_km ?? activeRates.perKm}/km
+                      </p>
                       {isMapsLoaded && (
                         <div className="mt-2 rounded-lg overflow-hidden border border-[var(--border)]" style={{ height: 120 }}>
                           <GoogleMap

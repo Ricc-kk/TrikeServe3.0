@@ -16,6 +16,7 @@ import {
   assignRiderAdminTerminal,
   getAdminTerminalAssignment,
   normalizeBoundaryPolygon,
+  logAudit,
   APPROVAL_REQUEST_LABELS,
   type ApprovalRequest,
   type RiderAdminSummary,
@@ -41,6 +42,10 @@ interface Terminal {
   rider_count: number;
   // Coverage area plotted on the map; null when no area has been drawn yet.
   boundary_polygon: LatLngPoint[] | null;
+  // This terminal's own ride fare, set by the terminal admin
+  // (ADD_TERMINAL_FARES.sql). Falls back to the platform default when null.
+  base_fare: number;
+  per_km: number;
 }
 
 interface StoredRider {
@@ -67,9 +72,9 @@ interface StoredRider {
 const TERMINALS_KEY = "trikeserve_terminals";
 
 const SEED_TERMINALS: Terminal[] = [
-  { id: "t1", name: "Valenzuela Terminal", boundary: "Main Road, Valenzuela City", center_lat: 14.7294, center_lng: 120.9349, radius_km: 2.0, is_active: true, rider_count: 2, boundary_polygon: null },
-  { id: "t2", name: "Malinta Terminal", boundary: "Malinta, Valenzuela City", center_lat: 14.7150, center_lng: 120.9500, radius_km: 1.5, is_active: true, rider_count: 1, boundary_polygon: null },
-  { id: "t3", name: "Paso de Blas Terminal", boundary: "Paso de Blas, Valenzuela City", center_lat: 14.6950, center_lng: 120.9600, radius_km: 1.8, is_active: false, rider_count: 0, boundary_polygon: null },
+  { id: "t1", name: "Valenzuela Terminal", boundary: "Main Road, Valenzuela City", center_lat: 14.7294, center_lng: 120.9349, radius_km: 2.0, is_active: true, rider_count: 2, boundary_polygon: null, base_fare: 20, per_km: 10 },
+  { id: "t2", name: "Malinta Terminal", boundary: "Malinta, Valenzuela City", center_lat: 14.7150, center_lng: 120.9500, radius_km: 1.5, is_active: true, rider_count: 1, boundary_polygon: null, base_fare: 20, per_km: 10 },
+  { id: "t3", name: "Paso de Blas Terminal", boundary: "Paso de Blas, Valenzuela City", center_lat: 14.6950, center_lng: 120.9600, radius_km: 1.8, is_active: false, rider_count: 0, boundary_polygon: null, base_fare: 20, per_km: 10 },
 ];
 
 // Demo riders so driver assignment works out of the box, mirroring the mock
@@ -135,6 +140,9 @@ export default function AdminTerminals() {
     center_lng: DEFAULT_TERMINAL_CENTER.lng,
     is_active: true,
     boundary_polygon: [] as LatLngPoint[],
+    // This terminal's own ride fare, editable by the terminal admin.
+    base_fare: 20,
+    per_km: 10,
   });
   const [showMapPicker, setShowMapPicker] = useState(false);
   // The map picker either moves the terminal pin or draws the coverage area.
@@ -232,6 +240,8 @@ export default function AdminTerminals() {
         is_active: t.is_active ?? true,
         rider_count: t.rider_count ?? 0,
         boundary_polygon: normalizeBoundaryPolygon(t.boundary_polygon),
+        base_fare: t.base_fare ?? 20,
+        per_km: t.per_km ?? 10,
       }));
     } catch {
       return null;
@@ -294,6 +304,18 @@ export default function AdminTerminals() {
       return;
     }
 
+    logAudit({
+      action: 'assign_rider_admin',
+      actorRole: 'admin',
+      entityType: 'rider_admin',
+      entityId: adminId,
+      summary: terminal
+        ? `Assigned ${admin.email} to ${terminal.name}`
+        : `Unassigned ${admin.email}`,
+      details: { terminal_id: terminalId, terminal_name: terminal?.name ?? null },
+      actorEmail: user?.email,
+      actorName: user?.name,
+    });
     await loadRiderAdmins();
     setToast({
       message: terminal ? `Rider admin assigned to ${terminal.name}` : 'Rider admin unassigned',
@@ -350,7 +372,7 @@ export default function AdminTerminals() {
     : terminals;
 
   function openCreate() {
-    setForm({ name: "", boundary: "", center_lat: DEFAULT_TERMINAL_CENTER.lat, center_lng: DEFAULT_TERMINAL_CENTER.lng, is_active: true, boundary_polygon: [] });
+    setForm({ name: "", boundary: "", center_lat: DEFAULT_TERMINAL_CENTER.lat, center_lng: DEFAULT_TERMINAL_CENTER.lng, is_active: true, boundary_polygon: [], base_fare: 20, per_km: 10 });
     setEditTerminal(null);
     setMapPickerMode('location');
     setShowForm(true);
@@ -364,6 +386,8 @@ export default function AdminTerminals() {
       center_lng: t.center_lng,
       is_active: t.is_active,
       boundary_polygon: t.boundary_polygon ? [...t.boundary_polygon] : [],
+      base_fare: t.base_fare ?? 20,
+      per_km: t.per_km ?? 10,
     });
     setEditTerminal(t);
     setMapPickerMode('location');
@@ -526,8 +550,14 @@ export default function AdminTerminals() {
 
     const boundaryPolygon = form.boundary_polygon.length >= 3 ? form.boundary_polygon : null;
 
+    // This terminal's own ride fare, kept non-negative with a safe default.
+    const fareValue = (value: number, fallback: number) =>
+      Number.isFinite(value) && value >= 0 ? value : fallback;
+    const base_fare = fareValue(Number(form.base_fare), 20);
+    const per_km = fareValue(Number(form.per_km), 10);
+
     const target: Terminal = editTerminal
-      ? { ...editTerminal, name: form.name, boundary: form.boundary, center_lat: form.center_lat, center_lng: form.center_lng, is_active: form.is_active, boundary_polygon: boundaryPolygon }
+      ? { ...editTerminal, name: form.name, boundary: form.boundary, center_lat: form.center_lat, center_lng: form.center_lng, is_active: form.is_active, boundary_polygon: boundaryPolygon, base_fare, per_km }
       : {
           id: `t_${Date.now()}`,
           name: form.name,
@@ -538,6 +568,8 @@ export default function AdminTerminals() {
           is_active: form.is_active,
           rider_count: 0,
           boundary_polygon: boundaryPolygon,
+          base_fare,
+          per_km,
         };
 
     // Super Admin changes apply immediately.
@@ -553,6 +585,8 @@ export default function AdminTerminals() {
           is_active: target.is_active,
           rider_count: target.rider_count,
           boundary_polygon: target.boundary_polygon,
+          base_fare: target.base_fare,
+          per_km: target.per_km,
           updated_at: new Date().toISOString(),
         },
         { onConflict: "id" }
@@ -562,6 +596,23 @@ export default function AdminTerminals() {
         setToast({ message: `Save failed: ${error.message}`, variant: 'error' });
         return;
       }
+
+      logAudit({
+        action: editTerminal ? 'update_terminal' : 'create_terminal',
+        actorRole: 'admin',
+        entityType: 'terminal',
+        entityId: target.id,
+        summary: `${editTerminal ? 'Updated' : 'Created'} terminal: ${target.name}`,
+        details: {
+          name: target.name,
+          boundary: target.boundary,
+          base_fare: target.base_fare,
+          per_km: target.per_km,
+          is_active: target.is_active,
+        },
+        actorEmail: user?.email,
+        actorName: user?.name,
+      });
 
       setTerminals(ts =>
         editTerminal ? ts.map(t => (t.id === editTerminal.id ? target : t)) : [...ts, target]
@@ -625,6 +676,17 @@ export default function AdminTerminals() {
         setToast({ message: `Delete failed: ${error.message}`, variant: 'error' });
         return;
       }
+
+      logAudit({
+        action: 'delete_terminal',
+        actorRole: 'admin',
+        entityType: 'terminal',
+        entityId: id,
+        summary: `Deleted terminal: ${target.name}`,
+        details: { name: target.name, boundary: target.boundary },
+        actorEmail: user?.email,
+        actorName: user?.name,
+      });
 
       setTerminals(ts => ts.filter(t => t.id !== id));
 
@@ -965,6 +1027,9 @@ export default function AdminTerminals() {
                                 ? `Boundary: ${t.boundary_polygon.length} pts`
                                 : "No boundary"}
                             </span>
+                            <span className="text-xs font-bold px-2 py-0.5 rounded-full bg-[var(--success-soft)] text-[var(--success)]">
+                              {`Fare: ₱${t.base_fare ?? 20} + ₱${t.per_km ?? 10}/km`}
+                            </span>
                           </div>
                           <p className="text-[var(--muted-foreground)] text-sm mt-0.5">📍 {t.boundary}</p>
                           <div className="flex items-center gap-4 mt-2 text-xs text-[var(--muted-foreground)]">
@@ -1221,6 +1286,47 @@ export default function AdminTerminals() {
                 >
                   <span className={`absolute top-0.5 left-0.5 w-6 h-6 bg-surface rounded-full shadow transition-transform ${form.is_active ? 'translate-x-5' : ''}`} />
                 </button>
+              </div>
+
+              {/* This terminal's own ride fare */}
+              <div className="p-3 bg-[var(--primary-soft)] border-2 border-[var(--primary-soft)] rounded-xl space-y-3">
+                <div>
+                  <p className="text-sm font-semibold text-[var(--ink)]">Ride Fare for this Terminal</p>
+                  <p className="text-xs text-[var(--muted-foreground)]">
+                    Rides booked from {form.name || 'this terminal'} are charged this fare: base + rate per km.
+                  </p>
+                </div>
+                <div className="grid grid-cols-2 gap-2">
+                  {([
+                    ['base_fare', 'Base Fare'],
+                    ['per_km', 'Rate / km'],
+                  ] as const).map(([key, label]) => (
+                    <div key={key}>
+                      <label className="text-[10px] font-bold uppercase tracking-widest text-[var(--muted-foreground)] block mb-1">
+                        {label}
+                      </label>
+                      <div className="flex items-center px-2 h-10 border border-line focus-within:border-[var(--primary)] rounded-xl bg-surface">
+                        <span className="text-sm text-[var(--muted-foreground)] mr-1">₱</span>
+                        <input
+                          type="number"
+                          min={0}
+                          inputMode="decimal"
+                          value={form[key]}
+                          onChange={e =>
+                            setForm(f => ({
+                              ...f,
+                              [key]: e.target.value === '' ? 0 : Number(e.target.value),
+                            }))
+                          }
+                          className="w-full min-w-0 text-sm font-semibold text-[var(--ink)] outline-none bg-transparent"
+                        />
+                      </div>
+                    </div>
+                  ))}
+                </div>
+                <p className="text-xs font-semibold text-[var(--primary)]">
+                  Preview: ₱{form.base_fare} base + ₱{form.per_km}/km
+                </p>
               </div>
 
               <div className="flex gap-3 pt-2">

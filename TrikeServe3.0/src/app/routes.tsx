@@ -45,6 +45,7 @@ import AdminDashboard from "./components/admin/AdminDashboard";
 import AdminUsers from "./components/admin/AdminUsers";
 import AdminTerminals from "./components/admin/AdminTerminals";
 import AdminApprovals from "./components/admin/AdminApprovals";
+import AuditTrail from "./components/admin/AuditTrail";
 import AdminSettings from "./components/admin/AdminSettings";
 
 export const router = createBrowserRouter([
@@ -424,6 +425,14 @@ export const router = createBrowserRouter([
         element: (
           <ProtectedRoute allowedRoles={['admin']}>
             <AdminApprovals />
+          </ProtectedRoute>
+        )
+      },
+      {
+        path: "admin/audit",
+        element: (
+          <ProtectedRoute allowedRoles={['admin']}>
+            <AuditTrail />
           </ProtectedRoute>
         )
       },

@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import {
-  Shield, Users, Settings, MapPin, ClipboardCheck
+  Shield, Users, Settings, MapPin, ClipboardCheck, ClipboardList
 } from "lucide-react";
 import { Link, useLocation } from "react-router";
 import { useAuth } from "../../contexts/AuthContext";
@@ -65,6 +65,7 @@ export default function AdminSidebar({ isMobileMenuOpen, setIsMobileMenuOpen }: 
         { path: "/admin/users", icon: Users, label: "Users", badge: 0 },
         { path: "/admin/terminals", icon: MapPin, label: "Terminals", badge: 0 },
         { path: "/admin/approvals", icon: ClipboardCheck, label: "Approvals", badge: pendingApprovalsCount },
+        { path: "/admin/audit", icon: ClipboardList, label: "Audit Trail", badge: 0 },
         { path: "/admin/settings", icon: Settings, label: "Settings", badge: 0 },
       ]
     : [

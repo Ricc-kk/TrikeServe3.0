@@ -29,17 +29,44 @@ export const DEFAULT_RATES: RideRates = {
   privateRide: 50,
 };
 
+/** Numeric coercion that treats null/blank/missing as "use the fallback". */
+function num(value: any, fallback: number): number {
+  if (value == null || value === '') return fallback;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : fallback;
+}
+
 /** Coerce a raw saved config into complete, numeric rates. */
 export function normalizeRates(raw: any): RideRates {
-  const num = (value: any, fallback: number) =>
-    Number.isFinite(Number(value)) ? Number(value) : fallback;
-
   return {
     baseFare: num(raw?.baseFare, DEFAULT_RATES.baseFare),
     perKm: num(raw?.perKm, DEFAULT_RATES.perKm),
     deliveryBaseFee: num(raw?.deliveryBaseFee, DEFAULT_RATES.deliveryBaseFee),
     sharedRide: num(raw?.sharedRide, DEFAULT_RATES.sharedRide),
     privateRide: num(raw?.privateRide, DEFAULT_RATES.privateRide),
+  };
+}
+
+/**
+ * A terminal's own ride fare (terminals.base_fare / terminals.per_km).
+ *
+ * Added by ADD_TERMINAL_FARES.sql. Any field can be null when the terminal has
+ * not set its own fare, in which case the admin-wide default applies.
+ */
+export interface TerminalFare {
+  base_fare?: number | null;
+  per_km?: number | null;
+}
+
+/**
+ * Resolve a terminal's ride fare, falling back to the platform defaults for any
+ * value the terminal has not set.
+ */
+export function terminalRates(terminal?: TerminalFare | null): RideRates {
+  return {
+    ...DEFAULT_RATES,
+    baseFare: num(terminal?.base_fare, DEFAULT_RATES.baseFare),
+    perKm: num(terminal?.per_km, DEFAULT_RATES.perKm),
   };
 }
 

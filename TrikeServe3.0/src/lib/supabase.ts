@@ -512,6 +512,9 @@ async function applyApprovalRequest(
             rider_count: payload.rider_count ?? 0,
             // Carried through so a Rider Admin's plotted coverage area survives approval.
             boundary_polygon: payload.boundary_polygon ?? null,
+            // This terminal's own ride fare (ADD_TERMINAL_FARES.sql).
+            base_fare: payload.base_fare ?? 20,
+            per_km: payload.per_km ?? 10,
             updated_at: new Date().toISOString(),
           },
           { onConflict: 'id' }
@@ -673,6 +676,85 @@ export async function getPendingApprovalCount(): Promise<number> {
     return count || 0;
   } catch {
     return 0;
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Audit trail (Super Admin)
+// ---------------------------------------------------------------------------
+// Every platform-changing action is recorded here so the Super Admin can see
+// who changed what and when. Requires CREATE_AUDIT_LOGS.sql.
+// ---------------------------------------------------------------------------
+
+export interface AuditLog {
+  id: string;
+  actor_email?: string | null;
+  actor_name?: string | null;
+  /** admin | rider | customer | business */
+  actor_role?: string | null;
+  action: string;
+  entity_type?: string | null;
+  entity_id?: string | null;
+  summary?: string | null;
+  details?: any;
+  created_at?: string | null;
+}
+
+export interface AuditLogInput {
+  action: string;
+  actorEmail?: string | null;
+  actorName?: string | null;
+  /** admin | rider | customer | business */
+  actorRole?: string | null;
+  entityType?: string | null;
+  entityId?: string | null;
+  summary?: string;
+  details?: any;
+}
+
+/**
+ * Record an audit entry. Best-effort: a missing table or network error is
+ * logged but never blocks the action that triggered it.
+ */
+export async function logAudit(input: AuditLogInput): Promise<void> {
+  try {
+    const { error } = await supabase.from('audit_logs').insert([
+      {
+        actor_email: input.actorEmail || null,
+        actor_name: input.actorName || null,
+        actor_role: input.actorRole || null,
+        action: input.action,
+        entity_type: input.entityType || null,
+        entity_id: input.entityId || null,
+        summary: input.summary || null,
+        details: input.details ?? null,
+      },
+    ]);
+    if (error) console.warn('[logAudit] insert failed:', error.message);
+  } catch (error) {
+    console.warn('[logAudit] failed:', error);
+  }
+}
+
+/** Recent audit entries, newest first. */
+export async function getAuditLogs(limit = 200): Promise<{ data: AuditLog[]; error?: string }> {
+  try {
+    const { data, error } = await supabase
+      .from('audit_logs')
+      .select('*')
+      .order('created_at', { ascending: false })
+      .limit(limit);
+
+    if (error) {
+      if (error.code === 'PGRST205' || error.code === '42P01') {
+        return { data: [], error: 'Audit log table is missing. Run CREATE_AUDIT_LOGS.sql in Supabase.' };
+      }
+      return { data: [], error: error.message };
+    }
+    return { data: (data || []) as AuditLog[] };
+  } catch (error) {
+    console.error('[getAuditLogs] error:', error);
+    return { data: [], error: 'Network error while loading the audit trail' };
   }
 }
 
