@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from "react";
-import { Search, MapPin, Users, User as UserIcon, ChevronDown, X, Clock, Utensils, Search as SearchIcon, User, Navigation, MessageCircle, Bell, Bike, Home as HomeIcon, ShoppingCart, ClipboardList, Star } from "lucide-react";
+import { Search, MapPin, Users, User as UserIcon, ChevronDown, X, Clock, Utensils, Search as SearchIcon, User, Navigation, MessageCircle, Bell, Bike, Home as HomeIcon, ShoppingCart, ClipboardList, Star, ArrowLeft } from "lucide-react";
 import { Link, useNavigate } from "react-router";
 import { Button } from "../ui/button";
 import { Card } from "../ui/card";
@@ -235,6 +235,9 @@ export default function CustomerHome() {
   const { user } = useAuth();
   const navigate = useNavigate();
   const [selectedVehicle, setSelectedVehicle] = useState<'share' | 'special' | null>(null);
+  // Booking is a three-step flow on top of the full-screen map:
+  // home (map + Book a Ride) → ride type → pickup / drop-off.
+  const [bookingStep, setBookingStep] = useState<'home' | 'ride' | 'locations'>('home');
   const [currentLocation, setCurrentLocation] = useState<{ lat: number; lng: number }>({ lat: 14.5995, lng: 120.9842 }); // Default: Manila
   const [mapCenter, setMapCenter] = useState<{ lat: number; lng: number }>({ lat: 14.5995, lng: 120.9842 });
   const [selectedMarker, setSelectedMarker] = useState<{ lat: number; lng: number } | null>(null);
@@ -319,6 +322,9 @@ export default function CustomerHome() {
    const [selectedTerminalId, setSelectedTerminalId] = useState<string | null>(null);
    const mapRef = useRef<any>(null);
    const hasManualPickupSelectionRef = useRef(false);
+   // Set while the "Choose on Map" shortcut should continue from the pickup
+   // terminal straight into the drop-off map picker.
+   const chainDropoffAfterPickupRef = useRef(false);
    const unsubscribeRef = useRef<(() => void) | null>(null);
    const driverStatusTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -1478,6 +1484,35 @@ export default function CustomerHome() {
     return true;
   };
 
+  // The booking UI lives on top of the map and stays out of the way while a
+  // ride is active or a request is already being searched for.
+  const showBookingFlow = !activeRide && rideStatus !== 'searching';
+
+  // "Choose on Map": pick the pickup terminal first, then pin the destination
+  // on the map. The pickup / drop-off step is revealed once that is underway.
+  const openChooseOnMap = () => {
+    setBookingStep('locations');
+
+    if (!selectedTerminalId) {
+      chainDropoffAfterPickupRef.current = true;
+      setShowTerminalPicker(true);
+      return;
+    }
+
+    setActiveLocationInput('dropoff');
+    setLocationPreview(
+      dropoffCoords
+        ? {
+            lat: dropoffCoords.lat,
+            lng: dropoffCoords.lng,
+            name: dropoff || 'Drop-off Location',
+            fullAddress: dropoffAddress || dropoff || 'Select drop-off location',
+          }
+        : null
+    );
+    setShowLocationPicker(true);
+  };
+
   const handleBookRide = async () => {
     if (!selectedVehicle) return;
     
@@ -1756,6 +1791,8 @@ export default function CustomerHome() {
     setActiveRide(null);
     setSelectedVehicle(null);
     setIsSearchMinimized(false);
+    // A finished ride drops the customer back on the plain map + Book a Ride.
+    setBookingStep('home');
   };
 
   // When a delivery completes, capture which business the customer can rate.
@@ -1969,12 +2006,60 @@ export default function CustomerHome() {
           </div>
         </div>
 
-        {/* Bottom Sheet - Main Booking Interface */}
-        {!activeRide && (
-          <div className="absolute bottom-20 left-0 right-0 z-[999] px-4">
-            <Card className="bg-surface shadow-2xl rounded-t-3xl">
-              <div className="px-5 pb-6 pt-6">
-                {/* Ride type — Sabay / Pribado */}
+        {/* Booking flow — Step 1: the map owns the whole screen with one clear action */}
+        {showBookingFlow && bookingStep === 'home' && (
+          <div className="absolute bottom-20 left-0 right-0 z-[999] mx-auto max-w-3xl px-4">
+            <Card className="rounded-3xl border border-line bg-surface p-4 shadow-2xl">
+              <p className="mb-1 text-center text-sm font-bold text-[var(--ink)]">Saan ka pupunta?</p>
+              <p className="mb-3 text-center text-xs text-[var(--muted-foreground)]">
+                Pindutin ang Book a Ride para magsimula
+              </p>
+              <Button
+                onClick={() => setBookingStep('ride')}
+                className="min-h-14 w-full flex-col rounded-2xl bg-[var(--primary)] py-4 text-lg font-bold text-white shadow-lg hover:bg-[var(--coral-dark)]"
+              >
+                <span className="block">Book a Ride</span>
+                <span className="block text-xs font-semibold tracking-normal opacity-90">
+                  Mag-book ng sakay
+                </span>
+              </Button>
+            </Card>
+          </div>
+        )}
+
+        {/* Booking flow — Steps 2 & 3: ride type first, then pickup and drop-off */}
+        {showBookingFlow && bookingStep !== 'home' && (
+          <>
+            <div
+              className="pointer-events-none absolute inset-0 z-[998] bg-black/25"
+              aria-hidden="true"
+            />
+            <div className="absolute bottom-20 left-0 right-0 z-[999] mx-auto max-w-3xl px-4">
+            <Card className="max-h-[calc(100vh-7rem)] overflow-y-auto rounded-3xl bg-surface shadow-2xl">
+              {/* Step header — back control plus plain-language context */}
+              <div className="sticky top-0 z-10 flex items-center gap-3 border-b border-line bg-surface px-4 py-3">
+                <button
+                  type="button"
+                  onClick={() => setBookingStep(bookingStep === 'ride' ? 'home' : 'ride')}
+                  aria-label={bookingStep === 'ride' ? 'Back to map' : 'Back to ride type'}
+                  className="flex h-11 w-11 flex-shrink-0 items-center justify-center rounded-full bg-[var(--muted)] transition-transform active:scale-90"
+                >
+                  <ArrowLeft className="h-5 w-5 text-[var(--ink)]" />
+                </button>
+                <div className="min-w-0">
+                  <h2 className="text-lg font-bold leading-tight text-[var(--ink)]">
+                    {bookingStep === 'ride' ? 'Book a Ride' : 'Pickup at drop-off'}
+                  </h2>
+                  <p className="truncate text-xs text-[var(--muted-foreground)]">
+                    {bookingStep === 'ride'
+                      ? 'Shared (Sabay) o Private (Pribado)'
+                      : 'Piliin ang sakayan at pupuntahan'}
+                  </p>
+                </div>
+              </div>
+              <div className="px-5 pb-6 pt-5">
+                {/* Step 2 — ride type: Sabay / Pribado */}
+                <div className={bookingStep === 'ride' ? '' : 'hidden'}>
                 <SectionHeading
                   eyebrow="Easy booking"
                   title="Pumili ng sakay"
@@ -2003,6 +2088,58 @@ export default function CustomerHome() {
                     icon={UserIcon}
                   />
                 </div>
+
+                {/* Choose on Map — shown before the pickup and drop-off fields appear */}
+                <Button
+                  type="button"
+                  onClick={openChooseOnMap}
+                  disabled={!selectedVehicle}
+                  variant="outline"
+                  className="mt-4 min-h-12 w-full rounded-2xl border-2 border-[var(--primary)] bg-[var(--primary-soft)] text-[var(--primary)] hover:bg-[var(--primary-soft)] hover:text-[var(--primary)] disabled:border-line disabled:bg-[var(--muted)] disabled:text-[var(--muted-foreground)]"
+                >
+                  <span className="flex flex-col items-center leading-tight">
+                    <span className="flex items-center gap-2 text-base font-bold">
+                      <MapPin className="h-5 w-5" />
+                      Choose on Map
+                    </span>
+                    <span className="text-xs font-normal">
+                      Pumili sa map ng sakayan at pupuntahan
+                    </span>
+                  </span>
+                </Button>
+                {!selectedVehicle && (
+                  <p className="mt-2 text-center text-sm text-[var(--muted-foreground)]">
+                    Pumili muna ng klase ng sakay bago pumili sa map.
+                  </p>
+                )}
+                </div>
+
+                {/* Step 3 — pickup and drop-off, only after the ride type is chosen */}
+                <div className={bookingStep === 'locations' ? '' : 'hidden'}>
+                <div className="mb-3 flex items-center justify-between gap-3 rounded-2xl border border-line bg-[var(--muted)] px-4 py-3">
+                  <div className="min-w-0">
+                    <p className="text-[11px] font-semibold uppercase tracking-widest text-[var(--muted-foreground)]">
+                      Ride type
+                    </p>
+                    <p className="truncate text-sm font-bold text-[var(--ink)]">
+                      {selectedVehicle === 'share' ? 'Shared ride · Sabay' : 'Private ride · Pribado'}
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setBookingStep('ride')}
+                    className="flex-shrink-0 rounded-lg px-3 py-2 text-xs font-bold text-[var(--primary)] underline-offset-2 hover:underline"
+                  >
+                    Change
+                  </button>
+                </div>
+                <SectionHeading
+                  eyebrow="Booking"
+                  title="Saan ka pupunta?"
+                  filipino="Piliin ang sakayan at iyong pupuntahan."
+                  as="h3"
+                  className="mb-3"
+                />
 
                 {/* Location Inputs */}
                 <div className="space-y-3 mb-4">
@@ -2074,11 +2211,22 @@ export default function CustomerHome() {
                   </Card>
                 </div>
 
+                {/* Choose on Map — same shortcut here, in case the fields are still empty */}
+                <Button
+                  type="button"
+                  onClick={openChooseOnMap}
+                  variant="outline"
+                  className="mb-4 min-h-12 w-full rounded-2xl border-2 border-[var(--primary)] bg-[var(--primary-soft)] text-base font-bold text-[var(--primary)] hover:bg-[var(--primary-soft)] hover:text-[var(--primary)]"
+                >
+                  <MapPin className="h-5 w-5" />
+                  Choose on Map
+                </Button>
+
                 {/* Book Ride Button — stays visible but disabled until the ride is complete */}
                 <Button
                   onClick={handleBookRide}
                   disabled={!selectedVehicle || !dropoff}
-                  className="min-h-14 w-full rounded-2xl bg-[var(--primary)] py-4 text-lg font-bold text-white hover:bg-[var(--coral-dark)] disabled:bg-[var(--border)] disabled:text-[var(--muted-foreground)]"
+                  className="min-h-14 w-full flex-col rounded-2xl bg-[var(--primary)] py-4 text-lg font-bold text-white hover:bg-[var(--coral-dark)] disabled:bg-[var(--border)] disabled:text-[var(--muted-foreground)]"
                 >
                   <span className="block">
                     {selectedVehicle
@@ -2096,9 +2244,11 @@ export default function CustomerHome() {
                       : 'Itakda muna ang pupuntahan para makapag-book.'}
                   </p>
                 ) : null}
+                </div>
               </div>
             </Card>
           </div>
+          </>
         )}
 
 
@@ -2447,7 +2597,10 @@ export default function CustomerHome() {
                 <p className="text-xs text-[var(--muted-foreground)]">Choose a terminal as your pickup point</p>
               </div>
               <button
-                onClick={() => setShowTerminalPicker(false)}
+                onClick={() => {
+                  chainDropoffAfterPickupRef.current = false;
+                  setShowTerminalPicker(false);
+                }}
                 className="w-8 h-8 rounded-full bg-[var(--muted)] flex items-center justify-center"
               >
                 <X className="w-5 h-5 text-[var(--muted-foreground)]" />
@@ -2473,6 +2626,15 @@ export default function CustomerHome() {
                     setSelectedTerminalId(terminal.id);
                     setShowTerminalPicker(false);
                     hasManualPickupSelectionRef.current = true;
+                    // "Choose on Map" continues straight to the drop-off picker.
+                    if (chainDropoffAfterPickupRef.current) {
+                      chainDropoffAfterPickupRef.current = false;
+                      setLocationPreview(null);
+                      setSearchQuery('');
+                      setPredictions([]);
+                      setActiveLocationInput('dropoff');
+                      setShowLocationPicker(true);
+                    }
                   }}
                   className={`p-4 rounded-xl border-2 cursor-pointer transition-all active:scale-[0.98] ${
                     selectedTerminalId === terminal.id
