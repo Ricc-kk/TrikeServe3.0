@@ -73,6 +73,11 @@ export default function ActiveRide() {
 
   const isCompleting = useRef(false);
   const lastReportedLocationRef = useRef<{ lat: number; lng: number } | null>(null);
+  // Latest ride data, readable from mount-only callbacks; and whether at least
+  // one GPS fix has been pushed to the database for the current ride.
+  const rideDataRef = useRef<ActiveRideData | null>(null);
+  const hasPersistedLocationRef = useRef(false);
+  rideDataRef.current = rideData;
   const [showRideComplete, setShowRideComplete] = useState(false);
   const [resolvedName, setResolvedName] = useState<string | null>(null);
   // Set when the customer cancels out from under an accepted ride, so the rider
@@ -139,6 +144,25 @@ export default function ActiveRide() {
     return true;
   };
 
+  // Write the driver's current position to the active ride's backing store so
+  // the customer and business maps can follow it.
+  const persistDriverLocation = (loc: { lat: number; lng: number }) => {
+    const ride = rideDataRef.current;
+    if (!ride) return false;
+    if (ride.lobbyId) {
+      supabaseHelpers.updateLobbyDriverLocation(ride.lobbyId, loc.lat, loc.lng);
+    } else if (ride.orderId) {
+      // Delivery: keep both the order row and the active ride in sync.
+      supabase.from('orders').update({ driver_lat: loc.lat, driver_lng: loc.lng, driver_name: ride.driverName || 'Driver', updated_at: new Date().toISOString() }).eq('id', ride.orderId).then(() => {}, () => {});
+      if (ride.id) supabaseHelpers.updateRideRequest(ride.id, { driver_lat: loc.lat, driver_lng: loc.lng, updated_at: new Date().toISOString() });
+    } else if (ride.id) {
+      supabaseHelpers.updateRideRequest(ride.id, { driver_lat: loc.lat, driver_lng: loc.lng, updated_at: new Date().toISOString() });
+    } else {
+      return false;
+    }
+    return true;
+  };
+
   // Request device GPS location
   useEffect(() => {
     if (!('geolocation' in navigator)) return;
@@ -146,14 +170,25 @@ export default function ActiveRide() {
       (pos) => {
         console.log('[ActiveRide] Got device location:', pos.coords.latitude, pos.coords.longitude);
         setLocationProblem(null);
-        reportDriverLocation({ lat: pos.coords.latitude, lng: pos.coords.longitude }, { force: true });
+        const loc = { lat: pos.coords.latitude, lng: pos.coords.longitude };
+        reportDriverLocation(loc, { force: true });
+        // Persist the first fix even if the driver is parked and never moves.
+        if (!hasPersistedLocationRef.current && persistDriverLocation(loc)) {
+          hasPersistedLocationRef.current = true;
+        }
       },
       (err) => {
         console.error('[ActiveRide] Geolocation error:', err.message);
         // Retry once after a short delay — sometimes the first request is rushed
         setTimeout(() => {
           navigator.geolocation.getCurrentPosition(
-            (pos2) => reportDriverLocation({ lat: pos2.coords.latitude, lng: pos2.coords.longitude }, { force: true }),
+            (pos2) => {
+              const loc = { lat: pos2.coords.latitude, lng: pos2.coords.longitude };
+              reportDriverLocation(loc, { force: true });
+              if (!hasPersistedLocationRef.current && persistDriverLocation(loc)) {
+                hasPersistedLocationRef.current = true;
+              }
+            },
             (retryError) => {
               console.error('[ActiveRide] Geolocation retry also failed');
               setLocationProblem(retryError.code === retryError.PERMISSION_DENIED ? 'permission-denied' : 'services-off');
@@ -166,6 +201,11 @@ export default function ActiveRide() {
     );
   }, []);
 
+  // A new ride starts fresh: its first GPS fix must be persisted.
+  useEffect(() => {
+    hasPersistedLocationRef.current = false;
+  }, [rideData?.id, rideData?.lobbyId]);
+
   // Watch position for real-time updates
   useEffect(() => {
     if (!('geolocation' in navigator)) return;
@@ -174,18 +214,12 @@ export default function ActiveRide() {
         const loc = { lat: pos.coords.latitude, lng: pos.coords.longitude };
         setLocationProblem(null);
         // Ignore sub-threshold drift so the map does not twitch while parked and
-        // customers are not sent a stream of meaningless position updates.
-        if (!reportDriverLocation(loc)) return;
-        // Save to ride_requests (private rides), shared_ride_lobbies (share rides),
-        // or orders table (deliveries)
-        if (rideData?.lobbyId) {
-          supabaseHelpers.updateLobbyDriverLocation(rideData.lobbyId, loc.lat, loc.lng);
-        } else if (rideData?.orderId) {
-          // Delivery: save GPS to BOTH orders table and ride_requests
-          supabase.from('orders').update({ driver_lat: loc.lat, driver_lng: loc.lng, driver_name: rideData.driverName || 'Driver', updated_at: new Date().toISOString() }).eq('id', rideData.orderId).then(() => {}, () => {});
-          if (rideData?.id) supabaseHelpers.updateRideRequest(rideData.id, { driver_lat: loc.lat, driver_lng: loc.lng, updated_at: new Date().toISOString() });
-        } else if (rideData?.id) {
-          supabaseHelpers.updateRideRequest(rideData.id, { driver_lat: loc.lat, driver_lng: loc.lng, updated_at: new Date().toISOString() });
+        // customers are not sent a stream of meaningless position updates. The
+        // first fix for a ride is always persisted, so tracking shows up even if
+        // the driver never moves.
+        const moved = reportDriverLocation(loc);
+        if (moved || !hasPersistedLocationRef.current) {
+          if (persistDriverLocation(loc)) hasPersistedLocationRef.current = true;
         }
       },
       (error) => {

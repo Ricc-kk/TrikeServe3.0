@@ -1,10 +1,12 @@
-import { X, Camera, ArrowLeft, Check, LogOut, User } from "lucide-react";
+import { X, Camera, ArrowLeft, Check, LogOut, User, MapPin } from "lucide-react";
 import { Link, useNavigate } from "react-router";
-import { useState, useRef } from "react";
+import { useEffect, useState, useRef } from "react";
 import { useAuth } from "../../contexts/AuthContext";
 import { Button } from "../ui/button";
 import { supabase } from "../../../lib/supabase";
 import { supabaseHelpers } from "@/lib/supabase";
+import MapSelector from "./MapSelector";
+import { getDefaultAddress, setDefaultAddress, type DefaultAddress } from "@/lib/defaultAddress";
 
 export default function Profile() {
   const navigate = useNavigate();
@@ -20,6 +22,17 @@ export default function Profile() {
   const [showSwitchConfirm, setShowSwitchConfirm] = useState(false);
   const [uploadingPhoto, setUploadingPhoto] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  // Customer's default delivery address, set from the map (search or tap).
+  const [showAddressMap, setShowAddressMap] = useState(false);
+  const [defaultAddress, setDefaultAddressState] = useState<DefaultAddress | null>(
+    () => getDefaultAddress(user?.id, user?.email)
+  );
+  const [addressSaved, setAddressSaved] = useState(false);
+
+  // Reload when the signed-in user resolves or changes.
+  useEffect(() => {
+    setDefaultAddressState(getDefaultAddress(user?.id, user?.email));
+  }, [user?.id, user?.email]);
 
   const handlePhotoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -170,6 +183,39 @@ export default function Profile() {
           </p>
         </div>
 
+        {/* Default Delivery Address */}
+        <div>
+          <label className="block text-sm text-[var(--muted-foreground)] mb-2">Delivery Address</label>
+          <button
+            onClick={() => setShowAddressMap(true)}
+            className="w-full flex items-center gap-3 p-4 text-left bg-surface border border-[var(--border)] rounded-xl active:scale-[0.98] transition-transform"
+          >
+            <MapPin className="w-5 h-5 text-[var(--primary)] flex-shrink-0" />
+            <div className="flex-1 min-w-0">
+              {defaultAddress ? (
+                <>
+                  <p className="font-semibold text-[var(--ink)] truncate">{defaultAddress.name}</p>
+                  <p className="text-xs text-[var(--muted-foreground)] truncate">{defaultAddress.full}</p>
+                </>
+              ) : (
+                <>
+                  <p className="font-semibold text-[var(--ink)]">Set your default address</p>
+                  <p className="text-xs text-[var(--muted-foreground)]">Search or tap the map to pin it.</p>
+                </>
+              )}
+            </div>
+            <span className="text-xs font-semibold text-[var(--primary)] flex-shrink-0">
+              {defaultAddress ? 'Change' : 'Set'}
+            </span>
+          </button>
+          <p className="text-xs text-[var(--muted-foreground)] mt-2 leading-relaxed">
+            Used automatically as the delivery address when you place an order.
+          </p>
+          {addressSaved && (
+            <p className="text-xs text-[var(--success)] mt-2 font-semibold">Default address saved.</p>
+          )}
+        </div>
+
       </div>
 
 
@@ -296,6 +342,34 @@ export default function Profile() {
             </div>
           </div>
         </div>
+      )}
+
+      {/* Default Address Map Selector */}
+      {showAddressMap && (
+        <MapSelector
+          onClose={() => setShowAddressMap(false)}
+          onSelectLocation={(location) => {
+            const addr: DefaultAddress = {
+              name: location.name,
+              full: location.full,
+              lat: location.lat,
+              lng: location.lng,
+            };
+            setDefaultAddress(addr, user?.id, user?.email);
+            setDefaultAddressState(addr);
+            setShowAddressMap(false);
+            setAddressSaved(true);
+            setTimeout(() => setAddressSaved(false), 3000);
+          }}
+          currentLocation={
+            defaultAddress || {
+              name: 'Select delivery address',
+              full: 'Tap the map to place your pin',
+              lat: 14.7244,
+              lng: 120.9668,
+            }
+          }
+        />
       )}
     </div>
   );

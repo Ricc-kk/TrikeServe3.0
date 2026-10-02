@@ -11,6 +11,7 @@ import { supabase } from "../../../utils/supabase";
 import { supabaseHelpers, logAudit } from "@/lib/supabase";
 import BottomNav from "../ui/BottomNav";
 import MapSelector from "./MapSelector";
+import { getDefaultAddress } from "@/lib/defaultAddress";
 
 export default function Cart() {
   const navigate = useNavigate();
@@ -23,6 +24,8 @@ export default function Cart() {
   const [checkoutRestaurant, setCheckoutRestaurant] = useState<any>(null);
   const [deliveryFee, setDeliveryFee] = useState(35); // Admin-set base delivery fee (default until loaded)
   const [hasSelectedAddress, setHasSelectedAddress] = useState(false);
+  // True while the address came from the customer's saved default (Profile).
+  const [fromDefaultAddress, setFromDefaultAddress] = useState(false);
   const [paymentMethod] = useState<"cash">("cash");
   const [needsCutlery, setNeedsCutlery] = useState(false);
   const [showOrderConfirmation, setShowOrderConfirmation] = useState(false);
@@ -45,6 +48,17 @@ export default function Cart() {
   useEffect(() => {
     supabaseHelpers.getAdminDeliveryFee().then(setDeliveryFee);
   }, []);
+
+  // Prefill the customer's saved default delivery address (set in Profile), so
+  // they don't have to pick a drop-off on the map for every order.
+  useEffect(() => {
+    const saved = getDefaultAddress(user?.id, user?.email);
+    if (saved) {
+      setSelectedAddress({ name: saved.name, full: saved.full, lat: saved.lat, lng: saved.lng });
+      setHasSelectedAddress(true);
+      setFromDefaultAddress(true);
+    }
+  }, [user?.id, user?.email]);
 
   const toggleRestaurantSelection = (id: number) => {
     setSelectedRestaurants(prev =>
@@ -734,6 +748,13 @@ export default function Cart() {
             <ChevronRight className="w-5 h-5 text-[var(--muted-foreground)] flex-shrink-0" />
           </button>
 
+          {fromDefaultAddress && (
+            <p className="text-xs text-[var(--muted-foreground)] mb-3 flex items-center gap-1.5">
+              <Check className="w-3.5 h-3.5 text-[var(--success)] flex-shrink-0" />
+              Using your saved default address. Tap above to change it for this order.
+            </p>
+          )}
+
           {/* Floor/Unit Number */}
           <div className="flex items-center gap-2 p-4 bg-surface border border-[var(--border)] rounded-xl mb-4">
             <input
@@ -916,6 +937,7 @@ export default function Cart() {
               lng: location.lng,
             });
             setHasSelectedAddress(true);
+            setFromDefaultAddress(false);
             setShowMapSelector(false);
           }}
           currentLocation={selectedAddress}

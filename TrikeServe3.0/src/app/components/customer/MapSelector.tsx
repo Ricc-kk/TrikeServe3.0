@@ -50,6 +50,8 @@ export default function MapSelector({ onClose, onSelectLocation, currentLocation
   const mapRef = useRef<google.maps.Map | null>(null);
   const geocodeRequestIdRef = useRef(0);
   const [placesSessionToken, setPlacesSessionToken] = useState<string>(() => createPlacesSessionToken());
+  // Ask the customer to confirm before the chosen pin is committed.
+  const [showConfirm, setShowConfirm] = useState(false);
 
   // Pan the map when the center changes (pin placement or search selection)
   useEffect(() => {
@@ -183,6 +185,11 @@ export default function MapSelector({ onClose, onSelectLocation, currentLocation
   };
 
   const handleChooseLocation = () => {
+    if (!pickedPin) return;
+    setShowConfirm(true);
+  };
+
+  const confirmSelectedLocation = () => {
     if (!pickedPin) return;
     onSelectLocation({
       name: pickedPin.name,
@@ -429,6 +436,36 @@ export default function MapSelector({ onClose, onSelectLocation, currentLocation
             >
               {pickedPin ? "Choose This Location" : "Tap the map to select a location"}
             </button>
+          </div>
+        </div>
+      )}
+
+      {/* Confirm Selected Address */}
+      {showConfirm && pickedPin && (
+        <div className="fixed inset-0 z-[4010] bg-black/60 flex items-center justify-center p-4">
+          <div className="bg-surface rounded-2xl shadow-xl p-6 max-w-sm w-full">
+            <div className="w-14 h-14 bg-[var(--success)]/10 rounded-full flex items-center justify-center mx-auto mb-3">
+              <MapPin className="w-7 h-7 text-[var(--success)]" />
+            </div>
+            <h3 className="text-lg font-bold text-[var(--ink)] text-center">Use this address?</h3>
+            <div className="mt-4 p-3 rounded-xl bg-[var(--muted)] border border-[var(--border)]">
+              <p className="text-sm font-semibold text-[var(--ink)] text-center">{pickedPin.name}</p>
+              <p className="text-xs text-[var(--muted-foreground)] text-center mt-1">{pickedPin.full}</p>
+            </div>
+            <div className="flex gap-3 mt-6">
+              <button
+                onClick={() => setShowConfirm(false)}
+                className="flex-1 py-3 text-sm font-semibold text-[var(--muted-foreground)] bg-[var(--muted)] rounded-xl active:scale-95 transition-transform"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={confirmSelectedLocation}
+                className="flex-1 py-3 text-sm font-semibold text-white bg-[var(--success)] rounded-xl active:scale-95 transition-transform"
+              >
+                Confirm
+              </button>
+            </div>
           </div>
         </div>
       )}

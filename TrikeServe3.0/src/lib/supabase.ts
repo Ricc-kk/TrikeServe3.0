@@ -2850,6 +2850,88 @@ export const supabaseHelpers = {
     return { data: stats, error: null };
   },
 
+  // ─── Ride reports ────────────────────────────────────────────────────
+  // Customers report a completed ride; Super Admins review these.
+  async createRideReport(report: {
+    rideId?: string;
+    reporterId?: string;
+    reporterName?: string;
+    reporterEmail?: string;
+    driverId?: string;
+    driverName?: string;
+    category: string;
+    description: string;
+    rideRoute?: string;
+  }) {
+    const now = new Date().toISOString();
+    const { data, error } = await supabase
+      .from('ride_reports')
+      .insert([{
+        ride_id: report.rideId || null,
+        reporter_id: report.reporterId || null,
+        reporter_name: report.reporterName || null,
+        reporter_email: report.reporterEmail || null,
+        driver_id: report.driverId || null,
+        driver_name: report.driverName || null,
+        category: report.category,
+        description: report.description,
+        ride_route: report.rideRoute || null,
+        status: 'pending',
+        created_at: now,
+        updated_at: now,
+      }])
+      .select()
+      .single();
+
+    return { data, error };
+  },
+
+  async getRideReports(status?: string) {
+    let query = supabase
+      .from('ride_reports')
+      .select('*')
+      .order('created_at', { ascending: false });
+    if (status) query = query.eq('status', status);
+    const { data, error } = await query;
+    return { data: data || [], error };
+  },
+
+  async updateRideReportStatus(id: string, status: string, adminNotes?: string) {
+    const { data, error } = await supabase
+      .from('ride_reports')
+      .update({ status, admin_notes: adminNotes ?? null, updated_at: new Date().toISOString() })
+      .eq('id', id)
+      .select()
+      .single();
+    return { data, error };
+  },
+
+  // Follow the driver's active ride for a delivery order: the ride request the
+  // driver accepted for that order. Emits the ride row on every change so the
+  // customer and business maps can follow driver_lat/lng live.
+  subscribeToOrderDelivery(orderId: string, callback: (data: any) => void) {
+    const channel = supabase
+      .channel(`order_delivery_${orderId}`)
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'ride_requests',
+          filter: `order_id=eq.${orderId}`,
+        },
+        (payload) => {
+          const record = payload?.new || (payload as any)?.record || null;
+          if (record) callback(record);
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  },
+
   // Real-time subscription for driver status updates
   subscribeToRideUpdates(rideId: string, callback: (data: any) => void) {
     console.log(`📡 Setting up real-time subscription for ride: ${rideId}`);

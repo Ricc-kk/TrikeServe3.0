@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo } from "react";
 import {
-  Menu, RefreshCw, ShieldCheck, Search, AlertTriangle, ClipboardList,
+  Menu, ShieldCheck, Search, AlertTriangle, ClipboardList,
 } from "lucide-react";
 import { Card } from "../ui/card";
 import { Badge } from "../ui/badge";
@@ -24,6 +24,7 @@ const ACTION_META: Record<string, { label: string; badge: string; category: stri
   create_ride: { label: "Booked ride", badge: "bg-[var(--primary)]", category: "Rides" },
   cancel_ride: { label: "Cancelled ride", badge: "bg-[var(--error)]", category: "Rides" },
   place_order: { label: "Placed order", badge: "bg-[var(--primary)]", category: "Orders" },
+  report_ride: { label: "Reported a ride", badge: "bg-[var(--error)]", category: "Rides" },
   // Driver actions
   accept_ride: { label: "Accepted ride", badge: "bg-[var(--success)]", category: "Rides" },
   complete_ride: { label: "Completed ride", badge: "bg-[var(--success)]", category: "Rides" },
@@ -160,12 +161,6 @@ export default function AuditTrail() {
                 </p>
               </div>
             </div>
-            <button
-              onClick={loadLogs}
-              className="flex items-center gap-2 px-3 py-2 bg-[var(--muted)] border border-line rounded-xl text-sm font-semibold text-[var(--muted-foreground)] hover:border-[var(--primary)] transition-all flex-shrink-0"
-            >
-              <RefreshCw className="w-4 h-4" /> Refresh
-            </button>
           </div>
         </div>
 
