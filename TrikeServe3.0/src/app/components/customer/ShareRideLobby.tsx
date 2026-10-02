@@ -907,6 +907,14 @@ export default function ShareRideLobby({
   const passengers = lobby.passengers_json || [];
   const isTerminal = terminalStatus !== null;
 
+  // The lobby stores the trip total it was created with (computed from the
+  // creator's terminal fare). Prefer that over the prop so everyone in the
+  // lobby — including a passenger who joined an existing lobby or reopened it
+  // later — sees the same, correct fare instead of their own re-estimate.
+  const lobbyTripTotal =
+    lobby && Number(lobby.price_per_seat) > 0 ? Number(lobby.price_per_seat) : pricePerSeat;
+  const perSeatFare = lobbyTripTotal / Math.max(1, passengers.length);
+
   // Full lobby view
   return (
     <>
@@ -1202,16 +1210,16 @@ export default function ShareRideLobby({
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-[10px] text-[var(--muted-foreground)] font-bold tracking-wider">Your Fare</p>
-                <p className="text-2xl font-bold text-[var(--primary)]">₱{(pricePerSeat / Math.max(1, passengers.length)).toFixed(2)}</p>
+                <p className="text-2xl font-bold text-[var(--primary)]">₱{perSeatFare.toFixed(2)}</p>
                 {passengers.length > 1 && (
                   <p className="text-[10px] text-[var(--muted-foreground)]">
-                    ₱{pricePerSeat} ÷ {passengers.length} passengers
+                    ₱{lobbyTripTotal} ÷ {passengers.length} passengers
                   </p>
                 )}
               </div>
               <div className="text-right">
                 <p className="text-[10px] text-[var(--muted-foreground)] font-bold tracking-wider">Trip Total</p>
-                <p className="text-lg font-bold text-[var(--ink)]">₱{pricePerSeat}</p>
+                <p className="text-lg font-bold text-[var(--ink)]">₱{lobbyTripTotal}</p>
               </div>
             </div>
 

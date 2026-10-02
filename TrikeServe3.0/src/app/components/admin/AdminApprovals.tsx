@@ -11,6 +11,7 @@ import {
   getApprovalRequests,
   approveApprovalRequest,
   rejectApprovalRequest,
+  logAudit,
   APPROVAL_REQUEST_LABELS,
   type ApprovalRequest,
   type ApprovalRequestType,
@@ -148,6 +149,16 @@ export default function AdminApprovals() {
           setToast({ message: `Approve failed: ${result.error}`, variant: 'error' });
           return;
         }
+        logAudit({
+          action: 'approve_request',
+          actorRole: 'admin',
+          entityType: 'approval',
+          entityId: request.id,
+          summary: `Approved ${APPROVAL_REQUEST_LABELS[request.request_type]}`,
+          details: request.payload,
+          actorEmail: user?.email,
+          actorName: user?.name,
+        });
         await loadRequests();
         setToast({ message: 'Request approved and applied', variant: 'success' });
       },
@@ -163,6 +174,16 @@ export default function AdminApprovals() {
       setToast({ message: `Reject failed: ${result.error}`, variant: 'error' });
       return;
     }
+    logAudit({
+      action: 'reject_request',
+      actorRole: 'admin',
+      entityType: 'approval',
+      entityId: rejectTarget.id,
+      summary: `Rejected ${APPROVAL_REQUEST_LABELS[rejectTarget.request_type]}`,
+      details: { payload: rejectTarget.payload, reason: rejectReason.trim() || null },
+      actorEmail: user?.email,
+      actorName: user?.name,
+    });
     setRejectTarget(null);
     setRejectReason("");
     await loadRequests();

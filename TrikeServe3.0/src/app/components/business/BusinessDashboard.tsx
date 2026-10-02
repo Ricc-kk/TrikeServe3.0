@@ -11,6 +11,7 @@ import { ImageWithFallback } from "../figma/ImageWithFallback";
 import AppHeader from "../ui/AppHeader";
 import AppShell from "../ui/AppShell";
 import BottomNav from "../ui/BottomNav";
+import { AnalyticsBarChart, type BarDatum } from "../ui/AnalyticsCharts";
 import { useAuth } from "../../contexts/AuthContext";
 import { supabase } from "../../../lib/supabase";
 import { supabaseHelpers } from "@/lib/supabase";
@@ -32,7 +33,7 @@ export default function BusinessDashboard() {
   });
   const [popularMenu, setPopularMenu] = useState<any[]>([]);
   const [dailySales, setDailySales] = useState<any[]>([]);
-  const [incomeBreakdown, setIncomeBreakdown] = useState<any[]>([]);
+  const [dailyOrders, setDailyOrders] = useState<BarDatum[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [restaurantId, setRestaurantId] = useState<string | null>(null);
   const [notifications, setNotifications] = useState<any[]>([]);
@@ -180,9 +181,8 @@ export default function BusinessDashboard() {
         const dailySalesData = calculateDailySales(orders);
         setDailySales(dailySalesData);
 
-        // Calculate income breakdown (cash vs gcash)
-        const incomeBreakdownData = calculateIncomeBreakdown(orders);
-        setIncomeBreakdown(incomeBreakdownData);
+        // Calculate order volume for last 7 days
+        setDailyOrders(calculateDailyOrders(orders));
       }
 
       // Load menu items
@@ -243,34 +243,28 @@ export default function BusinessDashboard() {
     return salesData;
   };
 
-  const calculateIncomeBreakdown = (orders: any[]) => {
-    let cashTotal = 0;
-    let gcashTotal = 0;
+  // Order counts for the last 7 days, for the analytics bar chart.
+  const calculateDailyOrders = (orders: any[]): BarDatum[] => {
+    const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+    const result: BarDatum[] = [];
 
-    orders.forEach((order: any) => {
-      const amount = order.total || 0;
-      if (order.payment_method === 'gcash') {
-        gcashTotal += amount;
-      } else {
-        cashTotal += amount;
-      }
-    });
+    for (let i = 6; i >= 0; i--) {
+      const date = new Date();
+      date.setDate(date.getDate() - i);
+      date.setHours(0, 0, 0, 0);
 
-    const total = cashTotal + gcashTotal;
-    if (total === 0) return [];
+      const nextDate = new Date(date);
+      nextDate.setDate(nextDate.getDate() + 1);
 
-    return [
-      {
-        label: 'Cash on Delivery',
-        percentage: Math.round((cashTotal / total) * 100),
-        color: 'var(--amber)'
-      },
-      {
-        label: 'GCash (Prepaid)',
-        percentage: Math.round((gcashTotal / total) * 100),
-        color: 'var(--success)'
-      }
-    ];
+      const count = orders.filter((order: any) => {
+        const orderDate = new Date(order.created_at);
+        return orderDate >= date && orderDate < nextDate;
+      }).length;
+
+      result.push({ label: days[date.getDay()], value: count });
+    }
+
+    return result;
   };
 
   // Check if user is not verified
@@ -590,92 +584,22 @@ export default function BusinessDashboard() {
             </div>
           </div>
 
-          {/* Total Income */}
+          {/* Orders Analytics */}
           <div>
-            <h2 className="text-xl lg:text-2xl font-bold text-[var(--ink)] mb-4">Total Income</h2>
+            <h2 className="text-xl lg:text-2xl font-bold text-[var(--ink)] mb-4">Orders by Day</h2>
             <Card className="p-5 lg:p-6 border border-line bg-surface">
-              {incomeBreakdown.length === 0 ? (
-                <div className="text-center py-12">
-                  <DollarSign className="w-16 h-16 text-[var(--border)] mx-auto mb-4" />
-                  <p className="text-[var(--muted-foreground)] text-sm">No income data yet</p>
-                  <p className="text-[var(--muted-foreground)] text-xs mt-1">Income breakdown will appear when you receive orders</p>
-                </div>
-              ) : (
-                <div className="flex flex-col lg:flex-row items-center gap-6 lg:gap-8">
-                  {/* Donut Chart */}
-                  <div className="relative w-40 h-40 lg:w-48 lg:h-48">
-                    <svg className="w-full h-full transform -rotate-90" viewBox="0 0 100 100">
-                      {/* Background circle */}
-                      <circle
-                        cx="50"
-                        cy="50"
-                        r="35"
-                        fill="none"
-                        stroke="var(--muted)"
-                        strokeWidth="15"
-                      />
-                      
-                      {/* Segments */}
-                      {incomeBreakdown.reduce((acc, item, index) => {
-                        const previousTotal = incomeBreakdown.slice(0, index).reduce((sum, i) => sum + i.percentage, 0);
-                        const circumference = 2 * Math.PI * 35;
-                        const offset = (previousTotal / 100) * circumference;
-                        const dashArray = `${(item.percentage / 100) * circumference} ${circumference}`;
-                        
-                        acc.push(
-                          <circle
-                            key={index}
-                            cx="50"
-                            cy="50"
-                            r="35"
-                            fill="none"
-                            stroke={item.color}
-                            strokeWidth="15"
-                            strokeDasharray={dashArray}
-                            strokeDashoffset={-offset}
-                            strokeLinecap="round"
-                          />
-                        );
-                        
-                        return acc;
-                      }, [] as JSX.Element[])}
-                    </svg>
-                    
-                    {/* Center text */}
-                    <div className="absolute inset-0 flex flex-col items-center justify-center">
-                      <p className="text-sm text-[var(--muted-foreground)]">Total</p>
-                      <p className="text-2xl font-bold text-[var(--ink)]">100%</p>
-                    </div>
-                  </div>
-                  
-                  {/* Legend */}
-                  <div className="flex-1 w-full space-y-4">
-                    {incomeBreakdown.map((item, index) => (
-                      <div key={index}>
-                        <div className="flex items-center justify-between mb-2">
-                          <div className="flex items-center gap-3">
-                            <div
-                              className="w-4 h-4 rounded"
-                              style={{ backgroundColor: item.color }}
-                            />
-                            <span className="font-semibold text-[var(--ink)] text-sm lg:text-base">{item.label}</span>
-                          </div>
-                          <span className="text-xl lg:text-2xl font-bold text-[var(--ink)]">{item.percentage}%</span>
-                        </div>
-                        <div className="w-full bg-[var(--muted)] rounded-full h-2">
-                          <div
-                            className="h-2 rounded-full transition-all"
-                            style={{
-                              width: `${item.percentage}%`,
-                              backgroundColor: item.color
-                            }}
-                          />
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
+              <div className="mb-5">
+                <p className="text-sm text-[var(--muted-foreground)] mb-1">Last 7 Days</p>
+                <h3 className="text-2xl lg:text-3xl font-bold text-[var(--ink)]">
+                  {dailyOrders.reduce((sum, d) => sum + d.value, 0)} orders
+                </h3>
+              </div>
+              <AnalyticsBarChart
+                data={dailyOrders}
+                color="var(--primary)"
+                height={180}
+                emptyHint="Start receiving orders to see your order trend"
+              />
             </Card>
           </div>
         </div>

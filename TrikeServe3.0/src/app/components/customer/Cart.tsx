@@ -8,7 +8,7 @@ import { useCart } from "../../contexts/CartContext";
 import { useOrders } from "../../contexts/OrderContext";
 import { useAuth } from "../../contexts/AuthContext";
 import { supabase } from "../../../utils/supabase";
-import { supabaseHelpers } from "@/lib/supabase";
+import { supabaseHelpers, logAudit } from "@/lib/supabase";
 import BottomNav from "../ui/BottomNav";
 import MapSelector from "./MapSelector";
 
@@ -272,6 +272,17 @@ export default function Cart() {
 
             // Remember the DB id so the confirmation can jump to the order details.
             setPlacedOrderId(savedOrder?.id || null);
+
+            logAudit({
+              action: 'place_order',
+              actorRole: 'customer',
+              entityType: 'order',
+              entityId: savedOrder?.id,
+              summary: `Placed an order at ${order.restaurantName || 'a restaurant'}`,
+              details: { order_number: order.orderNumber, total: order.total },
+              actorEmail: user?.email,
+              actorName: user?.name,
+            });
 
             // ONLY add to localStorage AFTER successful Supabase save
             addOrder(order);

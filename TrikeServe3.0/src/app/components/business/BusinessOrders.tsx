@@ -6,7 +6,8 @@ import { Badge } from "../ui/badge";
 import { Button } from "../ui/button";
 import BusinessSidebar from "./BusinessSidebar";
     import { supabase } from "../../../lib/supabase";
-    import { supabaseHelpers } from "@/lib/supabase";
+    import { supabaseHelpers, logAudit } from "@/lib/supabase";
+    import { useAuth } from "../../contexts/AuthContext";
 import ReasonPromptModal from "../ui/reason-prompt-modal";
 import { GoogleMap, MarkerF, Polyline } from "@react-google-maps/api";
 import useMapLoader from "@/lib/mapLoader";
@@ -42,6 +43,7 @@ interface Order {
 
 
 export default function BusinessOrders() {
+  const { user } = useAuth();
   const [selectedTab, setSelectedTab] = useState<'active' | 'history'>('active');
   const [selectedOrder, setSelectedOrder] = useState<Order | null>(null);
   const [confirmAction, setConfirmAction] = useState<'accept' | null>(null);
@@ -498,6 +500,17 @@ export default function BusinessOrders() {
         restaurantName: order.restaurantName,
         status: newStatus,
       }).catch(err => console.error('[BusinessOrders] Failed to notify customer:', err));
+
+      logAudit({
+        action: 'update_order_status',
+        actorRole: 'business',
+        entityType: 'order',
+        entityId: order.id,
+        summary: `Order ${order.orderNumber} → ${newStatus}`,
+        details: { from: order.status, to: newStatus },
+        actorEmail: user?.email,
+        actorName: user?.name,
+      });
 
       await new Promise(resolve => setTimeout(resolve, 2000));
 

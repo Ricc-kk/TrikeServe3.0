@@ -7,7 +7,7 @@ import { Card } from "../ui/card";
 import { Badge } from "../ui/badge";
 import LocationBanner, { type LocationProblem } from "../ui/LocationBanner";
 import { useAuth } from "../../contexts/AuthContext";
-import { supabaseHelpers } from "@/lib/supabase";
+import { supabaseHelpers, logAudit } from "@/lib/supabase";
 import { supabase } from "../../../utils/supabase";
 import useMapLoader from "@/lib/mapLoader";
 import PassengerMessagingDB from "./PassengerMessagingDB";
@@ -363,6 +363,17 @@ export default function ActiveRide() {
       await supabaseHelpers.updateRideRequest(rideData.id, { status: 'completed' });
       await supabaseHelpers.updateDriverRideStatus(rideData.id, 'completed', 'Ride completed!');
     }
+
+    logAudit({
+      action: 'complete_ride',
+      actorRole: 'rider',
+      entityType: 'ride_request',
+      entityId: rideData.id || rideData.lobbyId,
+      summary: `Completed a ${rideData.type || 'ride'}${rideData.pickup ? `: ${rideData.pickup} → ${rideData.dropoff || ''}` : ''}`,
+      details: { amount: rideData.amount },
+      actorEmail: user?.email,
+      actorName: user?.name,
+    });
 
     localStorage.removeItem('trikeserve_active_ride');
     setShowRideComplete(true);

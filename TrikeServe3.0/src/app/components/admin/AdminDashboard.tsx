@@ -13,10 +13,11 @@ import AppHeader from "../ui/AppHeader";
 import AppShell from "../ui/AppShell";
 import BottomNav from "../ui/BottomNav";
 import { supabase } from "../../../utils/supabase";
-import { adminDeleteUser, adminVerifyUser } from "../../../lib/supabase";
+import { adminDeleteUser, adminVerifyUser, logAudit } from "../../../lib/supabase";
 import { normalizeRates } from "@/lib/pricing";
 import ConfirmationModal from "../ui/confirmation-modal";
 import Toast from "../ui/Toast";
+import AdminAnalytics from "./AdminAnalytics";
 
 interface StoredUser {
   id: string;
@@ -268,6 +269,17 @@ export default function AdminDashboard() {
           setToast({ message: `Approve failed: ${result.error}`, variant: 'error' });
           return;
         }
+        const approved = pendingVerifications.find(p => p.id === userId);
+        logAudit({
+          action: 'verify_user',
+          actorRole: 'admin',
+          entityType: 'user',
+          entityId: userId,
+          summary: `Approved ${approved?.type || 'user'} account${approved?.name ? `: ${approved.name}` : ''}`,
+          details: approved ? { email: approved.email, type: approved.type } : null,
+          actorEmail: user?.email,
+          actorName: user?.name,
+        });
         loadUsers();
         closeModal();
         setToast({ message: 'User approved successfully', variant: 'success' });
@@ -287,6 +299,17 @@ export default function AdminDashboard() {
           setToast({ message: `Reject failed: ${result.error}`, variant: 'error' });
           return;
         }
+        const rejected = pendingVerifications.find(p => p.id === userId);
+        logAudit({
+          action: 'reject_user',
+          actorRole: 'admin',
+          entityType: 'user',
+          entityId: userId,
+          summary: `Rejected and deleted ${rejected?.type || 'user'} account${rejected?.name ? `: ${rejected.name}` : ''}`,
+          details: rejected ? { email: rejected.email, type: rejected.type } : null,
+          actorEmail: user?.email,
+          actorName: user?.name,
+        });
         const usersJson = localStorage.getItem('trikeserve_users');
         if (usersJson) {
           const allUsers = JSON.parse(usersJson);
@@ -326,6 +349,16 @@ export default function AdminDashboard() {
               updated_at: new Date().toISOString(),
             }, { onConflict: 'setting_key' });
 
+          logAudit({
+            action: 'update_rate',
+            actorRole: 'admin',
+            entityType: 'settings',
+            entityId: rateType,
+            summary: `${label} set to ₱${rateConfig[rateType]}`,
+            details: { ...rateConfig },
+            actorEmail: user?.email,
+            actorName: user?.name,
+          });
           setToast(
             error
               ? { message: 'Saved on this device — cloud sync failed.', variant: 'warning' }
@@ -487,6 +520,9 @@ export default function AdminDashboard() {
               </div>
             </Card>
           </div>
+
+          {/* Super Admin Analytics — driver + business performance */}
+          {isSuperAdmin && <AdminAnalytics />}
 
           <div className="grid grid-cols-1 gap-6 lg:gap-8 mb-6 lg:mb-8">
             {/* Pending Verifications */}

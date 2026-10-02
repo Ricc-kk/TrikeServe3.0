@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { ArrowLeft, DollarSign, TrendingUp, Calendar } from "lucide-react";
 import { useNavigate } from "react-router";
 import { Button } from "../ui/button";
@@ -9,6 +9,7 @@ import "slick-carousel/slick/slick.css";
 import "slick-carousel/slick/slick-theme.css";
 import { useAuth } from "../../contexts/AuthContext";
 import { supabaseHelpers } from "@/lib/supabase";
+import { AnalyticsBarChart, AnalyticsDonutChart, type BarDatum, type DonutDatum } from "../ui/AnalyticsCharts";
 import ActiveRideButton from "./ActiveRideButton";
 
 interface CompletedTrip {
@@ -218,6 +219,44 @@ export default function Earnings() {
   // those buckets together would triple-count trips). Used for Total Earnings and Avg per Trip.
   const totalEarnings = completedTrips.reduce((sum, trip) => sum + (trip.amount || 0), 0);
 
+  // Earnings per day for the last 7 days, for the analytics chart.
+  const weeklyEarnings = useMemo<BarDatum[]>(() => {
+    const labels = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+    const data: BarDatum[] = [];
+    for (let i = 6; i >= 0; i--) {
+      const date = new Date();
+      date.setDate(date.getDate() - i);
+      date.setHours(0, 0, 0, 0);
+      const nextDate = new Date(date);
+      nextDate.setDate(nextDate.getDate() + 1);
+      const total = completedTrips
+        .filter((trip) => {
+          const tripDate = new Date(trip.date);
+          return tripDate >= date && tripDate < nextDate;
+        })
+        .reduce((sum, trip) => sum + (trip.amount || 0), 0);
+      data.push({ label: labels[date.getDay()], value: Math.round(total) });
+    }
+    return data;
+  }, [completedTrips]);
+
+  // Completed trips split by service type.
+  const tripsByType = useMemo<DonutDatum[]>(() => {
+    let privateCount = 0;
+    let shareCount = 0;
+    let deliveryCount = 0;
+    completedTrips.forEach((trip) => {
+      if (trip.type === 'Delivery') deliveryCount += 1;
+      else if (trip.type === 'Ride Share') shareCount += 1;
+      else privateCount += 1;
+    });
+    return [
+      { label: 'Private Ride', value: privateCount, color: 'var(--success)' },
+      { label: 'Share Ride', value: shareCount, color: 'var(--amber)' },
+      { label: 'Delivery', value: deliveryCount, color: 'var(--info)' },
+    ];
+  }, [completedTrips]);
+
   return (
     <div className="min-h-screen bg-[var(--muted)] pb-20">
       {/* Header */}
@@ -333,6 +372,29 @@ export default function Earnings() {
               </p>
             </div>
           </div>
+        </Card>
+
+        {/* Analytics */}
+        <Card className="p-5 bg-surface border-0 shadow-sm">
+          <h3 className="font-extrabold text-[var(--ink)] mb-1" style={{ fontSize: '18px' }}>Weekly Earnings</h3>
+          <p className="text-xs text-[var(--muted-foreground)] mb-4">Last 7 days</p>
+          <AnalyticsBarChart
+            data={weeklyEarnings}
+            color="var(--primary)"
+            valuePrefix="₱"
+            height={160}
+            emptyHint="Complete trips to see your weekly earnings"
+          />
+        </Card>
+
+        <Card className="p-5 bg-surface border-0 shadow-sm">
+          <h3 className="font-extrabold text-[var(--ink)] mb-4" style={{ fontSize: '18px' }}>Trips by Type</h3>
+          <AnalyticsDonutChart
+            data={tripsByType}
+            centerLabel="Trips"
+            centerValue={String(tripsCompletedCount)}
+            emptyHint="Complete trips to see your trip breakdown"
+          />
         </Card>
 
         {/* Recent Trips */}

@@ -8,7 +8,7 @@ import { Badge } from "../ui/badge";
 import { useAuth } from "../../contexts/AuthContext";
 import { isDeliveryServiceMode, isQueueGatedType, useTerminalQueue } from "../../hooks/useTerminalQueue";
 import TerminalQueueCard from "./TerminalQueueCard";
-import { isPointInPolygon, normalizeBoundaryPolygon, supabaseHelpers, type LatLngPoint } from "@/lib/supabase";
+import { isPointInPolygon, normalizeBoundaryPolygon, supabaseHelpers, logAudit, type LatLngPoint } from "@/lib/supabase";
 import { supabase } from "../../../lib/supabase";
 import useMapLoader from "@/lib/mapLoader";
 import tricycleIcon from "../../../assets/0b76d1aa56b8ad6e15dd4efc8a0100b0ca5762a1.png";
@@ -473,6 +473,16 @@ export default function PassengerRequests() {
     // database requires the driver to still be first in queue at that moment —
     // so that path clears the slot itself.
     if (queueEntry && request.type !== 'private') await leaveQueue();
+    logAudit({
+      action: 'accept_ride',
+      actorRole: 'rider',
+      entityType: request.lobbyId ? 'lobby' : 'ride_request',
+      entityId: request.lobbyId || request.id,
+      summary: `Accepted a ${request.type} request: ${request.pickup} → ${request.dropoff}`,
+      details: { amount: request.amount },
+      actorEmail: user?.email,
+      actorName: user?.name,
+    });
     setTimeout(() => {
       navigate('/rider/active-ride', { state: { acceptedRide } });
     }, 2000);
