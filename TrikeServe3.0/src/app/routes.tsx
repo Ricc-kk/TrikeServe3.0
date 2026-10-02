@@ -29,7 +29,6 @@ import BusinessDirectChat from "./components/business/BusinessDirectChat";
 import CustomerApp from "./components/customer/CustomerApp";
 import CustomerHome from "./components/customer/Home";
 import FoodHome from "./components/customer/FoodHome";
-import CategoryFood from "./components/customer/CategoryFood";
 import RestaurantDetail from "./components/customer/RestaurantDetail";
 import Cart from "./components/customer/Cart";
 import Activity from "./components/customer/Activity";
@@ -42,6 +41,7 @@ import Profile from "./components/customer/Profile";
 import OrderDetail from "./components/customer/OrderDetail";
 import Favorites from "./components/customer/Favorites";
 import AdminDashboard from "./components/admin/AdminDashboard";
+import AdminAnalyticsPage from "./components/admin/AdminAnalyticsPage";
 import AdminUsers from "./components/admin/AdminUsers";
 import AdminTerminals from "./components/admin/AdminTerminals";
 import AdminApprovals from "./components/admin/AdminApprovals";
@@ -278,14 +278,6 @@ export const router = createBrowserRouter([
         )
       },
       { 
-        path: "customer/category-food", 
-        element: (
-          <ProtectedRoute allowedRoles={['customer']}>
-            <CategoryFood />
-          </ProtectedRoute>
-        )
-      },
-      { 
         path: "customer/restaurant-detail", 
         element: (
           <ProtectedRoute allowedRoles={['customer']}>
@@ -402,6 +394,14 @@ export const router = createBrowserRouter([
         element: (
           <ProtectedRoute allowedRoles={['admin']}>
             <AdminDashboard />
+          </ProtectedRoute>
+        )
+      },
+      {
+        path: "admin/analytics",
+        element: (
+          <ProtectedRoute allowedRoles={['admin']}>
+            <AdminAnalyticsPage />
           </ProtectedRoute>
         )
       },

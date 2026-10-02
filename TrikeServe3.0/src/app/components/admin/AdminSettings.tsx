@@ -1,24 +1,26 @@
 import { useState, useEffect } from "react";
 import {
-  Settings, Menu, Save, DollarSign,
-  Bike, Store,
-  LogOut, AlertTriangle
+  Settings, Menu, Save, PhilippinePeso,
+  Store,
+  LogOut, AlertTriangle, Palette
 } from "lucide-react";
+import { Tricycle } from "../ui/Tricycle";
 import { useNavigate } from "react-router";
 import { Card } from "../ui/card";
 import { Input } from "../ui/input";
 import { Badge } from "../ui/badge";
 import { useAuth } from "../../contexts/AuthContext";
-import AdminSidebar from "./AdminSidebar";
+
 import { supabase } from "../../../utils/supabase";
 import { normalizeRates } from "@/lib/pricing";
 import ConfirmationModal from "../ui/confirmation-modal";
 import Toast from "../ui/Toast";
+import ThemeModeSwitcher from "../ui/ThemeModeSwitcher";
+import AdminShell from "./AdminShell";
 
 export default function AdminSettings() {
   const navigate = useNavigate();
   const { user, logout } = useAuth();
-  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [toast, setToast] = useState<{ message: string; variant?: 'success' | 'error' | 'warning' } | null>(null);
   const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
 
@@ -136,37 +138,13 @@ export default function AdminSettings() {
   const isSuperAdmin = user?.adminType === 'business_customer';
 
   return (
-    <div className="min-h-screen bg-[var(--muted)] flex">
-      {/* Sidebar Navigation */}
-      <AdminSidebar
-        isMobileMenuOpen={isMobileMenuOpen}
-        setIsMobileMenuOpen={setIsMobileMenuOpen}
-      />
-
-      {/* Main Content */}
-      <div className="flex-1 lg:ml-64">
-        {/* Top Header */}
-        <div className="bg-surface border-b-2 border-[var(--border)] px-5 lg:px-8 py-4 lg:py-5 sticky top-0 z-50">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              {/* Hamburger Menu - Mobile Only */}
-              <button
-                onClick={() => setIsMobileMenuOpen(true)}
-                className="lg:hidden p-2 hover:bg-[var(--muted)] rounded-xl transition-all"
-              >
-                <Menu className="w-6 h-6 text-[var(--ink)]" />
-              </button>
-              <div>
-                <h1 className="text-2xl lg:text-3xl font-extrabold text-[var(--ink)]">Settings</h1>
-                <p className="text-xs lg:text-sm text-[var(--muted-foreground)]">Configure platform settings and rates</p>
-              </div>
-            </div>
-
-          </div>
-        </div>
+    <AdminShell
+      title="Settings"
+      subtitle="Configure platform settings and rates"
+    >
 
         {/* Content */}
-        <div className="p-5 lg:p-8 space-y-6 lg:space-y-8">
+        <div className="space-y-6">
           {/* Rider Admin: no rate configuration, but Account & Security stays */}
           {!isSuperAdmin && (
             <Card className="p-4 border-2 border-[var(--info-soft)] bg-[var(--info-soft)]">
@@ -224,7 +202,7 @@ export default function AdminSettings() {
             <div>
               <div className="flex items-center gap-3 mb-4">
                 <div className="w-10 h-10 bg-[var(--primary-soft)] rounded-xl flex items-center justify-center">
-                  <DollarSign className="w-6 h-6 text-[var(--primary)]" />
+                  <PhilippinePeso className="w-6 h-6 text-[var(--primary)]" aria-hidden="true" />
                 </div>
                 <div>
                   <h2 className="text-xl lg:text-2xl font-bold text-[var(--ink)]">Fixed Rate Configuration</h2>
@@ -237,7 +215,7 @@ export default function AdminSettings() {
               <Card className="p-5 lg:p-6 border border-line bg-surface">
                 <div className="flex items-start justify-between mb-4">
                   <div>
-                    <DollarSign className="w-8 h-8 lg:w-10 lg:h-10 text-[var(--violet)] mb-2" />
+                    <PhilippinePeso className="w-8 h-8 lg:w-10 lg:h-10 text-[var(--violet)] mb-2" aria-hidden="true" />
                     <h3 className="font-bold text-base lg:text-lg text-[var(--ink)]">Base Fare</h3>
                     <p className="text-xs text-[var(--muted-foreground)]">Flat amount added to every ride</p>
                   </div>
@@ -257,7 +235,7 @@ export default function AdminSettings() {
               <Card className="p-5 lg:p-6 border border-line bg-surface">
                 <div className="flex items-start justify-between mb-4">
                   <div>
-                    <Bike className="w-8 h-8 lg:w-10 lg:h-10 text-[var(--violet)] mb-2" />
+                    <Tricycle className="w-8 h-8 lg:w-10 lg:h-10 text-[var(--violet)] mb-2" />
                     <h3 className="font-bold text-base lg:text-lg text-[var(--ink)]">Rate per Kilometer</h3>
                     <p className="text-xs text-[var(--muted-foreground)]">Charged for each km the customer travels</p>
                   </div>
@@ -306,6 +284,20 @@ export default function AdminSettings() {
             </button>
           </div>
           )}
+
+          {/* Appearance — Super Admin sees English-only labels */}
+          <div>
+            <div className="flex items-center gap-3 mb-4">
+              <div className="w-10 h-10 bg-[var(--info-soft)] rounded-xl flex items-center justify-center">
+                <Palette className="w-6 h-6 text-[var(--info)]" />
+              </div>
+              <div>
+                <h2 className="text-xl lg:text-2xl font-bold text-[var(--ink)]">Appearance</h2>
+                <p className="text-sm text-[var(--muted-foreground)]">Light, dark, or follow your device</p>
+              </div>
+            </div>
+            <ThemeModeSwitcher />
+          </div>
 
           {/* Account & Security Section */}
           <div>
@@ -363,7 +355,6 @@ export default function AdminSettings() {
             </Card>
           </div>
         </div>
-      </div>
 
       {/* Logout Confirmation Modal */}
       {showLogoutConfirm && (
@@ -418,6 +409,6 @@ export default function AdminSettings() {
       {toast && (
         <Toast message={toast.message} variant={toast.variant} onClose={() => setToast(null)} />
       )}
-    </div>
+    </AdminShell>
   );
 }

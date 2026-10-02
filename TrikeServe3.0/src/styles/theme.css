@@ -12,8 +12,18 @@
   --surface: var(--background); /* app panel surface — adapts with .dark */
   --soft: var(--muted); /* soft inset surface for nested blocks */
   --line: var(--border); /* hairline borders for cards and dividers */
-  --ink: #122724; /* deep ink — primary structure/text */
+  --ink: #122724; /* deep ink — primary structure/text (flips in dark mode) */
   --ink-soft: #3a4a46; /* softened ink for secondary structure */
+  /* A permanently dark panel colour for surfaces that pair with white text
+     (e.g. the food header). Deliberately NOT --ink, because --ink flips in
+     dark mode and would turn these panels light-on-light. */
+  --ink-solid: #122724;
+  /* Text drawn on --amber-soft. Needs its own token because --amber-soft
+     darkens in dark mode, so the light-mode value stops being readable. */
+  --amber-ink: #8a5a06;
+  /* Text drawn on --success-soft, same reason as --amber-ink: --success itself
+     only reaches 2.97:1 against --success-soft, which fails WCAG AA. */
+  --success-ink: #14654a;
   --teal: #176b60; /* deep teal — structure accent */
   --teal-soft: #e3f0ea;
   --coral: #bc4b1f; /* deep coral — primary actions, AA with white text */
@@ -82,15 +92,49 @@
 }
 
 .dark {
-  /* Warm dark variant — kept on-brand in case dark mode is ever enabled. */
+  /* Warm dark variant.
+     The brand foundations below are flipped alongside the shadcn tokens: --ink
+     and --teal are used as text on surfaces, and the *-soft tokens are the
+     tinted chip backgrounds those colours are drawn on, so each pair has to
+     move together to stay readable. */
+  --canvas: #0d1513;
+  --ink: #f3efe6;
+  --ink-soft: #c9cfc7;
+  --ink-solid: #0e1917;
+  --teal: #5fc4ae;
+  --teal-soft: #16332d;
+  --coral: #e8804f;
+  --coral-dark: #f2a77f;
+  --coral-soft: #4a2314;
+  --amber: #ffc857;
+  --amber-soft: #4a3a12;
+  --amber-ink: #ffc857;
+  --success-ink: #6fdcae;
+  --mint: #9de0c8;
+  --mint-soft: #16342b;
+  --success: #34b184;
+  --success-soft: #10322a;
+  --info: #7aa7ff;
+  --info-soft: #16294d;
+  --violet: #a78bfa;
+  --violet-soft: #261d45;
+  --rider: #4dbfa0;
+  --rider-soft: #12332b;
+  --error: #ff8a80;
+  --error-soft: #3d1614;
+
   --background: #14201d;
   --foreground: #f3efe6;
   --card: #1b2926;
   --card-foreground: #f3efe6;
   --popover: #1b2926;
   --popover-foreground: #f3efe6;
+  /* `--primary` resolves to a LIGHT coral in dark mode (#e8804f), so a white
+     foreground on it only reaches 2.75:1 and fails WCAG AA for text. Pair it
+     with the dark ink instead — that lands around 6.5:1 while leaving the light
+     theme (deep coral, white text) untouched. */
   --primary: var(--coral);
-  --primary-foreground: #ffffff;
+  --primary-foreground: var(--ink-solid);
   --primary-soft: #4a2314;
   --secondary: #e3f0ea;
   --secondary-foreground: #14201d;
@@ -154,6 +198,9 @@
   --color-line: var(--line);
   --color-ink: var(--ink);
   --color-ink-soft: var(--ink-soft);
+  --color-ink-solid: var(--ink-solid);
+  --color-amber-ink: var(--amber-ink);
+  --color-success-ink: var(--success-ink);
   --color-teal: var(--teal);
   --color-teal-soft: var(--teal-soft);
   --color-coral: var(--coral);

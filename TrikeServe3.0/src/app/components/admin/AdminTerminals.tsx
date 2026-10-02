@@ -6,7 +6,7 @@ import {
 import { GoogleMap, MarkerF, InfoWindow, Polygon } from "@react-google-maps/api";
 import useMapLoader from "@/lib/mapLoader";
 import { autocompletePlacesNew, createPlacesSessionToken, fetchPlaceDetailsNew } from "@/lib/placesApi";
-import AdminSidebar from "./AdminSidebar";
+
 import { supabase } from "../../../utils/supabase";
 import { useAuth } from "../../contexts/AuthContext";
 import {
@@ -24,6 +24,9 @@ import {
 } from "../../../lib/supabase";
 import ConfirmationModal from "../ui/confirmation-modal";
 import Toast from "../ui/Toast";
+import AdminShell from "./AdminShell";
+import { StatSkeleton } from "./AdminSkeleton";
+import EmptyState from "../ui/EmptyState";
 
 const GOOGLE_MAPS_API_KEY = import.meta.env.VITE_GOOGLE_MAPS_API_KEY || "";
 
@@ -127,8 +130,10 @@ export default function AdminTerminals() {
   const [riderAdmins, setRiderAdmins] = useState<RiderAdminSummary[]>([]);
   const [savingAssignmentId, setSavingAssignmentId] = useState<string | null>(null);
 
-  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [terminals, setTerminals] = useState<Terminal[]>(getStoredTerminals());
+  // true until the first Supabase round-trip resolves, so the page can show a
+  // skeleton instead of a half-populated list.
+  const [loading, setLoading] = useState(true);
   const [users, setUsers] = useState<StoredRider[]>(getAllUsers());
   const [showForm, setShowForm] = useState(false);
   const [editTerminal, setEditTerminal] = useState<Terminal | null>(null);
@@ -218,12 +223,17 @@ export default function AdminTerminals() {
   }, [user?.email]);
 
   async function loadData() {
-    const [dbTerminals, dbRiders] = await Promise.all([
-      loadTerminalsFromSupabase(),
-      loadRidersFromSupabase(),
-    ]);
-    if (dbTerminals) setTerminals(dbTerminals);
-    if (dbRiders) setUsers(dbRiders);
+    setLoading(true);
+    try {
+      const [dbTerminals, dbRiders] = await Promise.all([
+        loadTerminalsFromSupabase(),
+        loadRidersFromSupabase(),
+      ]);
+      if (dbTerminals) setTerminals(dbTerminals);
+      if (dbRiders) setUsers(dbRiders);
+    } finally {
+      setLoading(false);
+    }
   }
 
   async function loadTerminalsFromSupabase(): Promise<Terminal[] | null> {
@@ -801,60 +811,13 @@ export default function AdminTerminals() {
   }
 
   return (
-    <div className="min-h-screen bg-[var(--muted)] flex">
-      {/* Sidebar Navigation - hidden when map picker is open */}
-      {!showMapPicker && (
-        <AdminSidebar
-          isMobileMenuOpen={isMobileMenuOpen}
-          setIsMobileMenuOpen={setIsMobileMenuOpen}
-        />
-      )}
-
-      {/* Main Content */}
-      <div className={`flex-1 ${!showMapPicker ? 'lg:ml-64' : ''}`}>
-        {/* Top Header */}
-        <div className="bg-surface border-b-2 border-[var(--border)] px-5 lg:px-8 py-4 lg:py-5 sticky top-0 z-50">
-          <div className="flex items-center justify-between gap-4">
-            <div className="flex items-center gap-3">
-              {/* Hamburger Menu - Mobile Only */}
-              <button
-                onClick={() => setIsMobileMenuOpen(true)}
-                className="lg:hidden p-2 hover:bg-[var(--muted)] rounded-xl transition-all"
-              >
-                <Menu className="w-6 h-6 text-[var(--ink)]" />
-              </button>
-              <div>
-                <h1 className="text-2xl lg:text-3xl font-extrabold text-[var(--ink)]">Terminal Management</h1>
-                <p className="text-xs lg:text-sm text-[var(--muted-foreground)]">
-                  {isRiderAdmin
-                    ? (assignedTerminalName ? `Assigned to ${assignedTerminalName} · ${riders.length} drivers` : 'No terminal assigned')
-                    : `${terminals.length} terminals · ${riders.length} drivers`}
-                </p>
-              </div>
-            </div>
-            <div className="flex items-center gap-3">
-              {isRiderAdmin && hasPendingChanges && (
-                <button
-                  onClick={savePendingChanges}
-                  className="flex items-center gap-2 px-4 lg:px-5 py-2.5 bg-[var(--success)] hover:bg-[var(--success)] text-white font-bold text-sm uppercase tracking-widest rounded-xl transition-all active:scale-95 shadow-lg shadow-[var(--success-soft)] animate-pulse"
-                >
-                  <Save size={16} /> Save Changes ({Object.keys(pendingChanges).length})
-                </button>
-              )}
-              {isSuperAdmin && (
-                <button
-                  onClick={openCreate}
-                  className="flex items-center gap-2 px-4 lg:px-5 py-2.5 bg-[var(--primary)] hover:bg-[var(--primary)] text-white font-bold text-sm uppercase tracking-widest rounded-xl transition-all active:scale-95 shadow-lg shadow-[var(--error-soft)]"
-                >
-                  <Plus size={16} /> New Terminal
-                </button>
-              )}
-            </div>
-          </div>
-        </div>
+    <AdminShell
+      title="Terminal Management"
+      subtitle="Terminals, drivers, fares and coverage areas"
+    >
 
         {/* Content */}
-        <div className="p-5 lg:p-8">
+        <div className="space-y-6">
           {/* Pending Changes Banner */}
           {isRiderAdmin && hasPendingChanges && (
             <div className="mb-4 p-4 bg-[var(--amber-soft)] border-2 border-[var(--amber-soft)] rounded-xl">
@@ -990,12 +953,15 @@ export default function AdminTerminals() {
             </div>
           )}
 
-          {isRiderAdmin && visibleTerminals.length === 0 ? (
-            <div className="p-12 border-2 border-dashed border-[var(--border)] rounded-2xl text-center">
-              <MapPin className="w-16 h-16 text-[var(--border)] mx-auto mb-4" />
-              <p className="text-[var(--muted-foreground)] text-sm mb-2">No terminal assigned to you yet</p>
-              <p className="text-[var(--muted-foreground)] text-xs">The Super Admin must assign you to a terminal</p>
-            </div>
+          {loading ? (
+            <StatSkeleton count={4} />
+          ) : isRiderAdmin && visibleTerminals.length === 0 ? (
+            <EmptyState
+              icon={MapPin}
+              title="No terminal assigned to you yet"
+              description="The Super Admin must assign you to a terminal before you can manage it."
+              filipino="Wala pang terminal na nakatalaga sa iyo. Itinalaga ito ng Super Admin."
+            />
           ) : (
           <div className="grid gap-4">
             {visibleTerminals.map(t => {
@@ -1005,12 +971,12 @@ export default function AdminTerminals() {
               return (
                 <div key={t.id} className="bg-surface rounded-2xl border border-line overflow-hidden">
                   <div className="p-5">
-                    <div className="flex items-start justify-between gap-4">
-                      <div className="flex items-start gap-3">
+                    <div className="flex flex-wrap items-start justify-between gap-4">
+                      <div className="flex items-start gap-3 min-w-0">
                         <div className="w-11 h-11 bg-[var(--info-soft)] rounded-xl flex items-center justify-center flex-shrink-0">
                           <MapPin size={20} className="text-[var(--info)]" />
                         </div>
-                        <div>
+                        <div className="min-w-0">
                           <div className="flex items-center gap-2 flex-wrap">
                             <h3 className="font-bold text-[var(--ink)] text-lg">🚏 {t.name}</h3>
                             <span className={`text-xs font-bold px-2 py-0.5 rounded-full ${t.is_active ? "bg-[var(--success-soft)] text-[var(--success)]" : "bg-[var(--muted)] text-[var(--muted-foreground)]"}`}>
@@ -1040,14 +1006,15 @@ export default function AdminTerminals() {
                       <div className="flex items-center gap-2 flex-shrink-0">
                         <button
                           onClick={() => setExpandedId(isExpanded ? null : t.id)}
-                          className="px-3 py-1.5 text-xs font-semibold text-[var(--info)] bg-[var(--info-soft)] rounded-lg hover:bg-[var(--info-soft)] transition-all"
+                          className="min-h-11 px-3 text-xs font-semibold text-[var(--info)] bg-[var(--info-soft)] rounded-lg hover:bg-[var(--info-soft)] transition-all"
                         >
                           {isExpanded ? "Hide" : "Drivers"}
                         </button>
                         {(isSuperAdmin || (isRiderAdmin && t.id === assignedTerminalId)) && (
                           <button
                             onClick={() => openEdit(t)}
-                            className="w-8 h-8 bg-[var(--muted)] border border-line rounded-xl flex items-center justify-center hover:border-[var(--info)] transition-all active:scale-90"
+                            aria-label={`Edit ${t.name}`}
+                            className="w-11 h-11 bg-[var(--muted)] border border-line rounded-xl flex items-center justify-center hover:border-[var(--info)] transition-all active:scale-90"
                           >
                             <Edit2 size={14} className="text-[var(--muted-foreground)]" />
                           </button>
@@ -1055,7 +1022,8 @@ export default function AdminTerminals() {
                         {isSuperAdmin && (
                           <button
                             onClick={() => confirmDeleteTerminal(t.id)}
-                            className="w-8 h-8 bg-[var(--error-soft)] border-2 border-[var(--error-soft)] rounded-xl flex items-center justify-center hover:border-[var(--error)] transition-all active:scale-90"
+                            aria-label={`Delete ${t.name}`}
+                            className="w-11 h-11 bg-[var(--error-soft)] border-2 border-[var(--error-soft)] rounded-xl flex items-center justify-center hover:border-[var(--error)] transition-all active:scale-90"
                           >
                             <Trash2 size={14} className="text-[var(--error)]" />
                           </button>
@@ -1164,7 +1132,6 @@ export default function AdminTerminals() {
           </div>
           )}
         </div>
-      </div>
 
       {/* Form modal */}
       {showForm && (
@@ -1548,6 +1515,6 @@ export default function AdminTerminals() {
         variant={toast?.variant || 'success'}
         onClose={() => setToast(null)}
       />
-    </div>
+    </AdminShell>
   );
 }

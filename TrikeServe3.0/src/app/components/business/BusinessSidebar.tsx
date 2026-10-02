@@ -86,7 +86,7 @@ export default function BusinessSidebar({ isMobileMenuOpen, setIsMobileMenuOpen 
 
       {/* Sidebar */}
       <div className={`
-        fixed top-0 left-0 h-screen w-64 bg-white border-r-2 border-[var(--border)] z-[1001]
+        fixed top-0 left-0 h-screen w-64 bg-[var(--sidebar)] border-r-2 border-[var(--border)] z-[1001]
         transition-transform duration-300 ease-in-out
         lg:translate-x-0
         ${isMobileMenuOpen ? 'translate-x-0' : '-translate-x-full'}

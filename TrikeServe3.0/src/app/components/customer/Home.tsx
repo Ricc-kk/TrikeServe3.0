@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from "react";
-import { Search, MapPin, Users, User as UserIcon, ChevronDown, X, Clock, Utensils, Search as SearchIcon, User, Navigation, MessageCircle, Bell, Bike, Home as HomeIcon, ShoppingCart, ClipboardList, Star, ArrowLeft } from "lucide-react";
+import { Search, MapPin, Users, User as UserIcon, ChevronDown, X, Clock, Utensils, Search as SearchIcon, User, Navigation, MessageCircle, Home as HomeIcon, ShoppingCart, ClipboardList, Star, ArrowLeft } from "lucide-react";
 import { Link, useNavigate } from "react-router";
 import { Button } from "../ui/button";
 import { Card } from "../ui/card";
@@ -9,19 +9,21 @@ import BottomNav from "../ui/BottomNav";
 import ChoiceCard from "../ui/ChoiceCard";
 import SectionHeading from "../ui/SectionHeading";
 import LocationBanner, { type LocationProblem } from "../ui/LocationBanner";
-import { GoogleMap, MarkerF, InfoWindow, Polyline } from "@react-google-maps/api";
+import { GoogleMap, MarkerF, InfoWindow, Polygon, Polyline } from "@react-google-maps/api";
 import useMapLoader from "@/lib/mapLoader";
 import { GOOGLE_MAPS_LIBRARIES } from "@/lib/googleMaps";
-import { autocompletePlacesNew, createPlacesSessionToken, fetchPlaceDetailsNew, type PlaceResult, type PlacesAutocompleteSuggestion } from "@/lib/placesApi";
+import { autocompletePlacesNew, createPlacesSessionToken, fetchPlaceDetailsNew, searchPlacesText, type PlaceResult, type PlacesAutocompleteSuggestion } from "@/lib/placesApi";
 import tricycleIcon from '../../../assets/0b76d1aa56b8ad6e15dd4efc8a0100b0ca5762a1.png';
 import { useAuth } from "../../contexts/AuthContext";
-import { supabaseHelpers, isDropoffWithinAnyTerminalBoundary, logAudit } from "@/lib/supabase";
+import { supabaseHelpers, isDropoffWithinAnyTerminalBoundary, isPointInPolygon, normalizeBoundaryPolygon, logAudit } from "@/lib/supabase";
 import { computeRideFare, normalizeRates, terminalRates } from "@/lib/pricing";
 import ReasonPromptModal from "../ui/reason-prompt-modal";
 import { supabase } from "../../../utils/supabase";
 import SharedRides from "./SharedRides";
 import ShareRideLobby from "./ShareRideLobby";
 import BrowseAvailableLobbies from "./BrowseAvailableLobbies";
+import CustomerHubHeader from "./CustomerHubHeader";
+import CustomerServiceHub from "./CustomerServiceHub";
 
 // Get Google Maps API Key from environment variable
 const GOOGLE_MAPS_API_KEY = import.meta.env.VITE_GOOGLE_MAPS_API_KEY || "";
@@ -231,6 +233,27 @@ const buildNavigationRouteOptions = (color: string, weight: number) => {
   } as any;
 };
 
+// Radius, in meters, that comfortably covers a terminal's boundary polygon.
+// Used only to bias the Places text search toward the terminal; results are
+// still filtered against the polygon itself, so an over-generous radius costs
+// a few discarded rows rather than letting an out-of-area place through.
+const polygonBiasRadius = (polygon: { lat: number; lng: number }[]): number => {
+  if (!polygon.length) return 2000;
+
+  const meanLat = polygon.reduce((sum, p) => sum + p.lat, 0) / polygon.length;
+  const meanLng = polygon.reduce((sum, p) => sum + p.lng, 0) / polygon.length;
+
+  const furthest = polygon.reduce((max, p) => {
+    // Equirectangular approximation is accurate well past a terminal's size.
+    const dx = (p.lng - meanLng) * 111_320 * Math.cos((meanLat * Math.PI) / 180);
+    const dy = (p.lat - meanLat) * 110_540;
+    return Math.max(max, Math.sqrt(dx * dx + dy * dy));
+  }, 0);
+
+  // Extra headroom, and a floor so a tiny polygon still searches its vicinity.
+  return Math.min(50_000, Math.max(500, Math.ceil(furthest * 2) + 250));
+};
+
 export default function CustomerHome() {
   const { user } = useAuth();
   const navigate = useNavigate();
@@ -284,6 +307,8 @@ export default function CustomerHome() {
    const [showValidationError, setShowValidationError] = useState(false);
    const [showSameLocationError, setShowSameLocationError] = useState(false);
    const [showOutOfBoundaryError, setShowOutOfBoundaryError] = useState(false);
+   // Shown when the customer taps the map outside the selected terminal's area.
+   const [pickerBoundaryWarning, setPickerBoundaryWarning] = useState<string | null>(null);
    const [showCancelConfirm, setShowCancelConfirm] = useState(false);
    const [rideCompletedPopup, setRideCompletedPopup] = useState(false);
    const [completionPopupType, setCompletionPopupType] = useState<'ride' | 'delivery'>('ride');
@@ -322,14 +347,21 @@ export default function CustomerHome() {
      backendRouteStatus: 'idle',
    });
     const [mapsBlocked, setMapsBlocked] = useState<string | null>(null);
-   const [terminals, setTerminals] = useState<{ id: string; name: string; boundary: string; center_lat: number; center_lng: number; base_fare?: number | null; per_km?: number | null }[]>([]);
+   const [terminals, setTerminals] = useState<{ id: string; name: string; boundary: string; center_lat: number; center_lng: number; base_fare?: number | null; per_km?: number | null; boundary_polygon?: any }[]>([]);
    const [showTerminalPicker, setShowTerminalPicker] = useState(false);
    const [selectedTerminalId, setSelectedTerminalId] = useState<string | null>(null);
+   // The chosen pickup terminal and its plotted service area. Drives the search
+   // filter, the picker's map view, and the pin guard, so all three agree on
+   // where the customer is allowed to be dropped off.
+   const selectedTerminalBoundary = useMemo(() => {
+     const terminal = terminals.find(t => t.id === selectedTerminalId) || null;
+     return {
+       terminal,
+       polygon: terminal ? normalizeBoundaryPolygon(terminal.boundary_polygon) : null,
+     };
+   }, [terminals, selectedTerminalId]);
    const mapRef = useRef<any>(null);
    const hasManualPickupSelectionRef = useRef(false);
-   // Set while the "Choose on Map" shortcut should continue from the pickup
-   // terminal straight into the drop-off map picker.
-   const chainDropoffAfterPickupRef = useRef(false);
    const unsubscribeRef = useRef<(() => void) | null>(null);
    const driverStatusTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -501,8 +533,38 @@ export default function CustomerHome() {
         return;
       }
 
+      const query = input.trim();
+
+      // The pickup terminal decides where a customer is allowed to be dropped
+      // off, so once one is chosen the search is limited to its plotted area.
+      const { terminal, polygon: boundary } = selectedTerminalBoundary;
+
+      if (boundary && terminal) {
+        // Autocomplete suggestions carry no coordinates, so they cannot be
+        // tested against the polygon. Text Search returns a location per hit,
+        // which lets each result be checked before it is ever shown.
+        const hits = await searchPlacesText({
+          textQuery: query,
+          apiKey,
+          bias: { lat: terminal.center_lat, lng: terminal.center_lng },
+          biasRadiusMeters: polygonBiasRadius(boundary),
+        });
+
+        setPredictions(
+          hits
+            .filter(hit => isPointInPolygon(hit.lat!, hit.lng!, boundary))
+            .map(hit => ({
+              place_id: hit.place_id || '',
+              displayName: hit.display_name || hit.name || hit.formatted_address || 'Drop-off point',
+              secondaryText: hit.formatted_address,
+              fullText: hit.formatted_address,
+            }))
+        );
+        return;
+      }
+
       const suggestions = await autocompletePlacesNew({
-        input: input.trim(),
+        input: query,
         apiKey,
         // bias around current map center for better local results
         locationBias: mapCenter || currentLocation,
@@ -1430,6 +1492,18 @@ export default function CustomerHome() {
     const lat = latLng.lat();
     const lng = latLng.lng();
 
+    // A tap outside the selected terminal's area is refused outright, so the
+    // customer cannot pin a drop-off the search would never have offered.
+    const { polygon, terminal } = selectedTerminalBoundary;
+    if (polygon && !isPointInPolygon(lat, lng, polygon)) {
+      setPickerBoundaryWarning(
+        `That spot is outside ${terminal?.name || 'this terminal'}'s service area. Tap inside the highlighted border.`
+      );
+      return;
+    }
+
+    setPickerBoundaryWarning(null);
+
     const fallbackLabel = `${lat.toFixed(5)}, ${lng.toFixed(5)}`;
     setLocationPreview({
       lat,
@@ -1506,31 +1580,6 @@ export default function CustomerHome() {
   // The booking UI lives on top of the map and stays out of the way while a
   // ride is active or a request is already being searched for.
   const showBookingFlow = !activeRide && rideStatus !== 'searching';
-
-  // "Choose on Map": pick the pickup terminal first, then pin the destination
-  // on the map. The pickup / drop-off step is revealed once that is underway.
-  const openChooseOnMap = () => {
-    setBookingStep('locations');
-
-    if (!selectedTerminalId) {
-      chainDropoffAfterPickupRef.current = true;
-      setShowTerminalPicker(true);
-      return;
-    }
-
-    setActiveLocationInput('dropoff');
-    setLocationPreview(
-      dropoffCoords
-        ? {
-            lat: dropoffCoords.lat,
-            lng: dropoffCoords.lng,
-            name: dropoff || 'Drop-off Location',
-            fullAddress: dropoffAddress || dropoff || 'Select drop-off location',
-          }
-        : null
-    );
-    setShowLocationPicker(true);
-  };
 
   const handleBookRide = async () => {
     if (!selectedVehicle) return;
@@ -2044,44 +2093,27 @@ export default function CustomerHome() {
          )}
         <LocationBanner
           problem={locationProblem}
-          className="absolute top-20 left-4 right-4 z-[1000]"
+          className="absolute top-24 left-3 right-3 z-[1000] sm:top-28 sm:left-4 sm:right-4"
         />
-        <div className="absolute top-4 right-4 z-[1000]">
-          <div className="flex items-center gap-2">
-            {/* Notifications bell - upper right of the home page */}
-            <button
-              onClick={() => navigate('/customer/notifications')}
-              className="relative w-12 h-12 bg-surface rounded-xl shadow-lg flex items-center justify-center active:scale-90 transition-transform"
-              aria-label="Notifications"
-            >
-              <Bell className="w-6 h-6 text-[var(--primary)]" />
-              {unreadDeliveryNotifications > 0 && (
-                <div className="absolute -top-1.5 -right-1.5 w-5 h-5 bg-[var(--primary)] rounded-full border-2 border-white flex items-center justify-center">
-                  <span className="text-[10px] font-bold text-white">{unreadDeliveryNotifications > 9 ? '9+' : unreadDeliveryNotifications}</span>
-                </div>
-              )}
-            </button>
-          </div>
-        </div>
 
-        {/* Booking flow — Step 1: the map owns the whole screen with one clear action */}
+        {/* Hub header — only while on the hub, so it never collides with the
+            booking back button or the active-ride driver card. */}
+        {showBookingFlow && bookingStep === 'home' && (
+          <CustomerHubHeader
+            userName={user?.name}
+            avatarUrl={user?.avatarUrl}
+            unreadCount={unreadDeliveryNotifications}
+          />
+        )}
+
+        {/* Hub — two equally-weighted services. Ride hands off to the unchanged
+            booking flow; Food opens the existing food experience. */}
         {showBookingFlow && bookingStep === 'home' && (
           <div className="absolute bottom-20 left-0 right-0 z-[999] mx-auto max-w-3xl px-4">
-            <Card className="rounded-3xl border border-line bg-surface p-4 shadow-2xl">
-              <p className="mb-1 text-center text-sm font-bold text-[var(--ink)]">Saan ka pupunta?</p>
-              <p className="mb-3 text-center text-xs text-[var(--muted-foreground)]">
-                Pindutin ang Book a Ride para magsimula
-              </p>
-              <Button
-                onClick={() => setBookingStep('ride')}
-                className="min-h-14 w-full flex-col rounded-2xl bg-[var(--primary)] py-4 text-lg font-bold text-white shadow-lg hover:bg-[var(--coral-dark)]"
-              >
-                <span className="block">Book a Ride</span>
-                <span className="block text-xs font-semibold tracking-normal opacity-90">
-                  Mag-book ng sakay
-                </span>
-              </Button>
-            </Card>
+            <CustomerServiceHub
+              onBookRide={() => setBookingStep('ride')}
+              onOrderFood={() => navigate('/customer/food')}
+            />
           </div>
         )}
 
@@ -2128,7 +2160,12 @@ export default function CustomerHome() {
                 <div className="mb-3 grid gap-3 sm:grid-cols-2">
                   <ChoiceCard
                     selected={selectedVehicle === 'share'}
-                    onSelect={() => setSelectedVehicle('share')}
+                    onSelect={() => {
+                      setSelectedVehicle('share');
+                      // Picking a ride type is the only question on this step,
+                      // so answering it moves straight on to pickup and drop-off.
+                      setBookingStep('locations');
+                    }}
                     label="Shared ride"
                     filipino="Sabay"
                     description="May kasabay kang pasahero. Mas mura ang bayad."
@@ -2139,6 +2176,7 @@ export default function CustomerHome() {
                     onSelect={() => {
                       setSelectedVehicle('special');
                       setPassengerCount(1);
+                      setBookingStep('locations');
                     }}
                     label="Private ride"
                     filipino="Pribado"
@@ -2146,30 +2184,6 @@ export default function CustomerHome() {
                     icon={UserIcon}
                   />
                 </div>
-
-                {/* Choose on Map — shown before the pickup and drop-off fields appear */}
-                <Button
-                  type="button"
-                  onClick={openChooseOnMap}
-                  disabled={!selectedVehicle}
-                  variant="outline"
-                  className="mt-4 min-h-12 w-full rounded-2xl border-2 border-[var(--primary)] bg-[var(--primary-soft)] text-[var(--primary)] hover:bg-[var(--primary-soft)] hover:text-[var(--primary)] disabled:border-line disabled:bg-[var(--muted)] disabled:text-[var(--muted-foreground)]"
-                >
-                  <span className="flex flex-col items-center leading-tight">
-                    <span className="flex items-center gap-2 text-base font-bold">
-                      <MapPin className="h-5 w-5" />
-                      Choose on Map
-                    </span>
-                    <span className="text-xs font-normal">
-                      Pumili sa map ng sakayan at pupuntahan
-                    </span>
-                  </span>
-                </Button>
-                {!selectedVehicle && (
-                  <p className="mt-2 text-center text-sm text-[var(--muted-foreground)]">
-                    Pumili muna ng klase ng sakay bago pumili sa map.
-                  </p>
-                )}
                 </div>
 
                 {/* Step 3 — pickup and drop-off, only after the ride type is chosen */}
@@ -2241,6 +2255,7 @@ export default function CustomerHome() {
                     className="p-3 border border-line shadow-sm cursor-pointer hover:border-[var(--primary)] transition-colors"
                     onClick={() => {
                       setActiveLocationInput('dropoff');
+                      setPickerBoundaryWarning(null);
                       setLocationPreview(
                         dropoffCoords
                           ? {
@@ -2268,17 +2283,6 @@ export default function CustomerHome() {
                     </div>
                   </Card>
                 </div>
-
-                {/* Choose on Map — same shortcut here, in case the fields are still empty */}
-                <Button
-                  type="button"
-                  onClick={openChooseOnMap}
-                  variant="outline"
-                  className="mb-4 min-h-12 w-full rounded-2xl border-2 border-[var(--primary)] bg-[var(--primary-soft)] text-base font-bold text-[var(--primary)] hover:bg-[var(--primary-soft)] hover:text-[var(--primary)]"
-                >
-                  <MapPin className="h-5 w-5" />
-                  Choose on Map
-                </Button>
 
                 {/* Book Ride Button — stays visible but disabled until the ride is complete */}
                 <Button
@@ -2394,7 +2398,7 @@ export default function CustomerHome() {
                 {/* Trip Info - compact */}
                 <div className="bg-[var(--muted)] rounded-xl p-3 mb-3 space-y-1.5">
                   <div className="flex items-start gap-2">
-                    <div className="w-5 h-5 bg-[var(--ink)] rounded-full flex items-center justify-center flex-shrink-0 mt-0.5">
+                    <div className="w-5 h-5 bg-[var(--ink-solid)] rounded-full flex items-center justify-center flex-shrink-0 mt-0.5">
                       <div className="w-2 h-2 bg-surface rounded-full" />
                     </div>
                     <div className="flex-1 min-w-0">
@@ -2643,7 +2647,7 @@ export default function CustomerHome() {
       </div>
 
       {/* Bottom Navigation */}
-      <BottomNav messagesBadge={unreadMessagesCount} />
+      <BottomNav active="home" messagesBadge={unreadMessagesCount} />
 
       {/* Terminal Picker Modal */}
       {showTerminalPicker && (
@@ -2655,10 +2659,7 @@ export default function CustomerHome() {
                 <p className="text-xs text-[var(--muted-foreground)]">Choose a terminal as your pickup point</p>
               </div>
               <button
-                onClick={() => {
-                  chainDropoffAfterPickupRef.current = false;
-                  setShowTerminalPicker(false);
-                }}
+                onClick={() => setShowTerminalPicker(false)}
                 className="w-8 h-8 rounded-full bg-[var(--muted)] flex items-center justify-center"
               >
                 <X className="w-5 h-5 text-[var(--muted-foreground)]" />
@@ -2684,15 +2685,6 @@ export default function CustomerHome() {
                     setSelectedTerminalId(terminal.id);
                     setShowTerminalPicker(false);
                     hasManualPickupSelectionRef.current = true;
-                    // "Choose on Map" continues straight to the drop-off picker.
-                    if (chainDropoffAfterPickupRef.current) {
-                      chainDropoffAfterPickupRef.current = false;
-                      setLocationPreview(null);
-                      setSearchQuery('');
-                      setPredictions([]);
-                      setActiveLocationInput('dropoff');
-                      setShowLocationPicker(true);
-                    }
                   }}
                   className={`p-4 rounded-xl border-2 cursor-pointer transition-all active:scale-[0.98] ${
                     selectedTerminalId === terminal.id
@@ -2759,12 +2751,21 @@ export default function CustomerHome() {
                   </p>
                   <h2 className="text-lg font-bold text-[var(--ink)]">Find a nearby place or tap the map</h2>
                 </div>
-                <button onClick={() => { setShowLocationPicker(false); setActiveLocationInput(null); setLocationPreview(null); setPredictions([]); setSearchQuery(""); }}>
+                <button onClick={() => { setShowLocationPicker(false); setActiveLocationInput(null); setLocationPreview(null); setPredictions([]); setSearchQuery(""); setPickerBoundaryWarning(null); }}>
                   <X className="w-6 h-6 text-[var(--muted-foreground)]" />
                 </button>
               </div>
 
                <div className="mt-3">
+                 {pickerBoundaryWarning && (
+                   <div
+                     role="alert"
+                     className="mb-2 flex items-start gap-2 rounded-xl border-2 border-[var(--error)] bg-[var(--error-soft)] px-3 py-2 text-sm font-semibold text-[var(--error)]"
+                   >
+                     <span aria-hidden="true">📍</span>
+                     <span>{pickerBoundaryWarning}</span>
+                   </div>
+                 )}
                  <Input value={searchQuery} onChange={(e) => { fetchPredictions((e.target as HTMLInputElement).value); }} placeholder="Search restaurants, parks, hotels, terminals..." />
                  {predictions.length > 0 && (
                    <div className="mt-2 bg-surface border border-[var(--border)] rounded-lg max-h-48 overflow-y-auto">
@@ -2788,7 +2789,13 @@ export default function CustomerHome() {
             ) : (
               <GoogleMap
                 mapContainerStyle={{ width: '100%', height: '100%' }}
-                center={locationPreview ? { lat: locationPreview.lat, lng: locationPreview.lng } : currentLocation}
+                center={
+                  locationPreview
+                    ? { lat: locationPreview.lat, lng: locationPreview.lng }
+                    : selectedTerminalBoundary.terminal
+                      ? { lat: selectedTerminalBoundary.terminal.center_lat, lng: selectedTerminalBoundary.terminal.center_lng }
+                      : currentLocation
+                }
                 zoom={16}
                 onClick={handleLocationPickerMapClick}
                 options={{
@@ -2799,6 +2806,19 @@ export default function CustomerHome() {
                 }}
               >
                 <MarkerF position={currentLocation} title="Current location" icon={createCustomerMarkerIcon()} />
+                {/* The terminal's service area, so it is obvious where a drop-off is allowed */}
+                {selectedTerminalBoundary.polygon && (
+                  <Polygon
+                    path={selectedTerminalBoundary.polygon}
+                    options={{
+                      fillColor: '#bc4b1f',
+                      fillOpacity: 0.15,
+                      strokeColor: '#bc4b1f',
+                      strokeWeight: 3,
+                      clickable: false,
+                    }}
+                  />
+                )}
                 {locationPreview && (
                   <MarkerF
                     position={{ lat: locationPreview.lat, lng: locationPreview.lng }}

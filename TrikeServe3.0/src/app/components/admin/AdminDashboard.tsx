@@ -1,17 +1,16 @@
 import { useState, useEffect } from "react";
 import {
-  Users, Store, Bike, CheckCircle, XCircle,
+  Users, Store, CheckCircle, XCircle,
   AlertTriangle, User as UserIcon,
   Bell, Menu, X
 } from "lucide-react";
+import { Tricycle } from "../ui/Tricycle";
 import { useNavigate } from "react-router";
 import { Card } from "../ui/card";
 import { Badge } from "../ui/badge";
 import { Input } from "../ui/input";
 import { useAuth } from "../../contexts/AuthContext";
-import AppHeader from "../ui/AppHeader";
-import AppShell from "../ui/AppShell";
-import BottomNav from "../ui/BottomNav";
+import AdminShell from "./AdminShell";
 import { supabase } from "../../../utils/supabase";
 import { adminDeleteUser, adminVerifyUser, logAudit } from "../../../lib/supabase";
 import { normalizeRates } from "@/lib/pricing";
@@ -385,26 +384,31 @@ export default function AdminDashboard() {
   const isRiderAdmin = user?.adminType === 'rider';
 
   return (
-    <AppShell
-      header={
-        <AppHeader
-          notificationCount={notifications.filter((n: any) => !n.read).length}
-          onNotificationsClick={() => setShowNotifications(true)}
-          hint={
-            user?.adminType === 'business_customer'
-              ? 'Super Admin — buong kontrol ng plataporma.'
-              : user?.adminType === 'rider'
-                ? 'Rider Admin — pamamahala ng terminal.'
-                : 'TrikeServe control panel.'
-          }
-        />
+    <AdminShell
+      title="Overview"
+      subtitle={
+        user?.adminType === 'business_customer'
+          ? 'Super Admin — buong kontrol ng plataporma.'
+          : user?.adminType === 'rider'
+            ? 'Rider Admin — pamamahala ng terminal.'
+            : 'TrikeServe control panel.'
       }
-      bottomNav={
-        <BottomNav
-          variant="admin"
-          adminVariant={isSuperAdmin ? 'super' : 'rider'}
-          active="overview"
-        />
+      actions={
+        <button
+          type="button"
+          onClick={() => setShowNotifications(true)}
+          aria-label={`Notifications${notifications.filter((n: any) => !n.read).length ? `, ${notifications.filter((n: any) => !n.read).length} unread` : ''}`}
+          className="relative w-11 h-11 flex-shrink-0 items-center justify-center rounded-full bg-[var(--muted)] hover:bg-[var(--soft)] transition-colors"
+        >
+          <Bell className="w-5 h-5 text-[var(--ink)]" aria-hidden="true" />
+          {notifications.filter((n: any) => !n.read).length > 0 && (
+            <span className="absolute -top-0.5 -right-0.5 min-w-5 h-5 px-1 rounded-full bg-[var(--primary)] text-white text-[10px] font-bold flex items-center justify-center">
+              {notifications.filter((n: any) => !n.read).length > 9
+                ? '9+'
+                : notifications.filter((n: any) => !n.read).length}
+            </span>
+          )}
+        </button>
       }
     >
       <div className="space-y-6">
@@ -440,7 +444,7 @@ export default function AdminDashboard() {
                   <h2 className="text-2xl lg:text-4xl font-bold text-[var(--ink)]">{stats.totalRiders}</h2>
                 </div>
                 <div className="w-10 h-10 lg:w-12 lg:h-12 bg-[var(--info-soft)] rounded-xl flex items-center justify-center">
-                  <Bike className="w-5 h-5 lg:w-6 lg:h-6 text-[var(--info)]" />
+                  <Tricycle className="w-5 h-5 lg:w-6 lg:h-6 text-[var(--info)]" />
                 </div>
               </div>
               <div className="flex items-end gap-0.5 lg:gap-1 h-8 lg:h-12">
@@ -565,7 +569,7 @@ export default function AdminDashboard() {
                               <div className="flex items-center gap-3">
                                 <div className={`w-10 h-10 ${user.type === 'rider' ? 'bg-[var(--info-soft)]' : 'bg-[var(--violet-soft)]'} rounded-lg flex items-center justify-center flex-shrink-0`}>
                                   {user.type === 'rider' ? (
-                                    <Bike className="w-5 h-5 text-[var(--info)]" />
+                                    <Tricycle className="w-5 h-5 text-[var(--info)]" />
                                   ) : (
                                     <Store className="w-5 h-5 text-[var(--violet)]" />
                                   )}
@@ -685,7 +689,7 @@ export default function AdminDashboard() {
                 <Card className="p-5 lg:p-6 border border-line bg-surface">
                   <div className="flex items-start justify-between mb-4">
                     <div>
-                      <Bike className="w-8 h-8 lg:w-10 lg:h-10 text-[var(--violet)] mb-2" />
+                      <Tricycle className="w-8 h-8 lg:w-10 lg:h-10 text-[var(--violet)] mb-2" />
                       <h3 className="font-bold text-base lg:text-lg text-[var(--ink)]">Rate per Kilometer</h3>
                       <p className="text-xs text-[var(--muted-foreground)]">Charged for each km travelled</p>
                     </div>
@@ -767,6 +771,6 @@ export default function AdminDashboard() {
           onClose={() => setToast(null)}
         />
       )}
-    </AppShell>
+    </AdminShell>
   );
 }

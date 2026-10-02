@@ -699,7 +699,7 @@ export default function PassengerRequests() {
                   <Badge className="bg-[var(--error-soft)] text-[var(--error)] text-[10px] mb-2 border border-[var(--error-soft)]">🚏 No terminal assigned</Badge>
                 )}
                 {!isUnassigned && queueBlocked && (
-                  <Badge className="bg-[var(--amber-soft)] text-[var(--amber-dark)] text-[10px] mb-2 border border-[var(--amber-soft)]">
+                  <Badge className="bg-[var(--amber-soft)] text-[var(--amber-ink)] text-[10px] mb-2 border border-[var(--amber-soft)]">
                     {queueEntry ? `⏳ Waiting for your turn (#${queuePosition} in queue)` : '🚏 Join the terminal queue first'}
                   </Badge>
                 )}

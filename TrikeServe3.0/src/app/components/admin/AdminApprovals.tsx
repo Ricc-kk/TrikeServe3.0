@@ -6,7 +6,8 @@ import {
 import { Card } from "../ui/card";
 import { Badge } from "../ui/badge";
 import { useAuth } from "../../contexts/AuthContext";
-import AdminSidebar from "./AdminSidebar";
+import AdminShell from "./AdminShell";
+import { TableSkeleton } from "./AdminSkeleton";
 import {
   getApprovalRequests,
   approveApprovalRequest,
@@ -83,7 +84,6 @@ function describePayload(request: ApprovalRequest): string[] {
 
 export default function AdminApprovals() {
   const { user } = useAuth();
-  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [requests, setRequests] = useState<ApprovalRequest[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -191,34 +191,11 @@ export default function AdminApprovals() {
   };
 
   return (
-    <div className="min-h-screen bg-[var(--muted)] flex">
-      <AdminSidebar
-        isMobileMenuOpen={isMobileMenuOpen}
-        setIsMobileMenuOpen={setIsMobileMenuOpen}
-      />
-
-      <div className="flex-1 lg:ml-64">
-        {/* Top Header */}
-        <div className="bg-surface border-b-2 border-[var(--border)] px-5 lg:px-8 py-4 lg:py-5 sticky top-0 z-50">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <button
-                onClick={() => setIsMobileMenuOpen(true)}
-                className="lg:hidden p-2 hover:bg-[var(--muted)] rounded-xl transition-all"
-              >
-                <Menu className="w-6 h-6 text-[var(--ink)]" />
-              </button>
-              <div>
-                <h1 className="text-2xl lg:text-3xl font-extrabold text-[var(--ink)]">Approvals</h1>
-                <p className="text-xs lg:text-sm text-[var(--muted-foreground)]">
-                  Review Rider Admin terminal &amp; driver requests
-                </p>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <div className="p-5 lg:p-8">
+    <AdminShell
+      title="Approvals"
+      subtitle="Review Rider Admin terminal & driver requests"
+    >
+        <div className="space-y-6">
           {/* Stats */}
           <div className="grid grid-cols-3 gap-3 lg:gap-6 mb-6">
             <Card className="p-4 lg:p-6 border border-line bg-surface">
@@ -251,8 +228,8 @@ export default function AdminApprovals() {
           {/* Pending requests */}
           <h2 className="text-xl lg:text-2xl font-bold text-[var(--ink)] mb-4">Pending Requests</h2>
           {loading ? (
-            <Card className="p-12 border-2 border-dashed border-[var(--border)] text-center">
-              <p className="text-[var(--muted-foreground)] text-sm">Loading requests…</p>
+            <Card className="border border-line bg-surface p-4">
+              <TableSkeleton rows={5} cols={5} />
             </Card>
           ) : pending.length === 0 ? (
             <Card className="p-12 border-2 border-dashed border-[var(--border)] text-center">
@@ -370,7 +347,6 @@ export default function AdminApprovals() {
             </Card>
           )}
         </div>
-      </div>
 
       {/* Reject reason modal */}
       {rejectTarget && (
@@ -431,6 +407,6 @@ export default function AdminApprovals() {
           onClose={() => setToast(null)}
         />
       )}
-    </div>
+    </AdminShell>
   );
 }

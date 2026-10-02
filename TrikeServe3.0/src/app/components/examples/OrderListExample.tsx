@@ -145,13 +145,13 @@ export default function OrderListExample() {
   const getStatusColor = (status: string) => {
     switch (status) {
       case 'pending':
-        return 'bg-[var(--amber-soft)] text-[var(--amber-dark)]';
+        return 'bg-[var(--amber-soft)] text-[var(--amber-ink)]';
       case 'preparing':
         return 'bg-[var(--info-soft)] text-[var(--info)]';
       case 'ready':
         return 'bg-[var(--success-soft)] text-[var(--success)]';
       case 'on-the-way':
-        return 'bg-[var(--amber-soft)] text-[var(--amber-dark)]';
+        return 'bg-[var(--amber-soft)] text-[var(--amber-ink)]';
       case 'delivered':
         return 'bg-[var(--muted)] text-[var(--ink)]';
       case 'cancelled':
@@ -396,7 +396,7 @@ export default function OrderListExample() {
       {/* Code Examples */}
       <div className="mt-12 p-6 bg-[var(--info-soft)] rounded-lg">
         <h2 className="text-2xl font-bold mb-4">Code Examples</h2>
-        <pre className="bg-[var(--ink)] text-[var(--success)] p-4 rounded overflow-x-auto text-sm">
+        <pre className="bg-[var(--ink-solid)] text-[var(--success)] p-4 rounded overflow-x-auto text-sm">
 {`// Method 1: Get all recent orders
 const { data: orders } = await supabaseHelpers.getRecentOrders(20);
 

@@ -5,8 +5,11 @@ import {
 import { Card } from "../ui/card";
 import { Badge } from "../ui/badge";
 import { useAuth } from "../../contexts/AuthContext";
-import AdminSidebar from "./AdminSidebar";
+
 import { supabaseHelpers } from "../../../lib/supabase";
+import AdminShell from "./AdminShell";
+import { TableSkeleton } from "./AdminSkeleton";
+import EmptyState from "../ui/EmptyState";
 
 interface RideReport {
   id: string;
@@ -51,7 +54,6 @@ export default function AdminReports() {
   const { user } = useAuth();
   const isSuperAdmin = user?.adminType === "business_customer";
 
-  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [reports, setReports] = useState<RideReport[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -101,43 +103,23 @@ export default function AdminReports() {
     });
   }, [reports, statusFilter, search]);
 
+  // Lets the empty state explain itself and offer a way back.
+  const hasFilter = search.trim() !== "" || statusFilter !== "All";
+
   return (
-    <div className="min-h-screen bg-[var(--muted)] flex">
-      <AdminSidebar
-        isMobileMenuOpen={isMobileMenuOpen}
-        setIsMobileMenuOpen={setIsMobileMenuOpen}
-      />
+    <AdminShell
+      title="Ride Reports"
+      subtitle="Reports submitted by customers about completed rides"
+    >
 
-      <div className="flex-1 lg:ml-64">
-        {/* Top Header */}
-        <div className="bg-surface border-b-2 border-[var(--border)] px-5 lg:px-8 py-4 lg:py-5 sticky top-0 z-50">
-          <div className="flex items-center justify-between gap-4">
-            <div className="flex items-center gap-3">
-              <button
-                onClick={() => setIsMobileMenuOpen(true)}
-                className="lg:hidden p-2 hover:bg-[var(--muted)] rounded-xl transition-all"
-              >
-                <Menu className="w-6 h-6 text-[var(--ink)]" />
-              </button>
-              <div>
-                <h1 className="text-2xl lg:text-3xl font-extrabold text-[var(--ink)]">Ride Reports</h1>
-                <p className="text-xs lg:text-sm text-[var(--muted-foreground)]">
-                  Reports submitted by customers about completed rides
-                </p>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <div className="p-5 lg:p-8">
+        <div className="space-y-6">
           {!isSuperAdmin ? (
-            <Card className="p-12 border-2 border-dashed border-[var(--border)] text-center">
-              <ShieldCheck className="w-16 h-16 text-[var(--border)] mx-auto mb-4" />
-              <p className="text-[var(--muted-foreground)] text-sm">Super Admin only</p>
-              <p className="text-[var(--muted-foreground)] text-xs mt-1">
-                Customer ride reports are reviewed by the Super Admin.
-              </p>
-            </Card>
+            <EmptyState
+              icon={ShieldCheck}
+              title="Super Admin only"
+              description="Customer ride reports are reviewed by the Super Admin."
+              filipino="Ito ay para sa Super Admin lamang."
+            />
           ) : (
             <>
               {loadError && (
@@ -158,7 +140,8 @@ export default function AdminReports() {
                     <button
                       key={f}
                       onClick={() => setStatusFilter(f)}
-                      className={`px-3.5 py-1.5 rounded-full text-xs font-bold whitespace-nowrap capitalize transition-all ${
+                      aria-pressed={statusFilter === f}
+                      className={`min-h-11 px-3.5 py-1.5 rounded-full text-xs font-bold whitespace-nowrap capitalize transition-all ${
                         statusFilter === f
                           ? "bg-[var(--primary)] text-white"
                           : "bg-[var(--surface)] border border-line text-[var(--muted-foreground)]"
@@ -168,9 +151,14 @@ export default function AdminReports() {
                     </button>
                   ))}
                 </div>
-                <div className="flex items-center gap-2 px-3 py-2 bg-[var(--surface)] border border-line rounded-xl sm:ml-auto sm:w-64">
-                  <Search className="w-4 h-4 text-[var(--muted-foreground)] flex-shrink-0" />
+                <div className="flex items-center gap-2 px-3 py-2 min-h-11 bg-[var(--surface)] border border-line rounded-xl sm:ml-auto sm:w-64">
+                  <Search className="w-4 h-4 text-[var(--muted-foreground)] flex-shrink-0" aria-hidden="true" />
+                  <label htmlFor="admin-report-search" className="sr-only">
+                    Search reports
+                  </label>
                   <input
+                    id="admin-report-search"
+                    type="search"
                     value={search}
                     onChange={(e) => setSearch(e.target.value)}
                     placeholder="Search reporter, driver, details…"
@@ -184,17 +172,32 @@ export default function AdminReports() {
               </p>
 
               {loading ? (
-                <Card className="p-12 border-2 border-dashed border-[var(--border)] text-center">
-                  <p className="text-[var(--muted-foreground)] text-sm">Loading reports…</p>
-                </Card>
+                <TableSkeleton rows={4} cols={4} />
               ) : filtered.length === 0 ? (
-                <Card className="p-12 border-2 border-dashed border-[var(--border)] text-center">
-                  <Flag className="w-16 h-16 text-[var(--border)] mx-auto mb-4" />
-                  <p className="text-[var(--muted-foreground)] text-sm mb-2">No reports yet</p>
-                  <p className="text-[var(--muted-foreground)] text-xs">
-                    Customer ride reports will appear here.
-                  </p>
-                </Card>
+                <EmptyState
+                  icon={Flag}
+                  title={hasFilter ? "No reports match these filters" : "No reports yet"}
+                  description={
+                    hasFilter
+                      ? "Try a different search term or status."
+                      : "Customer ride reports will appear here."
+                  }
+                  filipino={hasFilter ? "Wala pang tumutugma sa mga filter na ito." : "Wala pang ulat ng rides."}
+                  action={
+                    hasFilter ? (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setSearch("");
+                          setStatusFilter("All");
+                        }}
+                        className="min-h-11 px-5 rounded-xl bg-[var(--primary)] text-white font-semibold hover:opacity-90"
+                      >
+                        Clear filters
+                      </button>
+                    ) : undefined
+                  }
+                />
               ) : (
                 <div className="space-y-3">
                   {filtered.map((report) => {
@@ -226,7 +229,8 @@ export default function AdminReports() {
                               <button
                                 disabled={busyId === report.id}
                                 onClick={() => setStatus(report.id, "resolved")}
-                                className="px-3 py-1.5 rounded-lg bg-[var(--success)] text-white text-xs font-bold active:scale-95 transition-transform disabled:opacity-50"
+                                aria-label={`Resolve ${report.category} report from ${report.reporter_name || "a customer"}`}
+                                className="min-h-11 px-3 rounded-lg bg-[var(--success)] text-white text-xs font-bold active:scale-95 transition-transform disabled:opacity-50"
                               >
                                 Resolve
                               </button>
@@ -235,7 +239,8 @@ export default function AdminReports() {
                               <button
                                 disabled={busyId === report.id}
                                 onClick={() => setStatus(report.id, "dismissed")}
-                                className="px-3 py-1.5 rounded-lg bg-[var(--muted)] border border-line text-[var(--muted-foreground)] text-xs font-bold active:scale-95 transition-transform disabled:opacity-50"
+                                aria-label={`Dismiss ${report.category} report from ${report.reporter_name || "a customer"}`}
+                                className="min-h-11 px-3 rounded-lg bg-[var(--muted)] border border-line text-[var(--muted-foreground)] text-xs font-bold active:scale-95 transition-transform disabled:opacity-50"
                               >
                                 Dismiss
                               </button>
@@ -250,7 +255,6 @@ export default function AdminReports() {
             </>
           )}
         </div>
-      </div>
-    </div>
+    </AdminShell>
   );
 }

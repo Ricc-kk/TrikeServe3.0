@@ -1,7 +1,9 @@
 import { useState } from "react";
 import { createRoot } from "react-dom/client";
 import { MemoryRouter } from "react-router";
-import { Bike, MapPin, ShoppingBag, Star, TrendingUp, Users } from "lucide-react";
+import { MapPin, ShoppingBag, Star, TrendingUp, Users } from "lucide-react";
+
+import { Tricycle } from "./app/components/ui/Tricycle";
 
 import "./styles/index.css";
 import { AuthProvider } from "./app/contexts/AuthContext";
@@ -62,7 +64,7 @@ function KitPreview() {
           label="Private ride"
           filipino="Pribado"
           description="A direct ride reserved just for you."
-          icon={Bike}
+          icon={Tricycle}
           price="50"
           meta="2-4 min wait"
         />

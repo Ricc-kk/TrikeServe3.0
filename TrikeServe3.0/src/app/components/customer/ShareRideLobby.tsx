@@ -962,7 +962,7 @@ export default function ShareRideLobby({
             <div className="flex items-stretch gap-3">
               {/* Route dots & line */}
               <div className="flex flex-col items-center justify-center gap-0.5 w-4 flex-shrink-0">
-                <div className="w-3 h-3 rounded-full bg-[var(--ink)] border-2 border-white shadow-sm" />
+                <div className="w-3 h-3 rounded-full bg-[var(--ink-solid)] border-2 border-white shadow-sm" />
                 <div className="w-0.5 flex-1 bg-gradient-to-b from-[var(--ink)] to-[var(--primary)] rounded-full" />
                 <div className="w-3 h-3 rounded-full bg-[var(--primary)] border-2 border-white shadow-sm" />
               </div>

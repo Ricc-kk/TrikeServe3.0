@@ -1,5 +1,5 @@
 import { useNavigate } from "react-router";
-import { ArrowLeft, Settings, Bell, Star, DollarSign, HelpCircle, FileText } from "lucide-react";
+import { ArrowLeft, Settings, Bell, Star, PhilippinePeso, HelpCircle, FileText } from "lucide-react";
 import { Button } from "../ui/button";
 import ActiveRideButton from "./ActiveRideButton";
 
@@ -51,7 +51,7 @@ export default function MoreOptions() {
 
         <button className="w-full flex items-center gap-3 p-4 border border-[var(--border)] rounded-lg hover:border-[var(--primary)] transition-colors bg-surface">
           <div className="w-10 h-10 rounded-full bg-[var(--muted)] flex items-center justify-center">
-            <DollarSign className="w-5 h-5 text-[var(--muted-foreground)]" />
+            <PhilippinePeso className="w-5 h-5 text-[var(--muted-foreground)]" aria-hidden="true" />
           </div>
           <div className="flex-1 text-left">
             <p className="font-semibold text-[var(--ink)]">Payment Methods</p>

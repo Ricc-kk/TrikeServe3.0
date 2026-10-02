@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { 
-  Store, Package, TrendingUp, DollarSign, ChevronRight, 
+  Store, Package, TrendingUp, PhilippinePeso, ChevronRight, 
   Users, MessageSquare, BarChart3, Settings, ShoppingBag,
   Clock, Eye, Edit2, Bell, User as UserIcon, Search, Menu, X, Star, Check
 } from "lucide-react";
@@ -348,7 +348,7 @@ export default function BusinessDashboard() {
                   <h2 className="text-2xl lg:text-4xl font-bold text-[var(--ink)]">₱{(stats.totalRevenue >= 1000 ? (stats.totalRevenue / 1000).toFixed(1) : stats.totalRevenue.toFixed(0))}{stats.totalRevenue >= 1000 ? 'k' : ''}</h2>
                 </div>
                 <div className="w-10 h-10 lg:w-12 lg:h-12 bg-[var(--amber-soft)] rounded-xl flex items-center justify-center">
-                  <DollarSign className="w-5 h-5 lg:w-6 lg:h-6 text-[var(--amber)]" />
+                  <PhilippinePeso className="w-5 h-5 lg:w-6 lg:h-6 text-[var(--amber)]" aria-hidden="true" />
                 </div>
               </div>
               <div className="flex items-end gap-0.5 lg:gap-1 h-8 lg:h-12">

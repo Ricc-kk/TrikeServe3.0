@@ -1,9 +1,8 @@
 import { Link } from "react-router";
 import {
-  Bike,
   ClipboardCheck,
   ClipboardList,
-  DollarSign,
+  PhilippinePeso,
   Home as HomeIcon,
   LayoutDashboard,
   MapPin,
@@ -11,13 +10,13 @@ import {
   ReceiptText,
   Settings,
   ShoppingCart,
-  User,
   UserCircle,
   Users,
   UtensilsCrossed,
   type LucideIcon,
 } from "lucide-react";
 
+import { Tricycle } from "./Tricycle";
 import { useCart } from "../../contexts/CartContext";
 
 type BottomNavVariant = "customer" | "rider" | "business" | "admin";
@@ -84,7 +83,7 @@ export default function BottomNav({
             key: "earnings",
             to: "/rider/earnings",
             label: "Earnings",
-            icon: DollarSign,
+            icon: PhilippinePeso,
           },
           {
             key: "messages",
@@ -153,7 +152,7 @@ export default function BottomNav({
                   key: "drivers",
                   to: "/admin/users",
                   label: "Drivers",
-                  icon: Bike,
+                  icon: Tricycle,
                 },
                 {
                   key: "settings",
@@ -196,10 +195,16 @@ export default function BottomNav({
               ]
           : [
               {
-                key: "food",
-                to: "/customer/food",
+                key: "home",
+                to: "/customer",
                 label: "Home",
                 icon: HomeIcon,
+              },
+              {
+                key: "food",
+                to: "/customer/food",
+                label: "Food",
+                icon: UtensilsCrossed,
               },
               {
                 key: "cart",
@@ -220,12 +225,6 @@ export default function BottomNav({
                 to: "/customer/activity",
                 label: "Activity",
                 icon: ClipboardList,
-              },
-              {
-                key: "account",
-                to: "/customer/account",
-                label: "Account",
-                icon: User,
               },
             ];
 

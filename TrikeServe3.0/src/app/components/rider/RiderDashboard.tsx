@@ -5,7 +5,6 @@ import {
   Home as HomeIcon, 
   Package, 
   Users, 
-  DollarSign, 
   Camera, 
   Navigation,
   Calendar,
@@ -959,7 +958,7 @@ export default function RiderDashboard() {
                   className={`${
                 isOnline 
                   ? 'bg-[var(--primary)] hover:bg-[var(--primary)] text-white'
-                  : 'bg-[var(--ink)] hover:bg-[var(--ink)] text-white'
+                  : 'bg-[var(--ink-solid)] hover:bg-[var(--ink-solid)] text-white'
               } px-8 py-3 rounded-full font-bold shadow-xl flex items-center gap-2`}
             >
               {isOnline ? (

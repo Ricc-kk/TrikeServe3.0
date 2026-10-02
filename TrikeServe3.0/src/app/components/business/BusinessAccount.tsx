@@ -6,6 +6,7 @@ import { useState, useEffect } from "react";
 import BusinessSidebar from "./BusinessSidebar";
 import { useAuth } from "../../contexts/AuthContext";
 import { supabase } from "../../../lib/supabase";
+import ThemeModeSwitcher from "../ui/ThemeModeSwitcher";
 
 export default function BusinessAccount() {
   const navigate = useNavigate();
@@ -206,6 +207,10 @@ export default function BusinessAccount() {
 
 
 
+            <div className="px-4 pb-4 pt-1">
+              <ThemeModeSwitcher bilingual />
+            </div>
+
             <div className="flex items-center justify-between px-4 py-3.5 hover:bg-[var(--muted)] transition-colors cursor-pointer">
               <div className="flex items-center gap-3">
                 <div className="w-10 h-10 bg-gradient-to-br from-[var(--teal)] to-[var(--teal)] rounded-xl flex items-center justify-center shadow-sm">
@@ -224,7 +229,7 @@ export default function BusinessAccount() {
           {localStorage.getItem('trikeserve_original_role') ? (
             <button
               onClick={() => setShowSwitchConfirm(true)}
-              className="w-full py-4 text-base font-semibold text-white bg-[var(--ink)] hover:bg-[var(--ink)] rounded-2xl transition-all active:scale-[0.98] flex items-center justify-center gap-2 mb-3"
+              className="w-full py-4 text-base font-semibold text-white bg-[var(--ink-solid)] hover:bg-[var(--ink-solid)] rounded-2xl transition-all active:scale-[0.98] flex items-center justify-center gap-2 mb-3"
             >
               Switch back to Business App
             </button>

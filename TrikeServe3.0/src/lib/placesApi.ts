@@ -4,6 +4,9 @@ export type PlaceResult = {
   place_id?: string;
   lat?: number;
   lng?: number;
+  /** Text Search reports the place name and its street address separately;
+   * autocomplete suggestions show the name as the primary line. */
+  display_name?: string;
 };
 
 export type PlacesAutocompleteSuggestion = {
@@ -164,6 +167,83 @@ export async function fetchPlaceDetailsNew(params: {
     lat: extractLat(data.location),
     lng: extractLng(data.location),
   };
+}
+
+/**
+ * Text Search (New) — like autocomplete, but every hit comes back with
+ * coordinates. Autocomplete suggestions carry no location, so they cannot be
+ * tested against a boundary polygon; this is what lets results be limited to a
+ * terminal's plotted area.
+ */
+export async function searchPlacesText(params: {
+  textQuery: string;
+  apiKey: string;
+  /** Bias results toward this point without excluding anything else. */
+  bias?: { lat: number; lng: number };
+  biasRadiusMeters?: number;
+}): Promise<PlaceResult[]> {
+  const { textQuery, apiKey, bias, biasRadiusMeters = 2000 } = params;
+
+  if (!textQuery.trim()) return [];
+
+  const body: any = {
+    textQuery: textQuery.trim(),
+    languageCode: "en-US",
+    regionCode: "ph",
+    pageSize: 10,
+  };
+
+  if (bias) {
+    body.locationBias = {
+      circle: {
+        center: { latitude: bias.lat, longitude: bias.lng },
+        radius: biasRadiusMeters,
+      },
+    };
+  }
+
+  // No session token here: Text Search rejects the autocomplete session token,
+  // which is why this is a separate call from autocompletePlacesNew.
+
+  const response = await fetch(`${PLACES_API_BASE_URL}/places:searchText`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "X-Goog-Api-Key": apiKey,
+      "X-Goog-FieldMask": "places.id,places.displayName,places.formattedAddress,places.location",
+    },
+    body: JSON.stringify(body),
+  });
+
+  const data = await response.json();
+
+  if (!response.ok) {
+    const message = data?.error?.message || "Text search request failed";
+    throw new Error(message);
+  }
+
+  const places: any[] = Array.isArray(data?.places) ? data.places : [];
+
+  return places
+    .map((place) => {
+      const lat = extractLat(place?.location);
+      const lng = extractLng(place?.location);
+      if (lat == null || lng == null) return null;
+
+      const displayName = extractText(place.displayName);
+      const formattedAddress = place.formattedAddress;
+
+      return {
+        name: displayName || undefined,
+        formatted_address: formattedAddress || undefined,
+        place_id: place.id || place.name,
+        lat,
+        lng,
+        // Filled in by the caller when a suggestion row is rendered.
+        display_name: displayName || formattedAddress || undefined,
+      } as PlaceResult;
+    })
+    .filter(Boolean) as PlaceResult[];
 }
 
 export function isWithinCityOrArea(place: any, city: string) {

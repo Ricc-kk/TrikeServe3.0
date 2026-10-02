@@ -1,5 +1,7 @@
 import { Link } from "react-router";
-import { Bike, Store, User, Shield } from "lucide-react";
+import { Store, User, Shield } from "lucide-react";
+
+import { Tricycle } from "./ui/Tricycle";
 
 export default function Home() {
   const modules = [
@@ -15,9 +17,9 @@ export default function Home() {
       path: "/rider",
       title: "Driver",
       description: "Accept deliveries & rides",
-      icon: Bike,
+      icon: Tricycle,
       gradient: "from-[var(--ink)] to-[var(--ink)]",
-      bgAccent: "bg-[var(--ink)]/5"
+      bgAccent: "bg-[var(--ink-solid)]/5"
     },
     {
       path: "/business",
@@ -38,7 +40,7 @@ export default function Home() {
   ];
 
   return (
-    <div className="min-h-screen bg-[var(--ink)] flex flex-col items-center justify-center p-6 relative overflow-hidden">
+    <div className="min-h-screen bg-[var(--ink-solid)] flex flex-col items-center justify-center p-6 relative overflow-hidden">
       {/* Animated Background Pattern */}
       <div className="absolute inset-0 opacity-10">
         <div className="absolute top-0 left-0 w-96 h-96 bg-[var(--primary)] rounded-full blur-3xl animate-pulse"></div>
@@ -50,7 +52,7 @@ export default function Home() {
         <div className="text-center mb-16">
           <div className="inline-block mb-6">
             <div className="w-20 h-20 bg-[var(--primary)] rounded-2xl flex items-center justify-center shadow-2xl shadow-[var(--primary)]/30">
-              <Bike className="w-10 h-10 text-white" />
+              <Tricycle className="w-10 h-10 text-white" />
             </div>
           </div>
           <h1 className="text-6xl font-extrabold mb-4 bg-gradient-to-r from-white to-[var(--primary)] bg-clip-text text-transparent" style={{ letterSpacing: '-0.02em' }}>

@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo } from "react";
-import { ArrowLeft, DollarSign, TrendingUp, Calendar } from "lucide-react";
+import { ArrowLeft, TrendingUp, Calendar } from "lucide-react";
 import { useNavigate } from "react-router";
 import { Button } from "../ui/button";
 import { Card } from "../ui/card";

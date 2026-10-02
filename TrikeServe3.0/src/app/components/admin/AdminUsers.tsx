@@ -1,18 +1,22 @@
 import { useState, useEffect } from "react";
 import {
-  Users, Bike, Store, Search, Edit2, Trash2, CheckCircle,
+  Users, Store, Search, Edit2, Trash2, CheckCircle,
   XCircle, Menu, User as UserIcon, Shield, Filter, MoreVertical
 } from "lucide-react";
+import { Tricycle } from "../ui/Tricycle";
 import { useNavigate } from "react-router";
 import { Card } from "../ui/card";
 import { Badge } from "../ui/badge";
 import { Input } from "../ui/input";
 import { useAuth } from "../../contexts/AuthContext";
-import AdminSidebar from "./AdminSidebar";
+
 import { supabase } from "../../../utils/supabase";
 import { adminDeleteUser, adminVerifyUser, adminUnverifyUser, adminChangeRole } from "../../../lib/supabase";
 import ConfirmationModal from "../ui/confirmation-modal";
 import Toast from "../ui/Toast";
+import EmptyState from "../ui/EmptyState";
+import AdminShell from "./AdminShell";
+import { StatSkeleton, TableSkeleton } from "./AdminSkeleton";
 
 interface StoredUser {
   id: string;
@@ -34,7 +38,6 @@ interface StoredUser {
 export default function AdminUsers() {
   const navigate = useNavigate();
   const { user } = useAuth();
-  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [users, setUsers] = useState<StoredUser[]>([]);
   const [searchQuery, setSearchQuery] = useState("");
   const [filterRole, setFilterRole] = useState<string>("all");
@@ -42,12 +45,14 @@ export default function AdminUsers() {
   const [editingUserId, setEditingUserId] = useState<string | null>(null);
   const [editRole, setEditRole] = useState<string>("");
   const [toast, setToast] = useState<{ message: string; variant?: 'success' | 'error' | 'warning' } | null>(null);
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     loadUsers();
   }, [user]);
 
   const loadUsers = async () => {
+    setLoading(true);
     try {
       const { data: supabaseUsers, error } = await supabase
         .from('users')
@@ -59,7 +64,10 @@ export default function AdminUsers() {
         return;
       }
 
-      if (!supabaseUsers) return;
+      if (!supabaseUsers) {
+        setLoading(false);
+        return;
+      }
 
       const allUsers: StoredUser[] = supabaseUsers.map((u: any) => ({
         id: u.id,
@@ -89,12 +97,18 @@ export default function AdminUsers() {
     } catch (error) {
       console.error('Error in loadUsers:', error);
       loadUsersFromLocalStorage();
+    } finally {
+      setLoading(false);
     }
   };
 
   const loadUsersFromLocalStorage = () => {
     const usersJson = localStorage.getItem('trikeserve_users');
-    if (usersJson) {
+    if (!usersJson) {
+      setLoading(false);
+      return;
+    }
+    {
       const allUsers: StoredUser[] = JSON.parse(usersJson);
       const adminType = user?.adminType;
 
@@ -106,6 +120,7 @@ export default function AdminUsers() {
 
       setUsers(filteredUsers);
     }
+    setLoading(false);
   };
 
   // Modal state
@@ -253,12 +268,22 @@ export default function AdminUsers() {
     return matchesSearch && matchesRole && matchesStatus;
   });
 
+  // Lets the empty state say *why* it is empty and offer a way back.
+  const hasActiveFilter =
+    searchQuery.trim() !== "" || filterRole !== "all" || filterStatus !== "all";
+
+  const clearFilters = () => {
+    setSearchQuery("");
+    setFilterRole("all");
+    setFilterStatus("all");
+  };
+
   const getRoleIcon = (role: string) => {
     switch (role) {
       case 'customer':
         return <Users className="w-5 h-5 text-[var(--success)]" />;
       case 'rider':
-        return <Bike className="w-5 h-5 text-[var(--info)]" />;
+        return <Tricycle className="w-5 h-5 text-[var(--info)]" />;
       case 'business':
         return <Store className="w-5 h-5 text-[var(--violet)]" />;
       default:
@@ -289,41 +314,23 @@ export default function AdminUsers() {
   };
 
   return (
-    <div className="min-h-screen bg-[var(--muted)] flex">
-      {/* Sidebar Navigation */}
-      <AdminSidebar
-        isMobileMenuOpen={isMobileMenuOpen}
-        setIsMobileMenuOpen={setIsMobileMenuOpen}
-      />
-
-      {/* Main Content */}
-      <div className="flex-1 lg:ml-64">
-        {/* Top Header */}
-        <div className="bg-surface border-b-2 border-[var(--border)] px-5 lg:px-8 py-4 lg:py-5 sticky top-0 z-50">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              {/* Hamburger Menu - Mobile Only */}
-              <button
-                onClick={() => setIsMobileMenuOpen(true)}
-                className="lg:hidden p-2 hover:bg-[var(--muted)] rounded-xl transition-all"
-              >
-                <Menu className="w-6 h-6 text-[var(--ink)]" />
-              </button>
-              <div>
-                <h1 className="text-2xl lg:text-3xl font-extrabold text-[var(--ink)]">
-                  {isRiderReadOnly ? 'Drivers' : 'User Management'}
-                </h1>
-                <p className="text-xs lg:text-sm text-[var(--muted-foreground)]">
-                  {isRiderReadOnly ? 'View driver accounts' : 'Manage users, roles, and verifications'}
-                </p>
-              </div>
-            </div>
-          </div>
-        </div>
+    <AdminShell
+      title="User Management"
+      subtitle="Manage users, roles, and verifications"
+    >
 
         {/* Content */}
-        <div className="p-5 lg:p-8">
-          {isRiderReadOnly && (
+        <div className="space-y-6">
+          {loading && (
+            <>
+              <StatSkeleton count={6} />
+              <div className="mt-6">
+                <TableSkeleton rows={6} cols={5} />
+              </div>
+            </>
+          )}
+
+          {!loading && isRiderReadOnly && (
             <Card className="p-4 mb-6 border-2 border-[var(--info-soft)] bg-[var(--info-soft)]">
               <p className="text-sm text-[var(--info)] font-semibold">Read-only access</p>
               <p className="text-xs text-[var(--info)]/80 mt-0.5">
@@ -332,6 +339,8 @@ export default function AdminUsers() {
             </Card>
           )}
 
+          {!loading && (
+          <>
           {/* Stats Cards */}
           <div className="grid grid-cols-2 lg:grid-cols-6 gap-3 lg:gap-4 mb-6">
             <Card className="p-4 border border-line bg-surface">
@@ -366,21 +375,29 @@ export default function AdminUsers() {
               {/* Search */}
               <div className="relative">
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-[var(--muted-foreground)]" />
+                <label htmlFor="admin-user-search" className="sr-only">
+                  Search users
+                </label>
                 <Input
-                  type="text"
+                  id="admin-user-search"
+                  type="search"
                   placeholder="Search by name, email, or phone..."
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
-                  className="pl-10 border border-line"
+                  className="pl-10 border border-line min-h-11"
                 />
               </div>
 
               {/* Role Filter */}
               <div>
+                <label htmlFor="admin-user-filter-role" className="sr-only">
+                  Filter by role
+                </label>
                 <select
+                  id="admin-user-filter-role"
                   value={filterRole}
                   onChange={(e) => setFilterRole(e.target.value)}
-                  className="w-full p-3 border border-line rounded-xl font-semibold"
+                  className="w-full min-h-11 p-3 border border-line rounded-xl font-semibold"
                 >
                   <option value="all">All Roles</option>
                   {(!user?.adminType || user?.adminType === 'business_customer') && (
@@ -398,10 +415,14 @@ export default function AdminUsers() {
 
               {/* Status Filter */}
               <div>
+                <label htmlFor="admin-user-filter-status" className="sr-only">
+                  Filter by verification status
+                </label>
                 <select
+                  id="admin-user-filter-status"
                   value={filterStatus}
                   onChange={(e) => setFilterStatus(e.target.value)}
-                  className="w-full p-3 border border-line rounded-xl font-semibold"
+                  className="w-full min-h-11 p-3 border border-line rounded-xl font-semibold"
                 >
                   <option value="all">All Status</option>
                   <option value="verified">Verified Only</option>
@@ -414,22 +435,106 @@ export default function AdminUsers() {
           {/* Users List */}
           <Card className="border border-line bg-surface overflow-hidden">
             {filteredUsers.length === 0 ? (
-              <div className="p-12 border-2 border-dashed border-[var(--border)] text-center">
-                <Users className="w-16 h-16 text-[var(--border)] mx-auto mb-4" />
-                <p className="text-[var(--muted-foreground)] text-sm">No users found</p>
+              <div className="p-4 sm:p-6">
+                <EmptyState
+                  icon={Users}
+                  title={hasActiveFilter ? 'No users match these filters' : 'No users yet'}
+                  description={
+                    hasActiveFilter
+                      ? 'Try a different search term, role or status.'
+                      : 'Registered customers, drivers and businesses will appear here.'
+                  }
+                  filipino={hasActiveFilter ? 'Wala pang tumutugma sa mga filter na ito.' : 'Wala pang nakarehistong gumagamit.'}
+                  action={
+                    hasActiveFilter ? (
+                      <button
+                        type="button"
+                        onClick={clearFilters}
+                        className="min-h-11 px-5 rounded-xl bg-[var(--primary)] text-white font-semibold hover:opacity-90"
+                      >
+                        Clear filters
+                      </button>
+                    ) : undefined
+                  }
+                />
               </div>
             ) : (
-              <div className="overflow-x-auto">
+              <>
+              {/* Mobile: stacked cards. A 5-column table needs ~900px and reads
+                  poorly on a phone, so below sm each user becomes one card. */}
+              <div className="sm:hidden space-y-3">
+                {filteredUsers.map((u) => (
+                  <div key={u.id} className="rounded-2xl border border-line bg-surface p-4">
+                    <div className="flex items-start gap-3">
+                      <div className={`w-10 h-10 flex-shrink-0 rounded-full flex items-center justify-center ${getRoleBadgeColor(u.role)}`}>
+                        {getRoleIcon(u.role)}
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <p className="font-bold text-[var(--ink)] truncate">
+                          {u.role === 'business' ? (u.businessName || u.name) : u.name}
+                        </p>
+                        <p className="text-xs text-[var(--muted-foreground)] truncate">{u.email}</p>
+                      </div>
+                    </div>
+
+                    <div className="mt-3 flex flex-wrap items-center gap-2">
+                      <Badge className={getRoleBadgeColor(u.role)}>{u.role.toUpperCase()}</Badge>
+                      {u.isVerified ? (
+                        <Badge className="bg-[var(--success-soft)] text-[var(--success)]">Verified</Badge>
+                      ) : (
+                        <Badge className="bg-[var(--amber-soft)] text-[var(--amber-ink)]">Pending</Badge>
+                      )}
+                    </div>
+
+                    <div className="mt-3 grid grid-cols-2 gap-2">
+                      <button
+                        onClick={canVerifyUser(u.role) ? (u.isVerified ? () => handleUnverifyUser(u.id) : () => handleVerifyUser(u.id)) : undefined}
+                        disabled={!canVerifyUser(u.role)}
+                        aria-label={`${u.isVerified ? 'Unverify' : 'Verify'} ${u.name}`}
+                        title={!canVerifyUser(u.role) ? getBlockedReason(u.role) : u.isVerified ? 'Unverify this user' : 'Verify this user'}
+                        className={`min-h-11 rounded-xl transition-all flex items-center justify-center gap-1.5 font-semibold text-xs ${
+                          canVerifyUser(u.role)
+                            ? u.isVerified
+                              ? 'bg-[var(--amber)] text-white'
+                              : 'bg-[var(--success)] text-white'
+                            : 'bg-[var(--muted)] text-[var(--muted-foreground)] opacity-50'
+                        }`}
+                      >
+                        {u.isVerified ? <XCircle className="w-4 h-4" aria-hidden="true" /> : <CheckCircle className="w-4 h-4" aria-hidden="true" />}
+                        {u.isVerified ? 'Unverify' : 'Verify'}
+                      </button>
+                      <button
+                        onClick={canDeleteUser(u.role) ? () => handleDeleteUser(u.id) : undefined}
+                        disabled={!canDeleteUser(u.role)}
+                        aria-label={`Delete ${u.name}`}
+                        title={!canDeleteUser(u.role) ? getBlockedReason(u.role) : 'Delete this user'}
+                        className={`min-h-11 rounded-xl transition-all flex items-center justify-center gap-1.5 font-semibold text-xs ${
+                          canDeleteUser(u.role)
+                            ? 'bg-[var(--error)] text-white'
+                            : 'bg-[var(--muted)] text-[var(--muted-foreground)] opacity-50'
+                        }`}
+                      >
+                        <Trash2 className="w-4 h-4" aria-hidden="true" />
+                        Delete
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              {/* Desktop / tablet: the full table */}
+              <div className="hidden sm:block overflow-x-auto">
                 <table className="w-full">
+                <caption className="sr-only">Registered users, their role, verification status and available actions</caption>
                   <thead className="bg-[var(--muted)] border-b-2 border-[var(--border)]">
                     <tr>
-                      <th className="px-4 py-3 text-left text-xs font-bold text-[var(--muted-foreground)] tracking-wider">User</th>
-                      <th className="px-4 py-3 text-left text-xs font-bold text-[var(--muted-foreground)] tracking-wider">Role</th>
-                      <th className="px-4 py-3 text-left text-xs font-bold text-[var(--muted-foreground)] tracking-wider">Status</th>
-                      <th className="px-4 py-3 text-left text-xs font-bold text-[var(--muted-foreground)] tracking-wider">Email</th>
-                      <th className="px-4 py-3 text-left text-xs font-bold text-[var(--muted-foreground)] tracking-wider">Phone</th>
-                      <th className="px-4 py-3 text-left text-xs font-bold text-[var(--muted-foreground)] tracking-wider">Details</th>
-                      <th className="px-4 py-3 text-center text-xs font-bold text-[var(--muted-foreground)] tracking-wider">Actions</th>
+                      <th scope="col" className="px-4 py-3 text-left text-xs font-bold text-[var(--muted-foreground)] tracking-wider">User</th>
+                      <th scope="col" className="px-4 py-3 text-left text-xs font-bold text-[var(--muted-foreground)] tracking-wider">Role</th>
+                      <th scope="col" className="px-4 py-3 text-left text-xs font-bold text-[var(--muted-foreground)] tracking-wider">Status</th>
+                      <th scope="col" className="px-4 py-3 text-left text-xs font-bold text-[var(--muted-foreground)] tracking-wider">Email</th>
+                      <th scope="col" className="hidden lg:table-cell px-4 py-3 text-left text-xs font-bold text-[var(--muted-foreground)] tracking-wider">Phone</th>
+                      <th scope="col" className="hidden lg:table-cell px-4 py-3 text-left text-xs font-bold text-[var(--muted-foreground)] tracking-wider">Details</th>
+                      <th scope="col" className="px-4 py-3 text-center text-xs font-bold text-[var(--muted-foreground)] tracking-wider">Actions</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-[var(--border)]">
@@ -493,9 +598,10 @@ export default function AdminUsers() {
                               {isSuperAdmin && (
                                 <button
                                   onClick={() => handleStartEditRole(u.id, u.role)}
-                                  className="p-1 hover:bg-[var(--muted)] rounded transition-all"
+                                  aria-label={`Change role for ${u.name}`}
+                                  className="min-h-11 min-w-11 flex items-center justify-center hover:bg-[var(--muted)] rounded-lg transition-all"
                                 >
-                                  <Edit2 className="w-4 h-4 text-[var(--muted-foreground)]" />
+                                  <Edit2 className="w-4 h-4 text-[var(--muted-foreground)]" aria-hidden="true" />
                                 </button>
                               )}
                             </div>
@@ -519,10 +625,10 @@ export default function AdminUsers() {
                         <td className="px-4 py-4">
                           <p className="text-sm text-[var(--muted-foreground)]">{u.email}</p>
                         </td>
-                        <td className="px-4 py-4">
+                        <td className="hidden lg:table-cell px-4 py-4">
                           <p className="text-sm text-[var(--muted-foreground)]">{u.phone}</p>
                         </td>
-                        <td className="px-4 py-4">
+                        <td className="hidden lg:table-cell px-4 py-4">
                           <div className="text-sm text-[var(--muted-foreground)]">
                             {u.role === 'rider' && u.todaPlate && (
                               <p><span className="font-semibold">TODA:</span> {u.todaPlate}</p>
@@ -541,7 +647,7 @@ export default function AdminUsers() {
                               onClick={canVerifyUser(u.role) ? (u.isVerified ? () => handleUnverifyUser(u.id) : () => handleVerifyUser(u.id)) : undefined}
                               disabled={!canVerifyUser(u.role)}
                               title={!canVerifyUser(u.role) ? getBlockedReason(u.role) : u.isVerified ? 'Unverify this user' : 'Verify this user'}
-                              className={`px-3 py-1.5 rounded-lg transition-all flex items-center gap-1.5 font-semibold text-xs ${
+                              className={`min-h-11 px-3 rounded-lg transition-all flex items-center gap-1.5 font-semibold text-xs ${
                                 canVerifyUser(u.role)
                                   ? u.isVerified
                                     ? 'bg-[var(--amber)] hover:bg-[var(--amber)] text-white cursor-pointer'
@@ -556,7 +662,7 @@ export default function AdminUsers() {
                               onClick={canDeleteUser(u.role) ? () => handleDeleteUser(u.id) : undefined}
                               disabled={!canDeleteUser(u.role)}
                               title={!canDeleteUser(u.role) ? getBlockedReason(u.role) : 'Delete this user'}
-                              className={`px-3 py-1.5 rounded-lg transition-all flex items-center gap-1.5 font-semibold text-xs ${
+                              className={`min-h-11 px-3 rounded-lg transition-all flex items-center gap-1.5 font-semibold text-xs ${
                                 canDeleteUser(u.role)
                                   ? 'bg-[var(--error)] hover:bg-[var(--error)] text-white cursor-pointer'
                                   : 'bg-[var(--muted-foreground)] text-[var(--muted-foreground)] cursor-not-allowed opacity-50'
@@ -572,10 +678,12 @@ export default function AdminUsers() {
                   </tbody>
                 </table>
               </div>
+              </>
             )}
           </Card>
+          </>
+          )}
         </div>
-      </div>
 
       {/* Confirmation Modal */}
       <ConfirmationModal
@@ -596,6 +704,6 @@ export default function AdminUsers() {
           onClose={() => setToast(null)}
         />
       )}
-    </div>
+    </AdminShell>
   );
 }

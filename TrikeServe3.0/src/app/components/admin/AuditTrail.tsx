@@ -5,8 +5,11 @@ import {
 import { Card } from "../ui/card";
 import { Badge } from "../ui/badge";
 import { useAuth } from "../../contexts/AuthContext";
-import AdminSidebar from "./AdminSidebar";
+
 import { getAuditLogs, type AuditLog } from "../../../lib/supabase";
+import AdminShell from "./AdminShell";
+import { TableSkeleton } from "./AdminSkeleton";
+import EmptyState from "../ui/EmptyState";
 
 /** Display label + badge colour for each recorded action. */
 const ACTION_META: Record<string, { label: string; badge: string; category: string }> = {
@@ -99,7 +102,6 @@ export default function AuditTrail() {
   const { user } = useAuth();
   const isSuperAdmin = user?.adminType === "business_customer";
 
-  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [logs, setLogs] = useState<AuditLog[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -136,43 +138,23 @@ export default function AuditTrail() {
     });
   }, [logs, category, role, search]);
 
+  // Lets the empty state explain itself and offer a way back.
+  const hasFilter = search.trim() !== "" || category !== "All" || role !== "";
+
   return (
-    <div className="min-h-screen bg-[var(--muted)] flex">
-      <AdminSidebar
-        isMobileMenuOpen={isMobileMenuOpen}
-        setIsMobileMenuOpen={setIsMobileMenuOpen}
-      />
+    <AdminShell
+      title="Audit Trail"
+      subtitle="Admin, customer, driver and business activity"
+    >
 
-      <div className="flex-1 lg:ml-64">
-        {/* Top Header */}
-        <div className="bg-surface border-b-2 border-[var(--border)] px-5 lg:px-8 py-4 lg:py-5 sticky top-0 z-50">
-          <div className="flex items-center justify-between gap-4">
-            <div className="flex items-center gap-3">
-              <button
-                onClick={() => setIsMobileMenuOpen(true)}
-                className="lg:hidden p-2 hover:bg-[var(--muted)] rounded-xl transition-all"
-              >
-                <Menu className="w-6 h-6 text-[var(--ink)]" />
-              </button>
-              <div>
-                <h1 className="text-2xl lg:text-3xl font-extrabold text-[var(--ink)]">Audit Trail</h1>
-                <p className="text-xs lg:text-sm text-[var(--muted-foreground)]">
-                  Admin, customer, driver and business activity
-                </p>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <div className="p-5 lg:p-8">
+        <div className="space-y-6">
           {!isSuperAdmin ? (
-            <Card className="p-12 border-2 border-dashed border-[var(--border)] text-center">
-              <ShieldCheck className="w-16 h-16 text-[var(--border)] mx-auto mb-4" />
-              <p className="text-[var(--muted-foreground)] text-sm">Super Admin only</p>
-              <p className="text-[var(--muted-foreground)] text-xs mt-1">
-                The audit trail records platform-wide activity.
-              </p>
-            </Card>
+            <EmptyState
+              icon={ShieldCheck}
+              title="Super Admin only"
+              description="The audit trail records platform-wide activity."
+              filipino="Ito ay para sa Super Admin lamang."
+            />
           ) : (
             <>
               {loadError && (
@@ -190,9 +172,10 @@ export default function AuditTrail() {
                   <button
                     key={r.key || "all"}
                     onClick={() => setRole(r.key)}
-                    className={`px-3.5 py-1.5 rounded-full text-xs font-bold whitespace-nowrap transition-all ${
+                    aria-pressed={role === r.key}
+                    className={`min-h-11 px-3.5 py-1.5 rounded-full text-xs font-bold whitespace-nowrap transition-all ${
                       role === r.key
-                        ? "bg-[var(--ink)] text-white"
+                        ? "bg-[var(--ink-solid)] text-white"
                         : "bg-[var(--surface)] border border-line text-[var(--muted-foreground)]"
                     }`}
                   >
@@ -208,7 +191,8 @@ export default function AuditTrail() {
                     <button
                       key={f}
                       onClick={() => setCategory(f)}
-                      className={`px-3.5 py-1.5 rounded-full text-xs font-bold whitespace-nowrap transition-all ${
+                      aria-pressed={category === f}
+                      className={`min-h-11 px-3.5 py-1.5 rounded-full text-xs font-bold whitespace-nowrap transition-all ${
                         category === f
                           ? "bg-[var(--primary)] text-white"
                           : "bg-[var(--surface)] border border-line text-[var(--muted-foreground)]"
@@ -218,9 +202,14 @@ export default function AuditTrail() {
                     </button>
                   ))}
                 </div>
-                <div className="flex items-center gap-2 px-3 py-2 bg-[var(--surface)] border border-line rounded-xl sm:ml-auto sm:w-64">
-                  <Search className="w-4 h-4 text-[var(--muted-foreground)] flex-shrink-0" />
+                <div className="flex items-center gap-2 px-3 py-2 min-h-11 bg-[var(--surface)] border border-line rounded-xl sm:ml-auto sm:w-64">
+                  <Search className="w-4 h-4 text-[var(--muted-foreground)] flex-shrink-0" aria-hidden="true" />
+                  <label htmlFor="admin-audit-search" className="sr-only">
+                    Search the audit trail
+                  </label>
                   <input
+                    id="admin-audit-search"
+                    type="search"
                     value={search}
                     onChange={(e) => setSearch(e.target.value)}
                     placeholder="Search actor or action…"
@@ -234,29 +223,82 @@ export default function AuditTrail() {
               </p>
 
               {loading ? (
-                <Card className="p-12 border-2 border-dashed border-[var(--border)] text-center">
-                  <p className="text-[var(--muted-foreground)] text-sm">Loading audit trail…</p>
-                </Card>
+                <TableSkeleton rows={8} cols={5} />
               ) : filtered.length === 0 ? (
-                <Card className="p-12 border-2 border-dashed border-[var(--border)] text-center">
-                  <ClipboardList className="w-16 h-16 text-[var(--border)] mx-auto mb-4" />
-                  <p className="text-[var(--muted-foreground)] text-sm mb-2">No activity yet</p>
-                  <p className="text-[var(--muted-foreground)] text-xs">
-                    Admin changes plus customer, driver and business activity will appear here.
-                  </p>
-                </Card>
+                <EmptyState
+                  icon={ClipboardList}
+                  title={hasFilter ? "No activity matches these filters" : "No activity yet"}
+                  description={
+                    hasFilter
+                      ? "Try a different search term, category or role."
+                      : "Admin changes plus customer, driver and business activity will appear here."
+                  }
+                  filipino={
+                    hasFilter
+                      ? "Wala pang aktibidad na tumutugma sa mga filter na ito."
+                      : "Wala pang naitalang aktibidad."
+                  }
+                  action={
+                    hasFilter ? (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setSearch("");
+                          setCategory("All");
+                          setRole("");
+                        }}
+                        className="min-h-11 px-5 rounded-xl bg-[var(--primary)] text-white font-semibold hover:opacity-90"
+                      >
+                        Clear filters
+                      </button>
+                    ) : undefined
+                  }
+                />
               ) : (
                 <Card className="border border-line bg-surface overflow-hidden">
-                  <div className="overflow-x-auto">
+                  {/* Mobile: the 6-column table needs ~800px, so below sm each
+                      record becomes a stacked card instead of a scrolling grid. */}
+                  <div className="sm:hidden divide-y divide-[var(--border)]">
+                    {filtered.map((log) => {
+                      const meta = metaFor(log.action);
+                      const rMeta = roleMeta(roleFor(log));
+                      return (
+                        <div key={log.id} className="p-4 space-y-2">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <Badge className={`${meta.badge} text-white`}>{meta.label}</Badge>
+                            <Badge className={`${rMeta.badge} text-white`}>{rMeta.label}</Badge>
+                          </div>
+                          <p className="text-sm font-semibold text-[var(--ink)]">
+                            {log.actor_name || log.actor_email || "System"}
+                          </p>
+                          {log.actor_name && log.actor_email && (
+                            <p className="text-xs text-[var(--muted-foreground)] break-all">{log.actor_email}</p>
+                          )}
+                          <p className="text-sm text-[var(--ink)]">{log.summary || "—"}</p>
+                          <p className="text-xs text-[var(--muted-foreground)] break-words">
+                            {describeDetails(log.details)}
+                          </p>
+                          <p className="text-xs text-[var(--muted-foreground)]">
+                            {formatDate(log.created_at)}
+                          </p>
+                        </div>
+                      );
+                    })}
+                  </div>
+
+                  <div className="hidden sm:block overflow-x-auto">
                     <table className="w-full">
+                      <caption className="sr-only">
+                        Platform activity log, newest first.
+                      </caption>
                       <thead className="bg-[var(--muted)] border-b-2 border-[var(--border)]">
                         <tr>
-                          <th className="px-4 py-3 text-left text-xs font-bold text-[var(--muted-foreground)] tracking-wider">When</th>
-                          <th className="px-4 py-3 text-left text-xs font-bold text-[var(--muted-foreground)] tracking-wider">Role</th>
-                          <th className="px-4 py-3 text-left text-xs font-bold text-[var(--muted-foreground)] tracking-wider">Actor</th>
-                          <th className="px-4 py-3 text-left text-xs font-bold text-[var(--muted-foreground)] tracking-wider">Action</th>
-                          <th className="px-4 py-3 text-left text-xs font-bold text-[var(--muted-foreground)] tracking-wider">Summary</th>
-                          <th className="px-4 py-3 text-left text-xs font-bold text-[var(--muted-foreground)] tracking-wider">Details</th>
+                          <th scope="col" className="px-4 py-3 text-left text-xs font-bold text-[var(--muted-foreground)] tracking-wider">When</th>
+                          <th scope="col" className="px-4 py-3 text-left text-xs font-bold text-[var(--muted-foreground)] tracking-wider">Role</th>
+                          <th scope="col" className="px-4 py-3 text-left text-xs font-bold text-[var(--muted-foreground)] tracking-wider">Actor</th>
+                          <th scope="col" className="px-4 py-3 text-left text-xs font-bold text-[var(--muted-foreground)] tracking-wider">Action</th>
+                          <th scope="col" className="px-4 py-3 text-left text-xs font-bold text-[var(--muted-foreground)] tracking-wider">Summary</th>
+                          <th scope="col" className="px-4 py-3 text-left text-xs font-bold text-[var(--muted-foreground)] tracking-wider">Details</th>
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-[var(--border)]">
@@ -305,7 +347,6 @@ export default function AuditTrail() {
             </>
           )}
         </div>
-      </div>
-    </div>
+    </AdminShell>
   );
 }

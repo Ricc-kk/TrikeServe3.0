@@ -8,6 +8,7 @@ import { supabase } from "../../../utils/supabase";
 import { supabaseHelpers } from "@/lib/supabase";
 import MapSelector from "./MapSelector";
 import { getDefaultAddress, setDefaultAddress, type DefaultAddress } from "@/lib/defaultAddress";
+import ThemeModeSwitcher from "../ui/ThemeModeSwitcher";
 
 export default function Account() {
   const navigate = useNavigate();
@@ -285,6 +286,11 @@ export default function Account() {
           )}
         </div>
 
+        {/* Appearance */}
+        <div className="bg-surface rounded-2xl shadow-sm border border-[var(--muted)] p-4">
+          <ThemeModeSwitcher bilingual />
+        </div>
+
         {/* Help Card */}
         <div className="bg-surface rounded-2xl shadow-sm border border-[var(--muted)] overflow-hidden">
           <div className="flex items-center justify-between p-4 hover:bg-[var(--muted)] transition-colors cursor-pointer">
@@ -306,7 +312,7 @@ export default function Account() {
           <div className="pt-2">
             <Button
               onClick={() => setShowSwitchConfirm(true)}
-              className="w-full bg-[var(--ink)] hover:bg-[var(--ink)] text-white font-bold py-4 rounded-2xl flex items-center justify-center gap-2 shadow-lg"
+              className="w-full bg-[var(--ink-solid)] hover:bg-[var(--ink-solid)] text-white font-bold py-4 rounded-2xl flex items-center justify-center gap-2 shadow-lg"
             >
               <ArrowLeft className="w-5 h-5" />
               Switch back to Driver App
@@ -317,7 +323,7 @@ export default function Account() {
           <div className="pt-2">
             <Button
               onClick={() => setShowSwitchConfirm(true)}
-              className="w-full bg-[var(--ink)] hover:bg-[var(--ink)] text-white font-bold py-4 rounded-2xl flex items-center justify-center gap-2 shadow-lg"
+              className="w-full bg-[var(--ink-solid)] hover:bg-[var(--ink-solid)] text-white font-bold py-4 rounded-2xl flex items-center justify-center gap-2 shadow-lg"
             >
               <ArrowLeft className="w-5 h-5" />
               Switch back to Business App

@@ -1,189 +1,252 @@
-import { useState, useEffect } from "react";
-import { Search, MapPin, Heart, User, Home as HomeIcon, ShoppingCart, MessageCircle, ClipboardList, BadgeCheck, Clock, Star, Shield, SlidersHorizontal, ArrowUp, X, Check, Store, Bell, CheckCircle } from "lucide-react";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import {
+  ArrowUp,
+  CheckCircle,
+  SlidersHorizontal,
+  Star,
+  Store,
+  X,
+} from "lucide-react";
 import { Link, useNavigate } from "react-router";
-import { Card } from "../ui/card";
-import { Badge } from "../ui/badge";
+
 import BottomNav from "../ui/BottomNav";
 import { ImageWithFallback } from "../figma/ImageWithFallback";
-import StoreLogo from "../figma/StoreLogo";
-import Slider from "react-slick";
 import tricycleIcon from "../../../assets/0b76d1aa56b8ad6e15dd4efc8a0100b0ca5762a1.png";
+import { useAuth } from "../../contexts/AuthContext";
 import { useCart } from "../../contexts/CartContext";
 import { useFavorites } from "../../contexts/FavoritesContext";
 import { supabase } from "../../../utils/supabase";
 import { supabaseHelpers } from "@/lib/supabase";
 
+import FoodHomeHeader from "./FoodHomeHeader";
+import FoodCategoryRail, { FOOD_CATEGORIES, type FoodCategoryId } from "./FoodCategoryRail";
+import RestaurantCard, { type RestaurantView } from "./RestaurantCard";
+
+const SORT_OPTIONS = [
+  { id: "name", label: "Name" },
+  { id: "rating", label: "Top rated" },
+  { id: "time", label: "Fastest" },
+] as const;
+
+type SortId = (typeof SORT_OPTIONS)[number]["id"];
+
+/** Shape the two loaders agree on before it becomes a RestaurantView. */
+type RawRestaurant = {
+  id: string;
+  name: string;
+  subtitle: string;
+  logo: string;
+  image: string;
+  time: string;
+  rating: number;
+  ratingCount: number;
+  verified: boolean;
+  address: string;
+  hasMenu: boolean;
+  isOpen: boolean;
+};
+
+const FALLBACK_IMAGE =
+  "https://images.unsplash.com/photo-1517248135467-4c7edcad34c4?w=800";
+
+/** "25-35 min" -> 25, so "Fastest" has something numeric to sort on. */
+function deliveryMinutes(time: string): number {
+  const match = String(time || "").match(/(\d+)/);
+  return match ? Number(match[1]) : Number.MAX_SAFE_INTEGER;
+}
+
+/**
+ * Collapses the two listings that share a name and address into one entry.
+ *
+ * The live list showed the same restaurant twice. Whichever record carries a
+ * real image and a delivery time wins, because that is the one that reads as
+ * complete; ties fall back to rating so the better-known listing survives.
+ */
+function dedupeRestaurants(list: RawRestaurant[]): RawRestaurant[] {
+  const best = new Map<string, RawRestaurant>();
+
+  const completeness = (r: RawRestaurant) => {
+    let score = 0;
+    if (r.image && r.image !== FALLBACK_IMAGE) score += 4;
+    if (r.address) score += 2;
+    if (r.rating > 0) score += 2;
+    if (r.isOpen) score += 1;
+    return score;
+  };
+
+  for (const r of list) {
+    const key = `${r.name} ${r.address}`
+      .toLowerCase()
+      .normalize("NFKD")
+      .replace(/[^a-z0-9]+/g, " ")
+      .trim();
+
+    const existing = best.get(key);
+    if (!existing || completeness(r) > completeness(existing)) {
+      best.set(key, r);
+    }
+  }
+
+  return Array.from(best.values());
+}
+
 // TrikeServe Food Delivery Home - Gen T Deleon, Valenzuela
 export default function FoodHome() {
   const navigate = useNavigate();
+  const { user } = useAuth();
   const { getTotalItems } = useCart();
   const { toggleFavorite, isFavorite, getTotalFavorites } = useFavorites();
-  const [activeCategory, setActiveCategory] = useState<string>("all");
-  const [isScrolling, setIsScrolling] = useState(false);
-  const [fabExpanded, setFabExpanded] = useState(false);
-  const [isScrolled, setIsScrolled] = useState(false);
-  const [showBackToTop, setShowBackToTop] = useState(false);
-  const [showFilterModal, setShowFilterModal] = useState(false);
-  const [restaurants, setRestaurants] = useState<any[]>([]);
+
+  const [restaurants, setRestaurants] = useState<RawRestaurant[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [menuCategories, setMenuCategories] = useState<Record<string, string[]>>({});
   const [unreadNotifications, setUnreadNotifications] = useState(0);
-  const [adminDeliveryFee, setAdminDeliveryFee] = useState<number>(35); // Admin-set base delivery fee
-  
-  // Filter states
-  const [selectedRating, setSelectedRating] = useState<string>("");
+  const [adminDeliveryFee, setAdminDeliveryFee] = useState<number>(35);
+
+  const [searchQuery, setSearchQuery] = useState("");
+  const [activeCategory, setActiveCategory] = useState<FoodCategoryId>("all");
+  const [minRating, setMinRating] = useState(0);
+  const [sortBy, setSortBy] = useState<SortId>("rating");
+  const [showFilters, setShowFilters] = useState(false);
+  const [showBackToTop, setShowBackToTop] = useState(false);
+  const [isScrolling, setIsScrolling] = useState(false);
   const [showWelcomeBack, setShowWelcomeBack] = useState(false);
   const [welcomeUserName, setWelcomeUserName] = useState("");
-  const [searchQuery, setSearchQuery] = useState<string>("");
 
-  // Function to get unread notifications count
-  const getUnreadNotificationsCount = () => {
-    const currentUserData = localStorage.getItem('trikeserve_current_user');
-    if (!currentUserData) return 0;
-
-    const currentUser = JSON.parse(currentUserData);
-    const userEmail = currentUser.email;
-
-    const savedNotifications = localStorage.getItem(`notifications_${userEmail}`);
-    if (!savedNotifications) return 0;
-
-    const notifications = JSON.parse(savedNotifications);
-    return notifications.filter((n: any) => n.unread).length;
-  };
-
-  // Function to load restaurants from Supabase
-  const loadRestaurantsFromSupabase = async () => {
+  const getUnreadNotificationsCount = useCallback(() => {
     try {
-      const { data: restaurants, error } = await supabase
-        .from('restaurants')
-        .select(`
-          id,
-          name,
-          address,
-          phone,
-          rating,
-          is_open,
-          banner_image,
-          logo_image,
-          business_user_id,
-          subtitle,
-          delivery_time,
-          operating_hours
-        `)
-        .order('name');
+      const raw = localStorage.getItem("trikeserve_delivery_notifications");
+      if (!raw) return 0;
+      const list = JSON.parse(raw);
+      return Array.isArray(list) ? list.filter((n: any) => !n.read).length : 0;
+    } catch {
+      return 0;
+    }
+  }, []);
 
-      if (error) {
-        console.error('[FoodHome] Supabase error:', error);
+  /**
+   * Category derivation.
+   *
+   * `restaurants` has no category column, so instead of a schema migration the
+   * buckets are inferred from each restaurant's menu items — `menu_items.category`
+   * is what the business menu actually writes. A restaurant with no menu items
+   * lands in no bucket and stays visible under "All".
+   */
+  const loadMenuCategories = useCallback(async () => {
+    try {
+      const { data, error } = await supabase
+        .from("menu_items")
+        .select("restaurant_id, category");
+      if (error || !data) return;
+      const map: Record<string, string[]> = {};
+      for (const row of data as any[]) {
+        if (!row.restaurant_id || !row.category) continue;
+        (map[row.restaurant_id] ||= []).push(String(row.category).toLowerCase());
+      }
+      setMenuCategories(map);
+    } catch {
+      // Categories stay empty; every restaurant remains visible under "All".
+    }
+  }, []);
+
+  const loadRestaurantsFromSupabase = useCallback(async () => {
+    try {
+      const { data, error } = await supabase
+        .from("restaurants")
+        .select(
+          `id, name, address, phone, rating, is_open, banner_image, logo_image,
+           business_user_id, subtitle, delivery_time, operating_hours`,
+        )
+        .order("name");
+
+      if (error || !data || data.length === 0) {
         loadRestaurantsFromLocalStorage();
         return;
       }
 
-      if (restaurants && restaurants.length > 0) {
-        console.log('[FoodHome] Loaded restaurants from Supabase:', restaurants.length);
-        // Compute each restaurant's rating from the business_ratings table so
-        // the food page shows the real average instead of the hardcoded default.
-        const withRatings = await Promise.all(restaurants.map(async (restaurant: any) => {
+      const withRatings = await Promise.all(
+        (data as any[]).map(async (restaurant) => {
           let rating = restaurant.rating || 0;
           let ratingCount = 0;
           if (restaurant.business_user_id) {
-            const res = await supabaseHelpers.getBusinessRating(restaurant.business_user_id);
+            const res = await supabaseHelpers.getBusinessRating(
+              restaurant.business_user_id,
+            );
             if (res && res.average != null) {
-              rating = Number(res.average.toFixed(1));
+              rating = Number(Number(res.average).toFixed(1));
               ratingCount = res.count;
             }
           }
           return { ...restaurant, rating, ratingCount };
-        }));
-        const restaurantList = withRatings.map((restaurant: any) => ({
-          id: restaurant.id,
-          businessUserId: restaurant.business_user_id, // ✅ CRITICAL: Add business user ID for orders
-          name: restaurant.name || "Restaurant",
-          subtitle: restaurant.subtitle || restaurant.address || "Gen T Deleon, Valenzuela",
-          logo: restaurant.logo_image || "🍽️",
-          image: restaurant.banner_image || "https://images.unsplash.com/photo-1517248135467-4c7edcad34c4?w=800",
-          time: restaurant.delivery_time || "25-35 min",
-          rating: restaurant.rating,
-          ratingCount: restaurant.ratingCount,
-          bgColor: "var(--amber-soft)",
-          promo: restaurant.is_open ? "Open for Orders!" : "Closed",
-          verified: true,
-          category: "restaurant",
-          address: restaurant.address || "",
-          operatingHours: restaurant.operating_hours || "8:00 AM - 10:00 PM",
-          hasMenu: true,
-          isOpen: restaurant.is_open
-        }));
-        setRestaurants(restaurantList);
-      } else {
-        console.log('[FoodHome] No restaurants in Supabase, loading from localStorage');
-        loadRestaurantsFromLocalStorage();
-      }
+        }),
+      );
+
+      const mapped: RawRestaurant[] = withRatings.map((r: any) => ({
+        id: r.id,
+        name: r.name || "Restaurant",
+        subtitle: r.subtitle || "",
+        logo: r.logo_image || "🍽️",
+        image: r.banner_image || FALLBACK_IMAGE,
+        time: r.delivery_time || "25-35 min",
+        rating: Number(r.rating) || 0,
+        ratingCount: r.ratingCount || 0,
+        verified: true,
+        address: r.address || r.subtitle || "Gen T Deleon, Valenzuela",
+        hasMenu: true,
+        isOpen: r.is_open !== false,
+      }));
+
+      setRestaurants(dedupeRestaurants(mapped));
     } catch (error) {
-      console.error('[FoodHome] Error loading from Supabase:', error);
+      console.error("[FoodHome] Error loading from Supabase:", error);
       loadRestaurantsFromLocalStorage();
     }
-  };
-
-  // Function to load restaurants from localStorage
-  const loadRestaurantsFromLocalStorage = () => {
-    const usersData = localStorage.getItem('trikeserve_users');
-    if (usersData) {
-      try {
-        const users = JSON.parse(usersData);
-        const businessUsers = users.filter((u: any) => u.role === 'business');
-
-        const restaurantList = businessUsers.map((business: any) => {
-          const restaurantDataKey = `restaurantData_${business.email}`;
-          const savedData = localStorage.getItem(restaurantDataKey);
-          let restaurantData = savedData ? JSON.parse(savedData) : {};
-          
-          // Load menu items to check if restaurant has items
-          const menuItemsKey = `menuItems_${business.email}`;
-          const savedMenuItems = localStorage.getItem(menuItemsKey);
-          const menuItems = savedMenuItems ? JSON.parse(savedMenuItems) : [];
-          const hasMenu = menuItems.length > 0;
-          
-          return {
-            id: business.email,
-            businessUserId: business.id, // ✅ CRITICAL: Add actual business user ID for orders
-            name: restaurantData.name || business.businessName || business.name || "Restaurant",
-            subtitle: restaurantData.subtitle || business.businessAddress || "Gen T Deleon",
-            logo: restaurantData.logo || "🍽️",
-            image: restaurantData.heroImage || "https://images.unsplash.com/photo-1517248135467-4c7edcad34c4?w=800",
-            time: restaurantData.deliveryTime || "25-35 min",
-            rating: restaurantData.rating || 0,
-            ratingCount: restaurantData.ratingCount || 0,
-            bgColor: "var(--amber-soft)",
-            promo: hasMenu ? "Open for Orders!" : "Coming Soon",
-            verified: business.isVerified || false,
-            category: "restaurant",
-            address: restaurantData.address || business.businessAddress || "",
-            operatingHours: restaurantData.operatingHours || "8:00 AM - 10:00 PM",
-            hasMenu
-          };
-        });
-        
-        console.log('[FoodHome] Loaded restaurants from localStorage:', restaurantList.length);
-        setRestaurants(restaurantList);
-      } catch (error) {
-        console.error('[FoodHome] Error loading from localStorage:', error);
-        setRestaurants([]);
-      }
-    } else {
-      setRestaurants([]);
-    }
-  };
-
-  // Load the admin-set delivery fee (shown on restaurant cards; not editable by businesses)
-  useEffect(() => {
-    supabaseHelpers.getAdminDeliveryFee().then(setAdminDeliveryFee);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Load verified business users as restaurants - Initial load
-  // Combined unread count: localStorage notifications + unread delivery
-  // notifications from the database (driver status updates).
-  const loadUnreadCount = async () => {
+  const loadRestaurantsFromLocalStorage = useCallback(() => {
+    try {
+      const usersData = localStorage.getItem("trikeserve_users");
+      if (!usersData) {
+        setRestaurants([]);
+        return;
+      }
+      const users = JSON.parse(usersData);
+      const businessUsers = users.filter((u: any) => u.role === "business");
+
+      const mapped: RawRestaurant[] = businessUsers.map((business: any) => {
+        const saved = localStorage.getItem(`restaurantData_${business.email}`);
+        const restaurantData = saved ? JSON.parse(saved) : {};
+        const menuRaw = localStorage.getItem(`menuItems_${business.email}`);
+        const menuItems: any[] = menuRaw ? JSON.parse(menuRaw) : [];
+
+        return {
+          id: business.email,
+          name: restaurantData.name || business.businessName || business.name || "Restaurant",
+          subtitle: "",
+          logo: restaurantData.logo || "🍽️",
+          image: restaurantData.heroImage || FALLBACK_IMAGE,
+          time: restaurantData.deliveryTime || "25-35 min",
+          rating: Number(restaurantData.rating) || 0,
+          ratingCount: Number(restaurantData.ratingCount) || 0,
+          verified: Boolean(business.isVerified),
+          address: restaurantData.address || business.businessAddress || "Gen T Deleon",
+          hasMenu: menuItems.length > 0,
+          isOpen: restaurantData.isOpen !== false,
+        };
+      });
+
+      setRestaurants(dedupeRestaurants(mapped));
+    } catch (error) {
+      console.error("[FoodHome] Error loading from localStorage:", error);
+      setRestaurants([]);
+    }
+  }, []);
+
+  const loadUnreadCount = useCallback(async () => {
     let count = getUnreadNotificationsCount();
     try {
-      const currentUserData = localStorage.getItem('trikeserve_current_user');
+      const currentUserData = localStorage.getItem("trikeserve_current_user");
       if (currentUserData) {
         const currentUser = JSON.parse(currentUserData);
         if (currentUser?.id) {
@@ -191,549 +254,479 @@ export default function FoodHome() {
           count += (data || []).filter((n: any) => !n.read).length;
         }
       }
-    } catch (e) {
-      // ignore - keep localStorage count
+    } catch {
+      // keep the localStorage count
     }
     setUnreadNotifications(count);
-  };
+  }, [getUnreadNotificationsCount]);
 
-  useEffect(() => {
-    loadRestaurantsFromSupabase();
+  const loadAll = useCallback(() => {
+    setLoading(true);
+    loadRestaurantsFromSupabase().finally(() => setLoading(false));
     loadUnreadCount();
-  }, []);
+  }, [loadRestaurantsFromSupabase, loadUnreadCount]);
 
-  // Auto-refresh restaurants every 5 seconds to detect newly verified businesses
   useEffect(() => {
-    const refreshInterval = setInterval(() => {
-      loadRestaurantsFromSupabase();
-      loadUnreadCount();
-    }, 5000); // Check every 5 seconds
+    loadAll();
+    loadMenuCategories();
+  }, [loadAll, loadMenuCategories]);
 
-    return () => clearInterval(refreshInterval);
-  }, []);
-
-  // Refresh restaurants when page becomes visible (user switches back to tab)
+  // Refresh so a newly verified business shows up without a manual reload.
   useEffect(() => {
-    const handleVisibilityChange = () => {
-      if (document.visibilityState === 'visible') {
-        loadRestaurantsFromSupabase();
-      }
+    const interval = setInterval(loadRestaurantsFromSupabase, 15000);
+    return () => clearInterval(interval);
+  }, [loadRestaurantsFromSupabase]);
+
+  useEffect(() => {
+    const onVisible = () => {
+      if (document.visibilityState === "visible") loadRestaurantsFromSupabase();
     };
+    document.addEventListener("visibilitychange", onVisible);
+    return () => document.removeEventListener("visibilitychange", onVisible);
+  }, [loadRestaurantsFromSupabase]);
 
-    document.addEventListener('visibilitychange', handleVisibilityChange);
-    return () => document.removeEventListener('visibilitychange', handleVisibilityChange);
+  useEffect(() => {
+    supabaseHelpers.getAdminDeliveryFee().then(setAdminDeliveryFee);
   }, []);
 
-  // Handle scroll to expand/collapse FAB
   useEffect(() => {
-    let scrollTimeout: NodeJS.Timeout;
-    
-    const handleScroll = () => {
+    let timer: ReturnType<typeof setTimeout>;
+    const onScroll = () => {
       setIsScrolling(true);
-      setFabExpanded(true);
-      setShowBackToTop(false); // Hide while scrolling
-      
-      // Check if page is scrolled
-      setIsScrolled(window.scrollY > 10);
-      
-      clearTimeout(scrollTimeout);
-      scrollTimeout = setTimeout(() => {
-        setIsScrolling(false);
-        setFabExpanded(false);
-        // Show back to top only after scrolling stops
-        if (window.scrollY > 10) {
-          setShowBackToTop(true);
-        }
-      }, 750);
+      setShowBackToTop(window.scrollY > 600);
+      clearTimeout(timer);
+      timer = setTimeout(() => setIsScrolling(false), 700);
     };
-    
-    window.addEventListener('scroll', handleScroll);
+    window.addEventListener("scroll", onScroll, { passive: true });
     return () => {
-      window.removeEventListener('scroll', handleScroll);
-      clearTimeout(scrollTimeout);
+      window.removeEventListener("scroll", onScroll);
+      clearTimeout(timer);
     };
   }, []);
 
-  // Scroll to top function
-  const scrollToTop = () => {
-    window.scrollTo({ top: 0, behavior: 'smooth' });
+  useEffect(() => {
+    const flag = sessionStorage.getItem("trikeserve_show_welcome");
+    const name = sessionStorage.getItem("trikeserve_welcome_name");
+    if (flag !== "true") return;
+    sessionStorage.removeItem("trikeserve_show_welcome");
+    sessionStorage.removeItem("trikeserve_welcome_name");
+    setWelcomeUserName(name || "there");
+    const show = setTimeout(() => setShowWelcomeBack(true), 500);
+    const hide = setTimeout(() => setShowWelcomeBack(false), 3000);
+    return () => {
+      clearTimeout(show);
+      clearTimeout(hide);
+    };
+  }, []);
+
+  /** Restaurants projected into the card shape, with derived category labels. */
+  const views: RestaurantView[] = useMemo(() => {
+    return restaurants.map((r) => {
+      const owned = menuCategories[r.id] || [];
+      const labels = FOOD_CATEGORIES.filter(
+        (c) =>
+          c.id !== "all" && c.menuCategories.some((m) => owned.includes(m)),
+      ).map((c) => c.label);
+      return { ...r, categoryLabels: labels };
+    });
+  }, [restaurants, menuCategories]);
+
+  const categoryCounts = useMemo(() => {
+    const counts: Partial<Record<FoodCategoryId, number>> = {};
+    for (const c of FOOD_CATEGORIES) {
+      counts[c.id] =
+        c.id === "all"
+          ? views.length
+          : views.filter((v) => v.categoryLabels.includes(c.label)).length;
+    }
+    return counts;
+  }, [views]);
+
+  const results = useMemo(() => {
+    const term = searchQuery.trim().toLowerCase();
+
+    const filtered = views.filter((v) => {
+      if (minRating > 0 && v.rating < minRating) return false;
+
+      if (activeCategory !== "all") {
+        const meta = FOOD_CATEGORIES.find((c) => c.id === activeCategory);
+        if (!meta || !v.categoryLabels.includes(meta.label)) return false;
+      }
+
+      if (!term) return true;
+      return (
+        v.name.toLowerCase().includes(term) ||
+        v.address.toLowerCase().includes(term) ||
+        v.categoryLabels.some((l) => l.toLowerCase().includes(term))
+      );
+    });
+
+    return filtered.sort((a, b) => {
+      if (sortBy === "rating") return b.rating - a.rating;
+      if (sortBy === "time") {
+        return deliveryMinutes(a.time) - deliveryMinutes(b.time);
+      }
+      return a.name.localeCompare(b.name);
+    });
+  }, [views, searchQuery, activeCategory, minRating, sortBy]);
+
+  const featured = useMemo(
+    () => views.filter((v) => v.isOpen).sort((a, b) => b.rating - a.rating).slice(0, 6),
+    [views],
+  );
+
+  const hasFilters = searchQuery.trim() !== "" || activeCategory !== "all" || minRating > 0;
+  const cartCount = getTotalItems();
+
+  const clearFilters = () => {
+    setSearchQuery("");
+    setActiveCategory("all");
+    setMinRating(0);
   };
 
-  // Local Valenzuela/Gen T Deleon categories
-  const categories = [
-    { id: "silugan", name: "Silugan", icon: "🍳", gradient: "from-[var(--amber)] to-[var(--amber)]" },
-    { id: "ihawan", name: "Ihawan", icon: "🔥", gradient: "from-[var(--error)] to-[var(--amber)]" },
-    { id: "karinderya", name: "Karinderya", icon: "🍲", gradient: "from-[var(--success)] to-[var(--success)]" },
-    { id: "kape", name: "Kape & Tsaa", icon: "☕", gradient: "from-[var(--amber-dark)] to-[var(--amber-dark)]" },
-    { id: "merienda", name: "Merienda", icon: "🥐", gradient: "from-[var(--violet)] to-[var(--primary)]" },
-    { id: "malamig", name: "Malamig", icon: "🧋", gradient: "from-[var(--violet)] to-[var(--violet)]" },
-  ];
-
-  // Show welcome back popup after login
-  useEffect(() => {
-    const showWelcome = sessionStorage.getItem('trikeserve_show_welcome');
-    const userName = sessionStorage.getItem('trikeserve_welcome_name');
-    if (showWelcome === 'true') {
-      sessionStorage.removeItem('trikeserve_show_welcome');
-      sessionStorage.removeItem('trikeserve_welcome_name');
-      setWelcomeUserName(userName || 'there');
-      const timer = setTimeout(() => setShowWelcomeBack(true), 500);
-      const hideTimer = setTimeout(() => setShowWelcomeBack(false), 3000);
-      return () => { clearTimeout(timer); clearTimeout(hideTimer); };
-    }
-  }, []);
-
-  const carouselSettings = {
-    dots: true,
-    infinite: true,
-    speed: 800,
-    slidesToShow: 1,
-    slidesToScroll: 1,
-    autoplay: true,
-    autoplaySpeed: 3000,
-    cssEase: "ease-in-out",
-    arrows: false,
-    pauseOnHover: true,
+  const onToggleFavorite = (restaurant: RestaurantView) => {
+    toggleFavorite({
+      id: restaurant.id,
+      name: restaurant.name,
+      image: restaurant.image,
+      rating: restaurant.rating,
+      reviews: restaurant.ratingCount,
+      distance: restaurant.address,
+      estimatedTime: restaurant.time,
+      category: restaurant.categoryLabels[0] || "restaurant",
+      priceRange: `₱${adminDeliveryFee}`,
+    });
   };
 
   return (
-    <div className="min-h-screen bg-[var(--background)] flex flex-col pb-20">
-      {/* Header — TrikeServe brand, service area, trust strip */}
-      <div className="bg-[var(--ink)] px-5 pt-safe sm:pt-6 pb-5">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <div className="grid size-11 place-items-center rounded-2xl bg-[var(--amber)] shadow-md">
-              <span className="text-lg font-bold text-[var(--ink)]" aria-hidden="true">TS</span>
-            </div>
-            <div>
-              <h1 className="text-white font-bold text-2xl leading-tight">TrikeServe</h1>
-              <p className="text-white/80 text-sm">Gen T Deleon, Valenzuela City</p>
-            </div>
-          </div>
-          <div className="flex items-center gap-3">
-            <button
-              onClick={() => navigate('/customer/notifications')}
-              className="relative grid size-11 place-items-center rounded-xl bg-white/10 active:scale-90 transition-transform"
-              aria-label="Notifications"
-            >
-              <Bell className="w-6 h-6 text-white" />
-              {/* Notification badge (delivery status updates + local notifications) */}
-              {unreadNotifications > 0 && (
-                <div className="absolute -top-1 -right-1 w-5 h-5 bg-[var(--amber)] rounded-full flex items-center justify-center">
-                  <span className="text-[10px] font-bold text-[var(--ink)]">{unreadNotifications > 9 ? '9+' : unreadNotifications}</span>
-                </div>
-              )}
-            </button>
-            <button
-              onClick={() => navigate('/customer/favorites')}
-              className="relative grid size-11 place-items-center rounded-xl bg-white/10 active:scale-90 transition-transform"
-              aria-label="Favorites"
-            >
-              <Heart className="w-6 h-6 text-white" />
-              {getTotalFavorites() > 0 && (
-                <div className="absolute -top-1 -right-1 w-5 h-5 bg-[var(--amber)] rounded-full flex items-center justify-center">
-                  <span className="text-[10px] font-bold text-[var(--ink)]">{getTotalFavorites()}</span>
-                </div>
-              )}
-            </button>
-          </div>
-        </div>
-        <div className="mt-4 flex items-center gap-2 rounded-2xl border border-white/10 bg-white/10 px-4 py-3">
-          <BadgeCheck className="w-5 h-5 shrink-0 text-[var(--mint)]" />
-          <p className="text-sm text-white/85">
-            <span className="font-bold">Fixed local fares.</span>{' '}
-            <span className="text-white/70">Tulong ng pamayanan — sakay at pagkain mula sa Gen T Deleon.</span>
-          </p>
-        </div>
-      </div>
+    <div className="min-h-screen bg-[var(--background)] pb-24">
+      <FoodHomeHeader
+        userName={user?.name}
+        avatarUrl={user?.avatarUrl}
+        unreadCount={unreadNotifications}
+        favoritesCount={getTotalFavorites()}
+      />
 
-      {/* Search — large, explicit, bilingual */}
-      <div className="bg-[var(--ink)] px-5 pb-6">
-        <div className="flex items-center gap-3">
-          <div className="relative flex-1">
-            <Search className="absolute left-5 top-1/2 -translate-y-1/2 w-6 h-6 text-[var(--muted-foreground)]" />
+      {/* Search */}
+      <div className="bg-[var(--ink-solid)] px-4 pb-4 sm:px-5">
+        <div className="mx-auto flex max-w-3xl items-center gap-2">
+          <div className="relative min-w-0 flex-1">
+            <label htmlFor="food-search" className="sr-only">
+              Search food or restaurants
+            </label>
             <input
-              type="text"
-              placeholder="Search food or restaurant"
-              aria-label="Search food or restaurant"
+              id="food-search"
+              type="search"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full pl-16 pr-5 py-4 bg-surface rounded-2xl shadow-sm border-0 text-base text-[var(--ink)] placeholder:text-[var(--muted-foreground)]"
-              style={{ outline: 'none' }}
+              placeholder="Search food or restaurant"
+              className="min-h-12 w-full rounded-2xl border-0 bg-[var(--surface)] pl-4 pr-4 text-base text-[var(--ink)] placeholder:text-[var(--muted-foreground)]"
             />
           </div>
           <button
-            onClick={() => setShowFilterModal(true)}
-            className="size-12 bg-white/15 rounded-2xl flex flex-col items-center justify-center gap-0.5 active:scale-90 transition-transform flex-shrink-0"
-            aria-label="Filter restaurants"
+            type="button"
+            onClick={() => setShowFilters(true)}
+            aria-label="Sort and filter restaurants"
+            className="grid size-12 flex-shrink-0 place-items-center rounded-2xl bg-white/15 text-white transition-colors hover:bg-white/25"
           >
-            <SlidersHorizontal className="w-5 h-5 text-white" />
-            <span className="text-[9px] font-bold leading-none text-white/85">Filter</span>
+            <SlidersHorizontal className="size-5" aria-hidden="true" />
           </button>
         </div>
-        <p className="mt-2 text-xs text-white/60">Maghanap ng pagkain o tindahan</p>
       </div>
 
-      {/* Restaurant Carousel — deep ink band */}
-      {restaurants.length > 0 && (
-        <div
-          className="pt-6 pb-10 bg-[var(--ink)]"
-        >
-          <style>{`
-            .restaurant-carousel .slick-dots {
-              bottom: -35px;
-            }
-            .restaurant-carousel .slick-dots li button:before {
-              color: white;
-              font-size: 10px;
-              opacity: 0.4;
-            }
-            .restaurant-carousel .slick-dots li.slick-active button:before {
-              color: white;
-              opacity: 1;
-            }
-          `}</style>
-          <Slider {...carouselSettings} className="restaurant-carousel">
-            {restaurants.map((restaurant, idx) => (
-              <div key={idx}>
-                <Link to={`/customer/restaurant-detail?id=${encodeURIComponent(restaurant.id)}&name=${encodeURIComponent(restaurant.name)}`}>
-                  <div className="bg-white/15 backdrop-blur-xl rounded-none p-0 border-0 h-[140px] cursor-pointer hover:bg-white/20 transition-colors"
-                    style={{
-                      backdropFilter: 'blur(20px)',
-                      WebkitBackdropFilter: 'blur(20px)'
-                    }}
-                  >
-                  <div className="flex items-center gap-4 px-5 h-full">
-                    {/* Restaurant Image */}
-                    <div className="w-24 h-24 rounded-2xl flex-shrink-0 overflow-hidden relative border-2 border-white/50">
-                      <ImageWithFallback 
-                        src={restaurant.image}
-                        alt={restaurant.name}
-                        className="w-full h-full object-cover"
-                      />
-                      {/* Gradient overlay */}
-                      <div className="absolute inset-0 bg-gradient-to-t from-black/40 to-transparent" />
-                      {/* Verified badge */}
-                      {restaurant.verified && (
-                        <div className="absolute top-2 left-2 bg-[var(--ink)] text-white p-1 rounded-full">
-                          <BadgeCheck className="w-3 h-3" fill="white" />
-                        </div>
-                      )}
-                      {/* Store logo badge (hidden for the default placeholder) */}
-                      {restaurant.logo && restaurant.logo !== "🍽️" && (
-                        <div className="absolute top-2 right-2 w-8 h-8 rounded-full bg-surface shadow-md overflow-hidden flex items-center justify-center border border-white/60">
-                          <StoreLogo logo={restaurant.logo} emojiClass="text-base" />
-                        </div>
-                      )}
-                    </div>
-                    
-                    {/* Restaurant Info */}
-                    <div className="flex-1 min-w-0 flex flex-col justify-between h-full py-1">
-                      <div>
-                        <h3 className="text-white font-bold text-lg mb-0.5 leading-tight truncate">
-                          {restaurant.name}
-                        </h3>
-                        <p className="text-white/85 text-xs mb-2.5 leading-tight truncate">
-                          {restaurant.subtitle}
-                        </p>
-                      </div>
-                      
-                      <div>
-                        <div className="flex items-center gap-2 mb-2.5">
-                          <div className="flex items-center gap-1 bg-white/25 backdrop-blur-sm rounded-full px-2.5 py-1">
-                            <Clock className="w-3 h-3 text-white" />
-                            <span className="text-white text-[11px] font-semibold">{restaurant.time}</span>
-                          </div>
-                          <div className="flex items-center gap-1 bg-white/25 backdrop-blur-sm rounded-full px-2.5 py-1">
-                            <Star className="w-3 h-3 text-[var(--amber)] fill-[var(--amber)]" />
-                            <span className="text-white text-[11px] font-semibold">{restaurant.rating}</span>
-                          </div>
-                        </div>
-                        
-                        <div className="bg-white/20 backdrop-blur-sm rounded-lg px-2.5 py-1.5 border border-white/30">
-                          <p className="text-white text-[11px] font-bold leading-tight truncate">🎉 {restaurant.promo}</p>
-                        </div>
-                      </div>
-                    </div>
+      <div className="mx-auto max-w-3xl space-y-5 px-4 pt-5 sm:px-5">
+        {/* Category rail */}
+        <FoodCategoryRail
+          value={activeCategory}
+          onChange={setActiveCategory}
+          counts={categoryCounts}
+        />
+
+        {/* Featured — a manual scroll rail, not an autoplaying carousel, so it
+            stays keyboard-reachable and does not move under the reader. */}
+        {!hasFilters && featured.length > 0 && (
+          <section aria-label="Top rated near you">
+            <h2 className="mb-2 text-lg font-bold text-[var(--ink)]">
+              Top rated
+              <span className="ml-2 text-sm font-normal text-[var(--muted-foreground)]">
+                Mataas ang rating
+              </span>
+            </h2>
+            <div
+              className="-mx-4 flex gap-3 overflow-x-auto px-4 pb-1 sm:-mx-5 sm:px-5"
+              tabIndex={0}
+            >
+              {featured.map((r) => (
+                <Link
+                  key={r.id}
+                  to={`/customer/restaurant-detail?id=${encodeURIComponent(r.id)}&name=${encodeURIComponent(r.name)}`}
+                  className="flex w-44 flex-shrink-0 flex-col overflow-hidden rounded-2xl border border-line bg-[var(--surface)] shadow-sm"
+                >
+                  <div className="relative h-24 w-full">
+                    <ImageWithFallback
+                      src={r.image}
+                      alt={r.name}
+                      className="size-full object-cover"
+                    />
                   </div>
-                </div>
+                  <div className="min-w-0 flex-1 p-2.5">
+                    <p className="line-clamp-2 text-sm font-bold leading-tight text-[var(--ink)]">
+                      {r.name}
+                    </p>
+                    <p className="mt-1 flex items-center gap-1 text-xs text-[var(--muted-foreground)]">
+                      <Star
+                        className="size-3 flex-shrink-0 fill-[var(--amber)] text-[var(--amber)]"
+                        aria-hidden="true"
+                      />
+                      {r.rating ? Number(r.rating).toFixed(1) : "New"}
+                      <span className="min-w-0 truncate">{r.time}</span>
+                    </p>
+                  </div>
                 </Link>
-              </div>
-            ))}
-          </Slider>
-        </div>
-      )}
+              ))}
+            </div>
+          </section>
+        )}
 
-      {/* Categories and Restaurant List - Combined Section */}
-      <div className="px-5 py-6 bg-surface rounded-t-[32px] -mt-2 relative z-10">
-        {/* Popular Restaurants - Enhanced Cards */}
-        <div className="pt-2">
-          <h3 className="text-xl font-bold text-[var(--ink)] mb-4">All Available Restaurants</h3>
-          
-           {restaurants.length === 0 ? (
-             // Empty State
-             <div className="text-center py-12">
-               <div className="w-24 h-24 bg-[var(--muted)] rounded-full flex items-center justify-center mx-auto mb-4">
-                 <Store className="w-12 h-12 text-[var(--muted-foreground)]" />
-               </div>
-               <h3 className="text-xl font-bold text-[var(--ink)] mb-2">Walang Available na Tindahan</h3>
-               <p className="text-sm text-[var(--muted-foreground)] mb-4 px-8">
-                 No verified restaurants yet. Check back soon!
-               </p>
-             </div>
-           ) : restaurants.filter(r => {
-             const matchesSearch = searchQuery.toLowerCase().trim() === '' ||
-               r.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-               r.subtitle.toLowerCase().includes(searchQuery.toLowerCase()) ||
-               r.address.toLowerCase().includes(searchQuery.toLowerCase());
-             return matchesSearch;
-           }).length === 0 ? (
-             // No search results
-             <div className="text-center py-12">
-               <div className="w-24 h-24 bg-[var(--muted)] rounded-full flex items-center justify-center mx-auto mb-4">
-                 <Search className="w-12 h-12 text-[var(--muted-foreground)]" />
-               </div>
-               <h3 className="text-xl font-bold text-[var(--ink)] mb-2">Walang Nakitang Tindahan</h3>
-               <p className="text-sm text-[var(--muted-foreground)] mb-4 px-8">
-                 No restaurants match your search "{searchQuery}". Try a different name or location.
-               </p>
-             </div>
-           ) : (
-            <>
-               {/* Restaurant Cards with Verified Badges */}
-               <div className="space-y-4">
-                 {restaurants
-                   .filter((restaurant) => {
-                     const matchesSearch = searchQuery.toLowerCase().trim() === '' ||
-                       restaurant.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-                       restaurant.subtitle.toLowerCase().includes(searchQuery.toLowerCase()) ||
-                       restaurant.address.toLowerCase().includes(searchQuery.toLowerCase());
-
-                     const matchesCategory = activeCategory === 'all' || restaurant.category === activeCategory;
-
-                     return matchesSearch && matchesCategory;
-                   })
-                   .map((restaurant, idx) => (
-                  <Link key={idx} to={`/customer/restaurant-detail?id=${encodeURIComponent(restaurant.id)}&name=${encodeURIComponent(restaurant.name)}`}>
-                    <Card className="overflow-hidden shadow-xl hover:shadow-2xl transition-all duration-300 border-0 rounded-3xl bg-surface active:scale-[0.98]">
-                    <div className="flex items-center gap-0">
-                      {/* Image Thumbnail */}
-                      <div className="w-32 h-32 flex-shrink-0 relative overflow-hidden">
-                        <ImageWithFallback 
-                          src={restaurant.image}
-                          alt={restaurant.name}
-                          className="w-full h-full object-cover"
-                        />
-                        {/* Gradient overlay */}
-                        <div className="absolute inset-0 bg-gradient-to-t from-black/30 to-transparent" />
-                        {/* Store logo badge (hidden for the default placeholder) */}
-                        {restaurant.logo && restaurant.logo !== "🍽️" && (
-                          <div className="absolute top-2 left-2 w-9 h-9 rounded-full bg-surface shadow-md overflow-hidden flex items-center justify-center border border-[var(--border)]">
-                            <StoreLogo logo={restaurant.logo} emojiClass="text-lg" />
-                          </div>
-                        )}
-                        {/* Rating badge */}
-                        <div className="absolute bottom-2 left-2 bg-white/95 backdrop-blur-sm text-[var(--ink)] px-2 py-1 rounded-full flex items-center gap-1 shadow-lg">
-                          <Star className="w-3 h-3 fill-[var(--amber)] text-[var(--amber)]" />
-                          <span className="text-xs font-bold">{restaurant.rating}</span>
-                        </div>
-                      </div>
-
-                      {/* Restaurant Info */}
-                      <div className="flex-1 p-4 min-w-0">
-                        <div className="flex items-start justify-between mb-2">
-                          <div className="flex-1 min-w-0">
-                            <div className="flex items-center gap-2 mb-1">
-                              <h4 className="font-bold text-[var(--ink)] text-base truncate">
-                                {restaurant.name}
-                              </h4>
-                              {/* Verified Merchant Badge */}
-                              {restaurant.verified && (
-                                <div className="flex-shrink-0 w-5 h-5 bg-[var(--ink)] rounded-full flex items-center justify-center shadow-md">
-                                  <Shield className="w-3 h-3 text-white" fill="white" />
-                                </div>
-                              )}
-                            </div>
-                            <p className="text-xs text-[var(--muted-foreground)] flex items-center gap-1">
-                              <MapPin className="w-3 h-3" />
-                              {restaurant.subtitle}
-                            </p>
-                          </div>
-                          <button 
-                            onClick={(e) => {
-                              e.preventDefault();
-                              e.stopPropagation();
-                              toggleFavorite({
-                                id: restaurant.id,
-                                name: restaurant.name,
-                                image: restaurant.image,
-                                rating: restaurant.rating,
-                                reviews: restaurant.ratingCount,
-                                distance: restaurant.subtitle,
-                                estimatedTime: restaurant.time,
-                                category: restaurant.category,
-                                priceRange: `₱${adminDeliveryFee}`
-                              });
-                            }}
-                            className={`flex-shrink-0 ml-2 w-8 h-8 rounded-full flex items-center justify-center active:scale-90 transition-transform shadow-md ${
-                              isFavorite(restaurant.id) ? 'bg-[var(--primary)]' : 'bg-[var(--amber-soft)]'
-                            }`}
-                          >
-                            <Heart className={`w-4 h-4 ${isFavorite(restaurant.id) ? 'text-white fill-white' : 'text-[var(--primary)]'}`} />
-                          </button>
-                        </div>
-
-                        <div className="flex items-center gap-2 text-xs text-[var(--muted-foreground)] mb-3">
-                          <span className="flex items-center gap-1 bg-[var(--muted)] px-2.5 py-1.5 rounded-lg shadow-sm">
-                            <Clock className="w-3 h-3" />
-                            {restaurant.time}
-                          </span>
-                          <span className="flex items-center gap-1 bg-[var(--muted)] px-2.5 py-1.5 rounded-lg shadow-sm">
-                            <span className="text-[10px]">₱</span>
-                            {adminDeliveryFee}
-                          </span>
-                        </div>
-
-                        {/* Promo Badge */}
-                        <div className="bg-gradient-to-r from-[var(--amber-soft)] to-[var(--error-soft)] border-2 border-[var(--primary)]/20 rounded-xl px-3 py-2 shadow-sm">
-                          <p className="text-[var(--primary)] text-xs font-bold">
-                            🎉 {restaurant.promo}
-                          </p>
-                        </div>
-                      </div>
-                    </div>
-
-                    {/* Quick Action Button */}
-                    <div className="px-4 pb-4">
-                      <button className="w-full bg-[var(--primary)] text-white font-bold py-3.5 rounded-2xl hover:shadow-xl transition-all duration-200 active:scale-95 shadow-lg shadow-[var(--primary)]/30 text-sm tracking-wide">
-                        Order Na! / Order now
-                      </button>
-                    </div>
-                  </Card>
-                  </Link>
+        {/* List */}
+        <section aria-label="Restaurants">
+          <div className="mb-3 flex flex-wrap items-baseline justify-between gap-2">
+            <h2 className="text-lg font-bold text-[var(--ink)]">
+              {activeCategory === "all"
+                ? "All restaurants"
+                : FOOD_CATEGORIES.find((c) => c.id === activeCategory)?.label}
+              <span className="ml-2 text-sm font-normal text-[var(--muted-foreground)]">
+                {results.length} · {results.length === 1 ? "tindahan" : "mga tindahan"}
+              </span>
+            </h2>
+            {results.length > 1 && (
+              <div className="flex flex-wrap gap-1.5" role="group" aria-label="Sort by">
+                {SORT_OPTIONS.map((opt) => (
+                  <button
+                    key={opt.id}
+                    type="button"
+                    aria-pressed={sortBy === opt.id}
+                    onClick={() => setSortBy(opt.id)}
+                    className={`min-h-11 rounded-full border px-3 text-xs font-semibold transition-colors ${
+                      sortBy === opt.id
+                        ? "border-[var(--primary)] bg-[var(--primary-soft)] text-[var(--coral-dark)]"
+                        : "border-line text-[var(--muted-foreground)]"
+                    }`}
+                  >
+                    {opt.label}
+                  </button>
                 ))}
               </div>
-            </>
+            )}
+          </div>
+
+          {loading && restaurants.length === 0 ? (
+            <div role="status" aria-busy="true" aria-live="polite" className="space-y-3">
+              <span className="sr-only">Loading restaurants…</span>
+              {Array.from({ length: 4 }).map((_, i) => (
+                <div key={i} className="h-36 animate-pulse rounded-3xl bg-[var(--muted)]" />
+              ))}
+            </div>
+          ) : results.length === 0 ? (
+            <div className="rounded-3xl border border-dashed border-line bg-[var(--surface)] px-6 py-10 text-center">
+              <div className="mx-auto grid size-14 place-items-center rounded-2xl bg-[var(--muted)]">
+                <Store className="size-6 text-[var(--muted-foreground)]" aria-hidden="true" />
+              </div>
+              <p className="mt-4 text-lg font-bold text-[var(--ink)]">
+                {hasFilters ? "No matches" : "No restaurants yet"}
+              </p>
+              <p className="mt-1 text-sm text-[var(--muted-foreground)]">
+                {hasFilters
+                  ? "Try a different search or filter."
+                  : "Verified restaurants in Gen T Deleon will appear here."}
+              </p>
+              {hasFilters && (
+                <button
+                  type="button"
+                  onClick={clearFilters}
+                  className="mt-5 min-h-11 rounded-xl bg-[var(--primary)] px-5 font-semibold text-[var(--primary-foreground)]"
+                >
+                  Clear filters
+                </button>
+              )}
+            </div>
+          ) : (
+            <div className="space-y-3">
+              {results.map((r) => (
+                <RestaurantCard
+                  key={r.id}
+                  restaurant={r}
+                  deliveryFee={adminDeliveryFee}
+                  isFavorite={isFavorite(r.id)}
+                  onToggleFavorite={() => onToggleFavorite(r)}
+                />
+              ))}
+            </div>
           )}
-        </div>
+        </section>
       </div>
 
-      {/* Back to Top Button */}
-      {showBackToTop && (
-        <button
-          onClick={scrollToTop}
-          className="fixed left-1/2 -translate-x-1/2 bottom-28 bg-white/95 backdrop-blur-sm rounded-full px-5 py-3 flex items-center justify-center gap-2 shadow-2xl shadow-[var(--ink)]/20 hover:shadow-3xl active:scale-90 transition-all duration-300 z-[1600] border-2 border-[var(--primary)]"
-        >
-          <ArrowUp className="w-5 h-5 text-[var(--primary)]" />
-          <span className="text-[var(--primary)] font-bold text-sm whitespace-nowrap">Back to Top</span>
-        </button>
-      )}
+      {/* Floating cluster — kept to one right-hand column so the centred order
+          CTAs stay readable, and the list's bottom padding clears the last card. */}
+      <div className="fixed bottom-24 right-4 z-[1500] flex flex-col items-end gap-3">
+        {showBackToTop && (
+          <button
+            type="button"
+            onClick={() => window.scrollTo({ top: 0, behavior: "smooth" })}
+            aria-label="Back to top"
+            className="grid size-11 place-items-center rounded-full border border-[var(--border)] bg-[var(--surface)] shadow-lg"
+          >
+            <ArrowUp className="size-5 text-[var(--primary)]" aria-hidden="true" />
+          </button>
+        )}
 
-      {/* Floating Tricycle Ride Button - Bottom Right */}
-      <Link to="/customer">
-        <div
-          className={`fixed bottom-24 right-5 bg-[var(--primary)] rounded-full flex items-center justify-center shadow-2xl shadow-[var(--primary)]/50 hover:shadow-3xl transition-all duration-300 z-[1600] border-4 border-white active:scale-95 ${
-            fabExpanded ? 'px-5 py-3 gap-2' : 'w-16 h-16'
+        <Link
+          to="/customer"
+          className={`flex items-center justify-center rounded-full bg-[var(--primary)] shadow-xl transition-all ${
+            isScrolling ? "gap-2 px-4 py-3" : "size-14"
           }`}
+          aria-label="Book a Ride"
         >
-          {/* Filipino Tricycle Icon */}
           <img
             src={tricycleIcon}
-            alt="Tricycle"
-            className="drop-shadow-2xl pointer-events-none"
-            style={{ 
-              width: fabExpanded ? "40px" : "52px", 
-              height: fabExpanded ? "40px" : "52px",
-              objectFit: 'contain'
-            }}
+            alt=""
+            className={isScrolling ? "size-7" : "size-9"}
           />
-          
-          {/* Contextual label when scrolling */}
-          {fabExpanded && (
-            <span className="text-white font-bold text-sm whitespace-nowrap drop-shadow-lg pointer-events-none">
+          {isScrolling && (
+            <span className="whitespace-nowrap text-sm font-bold text-white">
               Book a Ride
             </span>
           )}
-        </div>
-      </Link>
+        </Link>
+      </div>
 
-      {/* Bottom Navigation Bar */}
+      {/* Cart summary — appears only when there is something in it */}
+      {cartCount > 0 && (
+        <div className="fixed inset-x-0 bottom-20 z-[1400] px-4">
+          <button
+            type="button"
+            onClick={() => navigate("/customer/cart")}
+            className="mx-auto flex min-h-14 w-full max-w-3xl items-center justify-between gap-3 rounded-2xl bg-[var(--ink-solid)] px-5 text-white shadow-xl"
+          >
+            <span className="font-bold">
+              {cartCount} {cartCount === 1 ? "item" : "items"} in cart
+            </span>
+            <span className="rounded-xl bg-[var(--primary)] px-4 py-2 font-bold">
+              View cart · Tingnan
+            </span>
+          </button>
+        </div>
+      )}
+
       <BottomNav active="food" />
 
-      {/* Filter Modal */}
-      {showFilterModal && (
-        <div className="fixed inset-0 bg-black/50 z-[2000] flex items-end">
-          <div className="w-full bg-surface rounded-t-3xl max-h-[85vh] overflow-hidden flex flex-col animate-in slide-in-from-bottom duration-300">
-            {/* Modal Header */}
-            <div className="flex items-center justify-between px-5 py-4 border-b border-[var(--border)]">
-              <h2 className="text-xl font-bold text-[var(--ink)]">Filter</h2>
-              <button 
-                onClick={() => setShowFilterModal(false)}
-                className="w-10 h-10 flex items-center justify-center rounded-full hover:bg-[var(--muted)] active:scale-90 transition-all"
+      {/* Sort + filter sheet */}
+      {showFilters && (
+        <div
+          className="fixed inset-0 z-[2000] flex items-end bg-black/50"
+          role="dialog"
+          aria-modal="true"
+          aria-label="Sort and filter"
+        >
+          <div className="flex max-h-[85vh] w-full flex-col overflow-hidden rounded-t-3xl bg-[var(--surface)]">
+            <div className="flex items-center justify-between border-b border-[var(--border)] px-5 py-4">
+              <h2 className="text-lg font-bold text-[var(--ink)]">Sort &amp; filter</h2>
+              <button
+                type="button"
+                onClick={() => setShowFilters(false)}
+                aria-label="Close filters"
+                className="grid size-11 place-items-center rounded-full hover:bg-[var(--muted)]"
               >
-                <X className="w-6 h-6 text-[var(--muted-foreground)]" />
+                <X className="size-5 text-[var(--muted-foreground)]" aria-hidden="true" />
               </button>
             </div>
 
-            {/* Modal Content - Scrollable */}
-            <div className="flex-1 overflow-y-auto px-5 py-4 space-y-6">
-              {/* Rating */}
+            <div className="flex-1 space-y-6 overflow-y-auto px-5 py-4">
               <div>
-                <h3 className="text-base font-bold text-[var(--ink)] mb-3">Rating</h3>
+                <h3 className="mb-3 text-sm font-bold text-[var(--ink)]">Rating</h3>
                 <div className="flex flex-wrap gap-2">
-                  {['4.0+', '4.5+', '4.8+'].map((rating) => (
+                  {[0, 4, 4.5, 4.8].map((r) => (
                     <button
-                      key={rating}
-                      onClick={() => setSelectedRating(selectedRating === rating ? '' : rating)}
-                      className={`px-4 py-2.5 rounded-full font-medium flex items-center gap-1 transition-all ${
-                        selectedRating === rating
-                          ? 'bg-[var(--primary)] text-white shadow-lg'
-                          : 'bg-[var(--muted)] text-[var(--ink)] hover:bg-[var(--border)]'
+                      key={r}
+                      type="button"
+                      aria-pressed={minRating === r}
+                      onClick={() => setMinRating(r)}
+                      className={`flex min-h-11 items-center gap-1.5 rounded-full border px-4 font-semibold transition-colors ${
+                        minRating === r
+                          ? "border-[var(--primary)] bg-[var(--primary-soft)] text-[var(--coral-dark)]"
+                          : "border-line text-[var(--muted-foreground)]"
                       }`}
                     >
-                      <Star className={`w-4 h-4 ${selectedRating === rating ? 'fill-white' : 'fill-[var(--amber)]'}`} />
-                      {rating}
+                      {r === 0 ? (
+                        "Any"
+                      ) : (
+                        <>
+                          <Star
+                            className="size-4 fill-[var(--amber)] text-[var(--amber)]"
+                            aria-hidden="true"
+                          />
+                          {r}+
+                        </>
+                      )}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div>
+                <h3 className="mb-3 text-sm font-bold text-[var(--ink)]">Sort by</h3>
+                <div className="flex flex-wrap gap-2">
+                  {SORT_OPTIONS.map((opt) => (
+                    <button
+                      key={opt.id}
+                      type="button"
+                      aria-pressed={sortBy === opt.id}
+                      onClick={() => setSortBy(opt.id)}
+                      className={`min-h-11 rounded-full border px-4 font-semibold transition-colors ${
+                        sortBy === opt.id
+                          ? "border-[var(--primary)] bg-[var(--primary-soft)] text-[var(--coral-dark)]"
+                          : "border-line text-[var(--muted-foreground)]"
+                      }`}
+                    >
+                      {opt.label}
                     </button>
                   ))}
                 </div>
               </div>
             </div>
 
-            {/* Modal Footer */}
-            <div className="px-5 py-4 border-t border-[var(--border)] flex gap-3">
+            <div className="flex gap-3 border-t border-[var(--border)] px-5 py-4">
               <button
-                onClick={() => {
-                  setSelectedRating('');
-                }}
-                className="flex-1 py-3.5 rounded-2xl font-bold text-[var(--primary)] bg-[var(--error-soft)] hover:bg-[var(--error-soft)] active:scale-95 transition-all text-sm tracking-wide"
+                type="button"
+                onClick={clearFilters}
+                className="min-h-12 flex-1 rounded-2xl border border-line bg-[var(--muted)] font-bold text-[var(--ink)]"
               >
-                Clear All
+                Clear all
               </button>
               <button
-                onClick={() => setShowFilterModal(false)}
-                className="flex-1 py-3.5 rounded-2xl font-bold text-white bg-[var(--primary)] hover:shadow-xl active:scale-95 transition-all shadow-lg shadow-[var(--primary)]/30 text-sm tracking-wide"
+                type="button"
+                onClick={() => setShowFilters(false)}
+                className="min-h-12 flex-1 rounded-2xl bg-[var(--primary)] font-bold text-[var(--primary-foreground)]"
               >
-                Apply Filter
+                Show {results.length}
               </button>
             </div>
           </div>
         </div>
       )}
 
-      {/* Welcome Back Popup */}
+      {/* Welcome back */}
       {showWelcomeBack && (
-        <div className="fixed inset-0 bg-black/50 z-[2000] flex items-center justify-center p-4">
-          <div className="bg-surface rounded-2xl shadow-xl p-8 max-w-sm w-full text-center">
-            <div className="w-16 h-16 bg-[var(--success-soft)] rounded-full flex items-center justify-center mx-auto mb-4">
-              <CheckCircle className="w-8 h-8 text-[var(--success)]" />
+        <div className="fixed inset-0 z-[2000] flex items-center justify-center bg-black/50 p-4">
+          <div className="w-full max-w-sm rounded-2xl bg-[var(--surface)] p-8 text-center shadow-xl">
+            <div className="mx-auto grid size-16 place-items-center rounded-full bg-[var(--success-soft)]">
+              <CheckCircle className="size-8 text-[var(--success)]" aria-hidden="true" />
             </div>
-            <h3 className="text-2xl font-bold text-[var(--ink)] mb-2">Welcome Back!</h3>
-            <p className="text-[var(--muted-foreground)] text-sm">Good to see you again, <span className="font-semibold text-[var(--ink)]">{welcomeUserName}</span></p>
-            <div className="mt-6">
-              <div className="w-full bg-[var(--border)] rounded-full h-1.5">
-                <div className="bg-[var(--success)] h-1.5 rounded-full" style={{ width: '100%', animation: 'shrink 2.5s linear forwards' }} />
-              </div>
-            </div>
+            <h3 className="mt-4 text-2xl font-bold text-[var(--ink)]">Welcome back!</h3>
+            <p className="text-sm text-[var(--muted-foreground)]">
+              Good to see you again,{" "}
+              <span className="font-semibold text-[var(--ink)]">{welcomeUserName}</span>
+            </p>
           </div>
         </div>
       )}

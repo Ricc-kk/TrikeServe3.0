@@ -14,7 +14,8 @@ import {
   Save,
   X,
   LogOut,
-  Camera
+  Camera,
+  Palette
 } from "lucide-react";
 import { GoogleMap, MarkerF } from "@react-google-maps/api";
 import useMapLoader from "@/lib/mapLoader";
@@ -25,6 +26,7 @@ import { Card } from "../ui/card";
 import { Badge } from "../ui/badge";
 import { useAuth } from "../../contexts/AuthContext";
 import ActiveRideButton from "./ActiveRideButton";
+import ThemeModeSwitcher from "../ui/ThemeModeSwitcher";
 
 export default function RiderProfile() {
   const navigate = useNavigate();
@@ -488,6 +490,15 @@ export default function RiderProfile() {
           </div>
         </Card>
 
+        {/* Appearance — Rider Admin / drivers get the bilingual gloss */}
+        <Card className="p-5 border-0 shadow-md">
+          <h2 className="text-lg font-bold text-[var(--ink)] mb-4 flex items-center gap-2">
+            <Palette className="w-5 h-5 text-[var(--primary)]" />
+            Appearance
+          </h2>
+          <ThemeModeSwitcher bilingual />
+        </Card>
+
         {/* Help Card */}
         <Card className="p-5 border-0 shadow-md bg-gradient-to-br from-[var(--primary)]/5 to-[var(--primary)]/5 border-2 border-[var(--primary)]/20">
           <h3 className="text-base font-bold text-[var(--ink)] mb-2">Need to update your documents?</h3>
@@ -516,7 +527,7 @@ export default function RiderProfile() {
             localStorage.getItem('trikeserve_original_role') && (
               <Button
                 onClick={() => setShowSwitchConfirm(true)}
-                className="w-full bg-[var(--ink)] hover:bg-[var(--ink)] text-white font-bold py-4 rounded-lg flex items-center justify-center gap-2 shadow-md mb-3"
+                className="w-full bg-[var(--ink-solid)] hover:bg-[var(--ink-solid)] text-white font-bold py-4 rounded-lg flex items-center justify-center gap-2 shadow-md mb-3"
               >
                 Switch back to Driver App
               </Button>
@@ -577,7 +588,7 @@ export default function RiderProfile() {
               navigate('/');
             }, 2000);
           }}
-          className="w-full bg-[var(--ink)] hover:bg-[var(--ink)] text-white font-bold py-4 rounded-lg flex items-center justify-center gap-2 shadow-md"
+          className="w-full bg-[var(--ink-solid)] hover:bg-[var(--ink-solid)] text-white font-bold py-4 rounded-lg flex items-center justify-center gap-2 shadow-md"
         >
           <LogOut className="w-5 h-5" />
           Sign Out

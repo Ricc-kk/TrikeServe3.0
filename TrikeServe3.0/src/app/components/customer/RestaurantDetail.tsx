@@ -758,7 +758,7 @@ export default function RestaurantDetail() {
                       <div className={`absolute top-2 left-2 px-2 py-1 rounded-full text-[10px] font-bold text-white ${
                         item.badge === "most-ordered" ? "bg-[var(--primary)]" :
                         item.badge === "most-liked" ? "bg-[var(--teal)]" :
-                        "bg-[var(--ink)]"
+                        "bg-[var(--ink-solid)]"
                       }`}>
                         {item.badge === "most-ordered" ? "Most ordered" :
                          item.badge === "most-liked" ? "Most liked" :

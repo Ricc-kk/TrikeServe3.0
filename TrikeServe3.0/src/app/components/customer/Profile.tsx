@@ -225,7 +225,7 @@ export default function Profile() {
          <div className="px-5 py-6">
            <Button
              onClick={() => setShowSwitchConfirm(true)}
-             className="w-full bg-[var(--ink)] hover:bg-[var(--ink)] text-white font-bold py-4 rounded-lg flex items-center justify-center gap-2"
+             className="w-full bg-[var(--ink-solid)] hover:bg-[var(--ink-solid)] text-white font-bold py-4 rounded-lg flex items-center justify-center gap-2"
            >
              <ArrowLeft className="w-5 h-5" />
              Switch back to Driver App
@@ -236,7 +236,7 @@ export default function Profile() {
          <div className="px-5 py-6">
            <Button
              onClick={() => setShowSwitchConfirm(true)}
-             className="w-full bg-[var(--ink)] hover:bg-[var(--ink)] text-white font-bold py-4 rounded-lg flex items-center justify-center gap-2"
+             className="w-full bg-[var(--ink-solid)] hover:bg-[var(--ink-solid)] text-white font-bold py-4 rounded-lg flex items-center justify-center gap-2"
            >
              <ArrowLeft className="w-5 h-5" />
              Switch back to Business App

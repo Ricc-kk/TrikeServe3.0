@@ -1,6 +1,8 @@
 import { useState } from "react";
 import { useNavigate, Link } from "react-router";
-import { ArrowLeft, User, Mail, Phone, Lock, Check, Bike, Store, UserCircle } from "lucide-react";
+import { ArrowLeft, User, Mail, Phone, Lock, Check, Store, UserCircle } from "lucide-react";
+
+import { Tricycle } from "../ui/Tricycle";
 import { Button } from "../ui/button";
 import { Card } from "../ui/card";
 import { Input } from "../ui/input";
@@ -222,7 +224,7 @@ export default function SignUp() {
               >
                 <div className="flex items-center gap-4">
                   <div className="w-14 h-14 bg-[var(--info-soft)] rounded-xl flex items-center justify-center group-hover:bg-[var(--info)] transition-colors">
-                    <Bike className="w-8 h-8 text-[var(--info)] group-hover:text-white" />
+                    <Tricycle className="w-8 h-8 text-[var(--info)] group-hover:text-white" />
                   </div>
                   <div>
                     <h3 className="font-bold text-lg text-[var(--ink)]">Driver</h3>
