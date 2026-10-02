@@ -64,6 +64,10 @@ export default function BusinessOrders() {
   const [etaToCustomer, setEtaToCustomer] = useState<string | null>(null);
   const [rideRequestInfo, setRideRequestInfo] = useState<any>(null);
   const trackingPollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  // Refs so the realtime subscription can call the latest loadOrders without
+  // re-subscribing on every render.
+  const loadOrdersRef = useRef<(() => Promise<void>) | null>(null);
+  const isUpdatingStatusRef = useRef(false);
 
   // Load orders from Supabase (secure - uses RLS policies)
   useEffect(() => {
@@ -99,10 +103,27 @@ export default function BusinessOrders() {
           .single();
 
         if (freshOrder) {
+          if (freshOrder.status) setDriverStatus(freshOrder.status);
           if (freshOrder.driver_lat && freshOrder.driver_lng) {
             setDriverLocation({ lat: freshOrder.driver_lat, lng: freshOrder.driver_lng });
-            setDriverStatus(freshOrder.status);
           }
+        }
+
+        // The driver's live GPS is written to the ride request that carries this
+        // order (`ride_requests.driver_lat/lng`), and the orders table may not
+        // have driver_lat/lng columns at all — so read from the ride request too.
+        const { data: freshRide } = await supabase
+          .from('ride_requests')
+          .select('driver_lat, driver_lng, driver_status')
+          .eq('order_id', selectedOrder.id)
+          .not('driver_lat', 'is', null)
+          .order('updated_at', { ascending: false })
+          .limit(1)
+          .maybeSingle();
+
+        if (freshRide?.driver_lat && freshRide?.driver_lng) {
+          setDriverLocation({ lat: freshRide.driver_lat, lng: freshRide.driver_lng });
+          if (freshRide.driver_status) setDriverStatus(freshRide.driver_status);
         }
       } catch (err) {
         console.error('[BusinessOrders] Error polling driver location:', err);
@@ -112,6 +133,19 @@ export default function BusinessOrders() {
     pollDriver();
     trackingPollRef.current = setInterval(pollDriver, 3000);
     return () => { if (trackingPollRef.current) clearInterval(trackingPollRef.current); };
+  }, [selectedOrder?.id, selectedOrder?.status]);
+
+  // Live tracking straight from the driver's active ride (the ride request for
+  // this order), so the map moves the moment the driver's GPS is written.
+  useEffect(() => {
+    if (!selectedOrder || selectedOrder.status !== 'on-the-way') return;
+    const unsubscribe = supabaseHelpers.subscribeToOrderDelivery(selectedOrder.id, (ride) => {
+      if (ride.driver_lat && ride.driver_lng) {
+        setDriverLocation({ lat: ride.driver_lat, lng: ride.driver_lng });
+        if (ride.driver_status) setDriverStatus(ride.driver_status);
+      }
+    });
+    return unsubscribe;
   }, [selectedOrder?.id, selectedOrder?.status]);
 
   // Compute route from driver to restaurant or customer
@@ -342,13 +376,19 @@ export default function BusinessOrders() {
             }
 
             if (!rr.driver_status) return;
-            const statusMap: Record<string, string> = {
+            // The driver's ride_requests row may lag behind the orders table, or
+            // an order may have been completed from this screen already. Driver
+            // status may only *advance* an in-transit order — it must never
+            // revert a terminal (delivered/cancelled) one.
+            const statusMap: Record<string, Order['status']> = {
               'on-the-way': 'on-the-way', 'arrived': 'on-the-way',
-              'picked-up': 'on-the-way', 'drop-off': 'on-the-way',
+              'picked-up': 'on-the-way', 'dropped-off': 'on-the-way',
+              'awaiting-payment': 'on-the-way',
               'completed': 'delivered',
             };
             const mapped = statusMap[rr.driver_status];
-            if (mapped) {
+            const isTerminal = order.status === 'delivered' || order.status === 'cancelled';
+            if (mapped && !isTerminal) {
               order.status = mapped;
             }
           });
@@ -363,6 +403,58 @@ export default function BusinessOrders() {
       setIsLoading(false);
     }
   };
+
+  loadOrdersRef.current = loadOrders;
+  isUpdatingStatusRef.current = isUpdatingStatus;
+
+  // Realtime updates: refresh the list as soon as one of this restaurant's
+  // orders changes (e.g. a driver completes a delivery), or a driver's live
+  // status on a ride request changes, instead of waiting for the 5s poll.
+  // The existing interval stays as a fallback.
+  useEffect(() => {
+    if (!restaurantId) return;
+
+    console.log('[BusinessOrders] Setting up realtime orders subscription for', restaurantId);
+
+    // Coalesce bursts of row changes into a single refetch.
+    let refreshTimer: ReturnType<typeof setTimeout> | null = null;
+    const scheduleRefresh = () => {
+      // Don't clobber an in-flight optimistic status update.
+      if (isUpdatingStatusRef.current) return;
+      if (refreshTimer) clearTimeout(refreshTimer);
+      refreshTimer = setTimeout(() => {
+        refreshTimer = null;
+        loadOrdersRef.current?.();
+      }, 300);
+    };
+
+    const channel = supabase
+      .channel(`business-orders-${restaurantId}`)
+      // Order rows for this restaurant (created/updated/cancelled).
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'orders',
+          filter: `restaurant_email=eq.${restaurantId}`,
+        },
+        scheduleRefresh
+      )
+      // Driver progress on the delivery requests behind those orders.
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'ride_requests' },
+        scheduleRefresh
+      )
+      .subscribe();
+
+    return () => {
+      if (refreshTimer) clearTimeout(refreshTimer);
+      console.log('[BusinessOrders] Cleaning up realtime orders subscription');
+      supabase.removeChannel(channel);
+    };
+  }, [restaurantId]);
 
   const activeOrders = orders.filter(o => ['pending', 'confirmed', 'preparing', 'ready', 'on-the-way'].includes(o.status));
   const historyOrders = orders.filter(o => ['delivered', 'cancelled'].includes(o.status));
@@ -1154,6 +1246,13 @@ export default function BusinessOrders() {
                             )}
                           </div>
                         </div>
+                      </div>
+                    )}
+
+                    {isMapsLoaded && !driverLocation && (
+                      <div className="rounded-xl border-2 border-dashed border-[var(--border)] p-4 text-center">
+                        <p className="text-sm font-semibold text-[var(--ink)]">Waiting for the driver's location…</p>
+                        <p className="text-xs text-[var(--muted-foreground)] mt-1">Live tracking appears once the driver shares GPS.</p>
                       </div>
                     )}
 

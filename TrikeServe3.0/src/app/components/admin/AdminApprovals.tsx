@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import {
   ClipboardCheck, Menu, CheckCircle, XCircle, Clock, MapPin,
-  AlertTriangle, RefreshCw, UserPlus, UserMinus, Store, Trash2
+  AlertTriangle, UserPlus, UserMinus, Store, Trash2
 } from "lucide-react";
 import { Card } from "../ui/card";
 import { Badge } from "../ui/badge";
@@ -215,12 +215,6 @@ export default function AdminApprovals() {
                 </p>
               </div>
             </div>
-            <button
-              onClick={loadRequests}
-              className="flex items-center gap-2 px-3 py-2 bg-[var(--muted)] border border-line rounded-xl text-sm font-semibold text-[var(--muted-foreground)] hover:border-[var(--primary)] transition-all"
-            >
-              <RefreshCw className="w-4 h-4" /> Refresh
-            </button>
           </div>
         </div>
 

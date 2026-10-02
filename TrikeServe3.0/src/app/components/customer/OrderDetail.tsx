@@ -1,4 +1,4 @@
-import { ArrowLeft, Package, Clock, MapPin, CreditCard, Star, Navigation, CheckCircle, AlertCircle, Phone, MessageCircle } from "lucide-react";
+import { ArrowLeft, Package, Clock, MapPin, CreditCard, Star, Navigation, CheckCircle, AlertCircle, Phone, MessageCircle, RefreshCw } from "lucide-react";
 import { useNavigate, useParams } from "react-router";
 import { Card } from "../ui/card";
 import { Button } from "../ui/button";
@@ -112,6 +112,7 @@ export default function OrderDetail() {
   const { user } = useAuth();
   const [order, setOrder] = useState<OrderData | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [isRefreshing, setIsRefreshing] = useState(false);
   const [rating, setRating] = useState(0);
   const [ratingSubmitting, setRatingSubmitting] = useState(false);
   const [ratingSubmitted, setRatingSubmitted] = useState(false);
@@ -123,6 +124,8 @@ export default function OrderDetail() {
   const [driverLocation, setDriverLocation] = useState<{ lat: number; lng: number } | null>(null);
   const [routePath, setRoutePath] = useState<Array<{ lat: number; lng: number }>>([]);
   const [etaToCustomer, setEtaToCustomer] = useState<string | null>(null);
+  // Lets the refresh button call the loader defined in the mount effect.
+  const fetchOrderRef = useRef<(() => Promise<void>) | null>(null);
 
   // Status timeline with timestamps
   const [statusHistory, setStatusHistory] = useState<Array<{ status: string; label: string; time: string; done: boolean }>>([]);
@@ -148,15 +151,21 @@ export default function OrderDetail() {
         try {
           const { data: rideReq } = await supabase
             .from('ride_requests')
-            .select('accepted_driver_id, driver_name')
+            .select('accepted_driver_id, driver_name, driver_lat, driver_lng')
             .eq('order_id', orderId)
             .not('accepted_driver_id', 'is', null)
+            .order('updated_at', { ascending: false })
             .limit(1)
             .maybeSingle();
 
           if (rideReq) {
             if (rideReq.accepted_driver_id) data.driverId = rideReq.accepted_driver_id;
             if (rideReq.driver_name) data.driverName = rideReq.driver_name;
+            // The live driver GPS lives on the ride request (the orders table may
+            // not have driver_lat/lng columns).
+            if (rideReq.driver_lat && rideReq.driver_lng) {
+              setDriverLocation({ lat: rideReq.driver_lat, lng: rideReq.driver_lng });
+            }
           }
         } catch (err) {
           console.error('[OrderDetail] Error fetching driver info:', err);
@@ -189,6 +198,7 @@ export default function OrderDetail() {
       setIsLoading(false);
     };
 
+    fetchOrderRef.current = fetchOrder;
     fetchOrder();
   }, [orderId]);
 
@@ -206,9 +216,23 @@ export default function OrderDetail() {
 
         if (!data) return;
 
-        // Update driver GPS
+        // Update driver GPS. The authoritative live position is on the ride
+        // request that carries this order — the orders table may not have
+        // driver_lat/lng columns — so fall back to it.
         if (data.driver_lat && data.driver_lng) {
           setDriverLocation({ lat: data.driver_lat, lng: data.driver_lng });
+        } else {
+          const { data: rideReq } = await supabase
+            .from('ride_requests')
+            .select('driver_lat, driver_lng')
+            .eq('order_id', orderId)
+            .not('driver_lat', 'is', null)
+            .order('updated_at', { ascending: false })
+            .limit(1)
+            .maybeSingle();
+          if (rideReq?.driver_lat && rideReq?.driver_lng) {
+            setDriverLocation({ lat: rideReq.driver_lat, lng: rideReq.driver_lng });
+          }
         }
 
         // Build new order data and always set it
@@ -231,6 +255,22 @@ export default function OrderDetail() {
     poll();
     const interval = setInterval(poll, 3000);
     return () => clearInterval(interval);
+  }, [orderId]);
+
+  // ─── Live driver tracking via the driver's active ride ────────────
+  // Follows the ride request the driver accepted for this order, so the map
+  // updates the moment the driver's GPS is written (no waiting on a poll).
+  useEffect(() => {
+    if (!orderId) return;
+    const unsubscribe = supabaseHelpers.subscribeToOrderDelivery(orderId, (ride) => {
+      if (ride.driver_lat && ride.driver_lng) {
+        setDriverLocation({ lat: ride.driver_lat, lng: ride.driver_lng });
+      }
+      if (ride.driver_name) {
+        setOrder(prev => (prev && !prev.driverName ? { ...prev, driverName: ride.driver_name } : prev));
+      }
+    });
+    return unsubscribe;
   }, [orderId]);
 
   // ─── Build status timeline when order changes ─────────────────────
@@ -361,6 +401,16 @@ export default function OrderDetail() {
   const handleChatWithDriver = () => {
     if (order.driverId) {
       navigate(`/customer/messages/driver/${order.driverId}`);
+    }
+  };
+
+  const handleRefresh = async () => {
+    if (isRefreshing) return;
+    setIsRefreshing(true);
+    try {
+      await fetchOrderRef.current?.();
+    } finally {
+      setIsRefreshing(false);
     }
   };
 
@@ -501,6 +551,15 @@ export default function OrderDetail() {
                 <div className="text-[10px] text-[var(--muted-foreground)]">● Live</div>
               </div>
             </div>
+          </Card>
+        )}
+
+        {/* Wired up but the driver hasn't shared GPS yet */}
+        {isActiveDelivery && isMapsLoaded && !driverLocation && (
+          <Card className="border-2 border-dashed border-[var(--border)] p-4 text-center">
+            <MapPin className="w-6 h-6 text-[var(--muted-foreground)] mx-auto mb-2" />
+            <p className="text-sm font-semibold text-[var(--ink)]">Waiting for the driver's location…</p>
+            <p className="text-xs text-[var(--muted-foreground)] mt-1">Live tracking appears once the driver shares GPS.</p>
           </Card>
         )}
 

@@ -1,12 +1,22 @@
-import { ArrowLeft, Home as HomeIcon, Calendar, MessageCircle, User, Users, Navigation, Search, ShoppingCart, ClipboardList, Package, MapPin } from "lucide-react";
+import { ArrowLeft, Home as HomeIcon, Calendar, MessageCircle, User, Users, Navigation, Search, ShoppingCart, ClipboardList, Package, MapPin, Flag, X, Check } from "lucide-react";
 import { Link, useNavigate } from "react-router";
 import { Button } from "../ui/button";
 import { Card } from "../ui/card";
 import BottomNav from "../ui/BottomNav";
 import { useAuth } from "../../contexts/AuthContext";
 import { ImageWithFallback } from "../figma/ImageWithFallback";
-import { supabase } from "../../../lib/supabase";
+import { supabase, supabaseHelpers, logAudit } from "../../../lib/supabase";
 import { useState, useEffect } from "react";
+
+const REPORT_CATEGORIES = [
+  'Driver behavior',
+  'Safety concern',
+  'Overcharging / fare issue',
+  'Route or navigation issue',
+  'Vehicle condition',
+  'Lost item',
+  'Other',
+];
 
 interface OrderDisplay {
   id: string;
@@ -36,6 +46,7 @@ interface RideDisplay {
   rideType?: string;
   paymentMethod?: string;
   passengerCount?: number;
+  driverId?: string;
 }
 
 export default function Activity() {
@@ -45,6 +56,68 @@ export default function Activity() {
   const [displayRides, setDisplayRides] = useState<RideDisplay[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<'rides' | 'deliveries'>('rides');
+  // Report form state (rides only).
+  const [reportRide, setReportRide] = useState<RideDisplay | null>(null);
+  const [reportCategory, setReportCategory] = useState(REPORT_CATEGORIES[0]);
+  const [reportDescription, setReportDescription] = useState('');
+  const [isSubmittingReport, setIsSubmittingReport] = useState(false);
+  const [reportError, setReportError] = useState<string | null>(null);
+  const [reportSubmitted, setReportSubmitted] = useState(false);
+
+  const openReport = (ride: RideDisplay) => {
+    setReportRide(ride);
+    setReportCategory(REPORT_CATEGORIES[0]);
+    setReportDescription('');
+    setReportError(null);
+    setReportSubmitted(false);
+  };
+
+  const closeReport = () => {
+    setReportRide(null);
+    setReportSubmitted(false);
+    setReportError(null);
+  };
+
+  const submitReport = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!reportRide) return;
+    if (!reportDescription.trim()) {
+      setReportError('Please describe what happened.');
+      return;
+    }
+    setIsSubmittingReport(true);
+    setReportError(null);
+    try {
+      const { error } = await supabaseHelpers.createRideReport({
+        rideId: reportRide.id,
+        reporterId: user?.id,
+        reporterName: user?.name,
+        reporterEmail: user?.email,
+        driverId: reportRide.driverId,
+        driverName: reportRide.driverName,
+        category: reportCategory,
+        description: reportDescription.trim(),
+        rideRoute: `${reportRide.pickupLocation} → ${reportRide.dropoffLocation}`,
+      });
+      if (error) throw error;
+      logAudit({
+        action: 'report_ride',
+        actorRole: 'customer',
+        entityType: 'ride_request',
+        entityId: reportRide.id,
+        summary: `Reported a ride: ${reportCategory}`,
+        details: { category: reportCategory },
+        actorEmail: user?.email,
+        actorName: user?.name,
+      });
+      setReportSubmitted(true);
+    } catch (err) {
+      console.error('[Activity] Failed to submit ride report:', err);
+      setReportError('Could not submit your report. Please try again.');
+    } finally {
+      setIsSubmittingReport(false);
+    }
+  };
 
   const isDeliveryRide = (dbRide: any) => {
     const pickupLocation = (dbRide?.pickup_location || '').toString();
@@ -161,6 +234,7 @@ export default function Activity() {
             rideType: dbRide.ride_type || 'ride',
             paymentMethod: dbRide.payment_method || 'COD',
             passengerCount: dbRide.passenger_count || 1,
+            driverId: dbRide.driver_id || undefined,
           };
         });
 
@@ -325,11 +399,20 @@ export default function Activity() {
                           </p>
                         </div>
 
-                        {/* Driver Info */}
-                        <p className="text-xs text-[var(--muted-foreground)]">
-                          👤 Driver: <span className="font-semibold text-[var(--ink)]">{ride.driverName || 'Driver'}</span>
-                          {ride.driverRating && ride.driverRating !== 'Driver' && <span> • ⭐ {ride.driverRating}</span>}
-                        </p>
+                        {/* Driver Info + Report */}
+                        <div className="flex items-center justify-between gap-3">
+                          <p className="text-xs text-[var(--muted-foreground)] min-w-0">
+                            👤 Driver: <span className="font-semibold text-[var(--ink)]">{ride.driverName || 'Driver'}</span>
+                            {ride.driverRating && ride.driverRating !== 'Driver' && <span> • ⭐ {ride.driverRating}</span>}
+                          </p>
+                          <button
+                            onClick={() => openReport(ride)}
+                            className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg border border-[var(--error)] text-[var(--error)] text-[11px] font-bold hover:bg-[var(--error-soft)] active:scale-95 transition-all flex-shrink-0"
+                          >
+                            <Flag className="w-3.5 h-3.5" />
+                            Report
+                          </button>
+                        </div>
                       </div>
                     </div>
                   </Card>
@@ -410,6 +493,81 @@ export default function Activity() {
           </div>
         )}
       </div>
+
+      {/* Report Ride Modal */}
+      {reportRide && (
+        <div className="fixed inset-0 bg-black/60 z-[2000] flex items-end sm:items-center justify-center p-0 sm:p-4">
+          <div className="bg-surface w-full sm:max-w-md sm:rounded-2xl rounded-t-3xl shadow-xl max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between p-5 border-b border-[var(--border)]">
+              <h3 className="text-lg font-bold text-[var(--ink)]">Report this ride</h3>
+              <button onClick={closeReport} className="p-1.5 hover:bg-[var(--muted)] rounded-full transition-colors">
+                <X className="w-5 h-5 text-[var(--muted-foreground)]" />
+              </button>
+            </div>
+
+            {reportSubmitted ? (
+              <div className="p-6 text-center">
+                <div className="w-14 h-14 bg-[var(--success-soft)] rounded-full flex items-center justify-center mx-auto mb-3">
+                  <Check className="w-7 h-7 text-[var(--success)]" />
+                </div>
+                <h4 className="text-base font-bold text-[var(--ink)]">Report submitted</h4>
+                <p className="text-sm text-[var(--muted-foreground)] mt-1">
+                  Our admin team will review it. Thank you for helping keep TrikeServe safe.
+                </p>
+                <button
+                  onClick={closeReport}
+                  className="mt-5 w-full py-3.5 bg-[var(--primary)] text-white font-bold rounded-2xl active:scale-95 transition-transform"
+                >
+                  Done
+                </button>
+              </div>
+            ) : (
+              <form onSubmit={submitReport} className="p-5 space-y-4">
+                <div className="p-3 rounded-xl bg-[var(--muted)] text-xs text-[var(--muted-foreground)]">
+                  <p className="font-semibold text-[var(--ink)] truncate">
+                    {reportRide.pickupLocation} → {reportRide.dropoffLocation}
+                  </p>
+                  <p className="mt-0.5">Driver: {reportRide.driverName || 'Driver'} · {reportRide.date}</p>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-[var(--muted-foreground)] mb-1.5">What went wrong?</label>
+                  <select
+                    value={reportCategory}
+                    onChange={(e) => setReportCategory(e.target.value)}
+                    className="w-full p-3 rounded-xl border border-line bg-surface text-sm text-[var(--ink)] outline-none focus:border-[var(--primary)]"
+                  >
+                    {REPORT_CATEGORIES.map((c) => (
+                      <option key={c} value={c}>{c}</option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-[var(--muted-foreground)] mb-1.5">Details</label>
+                  <textarea
+                    value={reportDescription}
+                    onChange={(e) => setReportDescription(e.target.value)}
+                    rows={4}
+                    placeholder="Tell us what happened..."
+                    className="w-full p-3 rounded-xl border border-line bg-surface text-sm text-[var(--ink)] outline-none focus:border-[var(--primary)] resize-none"
+                  />
+                </div>
+
+                {reportError && <p className="text-xs text-[var(--error)]">{reportError}</p>}
+
+                <button
+                  type="submit"
+                  disabled={isSubmittingReport}
+                  className="w-full py-3.5 bg-[var(--primary)] hover:bg-[var(--primary)] text-white font-bold rounded-2xl active:scale-95 transition-transform disabled:opacity-50"
+                >
+                  {isSubmittingReport ? 'Submitting...' : 'Submit report'}
+                </button>
+              </form>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* Bottom Navigation */}
       <BottomNav active="activity" />
