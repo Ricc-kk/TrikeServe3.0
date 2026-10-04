@@ -263,22 +263,6 @@ export default function Account() {
           <ThemeModeSwitcher bilingual />
         </div>
 
-        {/* Help Card */}
-        <div className="bg-surface rounded-2xl shadow-sm border border-[var(--muted)] overflow-hidden">
-          <div className="flex items-center justify-between p-4 hover:bg-[var(--muted)] transition-colors cursor-pointer">
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 bg-gradient-to-br from-[var(--teal)] to-[var(--teal)] rounded-xl flex items-center justify-center shadow-sm">
-                <HelpCircle className="w-5 h-5 text-white" />
-              </div>
-              <div>
-                <p className="text-sm font-semibold text-[var(--ink)]">Help & Support</p>
-                <p className="text-xs text-[var(--muted-foreground)]">FAQs and contact us</p>
-              </div>
-            </div>
-            <ChevronRight className="w-5 h-5 text-[var(--border)]" />
-          </div>
-        </div>
-
         {/* Switch Back to Driver/Business Button */}
         {localStorage.getItem('trikeserve_original_role') === 'rider' && (
           <div className="pt-2">

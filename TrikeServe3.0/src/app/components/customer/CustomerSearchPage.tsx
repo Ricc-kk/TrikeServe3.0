@@ -7,6 +7,7 @@ import { useAuth } from "../../contexts/AuthContext";
 import BottomNav from "../ui/BottomNav";
 import RecommendedRestaurants from "./RecommendedRestaurants";
 import { HubFilters, HubSearches, HubTerminals, type HubFilter } from "./CustomerHubFilters";
+import { usePreviousPage } from "../../hooks/usePreviousPage";
 
 type Terminal = {
   id: string;
@@ -33,6 +34,9 @@ type Terminal = {
  */
 export default function CustomerSearchPage() {
   const navigate = useNavigate();
+  // Search is reached from the hub, but it is also the landing screen for a
+  // shared search link; back should undo the tap, not force a fixed parent.
+  const goBack = usePreviousPage("/customer");
   const { user } = useAuth();
 
   const [query, setQuery] = useState("");
@@ -86,8 +90,8 @@ export default function CustomerSearchPage() {
           <div className="mb-2 flex items-start gap-2">
             <button
               type="button"
-              onClick={() => navigate("/customer")}
-              aria-label="Back to home"
+              onClick={goBack}
+              aria-label="Back"
               className="grid size-11 flex-shrink-0 place-items-center rounded-xl hover:bg-[var(--muted)]"
             >
               <ChevronLeft className="size-5 text-[var(--ink)]" aria-hidden="true" />

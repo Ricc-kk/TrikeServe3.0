@@ -9,6 +9,7 @@ import {
 } from "@/lib/placesApi";
 
 import { useDeliveryAddress } from "../../contexts/useDeliveryAddress";
+import { usePreviousPage } from "../../hooks/usePreviousPage";
 import {
   restOfAddress,
   streetOf,
@@ -29,6 +30,7 @@ type Hit = { place_id: string; label: string; detail: string };
  */
 export default function AddAddressSearch() {
   const navigate = useNavigate();
+  const goBack = usePreviousPage("/customer/delivery-address");
   const delivery = useDeliveryAddress();
 
   const [query, setQuery] = useState("");
@@ -111,7 +113,7 @@ export default function AddAddressSearch() {
         <div className="mx-auto flex max-w-3xl items-center gap-2">
           <button
             type="button"
-            onClick={() => navigate("/customer/delivery-address")}
+            onClick={goBack}
             aria-label="Back"
             className="grid size-11 flex-shrink-0 place-items-center rounded-xl hover:bg-[var(--muted)]"
           >

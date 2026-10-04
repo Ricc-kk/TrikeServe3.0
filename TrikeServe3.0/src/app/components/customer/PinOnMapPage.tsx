@@ -12,6 +12,7 @@ import {
 import type { LatLng } from "@/lib/distance";
 
 import { useDeliveryAddress } from "../../contexts/useDeliveryAddress";
+import { usePreviousPage } from "../../hooks/usePreviousPage";
 import {
   EMPTY_ADDRESS_DRAFT,
   FALLBACK_CENTER,
@@ -52,6 +53,10 @@ const MAX_VH = 0.88;
  */
 export default function PinOnMapPage() {
   const navigate = useNavigate();
+  // Undoes the tap that opened the map. A cold deep link has no map to go
+  // back from, so it falls to the search step instead of ejecting the app —
+  // which is what a bare `navigate(-1)` used to do here.
+  const goBack = usePreviousPage("/customer/delivery-address/new");
   const routeState = useLocation().state as { draft?: AddressDraft } | null;
   const delivery = useDeliveryAddress();
 
@@ -311,7 +316,7 @@ export default function PinOnMapPage() {
         <div className="flex items-center gap-2">
           <button
             type="button"
-            onClick={() => navigate("/customer/delivery-address/new")}
+            onClick={goBack}
             aria-label="Back"
             className="grid size-11 flex-shrink-0 place-items-center rounded-full bg-white shadow-md"
           >

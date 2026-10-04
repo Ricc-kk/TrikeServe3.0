@@ -226,12 +226,6 @@ export default function BottomNav({
                 label: "Activity",
                 icon: ClipboardList,
               },
-              {
-                key: "account",
-                to: "/customer/account",
-                label: "Profile",
-                icon: UserCircle,
-              },
             ];
 
   return (

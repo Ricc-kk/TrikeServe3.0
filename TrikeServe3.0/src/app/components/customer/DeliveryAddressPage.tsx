@@ -12,6 +12,7 @@ import {
 import { useNavigate } from "react-router";
 
 import { useDeliveryAddress } from "../../contexts/useDeliveryAddress";
+import { usePreviousPage } from "../../hooks/usePreviousPage";
 
 /**
  * Where the food is going.
@@ -31,6 +32,9 @@ import { useDeliveryAddress } from "../../contexts/useDeliveryAddress";
  */
 export default function DeliveryAddressPage() {
   const navigate = useNavigate();
+  // Normally the food screen, but this list is also linked from the home
+  // header's "Your location" line, so back follows the actual way in.
+  const goBack = usePreviousPage("/customer/food");
   const delivery = useDeliveryAddress();
 
   const [query, setQuery] = useState("");
@@ -79,8 +83,8 @@ export default function DeliveryAddressPage() {
         <div className="mx-auto flex max-w-3xl items-center gap-2">
           <button
             type="button"
-            onClick={() => navigate("/customer/food")}
-            aria-label="Back to food"
+            onClick={goBack}
+            aria-label="Back"
             className="grid size-11 flex-shrink-0 place-items-center rounded-xl hover:bg-[var(--muted)]"
           >
             <ChevronLeft className="size-5 text-[var(--ink)]" aria-hidden="true" />

@@ -1,6 +1,13 @@
 import { Link } from "react-router";
 import { Bell, MapPin, Search, User, X } from "lucide-react";
 
+import { useTypingPlaceholder } from "../../hooks/useTypingPlaceholder";
+
+// Module scope on purpose: `useTypingPlaceholder` reads this inside a timer
+// effect on every tick, so an array literal in the component body would give
+// it a new identity each render and restart the loop forever.
+const PLACEHOLDER_WORDS = ["Restaurant", "Terminals"] as const;
+
 type CustomerHubHeaderProps = {
   /** Unread notifications for the badge. */
   unreadCount?: number;
@@ -42,6 +49,11 @@ export default function CustomerHubHeader({
   onCloseSearch,
   onSubmitSearch,
 }: CustomerHubHeaderProps) {
+  // "Search" is typed by nobody and never changes; only the word after it is
+  // animated, so the field reads as one phrase that completes itself rather
+  // than two unrelated strings cross-fading.
+  const animatedWord = useTypingPlaceholder(PLACEHOLDER_WORDS);
+
   return (
     <header className="sticky top-0 z-[1000] border-b border-line bg-surface pt-safe">
       <div className="mx-auto max-w-3xl px-4 py-2.5 sm:py-3">
@@ -82,7 +94,7 @@ export default function CustomerHubHeader({
                 value={query}
                 onFocus={onOpenSearch}
                 onChange={(e) => onQueryChange?.(e.target.value)}
-                placeholder="Search restaurants, terminals"
+                placeholder={`Search ${animatedWord}`}
                 aria-label="Search restaurants and terminals"
                 className="min-w-0 flex-1 bg-transparent text-base text-[#122724] outline-none placeholder:text-[#5c6b68]"
               />

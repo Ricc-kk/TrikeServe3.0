@@ -2006,8 +2006,24 @@ export default function CustomerHome() {
   const hubLocationLabel =
     (pickupAddress && pickupAddress.trim()) || (pickup && pickup !== 'Current Location' ? pickup : '') || 'Locating you…';
 
+  /**
+   * The page gets a mint wash that fades to the base colour over the first
+   * 380px rather than a flat fill. `--surface` is defined as
+   * `var(--background)`, so before this every card was the exact same colour as
+   * the page behind it and the only thing separating them was a hairline. The
+   * wash is built from tokens rather than literals so it inverts with the
+   * theme: `--teal-soft` is a light mint in light mode and a deep pine in dark
+   * mode. The fade is an absolute distance rather than a percentage, so it
+   * covers the hub card at any viewport height instead of stretching down the
+   * whole page.
+   *
+   * (It is a JSDoc comment on the return rather than a `{/* ... *\/}` one
+   * because a JSX expression container is only legal as a child element — as
+   * the root of `return (...)` the parser reads it as an object literal and
+   * fails on the very next tag.)
+   */
   return (
-    <div className="min-h-screen bg-surface flex flex-col relative">
+    <div className="relative flex min-h-screen flex-col bg-[linear-gradient(180deg,var(--teal-soft)_0%,var(--background)_380px)]">
       {/* Full Screen Map */}
       {showMap && (
       <div className="absolute inset-0">

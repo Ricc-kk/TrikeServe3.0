@@ -31,7 +31,7 @@ type FoodHomeHeaderProps = {
  *
  * The numbers here are rem-resolved, and this app sets `html { font-size: 17px }`,
  * so they are not Tailwind's nominal values: -mt-6 hangs the field 25.5px below
- * the edge, pb-7 left a 4px gap under the icons (green bar and white field read
+ * the edge, pb-7 left a 4px gap under the address (green bar and white field read
  * as two welded blocks) and pb-10 gives 17px.
  *
  * The top padding is written as an explicit calc rather than layered alongside
@@ -39,12 +39,18 @@ type FoodHomeHeaderProps = {
  * utility and a `sm:pt-*` beside it could never apply. Adding to the safe-area
  * inset directly keeps the notched phone and the browser telling the same story.
  *
- * The address row used to open with a MapPin glyph in front of the text and an
- * avatar button at the end of the bar. The glyph said nothing the address itself
- * does not, and the avatar duplicated the Profile tab in the bottom nav — two
- * routes to one screen, one of them costing a whole row of the bar. So the
- * address text leads, a chevron sits on its right edge as the affordance that
- * it opens a list, and the bar ends after the favourites icon.
+ * The address is plain text, not a filled pill. It wore one, with a MapPin glyph
+ * in front of it, on the theory that a chip would read as tappable. On a bar that
+ * is already one row of controls the extra box just competes with the back button
+ * and the two icons, and the chevron on the address's right edge already says
+ * "this opens a list". The tap target is still the full 47px row height.
+ *
+ * Sharing one line with a 47px back button and two 47px icons does mean a long
+ * address truncates. That is a deliberate trade: the bar stays one row, and the
+ * full text is always one tap away on the address screen.
+ *
+ * The avatar that used to sit at the end of the bar is gone — it duplicated the
+ * Profile tab in the bottom nav, two routes to one screen.
  */
 export default function FoodHomeHeader({
   unreadCount = 0,
@@ -56,11 +62,11 @@ export default function FoodHomeHeader({
   return (
     <header className="bg-[var(--ink-solid)] px-3 pb-10 pt-[calc(max(0.25rem,env(safe-area-inset-top))+0.75rem)] sm:px-5 sm:pb-12">
       <div className="mx-auto flex max-w-3xl items-center gap-2">
-        {onBack && (
+        {onBack ? (
           <button
             type="button"
             onClick={onBack}
-            aria-label="Back to home"
+            aria-label="Back"
             className="grid size-11 flex-shrink-0 place-items-center rounded-xl bg-white/10 transition-colors hover:bg-white/20"
           >
             <ChevronRight
@@ -68,26 +74,43 @@ export default function FoodHomeHeader({
               aria-hidden="true"
             />
           </button>
+        ) : (
+          /* Holds the place of the back button so the icons stay hard right
+             even when this bar is rendered without one. */
+          <span className="size-11 flex-shrink-0" aria-hidden="true" />
         )}
 
+        {/* `flex-1` on this button is also what pushes the two icons out to the
+            far edge of the bar. */}
         {onOpenAddress && (
           <button
             type="button"
             onClick={onOpenAddress}
             aria-label={`Deliver to ${addressLabel || "no address set"}. Change delivery address`}
-            className="flex min-h-11 min-w-0 flex-1 items-center gap-2 rounded-xl bg-white/10 px-3 text-left transition-colors hover:bg-white/20"
+            className="flex min-h-11 min-w-0 flex-1 items-center text-left"
           >
-            {/* The address is the widest thing on the bar and the first thing
-                that changes, so it takes the space. `ml-auto` pins the chevron
-                to the far edge of the button rather than letting it sit against
-                the truncated text. */}
-            <span className="min-w-0 flex-1 truncate text-sm text-white">
-              {addressLabel || "Add delivery address"}
+            {/* Label above, address under it — the same two-line shape the home
+                search bar gives "Your location", so one fact reads the same way
+                on both screens. A label on its own line also buys the address
+                back a little width, because it no longer has to share the line
+                with a prefix.
+
+                Dimmed white, not --muted-foreground: this is the dark bar, and
+                that token is a dark stone here, unreadable on ink. */}
+            <span className="min-w-0 flex-1">
+              <span className="block text-[10px] font-bold uppercase tracking-wider text-white/70">
+                Your location
+              </span>
+              <span className="mt-0.5 flex min-w-0 items-center gap-1">
+                <span className="min-w-0 flex-1 truncate text-sm font-semibold text-white">
+                  {addressLabel || "Add delivery address"}
+                </span>
+                <ChevronDown
+                  className="size-4 flex-shrink-0 text-white/70"
+                  aria-hidden="true"
+                />
+              </span>
             </span>
-            <ChevronDown
-              className="size-4 flex-shrink-0 text-white/70"
-              aria-hidden="true"
-            />
           </button>
         )}
 
@@ -123,4 +146,4 @@ export default function FoodHomeHeader({
       </div>
     </header>
   );
-}
+}

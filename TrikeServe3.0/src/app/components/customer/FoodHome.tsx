@@ -12,9 +12,11 @@ import {
 } from "lucide-react";
 import { Link, useNavigate } from "react-router";
 
+import { usePreviousPage } from "../../hooks/usePreviousPage";
+
 import BottomNav from "../ui/BottomNav";
 import { ImageWithFallback } from "../figma/ImageWithFallback";
-import tricycleIcon from "../../../assets/0b76d1aa56b8ad6e15dd4efc8a0100b0ca5762a1.png";
+
 
 import { useCart } from "../../contexts/CartContext";
 import { useFavorites } from "../../contexts/FavoritesContext";
@@ -22,11 +24,11 @@ import { useDeliveryAddress } from "../../contexts/useDeliveryAddress";
 import { supabase } from "../../../utils/supabase";
 import { supabaseHelpers } from "@/lib/supabase";
 import { fetchRestaurants } from "@/lib/restaurantQueries";
-import { cuisineLabels, inferCuisineFromMenu, CUISINES } from "@/lib/foodTaxonomy";
+import { cuisineLabels, inferCuisineFromMenu } from "@/lib/foodTaxonomy";
 import { formatDistance, haversineMetres, hasCoords } from "@/lib/distance";
 
 import FoodHomeHeader from "./FoodHomeHeader";
-import FoodCategoryRail, { type FoodCategoryId } from "./FoodCategoryRail";
+
 import RestaurantCard, { type RestaurantView } from "./RestaurantCard";
 import FoodSearchOverlay from "./FoodSearchOverlay";
 
@@ -150,7 +152,6 @@ export default function FoodHome() {
   const [unreadNotifications, setUnreadNotifications] = useState(0);
   const [adminDeliveryFee, setAdminDeliveryFee] = useState<number>(35);
 
-  const [activeCategory, setActiveCategory] = useState<FoodCategoryId>("all");
   const [minRating, setMinRating] = useState(0);
   const [sortBy, setSortBy] = useState<SortId>("rating");
   const [showFilters, setShowFilters] = useState(false);
@@ -158,7 +159,7 @@ export default function FoodHome() {
   const [showSearch, setShowSearch] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [showBackToTop, setShowBackToTop] = useState(false);
-  const [isScrolling, setIsScrolling] = useState(false);
+  
   // True once the page has moved past the search bar, so the filter row can
   // take over as the only pinned control.
   const [condensed, setCondensed] = useState(false);
@@ -349,18 +350,13 @@ export default function FoodHome() {
   }, []);
 
   useEffect(() => {
-    let timer: ReturnType<typeof setTimeout>;
     const onScroll = () => {
-      setIsScrolling(true);
       setShowBackToTop(window.scrollY > 600);
       setCondensed(window.scrollY > 140);
-      clearTimeout(timer);
-      timer = setTimeout(() => setIsScrolling(false), 700);
     };
     window.addEventListener("scroll", onScroll, { passive: true });
     return () => {
       window.removeEventListener("scroll", onScroll);
-      clearTimeout(timer);
     };
   }, []);
 
@@ -405,22 +401,9 @@ export default function FoodHome() {
     });
   }, [restaurants, menuCategories, delivery.origin]);
 
-  const categoryCounts = useMemo(() => {
-    const counts: Partial<Record<FoodCategoryId, number>> = { all: views.length };
-    for (const c of CUISINES) {
-      counts[c.id] = views.filter((v) => v.cuisineLabels.includes(c.label)).length;
-    }
-    return counts;
-  }, [views]);
-
   const results = useMemo(() => {
     const filtered = views.filter((v) => {
       if (minRating > 0 && v.rating < minRating) return false;
-
-      if (activeCategory !== "all") {
-        const meta = CUISINES.find((c) => c.id === activeCategory);
-        if (!meta || !v.cuisineLabels.includes(meta.label)) return false;
-      }
 
       return true;
     });
@@ -442,7 +425,7 @@ export default function FoodHome() {
       }
       return a.name.localeCompare(b.name);
     });
-  }, [views, activeCategory, minRating, sortBy, delivery.origin]);
+  }, [views, minRating, sortBy, delivery.origin]);
 
   const featured = useMemo(
     () =>
@@ -453,29 +436,20 @@ export default function FoodHome() {
     [views],
   );
 
-  const hasFilters =
-    searchQuery.trim() !== "" || activeCategory !== "all" || minRating > 0;
+  const hasFilters = searchQuery.trim() !== "" || minRating > 0;
   const cartCount = getTotalItems();
 
   const clearFilters = () => {
     setSearchQuery("");
-    setActiveCategory("all");
     setMinRating(0);
   };
 
-  // A back button on a bottom-nav tab has no history to pop, so fall back to
-  // the customer hub rather than leaving the app.
-  /**
-   * Food lives one hop from the hub, so back always means "the hub".
-   *
-   * This used to be `window.history.length > 1 ? navigate(-1) : ...`, which is
-   * unreliable in a SPA: `history.length` counts entries from before the app
-   * loaded, so the arrow could bounce a customer out to the login page or off
-   * the site entirely.
-   */
-  const goBack = () => {
-    navigate("/customer");
-  };
+  // Back means "wherever I came from", which is not always the hub: this
+  // screen is reached from the home feed, from search and from the address
+  // flow, and hardcoding the hub dropped people out of the flow they were
+  // standing in. The fallback is only for the case where there is genuinely
+  // nothing to pop, which is what a cold deep link looks like.
+  const goBack = usePreviousPage("/customer");
 
   const onToggleFavorite = (restaurant: RestaurantView) => {
     toggleFavorite({
@@ -505,21 +479,19 @@ export default function FoodHome() {
    * what you already set without reopening it, which is the whole point once
    * the sheet is a tap away rather than the page's primary control.
    */
+  /**
+   * What is narrowing the list right now, shown as chips beside the filter.
+   *
+   * The filter sheet is where filters get set; these are how you see what you
+   * already set without reopening it, which is the whole point once the sheet
+   * is a tap away rather than the page's primary control.
+   */
   const activeFilterChips = [
     {
       key: "sort",
       label: "Sort",
       value: SORT_OPTIONS.find((o) => o.id === sortBy)?.label ?? "Top rated",
     },
-    ...(activeCategory !== "all"
-      ? [
-          {
-            key: "category",
-            label: "Category",
-            value: CUISINES.find((c) => c.id === activeCategory)?.label ?? "All",
-          },
-        ]
-      : []),
     ...(minRating > 0 ? [{ key: "rating", label: "Rating", value: `${minRating}+` }] : []),
   ];
 
@@ -596,106 +568,107 @@ export default function FoodHome() {
       {/* Search opens a full-page overlay rather than filtering in place, so the
           results never appear above the fold with no search context.
 
-          The block pins to the top of the page. At rest it is the centred search
-          field with the filter row beneath it; once the page scrolls past the
-          search field, the field gives way and the filter row — icon plus the
-          filters actually in force — is what stays reachable. */}
-      <div className="sticky top-0 z-[900] px-3 sm:px-5">
+          The block pins to the top of the page. At rest it is just the centred
+          search field straddling the dark header. Once the page scrolls, the
+          dark header has gone by, so this becomes its own white bar carrying
+          everything needed mid-scroll: where the food is going, how to search,
+          and the filter — the four controls, on a surface of their own rather
+          than floating over the list with no edge under it. */}
+      <div
+        className={`sticky top-0 z-[900] px-3 sm:px-5 ${
+          condensed
+            ? "border-b border-line bg-[var(--surface)] py-2 shadow-sm"
+            : ""
+        }`}
+      >
         <div className="mx-auto max-w-3xl">
           {condensed ? (
-            /* Once the page scrolls this collapses to one white row: back,
-               search, the delivery address and the filter icon — the four
-               things a customer reaches for mid-scroll. Notifications and
-               favourites are deliberately left out; they are destinations,
-               not controls for what is already on screen. */
-            <div className="flex items-center gap-2">
-              <button
-                type="button"
-                onClick={goBack}
-                aria-label="Back to home"
-                className="grid size-10 flex-shrink-0 place-items-center rounded-full bg-[var(--muted)] text-[var(--ink)]"
-              >
-                <ChevronRight className="size-5 rotate-180" aria-hidden="true" />
-              </button>
+            /* Three rows, not one. Back, a two-line address, a search field and
+               a filter icon on a single 390px line leaves the address about
+               60px, which is worse than useless — it is the one thing on this
+               bar that needs to be readable. Stacked, each control gets the
+               width it deserves.
 
+               The filter sits under the search field rather than beside the
+               address: it belongs to the list, not to the address, and giving
+               it its own line is what makes room for the chips beside it.
+
+               Notifications and favourites are deliberately absent: they are
+               destinations, not controls for what is already on screen. */
+            <>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={goBack}
+                  aria-label="Back"
+                  className="grid size-10 flex-shrink-0 place-items-center rounded-full bg-[var(--muted)] text-[var(--ink)] transition-colors hover:bg-[var(--border)]"
+                >
+                  <ChevronRight className="size-5 rotate-180" aria-hidden="true" />
+                </button>
+
+                {/* Same two-line "Your location" shape as the dark header, so
+                    the fact does not change shape as the bar swaps. */}
+                <button
+                  type="button"
+                  onClick={() => navigate("/customer/delivery-address")}
+                  aria-label={`Deliver to ${addressLabel || "no address set"}. Change delivery address`}
+                  className="min-w-0 flex-1 text-left"
+                >
+                  <span className="block text-[10px] font-bold uppercase tracking-wider text-[var(--muted-foreground)]">
+                    Your location
+                  </span>
+                  <span className="mt-0.5 flex min-w-0 items-center gap-1">
+                    <span className="min-w-0 flex-1 truncate text-sm font-semibold text-[var(--ink)]">
+                      {addressLabel || "Add delivery address"}
+                    </span>
+                    <ChevronDown
+                      className="size-4 flex-shrink-0 text-[var(--muted-foreground)]"
+                      aria-hidden="true"
+                    />
+                  </span>
+                </button>
+              </div>
+
+              {/* Literal colours, not tokens: this field is white in both
+                  themes now that it sits on a light bar, so --ink would flip to
+                  cream in dark mode and put cream on white. */}
               <button
                 type="button"
                 onClick={() => setShowSearch(true)}
-                className="flex min-h-10 min-w-0 flex-1 items-center gap-2 rounded-full border border-[#d6d3ca] bg-white px-3 text-left"
+                className="mt-2 flex min-h-11 w-full items-center gap-2 rounded-lg border border-[#d6d3ca] bg-white px-4 text-left transition-colors hover:brightness-[0.98]"
               >
-                <Search
-                  className="size-4 flex-shrink-0 text-[#5c6b68]"
-                  aria-hidden="true"
-                />
+                <Search className="size-4 flex-shrink-0 text-[#5c6b68]" aria-hidden="true" />
                 <span className="min-w-0 flex-1 truncate text-sm text-[#122724]">
                   {searchQuery || "Search food or restaurant"}
                 </span>
               </button>
 
-              {/* Chevron rather than a pin: this opens the address list, it is
-                  not a location readout. */}
-              <button
-                type="button"
-                onClick={() => navigate("/customer/delivery-address")}
-                aria-label={`Deliver to ${addressLabel || "no address set"}. Change delivery address`}
-                className="grid size-10 flex-shrink-0 place-items-center rounded-full bg-[var(--muted)]"
-              >
-                <ChevronDown className="size-4 text-[var(--ink)]" aria-hidden="true" />
-              </button>
-
-              <button
-                type="button"
-                onClick={() => setShowFilters(true)}
-                aria-label="Sort and filter restaurants"
-                className="grid size-10 flex-shrink-0 place-items-center rounded-full border border-line text-[var(--muted-foreground)]"
-              >
-                <SlidersHorizontal className="size-4" aria-hidden="true" />
-              </button>
-            </div>
-          ) : (
-            <>
-              {/* -mt-6 is half the field height (min-h-12 = 48px), so the field
-                  straddles the bottom edge of the dark header instead of
-                  sitting under it, the way the reference shows. It is negative
-                  space rather than an overlay, so the header keeps its full
-                  height and the field still scrolls away with the page. */}
-              <div className="-mt-6 flex justify-center">
-                <button
-                  type="button"
-                  onClick={() => setShowSearch(true)}
-                  className="flex min-h-12 w-full max-w-xl items-center gap-2 rounded-full border border-line bg-white px-5 text-left shadow-lg transition-colors hover:brightness-[0.98]"
-                >
-                  <Search
-                    className="size-5 flex-shrink-0 text-[var(--muted-foreground)]"
-                    aria-hidden="true"
-                  />
-                  <span className="min-w-0 flex-1 truncate text-base text-[var(--ink)]">
-                    {searchQuery || "Search food or restaurant"}
-                  </span>
-                </button>
-              </div>
-
-              {/* Filter icon, then whatever is currently narrowing the list. */}
-              <div className="-mx-3 mt-3 flex items-center gap-2 bg-[var(--surface)] px-3 pb-2.5 pt-3 shadow-sm sm:-mx-5 sm:px-5">
+              {/* Filter, then whatever is currently narrowing the list. The
+                  chip rail scrolls sideways rather than wrapping, so the bar
+                  keeps a fixed height however many filters are active — a
+                  wrapping rail would push the list down every time a filter was
+                  added. `scroll-smooth` because a filtered list is short and
+                  the rail can be flung sideways. */}
+              <div className="mt-2 flex items-center gap-2">
                 <button
                   type="button"
                   onClick={() => setShowFilters(true)}
                   aria-label="Sort and filter restaurants"
-                  className="grid size-10 flex-shrink-0 place-items-center rounded-full border border-line bg-[var(--surface)] text-[var(--muted-foreground)] transition-colors hover:bg-[var(--muted)]"
+                  className="grid size-9 flex-shrink-0 place-items-center rounded-full border border-line text-[var(--muted-foreground)] transition-colors hover:bg-[var(--muted)]"
                 >
                   <SlidersHorizontal className="size-4" aria-hidden="true" />
                 </button>
 
-                <div className="flex min-w-0 flex-1 gap-2 overflow-x-auto pb-0.5 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+                <div className="flex min-w-0 flex-1 snap-x gap-2 overflow-x-auto pb-0.5 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
                   {activeFilterChips.map((chip) => (
                     <button
                       key={chip.key}
                       type="button"
                       onClick={() => setShowFilters(true)}
-                      className="flex min-h-9 flex-shrink-0 items-center gap-1.5 rounded-full bg-[var(--muted)] px-3 text-xs font-semibold text-[var(--ink)]"
+                      className="flex min-h-9 flex-shrink-0 snap-start items-center gap-1.5 rounded-full bg-[var(--muted)] px-3 text-xs font-semibold text-[var(--ink)] transition-colors hover:bg-[var(--border)]"
                     >
                       <span className="text-[var(--muted-foreground)]">{chip.label}</span>
-                      <span className="max-w-[10rem] truncate">{chip.value}</span>
+                      <span className="max-w-[9rem] truncate">{chip.value}</span>
                     </button>
                   ))}
 
@@ -707,33 +680,44 @@ export default function FoodHome() {
                 </div>
               </div>
             </>
+          ) : (
+            /* -mt-6 is half the field height (min-h-12 = 48px), so the field
+                straddles the bottom edge of the dark header instead of
+                sitting under it, the way the reference shows. It is negative
+                space rather than an overlay, so the header keeps its full
+                height and the field still scrolls away with the page. */
+            <div className="-mt-6 flex justify-center">
+              <button
+                type="button"
+                onClick={() => setShowSearch(true)}
+                className="flex min-h-12 w-full max-w-xl items-center gap-2 rounded-lg border border-line bg-white px-5 text-left shadow-lg transition-colors hover:brightness-[0.98]"
+              >
+                <Search
+                  className="size-5 flex-shrink-0 text-[var(--muted-foreground)]"
+                  aria-hidden="true"
+                />
+                <span className="min-w-0 flex-1 truncate text-base text-[var(--ink)]">
+                  {searchQuery || "Search food or restaurant"}
+                </span>
+              </button>
+            </div>
           )}
         </div>
       </div>
 
       <div className="mx-auto max-w-3xl space-y-5 px-4 pt-5 sm:px-5">
-        {/* Category rail */}
-        <FoodCategoryRail
-          value={activeCategory}
-          onChange={setActiveCategory}
-          counts={categoryCounts}
-        />
-
         {/* Featured — two compact rows that scroll sideways as one page, so a
             customer sees more than four shops without leaving the screen. Logo
             and name only: everything else is already on the card below. */}
         {!hasFilters && featured.length > 0 && (
-          <section aria-label="Top rated near you">
+          <section aria-label="Most loved near you">
             <h2 className="mb-2 text-lg font-bold text-[var(--ink)]">
-              Top rated
-              <span className="ml-2 text-sm font-normal text-[var(--muted-foreground)]">
-                Mataas ang rating
-              </span>
+              Most Loved
             </h2>
             <div
               ref={featuredRailRef}
               onScroll={onFeaturedScroll}
-              className={`-mx-4 grid snap-x snap-mandatory grid-flow-col auto-cols-[7.5rem] gap-2 overflow-x-auto px-4 pb-1 [scrollbar-width:none] sm:-mx-5 sm:px-5 [&::-webkit-scrollbar]:hidden ${
+              className={`-mx-4 grid snap-x snap-mandatory grid-flow-col auto-cols-[4rem] gap-2 overflow-x-auto px-4 pb-1 [scrollbar-width:none] sm:-mx-5 sm:px-5 [&::-webkit-scrollbar]:hidden ${
                 featuredRows === 2 ? "grid-rows-2" : "grid-rows-1"
               }`}
               tabIndex={0}
@@ -742,16 +726,20 @@ export default function FoodHome() {
                 <Link
                   key={r.id}
                   to={`/customer/restaurant-detail?id=${encodeURIComponent(r.id)}&name=${encodeURIComponent(r.name)}`}
-                  className="flex snap-start flex-col items-center gap-1.5 overflow-hidden rounded-2xl border border-line bg-[var(--surface)] p-2 shadow-sm"
+                  className="flex snap-start flex-col items-center gap-1.5"
                 >
-                  <div className="size-14 w-full overflow-hidden rounded-xl">
+                  <div className="size-16 overflow-hidden rounded-xl">
                     <ImageWithFallback
                       src={r.image}
                       alt={r.name}
                       className="size-full object-cover"
                     />
                   </div>
-                  <p className="line-clamp-2 text-center text-xs font-bold leading-tight text-[var(--ink)]">
+                  {/* `w-16` matches the `size-16` picture above it, so the name can never run
+                      wider than the photo it labels. Left to the rail column it
+                      was free to spread to 127px and the tile stopped reading as
+                      one object. `line-clamp-2` still caps it at two lines. */}
+                  <p className="line-clamp-2 w-16 text-center text-xs font-bold leading-tight text-[var(--ink)]">
                     {r.name}
                   </p>
                 </Link>
@@ -766,9 +754,7 @@ export default function FoodHome() {
         <section aria-label="Restaurants">
           <div className="mb-3 flex flex-wrap items-baseline justify-between gap-2">
             <h2 className="text-lg font-bold text-[var(--ink)]">
-              {activeCategory === "all"
-                ? "All restaurants"
-                : CUISINES.find((c) => c.id === activeCategory)?.label}
+              All restaurants
               <span className="ml-2 text-sm font-normal text-[var(--muted-foreground)]">
                 {results.length} · {results.length === 1 ? "tindahan" : "mga tindahan"}
               </span>
@@ -840,10 +826,13 @@ export default function FoodHome() {
         </section>
       </div>
 
-      {/* Floating cluster — kept to one right-hand column so the centred order
-          CTAs stay readable, and the list's bottom padding clears the last card. */}
-      <div className="fixed bottom-24 right-4 z-[1500] flex flex-col items-end gap-3">
-        {showBackToTop && (
+      {/* Back to top only. The floating "Book a Ride" tricycle button that used
+          to sit here is gone: it duplicated the app bar's job and covered the
+          right-hand edge of the restaurant cards while scrolling, which is the
+          one thing a food list cannot afford. The button below is the whole
+          cluster now, so the wrapper only carries positioning. */}
+      {showBackToTop && (
+        <div className="fixed bottom-24 right-4 z-[1500]">
           <button
             type="button"
             onClick={() => window.scrollTo({ top: 0, behavior: "smooth" })}
@@ -852,27 +841,8 @@ export default function FoodHome() {
           >
             <ArrowUp className="size-5 text-[var(--primary)]" aria-hidden="true" />
           </button>
-        )}
-
-        <Link
-          to="/customer"
-          className={`flex items-center justify-center rounded-full bg-[var(--primary)] shadow-xl transition-all ${
-            isScrolling ? "gap-2 px-4 py-3" : "size-14"
-          }`}
-          aria-label="Book a Ride"
-        >
-          <img
-            src={tricycleIcon}
-            alt=""
-            className={isScrolling ? "size-7" : "size-9"}
-          />
-          {isScrolling && (
-            <span className="whitespace-nowrap text-sm font-bold text-white">
-              Book a Ride
-            </span>
-          )}
-        </Link>
-      </div>
+        </div>
+      )}
 
       {/* Cart summary — appears only when there is something in it */}
       {cartCount > 0 && (
