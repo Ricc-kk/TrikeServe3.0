@@ -1,5 +1,5 @@
 import { Link } from "react-router";
-import { Clock, Heart, MapPin, Shield, Star } from "lucide-react";
+import { Clock, Heart, MapPin, Route, Shield, Star } from "lucide-react";
 
 import { ImageWithFallback } from "../figma/ImageWithFallback";
 import StoreLogo from "../figma/StoreLogo";
@@ -17,8 +17,14 @@ export type RestaurantView = {
   isOpen: boolean;
   verified: boolean;
   hasMenu: boolean;
-  /** Filipino category labels this restaurant qualifies for. */
-  categoryLabels: string[];
+  /** Cuisine buckets this restaurant declares, as display labels. */
+  cuisineLabels: string[];
+  /**
+   * "450 m" / "1.2 km" from the selected delivery address, or null when the
+   * shop has not pinned itself -- rendered as "Distance unavailable" rather
+   * than a fabricated number.
+   */
+  distanceLabel: string | null;
 };
 
 type RestaurantCardProps = {
@@ -132,6 +138,10 @@ export default function RestaurantCard({
               {restaurant.time}
             </span>
             <span className="inline-flex items-center gap-1 rounded-lg bg-[var(--muted)] px-2 py-1 text-xs text-[var(--muted-foreground)]">
+              <Route className="size-3" aria-hidden="true" />
+              {restaurant.distanceLabel ?? "Distance unavailable"}
+            </span>
+            <span className="inline-flex items-center gap-1 rounded-lg bg-[var(--muted)] px-2 py-1 text-xs text-[var(--muted-foreground)]">
               <span className="text-[10px]" aria-hidden="true">
                 ₱
               </span>
@@ -148,9 +158,9 @@ export default function RestaurantCard({
             </span>
           </div>
 
-          {restaurant.categoryLabels.length > 0 && (
+          {restaurant.cuisineLabels.length > 0 && (
             <p className="mt-1.5 line-clamp-2 text-xs font-semibold leading-snug text-[var(--teal)]">
-              {restaurant.categoryLabels.join(" · ")}
+              {restaurant.cuisineLabels.join(" · ")}
             </p>
           )}
         </div>

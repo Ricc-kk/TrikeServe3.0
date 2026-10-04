@@ -15,14 +15,17 @@ type CustomerHubHeaderProps = {
 };
 
 /**
- * Orientation strip for the customer hub.
+ * The customer app bar.
  *
- * Replaces the old floating notification bell: brand, greeting and service area
- * on the left, with two labelled controls on the right. Every control carries a
- * text label or an accessible name, and both are 48px so they stay easy to hit.
+ * This used to be a floating rounded card pinned over the map. That only worked
+ * because the map beneath it never moved — as soon as the home screen became a
+ * scrolling feed of restaurants, a floating card clipped the content passing
+ * under it. It is now a solid, full-bleed bar with a hairline border and
+ * `sticky top-0`, so the greeting, notifications and avatar stay reachable while
+ * the customer scrolls, which is the whole point of a top bar.
  *
- * Account moved here from the bottom nav, which is what frees a nav slot for the
- * Food tab — see BottomNav's customer variant.
+ * Account lives here rather than in the bottom nav; that is what freed a nav
+ * slot for the Food tab. See BottomNav's customer variant.
  */
 export default function CustomerHubHeader({
   userName,
@@ -35,14 +38,11 @@ export default function CustomerHubHeader({
   const firstName = userName?.trim().split(" ")[0];
 
   return (
-    <header className="absolute inset-x-0 top-0 z-[1000] pt-3 sm:pt-4">
-      {/* The outer max-w + px-4 mirrors the hub panel's wrapper exactly, so the
-          two cards share a left edge at desktop widths instead of sitting 16px
-          apart. max-w-3xl resolves to 816px here because the root font is 17px. */}
-      <div className="mx-auto max-w-3xl px-4">
-      {/* Sizes are tuned so the greeting keeps ~100px at 320px: a 44px mark,
-          44px controls and tighter gaps leave the text room to not truncate. */}
-      <div className="flex items-center gap-2 rounded-2xl border border-line bg-surface px-3 py-2.5 shadow-lg sm:gap-3">
+    <header className="sticky top-0 z-[1000] border-b border-line bg-surface pt-safe">
+      {/* max-w + px-4 mirrors the content wrapper below, so the bar and the
+          content share one left edge at desktop widths instead of sitting 16px
+          apart. */}
+      <div className="mx-auto flex max-w-3xl items-center gap-2 px-4 py-2.5 sm:gap-3 sm:py-3">
         <div className="grid size-10 flex-shrink-0 place-items-center rounded-xl bg-[var(--primary)] sm:size-11">
           <Tricycle className="size-5 text-white sm:size-6" aria-hidden="true" />
         </div>
@@ -94,7 +94,6 @@ export default function CustomerHubHeader({
             <User className="size-6 text-[var(--ink)]" aria-hidden="true" />
           )}
         </Link>
-      </div>
       </div>
     </header>
   );

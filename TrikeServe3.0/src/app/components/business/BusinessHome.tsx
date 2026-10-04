@@ -10,6 +10,9 @@ import BusinessSidebar from "./BusinessSidebar";
 import { useAuth } from "../../contexts/AuthContext";
 import { supabase } from "../../../utils/supabase";
 import { supabaseHelpers } from "@/lib/supabase";
+import { GoogleMap, MarkerF } from "@react-google-maps/api";
+import useMapLoader from "@/lib/mapLoader";
+import { CUISINES, isCuisineId, type CuisineId } from "@/lib/foodTaxonomy";
 
 export default function BusinessHome() {
   const navigate = useNavigate();
@@ -39,8 +42,26 @@ export default function BusinessHome() {
     deliveryTime: "25-35 min",
     verified: true,
     address: "",
-    operatingHours: "8:00 AM - 10:00 PM"
+    operatingHours: "8:00 AM - 10:00 PM",
+    // What the shop actually serves, and where it is. Both are declared by the
+    // business; the customer filters and "distance to you" both read them.
+    cuisine: [] as string[],
+    latitude: null as number | null,
+    longitude: null as number | null
   });
+  const { isLoaded: isMapsLoaded } = useMapLoader();
+
+  const toggleCuisine = (id: CuisineId) => {
+    setRestaurantData((prev) => {
+      const current = Array.isArray(prev.cuisine) ? prev.cuisine : [];
+      return {
+        ...prev,
+        cuisine: current.includes(id)
+          ? current.filter((c) => c !== id)
+          : [...current, id],
+      };
+    });
+  };
 
   // Load menu items from Supabase
   useEffect(() => {
@@ -51,7 +72,7 @@ export default function BusinessHome() {
         // Get restaurant ID
         const { data: restaurant } = await supabase
           .from('restaurants')
-          .select('id, is_open, banner_image, logo_image, subtitle, delivery_time, operating_hours, name, address')
+          .select('id, is_open, banner_image, logo_image, subtitle, delivery_time, operating_hours, name, address, cuisine, latitude, longitude')
           .eq('business_user_id', user.id)
           .single();
 
@@ -90,6 +111,11 @@ export default function BusinessHome() {
           subtitle: restaurant.subtitle || prev.subtitle,
           deliveryTime: restaurant.delivery_time || prev.deliveryTime,
           operatingHours: restaurant.operating_hours || prev.operatingHours,
+          cuisine: Array.isArray(restaurant.cuisine)
+            ? restaurant.cuisine.filter(isCuisineId)
+            : prev.cuisine,
+          latitude: restaurant.latitude ?? prev.latitude,
+          longitude: restaurant.longitude ?? prev.longitude,
         }));
 
         // Show the business's real average rating from business_ratings.
@@ -516,6 +542,9 @@ export default function BusinessHome() {
             subtitle: restaurantData.subtitle,
             delivery_time: restaurantData.deliveryTime,
             operating_hours: restaurantData.operatingHours,
+            cuisine: Array.isArray(restaurantData.cuisine) ? restaurantData.cuisine : [],
+            latitude: restaurantData.latitude ?? null,
+            longitude: restaurantData.longitude ?? null,
             created_at: new Date().toISOString(),
           }])
           .select()
@@ -537,6 +566,9 @@ export default function BusinessHome() {
             subtitle: restaurantData.subtitle,
             delivery_time: restaurantData.deliveryTime,
             operating_hours: restaurantData.operatingHours,
+            cuisine: Array.isArray(restaurantData.cuisine) ? restaurantData.cuisine : [],
+            latitude: restaurantData.latitude ?? null,
+            longitude: restaurantData.longitude ?? null,
             updated_at: new Date().toISOString(),
           })
           .eq('id', restaurant.id);
@@ -1012,6 +1044,87 @@ export default function BusinessHome() {
                     className="w-full p-3 border border-line rounded-xl min-h-[80px]"
                     placeholder="Full address with barangay and city"
                   />
+                </div>
+
+                {/* Cuisine is what the customer filters match on. It used to be
+                    inferred from menu items, which called any shop selling one
+                    chicken dish an "Ihawan" -- only the business knows what it is. */}
+                <div>
+                  <label className="text-sm font-bold text-[var(--ink)] mb-2 block">
+                    What we serve
+                  </label>
+                  <p className="text-xs text-[var(--muted-foreground)] mb-2">
+                    Pick everything that describes your shop. Customers filter by this.
+                  </p>
+                  <div className="flex flex-wrap gap-2">
+                    {CUISINES.map(({ id, label, blurb, Icon }) => {
+                      const selected = Array.isArray(restaurantData.cuisine)
+                        && restaurantData.cuisine.includes(id);
+                      return (
+                        <button
+                          key={id}
+                          type="button"
+                          aria-pressed={selected}
+                          title={blurb}
+                          onClick={() => toggleCuisine(id)}
+                          className={`flex min-h-11 items-center gap-1.5 rounded-xl border-2 px-3 text-sm font-semibold transition-colors ${
+                            selected
+                              ? 'border-[var(--primary)] bg-[var(--primary-soft)] text-[var(--coral-dark)]'
+                              : 'border-line text-[var(--muted-foreground)]'
+                          }`}
+                        >
+                          <Icon className="size-4" aria-hidden="true" />
+                          {label}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {/* Pinning is the only way "distance to you" can exist: the table
+                    held a text address and no coordinates to measure from. */}
+                <div>
+                  <label className="text-sm font-bold text-[var(--ink)] mb-2 block">
+                    Shop location
+                  </label>
+                  <p className="text-xs text-[var(--muted-foreground)] mb-2">
+                    Tap the map to drop a pin on your shop so customers can see how far away you are.
+                  </p>
+                  <div className="h-56 overflow-hidden rounded-xl border border-line">
+                    {isMapsLoaded && (
+                      <GoogleMap
+                        mapContainerClassName="size-full"
+                        center={
+                          restaurantData.latitude != null && restaurantData.longitude != null
+                            ? { lat: restaurantData.latitude, lng: restaurantData.longitude }
+                            : { lat: 14.7294, lng: 120.9349 }
+                        }
+                        zoom={15}
+                        onClick={(e: any) => {
+                          const lat = e.latLng?.lat();
+                          const lng = e.latLng?.lng();
+                          if (typeof lat !== 'number' || typeof lng !== 'number') return;
+                          setRestaurantData((prev) => ({
+                            ...prev,
+                            latitude: lat,
+                            longitude: lng,
+                          }));
+                        }}
+                        options={{ disableDefaultUI: true, zoomControl: true }}
+                      >
+                        {restaurantData.latitude != null && restaurantData.longitude != null && (
+                          <MarkerF
+                            position={{ lat: restaurantData.latitude, lng: restaurantData.longitude }}
+                          />
+                        )}
+                      </GoogleMap>
+                    )}
+                  </div>
+                  <p className="text-xs text-[var(--muted-foreground)] mt-1">
+                    {restaurantData.latitude != null
+                      ? `Pinned at ${restaurantData.latitude.toFixed(5)}, ${restaurantData.longitude?.toFixed(5)}`
+                      : 'Not pinned yet — your shop will sort last in "near you" lists.'}
+                  </p>
                 </div>
 
                 <div className="grid grid-cols-2 gap-3">

@@ -24,6 +24,7 @@ import ShareRideLobby from "./ShareRideLobby";
 import BrowseAvailableLobbies from "./BrowseAvailableLobbies";
 import CustomerHubHeader from "./CustomerHubHeader";
 import CustomerServiceHub from "./CustomerServiceHub";
+import RecommendedRestaurants from "./RecommendedRestaurants";
 
 // Get Google Maps API Key from environment variable
 const GOOGLE_MAPS_API_KEY = import.meta.env.VITE_GOOGLE_MAPS_API_KEY || "";
@@ -1987,9 +1988,16 @@ export default function CustomerHome() {
     loc.address.toLowerCase().includes(searchQuery.toLowerCase())
   );
 
+  // The map is the substrate for pickup/drop pins, terminal boundary checks and
+  // the route, so it is left exactly as it was -- it just no longer mounts on
+  // the home step. That step is a scrolling feed now; the map appears the
+  // moment a ride is actually being booked or is already under way.
+  const showMap = !showBookingFlow || bookingStep !== 'home';
+
   return (
     <div className="min-h-screen bg-surface flex flex-col relative">
       {/* Full Screen Map */}
+      {showMap && (
       <div className="absolute inset-0">
         {!GOOGLE_MAPS_API_KEY ? (
           <div className="w-full h-full flex items-center justify-center bg-[var(--border)]">
@@ -2091,29 +2099,34 @@ export default function CustomerHome() {
              )}
            </GoogleMap>
          )}
+      </div>
+      )}
+
+      {showMap && (
         <LocationBanner
           problem={locationProblem}
           className="absolute top-24 left-3 right-3 z-[1000] sm:top-28 sm:left-4 sm:right-4"
         />
+      )}
 
-        {/* Hub header — only while on the hub, so it never collides with the
-            booking back button or the active-ride driver card. */}
+        {/* Hub — three layers in normal flow: the app bar, then "What do you
+            need today?", then the recommended feed. None of them float over the
+            content any more, which is what lets the feed scroll underneath the
+            sticky bar. */}
         {showBookingFlow && bookingStep === 'home' && (
-          <CustomerHubHeader
-            userName={user?.name}
-            avatarUrl={user?.avatarUrl}
-            unreadCount={unreadDeliveryNotifications}
-          />
-        )}
-
-        {/* Hub — two equally-weighted services. Ride hands off to the unchanged
-            booking flow; Food opens the existing food experience. */}
-        {showBookingFlow && bookingStep === 'home' && (
-          <div className="absolute bottom-20 left-0 right-0 z-[999] mx-auto max-w-3xl px-4">
-            <CustomerServiceHub
-              onBookRide={() => setBookingStep('ride')}
-              onOrderFood={() => navigate('/customer/food')}
+          <div className="relative z-[999] flex flex-1 flex-col pb-24">
+            <CustomerHubHeader
+              userName={user?.name}
+              avatarUrl={user?.avatarUrl}
+              unreadCount={unreadDeliveryNotifications}
             />
+            <div className="mx-auto w-full max-w-3xl space-y-6 px-4 py-4 sm:px-5">
+              <CustomerServiceHub
+                onBookRide={() => setBookingStep('ride')}
+                onOrderFood={() => navigate('/customer/food')}
+              />
+              <RecommendedRestaurants />
+            </div>
           </div>
         )}
 
@@ -2644,7 +2657,6 @@ export default function CustomerHome() {
         {/* Driver Status Update Popup */}
         {/* ❌ REMOVED: Driver status popup that appeared at top of screen */}
         {/* This was showing status updates like "On the Way", "Arrived", etc. */}
-      </div>
 
       {/* Bottom Navigation */}
       <BottomNav active="home" messagesBadge={unreadMessagesCount} />

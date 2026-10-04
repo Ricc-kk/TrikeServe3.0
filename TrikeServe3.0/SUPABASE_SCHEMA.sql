@@ -177,12 +177,20 @@ CREATE TABLE IF NOT EXISTS restaurants (
   subtitle VARCHAR(255),
   delivery_time VARCHAR(50),
   operating_hours VARCHAR(100),
+  -- Business-declared cuisine buckets driving the customer food filters.
+  -- Added by ADD_RESTAURANT_CUISINE_AND_LOCATION.sql.
+  cuisine TEXT[] DEFAULT '{}',
+  -- Pinned by the business; NULL until then, which sorts the shop last in
+  -- distance rankings instead of hiding it.
+  latitude DOUBLE PRECISION,
+  longitude DOUBLE PRECISION,
   created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
   updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
 
 CREATE INDEX idx_restaurants_business_user ON restaurants(business_user_id);
 CREATE INDEX idx_restaurants_name ON restaurants(name);
+CREATE INDEX idx_restaurants_cuisine ON restaurants USING GIN (cuisine);
 
 -- Menu Items Table
 CREATE TABLE IF NOT EXISTS menu_items (
@@ -200,6 +208,34 @@ CREATE TABLE IF NOT EXISTS menu_items (
 
 CREATE INDEX idx_menu_items_restaurant ON menu_items(restaurant_id);
 CREATE INDEX idx_menu_items_category ON menu_items(category);
+
+-- Saved / recent delivery addresses
+-- Added by ADD_USER_ADDRESSES_AND_SEARCH.sql. Owner-only via RLS.
+CREATE TABLE IF NOT EXISTS user_addresses (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  label VARCHAR(80) NOT NULL,
+  address VARCHAR(255) NOT NULL,
+  latitude DOUBLE PRECISION,
+  longitude DOUBLE PRECISION,
+  is_default BOOLEAN DEFAULT false,
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX idx_user_addresses_user ON user_addresses(user_id);
+
+-- Search terms customers actually typed, powering "popular searches".
+-- Append-only: an insert/select-only RLS policy keeps the ranking honest.
+CREATE TABLE IF NOT EXISTS restaurant_searches (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  term VARCHAR(120) NOT NULL,
+  restaurant_id UUID REFERENCES restaurants(id) ON DELETE SET NULL,
+  user_id UUID REFERENCES users(id) ON DELETE SET NULL,
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX idx_restaurant_searches_term ON restaurant_searches(term);
+CREATE INDEX idx_restaurant_searches_created ON restaurant_searches(created_at DESC);
 
 -- Favorites Table
 CREATE TABLE IF NOT EXISTS favorites (
@@ -222,6 +258,31 @@ ALTER TABLE orders ENABLE ROW LEVEL SECURITY;
 ALTER TABLE restaurants ENABLE ROW LEVEL SECURITY;
 ALTER TABLE menu_items ENABLE ROW LEVEL SECURITY;
 ALTER TABLE favorites ENABLE ROW LEVEL SECURITY;
+ALTER TABLE user_addresses ENABLE ROW LEVEL SECURITY;
+ALTER TABLE restaurant_searches ENABLE ROW LEVEL SECURITY;
+
+-- Owner-only access to saved addresses. See ADD_USER_ADDRESSES_AND_SEARCH.sql
+-- for the full policy definitions, which are applied there so an existing
+-- database picks them up too.
+DROP POLICY IF EXISTS "Users can view own addresses" ON user_addresses;
+CREATE POLICY "Users can view own addresses" ON user_addresses
+  FOR SELECT USING (user_id = auth.uid());
+DROP POLICY IF EXISTS "Users can add own addresses" ON user_addresses;
+CREATE POLICY "Users can add own addresses" ON user_addresses
+  FOR INSERT WITH CHECK (user_id = auth.uid());
+DROP POLICY IF EXISTS "Users can update own addresses" ON user_addresses;
+CREATE POLICY "Users can update own addresses" ON user_addresses
+  FOR UPDATE USING (user_id = auth.uid());
+DROP POLICY IF EXISTS "Users can delete own addresses" ON user_addresses;
+CREATE POLICY "Users can delete own addresses" ON user_addresses
+  FOR DELETE USING (user_id = auth.uid());
+
+DROP POLICY IF EXISTS "Anyone signed in can log a search" ON restaurant_searches;
+CREATE POLICY "Anyone signed in can log a search" ON restaurant_searches
+  FOR INSERT WITH CHECK (auth.uid() IS NOT NULL);
+DROP POLICY IF EXISTS "Anyone signed in can read searches" ON restaurant_searches;
+CREATE POLICY "Anyone signed in can read searches" ON restaurant_searches
+  FOR SELECT USING (auth.uid() IS NOT NULL);
 
 -- RLS Policies for users
 CREATE POLICY "Users can view their own profile" ON users

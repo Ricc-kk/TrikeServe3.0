@@ -1,5 +1,5 @@
-import { useState, useEffect } from "react";
-import { ArrowLeft, Heart, Users, Calendar, Share2, Clock, Star, MapPin, ChevronDown, ChevronRight, Home as HomeIcon, ShoppingCart, MessageCircle, ClipboardList, User, Search, BadgeCheck, X, Check } from "lucide-react";
+import { useState, useEffect, useMemo } from "react";
+import { ArrowLeft, Heart, Users, Calendar, Share2, Clock, Star, MapPin, Route, ChevronDown, ChevronRight, Home as HomeIcon, ShoppingCart, MessageCircle, ClipboardList, User, Search, BadgeCheck, X, Check } from "lucide-react";
 import { Link, useNavigate, useSearchParams } from "react-router";
 import { Card } from "../ui/card";
 import { Badge } from "../ui/badge";
@@ -12,6 +12,9 @@ import { useNotification } from "../../contexts/NotificationContext";
 import CustomizationModal, { MenuItem as CustomizableMenuItem, CustomizationGroup } from "./CustomizationModal";
 import { supabase } from "../../../utils/supabase";
 import { supabaseHelpers } from "@/lib/supabase";
+import { useDeliveryAddress } from "../../contexts/useDeliveryAddress";
+import { cuisineLabels } from "@/lib/foodTaxonomy";
+import { formatDistance, haversineMetres, hasCoords } from "@/lib/distance";
 
 interface MenuItem extends CustomizableMenuItem {
   available: boolean;
@@ -44,6 +47,11 @@ interface RestaurantData {
   is_open: boolean;
   /** The store owner's user id — needed to message the business and to link orders. */
   businessUserId?: string;
+  /** Business-declared cuisine, per ADD_RESTAURANT_CUISINE_AND_LOCATION.sql. */
+  cuisine: string[];
+  /** Pinned shop coordinates; null until the business has set them. */
+  latitude: number | null;
+  longitude: number | null;
 }
 
 export default function RestaurantDetail() {
@@ -52,6 +60,9 @@ export default function RestaurantDetail() {
   const restaurantId = searchParams.get("id");
   const restaurantName = searchParams.get("name") || "Restaurant";
   const { addToCart: addItemToCart, getTotalItems, cartRestaurants } = useCart();
+  // The same address the food home and search use, so the three never disagree
+  // about where the order is going or how far away the shop is.
+  const delivery = useDeliveryAddress();
 
   // Check if this restaurant has items in the cart
   const cartItemsForThisStore = cartRestaurants.find(
@@ -73,6 +84,24 @@ export default function RestaurantDetail() {
   const [isLoading, setIsLoading] = useState(true);
   const [showStoreClosedModal, setShowStoreClosedModal] = useState(false);
   const [adminDeliveryFee, setAdminDeliveryFee] = useState<number>(35); // Admin-set base delivery fee
+
+  // Declared after `restaurantData` exists -- reading it earlier would hit the
+  // temporal dead zone.
+  const restaurantDistanceLabel = useMemo(() => {
+    if (!delivery.origin || !restaurantData) return null;
+    if (!hasCoords({ lat: restaurantData.latitude, lng: restaurantData.longitude })) return null;
+    return formatDistance(
+      haversineMetres(delivery.origin, {
+        lat: Number(restaurantData.latitude),
+        lng: Number(restaurantData.longitude),
+      }),
+    );
+  }, [delivery.origin, restaurantData]);
+
+  const cuisineNames = useMemo(
+    () => cuisineLabels(restaurantData?.cuisine),
+    [restaurantData?.cuisine],
+  );
 
   // Load the admin-set delivery fee (shown on the store view)
   useEffect(() => {
@@ -190,7 +219,10 @@ export default function RestaurantDetail() {
           menuItems: mappedMenuItems,
           reviews: [],
           is_open: restaurant.is_open !== undefined ? restaurant.is_open : true,
-          businessUserId: restaurant.business_user_id || undefined
+          businessUserId: restaurant.business_user_id || undefined,
+          cuisine: Array.isArray(restaurant.cuisine) ? restaurant.cuisine : [],
+          latitude: restaurant.latitude ?? null,
+          longitude: restaurant.longitude ?? null
         };
 
         console.log('[RestaurantDetail] Loaded restaurant with', mappedMenuItems.length, 'menu items');
@@ -422,7 +454,9 @@ export default function RestaurantDetail() {
        supabaseRestaurantId: restaurantId || undefined, // Supabase restaurant UUID
        name: restaurantData.name,
        location: restaurantData.subtitle,
-       distance: "1.2 km",
+       // Real distance to the chosen delivery address. Previously this was a
+      // hardcoded "1.2 km" that reached the cart and the order record.
+      distance: restaurantDistanceLabel ?? restaurantData.subtitle,
        time: restaurantData.deliveryTime,
        image: restaurantData.image,
        deliveryFee: restaurantData.deliveryFee
@@ -582,7 +616,39 @@ export default function RestaurantDetail() {
                 <span className="text-sm font-bold text-[var(--ink)]">{restaurantData?.rating}</span>
                 <span className="text-xs text-[var(--muted-foreground)]">({restaurantData?.ratingCount.toLocaleString()}+)</span>
               </div>
+              {restaurantDistanceLabel && (
+                <span className="flex items-center gap-1 text-xs text-[var(--muted-foreground)]">
+                  <Route className="w-3.5 h-3.5" aria-hidden="true" />
+                  {restaurantDistanceLabel}
+                </span>
+              )}
             </div>
+
+            {/* What the shop says it is, and where the order is going. Both were
+                missing entirely, so a customer had no way to tell an ihawan
+                from a silugan or confirm the drop-off before paying. */}
+            {cuisineNames.length > 0 && (
+              <div className="mb-2 flex flex-wrap gap-1.5">
+                {cuisineNames.map((name) => (
+                  <span
+                    key={name}
+                    className="rounded-lg bg-[var(--teal-soft)] px-2 py-1 text-xs font-semibold text-[var(--teal)]"
+                  >
+                    {name}
+                  </span>
+                ))}
+              </div>
+            )}
+
+            <p className="mb-2 flex items-start gap-1.5 text-xs text-[var(--muted-foreground)]">
+              <MapPin className="mt-px w-3.5 h-3.5 flex-shrink-0" aria-hidden="true" />
+              <span className="min-w-0">
+                <span className="font-semibold text-[var(--ink)]">Deliver to:</span>{" "}
+                {delivery.address
+                  ? `${delivery.address.label} · ${delivery.address.address}`
+                  : 'No delivery address set — choose one from Order Food.'}
+              </span>
+            </p>
             
             <div className="flex items-center gap-2 text-sm">
               <span className="text-[var(--primary)] font-bold">

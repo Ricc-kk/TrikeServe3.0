@@ -550,8 +550,62 @@ export default function AdminDashboard() {
                 </Card>
               ) : (
                 <Card className="border border-line bg-surface overflow-hidden">
-                  <div className="overflow-x-auto">
+                  {/* Mobile: the 6-column table needs ~880px, so below sm each pending
+                      account becomes a stacked card instead of a scrolling grid. */}
+                  <div className="sm:hidden divide-y divide-[var(--border)]">
+                    {pendingVerifications.map((user) => (
+                      <div key={user.id} className="p-4 space-y-3">
+                        <div className="flex items-start gap-3">
+                          <div className={`w-10 h-10 ${user.type === 'rider' ? 'bg-[var(--info-soft)]' : 'bg-[var(--violet-soft)]'} rounded-lg flex items-center justify-center flex-shrink-0`}>
+                            {user.type === 'rider' ? (
+                              <Tricycle className="w-5 h-5 text-[var(--info)]" />
+                            ) : (
+                              <Store className="w-5 h-5 text-[var(--violet)]" />
+                            )}
+                          </div>
+                          <div className="min-w-0 flex-1">
+                            <p className="font-bold text-[var(--ink)] truncate">{user.name}</p>
+                            <p className="text-xs text-[var(--muted-foreground)] break-all">{user.email}</p>
+                          </div>
+                        </div>
+
+                        <div className="flex flex-wrap items-center gap-2">
+                          <Badge className={user.type === 'rider' ? 'bg-[var(--info)]' : 'bg-[var(--violet)]'}>
+                            {user.type.toUpperCase()}
+                          </Badge>
+                          {user.phone && (
+                            <span className="text-xs text-[var(--muted-foreground)]">{user.phone}</span>
+                          )}
+                          <span className="text-xs text-[var(--muted-foreground)]">{user.submittedDate}</span>
+                        </div>
+
+                        {isSuperAdmin ? (
+                          <div className="grid grid-cols-2 gap-2">
+                            <button
+                              onClick={() => handleApproveUser(user.id)}
+                              aria-label={`Approve ${user.name}`}
+                              className="min-h-11 rounded-xl bg-[var(--success)] text-white font-semibold text-xs transition-all flex items-center justify-center gap-1.5"
+                            >
+                              <CheckCircle className="w-4 h-4" aria-hidden="true" /> Approve
+                            </button>
+                            <button
+                              onClick={() => handleRejectUser(user.id)}
+                              aria-label={`Reject ${user.name}`}
+                              className="min-h-11 rounded-xl bg-[var(--error)] text-white font-semibold text-xs transition-all flex items-center justify-center gap-1.5"
+                            >
+                              <XCircle className="w-4 h-4" aria-hidden="true" /> Reject
+                            </button>
+                          </div>
+                        ) : (
+                          <p className="text-xs text-[var(--muted-foreground)] text-center">Super Admin only</p>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+
+                  <div className="hidden sm:block overflow-x-auto">
                     <table className="w-full">
+                      <caption className="sr-only">Accounts awaiting verification, with their details and approval actions</caption>
                       <thead className="bg-[var(--muted)] border-b-2 border-[var(--border)]">
                         <tr>
                           <th className="px-4 py-3 text-left text-xs font-bold text-[var(--muted-foreground)] tracking-wider">User</th>

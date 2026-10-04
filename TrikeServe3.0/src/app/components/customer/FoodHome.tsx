@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   ArrowUp,
   CheckCircle,
+  Search,
   SlidersHorizontal,
   Star,
   Store,
@@ -15,17 +16,24 @@ import tricycleIcon from "../../../assets/0b76d1aa56b8ad6e15dd4efc8a0100b0ca5762
 import { useAuth } from "../../contexts/AuthContext";
 import { useCart } from "../../contexts/CartContext";
 import { useFavorites } from "../../contexts/FavoritesContext";
+import { useDeliveryAddress } from "../../contexts/useDeliveryAddress";
 import { supabase } from "../../../utils/supabase";
 import { supabaseHelpers } from "@/lib/supabase";
+import { fetchRestaurants } from "@/lib/restaurantQueries";
+import { cuisineLabels, inferCuisineFromMenu, CUISINES } from "@/lib/foodTaxonomy";
+import { formatDistance, haversineMetres, hasCoords } from "@/lib/distance";
 
 import FoodHomeHeader from "./FoodHomeHeader";
-import FoodCategoryRail, { FOOD_CATEGORIES, type FoodCategoryId } from "./FoodCategoryRail";
+import FoodCategoryRail, { type FoodCategoryId } from "./FoodCategoryRail";
 import RestaurantCard, { type RestaurantView } from "./RestaurantCard";
+import FoodSearchOverlay from "./FoodSearchOverlay";
+import DeliveryAddressSheet from "./DeliveryAddressSheet";
 
 const SORT_OPTIONS = [
   { id: "name", label: "Name" },
   { id: "rating", label: "Top rated" },
   { id: "time", label: "Fastest" },
+  { id: "distance", label: "Nearest" },
 ] as const;
 
 type SortId = (typeof SORT_OPTIONS)[number]["id"];
@@ -44,6 +52,10 @@ type RawRestaurant = {
   address: string;
   hasMenu: boolean;
   isOpen: boolean;
+  /** Business-declared cuisine, per ADD_RESTAURANT_CUISINE_AND_LOCATION.sql. */
+  cuisine: string[];
+  latitude: number | null;
+  longitude: number | null;
 };
 
 const FALLBACK_IMAGE =
@@ -56,11 +68,10 @@ function deliveryMinutes(time: string): number {
 }
 
 /**
- * Collapses the two listings that share a name and address into one entry.
+ * Collapses listings that share a name and address into one entry.
  *
- * The live list showed the same restaurant twice. Whichever record carries a
- * real image and a delivery time wins, because that is the one that reads as
- * complete; ties fall back to rating so the better-known listing survives.
+ * Whichever record carries a real image, an address and a delivery time wins,
+ * because that is the one that reads as complete; ties fall back to rating.
  */
 function dedupeRestaurants(list: RawRestaurant[]): RawRestaurant[] {
   const best = new Map<string, RawRestaurant>();
@@ -71,6 +82,9 @@ function dedupeRestaurants(list: RawRestaurant[]): RawRestaurant[] {
     if (r.address) score += 2;
     if (r.rating > 0) score += 2;
     if (r.isOpen) score += 1;
+    // A pinned shop is more useful than an identical unpinned one.
+    if (hasCoords({ lat: r.latitude, lng: r.longitude })) score += 3;
+    if (r.cuisine?.length) score += 2;
     return score;
   };
 
@@ -96,6 +110,7 @@ export default function FoodHome() {
   const { user } = useAuth();
   const { getTotalItems } = useCart();
   const { toggleFavorite, isFavorite, getTotalFavorites } = useFavorites();
+  const delivery = useDeliveryAddress();
 
   const [restaurants, setRestaurants] = useState<RawRestaurant[]>([]);
   const [loading, setLoading] = useState(true);
@@ -103,11 +118,13 @@ export default function FoodHome() {
   const [unreadNotifications, setUnreadNotifications] = useState(0);
   const [adminDeliveryFee, setAdminDeliveryFee] = useState<number>(35);
 
-  const [searchQuery, setSearchQuery] = useState("");
   const [activeCategory, setActiveCategory] = useState<FoodCategoryId>("all");
   const [minRating, setMinRating] = useState(0);
   const [sortBy, setSortBy] = useState<SortId>("rating");
   const [showFilters, setShowFilters] = useState(false);
+  const [showAddressSheet, setShowAddressSheet] = useState(false);
+  const [showSearch, setShowSearch] = useState(false);
+  const [searchQuery, setSearchQuery] = useState("");
   const [showBackToTop, setShowBackToTop] = useState(false);
   const [isScrolling, setIsScrolling] = useState(false);
   const [showWelcomeBack, setShowWelcomeBack] = useState(false);
@@ -125,12 +142,12 @@ export default function FoodHome() {
   }, []);
 
   /**
-   * Category derivation.
+   * Fallback categories, for shops that have not declared a cuisine yet.
    *
-   * `restaurants` has no category column, so instead of a schema migration the
-   * buckets are inferred from each restaurant's menu items — `menu_items.category`
-   * is what the business menu actually writes. A restaurant with no menu items
-   * lands in no bucket and stays visible under "All".
+   * This used to be the *only* source of a shop's category, which is what made
+   * "Ihawan" mean "sells one item under chicken". It is now strictly a fallback:
+   * a declared `cuisine` always wins, and this only decides where an undeclared
+   * shop appears so it does not vanish from every filter.
    */
   const loadMenuCategories = useCallback(async () => {
     try {
@@ -151,21 +168,18 @@ export default function FoodHome() {
 
   const loadRestaurantsFromSupabase = useCallback(async () => {
     try {
-      const { data, error } = await supabase
-        .from("restaurants")
-        .select(
-          `id, name, address, phone, rating, is_open, banner_image, logo_image,
-           business_user_id, subtitle, delivery_time, operating_hours`,
-        )
-        .order("name");
+      // Falls back to the legacy columns when the cuisine/location migration has
+      // not been applied, so the food list never goes blank because of a schema
+      // mismatch.
+      const { rows } = await fetchRestaurants();
 
-      if (error || !data || data.length === 0) {
+      if (!rows || rows.length === 0) {
         loadRestaurantsFromLocalStorage();
         return;
       }
 
       const withRatings = await Promise.all(
-        (data as any[]).map(async (restaurant) => {
+        rows.map(async (restaurant) => {
           let rating = restaurant.rating || 0;
           let ratingCount = 0;
           if (restaurant.business_user_id) {
@@ -194,6 +208,9 @@ export default function FoodHome() {
         address: r.address || r.subtitle || "Gen T Deleon, Valenzuela",
         hasMenu: true,
         isOpen: r.is_open !== false,
+        cuisine: Array.isArray(r.cuisine) ? r.cuisine : [],
+        latitude: r.latitude ?? null,
+        longitude: r.longitude ?? null,
       }));
 
       setRestaurants(dedupeRestaurants(mapped));
@@ -233,6 +250,9 @@ export default function FoodHome() {
           address: restaurantData.address || business.businessAddress || "Gen T Deleon",
           hasMenu: menuItems.length > 0,
           isOpen: restaurantData.isOpen !== false,
+          cuisine: Array.isArray(restaurantData.cuisine) ? restaurantData.cuisine : [],
+          latitude: restaurantData.latitude ?? null,
+          longitude: restaurantData.longitude ?? null,
         };
       });
 
@@ -319,69 +339,95 @@ export default function FoodHome() {
     };
   }, []);
 
-  /** Restaurants projected into the card shape, with derived category labels. */
+  /** Restaurants projected into the card shape, with cuisine and distance. */
   const views: RestaurantView[] = useMemo(() => {
+    const origin = delivery.origin;
+
     return restaurants.map((r) => {
-      const owned = menuCategories[r.id] || [];
-      const labels = FOOD_CATEGORIES.filter(
-        (c) =>
-          c.id !== "all" && c.menuCategories.some((m) => owned.includes(m)),
-      ).map((c) => c.label);
-      return { ...r, categoryLabels: labels };
+      // Declared cuisine wins; the menu-derived guess is only for shops that
+      // have not declared anything yet.
+      const declared = cuisineLabels(r.cuisine);
+      const inferred = declared.length
+        ? declared
+        : cuisineLabels(inferCuisineFromMenu(menuCategories[r.id]));
+
+      let distanceLabel: string | null = null;
+      if (origin && hasCoords({ lat: r.latitude, lng: r.longitude })) {
+        distanceLabel = formatDistance(
+          haversineMetres(origin, {
+            lat: Number(r.latitude),
+            lng: Number(r.longitude),
+          }),
+        );
+      }
+
+      return { ...r, cuisineLabels: inferred, distanceLabel };
     });
-  }, [restaurants, menuCategories]);
+  }, [restaurants, menuCategories, delivery.origin]);
 
   const categoryCounts = useMemo(() => {
-    const counts: Partial<Record<FoodCategoryId, number>> = {};
-    for (const c of FOOD_CATEGORIES) {
-      counts[c.id] =
-        c.id === "all"
-          ? views.length
-          : views.filter((v) => v.categoryLabels.includes(c.label)).length;
+    const counts: Partial<Record<FoodCategoryId, number>> = { all: views.length };
+    for (const c of CUISINES) {
+      counts[c.id] = views.filter((v) => v.cuisineLabels.includes(c.label)).length;
     }
     return counts;
   }, [views]);
 
   const results = useMemo(() => {
-    const term = searchQuery.trim().toLowerCase();
-
     const filtered = views.filter((v) => {
       if (minRating > 0 && v.rating < minRating) return false;
 
       if (activeCategory !== "all") {
-        const meta = FOOD_CATEGORIES.find((c) => c.id === activeCategory);
-        if (!meta || !v.categoryLabels.includes(meta.label)) return false;
+        const meta = CUISINES.find((c) => c.id === activeCategory);
+        if (!meta || !v.cuisineLabels.includes(meta.label)) return false;
       }
 
-      if (!term) return true;
-      return (
-        v.name.toLowerCase().includes(term) ||
-        v.address.toLowerCase().includes(term) ||
-        v.categoryLabels.some((l) => l.toLowerCase().includes(term))
-      );
+      return true;
     });
 
-    return filtered.sort((a, b) => {
+    // Nearest needs an origin; without one it falls back to top rated rather
+    // than an arbitrary order.
+    if (sortBy === "distance" && delivery.origin) {
+      return [...filtered].sort((a, b) => {
+        if (a.distanceLabel === null) return 1;
+        if (b.distanceLabel === null) return -1;
+        return a.distanceLabel.localeCompare(b.distanceLabel, undefined, { numeric: true });
+      });
+    }
+
+    return [...filtered].sort((a, b) => {
       if (sortBy === "rating") return b.rating - a.rating;
       if (sortBy === "time") {
         return deliveryMinutes(a.time) - deliveryMinutes(b.time);
       }
       return a.name.localeCompare(b.name);
     });
-  }, [views, searchQuery, activeCategory, minRating, sortBy]);
+  }, [views, activeCategory, minRating, sortBy, delivery.origin]);
 
   const featured = useMemo(
-    () => views.filter((v) => v.isOpen).sort((a, b) => b.rating - a.rating).slice(0, 6),
+    () =>
+      views
+        .filter((v) => v.isOpen)
+        .sort((a, b) => b.rating - a.rating)
+        .slice(0, 6),
     [views],
   );
 
-  const hasFilters = searchQuery.trim() !== "" || activeCategory !== "all" || minRating > 0;
+  const hasFilters =
+    searchQuery.trim() !== "" || activeCategory !== "all" || minRating > 0;
   const cartCount = getTotalItems();
 
   const clearFilters = () => {
     setSearchQuery("");
     setActiveCategory("all");
     setMinRating(0);
+  };
+
+  // A back button on a bottom-nav tab has no history to pop, so fall back to
+  // the customer hub rather than leaving the app.
+  const goBack = () => {
+    if (window.history.length > 1) navigate(-1);
+    else navigate("/customer");
   };
 
   const onToggleFavorite = (restaurant: RestaurantView) => {
@@ -391,12 +437,16 @@ export default function FoodHome() {
       image: restaurant.image,
       rating: restaurant.rating,
       reviews: restaurant.ratingCount,
-      distance: restaurant.address,
+      distance: restaurant.distanceLabel ?? restaurant.address,
       estimatedTime: restaurant.time,
-      category: restaurant.categoryLabels[0] || "restaurant",
+      category: restaurant.cuisineLabels[0] || "restaurant",
       priceRange: `₱${adminDeliveryFee}`,
     });
   };
+
+  const addressLabel = delivery.address
+    ? `${delivery.address.label} · ${delivery.address.address}`
+    : null;
 
   return (
     <div className="min-h-screen bg-[var(--background)] pb-24">
@@ -405,24 +455,25 @@ export default function FoodHome() {
         avatarUrl={user?.avatarUrl}
         unreadCount={unreadNotifications}
         favoritesCount={getTotalFavorites()}
+        onBack={goBack}
+        addressLabel={addressLabel}
+        onOpenAddress={() => setShowAddressSheet(true)}
       />
 
-      {/* Search */}
+      {/* Search opens a full-page overlay rather than filtering in place, so the
+          results never appear above the fold with no search context. */}
       <div className="bg-[var(--ink-solid)] px-4 pb-4 sm:px-5">
         <div className="mx-auto flex max-w-3xl items-center gap-2">
-          <div className="relative min-w-0 flex-1">
-            <label htmlFor="food-search" className="sr-only">
-              Search food or restaurants
-            </label>
-            <input
-              id="food-search"
-              type="search"
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="Search food or restaurant"
-              className="min-h-12 w-full rounded-2xl border-0 bg-[var(--surface)] pl-4 pr-4 text-base text-[var(--ink)] placeholder:text-[var(--muted-foreground)]"
-            />
-          </div>
+          <button
+            type="button"
+            onClick={() => setShowSearch(true)}
+            className="flex min-h-12 min-w-0 flex-1 items-center gap-2 rounded-2xl bg-[var(--surface)] px-4 text-left"
+          >
+            <Search className="size-5 flex-shrink-0 text-[var(--muted-foreground)]" aria-hidden="true" />
+            <span className="min-w-0 flex-1 truncate text-base text-[var(--muted-foreground)]">
+              {searchQuery || "Search food or restaurant"}
+            </span>
+          </button>
           <button
             type="button"
             onClick={() => setShowFilters(true)}
@@ -479,7 +530,7 @@ export default function FoodHome() {
                         aria-hidden="true"
                       />
                       {r.rating ? Number(r.rating).toFixed(1) : "New"}
-                      <span className="min-w-0 truncate">{r.time}</span>
+                      <span className="min-w-0 truncate">{r.distanceLabel ?? r.time}</span>
                     </p>
                   </div>
                 </Link>
@@ -494,7 +545,7 @@ export default function FoodHome() {
             <h2 className="text-lg font-bold text-[var(--ink)]">
               {activeCategory === "all"
                 ? "All restaurants"
-                : FOOD_CATEGORIES.find((c) => c.id === activeCategory)?.label}
+                : CUISINES.find((c) => c.id === activeCategory)?.label}
               <span className="ml-2 text-sm font-normal text-[var(--muted-foreground)]">
                 {results.length} · {results.length === 1 ? "tindahan" : "mga tindahan"}
               </span>
@@ -619,6 +670,24 @@ export default function FoodHome() {
       )}
 
       <BottomNav active="food" />
+
+      {/* Full-page search */}
+      {showSearch && (
+        <FoodSearchOverlay
+          onClose={() => setShowSearch(false)}
+          restaurants={views}
+          initialQuery={searchQuery}
+          onSearchCommitted={setSearchQuery}
+        />
+      )}
+
+      {/* Delivery address */}
+      {showAddressSheet && (
+        <DeliveryAddressSheet
+          onClose={() => setShowAddressSheet(false)}
+          store={delivery}
+        />
+      )}
 
       {/* Sort + filter sheet */}
       {showFilters && (

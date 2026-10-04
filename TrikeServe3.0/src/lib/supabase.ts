@@ -3020,5 +3020,150 @@ export const supabaseHelpers = {
       supabase.removeChannel(channel);
     };
   },
+
+  // Restaurant cuisine & location
+  // Added with ADD_RESTAURANT_CUISINE_AND_LOCATION.sql. The customer filters
+  // read these; without the migration every call here fails, so each one
+  // degrades quietly rather than breaking the page that asked for it.
+  async getRestaurantProfile(restaurantId: string) {
+    const { data, error } = await supabase
+      .from('restaurants')
+      .select('id, name, cuisine, latitude, longitude')
+      .eq('id', restaurantId)
+      .single();
+    return { data, error };
+  },
+
+  async updateRestaurantCuisine(
+    restaurantId: string,
+    cuisine: string[],
+  ) {
+    const { data, error } = await supabase
+      .from('restaurants')
+      .update({ cuisine, updated_at: new Date().toISOString() })
+      .eq('id', restaurantId)
+      .select()
+      .single();
+    return { data, error };
+  },
+
+  async updateRestaurantLocation(
+    restaurantId: string,
+    coords: { latitude: number; longitude: number },
+  ) {
+    const { data, error } = await supabase
+      .from('restaurants')
+      .update({
+        latitude: coords.latitude,
+        longitude: coords.longitude,
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', restaurantId)
+      .select()
+      .single();
+    return { data, error };
+  },
+
+  // Saved delivery addresses
+  // Added with ADD_USER_ADDRESSES_AND_SEARCH.sql. Owner-scoped by RLS; the
+  // helpers never filter by anything else.
+  async getSavedAddresses(userId: string) {
+    if (!userId) return { data: [] as any[], error: null };
+    const { data, error } = await supabase
+      .from('user_addresses')
+      .select('*')
+      .eq('user_id', userId)
+      .order('created_at', { ascending: false });
+    return { data: data || [], error };
+  },
+
+  async addSavedAddress(input: {
+    userId: string;
+    label: string;
+    address: string;
+    latitude?: number | null;
+    longitude?: number | null;
+  }) {
+    const { data, error } = await supabase
+      .from('user_addresses')
+      .insert([
+        {
+          user_id: input.userId,
+          label: input.label,
+          address: input.address,
+          latitude: input.latitude ?? null,
+          longitude: input.longitude ?? null,
+          is_default: false,
+        },
+      ])
+      .select()
+      .single();
+    return { data, error };
+  },
+
+  async updateSavedAddress(
+    addressId: string,
+    patch: { label?: string; address?: string; latitude?: number | null; longitude?: number | null },
+  ) {
+    const { data, error } = await supabase
+      .from('user_addresses')
+      .update(patch)
+      .eq('id', addressId)
+      .select()
+      .single();
+    return { data, error };
+  },
+
+  async deleteSavedAddress(addressId: string) {
+    const { error } = await supabase
+      .from('user_addresses')
+      .delete()
+      .eq('id', addressId);
+    return { error };
+  },
+
+  // Search logging, for "popular searches"
+  async logRestaurantSearch(
+    term: string,
+    opts: { restaurantId?: string | null; userId?: string | null } = {},
+  ) {
+    // Normalised here rather than at the call sites so "  Adobo " and "adobo"
+    // cannot become two separate rows in the popularity ranking.
+    const cleaned = term.trim().toLowerCase().replace(/\s+/g, ' ');
+    if (cleaned.length < 2) return { error: null };
+
+    const { error } = await supabase.from('restaurant_searches').insert([
+      {
+        term: cleaned.slice(0, 120),
+        restaurant_id: opts.restaurantId ?? null,
+        user_id: opts.userId ?? null,
+      },
+    ]);
+    return { error };
+  },
+
+  async getPopularSearchTerms(limit = 8) {
+    // Counts in the client: the table is small, and this avoids shipping a
+    // database function that every existing deployment would have to apply
+    // before the feature worked at all.
+    const { data, error } = await supabase
+      .from('restaurant_searches')
+      .select('term')
+      .limit(500);
+    if (error || !data?.length) return { data: [] as string[], error };
+
+    const counts = new Map<string, number>();
+    for (const row of data as any[]) {
+      const term = String(row.term || '').trim();
+      if (!term) continue;
+      counts.set(term, (counts.get(term) || 0) + 1);
+    }
+
+    const top = Array.from(counts.entries())
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, limit)
+      .map(([term]) => term);
+    return { data: top, error: null };
+  },
 };
 

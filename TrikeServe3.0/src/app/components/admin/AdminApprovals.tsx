@@ -241,12 +241,14 @@ export default function AdminApprovals() {
             <div className="space-y-3 mb-8">
               {pending.map(request => (
                 <Card key={request.id} className="p-4 lg:p-5 border border-line bg-surface">
-                  <div className="flex items-start justify-between gap-4">
-                    <div className="flex items-start gap-3">
+                  {/* Narrow screens: the action buttons are flex-shrink-0, so a single row
+                      leaves the request text only a few dozen px. Stack below sm. */}
+                  <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4">
+                    <div className="flex items-start gap-3 min-w-0">
                       <div className="w-11 h-11 bg-[var(--muted)] rounded-xl flex items-center justify-center flex-shrink-0">
                         {typeIcon(request.request_type)}
                       </div>
-                      <div>
+                      <div className="min-w-0">
                         <div className="flex items-center gap-2 flex-wrap">
                           <h3 className="font-bold text-[var(--ink)]">
                             {APPROVAL_REQUEST_LABELS[request.request_type]}
@@ -261,25 +263,27 @@ export default function AdminApprovals() {
                         </p>
                         <div className="mt-2 space-y-0.5">
                           {describePayload(request).map((line, i) => (
-                            <p key={i} className="text-sm text-[var(--muted-foreground)]">{line}</p>
+                            <p key={i} className="text-sm text-[var(--muted-foreground)] break-words">{line}</p>
                           ))}
                         </div>
                       </div>
                     </div>
-                    <div className="flex items-center gap-2 flex-shrink-0">
+                    <div className="grid grid-cols-2 gap-2 w-full sm:w-auto sm:flex sm:items-center sm:flex-shrink-0">
                       <button
                         onClick={() => handleApprove(request)}
                         disabled={busyId === request.id}
-                        className="flex items-center gap-1.5 px-3 py-2 bg-[var(--success)] hover:bg-[var(--success)] disabled:opacity-50 text-white font-bold text-xs rounded-xl transition-all"
+                        aria-label={`Approve ${APPROVAL_REQUEST_LABELS[request.request_type]}`}
+                        className="min-h-11 w-full sm:w-auto flex items-center justify-center gap-1.5 px-3 py-2 bg-[var(--success)] hover:bg-[var(--success)] disabled:opacity-50 text-white font-bold text-xs rounded-xl transition-all"
                       >
-                        <CheckCircle className="w-4 h-4" /> Approve
+                        <CheckCircle className="w-4 h-4" aria-hidden="true" /> Approve
                       </button>
                       <button
                         onClick={() => { setRejectTarget(request); setRejectReason(""); }}
                         disabled={busyId === request.id}
-                        className="flex items-center gap-1.5 px-3 py-2 bg-[var(--error)] hover:bg-[var(--error)] disabled:opacity-50 text-white font-bold text-xs rounded-xl transition-all"
+                        aria-label={`Reject ${APPROVAL_REQUEST_LABELS[request.request_type]}`}
+                        className="min-h-11 w-full sm:w-auto flex items-center justify-center gap-1.5 px-3 py-2 bg-[var(--error)] hover:bg-[var(--error)] disabled:opacity-50 text-white font-bold text-xs rounded-xl transition-all"
                       >
-                        <XCircle className="w-4 h-4" /> Reject
+                        <XCircle className="w-4 h-4" aria-hidden="true" /> Reject
                       </button>
                     </div>
                   </div>
@@ -297,8 +301,44 @@ export default function AdminApprovals() {
             </Card>
           ) : (
             <Card className="border border-line bg-surface overflow-hidden">
-              <div className="overflow-x-auto">
+              {/* Mobile: the 5-column table needs ~760px, so below sm each reviewed
+                  request becomes a stacked card instead of a scrolling grid. */}
+              <div className="sm:hidden divide-y divide-[var(--border)]">
+                {history.map(request => (
+                  <div key={request.id} className="p-4 space-y-2">
+                    <div className="flex items-start gap-2 min-w-0">
+                      <span className="flex-shrink-0">{typeIcon(request.request_type)}</span>
+                      <p className="font-semibold text-sm text-[var(--ink)] min-w-0">
+                        {APPROVAL_REQUEST_LABELS[request.request_type]}
+                      </p>
+                    </div>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <Badge className={request.status === "approved" ? "bg-[var(--success)]" : "bg-[var(--error)]"}>
+                        {request.status.toUpperCase()}
+                      </Badge>
+                      <span className="text-xs text-[var(--muted-foreground)] break-all">
+                        {request.requested_by_name || request.requested_by_email || "Rider Admin"}
+                      </span>
+                    </div>
+                    <div className="space-y-0.5">
+                      {describePayload(request).map((line, i) => (
+                        <p key={i} className="text-sm text-[var(--muted-foreground)] break-words">{line}</p>
+                      ))}
+                    </div>
+                    {request.status === "rejected" && request.rejection_reason && (
+                      <p className="text-xs text-[var(--error)] break-words">Reason: {request.rejection_reason}</p>
+                    )}
+                    <p className="text-xs text-[var(--muted-foreground)] break-words">
+                      Reviewed {formatDate(request.reviewed_at)}
+                      {request.reviewed_by_email ? ` · ${request.reviewed_by_email}` : ""}
+                    </p>
+                  </div>
+                ))}
+              </div>
+
+              <div className="hidden sm:block overflow-x-auto">
                 <table className="w-full">
+                  <caption className="sr-only">Reviewed approval requests with their outcome, requester and reviewer</caption>
                   <thead className="bg-[var(--muted)] border-b-2 border-[var(--border)]">
                     <tr>
                       <th className="px-4 py-3 text-left text-xs font-bold text-[var(--muted-foreground)] tracking-wider">Request</th>
