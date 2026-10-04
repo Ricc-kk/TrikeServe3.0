@@ -43,7 +43,7 @@ const FALLBACK_IMAGE =
  * themselves still appear, last, so a shop is never silently dropped for
  * missing a setting.
  */
-export default function RecommendedRestaurants() {
+export default function RecommendedRestaurants({ query = "" }: { query?: string } = {}) {
   const [rows, setRows] = useState<Row[]>([]);
   const [loading, setLoading] = useState(true);
   const [origin, setOrigin] = useState<LatLng | null>(null);
@@ -118,6 +118,26 @@ export default function RecommendedRestaurants() {
     [rows, origin],
   );
 
+  /**
+   * Narrow the already-fetched list to what the customer typed.
+   *
+   * Filtering here rather than re-querying keeps the search screen from
+   * refetching on every keystroke, and the list it filters is the same ranked
+   * feed the home screen shows, so results are ranked by distance and rating
+   * the same way rather than by raw name order.
+   */
+  const term = query.trim().toLowerCase();
+  const shown = useMemo(
+    () =>
+      term
+        ? ranked.filter((r) =>
+            (r.name || "").toLowerCase().includes(term) ||
+            (r.address || "").toLowerCase().includes(term),
+          )
+        : ranked,
+    [ranked, term],
+  );
+
   const nothingNear = !loading && ranked.length > 0 && isEmptyRadius(rows, origin);
 
   if (loading) {
@@ -131,7 +151,7 @@ export default function RecommendedRestaurants() {
     );
   }
 
-  if (!ranked.length) {
+  if (!shown.length) {
     return (
       <div className="rounded-2xl border border-dashed border-line bg-surface px-5 py-8 text-center">
         <Store className="mx-auto size-7 text-[var(--muted-foreground)]" aria-hidden="true" />
@@ -167,7 +187,7 @@ export default function RecommendedRestaurants() {
       )}
 
       <ul className="space-y-2">
-        {ranked.map((r) => {
+        {shown.map((r) => {
           const distance =
             origin && hasCoords(r.coords)
               ? formatDistance(haversineMetres(origin, r.coords as LatLng))

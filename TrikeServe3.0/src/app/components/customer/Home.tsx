@@ -23,8 +23,8 @@ import SharedRides from "./SharedRides";
 import ShareRideLobby from "./ShareRideLobby";
 import BrowseAvailableLobbies from "./BrowseAvailableLobbies";
 import CustomerHubHeader from "./CustomerHubHeader";
-import CustomerServiceHub from "./CustomerServiceHub";
 import RecommendedRestaurants from "./RecommendedRestaurants";
+import CustomerServiceHub from "./CustomerServiceHub";
 
 // Get Google Maps API Key from environment variable
 const GOOGLE_MAPS_API_KEY = import.meta.env.VITE_GOOGLE_MAPS_API_KEY || "";
@@ -351,6 +351,8 @@ export default function CustomerHome() {
    const [terminals, setTerminals] = useState<{ id: string; name: string; boundary: string; center_lat: number; center_lng: number; base_fare?: number | null; per_km?: number | null; boundary_polygon?: any }[]>([]);
    const [showTerminalPicker, setShowTerminalPicker] = useState(false);
    const [selectedTerminalId, setSelectedTerminalId] = useState<string | null>(null);
+  // Hub state: what they want (all / a ride / a meal) and whether they have
+  // opened the header's search field.
    // The chosen pickup terminal and its plotted service area. Drives the search
    // filter, the picker's map view, and the pin guard, so all three agree on
    // where the customer is allowed to be dropped off.
@@ -1994,6 +1996,16 @@ export default function CustomerHome() {
   // moment a ride is actually being booked or is already under way.
   const showMap = !showBookingFlow || bookingStep !== 'home';
 
+  /**
+   * What the header shows above the search field once search is opened.
+   *
+   * The pickup the customer has already set is more useful than a raw
+   * coordinate, so it wins; otherwise we say plainly that we do not know yet
+   * rather than showing a stale default like "Manila".
+   */
+  const hubLocationLabel =
+    (pickupAddress && pickupAddress.trim()) || (pickup && pickup !== 'Current Location' ? pickup : '') || 'Locating you…';
+
   return (
     <div className="min-h-screen bg-surface flex flex-col relative">
       {/* Full Screen Map */}
@@ -2116,15 +2128,20 @@ export default function CustomerHome() {
         {showBookingFlow && bookingStep === 'home' && (
           <div className="relative z-[999] flex flex-1 flex-col pb-24">
             <CustomerHubHeader
-              userName={user?.name}
               avatarUrl={user?.avatarUrl}
               unreadCount={unreadDeliveryNotifications}
+              onOpenSearch={() => navigate('/customer/search')}
             />
+
             <div className="mx-auto w-full max-w-3xl space-y-6 px-4 py-4 sm:px-5">
+              {/* The original landing choice: a ride or a meal, one tap each.
+                  The filter / search / terminal feed is what the app bar
+                  search field opens now, so it lives on /customer/search. */}
               <CustomerServiceHub
                 onBookRide={() => setBookingStep('ride')}
                 onOrderFood={() => navigate('/customer/food')}
               />
+
               <RecommendedRestaurants />
             </div>
           </div>

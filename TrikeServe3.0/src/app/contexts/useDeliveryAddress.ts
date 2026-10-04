@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 
-import { supabaseHelpers } from "@/lib/supabase";
+import { supabase, supabaseHelpers } from "@/lib/supabase";
 import { hasCoords, type LatLng } from "@/lib/distance";
 import { useAuth } from "./AuthContext";
 
@@ -147,9 +147,17 @@ export function useDeliveryAddress() {
       latitude?: number | null;
       longitude?: number | null;
     }) => {
-      if (!user?.id) return { data: null, error: "Not signed in" };
+      // The row is written under `auth.uid()`: both the RLS policy
+      // ("Users can add own addresses") and the foreign key to users(id) check
+      // it. The profile object can carry something else entirely — a legacy
+      // localStorage account gets `legacy-<timestamp>` — and that id exists in
+      // neither, so the insert was rejected for every such customer while the
+      // UI showed only "could not save".
+      const { data: authData } = await supabase.auth.getUser();
+      const userId = authData?.user?.id ?? user?.id;
+      if (!userId) return { data: null, error: "Not signed in" };
       const result = await supabaseHelpers.addSavedAddress({
-        userId: user.id,
+        userId,
         label: input.label.trim() || "Saved place",
         address: input.address,
         latitude: input.latitude ?? null,

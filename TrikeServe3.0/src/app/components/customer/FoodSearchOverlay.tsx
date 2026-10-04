@@ -204,7 +204,7 @@ export default function FoodSearchOverlay({
         <div
           role="group"
           aria-label="Filter by cuisine"
-          className="-mx-4 flex gap-2 overflow-x-auto px-4 pb-1 sm:-mx-5 sm:px-5"
+          className="-mx-4 flex gap-2 overflow-x-auto px-4 pb-1 sm:-mx-5 sm:px-5 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
           tabIndex={0}
         >
           {CUISINES.map(({ id, label, Icon }) => {

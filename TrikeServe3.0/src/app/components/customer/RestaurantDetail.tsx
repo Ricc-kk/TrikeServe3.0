@@ -644,8 +644,12 @@ export default function RestaurantDetail() {
               <MapPin className="mt-px w-3.5 h-3.5 flex-shrink-0" aria-hidden="true" />
               <span className="min-w-0">
                 <span className="font-semibold text-[var(--ink)]">Deliver to:</span>{" "}
+                {/* The place's own label ("My address") is dropped here too:
+                    the "Deliver to:" above already frames this as the
+                    destination, so the label was a second, weaker copy of the
+                    same thing. */}
                 {delivery.address
-                  ? `${delivery.address.label} · ${delivery.address.address}`
+                  ? delivery.address.address
                   : 'No delivery address set — choose one from Order Food.'}
               </span>
             </p>

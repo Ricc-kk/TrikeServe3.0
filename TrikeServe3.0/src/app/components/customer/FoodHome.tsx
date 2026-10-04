@@ -2,6 +2,8 @@ import { useCallback, useEffect, useMemo, useState, useRef } from "react";
 import {
   ArrowUp,
   CheckCircle,
+  ChevronDown,
+  ChevronRight,
   Search,
   SlidersHorizontal,
   Star,
@@ -13,7 +15,7 @@ import { Link, useNavigate } from "react-router";
 import BottomNav from "../ui/BottomNav";
 import { ImageWithFallback } from "../figma/ImageWithFallback";
 import tricycleIcon from "../../../assets/0b76d1aa56b8ad6e15dd4efc8a0100b0ca5762a1.png";
-import { useAuth } from "../../contexts/AuthContext";
+
 import { useCart } from "../../contexts/CartContext";
 import { useFavorites } from "../../contexts/FavoritesContext";
 import { useDeliveryAddress } from "../../contexts/useDeliveryAddress";
@@ -27,7 +29,6 @@ import FoodHomeHeader from "./FoodHomeHeader";
 import FoodCategoryRail, { type FoodCategoryId } from "./FoodCategoryRail";
 import RestaurantCard, { type RestaurantView } from "./RestaurantCard";
 import FoodSearchOverlay from "./FoodSearchOverlay";
-import DeliveryAddressSheet from "./DeliveryAddressSheet";
 
 const SORT_OPTIONS = [
   { id: "name", label: "Name" },
@@ -138,7 +139,7 @@ function RailIndicator({ page, pages }: { page: number; pages: number }) {
 // TrikeServe Food Delivery Home - Gen T Deleon, Valenzuela
 export default function FoodHome() {
   const navigate = useNavigate();
-  const { user } = useAuth();
+  
   const { getTotalItems } = useCart();
   const { toggleFavorite, isFavorite, getTotalFavorites } = useFavorites();
   const delivery = useDeliveryAddress();
@@ -153,7 +154,7 @@ export default function FoodHome() {
   const [minRating, setMinRating] = useState(0);
   const [sortBy, setSortBy] = useState<SortId>("rating");
   const [showFilters, setShowFilters] = useState(false);
-  const [showAddressSheet, setShowAddressSheet] = useState(false);
+  
   const [showSearch, setShowSearch] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [showBackToTop, setShowBackToTop] = useState(false);
@@ -490,9 +491,12 @@ export default function FoodHome() {
     });
   };
 
-  const addressLabel = delivery.address
-    ? `${delivery.address.label} · ${delivery.address.address}`
-    : null;
+  // The address, and nothing else. It used to lead with the place's own
+  // label ("My address · 257, Tagalag Road…"), but the label only means
+  // something inside the address list — out here it is a prefix restating what
+  // the next screen already says, and it eats the width the address itself
+  // needs. On this bar the address is the headline.
+  const addressLabel = delivery.address?.address ?? null;
 
   /**
    * What is narrowing the list right now, shown beside the filter icon.
@@ -520,6 +524,33 @@ export default function FoodHome() {
   ];
 
   /**
+   * How many Top rated cards fit across the rail.
+   *
+   * A fixed `grid-rows-2` put one card in each row when only two restaurants
+   * existed, which read as a broken layout rather than a deliberate one. The
+   * rail now asks the DOM how many fit, and stays on a single row until the
+   * first one is genuinely full.
+   */
+  const [perRow, setPerRow] = useState(0);
+
+  const measurePerRow = () => {
+    const rail = featuredRailRef.current;
+    if (!rail) return;
+
+    const styles = window.getComputedStyle(rail);
+    const gap = parseFloat(styles.columnGap || "0") || 0;
+    const padding = parseFloat(styles.paddingLeft || "0") || 0;
+    const cardWidth = parseFloat(styles.gridAutoColumns || "0") || 0;
+    if (!cardWidth) return;
+
+    const usable = rail.clientWidth - padding;
+    setPerRow(Math.max(1, Math.floor((usable + gap) / (cardWidth + gap))));
+  };
+
+  // One row until there are more cards than fit; only then use the second row.
+  const featuredRows = perRow > 0 && featured.length > perRow ? 2 : 1;
+
+  /**
    * Track which page of the Top rated rail is on screen.
    *
    * Measured from the rail's own scroll offset rather than the window's, so it
@@ -543,19 +574,23 @@ export default function FoodHome() {
   // scroll rather than appearing only once the rail has been touched.
   useEffect(() => {
     onFeaturedScroll();
+    measurePerRow();
     window.addEventListener("resize", onFeaturedScroll);
-    return () => window.removeEventListener("resize", onFeaturedScroll);
+    window.addEventListener("resize", measurePerRow);
+    return () => {
+      window.removeEventListener("resize", onFeaturedScroll);
+      window.removeEventListener("resize", measurePerRow);
+    };
   }, [featured.length]);
 
   return (
     <div className="min-h-screen bg-[var(--background)] pb-24">
       <FoodHomeHeader
-        avatarUrl={user?.avatarUrl}
         unreadCount={unreadNotifications}
         favoritesCount={getTotalFavorites()}
         onBack={goBack}
         addressLabel={addressLabel}
-        onOpenAddress={() => setShowAddressSheet(true)}
+        onOpenAddress={() => navigate("/customer/delivery-address")}
       />
 
       {/* Search opens a full-page overlay rather than filtering in place, so the
@@ -565,57 +600,114 @@ export default function FoodHome() {
           field with the filter row beneath it; once the page scrolls past the
           search field, the field gives way and the filter row — icon plus the
           filters actually in force — is what stays reachable. */}
-      <div className="sticky top-0 z-[900] bg-[var(--surface)] px-4 pb-3 pt-3 shadow-sm sm:px-5">
+      <div className="sticky top-0 z-[900] px-3 sm:px-5">
         <div className="mx-auto max-w-3xl">
-          {!condensed && (
-            <div className="flex justify-center">
+          {condensed ? (
+            /* Once the page scrolls this collapses to one white row: back,
+               search, the delivery address and the filter icon — the four
+               things a customer reaches for mid-scroll. Notifications and
+               favourites are deliberately left out; they are destinations,
+               not controls for what is already on screen. */
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={goBack}
+                aria-label="Back to home"
+                className="grid size-10 flex-shrink-0 place-items-center rounded-full bg-[var(--muted)] text-[var(--ink)]"
+              >
+                <ChevronRight className="size-5 rotate-180" aria-hidden="true" />
+              </button>
+
               <button
                 type="button"
                 onClick={() => setShowSearch(true)}
-                className="flex min-h-12 w-full max-w-xl items-center gap-2 rounded-full border border-[var(--success)] bg-[var(--success-soft)] px-5 text-left transition-colors hover:brightness-[0.97]"
+                className="flex min-h-10 min-w-0 flex-1 items-center gap-2 rounded-full border border-[#d6d3ca] bg-white px-3 text-left"
               >
                 <Search
-                  className="size-5 flex-shrink-0 text-[var(--success)]"
+                  className="size-4 flex-shrink-0 text-[#5c6b68]"
                   aria-hidden="true"
                 />
-                <span className="min-w-0 flex-1 truncate text-base text-[var(--success-ink)]">
+                <span className="min-w-0 flex-1 truncate text-sm text-[#122724]">
                   {searchQuery || "Search food or restaurant"}
                 </span>
               </button>
+
+              {/* Chevron rather than a pin: this opens the address list, it is
+                  not a location readout. */}
+              <button
+                type="button"
+                onClick={() => navigate("/customer/delivery-address")}
+                aria-label={`Deliver to ${addressLabel || "no address set"}. Change delivery address`}
+                className="grid size-10 flex-shrink-0 place-items-center rounded-full bg-[var(--muted)]"
+              >
+                <ChevronDown className="size-4 text-[var(--ink)]" aria-hidden="true" />
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setShowFilters(true)}
+                aria-label="Sort and filter restaurants"
+                className="grid size-10 flex-shrink-0 place-items-center rounded-full border border-line text-[var(--muted-foreground)]"
+              >
+                <SlidersHorizontal className="size-4" aria-hidden="true" />
+              </button>
             </div>
-          )}
-
-          {/* Filter icon, then whatever is currently narrowing the list. */}
-          <div className={`${condensed ? "mt-0" : "mt-3"} flex items-center gap-2`}>
-            <button
-              type="button"
-              onClick={() => setShowFilters(true)}
-              aria-label="Sort and filter restaurants"
-              className="grid size-10 flex-shrink-0 place-items-center rounded-full border border-line bg-[var(--surface)] text-[var(--muted-foreground)] transition-colors hover:bg-[var(--muted)]"
-            >
-              <SlidersHorizontal className="size-4" aria-hidden="true" />
-            </button>
-
-            <div className="flex min-w-0 flex-1 gap-2 overflow-x-auto pb-0.5">
-              {activeFilterChips.map((chip) => (
+          ) : (
+            <>
+              {/* -mt-6 is half the field height (min-h-12 = 48px), so the field
+                  straddles the bottom edge of the dark header instead of
+                  sitting under it, the way the reference shows. It is negative
+                  space rather than an overlay, so the header keeps its full
+                  height and the field still scrolls away with the page. */}
+              <div className="-mt-6 flex justify-center">
                 <button
-                  key={chip.key}
+                  type="button"
+                  onClick={() => setShowSearch(true)}
+                  className="flex min-h-12 w-full max-w-xl items-center gap-2 rounded-full border border-line bg-white px-5 text-left shadow-lg transition-colors hover:brightness-[0.98]"
+                >
+                  <Search
+                    className="size-5 flex-shrink-0 text-[var(--muted-foreground)]"
+                    aria-hidden="true"
+                  />
+                  <span className="min-w-0 flex-1 truncate text-base text-[var(--ink)]">
+                    {searchQuery || "Search food or restaurant"}
+                  </span>
+                </button>
+              </div>
+
+              {/* Filter icon, then whatever is currently narrowing the list. */}
+              <div className="-mx-3 mt-3 flex items-center gap-2 bg-[var(--surface)] px-3 pb-2.5 pt-3 shadow-sm sm:-mx-5 sm:px-5">
+                <button
                   type="button"
                   onClick={() => setShowFilters(true)}
-                  className="flex min-h-9 flex-shrink-0 items-center gap-1.5 rounded-full bg-[var(--muted)] px-3 text-xs font-semibold text-[var(--ink)]"
+                  aria-label="Sort and filter restaurants"
+                  className="grid size-10 flex-shrink-0 place-items-center rounded-full border border-line bg-[var(--surface)] text-[var(--muted-foreground)] transition-colors hover:bg-[var(--muted)]"
                 >
-                  <span className="text-[var(--muted-foreground)]">{chip.label}</span>
-                  <span className="max-w-[10rem] truncate">{chip.value}</span>
+                  <SlidersHorizontal className="size-4" aria-hidden="true" />
                 </button>
-              ))}
 
-              {activeFilterChips.length === 0 && (
-                <span className="self-center text-xs text-[var(--muted-foreground)]">
-                  No filters applied
-                </span>
-              )}
-            </div>
-          </div>
+                <div className="flex min-w-0 flex-1 gap-2 overflow-x-auto pb-0.5 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+                  {activeFilterChips.map((chip) => (
+                    <button
+                      key={chip.key}
+                      type="button"
+                      onClick={() => setShowFilters(true)}
+                      className="flex min-h-9 flex-shrink-0 items-center gap-1.5 rounded-full bg-[var(--muted)] px-3 text-xs font-semibold text-[var(--ink)]"
+                    >
+                      <span className="text-[var(--muted-foreground)]">{chip.label}</span>
+                      <span className="max-w-[10rem] truncate">{chip.value}</span>
+                    </button>
+                  ))}
+
+                  {activeFilterChips.length === 0 && (
+                    <span className="self-center text-xs text-[var(--muted-foreground)]">
+                      No filters applied
+                    </span>
+                  )}
+                </div>
+              </div>
+            </>
+          )}
         </div>
       </div>
 
@@ -641,7 +733,9 @@ export default function FoodHome() {
             <div
               ref={featuredRailRef}
               onScroll={onFeaturedScroll}
-              className="-mx-4 grid snap-x snap-mandatory grid-flow-col auto-cols-[7.5rem] grid-rows-2 gap-2 overflow-x-auto px-4 pb-1 [scrollbar-width:none] sm:-mx-5 sm:px-5 [&::-webkit-scrollbar]:hidden"
+              className={`-mx-4 grid snap-x snap-mandatory grid-flow-col auto-cols-[7.5rem] gap-2 overflow-x-auto px-4 pb-1 [scrollbar-width:none] sm:-mx-5 sm:px-5 [&::-webkit-scrollbar]:hidden ${
+                featuredRows === 2 ? "grid-rows-2" : "grid-rows-1"
+              }`}
               tabIndex={0}
             >
               {featured.map((r) => (
@@ -812,13 +906,7 @@ export default function FoodHome() {
         />
       )}
 
-      {/* Delivery address */}
-      {showAddressSheet && (
-        <DeliveryAddressSheet
-          onClose={() => setShowAddressSheet(false)}
-          store={delivery}
-        />
-      )}
+      
 
       {/* Sort + filter sheet */}
       {showFilters && (

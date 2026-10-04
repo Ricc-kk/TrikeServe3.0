@@ -41,6 +41,12 @@ import Profile from "./components/customer/Profile";
 import OrderDetail from "./components/customer/OrderDetail";
 import Favorites from "./components/customer/Favorites";
 import HelpSupport from "./components/customer/HelpSupport";
+import EditProfile from "./components/customer/EditProfile";
+import DeliveryAddressPage from "./components/customer/DeliveryAddressPage";
+import CustomerSearchPage from "./components/customer/CustomerSearchPage";
+import AddAddressSearch from "./components/customer/AddAddressSearch";
+import PinOnMapPage from "./components/customer/PinOnMapPage";
+import SaveAddressPage from "./components/customer/SaveAddressPage";
 import AdminDashboard from "./components/admin/AdminDashboard";
 import AdminAnalyticsPage from "./components/admin/AdminAnalyticsPage";
 import AdminUsers from "./components/admin/AdminUsers";
@@ -374,14 +380,67 @@ export const router = createBrowserRouter([
           </ProtectedRoute>
         )      }, 
       {
+        path: "customer/edit-profile",
+        element: (
+          <ProtectedRoute allowedRoles={['customer']}>
+            <EditProfile />
+          </ProtectedRoute>
+        )
+      },
+      {
         path: "customer/help",
         element: (
           <ProtectedRoute allowedRoles={['customer']}>
             <HelpSupport />
           </ProtectedRoute>
         )
+            },
+      {
+        // What the home page search field opens. The hub feed used to sit on
+        // the landing screen; it is results, so it belongs behind search.
+        path: "customer/search",
+        element: (
+          <ProtectedRoute allowedRoles={['customer']}>
+            <CustomerSearchPage />
+          </ProtectedRoute>
+        )
       },
       {
+        // Choosing where an order is delivered is a four-screen task now, so
+        // it is four routes rather than nested modals. Order matters only for
+        // readability: these are exact paths, not nested segments.
+        path: "customer/delivery-address",
+        element: (
+          <ProtectedRoute allowedRoles={['customer']}>
+            <DeliveryAddressPage />
+          </ProtectedRoute>
+        )
+      },
+      {
+        path: "customer/delivery-address/new",
+        element: (
+          <ProtectedRoute allowedRoles={['customer']}>
+            <AddAddressSearch />
+          </ProtectedRoute>
+        )
+      },
+      {
+        path: "customer/delivery-address/pin",
+        element: (
+          <ProtectedRoute allowedRoles={['customer']}>
+            <PinOnMapPage />
+          </ProtectedRoute>
+        )
+      },
+      {
+        path: "customer/delivery-address/save",
+        element: (
+          <ProtectedRoute allowedRoles={['customer']}>
+            <SaveAddressPage />
+          </ProtectedRoute>
+        )
+      },
+      { 
         path: "customer/favorites", 
         element: (
           <ProtectedRoute allowedRoles={['customer']}>

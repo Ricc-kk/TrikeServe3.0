@@ -57,7 +57,8 @@ const ACCENTS: Record<BottomNavVariant, string> = {
  *
  * The customer bar has no Food tab: food is reached from the hub ("Order Food"
  * and the recommended restaurants), so each tab is a genuinely different
- * destination rather than two entries into the same hub.
+ * destination rather than two entries into the same hub. Profile lives here
+ * too, so reaching your own account never means a detour through a header icon.
  *
  * Responsive behaviour:
  * - Scales icons/labels down on small phone widths and up from the `sm` breakpoint.
@@ -224,6 +225,12 @@ export default function BottomNav({
                 to: "/customer/activity",
                 label: "Activity",
                 icon: ClipboardList,
+              },
+              {
+                key: "account",
+                to: "/customer/account",
+                label: "Profile",
+                icon: UserCircle,
               },
             ];
 

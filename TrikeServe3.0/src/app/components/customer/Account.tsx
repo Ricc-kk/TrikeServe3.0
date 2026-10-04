@@ -1,4 +1,4 @@
-import { Camera, ChevronRight, Home as HomeIcon, MessageCircle, User, ShoppingCart, ClipboardList, ArrowLeft, LogOut, Shield, Bell, HelpCircle, Pencil, Heart, Check, X, MapPin } from "lucide-react";
+import { ChevronRight, Home as HomeIcon, MessageCircle, User, ShoppingCart, ClipboardList, ArrowLeft, LogOut, Shield, Bell, HelpCircle, Pencil, Heart, Check, MapPin } from "lucide-react";
 
 import { uploadErrorMessage } from "@/lib/uploadErrors";
 import { Link, useNavigate } from "react-router";
@@ -120,14 +120,6 @@ export default function Account() {
     <div className="min-h-screen bg-[var(--muted)] pb-24">
       {/* Gradient Header with Profile */}
       <div className="relative bg-[var(--primary)] px-5 pt-6 pb-6 rounded-b-2xl shadow-lg">
-        {/* Edit Profile Button - Top Right */}
-        <button
-          onClick={() => setIsEditing(!isEditing)}
-          className="absolute top-4 right-4 flex items-center gap-1.5 bg-white/20 backdrop-blur-sm text-white text-xs font-semibold px-3 py-1.5 rounded-full hover:bg-white/30 transition-colors"
-        >
-          {isEditing ? <><X className="w-3.5 h-3.5" /> Cancel</> : <><Pencil className="w-3.5 h-3.5" /> Edit Profile</>}
-        </button>
-
         <div className="relative flex flex-col items-center">
           {/* Profile Photo */}
           <div className="relative mb-2">
@@ -138,29 +130,23 @@ export default function Account() {
                 <User className="w-8 h-8 text-white" />
               )}
             </div>
-            <input
-              ref={fileInputRef}
-              type="file"
-              accept="image/*"
-              className="hidden"
-              onChange={handlePhotoUpload}
-            />
-            <button
-              onClick={() => fileInputRef.current?.click()}
-              disabled={uploadingPhoto}
-              className="absolute bottom-0 right-0 w-7 h-7 bg-[var(--teal)] rounded-full flex items-center justify-center shadow-md border-2 border-white hover:bg-[var(--teal)] transition-colors active:scale-95"
-            >
-              {uploadingPhoto ? (
-                <div className="w-3 h-3 border-2 border-white border-t-transparent rounded-full animate-spin" />
-              ) : (
-                <Camera className="w-3.5 h-3.5 text-white" />
-              )}
-            </button>
+            {/* Photo editing lives on /customer/edit-profile. Nothing here is editable,
+                so a camera badge on the avatar would only invite a tap that
+                does nothing on a read-only screen. */}
           </div>
 
           {/* User Name & Email */}
           <h1 className="text-white text-base font-bold">{formData.name}</h1>
           <p className="text-white/70 text-[11px]">{formData.email || "No email set"}</p>
+
+          {/* Editing lives on its own screen now. */}
+          <button
+            onClick={() => navigate('/customer/edit-profile')}
+            className="mt-4 flex min-h-12 w-full items-center justify-center gap-2 rounded-2xl bg-white/20 px-5 text-sm font-bold text-white backdrop-blur-sm transition-colors hover:bg-white/30 active:scale-[0.99]"
+          >
+            <Pencil className="w-4 h-4" />
+            Edit profile
+          </button>
         </div>
       </div>
 
@@ -244,63 +230,32 @@ export default function Account() {
             <h3 className="text-sm font-semibold text-[var(--muted-foreground)] tracking-wider">Personal Information</h3>
           </div>
 
-          {/* Name */}
+          {/* These are now read-only here. Editing happens on its own screen
+              (/customer/edit-profile), reached from the button under the name,
+              rather than mutating the account screen in place. */}
           <div className="mb-5">
-            <label className="block text-xs font-medium text-[var(--muted-foreground)] mb-2 tracking-wider">Name</label>
-            <input
-              type="text"
-              value={formData.name}
-              onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-              readOnly={!isEditing}
-              className={`w-full text-base font-medium text-[var(--ink)] pb-2 border-b border-[var(--border)] outline-none transition-colors bg-transparent ${isEditing ? 'focus:border-[var(--teal)]' : 'cursor-not-allowed'}`}
-            />
+            <p className="block text-xs font-medium text-[var(--muted-foreground)] mb-2 tracking-wider">Name</p>
+            <p className="w-full text-base font-medium text-[var(--ink)] pb-2 border-b border-[var(--border)]">
+              {formData.name || 'Not set'}
+            </p>
           </div>
 
-          {/* Mobile Number */}
           <div className="mb-5">
-            <label className="block text-xs font-medium text-[var(--muted-foreground)] mb-2 tracking-wider">Mobile Number</label>
-            <input
-              type="text"
-              value={formData.mobile}
-              readOnly
-              className="w-full text-base font-medium text-[var(--ink)] pb-2 border-b border-[var(--border)] bg-transparent cursor-not-allowed"
-            />
+            <p className="block text-xs font-medium text-[var(--muted-foreground)] mb-2 tracking-wider">Mobile Number</p>
+            <p className="w-full text-base font-medium text-[var(--ink)] pb-2 border-b border-[var(--border)]">
+              {formData.mobile || 'Not set'}
+            </p>
           </div>
 
-          {/* Email */}
           <div>
-            <label className="block text-xs font-medium text-[var(--muted-foreground)] mb-2 tracking-wider">Email</label>
-            <input
-              type="email"
-              placeholder="Enter your email address"
-              value={formData.email}
-              readOnly={!isEditing}
-              onChange={(e) => setFormData({ ...formData, email: e.target.value })}
-              className={`w-full text-base font-medium text-[var(--ink)] placeholder:text-[var(--border)] pb-2 border-b border-[var(--border)] outline-none transition-colors bg-transparent ${isEditing ? 'focus:border-[var(--teal)]' : 'cursor-not-allowed'}`}
-            />
+            <p className="block text-xs font-medium text-[var(--muted-foreground)] mb-2 tracking-wider">Email</p>
+            <p className="w-full text-base font-medium text-[var(--ink)] pb-2 border-b border-[var(--border)]">
+              {formData.email || 'No email set'}
+            </p>
             <p className="text-xs text-[var(--muted-foreground)] mt-2 leading-relaxed">
               We'll reach out to you via email for account-related issues and product communication purposes.
             </p>
           </div>
-
-          {/* Save Button - only visible in edit mode */}
-          {isEditing && (
-            <div className="mt-5">
-              <button
-                onClick={handleSaveProfile}
-                disabled={isSaving}
-                className="w-full py-3.5 text-base font-semibold text-white bg-[var(--teal)] rounded-2xl hover:bg-[var(--teal)] transition-all active:scale-[0.98] flex items-center justify-center gap-2 disabled:opacity-50"
-              >
-                {isSaving ? (
-                  <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                ) : showSaved ? (
-                  <><Check className="w-5 h-5" /> Saved!</>
-                ) : (
-                  'Save Changes'
-                )}
-              </button>
-            </div>
-          )}
         </div>
 
         {/* Appearance */}
