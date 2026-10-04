@@ -2622,14 +2622,19 @@ export const supabaseHelpers = {
   async uploadProfilePhoto(userId: string, file: File) {
     const filePath = `${userId}/avatar.${safeFileExtension(file)}`;
 
-    const { data, error } = await supabase.storage
-      .from('avatars')
+    // `user_profiles`, not `avatars`: the latter was never created by any
+    // migration, so every upload failed against a missing bucket and the UI
+    // could only report a generic failure. This bucket is created by
+    // SUPABASE_SCHEMA.sql with public read plus a per-user insert policy that
+    // keys off the `${userId}/` folder, which is exactly the path above.
+    const { error } = await supabase.storage
+      .from('user_profiles')
       .upload(filePath, file, { upsert: true });
 
     if (error) return { data: null, error };
 
     const { data: publicUrlData } = supabase.storage
-      .from('avatars')
+      .from('user_profiles')
       .getPublicUrl(filePath);
 
     return { data: publicUrlData, error: null };

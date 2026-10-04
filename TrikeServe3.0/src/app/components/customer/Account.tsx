@@ -1,4 +1,6 @@
 import { Camera, ChevronRight, Home as HomeIcon, MessageCircle, User, ShoppingCart, ClipboardList, ArrowLeft, LogOut, Shield, Bell, HelpCircle, Pencil, Heart, Check, X, MapPin } from "lucide-react";
+
+import { uploadErrorMessage } from "@/lib/uploadErrors";
 import { Link, useNavigate } from "react-router";
 import { useEffect, useState, useRef } from "react";
 import { useAuth } from "../../contexts/AuthContext";
@@ -62,11 +64,13 @@ export default function Account() {
           .eq('id', user.id);
         if (error) throw error;
       } else {
-        alert('Failed to upload photo. Please try again.');
+        // Surface the actual cause (missing bucket, RLS, size) instead of a
+        // message that gives the customer nothing to act on.
+        alert(uploadErrorMessage(result?.error));
       }
     } catch (err) {
       console.error('Photo upload error:', err);
-      alert('Failed to upload photo. Please try again.');
+      alert(uploadErrorMessage(err));
     } finally {
       setUploadingPhoto(false);
       if (fileInputRef.current) fileInputRef.current.value = '';
@@ -180,9 +184,22 @@ export default function Account() {
               <ChevronRight className="w-5 h-5 text-[var(--border)]" />
             </div>
           </Link>
-        </div>
 
-        {/* Default Delivery Address Card */}
+          <Link to="/customer/help">
+            <div className="flex items-center justify-between p-4 hover:bg-[var(--muted)] transition-colors border-t border-[var(--muted)]">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 bg-gradient-to-br from-[var(--success)] to-[var(--success)] rounded-xl flex items-center justify-center shadow-sm">
+                  <HelpCircle className="w-5 h-5 text-white" />
+                </div>
+                <div>
+                  <p className="text-sm font-semibold text-[var(--ink)]">Help &amp; Support</p>
+                  <p className="text-xs text-[var(--muted-foreground)]">FAQs and contact us</p>
+                </div>
+              </div>
+              <ChevronRight className="w-5 h-5 text-[var(--border)]" />
+            </div>
+          </Link>
+        </div>
         <div className="bg-surface rounded-2xl shadow-sm border border-[var(--muted)] p-5">
           <div className="flex items-center gap-2 mb-4">
             <MapPin className="w-4 h-4 text-[var(--muted-foreground)]" />

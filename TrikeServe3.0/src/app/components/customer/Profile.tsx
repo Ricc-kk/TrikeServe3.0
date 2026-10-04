@@ -1,4 +1,6 @@
 import { X, Camera, ArrowLeft, Check, LogOut, User, MapPin } from "lucide-react";
+
+import { uploadErrorMessage } from "@/lib/uploadErrors";
 import { Link, useNavigate } from "react-router";
 import { useEffect, useState, useRef } from "react";
 import { useAuth } from "../../contexts/AuthContext";
@@ -57,11 +59,11 @@ export default function Profile() {
           .eq('id', user.id);
         if (error) throw error;
       } else {
-        alert('Failed to upload photo. Please try again.');
+        alert(uploadErrorMessage(result?.error));
       }
     } catch (err) {
       console.error('Photo upload error:', err);
-      alert('Failed to upload photo. Please try again.');
+      alert(uploadErrorMessage(err));
     } finally {
       setUploadingPhoto(false);
       if (fileInputRef.current) fileInputRef.current.value = '';

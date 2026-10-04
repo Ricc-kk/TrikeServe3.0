@@ -113,17 +113,19 @@ export default function AddPlaceSheet({ onClose, onSave, initialCenter }: AddPla
   }, [query, center]);
 
   /**
-   * Open on the customer: their saved address if we have one, otherwise where
-   * they are standing right now, otherwise the fallback centre. A refused or
-   * unavailable geolocation is not an error worth surfacing — the fallback
-   * centre is a perfectly usable place to drop a pin.
+   * Open on where the customer is standing right now.
+   *
+   * Their own location leads; the saved delivery address is only the fallback,
+   * because a saved address is where they *were* — dropping a pin for a new
+   * place nearly always means somewhere other than last time's address. A
+   * refused or unavailable geolocation is not an error worth surfacing: the
+   * saved address, then the city centre, are both usable places to start.
    */
   useEffect(() => {
-    if (initialCenter) {
-      setCenter(initialCenter);
+    if (!("geolocation" in navigator)) {
+      if (initialCenter) setCenter(initialCenter);
       return;
     }
-    if (!("geolocation" in navigator)) return;
 
     let cancelled = false;
     navigator.geolocation.getCurrentPosition(
@@ -134,13 +136,39 @@ export default function AddPlaceSheet({ onClose, onSave, initialCenter }: AddPla
           lng: position.coords.longitude,
         });
       },
-      () => {},
-      { timeout: 8000 },
+      () => {
+        if (!cancelled && initialCenter) setCenter(initialCenter);
+      },
+      { timeout: 8000, enableHighAccuracy: true },
     );
     return () => {
       cancelled = true;
     };
   }, [initialCenter]);
+
+  /**
+   * Pull the street out of a formatted address.
+   *
+   * "4397 L. Bernardino Street, Gen T Deleon, Valenzuela City" is unreadable in
+   * a list; the street on its own is what a person recognises. Falls back to
+   * the first comma-separated segment when the address has no house number.
+   */
+  const streetOf = useCallback((formatted: string): string => {
+    const first = formatted.split(",")[0]?.trim() ?? "";
+    if (!first) return formatted;
+    // "4397 L. Bernardino Street" -> "L. Bernardino Street": keep the number
+    // out of the label so long addresses stay scannable.
+    const withoutNumber = first.replace(/^\d+[A-Za-z]?\s*/, "").trim();
+    return withoutNumber || first;
+  }, []);
+
+  /** The street line for the current pin, or null when there is no pin yet. */
+  const pinStreet = draft.address ? streetOf(draft.address) : null;
+
+  /** Everything after the street segment, for the second line of a result. */
+  const restOfAddress = useCallback((formatted: string): string => {
+    return formatted.split(",").slice(1).join(",").trim();
+  }, []);
 
   /**
    * Turn a dropped pin into something readable in the saved-places list.
@@ -290,9 +318,17 @@ export default function AddPlaceSheet({ onClose, onSave, initialCenter }: AddPla
                         <span className="block truncate text-sm font-semibold text-[var(--ink)]">
                           {s.displayName}
                         </span>
-                        <span className="block truncate text-xs text-[var(--muted-foreground)]">
-                          {s.secondaryText || s.fullText}
-                        </span>
+                        {/* Street first, then the rest of the address. The
+                            street is the part a person actually recognises. */}
+                        {s.secondaryText || s.fullText ? (
+                          <span className="block truncate text-xs text-[var(--muted-foreground)]">
+                            <span className="font-medium text-[var(--ink)]">
+                              {streetOf(s.secondaryText || s.fullText)}
+                            </span>
+                            {" · "}
+                            {restOfAddress(s.secondaryText || s.fullText)}
+                          </span>
+                        ) : null}
                       </span>
                     </button>
                   </li>
@@ -334,9 +370,16 @@ export default function AddPlaceSheet({ onClose, onSave, initialCenter }: AddPla
               )}
             </div>
             {hasPoint && (
-              <p className="truncate text-xs text-[var(--muted-foreground)]">
-                {draft.latitude.toFixed(5)}, {draft.longitude?.toFixed(5)}
-              </p>
+              <div className="space-y-0.5">
+                {pinStreet && (
+                  <p className="truncate text-sm font-semibold text-[var(--ink)]">
+                    {pinStreet}
+                  </p>
+                )}
+                <p className="truncate text-xs text-[var(--muted-foreground)]">
+                  {draft.latitude.toFixed(5)}, {draft.longitude?.toFixed(5)}
+                </p>
+              </div>
             )}
           </div>
         )}

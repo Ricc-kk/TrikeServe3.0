@@ -40,6 +40,7 @@ import AccountManagement from "./components/customer/AccountManagement";
 import Profile from "./components/customer/Profile";
 import OrderDetail from "./components/customer/OrderDetail";
 import Favorites from "./components/customer/Favorites";
+import HelpSupport from "./components/customer/HelpSupport";
 import AdminDashboard from "./components/admin/AdminDashboard";
 import AdminAnalyticsPage from "./components/admin/AdminAnalyticsPage";
 import AdminUsers from "./components/admin/AdminUsers";
@@ -372,7 +373,15 @@ export const router = createBrowserRouter([
             <OrderDetail />
           </ProtectedRoute>
         )      }, 
-      { 
+      {
+        path: "customer/help",
+        element: (
+          <ProtectedRoute allowedRoles={['customer']}>
+            <HelpSupport />
+          </ProtectedRoute>
+        )
+      },
+      {
         path: "customer/favorites", 
         element: (
           <ProtectedRoute allowedRoles={['customer']}>

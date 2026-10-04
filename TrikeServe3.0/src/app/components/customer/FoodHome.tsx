@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState, useRef } from "react";
 import {
   ArrowUp,
   CheckCircle,
@@ -104,6 +104,37 @@ function dedupeRestaurants(list: RawRestaurant[]): RawRestaurant[] {
   return Array.from(best.values());
 }
 
+
+/**
+ * The scroll position of a rail, drawn as lines instead of a scrollbar.
+ *
+ * A horizontal scrollbar on a touch screen is either invisible or an ugly grey
+ * strip across the card, and it says nothing about where you are. One line per
+ * page, the current one wider and filled, reads as "section 2 of 4" without
+ * taking a row of the screen.
+ */
+function RailIndicator({ page, pages }: { page: number; pages: number }) {
+  if (pages <= 1) return null;
+
+  return (
+    <div
+      className="mt-3 flex items-center justify-center gap-1.5"
+      role="status"
+      aria-label={`Page ${page + 1} of ${pages}`}
+    >
+      {Array.from({ length: pages }, (_, i) => (
+        <span
+          key={i}
+          aria-hidden="true"
+          className={`h-1 rounded-full transition-all duration-200 ${
+            i === page ? "w-6 bg-[var(--success)]" : "w-2.5 bg-[var(--line)]"
+          }`}
+        />
+      ))}
+    </div>
+  );
+}
+
 // TrikeServe Food Delivery Home - Gen T Deleon, Valenzuela
 export default function FoodHome() {
   const navigate = useNavigate();
@@ -127,6 +158,13 @@ export default function FoodHome() {
   const [searchQuery, setSearchQuery] = useState("");
   const [showBackToTop, setShowBackToTop] = useState(false);
   const [isScrolling, setIsScrolling] = useState(false);
+  // True once the page has moved past the search bar, so the filter row can
+  // take over as the only pinned control.
+  const [condensed, setCondensed] = useState(false);
+  // Horizontal position of the Top rated rail, in pages, for the line indicator.
+  const [featuredPage, setFeaturedPage] = useState(0);
+  const [featuredPages, setFeaturedPages] = useState(1);
+  const featuredRailRef = useRef<HTMLDivElement | null>(null);
   const [showWelcomeBack, setShowWelcomeBack] = useState(false);
   const [welcomeUserName, setWelcomeUserName] = useState("");
 
@@ -314,6 +352,7 @@ export default function FoodHome() {
     const onScroll = () => {
       setIsScrolling(true);
       setShowBackToTop(window.scrollY > 600);
+      setCondensed(window.scrollY > 140);
       clearTimeout(timer);
       timer = setTimeout(() => setIsScrolling(false), 700);
     };
@@ -455,10 +494,62 @@ export default function FoodHome() {
     ? `${delivery.address.label} · ${delivery.address.address}`
     : null;
 
+  /**
+   * What is narrowing the list right now, shown beside the filter icon.
+   *
+   * The filter sheet is where filters get set; this row is where you can see
+   * what you already set without reopening it, which is the whole point once
+   * the sheet is a tap away rather than the page's primary control.
+   */
+  const activeFilterChips = [
+    {
+      key: "sort",
+      label: "Sort",
+      value: SORT_OPTIONS.find((o) => o.id === sortBy)?.label ?? "Top rated",
+    },
+    ...(activeCategory !== "all"
+      ? [
+          {
+            key: "category",
+            label: "Category",
+            value: CUISINES.find((c) => c.id === activeCategory)?.label ?? "All",
+          },
+        ]
+      : []),
+    ...(minRating > 0 ? [{ key: "rating", label: "Rating", value: `${minRating}+` }] : []),
+  ];
+
+  /**
+   * Track which page of the Top rated rail is on screen.
+   *
+   * Measured from the rail's own scroll offset rather than the window's, so it
+   * stays correct when the rail is resized or the restaurant count changes.
+   */
+  const onFeaturedScroll = () => {
+    const rail = featuredRailRef.current;
+    if (!rail) return;
+
+    // One "page" is however far the rail moves under snap scrolling.
+    const pageWidth = rail.clientWidth - 32;
+    const pages = Math.max(1, Math.ceil(rail.scrollWidth / pageWidth));
+
+    setFeaturedPages(pages);
+    setFeaturedPage(
+      Math.min(pages - 1, Math.max(0, Math.round(rail.scrollLeft / pageWidth))),
+    );
+  };
+
+  // Measure on mount and resize so the indicator is correct before the first
+  // scroll rather than appearing only once the rail has been touched.
+  useEffect(() => {
+    onFeaturedScroll();
+    window.addEventListener("resize", onFeaturedScroll);
+    return () => window.removeEventListener("resize", onFeaturedScroll);
+  }, [featured.length]);
+
   return (
     <div className="min-h-screen bg-[var(--background)] pb-24">
       <FoodHomeHeader
-        userName={user?.name}
         avatarUrl={user?.avatarUrl}
         unreadCount={unreadNotifications}
         favoritesCount={getTotalFavorites()}
@@ -468,27 +559,63 @@ export default function FoodHome() {
       />
 
       {/* Search opens a full-page overlay rather than filtering in place, so the
-          results never appear above the fold with no search context. */}
-      <div className="bg-[var(--ink-solid)] px-4 pb-4 sm:px-5">
-        <div className="mx-auto flex max-w-3xl items-center gap-2">
-          <button
-            type="button"
-            onClick={() => setShowSearch(true)}
-            className="flex min-h-12 min-w-0 flex-1 items-center gap-2 rounded-2xl bg-[var(--surface)] px-4 text-left"
-          >
-            <Search className="size-5 flex-shrink-0 text-[var(--muted-foreground)]" aria-hidden="true" />
-            <span className="min-w-0 flex-1 truncate text-base text-[var(--muted-foreground)]">
-              {searchQuery || "Search food or restaurant"}
-            </span>
-          </button>
-          <button
-            type="button"
-            onClick={() => setShowFilters(true)}
-            aria-label="Sort and filter restaurants"
-            className="grid size-12 flex-shrink-0 place-items-center rounded-2xl bg-white/15 text-white transition-colors hover:bg-white/25"
-          >
-            <SlidersHorizontal className="size-5" aria-hidden="true" />
-          </button>
+          results never appear above the fold with no search context.
+
+          The block pins to the top of the page. At rest it is the centred search
+          field with the filter row beneath it; once the page scrolls past the
+          search field, the field gives way and the filter row — icon plus the
+          filters actually in force — is what stays reachable. */}
+      <div className="sticky top-0 z-[900] bg-[var(--surface)] px-4 pb-3 pt-3 shadow-sm sm:px-5">
+        <div className="mx-auto max-w-3xl">
+          {!condensed && (
+            <div className="flex justify-center">
+              <button
+                type="button"
+                onClick={() => setShowSearch(true)}
+                className="flex min-h-12 w-full max-w-xl items-center gap-2 rounded-full border border-[var(--success)] bg-[var(--success-soft)] px-5 text-left transition-colors hover:brightness-[0.97]"
+              >
+                <Search
+                  className="size-5 flex-shrink-0 text-[var(--success)]"
+                  aria-hidden="true"
+                />
+                <span className="min-w-0 flex-1 truncate text-base text-[var(--success-ink)]">
+                  {searchQuery || "Search food or restaurant"}
+                </span>
+              </button>
+            </div>
+          )}
+
+          {/* Filter icon, then whatever is currently narrowing the list. */}
+          <div className={`${condensed ? "mt-0" : "mt-3"} flex items-center gap-2`}>
+            <button
+              type="button"
+              onClick={() => setShowFilters(true)}
+              aria-label="Sort and filter restaurants"
+              className="grid size-10 flex-shrink-0 place-items-center rounded-full border border-line bg-[var(--surface)] text-[var(--muted-foreground)] transition-colors hover:bg-[var(--muted)]"
+            >
+              <SlidersHorizontal className="size-4" aria-hidden="true" />
+            </button>
+
+            <div className="flex min-w-0 flex-1 gap-2 overflow-x-auto pb-0.5">
+              {activeFilterChips.map((chip) => (
+                <button
+                  key={chip.key}
+                  type="button"
+                  onClick={() => setShowFilters(true)}
+                  className="flex min-h-9 flex-shrink-0 items-center gap-1.5 rounded-full bg-[var(--muted)] px-3 text-xs font-semibold text-[var(--ink)]"
+                >
+                  <span className="text-[var(--muted-foreground)]">{chip.label}</span>
+                  <span className="max-w-[10rem] truncate">{chip.value}</span>
+                </button>
+              ))}
+
+              {activeFilterChips.length === 0 && (
+                <span className="self-center text-xs text-[var(--muted-foreground)]">
+                  No filters applied
+                </span>
+              )}
+            </div>
+          </div>
         </div>
       </div>
 
@@ -500,8 +627,9 @@ export default function FoodHome() {
           counts={categoryCounts}
         />
 
-        {/* Featured — a manual scroll rail, not an autoplaying carousel, so it
-            stays keyboard-reachable and does not move under the reader. */}
+        {/* Featured — two compact rows that scroll sideways as one page, so a
+            customer sees more than four shops without leaving the screen. Logo
+            and name only: everything else is already on the card below. */}
         {!hasFilters && featured.length > 0 && (
           <section aria-label="Top rated near you">
             <h2 className="mb-2 text-lg font-bold text-[var(--ink)]">
@@ -511,38 +639,32 @@ export default function FoodHome() {
               </span>
             </h2>
             <div
-              className="-mx-4 flex gap-3 overflow-x-auto px-4 pb-1 sm:-mx-5 sm:px-5"
+              ref={featuredRailRef}
+              onScroll={onFeaturedScroll}
+              className="-mx-4 grid snap-x snap-mandatory grid-flow-col auto-cols-[7.5rem] grid-rows-2 gap-2 overflow-x-auto px-4 pb-1 [scrollbar-width:none] sm:-mx-5 sm:px-5 [&::-webkit-scrollbar]:hidden"
               tabIndex={0}
             >
               {featured.map((r) => (
                 <Link
                   key={r.id}
                   to={`/customer/restaurant-detail?id=${encodeURIComponent(r.id)}&name=${encodeURIComponent(r.name)}`}
-                  className="flex w-44 flex-shrink-0 flex-col overflow-hidden rounded-2xl border border-line bg-[var(--surface)] shadow-sm"
+                  className="flex snap-start flex-col items-center gap-1.5 overflow-hidden rounded-2xl border border-line bg-[var(--surface)] p-2 shadow-sm"
                 >
-                  <div className="relative h-24 w-full">
+                  <div className="size-14 w-full overflow-hidden rounded-xl">
                     <ImageWithFallback
                       src={r.image}
                       alt={r.name}
                       className="size-full object-cover"
                     />
                   </div>
-                  <div className="min-w-0 flex-1 p-2.5">
-                    <p className="line-clamp-2 text-sm font-bold leading-tight text-[var(--ink)]">
-                      {r.name}
-                    </p>
-                    <p className="mt-1 flex items-center gap-1 text-xs text-[var(--muted-foreground)]">
-                      <Star
-                        className="size-3 flex-shrink-0 fill-[var(--amber)] text-[var(--amber)]"
-                        aria-hidden="true"
-                      />
-                      {r.rating ? Number(r.rating).toFixed(1) : "New"}
-                      <span className="min-w-0 truncate">{r.distanceLabel ?? r.time}</span>
-                    </p>
-                  </div>
+                  <p className="line-clamp-2 text-center text-xs font-bold leading-tight text-[var(--ink)]">
+                    {r.name}
+                  </p>
                 </Link>
               ))}
             </div>
+
+            <RailIndicator page={featuredPage} pages={featuredPages} />
           </section>
         )}
 
