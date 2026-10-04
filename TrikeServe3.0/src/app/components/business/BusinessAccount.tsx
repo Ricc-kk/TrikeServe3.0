@@ -275,9 +275,9 @@ export default function BusinessAccount() {
                       await restoreOriginalRole?.();
                       navigate('/business/account');
                     } else {
-                      localStorage.setItem('trikeserve_post_switch_route', '/customer/food');
-                      switchUiRole && await switchUiRole('customer');
-                      navigate('/customer/food');
+                    localStorage.setItem('trikeserve_post_switch_route', '/customer');
+                    switchUiRole && await switchUiRole('customer');
+                    navigate('/customer');
                     }
                   }}
                   className="w-full py-3 bg-[var(--info)] text-white font-bold rounded-xl active:scale-95 transition-transform"

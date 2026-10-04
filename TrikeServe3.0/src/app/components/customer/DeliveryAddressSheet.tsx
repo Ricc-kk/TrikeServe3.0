@@ -53,8 +53,15 @@ export default function DeliveryAddressSheet({
       <AddPlaceSheet
         onClose={() => setAdding(false)}
         onSave={async (input) => {
-          await store.saveAddress(input);
+          // `saveAddress` reports failures in its return value rather than
+          // throwing. Without re-throwing here the add-place sheet would close
+          // on a failed write and the customer would believe the address was
+          // saved when nothing was stored.
+          const result = await store.saveAddress(input);
+          if (result?.error) throw result.error;
         }}
+        // Open the pin map on where they are already being delivered to.
+        initialCenter={store.origin}
       />
     );
   }

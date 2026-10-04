@@ -11,7 +11,9 @@ export default function RoleRedirect() {
       if (user) {
         // Redirect based on role
         const roleRoutes = {
-          customer: '/customer/food',
+          // Customers land on the hub, not straight in the food tab: rides and
+          // food are both offered from Home, so the hub is the real landing page.
+          customer: '/customer',
           rider: '/rider',
           business: '/business',
           admin: '/admin',

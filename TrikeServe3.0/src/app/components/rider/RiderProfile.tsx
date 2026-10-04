@@ -653,9 +653,9 @@ export default function RiderProfile() {
                     await restoreOriginalRole?.();
                     navigate('/rider');
                   } else {
-                    localStorage.setItem('trikeserve_post_switch_route', '/customer/food');
+                    localStorage.setItem('trikeserve_post_switch_route', '/customer');
                     switchUiRole && await switchUiRole('customer');
-                    navigate('/customer/food');
+                    navigate('/customer');
                   }
                 }}
                 className="w-full py-3 bg-[var(--info)] text-white font-bold rounded-xl active:scale-95 transition-transform"

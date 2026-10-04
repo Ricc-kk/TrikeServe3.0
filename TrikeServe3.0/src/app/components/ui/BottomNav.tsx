@@ -1,4 +1,5 @@
 import { Link } from "react-router";
+
 import {
   ClipboardCheck,
   ClipboardList,
@@ -53,6 +54,10 @@ const ACCENTS: Record<BottomNavVariant, string> = {
 
 /**
  * Shared bottom navigation bar for every role.
+ *
+ * The customer bar has no Food tab: food is reached from the hub ("Order Food"
+ * and the recommended restaurants), so each tab is a genuinely different
+ * destination rather than two entries into the same hub.
  *
  * Responsive behaviour:
  * - Scales icons/labels down on small phone widths and up from the `sm` breakpoint.
@@ -199,12 +204,6 @@ export default function BottomNav({
                 to: "/customer",
                 label: "Home",
                 icon: HomeIcon,
-              },
-              {
-                key: "food",
-                to: "/customer/food",
-                label: "Food",
-                icon: UtensilsCrossed,
               },
               {
                 key: "cart",

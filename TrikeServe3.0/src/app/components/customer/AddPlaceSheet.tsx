@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { GoogleMap, MarkerF } from "@react-google-maps/api";
 import { Check, MapPin, Pencil, Search, X } from "lucide-react";
 
@@ -14,6 +14,9 @@ import type { LatLng } from "@/lib/distance";
 
 const GOOGLE_MAPS_API_KEY = import.meta.env.VITE_GOOGLE_MAPS_API_KEY || "";
 
+/** Valenzuela City, used when we have nothing better to centre on. */
+const FALLBACK_CENTER: LatLng = { lat: 14.7294, lng: 120.9349 };
+
 type Draft = {
   address: string;
   latitude: number | null;
@@ -28,6 +31,12 @@ type AddPlaceSheetProps = {
     latitude: number | null;
     longitude: number | null;
   }) => Promise<void> | void;
+  /**
+   * Where the pin map should open. The caller passes the customer's current
+   * delivery address, so the map starts on somewhere they already recognise
+   * rather than on an arbitrary city centre.
+   */
+  initialCenter?: LatLng | null;
 };
 
 const EMPTY: Draft = { address: "", latitude: null, longitude: null };
@@ -38,20 +47,33 @@ const EMPTY: Draft = { address: "", latitude: null, longitude: null };
  * Both routes end the same way — a name the customer chose — because "Home" or
  * "Mama's place" is far easier to recognise later than a coordinate or a long
  * address string.
+ *
+ * The map is deliberately not conditional on a pin already existing. It used to
+ * render only once `draft` held coordinates, which meant a fresh sheet showed a
+ * dead grey panel reading "Tap the map to place your pin" over something that
+ * was not a map — and since tapping the map was the only way to get those
+ * coordinates, the pin could never be placed at all. The map now renders as
+ * soon as the Maps script is ready; the marker is the conditional part.
  */
-export default function AddPlaceSheet({ onClose, onSave }: AddPlaceSheetProps) {
+export default function AddPlaceSheet({ onClose, onSave, initialCenter }: AddPlaceSheetProps) {
   const [mode, setMode] = useState<"search" | "pin">("search");
   const [query, setQuery] = useState("");
   const [suggestions, setSuggestions] = useState<PlacesAutocompleteSuggestion[]>([]);
   const [draft, setDraft] = useState<Draft>(EMPTY);
   const [label, setLabel] = useState("");
   const [labelFocused, setLabelFocused] = useState(false);
-  const [center, setCenter] = useState<LatLng>({ lat: 14.7294, lng: 120.9349 });
+  const [center, setCenter] = useState<LatLng>(initialCenter ?? FALLBACK_CENTER);
   const [sessionToken, setSessionToken] = useState(() => createPlacesSessionToken());
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const { isLoaded: isMapsLoaded } = useMapLoader();
+  const { isLoaded: isMapsLoaded, loadError, blocked, apiKeyPresent } = useMapLoader();
+
+  /**
+   * A map we can never draw is worse than an honest message, so the three ways
+   * it can fail get folded into one reason not to render the canvas.
+   */
+  const mapUnavailable = !apiKeyPresent || Boolean(loadError) || Boolean(blocked);
 
   useEffect(() => {
     const term = query.trim();
@@ -90,6 +112,59 @@ export default function AddPlaceSheet({ onClose, onSave }: AddPlaceSheetProps) {
     };
   }, [query, center]);
 
+  /**
+   * Open on the customer: their saved address if we have one, otherwise where
+   * they are standing right now, otherwise the fallback centre. A refused or
+   * unavailable geolocation is not an error worth surfacing — the fallback
+   * centre is a perfectly usable place to drop a pin.
+   */
+  useEffect(() => {
+    if (initialCenter) {
+      setCenter(initialCenter);
+      return;
+    }
+    if (!("geolocation" in navigator)) return;
+
+    let cancelled = false;
+    navigator.geolocation.getCurrentPosition(
+      (position) => {
+        if (cancelled) return;
+        setCenter({
+          lat: position.coords.latitude,
+          lng: position.coords.longitude,
+        });
+      },
+      () => {},
+      { timeout: 8000 },
+    );
+    return () => {
+      cancelled = true;
+    };
+  }, [initialCenter]);
+
+  /**
+   * Turn a dropped pin into something readable in the saved-places list.
+   *
+   * Coordinates alone are enough to save, so a failure here degrades to the
+   * coordinate readout rather than blocking the customer.
+   */
+  const reverseGeocode = useCallback((coords: LatLng) => {
+    const maps = (window as any)?.google?.maps;
+    if (!maps?.Geocoder) return;
+
+    try {
+      new maps.Geocoder().geocode({ location: coords }, (results: any, status: string) => {
+        const formatted = results?.[0]?.formatted_address;
+        if (status !== "OK" || !formatted) return;
+        // Merged, never overwritten: the lat/lng the customer just chose are
+        // the source of truth, the address is only a label for them.
+        setDraft((current) => ({ ...current, address: formatted }));
+      });
+    } catch {
+      /* Address text is a nicety here; the pin still saves. */
+    }
+  }, []);
+
   const chooseSuggestion = async (placeId: string) => {
     if (!GOOGLE_MAPS_API_KEY) return;
     try {
@@ -124,7 +199,21 @@ export default function AddPlaceSheet({ onClose, onSave }: AddPlaceSheetProps) {
     }
   };
 
-  const canSave = Boolean(draft.address.trim() && label.trim()) && !saving;
+  const dropPin = (coords: LatLng) => {
+    setDraft({ address: "", latitude: coords.lat, longitude: coords.lng });
+    setCenter(coords);
+    reverseGeocode(coords);
+  };
+
+  const hasPoint = draft.latitude != null && draft.longitude != null;
+
+  /**
+   * Search needs an address to save; a pin supplies its own location, so it only
+   * needs coordinates. Requiring an address in both modes is what kept the Save
+   * button permanently disabled while dropping pins.
+   */
+  const canSave =
+    Boolean(label.trim() && (mode === "pin" ? hasPoint : draft.address.trim())) && !saving;
 
   const submit = async () => {
     if (!canSave) return;
@@ -133,7 +222,7 @@ export default function AddPlaceSheet({ onClose, onSave }: AddPlaceSheetProps) {
     try {
       await onSave({
         label: label.trim(),
-        address: draft.address.trim(),
+        address: draft.address.trim() || `${draft.latitude?.toFixed(5)}, ${draft.longitude?.toFixed(5)}`,
         latitude: draft.latitude,
         longitude: draft.longitude,
       });
@@ -164,24 +253,6 @@ export default function AddPlaceSheet({ onClose, onSave }: AddPlaceSheetProps) {
         <h2 className="min-w-0 flex-1 truncate text-lg font-bold text-[var(--ink)]">
           Add new place
         </h2>
-      </div>
-
-      <div className="flex gap-2 border-b border-line px-3 py-2">
-        {(["search", "pin"] as const).map((m) => (
-          <button
-            key={m}
-            type="button"
-            aria-pressed={mode === m}
-            onClick={() => setMode(m)}
-            className={`min-h-11 flex-1 rounded-xl font-semibold text-sm capitalize transition-colors ${
-              mode === m
-                ? 'bg-[var(--primary)] text-[var(--primary-foreground)]'
-                : 'bg-[var(--muted)] text-[var(--muted-foreground)]'
-            }`}
-          >
-            {m === "search" ? "Search" : "Pin on map"}
-          </button>
-        ))}
       </div>
 
       <div className="flex-1 overflow-y-auto px-4 py-4">
@@ -235,7 +306,11 @@ export default function AddPlaceSheet({ onClose, onSave }: AddPlaceSheetProps) {
               Tap the map to drop a pin on your shop or landmark.
             </p>
             <div className="h-64 overflow-hidden rounded-2xl border border-line">
-              {isMapsLoaded && draft.latitude != null && draft.longitude != null ? (
+              {mapUnavailable ? (
+                <div className="grid size-full place-items-center bg-[var(--muted)] px-6 text-center text-sm text-[var(--muted-foreground)]">
+                  The map is unavailable right now. Search for your address instead.
+                </div>
+              ) : isMapsLoaded ? (
                 <GoogleMap
                   mapContainerClassName="size-full"
                   center={center}
@@ -244,22 +319,21 @@ export default function AddPlaceSheet({ onClose, onSave }: AddPlaceSheetProps) {
                     const lat = e.latLng?.lat();
                     const lng = e.latLng?.lng();
                     if (typeof lat !== 'number' || typeof lng !== 'number') return;
-                    setDraft({ address: '', latitude: lat, longitude: lng });
-                    setCenter({ lat, lng });
+                    dropPin({ lat, lng });
                   }}
                   options={{ disableDefaultUI: true, zoomControl: true }}
                 >
-                  <MarkerF position={{ lat: draft.latitude, lng: draft.longitude }} />
+                  {hasPoint && (
+                    <MarkerF position={{ lat: draft.latitude, lng: draft.longitude }} />
+                  )}
                 </GoogleMap>
               ) : (
                 <div className="grid size-full place-items-center bg-[var(--muted)] px-6 text-center text-sm text-[var(--muted-foreground)]">
-                  {isMapsLoaded
-                    ? 'Tap the map to place your pin.'
-                    : 'Loading the map…'}
+                  Loading the map…
                 </div>
               )}
             </div>
-            {draft.latitude != null && (
+            {hasPoint && (
               <p className="truncate text-xs text-[var(--muted-foreground)]">
                 {draft.latitude.toFixed(5)}, {draft.longitude?.toFixed(5)}
               </p>
@@ -292,7 +366,7 @@ export default function AddPlaceSheet({ onClose, onSave }: AddPlaceSheetProps) {
                 <span className="min-w-0 break-words">{draft.address}</span>
               </p>
             )}
-            </div>
+          </div>
         )}
 
         {error && (
@@ -302,7 +376,28 @@ export default function AddPlaceSheet({ onClose, onSave }: AddPlaceSheetProps) {
         )}
       </div>
 
+      {/* The mode switch lives with the action it changes the meaning of, just
+          above Save: the sheet is a search box or a map, and the button under it
+          is the one that commits whichever is on screen. */}
       <div className="border-t border-line px-4 py-4">
+        <div className="mb-3 flex gap-2">
+          {(["search", "pin"] as const).map((m) => (
+            <button
+              key={m}
+              type="button"
+              aria-pressed={mode === m}
+              onClick={() => setMode(m)}
+              className={`min-h-11 flex-1 rounded-xl font-semibold text-sm transition-colors ${
+                mode === m
+                  ? 'bg-[var(--primary)] text-[var(--primary-foreground)]'
+                  : 'bg-[var(--muted)] text-[var(--muted-foreground)]'
+              }`}
+            >
+              {m === "search" ? "Search" : "Pin on map"}
+            </button>
+          ))}
+        </div>
+
         <button
           type="button"
           onClick={submit}

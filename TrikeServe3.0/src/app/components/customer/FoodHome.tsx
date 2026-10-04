@@ -425,9 +425,16 @@ export default function FoodHome() {
 
   // A back button on a bottom-nav tab has no history to pop, so fall back to
   // the customer hub rather than leaving the app.
+  /**
+   * Food lives one hop from the hub, so back always means "the hub".
+   *
+   * This used to be `window.history.length > 1 ? navigate(-1) : ...`, which is
+   * unreliable in a SPA: `history.length` counts entries from before the app
+   * loaded, so the arrow could bounce a customer out to the login page or off
+   * the site entirely.
+   */
   const goBack = () => {
-    if (window.history.length > 1) navigate(-1);
-    else navigate("/customer");
+    navigate("/customer");
   };
 
   const onToggleFavorite = (restaurant: RestaurantView) => {
@@ -669,7 +676,9 @@ export default function FoodHome() {
         </div>
       )}
 
-      <BottomNav active="food" />
+      {/* Food has no tab of its own any more, so the Home tab is what covers
+          this screen — tapping it returns to the hub. */}
+      <BottomNav active="home" />
 
       {/* Full-page search */}
       {showSearch && (
