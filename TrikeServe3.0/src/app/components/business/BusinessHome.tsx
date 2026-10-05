@@ -13,10 +13,12 @@ import { supabaseHelpers } from "@/lib/supabase";
 import { GoogleMap, MarkerF } from "@react-google-maps/api";
 import useMapLoader from "@/lib/mapLoader";
 import { CUISINES, isCuisineId, type CuisineId } from "@/lib/foodTaxonomy";
+import { useRestaurantProfile } from "@/lib/restaurantProfile";
 
 export default function BusinessHome() {
   const navigate = useNavigate();
   const { user } = useAuth();
+  const profile = useRestaurantProfile();
   const [isStoreOpen, setIsStoreOpen] = useState(true);
   const [showEditBanner, setShowEditBanner] = useState(false);
   const [showEditInfo, setShowEditInfo] = useState(false);
@@ -30,6 +32,7 @@ export default function BusinessHome() {
   const [adminDeliveryFee, setAdminDeliveryFee] = useState(35); // Admin-set delivery fee (view-only for the business)
   const [showConfirmSaveInfo, setShowConfirmSaveInfo] = useState(false);
   const [showSaveSuccess, setShowSaveSuccess] = useState(false);
+  const [saveInfoError, setSaveInfoError] = useState<string | null>(null);
 
   // Restaurant data - initialize with user data
   const [restaurantData, setRestaurantData] = useState({
@@ -516,77 +519,34 @@ export default function BusinessHome() {
     }
   };
 
-  // Function to save store information to Supabase
+  // Save the shop details.
+  //
+  // This used to write the restaurants row directly, which made the edit modal
+  // here and the Pickup Location picker on Edit Profile two separate writers
+  // for one row, neither able to see the other's result. It now goes through the
+  // shared hook, which also stages the change for Super Admin review.
   const saveStoreInformation = async () => {
-    if (!user?.id) return;
+    const result = await profile.save({
+      name: restaurantData.name,
+      subtitle: restaurantData.subtitle,
+      address: restaurantData.address,
+      delivery_time: restaurantData.deliveryTime,
+      operating_hours: restaurantData.operatingHours,
+      cuisine: Array.isArray(restaurantData.cuisine) ? restaurantData.cuisine : [],
+      latitude: restaurantData.latitude,
+      longitude: restaurantData.longitude,
+    });
 
-    try {
-      // Get or create restaurant record
-      let { data: restaurant } = await supabase
-        .from('restaurants')
-        .select('id')
-        .eq('business_user_id', user.id)
-        .single();
-
-      if (!restaurant) {
-        // Create new restaurant record
-        const { data: newRestaurant, error } = await supabase
-          .from('restaurants')
-          .insert([{
-            name: restaurantData.name,
-            business_user_id: user.id,
-            address: restaurantData.address,
-            phone: user.phone || '',
-            rating: restaurantData.rating,
-            is_open: isStoreOpen,
-            subtitle: restaurantData.subtitle,
-            delivery_time: restaurantData.deliveryTime,
-            operating_hours: restaurantData.operatingHours,
-            cuisine: Array.isArray(restaurantData.cuisine) ? restaurantData.cuisine : [],
-            latitude: restaurantData.latitude ?? null,
-            longitude: restaurantData.longitude ?? null,
-            created_at: new Date().toISOString(),
-          }])
-          .select()
-          .single();
-
-        if (error) {
-          console.error('Error creating restaurant:', error);
-          return;
-        }
-        restaurant = newRestaurant;
-      } else {
-        // Update existing restaurant
-        const { error } = await supabase
-          .from('restaurants')
-          .update({
-            name: restaurantData.name,
-            address: restaurantData.address,
-            is_open: isStoreOpen,
-            subtitle: restaurantData.subtitle,
-            delivery_time: restaurantData.deliveryTime,
-            operating_hours: restaurantData.operatingHours,
-            cuisine: Array.isArray(restaurantData.cuisine) ? restaurantData.cuisine : [],
-            latitude: restaurantData.latitude ?? null,
-            longitude: restaurantData.longitude ?? null,
-            updated_at: new Date().toISOString(),
-          })
-          .eq('id', restaurant.id);
-
-        if (error) {
-          console.error('Error updating restaurant:', error);
-          return;
-        }
-      }
-
-      // Close the modal and show success
-      setShowEditInfo(false);
-      setShowConfirmSaveInfo(false);
-      setShowSaveSuccess(true);
-      setTimeout(() => setShowSaveSuccess(false), 2000);
-    } catch (error) {
-      console.error('Error saving store information:', error);
+    if (!result.ok) {
+      setSaveInfoError(result.error || 'Could not save your shop details.');
+      return;
     }
+
+    setSaveInfoError(null);
+    setShowEditInfo(false);
+    setShowConfirmSaveInfo(false);
+    setShowSaveSuccess(true);
+    setTimeout(() => setShowSaveSuccess(false), 2000);
   };
 
   return (
@@ -998,6 +958,27 @@ export default function BusinessHome() {
         )}
 
         {/* Edit Info Modal */}
+        {profile.hasPending && !showEditInfo && (
+          <div className="mx-4 lg:mx-6 mt-4 rounded-2xl border-2 border-[var(--amber-soft)] bg-[var(--amber-soft)] p-4">
+            <div className="flex items-start gap-3">
+              <Clock className="w-5 h-5 text-[var(--amber-dark)] flex-shrink-0 mt-0.5" aria-hidden="true" />
+              <div className="min-w-0 flex-1">
+                <p className="font-bold text-[var(--amber-dark)] text-sm">Waiting for Super Admin approval</p>
+                <p className="text-sm text-[var(--amber-dark)]/90 mt-0.5 break-words">
+                  Your last shop details change is queued. Customers keep seeing the previous ones until it is approved.
+                </p>
+                <button
+                  type="button"
+                  onClick={async () => { await profile.withdraw(); }}
+                  className="mt-2 min-h-11 inline-flex items-center gap-1.5 px-3 py-2 rounded-xl bg-[var(--surface)] border border-[var(--amber)] text-[var(--amber-dark)] font-bold text-xs hover:opacity-90 transition-opacity"
+                >
+                  Withdraw change
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
         {showEditInfo && (
           <div className="fixed inset-0 bg-black/50 z-[2000] flex items-end animate-in slide-in-from-bottom">
             <div className="bg-surface w-full rounded-t-3xl max-h-[85vh] overflow-y-auto">
@@ -1013,6 +994,19 @@ export default function BusinessHome() {
               </div>
 
               <div className="p-5 space-y-4">
+                {saveInfoError && (
+                  <div className="rounded-xl border-2 border-[var(--error-soft)] bg-[var(--error-soft)] px-3 py-2">
+                    <p className="text-sm text-[var(--error)] break-words">{saveInfoError}</p>
+                  </div>
+                )}
+
+                {profile.hasPending && (
+                  <div className="rounded-xl border border-[var(--amber-soft)] bg-[var(--amber-soft)] px-3 py-2">
+                    <p className="text-xs text-[var(--amber-dark)] break-words">
+                      Saving again replaces the change already waiting for approval.
+                    </p>
+                  </div>
+                )}
                 <div>
                   <label className="text-sm font-bold text-[var(--ink)] mb-2 block">Store Name *</label>
                   <input
@@ -1206,8 +1200,10 @@ export default function BusinessHome() {
               <div className="w-16 h-16 bg-[var(--success-soft)] rounded-full flex items-center justify-center mx-auto mb-4">
                 <Check className="w-8 h-8 text-[var(--success)]" />
               </div>
-              <h3 className="text-2xl font-bold text-[var(--ink)] mb-2">Saved! ✅</h3>
-              <p className="text-[var(--muted-foreground)] text-sm">Your store information has been updated.</p>
+              <h3 className="text-2xl font-bold text-[var(--ink)] mb-2">Sent for approval! ✅</h3>
+              <p className="text-[var(--muted-foreground)] text-sm">
+                The Super Admin will review your shop details. Customers see the previous ones until then.
+              </p>
             </div>
           </div>
         )}

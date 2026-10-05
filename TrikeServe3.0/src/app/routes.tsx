@@ -31,6 +31,7 @@ import CustomerHome from "./components/customer/Home";
 import FoodHome from "./components/customer/FoodHome";
 import RestaurantDetail from "./components/customer/RestaurantDetail";
 import Cart from "./components/customer/Cart";
+import CartCheckout from "./components/customer/CartCheckout";
 import Activity from "./components/customer/Activity";
 import CustomerMessages from "./components/customer/CustomerMessages";
 import CustomerDirectChat from "./components/customer/CustomerDirectChat";
@@ -300,6 +301,18 @@ export const router = createBrowserRouter([
           </ProtectedRoute>
         )
       },
+      { 
+        // Checkout is its own route rather than a second view inside the cart.
+        // As local state it had no history entry, so Back skipped it entirely
+        // and walked straight out of the cart.
+        path: "customer/cart/checkout",
+        element: (
+          <ProtectedRoute allowedRoles={['customer']}>
+            <CartCheckout />
+          </ProtectedRoute>
+        )
+      },
+
       { 
         path: "customer/activity", 
         element: (

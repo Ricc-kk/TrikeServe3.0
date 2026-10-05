@@ -23,6 +23,8 @@ export interface User {
   terminalName?: string;
   businessName?: string;
   businessAddress?: string;
+  /** What the shop serves, declared at sign-up. Seeds `restaurants.cuisine`. */
+  businessCuisine?: string[];
   restaurantId?: string;
   address?: string;
   avatarUrl?: string;
@@ -52,6 +54,7 @@ interface SignupData {
   licenseNumber?: string;
   businessName?: string;
   businessAddress?: string;
+  businessCuisine?: string[];
   address?: string;
 }
 
@@ -71,6 +74,7 @@ function mapSupabaseUser(row: any): User {
     licenseNumber: row.license_number,
     businessName: row.business_name,
     businessAddress: row.business_address,
+    businessCuisine: Array.isArray(row.business_cuisine) ? row.business_cuisine : [],
     restaurantId: row.restaurant_id,
     address: row.address,
     isOnline: row.is_online,
@@ -544,6 +548,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             address: data.address || '',
             business_name: data.businessName || '',
             business_address: data.businessAddress || '',
+            business_cuisine: data.businessCuisine || [],
             toda_plate: data.todaPlate || '',
             license_number: data.licenseNumber || '',
           },
@@ -582,6 +587,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             ...(data.role === 'business' && {
               business_name: data.businessName,
               business_address: data.businessAddress,
+              business_cuisine: data.businessCuisine ?? [],
             }),
             ...(data.role === 'customer' && {
               address: data.address,
@@ -618,7 +624,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           isVerified: isAutoVerified,
           createdAt: new Date().toISOString(),
           ...(data.role === 'customer' && { address: data.address }),
-          ...(data.role === 'business' && { businessName: data.businessName, businessAddress: data.businessAddress }),
+          ...(data.role === 'business' && { businessName: data.businessName, businessAddress: data.businessAddress, businessCuisine: data.businessCuisine ?? [] }),
           ...(data.role === 'rider' && { todaPlate: data.todaPlate, licenseNumber: data.licenseNumber }),
         });
         localStorage.setItem('trikeserve_users', JSON.stringify(users));
@@ -634,6 +640,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             rating: 0,
             ratingCount: 0,
             address: data.businessAddress || "",
+            cuisine: data.businessCuisine ?? [],
             operatingHours: "8:00 AM - 10:00 PM"
           }));
           localStorage.setItem(`menuItems_${data.email}`, JSON.stringify([]));

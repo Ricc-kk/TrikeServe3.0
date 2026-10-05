@@ -445,7 +445,12 @@ export type ApprovalRequestType =
   | 'terminal_update'
   | 'terminal_delete'
   | 'driver_assign'
-  | 'driver_unassign';
+  | 'driver_unassign'
+  // A business proposing a change to its own shop profile. Requires
+  // ADMIN_BUSINESS_APPROVALS.sql: the CHECK constraint on this column is what
+  // decides whether the insert is accepted, and it originally enumerated only
+  // the five types above.
+  | 'business_profile_update';
 
 export type ApprovalRequestStatus = 'pending' | 'approved' | 'rejected';
 
@@ -468,6 +473,50 @@ export const APPROVAL_REQUEST_LABELS: Record<ApprovalRequestType, string> = {
   terminal_delete: 'Delete terminal',
   driver_assign: 'Assign driver',
   driver_unassign: 'Unassign driver',
+  business_profile_update: 'Shop profile change',
+};
+
+/**
+ * The shop fields a business may propose changing.
+ *
+ * Kept in one place because the same list drives the payload the admin
+ * compares, the patch the business submits, and the SQL the Super Admin applies.
+ * Adding a field here without adding it to `applyBusinessProfileUpdate` would
+ * stage a change the admin can see but silently drop on approve.
+ */
+export const PROFILE_REVIEWED_FIELDS = [
+  { key: 'name', label: 'Shop name', column: 'name' },
+  { key: 'subtitle', label: 'Branch / tagline', column: 'subtitle' },
+  { key: 'address', label: 'Address', column: 'address' },
+  { key: 'delivery_time', label: 'Delivery time', column: 'delivery_time' },
+  { key: 'operating_hours', label: 'Operating hours', column: 'operating_hours' },
+  { key: 'latitude', label: 'Latitude', column: 'latitude' },
+  { key: 'longitude', label: 'Longitude', column: 'longitude' },
+  { key: 'cuisine', label: 'What we serve', column: 'cuisine' },
+] as const;
+
+/** The shop fields one proposed change carries. */
+export type BusinessProfileUpdate = {
+  restaurant_id: string;
+  business_user_id?: string | null;
+  name?: string | null;
+  subtitle?: string | null;
+  address?: string | null;
+  delivery_time?: string | null;
+  operating_hours?: string | null;
+  latitude?: number | null;
+  longitude?: number | null;
+  cuisine?: string[] | null;
+};
+
+/** What sits in `admin_approval_requests.payload` for a business change. */
+export type BusinessProfileUpdatePayload = {
+  restaurant_id: string;
+  business_user_id?: string | null;
+  /** Live values at the time the change was proposed, so the diff survives. */
+  before: BusinessProfileUpdate;
+  /** The values the Super Admin would apply if they approve. */
+  after: BusinessProfileUpdate;
 };
 
 function describeApprovalError(error: any): string {
@@ -475,6 +524,13 @@ function describeApprovalError(error: any): string {
   // PGRST205 = table not found in schema cache; 42P01 = undefined_table
   if (error.code === 'PGRST205' || error.code === '42P01') {
     return 'Approval queue table is missing. Run ADMIN_APPROVAL_REQUESTS.sql in Supabase.';
+  }
+  // 23514 = check_violation. The request_type CHECK enumerates the allowed
+  // values, so a request type added in code but not yet in the database is
+  // rejected by Postgres before the app ever sees a row. Without this the shop
+  // just sees a wall of SQL.
+  if (error.code === '23514') {
+    return 'The approval queue does not know this request type yet. Run ADMIN_BUSINESS_APPROVALS.sql in Supabase.';
   }
   return error.message || String(error);
 }
@@ -489,6 +545,58 @@ async function recountTerminalRiders(terminalId: string) {
     .from('terminals')
     .update({ rider_count: (data || []).length })
     .eq('id', terminalId);
+}
+
+/**
+ * Write a reviewed shop profile to `restaurants` (and mirror the address onto
+ * the owner, which the business app still reads as `business_address`).
+ *
+ * Shared by two callers so they cannot drift: the Super Admin approving a
+ * staged change, and the business app's one escape hatch that lets a shop that
+ * has never been pinned place its first pin without waiting for a review.
+ *
+ * Only fields present on the patch are written. A `null` is a real value here --
+ * "unpin the map" is `latitude: null`, not "leave it alone" -- so the caller
+ * decides which keys to include rather than sending a full object.
+ */
+export async function applyBusinessProfileUpdate(
+  patch: BusinessProfileUpdate,
+): Promise<{ success: boolean; error?: string }> {
+  try {
+    const row: Record<string, unknown> = { updated_at: new Date().toISOString() };
+    for (const { key, column } of PROFILE_REVIEWED_FIELDS) {
+      if (!(key in patch)) continue;
+      const value = (patch as Record<string, unknown>)[key];
+      row[column] = value === undefined ? null : value;
+    }
+
+    const { error } = await supabase
+      .from('restaurants')
+      .update(row)
+      .eq('id', patch.restaurant_id);
+    if (error) return { success: false, error: describeApprovalError(error) };
+
+    // The address is shown in two places that are genuinely the same fact. The
+    // business app's profile screen reads `users.business_address`; the
+    // storefront reads `restaurants.address`. Writing only one of them is how
+    // they drifted apart in the first place.
+    if (patch.business_user_id && typeof patch.address === 'string') {
+      const { error: userError } = await supabase
+        .from('users')
+        .update({ business_address: patch.address, updated_at: new Date().toISOString() })
+        .eq('id', patch.business_user_id);
+      if (userError) {
+        // The shop itself is already saved; a stale owner row is recoverable and
+        // must not report the whole approval as failed.
+        console.warn('[applyBusinessProfileUpdate] users.business_address not mirrored:', userError);
+      }
+    }
+
+    return { success: true };
+  } catch (error) {
+    console.error('[applyBusinessProfileUpdate] error:', error);
+    return { success: false, error: 'Network error while saving the shop profile' };
+  }
 }
 
 /** Apply an approved request's side effect to terminals/users. */
@@ -555,6 +663,13 @@ async function applyApprovalRequest(
         if (error) return { success: false, error: describeApprovalError(error) };
         if (payload.terminal_id) await recountTerminalRiders(payload.terminal_id);
         return { success: true };
+      }
+
+      case 'business_profile_update': {
+        // The payload keeps `after` so the reviewed values are the ones applied,
+        // not a re-read of the row. A second edit staged while this one sat in
+        // the queue would otherwise be silently applied by approving the first.
+        return applyBusinessProfileUpdate(payload.after || payload);
       }
 
       default:
@@ -676,6 +791,119 @@ export async function getPendingApprovalCount(): Promise<number> {
     return count || 0;
   } catch {
     return 0;
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Business shop-profile changes (Super Admin reviews these)
+// ---------------------------------------------------------------------------
+
+/** The change a shop currently has waiting, if any. */
+export async function getPendingBusinessProfileUpdate(
+  restaurantId: string,
+): Promise<{ request: ApprovalRequest | null; error?: string }> {
+  try {
+    const { data, error } = await supabase
+      .from('admin_approval_requests')
+      .select('*')
+      .eq('request_type', 'business_profile_update')
+      .eq('status', 'pending')
+      .order('requested_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    if (error) return { request: null, error: describeApprovalError(error) };
+    const request = (data as ApprovalRequest | null) ?? null;
+    if (!request) return { request: null };
+    // Guard against a row belonging to some other shop: the business screens
+    // ask for their own restaurant's queue by id, so anything else is not ours.
+    const payload = request.payload || {};
+    if (payload.restaurant_id && payload.restaurant_id !== restaurantId) {
+      return { request: null };
+    }
+    return { request };
+  } catch (error) {
+    console.error('[getPendingBusinessProfileUpdate] error:', error);
+    return { request: null, error: 'Network error while loading your pending change' };
+  }
+}
+
+/**
+ * Business: propose a shop-profile change for Super Admin review.
+ *
+ * Replaces any change already waiting for this shop rather than queueing a
+ * second one. Two stacked requests for the same shop means the admin reviews
+ * two versions of one edit and whichever is approved second silently wins.
+ */
+export async function submitBusinessProfileUpdate(params: {
+  restaurantId: string;
+  businessUserId?: string | null;
+  before: BusinessProfileUpdate;
+  after: BusinessProfileUpdate;
+  requestedByEmail?: string | null;
+  requestedByName?: string | null;
+}): Promise<{ success: boolean; error?: string }> {
+  const payload: BusinessProfileUpdatePayload = {
+    restaurant_id: params.restaurantId,
+    business_user_id: params.businessUserId ?? null,
+    before: params.before,
+    after: params.after,
+  };
+
+  try {
+    const row = {
+      request_type: 'business_profile_update' as const,
+      payload,
+      status: 'pending' as const,
+      requested_by_email: params.requestedByEmail || null,
+      requested_by_name: params.requestedByName || null,
+      requested_at: new Date().toISOString(),
+      reviewed_by_email: null,
+      reviewed_at: null,
+      rejection_reason: null,
+    };
+
+    // Update-in-place rather than insert. An upsert on `id` cannot do this,
+    // because the id of the row already queued is not known here -- without
+    // the lookup below every Save would stack another copy of the same edit.
+    const { data: existing, error: lookupError } = await supabase
+      .from('admin_approval_requests')
+      .select('id')
+      .eq('request_type', 'business_profile_update')
+      .eq('status', 'pending')
+      .order('requested_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    if (lookupError) return { success: false, error: describeApprovalError(lookupError) };
+
+    const error = existing
+      ? (await supabase.from('admin_approval_requests').update(row).eq('id', existing.id)).error
+      : (await supabase.from('admin_approval_requests').insert([row])).error;
+
+    if (error) return { success: false, error: describeApprovalError(error) };
+    return { success: true };
+  } catch (error) {
+    console.error('[submitBusinessProfileUpdate] error:', error);
+    return { success: false, error: 'Network error while sending your change for approval' };
+  }
+}
+
+/** Business: pull a staged change back before the Super Admin sees it. */
+export async function withdrawBusinessProfileUpdate(
+  requestId: string,
+): Promise<{ success: boolean; error?: string }> {
+  try {
+    const { error } = await supabase
+      .from('admin_approval_requests')
+      .delete()
+      .eq('id', requestId)
+      .eq('status', 'pending');
+    if (error) return { success: false, error: describeApprovalError(error) };
+    return { success: true };
+  } catch (error) {
+    console.error('[withdrawBusinessProfileUpdate] error:', error);
+    return { success: false, error: 'Network error while withdrawing your change' };
   }
 }
 

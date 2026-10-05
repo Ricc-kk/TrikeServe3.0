@@ -6,6 +6,7 @@ import {
 import { Link, useLocation, useNavigate } from "react-router";
 import { Card } from "../ui/card";
 import { supabase } from "../../../lib/supabase";
+import TrikeServeLogo from "../../../assets/TRIKESERVE_logo.png";
 
 interface BusinessSidebarProps {
   isMobileMenuOpen: boolean;
@@ -96,8 +97,14 @@ export default function BusinessSidebar({ isMobileMenuOpen, setIsMobileMenuOpen 
           <div className="p-6 border-b-2 border-[var(--border)]">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-3">
-                <div className="w-10 h-10 bg-[var(--primary)] rounded-xl flex items-center justify-center">
-                  <Store className="w-6 h-6 text-white" />
+                {/* The brand mark, not a generic shop glyph: this panel is
+                    TrikeServe's navigation, so it should say who it is. */}
+                <div className="w-10 h-10 rounded-xl overflow-hidden flex items-center justify-center bg-[var(--primary)]">
+                  <img
+                    src={TrikeServeLogo}
+                    alt="TrikeServe"
+                    className="size-full object-contain p-0.5"
+                  />
                 </div>
                 <span className="text-xl font-bold text-[var(--ink)]">TRIKESERVE</span>
               </div>

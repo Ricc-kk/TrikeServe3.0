@@ -1,5 +1,6 @@
 import { ArrowLeft, Bell, Home as HomeIcon, ShoppingCart, MessageCircle, ClipboardList, User, Package, Truck, CheckCircle, XCircle, AlertCircle, Gift, Star, Clock } from "lucide-react";
 import { Link, useNavigate } from "react-router";
+import { usePreviousPage } from "../../hooks/usePreviousPage";
 import { Card } from "../ui/card";
 import BottomNav from "../ui/BottomNav";
 import { useState, useEffect } from "react";
@@ -21,6 +22,9 @@ interface Notification {
 
 export default function Notifications() {
   const navigate = useNavigate();
+  // A bare navigate(-1) walks a cold deep link straight out of the app,
+  // because there is no history entry before it to return to.
+  const goBack = usePreviousPage("/customer");
   const { getTotalItems } = useCart();
   const [notifications, setNotifications] = useState<Notification[]>([]);
 
@@ -264,7 +268,7 @@ export default function Notifications() {
       <div className="bg-[var(--primary)] px-5 py-4 sticky top-0 z-50 shadow-lg">
         <div className="flex items-center justify-between mb-2">
           <button 
-            onClick={() => navigate(-1)}
+            onClick={goBack}
             className="w-10 h-10 bg-white/20 backdrop-blur-sm rounded-full flex items-center justify-center active:scale-90 transition-all"
           >
             <ArrowLeft className="w-6 h-6 text-white" />

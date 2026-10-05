@@ -8,6 +8,7 @@ import { Card } from "../ui/card";
 import { Input } from "../ui/input";
 import { Badge } from "../ui/badge";
 import { useAuth, UserRole } from "../../contexts/AuthContext";
+import { CUISINES, type CuisineId } from "../../../lib/foodTaxonomy";
 
 interface SignUpFormData {
   email: string;
@@ -23,6 +24,8 @@ interface SignUpFormData {
   // Business specific
   businessName?: string;
   businessAddress?: string;
+  /** What the shop serves. Seeds `restaurants.cuisine` at first shop load. */
+  businessCuisine?: CuisineId[];
   // Customer specific
   address?: string;
 }
@@ -112,6 +115,7 @@ export default function SignUp() {
       licenseNumber: formData.licenseNumber,
       businessName: formData.businessName,
       businessAddress: formData.businessAddress,
+      businessCuisine: formData.businessCuisine ?? [],
       address: formData.address,
     });
 
@@ -396,6 +400,53 @@ export default function SignUp() {
                       required
                       disabled={isLoading}
                     />
+                  </div>
+
+                  {/* Declared here, once, rather than guessed later. Customers
+                      filter on this, and an undeclared shop is invisible to
+                      every filter until someone opens the settings modal. */}
+                  <div>
+                    <label className="block text-sm font-semibold text-[var(--ink)] mb-2">
+                      What do you serve?
+                    </label>
+                    <p className="text-xs text-[var(--muted-foreground)] mb-2">
+                      Pick everything that describes your shop. Customers filter by this.
+                    </p>
+                    <div
+                      role="group"
+                      aria-label="What do you serve?"
+                      className="flex flex-wrap gap-2"
+                    >
+                      {CUISINES.map(({ id, label, Icon }) => {
+                        const selected = (formData.businessCuisine ?? []).includes(id);
+                        return (
+                          <button
+                            key={id}
+                            type="button"
+                            disabled={isLoading}
+                            aria-pressed={selected}
+                            onClick={() => {
+                              const current = formData.businessCuisine ?? [];
+                              setFormData({
+                                ...formData,
+                                businessCuisine: selected
+                                  ? current.filter((c) => c !== id)
+                                  : [...current, id],
+                              });
+                            }}
+                            className={[
+                              "min-h-11 inline-flex items-center gap-1.5 px-3 py-2 rounded-xl border text-xs font-semibold transition-colors disabled:opacity-50",
+                              selected
+                                ? "border-[var(--primary)] bg-[var(--primary-soft)] text-[var(--primary)]"
+                                : "border-line text-[var(--muted-foreground)] hover:border-[var(--primary)]",
+                            ].join(" ")}
+                          >
+                            <Icon className="w-4 h-4 flex-shrink-0" aria-hidden="true" />
+                            {label}
+                          </button>
+                        );
+                      })}
+                    </div>
                   </div>
                 </>
               )}

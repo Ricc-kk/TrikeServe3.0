@@ -127,17 +127,36 @@ export function useDeliveryAddress() {
     });
   }, []);
 
+  /**
+   * Persist the live selection everywhere it is read from.
+   *
+   * This is the whole bug the address screens had. `selected` is React state
+   * inside whichever screen asked for the hook, and FoodHome, the restaurant
+   * page and the address list each build their own instance. On mount every one
+   * of them reads localStorage, not another instance. So an edit that only
+   * called setSelected updated the list you were looking at and was silently
+   * gone the moment you navigated back -- the "Your location" header went back
+   * to the old address with no error anywhere.
+   */
+  const persistSelection = useCallback((address: DeliveryAddress | null) => {
+    setSelected(address);
+    try {
+      if (address) {
+        localStorage.setItem(SELECTED_KEY, JSON.stringify(address));
+      } else {
+        localStorage.removeItem(SELECTED_KEY);
+      }
+    } catch {
+      // A full or unavailable localStorage must not break the selection.
+    }
+  }, []);
+
   const selectAddress = useCallback(
     (address: DeliveryAddress) => {
-      setSelected(address);
+      persistSelection(address);
       remember(address);
-      try {
-        localStorage.setItem(SELECTED_KEY, JSON.stringify(address));
-      } catch {
-        // Selection still applies for this session.
-      }
     },
-    [remember],
+    [remember, persistSelection],
   );
 
   const saveAddress = useCallback(
@@ -184,20 +203,59 @@ export function useDeliveryAddress() {
   const updateAddress = useCallback(
     async (
       addressId: string,
-      patch: { label?: string; address?: string },
+      patch: {
+        label?: string;
+        address?: string;
+        latitude?: number | null;
+        longitude?: number | null;
+      },
     ) => {
       const result = await supabaseHelpers.updateSavedAddress(addressId, patch);
       if (!result.error) {
         await loadSaved();
-        setSelected((current) =>
-          current?.id === addressId
-            ? {
-                ...current,
-                label: patch.label ?? current.label,
-                address: patch.address ?? current.address,
-              }
-            : current,
-        );
+        setSelected((current) => {
+          if (current?.id !== addressId) return current;
+          return {
+            ...current,
+            label: patch.label ?? current.label,
+            address: patch.address ?? current.address,
+            latitude: patch.latitude ?? current.latitude,
+            longitude: patch.longitude ?? current.longitude,
+          };
+        });
+
+        // The edited row is also the delivery address, so the change has to
+        // reach the header -- and the recent list, which the address screen
+        // shows at the top and which would otherwise offer the old text back
+        // as a one-tap delivery destination.
+        const edited = (result.data || null) as SavedAddress | null;
+        if (edited) {
+          const next: DeliveryAddress = {
+            id: edited.id,
+            label: edited.label,
+            address: edited.address,
+            latitude: edited.latitude,
+            longitude: edited.longitude,
+            source: "saved",
+          };
+          try {
+            const raw = localStorage.getItem(SELECTED_KEY);
+            const current = raw ? (JSON.parse(raw) as DeliveryAddress) : null;
+            if (current?.id === addressId) {
+              localStorage.setItem(SELECTED_KEY, JSON.stringify(next));
+            }
+          } catch {
+            // Not being able to read the stored selection is not fatal.
+          }
+          setRecent((current) => {
+            const deduped = current.filter(
+              (r) => normalize(r.address) !== normalize(next.address) && r.id !== next.id,
+            );
+            const written = [{ ...next, source: "recent" as const }, ...deduped];
+            writeRecent(written);
+            return written;
+          });
+        }
       }
       return result;
     },
@@ -209,24 +267,26 @@ export function useDeliveryAddress() {
       const result = await supabaseHelpers.deleteSavedAddress(addressId);
       if (!result.error) {
         await loadSaved();
-        setSelected((current) => {
-          if (current?.id !== addressId) return current;
-          return profileDefault ?? recent[0] ?? null;
+        // Deleting the address that is currently the delivery destination has to
+        // clear the stored selection too, or the header goes on naming a row
+        // that no longer exists.
+        if (selected?.id === addressId) {
+          persistSelection(profileDefault ?? recent[0] ?? null);
+        }
+        setRecent((current) => {
+          const remaining = current.filter((r) => r.id !== addressId);
+          if (remaining.length !== current.length) writeRecent(remaining);
+          return remaining;
         });
       }
       return result;
     },
-    [loadSaved, profileDefault, recent],
+    [loadSaved, profileDefault, recent, selected, persistSelection],
   );
 
   const clearSelected = useCallback(() => {
-    setSelected(null);
-    try {
-      localStorage.removeItem(SELECTED_KEY);
-    } catch {
-      // Nothing to clean up.
-    }
-  }, []);
+    persistSelection(null);
+  }, [persistSelection]);
 
   /** Where restaurants should be measured from, when we know where "here" is. */
   const origin = useMemo<LatLng | null>(() => {

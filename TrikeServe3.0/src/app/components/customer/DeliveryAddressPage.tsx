@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   Check,
   ChevronLeft,
@@ -9,7 +9,9 @@ import {
   Search,
   Trash2,
 } from "lucide-react";
-import { useNavigate } from "react-router";
+import { useLocation, useNavigate } from "react-router";
+
+import type { AddressDraft } from "./addressFlowState";
 
 import { useDeliveryAddress } from "../../contexts/useDeliveryAddress";
 import { usePreviousPage } from "../../hooks/usePreviousPage";
@@ -31,6 +33,7 @@ import { usePreviousPage } from "../../hooks/usePreviousPage";
  * behind "add new address" only add a place to the list.
  */
 export default function DeliveryAddressPage() {
+  const location = useLocation();
   const navigate = useNavigate();
   // Normally the food screen, but this list is also linked from the home
   // header's "Your location" line, so back follows the actual way in.
@@ -40,6 +43,14 @@ export default function DeliveryAddressPage() {
   const [query, setQuery] = useState("");
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editLabel, setEditLabel] = useState("");
+  const [editAddress, setEditAddress] = useState("");
+  // Set when the customer moves this address's pin, so the coordinates are
+  // applied on top of whatever the form is holding.
+  // The draft the map screen sends back when the pin was moved.
+  const [movedCoords, setMovedCoords] = useState<{
+    latitude: number;
+    longitude: number;
+  } | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
 
   const current = delivery.address;
@@ -60,13 +71,50 @@ export default function DeliveryAddressPage() {
     navigate("/customer/food");
   };
 
+  const startEdit = (id: string, label: string, address: string) => {
+    setEditingId(id);
+    setEditLabel(label);
+    setEditAddress(address);
+    setMovedCoords(null);
+  };
+
   const saveEdit = async (id: string) => {
     if (!editLabel.trim()) return;
     setBusyId(id);
-    await delivery.updateAddress(id, { label: editLabel.trim() });
+    await delivery.updateAddress(id, {
+      label: editLabel.trim(),
+      address: editAddress.trim() || undefined,
+      ...(movedCoords ?? {}),
+    });
     setBusyId(null);
     setEditingId(null);
+    setMovedCoords(null);
   };
+
+  /**
+   * The map screen sends the customer back here with a draft and the id of the
+   * row they were editing, so the moved pin lands on that address rather than
+   // starting a new "add address" flow they never asked for.
+   */
+  useEffect(() => {
+    const state = location.state as
+      | { draft?: AddressDraft; editingId?: string }
+      | null;
+    if (!state?.draft || !state.editingId) return;
+    const row = delivery.saved.find((s) => s.id === state.editingId);
+    if (!row) return;
+    setEditingId(row.id);
+    setEditLabel(row.label);
+    setEditAddress(state.draft.address || row.address);
+    setMovedCoords(
+      state.draft.latitude != null && state.draft.longitude != null
+        ? { latitude: state.draft.latitude, longitude: state.draft.longitude }
+        : null,
+    );
+    // Clear the router entry so a back-navigation does not reopen the editor.
+    navigate(".", { replace: true, state: null });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [location.state, delivery.saved]);
 
   const remove = async (id: string) => {
     setBusyId(id);
@@ -192,6 +240,39 @@ export default function DeliveryAddressPage() {
                         autoFocus
                         className="min-h-11 w-full rounded-xl border border-line px-3 text-base text-[var(--ink)] outline-none focus:border-[var(--primary)]"
                       />
+                      <label htmlFor={`edit-address-${item.id}`} className="sr-only">
+                        Address
+                      </label>
+                      <input
+                        id={`edit-address-${item.id}`}
+                        value={editAddress}
+                        onChange={(e) => setEditAddress(e.target.value)}
+                        placeholder="Full address"
+                        className="min-h-11 w-full rounded-xl border border-line px-3 text-sm text-[var(--ink)] outline-none focus:border-[var(--primary)]"
+                      />
+                      {movedCoords && (
+                        <p className="text-xs text-[var(--muted-foreground)]">
+                          Pin moved to {movedCoords.latitude.toFixed(5)}, {movedCoords.longitude.toFixed(5)}
+                        </p>
+                      )}
+                      <button
+                        type="button"
+                        onClick={() =>
+                          navigate("/customer/delivery-address/pin", {
+                            state: {
+                              draft: {
+                                address: editAddress || item.address,
+                                latitude: item.latitude,
+                                longitude: item.longitude,
+                              },
+                              editingId: item.id,
+                            },
+                          })
+                        }
+                        className="min-h-11 w-full rounded-xl bg-[var(--muted)] text-sm font-semibold text-[var(--ink)] hover:opacity-90"
+                      >
+                        {movedCoords ? "Move pin again" : "Move pin on map"}
+                      </button>
                       <div className="flex gap-2">
                         <button
                           type="button"
@@ -199,7 +280,7 @@ export default function DeliveryAddressPage() {
                           disabled={busyId === item.id}
                           className="min-h-11 flex-1 rounded-xl bg-[var(--primary)] text-sm font-bold text-[var(--primary-foreground)] disabled:opacity-50"
                         >
-                          Save name
+                          Save
                         </button>
                         <button
                           type="button"
@@ -246,8 +327,7 @@ export default function DeliveryAddressPage() {
                       <button
                         type="button"
                         onClick={() => {
-                          setEditingId(item.id);
-                          setEditLabel(item.label);
+                          startEdit(item.id, item.label, item.address);
                         }}
                         aria-label={`Rename ${item.label}`}
                         className="grid size-11 flex-shrink-0 place-items-center rounded-xl hover:bg-[var(--muted)]"

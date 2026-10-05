@@ -2,6 +2,7 @@ import { X, Camera, ArrowLeft, Check, LogOut, User, MapPin } from "lucide-react"
 
 import { uploadErrorMessage } from "@/lib/uploadErrors";
 import { Link, useNavigate } from "react-router";
+import { usePreviousPage } from "../../hooks/usePreviousPage";
 import { useEffect, useState, useRef } from "react";
 import { useAuth } from "../../contexts/AuthContext";
 import { Button } from "../ui/button";
@@ -12,6 +13,9 @@ import { getDefaultAddress, setDefaultAddress, type DefaultAddress } from "@/lib
 
 export default function Profile() {
   const navigate = useNavigate();
+  // A bare navigate(-1) walks a cold deep link straight out of the app,
+  // because there is no history entry before it to return to.
+  const goBack = usePreviousPage("/customer/account");
   const { user, logout, restoreOriginalRole } = useAuth();
   const [formData, setFormData] = useState({
     name: user?.name || "",
@@ -107,7 +111,7 @@ export default function Profile() {
       {/* Header */}
       <div className="sticky top-0 bg-surface z-10 px-5 py-4">
         <button 
-          onClick={() => navigate(-1)}
+          onClick={goBack}
           className="w-10 h-10 flex items-center justify-center -ml-2"
         >
           <X className="w-6 h-6 text-[var(--ink)]" />

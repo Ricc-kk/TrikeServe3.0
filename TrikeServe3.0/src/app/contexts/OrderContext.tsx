@@ -9,7 +9,11 @@ export interface CustomizationSelection {
 }
 
 export interface OrderItem {
-  id: number;
+  // Matches `CartItem["id"]`. A menu item id coming back from Supabase can be
+  // a string, and the cart already carried both; this was previously declared
+  // `number`, which the cart could not actually satisfy without an `any` cast
+  // on the way into an order.
+  id: number | string;
   name: string;
   description: string;
   price: number;

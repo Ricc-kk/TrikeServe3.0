@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { 
   Store, Package, TrendingUp, PhilippinePeso, ChevronRight, 
   Users, MessageSquare, BarChart3, Settings, ShoppingBag,
@@ -10,17 +10,129 @@ import { Badge } from "../ui/badge";
 import { ImageWithFallback } from "../figma/ImageWithFallback";
 import AppHeader from "../ui/AppHeader";
 import AppShell from "../ui/AppShell";
-import BottomNav from "../ui/BottomNav";
+import BusinessSidebar from "./BusinessSidebar";
 import { AnalyticsBarChart, type BarDatum } from "../ui/AnalyticsCharts";
 import { useAuth } from "../../contexts/AuthContext";
 import { supabase } from "../../../lib/supabase";
 import { supabaseHelpers } from "@/lib/supabase";
+import { useRestaurantProfile } from "@/lib/restaurantProfile";
+import { cuisineLabels } from "@/lib/foodTaxonomy";
+
+/**
+ * Popular dishes across two rows that scroll as one.
+ *
+ * The rows are two separate overflow containers rather than one grid, because a
+ * grid cannot "fill the first row then continue into the second" -- and that
+ * wrapping is the behaviour wanted here: dishes read left to right along the
+ * top row, spill onto the bottom row, and the whole set moves sideways as one.
+ * Whichever row the finger is on drives the other, so the two never drift
+ * apart, and the cards size themselves with a flex basis rather than a fixed
+ * grid column, so a narrower phone simply fits fewer per row.
+ */
+/**
+ * Stand-in photo for a dish that has none.
+ *
+ * The same default the menu editor and the storefront use, so one dish looks the
+ * same everywhere in the app. Deliberately not a placeholder.com URL: that
+ * service is gone, and pointing at it turned "no photo" into "broken image".
+ */
+const DEFAULT_MENU_IMAGE =
+  "https://images.unsplash.com/photo-1546069901-ba9599a7e63c?w=400";
+
+function PopularMenuRows({ items }: { items: any[] }) {
+  const topRef = useRef<HTMLDivElement | null>(null);
+  const bottomRef = useRef<HTMLDivElement | null>(null);
+  const syncing = useRef(false);
+
+  const rowOf = (offset: number) => {
+    const rest = items.slice(offset);
+    // A row on a phone holds fewer, so the split is measured rather than fixed.
+    const perRow = window.innerWidth < 640 ? 2 : window.innerWidth < 1024 ? 3 : 4;
+    return rest.slice(0, perRow);
+  };
+
+  // Read the refs inside the handler, not while rendering. A ref is only
+  // populated during commit, so capturing `.current` in the render pass binds
+  // null and the two rows silently never scroll together -- with no error to
+  // notice, because the handler just quietly does nothing.
+  const link = (driver: "top" | "bottom") => () => {
+    const from = driver === "top" ? topRef.current : bottomRef.current;
+    const to = driver === "top" ? bottomRef.current : topRef.current;
+    if (!from || !to || syncing.current) return;
+    syncing.current = true;
+    to.scrollLeft = from.scrollLeft;
+    // Released on the next frame, after the scroll event this caused settles.
+    requestAnimationFrame(() => { syncing.current = false; });
+  };
+
+  const rowClass =
+    "flex gap-3 overflow-x-auto pb-2 snap-x snap-mandatory [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden";
+
+  const renderCard = (item: any) => (
+    <Card
+      key={item.id}
+      className="w-[46%] shrink-0 snap-start p-3 border border-line bg-surface group transition-colors hover:border-[var(--primary)] sm:w-[30%] lg:w-[23%]"
+    >
+      <div className="relative mb-3 h-24 overflow-hidden rounded-xl sm:h-28 lg:h-32">
+        <ImageWithFallback
+          src={item.image}
+          alt={item.name}
+          className="size-full object-cover transition-transform group-hover:scale-110"
+        />
+        {item.sold > 0 && (
+          <span className="absolute left-2 top-2 rounded-full bg-black/70 px-2 py-0.5 text-[10px] font-bold text-white">
+            {item.sold} sold
+          </span>
+        )}
+      </div>
+      <div className="flex items-center justify-between gap-2">
+        <div className="min-w-0">
+          <h3 className="mb-1 truncate text-sm font-bold text-[var(--ink)] lg:text-base">
+            {item.name}
+          </h3>
+          <p className="text-base font-bold text-[var(--primary)] lg:text-lg">₱{item.price}</p>
+        </div>
+        <ChevronRight className="size-4 shrink-0 text-[var(--primary)] lg:size-5" />
+      </div>
+    </Card>
+  );
+
+  const top = rowOf(0);
+  const bottom = rowOf(top.length);
+
+  return (
+    <div className="space-y-1">
+      {top.length > 0 && (
+        <div
+          ref={topRef}
+          onScroll={link("top")}
+          className={rowClass}
+        >
+          {top.map(renderCard)}
+        </div>
+      )}
+      {bottom.length > 0 && (
+        <div
+          ref={bottomRef}
+          onScroll={link("bottom")}
+          className={rowClass}
+        >
+          {bottom.map(renderCard)}
+        </div>
+      )}
+    </div>
+  );
+}
 
 export default function BusinessDashboard() {
   const navigate = useNavigate();
   const { user } = useAuth();
+  const profile = useRestaurantProfile();
+  const profileCuisineLabels = cuisineLabels(profile.restaurant?.cuisine);
+  const profileLocation = profile.restaurant;
   const [activeNav, setActiveNav] = useState("overview");
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+  const [restaurantLogo, setRestaurantLogo] = useState<string | null>(null);
   const [showNotifications, setShowNotifications] = useState(false);
   const [showMessages, setShowMessages] = useState(false);
   const [stats, setStats] = useState({
@@ -135,6 +247,15 @@ export default function BusinessDashboard() {
         return;
       }
 
+      // The header leads with the restaurant's own profile picture, so it has
+      // to be fetched here rather than inherited from the customer header.
+      const { data: restaurantRow } = await supabase
+        .from('restaurants')
+        .select('logo_image')
+        .eq('id', businessRestaurantId)
+        .maybeSingle();
+      if (restaurantRow?.logo_image) setRestaurantLogo(restaurantRow.logo_image);
+
       // Load orders
       const { data: orders } = await supabase
         .from('orders')
@@ -185,13 +306,15 @@ export default function BusinessDashboard() {
         setDailyOrders(calculateDailyOrders(orders));
       }
 
-      // Load menu items
+      // Load every menu item: the "Total Items" stat needs the real count, and
+      // ranking by what actually sells needs the whole menu to rank. The old
+      // query capped at six, so the stat was reporting 6 for any shop with
+      // more dishes than that.
       const { data: menuItems } = await supabase
         .from('menu_items')
         .select('*')
         .eq('restaurant_id', businessRestaurantId)
-        .order('created_at', { ascending: false })
-        .limit(6);
+        .order('created_at', { ascending: false });
 
       if (menuItems) {
         setStats(prev => ({
@@ -199,12 +322,44 @@ export default function BusinessDashboard() {
           totalItems: menuItems.length
         }));
 
-        // Show top 6 items (most ordered or most recent)
-        setPopularMenu(menuItems.slice(0, 6).map((item: any) => ({
+        // Popular means most ordered, not most recently added. Orders keep
+        // their line items as a JSON string, so the counts come from walking
+        // them rather than from a column on the item.
+        const sold = new Map<string, number>();
+        for (const order of orders ?? []) {
+          let lines: any[] = [];
+          try {
+            const raw = typeof order.items === 'string' ? JSON.parse(order.items) : order.items;
+            if (Array.isArray(raw)) lines = raw;
+          } catch {
+            // A malformed line-item blob costs us this order's counts only.
+          }
+          for (const line of lines) {
+            const id = String(line?.id ?? '');
+            if (!id) continue;
+            sold.set(id, (sold.get(id) ?? 0) + Number(line?.quantity ?? 1));
+          }
+        }
+
+        const ranked = [...menuItems]
+          .sort((a: any, b: any) => {
+            const diff = (sold.get(String(b.id)) ?? 0) - (sold.get(String(a.id)) ?? 0);
+            // Ties fall back to newest first so the order is still stable.
+            return diff !== 0 ? diff : 0;
+          })
+          .slice(0, 12);
+
+        setPopularMenu(ranked.map((item: any) => ({
           id: item.id,
           name: item.name,
           price: item.price,
-          image: item.image || 'https://via.placeholder.com/200x150?text=Menu+Item'
+          // image_url, not image. The column is named image_url everywhere else
+          // in this app, so reading `image` here always found nothing and every
+          // dish fell through to the fallback -- which was via.placeholder.com, a
+          // service that has since been shut down, so the cards rendered a broken
+          // image glyph even for dishes that do have a photo uploaded.
+          image: item.image_url || DEFAULT_MENU_IMAGE,
+          sold: sold.get(String(item.id)) ?? 0
         })));
       }
 
@@ -304,15 +459,22 @@ export default function BusinessDashboard() {
     : 1;
 
   return (
-    <AppShell
+    <>
+      <BusinessSidebar
+        isMobileMenuOpen={isMobileMenuOpen}
+        setIsMobileMenuOpen={setIsMobileMenuOpen}
+      />
+      <AppShell
       header={
         <AppHeader
           notificationCount={notifications.filter((n: any) => !n.read).length}
           onNotificationsClick={() => setShowNotifications(true)}
           hint="Heto ang balita sa tindahan mo ngayon."
+          avatarSrc={restaurantLogo || undefined}
+          avatarAlt={restaurantLogo ? "Your restaurant profile" : undefined}
+          onMenuClick={() => setIsMobileMenuOpen(true)}
         />
       }
-      bottomNav={<BottomNav variant="business" active="home" />}
     >
       <div className="space-y-6">
           {/* Stats Cards */}
@@ -437,6 +599,67 @@ export default function BusinessDashboard() {
             </Card>
           </div>
 
+          {/* What customers actually filter on, and where they think the shop
+              is. Both were editable in two other screens and visible in none,
+              so a shop that never found them looked broken. */}
+          <Card className="p-4 lg:p-6 border border-line bg-surface mb-6 lg:mb-8">
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <h2 className="text-xl lg:text-2xl font-bold text-[var(--ink)]">Your shop listing</h2>
+              <Link
+                to="/business/home"
+                className="text-[var(--primary)] font-semibold text-sm flex items-center gap-1 hover:gap-2 transition-all"
+              >
+                Edit
+                <ChevronRight className="w-4 h-4" aria-hidden="true" />
+              </Link>
+            </div>
+
+            <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div className="min-w-0">
+                <p className="text-[11px] font-bold uppercase tracking-wider text-[var(--muted-foreground)]">
+                  What we serve
+                </p>
+                {profileCuisineLabels.length > 0 ? (
+                  <ul className="mt-2 flex flex-wrap gap-1.5">
+                    {profileCuisineLabels.map((label) => (
+                      <li
+                        key={label}
+                        className="rounded-lg bg-[var(--primary-soft)] px-2 py-1 text-xs font-semibold text-[var(--primary)]"
+                      >
+                        {label}
+                      </li>
+                    ))}
+                  </ul>
+                ) : (
+                  <p className="mt-2 text-sm text-[var(--muted-foreground)]">
+                    Not set. Customers filtering by food type will not find this shop.
+                  </p>
+                )}
+              </div>
+
+              <div className="min-w-0">
+                <p className="text-[11px] font-bold uppercase tracking-wider text-[var(--muted-foreground)]">
+                  Pickup location
+                </p>
+                <p className="mt-2 text-sm text-[var(--ink)] break-words">
+                  {profileLocation?.address || "No address set"}
+                </p>
+                <p className="mt-0.5 text-xs text-[var(--muted-foreground)] break-words">
+                  {profileLocation?.latitude != null && profileLocation?.longitude != null
+                    ? `Pinned at ${profileLocation.latitude.toFixed(5)}, ${profileLocation.longitude.toFixed(5)}`
+                    : 'Not pinned — this shop sorts last in "near you" lists'}
+                </p>
+              </div>
+            </div>
+
+            {profile.hasPending && (
+              <p className="mt-4 rounded-xl border border-[var(--amber-soft)] bg-[var(--amber-soft)] px-3 py-2 text-xs text-[var(--amber-dark)] break-words">
+                You have a shop details change waiting for Super Admin approval. The values above are
+                what customers see until it is approved.
+              </p>
+            )}
+          </Card>
+
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 lg:gap-8 mb-6 lg:mb-8">
             {/* Popular Menu */}
             <div className="lg:col-span-2">
@@ -461,28 +684,7 @@ export default function BusinessDashboard() {
                   </Link>
                 </Card>
               ) : (
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-3 lg:gap-4">
-                  {popularMenu.map((item) => (
-                    <Card key={item.id} className="p-3 lg:p-4 border border-line bg-surface group hover:border-[var(--primary)] transition-all">
-                      <div className="relative h-28 lg:h-32 rounded-xl overflow-hidden mb-3">
-                        <ImageWithFallback
-                          src={item.image}
-                          alt={item.name}
-                          className="w-full h-full object-cover group-hover:scale-110 transition-transform"
-                        />
-                      </div>
-                      <div className="flex items-center justify-between">
-                        <div>
-                          <h3 className="font-bold text-[var(--ink)] mb-1 text-sm lg:text-base">{item.name}</h3>
-                          <p className="text-base lg:text-lg font-bold text-[var(--primary)]">₱{item.price}</p>
-                        </div>
-                        <button className="w-8 h-8 lg:w-10 lg:h-10 bg-[var(--primary)] rounded-full flex items-center justify-center group-hover:scale-110 transition-transform">
-                          <ChevronRight className="w-4 h-4 lg:w-5 lg:h-5 text-white" />
-                        </button>
-                      </div>
-                    </Card>
-                  ))}
-                </div>
+                <PopularMenuRows items={popularMenu} />
               )}
             </div>
 
@@ -682,5 +884,6 @@ export default function BusinessDashboard() {
         </div>
       )}
     </AppShell>
+    </>
   );
 }

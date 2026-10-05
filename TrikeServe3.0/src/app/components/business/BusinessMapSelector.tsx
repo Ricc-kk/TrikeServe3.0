@@ -15,6 +15,15 @@ interface BusinessMapSelectorProps {
   onClose: () => void;
   onSelectLocation: (location: { name: string; full: string; lat: number; lng: number }) => void;
   currentAddress: string;
+  /**
+   * Where the shop is pinned right now.
+   *
+   * Without these the map always opened on a hardcoded city centre, so a shop
+   * that had already placed its pin was shown somewhere else entirely and had
+   * to hunt for its own address again to confirm a change.
+   */
+  initialLat?: number | null;
+  initialLng?: number | null;
 }
 
 // Red app-branded pin for the pickup location the business placed on the map
@@ -34,12 +43,29 @@ const createSelectedPinIcon = () => {
   } as any;
 };
 
-export default function BusinessMapSelector({ onClose, onSelectLocation, currentAddress }: BusinessMapSelectorProps) {
+export default function BusinessMapSelector({ onClose, onSelectLocation, currentAddress, initialLat, initialLng }: BusinessMapSelectorProps) {
   const { isLoaded, loadError, blocked, apiKeyPresent } = useMapLoader();
 
-  // Gen T Deleon, Valenzuela City coordinates (also used as the default map center)
-  const [mapCenter, setMapCenter] = useState<{ lat: number; lng: number }>({ lat: 14.7244, lng: 120.9668 });
-  const [pickedPin, setPickedPin] = useState<{ lat: number; lng: number; name: string; full: string } | null>(null);
+  // Gen T Deleon, Valenzuela City coordinates, used only when the shop has no
+  // pin yet. Once it has one, the map opens there.
+  const hasExistingPin = typeof initialLat === "number" && typeof initialLng === "number";
+  const openingCenter = hasExistingPin
+    ? { lat: initialLat as number, lng: initialLng as number }
+    : { lat: 14.7244, lng: 120.9668 };
+  const [mapCenter, setMapCenter] = useState<{ lat: number; lng: number }>(openingCenter);
+  // Pre-seeding the pin means "Choose This Location" is live on open for a shop
+  // that already has one, and a business confirming an unrelated change does not
+  // silently lose its address.
+  const [pickedPin, setPickedPin] = useState<{ lat: number; lng: number; name: string; full: string } | null>(
+    hasExistingPin
+      ? {
+          lat: initialLat as number,
+          lng: initialLng as number,
+          name: currentAddress || "Current pickup point",
+          full: currentAddress || "Current pickup point",
+        }
+      : null,
+  );
   const [showPinInfo, setShowPinInfo] = useState(false);
   const [isGeocoding, setIsGeocoding] = useState(false);
   const [showAddressList, setShowAddressList] = useState(true);

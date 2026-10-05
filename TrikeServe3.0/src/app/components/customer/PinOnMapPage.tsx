@@ -57,7 +57,9 @@ export default function PinOnMapPage() {
   // back from, so it falls to the search step instead of ejecting the app —
   // which is what a bare `navigate(-1)` used to do here.
   const goBack = usePreviousPage("/customer/delivery-address/new");
-  const routeState = useLocation().state as { draft?: AddressDraft } | null;
+  const routeState = useLocation().state as
+    | { draft?: AddressDraft; editingId?: string }
+    | null;
   const delivery = useDeliveryAddress();
 
   const incoming = routeState?.draft ?? readAddressDraft();
@@ -258,6 +260,18 @@ export default function PinOnMapPage() {
     if (!canSelect) return;
     const address =
       resolved || `${draft.latitude!.toFixed(5)}, ${draft.longitude!.toFixed(5)}`;
+
+    // Moving the pin of a saved address. The map is not the destination here --
+    // the address list is -- so this goes back to the editor rather than on to
+    // "save a new place", which would create a duplicate instead of editing the
+    // one the customer opened.
+    if (routeState?.editingId) {
+      navigate("/customer/delivery-address", {
+        state: { draft: { ...draft, address }, editingId: routeState.editingId },
+      });
+      return;
+    }
+
     // Selecting is what makes this the live delivery address; the next screen
     // only adds it to the saved list.
     delivery.selectAddress({
