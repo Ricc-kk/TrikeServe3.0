@@ -15,6 +15,22 @@ interface BusinessMapSelectorProps {
   onClose: () => void;
   onSelectLocation: (location: { name: string; full: string; lat: number; lng: number }) => void;
   currentAddress: string;
+  /**
+   * Where the shop is pinned right now.
+   *
+   * Without these the map always opened on a hardcoded city centre, so a shop
+   * that had already placed its pin was shown somewhere else entirely and had
+   * to hunt for its own address again to confirm a change.
+   */
+  initialLat?: number | null;
+  initialLng?: number | null;
+  /**
+   * Opt-in. With no pin yet, drop the first one on the device's current
+   * position. Sign-up turns this on so a new business does not have to hunt for
+   * its own street; screens editing an existing pin leave it off so the map keeps
+   * opening on that pin.
+   */
+  centerOnCurrentLocation?: boolean;
 }
 
 // Red app-branded pin for the pickup location the business placed on the map
@@ -34,14 +50,33 @@ const createSelectedPinIcon = () => {
   } as any;
 };
 
-export default function BusinessMapSelector({ onClose, onSelectLocation, currentAddress }: BusinessMapSelectorProps) {
+export default function BusinessMapSelector({ onClose, onSelectLocation, currentAddress, initialLat, initialLng, centerOnCurrentLocation = false }: BusinessMapSelectorProps) {
   const { isLoaded, loadError, blocked, apiKeyPresent } = useMapLoader();
 
-  // Gen T Deleon, Valenzuela City coordinates (also used as the default map center)
-  const [mapCenter, setMapCenter] = useState<{ lat: number; lng: number }>({ lat: 14.7244, lng: 120.9668 });
-  const [pickedPin, setPickedPin] = useState<{ lat: number; lng: number; name: string; full: string } | null>(null);
+  // Gen T Deleon, Valenzuela City coordinates, used only when the shop has no
+  // pin yet. Once it has one, the map opens there.
+  const hasExistingPin = typeof initialLat === "number" && typeof initialLng === "number";
+  const openingCenter = hasExistingPin
+    ? { lat: initialLat as number, lng: initialLng as number }
+    : { lat: 14.7244, lng: 120.9668 };
+  const [mapCenter, setMapCenter] = useState<{ lat: number; lng: number }>(openingCenter);
+  // Pre-seeding the pin means "Choose This Location" is live on open for a shop
+  // that already has one, and a business confirming an unrelated change does not
+  // silently lose its address.
+  const [pickedPin, setPickedPin] = useState<{ lat: number; lng: number; name: string; full: string } | null>(
+    hasExistingPin
+      ? {
+          lat: initialLat as number,
+          lng: initialLng as number,
+          name: currentAddress || "Current pickup point",
+          full: currentAddress || "Current pickup point",
+        }
+      : null,
+  );
   const [showPinInfo, setShowPinInfo] = useState(false);
   const [isGeocoding, setIsGeocoding] = useState(false);
+  const [locating, setLocating] = useState(false);
+  const autoLocatedRef = useRef(false);
   const [showAddressList, setShowAddressList] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
   const [searchResults, setSearchResults] = useState<any[]>([]);
@@ -103,6 +138,38 @@ export default function BusinessMapSelector({ onClose, onSelectLocation, current
     },
     [reverseGeocode]
   );
+
+  // Sign-up has no pin yet, so the useful first pin is where the owner is
+  // standing. Denial or timeout is not an error: the map stays on its default
+  // centre and the existing search / tap-to-place routes still work.
+  useEffect(() => {
+    if (!centerOnCurrentLocation || hasExistingPin || autoLocatedRef.current) return;
+    if (typeof navigator === "undefined" || !navigator.geolocation) return;
+    autoLocatedRef.current = true;
+    setLocating(true);
+    navigator.geolocation.getCurrentPosition(
+      async (pos) => {
+        const lat = pos.coords.latitude;
+        const lng = pos.coords.longitude;
+        setMapCenter({ lat, lng });
+        setPickedPin({ lat, lng, name: 'Loading address...', full: 'Loading address...' });
+        setShowPinInfo(true);
+        setShowAddressList(true);
+        const address = await reverseGeocode(lat, lng);
+        setPickedPin(
+          address
+            ? { lat, lng, name: address.name, full: address.full }
+            : { lat, lng, name: 'Your current location', full: 'Your current location' },
+        );
+        setLocating(false);
+      },
+      () => {
+        // Denied or unavailable — leave the map where it is.
+        setLocating(false);
+      },
+      { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 },
+    );
+  }, [centerOnCurrentLocation, hasExistingPin, reverseGeocode]);
 
   // Debounced Places autocomplete search as the business types
   useEffect(() => {
@@ -370,8 +437,18 @@ export default function BusinessMapSelector({ onClose, onSelectLocation, current
       <div className="absolute inset-0 z-[4001]">
         {renderMap()}
 
+        {/* Locating chip, while the first pin is being placed automatically */}
+        {locating && (
+          <div className="absolute top-20 left-0 right-0 flex justify-center z-[4003] pointer-events-none">
+            <div className="bg-white/95 backdrop-blur-sm border border-[var(--border)] shadow-lg rounded-full px-4 py-2 text-xs font-semibold text-[var(--ink)] flex items-center gap-2">
+              <Loader2 className="w-3.5 h-3.5 text-[var(--primary)] animate-spin" aria-hidden="true" />
+              Finding your current location...
+            </div>
+          </div>
+        )}
+
         {/* Hint chip for tap-to-place */}
-        {!pickedPin && (
+        {!pickedPin && !locating && (
           <div className="absolute top-20 left-0 right-0 flex justify-center z-[4003] pointer-events-none">
             <div className="bg-white/95 backdrop-blur-sm border border-[var(--border)] shadow-lg rounded-full px-4 py-2 text-xs font-semibold text-[var(--ink)]">
               📍 Tap anywhere on the map to set your business pickup location

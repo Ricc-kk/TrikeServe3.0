@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useNavigate, Link } from "react-router";
-import { ArrowLeft, User, Mail, Phone, Lock, Check, Store, UserCircle } from "lucide-react";
+import { ArrowLeft, User, Mail, Phone, Lock, Check, MapPin, Store, UserCircle } from "lucide-react";
 
 import { Tricycle } from "../ui/Tricycle";
 import { Button } from "../ui/button";
@@ -8,6 +8,8 @@ import { Card } from "../ui/card";
 import { Input } from "../ui/input";
 import { Badge } from "../ui/badge";
 import { useAuth, UserRole } from "../../contexts/AuthContext";
+import { CUISINES, type CuisineId } from "../../../lib/foodTaxonomy";
+import BusinessMapSelector from "../business/BusinessMapSelector";
 
 interface SignUpFormData {
   email: string;
@@ -23,6 +25,12 @@ interface SignUpFormData {
   // Business specific
   businessName?: string;
   businessAddress?: string;
+  /** Where the shop is pinned, carried through signup so the shop's own map
+   *  opens on it instead of the hardcoded city centre. */
+  businessLat?: number;
+  businessLng?: number;
+  /** What the shop serves. Seeds `restaurants.cuisine` at first shop load. */
+  businessCuisine?: CuisineId[];
   // Customer specific
   address?: string;
 }
@@ -42,6 +50,7 @@ export default function SignUp() {
   });
   const [error, setError] = useState("");
   const [isLoading, setIsLoading] = useState(false);
+  const [showMapPicker, setShowMapPicker] = useState(false);
 
   const handleInputChange = (field: keyof SignUpFormData, value: string) => {
     setFormData(prev => ({ ...prev, [field]: value }));
@@ -112,6 +121,9 @@ export default function SignUp() {
       licenseNumber: formData.licenseNumber,
       businessName: formData.businessName,
       businessAddress: formData.businessAddress,
+      businessLat: formData.businessLat,
+      businessLng: formData.businessLng,
+      businessCuisine: formData.businessCuisine ?? [],
       address: formData.address,
     });
 
@@ -182,7 +194,7 @@ export default function SignUp() {
       </div>
 
       {/* Right Side - Sign Up Form */}
-      <div className="flex-1 lg:max-w-xl flex items-center justify-center p-6 bg-surface overflow-y-auto">
+      <div className="flex-1 lg:max-w-xl flex items-start justify-center p-6 pt-10 bg-surface overflow-y-auto">
         <div className="w-full max-w-md">
           {/* Header */}
           <div className="mb-6">
@@ -387,15 +399,88 @@ export default function SignUp() {
                     <label className="block text-sm font-semibold text-[var(--ink)] mb-2">
                       Business Address
                     </label>
-                    <Input
-                      type="text"
-                      placeholder="123 Main St, Gen T Deleon"
-                      value={formData.businessAddress || ""}
-                      onChange={(e) => handleInputChange("businessAddress", e.target.value)}
-                      className="border border-line focus:border-[var(--primary)]"
-                      required
+                    {/* Addresses here are coordinates, not prose: the shop has to be
+                        pinned so drivers can be routed to it, so this opens the map
+                        rather than accepting a typed line. */}
+                    <button
+                      type="button"
+                      onClick={() => setShowMapPicker(true)}
                       disabled={isLoading}
-                    />
+                      className="w-full min-h-12 flex items-center gap-3 p-3 text-left bg-surface border border-line rounded-xl transition-colors hover:border-[var(--primary)] disabled:opacity-50"
+                    >
+                      <MapPin className="w-5 h-5 text-[var(--primary)] flex-shrink-0" aria-hidden="true" />
+                      <span className="flex-1 min-w-0">
+                        {formData.businessAddress ? (
+                          <>
+                            <span className="block text-sm font-semibold text-[var(--ink)] truncate">
+                              {formData.businessAddress}
+                            </span>
+                            <span className="block text-xs text-[var(--muted-foreground)]">
+                              Tap to move the pin
+                            </span>
+                          </>
+                        ) : (
+                          <>
+                            <span className="block text-sm font-semibold text-[var(--ink)]">
+                              Pin your business location
+                            </span>
+                            <span className="block text-xs text-[var(--muted-foreground)]">
+                              Search for it, or use where you are now
+                            </span>
+                          </>
+                        )}
+                      </span>
+                      <span className="text-xs font-semibold text-[var(--primary)] flex-shrink-0">
+                        {formData.businessAddress ? "Change" : "Set"}
+                      </span>
+                    </button>
+                  </div>
+
+                  {/* Declared here, once, rather than guessed later. Customers
+                      filter on this, and an undeclared shop is invisible to
+                      every filter until someone opens the settings modal. */}
+                  <div>
+                    <label className="block text-sm font-semibold text-[var(--ink)] mb-2">
+                      What do you serve?
+                    </label>
+                    <p className="text-xs text-[var(--muted-foreground)] mb-2">
+                      Pick everything that describes your shop. Customers filter by this.
+                    </p>
+                    <div
+                      role="group"
+                      aria-label="What do you serve?"
+                      className="flex flex-wrap gap-2"
+                    >
+                      {CUISINES.map(({ id, label, Icon }) => {
+                        const selected = (formData.businessCuisine ?? []).includes(id);
+                        return (
+                          <button
+                            key={id}
+                            type="button"
+                            disabled={isLoading}
+                            aria-pressed={selected}
+                            onClick={() => {
+                              const current = formData.businessCuisine ?? [];
+                              setFormData({
+                                ...formData,
+                                businessCuisine: selected
+                                  ? current.filter((c) => c !== id)
+                                  : [...current, id],
+                              });
+                            }}
+                            className={[
+                              "min-h-11 inline-flex items-center gap-1.5 px-3 py-2 rounded-xl border text-xs font-semibold transition-colors disabled:opacity-50",
+                              selected
+                                ? "border-[var(--primary)] bg-[var(--primary-soft)] text-[var(--primary)]"
+                                : "border-line text-[var(--muted-foreground)] hover:border-[var(--primary)]",
+                            ].join(" ")}
+                          >
+                            <Icon className="w-4 h-4 flex-shrink-0" aria-hidden="true" />
+                            {label}
+                          </button>
+                        );
+                      })}
+                    </div>
                   </div>
                 </>
               )}
@@ -607,6 +692,26 @@ export default function SignUp() {
           )}
         </div>
       </div>
+
+      {showMapPicker && (
+        <BusinessMapSelector
+          currentAddress={formData.businessAddress || ""}
+          initialLat={formData.businessLat ?? null}
+          initialLng={formData.businessLng ?? null}
+          centerOnCurrentLocation
+          onClose={() => setShowMapPicker(false)}
+          onSelectLocation={(location) => {
+            setFormData((prev) => ({
+              ...prev,
+              businessAddress: location.full || location.name,
+              businessLat: location.lat,
+              businessLng: location.lng,
+            }));
+            setShowMapPicker(false);
+            setError("");
+          }}
+        />
+      )}
     </div>
   );
 }

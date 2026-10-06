@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { Heart, Home as HomeIcon, ShoppingCart, MessageCircle, ClipboardList, User, ArrowLeft, Star } from "lucide-react";
 import { Link, useNavigate } from "react-router";
+import { usePreviousPage } from "../../hooks/usePreviousPage";
 import { ImageWithFallback } from "../figma/ImageWithFallback";
 import BottomNav from "../ui/BottomNav";
 import { useFavorites } from "../../contexts/FavoritesContext";
@@ -8,6 +9,9 @@ import { useCart } from "../../contexts/CartContext"
 
 export default function Favorites() {
   const navigate = useNavigate();
+  // A bare navigate(-1) walks a cold deep link straight out of the app,
+  // because there is no history entry before it to return to.
+  const goBack = usePreviousPage("/customer");
   const { favorites, toggleFavorite, favoriteItems, toggleFavoriteItem, getTotalFavorites, getTotalFavoriteItems } = useFavorites();
   const { getTotalItems } = useCart();
   const [activeTab, setActiveTab] = useState<"restaurants" | "items">("restaurants");
@@ -17,7 +21,7 @@ export default function Favorites() {
       {/* Header */}
       <div className="px-5 py-4 border-b border-[var(--border)] flex items-center gap-3 sticky top-0 bg-surface z-50">
         <button
-          onClick={() => navigate(-1)}
+          onClick={goBack}
           className="active:scale-90 transition-transform"
         >
           <ArrowLeft className="w-6 h-6 text-[var(--ink)]" />

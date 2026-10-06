@@ -257,6 +257,45 @@ export default function Earnings() {
     ];
   }, [completedTrips]);
 
+  /**
+   * Recent Trips read as a day-by-day log: newest day first, each day's takings
+   * summed above its trips. Grouping happens after the tab filter and the
+   * 20-trip cap so the list still shows the most recent trips, just labelled.
+   */
+  const tripGroups = useMemo(() => {
+    const filtered = completedTrips
+      .filter((trip) => {
+        if (filterTab === 'rides') return trip.type !== 'Delivery';
+        if (filterTab === 'deliveries') return trip.type === 'Delivery';
+        return true;
+      })
+      .slice(0, 20);
+
+    const startOfDay = (date: Date) =>
+      new Date(date.getFullYear(), date.getMonth(), date.getDate()).getTime();
+    const dayTitle = (date: Date) => {
+      const today = startOfDay(new Date());
+      const day = startOfDay(date);
+      if (day === today) return 'Today';
+      if (day === today - 24 * 60 * 60 * 1000) return 'Yesterday';
+      return date.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
+    };
+
+    const groups: { key: string; title: string; total: number; items: CompletedTrip[] }[] = [];
+    filtered.forEach((trip) => {
+      const date = new Date(trip.date);
+      const key = `${date.getFullYear()}-${date.getMonth()}-${date.getDate()}`;
+      let group = groups.find((entry) => entry.key === key);
+      if (!group) {
+        group = { key, title: dayTitle(date), total: 0, items: [] };
+        groups.push(group);
+      }
+      group.total += trip.amount || 0;
+      group.items.push(trip);
+    });
+    return groups;
+  }, [completedTrips, filterTab]);
+
   return (
     <div className="min-h-screen bg-[var(--muted)] pb-20">
       {/* Header */}
@@ -430,14 +469,15 @@ export default function Earnings() {
             </Card>
           ) : (
             <div className="space-y-3">
-              {completedTrips
-                .filter(trip => {
-                  if (filterTab === 'rides') return trip.type !== 'Delivery';
-                  if (filterTab === 'deliveries') return trip.type === 'Delivery';
-                  return true;
-                })
-                .slice(0, 20)
-                .map((trip) => (
+              {tripGroups.map((group) => (
+                <div key={group.key} className="space-y-3">
+                  <div className="flex items-center justify-between gap-2">
+                    <h4 className="text-sm font-extrabold text-[var(--ink)]">{group.title}</h4>
+                    <span className="text-xs font-bold text-[var(--primary)]">
+                      ₱{group.total.toFixed(2)} · {group.items.length} {group.items.length === 1 ? 'trip' : 'trips'}
+                    </span>
+                  </div>
+                  {group.items.map((trip) => (
                 <Card key={trip.id} className={`bg-surface border-0 shadow-sm overflow-hidden ${
                   trip.type === 'Delivery' ? 'border-l-4 border-l-[var(--info)]' :
                   trip.type === 'Ride Share' ? 'border-l-4 border-l-[var(--amber)]' :
@@ -504,6 +544,8 @@ export default function Earnings() {
                     )}
                   </div>
                 </Card>
+                  ))}
+                </div>
               ))}
             </div>
           )}

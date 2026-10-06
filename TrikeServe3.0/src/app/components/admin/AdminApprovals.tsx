@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import {
   ClipboardCheck, Menu, CheckCircle, XCircle, Clock, MapPin,
-  AlertTriangle, UserPlus, UserMinus, Store, Trash2
+  AlertTriangle, UserPlus, UserMinus, Store, Trash2, UtensilsCrossed, ArrowRight
 } from "lucide-react";
 import { Card } from "../ui/card";
 import { Badge } from "../ui/badge";
@@ -14,9 +14,12 @@ import {
   rejectApprovalRequest,
   logAudit,
   APPROVAL_REQUEST_LABELS,
+  PROFILE_REVIEWED_FIELDS,
   type ApprovalRequest,
   type ApprovalRequestType,
+  type BusinessProfileUpdate,
 } from "../../../lib/supabase";
+import { cuisineLabels } from "../../../lib/foodTaxonomy";
 import ConfirmationModal from "../ui/confirmation-modal";
 import Toast from "../ui/Toast";
 
@@ -32,6 +35,8 @@ function typeIcon(type: ApprovalRequestType) {
       return <UserPlus className="w-5 h-5 text-[var(--success)]" />;
     case "driver_unassign":
       return <UserMinus className="w-5 h-5 text-[var(--amber)]" />;
+    case "business_profile_update":
+      return <UtensilsCrossed className="w-5 h-5 text-[var(--amber)]" />;
     default:
       return <ClipboardCheck className="w-5 h-5 text-[var(--muted-foreground)]" />;
   }
@@ -77,9 +82,105 @@ function describePayload(request: ApprovalRequest): string[] {
       return [`Driver: ${p.driver_name || p.driver_id || "—"}`, `Terminal: ${p.terminal_name || p.terminal_id || "—"}`];
     case "driver_unassign":
       return [`Driver: ${p.driver_name || p.driver_id || "—"}`, `Terminal: ${p.terminal_name || p.terminal_id || "—"}`];
+    case "business_profile_update": {
+      // The per-field diff carries the detail; this is just the one-line
+      // summary that fits above it in both the card and the history table.
+      const after = p.after || {};
+      const before = p.before || {};
+      const name = after.name || before.name || "this shop";
+      const moved =
+        before.latitude != null &&
+        after.latitude != null &&
+        (before.latitude !== after.latitude || before.longitude !== after.longitude);
+      return [
+        `Shop: ${name}`,
+        moved ? "Pickup point is being moved" : "Shop details only",
+      ];
+    }
     default:
       return [];
   }
+}
+
+/** One field of a shop-profile change, rendered as before → after. */
+type ProfileDiffRow = { key: string; label: string; from: string; to: string };
+
+/** A missing value is "Not set", never a blank cell that reads as "unchanged". */
+function showValue(key: string, value: unknown): string {
+  if (value === null || value === undefined || value === "") {
+    return "Not set";
+  }
+  if (key === "cuisine") {
+    const labels = cuisineLabels(value);
+    return labels.length ? labels.join(", ") : "Not set";
+  }
+  if (key === "latitude" || key === "longitude") {
+    return Number(value).toFixed(5);
+  }
+  return String(value);
+}
+
+/**
+ * What this change would actually do, field by field.
+ *
+ * The payload is a whole `restaurants` row, so a reviewer reading it raw sees
+ * every column and has to work out which ones moved. Only the fields that
+ * differ are listed: an approval screen whose diff is mostly noise is one
+ * people click through without reading.
+ */
+function profileDiff(request: ApprovalRequest): ProfileDiffRow[] {
+  const payload = request.payload || {};
+  const before = (payload.before || {}) as BusinessProfileUpdate;
+  const after = (payload.after || {}) as BusinessProfileUpdate;
+  if (!payload.after) return [];
+
+  return PROFILE_REVIEWED_FIELDS.flatMap(({ key, label }) => {
+    const from = before[key as keyof BusinessProfileUpdate];
+    const to = after[key as keyof BusinessProfileUpdate];
+    const same =
+      Array.isArray(from) && Array.isArray(to)
+        ? from.length === to.length && from.every((v) => to.includes(v as never))
+        : from === to;
+    if (same) return [];
+    return [{ key, label, from: showValue(key, from), to: showValue(key, to) }];
+  });
+}
+
+/** The shop-profile change, shown as a per-field before → after diff. */
+function ProfileDiff({ request }: { request: ApprovalRequest }) {
+  const rows = profileDiff(request);
+  if (rows.length === 0) {
+    return (
+      <p className="mt-2 text-sm text-[var(--muted-foreground)]">
+        This request carries no readable change. Review the raw payload before approving.
+      </p>
+    );
+  }
+
+  return (
+    <dl className="mt-3 space-y-2">
+      {rows.map((row) => (
+        <div
+          key={row.key}
+          className="rounded-xl border border-line bg-[var(--muted)] px-3 py-2"
+        >
+          <dt className="text-[11px] font-bold uppercase tracking-wider text-[var(--muted-foreground)]">
+            {row.label}
+          </dt>
+          <dd className="mt-1 flex flex-wrap items-center gap-2 text-sm">
+            <span className="min-w-0 break-words text-[var(--muted-foreground)] line-through">
+              {row.from}
+            </span>
+            <ArrowRight
+              className="size-4 flex-shrink-0 text-[var(--muted-foreground)]"
+              aria-hidden="true"
+            />
+            <span className="min-w-0 break-words font-semibold text-[var(--ink)]">{row.to}</span>
+          </dd>
+        </div>
+      ))}
+    </dl>
+  );
 }
 
 export default function AdminApprovals() {
@@ -193,7 +294,7 @@ export default function AdminApprovals() {
   return (
     <AdminShell
       title="Approvals"
-      subtitle="Review Rider Admin terminal & driver requests"
+      subtitle="Review shop profile changes, Rider Admin terminal & driver requests"
     >
         <div className="space-y-6">
           {/* Stats */}
@@ -266,6 +367,9 @@ export default function AdminApprovals() {
                             <p key={i} className="text-sm text-[var(--muted-foreground)] break-words">{line}</p>
                           ))}
                         </div>
+                        {request.request_type === "business_profile_update" && (
+                          <ProfileDiff request={request} />
+                        )}
                       </div>
                     </div>
                     <div className="grid grid-cols-2 gap-2 w-full sm:w-auto sm:flex sm:items-center sm:flex-shrink-0">
@@ -294,6 +398,7 @@ export default function AdminApprovals() {
 
           {/* History */}
           <h2 className="text-xl lg:text-2xl font-bold text-[var(--ink)] mb-4">Reviewed</h2>
+
           {history.length === 0 ? (
             <Card className="p-8 border-2 border-dashed border-[var(--border)] text-center">
               <Clock className="w-10 h-10 text-[var(--border)] mx-auto mb-3" />

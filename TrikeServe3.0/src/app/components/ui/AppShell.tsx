@@ -9,6 +9,13 @@ type AppShellProps = {
   bottomNav?: ReactNode;
   children: ReactNode;
   className?: string;
+  /**
+   * Set by screens that render a fixed role sidebar beside the shell (the
+   * business role wraps them in `lg:ml-64`). The default column is a phone
+   * first `max-w-3xl` panel, which left the right half of a 1440px+ screen
+   * empty, so those screens go full width from `lg` up.
+   */
+  wide?: boolean;
 };
 
 /**
@@ -24,6 +31,7 @@ export default function AppShell({
   bottomNav,
   children,
   className,
+  wide = false,
 }: AppShellProps) {
   return (
     <div className="relative min-h-screen bg-canvas text-foreground">
@@ -35,12 +43,15 @@ export default function AppShell({
         className={cn(
           "relative mx-auto flex min-h-screen w-full max-w-3xl flex-col bg-surface shadow-app",
           "md:my-8 md:min-h-[calc(100vh-4rem)] md:overflow-hidden md:rounded-3xl",
+          // Beside a fixed sidebar there is no floating panel to float in, so
+          // the shell fills the remaining width and drops the phone chrome.
+          wide && "lg:my-0 lg:min-h-screen lg:max-w-none lg:rounded-none lg:shadow-none",
           bottomNav ? "pb-24 md:pb-28" : "pb-6",
           className,
         )}
       >
         {header}
-        <div className="flex-1 px-4 py-6 sm:px-7">{children}</div>
+        <div className="flex-1 px-4 py-6 sm:px-7 lg:px-8 xl:px-12">{children}</div>
       </main>
       {bottomNav}
     </div>

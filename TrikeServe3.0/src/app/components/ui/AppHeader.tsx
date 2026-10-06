@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
 import { Link } from "react-router";
-import { BadgeCheck, Bell, MapPin } from "lucide-react";
+import { BadgeCheck, Bell, MapPin, Menu } from "lucide-react";
 
 import { useAuth, type UserRole } from "../../contexts/AuthContext";
 import { cn } from "./utils";
@@ -68,6 +68,16 @@ type AppHeaderProps = {
   onNotificationsClick?: () => void;
   /** Extra content rendered under the header (search bars, service switcher). */
   children?: ReactNode;
+  /**
+   * Image shown in place of the default "TS" monogram. A business passes its
+   * own logo here so the header leads with the restaurant's profile rather
+   * than the platform initials.
+   */
+  avatarSrc?: string;
+  /** Accessible name for the avatar image. */
+  avatarAlt?: string;
+  /** When set, a hamburger control appears at the head of the header row. */
+  onMenuClick?: () => void;
   className?: string;
 };
 
@@ -89,6 +99,9 @@ export default function AppHeader({
   notificationsHref,
   onNotificationsClick,
   children,
+  avatarSrc,
+  avatarAlt,
+  onMenuClick,
   className,
 }: AppHeaderProps) {
   const { user } = useAuth();
@@ -138,7 +151,12 @@ export default function AppHeader({
   return (
     <header
       className={cn(
-        "relative overflow-hidden bg-ink px-5 pb-7 pt-safe text-white sm:px-7 sm:pt-6",
+        // --ink-solid, not --ink. This is a permanently dark panel carrying white
+        // text, and --ink is a *text* token that flips to cream in dark mode --
+        // which painted this header cream-on-cream with its own text and left the
+        // greeting at roughly 1.1:1. The customer food header has always used
+        // --ink-solid here for the same reason.
+        "relative overflow-hidden bg-ink-solid px-5 pb-7 pt-safe text-white sm:px-7 sm:pt-6",
         className,
       )}
     >
@@ -149,10 +167,31 @@ export default function AppHeader({
 
       <div className="relative flex items-start justify-between gap-4 pt-4 sm:pt-0">
         <div className="flex min-w-0 items-center gap-3">
-          <div className="grid size-12 shrink-0 place-items-center rounded-2xl bg-amber shadow-soft">
-            <span className="text-lg font-bold text-ink" aria-hidden="true">
-              TS
-            </span>
+          {onMenuClick ? (
+            <button
+              type="button"
+              onClick={onMenuClick}
+              aria-label="Open menu"
+              className="grid size-12 shrink-0 place-items-center rounded-2xl bg-white/10 transition-colors hover:bg-white/20"
+            >
+              <Menu className="size-6" aria-hidden="true" />
+            </button>
+          ) : null}
+          <div className="grid size-12 shrink-0 place-items-center overflow-hidden rounded-2xl bg-amber shadow-soft">
+            {avatarSrc ? (
+              <img
+                src={avatarSrc}
+                alt={avatarAlt ?? ""}
+                className="size-full object-cover"
+              />
+            ) : (
+              // Same reason as the header background: --ink flips to cream in dark
+              // mode, and the amber monogram plate is light there, so the initials
+              // would sit cream on cream.
+              <span className="text-lg font-bold text-ink-solid" aria-hidden="true">
+                TS
+              </span>
+            )}
           </div>
           <div className="min-w-0">
             <p className="truncate text-sm font-bold text-white/75">

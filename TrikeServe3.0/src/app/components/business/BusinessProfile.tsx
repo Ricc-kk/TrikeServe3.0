@@ -1,27 +1,59 @@
-import { ArrowLeft, Menu, Check, User, Mail, Phone, Store, MapPin, Save, Loader2 } from "lucide-react";
+import {
+  ArrowLeft, Menu, Check, User, Mail, Phone, Store, MapPin, Save,
+  Loader2, Clock, X, AlertTriangle
+} from "lucide-react";
 import { useNavigate } from "react-router";
+import { usePreviousPage } from "../../hooks/usePreviousPage";
 import { useState } from "react";
 import BusinessSidebar from "./BusinessSidebar";
 import BusinessMapSelector from "./BusinessMapSelector";
 import { useAuth } from "../../contexts/AuthContext";
 import { supabase } from "../../../utils/supabase";
+import { useRestaurantProfile } from "@/lib/restaurantProfile";
 
 export default function BusinessProfile() {
   const navigate = useNavigate();
+  // A bare navigate(-1) walks a cold deep link straight out of the app,
+  // because there is no history entry before it to return to.
+  const goBack = usePreviousPage("/business/dashboard");
   const { user, updateProfile } = useAuth();
+  const profile = useRestaurantProfile();
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
-  const [showSaved, setShowSaved] = useState(false);
+  const [saveState, setSaveState] = useState<"idle" | "saved" | "staged">("idle");
+  const [saveError, setSaveError] = useState<string | null>(null);
   const [showMapSelector, setShowMapSelector] = useState(false);
   const [showConfirmSave, setShowConfirmSave] = useState(false);
 
+  // Seeded from the shop row, not from the auth user, because `business_address`
+  // on the user is only half the fact: the coordinates that the map picker
+  // returns have no home on that row at all, which is why the pin was being
+  // discarded every time this form was saved.
   const [formData, setFormData] = useState({
     name: user?.name || "",
     email: user?.email || "",
     phone: user?.phone || "",
     businessName: (user as any)?.businessName || "",
     businessAddress: (user as any)?.businessAddress || "",
+    latitude: null as number | null,
+    longitude: null as number | null,
   });
+  // The form is only worth re-seeding once, when the shop row lands. Re-seeding
+  // on every render would wipe whatever the owner is part-way through typing.
+  const [seeded, setSeeded] = useState(false);
+  if (!seeded && profile.restaurant) {
+    setSeeded(true);
+    const r = profile.restaurant;
+    setFormData((prev) => ({
+      ...prev,
+      businessName: r.name || prev.businessName,
+      businessAddress: r.address || prev.businessAddress,
+      latitude: r.latitude ?? null,
+      longitude: r.longitude ?? null,
+    }));
+  }
+
+  const isPinned = typeof formData.latitude === "number" && typeof formData.longitude === "number";
 
   const handleSave = () => {
     setShowConfirmSave(true);
@@ -31,15 +63,18 @@ export default function BusinessProfile() {
     setShowConfirmSave(false);
     if (!user?.id) return;
     setIsSaving(true);
+    setSaveError(null);
+
     try {
-      // Update the users table in Supabase
+      // Contact details are the owner's own, and nobody else reads them, so
+      // they still write straight through. The shop-facing fields go through
+      // the shared writer, which stages them for Super Admin review.
       const { error: userError } = await supabase
         .from("users")
         .update({
           name: formData.name,
           phone: formData.phone,
           business_name: formData.businessName,
-          business_address: formData.businessAddress,
           updated_at: new Date().toISOString(),
         })
         .eq("id", user.id);
@@ -48,47 +83,36 @@ export default function BusinessProfile() {
         console.error("[BusinessProfile] Error updating user:", userError);
       }
 
-      // Also update the restaurants table if a restaurant exists for this business
-      try {
-        const { data: restaurant } = await supabase
-          .from("restaurants")
-          .select("id")
-          .eq("business_user_id", user.id)
-          .single();
-
-        if (restaurant) {
-          const { error: restError } = await supabase
-            .from("restaurants")
-            .update({
-              name: formData.businessName,
-              address: formData.businessAddress,
-              updated_at: new Date().toISOString(),
-            })
-            .eq("id", restaurant.id);
-
-          if (restError) {
-            console.error("[BusinessProfile] Error updating restaurant:", restError);
-          }
-        }
-      } catch (restErr) {
-        console.warn("[BusinessProfile] Restaurant update skipped:", restErr);
-      }
-
-      // Update local auth state via updateProfile
-      await updateProfile({
-        name: formData.name,
-        phone: formData.phone,
-        businessName: formData.businessName,
-        businessAddress: formData.businessAddress,
+      const result = await profile.save({
+        name: formData.businessName,
+        address: formData.businessAddress,
+        latitude: formData.latitude,
+        longitude: formData.longitude,
       });
 
-      setShowSaved(true);
-      setTimeout(() => setShowSaved(false), 2000);
+      if (!result.ok) {
+        setSaveError(result.error || "Could not save the shop details.");
+        return;
+      }
+
+      await updateProfile({ name: formData.name, phone: formData.phone });
+
+      setSaveState(result.staged ? "staged" : "saved");
+      setTimeout(() => setSaveState("idle"), 4000);
     } catch (err) {
       console.error("[BusinessProfile] Save error:", err);
-      alert("Failed to save profile. Please try again.");
+      setSaveError("Failed to save profile. Please try again.");
     } finally {
       setIsSaving(false);
+    }
+  };
+
+  const withdraw = async () => {
+    setIsSaving(true);
+    const result = await profile.withdraw();
+    setIsSaving(false);
+    if (!result.ok) {
+      setSaveError(result.error || "Could not withdraw the change.");
     }
   };
 
@@ -115,7 +139,7 @@ export default function BusinessProfile() {
 
             {/* Back Button */}
             <button
-              onClick={() => navigate(-1)}
+              onClick={goBack}
               className="flex-shrink-0"
             >
               <ArrowLeft className="w-5 h-5 lg:w-6 lg:h-6 text-[var(--ink)]" />
@@ -141,8 +165,45 @@ export default function BusinessProfile() {
           </div>
         </div>
 
-        {/* Form Fields */}
         <div className="px-4 lg:px-6 py-5 space-y-5">
+          {/* A staged change is not live. Saying so, with a way back, beats
+              letting the owner save and watch the storefront ignore them. */}
+          {profile.hasPending && (
+            <div className="rounded-2xl border-2 border-[var(--amber-soft)] bg-[var(--amber-soft)] p-4">
+              <div className="flex items-start gap-3">
+                <Clock className="w-5 h-5 text-[var(--amber-dark)] flex-shrink-0 mt-0.5" aria-hidden="true" />
+                <div className="min-w-0 flex-1">
+                  <p className="font-bold text-[var(--amber-dark)] text-sm">Waiting for Super Admin approval</p>
+                  <p className="text-sm text-[var(--amber-dark)]/90 mt-0.5 break-words">
+                    These shop details go live only once they are approved. Customers still see the previous ones.
+                  </p>
+                  {profile.pendingValues?.address && (
+                    <p className="text-xs text-[var(--amber-dark)]/80 mt-1 break-words">
+                      Proposed address: {profile.pendingValues.address}
+                    </p>
+                  )}
+                  <button
+                    type="button"
+                    onClick={withdraw}
+                    disabled={isSaving}
+                    className="mt-2 min-h-11 inline-flex items-center gap-1.5 px-3 py-2 rounded-xl bg-[var(--surface)] border border-[var(--amber)] text-[var(--amber-dark)] font-bold text-xs hover:opacity-90 disabled:opacity-50 transition-opacity"
+                  >
+                    <X className="w-4 h-4" aria-hidden="true" /> Withdraw change
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {saveError && (
+            <div className="rounded-2xl border-2 border-[var(--error-soft)] bg-[var(--error-soft)] p-4">
+              <div className="flex items-start gap-3">
+                <AlertTriangle className="w-5 h-5 text-[var(--error)] flex-shrink-0 mt-0.5" aria-hidden="true" />
+                <p className="text-sm text-[var(--error)] break-words">{saveError}</p>
+              </div>
+            </div>
+          )}
+
           {/* Personal Information */}
           <div className="bg-surface rounded-2xl shadow-sm border border-[var(--muted)] overflow-hidden">
             <div className="px-4 pt-4 pb-2">
@@ -254,8 +315,15 @@ export default function BusinessProfile() {
                     )}
                   </div>
                 </button>
+                {/* The coordinates are half of this fact and used to be dropped
+                    on the floor. Showing them makes that impossible to miss. */}
                 <p className="text-xs text-[var(--muted-foreground)] mt-1 flex items-center gap-1">
                   <MapPin className="w-3 h-3" />
+                  {isPinned
+                    ? `Pinned at ${formData.latitude!.toFixed(5)}, ${formData.longitude!.toFixed(5)}`
+                    : "Not pinned yet — your shop sorts last in “near you” lists"}
+                </p>
+                <p className="text-xs text-[var(--muted-foreground)] mt-0.5">
                   Click to open map and select your business pickup point
                 </p>
               </div>
@@ -265,10 +333,19 @@ export default function BusinessProfile() {
                 <BusinessMapSelector
                   onClose={() => setShowMapSelector(false)}
                   onSelectLocation={(loc) => {
-                    setFormData({ ...formData, businessAddress: loc.full });
+                    // The lat/lng used to be dropped here: only the address text
+                    // survived, so the map and the saved address disagreed.
+                    setFormData({
+                      ...formData,
+                      businessAddress: loc.full,
+                      latitude: loc.lat,
+                      longitude: loc.lng,
+                    });
                     setShowMapSelector(false);
                   }}
                   currentAddress={formData.businessAddress}
+                  initialLat={formData.latitude}
+                  initialLng={formData.longitude}
                 />
               )}
             </div>
@@ -285,7 +362,12 @@ export default function BusinessProfile() {
                 <Loader2 className="w-5 h-5 animate-spin" />
                 Saving...
               </>
-            ) : showSaved ? (
+            ) : saveState === "staged" ? (
+              <>
+                <Clock className="w-5 h-5" />
+                Sent for approval
+              </>
+            ) : saveState === "saved" ? (
               <>
                 <Check className="w-5 h-5" />
                 Saved!
@@ -310,7 +392,8 @@ export default function BusinessProfile() {
               </div>
               <h3 className="text-lg font-bold text-[var(--ink)]">Save Changes?</h3>
               <p className="text-sm text-[var(--muted-foreground)] mt-2">
-                Are you sure you want to update your profile information?
+                Your name and phone save straight away. Your shop name and pickup location are
+                sent to the Super Admin and go live once approved.
               </p>
             </div>
             <div className="flex gap-3">

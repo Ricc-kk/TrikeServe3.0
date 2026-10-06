@@ -1,5 +1,5 @@
-import { useState, useEffect, useRef } from "react";
-import { Store, Package, BarChart3, User, Plus, Edit2, Image, Clock, Star, MapPin, BadgeCheck, Eye, EyeOff, Upload, ChevronRight, Settings, Camera, Check, Menu, Loader2 } from "lucide-react";
+import { useState, useEffect, useMemo, useRef } from "react";
+import { Store, Package, BarChart3, User, Plus, X, Image, Clock, Star, MapPin, BadgeCheck, Eye, EyeOff, Upload, ChevronRight, Settings, Camera, Check, Menu, Loader2 } from "lucide-react";
 import { Link, useNavigate } from "react-router";
 import { Card } from "../ui/card";
 import { Badge } from "../ui/badge";
@@ -13,16 +13,19 @@ import { supabaseHelpers } from "@/lib/supabase";
 import { GoogleMap, MarkerF } from "@react-google-maps/api";
 import useMapLoader from "@/lib/mapLoader";
 import { CUISINES, isCuisineId, type CuisineId } from "@/lib/foodTaxonomy";
+import { useRestaurantProfile } from "@/lib/restaurantProfile";
 
 export default function BusinessHome() {
   const navigate = useNavigate();
   const { user } = useAuth();
+  const profile = useRestaurantProfile();
   const [isStoreOpen, setIsStoreOpen] = useState(true);
   const [showEditBanner, setShowEditBanner] = useState(false);
   const [showEditInfo, setShowEditInfo] = useState(false);
   const [previewMode, setPreviewMode] = useState(false);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [menuItems, setMenuItems] = useState<any[]>([]);
+  const [sections, setSections] = useState<{ id: string; name: string; sort_order?: number }[]>([]);
   const [isBannerUploading, setIsBannerUploading] = useState(false);
   const bannerInputRef = useRef<HTMLInputElement | null>(null);
   const [isLogoUploading, setIsLogoUploading] = useState(false);
@@ -30,6 +33,7 @@ export default function BusinessHome() {
   const [adminDeliveryFee, setAdminDeliveryFee] = useState(35); // Admin-set delivery fee (view-only for the business)
   const [showConfirmSaveInfo, setShowConfirmSaveInfo] = useState(false);
   const [showSaveSuccess, setShowSaveSuccess] = useState(false);
+  const [saveInfoError, setSaveInfoError] = useState<string | null>(null);
 
   // Restaurant data - initialize with user data
   const [restaurantData, setRestaurantData] = useState({
@@ -50,6 +54,30 @@ export default function BusinessHome() {
     longitude: null as number | null
   });
   const { isLoaded: isMapsLoaded } = useMapLoader();
+
+  /** The customer preview reads the menu in sections, like the storefront does. */
+  const menuGroups = useMemo(() => {
+    const available = menuItems.filter((item) => item.available);
+    const groups = sections
+      .map((section) => ({
+        key: section.id,
+        title: section.name,
+        items: available.filter((item) => item.sectionId === section.id),
+      }))
+      .filter((group) => group.items.length > 0);
+
+    const unfiled = available.filter(
+      (item) => !item.sectionId || !sections.some((section) => section.id === item.sectionId),
+    );
+    if (unfiled.length > 0) {
+      groups.push({
+        key: "__unfiled",
+        title: sections.length > 0 ? "More" : "Menu",
+        items: unfiled,
+      });
+    }
+    return groups;
+  }, [menuItems, sections]);
 
   const toggleCuisine = (id: CuisineId) => {
     setRestaurantData((prev) => {
@@ -144,6 +172,7 @@ export default function BusinessHome() {
             image: item.image_url || 'https://images.unsplash.com/photo-1546069901-ba9599a7e63c?w=400',
             category: item.category,
             available: item.is_available,
+            sectionId: item.section_id ?? null,
           }));
           setMenuItems(mappedItems);
         } else if (user?.email) {
@@ -153,6 +182,19 @@ export default function BusinessHome() {
           if (savedItems) {
             setMenuItems(JSON.parse(savedItems));
           }
+        }
+
+        // Sections are optional: without the ADD_MENU_SECTIONS.sql migration this
+        // query fails and the preview simply shows one flat list.
+        try {
+          const { data: sectionRows, error: sectionError } = await supabase
+            .from('menu_sections')
+            .select('id, name, sort_order')
+            .eq('restaurant_id', restaurant.id)
+            .order('sort_order', { ascending: true });
+          setSections(sectionError ? [] : sectionRows ?? []);
+        } catch {
+          setSections([]);
         }
       } catch (error) {
         console.error('Error loading menu items:', error);
@@ -516,77 +558,34 @@ export default function BusinessHome() {
     }
   };
 
-  // Function to save store information to Supabase
+  // Save the shop details.
+  //
+  // This used to write the restaurants row directly, which made the edit modal
+  // here and the Pickup Location picker on Edit Profile two separate writers
+  // for one row, neither able to see the other's result. It now goes through the
+  // shared hook, which also stages the change for Super Admin review.
   const saveStoreInformation = async () => {
-    if (!user?.id) return;
+    const result = await profile.save({
+      name: restaurantData.name,
+      subtitle: restaurantData.subtitle,
+      address: restaurantData.address,
+      delivery_time: restaurantData.deliveryTime,
+      operating_hours: restaurantData.operatingHours,
+      cuisine: Array.isArray(restaurantData.cuisine) ? restaurantData.cuisine : [],
+      latitude: restaurantData.latitude,
+      longitude: restaurantData.longitude,
+    });
 
-    try {
-      // Get or create restaurant record
-      let { data: restaurant } = await supabase
-        .from('restaurants')
-        .select('id')
-        .eq('business_user_id', user.id)
-        .single();
-
-      if (!restaurant) {
-        // Create new restaurant record
-        const { data: newRestaurant, error } = await supabase
-          .from('restaurants')
-          .insert([{
-            name: restaurantData.name,
-            business_user_id: user.id,
-            address: restaurantData.address,
-            phone: user.phone || '',
-            rating: restaurantData.rating,
-            is_open: isStoreOpen,
-            subtitle: restaurantData.subtitle,
-            delivery_time: restaurantData.deliveryTime,
-            operating_hours: restaurantData.operatingHours,
-            cuisine: Array.isArray(restaurantData.cuisine) ? restaurantData.cuisine : [],
-            latitude: restaurantData.latitude ?? null,
-            longitude: restaurantData.longitude ?? null,
-            created_at: new Date().toISOString(),
-          }])
-          .select()
-          .single();
-
-        if (error) {
-          console.error('Error creating restaurant:', error);
-          return;
-        }
-        restaurant = newRestaurant;
-      } else {
-        // Update existing restaurant
-        const { error } = await supabase
-          .from('restaurants')
-          .update({
-            name: restaurantData.name,
-            address: restaurantData.address,
-            is_open: isStoreOpen,
-            subtitle: restaurantData.subtitle,
-            delivery_time: restaurantData.deliveryTime,
-            operating_hours: restaurantData.operatingHours,
-            cuisine: Array.isArray(restaurantData.cuisine) ? restaurantData.cuisine : [],
-            latitude: restaurantData.latitude ?? null,
-            longitude: restaurantData.longitude ?? null,
-            updated_at: new Date().toISOString(),
-          })
-          .eq('id', restaurant.id);
-
-        if (error) {
-          console.error('Error updating restaurant:', error);
-          return;
-        }
-      }
-
-      // Close the modal and show success
-      setShowEditInfo(false);
-      setShowConfirmSaveInfo(false);
-      setShowSaveSuccess(true);
-      setTimeout(() => setShowSaveSuccess(false), 2000);
-    } catch (error) {
-      console.error('Error saving store information:', error);
+    if (!result.ok) {
+      setSaveInfoError(result.error || 'Could not save your shop details.');
+      return;
     }
+
+    setSaveInfoError(null);
+    setShowEditInfo(false);
+    setShowConfirmSaveInfo(false);
+    setShowSaveSuccess(true);
+    setTimeout(() => setShowSaveSuccess(false), 2000);
   };
 
   return (
@@ -718,8 +717,13 @@ export default function BusinessHome() {
                 <h3 className="font-bold text-[var(--ink)] mb-3">Menu Items</h3>
                 
                 {menuItems.length > 0 ? (
-                  <div className="space-y-3">
-                    {menuItems.filter(item => item.available).map((item) => (
+                  <div className="space-y-5">
+                    {menuGroups.map((group) => (
+                      <div key={group.key} className="space-y-3">
+                        <h4 className="text-xs font-bold uppercase tracking-wider text-[var(--muted-foreground)]">
+                          {group.title}
+                        </h4>
+                        {group.items.map((item) => (
                       <div key={item.id} className="flex items-center gap-3 p-3 bg-[var(--muted)] rounded-xl">
                         <div className="w-16 h-16 rounded-xl overflow-hidden flex-shrink-0 border border-line">
                           <ImageWithFallback
@@ -733,6 +737,8 @@ export default function BusinessHome() {
                           <p className="text-xs text-[var(--muted-foreground)] line-clamp-1">{item.description}</p>
                           <p className="text-base font-bold text-[var(--primary)] mt-1">₱{item.price}</p>
                         </div>
+                      </div>
+                        ))}
                       </div>
                     ))}
                     <Link to="/business/menu">
@@ -806,24 +812,28 @@ export default function BusinessHome() {
 
             {/* Store Appearance Section */}
             <div className="px-5 py-4 border-t-8 border-[var(--muted)]">
-              <div className="flex items-center justify-between mb-3">
+              <div className="mb-3">
                 <h3 className="font-bold text-[var(--ink)]">🎨 Store Appearance</h3>
-                <Badge variant="outline" className="text-xs">
-                  <Eye className="w-3 h-3 mr-1" />
-                  Tap Preview to see
-                </Badge>
+                <p className="text-xs text-[var(--muted-foreground)] mt-0.5">
+                  customer view of the store
+                </p>
               </div>
+
+              <Button
+                onClick={() => {
+                  setPreviewMode(true);
+                  window.scrollTo({ top: 0, behavior: "smooth" });
+                }}
+                className="w-full min-h-12 mb-3 bg-[var(--primary)] hover:bg-[var(--primary)] text-white font-bold text-base flex items-center justify-center gap-2"
+              >
+                <Eye className="w-5 h-5" aria-hidden="true" />
+                Preview Store
+              </Button>
 
               {/* Hero Banner Editor */}
               <Card className="p-4 border border-line mb-3">
                 <div className="flex items-center justify-between mb-2">
                   <p className="font-semibold text-[var(--ink)]">Hero Banner & Logo</p>
-                  <button
-                    onClick={() => setShowEditBanner(true)}
-                    className="p-2 bg-[var(--muted)] rounded-lg active:scale-95 transition-transform"
-                  >
-                    <Edit2 className="w-4 h-4 text-[var(--primary)]" />
-                  </button>
                 </div>
                 <div className="relative h-32 rounded-xl overflow-hidden mb-2">
                   <ImageWithFallback
@@ -851,12 +861,6 @@ export default function BusinessHome() {
               <Card className="p-4 border border-line">
                 <div className="flex items-center justify-between mb-3">
                   <p className="font-semibold text-[var(--ink)]">Store Information</p>
-                  <button
-                    onClick={() => setShowEditInfo(true)}
-                    className="p-2 bg-[var(--muted)] rounded-lg active:scale-95 transition-transform"
-                  >
-                    <Edit2 className="w-4 h-4 text-[var(--primary)]" />
-                  </button>
                 </div>
                 <div className="space-y-2 text-sm">
                   <div className="flex items-start justify-between py-2 border-b border-[var(--border)]">
@@ -903,13 +907,22 @@ export default function BusinessHome() {
             <div className="bg-surface w-full rounded-t-3xl max-h-[85vh] overflow-y-auto">
               <div className="sticky top-0 bg-surface border-b border-[var(--border)] px-5 py-4 flex items-center justify-between">
                 <h2 className="text-xl font-bold text-[var(--ink)]">Edit Banner & Logo</h2>
-                <button
-                  onClick={() => setShowEditBanner(false)}
-                  className="px-4 py-2 bg-[var(--success)] text-white rounded-lg font-semibold active:scale-95 transition-transform flex items-center gap-2"
-                >
-                  <Check className="w-4 h-4" />
-                  Done
-                </button>
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => setShowEditBanner(false)}
+                    aria-label="Close"
+                    className="p-2 rounded-lg bg-[var(--muted)] text-[var(--muted-foreground)] active:scale-95 transition-transform"
+                  >
+                    <X className="w-5 h-5" aria-hidden="true" />
+                  </button>
+                  <button
+                    onClick={() => setShowEditBanner(false)}
+                    className="px-4 py-2 bg-[var(--success)] text-white rounded-lg font-semibold active:scale-95 transition-transform flex items-center gap-2"
+                  >
+                    <Check className="w-4 h-4" />
+                    Done
+                  </button>
+                </div>
               </div>
 
               <div className="p-5 space-y-5">
@@ -998,21 +1011,64 @@ export default function BusinessHome() {
         )}
 
         {/* Edit Info Modal */}
+        {profile.hasPending && !showEditInfo && (
+          <div className="mx-4 lg:mx-6 mt-4 rounded-2xl border-2 border-[var(--amber-soft)] bg-[var(--amber-soft)] p-4">
+            <div className="flex items-start gap-3">
+              <Clock className="w-5 h-5 text-[var(--amber-dark)] flex-shrink-0 mt-0.5" aria-hidden="true" />
+              <div className="min-w-0 flex-1">
+                <p className="font-bold text-[var(--amber-dark)] text-sm">Waiting for Super Admin approval</p>
+                <p className="text-sm text-[var(--amber-dark)]/90 mt-0.5 break-words">
+                  Your last shop details change is queued. Customers keep seeing the previous ones until it is approved.
+                </p>
+                <button
+                  type="button"
+                  onClick={async () => { await profile.withdraw(); }}
+                  className="mt-2 min-h-11 inline-flex items-center gap-1.5 px-3 py-2 rounded-xl bg-[var(--surface)] border border-[var(--amber)] text-[var(--amber-dark)] font-bold text-xs hover:opacity-90 transition-opacity"
+                >
+                  Withdraw change
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
         {showEditInfo && (
           <div className="fixed inset-0 bg-black/50 z-[2000] flex items-end animate-in slide-in-from-bottom">
             <div className="bg-surface w-full rounded-t-3xl max-h-[85vh] overflow-y-auto">
               <div className="sticky top-0 bg-surface border-b border-[var(--border)] px-5 py-4 flex items-center justify-between">
                 <h2 className="text-xl font-bold text-[var(--ink)]">Edit Store Info</h2>
-                <button
-                  onClick={() => setShowConfirmSaveInfo(true)}
-                  className="px-4 py-2 bg-[var(--success)] text-white rounded-lg font-semibold active:scale-95 transition-transform flex items-center gap-2"
-                >
-                  <Check className="w-4 h-4" />
-                  Save
-                </button>
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => setShowEditInfo(false)}
+                    aria-label="Close"
+                    className="p-2 rounded-lg bg-[var(--muted)] text-[var(--muted-foreground)] active:scale-95 transition-transform"
+                  >
+                    <X className="w-5 h-5" aria-hidden="true" />
+                  </button>
+                  <button
+                    onClick={() => setShowConfirmSaveInfo(true)}
+                    className="px-4 py-2 bg-[var(--success)] text-white rounded-lg font-semibold active:scale-95 transition-transform flex items-center gap-2"
+                  >
+                    <Check className="w-4 h-4" />
+                    Save
+                  </button>
+                </div>
               </div>
 
               <div className="p-5 space-y-4">
+                {saveInfoError && (
+                  <div className="rounded-xl border-2 border-[var(--error-soft)] bg-[var(--error-soft)] px-3 py-2">
+                    <p className="text-sm text-[var(--error)] break-words">{saveInfoError}</p>
+                  </div>
+                )}
+
+                {profile.hasPending && (
+                  <div className="rounded-xl border border-[var(--amber-soft)] bg-[var(--amber-soft)] px-3 py-2">
+                    <p className="text-xs text-[var(--amber-dark)] break-words">
+                      Saving again replaces the change already waiting for approval.
+                    </p>
+                  </div>
+                )}
                 <div>
                   <label className="text-sm font-bold text-[var(--ink)] mb-2 block">Store Name *</label>
                   <input
@@ -1206,8 +1262,10 @@ export default function BusinessHome() {
               <div className="w-16 h-16 bg-[var(--success-soft)] rounded-full flex items-center justify-center mx-auto mb-4">
                 <Check className="w-8 h-8 text-[var(--success)]" />
               </div>
-              <h3 className="text-2xl font-bold text-[var(--ink)] mb-2">Saved! ✅</h3>
-              <p className="text-[var(--muted-foreground)] text-sm">Your store information has been updated.</p>
+              <h3 className="text-2xl font-bold text-[var(--ink)] mb-2">Sent for approval! ✅</h3>
+              <p className="text-[var(--muted-foreground)] text-sm">
+                The Super Admin will review your shop details. Customers see the previous ones until then.
+              </p>
             </div>
           </div>
         )}

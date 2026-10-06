@@ -65,15 +65,25 @@ const FAQS: Faq[] = [
  * timing, payment, cancelling, a wrong order, account changes — rather than a
  * generic knowledge base.
  */
-export default function HelpSupport() {
+interface HelpSupportProps {
+  /** Where the back arrow goes. Business Settings reuses this screen. */
+  backPath?: string;
+  /** The bottom tab bar is the customer's; hide it for other roles. */
+  showBottomNav?: boolean;
+}
+
+export default function HelpSupport({
+  backPath = "/customer/account",
+  showBottomNav = true,
+}: HelpSupportProps) {
   const [openId, setOpenId] = useState<string | null>(null);
 
   return (
-    <div className="min-h-screen bg-[var(--background)] pb-24">
+    <div className={`min-h-screen bg-[var(--background)] ${showBottomNav ? "pb-24" : "pb-8"}`}>
       <header className="sticky top-0 z-[900] border-b border-line bg-[var(--surface)] px-3 py-3 sm:px-5">
         <div className="mx-auto flex max-w-3xl items-center gap-2">
           <Link
-            to="/customer/account"
+            to={backPath}
             aria-label="Back to account"
             className="grid size-11 flex-shrink-0 place-items-center rounded-xl hover:bg-[var(--muted)]"
           >
@@ -193,7 +203,7 @@ export default function HelpSupport() {
         </section>
       </div>
 
-      <BottomNav active="home" />
+      {showBottomNav && <BottomNav active="home" />}
     </div>
   );
 }

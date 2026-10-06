@@ -1,5 +1,6 @@
 import { Store, Package, Clock, User, ChevronRight, LogOut, ArrowLeft, Menu, Shield, Bell, HelpCircle, CreditCard, Pencil } from "lucide-react";
 import { Link, useNavigate } from "react-router";
+import { usePreviousPage } from "../../hooks/usePreviousPage";
 import { Card } from "../ui/card";
 import { Badge } from "../ui/badge";
 import { useState, useEffect } from "react";
@@ -10,6 +11,9 @@ import ThemeModeSwitcher from "../ui/ThemeModeSwitcher";
 
 export default function BusinessAccount() {
   const navigate = useNavigate();
+  // A bare navigate(-1) walks a cold deep link straight out of the app,
+  // because there is no history entry before it to return to.
+  const goBack = usePreviousPage("/business/dashboard");
   const { user, logout, switchUiRole, restoreOriginalRole } = useAuth();
   const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
   const [showSwitchConfirm, setShowSwitchConfirm] = useState(false);
@@ -66,7 +70,7 @@ export default function BusinessAccount() {
             
             {/* Back Button - Shows on Mobile and Desktop */}
             <button
-              onClick={() => navigate(-1)}
+              onClick={goBack}
               className="flex-shrink-0"
             >
               <ArrowLeft className="w-5 h-5 lg:w-6 lg:h-6 text-[var(--ink)]" />
@@ -211,7 +215,10 @@ export default function BusinessAccount() {
               <ThemeModeSwitcher bilingual />
             </div>
 
-            <div className="flex items-center justify-between px-4 py-3.5 hover:bg-[var(--muted)] transition-colors cursor-pointer">
+            <Link
+              to="/business/help"
+              className="flex items-center justify-between px-4 py-3.5 hover:bg-[var(--muted)] transition-colors cursor-pointer"
+            >
               <div className="flex items-center gap-3">
                 <div className="w-10 h-10 bg-gradient-to-br from-[var(--teal)] to-[var(--teal)] rounded-xl flex items-center justify-center shadow-sm">
                   <HelpCircle className="w-5 h-5 text-white" />
@@ -222,7 +229,7 @@ export default function BusinessAccount() {
                 </div>
               </div>
               <ChevronRight className="w-5 h-5 text-[var(--border)]" />
-            </div>
+            </Link>
           </div>
 
           {/* Use Customer App / Switch Back */}

@@ -15,7 +15,7 @@ export default function RoleRedirect() {
           // food are both offered from Home, so the hub is the real landing page.
           customer: '/customer',
           rider: '/rider',
-          business: '/business',
+          business: '/business/dashboard',
           admin: '/admin',
         };
         navigate(roleRoutes[user.role], { replace: true });

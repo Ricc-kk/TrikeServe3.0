@@ -1,5 +1,5 @@
-import { useState, useEffect, useRef } from "react";
-import { Store, Package, Clock, User, Plus, Edit2, Image as ImageIcon, X, Search, ChevronRight, Eye, EyeOff, Trash2, Check, BarChart3, Camera, Upload, TrendingUp, Star, Award, Menu, Settings } from "lucide-react";
+import { useState, useEffect, useMemo, useRef } from "react";
+import { Store, Package, Clock, User, Plus, Edit2, Pencil, Image as ImageIcon, X, Search, ChevronRight, Eye, EyeOff, Trash2, Check, BarChart3, Camera, Upload, TrendingUp, Star, Award, Menu, Settings } from "lucide-react";
 import { Link } from "react-router";
 import { Card } from "../ui/card";
 import { Badge } from "../ui/badge";
@@ -7,6 +7,7 @@ import { Button } from "../ui/button";
 import { ImageWithFallback } from "../figma/ImageWithFallback";
 import BusinessSidebar from "./BusinessSidebar";
 import { useMediaQuery } from "../../hooks/useMediaQuery";
+import { useRestaurantProfile } from "@/lib/restaurantProfile";
 import AddCustomizationModal, { CustomizationGroup } from "./AddCustomizationModal";
 import { useAuth } from "../../contexts/AuthContext";
 import { supabase } from "../../../utils/supabase";
@@ -17,6 +18,21 @@ interface Category {
   name: string;
 }
 
+/**
+ * A named folder on the menu ("For you", "Rice Meals").
+ *
+ * Sections are a layer above categories: the category still says what a dish
+ * is and still drives the customer filter rail, while the section decides where
+ * it sits in the order the storefront is read in. Renaming a category used to
+ * be the only way to reorder the menu, which meant a shop could not say "these
+ * are my recommendations" without losing the people who filtered on that name.
+ */
+interface MenuSection {
+  id: string;
+  name: string;
+  sortOrder: number;
+}
+
 interface MenuItem {
   id: number;
   name: string;
@@ -24,6 +40,7 @@ interface MenuItem {
   price: number;
   image: string;
   category: string;
+  sectionId: string | null;
   badge?: string;
   available: boolean;
   customizationGroups?: CustomizationGroup[];
@@ -31,20 +48,35 @@ interface MenuItem {
 
 export default function BusinessMenu() {
   const { user } = useAuth();
+  const profile = useRestaurantProfile();
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedCategory, setSelectedCategory] = useState("all");
+  const [sections, setSections] = useState<MenuSection[]>([]);
+  // Whether menu_items.section_id can be written at all.
+  //
+  // A ref, not state: the menu is persisted from a useEffect keyed on the items
+  // themselves, so depending on this would re-run every save whenever a section
+  // load resolved. Before ADD_MENU_SECTIONS.sql has run the column does not
+  // exist and PostgREST rejects the whole write with a 400 -- so the column is
+  // left out of the payload until the table answers, rather than breaking menu
+  // editing for every shop on the day this code ships.
+  const sectionsTableExists = useRef(false);
+  const [selectedSection, setSelectedSection] = useState("all");
+  const [showAddSection, setShowAddSection] = useState(false);
+  // When set, the section modal is renaming this one rather than creating a new one.
+  const [renamingSection, setRenamingSection] = useState<MenuSection | null>(null);
+  const [newSectionName, setNewSectionName] = useState("");
+  const [sectionError, setSectionError] = useState("");
+  const [showDeleteSectionModal, setShowDeleteSectionModal] = useState(false);
+  const [sectionToDelete, setSectionToDelete] = useState<MenuSection | null>(null);
   const [showAddItem, setShowAddItem] = useState(false);
   const [showEditItem, setShowEditItem] = useState(false);
   const [editingItem, setEditingItem] = useState<any>(null);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
-  const [viewMode, setViewMode] = useState<"edit" | "preview">("edit");
-  const [showAddCategory, setShowAddCategory] = useState(false);
   const [selectedItems, setSelectedItems] = useState<number[]>([]);
   const [showBulkActions, setShowBulkActions] = useState(false);
   const [showCustomizationModal, setShowCustomizationModal] = useState(false);
   const [customizingItem, setCustomizingItem] = useState<MenuItem | null>(null);
-  const [showDeleteCategoryModal, setShowDeleteCategoryModal] = useState(false);
-  const [categoryToDelete, setCategoryToDelete] = useState<string | null>(null);
   const [uploadingImage, setUploadingImage] = useState(false);
   const [uploadTarget, setUploadTarget] = useState<'new' | 'edit'>('new');
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -72,50 +104,29 @@ export default function BusinessMenu() {
   const [menuItems, setMenuItems] = useState<MenuItem[]>([]);
   const [restaurantId, setRestaurantId] = useState<string | null>(null);
 
-  // First, get or create the restaurant record
+  // Create the shop row through the shared writer.
+  //
+  // This used to insert a half-built copy carrying only the columns this screen
+  // knew about, so a business who opened their menu before their shop settings
+  // ended up with a row that had no cuisine and no coordinates -- and because
+  // the row then existed, the settings screen's own seeding never ran.
+  //
+  // The function identity changes every render, so it is read through a ref
+  // rather than depended on; depending on it would recreate this effect and
+  // re-run the lookup on every render.
+  const ensureRestaurantRef = useRef(profile.ensureRestaurant);
+  ensureRestaurantRef.current = profile.ensureRestaurant;
+
   useEffect(() => {
-    const loadRestaurant = async () => {
-      if (!user?.id || user?.role !== 'business') return;
-
-      try {
-        // Check if restaurant exists for this user
-        const { data: existingRestaurant } = await supabase
-          .from('restaurants')
-          .select('id')
-          .eq('business_user_id', user.id)
-          .single();
-
-        if (existingRestaurant) {
-          setRestaurantId(existingRestaurant.id);
-        } else {
-          // Create restaurant record if it doesn't exist
-          const { data: newRestaurant, error } = await supabase
-            .from('restaurants')
-            .insert([{
-              name: user.businessName || user.name || 'My Restaurant',
-              business_user_id: user.id,
-              address: (user as any).businessAddress || '',
-              phone: user.phone || '',
-              rating: 5.0,
-              is_open: true,
-              created_at: new Date().toISOString(),
-            }])
-            .select()
-            .single();
-
-          if (newRestaurant) {
-            setRestaurantId(newRestaurant.id);
-          } else if (error) {
-            console.error('Error creating restaurant:', error);
-          }
-        }
-      } catch (error) {
-        console.error('Error loading restaurant:', error);
-      }
-    };
-
-    loadRestaurant();
-  }, [user?.id, user?.role]);
+    if (!user?.id || user?.role !== 'business') return;
+    let cancelled = false;
+    (async () => {
+      const created = await ensureRestaurantRef.current();
+      if (!cancelled && created) setRestaurantId(created.id);
+    })();
+    return () => {
+      cancelled = true;
+    };  }, [user?.id, user?.role]);
 
   // Load menu items from Supabase
   useEffect(() => {
@@ -169,6 +180,7 @@ export default function BusinessMenu() {
             price: item.price,
             image: item.image_url || 'https://images.unsplash.com/photo-1546069901-ba9599a7e63c?w=400',
             category: item.category,
+            sectionId: item.section_id ?? null,
             badge: item.badge || undefined,
             available: item.is_available,
             customizationGroups: item.customization_groups || [],
@@ -214,6 +226,7 @@ export default function BusinessMenu() {
                 description: item.description,
                 price: item.price,
                 category: item.category,
+                ...sectionColumn(item),
                 image_url: item.image,
                 is_available: item.available,
                 badge: item.badge || null,
@@ -243,6 +256,7 @@ export default function BusinessMenu() {
                 description: item.description,
                 price: item.price,
                 category: item.category,
+                ...sectionColumn(item),
                 image_url: item.image,
                 is_available: item.available,
                 badge: item.badge || null,
@@ -291,6 +305,7 @@ export default function BusinessMenu() {
                     description: item.description,
                     price: item.price,
                     category: item.category,
+                    ...sectionColumn(item),
                     image_url: item.image,
                     is_available: item.available,
                     badge: item.badge || null,
@@ -304,6 +319,7 @@ export default function BusinessMenu() {
                     description: item.description,
                     price: item.price,
                     category: item.category,
+                    ...sectionColumn(item),
                     image_url: item.image,
                     is_available: item.available,
                     badge: item.badge || null,
@@ -346,8 +362,6 @@ export default function BusinessMenu() {
     image: ""
   });
 
-  const [newCategory, setNewCategory] = useState("");
-  const [categoryError, setCategoryError] = useState("");
   const [priceError, setPriceError] = useState("");
   const [editPriceError, setEditPriceError] = useState("");
 
@@ -398,10 +412,45 @@ export default function BusinessMenu() {
 
   const filteredItems = menuItems.filter(item => {
     const matchesCategory = selectedCategory === "all" || item.category === selectedCategory;
+    // "all" means every section, including items not filed in one -- hiding
+    // them would let food disappear just because nobody got round to filing it.
+    const matchesSection = selectedSection === "all" || item.sectionId === selectedSection;
     const matchesSearch = item.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
                          item.description.toLowerCase().includes(searchQuery.toLowerCase());
-    return matchesCategory && matchesSearch;
+    return matchesCategory && matchesSearch && matchesSection;
   });
+
+  /**
+   * The editor list is grouped the way the storefront reads: a heading per
+   * section, its dishes underneath. Dishes filed nowhere collect under "More"
+   * rather than vanishing, and a shop with no sections still sees one flat list.
+   */
+  const sectionGroups = useMemo(() => {
+    const groups = sections
+      .map((section) => ({
+        key: section.id,
+        title: section.name,
+        items: filteredItems.filter((item) => item.sectionId === section.id),
+      }))
+      .filter((group) => group.items.length > 0);
+
+    const unfiled = filteredItems.filter(
+      (item) => !item.sectionId || !sections.some((section) => section.id === item.sectionId),
+    );
+    if (unfiled.length > 0) {
+      groups.push({
+        key: "__unfiled",
+        title: sections.length > 0 ? "More" : "All items",
+        items: unfiled,
+      });
+    }
+    return groups;
+  }, [sections, filteredItems]);
+
+  /** The section a dish is filed under, for the card label. */
+  const sectionNameFor = (sectionId?: string | null) =>
+    sections.find((section) => section.id === sectionId)?.name ||
+    (sections.length > 0 ? "Unfiled" : "");
 
   const toggleAvailability = (id: number) => {
     setItemToToggle(id);
@@ -512,10 +561,11 @@ export default function BusinessMenu() {
 
     const item: MenuItem = {
       id: Date.now(),
+      sectionId: newItem.sectionId ?? sections[0]?.id ?? null,
       name: newItem.name || "",
       description: newItem.description || "",
       price: newItem.price || 0,
-      category: newItem.category || "Silog",
+      category: newItem.category || categories.find(c => c.id !== "All")?.id || "Menu",
       available: newItem.available ?? true,
       image: newItem.image || "https://images.unsplash.com/photo-1546069901-ba9599a7e63c?w=400",
     };
@@ -529,127 +579,6 @@ export default function BusinessMenu() {
       available: true,
       image: ""
     });
-  };
-
-  const addNewCategory = async () => {
-    if (!newCategory.trim()) return;
-
-    const categoryId = newCategory.toLowerCase().replace(/\s+/g, '-');
-
-    // Check for duplicate category (case-insensitive)
-    const isDuplicate = categories.some(
-      (c) => c.id.toLowerCase() === categoryId.toLowerCase() ||
-             c.name.toLowerCase() === newCategory.trim().toLowerCase()
-    );
-    if (isDuplicate) {
-      setCategoryError(`Category "${newCategory.trim()}" already exists.`);
-      return;
-    }
-
-    const newCat = { id: categoryId, name: newCategory.trim() };
-
-    try {
-      // If we have a restaurant ID, save to Supabase
-      if (restaurantId) {
-        const { error } = await supabase
-          .from('categories')
-          .insert([{
-            restaurant_id: restaurantId,
-            name: newCat.name,
-            id: categoryId,
-            created_at: new Date().toISOString(),
-          }]);
-
-        if (error) {
-          console.error('Error creating category in Supabase:', error);
-          // Still add locally even if Supabase fails
-        }
-      }
-
-      // Always update local state
-      setCategories([...categories, newCat]);
-      setNewCategory("");
-      setCategoryError("");
-      setShowAddCategory(false);
-
-      // Save to localStorage as backup
-      if (user?.email) {
-        const storageKey = `categories_${user.email}`;
-        const updatedCategories = [...categories, newCat];
-        localStorage.setItem(storageKey, JSON.stringify(updatedCategories));
-      }
-    } catch (error) {
-      console.error('Error adding category:', error);
-    }
-  };
-
-  const handleDeleteCategory = async (category: string) => {
-    const categoryObj = categories.find(c => c.id === category);
-    if (!categoryObj) return;
-
-    // Show the confirmation modal instead of using confirm()
-    setCategoryToDelete(category);
-    setShowDeleteCategoryModal(true);
-  };
-
-  const confirmDeleteCategory = async () => {
-    if (!categoryToDelete) return;
-
-    try {
-      // Delete from Supabase if restaurant ID exists
-      if (restaurantId) {
-        // Delete category record
-        const { error: catError } = await supabase
-          .from('categories')
-          .delete()
-          .eq('restaurant_id', restaurantId)
-          .eq('id', categoryToDelete);
-
-        if (catError) {
-          console.error('Error deleting category from Supabase:', catError);
-        }
-
-        // Delete all menu items in this category from Supabase
-        const itemsToDelete = menuItems.filter(i => i.category === categoryToDelete);
-        for (const item of itemsToDelete) {
-          if (typeof item.id === 'string') {
-            try {
-              await supabase
-                .from('menu_items')
-                .delete()
-                .eq('id', item.id)
-                .eq('restaurant_id', restaurantId);
-            } catch (error) {
-              console.error('Error deleting menu item from Supabase:', error);
-            }
-          }
-        }
-      }
-
-      // Update local state
-      const updatedCategories = categories.filter(c => c.id !== categoryToDelete);
-      setCategories(updatedCategories);
-
-      // Remove all items in this category
-      const updatedItems = menuItems.filter(i => i.category !== categoryToDelete);
-      setMenuItems(updatedItems);
-
-      setSelectedCategory("all");
-
-      // Save to localStorage as backup
-      if (user?.email) {
-        const storageKey = `categories_${user.email}`;
-        localStorage.setItem(storageKey, JSON.stringify(updatedCategories));
-      }
-
-      // Close the modal
-      setShowDeleteCategoryModal(false);
-      setCategoryToDelete(null);
-    } catch (error) {
-      console.error('Error deleting category:', error);
-      setShowDeleteCategoryModal(false);
-      setCategoryToDelete(null);
-    }
   };
 
   const toggleBulkSelection = (id: number) => {
@@ -743,6 +672,146 @@ export default function BusinessMenu() {
     }
   };
 
+  // Load sections from Supabase
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      if (!restaurantId) {
+        sectionsTableExists.current = true;
+      setSections([]);
+        return;
+      }
+      const { data, error } = await supabase
+        .from('menu_sections')
+        .select('id, name, sort_order')
+        .eq('restaurant_id', restaurantId)
+        .order('sort_order', { ascending: true });
+      if (cancelled) return;
+      if (error) {
+        // A shop that has not run ADD_MENU_SECTIONS.sql yet simply has no
+        // sections; the whole screen still works on categories alone.
+        console.error('[Sections Load] error:', error);
+        sectionsTableExists.current = false;
+        setSections([]);
+        return;
+      }
+      setSections(
+        (data || []).map((row: any) => ({
+          id: row.id,
+          name: row.name,
+          sortOrder: row.sort_order ?? 0,
+        }))
+      );
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [restaurantId]);
+
+  /**
+   * The section column, but only once the table behind it exists.
+   *
+   * Spreading an empty object is a no-op, so every write path stays a single
+   * call and does not have to know whether the migration has been run.
+   */
+  const sectionColumn = (item: { sectionId?: string | null }) =>
+    sectionsTableExists.current ? { section_id: item.sectionId ?? null } : {};
+
+  // Writing through Supabase where possible, local state as the source of
+  // truth either way: this screen already has no single backend, and a
+  // section that vanishes on a failed write is worse than one that lags.
+  const persistSectionOrder = async (next: MenuSection[]) => {
+    setSections(next);
+    if (!restaurantId) return;
+    for (let i = 0; i < next.length; i++) {
+      await supabase
+        .from('menu_sections')
+        .update({ sort_order: i })
+        .eq('id', next[i].id);
+    }
+  };
+
+  const addSection = async () => {
+    // Renaming goes through the same dialog: the create case is just the one
+    // with nothing pre-filled, and two near-identical modals is two places for
+    // the validation to drift apart.
+    const name = newSectionName.trim();
+    if (!name || !restaurantId) return;
+    if (renamingSection) {
+      if (sections.some((sec) => sec.id !== renamingSection.id && sec.name.toLowerCase() === name.toLowerCase())) {
+        setSectionError(`Section "${name}" already exists.`);
+        return;
+      }
+      const { error } = await supabase
+        .from('menu_sections')
+        .update({ name })
+        .eq('id', renamingSection.id);
+      if (error) {
+        setSectionError(error.message || "Could not rename the section.");
+        return;
+      }
+      setSections(sections.map((sec) => (sec.id === renamingSection.id ? { ...sec, name } : sec)));
+      setRenamingSection(null);
+      setNewSectionName("");
+      setSectionError("");
+      setShowAddSection(false);
+      return;
+    }
+    const clash = sections.some((sec) => sec.name.toLowerCase() === name.toLowerCase());
+    if (clash) {
+      setSectionError(`Section "${name}" already exists.`);
+      return;
+    }
+    const { data, error } = await supabase
+      .from('menu_sections')
+      .insert([{
+        restaurant_id: restaurantId,
+        name,
+        sort_order: sections.length,
+        created_at: new Date().toISOString(),
+      }])
+      .select('id, name, sort_order')
+      .single();
+    if (error || !data) {
+      setSectionError(error?.message || "Could not create the section.");
+      return;
+    }
+    setSections([...sections, { id: data.id, name: data.name, sortOrder: data.sort_order ?? sections.length }]);
+    setNewSectionName("");
+    setSectionError("");
+    setShowAddSection(false);
+  };
+
+  const moveSection = (id: string, delta: number) => {
+    const index = sections.findIndex((sec) => sec.id === id);
+    const target = index + delta;
+    if (index < 0 || target < 0 || target >= sections.length) return;
+    const next = [...sections];
+    [next[index], next[target]] = [next[target], next[index]];
+    void persistSectionOrder(next);
+  };
+
+  const confirmDeleteSection = async () => {
+    const target = sectionToDelete;
+    if (!target) return;
+    // ON DELETE SET NULL unlinks the dishes rather than taking them with it:
+    // deleting a heading must never delete food.
+    const { error } = await supabase
+      .from('menu_sections')
+      .delete()
+      .eq('id', target.id);
+    if (error) {
+      setSectionError(error.message || "Could not delete the section.");
+      return;
+    }
+    const remaining = sections.filter((sec) => sec.id !== target.id);
+    setSections(remaining);
+    setMenuItems(menuItems.map((item) => (item.sectionId === target.id ? { ...item, sectionId: null } : item)));
+    if (selectedSection === target.id) setSelectedSection("all");
+    setSectionToDelete(null);
+    setShowDeleteSectionModal(false);
+  };
+
   // Load categories from Supabase
   useEffect(() => {
     const loadCategories = async () => {
@@ -831,117 +900,8 @@ export default function BusinessMenu() {
           </p>
         </div>
 
-        {viewMode === "preview" ? (
-          // CUSTOMER PREVIEW MODE
-          <div className="min-h-screen">
-            <div className="bg-[var(--primary-soft)] border-b-2 border-[var(--primary)] px-4 py-3">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <Eye className="w-5 h-5 text-[var(--primary)]" />
-                  <div>
-                    <p className="font-bold text-[var(--primary)] text-sm">Customer Preview</p>
-                    <p className="text-xs text-[var(--primary)]">How customers see your menu</p>
-                  </div>
-                </div>
-                <button
-                  onClick={() => setViewMode("edit")}
-                  className="px-3 py-1.5 bg-[var(--primary)] text-white rounded-lg text-sm font-semibold"
-                >
-                  Exit
-                </button>
-              </div>
-            </div>
-
-            {/* Customer View Categories */}
-            <div className="px-4 py-3 bg-surface border-b border-[var(--border)] sticky top-0 z-40">
-              <div className="flex gap-2 overflow-x-auto pb-2 scrollbar-hide">
-                {categories.map((category) => (
-                  <button
-                    key={category.id}
-                    onClick={() => setSelectedCategory(category.id)}
-                    className={`px-4 py-2 rounded-full text-sm font-semibold whitespace-nowrap transition-all ${
-                      selectedCategory === category.id
-                        ? "bg-[var(--primary)] text-white"
-                        : "bg-[var(--muted)] text-[var(--muted-foreground)] border border-[var(--border)]"
-                    }`}
-                  >
-                    {category.name}
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            {/* Customer View Menu Items */}
-            <div className="p-4 space-y-3">
-              {filteredItems.filter(item => item.available).length > 0 ? (
-                filteredItems.filter(item => item.available).map((item) => (
-                  <Card key={item.id} className="p-0 overflow-hidden border border-[var(--border)] bg-surface">
-                    <div className="flex items-start gap-3 p-4">
-                      <div className="w-20 h-20 rounded-xl overflow-hidden flex-shrink-0">
-                        <ImageWithFallback
-                          src={item.image}
-                          alt={item.name}
-                          className="w-full h-full object-cover"
-                        />
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-start justify-between mb-1">
-                          <h3 className="font-bold text-[var(--ink)] text-base">{item.name}</h3>
-                        </div>
-                        {item.badge && (
-                          <Badge className={`${getBadgeColor(item.badge)} text-xs mb-2 inline-flex items-center gap-1`}>
-                            {getBadgeIcon(item.badge)}
-                            {getBadgeLabel(item.badge)}
-                          </Badge>
-                        )}
-                        <p className="text-sm text-[var(--muted-foreground)] mb-2 line-clamp-2">
-                          {item.description}
-                        </p>
-                        <p className="text-xl font-bold text-[var(--primary)]">₱{item.price}</p>
-                      </div>
-                    </div>
-                  </Card>
-                ))
-              ) : (
-                <div className="text-center py-12">
-                  <Package className="w-16 h-16 text-[var(--border)] mx-auto mb-3" />
-                  <p className="text-base text-[var(--muted-foreground)]">No available items in this category</p>
-                </div>
-              )}
-            </div>
-          </div>
-        ) : (
-          // EDIT MODE
-          <>
-            {/* Tab Navigation */}
-            <div className="bg-surface px-4 pt-3 sticky top-0 z-50">
-              <div className="flex gap-2">
-                <button
-                  onClick={() => setViewMode("edit")}
-                  className={`flex-1 py-3 rounded-t-xl font-bold text-sm transition-all ${
-                    viewMode === "edit"
-                      ? "bg-[var(--primary)] text-white"
-                      : "bg-[var(--muted)] text-[var(--muted-foreground)]"
-                  }`}
-                >
-                  Edit Menu ({menuItems.length})
-                </button>
-                <button
-                  onClick={() => setViewMode("preview")}
-                  className={`flex-1 py-3 rounded-t-xl font-bold text-sm transition-all flex items-center justify-center gap-2 ${
-                    viewMode === "preview"
-                      ? "bg-[var(--primary)] text-white"
-                      : "bg-[var(--muted)] text-[var(--muted-foreground)]"
-                  }`}
-                >
-                  <Eye className="w-4 h-4" />
-                  Preview
-                </button>
-              </div>
-            </div>
-
             {/* Search Bar */}
-            <div className="bg-surface px-4 pb-3 sticky top-[52px] z-40 border-b border-[var(--border)]">
+            <div className="bg-surface px-4 pb-3 sticky top-0 z-40 border-b border-[var(--border)]">
               <div className="relative">
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-[var(--muted-foreground)]" />
                 <input
@@ -954,55 +914,61 @@ export default function BusinessMenu() {
               </div>
             </div>
 
-            {/* Category Filter Pills */}
+            {/* Sections. These replaced the category pills as the organising
+                control, so the rail is always rendered — a shop with none yet
+                needs the button to create its first one. */}
             <div className="px-3 lg:px-4 py-3 bg-surface border-b border-[var(--border)]">
-              <div className="flex gap-2 overflow-x-auto scrollbar-hide">
+              <div className="flex items-center justify-between gap-2 mb-2">
+                <p className="text-[11px] font-bold uppercase tracking-wider text-[var(--muted-foreground)]">
+                  Sections
+                </p>
                 <button
-                  onClick={() => setSelectedCategory("all")}
-                  className={`px-4 py-2 rounded-full text-sm font-medium whitespace-nowrap transition-all flex-shrink-0 ${
-                    selectedCategory === "all"
+                  onClick={() => { setRenamingSection(null); setNewSectionName(""); setSectionError(""); setShowAddSection(true); }}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold bg-[var(--primary-soft)] text-[var(--primary)] hover:opacity-90 transition-opacity"
+                >
+                  <Plus className="w-3.5 h-3.5" aria-hidden="true" />
+                  Add Section
+                </button>
+              </div>
+              <div className="flex gap-2 overflow-x-auto scrollbar-hide pb-1">
+                <button
+                  onClick={() => setSelectedSection("all")}
+                  className={`px-4 py-2 rounded-full text-sm font-semibold whitespace-nowrap transition-all flex-shrink-0 ${
+                    selectedSection === "all"
                       ? "bg-[var(--primary)] text-white"
                       : "bg-[var(--muted)] text-[var(--muted-foreground)] hover:bg-[var(--border)]"
                   }`}
                 >
-                  All Items
+                  All ({menuItems.length})
                 </button>
-                {categories.filter(c => c.id !== "All").map((category) => (
-                  <div key={category.id} className="relative group flex-shrink-0">
+                {sections.map((section, at) => (
+                  <div key={section.id} className="relative flex-shrink-0 flex items-stretch">
                     <button
-                      onClick={() => setSelectedCategory(category.id)}
-                      className={`px-4 py-2 pr-8 rounded-full text-sm font-medium whitespace-nowrap transition-all ${
-                        selectedCategory === category.id
+                      onClick={() => setSelectedSection(section.id)}
+                      className={`px-4 py-2 rounded-l-full text-sm font-semibold whitespace-nowrap transition-all ${
+                        selectedSection === section.id
                           ? "bg-[var(--primary)] text-white"
                           : "bg-[var(--muted)] text-[var(--muted-foreground)] hover:bg-[var(--border)]"
                       }`}
                     >
-                      {category.name}
+                      {section.name}
                     </button>
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        handleDeleteCategory(category.id);
-                      }}
-                      className={`absolute right-1 top-1/2 -translate-y-1/2 p-1.5 rounded-full transition-all ${
-                        selectedCategory === category.id
-                          ? "bg-white/20 hover:bg-white/30 text-white"
-                          : "bg-[var(--border)] hover:bg-[var(--border)] text-[var(--muted-foreground)]"
-                      }`}
-                      title="Delete category"
-                    >
-                      <X className="w-3 h-3" />
-                    </button>
+                    <span className={`flex items-stretch rounded-r-full ${selectedSection === section.id ? "bg-[var(--primary)]" : "bg-[var(--muted)]"}`}>
+                      <button onClick={() => moveSection(section.id, -1)} disabled={at === 0} aria-label={`Move ${section.name} up`} className="px-1.5 text-[var(--muted-foreground)] disabled:opacity-30 hover:opacity-100">
+                        <ChevronRight className="w-3 h-3 rotate-180" aria-hidden="true" />
+                      </button>
+                      <button onClick={() => { setRenamingSection(section); setNewSectionName(section.name); setSectionError(""); setShowAddSection(true); }} aria-label={`Rename ${section.name}`} className="px-1.5 text-[var(--muted-foreground)] hover:opacity-100">
+                        <Pencil className="w-3 h-3" aria-hidden="true" />
+                      </button>
+                      <button onClick={() => moveSection(section.id, 1)} disabled={at === sections.length - 1} aria-label={`Move ${section.name} down`} className="px-1.5 text-[var(--muted-foreground)] disabled:opacity-30 hover:opacity-100">
+                        <ChevronRight className="w-3 h-3" aria-hidden="true" />
+                      </button>
+                      <button onClick={() => { setSectionToDelete(section); setShowDeleteSectionModal(true); }} aria-label={`Delete ${section.name}`} className="px-1.5 text-[var(--error)] hover:opacity-80">
+                        <X className="w-3 h-3" aria-hidden="true" />
+                      </button>
+                    </span>
                   </div>
                 ))}
-                {/* Add Category Button */}
-                <button
-                  onClick={() => setShowAddCategory(true)}
-                  className="px-4 py-2 rounded-full text-sm font-medium whitespace-nowrap transition-all flex-shrink-0 border-2 border-dashed border-[var(--primary)] text-[var(--primary)] hover:bg-[var(--primary-soft)] flex items-center gap-1.5"
-                >
-                  <Plus className="w-4 h-4" />
-                  Add Category
-                </button>
               </div>
             </div>
 
@@ -1018,9 +984,19 @@ export default function BusinessMenu() {
             </div>
 
             {/* Menu Items - Card Layout */}
-            <div className="px-4 pb-6 space-y-3">
+            <div className="px-4 pb-6 space-y-6">
               {filteredItems.length > 0 ? (
-                filteredItems.map((item) => (
+                sectionGroups.map((group) => (
+                  <div key={group.key} className="space-y-3">
+                    <div className="flex items-center justify-between gap-2">
+                      <h2 className="text-xs font-bold uppercase tracking-wider text-[var(--muted-foreground)]">
+                        {group.title}
+                      </h2>
+                      <span className="text-[11px] text-[var(--muted-foreground)]">
+                        {group.items.length} {group.items.length === 1 ? "item" : "items"}
+                      </span>
+                    </div>
+                    {group.items.map((item) => (
                   <Card 
                     key={item.id} 
                     className={`p-0 overflow-hidden bg-surface border border-[var(--border)] ${selectedItems.includes(item.id) ? 'ring-2 ring-[var(--info)]' : ''}`}
@@ -1090,11 +1066,17 @@ export default function BusinessMenu() {
                               Hidden
                             </Badge>
                           )}
-                          <span className="text-[10px] lg:text-xs text-[var(--muted-foreground)]">Category: {item.category}</span>
+                          {sectionNameFor(item.sectionId) && (
+                            <span className="text-[10px] lg:text-xs text-[var(--muted-foreground)]">
+                              {sectionNameFor(item.sectionId)}
+                            </span>
+                          )}
                         </div>
                       </div>
                     </div>
                   </Card>
+                    ))}
+                  </div>
                 ))
               ) : (
                 <div className="text-center py-12">
@@ -1123,9 +1105,6 @@ export default function BusinessMenu() {
                 </button>
               </div>
             )}
-          </>
-        )}
-
         {/* Add Item Modal */}
         {showAddItem && (
           <div className="fixed inset-0 bg-black/50 z-[2000] flex items-end">
@@ -1214,18 +1193,37 @@ export default function BusinessMenu() {
                 </div>
 
                 <div>
-                  <label className="text-sm font-bold text-[var(--ink)] mb-2 block">Category *</label>
-                  <select
-                    value={newItem.category}
-                    onChange={(e) => setNewItem({ ...newItem, category: e.target.value })}
-                    className="w-full p-3 border border-line rounded-xl font-semibold"
-                  >
-                    {categories.filter(c => c.id !== "All").map((cat) => (
-                      <option key={cat.id} value={cat.id}>{cat.name}</option>
-                    ))}
-                  </select>
+                  <div className="flex items-center justify-between mb-2">
+                    <label className="text-sm font-bold text-[var(--ink)]">Section</label>
+                    <button
+                      type="button"
+                      onClick={() => { setRenamingSection(null); setNewSectionName(""); setSectionError(""); setShowAddSection(true); }}
+                      className="inline-flex items-center gap-1 text-xs font-bold text-[var(--primary)] hover:underline"
+                    >
+                      <Plus className="w-3.5 h-3.5" aria-hidden="true" />
+                      New section
+                    </button>
+                  </div>
+                  {/* Sections are the grouping control now. The old category dropdown
+                      is gone; dishes keep a stored category behind the scenes so the
+                      customer cuisine filter rail is unaffected. */}
+                  {sections.length === 0 ? (
+                    <p className="text-xs text-[var(--muted-foreground)]">
+                      No sections yet. Use "New section" above to group your menu — items stay unfiled until you do.
+                    </p>
+                  ) : (
+                    <select
+                      value={newItem.sectionId ?? ""}
+                      onChange={(e) => setNewItem({ ...newItem, sectionId: e.target.value || null })}
+                      className="w-full p-3 border border-line rounded-xl font-semibold"
+                    >
+                      <option value="">Unfiled</option>
+                      {sections.map((section) => (
+                        <option key={section.id} value={section.id}>{section.name}</option>
+                      ))}
+                    </select>
+                  )}
                 </div>
-
                 <div className="flex items-center justify-between p-4 bg-[var(--muted)] rounded-xl">
                   <div>
                     <p className="font-bold text-[var(--ink)]">Make available immediately</p>
@@ -1333,18 +1331,37 @@ export default function BusinessMenu() {
                 </div>
 
                 <div>
-                  <label className="text-sm font-bold text-[var(--ink)] mb-2 block">Category *</label>
-                  <select
-                    value={editingItem.category}
-                    onChange={(e) => setEditingItem({ ...editingItem, category: e.target.value })}
-                    className="w-full p-3 border border-line rounded-xl font-semibold"
-                  >
-                    {categories.filter(c => c.id !== "All").map((cat) => (
-                      <option key={cat.id} value={cat.id}>{cat.name}</option>
-                    ))}
-                  </select>
+                  <div className="flex items-center justify-between mb-2">
+                    <label className="text-sm font-bold text-[var(--ink)]">Section</label>
+                    <button
+                      type="button"
+                      onClick={() => { setRenamingSection(null); setNewSectionName(""); setSectionError(""); setShowAddSection(true); }}
+                      className="inline-flex items-center gap-1 text-xs font-bold text-[var(--primary)] hover:underline"
+                    >
+                      <Plus className="w-3.5 h-3.5" aria-hidden="true" />
+                      New section
+                    </button>
+                  </div>
+                  {/* Sections are the grouping control now. The old category dropdown
+                      is gone; dishes keep a stored category behind the scenes so the
+                      customer cuisine filter rail is unaffected. */}
+                  {sections.length === 0 ? (
+                    <p className="text-xs text-[var(--muted-foreground)]">
+                      No sections yet. Use "New section" above to group your menu — items stay unfiled until you do.
+                    </p>
+                  ) : (
+                    <select
+                      value={editingItem.sectionId ?? ""}
+                      onChange={(e) => setEditingItem({ ...editingItem, sectionId: e.target.value || null })}
+                      className="w-full p-3 border border-line rounded-xl font-semibold"
+                    >
+                      <option value="">Unfiled</option>
+                      {sections.map((section) => (
+                        <option key={section.id} value={section.id}>{section.name}</option>
+                      ))}
+                    </select>
+                  )}
                 </div>
-
                 <div>
                   <label className="text-sm font-bold text-[var(--ink)] mb-2 block">Badge (Optional)</label>
                   <p className="text-xs text-[var(--muted-foreground)] mb-3">Highlight special items to attract customers</p>
@@ -1449,36 +1466,51 @@ export default function BusinessMenu() {
         />
 
         {/* Add Category Modal */}
-        {showAddCategory && (
+        {showAddSection && (
           <div className="fixed inset-0 bg-black/50 z-[2000] flex items-center justify-center p-4">
-            <Card className="bg-surface p-6 max-w-sm w-full">
-              <h3 className="text-xl font-bold text-[var(--ink)] mb-4">Add Category</h3>
+            <Card className="w-full max-w-md p-6 border border-line bg-surface">
+              <h3 className="text-lg font-bold text-[var(--ink)] mb-1">
+                {renamingSection ? "Rename section" : "New section"}
+              </h3>
+              <p className="text-sm text-[var(--muted-foreground)] mb-4">
+                Sections are the headings customers see down the menu, in the order you set here.
+              </p>
               <input
                 type="text"
-                value={newCategory}
-                onChange={(e) => { setNewCategory(e.target.value); setCategoryError(""); }}
-                className={`w-full p-3 border-2 rounded-xl mb-4 font-semibold ${categoryError ? 'border-[var(--primary)]' : 'border-[var(--border)]'}`}
-                placeholder="e.g., Breakfast Meals"
-                autoFocus
+                value={newSectionName}
+                onChange={(e) => { setNewSectionName(e.target.value); setSectionError(""); }}
+                placeholder="e.g. For you"
+                aria-label="Section name"
+                className="w-full px-4 py-3 border border-line rounded-xl text-sm outline-none focus:border-[var(--primary)]"
               />
-              {categoryError && (
-                <p className="text-sm text-[var(--primary)] font-semibold mb-3">{categoryError}</p>
-              )}
-              <div className="flex gap-2">
-                <Button
-                  onClick={() => { setShowAddCategory(false); setCategoryError(""); }}
-                  variant="outline"
-                  className="flex-1"
-                >
+              {sectionError && <p className="text-sm text-[var(--error)] mt-2">{sectionError}</p>}
+              <div className="flex gap-3 mt-5">
+                <button onClick={() => { setShowAddSection(false); setRenamingSection(null); setSectionError(""); }} className="flex-1 py-3 text-sm font-semibold text-[var(--muted-foreground)] bg-[var(--muted)] rounded-xl hover:bg-[var(--border)]">
                   Cancel
-                </Button>
-                <Button
-                  onClick={addNewCategory}
-                  className="flex-1 bg-[var(--primary)] hover:bg-[var(--primary)]"
-                  disabled={!newCategory.trim()}
-                >
-                  Add
-                </Button>
+                </button>
+                <button onClick={addSection} className="flex-1 py-3 text-sm font-semibold text-white bg-[var(--primary)] rounded-xl hover:opacity-90">
+                  {renamingSection ? "Save" : "Create"}
+                </button>
+              </div>
+            </Card>
+          </div>
+        )}
+
+        {showDeleteSectionModal && sectionToDelete && (
+          <div className="fixed inset-0 bg-black/50 z-[2000] flex items-center justify-center p-4">
+            <Card className="w-full max-w-md p-6 border border-line bg-surface text-center">
+              <Trash2 className="w-10 h-10 text-[var(--error)] mx-auto mb-3" aria-hidden="true" />
+              <h3 className="text-lg font-bold text-[var(--ink)]">Delete &quot;{sectionToDelete.name}&quot;?</h3>
+              <p className="text-sm text-[var(--muted-foreground)] mt-2">
+                The dishes inside stay on your menu and move to the unfiled group. Only the heading is removed.
+              </p>
+              <div className="flex gap-3 mt-5">
+                <button onClick={() => { setSectionToDelete(null); setShowDeleteSectionModal(false); }} className="flex-1 py-3 text-sm font-semibold text-[var(--muted-foreground)] bg-[var(--muted)] rounded-xl hover:bg-[var(--border)]">
+                  Cancel
+                </button>
+                <button onClick={confirmDeleteSection} className="flex-1 py-3 text-sm font-semibold text-white bg-[var(--error)] rounded-xl hover:opacity-90">
+                  Delete
+                </button>
               </div>
             </Card>
           </div>
@@ -1518,43 +1550,6 @@ export default function BusinessMenu() {
                 </Button>
               </div>
             </div>
-          </div>
-        )}
-
-        {/* Delete Category Confirmation Modal */}
-        {showDeleteCategoryModal && categoryToDelete && (
-          <div className="fixed inset-0 bg-black/50 z-[2000] flex items-center justify-center p-4">
-            <Card className="bg-surface p-6 max-w-md w-full rounded-2xl shadow-2xl">
-              <div className="flex items-center justify-center mb-4">
-                <div className="w-12 h-12 bg-[var(--error-soft)] rounded-full flex items-center justify-center">
-                  <X className="w-6 h-6 text-[var(--primary)]" />
-                </div>
-              </div>
-              <h3 className="text-xl font-bold text-[var(--ink)] text-center mb-2">
-                Delete Category?
-              </h3>
-              <p className="text-sm text-[var(--muted-foreground)] text-center mb-6">
-                {`All items in "${categories.find(c => c.id === categoryToDelete)?.name}" will also be deleted. This action cannot be undone.`}
-              </p>
-              <div className="flex gap-2">
-                <Button
-                  onClick={() => {
-                    setShowDeleteCategoryModal(false);
-                    setCategoryToDelete(null);
-                  }}
-                  variant="outline"
-                  className="flex-1"
-                >
-                  Cancel
-                </Button>
-                <Button
-                  onClick={confirmDeleteCategory}
-                  className="flex-1 bg-[var(--primary)] hover:bg-[var(--primary)] text-white font-bold"
-                >
-                  Delete
-                </Button>
-              </div>
-            </Card>
           </div>
         )}
 

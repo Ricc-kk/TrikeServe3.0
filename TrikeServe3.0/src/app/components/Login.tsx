@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { useNavigate, Link } from "react-router";
-import { ChevronDown, Users } from "lucide-react";
+import { ChevronDown, Eye, EyeOff, Users } from "lucide-react";
 import { Button } from "./ui/button";
 import { Input } from "./ui/input";
 import { useAuth } from "../contexts/AuthContext";
@@ -45,6 +45,7 @@ export default function Login() {
   const { login, resendVerificationEmail } = useAuth();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [showAccounts, setShowAccounts] = useState(false);
@@ -230,7 +231,7 @@ export default function Login() {
       </div>
 
       {/* Right Side - Login Form */}
-      <div className="flex-1 lg:max-w-xl flex items-center justify-center p-6 bg-surface">
+      <div className="flex-1 lg:max-w-xl flex items-start justify-center p-6 pt-10 bg-surface">
         <div className="w-full max-w-md">
           {/* Mobile Logo */}
           <div className="lg:hidden text-center mb-8">
@@ -241,8 +242,8 @@ export default function Login() {
           </div>
 
           <div className="mb-6">
-            <h2 className="text-3xl font-bold text-[var(--ink)] mb-2">Welcome Back / Muli, maligayang pagdating</h2>
-            <p className="text-[var(--muted-foreground)]">Sign in to your TrikeServe account / Mag-sign in sa iyong account</p>
+            <h2 className="text-3xl font-bold text-[var(--ink)] mb-2">Welcome Back</h2>
+            <p className="text-[var(--muted-foreground)]">Sign in to your TrikeServe account</p>
           </div>
 
           <form onSubmit={handleManualLogin} className="space-y-5">
@@ -289,15 +290,31 @@ export default function Login() {
               <label className="block text-sm font-semibold text-[var(--ink)] mb-2">
                 Password
               </label>
-              <Input
-                type="password"
-                placeholder="••••••••"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                className="border border-line focus:border-[var(--primary)] h-12"
-                required
-                disabled={isLoading}
-              />
+              <div className="relative">
+                <Input
+                  type={showPassword ? "text" : "password"}
+                  placeholder="••••••••"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  className="border border-line focus:border-[var(--primary)] h-12 pr-12"
+                  required
+                  disabled={isLoading}
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword((v) => !v)}
+                  aria-label={showPassword ? "Hide password" : "Show password"}
+                  aria-pressed={showPassword}
+                  disabled={isLoading}
+                  className="absolute right-1 top-1/2 grid size-10 -translate-y-1/2 place-items-center rounded-lg text-[var(--muted-foreground)] transition-colors hover:text-[var(--primary)] disabled:opacity-50"
+                >
+                  {showPassword ? (
+                    <EyeOff className="size-5" aria-hidden="true" />
+                  ) : (
+                    <Eye className="size-5" aria-hidden="true" />
+                  )}
+                </button>
+              </div>
               <div className="mt-2 text-right">
                 <Link to="/forgot-password" className="text-xs text-[var(--primary)] font-semibold hover:underline">
                   Forgot Password?
@@ -316,7 +333,7 @@ export default function Login() {
                   SIGNING IN...
                 </div>
               ) : (
-                'SIGN IN / MAG-LOG IN'
+                'SIGN IN'
               )}
             </Button>
           </form>

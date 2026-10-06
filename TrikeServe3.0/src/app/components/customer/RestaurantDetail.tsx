@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo } from "react";
 import { ArrowLeft, Heart, Users, Calendar, Share2, Clock, Star, MapPin, Route, ChevronDown, ChevronRight, Home as HomeIcon, ShoppingCart, MessageCircle, ClipboardList, User, Search, BadgeCheck, X, Check } from "lucide-react";
 import { Link, useNavigate, useSearchParams } from "react-router";
+import { usePreviousPage } from "../../hooks/usePreviousPage";
 import { Card } from "../ui/card";
 import { Badge } from "../ui/badge";
 import BottomNav from "../ui/BottomNav";
@@ -18,6 +19,8 @@ import { formatDistance, haversineMetres, hasCoords } from "@/lib/distance";
 
 interface MenuItem extends CustomizableMenuItem {
   available: boolean;
+  /** The shop's own heading this dish sits under. Null when unfiled. */
+  sectionId: string | null;
 }
 
 interface Review {
@@ -42,6 +45,8 @@ interface RestaurantData {
   verified: boolean;
   goodService: boolean;
   categories: { id: string; name: string }[];
+  /** The shop's own menu headings, ordered. Empty until sections are created. */
+  menuSections: { id: string; name: string; sortOrder: number }[];
   menuItems: MenuItem[];
   reviews: Review[];
   is_open: boolean;
@@ -56,6 +61,9 @@ interface RestaurantData {
 
 export default function RestaurantDetail() {
   const navigate = useNavigate();
+  // A bare navigate(-1) walks a cold deep link straight out of the app,
+  // because there is no history entry before it to return to.
+  const goBack = usePreviousPage("/customer/food");
   const [searchParams] = useSearchParams();
   const restaurantId = searchParams.get("id");
   const restaurantName = searchParams.get("name") || "Restaurant";
@@ -152,6 +160,23 @@ export default function RestaurantDetail() {
           console.error('[RestaurantDetail] Error loading categories:', categoriesError);
         }
 
+        // The shop's own menu headings, in the order it arranged them.
+        const { data: sectionsData, error: sectionsError } = await supabase
+          .from('menu_sections')
+          .select('id, name, sort_order')
+          .eq('restaurant_id', restaurantId)
+          .order('sort_order', { ascending: true });
+
+        if (sectionsError) {
+          console.error('[RestaurantDetail] Error loading menu sections:', sectionsError);
+        }
+
+        const mappedSections = (sectionsData || []).map((section: any) => ({
+          id: section.id,
+          name: section.name,
+          sortOrder: section.sort_order ?? 0,
+        }));
+
         // Use categories from the database, or fall back to extracting from menu items
         let categories = [{ id: "all", name: "All Items" }];
 
@@ -186,6 +211,7 @@ export default function RestaurantDetail() {
           price: parseFloat(item.price),
           image: item.image_url || 'https://images.unsplash.com/photo-1546069901-ba9599a7e63c?w=400',
           category: item.category,
+          sectionId: item.section_id ?? null,
           available: item.is_available,
           badge: item.badge || undefined,
           customizationGroups: []
@@ -216,6 +242,7 @@ export default function RestaurantDetail() {
           verified: true,
           goodService: true,
           categories,
+          menuSections: mappedSections,
           menuItems: mappedMenuItems,
           reviews: [],
           is_open: restaurant.is_open !== undefined ? restaurant.is_open : true,
@@ -279,10 +306,25 @@ export default function RestaurantDetail() {
                   ];
                 }
 
+                // Sections are loaded here too rather than blanked: a shop
+                // renaming a category would otherwise wipe the headings off
+                // every customer's open storefront for as long as the page
+                // stayed mounted.
+                const { data: sectionsData } = await supabase
+                  .from('menu_sections')
+                  .select('id, name, sort_order')
+                  .eq('restaurant_id', restaurantId)
+                  .order('sort_order', { ascending: true });
+
                 // Update restaurant data with new categories
                 setRestaurantData({
                   ...restaurantData,
-                  categories
+                  categories,
+                  menuSections: (sectionsData || []).map((section: any) => ({
+                    id: section.id,
+                    name: section.name,
+                    sortOrder: section.sort_order ?? 0,
+                  })),
                 });
 
                 console.log('[RestaurantDetail] Categories updated in real-time');
@@ -297,7 +339,7 @@ export default function RestaurantDetail() {
       )
       .subscribe();
 
-    return () => {
+  return () => {
       console.log('[RestaurantDetail] Cleaning up categories subscription');
       supabase.removeChannel(subscription);
     };
@@ -340,14 +382,29 @@ export default function RestaurantDetail() {
                    price: parseFloat(item.price),
                    image: item.image_url || 'https://images.unsplash.com/photo-1546069901-ba9599a7e63c?w=400',
                    category: item.category,
+                   sectionId: item.section_id ?? null,
                    available: item.is_available,
                    badge: item.badge || undefined,
                    customizationGroups: []
                  }));
 
+                 // Sections ride along with the items. Reloading only the items
+                 // would leave every dish on this shop's storefront headingless the
+                 // moment the business moved one between folders.
+                 const { data: sectionsData } = await supabase
+                   .from('menu_sections')
+                   .select('id, name, sort_order')
+                   .eq('restaurant_id', restaurantId)
+                   .order('sort_order', { ascending: true });
+
                 // Update restaurant data with new menu items
                 setRestaurantData({
                   ...restaurantData,
+                  menuSections: (sectionsData || []).map((section: any) => ({
+                    id: section.id,
+                    name: section.name,
+                    sortOrder: section.sort_order ?? 0,
+                  })),
                   menuItems: mappedMenuItems
                 });
 
@@ -521,6 +578,96 @@ export default function RestaurantDetail() {
 
   const selectedCategoryName = restaurantData?.categories.find(cat => cat.id === selectedCategory)?.name || "All Items";
 
+  // The shop's own headings, in the order it set them. Empty for a shop that
+  // has not created any, which is every shop until ADD_MENU_SECTIONS.sql runs.
+  const menuSections = restaurantData?.menuSections ?? [];
+
+  const sectionGroups = menuSections
+    .map((section) => ({
+      id: section.id,
+      name: section.name,
+      items: filteredItems.filter((item) => item.sectionId === section.id),
+    }))
+    // An empty heading is worse than no heading: it would be a title with
+    // nothing under it, so sections with no matching item drop out.
+    .filter((group) => group.items.length > 0);
+
+  // Items the business never filed must still be reachable. They collect
+  // under one trailing heading rather than disappearing off the menu.
+  const unfiledItems = filteredItems.filter(
+    (item) => !item.sectionId || !menuSections.some((section) => section.id === item.sectionId),
+  );
+if (unfiledItems.length > 0) sectionGroups.push({ id: "__unfiled", name: "More", items: unfiledItems });
+
+  const renderMenuItem = (item: (typeof filteredItems)[number]) => (
+  
+              <Card key={item.id} className="overflow-hidden border-0 shadow-lg rounded-2xl bg-surface">
+                <div className="flex items-center gap-4 p-4">
+                  <div className="relative w-24 h-24 flex-shrink-0 rounded-2xl overflow-hidden">
+                    <ImageWithFallback
+                      src={item.image}
+                      alt={item.name}
+                      className="w-full h-full object-cover"
+                    />
+                    {item.badge && (
+                      <div className={`absolute top-2 left-2 px-2 py-1 rounded-full text-[10px] font-bold text-white ${
+                        item.badge === "most-ordered" ? "bg-[var(--primary)]" :
+                        item.badge === "most-liked" ? "bg-[var(--teal)]" :
+                        "bg-[var(--ink-solid)]"
+                      }`}>
+                        {item.badge === "most-ordered" ? "Most ordered" :
+                         item.badge === "most-liked" ? "Most liked" :
+                         "Signature dish"}
+                      </div>
+                    )}
+                  </div>
+  
+                  <div className="flex-1 min-w-0">
+                    <h3 className="font-bold text-[var(--ink)] text-base mb-1 line-clamp-1">{item.name}</h3>
+                    {item.description && (
+                      <p className="text-xs text-[var(--muted-foreground)] mb-2 line-clamp-2">{item.description}</p>
+                    )}
+                    <p className="text-lg font-bold text-[var(--ink)]">
+                      <span className="text-sm">₱</span>{item.price.toFixed(2)}
+                    </p>
+                  </div>
+  
+                  <div className="flex flex-col items-center gap-2 flex-shrink-0">
+                    <button
+                      onClick={() =>
+                        toggleFavoriteItem({
+                          id: item.id,
+                          restaurantId: restaurantId || '',
+                          restaurantName: restaurantData?.name || '',
+                          name: item.name,
+                          description: item.description,
+                          price: item.price,
+                          image: item.image,
+                          category: item.category,
+                        })
+                      }
+                      className={`w-11 h-11 rounded-full flex items-center justify-center shadow-lg active:scale-90 transition-all ${
+                        isFavoriteItem(item.id)
+                          ? 'bg-[var(--primary)] shadow-[var(--primary)]/30'
+                          : 'bg-[var(--amber-soft)] shadow-[var(--primary)]/10'
+                      }`}
+                    >
+                      <Heart className={`w-5 h-5 ${isFavoriteItem(item.id) ? 'text-white fill-white' : 'text-[var(--primary)]'}`} />
+                    </button>
+                    <button
+                      onClick={() => handleAddToCart(item)}
+                      className="w-11 h-11 bg-[var(--primary)] rounded-full flex items-center justify-center shadow-lg shadow-[var(--primary)]/30 active:scale-90 transition-all"
+                    >
+                      <span className="text-white text-2xl font-bold leading-none">+</span>
+                    </button>
+                  </div>
+                </div>
+              </Card>
+  
+  );
+
+
+
   return (
     <div className="min-h-screen bg-[var(--muted)] pb-20">
       {/* Floating View Cart Bar */}
@@ -553,7 +700,7 @@ export default function RestaurantDetail() {
         {/* Header Overlay */}
         <div className="absolute top-0 left-0 right-0 flex items-center justify-between px-5 py-4">
           <button 
-            onClick={() => navigate(-1)}
+            onClick={goBack}
             className="w-11 h-11 bg-white/95 backdrop-blur-sm rounded-full flex items-center justify-center shadow-lg active:scale-90 transition-all"
           >
             <ArrowLeft className="w-6 h-6 text-[var(--ink)]" />
@@ -815,69 +962,17 @@ export default function RestaurantDetail() {
           </div>
         ) : (
           <div className="space-y-4">
-            {filteredItems.map((item) => (
-              <Card key={item.id} className="overflow-hidden border-0 shadow-lg rounded-2xl bg-surface">
-                <div className="flex items-center gap-4 p-4">
-                  <div className="relative w-24 h-24 flex-shrink-0 rounded-2xl overflow-hidden">
-                    <ImageWithFallback
-                      src={item.image}
-                      alt={item.name}
-                      className="w-full h-full object-cover"
-                    />
-                    {item.badge && (
-                      <div className={`absolute top-2 left-2 px-2 py-1 rounded-full text-[10px] font-bold text-white ${
-                        item.badge === "most-ordered" ? "bg-[var(--primary)]" :
-                        item.badge === "most-liked" ? "bg-[var(--teal)]" :
-                        "bg-[var(--ink-solid)]"
-                      }`}>
-                        {item.badge === "most-ordered" ? "Most ordered" :
-                         item.badge === "most-liked" ? "Most liked" :
-                         "Signature dish"}
-                      </div>
-                    )}
-                  </div>
-
-                  <div className="flex-1 min-w-0">
-                    <h3 className="font-bold text-[var(--ink)] text-base mb-1 line-clamp-1">{item.name}</h3>
-                    {item.description && (
-                      <p className="text-xs text-[var(--muted-foreground)] mb-2 line-clamp-2">{item.description}</p>
-                    )}
-                    <p className="text-lg font-bold text-[var(--ink)]">
-                      <span className="text-sm">₱</span>{item.price.toFixed(2)}
-                    </p>
-                  </div>
-
-                  <div className="flex flex-col items-center gap-2 flex-shrink-0">
-                    <button
-                      onClick={() =>
-                        toggleFavoriteItem({
-                          id: item.id,
-                          restaurantId: restaurantId || '',
-                          restaurantName: restaurantData?.name || '',
-                          name: item.name,
-                          description: item.description,
-                          price: item.price,
-                          image: item.image,
-                          category: item.category,
-                        })
-                      }
-                      className={`w-11 h-11 rounded-full flex items-center justify-center shadow-lg active:scale-90 transition-all ${
-                        isFavoriteItem(item.id)
-                          ? 'bg-[var(--primary)] shadow-[var(--primary)]/30'
-                          : 'bg-[var(--amber-soft)] shadow-[var(--primary)]/10'
-                      }`}
-                    >
-                      <Heart className={`w-5 h-5 ${isFavoriteItem(item.id) ? 'text-white fill-white' : 'text-[var(--primary)]'}`} />
-                    </button>
-                    <button
-                      onClick={() => handleAddToCart(item)}
-                      className="w-11 h-11 bg-[var(--primary)] rounded-full flex items-center justify-center shadow-lg shadow-[var(--primary)]/30 active:scale-90 transition-all"
-                    >
-                      <span className="text-white text-2xl font-bold leading-none">+</span>
-                    </button>
-                  </div>
+            {(menuSections.length > 0 ? sectionGroups : [{ id: "__all", name: null, items: filteredItems }]).map((group) => (
+              <section key={group.id} aria-label={group.name || undefined}>
+                {/* Sections are the shop's own headings, in the order it set. When
+                    it has none, the menu stays one flat list exactly as before. */}
+                {group.name && (
+                  <h3 className="text-lg font-bold text-[var(--ink)] mb-3">{group.name}</h3>
+                )}
+                <div className="space-y-4">
+                  {group.items.map((item) => renderMenuItem(item))}
                 </div>
-              </Card>
+              </section>
             ))}
           </div>
         )}
