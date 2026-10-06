@@ -6,6 +6,7 @@ import { useEffect, useState, useRef } from "react";
 import { useAuth } from "../../contexts/AuthContext";
 import { Button } from "../ui/button";
 import BottomNav from "../ui/BottomNav";
+import GoodbyeOverlay from "../ui/GoodbyeOverlay";
 import { supabase } from "../../../utils/supabase";
 import { supabaseHelpers } from "@/lib/supabase";
 import MapSelector from "./MapSelector";
@@ -80,10 +81,6 @@ export default function Account() {
   const handleLogout = () => {
     setShowLogoutConfirm(false);
     setShowGoodbye(true);
-    setTimeout(() => {
-      logout();
-      navigate("/");
-    }, 2000);
   };
 
   const handleSaveProfile = () => {
@@ -400,20 +397,19 @@ export default function Account() {
 
       {/* Goodbye Popup */}
       {showGoodbye && (
-        <div className="fixed inset-0 bg-black/50 z-[2000] flex items-center justify-center p-4">
-          <div className="bg-surface rounded-2xl shadow-xl p-8 max-w-sm w-full text-center">
-            <div className="w-16 h-16 bg-[var(--primary-soft)] rounded-full flex items-center justify-center mx-auto mb-4">
-              <Heart className="w-8 h-8 text-[var(--primary)]" />
-            </div>
-            <h3 className="text-2xl font-bold text-[var(--ink)] mb-2">Goodbye!</h3>
-            <p className="text-[var(--muted-foreground)] text-sm">See you again soon, <span className="font-semibold text-[var(--ink)]">{formData.name}</span>! 👋</p>
-            <div className="mt-6">
-              <div className="w-full bg-[var(--border)] rounded-full h-1.5">
-                <div className="bg-[var(--primary)] h-1.5 rounded-full" style={{ width: '100%', animation: 'shrink 2s linear forwards' }} />
-              </div>
-            </div>
-          </div>
-        </div>
+        <GoodbyeOverlay
+          name={formData.name}
+          subline={(name) => (
+            <>See you again soon, <span className="font-semibold text-[var(--ink)]">{name}</span>! 👋</>
+          )}
+          icon={<Heart className="w-8 h-8 text-[var(--primary)]" />}
+          accentSoft="var(--primary-soft)"
+          accent="var(--primary)"
+          onDone={() => {
+            logout();
+            navigate("/");
+          }}
+        />
       )}
 
       {/* Default Address Map Selector */}

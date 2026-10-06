@@ -2977,18 +2977,18 @@ export default function CustomerHome() {
             <div className="bg-[var(--amber-soft)] border-2 border-[var(--amber-soft)] rounded-xl p-4 mb-6">
               <div className="flex items-center justify-between">
                 <div>
-                  <p className="text-xs text-[var(--amber-dark)] uppercase tracking-widest font-semibold">Your Total Fare</p>
+                  <p className="text-xs text-[var(--amber-ink)] uppercase tracking-widest font-semibold">Your Total Fare</p>
                   {selectedVehicle === 'share' ? (
                     <>
-                      <p className="text-sm text-[var(--amber-dark)] mt-0.5">
+                      <p className="text-sm text-[var(--amber-ink)] mt-0.5">
                         ₱{rideTotal} trip ÷ {passengerCount} {passengerCount === 1 ? 'passenger' : 'passengers'}
                       </p>
                       <p className="text-3xl font-bold text-[var(--amber)]">₱{(rideTotal / passengerCount).toFixed(2)}</p>
-                      <p className="text-[10px] text-[var(--amber-dark)] mt-0.5">{fareBreakdown}</p>
+                      <p className="text-[10px] text-[var(--amber-ink)] mt-0.5">{fareBreakdown}</p>
                     </>
                   ) : (
                     <>
-                      <p className="text-sm text-[var(--amber-dark)] mt-0.5">{fareBreakdown}</p>
+                      <p className="text-sm text-[var(--amber-ink)] mt-0.5">{fareBreakdown}</p>
                       <p className="text-3xl font-bold text-[var(--amber)]">₱{rideTotal}</p>
                     </>
                   )}

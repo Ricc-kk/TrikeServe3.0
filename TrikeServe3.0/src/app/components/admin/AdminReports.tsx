@@ -125,8 +125,8 @@ export default function AdminReports() {
               {loadError && (
                 <Card className="p-4 mb-6 border-2 border-[var(--amber-soft)] bg-[var(--amber-soft)]">
                   <div className="flex items-start gap-3">
-                    <AlertTriangle className="w-5 h-5 text-[var(--amber-dark)] flex-shrink-0 mt-0.5" />
-                    <p className="text-sm text-[var(--amber-dark)]">
+                    <AlertTriangle className="w-5 h-5 text-[var(--amber-ink)] flex-shrink-0 mt-0.5" />
+                    <p className="text-sm text-[var(--amber-ink)]">
                       {loadError}. If the reports table is missing, run CREATE_RIDE_REPORTS.sql.
                     </p>
                   </div>

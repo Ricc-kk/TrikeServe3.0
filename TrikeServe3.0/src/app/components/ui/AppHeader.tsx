@@ -10,33 +10,53 @@ export const SERVICE_AREA = "Gen. T. de Leon, Valenzuela";
 
 const ROLE_META: Record<
   UserRole,
-  { title: string; trust: string; areaLabel: string; notificationsHref: string }
+  {
+    title: string;
+    trust: string;
+    areaLabel: string;
+    notificationsHref: string;
+    /** Where the avatar takes you when tapped. */
+    settingsHref: string;
+  }
 > = {
   customer: {
     title: "TrikeServe",
     trust: "Local fares",
     areaLabel: "Serving your area",
     notificationsHref: "/customer/notifications",
+    settingsHref: "/customer/account",
   },
   rider: {
     title: "Rider Hub",
     trust: "Verified rider",
     areaLabel: "Dispatch area",
     notificationsHref: "/rider/messages",
+    settingsHref: "/rider/profile",
   },
   business: {
     title: "Store Hub",
     trust: "Store account",
     areaLabel: "Your store",
     notificationsHref: "/business/dashboard",
+    settingsHref: "/business/account",
   },
   admin: {
     title: "Admin Center",
     trust: "Secure access",
     areaLabel: "Service area",
     notificationsHref: "/admin/approvals",
+    settingsHref: "/admin/settings",
   },
 };
+
+/** First letters of a name, for the avatar fallback. */
+function initialsOf(name: string | undefined, email: string | undefined): string {
+  const source = name?.trim() || email?.split("@")[0] || "";
+  const parts = source.split(/\s+/).filter(Boolean);
+  if (parts.length === 0) return "?";
+  if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
+  return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
+}
 
 function timeOfDayGreeting() {
   const hour = new Date().getHours();
@@ -69,9 +89,9 @@ type AppHeaderProps = {
   /** Extra content rendered under the header (search bars, service switcher). */
   children?: ReactNode;
   /**
-   * Image shown in place of the default "TS" monogram. A business passes its
-   * own logo here so the header leads with the restaurant's profile rather
-   * than the platform initials.
+   * Fallback image used when the signed-in user has no profile photo of their
+   * own. A business passes its shop logo here. The user's `avatarUrl` takes
+   * precedence, so tapping through to settings always leads to their profile.
    */
   avatarSrc?: string;
   /** Accessible name for the avatar image. */
@@ -129,6 +149,14 @@ export default function AppHeader({
         : SERVICE_AREA);
 
   const resolvedHref = notificationsHref ?? meta.notificationsHref;
+
+  // The signed-in user's own photo, which is what the header should lead with.
+  // `avatarSrc` is only a fallback (a business passes its shop logo, so an owner
+  // without a profile photo still gets their storefront). The initials replace
+  // the old "TS" when neither exists — "TS" said "TrikeServe", not "you", so it
+  // read as a watermark next to a personalised greeting.
+  const resolvedAvatar = user?.avatarUrl ?? avatarSrc ?? null;
+  const avatarInitials = initialsOf(user?.name, user?.email);
   const notificationLabel =
     notificationCount > 0
       ? `Notifications, ${notificationCount} unread`
@@ -177,10 +205,14 @@ export default function AppHeader({
               <Menu className="size-6" aria-hidden="true" />
             </button>
           ) : null}
-          <div className="grid size-12 shrink-0 place-items-center overflow-hidden rounded-2xl bg-amber shadow-soft">
-            {avatarSrc ? (
+          <Link
+            to={meta.settingsHref}
+            aria-label={`${avatarAlt ?? resolvedTitle} — open settings`}
+            className="grid size-12 shrink-0 place-items-center overflow-hidden rounded-2xl bg-amber shadow-soft transition-transform active:scale-95"
+          >
+            {resolvedAvatar ? (
               <img
-                src={avatarSrc}
+                src={resolvedAvatar}
                 alt={avatarAlt ?? ""}
                 className="size-full object-cover"
               />
@@ -188,11 +220,11 @@ export default function AppHeader({
               // Same reason as the header background: --ink flips to cream in dark
               // mode, and the amber monogram plate is light there, so the initials
               // would sit cream on cream.
-              <span className="text-lg font-bold text-ink-solid" aria-hidden="true">
-                TS
+              <span className="text-base font-bold text-ink-solid" aria-hidden="true">
+                {avatarInitials}
               </span>
             )}
-          </div>
+          </Link>
           <div className="min-w-0">
             <p className="truncate text-sm font-bold text-white/75">
               {resolvedGreeting}

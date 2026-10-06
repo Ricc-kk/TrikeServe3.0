@@ -607,8 +607,11 @@ export default function BusinessDashboard() {
           <Card className="p-4 lg:p-6 border border-line bg-surface mb-6 lg:mb-8">
             <div className="flex flex-wrap items-start justify-between gap-3">
               <h2 className="text-xl lg:text-2xl font-bold text-[var(--ink)]">Your shop listing</h2>
+              {/* Straight into the editor. This used to link to the Shop page, so tapping
+                  Edit on the Overview dropped you on the storefront preview and
+                  made you hunt for the edit form yourself. */}
               <Link
-                to="/business/home"
+                to="/business/home?edit=info"
                 className="text-[var(--primary)] font-semibold text-sm flex items-center gap-1 hover:gap-2 transition-all"
               >
                 Edit
@@ -655,7 +658,7 @@ export default function BusinessDashboard() {
             </div>
 
             {profile.hasPending && (
-              <p className="mt-4 rounded-xl border border-[var(--amber-soft)] bg-[var(--amber-soft)] px-3 py-2 text-xs text-[var(--amber-dark)] break-words">
+              <p className="mt-4 rounded-xl border border-[var(--amber-soft)] bg-[var(--amber-soft)] px-3 py-2 text-xs text-[var(--amber-ink)] break-words">
                 You have a shop details change waiting for Super Admin approval. The values above are
                 what customers see until it is approved.
               </p>

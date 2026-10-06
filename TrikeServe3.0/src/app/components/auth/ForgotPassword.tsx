@@ -174,7 +174,7 @@ export default function ForgotPassword() {
               )}
 
               <div className="p-3 bg-[var(--amber-soft)] border-2 border-[var(--amber-soft)] rounded-lg">
-                <p className="text-xs text-[var(--amber-dark)]">
+                <p className="text-xs text-[var(--amber-ink)]">
                   <strong>⚠️ Important:</strong> The reset email may land in your <strong>spam/junk folder</strong>. If you don't see it within 2 minutes, check spam and mark it as "Not Spam".
                 </p>
               </div>
@@ -246,7 +246,7 @@ export default function ForgotPassword() {
               </div>
 
               <div className="p-4 bg-[var(--amber-soft)] border-2 border-[var(--amber-soft)] rounded-lg">
-                <p className="text-sm text-[var(--amber-dark)]">
+                <p className="text-sm text-[var(--amber-ink)]">
                   <strong>⚠️ Check Spam/Junk Folder:</strong> Gmail and other providers may flag this email as spam. Look in your <strong>Spam</strong> or <strong>Junk</strong> folder and mark it as "Not Spam" so future emails arrive in your inbox.
                 </p>
               </div>

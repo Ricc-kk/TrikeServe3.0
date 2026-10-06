@@ -58,7 +58,7 @@ function RadiusNote({
     ? "bg-[var(--muted)] border-[var(--border)] text-[var(--muted-foreground)]"
     : inside
       ? "bg-[var(--success-soft)] border-[var(--success)]/40 text-[var(--success)]"
-      : "bg-[var(--amber-soft)] border-[var(--amber)]/40 text-[var(--amber-dark)]";
+      : "bg-[var(--amber-soft)] border-[var(--amber)]/40 text-[var(--amber-ink)]";
 
   const coverageLabel = hasBoundary ? "Boundary area" : `${radiusKm} km radius`;
   const status = unknown
@@ -297,7 +297,7 @@ export default function TerminalQueueCard({ queue, variant = "full", canJoin = t
           <div className="flex-1 min-w-0">
             <div className="flex items-center gap-1.5">
               {isFirst && <Zap className="w-3.5 h-3.5 text-[var(--success)] flex-shrink-0" />}
-              <p className={`text-[13px] font-extrabold truncate ${isFirst ? "text-[var(--success)]" : "text-[var(--amber-dark)]"}`}>
+              <p className={`text-[13px] font-extrabold truncate ${isFirst ? "text-[var(--success)]" : "text-[var(--amber-ink)]"}`}>
                 {myEntry ? statusTitle : "Not in the queue"}
               </p>
             </div>
@@ -384,7 +384,7 @@ export default function TerminalQueueCard({ queue, variant = "full", canJoin = t
               <div className="min-w-0 flex-1">
                 <div className="flex items-center gap-1.5">
                   {isFirst && <Zap className="w-4 h-4 text-[var(--success)] flex-shrink-0" />}
-                  <p className={`text-sm font-extrabold ${isFirst ? "text-[var(--success)]" : "text-[var(--amber-dark)]"}`}>
+                  <p className={`text-sm font-extrabold ${isFirst ? "text-[var(--success)]" : "text-[var(--amber-ink)]"}`}>
                     {statusTitle}
                   </p>
                 </div>

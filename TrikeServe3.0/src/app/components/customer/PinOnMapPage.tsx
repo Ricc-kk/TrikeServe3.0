@@ -77,6 +77,8 @@ export default function PinOnMapPage() {
   const [sessionToken, setSessionToken] = useState(() => createPlacesSessionToken());
   const [geocoding, setGeocoding] = useState(false);
   const [searching, setSearching] = useState(false);
+  /** True while the pin is the one we dropped from their device position. */
+  const [pinnedToCurrentLocation, setPinnedToCurrentLocation] = useState(false);
 
   /** Sheet height in pixels; the drag itself lives in a ref, not state. */
   const [sheetHeight, setSheetHeight] = useState(MIN_PX);
@@ -116,6 +118,12 @@ export default function PinOnMapPage() {
         setCenter(here);
         // A pin they can already see beats an empty map waiting for a tap.
         setDraft({ ...EMPTY_ADDRESS_DRAFT, latitude: here.lat, longitude: here.lng });
+        setPinnedToCurrentLocation(true);
+        // Resolve it to a street straight away. Without this the pin sat there
+        // with no address, so the sheet read "No address found for this pin yet"
+        // — on the customer's own front door — until they tapped the map and
+        // happened to trigger a geocode.
+        reverseGeocode(here);
       },
       () => {
         /* Keep the fallback centre. */
@@ -189,6 +197,8 @@ export default function PinOnMapPage() {
     // one address over a pin sitting somewhere else entirely.
     setDraft({ ...EMPTY_ADDRESS_DRAFT, latitude: coords.lat, longitude: coords.lng });
     setCenter(coords);
+    // A tap is a deliberate move, so the "your location" claim no longer holds.
+    setPinnedToCurrentLocation(false);
     reverseGeocode(coords);
   };
 
@@ -422,9 +432,18 @@ export default function PinOnMapPage() {
                 Finding this address…
               </p>
             ) : resolved ? (
-              <p className="mt-1 text-base font-semibold leading-snug text-[var(--ink)]">
-                {streetOf(resolved)}
-              </p>
+              <>
+                <p className="mt-1 text-base font-semibold leading-snug text-[var(--ink)]">
+                  {streetOf(resolved)}
+                </p>
+                {/* Why there is already a pin on open. Without it the map looks
+                    like it ignored the request, or picked somewhere arbitrary. */}
+                {pinnedToCurrentLocation && (
+                  <p className="mt-1 text-xs text-[var(--muted-foreground)]">
+                    Pinned at your current location — tap the map to move it.
+                  </p>
+                )}
+              </>
             ) : (
               <p className="mt-2 text-sm text-[var(--muted-foreground)]">
                 {pin

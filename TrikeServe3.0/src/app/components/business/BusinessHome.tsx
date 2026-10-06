@@ -1,22 +1,25 @@
 import { useState, useEffect, useMemo, useRef } from "react";
-import { Store, Package, BarChart3, User, Plus, X, Image, Clock, Star, MapPin, BadgeCheck, Eye, EyeOff, Upload, ChevronRight, Settings, Camera, Check, Menu, Loader2 } from "lucide-react";
-import { Link, useNavigate } from "react-router";
+import { Store, Package, BarChart3, User, Plus, X, Image, Clock, Star, MapPin, BadgeCheck, Eye, EyeOff, Upload, ChevronRight, Settings, Camera, Check, Menu, Loader2, Mail, Phone } from "lucide-react";
+import { Link, useNavigate, useSearchParams } from "react-router";
 import { Card } from "../ui/card";
 import { Badge } from "../ui/badge";
 import { Button } from "../ui/button";
 import { ImageWithFallback } from "../figma/ImageWithFallback";
 import StoreLogo from "../figma/StoreLogo";
 import BusinessSidebar from "./BusinessSidebar";
+import BusinessMapSelector from "./BusinessMapSelector";
 import { useAuth } from "../../contexts/AuthContext";
 import { supabase } from "../../../utils/supabase";
 import { supabaseHelpers } from "@/lib/supabase";
-import { GoogleMap, MarkerF } from "@react-google-maps/api";
-import useMapLoader from "@/lib/mapLoader";
 import { CUISINES, isCuisineId, type CuisineId } from "@/lib/foodTaxonomy";
 import { useRestaurantProfile } from "@/lib/restaurantProfile";
 
 export default function BusinessHome() {
   const navigate = useNavigate();
+  // Lets another screen deep-link straight into a particular editor, which is
+  // how "Edit" on the Overview reaches the store-info form instead of dumping
+  // the owner on the storefront preview to look for it.
+  const [searchParams] = useSearchParams();
   const { user } = useAuth();
   const profile = useRestaurantProfile();
   const [isStoreOpen, setIsStoreOpen] = useState(true);
@@ -34,6 +37,17 @@ export default function BusinessHome() {
   const [showConfirmSaveInfo, setShowConfirmSaveInfo] = useState(false);
   const [showSaveSuccess, setShowSaveSuccess] = useState(false);
   const [saveInfoError, setSaveInfoError] = useState<string | null>(null);
+  // Address and pin move together, so the full-screen map picker is the only way
+  // to edit them. Typing the address on its own produced a text address with no
+  // coordinates behind it, which is exactly what "distance to you" needs.
+  const [showLocationPicker, setShowLocationPicker] = useState(false);
+
+  // Open the requested editor on arrival. Reading it in an effect rather than
+  // initialising state means the query is honoured on every navigation to this
+  // route, not only the first mount.
+  useEffect(() => {
+    if (searchParams.get("edit") === "info") setShowEditInfo(true);
+  }, [searchParams]);
 
   // Restaurant data - initialize with user data
   const [restaurantData, setRestaurantData] = useState({
@@ -53,8 +67,6 @@ export default function BusinessHome() {
     latitude: null as number | null,
     longitude: null as number | null
   });
-  const { isLoaded: isMapsLoaded } = useMapLoader();
-
   /** The customer preview reads the menu in sections, like the storefront does. */
   const menuGroups = useMemo(() => {
     const available = menuItems.filter((item) => item.available);
@@ -863,29 +875,48 @@ export default function BusinessHome() {
                   <p className="font-semibold text-[var(--ink)]">Store Information</p>
                 </div>
                 <div className="space-y-2 text-sm">
-                  <div className="flex items-start justify-between py-2 border-b border-[var(--border)]">
-                    <span className="text-[var(--muted-foreground)]">Name</span>
-                    <span className="font-semibold text-[var(--ink)] text-right">{restaurantData.name}</span>
+                  {/* Icon per row. These are the three a shop owner scans for —
+                      how customers reach it, where to reach it, and where it
+                      sits — and they were three identical grey words. */}
+                  <div className="flex items-start gap-3 py-2 border-b border-[var(--border)]">
+                    <Store className="w-4 h-4 text-[var(--primary)] flex-shrink-0 mt-0.5" aria-hidden="true" />
+                    <span className="text-[var(--muted-foreground)] w-24 flex-shrink-0">Name</span>
+                    <span className="font-semibold text-[var(--ink)] text-right flex-1">{restaurantData.name}</span>
                   </div>
-                  <div className="flex items-start justify-between py-2 border-b border-[var(--border)]">
-                    <span className="text-[var(--muted-foreground)]">Subtitle</span>
-                    <span className="font-semibold text-[var(--ink)] text-right">{restaurantData.subtitle}</span>
+                  <div className="flex items-start gap-3 py-2 border-b border-[var(--border)]">
+                    <MapPin className="w-4 h-4 text-[var(--primary)] flex-shrink-0 mt-0.5" aria-hidden="true" />
+                    <span className="text-[var(--muted-foreground)] w-24 flex-shrink-0">Address</span>
+                    <span className="font-semibold text-[var(--ink)] text-right flex-1">{restaurantData.address}</span>
                   </div>
-                  <div className="flex items-start justify-between py-2 border-b border-[var(--border)]">
-                    <span className="text-[var(--muted-foreground)]">Address</span>
-                    <span className="font-semibold text-[var(--ink)] text-right flex-1 ml-4">{restaurantData.address}</span>
+                  <div className="flex items-start gap-3 py-2 border-b border-[var(--border)]">
+                    <Mail className="w-4 h-4 text-[var(--primary)] flex-shrink-0 mt-0.5" aria-hidden="true" />
+                    <span className="text-[var(--muted-foreground)] w-24 flex-shrink-0">Email</span>
+                    <span className="font-semibold text-[var(--ink)] text-right flex-1 break-all">{user?.email}</span>
                   </div>
-                  <div className="flex items-start justify-between py-2 border-b border-[var(--border)]">
-                    <span className="text-[var(--muted-foreground)]">Delivery Time</span>
-                    <span className="font-semibold text-[var(--ink)]">{restaurantData.deliveryTime}</span>
+                  <div className="flex items-start gap-3 py-2 border-b border-[var(--border)]">
+                    <Phone className="w-4 h-4 text-[var(--primary)] flex-shrink-0 mt-0.5" aria-hidden="true" />
+                    <span className="text-[var(--muted-foreground)] w-24 flex-shrink-0">Phone</span>
+                    <span className="font-semibold text-[var(--ink)] text-right flex-1">{user?.phone}</span>
                   </div>
-                  <div className="flex items-start justify-between py-2 border-b border-[var(--border)]">
-                    <span className="text-[var(--muted-foreground)]">Delivery Fee</span>
-                    <span className="font-semibold text-[var(--primary)]">₱{adminDeliveryFee}</span>
+                  <div className="flex items-start gap-3 py-2 border-b border-[var(--border)]">
+                    <BadgeCheck className="w-4 h-4 text-[var(--primary)] flex-shrink-0 mt-0.5" aria-hidden="true" />
+                    <span className="text-[var(--muted-foreground)] w-24 flex-shrink-0">Subtitle</span>
+                    <span className="font-semibold text-[var(--ink)] text-right flex-1">{restaurantData.subtitle}</span>
                   </div>
-                  <div className="flex items-start justify-between py-2">
-                    <span className="text-[var(--muted-foreground)]">Hours</span>
-                    <span className="font-semibold text-[var(--ink)]">{restaurantData.operatingHours}</span>
+                  <div className="flex items-start gap-3 py-2 border-b border-[var(--border)]">
+                    <Clock className="w-4 h-4 text-[var(--primary)] flex-shrink-0 mt-0.5" aria-hidden="true" />
+                    <span className="text-[var(--muted-foreground)] w-24 flex-shrink-0">Delivery Time</span>
+                    <span className="font-semibold text-[var(--ink)] text-right flex-1">{restaurantData.deliveryTime}</span>
+                  </div>
+                  <div className="flex items-start gap-3 py-2 border-b border-[var(--border)]">
+                    <span className="w-4 flex-shrink-0" aria-hidden="true" />
+                    <span className="text-[var(--muted-foreground)] w-24 flex-shrink-0">Delivery Fee</span>
+                    <span className="font-semibold text-[var(--primary)] text-right flex-1">₱{adminDeliveryFee}</span>
+                  </div>
+                  <div className="flex items-start gap-3 py-2">
+                    <Clock className="w-4 h-4 text-[var(--primary)] flex-shrink-0 mt-0.5" aria-hidden="true" />
+                    <span className="text-[var(--muted-foreground)] w-24 flex-shrink-0">Hours</span>
+                    <span className="font-semibold text-[var(--ink)] text-right flex-1">{restaurantData.operatingHours}</span>
                   </div>
                 </div>
                 <Button
@@ -1014,16 +1045,16 @@ export default function BusinessHome() {
         {profile.hasPending && !showEditInfo && (
           <div className="mx-4 lg:mx-6 mt-4 rounded-2xl border-2 border-[var(--amber-soft)] bg-[var(--amber-soft)] p-4">
             <div className="flex items-start gap-3">
-              <Clock className="w-5 h-5 text-[var(--amber-dark)] flex-shrink-0 mt-0.5" aria-hidden="true" />
+              <Clock className="w-5 h-5 text-[var(--amber-ink)] flex-shrink-0 mt-0.5" aria-hidden="true" />
               <div className="min-w-0 flex-1">
-                <p className="font-bold text-[var(--amber-dark)] text-sm">Waiting for Super Admin approval</p>
-                <p className="text-sm text-[var(--amber-dark)]/90 mt-0.5 break-words">
+                <p className="font-bold text-[var(--amber-ink)] text-sm">Waiting for Super Admin approval</p>
+                <p className="text-sm text-[var(--amber-ink)] mt-0.5 break-words">
                   Your last shop details change is queued. Customers keep seeing the previous ones until it is approved.
                 </p>
                 <button
                   type="button"
                   onClick={async () => { await profile.withdraw(); }}
-                  className="mt-2 min-h-11 inline-flex items-center gap-1.5 px-3 py-2 rounded-xl bg-[var(--surface)] border border-[var(--amber)] text-[var(--amber-dark)] font-bold text-xs hover:opacity-90 transition-opacity"
+                  className="mt-2 min-h-11 inline-flex items-center gap-1.5 px-3 py-2 rounded-xl bg-[var(--surface)] border border-[var(--amber)] text-[var(--amber-ink)] font-bold text-xs hover:opacity-90 transition-opacity"
                 >
                   Withdraw change
                 </button>
@@ -1064,7 +1095,7 @@ export default function BusinessHome() {
 
                 {profile.hasPending && (
                   <div className="rounded-xl border border-[var(--amber-soft)] bg-[var(--amber-soft)] px-3 py-2">
-                    <p className="text-xs text-[var(--amber-dark)] break-words">
+                    <p className="text-xs text-[var(--amber-ink)] break-words">
                       Saving again replaces the change already waiting for approval.
                     </p>
                   </div>
@@ -1094,12 +1125,34 @@ export default function BusinessHome() {
 
                 <div>
                   <label className="text-sm font-bold text-[var(--ink)] mb-2 block">Address *</label>
-                  <textarea
-                    value={restaurantData.address}
-                    onChange={(e) => setRestaurantData({ ...restaurantData, address: e.target.value })}
-                    className="w-full p-3 border border-line rounded-xl min-h-[80px]"
-                    placeholder="Full address with barangay and city"
-                  />
+                  {/* Search or drop a pin rather than typing. A typed address
+                      has no coordinates, and without coordinates the shop
+                      cannot be measured against a customer, sorted into
+                      "near you", or routed to by a driver. */}
+                  <button
+                    type="button"
+                    onClick={() => setShowLocationPicker(true)}
+                    className="w-full flex items-start gap-3 text-left p-3 border border-line rounded-xl hover:border-[var(--primary)] transition-colors"
+                  >
+                    <MapPin className="w-5 h-5 text-[var(--primary)] flex-shrink-0 mt-0.5" aria-hidden="true" />
+                    <span className="flex-1 min-w-0">
+                      {restaurantData.address ? (
+                        <span className="block text-sm font-semibold text-[var(--ink)] break-words">
+                          {restaurantData.address}
+                        </span>
+                      ) : (
+                        <span className="block text-sm font-semibold text-[var(--ink)]">
+                          Pin your shop location
+                        </span>
+                      )}
+                      <span className="block text-xs text-[var(--muted-foreground)] mt-0.5">
+                        Search for it, or tap the map to drop a pin
+                      </span>
+                    </span>
+                    <span className="text-xs font-semibold text-[var(--primary)] flex-shrink-0">
+                      {restaurantData.address ? "Change" : "Set"}
+                    </span>
+                  </button>
                 </div>
 
                 {/* Cuisine is what the customer filters match on. It used to be
@@ -1137,46 +1190,12 @@ export default function BusinessHome() {
                   </div>
                 </div>
 
-                {/* Pinning is the only way "distance to you" can exist: the table
-                    held a text address and no coordinates to measure from. */}
+                {/* Read-only pin status. Editing moved up to the address button above, so
+                    the address and its coordinates can no longer drift apart
+                    the way a text box and an inline map let them. */}
                 <div>
-                  <label className="text-sm font-bold text-[var(--ink)] mb-2 block">
-                    Shop location
-                  </label>
-                  <p className="text-xs text-[var(--muted-foreground)] mb-2">
-                    Tap the map to drop a pin on your shop so customers can see how far away you are.
-                  </p>
-                  <div className="h-56 overflow-hidden rounded-xl border border-line">
-                    {isMapsLoaded && (
-                      <GoogleMap
-                        mapContainerClassName="size-full"
-                        center={
-                          restaurantData.latitude != null && restaurantData.longitude != null
-                            ? { lat: restaurantData.latitude, lng: restaurantData.longitude }
-                            : { lat: 14.7294, lng: 120.9349 }
-                        }
-                        zoom={15}
-                        onClick={(e: any) => {
-                          const lat = e.latLng?.lat();
-                          const lng = e.latLng?.lng();
-                          if (typeof lat !== 'number' || typeof lng !== 'number') return;
-                          setRestaurantData((prev) => ({
-                            ...prev,
-                            latitude: lat,
-                            longitude: lng,
-                          }));
-                        }}
-                        options={{ disableDefaultUI: true, zoomControl: true }}
-                      >
-                        {restaurantData.latitude != null && restaurantData.longitude != null && (
-                          <MarkerF
-                            position={{ lat: restaurantData.latitude, lng: restaurantData.longitude }}
-                          />
-                        )}
-                      </GoogleMap>
-                    )}
-                  </div>
-                  <p className="text-xs text-[var(--muted-foreground)] mt-1">
+                  <p className="text-xs text-[var(--muted-foreground)] flex items-start gap-1.5">
+                    <MapPin className="w-3.5 h-3.5 flex-shrink-0 mt-px" aria-hidden="true" />
                     {restaurantData.latitude != null
                       ? `Pinned at ${restaurantData.latitude.toFixed(5)}, ${restaurantData.longitude?.toFixed(5)}`
                       : 'Not pinned yet — your shop will sort last in "near you" lists.'}
@@ -1254,6 +1273,28 @@ export default function BusinessHome() {
             </div>
           </div>
         )}
+
+        {/* Full-screen map picker. Opened from the address button above; the
+          edit modal stays mounted underneath so cancelling the picker leaves
+          the half-finished edit exactly as it was. */}
+      {showLocationPicker && (
+        <BusinessMapSelector
+          currentAddress={restaurantData.address || ""}
+          initialLat={restaurantData.latitude}
+          initialLng={restaurantData.longitude}
+          onClose={() => setShowLocationPicker(false)}
+          onSelectLocation={(location) => {
+            setRestaurantData((prev) => ({
+              ...prev,
+              address: location.full || location.name,
+              latitude: location.lat,
+              longitude: location.lng,
+            }));
+            setShowLocationPicker(false);
+            setSaveInfoError(null);
+          }}
+        />
+      )}
 
         {/* Save Success Popup */}
         {showSaveSuccess && (

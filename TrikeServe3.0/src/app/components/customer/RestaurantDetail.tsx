@@ -951,9 +951,14 @@ if (unfiledItems.length > 0) sectionGroups.push({ id: "__unfiled", name: "More",
 
       {/* Menu Items */}
       <div className="px-5 pb-6">
-        <h2 className="text-xl font-bold text-[var(--ink)] mb-4">
-          {selectedCategory === "all" ? "For You" : selectedCategoryName}
-        </h2>
+        {/* Only labelled when the customer is actually inside a category. With no
+            filter active the shop's own section headings below do the labelling,
+            and "For You" was a second, vaguer heading stacked on top of them. */}
+        {selectedCategory !== "all" && (
+          <h2 className="text-xl font-bold text-[var(--ink)] mb-4">
+            {selectedCategoryName}
+          </h2>
+        )}
         
         {filteredItems.length === 0 ? (
           <div className="text-center py-12">

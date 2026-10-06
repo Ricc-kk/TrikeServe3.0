@@ -1,7 +1,8 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { Link, useLocation } from "react-router";
-import { Menu, Shield, X } from "lucide-react";
+import { Menu, X } from "lucide-react";
 
+import TrikeServeLogo from "../../../assets/TRIKESERVE_logo.png";
 import { useAuth } from "../../contexts/AuthContext";
 import { adminNavFor, isSuperAdmin } from "./adminNav";
 
@@ -86,8 +87,15 @@ export default function AdminShell({
       >
         <div className="p-5 lg:p-6 border-b-2 border-[var(--border)] flex items-center justify-between gap-2">
           <div className="flex items-center gap-3 min-w-0">
-            <div className="w-10 h-10 flex-shrink-0 bg-gradient-to-br from-[var(--primary)] to-[var(--ink)] rounded-xl flex items-center justify-center">
-              <Shield className="w-6 h-6 text-white" aria-hidden="true" />
+            <div className="w-10 h-10 flex-shrink-0 bg-gradient-to-br from-[var(--primary)] to-[var(--ink)] rounded-xl flex items-center justify-center overflow-hidden">
+              {/* The TrikeServe mark, not a generic shield: the admin panel is
+                  part of this product, and the same logo already leads the
+                  business sidebar. A shield said "security" but not whose. */}
+              <img
+                src={TrikeServeLogo}
+                alt="TrikeServe"
+                className="size-full object-contain p-1"
+              />
             </div>
             <div className="min-w-0">
               <span className="block text-xl font-bold text-[var(--ink)]">ADMIN</span>

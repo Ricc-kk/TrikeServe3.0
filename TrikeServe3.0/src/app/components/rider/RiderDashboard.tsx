@@ -919,8 +919,8 @@ export default function RiderDashboard() {
         ) : isMapsLoaded && blocked ? (
           <div className="w-full h-full flex items-center justify-center bg-[var(--amber-soft)]">
             <div className="text-center max-w-md px-6">
-              <p className="text-lg font-bold text-[var(--amber-dark)] mb-2">⚠️ Google Maps scripts loaded but unavailable</p>
-              <p className="text-sm text-[var(--amber-dark)] mb-3">The Maps SDK appears to be blocked by a browser extension or network policy (window.google is missing). Try disabling ad-blockers or allow maps.googleapis.com.</p>
+              <p className="text-lg font-bold text-[var(--amber-ink)] mb-2">⚠️ Google Maps scripts loaded but unavailable</p>
+              <p className="text-sm text-[var(--amber-ink)] mb-3">The Maps SDK appears to be blocked by a browser extension or network policy (window.google is missing). Try disabling ad-blockers or allow maps.googleapis.com.</p>
               <div className="flex gap-3 justify-center">
                 <button onClick={() => window.location.reload()} className="px-4 py-2 bg-[var(--primary)] text-white rounded-md">Retry</button>
                 <button onClick={() => window.open('about:blank', '_blank')} className="px-4 py-2 border rounded-md">Open Incognito / Disable Extensions</button>
@@ -1013,9 +1013,9 @@ export default function RiderDashboard() {
 
               {activeTrip.type === 'delivery' && activeTrip.payment === 'COD' && Number(activeTrip.foodCost || 0) > 0 && (
                 <div className="bg-[var(--amber-soft)] border border-[var(--amber-soft)] rounded-lg p-3 mb-4">
-                  <p className="text-sm font-semibold text-[var(--amber-dark)] mb-1">⚠️ Pay Restaurant First</p>
-                  <p className="text-xs text-[var(--amber-dark)]">Food Cost: ₱{activeTrip.foodCost?.toFixed(2)}</p>
-                  <p className="text-xs text-[var(--amber-dark)]">You'll be reimbursed by customer</p>
+                  <p className="text-sm font-semibold text-[var(--amber-ink)] mb-1">⚠️ Pay Restaurant First</p>
+                  <p className="text-xs text-[var(--amber-ink)]">Food Cost: ₱{activeTrip.foodCost?.toFixed(2)}</p>
+                  <p className="text-xs text-[var(--amber-ink)]">You'll be reimbursed by customer</p>
                 </div>
               )}
 

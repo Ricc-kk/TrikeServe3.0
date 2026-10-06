@@ -160,8 +160,8 @@ export default function AuditTrail() {
               {loadError && (
                 <Card className="p-4 mb-6 border-2 border-[var(--amber-soft)] bg-[var(--amber-soft)]">
                   <div className="flex items-start gap-3">
-                    <AlertTriangle className="w-5 h-5 text-[var(--amber-dark)] flex-shrink-0 mt-0.5" />
-                    <p className="text-sm text-[var(--amber-dark)]">{loadError}</p>
+                    <AlertTriangle className="w-5 h-5 text-[var(--amber-ink)] flex-shrink-0 mt-0.5" />
+                    <p className="text-sm text-[var(--amber-ink)]">{loadError}</p>
                   </div>
                 </Card>
               )}

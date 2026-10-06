@@ -1260,10 +1260,10 @@ export default function BusinessOrders() {
                     )}
 
                     <div className="bg-[var(--amber-soft)] border-l-4 border-[var(--amber)] p-2 md:p-3 rounded text-sm">
-                      <p className="font-semibold text-[var(--amber-dark)]">Status: On The Way</p>
-                      <p className="text-xs text-[var(--amber-dark)] mt-1">Driver is delivering the order</p>
+                      <p className="font-semibold text-[var(--amber-ink)]">Status: On The Way</p>
+                      <p className="text-xs text-[var(--amber-ink)] mt-1">Driver is delivering the order</p>
                       {selectedOrder.driverName && (
-                        <p className="text-xs text-[var(--amber-dark)] mt-1">Driver: {selectedOrder.driverName}</p>
+                        <p className="text-xs text-[var(--amber-ink)] mt-1">Driver: {selectedOrder.driverName}</p>
                       )}
                     </div>
 

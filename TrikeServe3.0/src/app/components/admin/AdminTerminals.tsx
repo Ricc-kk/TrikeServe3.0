@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import {
   Plus, Edit2, Trash2, UserPlus, UserMinus, MapPin, Users, Menu, X, Navigation, Search, Loader2, Save,
-  ClipboardCheck, CheckCircle, XCircle, Clock, ShieldCheck
+  ClipboardCheck, CheckCircle, XCircle, Clock, ShieldCheck, ChevronDown
 } from "lucide-react";
 import { GoogleMap, MarkerF, InfoWindow, Polygon } from "@react-google-maps/api";
 import useMapLoader from "@/lib/mapLoader";
@@ -823,17 +823,17 @@ export default function AdminTerminals() {
             <div className="mb-4 p-4 bg-[var(--amber-soft)] border-2 border-[var(--amber-soft)] rounded-xl">
               <div className="flex items-center justify-between">
                 <div>
-                  <p className="font-bold text-[var(--amber-dark)] text-sm">
+                  <p className="font-bold text-[var(--amber-ink)] text-sm">
                     ⚠️ {Object.keys(pendingChanges).length} pending change{Object.keys(pendingChanges).length > 1 ? 's' : ''}
                   </p>
-                  <p className="text-xs text-[var(--amber-dark)] mt-0.5">
+                  <p className="text-xs text-[var(--amber-ink)] mt-0.5">
                     Changes are not applied until you click "Save Changes"
                   </p>
                 </div>
                 <div className="flex items-center gap-2">
                   <button
                     onClick={() => setPendingChanges({})}
-                    className="text-xs font-semibold text-[var(--amber-dark)] hover:text-[var(--amber-dark)] underline"
+                    className="text-xs font-semibold text-[var(--amber-ink)] hover:text-[var(--amber-ink)] underline"
                   >
                     Discard All
                   </button>
@@ -894,12 +894,12 @@ export default function AdminTerminals() {
           {/* Rider Admin: scope notice */}
           {isRiderAdmin && (
             <div className={`mb-4 p-4 rounded-xl border-2 ${assignedTerminalId ? 'bg-[var(--info-soft)] border-[var(--info-soft)]' : 'bg-[var(--amber-soft)] border-[var(--amber-soft)]'}`}>
-              <p className={`font-bold text-sm ${assignedTerminalId ? 'text-[var(--info)]' : 'text-[var(--amber-dark)]'}`}>
+              <p className={`font-bold text-sm ${assignedTerminalId ? 'text-[var(--info)]' : 'text-[var(--amber-ink)]'}`}>
                 {assignedTerminalId
                   ? `Assigned to ${assignedTerminalName || 'your terminal'}`
                   : 'No terminal assigned'}
               </p>
-              <p className={`text-xs mt-0.5 ${assignedTerminalId ? 'text-[var(--info)]/80' : 'text-[var(--amber-dark)]'}`}>
+              <p className={`text-xs mt-0.5 ${assignedTerminalId ? 'text-[var(--info)]/80' : 'text-[var(--amber-ink)]'}`}>
                 {assignedTerminalId
                   ? 'You can only edit this terminal and manage its drivers. Changes are sent to the Super Admin for approval.'
                   : 'Ask the Super Admin to assign you to a terminal before you can manage drivers.'}
@@ -929,7 +929,7 @@ export default function AdminTerminals() {
                       }`}
                     >
                       <div className="flex items-center gap-3 min-w-0">
-                        {pending ? <Clock size={15} className="text-[var(--amber-dark)] flex-shrink-0" />
+                        {pending ? <Clock size={15} className="text-[var(--amber-ink)] flex-shrink-0" />
                           : approved ? <CheckCircle size={15} className="text-[var(--success)] flex-shrink-0" />
                           : <XCircle size={15} className="text-[var(--error)] flex-shrink-0" />}
                         <div className="min-w-0">
@@ -942,7 +942,7 @@ export default function AdminTerminals() {
                         </div>
                       </div>
                       <span className={`text-xs font-bold flex-shrink-0 ${
-                        pending ? 'text-[var(--amber-dark)]' : approved ? 'text-[var(--success)]' : 'text-[var(--error)]'
+                        pending ? 'text-[var(--amber-ink)]' : approved ? 'text-[var(--success)]' : 'text-[var(--error)]'
                       }`}>
                         {pending ? 'Awaiting approval' : req.status}
                       </span>
@@ -972,7 +972,21 @@ export default function AdminTerminals() {
                 <div key={t.id} className="bg-surface rounded-2xl border border-line overflow-hidden">
                   <div className="p-5">
                     <div className="flex flex-wrap items-start justify-between gap-4">
-                      <div className="flex items-start gap-3 min-w-0">
+                      {/* The whole summary is the tap target for revealing the
+                          assigned drivers. It used to need a precise hit on the
+                          small "Drivers" pill, which on a phone meant aiming.
+                          This is a real <button> rather than a div with an
+                          onClick so it is reachable by keyboard and announced
+                          as expandable; the edit and delete controls sit
+                          outside it, so neither can toggle the list by
+                          accident. */}
+                      <button
+                        type="button"
+                        onClick={() => setExpandedId(isExpanded ? null : t.id)}
+                        aria-expanded={isExpanded}
+                        aria-controls={`terminal-drivers-${t.id}`}
+                        className="flex items-start gap-3 min-w-0 flex-1 text-left rounded-xl -m-2 p-2 hover:bg-[var(--muted)] transition-colors active:scale-[0.99]"
+                      >
                         <div className="w-11 h-11 bg-[var(--info-soft)] rounded-xl flex items-center justify-center flex-shrink-0">
                           <MapPin size={20} className="text-[var(--info)]" />
                         </div>
@@ -1000,9 +1014,21 @@ export default function AdminTerminals() {
                           <p className="text-[var(--muted-foreground)] text-sm mt-0.5">📍 {t.boundary}</p>
                           <div className="flex items-center gap-4 mt-2 text-xs text-[var(--muted-foreground)]">
                             <span className="flex items-center gap-1"><Users size={12} />{termRiders.length} drivers</span>
+                            {/* Rotating chevron: the card now expands on tap, so
+                                it needs to say so. Without it the whole card
+                                just looks tappable and does nothing visible
+                                until you notice. */}
+                            <span className="flex items-center gap-1 ml-auto font-semibold text-[var(--info)]">
+                              {isExpanded ? "Hide drivers" : "Show drivers"}
+                              <ChevronDown
+                                size={14}
+                                aria-hidden="true"
+                                className={`transition-transform ${isExpanded ? "rotate-180" : ""}`}
+                              />
+                            </span>
                           </div>
                         </div>
-                      </div>
+                      </button>
                       <div className="flex items-center gap-2 flex-shrink-0">
                         <button
                           onClick={() => setExpandedId(isExpanded ? null : t.id)}
@@ -1033,7 +1059,10 @@ export default function AdminTerminals() {
                   </div>
 
                   {isExpanded && (
-                    <div className="border-t-2 border-[var(--border)] p-5 bg-[var(--muted)]">
+                    <div
+                      id={`terminal-drivers-${t.id}`}
+                      className="border-t-2 border-[var(--border)] p-5 bg-[var(--muted)]"
+                    >
                       <h4 className="text-xs font-semibold uppercase tracking-widest text-[var(--muted-foreground)] mb-3">
                         Assigned Drivers ({termRiders.length})
                       </h4>
@@ -1057,7 +1086,7 @@ export default function AdminTerminals() {
                                   <p className="text-xs text-[var(--muted-foreground)]">{riderPlate(r) || "No plate"}</p>
                                 </div>
                                 {isPending && pendingAction?.action === 'unassign' && (
-                                  <span className="text-xs font-bold text-[var(--amber-dark)] bg-[var(--amber-soft)] px-2 py-0.5 rounded-full">
+                                  <span className="text-xs font-bold text-[var(--amber-ink)] bg-[var(--amber-soft)] px-2 py-0.5 rounded-full">
                                     ⏳ Pending removal
                                   </span>
                                 )}
@@ -1065,7 +1094,7 @@ export default function AdminTerminals() {
                               {isRiderAdmin && (isPending ? (
                                 <button
                                   onClick={() => cancelPendingChange(r.id)}
-                                  className="text-xs font-semibold text-[var(--amber-dark)] hover:text-[var(--amber-dark)] underline"
+                                  className="text-xs font-semibold text-[var(--amber-ink)] hover:text-[var(--amber-ink)] underline"
                                 >
                                   Cancel
                                 </button>
@@ -1095,7 +1124,7 @@ export default function AdminTerminals() {
                                     <>
                                       <button
                                         disabled
-                                        className="flex items-center gap-2 px-3 py-2 bg-[var(--amber-soft)] border-2 border-[var(--amber-soft)] rounded-xl text-sm font-medium text-[var(--amber-dark)]"
+                                        className="flex items-center gap-2 px-3 py-2 bg-[var(--amber-soft)] border-2 border-[var(--amber-soft)] rounded-xl text-sm font-medium text-[var(--amber-ink)]"
                                       >
                                         <UserPlus size={13} className="text-[var(--amber)]" />
                                         {riderName(r)}
@@ -1103,7 +1132,7 @@ export default function AdminTerminals() {
                                       </button>
                                       <button
                                         onClick={() => cancelPendingChange(r.id)}
-                                        className="text-xs font-semibold text-[var(--amber-dark)] hover:text-[var(--amber-dark)] underline"
+                                        className="text-xs font-semibold text-[var(--amber-ink)] hover:text-[var(--amber-ink)] underline"
                                       >
                                         Cancel
                                       </button>

@@ -1,14 +1,15 @@
 import {
   ArrowLeft, Menu, Check, User, Mail, Phone, Store, MapPin, Save,
-  Loader2, Clock, X, AlertTriangle
+  Loader2, Clock, X, AlertTriangle, Camera
 } from "lucide-react";
 import { useNavigate } from "react-router";
 import { usePreviousPage } from "../../hooks/usePreviousPage";
-import { useState } from "react";
+import { useState, useRef } from "react";
 import BusinessSidebar from "./BusinessSidebar";
 import BusinessMapSelector from "./BusinessMapSelector";
 import { useAuth } from "../../contexts/AuthContext";
 import { supabase } from "../../../utils/supabase";
+import { supabaseHelpers } from "../../../lib/supabase";
 import { useRestaurantProfile } from "@/lib/restaurantProfile";
 
 export default function BusinessProfile() {
@@ -24,6 +25,47 @@ export default function BusinessProfile() {
   const [saveError, setSaveError] = useState<string | null>(null);
   const [showMapSelector, setShowMapSelector] = useState(false);
   const [showConfirmSave, setShowConfirmSave] = useState(false);
+  // Profile photo. Written straight to the users row rather than through
+  // profile.save(), which stages shop edits for Super Admin review.
+  const [avatarUrl, setAvatarUrl] = useState<string | null>(user?.avatarUrl ?? null);
+  const [isUploadingPhoto, setIsUploadingPhoto] = useState(false);
+  const [photoError, setPhotoError] = useState<string | null>(null);
+  const photoInputRef = useRef<HTMLInputElement>(null);
+
+  const handlePhotoUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file || !user?.id) return;
+
+    if (!file.type.startsWith("image/")) {
+      setPhotoError("Please choose an image file.");
+      return;
+    }
+    if (file.size > 5 * 1024 * 1024) {
+      setPhotoError("That image is larger than 5MB. Please choose a smaller one.");
+      return;
+    }
+
+    setIsUploadingPhoto(true);
+    setPhotoError(null);
+    try {
+      const result = await supabaseHelpers.uploadProfilePhoto(user.id, file);
+      const publicUrl = result?.data?.publicUrl;
+      if (!publicUrl) {
+        setPhotoError("Could not upload the photo. Please try again.");
+        return;
+      }
+
+      // Keep the in-memory user in step so the header avatar updates the moment
+      // the upload lands, without waiting for a reload.
+      await updateProfile({ avatarUrl: publicUrl });
+      setAvatarUrl(publicUrl);
+    } catch {
+      setPhotoError("Could not upload the photo. Please try again.");
+    } finally {
+      setIsUploadingPhoto(false);
+      if (photoInputRef.current) photoInputRef.current.value = "";
+    }
+  };
 
   // Seeded from the shop row, not from the auth user, because `business_address`
   // on the user is only half the fact: the coordinates that the map picker
@@ -155,12 +197,46 @@ export default function BusinessProfile() {
         {/* Profile Header Section */}
         <div className="relative bg-[var(--primary)] px-4 lg:px-6 py-6 lg:py-8">
           <div className="flex items-center gap-4">
-            <div className="w-16 h-16 lg:w-20 lg:h-20 bg-white/20 backdrop-blur-sm rounded-2xl flex items-center justify-center border-2 border-white/30 shadow-lg">
-              <User className="w-8 h-8 lg:w-10 lg:h-10 text-white" />
+            <div className="relative flex-shrink-0">
+              <div className="w-16 h-16 lg:w-20 lg:h-20 bg-white/20 backdrop-blur-sm rounded-2xl flex items-center justify-center border-2 border-white/30 shadow-lg overflow-hidden">
+                {avatarUrl ? (
+                  <img src={avatarUrl} alt="Your profile photo" className="size-full object-cover" />
+                ) : (
+                  <User className="w-8 h-8 lg:w-10 lg:h-10 text-white" />
+                )}
+              </div>
+              {/* Camera badge. Deliberately outside the staged-save flow below:
+                  a profile photo is the owner's own likeness, it is not shown
+                  to customers as shop information, and gating it behind Super
+                  Admin review would mean a shop logo change and a face change
+                  are treated as equally risky. They are not. */}
+              <button
+                type="button"
+                onClick={() => photoInputRef.current?.click()}
+                disabled={isUploadingPhoto || isSaving}
+                aria-label="Change profile photo"
+                className="absolute -bottom-1.5 -right-1.5 grid size-8 place-items-center rounded-full bg-white text-[var(--primary)] shadow-lg ring-2 ring-[var(--primary)] transition-transform active:scale-90 disabled:opacity-60"
+              >
+                {isUploadingPhoto ? (
+                  <Loader2 className="w-4 h-4 animate-spin" aria-hidden="true" />
+                ) : (
+                  <Camera className="w-4 h-4" aria-hidden="true" />
+                )}
+              </button>
+              <input
+                ref={photoInputRef}
+                type="file"
+                accept="image/*"
+                className="hidden"
+                onChange={handlePhotoUpload}
+              />
             </div>
             <div className="flex-1 min-w-0">
               <h2 className="text-lg lg:text-xl font-bold text-white truncate">{formData.businessName || formData.name || "Business"}</h2>
               <p className="text-white/80 text-xs lg:text-sm">{formData.email}</p>
+              {photoError && (
+                <p className="mt-1 text-xs font-semibold text-white" role="alert">{photoError}</p>
+              )}
             </div>
           </div>
         </div>
@@ -171,14 +247,14 @@ export default function BusinessProfile() {
           {profile.hasPending && (
             <div className="rounded-2xl border-2 border-[var(--amber-soft)] bg-[var(--amber-soft)] p-4">
               <div className="flex items-start gap-3">
-                <Clock className="w-5 h-5 text-[var(--amber-dark)] flex-shrink-0 mt-0.5" aria-hidden="true" />
+                <Clock className="w-5 h-5 text-[var(--amber-ink)] flex-shrink-0 mt-0.5" aria-hidden="true" />
                 <div className="min-w-0 flex-1">
-                  <p className="font-bold text-[var(--amber-dark)] text-sm">Waiting for Super Admin approval</p>
-                  <p className="text-sm text-[var(--amber-dark)]/90 mt-0.5 break-words">
+                  <p className="font-bold text-[var(--amber-ink)] text-sm">Waiting for Super Admin approval</p>
+                  <p className="text-sm text-[var(--amber-ink)] mt-0.5 break-words">
                     These shop details go live only once they are approved. Customers still see the previous ones.
                   </p>
                   {profile.pendingValues?.address && (
-                    <p className="text-xs text-[var(--amber-dark)]/80 mt-1 break-words">
+                    <p className="text-xs text-[var(--amber-ink)] mt-1 break-words">
                       Proposed address: {profile.pendingValues.address}
                     </p>
                   )}
@@ -186,7 +262,7 @@ export default function BusinessProfile() {
                     type="button"
                     onClick={withdraw}
                     disabled={isSaving}
-                    className="mt-2 min-h-11 inline-flex items-center gap-1.5 px-3 py-2 rounded-xl bg-[var(--surface)] border border-[var(--amber)] text-[var(--amber-dark)] font-bold text-xs hover:opacity-90 disabled:opacity-50 transition-opacity"
+                    className="mt-2 min-h-11 inline-flex items-center gap-1.5 px-3 py-2 rounded-xl bg-[var(--surface)] border border-[var(--amber)] text-[var(--amber-ink)] font-bold text-xs hover:opacity-90 disabled:opacity-50 transition-opacity"
                   >
                     <X className="w-4 h-4" aria-hidden="true" /> Withdraw change
                   </button>

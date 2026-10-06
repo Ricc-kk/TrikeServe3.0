@@ -32,7 +32,7 @@ const variantConfig: Record<ModalVariant, {
   warning: {
     icon: AlertTriangle,
     iconBg: "bg-[var(--amber-soft)]",
-    iconColor: "text-[var(--amber-dark)]",
+    iconColor: "text-[var(--amber-ink)]",
     confirmBg: "bg-[var(--amber)]",
     confirmHover: "hover:bg-[var(--amber)]",
   },

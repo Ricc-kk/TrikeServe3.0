@@ -132,7 +132,7 @@ export default function PlaceSearch({ value, onChange, onSelect, placeholder, cl
 	  />
 
 	  {errorMessage && (
-		<div className="mt-1 rounded-md border border-[var(--amber-soft)] bg-[var(--amber-soft)] px-3 py-2 text-xs text-[var(--amber-dark)]">
+		<div className="mt-1 rounded-md border border-[var(--amber-soft)] bg-[var(--amber-soft)] px-3 py-2 text-xs text-[var(--amber-ink)]">
 		  {errorMessage}
 		</div>
 	  )}

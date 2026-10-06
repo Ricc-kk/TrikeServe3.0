@@ -259,7 +259,7 @@ export default function LobbyList({
                   {/* Full Warning */}
                   {lobby.passengers.length === lobby.maxSeats - 1 && (
                     <div className="mt-3 bg-[var(--amber-soft)] border border-[var(--amber-soft)] rounded-lg p-2 text-center">
-                      <p className="text-xs text-[var(--amber-dark)] font-semibold">
+                      <p className="text-xs text-[var(--amber-ink)] font-semibold">
                         🔥 Last seat available!
                       </p>
                     </div>

@@ -6,7 +6,15 @@ import { useTypingPlaceholder } from "../../hooks/useTypingPlaceholder";
 // Module scope on purpose: `useTypingPlaceholder` reads this inside a timer
 // effect on every tick, so an array literal in the component body would give
 // it a new identity each render and restart the loop forever.
-const PLACEHOLDER_WORDS = ["Restaurant", "Terminals"] as const;
+/**
+ * Typing placeholder, cycled while the field is empty.
+ *
+ * Full phrases rather than a suffix behind a fixed "Search", because the two
+ * entries are not the same verb: a customer looks for a restaurant, but they
+ * do not go looking for a terminal — they book a ride, and "Search Terminals"
+ * offered a destination-side action the hub has no flow for.
+ */
+const PLACEHOLDER_WORDS = ["Search Restaurant", "Book a Tricycle"] as const;
 
 type CustomerHubHeaderProps = {
   /** Unread notifications for the badge. */
@@ -94,8 +102,8 @@ export default function CustomerHubHeader({
                 value={query}
                 onFocus={onOpenSearch}
                 onChange={(e) => onQueryChange?.(e.target.value)}
-                placeholder={`Search ${animatedWord}`}
-                aria-label="Search restaurants and terminals"
+                placeholder={animatedWord}
+                aria-label="Search restaurants and book a tricycle"
                 className="min-w-0 flex-1 bg-transparent text-base text-[#122724] outline-none placeholder:text-[#5c6b68]"
               />
             </div>

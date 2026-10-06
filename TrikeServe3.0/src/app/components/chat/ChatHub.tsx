@@ -250,7 +250,31 @@ export default function ChatHub({
 
 
 
-  function getConversationPeer(conversation: ChatConversation) {
+  /**
+ * Renders a conversation avatar.
+ *
+ * The stored value is either a real image URL or an emoji placeholder, and
+ * they used to be dropped into the same `{peer.avatar}` expression. A URL is
+ * just a string, so anyone who had actually set a profile photo had their
+ * address printed across the row instead of their face. Anything that looks
+ * like a URL gets an <img>; anything else is treated as the emoji it is.
+ */
+function PeerAvatar({
+  value,
+  className,
+}: {
+  value: string | null | undefined;
+  className?: string;
+}) {
+  const src = value?.trim() || "";
+  const isImage = /^https?:\/\//i.test(src) || src.startsWith("data:image/");
+  if (!isImage) {
+    return <span className={className}>{src || "💬"}</span>;
+  }
+  return <img src={src} alt="" className={`size-full object-cover ${className || ""}`} />;
+}
+
+function getConversationPeer(conversation: ChatConversation) {
     const participantA = {
       id: conversation.participant_a_id,
       name: conversation.participant_a_name || 'User',
@@ -373,8 +397,8 @@ export default function ChatHub({
           <Button variant="ghost" size="icon" onClick={() => navigate(backPath)} className="text-white hover:bg-white/20">
             <ArrowLeft className="w-5 h-5" />
           </Button>
-          <div className={`w-11 h-11 rounded-full border flex items-center justify-center text-2xl flex-shrink-0 ${peerTheme.avatarWrap}`}>
-            {peer.avatar}
+          <div className={`w-11 h-11 rounded-full border overflow-hidden flex items-center justify-center text-2xl flex-shrink-0 ${peerTheme.avatarWrap}`}>
+            <PeerAvatar value={peer.avatar} />
           </div>
           <div className="flex-1 min-w-0">
             <h3 className="font-bold text-lg truncate leading-tight">{peer.name}</h3>
@@ -487,7 +511,7 @@ export default function ChatHub({
                   >
                     <div className="flex items-start gap-3">
                       <div className={`relative w-12 h-12 rounded-full border flex items-center justify-center text-2xl flex-shrink-0 shadow-sm ${peerTheme.avatarWrap}`}>
-                        {peer.avatar || '💬'}
+                        <PeerAvatar value={peer.avatar} />
                         {isUnread && (
                           <span className={`absolute -top-1 -right-1 w-3 h-3 rounded-full border-2 border-white ${peerTheme.unreadDot} animate-pulse`} />
                         )}

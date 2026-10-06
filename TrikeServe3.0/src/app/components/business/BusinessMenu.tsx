@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo, useRef } from "react";
-import { Store, Package, Clock, User, Plus, Edit2, Pencil, Image as ImageIcon, X, Search, ChevronRight, Eye, EyeOff, Trash2, Check, BarChart3, Camera, Upload, TrendingUp, Star, Award, Menu, Settings } from "lucide-react";
+import { Store, Package, Clock, User, Plus, Edit2, Image as ImageIcon, X, Search, ChevronRight, Eye, EyeOff, Trash2, Check, BarChart3, Camera, Upload, TrendingUp, Star, Award, Menu, Settings } from "lucide-react";
 import { Link } from "react-router";
 import { Card } from "../ui/card";
 import { Badge } from "../ui/badge";
@@ -69,6 +69,14 @@ export default function BusinessMenu() {
   const [sectionError, setSectionError] = useState("");
   const [showDeleteSectionModal, setShowDeleteSectionModal] = useState(false);
   const [sectionToDelete, setSectionToDelete] = useState<MenuSection | null>(null);
+  // One editor per section, reached from a single button on the section chip.
+  // Replaces the inline pencil + X pair, which put two destructive-looking
+  // controls a finger-width apart on every chip in a horizontal scroller.
+  const [sectionEditor, setSectionEditor] = useState<MenuSection | null>(null);
+  const [sectionEditorName, setSectionEditorName] = useState("");
+  const [sectionEditorItemIds, setSectionEditorItemIds] = useState<number[]>([]);
+  const [sectionEditorError, setSectionEditorError] = useState("");
+  const [isSavingSection, setIsSavingSection] = useState(false);
   const [showAddItem, setShowAddItem] = useState(false);
   const [showEditItem, setShowEditItem] = useState(false);
   const [editingItem, setEditingItem] = useState<any>(null);
@@ -731,15 +739,113 @@ export default function BusinessMenu() {
     }
   };
 
-  const addSection = async () => {
-    // Renaming goes through the same dialog: the create case is just the one
-    // with nothing pre-filled, and two near-identical modals is two places for
-    // the validation to drift apart.
+  /**
+ * Opens the one editor a section gets. Seeding the product selection from the
+ * items already pointing at this section is what makes the grouping list open
+ * showing the truth rather than an empty set the owner has to rebuild.
+ */
+const openSectionEditor = (section: MenuSection) => {
+  setSectionEditor(section);
+  setSectionEditorName(section.name);
+  setSectionEditorItemIds(
+    menuItems.filter((item) => item.sectionId === section.id).map((item) => item.id)
+  );
+  setSectionEditorError("");
+};
+
+const closeSectionEditor = () => {
+  setSectionEditor(null);
+  setSectionEditorError("");
+};
+
+const toggleSectionEditorItem = (id: number) => {
+  setSectionEditorItemIds((prev) =>
+    prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]
+  );
+};
+
+/**
+ * Saves the section name and its product grouping together.
+ *
+ * Grouping is the whole point of the editor: ticking a product here sets its
+ * `section_id`, and unticking a product that is in *another* section moves it
+ * back out to unassigned rather than silently leaving it where it was.
+ */
+const saveSectionEditor = async () => {
+  const section = sectionEditor;
+  if (!section) return;
+
+  const name = sectionEditorName.trim();
+  if (!name) {
+    setSectionEditorError("Category name is required.");
+    return;
+  }
+  if (sections.some((sec) => sec.id !== section.id && sec.name.toLowerCase() === name.toLowerCase())) {
+    setSectionEditorError(`Category "${name}" already exists.`);
+    return;
+  }
+
+  setIsSavingSection(true);
+  setSectionEditorError("");
+
+  try {
+    const { error: renameError } = await supabase
+      .from('menu_sections')
+      .update({ name })
+      .eq('id', section.id);
+    if (renameError) {
+      setSectionEditorError(renameError.message || "Could not rename the category.");
+      return;
+    }
+    setSections((prev) => prev.map((sec) => (sec.id === section.id ? { ...sec, name } : sec)));
+
+    // Only touch the write path when the section column actually exists —
+    // menu editing must keep working on a shop that has not run
+    // ADD_MENU_SECTIONS.sql yet.
+    if (sectionsTableExists.current) {
+      const selected = new Set(sectionEditorItemIds);
+      const moved = menuItems.filter(
+        (item) => (item.sectionId === section.id) !== selected.has(item.id)
+      );
+
+      for (const item of moved) {
+        const nextSectionId = selected.has(item.id) ? section.id : null;
+        const { error: itemError } = await supabase
+          .from('menu_items')
+          .update({ section_id: nextSectionId })
+          .eq('id', item.id as any);
+        if (itemError) {
+          setSectionEditorError(itemError.message || "Could not update the products in this category.");
+          return;
+        }
+      }
+
+      if (moved.length > 0) {
+        setMenuItems((prev) =>
+          prev.map((item) => {
+            const wasChanged = moved.some((m) => m.id === item.id);
+            if (!wasChanged) return item;
+            return { ...item, sectionId: selected.has(item.id) ? section.id : null };
+          })
+        );
+      }
+    }
+
+    closeSectionEditor();
+  } finally {
+    setIsSavingSection(false);
+  }
+};
+
+const addSection = async () => {
+  // Renaming goes through the same dialog: the create case is just the one
+  // with nothing pre-filled, and two near-identical modals is two places for
+  // the validation to drift apart.
     const name = newSectionName.trim();
     if (!name || !restaurantId) return;
     if (renamingSection) {
       if (sections.some((sec) => sec.id !== renamingSection.id && sec.name.toLowerCase() === name.toLowerCase())) {
-        setSectionError(`Section "${name}" already exists.`);
+        setSectionError(`Category "${name}" already exists.`);
         return;
       }
       const { error } = await supabase
@@ -747,7 +853,7 @@ export default function BusinessMenu() {
         .update({ name })
         .eq('id', renamingSection.id);
       if (error) {
-        setSectionError(error.message || "Could not rename the section.");
+        setSectionError(error.message || "Could not rename the category.");
         return;
       }
       setSections(sections.map((sec) => (sec.id === renamingSection.id ? { ...sec, name } : sec)));
@@ -759,7 +865,7 @@ export default function BusinessMenu() {
     }
     const clash = sections.some((sec) => sec.name.toLowerCase() === name.toLowerCase());
     if (clash) {
-      setSectionError(`Section "${name}" already exists.`);
+      setSectionError(`Category "${name}" already exists.`);
       return;
     }
     const { data, error } = await supabase
@@ -773,7 +879,7 @@ export default function BusinessMenu() {
       .select('id, name, sort_order')
       .single();
     if (error || !data) {
-      setSectionError(error?.message || "Could not create the section.");
+      setSectionError(error?.message || "Could not create the category.");
       return;
     }
     setSections([...sections, { id: data.id, name: data.name, sortOrder: data.sort_order ?? sections.length }]);
@@ -801,7 +907,7 @@ export default function BusinessMenu() {
       .delete()
       .eq('id', target.id);
     if (error) {
-      setSectionError(error.message || "Could not delete the section.");
+      setSectionError(error.message || "Could not delete the category.");
       return;
     }
     const remaining = sections.filter((sec) => sec.id !== target.id);
@@ -920,14 +1026,14 @@ export default function BusinessMenu() {
             <div className="px-3 lg:px-4 py-3 bg-surface border-b border-[var(--border)]">
               <div className="flex items-center justify-between gap-2 mb-2">
                 <p className="text-[11px] font-bold uppercase tracking-wider text-[var(--muted-foreground)]">
-                  Sections
+                  Categories
                 </p>
                 <button
                   onClick={() => { setRenamingSection(null); setNewSectionName(""); setSectionError(""); setShowAddSection(true); }}
                   className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold bg-[var(--primary-soft)] text-[var(--primary)] hover:opacity-90 transition-opacity"
                 >
                   <Plus className="w-3.5 h-3.5" aria-hidden="true" />
-                  Add Section
+                  Add Category
                 </button>
               </div>
               <div className="flex gap-2 overflow-x-auto scrollbar-hide pb-1">
@@ -957,14 +1063,11 @@ export default function BusinessMenu() {
                       <button onClick={() => moveSection(section.id, -1)} disabled={at === 0} aria-label={`Move ${section.name} up`} className="px-1.5 text-[var(--muted-foreground)] disabled:opacity-30 hover:opacity-100">
                         <ChevronRight className="w-3 h-3 rotate-180" aria-hidden="true" />
                       </button>
-                      <button onClick={() => { setRenamingSection(section); setNewSectionName(section.name); setSectionError(""); setShowAddSection(true); }} aria-label={`Rename ${section.name}`} className="px-1.5 text-[var(--muted-foreground)] hover:opacity-100">
-                        <Pencil className="w-3 h-3" aria-hidden="true" />
-                      </button>
                       <button onClick={() => moveSection(section.id, 1)} disabled={at === sections.length - 1} aria-label={`Move ${section.name} down`} className="px-1.5 text-[var(--muted-foreground)] disabled:opacity-30 hover:opacity-100">
                         <ChevronRight className="w-3 h-3" aria-hidden="true" />
                       </button>
-                      <button onClick={() => { setSectionToDelete(section); setShowDeleteSectionModal(true); }} aria-label={`Delete ${section.name}`} className="px-1.5 text-[var(--error)] hover:opacity-80">
-                        <X className="w-3 h-3" aria-hidden="true" />
+                      <button onClick={() => openSectionEditor(section)} aria-label={`Edit ${section.name}`} className="px-1.5 text-[var(--muted-foreground)] hover:opacity-100">
+                        <Settings className="w-3 h-3" aria-hidden="true" />
                       </button>
                     </span>
                   </div>
@@ -1194,14 +1297,14 @@ export default function BusinessMenu() {
 
                 <div>
                   <div className="flex items-center justify-between mb-2">
-                    <label className="text-sm font-bold text-[var(--ink)]">Section</label>
+                    <label className="text-sm font-bold text-[var(--ink)]">Category</label>
                     <button
                       type="button"
                       onClick={() => { setRenamingSection(null); setNewSectionName(""); setSectionError(""); setShowAddSection(true); }}
                       className="inline-flex items-center gap-1 text-xs font-bold text-[var(--primary)] hover:underline"
                     >
                       <Plus className="w-3.5 h-3.5" aria-hidden="true" />
-                      New section
+                      New category
                     </button>
                   </div>
                   {/* Sections are the grouping control now. The old category dropdown
@@ -1209,7 +1312,7 @@ export default function BusinessMenu() {
                       customer cuisine filter rail is unaffected. */}
                   {sections.length === 0 ? (
                     <p className="text-xs text-[var(--muted-foreground)]">
-                      No sections yet. Use "New section" above to group your menu — items stay unfiled until you do.
+                      No categories yet. Use "New category" above to group your menu — items stay unfiled until you do.
                     </p>
                   ) : (
                     <select
@@ -1332,14 +1435,14 @@ export default function BusinessMenu() {
 
                 <div>
                   <div className="flex items-center justify-between mb-2">
-                    <label className="text-sm font-bold text-[var(--ink)]">Section</label>
+                    <label className="text-sm font-bold text-[var(--ink)]">Category</label>
                     <button
                       type="button"
                       onClick={() => { setRenamingSection(null); setNewSectionName(""); setSectionError(""); setShowAddSection(true); }}
                       className="inline-flex items-center gap-1 text-xs font-bold text-[var(--primary)] hover:underline"
                     >
                       <Plus className="w-3.5 h-3.5" aria-hidden="true" />
-                      New section
+                      New category
                     </button>
                   </div>
                   {/* Sections are the grouping control now. The old category dropdown
@@ -1347,7 +1450,7 @@ export default function BusinessMenu() {
                       customer cuisine filter rail is unaffected. */}
                   {sections.length === 0 ? (
                     <p className="text-xs text-[var(--muted-foreground)]">
-                      No sections yet. Use "New section" above to group your menu — items stay unfiled until you do.
+                      No categories yet. Use "New category" above to group your menu — items stay unfiled until you do.
                     </p>
                   ) : (
                     <select
@@ -1470,17 +1573,17 @@ export default function BusinessMenu() {
           <div className="fixed inset-0 bg-black/50 z-[2000] flex items-center justify-center p-4">
             <Card className="w-full max-w-md p-6 border border-line bg-surface">
               <h3 className="text-lg font-bold text-[var(--ink)] mb-1">
-                {renamingSection ? "Rename section" : "New section"}
+                {renamingSection ? "Rename category" : "New category"}
               </h3>
               <p className="text-sm text-[var(--muted-foreground)] mb-4">
-                Sections are the headings customers see down the menu, in the order you set here.
+                Categories are the headings customers see down the menu, in the order you set here.
               </p>
               <input
                 type="text"
                 value={newSectionName}
                 onChange={(e) => { setNewSectionName(e.target.value); setSectionError(""); }}
                 placeholder="e.g. For you"
-                aria-label="Section name"
+                aria-label="Category name"
                 className="w-full px-4 py-3 border border-line rounded-xl text-sm outline-none focus:border-[var(--primary)]"
               />
               {sectionError && <p className="text-sm text-[var(--error)] mt-2">{sectionError}</p>}
@@ -1496,11 +1599,135 @@ export default function BusinessMenu() {
           </div>
         )}
 
+        {/* One editor per section: rename it, choose which products sit under it, and
+            delete it — the three things the old pencil + X pair used to do. */}
+        {sectionEditor && (
+          <div className="fixed inset-0 bg-black/50 z-[2000] flex items-end sm:items-center sm:justify-center">
+            <div className="bg-surface w-full sm:max-w-md sm:rounded-2xl rounded-t-3xl p-5 max-h-[85vh] flex flex-col">
+              <div className="flex items-start justify-between gap-3 mb-4">
+                <h3 className="text-xl font-bold text-[var(--ink)]">Edit category</h3>
+                <button
+                  type="button"
+                  onClick={closeSectionEditor}
+                  aria-label="Close"
+                  className="p-1.5 -mr-1.5 rounded-lg hover:bg-[var(--muted)]"
+                >
+                  <X className="w-5 h-5 text-[var(--muted-foreground)]" aria-hidden="true" />
+                </button>
+              </div>
+
+              <div className="flex-1 overflow-y-auto space-y-4">
+                <div>
+                  <label
+                    htmlFor="sectionName"
+                    className="block text-sm font-bold text-[var(--ink)] mb-2"
+                  >
+                    Category name
+                  </label>
+                  <input
+                    id="sectionName"
+                    type="text"
+                    value={sectionEditorName}
+                    onChange={(e) => {
+                      setSectionEditorName(e.target.value);
+                      setSectionEditorError("");
+                    }}
+                    className="w-full border border-line focus:border-[var(--primary)] rounded-lg h-12 px-4 text-sm outline-none"
+                    placeholder="e.g. Main Course"
+                  />
+                </div>
+
+                <div>
+                  <p className="block text-sm font-bold text-[var(--ink)] mb-1">
+                    Products in this category
+                  </p>
+                  <p className="text-xs text-[var(--muted-foreground)] mb-2">
+                    Tick a product to group it here. Unticking one moves it out of
+                    whichever category it was in.
+                  </p>
+
+                  {menuItems.length === 0 ? (
+                    <p className="text-sm text-[var(--muted-foreground)] py-3 text-center">
+                      No products yet. Add one first, then group it here.
+                    </p>
+                  ) : (
+                    <ul className="space-y-1.5">
+                      {menuItems.map((item) => {
+                        const checked = sectionEditorItemIds.includes(item.id);
+                        const inOther = !checked && item.sectionId && item.sectionId !== sectionEditor.id;
+                        return (
+                          <li key={item.id}>
+                            <label
+                              className={`flex items-center gap-3 rounded-xl border px-3 py-3 cursor-pointer transition-colors ${
+                                checked
+                                  ? "border-[var(--primary)] bg-[var(--primary-soft)]"
+                                  : "border-line hover:border-[var(--primary)]"
+                              }`}
+                            >
+                              <input
+                                type="checkbox"
+                                checked={checked}
+                                onChange={() => toggleSectionEditorItem(item.id)}
+                                className="size-4 accent-[var(--primary)] flex-shrink-0"
+                              />
+                              <span className="min-w-0 flex-1">
+                                <span className="block text-sm font-semibold text-[var(--ink)] truncate">
+                                  {item.name}
+                                </span>
+                                {inOther && (
+                                  <span className="block text-xs text-[var(--muted-foreground)] truncate">
+                                    Currently in another category
+                                  </span>
+                                )}
+                              </span>
+                            </label>
+                          </li>
+                        );
+                      })}
+                    </ul>
+                  )}
+                </div>
+
+                {sectionEditorError && (
+                  <p className="text-sm font-semibold text-[var(--error)]" role="alert">
+                    {sectionEditorError}
+                  </p>
+                )}
+              </div>
+
+              <div className="pt-4 mt-2 border-t border-[var(--border)] space-y-3">
+                <Button
+                  onClick={saveSectionEditor}
+                  disabled={isSavingSection}
+                  className="w-full bg-[var(--primary)] hover:bg-[var(--primary)] py-4 font-bold"
+                >
+                  {isSavingSection ? "Saving..." : "Save changes"}
+                </Button>
+                {/* Deletion stays behind its own confirmation — the editor is
+                    reached by tapping a chip, so a stray tap must not be able
+                    to remove a section and its grouping in one gesture. */}
+                <button
+                  type="button"
+                  disabled={isSavingSection}
+                  onClick={() => {
+                    setSectionToDelete(sectionEditor);
+                    setShowDeleteSectionModal(true);
+                    closeSectionEditor();
+                  }}
+                  className="w-full py-3 text-sm font-semibold text-[var(--error)] disabled:opacity-50"
+                >
+                  Delete this category
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
         {showDeleteSectionModal && sectionToDelete && (
           <div className="fixed inset-0 bg-black/50 z-[2000] flex items-center justify-center p-4">
             <Card className="w-full max-w-md p-6 border border-line bg-surface text-center">
               <Trash2 className="w-10 h-10 text-[var(--error)] mx-auto mb-3" aria-hidden="true" />
-              <h3 className="text-lg font-bold text-[var(--ink)]">Delete &quot;{sectionToDelete.name}&quot;?</h3>
+              <h3 className="text-lg font-bold text-[var(--ink)]">Delete &quot;{sectionToDelete.name}&quot;? — its products will become unfiled</h3>
               <p className="text-sm text-[var(--muted-foreground)] mt-2">
                 The dishes inside stay on your menu and move to the unfiled group. Only the heading is removed.
               </p>

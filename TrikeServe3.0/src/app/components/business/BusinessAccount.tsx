@@ -2,6 +2,7 @@ import { Store, Package, Clock, User, ChevronRight, LogOut, ArrowLeft, Menu, Shi
 import { Link, useNavigate } from "react-router";
 import { usePreviousPage } from "../../hooks/usePreviousPage";
 import { Card } from "../ui/card";
+import GoodbyeOverlay from "../ui/GoodbyeOverlay";
 import { Badge } from "../ui/badge";
 import { useState, useEffect } from "react";
 import BusinessSidebar from "./BusinessSidebar";
@@ -39,10 +40,6 @@ export default function BusinessAccount() {
   const handleLogout = () => {
     setShowLogoutConfirm(false);
     setShowGoodbye(true);
-    setTimeout(() => {
-      logout();
-      navigate("/");
-    }, 2000);
   };
 
   const pendingOrders = 0;
@@ -333,20 +330,19 @@ export default function BusinessAccount() {
 
         {/* Goodbye Popup */}
         {showGoodbye && (
-          <div className="fixed inset-0 bg-black/50 z-[2000] flex items-center justify-center p-4">
-            <div className="bg-surface rounded-2xl shadow-xl p-8 max-w-sm w-full text-center">
-              <div className="w-16 h-16 bg-[var(--info-soft)] rounded-full flex items-center justify-center mx-auto mb-4">
-                <LogOut className="w-8 h-8 text-[var(--info)]" />
-              </div>
-              <h3 className="text-2xl font-bold text-[var(--ink)] mb-2">Goodbye! 👋</h3>
-              <p className="text-[var(--muted-foreground)] text-sm">See you soon, <span className="font-semibold text-[var(--ink)]">{user?.name || 'there'}</span></p>
-              <div className="mt-6">
-                <div className="w-full bg-[var(--border)] rounded-full h-1.5">
-                  <div className="bg-[var(--info)] h-1.5 rounded-full" style={{ width: '100%', animation: 'shrink 1.8s linear forwards' }} />
-                </div>
-              </div>
-            </div>
-          </div>
+          <GoodbyeOverlay
+            name={user?.name}
+            subline={(name) => (
+              <>See you soon, <span className="font-semibold text-[var(--ink)]">{name}</span></>
+            )}
+            icon={<LogOut className="w-8 h-8 text-[var(--info)]" />}
+            accentSoft="var(--info-soft)"
+            accent="var(--info)"
+            onDone={() => {
+              logout();
+              navigate("/");
+            }}
+          />
         )}
       </div>
     </div>

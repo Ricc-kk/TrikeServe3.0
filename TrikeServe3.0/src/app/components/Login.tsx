@@ -15,6 +15,21 @@ interface TestAccount {
   password?: string;
 }
 
+/**
+ * Password Quick Access fills in for customer, driver and business accounts.
+ *
+ * Those three roles are signed in through Supabase Auth, which verifies the
+ * real password — so this only logs an account in if its password genuinely is
+ * Admin12345. It is a developer convenience for accounts seeded with that
+ * password, not a bypass. Admins are deliberately left alone: their password
+ * is stored in plain `admins.password_hash` and is already known here, so
+ * there is nothing to guess.
+ */
+const QUICK_ACCESS_PASSWORD = "Admin12345";
+
+/** Roles Quick Access supplies QUICK_ACCESS_PASSWORD for. */
+const QUICK_ACCESS_ROLES = new Set(["customer", "rider", "business"]);
+
 // Styling per role (matches the admin panel's role colors)
 const ROLE_BADGE: Record<string, string> = {
   admin: "bg-[var(--primary-soft)] text-[var(--primary)]",
@@ -68,6 +83,13 @@ export default function Login() {
       const key = (acc.email || "").toLowerCase();
       if (!key || seen.has(key)) return;
       seen.add(key);
+      // A password we already know is left alone. Overwriting a real stored
+      // password with the shared one would guarantee the quick-access click
+      // fails for that account, which is the opposite of the point.
+      if (!acc.password && QUICK_ACCESS_ROLES.has(acc.role)) {
+        list.push({ ...acc, password: QUICK_ACCESS_PASSWORD });
+        return;
+      }
       list.push(acc);
     };
 
@@ -135,9 +157,10 @@ export default function Login() {
 
   const useAccount = (acc: TestAccount) => {
     setEmail(acc.email);
-    // Supabase users have no server-side password (login accepts any value), so
-    // fill a dummy to satisfy the required field.
-    setPassword(acc.password || "demo123");
+    setPassword(
+      acc.password ||
+      (QUICK_ACCESS_ROLES.has(acc.role) ? QUICK_ACCESS_PASSWORD : "demo123")
+    );
     setError("");
     setShowAccounts(false);
   };

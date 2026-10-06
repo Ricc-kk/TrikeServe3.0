@@ -1,4 +1,4 @@
-import { createContext, useContext, useState, useEffect, ReactNode } from 'react';
+import { createContext, useContext, useState, useEffect, useRef, ReactNode } from 'react';
 import { supabase } from '../../utils/supabase';
 
 export type UserRole = 'customer' | 'rider' | 'business' | 'admin';
@@ -108,15 +108,46 @@ function mapSupabaseUser(row: any): User {
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  // Set while logout() is running, so the SIGNED_OUT it causes is read as a
+  // deliberate sign-out rather than a token refresh that failed.
+  const signOutRequestedRef = useRef(false);
 
   // Listen for Supabase auth state changes
   useEffect(() => {
     let mounted = true;
 
+    /**
+     * Last resort on a reload: the cached user.
+     *
+     * Every failure path below ends here rather than at `setUser(null)`. The
+     * route guard sends a null user to the sign-in screen, so ending a slow or
+     * failed restore with null logged people out on every refresh even though
+     * their session was still good. A stale profile beats a spurious logout;
+     * a fresh profile load will overwrite this once it lands.
+     */
+    const restoreFromStorage = (why: string) => {
+      const raw = localStorage.getItem('trikeserve_current_user');
+      if (!raw) return false;
+      try {
+        const parsed = JSON.parse(raw);
+        console.log(`[AuthContext] Restoring stored user (${why}):`, parsed.email);
+        setUser(parsed);
+        return true;
+      } catch (e) {
+        console.warn('[AuthContext] Failed to parse stored user:', e);
+        // Unreadable cache is worse than none: it would throw on every reload.
+        localStorage.removeItem('trikeserve_current_user');
+        return false;
+      }
+    };
+
     // Safety timeout — always stop loading after 3 seconds max
     const safetyTimeout = setTimeout(() => {
       if (mounted) {
         console.warn('[AuthContext] Safety timeout — forcing loading to stop');
+        // Show the cached user rather than resolving to null, so a slow profile
+        // query cannot bounce a signed-in person to the login screen.
+        restoreFromStorage('safety timeout');
         setIsLoading(false);
       }
     }, 3000);
@@ -130,33 +161,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           if (mounted) setIsLoading(false);
         });
       } else {
-        // No Supabase session — fall back to stored user in localStorage
-        // This keeps the user logged in on Capacitor after app restart
-        const storedUser = localStorage.getItem('trikeserve_current_user');
-        if (storedUser) {
-          try {
-            const parsed = JSON.parse(storedUser);
-            console.log('[AuthContext] No session but found stored user:', parsed.email);
-            setUser(parsed);
-          } catch (e) {
-            console.warn('[AuthContext] Failed to parse stored user:', e);
-          }
-        }
+        // No Supabase session — fall back to stored user in localStorage.
+        // This keeps the user logged in on Capacitor after app restart, and on
+        // the web for accounts (admins) that never had an Auth session.
+        restoreFromStorage('no session');
         clearTimeout(safetyTimeout);
         setIsLoading(false);
       }
     }).catch(() => {
       // On error, try to restore from localStorage as fallback
-      const storedUser = localStorage.getItem('trikeserve_current_user');
-      if (storedUser) {
-        try {
-          const parsed = JSON.parse(storedUser);
-          console.log('[AuthContext] Session error, restoring stored user:', parsed.email);
-          setUser(parsed);
-        } catch (e) {
-          console.warn('[AuthContext] Failed to parse stored user:', e);
-        }
-      }
+      restoreFromStorage('session error');
       clearTimeout(safetyTimeout);
       if (mounted) setIsLoading(false);
     });
@@ -165,9 +179,29 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       async (event, session) => {
         console.log('[AuthContext] Auth event:', event);
         if (!mounted) return;
-        // SIGNED_IN is handled by the login() function directly
-        // Only handle SIGNED_OUT and INITIAL_SESSION here
+        // SIGNED_IN is handled by the login() function directly.
+        if (event === 'INITIAL_SESSION') {
+          // Emitted on every page load. The getSession() call above owns the
+          // initial restore; without this, a load where that promise is slow
+          // would fall through to the guard and bounce the user out.
+          if (session?.user) loadUserProfile(session.user.id);
+          else restoreFromStorage('initial session');
+          setIsLoading(false);
+          return;
+        }
         if (event === 'SIGNED_OUT') {
+          // Distinguish a real sign-out from a token that merely failed to
+          // refresh. An explicit logout() clears the cache itself, so a
+          // SIGNED_OUT arriving with a cached user still present is a refresh
+          // failure — wiping the key there is what made accounts vanish on
+          // reload even though they were still signed in.
+          const stillCached = localStorage.getItem('trikeserve_current_user');
+          if (stillCached && !signOutRequestedRef.current) {
+            console.warn('[AuthContext] SIGNED_OUT with a cached user — treating as a refresh failure');
+            restoreFromStorage('sign-out with cached user');
+            setIsLoading(false);
+            return;
+          }
           setUser(null);
           localStorage.removeItem('trikeserve_current_user');
           setIsLoading(false);
@@ -210,6 +244,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
     } catch (err) {
       console.error('[AuthContext] Error loading profile:', err);
+      // A failed profile read must not read as a logged-out user. Falling back
+      // to the cached copy keeps the session alive until the next reload gets a
+      // clean read.
+      const raw = localStorage.getItem('trikeserve_current_user');
+      if (raw) {
+        try {
+          setUser(JSON.parse(raw));
+        } catch {
+          localStorage.removeItem('trikeserve_current_user');
+        }
+      }
     }
   };
 
@@ -487,6 +532,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   const logout = async () => {
+    signOutRequestedRef.current = true;
     await supabase.auth.signOut();
     setUser(null);
     localStorage.removeItem('trikeserve_current_user');
