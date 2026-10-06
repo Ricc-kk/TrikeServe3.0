@@ -76,6 +76,16 @@ export default function BusinessMapSelector({ onClose, onSelectLocation, current
   const [showPinInfo, setShowPinInfo] = useState(false);
   const [isGeocoding, setIsGeocoding] = useState(false);
   const [locating, setLocating] = useState(false);
+  // The device's own position, resolved to an address and shown as the first
+  // row of the address list. On a phone this is nearly always the right
+  // answer, and offering it up front saves the owner from searching for their
+  // own street or hunting for the spot on the map.
+  const [deviceLocation, setDeviceLocation] = useState<{
+    lat: number;
+    lng: number;
+    name: string;
+    full: string;
+  } | null>(null);
   const autoLocatedRef = useRef(false);
   const [showAddressList, setShowAddressList] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
@@ -139,28 +149,37 @@ export default function BusinessMapSelector({ onClose, onSelectLocation, current
     [reverseGeocode]
   );
 
-  // Sign-up has no pin yet, so the useful first pin is where the owner is
-  // standing. Denial or timeout is not an error: the map stays on its default
-  // centre and the existing search / tap-to-place routes still work.
+  // Resolve the device position once, on open, for every caller — not just
+  // sign-up. It backs the "Current location" row in the address list, so it has
+  // to run even when the shop already has a pin and the map is not being
+  // re-centred. Denial or timeout is not an error: the row is simply omitted
+  // and the existing search / tap-to-place routes still work.
   useEffect(() => {
-    if (!centerOnCurrentLocation || hasExistingPin || autoLocatedRef.current) return;
+    if (autoLocatedRef.current) return;
     if (typeof navigator === "undefined" || !navigator.geolocation) return;
     autoLocatedRef.current = true;
+
+    // Sign-up has no pin yet, so it also drops the first pin here rather than
+    // making the owner pick their own row.
+    const autoPlace = centerOnCurrentLocation && !hasExistingPin;
+
     setLocating(true);
     navigator.geolocation.getCurrentPosition(
       async (pos) => {
         const lat = pos.coords.latitude;
         const lng = pos.coords.longitude;
-        setMapCenter({ lat, lng });
-        setPickedPin({ lat, lng, name: 'Loading address...', full: 'Loading address...' });
-        setShowPinInfo(true);
-        setShowAddressList(true);
+        if (autoPlace) {
+          setMapCenter({ lat, lng });
+          setPickedPin({ lat, lng, name: 'Loading address...', full: 'Loading address...' });
+          setShowPinInfo(true);
+          setShowAddressList(true);
+        }
         const address = await reverseGeocode(lat, lng);
-        setPickedPin(
-          address
-            ? { lat, lng, name: address.name, full: address.full }
-            : { lat, lng, name: 'Your current location', full: 'Your current location' },
-        );
+        const resolved = address
+          ? { lat, lng, name: address.name, full: address.full }
+          : { lat, lng, name: 'Your current location', full: 'Your current location' };
+        setDeviceLocation(resolved);
+        if (autoPlace) setPickedPin(resolved);
         setLocating(false);
       },
       () => {
@@ -170,6 +189,17 @@ export default function BusinessMapSelector({ onClose, onSelectLocation, current
       { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 },
     );
   }, [centerOnCurrentLocation, hasExistingPin, reverseGeocode]);
+
+  // Tapping the "Current location" row is the same as tapping that point on
+  // the map: drop the pin there, pan to it, show its bubble.
+  const handleUseDeviceLocation = useCallback(() => {
+    if (!deviceLocation) return;
+    setPickedPin({ ...deviceLocation });
+    setMapCenter({ lat: deviceLocation.lat, lng: deviceLocation.lng });
+    setShowPinInfo(true);
+    setShowAddressList(true);
+    setShowSearchDropdown(false);
+  }, [deviceLocation]);
 
   // Debounced Places autocomplete search as the business types
   useEffect(() => {
@@ -474,6 +504,37 @@ export default function BusinessMapSelector({ onClose, onSelectLocation, current
           </div>
 
           <div className="flex-1 overflow-y-auto px-5 py-4 space-y-3">
+            {/* Device position — first, so the likeliest answer is already
+                offered before the owner searches or taps anything. */}
+            {locating && !deviceLocation && (
+              <div className="flex items-center gap-3 rounded-xl border border-[var(--border)] bg-[var(--muted)] p-4">
+                <Loader2 className="w-5 h-5 text-[var(--primary)] animate-spin flex-shrink-0" aria-hidden="true" />
+                <p className="text-sm font-semibold text-[var(--ink)]">
+                  Finding your current location...
+                </p>
+              </div>
+            )}
+
+            {deviceLocation && (
+              <button
+                type="button"
+                onClick={handleUseDeviceLocation}
+                className="w-full flex items-center gap-3 rounded-xl border border-[var(--border)] bg-[var(--muted)] p-4 text-left hover:border-[var(--primary)] active:scale-[0.99] transition-all"
+              >
+                <div className="w-10 h-10 rounded-full bg-[var(--primary-soft)] flex items-center justify-center flex-shrink-0">
+                  <Navigation className="w-5 h-5 text-[var(--primary)]" aria-hidden="true" />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-xs font-bold text-[var(--muted-foreground)] uppercase tracking-widest mb-1">
+                    Current Location
+                  </p>
+                  <p className="font-semibold text-[var(--ink)] text-sm">{deviceLocation.name}</p>
+                  <p className="text-xs text-[var(--muted-foreground)]">{deviceLocation.full}</p>
+                </div>
+                <span className="text-xs font-semibold text-[var(--primary)] flex-shrink-0">Use</span>
+              </button>
+            )}
+
             {/* Current pickup location context */}
             {currentAddress && (
               <div className="rounded-xl border border-[var(--border)] bg-[var(--muted)] p-4">

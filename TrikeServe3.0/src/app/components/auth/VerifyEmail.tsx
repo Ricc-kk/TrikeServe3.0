@@ -202,7 +202,7 @@ export default function VerifyEmail() {
             <div className="space-y-6">
               <div className="text-center">
                 <div className="w-20 h-20 bg-[var(--success-soft)] rounded-full flex items-center justify-center mx-auto mb-4">
-                  <CheckCircle className="w-10 h-10 text-[var(--success)]" />
+                  <CheckCircle className="w-10 h-10 text-[var(--success-ink)]" />
                 </div>
                 <h3 className="text-2xl font-bold text-[var(--ink)] mb-2">Welcome Aboard!</h3>
                 <p className="text-[var(--muted-foreground)] text-sm">
@@ -266,7 +266,9 @@ export default function VerifyEmail() {
 
                 {resendSuccess && (
                   <div className="p-3 bg-[var(--success-soft)] border-2 border-[var(--success-soft)] rounded-lg">
-                    <p className="text-sm text-[var(--success)]">✅ Verification email sent! Check your inbox.</p>
+                    <p className="text-sm font-semibold text-[var(--success-ink)]">
+                    ✅ Verification email sent! Check your inbox.
+                  </p>
                   </div>
                 )}
 
@@ -310,7 +312,7 @@ export default function VerifyEmail() {
               </div>
 
               <div className="p-4 bg-[var(--amber-soft)] border-2 border-[var(--amber-soft)] rounded-lg">
-                <p className="text-sm text-[var(--amber-dark)]">
+                <p className="text-sm text-[var(--amber-ink)]">
                   <strong>⚠️ Check Spam/Junk Folder:</strong> Gmail and other providers may flag this email as spam. Look in your <strong>Spam</strong> or <strong>Junk</strong> folder and mark it as "Not Spam" so future emails arrive in your inbox.
                 </p>
               </div>
@@ -339,7 +341,9 @@ export default function VerifyEmail() {
 
                 {resendSuccess && (
                   <div className="p-3 bg-[var(--success-soft)] border-2 border-[var(--success-soft)] rounded-lg">
-                    <p className="text-sm text-[var(--success)]">✅ Verification email resent! Check your inbox.</p>
+                    <p className="text-sm font-semibold text-[var(--success-ink)]">
+                    ✅ Verification email resent! Check your inbox.
+                  </p>
                   </div>
                 )}
 

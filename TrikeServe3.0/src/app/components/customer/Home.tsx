@@ -19,6 +19,7 @@ import { supabaseHelpers, isDropoffWithinAnyTerminalBoundary, isPointInPolygon, 
 import { computeRideFare, normalizeRates, terminalRates } from "@/lib/pricing";
 import ReasonPromptModal from "../ui/reason-prompt-modal";
 import { supabase } from "../../../utils/supabase";
+import { isAwaitingApproval } from "../../../lib/roleAccess";
 import SharedRides from "./SharedRides";
 import ShareRideLobby from "./ShareRideLobby";
 import BrowseAvailableLobbies from "./BrowseAvailableLobbies";
@@ -2135,6 +2136,26 @@ export default function CustomerHome() {
           problem={locationProblem}
           className="absolute top-24 left-3 right-3 z-[1000] sm:top-28 sm:left-4 sm:right-4"
         />
+      )}
+
+      {/* A business or driver awaiting superadmin approval is routed here as a
+          customer. Without this they land in the customer app with no idea why,
+          since nothing about the customer UI hints that a shop or tricycle is
+          registered against their email. */}
+      {showBookingFlow && bookingStep === 'home' && isAwaitingApproval(user?.role, user?.isVerified) && (
+        <div className="relative z-[999] px-4 pt-3">
+          <div className="rounded-2xl border-2 border-[var(--amber-soft)] bg-[var(--amber-soft)] p-4">
+            <p className="text-sm font-bold text-[var(--amber-ink)]">
+              {user?.role === 'business' ? 'Business' : 'Driver'} account pending approval
+            </p>
+            <p className="text-xs text-[var(--amber-ink)] mt-1">
+              You&apos;re using TrikeServe as a customer for now. A superadmin needs to
+              verify your account before you can open the{' '}
+              {user?.role === 'business' ? 'business' : 'driver'} dashboard. You&apos;ll get access as soon as
+              that&apos;s done — no need to register again.
+            </p>
+          </div>
+        </div>
       )}
 
         {/* Hub — three layers in normal flow: the app bar, then "What do you

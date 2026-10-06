@@ -16,8 +16,14 @@ const buttonVariants = cva(
           "border bg-background text-foreground hover:bg-accent hover:text-accent-foreground dark:bg-input/30 dark:border-input dark:hover:bg-input/50",
         secondary:
           "bg-secondary text-secondary-foreground hover:bg-secondary/80",
+        /* `dark:hover:bg-accent/50` used to dim the amber to 50%, but
+           --accent-foreground is a dark brown (#3d2e05) chosen to sit on
+           full-strength amber. Composited over the dark surface the wash
+           landed at #8a743a, so hover text dropped to 2.92:1 — unreadable.
+           Full-strength amber keeps the same pairing at 8.58:1 in both
+           themes, so only the opacity is removed. */
         ghost:
-          "hover:bg-accent hover:text-accent-foreground dark:hover:bg-accent/50",
+          "hover:bg-accent hover:text-accent-foreground",
         link: "text-primary underline-offset-4 hover:underline",
       },
       size: {

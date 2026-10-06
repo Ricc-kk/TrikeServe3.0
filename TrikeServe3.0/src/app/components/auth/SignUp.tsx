@@ -1,6 +1,6 @@
-import { useState } from "react";
+import { useState, useRef } from "react";
 import { useNavigate, Link } from "react-router";
-import { ArrowLeft, User, Mail, Phone, Lock, Check, MapPin, Store, UserCircle } from "lucide-react";
+import { ArrowLeft, User, Mail, Phone, Lock, Check, MapPin, Store, UserCircle, Eye, EyeOff, AlertCircle } from "lucide-react";
 
 import { Tricycle } from "../ui/Tricycle";
 import { Button } from "../ui/button";
@@ -21,7 +21,6 @@ interface SignUpFormData {
   role: UserRole;
   // Rider specific
   todaPlate?: string;
-  licenseNumber?: string;
   // Business specific
   businessName?: string;
   businessAddress?: string;
@@ -31,6 +30,149 @@ interface SignUpFormData {
   businessLng?: number;
   /** What the shop serves. Seeds `restaurants.cuisine` at first shop load. */
   businessCuisine?: CuisineId[];
+}
+
+/** The password requirements, declared once so the checklist and
+ *  `handleSubmitForm` can't drift apart — the form must not reject a password
+ *  the checklist just told the user was good, or accept one it flagged. */
+const PASSWORD_RULES = [
+  { label: "At least 8 characters", test: (v: string) => v.length >= 8 },
+  { label: "One uppercase letter", test: (v: string) => /[A-Z]/.test(v) },
+  { label: "One lowercase letter", test: (v: string) => /[a-z]/.test(v) },
+  { label: "One number", test: (v: string) => /[0-9]/.test(v) },
+] as const;
+
+/** Per-field validators. Each returns an error string, or null when the value
+ *  is acceptable. Kept next to PASSWORD_RULES so the blur-time messages, the
+ *  submit-time guard and the visible checklist all read from one place. */
+const FIELD_VALIDATORS: Partial<
+  Record<keyof SignUpFormData, (data: SignUpFormData) => string | null>
+> = {
+  firstName: (d) => {
+    const v = d.firstName?.trim() ?? "";
+    if (!v) return "First name is required";
+    if (v.length < 2) return "First name must be at least 2 characters";
+    if (v.length > 50) return "First name must be 50 characters or fewer";
+    if (!/^[\p{L}][\p{L}\s'’-]*$/u.test(v))
+      return "Use letters only (spaces, hyphens and apostrophes are fine)";
+    return null;
+  },
+  lastName: (d) => {
+    const v = d.lastName?.trim() ?? "";
+    if (!v) return "Last name is required";
+    if (v.length < 2) return "Last name must be at least 2 characters";
+    if (v.length > 50) return "Last name must be 50 characters or fewer";
+    if (!/^[\p{L}][\p{L}\s'’-]*$/u.test(v))
+      return "Use letters only (spaces, hyphens and apostrophes are fine)";
+    return null;
+  },
+  email: (d) => {
+    const v = d.email?.trim() ?? "";
+    if (!v) return "Email address is required";
+    if (v.length > 254) return "Email address is too long";
+    // Deliberately stricter than the browser's type="email": that one accepts
+    // "a@b" with no dot, which no real mail provider will issue.
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(v))
+      return "Enter a valid email address, e.g. name@example.com";
+    return null;
+  },
+  phoneNumber: (d) => {
+    const v = d.phoneNumber?.trim() ?? "";
+    if (!v) return "Phone number is required";
+    if (!/^09\d{9}$/.test(v)) return "Phone number must be in format: 09XXXXXXXXX";
+    return null;
+  },
+  password: (d) => {
+    const unmet = PASSWORD_RULES.filter((rule) => !rule.test(d.password ?? ""));
+    if (unmet.length === 0) return null;
+    return `Password needs: ${unmet.map((r) => r.label.toLowerCase()).join(", ")}`;
+  },
+  confirmPassword: (d) => {
+    if (!d.confirmPassword) return "Please confirm your password";
+    if (d.confirmPassword !== d.password) return "Passwords do not match";
+    return null;
+  },
+  todaPlate: (d) => {
+    if (d.role !== "rider") return null;
+    const v = d.todaPlate?.trim() ?? "";
+    if (!v) return "TODA Plate Number is required for drivers";
+    if (!/^[A-Za-z0-9][A-Za-z0-9 -]{2,14}$/.test(v))
+      return "Use letters and numbers only, 3-15 characters (e.g. TV-1234)";
+    return null;
+  },
+  businessName: (d) => {
+    if (d.role !== "business") return null;
+    const v = d.businessName?.trim() ?? "";
+    if (!v) return "Business Name is required";
+    if (v.length < 2) return "Business Name must be at least 2 characters";
+    if (v.length > 80) return "Business Name must be 80 characters or fewer";
+    return null;
+  },
+  businessAddress: (d) => {
+    if (d.role !== "business") return null;
+    if (!d.businessAddress?.trim()) {
+      return "Pin your business location so drivers can be routed to you";
+    }
+    return null;
+  },
+};
+
+/** Fields that apply to the currently selected role, in DOM order. Used to
+ *  decide what to check on submit and which input to focus first. */
+const FIELD_ORDER: (keyof SignUpFormData)[] = [
+  "firstName",
+  "lastName",
+  "email",
+  "phoneNumber",
+  "todaPlate",
+  "businessName",
+  "businessAddress",
+  "password",
+  "confirmPassword",
+];
+
+function FieldError({ id, message }: { id: string; message?: string | null }) {
+  if (!message) return null;
+  return (
+    <p
+      id={id}
+      className="mt-1.5 flex items-start gap-1.5 text-xs text-[var(--error)]"
+    >
+      <AlertCircle className="mt-px w-3.5 h-3.5 flex-shrink-0" aria-hidden="true" />
+      <span>{message}</span>
+    </p>
+  );
+}
+
+function PasswordChecklist({ value }: { value: string }) {
+  // Nothing to report until there's something typed; an all-red list before
+  // the first keystroke just reads as an error the user can't fix yet.
+  const results = PASSWORD_RULES.map((rule) => ({ label: rule.label, met: rule.test(value) }));
+  const metCount = results.filter((r) => r.met).length;
+  const allMet = metCount === results.length;
+
+  return (
+    <ul className="mt-2 space-y-1" aria-live="polite">
+      {results.map(({ label, met }) => (
+        <li
+          key={label}
+          className={`flex items-center gap-1.5 text-xs transition-colors ${
+            met ? "text-[var(--success-ink)]" : "text-[var(--muted-foreground)]"
+          }`}
+        >
+          <Check
+            className={`w-3.5 h-3.5 flex-shrink-0 ${met ? "opacity-100" : "opacity-40"}`}
+            aria-hidden="true"
+            strokeWidth={3}
+          />
+          <span>{label}</span>
+        </li>
+      ))}
+      <li className="sr-only" aria-live="assertive">
+        {allMet ? "Password meets all requirements" : `${metCount} of ${results.length} password requirements met`}
+      </li>
+    </ul>
+  );
 }
 
 export default function SignUp() {
@@ -49,6 +191,24 @@ export default function SignUp() {
   const [error, setError] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [showMapPicker, setShowMapPicker] = useState(false);
+  // Password and confirm each toggle independently, so you can reveal one to
+  // check it against the other without exposing both at once.
+  const [showPassword, setShowPassword] = useState(false);
+  const [showConfirm, setShowConfirm] = useState(false);
+  /** Fields the user has left at least once. Errors are only shown for touched
+   *  fields so a pristine form isn't painted red before it's been filled in. */
+  const [touched, setTouched] = useState<Partial<Record<keyof SignUpFormData, boolean>>>({});
+  const [submitAttempted, setSubmitAttempted] = useState(false);
+  const formRef = useRef<HTMLFormElement>(null);
+
+  const errorFor = (field: keyof SignUpFormData): string | null => {
+    if (!touched[field] && !submitAttempted) return null;
+    return FIELD_VALIDATORS[field]?.(formData) ?? null;
+  };
+
+  const handleBlur = (field: keyof SignUpFormData) => {
+    setTouched(prev => ({ ...prev, [field]: true }));
+  };
 
   const handleInputChange = (field: keyof SignUpFormData, value: string) => {
     setFormData(prev => ({ ...prev, [field]: value }));
@@ -57,54 +217,41 @@ export default function SignUp() {
 
   const handleRoleSelect = (role: UserRole) => {
     setFormData(prev => ({ ...prev, role }));
+    // Role changes which fields are required, so clear the blur state —
+    // otherwise errors from the previously selected role linger.
+    setTouched({});
+    setSubmitAttempted(false);
+    setError("");
     setStep("form");
   };
 
   const handleSubmitForm = async (e: React.FormEvent) => {
     e.preventDefault();
     setError("");
+    setSubmitAttempted(true);
 
-    // Validation
-    if (formData.password !== formData.confirmPassword) {
-      setError("Passwords do not match");
-      return;
-    }
+    // Walk every applicable field and collect what failed, rather than bailing
+    // on the first one — the user gets the whole list in one pass instead of
+    // discovering problems one submit at a time.
+    const failures = FIELD_ORDER.map((field) => ({
+      field,
+      message: FIELD_VALIDATORS[field]?.(formData) ?? null,
+    })).filter((f) => f.message);
 
-    if (formData.password.length < 8) {
-      setError("Password must be at least 8 characters");
-      return;
-    }
-    if (!/[A-Z]/.test(formData.password)) {
-      setError("Password must contain at least one uppercase letter");
-      return;
-    }
-    if (!/[a-z]/.test(formData.password)) {
-      setError("Password must contain at least one lowercase letter");
-      return;
-    }
-    if (!/[0-9]/.test(formData.password)) {
-      setError("Password must contain at least one number");
-      return;
-    }
+    if (failures.length > 0) {
+      setError(
+        failures.length === 1
+          ? "Please fix the highlighted field"
+          : `Please fix ${failures.length} highlighted fields`
+      );
 
-    if (!formData.phoneNumber.match(/^09\d{9}$/)) {
-      setError("Phone number must be in format: 09XXXXXXXXX");
+      // Move focus to the first problem so keyboard and screen-reader users
+      // land on it instead of guessing where submission stopped.
+      const first = formRef.current?.querySelector<HTMLElement>(
+        `[data-field="${failures[0].field}"]`
+      );
+      first?.focus();
       return;
-    }
-
-    // Role-specific validation
-    if (formData.role === "rider") {
-      if (!formData.todaPlate || !formData.licenseNumber) {
-        setError("TODA Plate and License Number are required for drivers");
-        return;
-      }
-    }
-
-    if (formData.role === "business") {
-      if (!formData.businessName || !formData.businessAddress) {
-        setError("Business Name and Address are required for business owners");
-        return;
-      }
     }
 
     setIsLoading(true);
@@ -116,7 +263,6 @@ export default function SignUp() {
       phone: formData.phoneNumber,
       role: formData.role,
       todaPlate: formData.todaPlate,
-      licenseNumber: formData.licenseNumber,
       businessName: formData.businessName,
       businessAddress: formData.businessAddress,
       businessLat: formData.businessLat,
@@ -261,7 +407,7 @@ export default function SignUp() {
 
           {/* Registration Form */}
           {step === "form" && (
-            <form onSubmit={handleSubmitForm} className="space-y-4">
+            <form onSubmit={handleSubmitForm} className="space-y-4" ref={formRef} noValidate>
               <div className="p-3 bg-[var(--info-soft)] border-2 border-[var(--info-soft)] rounded-lg">
                 <p className="text-sm text-[var(--info)]">
                   <strong>Registering as:</strong> {formData.role.charAt(0).toUpperCase() + formData.role.slice(1)}
@@ -278,10 +424,19 @@ export default function SignUp() {
                     placeholder="Juan"
                     value={formData.firstName}
                     onChange={(e) => handleInputChange("firstName", e.target.value)}
-                    className="border border-line focus:border-[var(--primary)]"
+                    onBlur={() => handleBlur("firstName")}
+                    data-field="firstName"
+                    aria-invalid={!!errorFor("firstName")}
+                    aria-describedby={errorFor("firstName") ? "firstName-error" : undefined}
+                    className={`border focus:border-[var(--primary)] ${
+                      errorFor("firstName")
+                        ? "border-[var(--error)]"
+                        : "border-line"
+                    }`}
                     required
                     disabled={isLoading}
                   />
+                  <FieldError id="firstName-error" message={errorFor("firstName")} />
                 </div>
                 <div>
                   <label className="block text-sm font-semibold text-[var(--ink)] mb-2">
@@ -292,10 +447,19 @@ export default function SignUp() {
                     placeholder="Dela Cruz"
                     value={formData.lastName}
                     onChange={(e) => handleInputChange("lastName", e.target.value)}
-                    className="border border-line focus:border-[var(--primary)]"
+                    onBlur={() => handleBlur("lastName")}
+                    data-field="lastName"
+                    aria-invalid={!!errorFor("lastName")}
+                    aria-describedby={errorFor("lastName") ? "lastName-error" : undefined}
+                    className={`border focus:border-[var(--primary)] ${
+                      errorFor("lastName")
+                        ? "border-[var(--error)]"
+                        : "border-line"
+                    }`}
                     required
                     disabled={isLoading}
                   />
+                  <FieldError id="lastName-error" message={errorFor("lastName")} />
                 </div>
               </div>
 
@@ -310,11 +474,18 @@ export default function SignUp() {
                     placeholder="your.email@example.com"
                     value={formData.email}
                     onChange={(e) => handleInputChange("email", e.target.value)}
-                    className="border border-line focus:border-[var(--primary)] pl-11"
+                    onBlur={() => handleBlur("email")}
+                    data-field="email"
+                    aria-invalid={!!errorFor("email")}
+                    aria-describedby={errorFor("email") ? "email-error" : undefined}
+                    className={`border focus:border-[var(--primary)] pl-11 ${
+                      errorFor("email") ? "border-[var(--error)]" : "border-line"
+                    }`}
                     required
                     disabled={isLoading}
                   />
                 </div>
+                <FieldError id="email-error" message={errorFor("email")} />
               </div>
 
               <div>
@@ -333,12 +504,21 @@ export default function SignUp() {
                       handleInputChange("phoneNumber", digits);
                     }}
                     maxLength={11}
-                    className="border border-line focus:border-[var(--primary)] pl-11"
+                    onBlur={() => handleBlur("phoneNumber")}
+                    data-field="phoneNumber"
+                    aria-invalid={!!errorFor("phoneNumber")}
+                    aria-describedby={errorFor("phoneNumber") ? "phoneNumber-error" : undefined}
+                    className={`border focus:border-[var(--primary)] pl-11 ${
+                      errorFor("phoneNumber") ? "border-[var(--error)]" : "border-line"
+                    }`}
                     required
                     disabled={isLoading}
                   />
                 </div>
-                <p className="text-xs text-[var(--muted-foreground)] mt-1">Format: 09XXXXXXXXX</p>
+                <FieldError id="phoneNumber-error" message={errorFor("phoneNumber")} />
+                {!errorFor("phoneNumber") && (
+                  <p className="text-xs text-[var(--muted-foreground)] mt-1">Format: 09XXXXXXXXX</p>
+                )}
               </div>
 
               {/* Rider-specific fields */}
@@ -353,24 +533,17 @@ export default function SignUp() {
                       placeholder="ABC 1234"
                       value={formData.todaPlate || ""}
                       onChange={(e) => handleInputChange("todaPlate", e.target.value)}
-                      className="border border-line focus:border-[var(--primary)]"
+                      onBlur={() => handleBlur("todaPlate")}
+                      data-field="todaPlate"
+                      aria-invalid={!!errorFor("todaPlate")}
+                      aria-describedby={errorFor("todaPlate") ? "todaPlate-error" : undefined}
+                      className={`border focus:border-[var(--primary)] ${
+                        errorFor("todaPlate") ? "border-[var(--error)]" : "border-line"
+                      }`}
                       required
                       disabled={isLoading}
                     />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-semibold text-[var(--ink)] mb-2">
-                      License Number
-                    </label>
-                    <Input
-                      type="text"
-                      placeholder="N01-23-456789"
-                      value={formData.licenseNumber || ""}
-                      onChange={(e) => handleInputChange("licenseNumber", e.target.value)}
-                      className="border border-line focus:border-[var(--primary)]"
-                      required
-                      disabled={isLoading}
-                    />
+                    <FieldError id="todaPlate-error" message={errorFor("todaPlate")} />
                   </div>
                 </>
               )}
@@ -387,10 +560,17 @@ export default function SignUp() {
                       placeholder="Kuya J's Eatery"
                       value={formData.businessName || ""}
                       onChange={(e) => handleInputChange("businessName", e.target.value)}
-                      className="border border-line focus:border-[var(--primary)]"
+                      onBlur={() => handleBlur("businessName")}
+                      data-field="businessName"
+                      aria-invalid={!!errorFor("businessName")}
+                      aria-describedby={errorFor("businessName") ? "businessName-error" : undefined}
+                      className={`border focus:border-[var(--primary)] ${
+                        errorFor("businessName") ? "border-[var(--error)]" : "border-line"
+                      }`}
                       required
                       disabled={isLoading}
                     />
+                    <FieldError id="businessName-error" message={errorFor("businessName")} />
                   </div>
                   <div>
                     <label className="block text-sm font-semibold text-[var(--ink)] mb-2">
@@ -401,9 +581,19 @@ export default function SignUp() {
                         rather than accepting a typed line. */}
                     <button
                       type="button"
-                      onClick={() => setShowMapPicker(true)}
+                      onClick={() => {
+                        setShowMapPicker(true);
+                        setTouched(prev => ({ ...prev, businessAddress: true }));
+                      }}
                       disabled={isLoading}
-                      className="w-full min-h-12 flex items-center gap-3 p-3 text-left bg-surface border border-line rounded-xl transition-colors hover:border-[var(--primary)] disabled:opacity-50"
+                      data-field="businessAddress"
+                      aria-invalid={!!errorFor("businessAddress")}
+                      aria-describedby={errorFor("businessAddress") ? "businessAddress-error" : undefined}
+                      className={`w-full min-h-12 flex items-center gap-3 p-3 text-left bg-surface rounded-xl transition-colors disabled:opacity-50 ${
+                        errorFor("businessAddress")
+                          ? "border-2 border-[var(--error)]"
+                          : "border border-line hover:border-[var(--primary)]"
+                      }`}
                     >
                       <MapPin className="w-5 h-5 text-[var(--primary)] flex-shrink-0" aria-hidden="true" />
                       <span className="flex-1 min-w-0">
@@ -431,53 +621,7 @@ export default function SignUp() {
                         {formData.businessAddress ? "Change" : "Set"}
                       </span>
                     </button>
-                  </div>
-
-                  {/* Declared here, once, rather than guessed later. Customers
-                      filter on this, and an undeclared shop is invisible to
-                      every filter until someone opens the settings modal. */}
-                  <div>
-                    <label className="block text-sm font-semibold text-[var(--ink)] mb-2">
-                      What do you serve?
-                    </label>
-                    <p className="text-xs text-[var(--muted-foreground)] mb-2">
-                      Pick everything that describes your shop. Customers filter by this.
-                    </p>
-                    <div
-                      role="group"
-                      aria-label="What do you serve?"
-                      className="flex flex-wrap gap-2"
-                    >
-                      {CUISINES.map(({ id, label, Icon }) => {
-                        const selected = (formData.businessCuisine ?? []).includes(id);
-                        return (
-                          <button
-                            key={id}
-                            type="button"
-                            disabled={isLoading}
-                            aria-pressed={selected}
-                            onClick={() => {
-                              const current = formData.businessCuisine ?? [];
-                              setFormData({
-                                ...formData,
-                                businessCuisine: selected
-                                  ? current.filter((c) => c !== id)
-                                  : [...current, id],
-                              });
-                            }}
-                            className={[
-                              "min-h-11 inline-flex items-center gap-1.5 px-3 py-2 rounded-xl border text-xs font-semibold transition-colors disabled:opacity-50",
-                              selected
-                                ? "border-[var(--primary)] bg-[var(--primary-soft)] text-[var(--primary)]"
-                                : "border-line text-[var(--muted-foreground)] hover:border-[var(--primary)]",
-                            ].join(" ")}
-                          >
-                            <Icon className="w-4 h-4 flex-shrink-0" aria-hidden="true" />
-                            {label}
-                          </button>
-                        );
-                      })}
-                    </div>
+                    <FieldError id="businessAddress-error" message={errorFor("businessAddress")} />
                   </div>
 
                   {/* Declared here, once, rather than guessed later. Customers
@@ -536,16 +680,33 @@ export default function SignUp() {
                 <div className="relative">
                   <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-[var(--muted-foreground)]" />
                   <Input
-                    type="password"
+                    type={showPassword ? "text" : "password"}
                     placeholder="••••••••"
                     value={formData.password}
                     onChange={(e) => handleInputChange("password", e.target.value)}
-                    className="border border-line focus:border-[var(--primary)] pl-11"
+                    onBlur={() => handleBlur("password")}
+                    data-field="password"
+                    aria-invalid={!!errorFor("password")}
+                    aria-describedby={errorFor("password") ? "password-error" : undefined}
+                    className={`border focus:border-[var(--primary)] pl-11 pr-11 ${
+                      errorFor("password") ? "border-[var(--error)]" : "border-line"
+                    }`}
                     required
                     disabled={isLoading}
                   />
+                  <button
+                    type="button"
+                    onClick={() => setShowPassword(!showPassword)}
+                    disabled={isLoading}
+                    aria-label={showPassword ? "Hide password" : "Show password"}
+                    aria-pressed={showPassword}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-[var(--muted-foreground)] hover:text-[var(--ink)] disabled:opacity-50"
+                  >
+                    {showPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
+                  </button>
                 </div>
-                <p className="text-xs text-[var(--muted-foreground)] mt-1">At least 8 characters, 1 uppercase, 1 lowercase, 1 number</p>
+                <PasswordChecklist value={formData.password} />
+                <FieldError id="password-error" message={errorFor("password")} />
               </div>
 
               <div>
@@ -555,20 +716,44 @@ export default function SignUp() {
                 <div className="relative">
                   <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-[var(--muted-foreground)]" />
                   <Input
-                    type="password"
+                    type={showConfirm ? "text" : "password"}
                     placeholder="••••••••"
                     value={formData.confirmPassword}
                     onChange={(e) => handleInputChange("confirmPassword", e.target.value)}
-                    className="border border-line focus:border-[var(--primary)] pl-11"
+                    onBlur={() => handleBlur("confirmPassword")}
+                    data-field="confirmPassword"
+                    aria-invalid={!!errorFor("confirmPassword")}
+                    aria-describedby={errorFor("confirmPassword") ? "confirmPassword-error" : undefined}
+                    className={`border focus:border-[var(--primary)] pl-11 pr-11 ${
+                      errorFor("confirmPassword") ? "border-[var(--error)]" : "border-line"
+                    }`}
                     required
                     disabled={isLoading}
                   />
+                  <button
+                    type="button"
+                    onClick={() => setShowConfirm(!showConfirm)}
+                    disabled={isLoading}
+                    aria-label={showConfirm ? "Hide password confirmation" : "Show password confirmation"}
+                    aria-pressed={showConfirm}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-[var(--muted-foreground)] hover:text-[var(--ink)] disabled:opacity-50"
+                  >
+                    {showConfirm ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
+                  </button>
                 </div>
+                <FieldError id="confirmPassword-error" message={errorFor("confirmPassword")} />
               </div>
 
               {error && (
-                <div className="p-3 bg-[var(--error-soft)] border-2 border-[var(--error-soft)] rounded-lg">
-                  <p className="text-sm text-[var(--error)]">{error}</p>
+                <div
+                  role="alert"
+                  aria-live="assertive"
+                  className="p-3 bg-[var(--error-soft)] border-2 border-[var(--error-soft)] rounded-lg"
+                >
+                  <p className="text-sm font-semibold text-[var(--error)] flex items-start gap-2">
+                    <AlertCircle className="w-4 h-4 mt-0.5 flex-shrink-0" aria-hidden="true" />
+                    <span>{error}</span>
+                  </p>
                 </div>
               )}
 
@@ -582,7 +767,7 @@ export default function SignUp() {
               {/* Show additional note for rider and business */}
               {(formData.role === "rider" || formData.role === "business") && (
                 <div className="p-3 bg-[var(--amber-soft)] border-2 border-[var(--amber-soft)] rounded-lg">
-                  <p className="text-xs text-[var(--amber-dark)]">
+                  <p className="text-xs text-[var(--amber-ink)]">
                     <strong>📋 Additional Step:</strong> You must also visit the Barangay Hall for face-to-face verification before your account can be fully activated.
                   </p>
                 </div>
@@ -640,7 +825,7 @@ export default function SignUp() {
                   </div>
 
                   <div className="p-3 bg-[var(--amber-soft)] border-2 border-[var(--amber-soft)] rounded-lg">
-                    <p className="text-xs text-[var(--amber-dark)]">
+                    <p className="text-xs text-[var(--amber-ink)]">
                       <strong>Didn't receive the email?</strong> Check your spam folder, or contact support if the problem persists.
                     </p>
                   </div>
@@ -653,26 +838,32 @@ export default function SignUp() {
                 </>
               )}
 
-              {/* Rider/Business: Admin verification required (no email verification needed) */}
+              {/* Rider/Business: email verification AND admin F2F approval both required */}
               {(formData.role === "rider" || formData.role === "business") && (
                 <>
                   <div className="p-4 bg-[var(--info-soft)] border-2 border-[var(--info-soft)] rounded-lg">
-                    <p className="text-sm text-[var(--info)] mb-2">
-                      <strong>📧 Email Verified Automatically</strong>
+                    <p className="text-sm font-semibold text-[var(--info)] mb-2">
+                      <strong>📧 Check Your Email!</strong>
                     </p>
                     <p className="text-sm text-[var(--info)]">
-                      Your email has been confirmed. No need to check your inbox.
+                      We sent a verification link to <strong>{formData.email}</strong>. Click it to confirm your email address — you won&apos;t be able to log in until you do.
+                    </p>
+                  </div>
+
+                  <div className="p-3 bg-[var(--amber-soft)] border-2 border-[var(--amber-soft)] rounded-lg">
+                    <p className="text-xs text-[var(--amber-ink)]">
+                      <strong>Didn&apos;t receive the email?</strong> Check your spam folder, or contact support if the problem persists.
                     </p>
                   </div>
 
                   <div className="p-4 bg-[var(--amber-soft)] border-2 border-[var(--amber-soft)] rounded-lg">
-                    <p className="text-sm text-[var(--amber-dark)] mb-3">
+                    <p className="text-sm text-[var(--amber-ink)] mb-3">
                       <strong>⏳ Admin Verification Required</strong>
                     </p>
-                    <p className="text-sm text-[var(--amber-dark)] mb-3">
+                    <p className="text-sm text-[var(--amber-ink)] mb-3">
                       You must visit the Barangay Hall for face-to-face verification before you can log in.
                     </p>
-                    <ol className="text-sm text-[var(--amber-dark)] space-y-2 list-decimal list-inside">
+                    <ol className="text-sm text-[var(--amber-ink)] space-y-2 list-decimal list-inside">
                       <li>Visit the TrikeServe Office at Barangay Hall</li>
                       <li>Bring your valid ID and required documents:
                         {formData.role === "rider" && (

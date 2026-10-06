@@ -43,6 +43,17 @@ export default function MapSelector({ onClose, onSelectLocation, currentLocation
   const [showPinInfo, setShowPinInfo] = useState(false);
   const [isGeocoding, setIsGeocoding] = useState(false);
   const [showAddressList, setShowAddressList] = useState(true);
+  const [locating, setLocating] = useState(false);
+  // The device's own position, resolved to an address and shown as the first
+  // row of the address list. Most delivery pins are the customer's own
+  // doorstep, so offering it up front beats making them search or guess pins.
+  const [deviceLocation, setDeviceLocation] = useState<{
+    lat: number;
+    lng: number;
+    name: string;
+    full: string;
+  } | null>(null);
+  const deviceLocatedRef = useRef(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [searchResults, setSearchResults] = useState<any[]>([]);
   const [isSearching, setIsSearching] = useState(false);
@@ -89,6 +100,45 @@ export default function MapSelector({ onClose, onSelectLocation, currentLocation
     }
     return null;
   }, []);
+
+  // Resolve the device position once on open to back the "Current location"
+  // row. Denial or timeout is not an error: the row is omitted and search /
+  // tap-to-place still work.
+  useEffect(() => {
+    if (deviceLocatedRef.current) return;
+    if (typeof navigator === "undefined" || !navigator.geolocation) return;
+    deviceLocatedRef.current = true;
+    setLocating(true);
+    navigator.geolocation.getCurrentPosition(
+      async (pos) => {
+        const lat = pos.coords.latitude;
+        const lng = pos.coords.longitude;
+        const address = await reverseGeocode(lat, lng);
+        setDeviceLocation(
+          address
+            ? { lat, lng, name: address.name, full: address.full }
+            : { lat, lng, name: 'Your current location', full: 'Your current location' },
+        );
+        setLocating(false);
+      },
+      () => {
+        // Denied or unavailable — leave the map where it is.
+        setLocating(false);
+      },
+      { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 },
+    );
+  }, [reverseGeocode]);
+
+  // Tapping the "Current location" row is the same as tapping that point on
+  // the map: drop the pin there, pan to it, show its bubble.
+  const handleUseDeviceLocation = useCallback(() => {
+    if (!deviceLocation) return;
+    setPickedPin({ ...deviceLocation });
+    setMapCenter({ lat: deviceLocation.lat, lng: deviceLocation.lng });
+    setShowPinInfo(true);
+    setShowAddressList(true);
+    setShowSearchDropdown(false);
+  }, [deviceLocation]);
 
   // When the customer taps on the map, drop a pin and look up the address
   const handleMapClick = useCallback(
@@ -411,6 +461,37 @@ export default function MapSelector({ onClose, onSelectLocation, currentLocation
           </div>
 
           <div className="flex-1 overflow-y-auto px-5 py-4 space-y-3">
+            {/* Device position — first, so the customer's own doorstep is
+                already offered before they search or tap anything. */}
+            {locating && !deviceLocation && (
+              <div className="flex items-center gap-3 rounded-xl border border-[var(--border)] bg-[var(--muted)] p-4">
+                <Loader2 className="w-5 h-5 text-[var(--primary)] animate-spin flex-shrink-0" aria-hidden="true" />
+                <p className="text-sm font-semibold text-[var(--ink)]">
+                  Finding your current location...
+                </p>
+              </div>
+            )}
+
+            {deviceLocation && (
+              <button
+                type="button"
+                onClick={handleUseDeviceLocation}
+                className="w-full flex items-center gap-3 rounded-xl border border-[var(--border)] bg-[var(--muted)] p-4 text-left hover:border-[var(--primary)] active:scale-[0.99] transition-all"
+              >
+                <div className="w-10 h-10 rounded-full bg-[var(--primary-soft)] flex items-center justify-center flex-shrink-0">
+                  <Navigation className="w-5 h-5 text-[var(--primary)]" aria-hidden="true" />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-xs font-bold text-[var(--muted-foreground)] uppercase tracking-widest mb-1">
+                    Current Location
+                  </p>
+                  <p className="font-semibold text-[var(--ink)] text-sm">{deviceLocation.name}</p>
+                  <p className="text-xs text-[var(--muted-foreground)]">{deviceLocation.full}</p>
+                </div>
+                <span className="text-xs font-semibold text-[var(--primary)] flex-shrink-0">Use</span>
+              </button>
+            )}
+
             {/* Selected pin preview */}
             {pickedPin && (
               <div className="rounded-xl border-2 border-[var(--success)] bg-[var(--success)]/5 p-4">

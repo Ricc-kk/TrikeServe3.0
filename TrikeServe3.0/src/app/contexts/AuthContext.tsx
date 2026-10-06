@@ -62,14 +62,29 @@ interface SignupData {
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
+/**
+ * Whether an account counts as superadmin-approved when the stored flag is
+ * missing.
+ *
+ * A missing flag used to mean `true` for everyone, which quietly granted
+ * business access to any account whose `is_verified` column was null — exactly
+ * the accounts that had never been through approval. Only roles that are never
+ * approval-gated (customer, admin) default to approved; business and rider
+ * default to not, so the safe reading wins whenever the column is absent.
+ */
+function defaultIsVerified(role: string): boolean {
+  return role !== 'business' && role !== 'rider';
+}
+
 function mapSupabaseUser(row: any): User {
+  const role = row.role || 'customer';
   return {
     id: row.id,
     email: row.email,
     name: row.name || row.email?.split('@')[0] || 'User',
-    role: row.role || 'customer',
+    role,
     phone: row.phone || '',
-    isVerified: row.is_verified ?? true,
+    isVerified: row.is_verified ?? defaultIsVerified(role),
     createdAt: row.created_at || new Date().toISOString(),
     adminType: row.admin_type,
     todaPlate: row.toda_plate,
@@ -271,13 +286,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (profile) {
         const mappedUser = mapSupabaseUser(profile);
 
-        if (!mappedUser.isVerified) {
-          return {
-            success: false,
-            error: 'Account pending verification. Please visit the TrikeServe office at Barangay Hall with your documents.',
-          };
-        }
-
         setUser(mappedUser);
         localStorage.setItem('trikeserve_current_user', JSON.stringify(mappedUser));
         console.log('[AuthContext] Legacy login successful (users table profile):', mappedUser.email);
@@ -285,13 +293,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
 
       // Profile missing from the users table — build one from the localStorage record
+      const legacyRole = match.role || 'customer';
       const mappedUser: User = {
         id: match.id || `legacy-${Date.now()}`,
         email: match.email,
         name: match.name || match.email.split('@')[0],
-        role: match.role || 'customer',
+        role: legacyRole,
         phone: match.phone || '',
-        isVerified: match.isVerified ?? true,
+        // Same rule as the database read: an absent flag means "not approved"
+        // for business and rider, so a stale localStorage record can't stand in
+        // for a superadmin decision that was never made.
+        isVerified: match.isVerified ?? defaultIsVerified(legacyRole),
         createdAt: match.createdAt || new Date().toISOString(),
         todaPlate: match.todaPlate,
         licenseNumber: match.licenseNumber,
@@ -397,28 +409,30 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           setUser(mappedUser);
           localStorage.setItem('trikeserve_current_user', JSON.stringify(mappedUser));
 
-          // Check F2F verification
-          if (!mappedUser.isVerified) {
-            await supabase.auth.signOut();
-            return {
-              success: false,
-              error: 'Account pending verification. Please visit the TrikeServe office at Barangay Hall with your documents.',
-            };
-          }
-
+          // A business or rider awaiting superadmin approval is still signed in.
+          // Their role stays 'business'/'rider' in the database — that is what
+          // approval keys off — but ProtectedRoute routes them as a customer, so
+          // their own UI stays locked while the rest of the app still works.
+          // Email confirmation is already enforced above: Supabase rejects the
+          // sign-in with "Email not confirmed" until the link is clicked.
           console.log('[AuthContext] Login complete:', mappedUser.email, mappedUser.role);
           return { success: true };
         } else {
           // Profile doesn't exist — create a basic one from auth metadata
           console.warn('[AuthContext] No profile found, creating one from auth metadata');
           const authMeta = authData.user.user_metadata || {};
+          const metaRole = authMeta.role || 'customer';
           const newProfile: any = {
             id: authData.user.id,
             email: email.toLowerCase(),
             name: authMeta.name || authMeta.full_name || email.split('@')[0],
             phone: authMeta.phone || '',
-            role: authMeta.role || 'customer',
-            is_verified: true,
+            role: metaRole,
+            // Rebuilding a missing profile must not imply superadmin approval.
+            // It used to hardcode is_verified: true, so deleting a pending
+            // business's row and logging back in promoted it straight to full
+            // business access with nobody ever approving it.
+            is_verified: defaultIsVerified(metaRole),
             email_verified: true,
             created_at: new Date().toISOString(),
             updated_at: new Date().toISOString(),
@@ -600,18 +614,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           console.error('Error creating profile:', insertError);
         }
 
-        // For business/rider: auto-confirm email so they skip email verification.
-        // The admin's F2F verification is the only gate for these roles.
-        if (data.role === 'business' || data.role === 'rider') {
-          fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/signup-confirm-email`, {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              'Authorization': `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY || import.meta.env.VITE_SUPABASE_PUBLISHABLE_DEFAULT_KEY}`,
-            },
-            body: JSON.stringify({ userId: authData.user.id }),
-          }).catch((err) => console.warn('[AuthContext] signup-confirm-email failed (non-critical):', err));
-        }
+        // Every role must confirm its own email by clicking the link Supabase
+        // just sent. Riders and businesses used to be auto-confirmed here via
+        // the signup-confirm-email edge function, which let anyone register a
+        // driver or shop under an address they don't control — the F2F check at
+        // the Barangay Hall never sees that the email was never proven.
+        // `email_verified: false` above now stands for all roles, and login
+        // surfaces Supabase's "Email not confirmed" until the link is clicked.
 
         // Also save to localStorage
         const usersJson = localStorage.getItem('trikeserve_users');

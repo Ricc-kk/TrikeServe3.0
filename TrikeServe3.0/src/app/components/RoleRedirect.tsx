@@ -1,6 +1,7 @@
 import { useEffect } from 'react';
 import { useNavigate } from 'react-router';
 import { useAuth } from '../contexts/AuthContext';
+import { effectiveRole, ROLE_HOME } from '../../lib/roleAccess';
 
 export default function RoleRedirect() {
   const { user, isLoading } = useAuth();
@@ -9,16 +10,10 @@ export default function RoleRedirect() {
   useEffect(() => {
     if (!isLoading) {
       if (user) {
-        // Redirect based on role
-        const roleRoutes = {
-          // Customers land on the hub, not straight in the food tab: rides and
-          // food are both offered from Home, so the hub is the real landing page.
-          customer: '/customer',
-          rider: '/rider',
-          business: '/business/dashboard',
-          admin: '/admin',
-        };
-        navigate(roleRoutes[user.role], { replace: true });
+        // Customers land on the hub, not straight in the food tab: rides and
+        // food are both offered from Home, so the hub is the real landing page.
+        const role = effectiveRole(user.role, user.isVerified);
+        navigate((role && ROLE_HOME[role]) || '/', { replace: true });
       } else {
         navigate('/', { replace: true });
       }
