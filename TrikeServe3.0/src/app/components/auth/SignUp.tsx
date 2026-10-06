@@ -31,8 +31,6 @@ interface SignUpFormData {
   businessLng?: number;
   /** What the shop serves. Seeds `restaurants.cuisine` at first shop load. */
   businessCuisine?: CuisineId[];
-  // Customer specific
-  address?: string;
 }
 
 export default function SignUp() {
@@ -124,7 +122,6 @@ export default function SignUp() {
       businessLat: formData.businessLat,
       businessLng: formData.businessLng,
       businessCuisine: formData.businessCuisine ?? [],
-      address: formData.address,
     });
 
     setIsLoading(false);
@@ -530,23 +527,6 @@ export default function SignUp() {
                     </div>
                   </div>
                 </>
-              )}
-
-              {/* Customer-specific fields */}
-              {formData.role === "customer" && (
-                <div>
-                  <label className="block text-sm font-semibold text-[var(--ink)] mb-2">
-                    Address (Optional)
-                  </label>
-                  <Input
-                    type="text"
-                    placeholder="123 Main St, Gen T Deleon"
-                    value={formData.address || ""}
-                    onChange={(e) => handleInputChange("address", e.target.value)}
-                    className="border border-line focus:border-[var(--primary)]"
-                    disabled={isLoading}
-                  />
-                </div>
               )}
 
               <div>
