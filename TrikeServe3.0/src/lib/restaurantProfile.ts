@@ -168,6 +168,21 @@ export function useRestaurantProfile() {
           : [],
       };
 
+      // The pin placed during sign-up. It lives in the localStorage seed rather
+      // than on `users`, which has no coordinate columns -- without this a new
+      // shop's map opens on the default city centre instead of the address it
+      // chose while registering.
+      let seedPin: { latitude: number; longitude: number } | null = null;
+      try {
+        const raw = localStorage.getItem(`restaurantData_${user?.email || ""}`);
+        const parsed = raw ? JSON.parse(raw) : null;
+        if (typeof parsed?.latitude === "number" && typeof parsed?.longitude === "number") {
+          seedPin = { latitude: parsed.latitude, longitude: parsed.longitude };
+        }
+      } catch {
+        // Malformed seed: the shop simply starts without a pin.
+      }
+
       const { data, error: insertError } = await supabase
         .from("restaurants")
         .insert({
@@ -179,6 +194,7 @@ export function useRestaurantProfile() {
           is_open: true,
           cuisine: seed.cuisine,
           created_at: new Date().toISOString(),
+          ...(seedPin ? { latitude: seedPin.latitude, longitude: seedPin.longitude } : {}),
         })
         .select()
         .single();

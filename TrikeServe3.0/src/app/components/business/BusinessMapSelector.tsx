@@ -24,6 +24,13 @@ interface BusinessMapSelectorProps {
    */
   initialLat?: number | null;
   initialLng?: number | null;
+  /**
+   * Opt-in. With no pin yet, drop the first one on the device's current
+   * position. Sign-up turns this on so a new business does not have to hunt for
+   * its own street; screens editing an existing pin leave it off so the map keeps
+   * opening on that pin.
+   */
+  centerOnCurrentLocation?: boolean;
 }
 
 // Red app-branded pin for the pickup location the business placed on the map
@@ -43,7 +50,7 @@ const createSelectedPinIcon = () => {
   } as any;
 };
 
-export default function BusinessMapSelector({ onClose, onSelectLocation, currentAddress, initialLat, initialLng }: BusinessMapSelectorProps) {
+export default function BusinessMapSelector({ onClose, onSelectLocation, currentAddress, initialLat, initialLng, centerOnCurrentLocation = false }: BusinessMapSelectorProps) {
   const { isLoaded, loadError, blocked, apiKeyPresent } = useMapLoader();
 
   // Gen T Deleon, Valenzuela City coordinates, used only when the shop has no
@@ -68,6 +75,8 @@ export default function BusinessMapSelector({ onClose, onSelectLocation, current
   );
   const [showPinInfo, setShowPinInfo] = useState(false);
   const [isGeocoding, setIsGeocoding] = useState(false);
+  const [locating, setLocating] = useState(false);
+  const autoLocatedRef = useRef(false);
   const [showAddressList, setShowAddressList] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
   const [searchResults, setSearchResults] = useState<any[]>([]);
@@ -129,6 +138,38 @@ export default function BusinessMapSelector({ onClose, onSelectLocation, current
     },
     [reverseGeocode]
   );
+
+  // Sign-up has no pin yet, so the useful first pin is where the owner is
+  // standing. Denial or timeout is not an error: the map stays on its default
+  // centre and the existing search / tap-to-place routes still work.
+  useEffect(() => {
+    if (!centerOnCurrentLocation || hasExistingPin || autoLocatedRef.current) return;
+    if (typeof navigator === "undefined" || !navigator.geolocation) return;
+    autoLocatedRef.current = true;
+    setLocating(true);
+    navigator.geolocation.getCurrentPosition(
+      async (pos) => {
+        const lat = pos.coords.latitude;
+        const lng = pos.coords.longitude;
+        setMapCenter({ lat, lng });
+        setPickedPin({ lat, lng, name: 'Loading address...', full: 'Loading address...' });
+        setShowPinInfo(true);
+        setShowAddressList(true);
+        const address = await reverseGeocode(lat, lng);
+        setPickedPin(
+          address
+            ? { lat, lng, name: address.name, full: address.full }
+            : { lat, lng, name: 'Your current location', full: 'Your current location' },
+        );
+        setLocating(false);
+      },
+      () => {
+        // Denied or unavailable — leave the map where it is.
+        setLocating(false);
+      },
+      { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 },
+    );
+  }, [centerOnCurrentLocation, hasExistingPin, reverseGeocode]);
 
   // Debounced Places autocomplete search as the business types
   useEffect(() => {
@@ -396,8 +437,18 @@ export default function BusinessMapSelector({ onClose, onSelectLocation, current
       <div className="absolute inset-0 z-[4001]">
         {renderMap()}
 
+        {/* Locating chip, while the first pin is being placed automatically */}
+        {locating && (
+          <div className="absolute top-20 left-0 right-0 flex justify-center z-[4003] pointer-events-none">
+            <div className="bg-white/95 backdrop-blur-sm border border-[var(--border)] shadow-lg rounded-full px-4 py-2 text-xs font-semibold text-[var(--ink)] flex items-center gap-2">
+              <Loader2 className="w-3.5 h-3.5 text-[var(--primary)] animate-spin" aria-hidden="true" />
+              Finding your current location...
+            </div>
+          </div>
+        )}
+
         {/* Hint chip for tap-to-place */}
-        {!pickedPin && (
+        {!pickedPin && !locating && (
           <div className="absolute top-20 left-0 right-0 flex justify-center z-[4003] pointer-events-none">
             <div className="bg-white/95 backdrop-blur-sm border border-[var(--border)] shadow-lg rounded-full px-4 py-2 text-xs font-semibold text-[var(--ink)]">
               📍 Tap anywhere on the map to set your business pickup location

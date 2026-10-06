@@ -1,5 +1,5 @@
-import { useState, useEffect, useRef } from "react";
-import { Store, Package, BarChart3, User, Plus, Edit2, Image, Clock, Star, MapPin, BadgeCheck, Eye, EyeOff, Upload, ChevronRight, Settings, Camera, Check, Menu, Loader2 } from "lucide-react";
+import { useState, useEffect, useMemo, useRef } from "react";
+import { Store, Package, BarChart3, User, Plus, X, Image, Clock, Star, MapPin, BadgeCheck, Eye, EyeOff, Upload, ChevronRight, Settings, Camera, Check, Menu, Loader2 } from "lucide-react";
 import { Link, useNavigate } from "react-router";
 import { Card } from "../ui/card";
 import { Badge } from "../ui/badge";
@@ -25,6 +25,7 @@ export default function BusinessHome() {
   const [previewMode, setPreviewMode] = useState(false);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [menuItems, setMenuItems] = useState<any[]>([]);
+  const [sections, setSections] = useState<{ id: string; name: string; sort_order?: number }[]>([]);
   const [isBannerUploading, setIsBannerUploading] = useState(false);
   const bannerInputRef = useRef<HTMLInputElement | null>(null);
   const [isLogoUploading, setIsLogoUploading] = useState(false);
@@ -53,6 +54,30 @@ export default function BusinessHome() {
     longitude: null as number | null
   });
   const { isLoaded: isMapsLoaded } = useMapLoader();
+
+  /** The customer preview reads the menu in sections, like the storefront does. */
+  const menuGroups = useMemo(() => {
+    const available = menuItems.filter((item) => item.available);
+    const groups = sections
+      .map((section) => ({
+        key: section.id,
+        title: section.name,
+        items: available.filter((item) => item.sectionId === section.id),
+      }))
+      .filter((group) => group.items.length > 0);
+
+    const unfiled = available.filter(
+      (item) => !item.sectionId || !sections.some((section) => section.id === item.sectionId),
+    );
+    if (unfiled.length > 0) {
+      groups.push({
+        key: "__unfiled",
+        title: sections.length > 0 ? "More" : "Menu",
+        items: unfiled,
+      });
+    }
+    return groups;
+  }, [menuItems, sections]);
 
   const toggleCuisine = (id: CuisineId) => {
     setRestaurantData((prev) => {
@@ -147,6 +172,7 @@ export default function BusinessHome() {
             image: item.image_url || 'https://images.unsplash.com/photo-1546069901-ba9599a7e63c?w=400',
             category: item.category,
             available: item.is_available,
+            sectionId: item.section_id ?? null,
           }));
           setMenuItems(mappedItems);
         } else if (user?.email) {
@@ -156,6 +182,19 @@ export default function BusinessHome() {
           if (savedItems) {
             setMenuItems(JSON.parse(savedItems));
           }
+        }
+
+        // Sections are optional: without the ADD_MENU_SECTIONS.sql migration this
+        // query fails and the preview simply shows one flat list.
+        try {
+          const { data: sectionRows, error: sectionError } = await supabase
+            .from('menu_sections')
+            .select('id, name, sort_order')
+            .eq('restaurant_id', restaurant.id)
+            .order('sort_order', { ascending: true });
+          setSections(sectionError ? [] : sectionRows ?? []);
+        } catch {
+          setSections([]);
         }
       } catch (error) {
         console.error('Error loading menu items:', error);
@@ -678,8 +717,13 @@ export default function BusinessHome() {
                 <h3 className="font-bold text-[var(--ink)] mb-3">Menu Items</h3>
                 
                 {menuItems.length > 0 ? (
-                  <div className="space-y-3">
-                    {menuItems.filter(item => item.available).map((item) => (
+                  <div className="space-y-5">
+                    {menuGroups.map((group) => (
+                      <div key={group.key} className="space-y-3">
+                        <h4 className="text-xs font-bold uppercase tracking-wider text-[var(--muted-foreground)]">
+                          {group.title}
+                        </h4>
+                        {group.items.map((item) => (
                       <div key={item.id} className="flex items-center gap-3 p-3 bg-[var(--muted)] rounded-xl">
                         <div className="w-16 h-16 rounded-xl overflow-hidden flex-shrink-0 border border-line">
                           <ImageWithFallback
@@ -693,6 +737,8 @@ export default function BusinessHome() {
                           <p className="text-xs text-[var(--muted-foreground)] line-clamp-1">{item.description}</p>
                           <p className="text-base font-bold text-[var(--primary)] mt-1">₱{item.price}</p>
                         </div>
+                      </div>
+                        ))}
                       </div>
                     ))}
                     <Link to="/business/menu">
@@ -766,24 +812,28 @@ export default function BusinessHome() {
 
             {/* Store Appearance Section */}
             <div className="px-5 py-4 border-t-8 border-[var(--muted)]">
-              <div className="flex items-center justify-between mb-3">
+              <div className="mb-3">
                 <h3 className="font-bold text-[var(--ink)]">🎨 Store Appearance</h3>
-                <Badge variant="outline" className="text-xs">
-                  <Eye className="w-3 h-3 mr-1" />
-                  Tap Preview to see
-                </Badge>
+                <p className="text-xs text-[var(--muted-foreground)] mt-0.5">
+                  customer view of the store
+                </p>
               </div>
+
+              <Button
+                onClick={() => {
+                  setPreviewMode(true);
+                  window.scrollTo({ top: 0, behavior: "smooth" });
+                }}
+                className="w-full min-h-12 mb-3 bg-[var(--primary)] hover:bg-[var(--primary)] text-white font-bold text-base flex items-center justify-center gap-2"
+              >
+                <Eye className="w-5 h-5" aria-hidden="true" />
+                Preview Store
+              </Button>
 
               {/* Hero Banner Editor */}
               <Card className="p-4 border border-line mb-3">
                 <div className="flex items-center justify-between mb-2">
                   <p className="font-semibold text-[var(--ink)]">Hero Banner & Logo</p>
-                  <button
-                    onClick={() => setShowEditBanner(true)}
-                    className="p-2 bg-[var(--muted)] rounded-lg active:scale-95 transition-transform"
-                  >
-                    <Edit2 className="w-4 h-4 text-[var(--primary)]" />
-                  </button>
                 </div>
                 <div className="relative h-32 rounded-xl overflow-hidden mb-2">
                   <ImageWithFallback
@@ -811,12 +861,6 @@ export default function BusinessHome() {
               <Card className="p-4 border border-line">
                 <div className="flex items-center justify-between mb-3">
                   <p className="font-semibold text-[var(--ink)]">Store Information</p>
-                  <button
-                    onClick={() => setShowEditInfo(true)}
-                    className="p-2 bg-[var(--muted)] rounded-lg active:scale-95 transition-transform"
-                  >
-                    <Edit2 className="w-4 h-4 text-[var(--primary)]" />
-                  </button>
                 </div>
                 <div className="space-y-2 text-sm">
                   <div className="flex items-start justify-between py-2 border-b border-[var(--border)]">
@@ -863,13 +907,22 @@ export default function BusinessHome() {
             <div className="bg-surface w-full rounded-t-3xl max-h-[85vh] overflow-y-auto">
               <div className="sticky top-0 bg-surface border-b border-[var(--border)] px-5 py-4 flex items-center justify-between">
                 <h2 className="text-xl font-bold text-[var(--ink)]">Edit Banner & Logo</h2>
-                <button
-                  onClick={() => setShowEditBanner(false)}
-                  className="px-4 py-2 bg-[var(--success)] text-white rounded-lg font-semibold active:scale-95 transition-transform flex items-center gap-2"
-                >
-                  <Check className="w-4 h-4" />
-                  Done
-                </button>
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => setShowEditBanner(false)}
+                    aria-label="Close"
+                    className="p-2 rounded-lg bg-[var(--muted)] text-[var(--muted-foreground)] active:scale-95 transition-transform"
+                  >
+                    <X className="w-5 h-5" aria-hidden="true" />
+                  </button>
+                  <button
+                    onClick={() => setShowEditBanner(false)}
+                    className="px-4 py-2 bg-[var(--success)] text-white rounded-lg font-semibold active:scale-95 transition-transform flex items-center gap-2"
+                  >
+                    <Check className="w-4 h-4" />
+                    Done
+                  </button>
+                </div>
               </div>
 
               <div className="p-5 space-y-5">
@@ -984,13 +1037,22 @@ export default function BusinessHome() {
             <div className="bg-surface w-full rounded-t-3xl max-h-[85vh] overflow-y-auto">
               <div className="sticky top-0 bg-surface border-b border-[var(--border)] px-5 py-4 flex items-center justify-between">
                 <h2 className="text-xl font-bold text-[var(--ink)]">Edit Store Info</h2>
-                <button
-                  onClick={() => setShowConfirmSaveInfo(true)}
-                  className="px-4 py-2 bg-[var(--success)] text-white rounded-lg font-semibold active:scale-95 transition-transform flex items-center gap-2"
-                >
-                  <Check className="w-4 h-4" />
-                  Save
-                </button>
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => setShowEditInfo(false)}
+                    aria-label="Close"
+                    className="p-2 rounded-lg bg-[var(--muted)] text-[var(--muted-foreground)] active:scale-95 transition-transform"
+                  >
+                    <X className="w-5 h-5" aria-hidden="true" />
+                  </button>
+                  <button
+                    onClick={() => setShowConfirmSaveInfo(true)}
+                    className="px-4 py-2 bg-[var(--success)] text-white rounded-lg font-semibold active:scale-95 transition-transform flex items-center gap-2"
+                  >
+                    <Check className="w-4 h-4" />
+                    Save
+                  </button>
+                </div>
               </div>
 
               <div className="p-5 space-y-4">

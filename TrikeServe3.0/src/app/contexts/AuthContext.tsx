@@ -54,6 +54,8 @@ interface SignupData {
   licenseNumber?: string;
   businessName?: string;
   businessAddress?: string;
+  businessLat?: number;
+  businessLng?: number;
   businessCuisine?: string[];
   address?: string;
 }
@@ -640,6 +642,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             rating: 0,
             ratingCount: 0,
             address: data.businessAddress || "",
+            // Carried from sign-up so the shop's own map opens on the pin it
+            // chose while registering, not the default city centre.
+            latitude: data.businessLat ?? null,
+            longitude: data.businessLng ?? null,
             cuisine: data.businessCuisine ?? [],
             operatingHours: "8:00 AM - 10:00 PM"
           }));

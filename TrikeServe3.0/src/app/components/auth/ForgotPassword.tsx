@@ -118,7 +118,7 @@ export default function ForgotPassword() {
       </div>
 
       {/* Right Side — form */}
-      <div className="flex-1 lg:max-w-xl flex items-center justify-center p-6 bg-surface">
+      <div className="flex-1 lg:max-w-xl flex items-start justify-center p-6 pt-10 bg-surface">
         <div className="w-full max-w-md">
           {/* Header */}
           <div className="mb-6">

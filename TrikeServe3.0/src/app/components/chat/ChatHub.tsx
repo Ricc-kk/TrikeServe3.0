@@ -82,7 +82,13 @@ export default function ChatHub({
   const [activeConversation, setActiveConversation] = useState<ChatConversation | null>(null);
   const [isCreatingThread, setIsCreatingThread] = useState(false);
 
-  const messagesEndRef = useRef<HTMLDivElement>(null);
+  const messageListRef = useRef<HTMLDivElement>(null);
+  // Whether the reader is parked on the newest message. The 2.5s refresh hands
+  // back a brand new array every time, so scrolling on every `messages` change
+  // pinned the view to the bottom and made older messages impossible to read.
+  const atBottomRef = useRef(true);
+  const lastThreadRef = useRef<string | null>(null);
+  const lastMessageKeyRef = useRef<string>('');
 
   const isDirectMode = !!directPeerId;
   const activeConversationId = isDirectMode ? activeConversation?.id : conversationId;
@@ -213,9 +219,34 @@ export default function ChatHub({
     };
   }, [activeConversationId, user?.id]);
 
+  const handleMessageScroll = () => {
+    const el = messageListRef.current;
+    if (!el) return;
+    atBottomRef.current = el.scrollHeight - el.scrollTop - el.clientHeight < 80;
+  };
+
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages]);
+    const el = messageListRef.current;
+    if (!el) return;
+
+    const threadChanged = lastThreadRef.current !== (activeConversationId ?? null);
+    if (threadChanged) {
+      lastThreadRef.current = activeConversationId ?? null;
+      atBottomRef.current = true;
+    }
+
+    const key = messages.length
+      ? `${messages.length}:${messages[messages.length - 1]?.id ?? ''}`
+      : '0';
+    const grew = key !== lastMessageKeyRef.current;
+    lastMessageKeyRef.current = key;
+
+    // A thread always opens on its newest message, and after that we only follow
+    // when the reader has not scrolled away to read something older.
+    if (threadChanged || (grew && atBottomRef.current)) {
+      el.scrollTop = el.scrollHeight;
+    }
+  }, [messages, activeConversationId]);
 
 
 
@@ -354,7 +385,11 @@ export default function ChatHub({
           </div>
         </div>
 
-        <div className="flex-1 overflow-y-auto p-4 space-y-3 bg-[var(--muted)]">
+        <div
+          ref={messageListRef}
+          onScroll={handleMessageScroll}
+          className="flex-1 overflow-y-auto p-4 space-y-3 bg-[var(--muted)]"
+        >
           {messages.length === 0 ? (
             <div className="text-center py-12">
               <MessageCircle className="w-12 h-12 text-[var(--border)] mx-auto mb-3" />
@@ -379,7 +414,6 @@ export default function ChatHub({
               );
             })
           )}
-          <div ref={messagesEndRef} />
         </div>
 
         <div className="bg-surface border-t border-[var(--border)] p-4 sticky bottom-0">

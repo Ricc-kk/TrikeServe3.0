@@ -62,8 +62,14 @@ export default function BusinessSidebar({ isMobileMenuOpen, setIsMobileMenuOpen 
     }
   };
 
+  /**
+   * `/business` and `/business/dashboard` are the same screen reached two ways
+   * (login lands on the first), so Overview has to light up for both or it looks
+   * like the sidebar lost its place right after signing in.
+   */
   const isActive = (path: string) => {
-    return location.pathname === path;
+    if (location.pathname === path) return true;
+    return path === "/business/dashboard" && location.pathname === "/business";
   };
 
   const menuItems = [

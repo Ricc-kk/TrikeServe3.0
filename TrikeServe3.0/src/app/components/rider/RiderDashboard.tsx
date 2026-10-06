@@ -71,6 +71,8 @@ export default function RiderDashboard() {
   const [currentSeats, setCurrentSeats] = useState(user?.currentSeats || 0);
   const [activeTrip, setActiveTrip] = useState<IncomingRequest | null>(null);
   const [showServiceTypes, setShowServiceTypes] = useState(false);
+  // Explains the offline tap instead of leaving a dead button.
+  const [showOfflineNotice, setShowOfflineNotice] = useState(false);
   const [showMore, setShowMore] = useState(false);
   // Rides can include Ride Share and/or Private Ride; Delivery is exclusive with a single option
   const normalizeServiceSelection = (existing: string[] = []): { category: 'rides' | 'delivery'; rides: string[] } => {
@@ -964,12 +966,12 @@ export default function RiderDashboard() {
               {isOnline ? (
                 <>
                   <div className="w-3 h-3 rounded-full bg-surface animate-pulse" />
-                  <span>Kasama ka na / You're Online</span>
+                  <span>You're Online</span>
                 </>
               ) : (
                 <>
                   <Power className="w-5 h-5" />
-                  <span>Go Online / Sumama na</span>
+                  <span>Go Online</span>
                 </>
               )}
             </Button>
@@ -1071,7 +1073,7 @@ export default function RiderDashboard() {
                     </div>
                   </div>
 
-                  {/* View All Button - Disabled when offline */}
+                  {/* View All Button - offline taps explain themselves */}
                   {isOnline ? (
                     <Link to="/rider/passenger-requests" className="w-full">
                       <Button className="w-full bg-[var(--primary)] hover:bg-[var(--primary)] text-white font-bold">
@@ -1079,7 +1081,11 @@ export default function RiderDashboard() {
                       </Button>
                     </Link>
                   ) : (
-                    <Button disabled className="w-full bg-[var(--border)] text-[var(--muted-foreground)] font-bold cursor-not-allowed">
+                    <Button
+                      onClick={() => setShowOfflineNotice(true)}
+                      aria-haspopup="dialog"
+                      className="w-full bg-[var(--border)] text-[var(--muted-foreground)] font-bold"
+                    >
                       View All Passenger Requests
                     </Button>
                   )}
@@ -1222,6 +1228,46 @@ export default function RiderDashboard() {
 
       {/* Active Ride Floating Button */}
       <ActiveRideButton />
+
+        {/* Offline Notice */}
+        {showOfflineNotice && (
+          <div className="fixed inset-0 bg-black/50 z-[2000] flex items-center justify-center p-4">
+            <div
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="offline-notice-title"
+              className="bg-surface rounded-2xl shadow-xl p-6 max-w-sm w-full text-center"
+            >
+              <div className="w-14 h-14 bg-[var(--muted)] rounded-full flex items-center justify-center mx-auto mb-4">
+                <Power className="w-7 h-7 text-[var(--muted-foreground)]" aria-hidden="true" />
+              </div>
+              <h3 id="offline-notice-title" className="text-xl font-bold text-[var(--ink)] mb-2">
+                You're offline
+              </h3>
+              <p className="text-[var(--muted-foreground)] text-sm mb-6">
+                Go online first, then you can see the passenger requests waiting nearby.
+              </p>
+              <div className="space-y-2">
+                <Button
+                  onClick={() => {
+                    setShowOfflineNotice(false);
+                    handleToggleOnline();
+                  }}
+                  className="w-full bg-[var(--primary)] hover:bg-[var(--primary)] text-white font-bold"
+                >
+                  Go Online
+                </Button>
+                <Button
+                  onClick={() => setShowOfflineNotice(false)}
+                  variant="outline"
+                  className="w-full border border-line"
+                >
+                  Close
+                </Button>
+              </div>
+            </div>
+          </div>
+        )}
 
       {/* Welcome Back Popup */}
       {showWelcomeBack && (

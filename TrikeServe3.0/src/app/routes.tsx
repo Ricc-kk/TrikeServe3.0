@@ -218,6 +218,16 @@ export const router = createBrowserRouter([
         )
       },
       {
+        // The Settings row used to point at nothing. Help & Support is
+        // role-agnostic, so the business just borrows the customer screen.
+        path: "business/help",
+        element: (
+          <ProtectedRoute allowedRoles={['business']}>
+            <HelpSupport backPath="/business/account" showBottomNav={false} />
+          </ProtectedRoute>
+        )
+      },
+      {
         path: "business/profile",
         element: (
           <ProtectedRoute allowedRoles={['business']}>

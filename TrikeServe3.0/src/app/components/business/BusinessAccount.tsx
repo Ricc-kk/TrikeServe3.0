@@ -215,7 +215,10 @@ export default function BusinessAccount() {
               <ThemeModeSwitcher bilingual />
             </div>
 
-            <div className="flex items-center justify-between px-4 py-3.5 hover:bg-[var(--muted)] transition-colors cursor-pointer">
+            <Link
+              to="/business/help"
+              className="flex items-center justify-between px-4 py-3.5 hover:bg-[var(--muted)] transition-colors cursor-pointer"
+            >
               <div className="flex items-center gap-3">
                 <div className="w-10 h-10 bg-gradient-to-br from-[var(--teal)] to-[var(--teal)] rounded-xl flex items-center justify-center shadow-sm">
                   <HelpCircle className="w-5 h-5 text-white" />
@@ -226,7 +229,7 @@ export default function BusinessAccount() {
                 </div>
               </div>
               <ChevronRight className="w-5 h-5 text-[var(--border)]" />
-            </div>
+            </Link>
           </div>
 
           {/* Use Customer App / Switch Back */}

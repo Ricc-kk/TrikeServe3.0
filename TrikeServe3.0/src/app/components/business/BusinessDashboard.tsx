@@ -459,17 +459,19 @@ export default function BusinessDashboard() {
     : 1;
 
   return (
-    <>
+    <div className="flex min-h-screen overflow-x-hidden">
       <BusinessSidebar
         isMobileMenuOpen={isMobileMenuOpen}
         setIsMobileMenuOpen={setIsMobileMenuOpen}
       />
+      {/* Main Content */}
+      <div className="flex-1 lg:ml-64 w-full min-w-0">
       <AppShell
+      wide
       header={
         <AppHeader
           notificationCount={notifications.filter((n: any) => !n.read).length}
           onNotificationsClick={() => setShowNotifications(true)}
-          hint="Heto ang balita sa tindahan mo ngayon."
           avatarSrc={restaurantLogo || undefined}
           avatarAlt={restaurantLogo ? "Your restaurant profile" : undefined}
           onMenuClick={() => setIsMobileMenuOpen(true)}
@@ -478,15 +480,15 @@ export default function BusinessDashboard() {
     >
       <div className="space-y-6">
           {/* Stats Cards */}
-          <div className="grid grid-cols-2 lg:grid-cols-5 gap-3 lg:gap-4 mb-6 lg:mb-8">
+          <div className="grid grid-cols-2 xl:grid-cols-3 2xl:grid-cols-5 gap-3 lg:gap-4 mb-6 lg:mb-8">
             {/* Total Orders */}
             <Card className="p-4 lg:p-6 border border-line bg-surface">
               <div className="flex items-start justify-between mb-3 lg:mb-4">
-                <div>
+                <div className="min-w-0">
                   <p className="text-xs lg:text-sm text-[var(--muted-foreground)] mb-1">Total Orders</p>
                   <h2 className="text-2xl lg:text-4xl font-bold text-[var(--ink)]">{stats.totalOrders}</h2>
                 </div>
-                <div className="w-10 h-10 lg:w-12 lg:h-12 bg-[var(--primary-soft)] rounded-xl flex items-center justify-center">
+                <div className="w-10 h-10 lg:w-12 lg:h-12 bg-[var(--primary-soft)] rounded-xl flex shrink-0 items-center justify-center">
                   <ShoppingBag className="w-5 h-5 lg:w-6 lg:h-6 text-[var(--primary)]" />
                 </div>
               </div>
@@ -505,11 +507,11 @@ export default function BusinessDashboard() {
             {/* Total Revenue */}
             <Card className="p-4 lg:p-6 border border-line bg-surface">
               <div className="flex items-start justify-between mb-3 lg:mb-4">
-                <div>
+                <div className="min-w-0">
                   <p className="text-xs lg:text-sm text-[var(--muted-foreground)] mb-1">Total Revenue</p>
                   <h2 className="text-2xl lg:text-4xl font-bold text-[var(--ink)]">₱{(stats.totalRevenue >= 1000 ? (stats.totalRevenue / 1000).toFixed(1) : stats.totalRevenue.toFixed(0))}{stats.totalRevenue >= 1000 ? 'k' : ''}</h2>
                 </div>
-                <div className="w-10 h-10 lg:w-12 lg:h-12 bg-[var(--amber-soft)] rounded-xl flex items-center justify-center">
+                <div className="w-10 h-10 lg:w-12 lg:h-12 bg-[var(--amber-soft)] rounded-xl flex shrink-0 items-center justify-center">
                   <PhilippinePeso className="w-5 h-5 lg:w-6 lg:h-6 text-[var(--amber)]" aria-hidden="true" />
                 </div>
               </div>
@@ -527,11 +529,11 @@ export default function BusinessDashboard() {
             {/* Total Items */}
             <Card className="p-4 lg:p-6 border border-line bg-surface">
               <div className="flex items-start justify-between mb-3 lg:mb-4">
-                <div>
+                <div className="min-w-0">
                   <p className="text-xs lg:text-sm text-[var(--muted-foreground)] mb-1">Total Items</p>
                   <h2 className="text-2xl lg:text-4xl font-bold text-[var(--ink)]">{stats.totalItems}</h2>
                 </div>
-                <div className="w-10 h-10 lg:w-12 lg:h-12 bg-[var(--success-soft)] rounded-xl flex items-center justify-center">
+                <div className="w-10 h-10 lg:w-12 lg:h-12 bg-[var(--success-soft)] rounded-xl flex shrink-0 items-center justify-center">
                   <Package className="w-5 h-5 lg:w-6 lg:h-6 text-[var(--success)]" />
                 </div>
               </div>
@@ -549,11 +551,11 @@ export default function BusinessDashboard() {
             {/* Earnings */}
             <Card className="p-4 lg:p-6 border border-line bg-surface">
               <div className="flex items-start justify-between mb-3 lg:mb-4">
-                <div>
+                <div className="min-w-0">
                   <p className="text-xs lg:text-sm text-[var(--muted-foreground)] mb-1">Today's Earnings</p>
                   <h2 className="text-2xl lg:text-4xl font-bold text-[var(--ink)]">₱{(stats.earnings >= 1000 ? (stats.earnings / 1000).toFixed(1) : stats.earnings.toFixed(0))}{stats.earnings >= 1000 ? 'k' : ''}</h2>
                 </div>
-                <div className="w-10 h-10 lg:w-12 lg:h-12 bg-[var(--info-soft)] rounded-xl flex items-center justify-center">
+                <div className="w-10 h-10 lg:w-12 lg:h-12 bg-[var(--info-soft)] rounded-xl flex shrink-0 items-center justify-center">
                   <TrendingUp className="w-5 h-5 lg:w-6 lg:h-6 text-[var(--info)]" />
                 </div>
               </div>
@@ -571,7 +573,7 @@ export default function BusinessDashboard() {
             {/* Rating */}
             <Card className="p-4 lg:p-6 border border-line bg-surface">
               <div className="flex items-start justify-between mb-3 lg:mb-4">
-                <div>
+                <div className="min-w-0">
                   <p className="text-xs lg:text-sm text-[var(--muted-foreground)] mb-1">Rating</p>
                   <div className="flex items-center gap-2">
                     <h2 className="text-2xl lg:text-4xl font-bold text-[var(--ink)]">{stats.rating > 0 ? stats.rating.toFixed(1) : '—'}</h2>
@@ -579,7 +581,7 @@ export default function BusinessDashboard() {
                   </div>
                   <p className="text-xs text-[var(--muted-foreground)] mt-1">{stats.ratingCount > 0 ? `${stats.ratingCount} rating${stats.ratingCount !== 1 ? 's' : ''}` : 'No ratings yet'}</p>
                 </div>
-                <div className="w-10 h-10 lg:w-12 lg:h-12 bg-[var(--amber-soft)] rounded-xl flex items-center justify-center">
+                <div className="w-10 h-10 lg:w-12 lg:h-12 bg-[var(--amber-soft)] rounded-xl flex shrink-0 items-center justify-center">
                   <Star className="w-5 h-5 lg:w-6 lg:h-6 text-[var(--amber)]" />
                 </div>
               </div>
@@ -884,6 +886,7 @@ export default function BusinessDashboard() {
         </div>
       )}
     </AppShell>
-    </>
+      </div>
+    </div>
   );
 }

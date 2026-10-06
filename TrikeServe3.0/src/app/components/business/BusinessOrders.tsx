@@ -809,8 +809,11 @@ export default function BusinessOrders() {
         </div>
 
         {/* Tabs */}
-        <div className="px-3 md:px-5 py-3 border-b border-[var(--border)] sticky top-0 bg-surface z-50 space-y-2 md:space-y-3 overflow-x-auto">
-          <div className="flex gap-2 min-w-max md:min-w-0">
+        {/* The horizontal scroll belongs to the status row alone. While it was on
+            this shared wrapper, swiping the chips dragged Active/History off-screen
+            with them. */}
+        <div className="px-3 md:px-5 py-3 border-b border-[var(--border)] sticky top-0 bg-surface z-50 space-y-2 md:space-y-3">
+          <div className="flex gap-2">
             <button
               onClick={() => setSelectedTab('active')}
               className={`flex-1 md:flex-1 py-2.5 px-3 md:px-4 rounded-xl font-semibold transition-all text-sm md:text-base whitespace-nowrap ${
@@ -835,7 +838,7 @@ export default function BusinessOrders() {
 
            {/* Status Filter - Only for Active Tab */}
            {selectedTab === 'active' && (
-             <div className="flex gap-2 overflow-x-auto scrollbar-hide pb-1 min-w-max md:flex-wrap md:gap-2">
+             <div className="flex gap-2 overflow-x-auto scrollbar-hide pb-1 md:flex-wrap md:gap-2">
                <button
                  onClick={() => setSelectedStatusFilter('all')}
                  className={`px-3 md:px-4 py-2 rounded-full text-xs md:text-sm font-medium whitespace-nowrap transition-all flex-shrink-0 ${
