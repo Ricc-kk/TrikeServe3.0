@@ -5,7 +5,7 @@ import { useActiveRideLock } from "../../../lib/rideLock";
 // Named, not default: Button.tsx only has `export { Button, buttonVariants }`.
 // Importing it as a default gives undefined, and rendering it throws, which takes
 // down the whole route rather than just this screen.
-import { Button } from "./Button";
+import { Button } from "./button";
 
 /**
  * Blocks the food-ordering surfaces while the customer is mid-ride.
