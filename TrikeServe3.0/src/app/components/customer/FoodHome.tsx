@@ -975,7 +975,20 @@ export default function FoodHome() {
 
       {/* Welcome back */}
       {showWelcomeBack && (
-        <div className="fixed inset-0 z-[2000] flex items-center justify-center bg-black/50 p-4">
+        // Tap anywhere to dismiss — a greeting shouldn't hold up the menu.
+        <div
+          onClick={() => setShowWelcomeBack(false)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter" || e.key === " ") {
+              e.preventDefault();
+              setShowWelcomeBack(false);
+            }
+          }}
+          role="button"
+          tabIndex={0}
+          aria-label="Welcome message. Tap to close."
+          className="fixed inset-0 z-[2000] flex items-center justify-center bg-black/50 p-4 cursor-pointer"
+        >
           <div className="w-full max-w-sm rounded-2xl bg-[var(--surface)] p-8 text-center shadow-xl">
             <div className="mx-auto grid size-16 place-items-center rounded-full bg-[var(--success-soft)]">
               <CheckCircle className="size-8 text-[var(--success)]" aria-hidden="true" />

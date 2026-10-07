@@ -46,15 +46,17 @@ export default function CustomerDirectChat() {
             setPeerInfo({ name: restaurant.name || "Restaurant", emoji: "🏪" });
           }
         } else if (driverId) {
-          // Load driver info from users table
+          // Load driver info from users table. avatar_url matters: this used to
+          // select only the name, so the chat header fell back to a scooter emoji
+          // and never showed the driver's actual profile photo.
           const { data: driver } = await supabase
             .from("users")
-            .select("name")
+            .select("name, avatar_url")
             .eq("id", driverId)
             .single();
 
           if (driver) {
-            setPeerInfo({ name: driver.name || "Driver", emoji: "🛵" });
+            setPeerInfo({ name: driver.name || "Driver", emoji: driver.avatar_url || "🛵" });
           }
         }
       } catch (error) {

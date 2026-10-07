@@ -87,6 +87,12 @@ export function straightLineKm(
 /**
  * Ride fare = base fare + (rate per km × straight-line distance).
  *
+ * Rounded UP to a whole peso. Every peso-per-km step lands on a fraction
+ * (₱10/km over 1.37 km is ₱23.70), and a tricycle fare quoted in centavos
+ * reads like a miscalculation rather than a price. Rounding up rather than to
+ * nearest also keeps the driver whole — the fare they earn never lands a few
+ * centavos short of the number quoted to the passenger.
+ *
  * `distanceKm` is null when either coordinate is missing, so callers can fall
  * back to the legacy fixed fare instead of charging only the base.
  */
@@ -98,7 +104,7 @@ export function computeRideFare(
   const distanceKm = straightLineKm(pickup, dropoff);
   if (distanceKm == null) return { total: rates.baseFare, distanceKm: null };
 
-  const total = Math.round((rates.baseFare + rates.perKm * distanceKm) * 100) / 100;
+  const total = Math.ceil(rates.baseFare + rates.perKm * distanceKm);
   return { total, distanceKm };
 }
 

@@ -172,8 +172,11 @@ export default function RiderProfile() {
           </button>
           
           {!isEditing ? (
+            // Editing now lives on its own screen, matching the customer. The
+            // inline mode stays for this render but is no longer how you get
+            // there, so the two can't drift apart unnoticed.
             <Button
-              onClick={() => setIsEditing(true)}
+              onClick={() => navigate("/rider/edit-profile")}
               className="bg-white/20 backdrop-blur-sm hover:bg-white/30 text-white font-bold text-sm px-4 py-2 rounded-lg flex items-center gap-2"
             >
               <Edit2 className="w-4 h-4" />

@@ -450,7 +450,11 @@ export type ApprovalRequestType =
   // ADMIN_BUSINESS_APPROVALS.sql: the CHECK constraint on this column is what
   // decides whether the insert is accepted, and it originally enumerated only
   // the five types above.
-  | 'business_profile_update';
+  | 'business_profile_update'
+  // A driver proposing a change to its own TODA plate number. The plate is the
+  // vehicle's legal identity, so it is not the driver's to change unilaterally
+  // -- a wrong plate attaches fares and violations to the wrong tricycle.
+  | 'rider_plate_update';
 
 export type ApprovalRequestStatus = 'pending' | 'approved' | 'rejected';
 
@@ -474,6 +478,7 @@ export const APPROVAL_REQUEST_LABELS: Record<ApprovalRequestType, string> = {
   driver_assign: 'Assign driver',
   driver_unassign: 'Unassign driver',
   business_profile_update: 'Shop profile change',
+  rider_plate_update: 'Driver plate change',
 };
 
 /**
@@ -530,7 +535,7 @@ function describeApprovalError(error: any): string {
   // rejected by Postgres before the app ever sees a row. Without this the shop
   // just sees a wall of SQL.
   if (error.code === '23514') {
-    return 'The approval queue does not know this request type yet. Run ADMIN_BUSINESS_APPROVALS.sql in Supabase.';
+    return 'The approval queue does not know this request type yet. Run ADMIN_APPROVAL_REQUEST_TYPES.sql in Supabase.';
   }
   return error.message || String(error);
 }
@@ -670,6 +675,18 @@ async function applyApprovalRequest(
         // not a re-read of the row. A second edit staged while this one sat in
         // the queue would otherwise be silently applied by approving the first.
         return applyBusinessProfileUpdate(payload.after || payload);
+      }
+
+      case 'rider_plate_update': {
+        if (!payload.driver_id || !payload.new_plate) {
+          return { success: false, error: 'This plate request is missing the driver or the new plate number.' };
+        }
+        const { error } = await supabase
+          .from('users')
+          .update({ toda_plate: payload.new_plate, updated_at: new Date().toISOString() })
+          .eq('id', payload.driver_id);
+        if (error) return { success: false, error: error.message };
+        return { success: true };
       }
 
       default:
@@ -904,6 +921,111 @@ export async function withdrawBusinessProfileUpdate(
   } catch (error) {
     console.error('[withdrawBusinessProfileUpdate] error:', error);
     return { success: false, error: 'Network error while withdrawing your change' };
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Rider TODA plate changes
+// ---------------------------------------------------------------------------
+//
+// A plate number identifies the vehicle the fares and violations attach to, so a
+// driver cannot rewrite it: the row keeps its current plate until a Super Admin
+// approves the change. Drivers stage a request here; `applyApprovalRequest`
+// above writes the new plate on approve.
+
+export type RiderPlateUpdatePayload = {
+  driver_id: string;
+  driver_name?: string | null;
+  /** Live value when the change was proposed, so the reviewer sees the diff. */
+  previous_plate: string | null;
+  /** The plate to write if approved. */
+  new_plate: string;
+};
+
+/** The change this driver currently has waiting, if any. */
+export async function getPendingRiderPlateUpdate(
+  driverId: string,
+): Promise<{ request: ApprovalRequest | null; error?: string }> {
+  try {
+    const { data, error } = await supabase
+      .from('admin_approval_requests')
+      .select('*')
+      .eq('request_type', 'rider_plate_update')
+      .eq('status', 'pending')
+      .order('requested_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    if (error) return { request: null, error: describeApprovalError(error) };
+    const request = (data as ApprovalRequest | null) ?? null;
+    if (!request) return { request: null };
+    // The lookup above takes the newest pending plate change in the queue, which
+    // may belong to another driver. Only a row naming this driver is theirs.
+    if (request.payload?.driver_id && request.payload.driver_id !== driverId) {
+      return { request: null };
+    }
+    return { request };
+  } catch (error) {
+    console.error('[getPendingRiderPlateUpdate] error:', error);
+    return { request: null, error: 'Network error while loading your pending plate change' };
+  }
+}
+
+/**
+ * Rider: propose a new TODA plate for Super Admin review.
+ *
+ * Replaces this driver's existing pending request rather than queueing a second
+ * one, for the same reason as the shop-profile queue: two stacked requests mean
+ * the admin reviews two versions of one edit and the later approval silently
+ * discards the earlier intent.
+ */
+export async function submitRiderPlateUpdate(params: {
+  driverId: string;
+  driverName?: string | null;
+  previousPlate?: string | null;
+  newPlate: string;
+  requestedByEmail?: string | null;
+}): Promise<{ success: boolean; error?: string }> {
+  const payload: RiderPlateUpdatePayload = {
+    driver_id: params.driverId,
+    driver_name: params.driverName ?? null,
+    previous_plate: params.previousPlate ?? null,
+    new_plate: params.newPlate,
+  };
+
+  try {
+    const row = {
+      request_type: 'rider_plate_update' as const,
+      payload,
+      status: 'pending' as const,
+      requested_by_email: params.requestedByEmail || null,
+      requested_by_name: params.driverName || null,
+      requested_at: new Date().toISOString(),
+      reviewed_by_email: null,
+      reviewed_at: null,
+      rejection_reason: null,
+    };
+
+    const { data: existing, error: lookupError } = await supabase
+      .from('admin_approval_requests')
+      .select('id')
+      .eq('request_type', 'rider_plate_update')
+      .eq('status', 'pending')
+      .order('requested_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    if (lookupError) return { success: false, error: describeApprovalError(lookupError) };
+
+    const error = existing
+      ? (await supabase.from('admin_approval_requests').update(row).eq('id', existing.id)).error
+      : (await supabase.from('admin_approval_requests').insert([row])).error;
+
+    if (error) return { success: false, error: describeApprovalError(error) };
+    return { success: true };
+  } catch (error) {
+    console.error('[submitRiderPlateUpdate] error:', error);
+    return { success: false, error: 'Network error while sending your plate change for approval' };
   }
 }
 
@@ -2477,13 +2599,57 @@ export const supabaseHelpers = {
     });
   },
 
+  /**
+   * Conversations for a user, with each participant's avatar resolved live.
+   *
+   * The `participant_*_avatar` columns on `chat_conversations` are a snapshot
+   * written once when the thread is created, and they were seeded with a name
+   * initial and an emoji rather than a photo — so every conversation showed a
+   * letter no matter what the person had uploaded, and a photo added later
+   * never appeared. Reading `users.avatar_url` here instead means the real
+   * profile picture shows up, including for threads that already exist.
+   */
   async getChatConversations(userId: string) {
     const { data, error } = await supabase
       .from('chat_conversations')
       .select('*')
       .or(`participant_a_id.eq.${userId},participant_b_id.eq.${userId}`)
       .order('updated_at', { ascending: false });
-    return { data, error };
+
+    if (error || !data || data.length === 0) return { data, error };
+
+    // One lookup for every distinct participant across all visible threads,
+    // rather than one per conversation.
+    const ids = Array.from(
+      new Set(data.flatMap((c: any) => [c.participant_a_id, c.participant_b_id]).filter(Boolean))
+    );
+
+    let profiles: Record<string, { avatar_url: string | null; name: string | null }> = {};
+    try {
+      const { data: people } = await supabase
+        .from('users')
+        .select('id, name, avatar_url')
+        .in('id', ids);
+      for (const person of people || []) {
+        profiles[person.id] = { avatar_url: person.avatar_url, name: person.name };
+      }
+    } catch (e) {
+      // A failed profile read must not take the conversation list down with it;
+      // the denormalised snapshot is still on the row as a fallback.
+      console.warn('[supabase] Could not resolve chat avatars:', e);
+    }
+
+    // Prefer the live profile photo. Fall back to the stored value, which is an
+    // initial or emoji for older threads.
+    const merged = data.map((c: any) => ({
+      ...c,
+      participant_a_avatar: profiles[c.participant_a_id]?.avatar_url || c.participant_a_avatar,
+      participant_b_avatar: profiles[c.participant_b_id]?.avatar_url || c.participant_b_avatar,
+      participant_a_name: profiles[c.participant_a_id]?.name || c.participant_a_name,
+      participant_b_name: profiles[c.participant_b_id]?.name || c.participant_b_name,
+    }));
+
+    return { data: merged, error };
   },
 
   async getChatMessages(conversationId: string) {

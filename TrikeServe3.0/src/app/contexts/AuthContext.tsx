@@ -768,8 +768,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         .update(updatePayload)
         .eq('id', user.id);
 
+      // A failed write must not be reported as a success. This used to log the
+      // error and then fall through to `return { success: true }`, so the UI
+      // showed "Saved" while the row was unchanged — a profile edit that looked
+      // like it worked and silently wasn't.
       if (updateError) {
         console.error('Error updating profile:', updateError);
+        return { success: false, error: 'Could not save your details. Please try again.' };
       }
 
       const updatedUser = { ...user, ...data };

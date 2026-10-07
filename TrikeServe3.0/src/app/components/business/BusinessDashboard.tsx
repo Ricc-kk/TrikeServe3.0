@@ -873,7 +873,21 @@ export default function BusinessDashboard() {
 
       {/* Welcome Back Popup */}
       {showWelcomeBack && (
-        <div className="fixed inset-0 bg-black/50 z-[2000] flex items-center justify-center p-4">
+        // Tap anywhere to dismiss. It is a greeting, not a decision, so making
+        // someone wait out the bar before reaching their dashboard is pure cost.
+        <div
+          onClick={() => setShowWelcomeBack(false)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter" || e.key === " ") {
+              e.preventDefault();
+              setShowWelcomeBack(false);
+            }
+          }}
+          role="button"
+          tabIndex={0}
+          aria-label="Welcome message. Tap to close."
+          className="fixed inset-0 bg-black/50 z-[2000] flex items-center justify-center p-4 cursor-pointer"
+        >
           <div className="bg-surface rounded-2xl shadow-xl p-8 max-w-sm w-full text-center">
             <div className="w-16 h-16 bg-[var(--success-soft)] rounded-full flex items-center justify-center mx-auto mb-4">
               <Check className="w-8 h-8 text-[var(--success)]" />

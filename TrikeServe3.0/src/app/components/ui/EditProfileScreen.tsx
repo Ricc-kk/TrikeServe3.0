@@ -5,21 +5,52 @@ import { ArrowLeft, Camera, Check, User } from "lucide-react";
 import { useAuth } from "../../contexts/AuthContext";
 import { supabaseHelpers } from "@/lib/supabase";
 import { uploadErrorMessage } from "@/lib/uploadErrors";
-import PhotoAdjustModal from "../ui/PhotoAdjustModal";
-import ConfirmationModal from "../ui/confirmation-modal";
+import PhotoAdjustModal from "./PhotoAdjustModal";
+import BottomNav from "./BottomNav";
+import ConfirmationModal from "./confirmation-modal";
 
-import BottomNav from "../ui/BottomNav";
+type ExtraField = {
+  key: string;
+  label: string;
+  value: string;
+  placeholder: string;
+  onChange: (v: string) => void;
+  type?: string;
+};
+
+type Props = {
+  /** Where the back arrow goes — the role's own account screen. */
+  backTo: string;
+  /** Section heading above the role's own fields, when it has any. */
+  extraHeading?: string;
+  extraNote?: string;
+  extraFields?: ExtraField[];
+  /** Called after the shared fields save, for anything role-specific. */
+  onSaveExtra?: () => Promise<string | null>;
+  /** BottomNav flavour, so each role keeps its own tab bar. */
+  navVariant?: "customer" | "rider" | "business";
+};
 
 /**
- * Edit profile.
+ * The edit-profile screen every role now uses.
  *
- * This was an inline edit mode on the account screen: every field sat
- * `readOnly` until a small pill in the header corner toggled them, then a
- * confirmation dialog stood between the customer and saving. Editing is a
- * deliberate task, not a mode you fall into while reading your own details, so
- * it gets its own screen with its own save.
+ * Editing is a deliberate task, not a mode you fall into while reading your
+ * own details, so it gets its own screen with its own save rather than a
+ * toggle hidden in a header corner. Customer had this; driver and business
+ * owner edit in place, which meant three different behaviours for the same job.
+ *
+ * The photo flows through the framing step rather than uploading straight from
+ * the file picker — the avatar is a small circle everywhere it appears, so what
+ * gets centred here is what survives.
  */
-export default function EditProfile() {
+export default function EditProfileScreen({
+  backTo,
+  extraHeading,
+  extraNote,
+  extraFields = [],
+  onSaveExtra,
+  navVariant = "customer",
+}: Props) {
   const { user, updateProfile } = useAuth();
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -41,10 +72,8 @@ export default function EditProfile() {
    */
   const [photoSaved, setPhotoSaved] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  /** The chosen image, held while the customer frames it. Null = no modal. */
-  const [pendingPhoto, setPendingPhoto] = useState<{ url: string; name: string; type: string } | null>(
-    null
-  );
+  /** The chosen image, held while it is framed. Null = no modal. */
+  const [pendingPhoto, setPendingPhoto] = useState<{ url: string; name: string } | null>(null);
 
   const canSave = name.trim().length > 0 && !saving;
 
@@ -62,8 +91,12 @@ export default function EditProfile() {
    */
   const initialName = useRef(user?.name ?? "");
   const initialPhone = useRef(user?.phone ?? "");
+  const initialExtras = useRef(extraFields.map((f) => f.value));
 
-  const hasUnsavedChanges = name !== initialName.current || phone !== initialPhone.current;
+  const hasUnsavedChanges =
+    name !== initialName.current ||
+    phone !== initialPhone.current ||
+    extraFields.some((f, i) => f.value !== initialExtras.current[i]);
 
   // Blocks in-app navigation only. A reload or tab close is the browser's own
   // prompt, registered below — the two cover different exits.
@@ -81,7 +114,7 @@ export default function EditProfile() {
     return () => window.removeEventListener("beforeunload", handler);
   }, [hasUnsavedChanges]);
 
-  const handlePhotoUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
+  const handlePhotoUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (!file || !user?.id) return;
 
@@ -94,19 +127,11 @@ export default function EditProfile() {
       return;
     }
 
-    // Hand off to the framing step instead of uploading straight away. The
-    // avatar is a small circle everywhere it appears, so what gets centred here
-    // is what survives.
-    setPendingPhoto({
-      url: URL.createObjectURL(file),
-      name: file.name,
-      type: file.type || "image/jpeg",
-    });
-
+    setPendingPhoto({ url: URL.createObjectURL(file), name: file.name });
     if (fileInputRef.current) fileInputRef.current.value = "";
   };
 
-  /** Uploads the cropped square the customer framed. */
+  /** Uploads the cropped square the person framed. */
   const uploadCroppedPhoto = async (blob: Blob) => {
     if (!user?.id) return;
 
@@ -137,7 +162,8 @@ export default function EditProfile() {
       // `supabase.from("users").update(...)` persists the URL but leaves
       // AuthContext.user.avatarUrl and the localStorage cache holding the old
       // one, so the header and account screen keep the previous photo and a
-      // reload restores the stale value.
+      // reload restores the stale value — the edit screen showed the new photo
+      // while nothing else did.
       const saved = await updateProfile({ avatarUrl: publicUrl });
       if (!saved.success) {
         setError(saved.error ?? "Could not save your new photo.");
@@ -152,8 +178,8 @@ export default function EditProfile() {
     } finally {
       setUploadingPhoto(false);
       if (fileInputRef.current) fileInputRef.current.value = "";
-      // Release the object URL only once the upload is done, or the modal
-      // would lose its bitmap mid-crop.
+      // Release the object URL only once the upload is done, or the modal would
+      // lose its bitmap mid-crop.
       if (pendingPhoto) URL.revokeObjectURL(pendingPhoto.url);
       setPendingPhoto(null);
     }
@@ -170,11 +196,20 @@ export default function EditProfile() {
         setError(result.error ?? "Could not save your details. Please try again.");
         return;
       }
+      if (onSaveExtra) {
+        const extraError = await onSaveExtra();
+        if (extraError) {
+          setError(extraError);
+          return;
+        }
+      }
 
       // Re-baseline to what was just stored, so the guard stops asking about
-      // changes that are already saved.
+      // changes that are already saved. Without this the person would be
+      // warned about exactly the edits they just confirmed.
       initialName.current = name.trim();
       initialPhone.current = phone.trim();
+      initialExtras.current = extraFields.map((f) => f.value);
 
       setSaved(true);
     } finally {
@@ -187,7 +222,7 @@ export default function EditProfile() {
       <header className="sticky top-0 z-[900] border-b border-line bg-[var(--surface)] px-3 py-3 sm:px-5">
         <div className="mx-auto flex max-w-3xl items-center gap-2">
           <Link
-            to="/customer/account"
+            to={backTo}
             aria-label="Back to account"
             className="grid size-11 flex-shrink-0 place-items-center rounded-xl hover:bg-[var(--muted)]"
           >
@@ -200,8 +235,6 @@ export default function EditProfile() {
       </header>
 
       <div className="mx-auto max-w-3xl space-y-5 px-4 py-5 sm:px-5">
-        {/* Photo — the camera sits with the photo, which is the only reason it
-            is ever needed. */}
         <section className="rounded-2xl border border-line bg-[var(--surface)] p-5">
           <h2 className="mb-4 text-sm font-bold tracking-wider text-[var(--muted-foreground)]">
             Profile photo
@@ -244,7 +277,7 @@ export default function EditProfile() {
             <div className="min-w-0">
               <p className="text-sm font-semibold text-[var(--ink)]">Choose a photo</p>
               <p className="mt-0.5 text-xs text-[var(--muted-foreground)]">
-                JPG or PNG, up to 5MB.
+                Drag to reposition before saving. JPG or PNG, up to 5MB.
               </p>
               {/* Confirms the photo itself, so it never reads as the fields
                   being saved. */}
@@ -258,7 +291,6 @@ export default function EditProfile() {
           </div>
         </section>
 
-        {/* Details */}
         <section className="rounded-2xl border border-line bg-[var(--surface)] p-5">
           <h2 className="mb-4 text-sm font-bold tracking-wider text-[var(--muted-foreground)]">
             Personal information
@@ -310,6 +342,40 @@ export default function EditProfile() {
           </p>
         </section>
 
+        {extraFields.length > 0 && (
+          <section className="rounded-2xl border border-line bg-[var(--surface)] p-5">
+            <h2 className="mb-4 text-sm font-bold tracking-wider text-[var(--muted-foreground)]">
+              {extraHeading}
+            </h2>
+            {extraFields.map((f) => (
+              <div key={f.key} className="mb-4 last:mb-0">
+                <label
+                  htmlFor={`edit-${f.key}`}
+                  className="mb-2 block text-xs font-medium tracking-wider text-[var(--muted-foreground)]"
+                >
+                  {f.label}
+                </label>
+                <input
+                  id={`edit-${f.key}`}
+                  type={f.type ?? "text"}
+                  value={f.value}
+                  onChange={(e) => {
+                    f.onChange(e.target.value);
+                    setSaved(false);
+                  }}
+                  placeholder={f.placeholder}
+                  className="min-h-12 w-full rounded-xl border border-line bg-[var(--surface)] px-4 text-base text-[var(--ink)] outline-none focus:border-[var(--primary)]"
+                />
+              </div>
+            ))}
+            {extraNote && (
+              <p className="mt-4 text-xs leading-relaxed text-[var(--muted-foreground)]">
+                {extraNote}
+              </p>
+            )}
+          </section>
+        )}
+
         {error && (
           <p role="alert" className="text-sm font-semibold text-[var(--error)]">
             {error}
@@ -335,11 +401,8 @@ export default function EditProfile() {
         </button>
       </div>
 
-      <BottomNav active="account" />
+      <BottomNav active="account" variant={navVariant} />
 
-      {/* Framing step. Opens as soon as a photo is picked and only closes once
-          the upload finishes or the customer backs out, so nothing is sent
-          before they have seen what they are sending. */}
       {pendingPhoto && (
         <PhotoAdjustModal
           src={pendingPhoto.url}

@@ -76,7 +76,7 @@ export default function BusinessAccount() {
             <div className="flex-1 min-w-0">
               <h1 className="text-lg lg:text-2xl xl:text-3xl font-extrabold text-[var(--ink)]">Account</h1>
             </div>
-            <Link to="/business/profile" className="flex-shrink-0 flex items-center gap-1.5 px-3 py-1.5 bg-white/80 backdrop-blur-sm rounded-full text-[var(--primary)] text-xs font-semibold hover:bg-surface transition-colors shadow-sm">
+            <Link to="/business/edit-profile" className="flex-shrink-0 flex items-center gap-1.5 px-3 py-1.5 bg-white/80 backdrop-blur-sm rounded-full text-[var(--primary)] text-xs font-semibold hover:bg-surface transition-colors shadow-sm">
               <Pencil className="w-3.5 h-3.5" />
               Edit Profile
             </Link>

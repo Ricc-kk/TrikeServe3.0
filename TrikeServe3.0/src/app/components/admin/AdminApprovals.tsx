@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import {
   ClipboardCheck, Menu, CheckCircle, XCircle, Clock, MapPin,
-  AlertTriangle, UserPlus, UserMinus, Store, Trash2, UtensilsCrossed, ArrowRight
+  AlertTriangle, UserPlus, UserMinus, Store, Trash2, UtensilsCrossed, ArrowRight, IdCard
 } from "lucide-react";
 import { Card } from "../ui/card";
 import { Badge } from "../ui/badge";
@@ -37,6 +37,8 @@ function typeIcon(type: ApprovalRequestType) {
       return <UserMinus className="w-5 h-5 text-[var(--amber)]" />;
     case "business_profile_update":
       return <UtensilsCrossed className="w-5 h-5 text-[var(--amber)]" />;
+    case "rider_plate_update":
+      return <IdCard className="w-5 h-5 text-[var(--amber)]" />;
     default:
       return <ClipboardCheck className="w-5 h-5 text-[var(--muted-foreground)]" />;
   }
@@ -82,6 +84,11 @@ function describePayload(request: ApprovalRequest): string[] {
       return [`Driver: ${p.driver_name || p.driver_id || "—"}`, `Terminal: ${p.terminal_name || p.terminal_id || "—"}`];
     case "driver_unassign":
       return [`Driver: ${p.driver_name || p.driver_id || "—"}`, `Terminal: ${p.terminal_name || p.terminal_id || "—"}`];
+    case "rider_plate_update":
+      return [
+        `Driver: ${p.driver_name || "—"}`,
+        `Plate: ${p.previous_plate || "Not set"} → ${p.new_plate || "—"}`,
+      ];
     case "business_profile_update": {
       // The per-field diff carries the detail; this is just the one-line
       // summary that fits above it in both the card and the history table.

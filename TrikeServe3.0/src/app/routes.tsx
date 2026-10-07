@@ -43,6 +43,8 @@ import OrderDetail from "./components/customer/OrderDetail";
 import Favorites from "./components/customer/Favorites";
 import HelpSupport from "./components/customer/HelpSupport";
 import EditProfile from "./components/customer/EditProfile";
+import RiderEditProfile from "./components/rider/EditProfile";
+import BusinessEditProfile from "./components/business/EditProfile";
 import DeliveryAddressPage from "./components/customer/DeliveryAddressPage";
 import CustomerSearchPage from "./components/customer/CustomerSearchPage";
 import AddAddressSearch from "./components/customer/AddAddressSearch";
@@ -402,6 +404,22 @@ export const router = createBrowserRouter([
             <OrderDetail />
           </ProtectedRoute>
         )      }, 
+      {
+        path: "rider/edit-profile",
+        element: (
+          <ProtectedRoute allowedRoles={['rider']}>
+            <RiderEditProfile />
+          </ProtectedRoute>
+        )
+      },
+      {
+        path: "business/edit-profile",
+        element: (
+          <ProtectedRoute allowedRoles={['business']}>
+            <BusinessEditProfile />
+          </ProtectedRoute>
+        )
+      },
       {
         path: "customer/edit-profile",
         element: (
