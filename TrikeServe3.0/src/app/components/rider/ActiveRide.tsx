@@ -78,26 +78,6 @@ export default function ActiveRide() {
    */
   const { sync: syncRideResume } = useRideResume();
 
-  /*
-   * Hold the marker for as long as this ride is live, and release it the moment it
-   * is not.
-   *
-   * `completed` releases it. A marker pointing at a finished trip would pull the
-   * driver back to a ride screen for a ride that no longer exists -- and the resume
-   * check would query a row that is gone.
-   */
-  useEffect(() => {
-    if (!live) {
-      // Only release the marker when the ride has actually ended. `status` starts as
-      // undefined before `rideData` hydrates, and treating that transient as "over"
-      // would clear the marker on the very first tick.
-      if (rideData && rideData.status === 'completed') {
-        syncRideResume(null);
-      }
-      return;
-    }
-    syncRideResume(rideData.id);
-  }, [rideData?.id, rideData?.status, syncRideResume]);
   const [rideData, setRideData] = useState<ActiveRideData | null>(null);
   const [isMinimized, setIsMinimized] = useState(false);
   const [driverLocation, setDriverLocation] = useState<{ lat: number; lng: number } | null>(null);
@@ -112,6 +92,30 @@ export default function ActiveRide() {
   // one GPS fix has been pushed to the database for the current ride.
   const rideDataRef = useRef<ActiveRideData | null>(null);
   const hasPersistedLocationRef = useRef(false);
+
+  /*
+   * Hold the marker for as long as this ride is live, and release it the moment it
+   * is not.
+   *
+   * `completed` releases it. A marker pointing at a finished trip would pull the
+   * driver back to a ride screen for a ride that no longer exists -- and the resume
+   * check would query a row that is gone.
+   *
+   * This effect is positioned after every value it reads (`rideData`, `status`,
+   * `rideData?.status`). The previous version referenced them inside the dependency
+   * array before they were declared, which threw "Cannot access before
+   * initialization" during render and took the whole route down.
+   */
+  useEffect(() => {
+    const completed = rideData?.status === 'completed';
+    if (completed) {
+      syncRideResume(null);
+      return;
+    }
+    if (rideData) {
+      syncRideResume(rideData.id);
+    }
+  }, [rideData?.id, rideData?.status, syncRideResume]);
   rideDataRef.current = rideData;
   const [showRideComplete, setShowRideComplete] = useState(false);
   const [resolvedName, setResolvedName] = useState<string | null>(null);
