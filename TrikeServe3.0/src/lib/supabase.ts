@@ -2702,12 +2702,54 @@ export const supabaseHelpers = {
     message: string;
   }) {
     const timestamp = new Date().toISOString();
+
+    /*
+     * Read the conversation before writing into it.
+     *
+     * The receiver used to be whatever the caller passed, and the conversation
+     * was only fetched afterwards to bump the unread counters. So a wrong guess
+     * from any chat surface went straight into the row: the table holds one
+     * message addressed to its own sender, and one whose sender is not a
+     * participant of the conversation it landed in. Neither can be read by the
+     * person it was meant for, and both skew the counters.
+     *
+     * Resolving the other participant here makes the receiver a fact about the
+     * conversation rather than a value every caller has to get right. A
+     * caller's `receiverId` is no longer trusted to address the message.
+     */
+    const { data: conversation, error: conversationError } = await supabase
+      .from('chat_conversations')
+      .select('*')
+      .eq('id', message.conversationId)
+      .single();
+
+    if (conversationError || !conversation) {
+      console.error('[supabase] Cannot send: conversation not found:', conversationError);
+      return { data: null, error: conversationError || new Error('Conversation not found') };
+    }
+
+    const isSenderA = conversation.participant_a_id === message.senderId;
+    const isSenderB = conversation.participant_b_id === message.senderId;
+    const receiverId = isSenderA
+      ? conversation.participant_b_id
+      : isSenderB
+        ? conversation.participant_a_id
+        : null;
+
+    // No receiver means the sender is a stranger to this thread; a receiver
+    // equal to the sender means the thread is addressed to nobody. Both are
+    // refused rather than written.
+    if (!receiverId || receiverId === message.senderId) {
+      console.error('[supabase] Cannot send: sender is not a participant of this conversation');
+      return { data: null, error: new Error('Sender is not a participant of this conversation') };
+    }
+
     const { data, error } = await supabase
       .from('chat_messages')
       .insert([{
         conversation_id: message.conversationId,
         sender_id: message.senderId,
-        receiver_id: message.receiverId,
+        receiver_id: receiverId,
         sender_name: message.senderName,
         sender_role: message.senderRole,
         receiver_role: message.receiverRole,
@@ -2720,29 +2762,23 @@ export const supabaseHelpers = {
       .single();
 
     if (!error) {
-      const { data: conversation } = await supabase
+      await supabase
         .from('chat_conversations')
-        .select('*')
-        .eq('id', message.conversationId)
-        .single();
-
-      if (conversation) {
-        const isParticipantA = conversation.participant_a_id === message.senderId;
-        const unreadA = isParticipantA ? (conversation.unread_count_a || 0) : (conversation.unread_count_a || 0) + 1;
-        const unreadB = !isParticipantA ? (conversation.unread_count_b || 0) : (conversation.unread_count_b || 0) + 1;
-
-        await supabase
-          .from('chat_conversations')
-          .update({
-            last_message_preview: message.message,
-            last_message_sender_id: message.senderId,
-            last_message_at: timestamp,
-            unread_count_a: isParticipantA ? unreadA : unreadA,
-            unread_count_b: isParticipantA ? unreadB : unreadB,
-            updated_at: timestamp,
-          })
-          .eq('id', message.conversationId);
-      }
+        .update({
+          last_message_preview: message.message,
+          last_message_sender_id: message.senderId,
+          last_message_at: timestamp,
+          // The receiver's counter is the one that moves: the sender is looking
+          // at the thread they just wrote in.
+          unread_count_a: isSenderA
+            ? (conversation.unread_count_a || 0)
+            : (conversation.unread_count_a || 0) + 1,
+          unread_count_b: isSenderA
+            ? (conversation.unread_count_b || 0) + 1
+            : (conversation.unread_count_b || 0),
+          updated_at: timestamp,
+        })
+        .eq('id', message.conversationId);
     }
 
     return { data, error };

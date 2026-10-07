@@ -973,6 +973,7 @@ export default function ActiveRide() {
         open={chatPopupOpen}
         conversationId={chatId}
         peerId={rideData?.customerId || rideData?.passengerDetails?.[0]?.id || null}
+        currentUserId={user?.id ?? null}
         peerAvatar={passengerAvatar}
         peerName={resolvedName || rideData.customerName || 'Passenger'}
         peerIsGroup={rideData.customerPhoto === 'shared'}

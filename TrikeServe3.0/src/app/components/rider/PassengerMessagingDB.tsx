@@ -97,6 +97,15 @@ export default function PassengerMessagingDB({ passengerId, passengerName, passe
   const sendMessage = async () => {
     if (!user?.id || !newMessage.trim() || !conversationId) return;
 
+    // The passenger id is handed in by whoever opened this panel. If it ever
+    // resolves to the signed-in user, the insert would carry the same account
+    // as both sender and receiver -- unread by anyone, and it would land in that
+    // person's own unread count.
+    if (passengerId === user.id) {
+      alert('Message failed to send: this ride has you on both sides of the chat.');
+      return;
+    }
+
     const { error } = await supabaseHelpers.sendChatMessage({
       conversationId,
       senderId: user.id,

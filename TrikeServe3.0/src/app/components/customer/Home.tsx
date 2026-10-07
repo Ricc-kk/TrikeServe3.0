@@ -2572,6 +2572,7 @@ export default function CustomerHome() {
         open={customerChatPopup}
         conversationId={driverChatId.current}
         peerId={rideDriverId}
+        currentUserId={user?.id ?? null}
         peerAvatar={rideDriverAvatar}
         peerName={activeRide?.driver || 'Driver'}
         senderRole="customer"

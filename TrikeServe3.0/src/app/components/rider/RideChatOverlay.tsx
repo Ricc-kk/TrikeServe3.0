@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Send, User, Users, X } from "lucide-react";
-import { supabase, supabaseHelpers } from "@/lib/supabase";
+import { supabaseHelpers } from "@/lib/supabase";
 
 /**
  * The passenger/driver conversation as a popup over the live ride.
@@ -44,6 +44,7 @@ export default function RideChatOverlay({
   peerAvatar,
   peerName,
   peerId,
+  currentUserId,
   peerIsGroup,
   senderRole,
   onClose,
@@ -61,6 +62,15 @@ export default function RideChatOverlay({
    * does not exist yet produced a blank `receiver_id`.
    */
   peerId: string | null;
+  /**
+   * The signed-in user's own id, from the app's auth context.
+   *
+   * Passed in rather than asked of Supabase Auth. Every `sender_id` and every
+   * conversation participant is written from the app's own user id, so this is
+   * the identity the thread is checked against -- and unlike a Supabase session
+   * it also exists for the accounts that have none.
+   */
+  currentUserId: string | null;
   /** A shared ride has several passengers and no single face to show. */
   peerIsGroup?: boolean;
   /** 'rider' for the driver, 'customer' for the passenger. */
@@ -68,8 +78,6 @@ export default function RideChatOverlay({
   onClose: () => void;
 }) {
   const [messages, setMessages] = useState<any[]>([]);
-  /** Who "mine" means. Resolved once and held, so every bubble agrees. */
-  const [meId, setMeId] = useState<string | null>(null);
   const [text, setText] = useState('');
   /**
    * Whether the sheet is animating out.
@@ -99,7 +107,6 @@ export default function RideChatOverlay({
 
   useEffect(() => {
     if (!open) return;
-    supabase.auth.getUser().then(({ data }) => setMeId(data.user?.id ?? null));
     load();
     const t = setInterval(load, 2500);
     return () => clearInterval(t);
@@ -107,9 +114,9 @@ export default function RideChatOverlay({
 
   // Opening the popup is the act of reading, so anything unread is read now.
   useEffect(() => {
-    if (!open || !conversationId || !meId) return;
-    supabaseHelpers.markChatConversationRead(conversationId, meId);
-  }, [open, conversationId, meId]);
+    if (!open || !conversationId || !currentUserId) return;
+    supabaseHelpers.markChatConversationRead(conversationId, currentUserId);
+  }, [open, conversationId, currentUserId]);
 
   useEffect(() => {
     listRef.current?.scrollTo({ top: listRef.current.scrollHeight });
@@ -143,8 +150,11 @@ export default function RideChatOverlay({
     const body = (override ?? text).trim();
     if (!body || !conversationId || sending) return;
 
-    const mine = meId ?? (await supabase.auth.getUser()).data.user?.id;
-    if (!mine) return;
+    const mine = currentUserId;
+    if (!mine) {
+      alert("Message failed to send: you appear to be signed out. Sign in again and retry.");
+      return;
+    }
 
     /*
      * Never send without a receiver.
@@ -158,6 +168,20 @@ export default function RideChatOverlay({
       alert(
         "Message failed to send: the other person could not be identified. Close the chat and open it again."
       );
+      return;
+    }
+
+    /*
+     * And never a message to yourself.
+     *
+     * The peer id comes from the ride, and a ride can put one account on both
+     * sides -- booking from the driver's own account, or two tabs sharing a
+     * single signed-in session. The row that gets written has `sender_id` equal
+     * to `receiver_id`: nothing ever reads it, and it lands in the unread count
+     * of the one person it was not meant for.
+     */
+    if (peerId === currentUserId) {
+      alert("Message failed to send: this ride has you on both sides of the chat.");
       return;
     }
 
@@ -344,7 +368,7 @@ export default function RideChatOverlay({
           </p>
         ) : (
           messages.map((m, i) => {
-            const isMine = !!meId && m.sender_id === meId;
+            const isMine = !!currentUserId && m.sender_id === currentUserId;
             const when = new Date(m.created_at);
             const prev = i > 0 ? new Date(messages[i - 1].created_at) : null;
             const newDay = !prev || prev.toDateString() !== when.toDateString();
