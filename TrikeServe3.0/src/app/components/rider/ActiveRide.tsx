@@ -1,9 +1,12 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { useNavigate, useLocation } from "react-router";
-import { ArrowLeft, Navigation, Phone, MapPin, CheckCircle, Minimize2, Maximize2, Users, X } from "lucide-react";
-import { GoogleMap, Marker, InfoWindow, DirectionsRenderer } from "@react-google-maps/api";
+import { ArrowLeft, Navigation, MapPin, CheckCircle, Users, User, X, MessageSquare } from "lucide-react";
+import { GoogleMap, Marker, InfoWindow, DirectionsRenderer, Polyline } from "@react-google-maps/api";
 import { Button } from "../ui/button";
 import { Card } from "../ui/card";
+import FloatingChatHead from "../ui/FloatingChatHead";
+import { useRideResume } from "../../../lib/rideResume";
+import RideChatOverlay from "../rider/RideChatOverlay";
 import { Badge } from "../ui/badge";
 import LocationBanner, { type LocationProblem } from "../ui/LocationBanner";
 import { useAuth } from "../../contexts/AuthContext";
@@ -63,6 +66,30 @@ export default function ActiveRide() {
   const navigate = useNavigate();
   const location = useLocation();
   const { user } = useAuth();
+
+  /*
+   * Keeps a pointer to the ride in progress and returns the driver to it after the
+   * session comes back. A driver who gets signed out mid-ride was otherwise dumped
+   * on the login screen while a passenger was still in the back of the tricycle.
+   *
+   * The marker is cleared when the ride is no longer active -- on completion the
+   * screen is replaced and this component unmounts, so the marker is explicitly
+   * released rather than left pointing at a finished trip.
+   */
+  const { sync: syncRideResume } = useRideResume();
+
+  /*
+   * Hold the marker for as long as this ride is live, and release it the moment it
+   * is not.
+   *
+   * `completed` releases it. A marker pointing at a finished trip would pull the
+   * driver back to a ride screen for a ride that no longer exists -- and the resume
+   * check would query a row that is gone.
+   */
+  useEffect(() => {
+    const live = !!rideData && rideData.status !== 'completed';
+    syncRideResume(live ? rideData?.id ?? null : null);
+  }, [rideData?.id, rideData?.status, syncRideResume]);
   const [rideData, setRideData] = useState<ActiveRideData | null>(null);
   const [isMinimized, setIsMinimized] = useState(false);
   const [driverLocation, setDriverLocation] = useState<{ lat: number; lng: number } | null>(null);
@@ -80,6 +107,60 @@ export default function ActiveRide() {
   rideDataRef.current = rideData;
   const [showRideComplete, setShowRideComplete] = useState(false);
   const [resolvedName, setResolvedName] = useState<string | null>(null);
+  /** The passenger's profile photo, resolved by id from the users table. */
+  const [passengerAvatar, setPassengerAvatar] = useState<string | null>(null);
+
+  /**
+   * In-ride chat with the passenger.
+   *
+   * A driver had no way to talk to the passenger without leaving the ride
+   * screen, which meant calling them or nothing. This reuses the same
+   * conversation the customer's Chat button opens (`findOrCreateRideChat`), so
+   * both sides land in one thread rather than two half-used ones.
+   */
+  const [chatId, setChatId] = useState<string | null>(null);
+  /** Whether the chat overlay is showing. */
+  const [chatPopupOpen, setChatPopupOpen] = useState(false);
+  /** Messages from the passenger the driver has not looked at yet. */
+  const [unreadFromPassenger, setUnreadFromPassenger] = useState(0);
+  /** Counts from the last poll, so a rise can be told apart from steady state. */
+  const lastSeenCount = useRef(0);
+  /**
+   * Bumped to replay the ripple.
+   *
+   * A boolean would not do: the animation runs once and ends, and React will not
+   * re-render a component to restart an already-finished CSS animation unless
+   * something changes. Changing a key remounts the rings each time.
+   */
+  const [pulseKey, setPulseKey] = useState(0);
+  /** Whether anything has been said on this ride -- gates the floating head. */
+  /**
+   * Whether chat has been opened on this ride.
+   *
+   * Read from storage like `chatStarted`, because opening the Messages tab
+   * unmounts this screen: without persisting it, coming back from a reply would
+   * put the head back in the middle of the map instead of up in the corner.
+   */
+  const [chatOpened, setChatOpened] = useState(() => {
+    if (typeof window === 'undefined') return false;
+    try {
+      return window.localStorage.getItem('trikeserve_chat_opened') === '1';
+    } catch {
+      return false;
+    }
+  });
+  const [chatStarted, setChatStarted] = useState(() => {
+    // Read straight from storage on mount: opening the Messages tab unmounts this
+    // screen, so without this the head vanished on the way back from a chat.
+    if (typeof window === 'undefined') return false;
+    try {
+      return window.localStorage.getItem('trikeserve_chat_started') === '1';
+    } catch {
+      return false;
+    }
+  });
+  /** The mounted map instance, for imperative camera control. */
+  const mapRef = useRef<any>(null);
   // Set when the customer cancels out from under an accepted ride, so the rider
   // isn't left driving to a pickup that no longer exists.
   const [customerCancellation, setCustomerCancellation] = useState<{ reason: string | null } | null>(null);
@@ -129,7 +210,185 @@ export default function ActiveRide() {
       .catch(() => {});
   }, [rideData?.customerId, rideData?.customerName]);
 
+  /**
+   * The passenger's profile photo.
+   *
+   * The ride row carries the passenger's name but no avatar, so the card had
+   * nothing to render and fell back to a generic person glyph. Resolved by id
+   * from the users table, which is the same source the customer side uses for
+   * its driver.
+   */
+  /**
+   * Open the passenger conversation in the Messages tab.
+   *
+   * Chat used to be an inline panel built into the ride screen, which meant a
+   * second, dumber copy of the conversation list already exists: the driver had
+   * two places to read the same thread, and the inline one had no history beyond
+   * what was loaded, no unread state, and no way back to the rest of their
+   * messages. Handing off to the real Messages tab means one conversation list,
+   * one place where "unread" means something.
+   */
+  const openPassengerChat = useCallback(async () => {
+    const peerId = rideData?.customerId || rideData?.passengerDetails?.[0]?.id;
+    if (!peerId || !user?.id) return;
+
+    const { data, error } = await supabaseHelpers.findOrCreateRideChat({
+      currentUserId: user.id,
+      currentUserName: user.name,
+      currentUserRole: user.role,
+      peerId,
+      peerName: rideData.customerName,
+      contextId: rideData.id,
+    });
+    if (error || !data) return;
+
+    setChatId(data.id);
+    setUnreadFromPassenger(0);
+    // Read here rather than waiting for the Messages tab to do it: the driver is
+    // leaving for the thread, and until that thread mounts the badge would still
+    // be counting what they are on their way to read.
+    await supabaseHelpers.markChatConversationRead(data.id, user.id);
+    setChatStarted(true);
+    setChatOpened(true);
+    // Persisted so the head survives the round trip through the Messages tab,
+    // which unmounts this screen entirely.
+    try {
+      localStorage.setItem('trikeserve_chat_started', '1');
+      localStorage.setItem('trikeserve_chat_opened', '1');
+    } catch {
+      // Storage unavailable; the head still appears for this mount.
+    }
+    // Opens the overlay in place. No navigation: this screen stays mounted, so
+    // the map, the ride sheet and the floating head are all still there behind
+    // the chat, and closing it costs the driver nothing.
+    setChatPopupOpen(true);
+  }, [rideData?.customerId, rideData?.id, user?.id, navigate, passengerAvatar, resolvedName, rideData?.customerName]);
+
+  /**
+   * Park the chat head mid-screen the first time it appears.
+   *
+   * Deferred to the next frame because the element is not mounted yet on the
+   * render that first sets `chatStarted`, so its size -- needed to centre it --
+   * is not measurable. Centred rather than pinned to a corner so it does not
+   * sit over the map's controls or the pickup/drop-off labels.
+    window.addEventListener('pointerup', onUp);
+  };
+
+  /**
+   * Resolve the passenger's thread on mount.
+   *
+   * Without this the unread badge could never appear until the driver tapped the
+   * head: the poll needs a conversation id, and the id was only assigned inside
+   * `openPassengerChat`. So the badge would have been permanently invisible on a
+   * fresh load -- precisely when there is something unread to show.
+   *
+   * Deliberately *finds* the thread rather than creating one. A driver who has
+   * not messaged yet should get no badge, not a new empty conversation invented
+   * for them every time this screen mounts.
+   */
+  const resolvePassengerChat = useCallback(async () => {
+    const peerId = rideData?.customerId || rideData?.passengerDetails?.[0]?.id;
+    if (!peerId || !user?.id) return;
+
+    const { data } = await supabase
+      .from('chat_conversations')
+      .select('id, participant_a_id, participant_b_id, updated_at')
+      .or(`participant_a_id.eq.${user.id},participant_b_id.eq.${user.id}`);
+
+    const mine = ((data || []) as any[]).filter((c: any) => {
+      const other = c.participant_a_id === user.id ? c.participant_b_id : c.participant_a_id;
+      return other === peerId;
+    });
+    if (mine.length === 0) return;
+    // Newest first, so a thread that has duplicates still resolves to the one
+    // actually in use rather than an arbitrary stale copy.
+    mine.sort((a: any, b: any) => (b.updated_at || '').localeCompare(a.updated_at || ''));
+    setChatId(mine[0].id);
+  }, [rideData?.customerId, user?.id]);
+
+  useEffect(() => {
+    if (chatId || !chatStarted || !user?.id) return;
+    resolvePassengerChat();
+  }, [chatId, chatStarted, user?.id, resolvePassengerChat]);
+
+  /**
+   * Poll the passenger thread so the floating head's unread badge stays honest.
+   *
+   * Only the count matters now that reading happens in the Messages tab, so this
+   * deliberately does not keep a local copy of the messages -- that would be a
+   * second, staler version of what the tab already shows.
+   */
+  useEffect(() => {
+    if (!chatId || !user?.id) return;
+    let cancelled = false;
+
+    const check = async () => {
+      const { data } = await supabaseHelpers.getChatMessages(chatId);
+      if (cancelled) return;
+      const fromThem = ((data || []) as any[]).filter(
+        (m) => m.sender_id !== user.id && m.read === false
+      );
+      const count = fromThem.length;
+
+      // Ripple only when the count actually grows, not on the first poll and not
+      // every five seconds. Without the previous-count check the head pulsed
+      // forever on any thread that had unread history.
+      if (count > lastSeenCount.current) {
+        setPulseKey((k) => k + 1);
+      }
+      lastSeenCount.current = count;
+      setUnreadFromPassenger(count);
+    };
+
+    check();
+    const interval = setInterval(check, 5000);
+    return () => {
+      cancelled = true;
+      clearInterval(interval);
+    };
+  }, [chatId, user?.id]);
+
+  useEffect(() => {
+    const cid = rideData?.customerId || rideData?.passengerDetails?.[0]?.id;
+    if (!cid) {
+      setPassengerAvatar(null);
+      return;
+    }
+    let active = true;
+    supabase.from('users').select('avatar_url').eq('id', cid).maybeSingle()
+      .then(({ data }) => { if (active) setPassengerAvatar(data?.avatar_url || null); })
+      .catch(() => { /* no photo is not a failure; the name still renders */ });
+    return () => { active = false; };
+  }, [rideData?.customerId, rideData?.passengerDetails]);
+
   useEffect(() => { if (driverLocation) setMapCenter(driverLocation); }, [driverLocation]);
+
+  /**
+   * Keep the camera on the driver.
+   *
+   * Only pans, never zooms, and only when the driver has moved far enough to
+   * matter. The imperative pan is what actually moves an already-mounted map --
+   * re-passing `center` as a prop after mount does not, which is why the driver
+   * drifted off screen while the route kept re-fitting the viewport.
+   */
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !driverLocation) return;
+
+    let cancelled = false;
+    const pan = () => {
+      if (cancelled || mapRef.current !== map) return;
+      map.panTo(driverLocation);
+    };
+    // panTo interrupts any in-flight pan animation, so a slow gesture would
+    // otherwise be cut short and leave the camera behind the vehicle.
+    const interval = setInterval(pan, 1000);
+    pan();
+    return () => {
+      cancelled = true;
+      clearInterval(interval);
+    };
+  }, [driverLocation]);
 
   // Accept a GPS fix only when it has moved far enough to be worth acting on.
   // Returns false for sub-threshold wobble so callers can skip both the map
@@ -442,13 +701,51 @@ export default function ActiveRide() {
     };
   }, [rideData?.id, rideData?.lobbyId, customerCancellation]);
 
-  const markerIcon = (color: string) => ({
-    url: `data:image/svg+xml;charset=UTF-8,${encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="${color}" stroke="white" stroke-width="1"><path d="M12 2C8.13 2 5 5.13 5 9c0 4.95 6.1 11.53 6.36 11.81.36.39.92.39 1.28 0C13.9 20.53 20 13.95 20 9c0-3.87-3.13-7-8-7z"/><circle cx="12" cy="8.5" r="2.5" fill="white"/></svg>`)}`,
+  /**
+   * Pin marker for pickup and drop-off.
+   *
+   * `color` must be a literal hex, not a CSS variable. Google Maps renders
+   * markers in its own canvas and never resolves `var(--x)`, so passing a custom
+   * property produced an invalid fill and the pin simply did not draw. Kept
+   * explicit hex here for that reason, with the theme token noted alongside so
+   * the pairing stays traceable.
+   */
+  const markerIcon = (hex: string) => ({
+    url: `data:image/svg+xml;charset=UTF-8,${encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="${hex}" stroke="white" stroke-width="1"><path d="M12 2C8.13 2 5 5.13 5 9c0 4.95 6.1 11.53 6.36 11.81.36.39.92.39 1.28 0C13.9 20.53 20 13.95 20 9c0-3.87-3.13-7-8-7z"/><circle cx="12" cy="8.5" r="2.5" fill="white"/></svg>`)}`,
     scaledSize: new (window as any).google.maps.Size(40, 40),
     anchor: new (window as any).google.maps.Point(20, 40)
   });
 
+  // Literal hex values, matching the theme tokens they stand in for. Maps cannot
+  // read CSS custom properties; see markerIcon above.
+  const PICKUP_HEX = '#2f9e77';   // --success
+  const DROPOFF_HEX = '#BC4B1F';  // the existing destination route colour
+
   if (!rideData) return null;
+
+  /**
+   * The single action for the ride's current phase.
+   *
+   * Derived once so the full sheet and the compact bar cannot drift apart -- they
+   * are the same control at two sizes, and two hand-written lists meant a phase
+   * could gain a button in one and not the other.
+   */
+  const activeAction = (() => {
+    switch (rideData.status) {
+      case 'on-the-way':
+        return { label: "I've Arrived", onClick: () => updateStatus('arrived'), isComplete: false };
+      case 'arrived':
+        return { label: 'Confirm Pickup', onClick: () => updateStatus('pickup'), isComplete: false };
+      case 'pickup':
+        return { label: 'Arrived at Drop-off', onClick: () => updateStatus('drop-off'), isComplete: false };
+      case 'drop-off':
+        return { label: 'Confirm Drop-off', onClick: () => updateStatus('payment'), isComplete: false };
+      case 'payment':
+        return { label: 'Complete Ride', onClick: completeRide, isComplete: true };
+      default:
+        return null;
+    }
+  })();
 
   // The customer cancelled — say so, and show the reason they gave.
   if (customerCancellation) {
@@ -494,27 +791,57 @@ export default function ActiveRide() {
           </div>
         </div>
       )}
+      {/* Hidden entirely while the chat panel is open, not made transparent.
+
+          Making it transparent was tried first and was the wrong call: this header
+          sits in the normal flow, so clearing its fill exposed the page background
+          behind it -- the same dark green band, just without a title on it.
+
+          Removing it outright moves the map up into the vacated space, so the strip
+          shows the map the driver is actually navigating by. Hiding it is also why
+          the back arrow does not need to survive: the chat head closes the panel,
+          and the ride screen is still there underneath it. */}
+      {!chatPopupOpen && (
       <div className="bg-[var(--primary)] text-white p-4 shadow-md">
         <div className="flex items-center justify-between mb-4">
           <Button variant="ghost" size="icon" onClick={() => navigate('/rider')} className="text-white hover:bg-white/20"><ArrowLeft className="w-5 h-5" /></Button>
           <h1 className="text-lg font-bold">Active Ride</h1>
-          <Button variant="ghost" size="icon" onClick={() => setIsMinimized(!isMinimized)} className="text-white hover:bg-white/20">{isMinimized ? <Maximize2 className="w-5 h-5" /> : <Minimize2 className="w-5 h-5" />}</Button>
+          {/* The map and the detail sheet are resized by dragging the sheet's
+              handle, so this toggle was a redundant second way to do the same
+              thing. Removed rather than kept as a duplicate control. */}
+          <span className="w-10" aria-hidden="true" />
         </div>
       </div>
+      )}
 
       <div className={`relative w-full transition-all duration-300 ${isMinimized ? 'h-[80vh]' : 'h-80'}`}>
         {isMapsLoaded ? (
-          <GoogleMap mapContainerStyle={{ width: '100%', height: '100%' }} center={driverLocation || mapCenter} zoom={15} options={{ disableDefaultUI: true }}>
+          <GoogleMap
+            mapContainerStyle={{ width: '100%', height: '100%' }}
+            // Re-centre imperatively on every accepted fix.
+            //
+            // Passing `center` as a prop does not re-centre after mount: React
+            // only applies it when the value changes by identity, and the map
+            // had already taken over the camera. So the driver icon walked off
+            // screen while the route re-fit the viewport around itself.
+            // `reportDriverLocation` already throttles to meaningful movement, so
+            // this does not fire on GPS jitter.
+            center={driverLocation || mapCenter}
+            onLoad={(map) => { mapRef.current = map; }}
+            zoom={15}
+            options={{ disableDefaultUI: true }}
+          >
             {driverLocation && (
               <Marker position={driverLocation} icon={{ url: tricycleIcon, scaledSize: new (window as any).google.maps.Size(44, 44), anchor: new (window as any).google.maps.Point(22, 22) }} zIndex={100} />
             )}
-            {/* Pickup marker: only show when heading to pickup */}
-            {isHeadingToPickup && rideData.pickupLat && (
-              <Marker position={{ lat: Number(rideData.pickupLat), lng: Number(rideData.pickupLng) }} icon={markerIcon('var(--success)')} title="Pickup" />
+            {/* Both endpoints stay pinned for the whole ride, not just whichever
+                one is next. Showing only the active leg hid the destination from
+                the driver, so there was nothing on screen to steer toward. */}
+            {rideData.pickupLat && (
+              <Marker position={{ lat: Number(rideData.pickupLat), lng: Number(rideData.pickupLng) }} icon={markerIcon(PICKUP_HEX)} title="Pickup" zIndex={isHeadingToPickup ? 90 : 70} />
             )}
-            {/* Dropoff marker: only show when heading to dropoff */}
-            {!isHeadingToPickup && rideData.dropoffLat && (
-              <Marker position={{ lat: Number(rideData.dropoffLat), lng: Number(rideData.dropoffLng) }} icon={markerIcon('var(--primary)')} title="Drop-off" />
+            {rideData.dropoffLat && (
+              <Marker position={{ lat: Number(rideData.dropoffLat), lng: Number(rideData.dropoffLng) }} icon={markerIcon(DROPOFF_HEX)} title="Drop-off" zIndex={!isHeadingToPickup ? 90 : 70} />
             )}
 
             {/* Google Directions route line */}
@@ -529,13 +856,44 @@ export default function ActiveRide() {
                   // keep yanking the centre off the driver icon.
                   preserveViewport: true,
                   polylineOptions: {
-                    strokeColor: isHeadingToPickup ? 'var(--success)' : 'var(--primary)',
+                    // Literal hex: Maps does not resolve CSS custom properties,
+                    // so `var(--success)` here left the route undrawn.
+                    strokeColor: isHeadingToPickup ? PICKUP_HEX : DROPOFF_HEX,
                     strokeWeight: 6,
                     strokeOpacity: 0.9,
                   },
                 }}
               />
             )}
+
+            {/* Straight-line fallback.
+                The road route only exists if DirectionsService answered. When it
+                fails -- quota, offline, an unroutable pair -- there was no line at
+                all, so the driver saw two pins and no path between them. This
+                draws the direct connection from the driver to the active
+                destination, which at least shows which way to head. The real
+                route replaces it as soon as directions arrive. */}
+            {!directions && driverLocation && (() => {
+              const dest = isHeadingToPickup
+                ? (rideData.pickupLat != null && rideData.pickupLng != null
+                    ? { lat: Number(rideData.pickupLat), lng: Number(rideData.pickupLng) }
+                    : null)
+                : (rideData.dropoffLat != null && rideData.dropoffLng != null
+                    ? { lat: Number(rideData.dropoffLat), lng: Number(rideData.dropoffLng) }
+                    : null);
+              if (!dest) return null;
+              return (
+                <Polyline
+                  path={[{ lat: driverLocation.lat, lng: driverLocation.lng }, dest]}
+                  options={{
+                    strokeColor: isHeadingToPickup ? PICKUP_HEX : DROPOFF_HEX,
+                    strokeOpacity: 0.75,
+                    strokeWeight: 4,
+                    geodesic: true,
+                  }}
+                />
+              );
+            })()}
 
           </GoogleMap>
         ) : (
@@ -558,6 +916,25 @@ export default function ActiveRide() {
             )}
           </div>
         )}
+        {/* Pickup and drop-off named on the map itself.
+            Shown only while the sheet is minimized. That is the one mode where
+            the map is fully visible: the compact bar is a single ~76px row, so
+            nothing covers the lower edge. Expanded, the sheet's own Pickup and
+            Drop-off rows sit right there with the same information, so the map
+            labels would be a duplicate. The pins always stay; only this text
+            overlay toggles. */}
+        {isMinimized && (
+          <div className="absolute left-3 bottom-3 flex flex-col gap-1.5 pointer-events-none">
+            <span className="inline-flex w-fit items-center gap-1.5 rounded-full bg-surface px-2.5 py-1 text-[11px] font-bold shadow-md">
+              <span className="size-2.5 rounded-full" style={{ background: PICKUP_HEX }} aria-hidden="true" />
+              Pickup · {rideData.pickup}
+            </span>
+            <span className="inline-flex w-fit items-center gap-1.5 rounded-full bg-surface px-2.5 py-1 text-[11px] font-bold shadow-md">
+              <span className="size-2.5 rounded-full" style={{ background: DROPOFF_HEX }} aria-hidden="true" />
+              Drop-off · {rideData.dropoff}
+            </span>
+          </div>
+        )}
         <Button onClick={() => {
           const dest = isHeadingToPickup
             ? { lat: rideData.pickupLat, lng: rideData.pickupLng }
@@ -571,16 +948,148 @@ export default function ActiveRide() {
         </div>
       </div>
 
+      {/* Floating chat head. See FloatingChatHead for the drag, snap, badge and
+          ripple behaviour -- both sides of a ride use that one component so the
+          two cannot drift apart. Appears once the ride has a conversation and
+          disappears when the ride is over. */}
+      {/* Chat as an overlay rather than a page.
+          Navigating to the Messages tab unmounted this screen, which is why the
+          floating head vanished the moment the chat opened and a gap had to be
+          reserved above the thread header -- a band of the ride screen's own
+          background showing through the top of the chat. */}
+      <RideChatOverlay
+        open={chatPopupOpen}
+        conversationId={chatId}
+        peerAvatar={passengerAvatar}
+        peerName={resolvedName || rideData.customerName || 'Passenger'}
+        peerIsGroup={rideData.customerPhoto === 'shared'}
+        senderRole="rider"
+        onClose={() => setChatPopupOpen(false)}
+      />
+
+      {/* Hidden while the panel is open: the panel carries its own head, and both
+          would otherwise sit in the same top-right corner on top of each other. */}
+      {chatStarted && rideData.status !== 'completed' && !chatPopupOpen && (
+        <FloatingChatHead
+          storageKey="trikeserve_chat_head_pos_rider"
+          peerAvatar={passengerAvatar}
+          peerIsGroup={rideData.customerPhoto === 'shared'}
+          peerLabel={resolvedName || rideData.customerName || 'passenger'}
+          unread={unreadFromPassenger}
+          pulseKey={pulseKey}
+          opened={chatOpened}
+          onOpen={openPassengerChat}
+          onInitialResolve={resolvePassengerChat}
+        />
+      )}
+
       <LocationBanner problem={locationProblem} className="mx-3 mt-3" />
 
-      <div className={isMinimized ? 'fixed bottom-0 left-0 right-0 bg-surface rounded-t-3xl shadow-[0_-10px_40px_rgba(0,0,0,0.1)] p-4 h-[40vh] overflow-y-auto z-[1001]' : 'p-4 space-y-4'}>
+      {/* Minimized, the sheet hugs its content instead of holding 40vh of
+          empty panel. It was a fixed-height box with a compact card at the top
+          of it, so "minimizing" only shrank the map by the same amount as before
+          and left a large blank area. */}
+      <div
+        className={
+          isMinimized
+            ? 'fixed bottom-0 left-0 right-0 bg-surface rounded-t-3xl shadow-[0_-10px_40px_rgba(0,0,0,0.1)] p-3 z-[1001]'
+            : 'p-4 space-y-4'
+        }
+      >
+        {/* Drag handle: pulls the sheet up to cover the map, or pushes it back
+            down. A tap also toggles, so it works without a drag gesture. The
+            header toggle that used to do this was removed. */}
+        <button
+          type="button"
+          onClick={() => setIsMinimized((v) => !v)}
+          aria-label={isMinimized ? 'Show ride details' : 'Expand map'}
+          aria-expanded={isMinimized}
+          className="mx-auto mb-1 flex h-6 w-full max-w-24 items-center justify-center rounded-full hover:bg-[var(--muted)] active:bg-[var(--muted)]"
+        >
+          <span className="h-1.5 w-12 rounded-full bg-[var(--muted-foreground)] opacity-60" aria-hidden="true" />
+        </button>
+
+        {isMinimized && (
+          /* Compact bar.
+             Minimizing previously just stretched the same full card to 40vh, so
+             the map was covered by the same amount of white space it had before.
+             This collapses to the three things a driver needs at a glance while
+             driving: who is in the car, and the one action for the current
+             phase. Everything else comes back on a tap. */
+          <Card className="flex-row items-center gap-3 p-3 border-2 border-[var(--primary)] shadow-2xl">
+            {/* `flex-row` is load-bearing: the shared Card component ships its own
+                `flex-col`, and Tailwind resolves the two classes by stylesheet
+                order rather than the order they appear in `className`. Without
+                the explicit row direction the whole bar stacked vertically and
+                read as a narrow column, which is the opposite of what it is for. */}
+            <div className="size-11 flex-shrink-0 overflow-hidden rounded-full bg-[var(--primary-soft)] flex items-center justify-center">
+              {passengerAvatar ? (
+                <img
+                  src={passengerAvatar}
+                  alt={`${resolvedName || rideData.customerName || 'Passenger'}'s profile`}
+                  className="w-full h-full object-cover"
+                />
+              ) : rideData.customerPhoto === 'shared' ? (
+                <Users className="w-5 h-5 text-[var(--primary)]" aria-hidden="true" />
+              ) : (
+                <User className="w-5 h-5 text-[var(--primary)]" aria-hidden="true" />
+              )}
+            </div>
+            {/* Details run left to right across the bar: photo, name, fare and
+                destination, then the controls. The name and the detail were
+                stacked in a column, which made the bar taller for no gain and
+                pushed the action button toward the edge. */}
+            <div className="min-w-0 flex-1 flex items-center gap-2">
+              <p className="truncate font-bold text-[var(--ink)]">
+                {resolvedName || rideData.customerName}
+              </p>
+              <span className="text-[var(--muted-foreground)]" aria-hidden="true">·</span>
+              <p className="truncate text-xs text-[var(--muted-foreground)]">
+                ₱{rideData.amount} · {isHeadingToPickup ? 'To pickup' : 'To drop-off'}
+              </p>
+            </div>
+            <Button
+              onClick={openPassengerChat}
+              aria-label="Message passenger"
+              className="size-11 flex-shrink-0 rounded-full bg-[var(--surface)] border-2 border-[var(--primary)] flex items-center justify-center"
+            >
+              <MessageSquare className="w-4 h-4 text-[var(--primary)]" aria-hidden="true" />
+            </Button>
+          </Card>
+        )}
+
+        {/*
+            Phase action, below the profile row.
+
+            It sat inline after the chat button, which squeezed the name and fare
+            into a narrow truncated strip. It is the one control that changes the
+            ride's state, so it gets a full-width row of its own, directly beneath
+            the passenger details.
+
+            Same size in both states, so the control does not appear to grow or
+            shrink as the sheet is toggled -- it is the same action either way.
+            In normal flow rather than absolutely positioned: the sheet is a
+            bottom-anchored box, so document order is what places the row, and no
+            hand-tuned offset can drift out of alignment with a bar whose height
+            changes with the name and fare.
+        */}
+        {!isMinimized && (
         <Card className="p-4 border-2 border-[var(--muted)] shadow-sm">
           <div className="flex gap-4 mb-3">
-            <div className="text-4xl">
-              {rideData.customerPhoto === 'shared' ? (
-                <Users className="w-10 h-10 text-[var(--primary)]" />
+            {/* Round passenger photo, cropped by the wrapper. A shared ride has
+                several passengers and no single person to show, so it keeps the
+                group glyph. */}
+            <div className="size-14 flex-shrink-0 overflow-hidden rounded-full bg-[var(--primary-soft)] flex items-center justify-center">
+              {passengerAvatar ? (
+                <img
+                  src={passengerAvatar}
+                  alt={`${resolvedName || rideData.customerName || 'Passenger'}'s profile`}
+                  className="w-full h-full object-cover"
+                />
+              ) : rideData.customerPhoto === 'shared' ? (
+                <Users className="w-6 h-6 text-[var(--primary)]" aria-hidden="true" />
               ) : (
-                rideData.customerPhoto
+                <User className="w-6 h-6 text-[var(--primary)]" aria-hidden="true" />
               )}
             </div>
             <div className="flex-1">
@@ -615,13 +1124,48 @@ export default function ActiveRide() {
             </div>
           </div>
         </Card>
+        )}
+
         <div className="grid gap-2">
-          {rideData.status === 'on-the-way' && <Button onClick={() => updateStatus('arrived')} className="bg-[var(--primary)] py-7 text-lg font-bold shadow-lg shadow-[var(--error-soft)]">I've Arrived</Button>}
-          {rideData.status === 'arrived' && <Button onClick={() => updateStatus('pickup')} className="bg-[var(--primary)] py-7 text-lg font-bold shadow-lg shadow-[var(--error-soft)]">Confirm Pickup</Button>}
-          {rideData.status === 'pickup' && <Button onClick={() => updateStatus('drop-off')} className="bg-[var(--primary)] py-7 text-lg font-bold shadow-lg shadow-[var(--error-soft)]">Arrived at Drop-off</Button>}
-          {rideData.status === 'drop-off' && <Button onClick={() => updateStatus('payment')} className="bg-[var(--primary)] py-7 text-lg font-bold shadow-lg shadow-[var(--error-soft)]">Confirm Drop-off</Button>}
-          {rideData.status === 'payment' && <Button onClick={completeRide} className="bg-[var(--success)] py-7 text-lg font-bold shadow-lg shadow-[var(--success-soft)]">Complete Ride</Button>}
+          {!isMinimized && (
+            <Button
+              onClick={openPassengerChat}
+              className="bg-[var(--surface)] text-[var(--ink)] border-2 border-[var(--primary)] py-4 font-bold flex items-center justify-center gap-2"
+            >
+              <MessageSquare className="w-4 h-4" aria-hidden="true" />
+              Message passenger
+            </Button>
+          )}
         </div>
+
+        {/*
+            Phase action, last in the sheet -- beneath the profile and the
+            pickup/drop-off rows in either state.
+
+            It used to sit inline next to the chat button, which squeezed the name
+            and fare into a narrow truncated strip. It is the one control that
+            changes the ride's state, so a full-width row of its own keeps it
+            distinct from the passenger's details.
+
+            Identical size in both states, so the control does not appear to grow
+            or shrink as the sheet is toggled. The `-mx-1` cancels the expanded
+            container's wider padding so it matches the minimized sheet's width
+            exactly rather than being 24px narrower.
+
+            In normal flow rather than absolutely positioned: the sheet is a
+            bottom-anchored box, so document order is what places the row, and no
+            hand-tuned offset can drift out of alignment with a bar whose height
+            changes with the name and fare.
+        */}
+        {activeAction && (
+          <Button
+            onClick={activeAction.onClick}
+            className={`${activeAction.isComplete ? 'bg-[var(--success)]' : 'bg-[var(--primary)]'} -mx-1 mt-2 w-[calc(100%+0.5rem)] py-4 text-base font-bold shadow-lg`}
+          >
+            {activeAction.label}
+          </Button>
+        )}
+
       </div>
     </div>
   );

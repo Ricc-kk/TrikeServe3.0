@@ -2624,19 +2624,50 @@ export const supabaseHelpers = {
       new Set(data.flatMap((c: any) => [c.participant_a_id, c.participant_b_id]).filter(Boolean))
     );
 
-    let profiles: Record<string, { avatar_url: string | null; name: string | null }> = {};
+    let profiles: Record<string, { avatar_url: string | null; name: string | null; role?: string | null }> = {};
     try {
       const { data: people } = await supabase
         .from('users')
-        .select('id, name, avatar_url')
+        .select('id, name, avatar_url, role')
         .in('id', ids);
       for (const person of people || []) {
-        profiles[person.id] = { avatar_url: person.avatar_url, name: person.name };
+        profiles[person.id] = {
+          avatar_url: person.avatar_url,
+          name: person.name,
+          role: person.role,
+        };
       }
     } catch (e) {
       // A failed profile read must not take the conversation list down with it;
       // the denormalised snapshot is still on the row as a fallback.
       console.warn('[supabase] Could not resolve chat avatars:', e);
+    }
+
+    /**
+     * Shop names for the business owners taking part.
+     *
+     * A conversation with a shop should be labelled by the shop, not by the
+     * person who owns it. "Nemia's Kakanin" tells a customer who they are
+     * talking to; "John Marc Balagot" does not, and they may be messaging three
+     * branches run by one person. Looked up in a single query; a failure here
+     * leaves the owner's name in place, which is the old behaviour.
+     */
+    const shopNames: Record<string, string> = {};
+    const businessIds = ids.filter((id) => profiles[id]?.role === 'business');
+    if (businessIds.length > 0) {
+      try {
+        const { data: shops } = await supabase
+          .from('restaurants')
+          .select('business_user_id, name')
+          .in('business_user_id', businessIds);
+        for (const shop of shops || []) {
+          if (shop.business_user_id && shop.name) {
+            shopNames[shop.business_user_id] = shop.name;
+          }
+        }
+      } catch (e) {
+        console.warn('[supabase] Could not resolve shop names for chat:', e);
+      }
     }
 
     // Prefer the live profile photo. Fall back to the stored value, which is an
@@ -2645,8 +2676,8 @@ export const supabaseHelpers = {
       ...c,
       participant_a_avatar: profiles[c.participant_a_id]?.avatar_url || c.participant_a_avatar,
       participant_b_avatar: profiles[c.participant_b_id]?.avatar_url || c.participant_b_avatar,
-      participant_a_name: profiles[c.participant_a_id]?.name || c.participant_a_name,
-      participant_b_name: profiles[c.participant_b_id]?.name || c.participant_b_name,
+      participant_a_name: shopNames[c.participant_a_id] || profiles[c.participant_a_id]?.name || c.participant_a_name,
+      participant_b_name: shopNames[c.participant_b_id] || profiles[c.participant_b_id]?.name || c.participant_b_name,
     }));
 
     return { data: merged, error };

@@ -56,7 +56,7 @@ export default function BusinessDirectChat() {
   return (
     <ChatHub
       title={customerId ? "Chat with Customer" : "Chat with Driver"}
-      backPath="/business/orders"
+      backPath="/business/messages"
       basePath="/business/messages"
       directPeerId={peerId}
       directPeerRole={peerRole as any}

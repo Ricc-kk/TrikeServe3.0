@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState } from 'react';
-import { useNavigate, useParams } from 'react-router';
+import { useNavigate, useParams, useLocation } from 'react-router';
 import { ArrowLeft, MessageCircle, Send, X } from 'lucide-react';
 import { Button } from '../ui/button';
+import FloatingChatHead from '../ui/FloatingChatHead';
 import { Card } from '../ui/card';
 import { Badge } from '../ui/badge';
 import { useAuth } from '../../contexts/AuthContext';
@@ -10,7 +11,21 @@ import { buildChatThreadKey, getPeerAvatar, getPeerName, getRoleLabel, ChatConte
 
 interface ChatHubProps {
   title: string;
+  /**
+   * Where the back arrow goes from the conversation list.
+   *
+   * The role's home screen -- that list is the thing you leave.
+   */
   backPath: string;
+  /**
+   * Where the back arrow goes from inside a thread.
+   *
+   * The messages list, not `backPath`. A thread is reached from that list, so
+   * backing out of one should return there; using `backPath` skipped the list
+   * entirely and dropped the reader on the home screen, losing their place in
+   * the queue. Defaults to the list it was opened from.
+   */
+  threadBackPath?: string;
   basePath: string;
   directPeerId?: string;
   directPeerRole?: ChatRole;
@@ -45,6 +60,21 @@ interface ChatConversation {
   updated_at: string;
 }
 
+/**
+ * One-tap phrases a driver sends constantly during a ride.
+ *
+ * Kept to the things said over and over on a shared tricycle -- where you are,
+ * please be ready, apologies for delay. Anything situational still gets typed.
+ */
+const QUICK_REPLIES = [
+  "On my way",
+  "Where are you exactly?",
+  "Please be ready at the pickup point",
+  "Running a few minutes late",
+  "I'm at your pickup point",
+  "You're on the tricycle, let's go",
+];
+
 interface ChatMessage {
   id: string;
   conversation_id: string;
@@ -61,6 +91,7 @@ interface ChatMessage {
 export default function ChatHub({
   title,
   backPath,
+  threadBackPath,
   basePath,
   directPeerId,
   directPeerRole = 'customer',
@@ -71,6 +102,7 @@ export default function ChatHub({
   subject,
 }: ChatHubProps) {
   const navigate = useNavigate();
+  const location = useLocation();
   const { conversationId } = useParams();
   const { user } = useAuth();
 
@@ -103,6 +135,34 @@ export default function ChatHub({
   const isDirectMode = !!directPeerId;
   const activeConversationId = isDirectMode ? activeConversation?.id : conversationId;
 
+  /**
+   * The in-thread back arrow.
+   *
+   * A thread opened from the messages list returns there, not to the home
+   * screen. In direct mode there is no list to return to, so the caller's
+   * `backPath` is the only sensible target.
+   */
+  /**
+   * Where the in-thread back arrow goes.
+   *
+   * A thread opened from a live ride returns to that ride, not to the messages
+   * list: the driver is mid-journey, and the list is somewhere they did not mean
+   * to be. `fromActiveRide` is set by the ride screen when it hands off here, so
+   * a thread reached any other way still backs out to the list as before.
+   */
+  /**
+   * Where the in-thread back arrow, and the floating head, go.
+   *
+   * A thread opened from a live ride returns to that ride. The target comes from
+   * the ride screen in `location.state`, never derived from `basePath`:
+   * deriving it produced `/customer/active-ride`, which is not a route -- the
+   * customer tracks a ride on their home screen while the driver has a dedicated
+   * one -- so tapping back landed on a 404.
+   */
+  const threadBack = isDirectMode
+    ? backPath
+    : ((location.state as any)?.rideBackTo as string) ?? (threadBackPath ?? basePath);
+
   const loadInbox = async () => {
     if (!user?.id) return;
     try {
@@ -112,7 +172,55 @@ export default function ChatHub({
         setConversations([]);
         return;
       }
-      setConversations((data || []) as ChatConversation[]);
+      /**
+       * One card per person, newest thread wins.
+       *
+       * `thread_key` includes the context id, so the same two people get a fresh
+       * conversation per ride or per order. The list then showed the same driver
+       * three times over, one card per trip -- unread buried among near-duplicates
+       * and the inbox growing without bound. Collapse to the most recent thread
+       * per peer, summing unread across all of theirs so collapsing never hides a
+       * message.
+       */
+      const unreadOf = (c: any) =>
+        c.participant_a_id === user.id ? c.unread_count_a || 0 : c.unread_count_b || 0;
+      const peerOf = (c: any) =>
+        c.participant_a_id === user.id ? c.participant_b_id : c.participant_a_id;
+
+      const newestByPeer = new Map<string, any>();
+      for (const c of [...(data || [])] as any[]) {
+        const peer = peerOf(c);
+        const held = newestByPeer.get(peer);
+        if (
+          !held ||
+          new Date(c.updated_at).getTime() > new Date(held.updated_at).getTime()
+        ) {
+          newestByPeer.set(peer, held ? { ...c, unread_count_a: c.unread_count_a, unread_count_b: c.unread_count_b } : c);
+          // Carry the unread total forward from the thread this one replaces.
+          if (held) {
+            const merged = newestByPeer.get(peer);
+            merged._collapsedUnread =
+              (held._collapsedUnread ?? unreadOf(held)) + unreadOf(c);
+          }
+        } else {
+          held._collapsedUnread = (held._collapsedUnread ?? unreadOf(held)) + unreadOf(c);
+        }
+      }
+
+      const collapsed = [...newestByPeer.values()];
+
+      // Unread threads float to the top, most recently active first within each
+      // group. Sorted here rather than in SQL because the unread count lives in two
+      // columns (`unread_count_a` / `unread_count_b`) depending on which side
+      // this user is, which PostgREST cannot filter on without knowing the side.
+      const sorted = collapsed.sort((a: any, b: any) => {
+        const countOf = (c: any) => c._collapsedUnread ?? unreadOf(c);
+        const aUnread = countOf(a) > 0;
+        const bUnread = countOf(b) > 0;
+        if (aUnread !== bUnread) return aUnread ? -1 : 1;
+        return new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime();
+      });
+      setConversations(sorted as ChatConversation[]);
     } catch (error) {
       console.error('[ChatHub] Unexpected inbox error:', error);
       setConversations([]);
@@ -345,8 +453,10 @@ function getConversationPeer(conversation: ChatConversation) {
     navigate(`${basePath}/thread/${conversation.id}`);
   };
 
-  const sendMessage = async () => {
-    if (!user?.id || !messageText.trim() || !activeConversation) return;
+  /** Sends the composer text, or `override` when a quick reply chip calls it. */
+  const sendMessage = async (override?: string) => {
+    const text = (override ?? messageText).trim();
+    if (!user?.id || !text || !activeConversation) return;
 
     const isParticipantA = activeConversation.participant_a_id === user.id;
     const receiverId = isParticipantA ? activeConversation.participant_b_id : activeConversation.participant_a_id;
@@ -359,7 +469,7 @@ function getConversationPeer(conversation: ChatConversation) {
       senderName: user.name,
       senderRole: user.role,
       receiverRole,
-      message: messageText.trim(),
+      message: text,
     });
 
     if (error) {
@@ -401,22 +511,92 @@ function getConversationPeer(conversation: ChatConversation) {
       : dbPeer;
     const peerTheme = getRoleTheme(peer.role);
 
+    /**
+     * Quick replies only make sense in a ride thread.
+     *
+     * Checked against the conversation's own type rather than its subject text,
+     * so a ride whose subject happens to read like an order still qualifies.
+     */
+    const isRideThread =
+      activeConversation.context_type === 'ride' ||
+      activeConversation.thread_type === 'ride';
+
     return (
       <div className="flex-1 flex flex-col min-h-0">
+        {/*
+            Clearance strip above the thread header.
+
+            Only when the chat was opened from a live ride, where the floating chat
+            head is pinned to the top-right. Sized to the head itself (56px) rather
+            than a generous band: at 64px plus a solid fill it read as a heavy bar
+            across the top of the chat rather than space for a control, and it
+            pushed the whole conversation down.
+
+            Transparent, so it reads as "nothing here" rather than as a surface.
+        */}
+        {(location.state as any)?.fromActiveRide && (
+          <div className="h-14 flex-shrink-0" aria-hidden="true" />
+        )}
+
+        {/*
+            The floating chat head, continued into the thread.
+
+            It normally lives on the ride screen, which navigating here unmounts --
+            so it disappeared the moment the chat opened, leaving the reserved
+            strip above empty and the head looking broken. Rendered here too, in
+            that strip's corner, so it survives the hand-off. Tapping it returns to
+            the ride, which is where it belongs.
+
+            `opened` is true: the chat is open, which is what parks the head in the
+            top right. The unread count is 0 here -- reading happens on this screen.
+        */}
+        {(location.state as any)?.fromActiveRide && (
+          <FloatingChatHead
+            storageKey={
+              basePath.includes('rider')
+                ? 'trikeserve_chat_head_pos_rider'
+                : 'trikeserve_chat_head_pos_customer'
+            }
+            peerAvatar={(location.state as any)?.peerAvatar ?? peer.avatar}
+            peerLabel={(location.state as any)?.peerLabel ?? peer.name}
+            unread={0}
+            pulseKey={0}
+            opened
+            onOpen={() => navigate(threadBack)}
+          />
+        )}
         <div className="bg-[var(--primary)] text-white px-4 py-4 flex items-center gap-3 sticky top-0 z-10">
-          <Button variant="ghost" size="icon" onClick={() => navigate(backPath)} className="text-white hover:bg-white/20">
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={() => navigate(threadBack)}
+            aria-label="Back to messages"
+            className="text-white hover:bg-white/20"
+          >
             <ArrowLeft className="w-5 h-5" />
           </Button>
-          <div className={`w-11 h-11 rounded-full border overflow-hidden flex items-center justify-center text-2xl flex-shrink-0 ${peerTheme.avatarWrap}`}>
-            <PeerAvatar value={peer.avatar} />
-          </div>
-          <div className="flex-1 min-w-0">
-            <h3 className="font-bold text-lg truncate leading-tight">{peer.name}</h3>
-            <div className="flex items-center gap-2 mt-1 flex-wrap">
-              {peer.role !== 'business' && <Badge className={peerTheme.roleBadge}>{getRoleLabel(peer.role)}</Badge>}
-              <span className="text-xs text-white/80 truncate">{activeConversation.subject || activeConversation.context_type || 'Chat'}</span>
+          {/* Peer identity, tappable to their profile.
+              Opening a chat from the active ride usually happens mid-journey, and
+              "who am I about to argue with about the fare" is a reasonable thing
+              to want answered right then. The whole name/photo block is the link,
+              not just the avatar, because the name is what people aim at. */}
+          <button
+            type="button"
+            onClick={() => peer.id && navigate(`/${basePath.split('/')[1]}/profile`)}
+            aria-label={`View ${peer.name}'s profile`}
+            className="flex items-center gap-3 min-w-0 text-left hover:opacity-90 transition-opacity"
+          >
+            <div className={`w-11 h-11 overflow-hidden rounded-full border flex items-center justify-center text-2xl flex-shrink-0 ${peerTheme.avatarWrap}`}>
+              <PeerAvatar value={peer.avatar} />
             </div>
-          </div>
+            <div className="flex-1 min-w-0">
+              <h3 className="font-bold text-lg truncate leading-tight">{peer.name}</h3>
+              <div className="flex items-center gap-2 mt-1 flex-wrap">
+                {peer.role !== 'business' && <Badge className={peerTheme.roleBadge}>{getRoleLabel(peer.role)}</Badge>}
+                <span className="text-xs text-white/80 truncate">{activeConversation.subject || activeConversation.context_type || 'Chat'}</span>
+              </div>
+            </div>
+          </button>
         </div>
 
         <div
@@ -544,6 +724,22 @@ function getConversationPeer(conversation: ChatConversation) {
         </div>
 
         <div className="bg-surface border-t border-[var(--border)] p-4 sticky bottom-0">
+          {/* Quick replies. See QUICK_REPLIES for why these are driver-only
+              ride-thread phrases and why a tap sends immediately. */}
+          {user.role === "rider" && isRideThread && (
+            <div className="mb-2 flex flex-wrap gap-1.5">
+              {QUICK_REPLIES.map((q) => (
+                <button
+                  key={q}
+                  type="button"
+                  onClick={() => sendMessage(q)}
+                  className="rounded-full border border-[var(--primary)] px-3 py-1.5 text-xs font-semibold text-[var(--primary)] hover:bg-[var(--primary-soft)] active:scale-95 transition-all"
+                >
+                  {q}
+                </button>
+              ))}
+            </div>
+          )}
           <div className="flex gap-2">
             <textarea
               value={messageText}
@@ -603,7 +799,13 @@ function getConversationPeer(conversation: ChatConversation) {
               conversations.map((conversation) => {
                 const peer = getConversationPeer(conversation);
                 const peerTheme = getRoleTheme(peer.role);
-                const unread = conversation.participant_a_id === user.id ? conversation.unread_count_a : conversation.unread_count_b;
+                // `_collapsedUnread` carries the total from every thread this card
+                // stands in for, so merging duplicates never hides a message.
+                const unread =
+                  (conversation as any)._collapsedUnread ??
+                  (conversation.participant_a_id === user.id
+                    ? conversation.unread_count_a
+                    : conversation.unread_count_b);
                 const isUnread = unread > 0;
 
                 return (

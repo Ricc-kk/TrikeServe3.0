@@ -32,6 +32,7 @@ import FoodHome from "./components/customer/FoodHome";
 import RestaurantDetail from "./components/customer/RestaurantDetail";
 import Cart from "./components/customer/Cart";
 import CartCheckout from "./components/customer/CartCheckout";
+import RideLock from "./components/ui/RideLock";
 import Activity from "./components/customer/Activity";
 import CustomerMessages from "./components/customer/CustomerMessages";
 import CustomerDirectChat from "./components/customer/CustomerDirectChat";
@@ -309,7 +310,12 @@ export const router = createBrowserRouter([
         path: "customer/cart", 
         element: (
           <ProtectedRoute allowedRoles={['customer']}>
-            <Cart />
+            {/* Food ordering is unavailable mid-ride. Guarded here as well as on the
+                nav item so the route cannot be reached by deep link or by the back
+                button from a tab opened before the ride started. */}
+            <RideLock>
+              <Cart />
+            </RideLock>
           </ProtectedRoute>
         )
       },
@@ -320,7 +326,12 @@ export const router = createBrowserRouter([
         path: "customer/cart/checkout",
         element: (
           <ProtectedRoute allowedRoles={['customer']}>
-            <CartCheckout />
+            {/* Guarded separately from the cart: this route is reachable on its own
+                and a stale tab from before the ride started would otherwise land
+                straight on the payment step. */}
+            <RideLock>
+              <CartCheckout />
+            </RideLock>
           </ProtectedRoute>
         )
       },

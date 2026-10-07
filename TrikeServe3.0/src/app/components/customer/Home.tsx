@@ -6,9 +6,13 @@ import { Card } from "../ui/card";
 import { Badge } from "../ui/badge";
 import { Input } from "../ui/input";
 import BottomNav from "../ui/BottomNav";
+import { isActiveRideStatus } from "../../../lib/rideLock";
+import { useRideResume } from "../../../lib/rideResume";
 import ChoiceCard from "../ui/ChoiceCard";
 import SectionHeading from "../ui/SectionHeading";
 import LocationBanner, { type LocationProblem } from "../ui/LocationBanner";
+import FloatingChatHead from "../ui/FloatingChatHead";
+import RideChatOverlay from "../rider/RideChatOverlay";
 import { GoogleMap, MarkerF, InfoWindow, Polygon, Polyline } from "@react-google-maps/api";
 import useMapLoader from "@/lib/mapLoader";
 import { GOOGLE_MAPS_LIBRARIES } from "@/lib/googleMaps";
@@ -75,6 +79,37 @@ const getNearestRecommendedLocation = (location: { lat: number; lng: number }) =
     const candidateDistance = (candidate.lat - location.lat) ** 2 + (candidate.lng - location.lng) ** 2;
     return candidateDistance < nearestDistance ? candidate : nearest;
   }, TAGALAG_BISIG_RECOMMENDATIONS[0]);
+};
+
+/**
+ * Path points for a Directions result.
+ *
+ * `overview_polyline` is the obvious source and it is regularly useless here: the
+ * object comes back present but with `points: null`, while every individual step
+ * carries real geometry. Verified against a live trip -- 3 steps with polyline
+ * data, `overview_polyline.points` null. Reading only the overview therefore
+ * produced an empty array, the guard on the polyline never passed, and no road line
+ * was ever drawn.
+ *
+ * Steps are decoded separately and concatenated, not joined as strings: each
+ * polyline is independently encoded, so splicing the encoded text together
+ * corrupts the deltas. Each step starts at the previous step's last point, so that
+ * duplicate is dropped to keep the path free of a zero-length segment.
+ */
+const routePathFromResult = (route: any): LatLng[] => {
+  const overview = route?.overview_polyline?.points;
+  if (overview) return decodeGooglePolyline(overview);
+
+  const steps = (route?.legs ?? []).flatMap((leg: any) => leg?.steps ?? []);
+  const path: LatLng[] = [];
+  for (const step of steps) {
+    const encoded = step?.polyline?.points;
+    if (!encoded) continue;
+    const decoded = decodeGooglePolyline(encoded);
+    // Drop the first point when it just repeats where the previous step ended.
+    path.push(...(path.length ? decoded.slice(1) : decoded));
+  }
+  return path;
 };
 
 const decodeGooglePolyline = (encoded: string): LatLng[] => {
@@ -210,6 +245,27 @@ const createPassengerMarkerIcon = (initials: string, color: string) => {
   } as any;
 };
 
+/**
+ * Short labels for the live status shown beside the driver's name.
+ *
+ * The popup further down uses long sentences ("Your driver is on the way to pick you
+ * up!") because it has the whole screen. Beside a name there is room for three or
+ * four words at most, and a full sentence there would wrap the card and push the
+ * fare off screen.
+ */
+const DRIVER_STATUS_LABELS: { [key: string]: string } = {
+  'on-the-way': 'On the way',
+  'arrived': 'Arrived at pickup',
+  'pickup': 'Heading to your destination',
+  'picked-up': 'Heading to your destination',
+  'drop-off': 'Arrived at your destination',
+  'dropped-off': 'Arrived at your destination',
+  'in-progress': 'Ride in progress',
+  'payment': 'Awaiting payment',
+  'awaiting-payment': 'Awaiting payment',
+  'completed': 'Completed',
+};
+
 const buildNavigationRouteOptions = (color: string, weight: number) => {
   const google = (window as any)?.google;
   const arrowPath = google?.maps?.SymbolPath?.FORWARD_CLOSED_ARROW;
@@ -296,6 +352,27 @@ export default function CustomerHome() {
   const [paymentMethod] = useState<'COD'>('COD');
   const [activeRide, setActiveRide] = useState<any>(null);
   const [rideStatus, setRideStatus] = useState<'searching' | 'driver-found' | 'picking-up' | 'in-transit' | null>(null);
+
+  /*
+   * Keeps a pointer to the active ride and restores it after a session drop.
+   *
+   * `sync` is called with the ride this screen is actually showing, so the marker
+   * cannot drift out of step with reality -- it is written from the ride in hand
+   * rather than inferred from route or status strings elsewhere.
+   */
+  const { sync: syncRideResume } = useRideResume();
+
+  /*
+   * Write or clear the resume marker whenever the ride on screen changes.
+   *
+   * `rideStatus` decides whether there is a ride at all: `searching` means a driver
+   * has not been assigned, and a marker for that would drop the customer onto a
+   * waiting screen after a re-login rather than their ride.
+   */
+  useEffect(() => {
+    const live = rideStatus !== null && rideStatus !== 'searching';
+    syncRideResume(live ? currentRequestId : null);
+  }, [rideStatus, currentRequestId, syncRideResume]);
    const [isSearchMinimized, setIsSearchMinimized] = useState(false);
    const [currentRequestId, setCurrentRequestId] = useState<string | null>(null);
    const [currentSharedRideId, setCurrentSharedRideId] = useState<string | null>(null);
@@ -306,6 +383,14 @@ export default function CustomerHome() {
    const [unreadMessagesCount, setUnreadMessagesCount] = useState(0);
    const [driverAcceptedPopup, setDriverAcceptedPopup] = useState<any>(null);
    const [driverStatusPopup, setDriverStatusPopup] = useState<{ status: string; message: string } | null>(null);
+  /**
+   * The driver's latest status, kept permanently.
+   *
+   * `driverStatusPopup` is not a substitute: it deliberately clears itself after
+   * four seconds, so it is a notification and not a state. The card needs the
+   * current status to still be readable after that.
+   */
+  const [driverLiveStatus, setDriverLiveStatus] = useState<string>('');
    const [showValidationError, setShowValidationError] = useState(false);
    const [showSameLocationError, setShowSameLocationError] = useState(false);
    const [showOutOfBoundaryError, setShowOutOfBoundaryError] = useState(false);
@@ -316,6 +401,115 @@ export default function CustomerHome() {
    const [completionPopupType, setCompletionPopupType] = useState<'ride' | 'delivery'>('ride');
    const [showRatingModal, setShowRatingModal] = useState(false);
    const [rideDriverId, setRideDriverId] = useState<string | null>(null);
+   /**
+    * The assigned driver's profile photo.
+    *
+    * Resolved from `users.avatar_url` by id rather than carried on the ride row,
+    * because the accept payload has no photo column -- which is why the card
+    * fell back to a hardcoded pilot emoji. Kept as its own state so the
+    * name/plate card still renders if the lookup fails.
+    */
+   const [rideDriverAvatar, setRideDriverAvatar] = useState<string | null>(null);
+
+   /**
+    * Floating chat head state.
+    *
+    * Mirrors the driver's: the head only appears once the ride has a
+    * conversation, and the badge counts what the driver has said that has not
+    * been read. Same shared component, so the two cannot drift apart.
+    */
+   const [driverUnread, setDriverUnread] = useState(0);
+   const lastDriverCount = useRef(0);
+   const [chatPulseKey, setChatPulseKey] = useState(0);
+   /**
+    * Whether chat has been opened on this ride.
+    *
+    * Persisted because the Messages tab unmounts this screen -- without it,
+    * returning from a reply would drop the head back into the middle of the map.
+    */
+   const [chatOpened, setChatOpened] = useState(() => {
+     try {
+       return localStorage.getItem('trikeserve_chat_opened_customer') === '1';
+     } catch {
+       return false;
+     }
+   });
+   const driverChatId = useRef<string | null>(null);
+   /** Whether the ride chat overlay is showing. */
+   const [customerChatPopup, setCustomerChatPopup] = useState(false);
+
+   /** Opens (or reuses) the driver thread and jumps to it. */
+   const openDriverChatThread = useCallback(async () => {
+     if (!user?.id || !rideDriverId) return;
+     const { data, error } = await supabaseHelpers.findOrCreateRideChat({
+       currentUserId: user.id,
+       currentUserName: user.name,
+       currentUserRole: user.role,
+       peerId: rideDriverId,
+       peerName: activeRide?.driver || 'Driver',
+       contextId: currentRequestId || undefined,
+     });
+     if (error || !data) return;
+     driverChatId.current = data.id;
+     setDriverUnread(0);
+     // Read here, not left to the Messages tab: the badge would otherwise keep
+     // counting the very message the passenger is on their way to read.
+     await supabaseHelpers.markChatConversationRead(data.id, user.id);
+     setChatOpened(true);
+     try {
+       localStorage.setItem('trikeserve_chat_opened_customer', '1');
+     } catch {
+       // Not fatal; the head still repositions for this mount.
+     }
+      // Opens the overlay in place, like the driver's. No navigation means this
+      // screen stays mounted, so the map, the ride card and the floating head
+      // are all still behind the chat, and there is no gap above the thread
+      // header for the head to sit in.
+      setCustomerChatPopup(true);
+    }, [user?.id, rideDriverId, activeRide?.driver, currentRequestId, navigate, rideDriverAvatar]);
+
+   /**
+    * Load the driver's photo whenever the assigned driver changes.
+    *
+    * The ride row carries the driver's name and plate but no avatar, so the only
+    * source is the users table. Resolved by id so it works for rides restored
+    * from storage as well as ones accepted while the page is open.
+    */
+   useEffect(() => {
+     if (!rideDriverId) {
+       setRideDriverAvatar(null);
+       return;
+     }
+     let active = true;
+     supabase
+       .from('users')
+       .select('avatar_url')
+       .eq('id', rideDriverId)
+       .maybeSingle()
+        .then(async ({ data }) => {
+          if (!active) return;
+          if (data?.avatar_url) {
+            setRideDriverAvatar(data.avatar_url);
+            return;
+          }
+          // RLS does not let a customer read another user's row in `users`, so this
+          // lookup comes back empty even when the driver has a photo, and the chat
+          // head falls back to a generic silhouette. The ride request carries its
+          // own copy of the driver's photo, which this session can read.
+          const { data: ride } = await supabase
+            .from('ride_requests')
+            .select('driver_photo')
+            .eq('id', currentRequestId)
+            .maybeSingle();
+          if (active) setRideDriverAvatar(ride?.driver_photo || null);
+        })
+       .catch(() => {
+         // No photo is not a failure; the card keeps its name and plate.
+       });
+     return () => {
+       active = false;
+     };
+   }, [rideDriverId]);
    const [openingChat, setOpeningChat] = useState(false);
    const [selectedRating, setSelectedRating] = useState(0);
    const [ratingSubmitting, setRatingSubmitting] = useState(false);
@@ -336,6 +530,32 @@ export default function CustomerHome() {
    const [driverLocation, setDriverLocation] = useState<{ lat: number; lng: number } | null>(null);
    const [driverRoutePath, setDriverRoutePath] = useState<LatLng[]>([]);
    const [destinationRoutePath, setDestinationRoutePath] = useState<LatLng[]>([]);
+  /**
+   * The customer's own map instance.
+   *
+   * Needed because `center` is a mount-time prop: React only applies it when the
+   * value changes, and this map had no other way to move. The driver map got a ref
+   * for exactly this reason; without the same here the passenger's map sat at a
+   * fixed zoom on wherever they happened to be standing, and the pickup-to-drop-off
+   * road line was frequently drawn off-screen or too small to read.
+   */
+  const customerMapRef = useRef<any>(null);
+
+  /**
+   * Frame the whole trip: where the passenger is, the pickup, the driver, the
+   * drop-off. Two points is the minimum worth fitting to; with one there is no
+   * direction to show and zooming to a single pin is just noise.
+   */
+  const fitTripBounds = useCallback(() => {
+    const map = customerMapRef.current;
+    const maps = (window as any).google?.maps;
+    if (!map || !maps?.LatLngBounds) return;
+    const points = [currentLocation, pickupCoords, dropoffCoords, driverLocation].filter(Boolean) as LatLng[];
+    if (points.length < 2) return;
+    const bounds = new maps.LatLngBounds();
+    points.forEach((p) => bounds.extend(p));
+    map.fitBounds(bounds, 56);
+  }, [currentLocation, pickupCoords, dropoffCoords, driverLocation]);
    const [etaToDestination, setEtaToDestination] = useState<string | null>(null);
    const [ridePassengers, setRidePassengers] = useState<any[]>([]);
    const [passengerLocations, setPassengerLocations] = useState<{ [key: string]: { lat: number; lng: number } }>({});
@@ -711,6 +931,9 @@ export default function CustomerHome() {
             : null;
 
         setRideStatus(rideData.status);
+        if (typeof rideData?.rideDriverId === 'string') {
+          setRideDriverId(rideData.rideDriverId);
+        }
         setPickup(rideData.pickup);
         setPickupAddress(rideData.pickupAddress);
         setPickupCoords(rideData.pickupCoords || null);
@@ -724,6 +947,81 @@ export default function CustomerHome() {
         }
         if (rideData.bookedFare != null) {
           setBookedFare(Number(rideData.bookedFare));
+        }
+
+        /**
+         * Reconcile with the database, because localStorage cannot know what
+         * happened while this screen was unmounted.
+         *
+         * Changing tab unmounts this page, which tears down the realtime
+         * subscription. A driver accepting during that window was never seen:
+         * the stored status stays `searching` and `activeRide` stays null, so
+         * the booking card renders nothing and the booking flow stays hidden
+         * (`showBookingFlow` is false while searching) -- the booking appears to
+         * have vanished. Re-reading the request on mount picks up an acceptance
+         * that landed while away.
+         */
+        /**
+         * Always reconcile when there is a stored request.
+         *
+         * This used to be skipped whenever `activeRide` was already cached, and
+         * that is what broke Chat: the Chat button's handler bails out silently
+         * when `rideDriverId` is null, and `rideDriverId` is only ever set from
+         * the database or a live event -- never from the cached payload. So a
+         * booking restored with a driver already assigned rendered a working
+         * driver card whose Chat button did nothing at all.
+         */
+        if (restoredRequestId) {
+          supabaseHelpers
+            .getRideRequest(restoredRequestId)
+            .then(({ data: fresh }) => {
+              if (!fresh) return;
+
+              // Restore the stored coordinates too. The pickup-to-destination
+              // route line is computed from these, and they are often missing
+              // from a cached booking, so without this the destination line had
+              // nothing to draw and no error to explain it.
+              if (fresh.pickup_lat != null && fresh.pickup_lng != null) {
+                setPickupCoords({ lat: Number(fresh.pickup_lat), lng: Number(fresh.pickup_lng) });
+              }
+              if (fresh.dropoff_lat != null && fresh.dropoff_lng != null) {
+                setDropoffCoords({ lat: Number(fresh.dropoff_lat), lng: Number(fresh.dropoff_lng) });
+              }
+
+              if (fresh.status === 'completed' || fresh.status === 'cancelled') {
+                // The ride ended while away; drop the stale local copy so the
+                // next booking starts clean.
+                setRideStatus(null);
+                setActiveRide(null);
+                localStorage.removeItem('trikeserve_active_ride');
+                return;
+              }
+
+              if (fresh.accepted_driver_id) {
+                const rideState = {
+                  driver: fresh.driver_name || 'Driver',
+                  plateNumber: fresh.driver_plate || 'N/A',
+                  rating: fresh.driver_rating || '4.8',
+                  eta: fresh.eta || '5 mins',
+                };
+                setRideDriverId(fresh.accepted_driver_id);
+                setRideStatus('driver-found');
+                // Only rebuild the card when one is not already on screen.
+                // Overwriting a cached card on every mount discarded live
+                // progress such as the resolved ETA.
+                if (!rideData.activeRide) {
+                  setActiveRide(rideState);
+                }
+                if (fresh.amount != null) {
+                  const amount = Number(fresh.amount);
+                  if (Number.isFinite(amount) && amount > 0) setBookedFare(amount);
+                }
+              }
+            })
+            .catch(() => {
+              // Offline or the request is gone. The cached state still renders,
+              // which is better than clearing a live booking.
+            });
         }
       } catch (error) {
         console.error('Error loading ride data:', error);
@@ -884,6 +1182,11 @@ export default function CustomerHome() {
             'completed': message || 'Your ride has been completed. Thank you for using TrikeServe!'
         };
 
+        // The card's status persists, so it is set on every update rather than only
+        // when the status changes -- a re-poll of the same status must still correct
+        // the card if the page was mounted mid-ride.
+        setDriverLiveStatus(normalizedStatus);
+
         if (normalizedStatus !== lastShownStatus) {
           // Normalize driver-side statuses to the display keys used by the popup UI.
           const displayStatus =
@@ -1016,7 +1319,7 @@ export default function CustomerHome() {
             driverName: rideRequest.driver_name || 'Driver',
             driverPlate: rideRequest.driver_plate || 'N/A',
             driverRating: rideRequest.driver_rating || '4.8',
-            driverPhoto: '👨‍✈️',
+            driverPhoto: '👨‍✈️', // replaced by rideDriverAvatar once it loads // replaced by rideDriverAvatar once it loads
           });
 
           // Use the driver's real average rating from driver_ratings when available.
@@ -1190,7 +1493,7 @@ export default function CustomerHome() {
            driverName: updatedRide.driver_name || 'Driver',
            driverPlate: updatedRide.driver_plate || 'N/A',
            driverRating: updatedRide.driver_rating || '4.8',
-           driverPhoto: '👨‍✈️',
+           driverPhoto: '👨‍✈️', // replaced by rideDriverAvatar once it loads
          });
 
          // Use the driver's real average rating from driver_ratings when available.
@@ -1342,13 +1645,17 @@ export default function CustomerHome() {
         paymentMethod,
         activeRide,
         requestId: currentRequestId,
+        // Persisted so a restored booking still knows who the driver is. Without
+        // this, Chat has no peer id after a reload and its handler bails out
+        // silently.
+        rideDriverId,
         bookedFare,
       };
       localStorage.setItem('trikeserve_active_ride', JSON.stringify(rideData));
     } else {
       localStorage.removeItem('trikeserve_active_ride');
     }
-   }, [rideStatus, pickup, pickupAddress, pickupCoords, dropoff, dropoffAddress, dropoffCoords, selectedVehicle, paymentMethod, activeRide, currentRequestId, bookedFare]);
+   }, [rideStatus, pickup, pickupAddress, pickupCoords, dropoff, dropoffAddress, dropoffCoords, selectedVehicle, paymentMethod, activeRide, currentRequestId, rideDriverId, bookedFare]);
 
    // Compute driver's route to pickup/dropoff location (real-time tracking)
    useEffect(() => {
@@ -1369,7 +1676,7 @@ export default function CustomerHome() {
          if (status === 'OK' && result?.routes?.[0]) {
            const route = result.routes[0];
            if (route.overview_polyline?.points) {
-             setDriverRoutePath(decodeGooglePolyline(route.overview_polyline.points));
+             setDriverRoutePath(routePathFromResult(route));
            }
          }
        }
@@ -1392,7 +1699,7 @@ export default function CustomerHome() {
          if (status === 'OK' && result?.routes?.[0]) {
            const route = result.routes[0];
            if (route.overview_polyline?.points) {
-             setDestinationRoutePath(decodeGooglePolyline(route.overview_polyline.points));
+             setDestinationRoutePath(routePathFromResult(route));
            }
            // Extract ETA from legs
            const leg = route.legs?.[0];
@@ -1403,6 +1710,28 @@ export default function CustomerHome() {
        }
      );
    }, [pickupCoords, dropoffCoords, isMapsLoaded, rideStatus]);
+
+    /*
+     * Re-frame once the road line actually exists, and again if either endpoint
+     * moves.
+     *
+     * Keyed on the route becoming non-empty rather than on `driverLocation`, so
+     * this does not re-fit on every GPS tick and yank the map out from under
+     * someone who has panned somewhere deliberately. The driver's live position is
+     * still folded into the bounds, it just is not the trigger.
+     */
+    const tripRouteDrawn = destinationRoutePath.length > 0;
+    useEffect(() => {
+      if (!tripRouteDrawn) return;
+      fitTripBounds();
+    }, [
+      tripRouteDrawn,
+      pickupCoords?.lat,
+      pickupCoords?.lng,
+      dropoffCoords?.lat,
+      dropoffCoords?.lng,
+      // eslint-disable-next-line react-hooks/exhaustive-deps
+    ]);
 
    // Count unread messages from drivers
    useEffect(() => {
@@ -1584,6 +1913,55 @@ export default function CustomerHome() {
   // The booking UI lives on top of the map and stays out of the way while a
   // ride is active or a request is already being searched for.
   const showBookingFlow = !activeRide && rideStatus !== 'searching';
+
+  /**
+   * Watch the driver's messages so the floating head's badge is honest.
+   *
+   * Only the count is kept -- reading happens in the Messages tab, and holding a
+   * second copy of the messages here would be a staler duplicate of what that
+   * tab already renders. The ripple fires only when the count actually rises, so
+   * a thread with existing unread history does not pulse forever on mount.
+   */
+  useEffect(() => {
+    if (!rideDriverId || !user?.id) return;
+    let cancelled = false;
+
+    const check = async () => {
+      // Find the thread rather than creating one: a passenger who has not messaged
+      // yet should get no badge, not an empty conversation invented for them.
+      const { data } = await supabase
+        .from('chat_conversations')
+        .select('id, participant_a_id, participant_b_id, updated_at')
+        .or(`participant_a_id.eq.${user.id},participant_b_id.eq.${user.id}`);
+
+      const mine = ((data || []) as any[]).filter((c) => {
+        const other = c.participant_a_id === user.id ? c.participant_b_id : c.participant_a_id;
+        return other === rideDriverId;
+      });
+      if (cancelled || mine.length === 0) return;
+      mine.sort((a, b) => (b.updated_at || '').localeCompare(a.updated_at || ''));
+      const cid = mine[0].id;
+      driverChatId.current = cid;
+
+      const { data: msgs } = await supabaseHelpers.getChatMessages(cid);
+      if (cancelled) return;
+      const fromDriver = ((msgs || []) as any[]).filter(
+        (m: any) => m.sender_id !== user.id && m.read === false
+      );
+      const count = fromDriver.length;
+
+      if (count > lastDriverCount.current) setChatPulseKey((k) => k + 1);
+      lastDriverCount.current = count;
+      setDriverUnread(count);
+    };
+
+    check();
+    const interval = setInterval(check, 5000);
+    return () => {
+      cancelled = true;
+      clearInterval(interval);
+    };
+  }, [rideDriverId, user?.id]);
 
   const handleBookRide = async () => {
     if (!selectedVehicle) return;
@@ -2069,6 +2447,13 @@ export default function CustomerHome() {
              mapContainerStyle={{ width: "100%", height: "100%" }}
              center={currentLocation}
              zoom={15}
+             onLoad={(map: any) => {
+               customerMapRef.current = map;
+               // The route may already be drawn by the time the map finishes
+               // loading, in which case the fit effect above ran with no instance
+               // to call and did nothing.
+               fitTripBounds();
+             }}
              options={{
                zoomControl: false,
                fullscreenControl: true,
@@ -2083,6 +2468,14 @@ export default function CustomerHome() {
                title="Your location (start)"
                 icon={createCustomerMarkerIcon()}
              />
+
+              {/* Pickup and drop-off both, once a ride is live. The pickup pin
+                  used to be omitted here and drawn only inside the (now removed)
+                  embedded card map, so the destination route had no visible start
+                  point. */}
+              {rideStatus !== 'searching' && pickupCoords && (
+                <MarkerF position={pickupCoords} title="Pickup location" icon={createCustomerMarkerIcon()} />
+              )}
 
               {/* Drop-off marker only */}
               {dropoffCoords && (
@@ -2112,6 +2505,15 @@ export default function CustomerHome() {
                 <Polyline path={destinationRoutePath} options={buildNavigationRouteOptions('#BC4B1F', 5)} />
               )}
 
+              {/* No straight-line fallback here on purpose.
+                  The passenger should always see the real road the driver will
+                  take. A direct pickup-to-drop-off chord cuts across blocks and
+                  rivers, which reads as "this is the route" and is wrong. If
+                  DirectionsService has not answered yet the route is simply
+                  absent for a moment, which is far better than a misleading
+                  one. The driver-side fallback stays because a driver needs some
+                  indication of heading even if routing fails. */}
+
              {/* Info Window for selected marker */}
              {selectedMarker && (
                <InfoWindow
@@ -2135,6 +2537,34 @@ export default function CustomerHome() {
         <LocationBanner
           problem={locationProblem}
           className="absolute top-24 left-3 right-3 z-[1000] sm:top-28 sm:left-4 sm:right-4"
+        />
+      )}
+
+      {/* Floating chat head, the same component the driver's ride screen uses.
+          Opens the driver thread in the Messages tab, so both sides land in one
+          conversation rather than two parallel ones. */}
+      {/* Chat as an overlay rather than a page, so the map and the floating head
+          stay behind it and no gap has to be reserved above the thread header. */}
+      <RideChatOverlay
+        open={customerChatPopup}
+        conversationId={driverChatId.current}
+        peerAvatar={rideDriverAvatar}
+        peerName={activeRide?.driver || 'Driver'}
+        senderRole="customer"
+        onClose={() => setCustomerChatPopup(false)}
+      />
+
+      {/* Hidden while the panel is open, so the two heads cannot stack in the
+          same corner. */}
+      {rideStatus === 'driver-found' && activeRide && rideDriverId && !customerChatPopup && (
+        <FloatingChatHead
+          storageKey="trikeserve_chat_head_pos_customer"
+          peerAvatar={rideDriverAvatar}
+          peerLabel={activeRide.driver || 'Driver'}
+          unread={driverUnread}
+          pulseKey={chatPulseKey}
+          opened={chatOpened}
+          onOpen={openDriverChatThread}
         />
       )}
 
@@ -2383,71 +2813,82 @@ export default function CustomerHome() {
 
         {/* Active Ride Card - Driver Info with embedded map */}
         {rideStatus === 'driver-found' && activeRide && (
-          <div className="absolute bottom-16 left-0 right-0 z-[1100] p-3">
+          <>
+            {/*
+              "Live Tracking" badge.
+
+              Sits outside the ride card rather than inside it. As a child it was
+              absolutely positioned against the card's own box, so it scrolled and
+              shifted with the card and read as part of the driver's details --
+              when it describes the map behind them. As a sibling it is anchored to
+              the viewport, on the left, above the map's zoom controls.
+            */}
+            <div className="pointer-events-none absolute left-3 top-24 z-[1101] sm:top-28 bg-white/95 backdrop-blur-sm rounded-full px-3 py-1.5 shadow-lg flex items-center gap-2">
+              <div className="w-2 h-2 bg-[var(--success)] rounded-full animate-pulse" />
+              <span className="text-xs font-bold text-[var(--ink)]">Live Tracking</span>
+            </div>
+
+            <div className="absolute bottom-16 left-0 right-0 z-[1100] p-3">
             <Card className="bg-surface shadow-2xl border-2 border-[var(--primary)] rounded-2xl overflow-hidden">
-              {/* Live Tracking Map - embedded inside the card */}
-              {isMapsLoaded && (driverLocation || pickupCoords) && (
-                <div className="relative">
-                  <GoogleMap
-                    mapContainerStyle={{ width: '100%', height: '220px' }}
-                    center={driverLocation || pickupCoords || currentLocation}
-                    zoom={15}
-                    options={{
-                      zoomControl: false,
-                      fullscreenControl: false,
-                      streetViewControl: false,
-                      mapTypeControl: false,
-                      gestureHandling: 'none',
-                    }}
-                  >
-                    <MarkerF
-                      position={driverLocation}
-                      title="Driver Location"
-                      icon={createDriverMarkerIcon()}
-                    />
-                    {pickupCoords && (
-                      <MarkerF
-                        position={pickupCoords}
-                        title="Pickup"
-                        icon={createCustomerMarkerIcon()}
-                      />
-                    )}
-                    {dropoffCoords && (
-                      <MarkerF
-                        position={dropoffCoords}
-                        title="Drop-off"
-                        icon={createDropoffMarkerIcon()}
-                      />
-                    )}
-                    {driverRoutePath.length > 0 && (
-                      <Polyline path={driverRoutePath} options={buildNavigationRouteOptions('#1D4ED8', 4)} />
-                    )}
-                    {destinationRoutePath.length > 0 && (
-                      <Polyline path={destinationRoutePath} options={buildNavigationRouteOptions('#BC4B1F', 5)} />
-                    )}
-                  </GoogleMap>
-                  {/* Map overlay badge */}
-                  <div className="absolute top-3 left-3 bg-white/95 backdrop-blur-sm rounded-full px-3 py-1.5 shadow-lg flex items-center gap-2">
-                    <div className="w-2 h-2 bg-[var(--success)] rounded-full animate-pulse" />
-                    <span className="text-xs font-bold text-[var(--ink)]">Live Tracking</span>
-                  </div>
-                  {/* Route status badge */}
-                  <div className="absolute bottom-3 left-3 right-3 flex justify-between items-center">
-                    <div className="bg-white/95 backdrop-blur-sm rounded-full px-3 py-1.5 shadow-lg">
-                      <span className="text-xs font-semibold text-[var(--info)]">🛣️ Following route to pickup</span>
-                    </div>
-                  </div>
-                </div>
-              )}
+              {/*
+                No second map here.
+
+                There was a 220px map embedded in this card alongside the
+                full-screen background map, so an accepted ride showed the same
+                route twice and Google Maps charged two loads for one trip. The
+                background map already draws the driver marker, both polylines
+                and the pickup/drop-off markers, so this card is now just the
+                driver and trip details laid over it.
+              */}
 
               <div className="p-4">
                 {/* Driver Info Row */}
                 <div className="flex items-center gap-3 mb-3">
-                  <div className="w-14 h-14 bg-[var(--primary-soft)] rounded-full flex items-center justify-center flex-shrink-0">
-                    <span className="text-2xl">👨‍✈️</span>
+                  <div className="w-14 h-14 overflow-hidden rounded-full bg-[var(--primary-soft)] flex items-center justify-center flex-shrink-0">
+                    {rideDriverAvatar ? (
+                      <img
+                        src={rideDriverAvatar}
+                        alt={`${activeRide.driver}'s profile`}
+                        className="w-full h-full object-cover"
+                      />
+                    ) : (
+                      <span className="text-2xl" aria-hidden="true">👨‍✈️</span>
+                    )}
                   </div>
                   <div className="flex-1 min-w-0">
-                    <h3 className="font-bold text-base text-[var(--ink)] truncate">{activeRide.driver}</h3>
+                    {/* Name and live status share one row.
+
+                        It was stacked under the name, which pushed the plate and
+                        "Driver Found" badge down and made the card taller than the
+                        map region it sits over. Beside the name it costs one line. */}
+                    <div className="flex items-center gap-2 min-w-0">
+                      <h3 className="font-bold text-base text-[var(--ink)] truncate">{activeRide.driver}</h3>
+                      {/* `aria-live="polite"` so a screen reader announces the change
+                          when it happens, without interrupting whatever is being read.
+                          The rings are decorative and hidden from the reader. */}
+                      {DRIVER_STATUS_LABELS[driverLiveStatus] && (
+                        /*
+                          The status is a rounded pill with a wave sweeping across it,
+                          rather than an icon beside the words. The wave is clipped by
+                          `overflow-hidden` and the pill's radius, so the crest is cut
+                          to the rounded rectangle instead of showing square corners
+                          over it.
+
+                          The text sits above the wave (`relative` on its own span) so
+                          the crest passes behind the label and never washes out the
+                          words at the moment it crosses them. Both crests are
+                          `aria-hidden`; the label carries the live region.
+                        */
+                        <p
+                          aria-live="polite"
+                          className="relative flex min-w-0 items-center overflow-hidden rounded-full border border-[var(--success)]/40 bg-[var(--success)]/12 px-2 py-0.5 text-xs font-semibold text-[var(--success)]"
+                        >
+                          <span aria-hidden="true" className="driver-status-wave pointer-events-none absolute inset-y-0 left-0 w-1/2" />
+                          <span aria-hidden="true" className="driver-status-wave driver-status-wave--second pointer-events-none absolute inset-y-0 left-0 w-1/2" />
+                          <span className="relative truncate">{DRIVER_STATUS_LABELS[driverLiveStatus]}</span>
+                        </p>
+                      )}
+                    </div>
                     <div className="flex items-center gap-2">
                       <Badge className="bg-[var(--success)] text-white text-[10px]">Driver Found</Badge>
                       <span className="text-xs text-[var(--muted-foreground)]">{activeRide.plateNumber}</span>
@@ -2520,6 +2961,7 @@ export default function CustomerHome() {
               </div>
             </Card>
           </div>
+          </>
         )}
 
         {/* Validation Error Popup */}
@@ -3226,14 +3668,28 @@ export default function CustomerHome() {
         <div className="fixed inset-0 bg-black/50 z-[3000] flex items-end">
           <div className="bg-surface w-full rounded-t-3xl p-6 animate-in slide-in-from-bottom duration-300">
             <div className="max-w-sm mx-auto">
-              {/* Status Icon */}
-              <div className="w-16 h-16 bg-[var(--primary)] rounded-full flex items-center justify-center mx-auto mb-4 text-3xl">
-                {driverStatusPopup.status === 'on-the-way' && '🚗'}
-                {driverStatusPopup.status === 'arrived' && '📍'}
-                {driverStatusPopup.status === 'pickup' && '🚀'}
-                {driverStatusPopup.status === 'drop-off' && '🏁'}
-                {driverStatusPopup.status === 'payment' && '💰'}
-                {driverStatusPopup.status === 'completed' && '🎉'}
+              {/* Status Icon — while a driver is assigned this is their actual
+                  profile photo, not a car. "On the way" reads as *their*
+                  progress, so the person is the more useful thing to show; the
+                  later milestones (arrived, picked up, payment) stay symbolic
+                  because they are about the trip rather than the driver. */}
+              <div className="w-16 h-16 overflow-hidden bg-[var(--primary)] rounded-full flex items-center justify-center mx-auto mb-4 text-3xl">
+                {rideDriverAvatar && driverStatusPopup.status !== 'payment' && driverStatusPopup.status !== 'completed' ? (
+                  <img
+                    src={rideDriverAvatar}
+                    alt={`${activeRide?.driver || 'Driver'}'s profile`}
+                    className="w-full h-full object-cover"
+                  />
+                ) : (
+                  <>
+                    {driverStatusPopup.status === 'on-the-way' && '🚗'}
+                    {driverStatusPopup.status === 'arrived' && '📍'}
+                    {driverStatusPopup.status === 'pickup' && '🚀'}
+                    {driverStatusPopup.status === 'drop-off' && '🏁'}
+                    {driverStatusPopup.status === 'payment' && '💰'}
+                    {driverStatusPopup.status === 'completed' && '🎉'}
+                  </>
+                )}
               </div>
 
               {/* Status Message */}
