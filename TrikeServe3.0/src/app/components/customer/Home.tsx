@@ -2571,6 +2571,7 @@ export default function CustomerHome() {
       <RideChatOverlay
         open={customerChatPopup}
         conversationId={driverChatId.current}
+        peerId={rideDriverId}
         peerAvatar={rideDriverAvatar}
         peerName={activeRide?.driver || 'Driver'}
         senderRole="customer"

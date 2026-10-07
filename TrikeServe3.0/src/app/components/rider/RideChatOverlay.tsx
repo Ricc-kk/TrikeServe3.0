@@ -43,6 +43,7 @@ export default function RideChatOverlay({
   conversationId,
   peerAvatar,
   peerName,
+  peerId,
   peerIsGroup,
   senderRole,
   onClose,
@@ -51,6 +52,15 @@ export default function RideChatOverlay({
   conversationId: string | null;
   peerAvatar: string | null;
   peerName: string;
+  /**
+   * The other participant's user id.
+   *
+   * Passed in rather than read back out of the thread's own messages. An empty
+   * thread is exactly the moment this is first needed -- the ride chat is created
+   * before anyone has written in it -- and inferring the peer from a message that
+   * does not exist yet produced a blank `receiver_id`.
+   */
+  peerId: string | null;
   /** A shared ride has several passengers and no single face to show. */
   peerIsGroup?: boolean;
   /** 'rider' for the driver, 'customer' for the passenger. */
@@ -136,18 +146,39 @@ export default function RideChatOverlay({
     const mine = meId ?? (await supabase.auth.getUser()).data.user?.id;
     if (!mine) return;
 
+    /*
+     * Never send without a receiver.
+     *
+     * `receiver_id` is a UUID column, so a blank one is rejected by Postgres as
+     * "invalid input syntax for type uuid" -- an error that says nothing about
+     * the actual fault and never reaches the screen. Sending nothing at all is
+     * worse than saying so, so this stops here with an explanation.
+     */
+    if (!peerId) {
+      alert(
+        "Message failed to send: the other person could not be identified. Close the chat and open it again."
+      );
+      return;
+    }
+
     setSending(true);
     try {
       const { error } = await supabaseHelpers.sendChatMessage({
         conversationId,
         senderId: mine,
-        receiverId: peerIdOf(messages, mine) ?? '',
+        receiverId: peerId,
         senderName: senderRole === 'rider' ? 'Driver' : 'Customer',
         senderRole,
         receiverRole: senderRole === 'rider' ? 'customer' : 'rider',
         message: body,
       });
-      if (error) return;
+      // The composer keeps the text on failure, so a retry costs nothing but a
+      // tap. Failing silently looked identical to a dead send button.
+      if (error) {
+        console.error('[RideChatOverlay] Send message failed:', error);
+        alert('Message failed to send. Please try again.');
+        return;
+      }
       setText('');
       load();
     } finally {
@@ -424,11 +455,4 @@ export default function RideChatOverlay({
       </div>
     </div>
   );
-}
-
-/** The other participant, derived from the first message's sender/receiver. */
-function peerIdOf(messages: any[], meId: string): string | null {
-  const m = messages[0];
-  if (!m) return null;
-  return m.sender_id === meId ? m.receiver_id : m.sender_id;
 }
