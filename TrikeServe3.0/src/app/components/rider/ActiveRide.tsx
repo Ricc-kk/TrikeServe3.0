@@ -87,8 +87,16 @@ export default function ActiveRide() {
    * check would query a row that is gone.
    */
   useEffect(() => {
-    const live = !!rideData && rideData.status !== 'completed';
-    syncRideResume(live ? rideData?.id ?? null : null);
+    if (!live) {
+      // Only release the marker when the ride has actually ended. `status` starts as
+      // undefined before `rideData` hydrates, and treating that transient as "over"
+      // would clear the marker on the very first tick.
+      if (rideData && rideData.status === 'completed') {
+        syncRideResume(null);
+      }
+      return;
+    }
+    syncRideResume(rideData.id);
   }, [rideData?.id, rideData?.status, syncRideResume]);
   const [rideData, setRideData] = useState<ActiveRideData | null>(null);
   const [isMinimized, setIsMinimized] = useState(false);

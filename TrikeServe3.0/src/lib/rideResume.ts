@@ -22,7 +22,10 @@ import { ACTIVE_RIDE_STATUSES } from "./rideLock";
  * was cancelled while the user was signed out does not get resurrected.
  */
 
-const STORAGE_KEY = "trikeserve_active_ride";
+// Deliberate, distinct key. `trikeserve_active_ride` already existed in the app and
+// is cleared on every ride-end and cancel transition; reusing it meant this marker
+// was wiped by those flows and the driver/customer disappeared with it.
+const STORAGE_KEY = "trikeserve_ride_resume";
 
 type RememberedRide = {
   role: "customer" | "rider";
@@ -86,15 +89,20 @@ export function useRideResume() {
 
   // Resume once per sign-in, not once per render.
   useEffect(() => {
+    ((window as any).__rideResumeDebug ??= []).push({ stage: "effect", loading, hasUser: !!user?.id });
     if (loading) return;
 
-    if (!user) {
+    // Do not clear the marker when the user object is missing its id. Without an id
+    // the ride query below matches nothing and the marker would be wiped as "not
+    // active" -- losing exactly the ride it was meant to survive losing.
+    if (!user?.id) {
       // Signed out. Deliberately keep the marker: that is the whole point.
       resumedFor.current = null;
       return;
     }
 
     const remembered = read();
+    ((window as any).__rideResumeDebug ??= []).push({ stage: "read", remembered: remembered ? remembered.rideId : null, userRole: user?.role });
     if (!remembered) return;
 
     // Only resume if the marker belongs to this person. Someone else signing in on a
@@ -112,7 +120,7 @@ export function useRideResume() {
       // navigating: the ride may have been cancelled or completed while signed out,
       // and dropping the user onto a finished ride would be worse than not resuming.
       const column = remembered.role === "rider" ? "driver_id" : "customer_id";
-      const { data } = await supabase
+      const { data, error } = await supabase
         .from("ride_requests")
         .select("id, status")
         .eq("id", remembered.rideId)
@@ -121,10 +129,21 @@ export function useRideResume() {
         .limit(1);
 
       if (!active) return;
-      const stillActive = (data ?? []).length > 0;
+      const stillActive = !error && (data ?? []).length > 0;
+      ((window as any).__rideResumeDebug ??= []).push({
+        rideId: remembered.rideId,
+        column,
+        userId: user.id,
+        rows: (data ?? []).length,
+        error: error?.message ?? null,
+      });
+
       if (stillActive) {
         navigate(RIDE_PATHS[remembered.role], { replace: true });
-      } else {
+      } else if (!error) {
+        // Only clear on a *definitive* empty answer. A query error, or a missing
+        // row because the user object has a different id shape, must not wipe a
+        // ride that may still be live.
         forgetActiveRide();
       }
     })();

@@ -368,13 +368,36 @@ export default function CustomerHome() {
    * `rideStatus` decides whether there is a ride at all: `searching` means a driver
    * has not been assigned, and a marker for that would drop the customer onto a
    * waiting screen after a re-login rather than their ride.
+   *
+   * This hook is declared after `currentRequestId` on purpose. Defining the effect
+   * earlier put `currentRequestId` in its dependency array before it was initialised,
+   * which throws "Cannot access before initialization" during render and blanks the
+   * whole screen.
    */
+  const [isSearchMinimized, setIsSearchMinimized] = useState(false);
+  const [currentRequestId, setCurrentRequestId] = useState<string | null>(null);
+
+  /*
+   * Write or clear the resume marker, but only clear it after a ride has actually
+   * been seen on this screen.
+   *
+   * `rideStatus` is `null` transiently on every mount -- the reconcile from the
+   * database has not run yet. Clearing on that null wiped the marker before the
+   * resume check could read it, which defeated the whole feature. A ride only has
+   * "ended" once it has been observed as live and is now no longer live.
+   */
+  const hadRideRef = useRef(false);
+  const isRideLive = rideStatus !== null && rideStatus !== 'searching';
   useEffect(() => {
-    const live = rideStatus !== null && rideStatus !== 'searching';
-    syncRideResume(live ? currentRequestId : null);
-  }, [rideStatus, currentRequestId, syncRideResume]);
-   const [isSearchMinimized, setIsSearchMinimized] = useState(false);
-   const [currentRequestId, setCurrentRequestId] = useState<string | null>(null);
+    if (isRideLive && currentRequestId) {
+      hadRideRef.current = true;
+      syncRideResume(currentRequestId);
+    } else if (hadRideRef.current) {
+      // A ride existed and is now gone.
+      hadRideRef.current = false;
+      syncRideResume(null);
+    }
+  }, [isRideLive, currentRequestId, syncRideResume]);
    const [currentSharedRideId, setCurrentSharedRideId] = useState<string | null>(null);
    const [showPassengerCount, setShowPassengerCount] = useState(false);
    const [passengerCount, setPassengerCount] = useState(1);
