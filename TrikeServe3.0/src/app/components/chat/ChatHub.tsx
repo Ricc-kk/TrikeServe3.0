@@ -83,6 +83,16 @@ export default function ChatHub({
   const [isCreatingThread, setIsCreatingThread] = useState(false);
 
   const messageListRef = useRef<HTMLDivElement>(null);
+
+  /**
+   * Message whose timestamp is currently revealed.
+   *
+   * Only one at a time: each message has a tap target that toggles it, and
+   * opening a second one closes the first so the thread does not fill with
+   * clutter. Held by id because the 2.5s poll hands back new message objects,
+   * so keying on the object itself would collapse the state on every refresh.
+   */
+  const [revealedMessageId, setRevealedMessageId] = useState<string | null>(null);
   // Whether the reader is parked on the newest message. The 2.5s refresh hands
   // back a brand new array every time, so scrolling on every `messages` change
   // pinned the view to the bottom and made older messages impossible to read.
@@ -421,18 +431,111 @@ function getConversationPeer(conversation: ChatConversation) {
               <p className="text-[var(--muted-foreground)] text-xs mt-1">Start the conversation!</p>
             </div>
           ) : (
-            messages.map((msg) => {
+            messages.map((msg, index) => {
               const isMine = msg.sender_id === user.id;
               const messageDate = new Date(msg.created_at);
-              const dateTimeString = messageDate.toLocaleDateString([], { month: 'short', day: 'numeric', year: 'numeric' }) + ', ' +
-                                     messageDate.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+              const isRevealed = revealedMessageId === msg.id;
+
+              /**
+               * Day label for the chat, shown above a run of messages.
+               *
+               * No year, per the brief: a conversation thread is read over days,
+               * not years, and the year on every message is noise. Today reads as
+               * "Today", yesterday as "Yesterday", anything older as its
+               * weekday, which is what people actually refer to.
+               */
+              const dayLabel = (() => {
+                const now = new Date();
+                const startOf = (d: Date) => new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
+                const days = Math.round((startOf(now) - startOf(messageDate)) / 86400000);
+                if (days === 0) return "Today";
+                if (days === 1) return "Yesterday";
+                return messageDate.toLocaleDateString([], { weekday: "short" });
+              })();
+
+              // A divider goes above the first message of each day, so the day is
+              // stated once rather than repeated on every message.
+              const previous = index > 0 ? messages[index - 1] : null;
+              const previousDay = previous
+                ? new Date(previous.created_at).toDateString()
+                : null;
+              const startsNewDay = previousDay !== messageDate.toDateString();
+
+              // Time only, no date and no year: the day is already carried by the
+              // divider above, so repeating it on every message is what made the
+              // thread look cluttered.
+              const timeString = messageDate.toLocaleTimeString([], {
+                hour: "numeric",
+                minute: "2-digit",
+              });
+
               return (
-                <div key={msg.id} className={`flex ${isMine ? 'justify-end' : 'justify-start'}`}>
-                  <div className={`max-w-[75%] rounded-2xl px-4 py-2 ${isMine ? 'bg-[var(--primary)] text-white' : 'bg-surface border border-[var(--border)]'}`}>
-                    <p className="text-sm break-words">{msg.message}</p>
-                    <p className={`text-[10px] mt-1 ${isMine ? 'text-white/70' : 'text-[var(--muted-foreground)]'}`}>
-                      {dateTimeString}
-                    </p>
+                <div key={msg.id}>
+                  {startsNewDay && (
+                    <div className="sticky top-1 z-[1] flex justify-center py-2">
+                      <span className="rounded-full bg-[var(--surface)] px-3 py-1 text-[11px] font-bold text-[var(--muted-foreground)] shadow-sm border border-[var(--border)]">
+                        {dayLabel}
+                      </span>
+                    </div>
+                  )}
+
+                  <div
+                    className={`flex items-start gap-2 ${isMine ? 'justify-end' : 'justify-start'}`}
+                  >
+                    {/* Only the person you are talking to is identified. Your own
+                        photo beside your own messages says nothing -- you know
+                        which side of the screen is yours -- and it crowds the
+                        thread. `items-start` puts the avatar level with the top
+                        of the bubble rather than its baseline. */}
+                    {!isMine && (
+                      <div
+                        className={`mt-1 size-8 flex-shrink-0 overflow-hidden rounded-full border ${peerTheme.avatarWrap}`}
+                      >
+                        <PeerAvatar value={peer.avatar} />
+                      </div>
+                    )}
+
+                    <div
+                      className={`flex max-w-[75%] flex-col ${isMine ? 'items-end' : 'items-start'}`}
+                    >
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setRevealedMessageId((current) =>
+                            current === msg.id ? null : msg.id
+                          )
+                        }
+                        aria-expanded={isRevealed}
+                        aria-label={
+                          isRevealed
+                            ? `Hide when ${timeString} was sent`
+                            : `Show when this was sent`
+                        }
+                        className={`max-w-full rounded-2xl px-4 py-2 text-left transition-opacity active:opacity-80 ${
+                          isMine
+                            ? "bg-[var(--primary)] text-white"
+                            : "bg-surface border border-[var(--border)]"
+                        }`}
+                      >
+                        <span className="block text-sm break-words">{msg.message}</span>
+                      </button>
+
+                      {/* Receipt and timestamp live outside the bubble, beneath it,
+                          so the message itself is not padded around metadata it
+                          does not need. The timestamp only appears once the
+                          message is tapped; `read` is set by the reader's own
+                          thread via markChatConversationRead, so it reflects that
+                          they actually opened it. */}
+                      <p
+                        className={`mt-1 px-1 text-[10px] font-semibold ${
+                          isMine ? "text-[var(--muted-foreground)]" : "text-[var(--muted-foreground)]"
+                        }`}
+                      >
+                        {isMine && <span>{msg.read ? "Read" : "Sent"}</span>}
+                        {isMine && isRevealed && <span className="mx-1">·</span>}
+                        {isRevealed && <span>{timeString}</span>}
+                      </p>
+                    </div>
                   </div>
                 </div>
               );
@@ -510,7 +613,11 @@ function getConversationPeer(conversation: ChatConversation) {
                     onClick={() => openConversation(conversation)}
                   >
                     <div className="flex items-start gap-3">
-                      <div className={`relative w-12 h-12 rounded-full border flex items-center justify-center text-2xl flex-shrink-0 shadow-sm ${peerTheme.avatarWrap}`}>
+                      {/* `overflow-hidden` is what makes the photo round: the
+                          wrapper is the circle and the img inside is
+                          `size-full object-cover`. Rounded corners alone leave a
+                          square image poking out of the shape. */}
+                      <div className={`relative w-12 h-12 overflow-hidden rounded-full border flex items-center justify-center text-2xl flex-shrink-0 shadow-sm ${peerTheme.avatarWrap}`}>
                         <PeerAvatar value={peer.avatar} />
                         {isUnread && (
                           <span className={`absolute -top-1 -right-1 w-3 h-3 rounded-full border-2 border-white ${peerTheme.unreadDot} animate-pulse`} />
