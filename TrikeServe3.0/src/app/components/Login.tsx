@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { useNavigate, Link } from "react-router";
 import { ChevronDown, Eye, EyeOff, Users } from "lucide-react";
+import { armWelcomeGreeting } from "../../lib/welcomeGreeting";
 import { Button } from "./ui/button";
 import { Input } from "./ui/input";
 import { useAuth } from "../contexts/AuthContext";
@@ -175,12 +176,15 @@ export default function Login() {
     setIsLoading(false);
     
     if (result.success) {
-      // Redirect immediately, then show welcome popup on destination page
-      // Store welcome data for the popup
+      // Redirect immediately, then show welcome popup on destination page.
+      //
+      // Held in memory rather than sessionStorage: sessionStorage survives a page
+      // reload, so a flag written here could be replayed much later on a screen
+      // the customer had merely navigated to, greeting them for a sign-in that
+      // happened minutes or hours ago. See welcomeGreeting.ts.
       const matched = accounts.find(a => a.email.toLowerCase() === email.toLowerCase());
       const displayName = matched?.name || email.split('@')[0];
-      sessionStorage.setItem('trikeserve_welcome_name', displayName);
-      sessionStorage.setItem('trikeserve_show_welcome', 'true');
+      armWelcomeGreeting(displayName);
       navigate('/redirect');
     } else {
       setError(result.error || "Login failed");

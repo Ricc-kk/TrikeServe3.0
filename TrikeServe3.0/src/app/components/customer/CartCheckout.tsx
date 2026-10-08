@@ -9,7 +9,7 @@ import {
 } from "lucide-react";
 import { Navigate, useLocation, useNavigate } from "react-router";
 import { Card } from "../ui/card";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { ImageWithFallback } from "../figma/ImageWithFallback";
 import { useCart } from "../../contexts/CartContext";
 import { useOrders } from "../../contexts/OrderContext";
@@ -18,7 +18,8 @@ import { usePreviousPage } from "../../hooks/usePreviousPage";
 import { supabase } from "../../../utils/supabase";
 import { supabaseHelpers, logAudit } from "@/lib/supabase";
 import MapSelector from "./MapSelector";
-import { getDefaultAddress } from "@/lib/defaultAddress";
+import { getDefaultAddress, setDefaultAddress } from "@/lib/defaultAddress";
+import { useDeliveryAddress } from "../../contexts/useDeliveryAddress";
 
 /**
  * Checkout for one restaurant.
@@ -64,6 +65,14 @@ export default function CartCheckout() {
   const [showAddressError, setShowAddressError] = useState(false);
   const [placedOrderNumber, setPlacedOrderNumber] = useState<string | null>(null);
   const [placedOrderId, setPlacedOrderId] = useState<string | null>(null);
+  /**
+   * Set when the customer has chosen a destination after placing an order.
+   *
+   * Distinguishes "the cart emptied because we just ordered" from "the restaurant
+   * disappeared underneath us", which the empty-cart redirect below cannot tell
+   * apart on its own. See the guard at the end of this component.
+   */
+  const leavingRef = useRef(false);
   const [selectedAddress, setSelectedAddress] = useState({
     name: "Select Delivery Address",
     full: "Tap to choose your delivery location",
@@ -77,9 +86,34 @@ export default function CartCheckout() {
     supabaseHelpers.getAdminDeliveryFee().then(setDeliveryFee);
   }, []);
 
-  // Prefill the customer's saved default delivery address (set in Profile), so
-  // they don't have to pick a drop-off on the map for every order.
+  // Prefill from the "Deliver to" address chosen on the food page, so the address
+  // shown at checkout is the one the customer just set.
+  //
+  // Previously this read only the saved default, which is a *different* address:
+  // it came from the profile or the last placed order, and it lagged behind. So a
+  // customer who changed their delivery address on the food page still arrived at
+  // checkout being offered the old one — the exact mismatch the "Deliver to" line
+  // on that page exists to prevent.
+  //
+  // `delivery.address` is the live selection behind that line. The saved default is
+  // kept as the fallback for a customer who has never picked one on the food page.
+  const delivery = useDeliveryAddress();
   useEffect(() => {
+    const chosen = delivery.address;
+    if (chosen) {
+      setSelectedAddress({
+        name: chosen.label || "Delivery address",
+        full: chosen.address,
+        lat: Number(chosen.latitude ?? 0) || 0,
+        lng: Number(chosen.longitude ?? 0) || 0,
+      });
+      // Without these the "Place order" button stays disabled even though an
+      // address is showing, because they are what marks it as chosen.
+      setHasSelectedAddress(true);
+      setFromDefaultAddress(true);
+      return;
+    }
+
     const saved = getDefaultAddress(user?.id, user?.email);
     if (saved) {
       setSelectedAddress({
@@ -91,7 +125,7 @@ export default function CartCheckout() {
       setHasSelectedAddress(true);
       setFromDefaultAddress(true);
     }
-  }, [user?.id, user?.email]);
+  }, [user?.id, user?.email, delivery.address]);
 
   const subtotal = restaurant
     ? restaurant.items.reduce((sum, item) => sum + item.price * item.quantity, 0)
@@ -275,6 +309,74 @@ export default function CartCheckout() {
         // Remember the DB id so the confirmation can jump to the order details.
         setPlacedOrderId(savedOrder?.id || null);
 
+        /*
+         * The address they actually ordered to becomes their default.
+         *
+         * They chose it deliberately, by tapping the "Deliver to" line and picking
+         * somewhere — that is the strongest possible signal of which address they
+         * live at. Without this the next checkout silently reopened the one they
+         * last used, so changing address for a single order had to be redone every
+         * time.
+         *
+         * Only written when the address has coordinates: `getDefaultAddress` rejects
+         * a default without lat/lng on the way back out, so storing one would just
+         * be a value nothing could read.
+         */
+        if (selectedAddress.lat && selectedAddress.lng) {
+          setDefaultAddress(
+            {
+              name: selectedAddress.name,
+              full: selectedAddress.full,
+              lat: selectedAddress.lat,
+              lng: selectedAddress.lng,
+            },
+            user?.id,
+            user?.email,
+          );
+        }
+
+        /*
+         * Tell the customer their own order landed.
+         *
+         * Nothing wrote a notification on placement. `notifyDeliveryStatusChange`
+         * only fires from the driver's screen when a status changes, so the first
+         * row a customer ever saw was a status update about an order they had to
+         * already know about. Placing an order produced no notification at all.
+         *
+         * Written directly rather than through that helper because it recovers the
+         * order id by parsing it out of the pickup address text, which is not
+         * something to rely on when the id is already in hand.
+         *
+         * `order_id` is what makes the notification tappable — the notifications
+         * screen builds its destination from it — so it is the field that matters
+         * here, more than the wording.
+         *
+         * Fire and forget: the order is placed either way, and a failed
+         * notification must not turn a successful order into an error.
+         */
+        void supabase
+          .from("delivery_notifications")
+          .insert([
+            {
+              recipient_id: user?.id ?? null,
+              order_id: savedOrder?.id ?? null,
+              order_number: order.orderNumber ?? null,
+              restaurant_name: order.restaurantName || null,
+              title: "🧾 Order placed",
+              message: order.restaurantName
+                ? `Your order at ${order.restaurantName} has been placed.`
+                : "Your order has been placed.",
+              type: "order",
+              read: false,
+              created_at: new Date().toISOString(),
+            },
+          ])
+          .then(({ error: notifError }) => {
+            if (notifError) {
+              console.warn("[Cart] Order-placed notification failed:", notifError.message);
+            }
+          });
+
         logAudit({
           action: "place_order",
           actorRole: "customer",
@@ -349,8 +451,20 @@ export default function CartCheckout() {
   // The restaurant can vanish from under this screen: deleted by a swipe on
   // the cart list, or by another tab's poll of localStorage. There is nothing
   // to check out, so go back to the list rather than render an empty order.
+  //
+  // `leavingRef` is the exception. After placing an order the confirmation buttons
+  // deliberately empty the cart and then navigate away -- Track Order to the order
+  // detail, Continue Shopping to the food screen. Both do `removeRestaurant()`
+  // before navigating, so this guard saw no restaurant, fired, and its `replace`
+  // *overwrote* the navigation that was on its way. That is why tapping Track
+  // Order landed on the cart instead of the order detail: the customer's explicit
+  // destination lost to a redirect nobody asked for.
+  //
+  // The flag is set before the cart is touched, so the guard knows the emptiness is
+  // ours and not a stranger's. It renders nothing rather than falling through,
+  // because the body below dereferences `restaurant` and it is genuinely gone.
   if (!restaurant) {
-    return <Navigate to="/customer/cart" replace />;
+    return leavingRef.current ? null : <Navigate to="/customer/cart" replace />;
   }
 
   return (
@@ -566,14 +680,37 @@ export default function CartCheckout() {
             <input
               type="text"
               placeholder="Floor / unit no."
+              aria-label="Floor or unit number"
               className="flex-1 text-sm text-[var(--ink)] outline-none placeholder:text-[var(--muted-foreground)]"
             />
-            <span className="text-sm font-semibold text-[var(--info)]">
+            {/* Support text, not a control. It was `--info` blue and bold, which
+                read as a link or a button and competed with the field it describes.
+                Muted and lighter, it reads as a hint. The "Add" button beside it is
+                gone: there is nothing for it to add — the value is typed directly in
+                the field, so it only ever looked like the actual action. */}
+            <span className="text-xs font-normal text-[var(--muted-foreground)]/80">
               Helps with delivery
             </span>
-            <button type="button" className="text-sm font-semibold text-[var(--info)]">
-              Add
-            </button>
+          </div>
+
+          {/* Note for the driver. Optional by design: most tricycle drops need
+              nothing said, so requiring it would be friction on every order. */}
+          <div className="mb-4 rounded-xl border border-[var(--border)] bg-surface p-4">
+            <label
+              htmlFor="driver-note"
+              className="mb-2 flex items-baseline gap-2 text-sm font-semibold text-[var(--ink)]"
+            >
+              Note for driver
+              <span className="text-xs font-normal text-[var(--muted-foreground)]">
+                Optional
+              </span>
+            </label>
+            <textarea
+              id="driver-note"
+              rows={2}
+              placeholder="e.g. Blue gate beside the sari-sari store"
+              className="w-full resize-none rounded-lg border border-[var(--border)] bg-[var(--surface)] px-3 py-2 text-sm text-[var(--ink)] outline-none placeholder:text-[var(--muted-foreground)] focus:border-[var(--primary)]"
+            />
           </div>
         </div>
 
@@ -679,6 +816,9 @@ export default function CartCheckout() {
                 type="button"
                 onClick={() => {
                   setShowOrderConfirmation(false);
+                  // Before removing: this empties the cart, and the empty-cart
+                  // redirect must know we are leaving on purpose.
+                  leavingRef.current = true;
                   removeRestaurant(restaurant.id);
                   // Go straight to this order's details. Only fall back to the
                   // order list if the order never reached the database.
@@ -696,6 +836,7 @@ export default function CartCheckout() {
                 type="button"
                 onClick={() => {
                   setShowOrderConfirmation(false);
+                  leavingRef.current = true;
                   removeRestaurant(restaurant.id);
                   navigate("/customer/food");
                 }}

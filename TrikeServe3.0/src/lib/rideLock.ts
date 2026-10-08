@@ -46,19 +46,35 @@ export function isActiveRideStatus(status: string | null | undefined): boolean {
  * tab left open from before the ride started; only the database knows.
  */
 export async function hasActiveRide(customerId: string): Promise<boolean> {
+  /*
+   * Only the customer's *most recent* request is consulted.
+   *
+   * Asking "does any row have an active status?" was wrong, and it blocked food
+   * ordering permanently. A booking that is accepted and then superseded by a new
+   * booking never reaches `completed` or `cancelled` -- the customer simply books
+   * again -- so its row stays `accepted` forever. One test customer had four such
+   * orphans, all from the previous day, while their six most recent rides were
+   * every one cancelled or completed. With the "any row" rule they were told they
+   * were on a ride indefinitely, with no ride on screen and nothing to click to
+   * clear it.
+   *
+   * The newest request is the one that reflects reality: if it is finished, the
+   * ride is over, whatever earlier rows still claim.
+   */
   const { data, error } = await supabase
     .from("ride_requests")
-    .select("status")
+    .select("id, status")
     .eq("customer_id", customerId)
-    .in("status", [...ACTIVE_RIDE_STATUSES])
-    .limit(1);
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
 
   // A failed check must not lock the customer out of food ordering. Failing open is
   // the right direction for this particular rule: the cost of a wrong "no ride" is
   // an order they place anyway, while a wrong "on a ride" blocks a paying action
   // with no explanation and no way to tell why.
   if (error) return false;
-  return (data ?? []).length > 0;
+  return isActiveRideStatus(data?.status);
 }
 
 /**

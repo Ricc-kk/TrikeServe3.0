@@ -11,6 +11,7 @@ import {
 } from "lucide-react";
 
 import BottomNav from "../ui/BottomNav";
+import { usePreviousPage } from "../../hooks/usePreviousPage";
 
 type Faq = {
   id: string;
@@ -77,18 +78,29 @@ export default function HelpSupport({
   showBottomNav = true,
 }: HelpSupportProps) {
   const [openId, setOpenId] = useState<string | null>(null);
+  const goBack = usePreviousPage(backPath);
 
   return (
     <div className={`min-h-screen bg-[var(--background)] ${showBottomNav ? "pb-24" : "pb-8"}`}>
       <header className="sticky top-0 z-[900] border-b border-line bg-[var(--surface)] px-3 py-3 sm:px-5">
         <div className="mx-auto flex max-w-3xl items-center gap-2">
-          <Link
-            to={backPath}
+          {/*
+             A button that pops, not a Link that pushes.
+
+             This was `<Link to={backPath}>`, which *adds* a history entry on the way
+             back. That is why Help could not be reversed: pressing back left Help in
+             the stack, so pressing back again re-entered it instead of continuing to
+             unwind the flow the customer actually took to get here. `backPath` is
+             still the fallback, for a cold deep link with no history to pop.
+           */}
+          <button
+            type="button"
+            onClick={goBack}
             aria-label="Back to account"
             className="grid size-11 flex-shrink-0 place-items-center rounded-xl hover:bg-[var(--muted)]"
           >
             <ArrowLeft className="size-5 text-[var(--ink)]" aria-hidden="true" />
-          </Link>
+          </button>
           <h1 className="min-w-0 flex-1 truncate text-lg font-bold text-[var(--ink)]">
             Help &amp; Support
           </h1>

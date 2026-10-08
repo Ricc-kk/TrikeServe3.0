@@ -3,6 +3,8 @@ import { GoogleMap, MarkerF } from "@react-google-maps/api";
 import { ChevronLeft, Loader2, Pencil } from "lucide-react";
 import { useLocation, useNavigate } from "react-router";
 
+import { usePreviousPage } from "../../hooks/usePreviousPage";
+
 import useMapLoader from "@/lib/mapLoader";
 import { describeAddressSaveError } from "@/lib/addressErrors";
 import type { LatLng } from "@/lib/distance";
@@ -33,6 +35,20 @@ import {
  */
 export default function SaveAddressPage() {
   const navigate = useNavigate();
+  /*
+   * Back undoes arriving here, rather than pushing the pin screen again.
+   *
+   * This used to `navigate("/customer/delivery-address/pin", { state: { draft } })`,
+   * which *pushes* a new history entry. The pin screen is already directly behind
+   * us -- we came from it via "Select" -- so that turned the stack into
+   * pin → save → pin. Pressing back again on the pin screen popped straight back
+   * into save, and the customer bounced between the last two steps of the flow
+   * forever, unable to reach the search step.
+   *
+   * `usePreviousPage` pops the real previous entry, and falls back to the pin screen
+   * only on a cold deep link where there is no history to pop.
+   */
+  const goBack = usePreviousPage("/customer/delivery-address/pin");
   const routeState = useLocation().state as { draft?: AddressDraft } | null;
   const delivery = useDeliveryAddress();
 
@@ -90,7 +106,7 @@ export default function SaveAddressPage() {
         <div className="mx-auto flex max-w-3xl items-center gap-2">
           <button
             type="button"
-            onClick={() => navigate("/customer/delivery-address/pin", { state: { draft: incoming } })}
+            onClick={goBack}
             aria-label="Back to map"
             className="grid size-11 flex-shrink-0 place-items-center rounded-xl hover:bg-[var(--muted)]"
           >

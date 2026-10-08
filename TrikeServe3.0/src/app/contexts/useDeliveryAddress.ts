@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { supabase, supabaseHelpers } from "@/lib/supabase";
 import { hasCoords, type LatLng } from "@/lib/distance";
+import { describeCoordinates, reverseGeocodePosition } from "@/lib/reverseGeocode";
 import { useAuth } from "./AuthContext";
 
 /**
@@ -31,11 +32,12 @@ export type DeliveryAddress = {
   latitude: number | null;
   longitude: number | null;
   /** Where this address came from, so the UI can explain it. */
-  source: "profile" | "saved" | "recent";
+  source: "profile" | "saved" | "recent" | "device";
 };
 
 const SELECTED_KEY = "trikeserve_delivery_address";
 const RECENT_KEY = "trikeserve_recent_addresses";
+const DEVICE_KEY = "trikeserve_device_location";
 const RECENT_LIMIT = 5;
 
 /** Same address text = same place; addresses come back in many spellings. */
@@ -61,12 +63,106 @@ function writeRecent(list: DeliveryAddress[]) {
   }
 }
 
+/**
+ * Where the device currently is, as a delivery address.
+ *
+ * This is the default "Deliver to" value: a customer who has never chosen an
+ * address should see the place they are standing, not an empty prompt. It is
+ * resolved once and cached, because the header, the food list and checkout each
+ * build their own instance of this hook and would otherwise fire three separate
+ * permission prompts for the same fix.
+ *
+ * Cached rather than re-requested because a delivery destination should not move
+ * under the customer mid-session: someone who walks to the corner should still
+ * see the address they ordered from. Selecting a different address overwrites it
+ * for good — that is the "until changed" part.
+ */
+type CachedDeviceLocation = { address: DeliveryAddress; at: number };
+
+let deviceLocationCache: CachedDeviceLocation | null = null;
+let deviceLocationRequest: Promise<DeliveryAddress | null> | null = null;
+
+function readCachedDeviceLocation(): DeliveryAddress | null {
+  if (deviceLocationCache) return deviceLocationCache.address;
+  try {
+    const raw = localStorage.getItem(DEVICE_KEY);
+    if (raw) {
+      const parsed = JSON.parse(raw) as CachedDeviceLocation;
+      if (parsed?.address?.address) {
+        deviceLocationCache = parsed;
+        return parsed.address;
+      }
+    }
+  } catch {
+    // Fall through to asking the device.
+  }
+  return null;
+}
+
+function writeCachedDeviceLocation(address: DeliveryAddress) {
+  const entry: CachedDeviceLocation = { address, at: Date.now() };
+  deviceLocationCache = entry;
+  try {
+    localStorage.setItem(DEVICE_KEY, JSON.stringify(entry));
+  } catch {
+    // The in-memory cache still serves this session.
+  }
+}
+
+function resolveDeviceLocation(): Promise<DeliveryAddress | null> {
+  // One in-flight request shared by every caller, so three mounted screens
+  // produce one permission prompt and one geocode.
+  if (deviceLocationRequest) return deviceLocationRequest;
+  if (typeof navigator === "undefined" || !navigator.geolocation) {
+    return Promise.resolve(null);
+  }
+
+  deviceLocationRequest = new Promise<DeliveryAddress | null>((resolve) => {
+    navigator.geolocation.getCurrentPosition(
+      async (position) => {
+        const { latitude, longitude } = position.coords;
+        // A street name is worth one request: "Deliver to 123 Mabini St" is
+        // something the customer can check, coordinates are not.
+        const place = await reverseGeocodePosition(latitude, longitude);
+        const address: DeliveryAddress = {
+          label: place?.name || "Current location",
+          address: place?.full || describeCoordinates(latitude, longitude),
+          latitude,
+          longitude,
+          source: "device",
+        };
+        writeCachedDeviceLocation(address);
+        resolve(address);
+      },
+      () => resolve(null),
+      // Cached by the browser for five minutes, so revisiting a screen does not
+      // re-open GPS for a value that has not moved.
+      { enableHighAccuracy: true, timeout: 10000, maximumAge: 300000 },
+    );
+  }).finally(() => {
+    deviceLocationRequest = null;
+  });
+
+  return deviceLocationRequest;
+}
+
 export function useDeliveryAddress() {
   const { user } = useAuth();
   const [saved, setSaved] = useState<SavedAddress[]>([]);
   const [recent, setRecent] = useState<DeliveryAddress[]>(() => readRecent());
   const [selected, setSelected] = useState<DeliveryAddress | null>(null);
   const [loading, setLoading] = useState(true);
+  /**
+   * Where the device is, used only when the customer has not chosen an address.
+   *
+   * Separate from `selected` on purpose. This one is ours, not theirs: it must
+   * never displace an address they picked, and picking one has to survive for as
+   * long as they do not change it again.
+   */
+  const [deviceLocation, setDeviceLocation] = useState<DeliveryAddress | null>(
+    () => readCachedDeviceLocation(),
+  );
+  const [locating, setLocating] = useState(false);
 
   const profileDefault = useMemo<DeliveryAddress | null>(() => {
     if (!user?.address) return null;
@@ -115,6 +211,42 @@ export function useDeliveryAddress() {
       cancelled = true;
     };
   }, [initial, loadSaved]);
+
+  /*
+   * Resolve the device position, but only while nothing has been chosen.
+   *
+   * The guard is the whole point of this effect: `initial` is null until a stored
+   * selection, a recent one or a profile address exists, so a customer who has
+   * picked an address never triggers a permission prompt and never has their
+   * choice silently replaced by wherever they happen to be standing.
+   *
+   * The resolved position is deliberately not written through `persistSelection`.
+   * It is the fallback, not the choice — recording it there would make it
+   * indistinguishable from a deliberate address and it would then survive as the
+   * selection after they moved, which is the bug this avoids.
+   */
+  useEffect(() => {
+    if (selected || deviceLocation) return;
+    if (typeof navigator === "undefined" || !navigator.geolocation) return;
+
+    let cancelled = false;
+    setLocating(true);
+    resolveDeviceLocation()
+      .then((address) => {
+        if (cancelled) return;
+        setDeviceLocation(address);
+        setLocating(false);
+      })
+      .catch(() => {
+        // Denied or unavailable. The screens fall back to an honest prompt to set
+        // an address, which is more use than a spinner that has given up.
+        if (!cancelled) setLocating(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [selected, deviceLocation]);
 
   const remember = useCallback((address: DeliveryAddress) => {
     setRecent((current) => {
@@ -288,18 +420,31 @@ export function useDeliveryAddress() {
     persistSelection(null);
   }, [persistSelection]);
 
-  /** Where restaurants should be measured from, when we know where "here" is. */
-  const origin = useMemo<LatLng | null>(() => {
-    if (selected && hasCoords(selected)) {
-      return { lat: Number(selected.latitude), lng: Number(selected.longitude) };
-    }
-    return null;
-  }, [selected]);
+  /**
+ * What "Deliver to" shows.
+ *
+ * The chosen address wins outright. Only when there is none does the device
+ * position stand in, so the customer always sees somewhere real rather than an
+ * empty prompt — and once they choose, the choice holds until they change it.
+ */
+const effective = selected ?? deviceLocation;
+
+const origin = useMemo<LatLng | null>(() => {
+  if (effective && hasCoords(effective)) {
+    return { lat: Number(effective.latitude), lng: Number(effective.longitude) };
+  }
+  return null;
+}, [effective]);
 
   const hasSaved = saved.length > 0;
 
   return {
-    address: selected,
+    /** The chosen address, or the device position when nothing has been chosen. */
+    address: effective,
+    /** True only when `address` is the device position rather than a choice. */
+    isDeviceDefault: !selected && !!deviceLocation,
+    /** True while the device position is still being resolved. */
+    locating,
     origin,
     saved,
     recent,

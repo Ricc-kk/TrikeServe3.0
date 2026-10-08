@@ -1,9 +1,10 @@
 import { useEffect, useMemo, useState } from "react";
-import { ChevronDown, ChevronLeft, Search } from "lucide-react";
+import { ChevronDown, ChevronLeft, Loader2, Search } from "lucide-react";
 import { useNavigate } from "react-router";
 
 import { supabase } from "../../../utils/supabase";
 import { useAuth } from "../../contexts/AuthContext";
+import { useDeliveryAddress } from "../../contexts/useDeliveryAddress";
 import BottomNav from "../ui/BottomNav";
 import RecommendedRestaurants from "./RecommendedRestaurants";
 import { HubFilters, HubSearches, HubTerminals, type HubFilter } from "./CustomerHubFilters";
@@ -38,14 +39,31 @@ export default function CustomerSearchPage() {
   // shared search link; back should undo the tap, not force a fixed parent.
   const goBack = usePreviousPage("/customer");
   const { user } = useAuth();
+  const delivery = useDeliveryAddress();
 
   const [query, setQuery] = useState("");
   const [filter, setFilter] = useState<HubFilter>("all");
   const [terminals, setTerminals] = useState<Terminal[]>([]);
 
-  // Same precedence the home header used: a pickup they have already set beats
-  // a raw coordinate, and saying we do not know yet beats showing a stale city.
-  const locationLabel = user?.address?.trim() || "Locating you…";
+  /*
+   * The delivery address, or where the customer is standing.
+   *
+   * `delivery.address` is the chosen address, falling back to the device position
+   * when the customer has never chosen one. That fallback used to be built here
+   * out of `user.address` plus a one-off geolocation call, and it had two problems:
+   * a customer with a profile address never saw their actual location even when
+   * they had moved, and the label never persisted, so it re-prompted for location
+   * on every visit. Both are now the hook's business, shared with the food header
+   * and checkout so the three screens cannot disagree about where an order goes.
+   *
+   * The profile address is still worth reading directly: it is the one address a
+   * customer can have without ever opening the address picker, and `delivery`
+   * only falls back to it on mount.
+   */
+  const locationLabel =
+    delivery.address?.address?.trim() ||
+    user?.address?.trim() ||
+    (delivery.locating ? "Locating you…" : "Add delivery address");
 
   useEffect(() => {
     // `select('*')` keeps this working before ADD_TERMINAL_FARES.sql adds the
@@ -84,9 +102,10 @@ export default function CustomerSearchPage() {
     <div className="flex min-h-screen flex-col bg-[var(--background)]">
       <header className="sticky top-0 z-[1000] border-b border-line bg-[var(--surface)] pt-safe">
         <div className="mx-auto max-w-3xl px-4 pb-2.5 pt-2 sm:px-5">
-          {/* Back, then "Your location" with the address under it. In a search
+          {/* Back, then "Deliver to" with the address under it. In a search
               box "where am I" is the first thing worth knowing, not something
-              behind an icon. */}
+              behind an icon — and it is the same wording the food header uses,
+              so the fact does not change name between screens. */}
           <div className="mb-2 flex items-start gap-2">
             <button
               type="button"
@@ -104,9 +123,15 @@ export default function CustomerSearchPage() {
               className="min-w-0 flex-1 pt-0.5 text-left"
             >
               <span className="block text-xs font-bold uppercase tracking-wider text-[var(--muted-foreground)]">
-                Your location
+                Deliver to
               </span>
               <span className="flex items-center gap-1">
+                {delivery.locating && (
+                  <Loader2
+                    className="size-3.5 flex-shrink-0 animate-spin text-[var(--muted-foreground)]"
+                    aria-hidden="true"
+                  />
+                )}
                 <span className="truncate text-sm font-semibold text-[var(--ink)]">
                   {locationLabel}
                 </span>

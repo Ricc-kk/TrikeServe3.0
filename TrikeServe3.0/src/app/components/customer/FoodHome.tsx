@@ -11,6 +11,7 @@ import {
   X,
 } from "lucide-react";
 import { Link, useNavigate } from "react-router";
+import { consumeWelcomeGreeting } from "../../../lib/welcomeGreeting";
 
 import { usePreviousPage } from "../../hooks/usePreviousPage";
 
@@ -361,11 +362,10 @@ export default function FoodHome() {
   }, []);
 
   useEffect(() => {
-    const flag = sessionStorage.getItem("trikeserve_show_welcome");
-    const name = sessionStorage.getItem("trikeserve_welcome_name");
-    if (flag !== "true") return;
-    sessionStorage.removeItem("trikeserve_show_welcome");
-    sessionStorage.removeItem("trikeserve_welcome_name");
+    // In-memory, not sessionStorage: only a real sign-in arms this, and a reload
+    // must not replay it. See welcomeGreeting.ts.
+    const name = consumeWelcomeGreeting();
+    if (name === null) return;
     setWelcomeUserName(name || "there");
     const show = setTimeout(() => setShowWelcomeBack(true), 500);
     const hide = setTimeout(() => setShowWelcomeBack(false), 3000);
@@ -470,6 +470,8 @@ export default function FoodHome() {
   // something inside the address list — out here it is a prefix restating what
   // the next screen already says, and it eats the width the address itself
   // needs. On this bar the address is the headline.
+  // Falls back to the device position through the hook, so the food header and the
+  // search header cannot name two different destinations for the same order.
   const addressLabel = delivery.address?.address ?? null;
 
   /**
@@ -615,7 +617,7 @@ export default function FoodHome() {
                   className="min-w-0 flex-1 text-left"
                 >
                   <span className="block text-[10px] font-bold uppercase tracking-wider text-[var(--muted-foreground)]">
-                    Your location
+                    Deliver to
                   </span>
                   <span className="mt-0.5 flex min-w-0 items-center gap-1">
                     <span className="min-w-0 flex-1 truncate text-sm font-semibold text-[var(--ink)]">

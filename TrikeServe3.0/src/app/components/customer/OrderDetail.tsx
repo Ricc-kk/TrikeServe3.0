@@ -4,11 +4,14 @@ import { Card } from "../ui/card";
 import { Button } from "../ui/button";
 import { Badge } from "../ui/badge";
 import { useAuth } from "../../contexts/AuthContext";
+import { usePreviousPage } from "../../hooks/usePreviousPage";
 import { ImageWithFallback } from "../figma/ImageWithFallback";
 import StoreLogo from "../figma/StoreLogo";
 import { supabase } from "../../../lib/supabase";
 import ReasonPromptModal from "../ui/reason-prompt-modal";
 import { supabaseHelpers } from "@/lib/supabase";
+import { getOrderProgress } from "@/lib/orderProgress";
+import { OrderProgressStepper, OrderProgressTimeline } from "../ui/OrderProgress";
 import { useState, useEffect, useRef } from "react";
 import { GoogleMap, MarkerF, Polyline } from "@react-google-maps/api";
 import useMapLoader from "@/lib/mapLoader";
@@ -37,6 +40,14 @@ interface OrderData {
   createdAt: string;
   driverName?: string;
   driverId?: string;
+  /**
+   * Live rider progress for this order, from the ride request that carries it.
+   * `orders.status` only says "a rider is involved"; this says what they are
+   * doing, which is what the progress track needs for its later steps.
+   */
+  driverStatus?: string | null;
+  /** Whatever the rider app last wrote in `driver_status_message`. */
+  driverMessage?: string | null;
   /** Why the order was cancelled, and which side cancelled it. */
   cancelReason?: string | null;
   cancelledBy?: string | null;
@@ -70,21 +81,20 @@ function buildOrderData(dbOrder: any): OrderData {
     createdAt: dbOrder.created_at,
     driverName: dbOrder.driver_name || undefined,
     driverId: undefined,
+    driverStatus: dbOrder.driver_status || null,
+    driverMessage: dbOrder.driver_status_message || null,
     cancelReason: dbOrder.cancel_reason || null,
     cancelledBy: dbOrder.cancelled_by || null,
   };
 }
 
-// Status workflow matching the business pattern
-const statusWorkflow: Record<string, { steps: string[]; current: number }> = {
-  'pending':    { steps: ['Order Received', 'Preparing', 'Ready', 'Out for Delivery', 'Delivered'], current: 0 },
-  'preparing':  { steps: ['Order Received', 'Preparing', 'Ready', 'Out for Delivery', 'Delivered'], current: 1 },
-  'ready':      { steps: ['Order Received', 'Preparing', 'Ready', 'Out for Delivery', 'Delivered'], current: 2 },
-  'confirmed':  { steps: ['Order Received', 'Preparing', 'Ready', 'Out for Delivery', 'Delivered'], current: 3 },
-  'on-the-way': { steps: ['Order Received', 'Preparing', 'Ready', 'Out for Delivery', 'Delivered'], current: 3 },
-  'delivered':  { steps: ['Order Received', 'Preparing', 'Ready', 'Out for Delivery', 'Delivered'], current: 4 },
-  'cancelled':  { steps: ['Cancelled'], current: 0 },
-};
+/*
+ * The step list itself lives in `@/lib/orderProgress`, shared with the business
+ * screen. It used to be a private five-step table here, which could not show the
+ * rider's leg at all: `confirmed` and `on-the-way` both landed on "Out for
+ * Delivery", so the customer watching a rider sit at the restaurant, collect the
+ * food and drive over saw a tracker that did not move.
+ */
 
 const statusColors: Record<string, string> = {
   'pending': 'bg-[var(--amber)] text-white',
@@ -96,6 +106,13 @@ const statusColors: Record<string, string> = {
   'cancelled': 'bg-[var(--error)] text-white',
 };
 
+/*
+ * The badge headline, per order status.
+ *
+ * Once a rider is involved this is overridden by the progress track, which knows
+ * the finer-grained rider phase — "On the Way" meant anything from the rider
+ * leaving the shop to arriving at the door.
+ */
 const statusLabels: Record<string, string> = {
   'pending': 'New Order',
   'preparing': 'Preparing Your Order',
@@ -108,6 +125,20 @@ const statusLabels: Record<string, string> = {
 
 export default function OrderDetail() {
   const navigate = useNavigate();
+  /*
+   * Back means "pop", not "go to Activity".
+   *
+   * Both back affordances here — the header chevron and the empty-state button —
+   * pushed `/customer/activity` as a new history entry. That breaks reversing a
+   * flow: the customer arrived from somewhere specific, and pressing back sent them
+   * to a fixed screen instead, leaving the real previous page stranded further back
+   * in the stack. Pressing back again from Activity repeated the push rather than
+   * unwinding anything.
+   *
+   * `usePreviousPage` pops the entry that is genuinely behind, and falls back to
+   * Activity only on a cold deep link where there is no history to pop.
+   */
+  const goBack = usePreviousPage("/customer/activity");
   const { orderId } = useParams();
   const { user } = useAuth();
   const [order, setOrder] = useState<OrderData | null>(null);
@@ -126,9 +157,6 @@ export default function OrderDetail() {
   const [etaToCustomer, setEtaToCustomer] = useState<string | null>(null);
   // Lets the refresh button call the loader defined in the mount effect.
   const fetchOrderRef = useRef<(() => Promise<void>) | null>(null);
-
-  // Status timeline with timestamps
-  const [statusHistory, setStatusHistory] = useState<Array<{ status: string; label: string; time: string; done: boolean }>>([]);
 
   // ─── Load order once ───────────────────────────────────────────────
   useEffect(() => {
@@ -151,7 +179,7 @@ export default function OrderDetail() {
         try {
           const { data: rideReq } = await supabase
             .from('ride_requests')
-            .select('accepted_driver_id, driver_name, driver_lat, driver_lng')
+            .select('accepted_driver_id, driver_name, driver_lat, driver_lng, driver_status, driver_status_message')
             .eq('order_id', orderId)
             .not('accepted_driver_id', 'is', null)
             .order('updated_at', { ascending: false })
@@ -161,6 +189,10 @@ export default function OrderDetail() {
           if (rideReq) {
             if (rideReq.accepted_driver_id) data.driverId = rideReq.accepted_driver_id;
             if (rideReq.driver_name) data.driverName = rideReq.driver_name;
+            // The rider's own progress is only on the ride request, and it is what
+            // moves the track past "Rider Assigned".
+            if (rideReq.driver_status) data.driverStatus = rideReq.driver_status;
+            if (rideReq.driver_status_message) data.driverMessage = rideReq.driver_status_message;
             // The live driver GPS lives on the ride request (the orders table may
             // not have driver_lat/lng columns).
             if (rideReq.driver_lat && rideReq.driver_lng) {
@@ -216,35 +248,50 @@ export default function OrderDetail() {
 
         if (!data) return;
 
-        // Update driver GPS. The authoritative live position is on the ride
-        // request that carries this order — the orders table may not have
-        // driver_lat/lng columns — so fall back to it.
-        if (data.driver_lat && data.driver_lng) {
-          setDriverLocation({ lat: data.driver_lat, lng: data.driver_lng });
-        } else {
-          const { data: rideReq } = await supabase
-            .from('ride_requests')
-            .select('driver_lat, driver_lng')
-            .eq('order_id', orderId)
-            .not('driver_lat', 'is', null)
-            .order('updated_at', { ascending: false })
-            .limit(1)
-            .maybeSingle();
-          if (rideReq?.driver_lat && rideReq?.driver_lng) {
-            setDriverLocation({ lat: rideReq.driver_lat, lng: rideReq.driver_lng });
-          }
+        /*
+         * The rider's live GPS *and* phase both live on the ride request that
+         * carries this order — the orders table may not have driver_lat/lng
+         * columns at all, and the phase is only ever recorded on the ride
+         * request. One read covers both, and it is not gated on the rider having
+         * shared GPS: a rider who has arrived at the shop but not moved yet still
+         * has a status that moves the track.
+         */
+        const { data: rideReq } = await supabase
+          .from('ride_requests')
+          .select('driver_lat, driver_lng, driver_status, driver_status_message')
+          .eq('order_id', orderId)
+          .order('updated_at', { ascending: false })
+          .limit(1)
+          .maybeSingle();
+
+        const lat = data.driver_lat ?? rideReq?.driver_lat;
+        const lng = data.driver_lng ?? rideReq?.driver_lng;
+        if (lat && lng) {
+          setDriverLocation({ lat, lng });
         }
 
         // Build new order data and always set it
         const newData = buildOrderData(data);
+        newData.driverStatus = rideReq?.driver_status ?? null;
+        newData.driverMessage = rideReq?.driver_status_message ?? null;
         setOrder(prev => {
           // Preserve driverId and businessId from previous state (not in DB order row)
           if (prev) {
             newData.driverId = newData.driverId || prev.driverId;
             newData.businessId = newData.businessId || prev.businessId;
+            // Keep the last known rider status when this poll saw no ride request
+            // (no rider yet, or the read failed) — the track must not fall back.
+            newData.driverStatus = newData.driverStatus || prev.driverStatus || null;
+            newData.driverMessage = newData.driverMessage || prev.driverMessage || null;
           }
           // Only update if status or driver changed
-          if (prev && prev.status === newData.status && prev.driverName === newData.driverName) return prev;
+          if (
+            prev &&
+            prev.status === newData.status &&
+            prev.driverName === newData.driverName &&
+            prev.driverStatus === newData.driverStatus &&
+            prev.driverMessage === newData.driverMessage
+          ) return prev;
           return newData;
         });
       } catch (err) {
@@ -266,25 +313,21 @@ export default function OrderDetail() {
       if (ride.driver_lat && ride.driver_lng) {
         setDriverLocation({ lat: ride.driver_lat, lng: ride.driver_lng });
       }
-      if (ride.driver_name) {
+      // The rider's status arrives here first, so the track advances on the
+      // moment they tap a button rather than on the next 3s poll.
+      if (ride.driver_status) {
+        setOrder(prev => (prev ? {
+          ...prev,
+          driverName: prev.driverName || ride.driver_name || undefined,
+          driverStatus: ride.driver_status,
+          driverMessage: ride.driver_status_message || prev.driverMessage || null,
+        } : prev));
+      } else if (ride.driver_name) {
         setOrder(prev => (prev && !prev.driverName ? { ...prev, driverName: ride.driver_name } : prev));
       }
     });
     return unsubscribe;
   }, [orderId]);
-
-  // ─── Build status timeline when order changes ─────────────────────
-  useEffect(() => {
-    if (!order) return;
-    const workflow = statusWorkflow[order.status] || statusWorkflow['pending'];
-    const history = workflow.steps.map((step, idx) => ({
-      status: step,
-      label: step,
-      time: idx <= workflow.current ? '✓' : '',
-      done: idx <= workflow.current,
-    }));
-    setStatusHistory(history);
-  }, [order?.status]);
 
   // ─── Compute route from driver to customer ─────────────────────────
   useEffect(() => {
@@ -383,14 +426,31 @@ export default function OrderDetail() {
         <div className="text-center">
           <h2 className="text-xl font-bold text-[var(--ink)] mb-2">Order Not Found</h2>
           <p className="text-[var(--muted-foreground)] mb-4">The order you're looking for doesn't exist.</p>
-          <Button onClick={() => navigate("/customer/activity")} className="bg-[var(--primary)] hover:bg-[var(--primary)] text-white font-bold">Back to Activity</Button>
+          <Button onClick={goBack} className="bg-[var(--primary)] hover:bg-[var(--primary)] text-white font-bold">Back to Activity</Button>
         </div>
       </div>
     );
   }
 
-  const workflow = statusWorkflow[order.status] || statusWorkflow['pending'];
-  const isActiveDelivery = ['confirmed', 'on-the-way'].includes(order.status);
+  /*
+   * One track, built from the order status plus the rider's live status.
+   *
+   * Both are needed: `orders.status` only reaches "on-the-way" for the whole
+   * journey to the customer's address, while the rider's own status separates
+   * heading to the shop, waiting at the shop, driving over and arriving. Feeding
+   * only the order status left the customer staring at a stuck step for most of
+   * the delivery.
+   */
+  const progress = getOrderProgress({
+    status: order.status,
+    driverStatus: order.driverStatus,
+    driverMessage: order.driverMessage,
+    deliveryMode: order.deliveryMode,
+  });
+
+  // Tracking the map is only useful once a rider exists, and only on delivery.
+  const isActiveDelivery =
+    order.deliveryMode === 'delivery' && progress.hasRider && progress.currentStepIsRiderStep;
 
   const handleChatWithBusiness = () => {
     if (order.businessId) {
@@ -420,7 +480,7 @@ export default function OrderDetail() {
       <div className="sticky top-0 bg-surface border-b-2 border-[var(--border)] px-4 md:px-5 py-3 md:py-4 z-10">
         <div className="flex items-center justify-between mb-2">
           <div className="flex items-center gap-3">
-            <button onClick={() => navigate("/customer/activity")} className="p-2 hover:bg-[var(--muted)] rounded-full transition-colors">
+            <button onClick={goBack} aria-label="Back" className="p-2 hover:bg-[var(--muted)] rounded-full transition-colors">
               <ArrowLeft className="w-5 h-5 md:w-6 md:h-6 text-[var(--ink)]" />
             </button>
             <div>
@@ -449,41 +509,16 @@ export default function OrderDetail() {
           </div>
         </div>
         <Badge className={`${statusColors[order.status]} text-xs`}>
-          {statusLabels[order.status]}
+          {progress.currentStepIsRiderStep && progress.riderHasStarted
+            ? progress.currentTitle
+            : statusLabels[order.status]}
         </Badge>
 
-        {/* Business-style horizontal stepper */}
+        {/* Horizontal stepper — shared with the business screen so both sides
+            read the same nine steps, rider's leg included. */}
         <div className="mt-3 md:mt-4">
           <p className="text-xs font-semibold text-[var(--muted-foreground)] mb-2">ORDER PROGRESS</p>
-          <div className="flex items-center gap-1 md:gap-2 overflow-x-auto pb-2">
-            {workflow.steps.map((step, idx) => (
-              <div key={idx} className="flex items-center flex-shrink-0">
-                <div
-                  className={`w-7 h-7 md:w-8 md:h-8 rounded-full flex items-center justify-center text-xs font-bold transition-all ${
-                    idx <= workflow.current
-                      ? 'bg-[var(--success)] text-white'
-                      : 'bg-[var(--border)] text-[var(--muted-foreground)]'
-                  }`}
-                >
-                  {idx <= workflow.current ? '✓' : idx + 1}
-                </div>
-                {idx < workflow.steps.length - 1 && (
-                  <div
-                    className={`h-0.5 w-3 md:w-5 ml-1 md:ml-2 transition-all ${
-                      idx < workflow.current ? 'bg-[var(--success)]' : 'bg-[var(--border)]'
-                    }`}
-                  />
-                )}
-              </div>
-            ))}
-          </div>
-          <div className="flex gap-0 overflow-x-auto pb-1">
-            {workflow.steps.map((step, idx) => (
-              <div key={idx} className="flex-shrink-0" style={{ width: `${100 / workflow.steps.length}%` }}>
-                <p className={`text-[10px] md:text-xs font-semibold truncate ${idx <= workflow.current ? 'text-[var(--ink)]' : 'text-[var(--muted-foreground)]'}`}>{step}</p>
-              </div>
-            ))}
-          </div>
+          <OrderProgressStepper progress={progress} />
         </div>
       </div>
 
@@ -542,7 +577,9 @@ export default function OrderDetail() {
             <div className="px-4 py-2.5 bg-surface border-t border-[var(--border)] flex items-center justify-between">
               <p className="text-xs font-semibold text-[var(--ink)]">
                 {order.driverName && <span className="text-[var(--muted-foreground)]">Driver: {order.driverName} • </span>}
-                {order.status === 'confirmed' ? '🛵 Heading to restaurant' : '🟢 Delivering to you'}
+                {/* The track already knows which leg of the trip the rider is on,
+                    so reuse it here rather than guessing from the order status. */}
+                {progress.currentTitle}
               </p>
               <div className="flex items-center gap-2">
                 {etaToCustomer && (
@@ -563,35 +600,10 @@ export default function OrderDetail() {
           </Card>
         )}
 
-        {/* Status Timeline — business style */}
+        {/* Status Timeline — the same track as the stepper above, spelled out */}
         <Card className="p-4 md:p-5 border border-line">
           <h3 className="font-bold text-[var(--ink)] text-sm md:text-base mb-3">Status Updates</h3>
-          <div className="space-y-0">
-            {statusHistory.map((item, idx) => (
-              <div key={idx} className="flex items-start gap-3">
-                {/* Vertical line + circle */}
-                <div className="flex flex-col items-center">
-                  <div className={`w-6 h-6 md:w-7 md:h-7 rounded-full flex items-center justify-center text-[10px] md:text-xs font-bold shrink-0 ${
-                    item.done ? 'bg-[var(--success)] text-white' : 'bg-[var(--border)] text-[var(--muted-foreground)]'
-                  }`}>
-                    {item.done ? '✓' : idx + 1}
-                  </div>
-                  {idx < statusHistory.length - 1 && (
-                    <div className={`w-0.5 h-5 ${item.done ? 'bg-[var(--success)]' : 'bg-[var(--border)]'}`} />
-                  )}
-                </div>
-                {/* Label */}
-                <div className="pt-0.5 pb-2">
-                  <p className={`text-sm font-semibold ${item.done ? 'text-[var(--ink)]' : 'text-[var(--muted-foreground)]'}`}>
-                    {item.label}
-                  </p>
-                  {idx === workflow.current && (
-                    <p className="text-[10px] md:text-xs text-[var(--info)] font-medium">Current</p>
-                  )}
-                </div>
-              </div>
-            ))}
-          </div>
+          <OrderProgressTimeline progress={progress} />
         </Card>
 
         {/* Why the order was cancelled, so the customer sees the reason */}

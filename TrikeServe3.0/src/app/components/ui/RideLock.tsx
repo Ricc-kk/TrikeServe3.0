@@ -1,5 +1,6 @@
 import type { ReactNode } from "react";
 import { Lock, MessageCircle } from "lucide-react";
+import { useNavigate } from "react-router";
 import { useAuth } from "../../contexts/AuthContext";
 import { useActiveRideLock } from "../../../lib/rideLock";
 // Named, not default: Button.tsx only has `export { Button, buttonVariants }`.
@@ -19,6 +20,7 @@ import { Button } from "./button";
  * something is broken.
  */
 export default function RideLock({ children }: { children: ReactNode }) {
+  const navigate = useNavigate();
   const { user } = useAuth();
   const { locked, checked } = useActiveRideLock(user?.id);
 
@@ -48,7 +50,17 @@ export default function RideLock({ children }: { children: ReactNode }) {
         </p>
       </div>
       <div className="flex flex-wrap items-center justify-center gap-2">
-        <Button onClick={() => (window.location.href = "/customer")}>
+        {/*
+            Client-side navigation, never `window.location.href`.
+
+            This used to assign `window.location.href`, which is a full page load:
+            the SPA is torn down, Supabase has to re-read the session from storage
+            and refresh it, and if that refresh fails the app treats the customer as
+            signed out. So tapping "Back to my ride" logged them out mid-ride -- the
+            exact failure this screen exists to prevent. `navigate` keeps the app, the
+            session and the in-flight ride polling alive.
+        */}
+        <Button onClick={() => navigate("/customer", { replace: true })}>
           <MessageCircle className="mr-2 size-4" aria-hidden="true" />
           Back to my ride
         </Button>

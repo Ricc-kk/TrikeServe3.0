@@ -814,6 +814,26 @@ export default function AdminTerminals() {
     <AdminShell
       title="Terminal Management"
       subtitle="Terminals, drivers, fares and coverage areas"
+      /* The one way to reach the create form.
+         `openCreate` was written and wired to nothing, so there was no way to add a
+         terminal at all from this page -- the form existed, fully built, with no
+         button that opened it.
+
+         Super Admin only: a Rider Admin's terminal edits are staged and need Super
+         Admin approval, so giving them the same button would create a second, faster
+         route to the same outcome and bypass that review. */
+      actions={
+        isSuperAdmin ? (
+          <button
+            type="button"
+            onClick={openCreate}
+            className="inline-flex min-h-11 items-center gap-2 rounded-xl bg-[var(--primary)] px-4 py-2 text-sm font-bold text-white shadow-sm transition-opacity hover:opacity-90 active:scale-[0.98]"
+          >
+            <Plus className="size-4" aria-hidden="true" />
+            Add Terminal
+          </button>
+        ) : null
+      }
     >
 
         {/* Content */}

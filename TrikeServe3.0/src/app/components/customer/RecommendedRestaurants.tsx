@@ -5,6 +5,7 @@ import { Star, Store } from "lucide-react";
 import { supabaseHelpers } from "@/lib/supabase";
 import { fetchRestaurants } from "@/lib/restaurantQueries";
 import { cuisineLabels } from "@/lib/foodTaxonomy";
+import { useDeliveryAddress } from "../../contexts/useDeliveryAddress";
 import {
   formatDistance,
   haversineMetres,
@@ -44,20 +45,23 @@ const FALLBACK_IMAGE =
  * missing a setting.
  */
 export default function RecommendedRestaurants({ query = "" }: { query?: string } = {}) {
+  const delivery = useDeliveryAddress();
   const [rows, setRows] = useState<Row[]>([]);
   const [loading, setLoading] = useState(true);
-  const [origin, setOrigin] = useState<LatLng | null>(null);
 
-  // Device position is the fallback origin; a saved delivery address overrides
-  // it further down the stack when the customer has chosen one.
-  useEffect(() => {
-    if (!("geolocation" in navigator)) return;
-    navigator.geolocation.getCurrentPosition(
-      (pos) => setOrigin({ lat: pos.coords.latitude, lng: pos.coords.longitude }),
-      () => setOrigin(null),
-      { timeout: 8000, maximumAge: 300000 },
-    );
-  }, []);
+  /*
+   * Ranked from the same place the "Deliver to" line names.
+   *
+   * This used to ask the device for a position itself and ignore any chosen
+   * delivery address, so a customer who set delivery to their sister's place was
+   * shown shops ranked around wherever they were standing — and this screen, the
+   * header above it and checkout each asked the device separately, which is also
+   * why opening search could raise two location prompts.
+   *
+   * `delivery.origin` is the chosen address when there is one and the device
+   * position otherwise, so one fact now decides all three.
+   */
+  const origin = delivery.origin;
 
   useEffect(() => {
     let cancelled = false;

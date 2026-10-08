@@ -354,7 +354,30 @@ export default function Notifications() {
                     {notification.message}
                   </p>
                   {notification.actionUrl && (
-                    <button className="mt-2 text-xs font-bold text-[var(--primary)] hover:underline">
+                    /*
+                     * A real control, not decoration.
+
+                     * This was a bare <button> with no onClick at all -- it looked
+                     * like the way in and did nothing on its own, relying entirely
+                     * on the click bubbling to the card's handler. Anything that
+                     * stops propagation, or any change to the card's markup, silently
+                     * kills the one route to the order. So it carries the navigation
+                     * itself.
+
+                     * `stopPropagation` keeps the card's own handler from also firing,
+                     * which would otherwise mark the row read a second time and push
+                     * a second history entry via the card's navigate.
+                     */
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        markAsRead(notification.id);
+                        navigate(notification.actionUrl!);
+                      }}
+                      aria-label={`View details${notification.title ? ` for ${notification.title}` : ""}`}
+                      className="mt-2 text-xs font-bold text-[var(--primary)] hover:underline"
+                    >
                       View Details →
                     </button>
                   )}

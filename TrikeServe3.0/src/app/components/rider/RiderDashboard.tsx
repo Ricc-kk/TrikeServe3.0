@@ -30,6 +30,7 @@ import { Badge } from "../ui/badge";
 import BottomNav from "../ui/BottomNav";
 import { Input } from "../ui/input";
 import { useAuth } from "../../contexts/AuthContext";
+import { consumeWelcomeGreeting } from "../../../lib/welcomeGreeting";
 import { supabaseHelpers } from "@/lib/supabase";
 import { useTerminalQueue } from "../../hooks/useTerminalQueue";
 import TerminalQueueCard from "./TerminalQueueCard";
@@ -135,16 +136,14 @@ export default function RiderDashboard() {
 
     // Show welcome back popup after login
     useEffect(() => {
-      const showWelcome = sessionStorage.getItem('trikeserve_show_welcome');
-      const userName = sessionStorage.getItem('trikeserve_welcome_name');
-      if (showWelcome === 'true') {
-        sessionStorage.removeItem('trikeserve_show_welcome');
-        sessionStorage.removeItem('trikeserve_welcome_name');
-        setWelcomeUserName(userName || 'there');
-        const timer = setTimeout(() => setShowWelcomeBack(true), 500);
-        const hideTimer = setTimeout(() => setShowWelcomeBack(false), 3000);
-        return () => { clearTimeout(timer); clearTimeout(hideTimer); };
-      }
+      // In-memory, not sessionStorage: only a real sign-in arms this, and a reload
+      // must not replay it. See welcomeGreeting.ts.
+      const name = consumeWelcomeGreeting();
+      if (name === null) return;
+      setWelcomeUserName(name || 'there');
+      const timer = setTimeout(() => setShowWelcomeBack(true), 500);
+      const hideTimer = setTimeout(() => setShowWelcomeBack(false), 3000);
+      return () => { clearTimeout(timer); clearTimeout(hideTimer); };
     }, []);
 
           // Load Google Maps SDK via shared loader

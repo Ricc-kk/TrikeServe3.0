@@ -3,7 +3,9 @@ import {
   Check,
   ChevronLeft,
   Clock,
+  Loader2,
   MapPin,
+  Navigation,
   Pencil,
   Plus,
   Search,
@@ -123,7 +125,16 @@ export default function DeliveryAddressPage() {
     setEditingId(null);
   };
 
-  const noneYet = delivery.saved.length === 0 && delivery.recent.length === 0;
+  /*
+   * The device position is offered as a row of its own.
+   *
+   * It is what "Deliver to" falls back to when nothing has been chosen, so the
+   * only way back to it — after sending food to a friend's place, say — is to be
+   * able to pick it again here. Without this row the fallback is a one-way door.
+   */
+  const device = delivery.isDeviceDefault ? delivery.address : null;
+  const noneYet =
+    delivery.saved.length === 0 && delivery.recent.length === 0 && !device && !delivery.locating;
 
   return (
     <div className="min-h-screen bg-[var(--background)]">
@@ -159,6 +170,13 @@ export default function DeliveryAddressPage() {
           />
         </div>
 
+        {delivery.locating && (
+          <div className="mt-4 flex items-center justify-center gap-2 rounded-2xl border border-dashed border-line px-5 py-6 text-sm text-[var(--muted-foreground)]">
+            <Loader2 className="size-4 animate-spin" aria-hidden="true" />
+            Finding your current location…
+          </div>
+        )}
+
         {noneYet && (
           <div className="mt-4 rounded-2xl border border-dashed border-line px-5 py-8 text-center">
             <MapPin
@@ -170,6 +188,43 @@ export default function DeliveryAddressPage() {
               Add a place so we know where to bring your order.
             </p>
           </div>
+        )}
+
+        {/* Above "Recent": it is the default, so it belongs first. */}
+        {device && (
+          <section className="mt-4" aria-label="Current location">
+            <ul className="overflow-hidden rounded-2xl border border-line bg-[var(--surface)]">
+              <li>
+                <button
+                  type="button"
+                  onClick={() => pick(device)}
+                  aria-pressed="true"
+                  className="flex min-h-14 w-full items-start gap-2 bg-[var(--primary-soft)] px-4 py-3 text-left"
+                >
+                  <Navigation
+                    className="mt-0.5 size-4 flex-shrink-0 text-[var(--primary)]"
+                    aria-hidden="true"
+                  />
+                  <span className="min-w-0 flex-1">
+                    <span className="block truncate text-sm font-semibold text-[var(--ink)]">
+                      Current location
+                    </span>
+                    <span className="block truncate text-xs text-[var(--muted-foreground)]">
+                      {device.address}
+                    </span>
+                  </span>
+                  <Check
+                    className="mt-0.5 size-4 flex-shrink-0 text-[var(--primary)]"
+                    aria-label="Current delivery address"
+                  />
+                </button>
+              </li>
+            </ul>
+            <p className="mt-1.5 px-1 text-xs text-[var(--muted-foreground)]">
+              Your current location is the default. Pick any address below and it stays
+              until you change it.
+            </p>
+          </section>
         )}
 
         {recent.length > 0 && (

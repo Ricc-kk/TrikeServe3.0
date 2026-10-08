@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 import { Store, Package, Clock, User, ChevronRight, CheckCircle, XCircle, AlertCircle, Menu, Navigation, MessageCircle } from "lucide-react";
-import { Link, useNavigate } from "react-router";
+import { Link, useNavigate, useLocation } from "react-router";
 import { Card } from "../ui/card";
 import { Badge } from "../ui/badge";
 import { Button } from "../ui/button";
@@ -9,6 +9,8 @@ import BusinessSidebar from "./BusinessSidebar";
     import { supabaseHelpers, logAudit } from "@/lib/supabase";
     import { useAuth } from "../../contexts/AuthContext";
 import ReasonPromptModal from "../ui/reason-prompt-modal";
+import { getOrderProgress, isRiderHeadingToRestaurant } from "@/lib/orderProgress";
+import { OrderProgressStepper } from "../ui/OrderProgress";
 import { GoogleMap, MarkerF, Polyline } from "@react-google-maps/api";
 import useMapLoader from "@/lib/mapLoader";
 import tricycleIcon from '../../../assets/0b76d1aa56b8ad6e15dd4efc8a0100b0ca5762a1.png'
@@ -36,6 +38,14 @@ interface Order {
   driverName?: string;
   restaurantName?: string;
   restaurantAddress?: string;
+  /**
+   * The rider's live phase, from the ride request that carries this order.
+   * `status` collapses the whole journey to the customer's address into one
+   * value, so this is what lets the shop see which leg the rider is on.
+   */
+  driverStatus?: string | null;
+  /** Whatever the rider app last wrote in `driver_status_message`. */
+  driverMessage?: string | null;
   /** Why the order was cancelled, and which side cancelled it. */
   cancelReason?: string | null;
   cancelledBy?: string | null;
@@ -56,6 +66,33 @@ export default function BusinessOrders() {
   const [isLoading, setIsLoading] = useState(true);
   const [restaurantId, setRestaurantId] = useState<string | null>(null);
   const navigate = useNavigate();
+  const location = useLocation();
+
+  /*
+   * Open a specific order when one arrives in the router state.
+   *
+   * The dashboard's notification panel sends here with `focusOrderId`, because the
+   * order detail is a modal on this screen rather than a route of its own -- there is
+   * no `/business/orders/:id`. Without consuming that state the tap landed on the
+   * orders *list* and the customer had to hunt for the order themselves.
+   *
+   * Re-resolves on every `orders` change rather than only on mount, because the
+   * list is still loading when the state first arrives; matching against an empty
+   * array would silently do nothing.
+   *
+   * The state is cleared once consumed. Left in place, it would re-open the modal
+   * every time the list refreshed -- and again on back, because router state
+   * survives history.
+   */
+  useEffect(() => {
+    const state = location.state as { focusOrderId?: string } | null;
+    const id = state?.focusOrderId;
+    if (!id) return;
+    const match = orders.find((o) => o.id === id);
+    if (!match) return;
+    setSelectedOrder(match);
+    navigate(".", { replace: true, state: null });
+  }, [location.state, orders, navigate]);
   const [isUpdatingStatus, setIsUpdatingStatus] = useState(false); // Prevent refresh during update
   const { isLoaded: isMapsLoaded } = useMapLoader();
   const [driverLocation, setDriverLocation] = useState<{ lat: number; lng: number } | null>(null);
@@ -84,17 +121,34 @@ export default function BusinessOrders() {
     return () => clearInterval(interval);
   }, [isUpdatingStatus]);
 
-  // Poll for driver location when an on-the-way order is selected
+  /*
+   * Poll the rider for whichever order is open.
+   *
+   * Previously this ran only for `on-the-way` orders and only kept the driver's
+   * GPS, so the shop's view of the rider froze as soon as the order left
+   * `on-the-way` — exactly when the rider is collecting the food and the shop
+   * most wants to know they actually turned up. It now follows `driver_status`
+   * for the whole rider leg and keeps the last phase once the order is
+   * delivered, so the modal does not blank out behind a completed delivery.
+   *
+   * `driver_status` is read from the ride request rather than the order status:
+   * they were both written into this state, and `orders.status` is the coarse
+   * "on-the-way" value that says nothing about which leg the rider is on.
+   */
   useEffect(() => {
-    if (!selectedOrder || selectedOrder.status !== 'on-the-way') {
+    const hasRider = !!selectedOrder && ['confirmed', 'on-the-way', 'delivered'].includes(selectedOrder.status);
+
+    if (!hasRider) {
       if (trackingPollRef.current) clearInterval(trackingPollRef.current);
       setDriverLocation(null);
       setRoutePath([]);
       setRideRequestInfo(null);
+      setDriverStatus(null);
       return;
     }
 
     const pollDriver = async () => {
+      if (!selectedOrder) return;
       try {
         const { data: freshOrder } = await supabase
           .from('orders')
@@ -102,29 +156,25 @@ export default function BusinessOrders() {
           .eq('id', selectedOrder.id)
           .single();
 
-        if (freshOrder) {
-          if (freshOrder.status) setDriverStatus(freshOrder.status);
-          if (freshOrder.driver_lat && freshOrder.driver_lng) {
-            setDriverLocation({ lat: freshOrder.driver_lat, lng: freshOrder.driver_lng });
-          }
+        if (freshOrder?.driver_lat && freshOrder?.driver_lng) {
+          setDriverLocation({ lat: freshOrder.driver_lat, lng: freshOrder.driver_lng });
         }
 
-        // The driver's live GPS is written to the ride request that carries this
-        // order (`ride_requests.driver_lat/lng`), and the orders table may not
-        // have driver_lat/lng columns at all — so read from the ride request too.
+        // The driver's live GPS *and* phase live on the ride request that carries
+        // this order (`ride_requests.driver_*`); the orders table may not even
+        // have driver_lat/lng columns.
         const { data: freshRide } = await supabase
           .from('ride_requests')
-          .select('driver_lat, driver_lng, driver_status')
+          .select('driver_lat, driver_lng, driver_status, driver_status_message')
           .eq('order_id', selectedOrder.id)
-          .not('driver_lat', 'is', null)
           .order('updated_at', { ascending: false })
           .limit(1)
           .maybeSingle();
 
         if (freshRide?.driver_lat && freshRide?.driver_lng) {
           setDriverLocation({ lat: freshRide.driver_lat, lng: freshRide.driver_lng });
-          if (freshRide.driver_status) setDriverStatus(freshRide.driver_status);
         }
+        if (freshRide?.driver_status) setDriverStatus(freshRide.driver_status);
       } catch (err) {
         console.error('[BusinessOrders] Error polling driver location:', err);
       }
@@ -136,14 +186,14 @@ export default function BusinessOrders() {
   }, [selectedOrder?.id, selectedOrder?.status]);
 
   // Live tracking straight from the driver's active ride (the ride request for
-  // this order), so the map moves the moment the driver's GPS is written.
+  // this order), so the map and the phase move the moment the rider acts.
   useEffect(() => {
-    if (!selectedOrder || selectedOrder.status !== 'on-the-way') return;
+    if (!selectedOrder || !['confirmed', 'on-the-way'].includes(selectedOrder.status)) return;
     const unsubscribe = supabaseHelpers.subscribeToOrderDelivery(selectedOrder.id, (ride) => {
       if (ride.driver_lat && ride.driver_lng) {
         setDriverLocation({ lat: ride.driver_lat, lng: ride.driver_lng });
-        if (ride.driver_status) setDriverStatus(ride.driver_status);
       }
+      if (ride.driver_status) setDriverStatus(ride.driver_status);
     });
     return unsubscribe;
   }, [selectedOrder?.id, selectedOrder?.status]);
@@ -376,6 +426,12 @@ export default function BusinessOrders() {
             }
 
             if (!rr.driver_status) return;
+            // Keep the raw rider phase on the order so the progress track can show
+            // it. `status` alone flattens "heading to the shop", "waiting at the
+            // shop", "driving over" and "at the door" into `on-the-way`.
+            order.driverStatus = rr.driver_status;
+            if (rr.driver_status_message) order.driverMessage = rr.driver_status_message;
+
             // The driver's ride_requests row may lag behind the orders table, or
             // an order may have been completed from this screen already. Driver
             // status may only *advance* an in-transit order — it must never
@@ -767,19 +823,29 @@ export default function BusinessOrders() {
     }
   };
 
-  // Get the workflow status for display
-  const getStatusWorkflow = (status: Order['status']) => {
-    const workflows: Record<Order['status'], { steps: string[]; current: number }> = {
-      'pending': { steps: ['Pending', 'Preparing', 'Ready', 'Ready for Delivery', 'Delivered'], current: 0 },
-      'preparing': { steps: ['Pending', 'Preparing', 'Ready', 'Ready for Delivery', 'Delivered'], current: 1 },
-      'ready': { steps: ['Pending', 'Preparing', 'Ready', 'Ready for Delivery', 'Delivered'], current: 2 },
-      'confirmed': { steps: ['Pending', 'Preparing', 'Ready', 'Ready for Delivery', 'Delivered'], current: 3 },
-      'on-the-way': { steps: ['Pending', 'Preparing', 'Ready', 'Ready for Delivery', 'Delivering', 'Delivered'], current: 4 },
-      'delivered': { steps: ['Pending', 'Preparing', 'Ready', 'Ready for Delivery', 'Delivered'], current: 4 },
-      'cancelled': { steps: ['Cancelled'], current: 0 }
-    };
-    return workflows[status];
-  };
+  /*
+   * The progress track for the open order, built from its status and the rider's
+   * live phase.
+   *
+   * This used to be a private six-step table here with a matching one in the
+   * customer's order screen, and the two disagreed. It also had no rider leg
+   * beyond "Delivering", so a rider stuck at the shop and a rider already at the
+   * customer's door looked identical to the shop owner. The step list and the
+   * mapping now live in `@/lib/orderProgress` and both screens render it.
+   */
+  const progress = selectedOrder
+    ? getOrderProgress({
+        status: selectedOrder.status,
+        driverStatus: driverStatus ?? selectedOrder.driverStatus,
+        driverMessage: selectedOrder.driverMessage,
+        deliveryMode: selectedOrder.deliveryMode,
+      })
+    : null;
+
+  // Which leg of the trip the rider is on. The old inline check listed
+  // `accepted`, `on-the-way` and `arrived` but not `picked-up`, so the route line
+  // flipped colour at the wrong moment.
+  const isRiderEnRouteToShop = isRiderHeadingToRestaurant(driverStatus ?? selectedOrder?.driverStatus);
 
   return (
     <div className="min-h-screen bg-surface flex">
@@ -1029,43 +1095,15 @@ export default function BusinessOrders() {
                   </button>
                 </div>
                 <Badge className={`${getStatusColor(selectedOrder.status)} text-white`}>
-                  {getStatusLabel(selectedOrder.status)}
+                  {progress?.currentStepIsRiderStep && progress.riderHasStarted
+                    ? progress.currentTitle
+                    : getStatusLabel(selectedOrder.status)}
                 </Badge>
 
-                {/* Status Progress Bar - Responsive */}
+                {/* Status Progress Bar - same track as the customer's screen */}
                 <div className="mt-3 md:mt-4">
                   <p className="text-xs font-semibold text-[var(--muted-foreground)] mb-2">ORDER PROGRESS</p>
-                  <div className="flex items-center gap-1 md:gap-2 overflow-x-auto pb-2">
-                    {getStatusWorkflow(selectedOrder.status).steps.map((step, idx) => (
-                      <div key={idx} className="flex items-center flex-shrink-0">
-                        <div
-                          className={`w-6 md:w-8 h-6 md:h-8 rounded-full flex items-center justify-center text-xs font-bold transition-all ${
-                            idx <= getStatusWorkflow(selectedOrder.status).current
-                              ? 'bg-[var(--success)] text-white'
-                              : 'bg-[var(--border)] text-[var(--muted-foreground)]'
-                          }`}
-                        >
-                          {idx <= getStatusWorkflow(selectedOrder.status).current ? '✓' : idx + 1}
-                        </div>
-                        {idx < getStatusWorkflow(selectedOrder.status).steps.length - 1 && (
-                          <div
-                            className={`h-0.5 w-2 md:w-4 ml-1 md:ml-2 transition-all ${
-                              idx < getStatusWorkflow(selectedOrder.status).current
-                                ? 'bg-[var(--success)]'
-                                : 'bg-[var(--border)]'
-                            }`}
-                          />
-                        )}
-                      </div>
-                    ))}
-                  </div>
-                  <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 text-xs text-[var(--muted-foreground)] mt-2 gap-1">
-                    {getStatusWorkflow(selectedOrder.status).steps.map((step, idx) => (
-                      <div key={idx} className="min-w-0">
-                        <p className="font-semibold truncate text-[10px] md:text-xs">{step}</p>
-                      </div>
-                    ))}
-                  </div>
+                  {progress && <OrderProgressStepper progress={progress} />}
                 </div>
               </div>
 
@@ -1232,13 +1270,24 @@ export default function BusinessOrders() {
                           {routePath.length > 0 && (
                             <Polyline
                               path={routePath}
-                              options={{ strokeColor: (driverStatus === 'on-the-way' || driverStatus === 'arrived' || driverStatus === 'accepted') ? 'var(--success)' : 'var(--primary)', strokeOpacity: 0.9, strokeWeight: 4, geodesic: true }}
+                              options={{
+                                  /* Green while the rider is still on the way to the
+                                     shop, a different colour once they are carrying
+                                     the order, so the route line tells you which leg
+                                     it is. */
+                                  strokeColor: isRiderEnRouteToShop ? 'var(--success)' : 'var(--primary)',
+                                  strokeOpacity: 0.9,
+                                  strokeWeight: 4,
+                                  geodesic: true,
+                                }}
                             />
                           )}
                         </GoogleMap>
                         <div className="px-3 py-2 bg-surface border-t border-[var(--border)] flex items-center justify-between">
                           <span className="text-xs font-semibold text-[var(--ink)]">
-                            {(driverStatus === 'on-the-way' || driverStatus === 'arrived' || driverStatus === 'accepted') ? '🟢 Heading to restaurant' : '🔴 Delivering to customer'}
+                            {/* Reuses the track's own wording so the map caption
+                                cannot disagree with the stepper above it. */}
+                            {isRiderEnRouteToShop ? '🟢 Heading to restaurant' : '🔴 Delivering to customer'}
                           </span>
                           <div className="flex items-center gap-2">
                             {etaToCustomer && (
@@ -1259,9 +1308,25 @@ export default function BusinessOrders() {
                       </div>
                     )}
 
+                    /*
+                      The rider's actual phase, not just "on the way".
+
+                      `orders.status` is `on-the-way` for the whole trip to the
+                      customer's address, so this used to claim the driver was
+                      delivering while they were still parked outside the shop
+                      waiting for the food. The rider writes a status for each leg
+                      and a message to go with it.
+                    */
                     <div className="bg-[var(--amber-soft)] border-l-4 border-[var(--amber)] p-2 md:p-3 rounded text-sm">
-                      <p className="font-semibold text-[var(--amber-ink)]">Status: On The Way</p>
-                      <p className="text-xs text-[var(--amber-ink)] mt-1">Driver is delivering the order</p>
+                      <p className="font-semibold text-[var(--amber-ink)]">
+                        Rider: {progress?.currentTitle ?? getStatusLabel(selectedOrder.status)}
+                      </p>
+                      {progress?.riderMessage && (
+                        <p className="text-xs text-[var(--amber-ink)] mt-1">"{progress.riderMessage}"</p>
+                      )}
+                      {!progress?.riderMessage && progress?.currentStep && (
+                        <p className="text-xs text-[var(--amber-ink)] mt-1">{progress.currentStep.description}</p>
+                      )}
                       {selectedOrder.driverName && (
                         <p className="text-xs text-[var(--amber-ink)] mt-1">Driver: {selectedOrder.driverName}</p>
                       )}
@@ -1347,7 +1412,12 @@ export default function BusinessOrders() {
                 onClick={async () => {
                   await updateOrderStatus(selectedOrder.id, 'preparing');
                   setConfirmAction(null);
-                  setSelectedOrder(null);
+                  // Stay on the order. This closed the detail modal entirely, so
+                  // accepting dumped the shop owner back on the orders list and
+                  // they had to find and reopen the order just accepted to do
+                  // anything with it. The modal stays, showing the new status, and
+                  // the refresh that follows picks up the rest of the order.
+                  setSelectedOrder((o) => (o ? { ...o, status: 'preparing' as Order['status'] } : o));
                 }}
                 className={`flex-1 font-bold ${
                   confirmAction === 'accept'
@@ -1405,13 +1475,18 @@ export default function BusinessOrders() {
               </Button>
               <Button
                 onClick={async () => {
+                  const nextStatus: Order['status'] =
+                    statusConfirm === 'ready' ? 'ready' : 'confirmed';
                   if (statusConfirm === 'ready') {
                     await updateOrderStatus(selectedOrder.id, 'ready');
                   } else {
                     await handleReadyForDelivery(selectedOrder);
                   }
                   setStatusConfirm(null);
-                  setSelectedOrder(null);
+                  // Same as accepting: keep the detail open on this order and let it
+                  // show the status it just moved to, rather than dropping the shop
+                  // owner back on the orders list mid-flow.
+                  setSelectedOrder((o) => (o ? { ...o, status: nextStatus } : o));
                 }}
                 className={`flex-1 font-bold ${
                   statusConfirm === 'ready'

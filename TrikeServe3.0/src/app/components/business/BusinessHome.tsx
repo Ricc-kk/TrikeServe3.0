@@ -20,7 +20,7 @@ export default function BusinessHome() {
   // how "Edit" on the Overview reaches the store-info form instead of dumping
   // the owner on the storefront preview to look for it.
   const [searchParams] = useSearchParams();
-  const { user } = useAuth();
+  const { user, updateProfile } = useAuth();
   const profile = useRestaurantProfile();
   const [isStoreOpen, setIsStoreOpen] = useState(true);
   const [showEditBanner, setShowEditBanner] = useState(false);
@@ -534,6 +534,21 @@ export default function BusinessHome() {
         } else {
           console.log('[BusinessHome] Logo saved to database ✅');
         }
+
+        /*
+         * The store logo and the owner's profile photo are the same image, so keep
+         * the profile in step when the logo is changed here.
+         *
+         * Goes through `updateProfile` rather than a direct `users` write, for the
+         * reason EditProfileScreen documents: a bare write leaves AuthContext.user
+         * and the localStorage cache holding the old photo, so the account header
+         * would keep showing the previous image until a reload.
+         *
+         * Best effort and deliberately not awaited into the success path -- the logo
+         * is already saved and on screen, so a failure here must not turn a
+         * successful logo change into an error.
+         */
+        void updateProfile({ avatarUrl: publicUrl });
       } else {
         // No restaurant record yet - create one with the logo
         const { error: insertError } = await supabase
@@ -558,6 +573,10 @@ export default function BusinessHome() {
         } else {
           console.log('[BusinessHome] Logo saved to database ✅');
         }
+
+        // Same profile sync as the update branch above -- a store being set up for
+        // the first time needs it just as much as an existing store.
+        void updateProfile({ avatarUrl: publicUrl });
       }
     } catch (error: any) {
       console.error('[BusinessHome] Logo upload error:', error);

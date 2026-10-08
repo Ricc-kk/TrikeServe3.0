@@ -99,7 +99,7 @@ export default function FoodHomeHeader({
                 that token is a dark stone here, unreadable on ink. */}
             <span className="min-w-0 flex-1">
               <span className="block text-[10px] font-bold uppercase tracking-wider text-white/70">
-                Your location
+                Deliver to
               </span>
               <span className="mt-0.5 flex min-w-0 items-center gap-1">
                 <span className="min-w-0 flex-1 truncate text-sm font-semibold text-white">

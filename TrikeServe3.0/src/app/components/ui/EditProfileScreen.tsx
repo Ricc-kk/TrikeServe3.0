@@ -1,9 +1,10 @@
 import { useEffect, useRef, useState } from "react";
 import { Link, useBlocker } from "react-router";
+import { usePreviousPage } from "../../hooks/usePreviousPage";
 import { ArrowLeft, Camera, Check, User } from "lucide-react";
 
 import { useAuth } from "../../contexts/AuthContext";
-import { supabaseHelpers } from "@/lib/supabase";
+import { supabaseHelpers, supabase } from "@/lib/supabase";
 import { uploadErrorMessage } from "@/lib/uploadErrors";
 import PhotoAdjustModal from "./PhotoAdjustModal";
 import BottomNav from "./BottomNav";
@@ -53,6 +54,7 @@ export default function EditProfileScreen({
 }: Props) {
   const { user, updateProfile } = useAuth();
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const goBack = usePreviousPage(backTo);
 
   const [name, setName] = useState(user?.name ?? "");
   const [phone, setPhone] = useState(user?.phone ?? "");
@@ -171,6 +173,31 @@ export default function EditProfileScreen({
       }
 
       setAvatarUrl(publicUrl);
+
+      /*
+       * Keep the store logo in step.
+       *
+       * A business owner's profile photo and their store logo are meant to be the
+       * same image, so changing the photo here has to change the logo the shop shows
+       * to customers. Without this the two drifted apart permanently: the logo lives
+       * in `restaurants.logo_image` and the photo in `users.avatar_url`, with nothing
+       * connecting them, and whichever one was set last won for good.
+
+       * Business only -- this screen is shared with customer and rider, who have no
+       * restaurant row. Best effort: the photo is already saved and visible, so a
+       * failure here must not fail the save or roll the photo back.
+       */
+      if (navVariant === "business" && user?.id) {
+        try {
+          await supabase
+            .from("restaurants")
+            .update({ logo_image: publicUrl, updated_at: new Date().toISOString() })
+            .eq("business_user_id", user.id);
+        } catch {
+          /* Photo is saved. A stale logo is recoverable; losing the photo is not. */
+        }
+      }
+
       // Its own flag, not `saved` — the photo does not stand in for the fields.
       setPhotoSaved(true);
     } catch (err) {
@@ -221,13 +248,25 @@ export default function EditProfileScreen({
     <div className="min-h-screen bg-[var(--background)] pb-24">
       <header className="sticky top-0 z-[900] border-b border-line bg-[var(--surface)] px-3 py-3 sm:px-5">
         <div className="mx-auto flex max-w-3xl items-center gap-2">
-          <Link
-            to={backTo}
+          {/*
+             A button that pops, not a Link that pushes.
+
+             This screen is shared by customer, rider and business, so the same bug
+             was on all three: pressing back *added* `backTo` to the history instead
+             of removing the entry behind it. The account screen stayed in the stack,
+             so pressing back again walked straight back into the editor rather than
+             unwinding the flow the customer took to reach it.
+
+             `backTo` remains the fallback for a cold deep link with no history.
+           */}
+          <button
+            type="button"
+            onClick={goBack}
             aria-label="Back to account"
             className="grid size-11 flex-shrink-0 place-items-center rounded-xl hover:bg-[var(--muted)]"
           >
             <ArrowLeft className="size-5 text-[var(--ink)]" aria-hidden="true" />
-          </Link>
+          </button>
           <h1 className="min-w-0 flex-1 truncate text-lg font-bold text-[var(--ink)]">
             Edit profile
           </h1>

@@ -5,6 +5,7 @@ import {
   Clock, Eye, Edit2, Bell, User as UserIcon, Search, Menu, X, Star, Check
 } from "lucide-react";
 import { Link, useNavigate } from "react-router";
+import { consumeWelcomeGreeting } from "../../../lib/welcomeGreeting";
 import { Card } from "../ui/card";
 import { Badge } from "../ui/badge";
 import { ImageWithFallback } from "../figma/ImageWithFallback";
@@ -155,16 +156,14 @@ export default function BusinessDashboard() {
 
   // Show welcome back popup after login
   useEffect(() => {
-    const showWelcome = sessionStorage.getItem('trikeserve_show_welcome');
-    const userName = sessionStorage.getItem('trikeserve_welcome_name');
-    if (showWelcome === 'true') {
-      sessionStorage.removeItem('trikeserve_show_welcome');
-      sessionStorage.removeItem('trikeserve_welcome_name');
-      setWelcomeUserName(userName || 'there');
-      const timer = setTimeout(() => setShowWelcomeBack(true), 500);
-      const hideTimer = setTimeout(() => setShowWelcomeBack(false), 3000);
-      return () => { clearTimeout(timer); clearTimeout(hideTimer); };
-    }
+    // In-memory, not sessionStorage: only a real sign-in arms this, and a reload
+    // must not replay it. See welcomeGreeting.ts.
+    const name = consumeWelcomeGreeting();
+    if (name === null) return;
+    setWelcomeUserName(name || 'there');
+    const timer = setTimeout(() => setShowWelcomeBack(true), 500);
+    const hideTimer = setTimeout(() => setShowWelcomeBack(false), 3000);
+    return () => { clearTimeout(timer); clearTimeout(hideTimer); };
   }, []);
 
   // Load delivery status notifications (driver updates) for this business.
@@ -172,14 +171,50 @@ export default function BusinessDashboard() {
     if (!user?.id) return;
     const loadNotifications = async () => {
       const { data } = await supabaseHelpers.getDeliveryNotifications(user.id);
-      setNotifications((data || []).map((n: any) => ({
+      const mapped = (data || []).map((n: any) => ({
         id: n.id,
-        type: 'delivery',
+        // The real type, not a hardcoded 'delivery'. The icon and tint below are
+        // chosen by type, and pinning every row to 'delivery' made an order
+        // notification render as a delivery one.
+        type: n.type || 'delivery',
         title: n.title || 'Delivery update',
         message: n.message || '',
         read: !!n.read,
         time: formatNotificationTime(n.created_at),
-      })));
+        /*
+         * Carried through so a notification can be tapped through to its order.
+         * These were dropped here, and the row had nothing left to navigate with --
+         * which is why tapping a notification did nothing.
+         */
+        orderId: n.order_id ?? null,
+        orderNumber: n.order_number ?? null,
+      }));
+
+      /*
+       * One row per order, showing its latest state.
+       *
+       * Every status change writes its own row, so a single order produced a pile of
+       * them: "new order received", "preparing", "ready", "on the way", "delivery
+       * completed" -- five rows, all about one order, pushing everything else off
+       * the panel. The older ones are not information; they are the same order
+       * earlier in time, and the detail modal carries the full status workflow.
+       *
+       * `data` is already ordered created_at desc, so the first row seen for an
+       * order is its newest and every later one is superseded.
+       *
+       * Rows with no order id are always kept. They are system notices, not status
+       * updates, and collapsing them by some other key would throw away unrelated
+       * messages.
+       */
+      const seenOrders = new Set<string>();
+      setNotifications(
+        mapped.filter((n) => {
+          if (!n.orderId) return true;
+          if (seenOrders.has(n.orderId)) return false;
+          seenOrders.add(n.orderId);
+          return true;
+        }),
+      );
     };
     loadNotifications();
     const interval = setInterval(loadNotifications, 4000);
@@ -840,6 +875,35 @@ export default function BusinessDashboard() {
                   className={`p-4 border transition-all cursor-pointer hover:border-[var(--primary)] ${
                     notification.read ? 'border-[var(--border)] bg-surface' : 'border-[var(--border)] bg-surface'
                   }`}
+                  role="button"
+                  tabIndex={0}
+                  aria-label={
+                    notification.orderNumber
+                      ? `Open order ${notification.orderNumber}`
+                      : 'Open notifications'
+                  }
+                  onClick={() => {
+                    setShowNotifications(false);
+                    /*
+                     * The orders screen is the business's only order view -- there is
+                     * no per-order route -- so "open order details" means going there
+                     * with the id attached. The id travels as router state, so a
+                     * BusinessOrders that does not read it is unaffected; one that does
+                     * can open and highlight that order.
+                     */
+                    navigate('/business/orders', {
+                      state: {
+                        focusOrderId: notification.orderId ?? undefined,
+                        focusOrderNumber: notification.orderNumber ?? undefined,
+                      },
+                    });
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' || e.key === ' ') {
+                      e.preventDefault();
+                      e.currentTarget.click();
+                    }
+                  }}
                 >
                   <div className="flex items-start gap-3">
                     <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${
