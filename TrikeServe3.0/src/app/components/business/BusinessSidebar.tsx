@@ -5,6 +5,7 @@ import {
 } from "lucide-react";
 import { Link, useLocation, useNavigate } from "react-router";
 import { Card } from "../ui/card";
+import { useAuth } from "../../contexts/AuthContext";
 import { supabase } from "../../../lib/supabase";
 import TrikeServeLogo from "../../../assets/TRIKESERVE_logo.png";
 
@@ -16,26 +17,30 @@ interface BusinessSidebarProps {
 export default function BusinessSidebar({ isMobileMenuOpen, setIsMobileMenuOpen }: BusinessSidebarProps) {
   const location = useLocation();
   const navigate = useNavigate();
+  const { user } = useAuth();
   const [pendingOrdersCount, setPendingOrdersCount] = useState(0);
 
   // Load pending orders count from Supabase
   useEffect(() => {
     loadPendingOrdersCount();
-    
+
     // Auto-refresh every 3 seconds
     const interval = setInterval(loadPendingOrdersCount, 3000);
     return () => clearInterval(interval);
-  }, []);
+  }, [user?.id]);
 
   const loadPendingOrdersCount = async () => {
     try {
-      const currentUserData = localStorage.getItem('trikeserve_current_user');
-      if (!currentUserData) {
+      /*
+       * Scoped to the signed-in user from the auth context rather than the cached
+       * copy in localStorage, which every tab shares. The badge was counting
+       * whoever signed in last anywhere, under this shop's own name.
+       */
+      const currentUser = user;
+      if (!currentUser?.id) {
         setPendingOrdersCount(0);
         return;
       }
-
-      const currentUser = JSON.parse(currentUserData);
 
       // SECURITY: Fetch orders from Supabase using RLS
       // The RLS policy ensures this business user can only see orders for their restaurant

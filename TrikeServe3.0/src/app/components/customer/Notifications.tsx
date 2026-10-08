@@ -5,6 +5,7 @@ import { Card } from "../ui/card";
 import BottomNav from "../ui/BottomNav";
 import { useState, useEffect } from "react";
 import { useCart } from "../../contexts/CartContext";
+import { useAuth } from "../../contexts/AuthContext";
 import { supabaseHelpers } from "@/lib/supabase";
 
 interface Notification {
@@ -26,6 +27,7 @@ export default function Notifications() {
   // because there is no history entry before it to return to.
   const goBack = usePreviousPage("/customer");
   const { getTotalItems } = useCart();
+  const { user } = useAuth();
   const [notifications, setNotifications] = useState<Notification[]>([]);
   // Whether the first load has finished. Without it the screen rendered its
   // empty state immediately, and that empty state says "You're all caught up!"
@@ -34,27 +36,40 @@ export default function Notifications() {
   // "notifications not displaying" rather than as loading.
   const [isLoading, setIsLoading] = useState(true);
 
+  /*
+   * Who to load for.
+   *
+   * Read from the auth context, never from `trikeserve_current_user`. That key is
+   * in localStorage, which every tab on this origin shares, so it names whoever
+   * signed in *last anywhere* -- not who this screen belongs to. Signing in as the
+   * business in one tab used to leave a customer tab's 5-second poll reading the
+   * business's id, and it quietly listed the business's own notifications
+   * ("New Order Received") under the customer's account.
+   */
+  const userId = user?.id ?? null;
+  const userEmail = user?.email ?? null;
+
   // Load notifications from orders, rides and delivery status updates.
   // Single loader (async) so it never fights with itself: the merged list is
   // saved back to localStorage and re-used on the next poll.
+  //
+  // Re-runs when the signed-in user changes, so the list follows the account
+  // instead of keeping the previous one's rows.
   useEffect(() => {
     loadNotifications();
-    
+
     // Poll for updates every 5 seconds
     const interval = setInterval(loadNotifications, 5000);
-    
+
     return () => clearInterval(interval);
-  }, []);
+  }, [userId]);
 
   const loadNotifications = async () => {
-    const currentUserData = localStorage.getItem('trikeserve_current_user');
-    if (!currentUserData) {
+    if (!userId || !userEmail) {
+      setNotifications([]);
       setIsLoading(false);
       return;
     }
-
-    const currentUser = JSON.parse(currentUserData);
-    const userEmail = currentUser.email;
 
     // Load saved notifications from localStorage
     const savedNotifications = localStorage.getItem(`notifications_${userEmail}`);
@@ -62,8 +77,8 @@ export default function Notifications() {
 
     // Merge in database-driven delivery notifications (driver status updates)
     // so they persist in the saved list instead of being re-added every poll.
-    if (currentUser?.id) {
-      const { data } = await supabaseHelpers.getDeliveryNotifications(currentUser.id);
+    {
+      const { data } = await supabaseHelpers.getDeliveryNotifications(userId);
       const existingIds = new Set(notificationsList.map(n => n.id));
       const dbNotifications: Notification[] = (data || []).map((n: any) => ({
         id: `db-${n.id}`,
@@ -89,7 +104,7 @@ export default function Notifications() {
         );
       }
       // Mark the database notifications as read (this page is the reader).
-      supabaseHelpers.markDeliveryNotificationsRead(currentUser.id);
+      supabaseHelpers.markDeliveryNotificationsRead(userId);
     }
 
     // Load orders

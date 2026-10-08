@@ -111,6 +111,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   // Set while logout() is running, so the SIGNED_OUT it causes is read as a
   // deliberate sign-out rather than a token refresh that failed.
   const signOutRequestedRef = useRef(false);
+  // Mirrors the signed-in user for the auth listeners, which are registered once
+  // and so cannot close over `user` without re-subscribing on every change.
+  const userIdRef = useRef<string | null>(null);
+  useEffect(() => {
+    userIdRef.current = user?.id ?? null;
+  }, [user]);
 
   // Listen for Supabase auth state changes
   useEffect(() => {
@@ -179,7 +185,34 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       async (event, session) => {
         console.log('[AuthContext] Auth event:', event);
         if (!mounted) return;
-        // SIGNED_IN is handled by the login() function directly.
+        if (event === 'SIGNED_IN') {
+          /*
+           * Another tab signed in.
+           *
+           * The session lives in localStorage, which every tab on this origin
+           * shares, so signing in anywhere replaces it everywhere. This event was
+           * ignored, which left this tab rendering the previous account's screens
+           * while the shared session had already moved on -- and the screens that
+           * scope a query by the cached user then ran it as the *new* account, so
+           * one tab quietly listed another account's notifications and orders.
+           *
+           * Adopt the profile the session now names. `ProtectedRoute` re-routes
+           * from there on its own, so a customer tab that gets signed in as the
+           * business lands on the business dashboard instead of continuing to
+           * serve the customer.
+           *
+           * Only when there is a user to replace: on the first event of a page
+           * load there is none yet, and that is the initial restore, already owned
+           * by getSession/INITIAL_SESSION below. This tab signing in itself also
+           * lands here, but by then login() has already set that user.
+           */
+          const currentId = userIdRef.current;
+          if (session?.user && currentId && session.user.id !== currentId) {
+            console.warn('[AuthContext] Another tab signed in as a different account — following it');
+            void loadUserProfile(session.user.id);
+          }
+          return;
+        }
         if (event === 'INITIAL_SESSION') {
           /*
            * Emitted on every page load. The getSession() call above owns the

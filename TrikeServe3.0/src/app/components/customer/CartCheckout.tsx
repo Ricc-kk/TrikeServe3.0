@@ -200,8 +200,17 @@ export default function CartCheckout() {
       }
 
       const orderNumber = Math.random().toString(36).substring(2, 9).toUpperCase();
-      const currentUserData = localStorage.getItem("trikeserve_current_user");
-      const currentUser = currentUserData ? JSON.parse(currentUserData) : null;
+      /*
+       * The customer details come from the auth context, not from
+       * `trikeserve_current_user`.
+       *
+       * That key is shared by every tab on this origin, so it names whoever
+       * signed in last anywhere. It also disagreed with the `customer_id` written
+       * a few lines below, which came from the context -- so an order could be
+       * filed under one account's id and another account's email and name, and
+       * neither of them could be found again in their own Activity.
+       */
+      const currentUser = user;
 
       const order = {
         id: Date.now().toString(),

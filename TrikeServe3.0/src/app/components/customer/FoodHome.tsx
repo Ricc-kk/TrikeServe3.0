@@ -21,6 +21,7 @@ import { ImageWithFallback } from "../figma/ImageWithFallback";
 
 import { useCart } from "../../contexts/CartContext";
 import { useFavorites } from "../../contexts/FavoritesContext";
+import { useAuth } from "../../contexts/AuthContext";
 import { useDeliveryAddress } from "../../contexts/useDeliveryAddress";
 import { supabase } from "../../../utils/supabase";
 import { supabaseHelpers } from "@/lib/supabase";
@@ -144,6 +145,7 @@ export default function FoodHome() {
   const navigate = useNavigate();
   
   const { getTotalItems } = useCart();
+  const { user } = useAuth();
   const { toggleFavorite, isFavorite, getTotalFavorites } = useFavorites();
   const delivery = useDeliveryAddress();
 
@@ -307,19 +309,18 @@ export default function FoodHome() {
   const loadUnreadCount = useCallback(async () => {
     let count = getUnreadNotificationsCount();
     try {
-      const currentUserData = localStorage.getItem("trikeserve_current_user");
-      if (currentUserData) {
-        const currentUser = JSON.parse(currentUserData);
-        if (currentUser?.id) {
-          const { data } = await supabaseHelpers.getDeliveryNotifications(currentUser.id);
-          count += (data || []).filter((n: any) => !n.read).length;
-        }
+      // From the auth context, not `trikeserve_current_user`: that key is in
+      // localStorage, which every tab on this origin shares, so the bell used to
+      // count whoever signed in last anywhere's unread notifications.
+      if (user?.id) {
+        const { data } = await supabaseHelpers.getDeliveryNotifications(user.id);
+        count += (data || []).filter((n: any) => !n.read).length;
       }
     } catch {
       // keep the localStorage count
     }
     setUnreadNotifications(count);
-  }, [getUnreadNotificationsCount]);
+  }, [getUnreadNotificationsCount, user?.id]);
 
   const loadAll = useCallback(() => {
     setLoading(true);

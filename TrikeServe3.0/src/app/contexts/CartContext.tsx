@@ -1,4 +1,5 @@
 import { createContext, useContext, useState, ReactNode, useEffect } from "react";
+import { useAuth } from "./AuthContext";
 
 export interface CustomizationSelection {
   groupId: number;
@@ -46,52 +47,51 @@ interface CartContextType {
 const CartContext = createContext<CartContextType | undefined>(undefined);
 
 export function CartProvider({ children }: { children: ReactNode }) {
+  const { user } = useAuth();
   const [cartRestaurants, setCartRestaurants] = useState<CartRestaurant[]>([]);
-  const [currentUserEmail, setCurrentUserEmail] = useState<string | null>(null);
 
-  // Load cart from localStorage on mount and when user changes
+  /*
+   * Whose cart this is, taken from the auth context.
+   *
+   * This used to re-read `trikeserve_current_user` from localStorage on a
+   * 1-second poll. That key is shared by every tab on this origin, so a second
+   * tab signing in as somebody else repointed this one at their account -- and
+   * the save effect below then wrote the *first* account's cart under the second
+   * account's key, so one person's cart silently overwrote another's.
+   */
+  const userEmail = user?.email ?? null;
+
+  // Which account the in-memory cart was loaded for. The save effect checks
+  // this, because on an account switch the cart still holds the previous
+  // account's items for one render -- saving those under the new key is the
+  // exact corruption this guards against.
+  const [loadedFor, setLoadedFor] = useState<string | null>(null);
+
+  // Load this account's cart, and only this account's.
   useEffect(() => {
-    const loadCart = () => {
-      const currentUserData = localStorage.getItem('trikeserve_current_user');
-      if (currentUserData) {
-        try {
-          const currentUser = JSON.parse(currentUserData);
-          const userEmail = currentUser.email;
-          setCurrentUserEmail(userEmail);
-          
-          // Load user-specific cart
-          const cartKey = `cart_${userEmail}`;
-          const savedCart = localStorage.getItem(cartKey);
-          if (savedCart) {
-            setCartRestaurants(JSON.parse(savedCart));
-          } else {
-            setCartRestaurants([]);
-          }
-        } catch (error) {
-          console.error('Error loading cart:', error);
-          setCartRestaurants([]);
-        }
-      } else {
-        setCartRestaurants([]);
-        setCurrentUserEmail(null);
-      }
-    };
+    if (!userEmail) {
+      setCartRestaurants([]);
+      setLoadedFor(null);
+      return;
+    }
 
-    loadCart();
+    try {
+      const savedCart = localStorage.getItem(`cart_${userEmail}`);
+      setCartRestaurants(savedCart ? JSON.parse(savedCart) : []);
+    } catch (error) {
+      console.error('Error loading cart:', error);
+      setCartRestaurants([]);
+    }
 
-    // Poll for user changes (in case user switches accounts)
-    const interval = setInterval(loadCart, 1000);
-    
-    return () => clearInterval(interval);
-  }, []);
+    setLoadedFor(userEmail);
+  }, [userEmail]);
 
   // Save cart to localStorage whenever it changes
   useEffect(() => {
-    if (currentUserEmail) {
-      const cartKey = `cart_${currentUserEmail}`;
-      localStorage.setItem(cartKey, JSON.stringify(cartRestaurants));
+    if (userEmail && loadedFor === userEmail) {
+      localStorage.setItem(`cart_${userEmail}`, JSON.stringify(cartRestaurants));
     }
-  }, [cartRestaurants, currentUserEmail]);
+  }, [cartRestaurants, userEmail, loadedFor]);
 
   const addToCart = (
     restaurantData: { id: string; name: string; location: string; distance: string; time: string; image: string; deliveryFee: number; businessUserId?: string; supabaseRestaurantId?: string },

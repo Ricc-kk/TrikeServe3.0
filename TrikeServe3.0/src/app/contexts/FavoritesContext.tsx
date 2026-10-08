@@ -1,4 +1,5 @@
 import { createContext, useContext, useState, ReactNode, useEffect } from "react";
+import { useAuth } from "./AuthContext";
 
 export interface FavoriteRestaurant {
   id: number | string;
@@ -40,72 +41,65 @@ interface FavoritesContextType {
 const FavoritesContext = createContext<FavoritesContextType | undefined>(undefined);
 
 export function FavoritesProvider({ children }: { children: ReactNode }) {
+  const { user } = useAuth();
   const [favorites, setFavorites] = useState<FavoriteRestaurant[]>([]);
   const [favoriteItems, setFavoriteItems] = useState<FavoriteMenuItem[]>([]);
-  const [currentUserEmail, setCurrentUserEmail] = useState<string | null>(null);
 
-  // Load favorites from localStorage on mount and when user changes
+  /*
+   * Whose favourites these are, taken from the auth context.
+   *
+   * This used to re-read `trikeserve_current_user` from localStorage on a 1-second
+   * poll. That key is shared by every tab on this origin, so a second tab
+   * signing in as somebody else repointed this one at their account -- and the
+   * save effects below then wrote the *first* account's favourites under the
+   * second account's key, quietly destroying them. The context user is this tab's
+   * own account and only changes when this tab's identity changes.
+   */
+  const userEmail = user?.email ?? null;
+
+  // Which account the in-memory lists were loaded for. The save effects check
+  // this, because on an account switch the lists still hold the previous
+  // account's rows for one render -- saving those under the new key is the exact
+  // corruption this guards against.
+  const [loadedFor, setLoadedFor] = useState<string | null>(null);
+
+  // Load this account's favourites, and only this account's.
   useEffect(() => {
-    const loadFavorites = () => {
-      const currentUserData = localStorage.getItem('trikeserve_current_user');
-      if (currentUserData) {
-        try {
-          const currentUser = JSON.parse(currentUserData);
-          const userEmail = currentUser.email;
-          setCurrentUserEmail(userEmail);
-          
-          // Load user-specific restaurant favorites
-          const favoritesKey = `favorites_${userEmail}`;
-          const savedFavorites = localStorage.getItem(favoritesKey);
-          if (savedFavorites) {
-            setFavorites(JSON.parse(savedFavorites));
-          } else {
-            setFavorites([]);
-          }
+    if (!userEmail) {
+      setFavorites([]);
+      setFavoriteItems([]);
+      setLoadedFor(null);
+      return;
+    }
 
-          // Load user-specific menu item favorites
-          const itemFavoritesKey = `favorite_items_${userEmail}`;
-          const savedItemFavorites = localStorage.getItem(itemFavoritesKey);
-          if (savedItemFavorites) {
-            setFavoriteItems(JSON.parse(savedItemFavorites));
-          } else {
-            setFavoriteItems([]);
-          }
-        } catch (error) {
-          console.error('Error loading favorites:', error);
-          setFavorites([]);
-          setFavoriteItems([]);
-        }
-      } else {
-        setFavorites([]);
-        setFavoriteItems([]);
-        setCurrentUserEmail(null);
-      }
-    };
+    try {
+      const savedFavorites = localStorage.getItem(`favorites_${userEmail}`);
+      setFavorites(savedFavorites ? JSON.parse(savedFavorites) : []);
 
-    loadFavorites();
+      const savedItemFavorites = localStorage.getItem(`favorite_items_${userEmail}`);
+      setFavoriteItems(savedItemFavorites ? JSON.parse(savedItemFavorites) : []);
+    } catch (error) {
+      console.error('Error loading favorites:', error);
+      setFavorites([]);
+      setFavoriteItems([]);
+    }
 
-    // Poll for user changes (in case user switches accounts)
-    const interval = setInterval(loadFavorites, 1000);
-    
-    return () => clearInterval(interval);
-  }, []);
+    setLoadedFor(userEmail);
+  }, [userEmail]);
 
   // Save restaurant favorites to localStorage whenever they change
   useEffect(() => {
-    if (currentUserEmail) {
-      const favoritesKey = `favorites_${currentUserEmail}`;
-      localStorage.setItem(favoritesKey, JSON.stringify(favorites));
+    if (userEmail && loadedFor === userEmail) {
+      localStorage.setItem(`favorites_${userEmail}`, JSON.stringify(favorites));
     }
-  }, [favorites, currentUserEmail]);
+  }, [favorites, userEmail, loadedFor]);
 
   // Save menu item favorites to localStorage whenever they change
   useEffect(() => {
-    if (currentUserEmail) {
-      const itemFavoritesKey = `favorite_items_${currentUserEmail}`;
-      localStorage.setItem(itemFavoritesKey, JSON.stringify(favoriteItems));
+    if (userEmail && loadedFor === userEmail) {
+      localStorage.setItem(`favorite_items_${userEmail}`, JSON.stringify(favoriteItems));
     }
-  }, [favoriteItems, currentUserEmail]);
+  }, [favoriteItems, userEmail, loadedFor]);
 
   // --- Restaurant favorites ---
   const toggleFavorite = (restaurant: FavoriteRestaurant) => {

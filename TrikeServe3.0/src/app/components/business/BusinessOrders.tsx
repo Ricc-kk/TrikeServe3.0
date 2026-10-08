@@ -109,7 +109,7 @@ export default function BusinessOrders() {
   // Load orders from Supabase (secure - uses RLS policies)
   useEffect(() => {
     loadOrders();
-    
+
     // Auto-refresh orders every 5 seconds (increased from 3), but NOT while updating status
     const interval = setInterval(() => {
       if (!isUpdatingStatus) {
@@ -119,7 +119,9 @@ export default function BusinessOrders() {
       }
     }, 5000);
     return () => clearInterval(interval);
-  }, [isUpdatingStatus]);
+    // Re-reads when the signed-in user changes, so the list never keeps showing
+    // the previous account's orders after another tab signs in.
+  }, [isUpdatingStatus, user?.id]);
 
   /*
    * Poll the rider for whichever order is open.
@@ -249,15 +251,24 @@ export default function BusinessOrders() {
   const loadOrders = async () => {
     try {
       setIsLoading(true);
-      const currentUserData = localStorage.getItem('trikeserve_current_user');
+      /*
+       * Identity from the auth context, not from `trikeserve_current_user`.
+       *
+       * That key is in localStorage, which every tab on this origin shares, so it
+       * names whoever signed in last anywhere. Re-reading it here let another
+       * tab's sign-in swap the restaurant this list was scoped to, so the shop
+       * saw a different account's orders under its own name -- or none at all,
+       * when that account had no restaurant.
+       */
+      const currentUser = user;
 
-      if (!currentUserData) {
-        console.log('[BusinessOrders] No current user data found');
+      if (!currentUser?.id) {
+        console.log('[BusinessOrders] No signed-in user');
+        setOrders([]);
         setIsLoading(false);
         return;
       }
 
-      const currentUser = JSON.parse(currentUserData);
       console.log('[BusinessOrders] Current user:', {
         email: currentUser.email,
         id: currentUser.id,
@@ -680,10 +691,9 @@ export default function BusinessOrders() {
       return false;
     }
 
-    const currentUserData = localStorage.getItem('trikeserve_current_user');
-    const currentUser = currentUserData ? JSON.parse(currentUserData) : null;
-
-    const pickupLabel = order.restaurantName || currentUser?.businessName || 'Restaurant Pickup';
+    // Same reason as loadOrders: the pickup label belongs to the account that owns
+    // the order, and the context user is the one this screen was admitted for.
+    const pickupLabel = order.restaurantName || user?.businessName || 'Restaurant Pickup';
     const taggedPickup = `DELIVERY|ORDER_ID:${order.id}|ORDER_NO:${order.orderNumber}|${pickupLabel}`;
 
     console.log('[BusinessOrders] Creating OPEN delivery request for order:', {

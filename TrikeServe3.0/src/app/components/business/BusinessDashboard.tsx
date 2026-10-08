@@ -248,17 +248,28 @@ export default function BusinessDashboard() {
       loadDashboardData();
     }, 30000);
     return () => clearInterval(interval);
-  }, []);
+    // Re-reads when the signed-in user changes, so the totals never outlive the
+    // account they were loaded for.
+  }, [user?.id]);
 
   const loadDashboardData = async () => {
     try {
-      const currentUserData = localStorage.getItem('trikeserve_current_user');
-      if (!currentUserData) {
+      /*
+       * Identity from the auth context, not from `trikeserve_current_user`.
+       *
+       * That key is in localStorage, which every tab on this origin shares, so it
+       * names whoever signed in last anywhere. Re-reading it here meant a
+       * business tab could resolve a different account's restaurant and totals
+       * the moment another tab signed in, and this screen reported them as
+       * "yours". The context user is this tab's own account, and it is also the
+       * one `ProtectedRoute` admitted this screen for.
+       */
+      const currentUser = user;
+      if (!currentUser?.id) {
         setIsLoading(false);
         return;
       }
 
-      const currentUser = JSON.parse(currentUserData);
       let businessRestaurantId = currentUser.restaurantId;
 
       // If no restaurantId, fetch from Supabase
