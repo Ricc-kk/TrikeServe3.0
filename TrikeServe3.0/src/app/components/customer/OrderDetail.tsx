@@ -115,6 +115,7 @@ const statusColors: Record<string, string> = {
  */
 const statusLabels: Record<string, string> = {
   'pending': 'New Order',
+  'payment-confirmed': 'Payment confirmed',
   'preparing': 'Preparing Your Order',
   'ready': 'Ready for Pickup',
   'confirmed': 'Driver Assigned',
@@ -676,20 +677,67 @@ export default function OrderDetail() {
             <CreditCard className="w-4 h-4 text-[var(--primary)]" />
             <h3 className="font-bold text-[var(--ink)] text-sm md:text-base">Payment</h3>
           </div>
-          <div className="flex items-center justify-between mb-4">
-            <span className="text-sm text-[var(--muted-foreground)]">{order.paymentMethod === 'cash' ? 'Cash on Delivery' : 'GCash (Prepaid)'}</span>
-            <Badge className={order.paymentMethod === 'gcash' ? 'bg-[var(--success)] text-white text-xs' : 'bg-[var(--amber-soft)] text-[var(--amber)] text-xs'}>
-              {order.paymentMethod === 'gcash' ? 'GCash' : 'COD'}
+          <div className="flex flex-wrap items-center gap-2 mb-4">
+            <Badge className="bg-[var(--success)] text-white text-xs">
+              Food: GCash
+            </Badge>
+            {/* The rider collects this part at the door, so it stays unpaid for
+                most of the order's life. Showing one badge for the whole order
+                made a fully paid order look identical to an unpaid one. */}
+            <Badge
+              variant="outline"
+              className={
+                order.status === 'delivered'
+                  ? 'border-[var(--success)] text-[var(--success)] text-xs'
+                  : 'border-[var(--amber)] text-[var(--amber)] text-xs'
+              }
+            >
+              {order.status === 'delivered' ? 'Delivery fee: paid' : 'Delivery fee: cash to rider'}
             </Badge>
           </div>
+
+          {/* The customer's own screenshot, so the record is on their side too
+              and not only in the shop's. Tappable, because the thumbnail is
+              small and a GCash receipt is not legible at that size. */}
+          {order.paymentProofUrl && (
+            <a
+              href={order.paymentProofUrl}
+              target="_blank"
+              rel="noreferrer"
+              className="mb-3 block overflow-hidden rounded-xl border border-line"
+            >
+              <img
+                src={order.paymentProofUrl}
+                alt={`GCash payment proof for order ${order.orderNumber}`}
+                className="max-h-48 w-full cursor-zoom-in object-cover"
+              />
+              <p className="bg-[var(--muted)] px-3 py-1.5 text-xs text-[var(--muted-foreground)]">
+                Your payment proof · tap to view full size
+              </p>
+            </a>
+          )}
+
+          <p className="mb-3 text-xs text-[var(--muted-foreground)]">
+            {order.paymentConfirmedAt
+              ? 'The shop has confirmed your GCash payment.'
+              : 'Waiting for the shop to confirm your GCash payment.'}
+          </p>
+
           <div className="space-y-2 pt-3 border-t-2 border-[var(--muted)]">
             <div className="flex justify-between text-sm text-[var(--muted-foreground)]">
-              <span>Subtotal</span>
+              <span>Food subtotal (GCash)</span>
               <span>₱{order.subtotal.toFixed(2)}</span>
             </div>
             <div className="flex justify-between text-sm text-[var(--muted-foreground)]">
-              <span>Delivery Fee</span>
+              <span>Delivery fee (cash to rider)</span>
               <span>₱{order.deliveryFee.toFixed(2)}</span>
+            </div>
+            {/* The split restated on the total, because the total is one number
+                and the payment is not: this is where the two are made explicit
+                on the order the customer keeps. */}
+            <div className="flex justify-between text-xs text-[var(--muted-foreground)] pt-1">
+              <span>Transferred by GCash</span>
+              <span>₱{(order.gcashAmount ?? order.subtotal).toFixed(2)}</span>
             </div>
             <div className="flex justify-between text-base font-bold text-[var(--ink)] pt-2 border-t-2 border-[var(--border)]">
               <span>Total</span>
@@ -698,12 +746,43 @@ export default function OrderDetail() {
           </div>
         </Card>
 
-        {/* Cancel Order — only while the restaurant hasn't accepted it yet */}
+        {/* The rider's handover photo, once there is one.
+            Placed before the cancel block because a delivered order can no longer
+            be cancelled and this is what a customer looks for at that point: not
+            "delivered" as a word, but the picture of it. */}
+        {order.deliveryProofUrl && (
+          <Card className="p-4 md:p-5 border border-line">
+            <h3 className="font-bold text-[var(--ink)] text-sm md:text-base mb-3">
+              Proof of delivery
+            </h3>
+            <a
+              href={order.deliveryProofUrl}
+              target="_blank"
+              rel="noreferrer"
+              className="block overflow-hidden rounded-xl border border-line"
+            >
+              <img
+                src={order.deliveryProofUrl}
+                alt={`Photo of this order being handed over${order.driverName ? ` by ${order.driverName}` : ''}`}
+                className="max-h-64 w-full cursor-zoom-in object-cover"
+              />
+              <p className="bg-[var(--muted)] px-3 py-1.5 text-xs text-[var(--muted-foreground)]">
+                {order.driverName ? `${order.driverName}'s handover photo` : 'Handover photo'}
+                {' · '}tap to view full size
+              </p>
+            </a>
+          </Card>
+        )}
+
+        {/* Cancel Order — only while the restaurant hasn't accepted it yet.
+            An order awaiting payment is still cancellable, but a payment-
+            confirmed one is not: the money has moved and the kitchen may have
+            started. */}
         {order.status === 'pending' && (
           <Card className="p-4 md:p-5 border-2 border-[#E2E8F0]">
             <h3 className="font-bold text-[#121212] text-sm md:text-base mb-1">Need to cancel?</h3>
             <p className="text-sm text-[#64748B] mb-3">
-              You can cancel this order until the restaurant accepts it.
+              You can cancel this order until the shop confirms your payment.
             </p>
             <Button
               onClick={() => setShowCancelOrderPrompt(true)}

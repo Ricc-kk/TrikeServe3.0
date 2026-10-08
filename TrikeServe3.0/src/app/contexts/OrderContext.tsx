@@ -36,9 +36,16 @@ export interface Order {
   subtotal: number;
   deliveryFee: number;
   total: number;
-  status: "pending" | "preparing" | "on-the-way" | "delivered" | "cancelled";
+  /**
+   * `payment-confirmed` sits between `pending` and `preparing`: the customer has
+   * uploaded a GCash screenshot and the shop has checked it. It is not
+   * `confirmed` -- that already means "published, rider requested", which is a
+   * different point in the flow entirely.
+   */
+  status: "pending" | "payment-confirmed" | "preparing" | "on-the-way" | "delivered" | "cancelled";
   deliveryMode: "delivery" | "pickup";
-  paymentMethod: "cash" | "gcash";
+  /** GCash only. The delivery fee is cash, collected by the rider. */
+  paymentMethod: "gcash";
   address: string;
   date: string;
   createdAt: string; // ISO timestamp

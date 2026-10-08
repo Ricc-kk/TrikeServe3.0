@@ -1113,6 +1113,21 @@ function safeFileExtension(file: File): string {
   const raw = file.name.split('.').pop() || '';
   return /^[a-zA-Z0-9]{1,10}$/.test(raw) ? raw.toLowerCase() : 'jpg';
 }
+/**
+ * Turn a storage upload failure into something a person can act on.
+ *
+ * A missing bucket is the overwhelmingly common case here -- the proof buckets
+ * are created by a migration, and every upload against a project where it has
+ * not been run fails with a message that says nothing about the migration. The
+ * UI can then say which SQL to run instead of showing a raw storage error.
+ */
+function describeStorageError(error: { message?: string } | null): string {
+  const message = error?.message || 'Upload failed';
+  if (/bucket/i.test(message) || /not found/i.test(message)) {
+    return 'Proof storage is not set up. Run ADD_ORDER_PAYMENT_AND_DELIVERY_PROOF.sql in Supabase.';
+  }
+  return message;
+}
 
 // ---------------------------------------------------------------------------
 // Fuzzy place matching for shared-ride lobbies
@@ -2201,6 +2216,11 @@ export const supabaseHelpers = {
     if (!customerId) return { data: null, error: null };
 
     const labels: Record<string, { title: string; message: string; emoji: string }> = {
+      'payment-confirmed': {
+        title: 'Payment received',
+        message: 'The shop has received your GCash payment and is preparing your order.',
+        emoji: '\uD83D\uDD18',
+      },
       'confirmed': {
         title: 'Order Confirmed',
         message: 'Your order has been confirmed and is being prepared.',
@@ -2942,7 +2962,10 @@ export const supabaseHelpers = {
       .from('orders')
       .select('*')
       .eq('restaurant_id', restaurantId)
-      .in('status', ['pending', 'preparing', 'ready', 'on-the-way'])
+      // 'payment-confirmed' is still live work: the money is in, the food is
+      // not cooked yet. Left out, a paid order stopped appearing in the pending
+      // list the moment the shop confirmed it.
+      .in('status', ['pending', 'payment-confirmed', 'preparing', 'ready', 'on-the-way'])
       .order('created_at', { ascending: true });
     return { data, error };
   },
@@ -3116,6 +3139,129 @@ export const supabaseHelpers = {
       .getPublicUrl(filePath);
 
     return { data: publicUrlData, error: null };
+  },
+  // ---------------------------------------------------------------------------
+  // Payment proof and delivery proof
+  // ---------------------------------------------------------------------------
+  //
+  // Both are order screenshots: the customer's GCash transfer receipt, and the
+  // rider's photo at handover. One bucket ('order_proofs', created by
+  // ADD_ORDER_PAYMENT_AND_DELIVERY_PROOF.sql), one folder per order.
+  //
+  // `safeFileExtension` rather than `file.name.split('.')`, which is what the
+  // menu-image upload above does: an unvalidated extension goes straight into
+  // the storage path.
+
+  /** The customer's screenshot of their GCash transfer. */
+  async uploadOrderPaymentProof(orderId: string, file: File) {
+    const filePath = orderId + '/payment.' + safeFileExtension(file);
+
+    const { error } = await supabase.storage
+      .from('order_proofs')
+      .upload(filePath, file, { upsert: true });
+
+    if (error) return { data: null, error: describeStorageError(error) };
+
+    const { data: publicUrlData } = supabase.storage
+      .from('order_proofs')
+      .getPublicUrl(filePath);
+
+    return { data: publicUrlData, error: null };
+  },
+
+  /** The rider's photo of the handover. */
+  async uploadDeliveryProof(orderId: string, file: File) {
+    const filePath = orderId + '/delivery.' + safeFileExtension(file);
+
+    const { error } = await supabase.storage
+      .from('order_proofs')
+      .upload(filePath, file, { upsert: true });
+
+    if (error) return { data: null, error: describeStorageError(error) };
+
+    const { data: publicUrlData } = supabase.storage
+      .from('order_proofs')
+      .getPublicUrl(filePath);
+
+    return { data: publicUrlData, error: null };
+  },
+
+  /**
+   * Shop: the transfer has been verified. Moves the order to `payment-confirmed`
+   * and records who verified it and when.
+   *
+   * Guarded on the order still being `pending`, so two people tapping Confirm at
+   * the same moment cannot both record a confirmation -- the second update
+   * matches no row and reports back rather than overwriting the first one's name.
+   */
+  async confirmOrderPayment(
+    orderId: string,
+    businessUserEmail?: string | null,
+  ): Promise<{ success: boolean; error?: string }> {
+    try {
+      const { data, error } = await supabase
+        .from('orders')
+        .update({
+          status: 'payment-confirmed',
+          payment_confirmed_at: new Date().toISOString(),
+          payment_confirmed_by: businessUserEmail || null,
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', orderId)
+        .eq('status', 'pending')
+        .select('id')
+        .maybeSingle();
+
+      if (error) return { success: false, error: error.message };
+      if (!data) return { success: false, error: 'This order is no longer awaiting payment.' };
+      return { success: true };
+    } catch (error) {
+      console.error('[confirmOrderPayment] error:', error);
+      return { success: false, error: 'Network error while confirming the payment' };
+    }
+  },
+
+  /** Rider: attach the handover photo to the order. */
+  async attachDeliveryProof(
+    orderId: string,
+    proofUrl: string,
+  ): Promise<{ success: boolean; error?: string }> {
+    try {
+      const { error } = await supabase
+        .from('orders')
+        .update({
+          delivery_proof_url: proofUrl,
+          delivery_proof_uploaded_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', orderId);
+
+      if (error) return { success: false, error: error.message };
+      return { success: true };
+    } catch (error) {
+      console.error('[attachDeliveryProof] error:', error);
+      return { success: false, error: 'Network error while saving the delivery photo' };
+    }
+  },
+
+  /** What the shop told customers to do before paying, for the checkout screen. */
+  async getPaymentInstructions(restaurantId: string): Promise<{
+    instructions: string | null;
+    error?: string;
+  }> {
+    try {
+      const { data, error } = await supabase
+        .from('restaurants')
+        .select('payment_instructions')
+        .eq('id', restaurantId)
+        .maybeSingle();
+
+      if (error) return { instructions: null, error: error.message };
+      return { instructions: data?.payment_instructions?.trim() || null };
+    } catch (error) {
+      console.error('[getPaymentInstructions] error:', error);
+      return { instructions: null, error: 'Network error while loading payment instructions' };
+    }
   },
 
   // Load the admin-set base delivery fee (admin_settings > rates > deliveryBaseFee)

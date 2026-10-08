@@ -37,6 +37,11 @@ export default function BusinessHome() {
   const [showConfirmSaveInfo, setShowConfirmSaveInfo] = useState(false);
   const [showSaveSuccess, setShowSaveSuccess] = useState(false);
   const [saveInfoError, setSaveInfoError] = useState<string | null>(null);
+  // The GCash instructions save on their own, immediately, and so carry their
+  // own state rather than borrowing the shop-details modal's.
+  const [isSavingPaymentInstructions, setIsSavingPaymentInstructions] = useState(false);
+  const [savePaymentInstructionsError, setSavePaymentInstructionsError] = useState<string | null>(null);
+  const [paymentInstructionsSaved, setPaymentInstructionsSaved] = useState(false);
   // Address and pin move together, so the full-screen map picker is the only way
   // to edit them. Typing the address on its own produced a text address with no
   // coordinates behind it, which is exactly what "distance to you" needs.
@@ -65,7 +70,19 @@ export default function BusinessHome() {
     // business; the customer filters and "distance to you" both read them.
     cuisine: [] as string[],
     latitude: null as number | null,
-    longitude: null as number | null
+    longitude: null as number | null,
+    /**
+     * How to pay, in the shop's own words: which GCash number, under whose name,
+     * what to put in the reference. Shown verbatim at checkout, above the proof
+     * upload, because this is the text the customer is reading while they decide
+     * where to send money.
+     *
+     * Saved straight to the row rather than staged for Super Admin review: it is
+     * the shop's own payment details, it cannot affect any other shop, and making
+     * a customer wait for an admin to publish a GCash number would block every
+     * order in the meantime.
+     */
+    paymentInstructions: ""
   });
   /** The customer preview reads the menu in sections, like the storefront does. */
   const menuGroups = useMemo(() => {
@@ -157,6 +174,35 @@ export default function BusinessHome() {
           latitude: restaurant.latitude ?? prev.latitude,
           longitude: restaurant.longitude ?? prev.longitude,
         }));
+
+        /*
+         * The GCash instructions, read on their own.
+         *
+         * Deliberately a second query rather than one more column on the select
+         * above. PostgREST rejects a whole select that names a column the project
+         * does not have, so putting `payment_instructions` there meant that until
+         * ADD_ORDER_PAYMENT_AND_DELIVERY_PROOF.sql had been run, this screen lost
+         * the shop's name, address, hours and map pin too -- one optional column
+         * taking down every other field on the page.
+         *
+         * `?? prev` rather than `|| prev`, so a shop that deliberately clears the
+         * field is not given their old instructions back on the next load.
+         */
+        supabaseHelpers
+          .getPaymentInstructions(restaurant.id)
+          .then((res) => {
+            if (res.error) {
+              console.warn('[BusinessHome] Payment instructions unavailable:', res.error);
+              return;
+            }
+            setRestaurantData((prev) => ({
+              ...prev,
+              paymentInstructions: res.instructions ?? '',
+            }));
+          })
+          .catch((err) =>
+            console.warn('[BusinessHome] Failed to load payment instructions:', err),
+          );
 
         // Show the business's real average rating from business_ratings.
         supabaseHelpers.getBusinessRating(user.id).then((ratingRes) => {
@@ -332,6 +378,7 @@ export default function BusinessHome() {
             subtitle: restaurantData.subtitle,
             delivery_time: restaurantData.deliveryTime,
             operating_hours: restaurantData.operatingHours,
+            payment_instructions: restaurantData.paymentInstructions,
             created_at: new Date().toISOString(),
           }])
           .select()
@@ -461,6 +508,7 @@ export default function BusinessHome() {
             subtitle: restaurantData.subtitle,
             delivery_time: restaurantData.deliveryTime,
             operating_hours: restaurantData.operatingHours,
+            payment_instructions: restaurantData.paymentInstructions,
             banner_image: publicUrl,
             created_at: new Date().toISOString(),
           }]);
@@ -563,6 +611,7 @@ export default function BusinessHome() {
             subtitle: restaurantData.subtitle,
             delivery_time: restaurantData.deliveryTime,
             operating_hours: restaurantData.operatingHours,
+            payment_instructions: restaurantData.paymentInstructions,
             logo_image: publicUrl,
             created_at: new Date().toISOString(),
           }]);
@@ -589,7 +638,73 @@ export default function BusinessHome() {
     }
   };
 
-  // Save the shop details.
+  /*
+ * Save the GCash instructions on their own.
+ *
+ * Writes the row directly rather than going through `profile.save`, which stages
+ * a change for Super Admin review. That queue exists for the fields that describe
+ * the shop to the public -- its name, where it is, what it serves -- because a
+ * wrong value there misleads customers about a business the platform vouches for.
+ * A GCash number is none of those things: it is this shop's own account, it
+ * affects nobody else's listing, and a customer who cannot read it at checkout
+ * cannot pay, so every order stalls until an admin gets to it.
+ */
+const savePaymentInstructions = async () => {
+  if (!user?.id) return;
+
+  setIsSavingPaymentInstructions(true);
+  setSavePaymentInstructionsError(null);
+
+  try {
+    // Always looked up by owner rather than carried in state: the shop row is
+    // identified by `business_user_id`, and the other writers on this screen
+    // look it up the same way, so a cached id here would be a second source that
+    // can disagree after the shop row is recreated.
+    const { data: row, error: lookupError } = await supabase
+      .from('restaurants')
+      .select('id')
+      .eq('business_user_id', user.id)
+      .maybeSingle();
+
+    if (lookupError) {
+      setSavePaymentInstructionsError(lookupError.message);
+      return;
+    }
+
+    const restaurantId = row?.id;
+
+    if (!restaurantId) {
+      setSavePaymentInstructionsError('No shop is linked to this account yet.');
+      return;
+    }
+
+    const { error: updateError } = await supabase
+      .from('restaurants')
+      .update({
+        // Trimmed, but an emptied field is written as an empty string rather than
+        // null so clearing it actually clears it -- the next load reads this back
+        // with `??`, which would keep a null and put the old text on screen again.
+        payment_instructions: restaurantData.paymentInstructions.trim(),
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', restaurantId);
+
+    if (updateError) {
+      setSavePaymentInstructionsError(updateError.message);
+      return;
+    }
+
+    setPaymentInstructionsSaved(true);
+    setTimeout(() => setPaymentInstructionsSaved(false), 2500);
+  } catch (error) {
+    console.error('[BusinessHome] Failed to save payment instructions:', error);
+    setSavePaymentInstructionsError('Could not save your payment instructions.');
+  } finally {
+    setIsSavingPaymentInstructions(false);
+  }
+};
+
+// Save the shop details.
   //
   // This used to write the restaurants row directly, which made the edit modal
   // here and the Pickup Location picker on Edit Profile two separate writers
@@ -1258,6 +1373,77 @@ export default function BusinessHome() {
                     placeholder="8:00 AM - 10:00 PM"
                   />
                   <p className="text-xs text-[var(--muted-foreground)] mt-1">Daily operating hours</p>
+                </div>
+
+                {/*
+                  GCash instructions, with a Save of their own.
+
+                  Deliberately not part of the Save button above. That one stages
+                  the change for Super Admin review, which is right for the name
+                  and the address but wrong here: this is the shop's own payment
+                  details, and holding them behind an admin queue would block
+                  every order in the meantime -- customers reach checkout, read
+                  no number, and cannot pay.
+
+                  So it writes straight to the row and says so, both here and in
+                  the confirmation.
+                */}
+                <div className="rounded-2xl border-2 border-dashed border-line p-4">
+                  <label
+                    htmlFor="payment-instructions"
+                    className="text-sm font-bold text-[var(--ink)] mb-2 block"
+                  >
+                    GCash payment instructions
+                  </label>
+                  <textarea
+                    id="payment-instructions"
+                    value={restaurantData.paymentInstructions}
+                    onChange={(e) =>
+                      setRestaurantData({ ...restaurantData, paymentInstructions: e.target.value })
+                    }
+                    rows={4}
+                    className="w-full p-3 border border-line rounded-xl resize-y"
+                    placeholder={'GCash number: 0917 123 4567\nName: Juan Dela Cruz\nSend the exact amount and put your order number as the reference.'}
+                  />
+                  <p className="text-xs text-[var(--muted-foreground)] mt-1">
+                    Shown word for word at checkout, above the payment proof
+                    upload. Customers transfer the food amount by GCash and pay the
+                    delivery fee in cash to the rider.
+                  </p>
+
+                  <div className="mt-3 flex items-center gap-3">
+                    <Button
+                      onClick={savePaymentInstructions}
+                      disabled={isSavingPaymentInstructions}
+                      className="text-sm disabled:opacity-60"
+                    >
+                      {isSavingPaymentInstructions ? (
+                        <>
+                          <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                          Saving...
+                        </>
+                      ) : (
+                        <>
+                          <Check className="w-4 h-4 mr-2" />
+                          Save instructions
+                        </>
+                      )}
+                    </Button>
+                    {paymentInstructionsSaved && (
+                      <p className="text-xs font-semibold text-[var(--success-ink)]">
+                        Saved. Customers see this at checkout.
+                      </p>
+                    )}
+                  </div>
+
+                  {savePaymentInstructionsError && (
+                    <p
+                      role="alert"
+                      className="mt-2 rounded-xl bg-[var(--error-soft)] px-3 py-2 text-xs text-[var(--error)]"
+                    >
+                      {savePaymentInstructionsError}
+                    </p>
+                  )}
                 </div>
               </div>
             </div>

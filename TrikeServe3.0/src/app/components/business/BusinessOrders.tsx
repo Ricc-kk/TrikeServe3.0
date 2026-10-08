@@ -24,10 +24,28 @@ interface Order {
   items: { name: string; quantity: number; price: number }[];
   total: number;
   subtotal: number;
-  status: 'pending' | 'confirmed' | 'preparing' | 'ready' | 'on-the-way' | 'delivered' | 'cancelled';
-  paymentMethod: 'cash' | 'gcash';
+  /**
+   * `payment-confirmed` is the shop's own "I have the money" step, sitting
+   * between `pending` and `preparing`. It is deliberately not folded into
+   * `confirmed`, which already means something else in this app: "published, a
+   * rider has been requested".
+   */
+  status: 'pending' | 'payment-confirmed' | 'confirmed' | 'preparing' | 'ready' | 'on-the-way' | 'delivered' | 'cancelled';
+  /** GCash only. The delivery fee is cash, collected by the rider at the door. */
+  paymentMethod: 'gcash';
   address: string;
   deliveryFee: number;
+  /**
+   * The customer's screenshot of their GCash transfer, and when it arrived. This
+   * is what the shop is checking when it taps Confirm Payment.
+   */
+  paymentProofUrl?: string | null;
+  paymentProofUploadedAt?: string | null;
+  /** Who verified the transfer, and when. */
+  paymentConfirmedAt?: string | null;
+  paymentConfirmedBy?: string | null;
+  /** The rider's photo at handover. */
+  deliveryProofUrl?: string | null;
   estimatedTime?: string;
   date: string;
   createdAt: string;
@@ -60,6 +78,12 @@ export default function BusinessOrders() {
   // Decline collects a reason before the order is cancelled.
   const [showDeclinePrompt, setShowDeclinePrompt] = useState(false);
   const [statusConfirm, setStatusConfirm] = useState<'ready' | 'delivery' | null>(null);
+  // Confirming the GCash transfer. Its own flag and message because it is the
+  // one action on this screen that can legitimately fail on a busy shop -- two
+  // people, or a double tap -- and a silent no-op there looks like the button
+  // is broken.
+  const [isConfirmingPayment, setIsConfirmingPayment] = useState(false);
+  const [paymentError, setPaymentError] = useState<string | null>(null);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [selectedStatusFilter, setSelectedStatusFilter] = useState<'all' | 'pending' | 'confirmed' | 'preparing' | 'ready' | 'on-the-way'>('all');
   const [orders, setOrders] = useState<Order[]>([]);
@@ -395,7 +419,12 @@ export default function BusinessOrders() {
           total: dbOrder.total || 0,
           subtotal: dbOrder.subtotal || 0,
           status: dbOrder.status || 'pending',
-          paymentMethod: dbOrder.payment_method || 'cash',
+          paymentMethod: 'gcash',
+          paymentProofUrl: dbOrder.payment_proof_url ?? null,
+          paymentProofUploadedAt: dbOrder.payment_proof_uploaded_at ?? null,
+          paymentConfirmedAt: dbOrder.payment_confirmed_at ?? null,
+          paymentConfirmedBy: dbOrder.payment_confirmed_by ?? null,
+          deliveryProofUrl: dbOrder.delivery_proof_url ?? null,
           address: dbOrder.address || '',
           deliveryFee: dbOrder.delivery_fee || 0,
           estimatedTime: dbOrder.estimated_time || '30 mins',
@@ -523,13 +552,66 @@ export default function BusinessOrders() {
     };
   }, [restaurantId]);
 
-  const activeOrders = orders.filter(o => ['pending', 'confirmed', 'preparing', 'ready', 'on-the-way'].includes(o.status));
+  // `payment-confirmed` is an active state, not history: the shop still has to
+  // cook the food and hand it to a rider. Leaving it out put a paid order into
+  // neither list, which is where "my order vanished" came from.
+  const activeOrders = orders.filter(o => ['pending', 'payment-confirmed', 'confirmed', 'preparing', 'ready', 'on-the-way'].includes(o.status));
   const historyOrders = orders.filter(o => ['delivered', 'cancelled'].includes(o.status));
 
   // Filter active orders by selected status
   const filteredActiveOrders = selectedStatusFilter === 'all' 
     ? activeOrders 
     : activeOrders.filter(o => o.status === selectedStatusFilter);
+
+  /**
+   * Shop: the GCash transfer has arrived and been checked.
+   *
+   * Moves the order to `payment-confirmed`, which is what releases the Accept
+   * action -- the order cannot be cooked until the money for it is accounted
+   * for. It then reloads rather than patching the local row, because the write
+   * is guarded on `status = 'pending'` and a row this screen still believes is
+   * pending is exactly the case where the guard rejected it.
+   */
+  const handleConfirmPayment = async (order: Order) => {
+    setIsConfirmingPayment(true);
+    setPaymentError(null);
+
+    const result = await supabaseHelpers.confirmOrderPayment(order.id, user?.email);
+
+    if (!result.success) {
+      setPaymentError(result.error || 'Could not confirm this payment.');
+      setIsConfirmingPayment(false);
+      return;
+    }
+
+    // Tell the customer their money landed. Nothing else does this: the
+    // delivery notifications only fire from the rider's screen, so without
+    // it the customer is left watching a tracker that has not moved.
+    try {
+      await supabaseHelpers.notifyBusinessOrderStatusChange({
+        orderId: order.id,
+        orderNumber: order.orderNumber,
+        restaurantName: order.restaurantName,
+        status: 'payment-confirmed',
+      });
+    } catch (notifyError) {
+      console.error('[BusinessOrders] Failed to notify customer of payment:', notifyError);
+    }
+
+    logAudit({
+      action: 'confirm_payment',
+      actorRole: 'business',
+      entityType: 'order',
+      entityId: order.id,
+      summary: `Confirmed GCash payment for order ${order.orderNumber}`,
+      details: { order_number: order.orderNumber, total: order.total },
+      actorEmail: user?.email,
+      actorName: user?.name,
+    });
+
+    await loadOrders();
+    setIsConfirmingPayment(false);
+  };
 
   /** Decline a pending order, recording the reason the business gave. */
   const declineOrder = async (orderId: string, reason: string) => {
@@ -933,7 +1015,17 @@ export default function BusinessOrders() {
                      : 'bg-[var(--muted)] text-[var(--muted-foreground)] hover:bg-[var(--border)]'
                  }`}
                >
-                 New ({activeOrders.filter(o => o.status === 'pending').length})
+                 Awaiting Payment ({activeOrders.filter(o => o.status === 'pending').length})
+                </button>
+               <button
+                 onClick={() => setSelectedStatusFilter('payment-confirmed')}
+                 className={`px-3 md:px-4 py-2 rounded-full text-xs md:text-sm font-medium whitespace-nowrap transition-all flex-shrink-0 ${
+                   selectedStatusFilter === 'payment-confirmed'
+                     ? 'bg-[var(--primary)] text-white'
+                     : 'bg-[var(--muted)] text-[var(--muted-foreground)] hover:bg-[var(--border)]'
+                 }`}
+                >
+                 Paid ({activeOrders.filter(o => o.status === 'payment-confirmed').length})
                </button>
                <button
                  onClick={() => setSelectedStatusFilter('preparing')}
@@ -1154,6 +1246,79 @@ export default function BusinessOrders() {
                   </div>
                 </div>
 
+                {/*
+                 * The GCash screenshot, and the Confirm Payment action.
+                 *
+                 * Placed above the money breakdown on purpose: confirming is
+                 * the shop's next action on a pending order, and it cannot be
+                 * done from a number. They have to see the transfer first.
+                 *
+                 * Confirmation is gated on the screenshot being present. The
+                 * write is itself guarded on the order still being `pending`
+                 * (see confirmOrderPayment), so two people tapping at once
+                 * cannot both record a confirmation -- but blocking it here
+                 * too means the shop is never offered a button that cannot
+                 * work.
+                 */}
+                <div className="rounded-2xl border-2 border-line p-4">
+                  <h3 className="font-bold text-[var(--ink)] mb-1 text-sm md:text-base">
+                    Payment
+                  </h3>
+                  <p className="text-xs md:text-sm text-[var(--muted-foreground)] mb-3">
+                    ₱{(selectedOrder.total - selectedOrder.deliveryFee).toFixed(2)} by GCash, ₱{selectedOrder.deliveryFee.toFixed(2)} delivery fee in cash to the rider.
+                  </p>
+
+                  {selectedOrder.paymentProofUrl ? (
+                    <a
+                      href={selectedOrder.paymentProofUrl}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="block overflow-hidden rounded-xl border border-line"
+                    >
+                      <img
+                        src={selectedOrder.paymentProofUrl}
+                        alt={`GCash payment proof for order ${selectedOrder.orderNumber}`}
+                        className="max-h-64 w-full cursor-zoom-in object-cover"
+                      />
+                      <p className="bg-[var(--muted)] px-3 py-2 text-xs text-[var(--muted-foreground)]">
+                        Tap to view full size
+                      </p>
+                    </a>
+                  ) : (
+                    <p className="rounded-xl bg-[var(--amber-soft)] px-3 py-2.5 text-xs text-[var(--amber-ink)]">
+                      No payment proof was attached. Check with the customer before accepting.
+                    </p>
+                  )}
+
+                  {selectedOrder.paymentConfirmedAt ? (
+                    <p className="mt-3 flex items-center gap-1.5 text-xs font-semibold text-[var(--success-ink)]">
+                      <CheckCircle className="size-4" aria-hidden="true" />
+                      Payment confirmed
+                      {selectedOrder.paymentConfirmedBy
+                        ? ` by ${selectedOrder.paymentConfirmedBy}`
+                        : ''}
+                    </p>
+                  ) : (
+                    <Button
+                      onClick={() => handleConfirmPayment(selectedOrder)}
+                      disabled={isConfirmingPayment || !selectedOrder.paymentProofUrl}
+                      className="mt-3 w-full bg-[var(--success)] hover:bg-[var(--success)] py-4 md:py-5 font-bold text-sm md:text-base disabled:opacity-50"
+                    >
+                      {isConfirmingPayment
+                        ? 'Confirming…'
+                        : selectedOrder.paymentProofUrl
+                          ? '✓ Confirm GCash Payment'
+                          : 'Confirm Payment (no proof attached)'}
+                    </Button>
+                  )}
+
+                  {paymentError && (
+                    <p role="alert" className="mt-2 text-xs text-[var(--error)]">
+                      {paymentError}
+                    </p>
+                  )}
+                </div>
+
                 {/* Payment Summary */}
                 <div className="border-t border-[var(--border)] pt-3 md:pt-4">
                   <div className="flex items-center justify-between mb-2 text-sm md:text-base">
@@ -1168,28 +1333,36 @@ export default function BusinessOrders() {
                     <span className="font-bold text-[var(--ink)] md:text-base">Total</span>
                     <span className="text-lg md:text-xl font-bold text-[var(--primary)]">₱{selectedOrder.total.toFixed(2)}</span>
                   </div>
-                  <div className="mt-2 md:mt-3">
-                    <Badge className={selectedOrder.paymentMethod === 'gcash' ? 'bg-[var(--success)] text-white text-xs md:text-sm' : 'border-[var(--amber)] text-[var(--amber)] text-xs md:text-sm'} variant={selectedOrder.paymentMethod === 'gcash' ? 'default' : 'outline'}>
-                      {selectedOrder.paymentMethod === 'gcash' ? (
-                        <>
-                          <CheckCircle className="w-3 h-3 mr-1" />
-                          Prepaid (GCash)
-                        </>
-                      ) : (
-                        <>
-                          <AlertCircle className="w-3 h-3 mr-1" />
-                          Cash on Delivery
-                        </>
-                      )}
+                  <div className="mt-2 md:mt-3 flex flex-wrap gap-2">
+                    <Badge className="bg-[var(--success)] text-white text-xs md:text-sm">
+                      <CheckCircle className="w-3 h-3 mr-1" />
+                      Paid by GCash
+                    </Badge>
+                    {/* The rider collects this part in cash. It was folded
+                        into the COD badge before, which read as though the
+                        whole order was unpaid -- the food had already been
+                        transferred. */}
+                    <Badge className="border-[var(--amber)] text-[var(--amber)] text-xs md:text-sm" variant="outline">
+                      <AlertCircle className="w-3 h-3 mr-1" />
+                      Delivery fee: cash to rider
                     </Badge>
                   </div>
                 </div>
 
                 {/* Action Buttons - Complete Workflow */}
+                {/*
+                 * Decline stays available on an unpaid order -- a customer who
+                 * never transferred should not be able to hold a slot open --
+                 * but Accept is not: accepting cooks the food, and the food
+                 * is what the GCash transfer was for. The order leaves
+                 * `pending` only by confirming payment, from the panel above.
+                 */}
                 {selectedOrder.status === 'pending' && (
                   <div className="space-y-2">
                     <Button
                       onClick={() => setConfirmAction('accept')}
+                      disabled
+                      title="Confirm the GCash payment first"
                       className="w-full bg-[var(--success)] hover:bg-[var(--success)] py-4 md:py-6 font-bold text-sm md:text-base"
                     >
                       ✓ Accept Order
@@ -1200,6 +1373,19 @@ export default function BusinessOrders() {
                       className="w-full border-[var(--primary)] text-[var(--primary)] py-4 md:py-6 text-sm md:text-base"
                     >
                       ✗ Decline Order
+                    </Button>
+                  </div>
+                )}
+
+                {/* Only reachable once payment is confirmed; see the Accept
+                    button above. */}
+                {selectedOrder.status === 'payment-confirmed' && (
+                  <div className="space-y-2">
+                    <Button
+                      onClick={() => setConfirmAction('accept')}
+                      className="w-full bg-[var(--success)] hover:bg-[var(--success)] py-4 md:py-6 font-bold text-sm md:text-base"
+                    >
+                      ✓ Start Preparing
                     </Button>
                   </div>
                 )}
@@ -1405,7 +1591,7 @@ export default function BusinessOrders() {
               <span className="text-3xl">{confirmAction === 'accept' ? '✅' : '❌'}</span>
             </div>
             <h2 className="text-xl font-extrabold text-[var(--ink)] mb-1">
-              {confirmAction === 'accept' ? 'Accept this order?' : 'Decline this order?'}
+              {confirmAction === 'accept' ? 'Start preparing this order?' : 'Decline this order?'}
             </h2>
             <p className="text-sm text-[var(--muted-foreground)] mb-1">Order #{selectedOrder.orderNumber}</p>
             <p className="text-sm text-[var(--muted-foreground)] mb-1">{selectedOrder.customerName}</p>

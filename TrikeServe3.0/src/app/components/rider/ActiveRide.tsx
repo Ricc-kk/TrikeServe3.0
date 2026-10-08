@@ -9,6 +9,7 @@ import { useRideResume } from "../../../lib/rideResume";
 import RideChatOverlay from "../rider/RideChatOverlay";
 import { Badge } from "../ui/badge";
 import LocationBanner, { type LocationProblem } from "../ui/LocationBanner";
+import ProofCapture from "../ui/ProofCapture";
 import { useAuth } from "../../contexts/AuthContext";
 import { supabaseHelpers, logAudit } from "@/lib/supabase";
 import { supabase } from "../../../utils/supabase";
@@ -118,6 +119,19 @@ export default function ActiveRide() {
   }, [rideData?.id, rideData?.status, syncRideResume]);
   rideDataRef.current = rideData;
   const [showRideComplete, setShowRideComplete] = useState(false);
+
+  /*
+   * The handover photo, for deliveries only.
+   *
+   * A shared ride needs nothing of the sort, so the gate is only raised when
+   * `isDeliveryRide` -- otherwise every passenger would be asked to photograph
+   * a stranger's handover.
+   */
+  const [showProofSheet, setShowProofSheet] = useState(false);
+  const [proofFile, setProofFile] = useState<File | null>(null);
+  const [proofPreview, setProofPreview] = useState<string | null>(null);
+  const [isUploadingProof, setIsUploadingProof] = useState(false);
+  const [proofError, setProofError] = useState<string | null>(null);
   const [resolvedName, setResolvedName] = useState<string | null>(null);
   /** The passenger's profile photo, resolved by id from the users table. */
   const [passengerAvatar, setPassengerAvatar] = useState<string | null>(null);
@@ -598,6 +612,83 @@ export default function ActiveRide() {
     }
   };
 
+  const handleProofSelected = (file: File) => {
+    setProofError(null);
+    if (proofPreview) URL.revokeObjectURL(proofPreview);
+    setProofFile(file);
+    setProofPreview(URL.createObjectURL(file));
+  };
+
+  const handleProofCleared = () => {
+    setProofError(null);
+    if (proofPreview) URL.revokeObjectURL(proofPreview);
+    setProofPreview(null);
+    setProofFile(null);
+  };
+
+  /**
+   * Upload the handover photo and file it against the order.
+   *
+   * Runs before the order is marked delivered rather than after, so a failure
+   * is reported against a ride that is still open and the rider can retake it.
+   * Once the order is `delivered` there is no longer a Complete button to come
+   * back through.
+   */
+  const uploadDeliveryProof = async () => {
+    if (!rideData?.orderId || !proofFile) return false;
+
+    setIsUploadingProof(true);
+    setProofError(null);
+
+    try {
+      const { data: proof, error } = await supabaseHelpers.uploadDeliveryProof(
+        rideData.orderId,
+        proofFile,
+      );
+
+      if (error) {
+        console.error('Delivery proof upload failed:', error);
+        setProofError(error);
+        return false;
+      }
+
+      const attached = await supabaseHelpers.attachDeliveryProof(
+        rideData.orderId,
+        proof?.publicUrl ?? '',
+      );
+
+      if (!attached.success) {
+        console.error('Could not attach delivery proof:', attached.error);
+        setProofError(attached.error || 'Could not attach the delivery photo.');
+        return false;
+      }
+
+      return true;
+    } finally {
+      setIsUploadingProof(false);
+    }
+  };
+
+  /**
+   * The delivery leg's last step: photograph the handover, then complete.
+   *
+   * The photo is uploaded here rather than inside completeRide so that a
+   * failure leaves the rider on this screen with the ride still open, instead
+   * of delivering an order and losing the evidence for it.
+   */
+  const completeDeliveryWithProof = async () => {
+    if (!proofFile) {
+      setProofError('Take a photo of the handover first.');
+      return;
+    }
+
+    const ok = await uploadDeliveryProof();
+    if (!ok) return;
+
+    setShowProofSheet(false);
+    await completeRide();
+  };
+
   const completeRide = async () => {
     if (!rideData || isCompleting.current) return;
     isCompleting.current = true;
@@ -753,6 +844,22 @@ export default function ActiveRide() {
       case 'drop-off':
         return { label: 'Confirm Drop-off', onClick: () => updateStatus('payment'), isComplete: false };
       case 'payment':
+        /*
+         * Deliveries raise the photo sheet here instead of completing.
+         *
+         * This is the only point in the flow where the rider and the customer
+         * are in the same room, so it is the only moment a photo of the handover
+         * can honestly be taken. The label changes with it, because a button
+         * that says 'Complete Ride' and opens a camera is not what anyone
+         * pressing it expects.
+         */
+        if (isDeliveryRide(rideData)) {
+          return {
+            label: 'Photo handover & complete',
+            onClick: () => setShowProofSheet(true),
+            isComplete: true,
+          };
+        }
         return { label: 'Complete Ride', onClick: completeRide, isComplete: true };
       default:
         return null;
@@ -1181,6 +1288,91 @@ export default function ActiveRide() {
         )}
 
       </div>
+
+      {/*
+        The handover photo sheet.
+
+        A sheet rather than an inline row because it interrupts a flow the rider
+        is in the middle of: they are standing at the door, so this has to be one
+        obvious thing to deal with and then go away.
+
+        The customer is named rather than "the customer" -- if the photo comes out
+        wrong they will want to know whose order to re-check.
+
+        Cancel is always available and never loses the ride: it only closes this
+        sheet. Forcing a photo would mean a rider with a broken camera cannot
+        deliver anything at all, which is worse than a delivery without a photo.
+      */}
+      {showProofSheet && (
+        <div
+          className="fixed inset-0 z-[4000] flex items-end justify-center bg-black/60 p-4"
+          onClick={() => {
+            if (!isUploadingProof) setShowProofSheet(false);
+          }}
+        >
+          <Card
+            className="w-full max-w-md rounded-2xl bg-surface p-5"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="mb-4 flex items-start justify-between gap-3">
+              <div>
+                <h2 className="text-lg font-bold text-[var(--ink)]">Handover photo</h2>
+                <p className="mt-1 text-sm text-[var(--muted-foreground)]">
+                  Take one photo of the food being handed over
+                  {rideData?.customerName ? ` to ${rideData.customerName}` : ''}. It is
+                  kept on the order as proof of delivery.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  if (!isUploadingProof) setShowProofSheet(false);
+                }}
+                disabled={isUploadingProof}
+                aria-label="Close"
+                className="grid size-10 shrink-0 place-items-center rounded-full text-[var(--muted-foreground)] disabled:opacity-50"
+              >
+                <X className="size-5" aria-hidden="true" />
+              </button>
+            </div>
+
+            <ProofCapture
+              mode="camera"
+              label="Delivery photo"
+              hint="The order, the customer, or both."
+              value={proofPreview}
+              busy={isUploadingProof}
+              error={proofError}
+              onSelect={handleProofSelected}
+              onClear={handleProofCleared}
+            />
+
+            <div className="mt-4 flex gap-2">
+              <Button
+                onClick={() => setShowProofSheet(false)}
+                disabled={isUploadingProof}
+                variant="outline"
+                className="flex-1"
+              >
+                Cancel
+              </Button>
+              <Button
+                onClick={completeDeliveryWithProof}
+                disabled={isUploadingProof || !proofFile}
+                className="flex-1 bg-[var(--success)] hover:bg-[var(--success)] text-white font-bold disabled:opacity-50"
+              >
+                {isUploadingProof ? 'Uploading…' : 'Complete delivery'}
+              </Button>
+            </div>
+
+            {proofError && (
+              <p role="alert" className="mt-2 text-xs text-[var(--error)]">
+                {proofError}
+              </p>
+            )}
+          </Card>
+        </div>
+      )}
     </div>
   );
 }

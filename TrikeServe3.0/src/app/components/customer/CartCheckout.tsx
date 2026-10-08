@@ -18,6 +18,7 @@ import { usePreviousPage } from "../../hooks/usePreviousPage";
 import { supabase } from "../../../utils/supabase";
 import { supabaseHelpers, logAudit } from "@/lib/supabase";
 import MapSelector from "./MapSelector";
+import ProofCapture from "../ui/ProofCapture";
 import { getDefaultAddress, setDefaultAddress } from "@/lib/defaultAddress";
 import { useDeliveryAddress } from "../../contexts/useDeliveryAddress";
 
@@ -53,7 +54,35 @@ export default function CartCheckout() {
   const [deliveryFee, setDeliveryFee] = useState(35);
   const [hasSelectedAddress, setHasSelectedAddress] = useState(false);
   const [fromDefaultAddress, setFromDefaultAddress] = useState(false);
-  const [paymentMethod] = useState<"cash">("cash");
+
+  /*
+   * GCash only, for the food.
+   *
+   * Cash was the sole option and the whole checkout said "Pay with cash on
+   * delivery". It is not an option any more, so there is nothing to select and
+   * nothing to keep in state -- `paymentMethod` is derived from the fact below
+   * rather than chosen, which is also why the confirm screen can no longer offer
+   * a choice the database does not have.
+   */
+  const paymentMethod = 'gcash' as const;
+
+  /*
+   * Payment proof: the screenshot of the GCash transfer the shop will check
+   * before it accepts the order.
+   *
+   * Held as a File until the order exists, because the upload path is keyed by
+   * order id and the id is only returned by the insert. Uploaded immediately
+   * after, then attached -- see handlePlaceOrder.
+   */
+  const [proofFile, setProofFile] = useState<File | null>(null);
+  const [proofPreview, setProofPreview] = useState<string | null>(null);
+  const [isUploadingProof, setIsUploadingProof] = useState(false);
+  const [proofError, setProofError] = useState<string | null>(null);
+  const [showProofError, setShowProofError] = useState(false);
+
+  /** What this shop told customers to do before paying. */
+  const [paymentInstructions, setPaymentInstructions] = useState<string | null>(null);
+
   const [needsCutlery, setNeedsCutlery] = useState(false);
   const [showOrderConfirmation, setShowOrderConfirmation] = useState(false);
   const [showMapSelector, setShowMapSelector] = useState(false);
@@ -133,6 +162,73 @@ export default function CartCheckout() {
 
   const total = subtotal + deliveryFee;
 
+  /*
+   * The two halves of the bill, because they are paid in two different ways.
+   *
+   * The food goes to the shop by GCash before the order is accepted, so it is the
+   * amount the customer has to transfer and the amount the shop reconciles
+   * against. The delivery fee goes to the rider in cash at the door, so it is not
+   * in any transfer and must not appear in one -- a shop checking the GCash
+   * account for a total that includes cash nobody has handed over cannot ever
+   * match it.
+   */
+  const gcashAmount = subtotal;
+  const cashOnDeliveryAmount = deliveryFee;
+
+  // Release the preview URL. Leaking one per picked photo is not worth tracking,
+  // and these are full-resolution phone screenshots.
+  useEffect(() => {
+    return () => {
+      if (proofPreview) URL.revokeObjectURL(proofPreview);
+    };
+  }, [proofPreview]);
+
+  const handleProofSelected = (file: File) => {
+    setProofError(null);
+    setShowProofError(false);
+    if (proofPreview) URL.revokeObjectURL(proofPreview);
+    setProofFile(file);
+    setProofPreview(URL.createObjectURL(file));
+  };
+
+  const handleProofCleared = () => {
+    setProofError(null);
+    setShowProofError(false);
+    if (proofPreview) URL.revokeObjectURL(proofPreview);
+    setProofPreview(null);
+    setProofFile(null);
+  };
+
+  /*
+   * What to send to, so the customer does not have to find it.
+   *
+   * Read from the restaurant row rather than passed in, because the cart carries
+   * no payment details and this is the only place the shop can change them.
+   */
+  useEffect(() => {
+    const restaurantId = restaurant?.supabaseRestaurantId;
+    if (!restaurantId) {
+      setPaymentInstructions(null);
+      return;
+    }
+
+    let cancelled = false;
+    supabaseHelpers
+      .getPaymentInstructions(restaurantId)
+      .then((res) => {
+        // A shop that has not written instructions yet is not an error -- the
+        // screen still has to work, it just says less.
+        if (!cancelled) setPaymentInstructions(res.instructions ?? null);
+      })
+      .catch(() => {
+        if (!cancelled) setPaymentInstructions(null);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [restaurant?.supabaseRestaurantId]);
+
   const confirmRemoveRestaurants = () => {
     if (!restaurant) return;
     if (pendingRemoveItem) {
@@ -146,6 +242,19 @@ export default function CartCheckout() {
     if (!restaurant) return;
     if (!hasSelectedAddress) {
       setShowAddressError(true);
+      return;
+    }
+    /*
+     * No proof, no order.
+     *
+     * The shop's only way to tell a paid order from an unpaid one is the
+     * screenshot, so an order placed without one is an order nobody can verify
+     * -- it would sit in the payment queue looking identical to one that was
+     * paid. Blocked here rather than warned about, because "please attach proof"
+     * after the fact is how an unverified order gets accepted.
+     */
+    if (!proofFile) {
+      setShowProofError(true);
       return;
     }
     // Don't let a previous order's ids leak into this confirmation.
@@ -302,6 +411,15 @@ export default function CartCheckout() {
               estimated_time: order.estimatedTime,
               needs_cutlery: order.needsCutlery,
               created_at: order.createdAt,
+              /*
+               * Which half of the bill goes where, recorded up front.
+               *
+               * `total` alone cannot express "₱2,150 by GCash and ₱35 in cash",
+               * and the shop cannot reconcile a transfer against a figure that
+               * includes money the customer is going to hand a rider instead.
+               */
+              gcash_amount: gcashAmount,
+              delivery_fee_cash: cashOnDeliveryAmount,
             },
           ])
           .select()
@@ -309,11 +427,65 @@ export default function CartCheckout() {
 
         if (insertError) {
           console.error("[Cart] Error saving order to Supabase:", insertError);
-          alert("Error saving order: " + (insertError?.message || "Unknown error"));
+          /*
+           * A column this insert names does not exist, which on a project where
+           * ADD_ORDER_PAYMENT_AND_DELIVERY_PROOF.sql has not been run means
+           * `gcash_amount` / `delivery_fee_cash`. Postgres rejects the whole row,
+           * so the order is lost -- the safe direction, since nothing is
+           * half-saved -- but the raw message names a column and offers no way to
+           * act on it.
+           *
+           * Both codes are checked. A direct SQL insert reports the Postgres
+           * code 42703; PostgREST refuses before Postgres is ever reached and
+           * reports PGRST204, because the column is missing from its schema
+           * cache. Checking only 42703 is why this branch did not fire.
+           */
+          const missingColumn =
+            insertError.code === '42703' ||
+            insertError.code === 'PGRST204' ||
+            /column .* of .* in the schema cache/i.test(insertError.message || '');
+
+          alert(
+            missingColumn
+              ? 'This checkout needs a database update before it can save orders. Please run ADD_ORDER_PAYMENT_AND_DELIVERY_PROOF.sql in Supabase.'
+              : 'Error saving order: ' + (insertError?.message || 'Unknown error'),
+          );
           return;
         }
 
         console.log("[Cart] Order saved successfully to Supabase:", savedOrder);
+
+        /*
+         * Attach the proof now that there is an id to file it under.
+         *
+         * The upload path is keyed by order id, which only exists after the
+         * insert -- so it could not be part of the insert itself.
+         *
+         * The order is already saved at this point and stays saved. Failing the
+         * upload must not also fail the order: the customer would be left with a
+         * placed order they were told did not go through. So it is reported, the
+         * order carries on, and the shop sees the payment row with no screenshot
+         * and can ask for one.
+         */
+        if (savedOrder?.id) {
+          setIsUploadingProof(true);
+          const { data: proof, error: proofUploadError } =
+            await supabaseHelpers.uploadOrderPaymentProof(savedOrder.id, proofFile);
+
+          if (proofUploadError) {
+            console.error("[Cart] Payment proof upload failed:", proofUploadError);
+            setProofError(proofUploadError);
+          } else {
+            await supabase
+              .from("orders")
+              .update({
+                payment_proof_url: proof?.publicUrl ?? null,
+                payment_proof_uploaded_at: new Date().toISOString(),
+              })
+              .eq("id", savedOrder.id);
+          }
+          setIsUploadingProof(false);
+        }
 
         // Remember the DB id so the confirmation can jump to the order details.
         setPlacedOrderId(savedOrder?.id || null);
@@ -373,8 +545,8 @@ export default function CartCheckout() {
               restaurant_name: order.restaurantName || null,
               title: "🧾 Order placed",
               message: order.restaurantName
-                ? `Your order at ${order.restaurantName} has been placed.`
-                : "Your order has been placed.",
+                ? `Your order at ${order.restaurantName} has been placed. We are checking your GCash payment.`
+                : "Your order has been placed. We are checking your GCash payment.",
               type: "order",
               read: false,
               created_at: new Date().toISOString(),
@@ -744,27 +916,95 @@ export default function CartCheckout() {
 
         {/* Payment details */}
         <div className="pb-6">
-          <h2 className="mb-3 text-lg font-bold text-[var(--ink)]">Payment details</h2>
+          <h2 className="mb-3 text-lg font-bold text-[var(--ink)]">Payment</h2>
           <p className="mb-4 text-sm text-[var(--muted-foreground)]">
-            Pay with cash on delivery.
+            Pay the food by GCash now. The delivery fee is paid in cash to the
+            rider when they hand it over.
           </p>
-          <div className="flex w-full items-center justify-between rounded-xl border-2 border-[var(--success)] bg-[var(--success)]/5 p-4">
+
+          {/*
+            The single option, shown as a chosen state rather than a picker.
+
+            There is nothing to choose between, so it is a read-out. Drawn as the
+            same "selected" panel the old cash option used, because that is what
+            this row has always looked like and a different treatment would read
+            as "something else is available".
+          */}
+          <div className="mb-4 flex w-full items-center justify-between rounded-xl border-2 border-[var(--success)] bg-[var(--success)]/5 p-4">
             <div className="flex items-center gap-3">
               <div className="grid size-10 place-items-center rounded-lg bg-[var(--success)]">
-                <span className="text-lg font-bold text-white">💵</span>
+                <span className="text-lg font-bold text-white">📱</span>
               </div>
-              <span className="font-semibold text-[var(--ink)]">Cash</span>
+              <div>
+                <span className="font-semibold text-[var(--ink)]">GCash</span>
+                <p className="text-xs text-[var(--muted-foreground)]">
+                  ₱{gcashAmount.toFixed(2)} for the food
+                </p>
+              </div>
             </div>
             <div className="grid size-6 place-items-center rounded-full bg-[var(--success)]">
               <Check className="size-4 text-white" strokeWidth={3} />
             </div>
           </div>
+
+          {/*
+            The shop's own instructions, verbatim.
+
+            Deliberately not editable and not paraphrased: this is the number the
+            customer has to send money to, so it must be the shop's words exactly
+            as they wrote them. A shop that has not set any still gets a usable
+            screen, just a thinner one.
+          */}
+          {paymentInstructions ? (
+            <div className="mb-4 rounded-xl border border-line bg-[var(--surface)] p-4">
+              <p className="mb-1 text-xs font-bold uppercase tracking-wider text-[var(--muted-foreground)]">
+                How to pay
+              </p>
+              <p className="whitespace-pre-line text-sm text-[var(--ink)]">
+                {paymentInstructions}
+              </p>
+            </div>
+          ) : (
+            <p className="mb-4 rounded-xl border border-line bg-[var(--muted)] p-4 text-xs text-[var(--muted-foreground)]">
+              This shop has not added GCash instructions yet. Check the order
+              confirmation for the amount, or contact the shop before transferring.
+            </p>
+          )}
+
+          <ProofCapture
+            mode="upload"
+            label="GCash payment proof"
+            hint="Screenshot of the transfer receipt. The shop checks this before accepting your order."
+            value={proofPreview}
+            busy={isUploadingProof}
+            error={proofError}
+            onSelect={handleProofSelected}
+            onClear={handleProofCleared}
+          />
+
+          {showProofError && !proofFile && (
+            <p
+              role="alert"
+              className="mt-2 rounded-xl bg-[var(--error-soft)] px-3 py-2 text-xs text-[var(--error)]"
+            >
+              Attach your GCash payment proof before placing the order.
+            </p>
+          )}
+
+          {/* Say plainly that the rider collects cash, before it is a surprise. */}
+          <p className="mt-3 flex items-start gap-2 rounded-xl bg-[var(--amber-soft)] px-3 py-2.5 text-xs text-[var(--amber-ink)]">
+            <Info className="mt-0.5 size-3.5 shrink-0" aria-hidden="true" />
+            <span>
+              Have ₱{cashOnDeliveryAmount.toFixed(2)} ready in cash for the
+              delivery fee. It is not part of your GCash transfer.
+            </span>
+          </p>
         </div>
 
         {/* Subtotal summary */}
         <div className="space-y-2 border-t border-[var(--border)] pt-4">
           <div className="flex items-center justify-between text-sm">
-            <span className="text-[var(--muted-foreground)]">Subtotal</span>
+            <span className="text-[var(--muted-foreground)]">Food subtotal</span>
             <span className="font-semibold text-[var(--ink)]">
               ₱{subtotal.toFixed(2)}
             </span>
@@ -773,6 +1013,22 @@ export default function CartCheckout() {
             <span className="text-[var(--muted-foreground)]">Delivery fee</span>
             <span className="font-semibold text-[var(--ink)]">
               ₱{deliveryFee.toFixed(2)}
+            </span>
+          </div>
+          {/* Both halves again, named by how they are paid. A single total is
+              still what the customer owes, but it is no longer a single
+              transfer, and the two numbers are worth stating separately here
+              where the transfer amount is being decided. */}
+          <div className="flex items-center justify-between border-t border-dashed border-[var(--border)] pt-2 text-sm">
+            <span className="text-[var(--muted-foreground)]">Pay by GCash now</span>
+            <span className="font-bold text-[var(--success)]">
+              ₱{gcashAmount.toFixed(2)}
+            </span>
+          </div>
+          <div className="flex items-center justify-between text-sm">
+            <span className="text-[var(--muted-foreground)]">Cash to rider</span>
+            <span className="font-bold text-[var(--amber)]">
+              ₱{cashOnDeliveryAmount.toFixed(2)}
             </span>
           </div>
         </div>
@@ -789,9 +1045,10 @@ export default function CartCheckout() {
         <button
           type="button"
           onClick={handlePlaceOrder}
-          className="w-full rounded-2xl bg-[var(--success)] py-4 font-bold text-white shadow-lg transition-all active:scale-95"
+          disabled={isUploadingProof}
+          className="w-full rounded-2xl bg-[var(--success)] py-4 font-bold text-white shadow-lg transition-all active:scale-95 disabled:opacity-60"
         >
-          Place Order
+          {isUploadingProof ? 'Uploading proof…' : 'Place Order'}
         </button>
       </div>
 

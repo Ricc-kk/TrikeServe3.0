@@ -149,7 +149,20 @@ CREATE TABLE IF NOT EXISTS orders (
   subtotal DECIMAL(10, 2) NOT NULL,
   delivery_fee DECIMAL(10, 2) NOT NULL,
   total DECIMAL(10, 2) NOT NULL,
-  status VARCHAR(50) NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'confirmed', 'preparing', 'ready', 'picked_up', 'delivered', 'cancelled')),
+  status VARCHAR(50) NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'payment-confirmed', 'confirmed', 'preparing', 'ready', 'picked_up', 'on-the-way', 'delivered', 'cancelled')),
+  -- GCash proof for the food. The delivery fee is collected in cash by the
+  -- rider instead, which is why the two halves of the bill are stored apart:
+  -- a single total cannot say which part has been paid yet.
+  -- See ADD_ORDER_PAYMENT_AND_DELIVERY_PROOF.sql.
+  payment_proof_url TEXT,
+  payment_proof_uploaded_at TIMESTAMPTZ,
+  gcash_amount DECIMAL(10, 2),
+  delivery_fee_cash DECIMAL(10, 2),
+  payment_confirmed_at TIMESTAMPTZ,
+  payment_confirmed_by TEXT,
+  -- The rider's photo at handover.
+  delivery_proof_url TEXT,
+  delivery_proof_uploaded_at TIMESTAMPTZ,
   delivery_mode VARCHAR(20) NOT NULL,
   payment_method VARCHAR(20) NOT NULL,
   address TEXT,
@@ -162,6 +175,8 @@ CREATE TABLE IF NOT EXISTS orders (
 CREATE INDEX idx_orders_customer ON orders(customer_id);
 CREATE INDEX idx_orders_business ON orders(business_id);
 CREATE INDEX idx_orders_status ON orders(status);
+-- The shop's payment queue: orders awaiting a payment decision.
+CREATE INDEX idx_orders_awaiting_payment ON orders(status) WHERE payment_confirmed_at IS NULL;
 
 -- Restaurants Table
 CREATE TABLE IF NOT EXISTS restaurants (
@@ -180,6 +195,10 @@ CREATE TABLE IF NOT EXISTS restaurants (
   -- Business-declared cuisine buckets driving the customer food filters.
   -- Added by ADD_RESTAURANT_CUISINE_AND_LOCATION.sql.
   cuisine TEXT[] DEFAULT '{}',
+  -- What the customer should do before paying: which GCash number, under whose
+  -- name, what to put in the reference. Free text, set by the business from the
+  -- Shop tab. Added by ADD_ORDER_PAYMENT_AND_DELIVERY_PROOF.sql.
+  payment_instructions TEXT,
   -- Pinned by the business; NULL until then, which sorts the shop last in
   -- distance rankings instead of hiding it.
   latitude DOUBLE PRECISION,
@@ -327,7 +346,9 @@ CREATE POLICY "Anyone can update orders" ON orders
 INSERT INTO storage.buckets (id, name, public) VALUES
   ('user_profiles', 'user_profiles', true),
   ('restaurants', 'restaurants', true),
-  ('menu_items', 'menu_items', true)
+  ('menu_items', 'menu_items', true),
+  -- GCash screenshots and rider handover photos.
+  ('order_proofs', 'order_proofs', true)
 ON CONFLICT DO NOTHING;
 
 -- Storage RLS Policies
@@ -352,4 +373,17 @@ CREATE POLICY "Businesses can update restaurant images" ON storage.objects
 
 CREATE POLICY "Businesses can delete restaurant images" ON storage.objects
   FOR DELETE USING (bucket_id = 'restaurants');
+
+-- Payment screenshots and delivery photos. See
+-- ADD_ORDER_PAYMENT_AND_DELIVERY_PROOF.sql for why the writer check is any
+-- signed-in user rather than the order's own customer.
+CREATE POLICY "Public read access to order proofs" ON storage.objects
+  FOR SELECT USING (bucket_id = 'order_proofs');
+
+CREATE POLICY "Signed-in users can upload order proofs" ON storage.objects
+  FOR INSERT WITH CHECK (bucket_id = 'order_proofs' AND auth.uid() IS NOT NULL);
+
+CREATE POLICY "Signed-in users can replace order proofs" ON storage.objects
+  FOR UPDATE USING (bucket_id = 'order_proofs' AND auth.uid() IS NOT NULL)
+  WITH CHECK (bucket_id = 'order_proofs' AND auth.uid() IS NOT NULL);
 

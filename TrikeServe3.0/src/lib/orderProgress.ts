@@ -29,6 +29,7 @@
 
 export type OrderStepKey =
   | 'received'
+  | 'payment-confirmed'
   | 'preparing'
   | 'ready'
   | 'rider-assigned'
@@ -82,7 +83,8 @@ export interface OrderProgress {
 
 /** Delivery orders: the restaurant hands the food to a rider. */
 const DELIVERY_STEPS: OrderProgressStep[] = [
-  { key: 'received', label: 'Received', title: 'Order received', description: 'The restaurant has received your order.', isRiderStep: false },
+  { key: 'received', label: 'Received', title: 'Order received', description: 'The restaurant has received your order and is checking your GCash payment.', isRiderStep: false },
+  { key: 'payment-confirmed', label: 'Paid', title: 'Payment confirmed', description: 'The shop has received your GCash payment and is getting your order ready.', isRiderStep: false },
   { key: 'preparing', label: 'Preparing', title: 'Preparing your order', description: 'The kitchen is preparing your order.', isRiderStep: false },
   { key: 'ready', label: 'Ready', title: 'Ready for pickup', description: 'Your order is packed and waiting to be collected.', isRiderStep: false },
   { key: 'rider-assigned', label: 'Rider Assigned', title: 'Rider assigned', description: 'A rider has been assigned to deliver your order.', isRiderStep: true },
@@ -97,11 +99,14 @@ const DELIVERY_STEPS: OrderProgressStep[] = [
  * Pickup orders have no rider, so they get the same shape minus the rider leg.
  * Showing "Rider heading to the restaurant" on an order the customer is going to
  * collect themselves would be a lie told by the tracker.
+ *
+ * The payment step stays: the money still moves by GCash whoever collects it.
  */
 const PICKUP_STEPS: OrderProgressStep[] = [
   DELIVERY_STEPS[0],
   DELIVERY_STEPS[1],
   DELIVERY_STEPS[2],
+  DELIVERY_STEPS[3],
   { key: 'collected', label: 'Collected', title: 'Order collected', description: 'The order was collected from the restaurant.', isRiderStep: false },
 ];
 
@@ -121,8 +126,13 @@ const DELIVERED_INDEX = DELIVERY_STEPS.length - 1;
  */
 const ORDER_STATUS_STEP: Record<string, number> = {
   pending: 0,
-  preparing: 1,
-  ready: 2,
+  // The shop has verified the GCash transfer. Index 1 is the `payment-confirmed`
+  // step, which is why the entries below are offsets from the step list rather
+  // than the small integers they used to be -- inserting a step in the middle
+  // silently moved every one of them otherwise.
+  'payment-confirmed': 1,
+  preparing: 2,
+  ready: 3,
   // "Ready for delivery" - the shop published the order and a rider was requested.
   confirmed: RIDER_ASSIGNED_INDEX,
   'on-the-way': RIDER_ASSIGNED_INDEX + 1,
