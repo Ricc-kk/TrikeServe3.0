@@ -181,12 +181,35 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         if (!mounted) return;
         // SIGNED_IN is handled by the login() function directly.
         if (event === 'INITIAL_SESSION') {
-          // Emitted on every page load. The getSession() call above owns the
-          // initial restore; without this, a load where that promise is slow
-          // would fall through to the guard and bounce the user out.
-          if (session?.user) loadUserProfile(session.user.id);
-          else restoreFromStorage('initial session');
-          setIsLoading(false);
+          /*
+           * Emitted on every page load. The getSession() call above owns the
+           * initial restore; without this, a load where that promise is slow
+           * would fall through to the guard and bounce the user out.
+           *
+           * The session is known here, but the profile behind it is not:
+           * `loadUserProfile` is still in flight, so `user` is null. Ending the
+           * restore anyway handed the route guard exactly that null with
+           * isLoading already false, and ProtectedRoute read it as "signed out"
+           * and sent the person to the login form. Because the guard navigates
+           * imperatively, the redirect stuck even once the profile landed, so
+           * every refresh, deep link, new tab and app restart opened the
+           * sign-in screen instead of the page that was asked for --
+           * notifications, the business overview, orders, all of them.
+           *
+           * So the restore ends when the profile does, exactly as the getSession
+           * branch above already does. Two loads of the same profile are
+           * harmless: both resolve to the same user.
+           */
+          if (session?.user) {
+            loadUserProfile(session.user.id).finally(() => {
+              clearTimeout(safetyTimeout);
+              if (mounted) setIsLoading(false);
+            });
+          } else {
+            restoreFromStorage('initial session');
+            clearTimeout(safetyTimeout);
+            setIsLoading(false);
+          }
           return;
         }
         if (event === 'SIGNED_OUT') {

@@ -27,6 +27,12 @@ export default function Notifications() {
   const goBack = usePreviousPage("/customer");
   const { getTotalItems } = useCart();
   const [notifications, setNotifications] = useState<Notification[]>([]);
+  // Whether the first load has finished. Without it the screen rendered its
+  // empty state immediately, and that empty state says "You're all caught up!"
+  // -- which is a claim about the account, not about a request still in flight.
+  // On a slow connection the list was there a second later, so the page read as
+  // "notifications not displaying" rather than as loading.
+  const [isLoading, setIsLoading] = useState(true);
 
   // Load notifications from orders, rides and delivery status updates.
   // Single loader (async) so it never fights with itself: the merged list is
@@ -42,7 +48,10 @@ export default function Notifications() {
 
   const loadNotifications = async () => {
     const currentUserData = localStorage.getItem('trikeserve_current_user');
-    if (!currentUserData) return;
+    if (!currentUserData) {
+      setIsLoading(false);
+      return;
+    }
 
     const currentUser = JSON.parse(currentUserData);
     const userEmail = currentUser.email;
@@ -202,6 +211,7 @@ export default function Notifications() {
     // Save to localStorage and update the UI once.
     localStorage.setItem(`notifications_${userEmail}`, JSON.stringify(notificationsList));
     setNotifications(notificationsList);
+    setIsLoading(false);
   };
 
   const formatTimeAgo = (timestamp: number): string => {
@@ -301,7 +311,19 @@ export default function Notifications() {
       </div>
 
       {/* Notifications List */}
-      {notifications.length === 0 ? (
+      {isLoading && notifications.length === 0 ? (
+        /*
+         * A pending state rather than the empty state below.
+         *
+         * The empty state is a statement about the account -- "you're all caught
+         * up" -- so showing it before the first load lands tells the reader they
+         * have no notifications when the truth is that nobody has asked yet.
+         */
+        <div className="flex flex-col items-center justify-center py-20 px-5">
+          <div className="w-16 h-16 border-4 border-[var(--primary)] border-t-transparent rounded-full animate-spin mb-4" />
+          <p className="text-sm text-[var(--muted-foreground)]">Loading notifications…</p>
+        </div>
+      ) : notifications.length === 0 ? (
         <div className="flex flex-col items-center justify-center py-20 px-5">
           <div className="w-24 h-24 bg-[var(--muted)] rounded-full flex items-center justify-center mb-4">
             <Bell className="w-12 h-12 text-[var(--muted-foreground)]" />
