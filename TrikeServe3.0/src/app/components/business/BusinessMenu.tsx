@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo, useRef } from "react";
-import { Store, Package, Clock, User, Plus, Edit2, Image as ImageIcon, X, Search, ChevronRight, Eye, EyeOff, Trash2, Check, BarChart3, Camera, Upload, TrendingUp, Star, Award, Menu, Settings } from "lucide-react";
-import { Link } from "react-router";
+import { Store, Package, Clock, User, Plus, Edit2, Image as ImageIcon, X, Search, ChevronRight, Eye, EyeOff, Trash2, Check, BarChart3, Camera, Upload, TrendingUp, Star, Award, Menu, Settings, Save } from "lucide-react";
+import { Link, useBlocker } from "react-router";
 import { Card } from "../ui/card";
 import { Badge } from "../ui/badge";
 import { Button } from "../ui/button";
@@ -43,6 +43,8 @@ interface MenuItem {
   sectionId: string | null;
   badge?: string;
   available: boolean;
+  /** Position in the menu. Written by dragging; read on every load. */
+  sortOrder: number;
   customizationGroups?: CustomizationGroup[];
 }
 
@@ -82,29 +84,111 @@ export default function BusinessMenu() {
    * you had already selected things. One sheet, always in the same place,
    * holding every job.
    */
-  const [showMenuEditor, setShowMenuEditor] = useState(false);
-  const [menuEditorNote, setMenuEditorNote] = useState<string | null>(null);
+  /**
+   * Which of the sheet's two entry points is open.
+   *
+   * `null` is the resting state — both entry buttons visible, nothing expanded.
+   * The sheet opens straight into the flow rather than dropping the owner into a
+   * wall of controls, so "what do I do here" is the first question the layout
+   * answers.
+   */
 
   const [isSavingSection, setIsSavingSection] = useState(false);
-  const [showAddItem, setShowAddItem] = useState(false);
-  const [showEditItem, setShowEditItem] = useState(false);
+  /** Category rename/reorder/delete dialog. Kept beside the filter, not in it. */
+
+  /** Which category name is currently being typed into, if any. */
+  const [renamingSectionId, setRenamingSectionId] = useState<string | null>(null);
+
+  /**
+   * The name being typed, held separately from the category itself.
+   *
+   * Writing straight into `sections` on every keystroke made Escape a lie: the
+   * field closed and looked abandoned, but the name had already changed — and a
+   * rename is saved, so a "cancelled" edit would come back as a silent
+   * miscategorisation of every dish in it. Now the field holds a draft and the
+   * category is only touched on Enter or blur.
+   */
+  const [sectionNameDraft, setSectionNameDraft] = useState("");
+
+  const startRenamingSection = (sectionId: string, name: string) => {
+    setRenamingSectionId(sectionId);
+    setSectionNameDraft(name);
+  };
+
+  /**
+   * Commit a rename, to the database as well as to state.
+   *
+   * `setSections` on its own is local-only — the dialog's rename writes a row,
+   * and this one did not, so the name changed on screen and reverted on the next
+   * load. The same three guards apply: empty is refused, a duplicate is refused,
+   * and a failed write leaves the old name rather than pretending.
+   */
+  const commitSectionName = async () => {
+    if (renamingSectionId == null) return;
+    const id = renamingSectionId;
+    const name = sectionNameDraft.trim();
+
+    setRenamingSectionId(null);
+
+    const current = sections.find((s) => s.id === id);
+    if (!name || !current || name === current.name) return;
+
+    if (
+      sections.some(
+        (s) => s.id !== id && s.name.trim().toLowerCase() === name.toLowerCase(),
+      )
+    ) {
+      setSectionError(`A category called "${name}" already exists.`);
+      return;
+    }
+
+    setSections((prev) => prev.map((s) => (s.id === id ? { ...s, name } : s)));
+
+    if (!restaurantId) return;
+
+    const { error } = await supabase
+      .from('menu_sections')
+      .update({ name })
+      .eq('id', id);
+
+    if (error) {
+      setSections((prev) =>
+        prev.map((s) => (s.id === id ? { ...s, name: current.name } : s)),
+      );
+      setSectionError(error.message || "Could not rename the category.");
+    }
+  };
+
+  const cancelRenamingSection = () => setRenamingSectionId(null);
+
+  /*
+   * The item form, and the card it is open on.
+   *
+   * One form, two jobs. There used to be three separate editing surfaces — an
+   * Edit Menu sheet, an "Add New Item" modal and an "Edit Item" modal — each
+   * with its own copy of the same fields, its own save path and its own idea of
+   * which item it was working on. Two of those copies were reachable from the
+   * same card, which is how "my change did not save" happens.
+   *
+   * Now the card *is* the form: `expandedId` says which one is open and
+   * `editingItem` is whatever that card is holding. Adding preps a blank card
+   * at the top of the list and opens it the same way.
+   */
+  const [expandedId, setExpandedId] = useState<string | null>(null);
+  const [draftMode, setDraftMode] = useState<'edit' | 'add'>('edit');
   const [editingItem, setEditingItem] = useState<any>(null);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
-  const [selectedItems, setSelectedItems] = useState<number[]>([]);
-  const [showBulkActions, setShowBulkActions] = useState(false);
   const [showCustomizationModal, setShowCustomizationModal] = useState(false);
   const [customizingItem, setCustomizingItem] = useState<MenuItem | null>(null);
   const [uploadingImage, setUploadingImage] = useState(false);
-  const [uploadTarget, setUploadTarget] = useState<'new' | 'edit'>('new');
+
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [showDeleteItemModal, setShowDeleteItemModal] = useState(false);
   const [itemToDelete, setItemToDelete] = useState<number | string | null>(null);
-  const [showBulkDeleteModal, setShowBulkDeleteModal] = useState(false);
   const [showDeleteSuccess, setShowDeleteSuccess] = useState(false);
   const [deleteSuccessMessage, setDeleteSuccessMessage] = useState("");
   const [showToggleAvailabilityModal, setShowToggleAvailabilityModal] = useState(false);
   const [itemToToggle, setItemToToggle] = useState<number | null>(null);
-  const [showBulkToggleModal, setShowBulkToggleModal] = useState(false);
 
   // Use media query hook to detect mobile
   const isMobile = useMediaQuery('(max-width: 1023px)');
@@ -159,6 +243,7 @@ export default function BusinessMenu() {
               const parsed = JSON.parse(savedItems);
               console.log('[Menu Load] Loaded from localStorage:', parsed.length, 'items');
               setMenuItems(parsed);
+              setSavedSnapshot(snapshotOf(parsed));
             } catch (error) {
               console.error('Error loading menu items from localStorage:', error);
             }
@@ -169,10 +254,36 @@ export default function BusinessMenu() {
 
       try {
         console.log('[Menu Load] Loading from Supabase, restaurantId:', restaurantId);
-        const { data, error } = await supabase
+        /*
+         * The menu has an order the shop set by dragging, so it has to be asked for.
+         *
+         * Two attempts, because ordering by a column that does not exist fails the
+         * whole query with a 400 — which, before ADD_MENU_ITEM_SORT_ORDER.sql has
+         * been run, would have taken the entire menu down rather than just its
+         * ordering. The retry drops the ORDER BY and the rows come back in whatever
+         * order Postgres prefers, which is the behaviour from before dragging
+         * existed.
+         */
+        let result = await supabase
           .from('menu_items')
           .select('*')
-          .eq('restaurant_id', restaurantId);
+          .eq('restaurant_id', restaurantId)
+          .order('sort_order', { ascending: true })
+          .order('created_at', { ascending: true });
+
+        if (result.error) {
+          console.warn(
+            '[Menu Load] Ordered read failed, retrying without an order:',
+            result.error.message,
+          );
+          result = await supabase
+            .from('menu_items')
+            .select('*')
+            .eq('restaurant_id', restaurantId)
+            .order('created_at', { ascending: true });
+        }
+
+        const { data, error } = result;
 
         if (error) {
           console.error('[Menu Load] Data API error:', error);
@@ -185,12 +296,13 @@ export default function BusinessMenu() {
               const parsed = JSON.parse(savedItems);
               console.log('[Menu Load] Loaded from localStorage (fallback):', parsed.length, 'items');
               setMenuItems(parsed);
+              setSavedSnapshot(snapshotOf(parsed));
             }
           }
         } else if (data) {
           console.log('[Menu Load] Loaded from Supabase:', data.length, 'items');
           // Map Supabase data to MenuItem format
-          const items = data.map((item: any) => ({
+          const items = data.map((item: any, at: number) => ({
             id: item.id || Math.random(),
             name: item.name,
             description: item.description || '',
@@ -200,9 +312,15 @@ export default function BusinessMenu() {
             sectionId: item.section_id ?? null,
             badge: item.badge || undefined,
             available: item.is_available,
+            // `at` rather than the column, so a shop whose database has not run
+            // ADD_MENU_ITEM_SORT_ORDER.sql yet still gets a stable, saveable order
+            // instead of every row sitting on the same number.
+            sortOrder: Number.isFinite(item.sort_order) ? item.sort_order : at,
             customizationGroups: item.customization_groups || [],
           }));
           setMenuItems(items);
+          // A freshly loaded menu is the saved menu, by definition.
+          setSavedSnapshot(snapshotOf(items));
         }
       } catch (error) {
         console.error('[Menu Load] Critical error fetching menu items:', error);
@@ -213,177 +331,87 @@ export default function BusinessMenu() {
     loadMenuItems();
   }, [restaurantId, user?.email]);
 
-  // Save menu items to both Supabase and localStorage
-  useEffect(() => {
-    const saveMenuItems = async () => {
-      if (!user?.email) return;
 
-      // Always save to localStorage as backup
-      const storageKey = `menuItems_${user.email}`;
-      localStorage.setItem(storageKey, JSON.stringify(menuItems));
-      console.log('[Menu Sync] Saved to localStorage:', menuItems.length, 'items');
-
-      // Save to Supabase if restaurant ID exists
-      if (!restaurantId) {
-        console.log('[Menu Sync] No restaurant ID yet, skipping Supabase save');
-        return;
-      }
-
-      try {
-        // For now, we'll sync items - in production you might want more sophisticated logic
-        for (const item of menuItems) {
-          if (typeof item.id === 'number') {
-            // Local item (not yet in Supabase), insert it
-            console.log('[Menu Sync] Inserting new item to Supabase:', item.name);
-            const { data: insertedItem, error: insertError } = await supabase
-              .from('menu_items')
-              .insert([{
-                restaurant_id: restaurantId,
-                name: item.name,
-                description: item.description,
-                price: item.price,
-                category: item.category,
-                ...sectionColumn(item),
-                image_url: item.image,
-                is_available: item.available,
-                badge: item.badge || null,
-                created_at: new Date().toISOString(),
-              }])
-              .select()
-              .single();
-
-            if (insertError) {
-              console.error('[Menu Sync] Insert error:', insertError);
-            } else if (insertedItem) {
-              console.log('[Menu Sync] Item inserted successfully with UUID:', insertedItem.id);
-              // Update local state with UUID from Supabase
-              setMenuItems(prevItems =>
-                prevItems.map(i =>
-                  i.id === item.id ? { ...i, id: insertedItem.id } : i
-                )
-              );
-            }
-          } else if (typeof item.id === 'string') {
-            // Already in Supabase, update it
-            console.log('[Menu Sync] Updating item in Supabase:', item.name, 'ID:', item.id);
-            const { error: updateError } = await supabase
-              .from('menu_items')
-              .update({
-                name: item.name,
-                description: item.description,
-                price: item.price,
-                category: item.category,
-                ...sectionColumn(item),
-                image_url: item.image,
-                is_available: item.available,
-                badge: item.badge || null,
-                updated_at: new Date().toISOString(),
-              })
-              .eq('id', item.id);
-
-            if (updateError) {
-              console.error('[Menu Sync] Update error:', updateError);
-            } else {
-              console.log('[Menu Sync] Item updated successfully');
-            }
-          }
-        }
-        console.log('[Menu Sync] Supabase sync completed successfully');
-      } catch (error) {
-        console.error('[Menu Sync] Critical error during save:', error);
-        console.warn('[Menu Sync] Items still saved to localStorage, no data lost');
-        // Items are still saved to localStorage, so user won't lose data
-      }
-    };
-
-    // Reduced debounce from 1000ms to 300ms for faster saves
-    const debounceTimer = setTimeout(saveMenuItems, 300);
-    return () => clearTimeout(debounceTimer);
-  }, [menuItems, restaurantId, user?.email]);
-
-  // Sync when page visibility changes (tab switch, before unload, etc)
-  useEffect(() => {
-    const handleVisibilityChange = async () => {
-      if (document.hidden) {
-        // Page is hidden - save immediately before tab switch
-        if (user?.email && menuItems.length > 0 && restaurantId) {
-          const storageKey = `menuItems_${user.email}`;
-          localStorage.setItem(storageKey, JSON.stringify(menuItems));
-
-          // Attempt immediate save to Supabase
-          try {
-            for (const item of menuItems) {
-              if (typeof item.id === 'number') {
-                await supabase
-                  .from('menu_items')
-                  .insert([{
-                    restaurant_id: restaurantId,
-                    name: item.name,
-                    description: item.description,
-                    price: item.price,
-                    category: item.category,
-                    ...sectionColumn(item),
-                    image_url: item.image,
-                    is_available: item.available,
-                    badge: item.badge || null,
-                    created_at: new Date().toISOString(),
-                  }]);
-              } else if (typeof item.id === 'string') {
-                await supabase
-                  .from('menu_items')
-                  .update({
-                    name: item.name,
-                    description: item.description,
-                    price: item.price,
-                    category: item.category,
-                    ...sectionColumn(item),
-                    image_url: item.image,
-                    is_available: item.available,
-                    badge: item.badge || null,
-                    updated_at: new Date().toISOString(),
-                  })
-                  .eq('id', item.id);
-              }
-            }
-          } catch (error) {
-            console.error('Error syncing on tab hide:', error);
-          }
-        }
-      }
-    };
-
-    document.addEventListener('visibilitychange', handleVisibilityChange);
-
-    // Also sync before page unload
-    const handleBeforeUnload = async () => {
-      if (user?.email && menuItems.length > 0) {
-        const storageKey = `menuItems_${user.email}`;
-        localStorage.setItem(storageKey, JSON.stringify(menuItems));
-      }
-    };
-
-    window.addEventListener('beforeunload', handleBeforeUnload);
-
-    return () => {
-      document.removeEventListener('visibilitychange', handleVisibilityChange);
-      window.removeEventListener('beforeunload', handleBeforeUnload);
-    };
-  }, [menuItems, restaurantId, user?.email]);
-
-  const [newItem, setNewItem] = useState<Partial<MenuItem>>({
-    name: "",
-    description: "",
-    price: 0,
-    category: categories.length > 0 ? categories[0].id : "Silog", // Default to first category
-    available: true,
-    image: ""
-  });
-
-  const [priceError, setPriceError] = useState("");
   const [editPriceError, setEditPriceError] = useState("");
 
-  const handleUploadClick = (target: 'new' | 'edit') => {
-    setUploadTarget(target);
+  /*
+   * Saving is now something the owner does, not something that happens to them.
+   *
+   * Every change used to be written to Supabase 300ms after it was made. That is
+   * the right default for a form you are filling in and the wrong one for a menu:
+   * toggling three dishes and walking away leaves a half-finished menu live for
+   * customers, with no point at which any of it was deliberate.
+   *
+   * So the write moved behind a button. `savedSnapshot` is what was last written;
+   * anything that differs from it is unsaved work.
+   */
+  const [savedSnapshot, setSavedSnapshot] = useState("[]");
+  const [isSaving, setIsSaving] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
+
+  /** A stable string for a menu, holding only the fields that get written. */
+  const snapshotOf = (items: MenuItem[]) =>
+    JSON.stringify(
+      items.map((item) => ({
+        id: item.id,
+        name: item.name,
+        description: item.description,
+        price: item.price,
+        image: item.image,
+        sectionId: item.sectionId ?? null,
+        badge: item.badge ?? null,
+        available: item.available,
+        sortOrder: item.sortOrder ?? 0,
+      })),
+    );
+
+  // Both sides go through snapshotOf. Comparing a raw JSON.stringify of the state
+  // against a filtered snapshot compares two different things and is therefore
+  // always unequal, which pins the save bar in its unsaved state forever.
+  const isDirty = useMemo(
+    () => snapshotOf(menuItems) !== savedSnapshot,
+    [menuItems, savedSnapshot],
+  );
+
+  /**
+   * A short-lived note about the last change or the last save.
+   *
+   * Both used to sit in the toolbar permanently. A "Saved 1:39:03 AM" that never goes
+   * away is three words of furniture competing with the button it describes, and it
+   * is still there an hour later describing a save nobody is thinking about.
+   *
+   * They appear when something happens and clear themselves. The Save button being
+   * lit or dim is the standing signal; the words are the event.
+   */
+  const [notice, setNotice] = useState<{ kind: 'unsaved' | 'saved' } | null>(null);
+
+  /**
+   * The menu as one comparable string. Any edit produces a new one; nothing else does.
+   */
+  const snapshot = useMemo(() => snapshotOf(menuItems), [menuItems]);
+
+  /*
+   * Announce unsaved work, keyed on the menu itself rather than on isDirty.
+   *
+   * isDirty only flips once, from false to true, so an effect depending on it fires
+   * exactly once no matter how many edits follow — the note would appear on the first
+   * and quietly expire while the owner was still in the middle of the third. Keying on
+   * the snapshot re-arms the clock on every change, and always builds a fresh object
+   * so the clearing timeout below is restarted rather than reused.
+   */
+  useEffect(() => {
+    if (!isDirty) return;
+    setNotice({ kind: 'unsaved' });
+  }, [snapshot, isDirty]);
+
+  useEffect(() => {
+    if (!notice) return;
+    const t = window.setTimeout(() => setNotice(null), notice.kind === 'saved' ? 3000 : 5000);
+    return () => window.clearTimeout(t);
+  }, [notice]);
+
+
+  const handleUploadClick = () => {
     fileInputRef.current?.click();
   };
 
@@ -405,14 +433,13 @@ export default function BusinessMenu() {
 
     setUploadingImage(true);
     try {
-      const id = uploadTarget === 'edit' ? String(editingItem?.id ?? Date.now()) : `new-${Date.now()}`;
+      // A new dish has no id yet, so it uploads under a temporary one and the
+      // row it lands in keeps it. Same path as an edit; the id is all that
+      // differed before.
+      const id = editingItem?.id ? String(editingItem.id) : `new-${Date.now()}`;
       const result = await supabaseHelpers.uploadMenuItemImage(id, file);
       if (result?.data?.publicUrl) {
-        if (uploadTarget === 'edit') {
-          setEditingItem((prev: any) => (prev ? { ...prev, image: result.data.publicUrl } : prev));
-        } else {
-          setNewItem((prev) => ({ ...prev, image: result.data.publicUrl }));
-        }
+        setEditingItem((prev: any) => (prev ? { ...prev, image: result.data.publicUrl } : prev));
         console.log('[Menu Image] Uploaded successfully:', result.data.publicUrl);
       } else {
         console.error('[Menu Image] Upload failed:', result?.error);
@@ -531,11 +558,6 @@ export default function BusinessMenu() {
     setMenuItems([...menuItems, newItem]);
   };
 
-  const handleEditItem = (item: MenuItem) => {
-    setEditingItem({ ...item });
-    setShowEditItem(true);
-  };
-
   const handleManageCustomizations = (item: MenuItem, e?: React.MouseEvent) => {
     if (e) {
       e.stopPropagation();
@@ -555,6 +577,89 @@ export default function BusinessMenu() {
     }
   };
 
+  const blankDraft = (sectionId?: string | null): Partial<MenuItem> => ({
+    name: "",
+    description: "",
+    price: 0,
+    /*
+     * Where the new dish lands.
+     *
+     * An explicit category wins — that is the [+] on a category heading, and it
+     * means "put it in here". Otherwise the current filter decides, so a shop
+     * looking at Desserts and pressing Add Item gets a dessert.
+     */
+    sectionId:
+      sectionId ??
+      (selectedSection === 'all' ? sections[0]?.id ?? null : selectedSection),
+    category: categories.find((c) => c.id !== "All")?.id || "Menu",
+    available: true,
+    image: "",
+  });
+
+  /*
+   * Show / hide one dish.
+   *
+   * No confirmation. This is the action a shop does dozens of times a day — mark
+   * it out of stock while it sells out, put it back when the kitchen restocks — and
+   * a dialog on each one only teaches the owner to click through dialogs without
+   * reading them, which is the reflex that makes the delete button dangerous.
+   *
+   * Only moves state. Nothing reaches the database until Save is pressed, which is
+   * the deal the save bar makes: you can mark three dishes out of stock, change your
+   * mind about one, and only then write it.
+   */
+  const toggleItemAvailability = (itemId: number | string) => {
+    setMenuItems((prev) =>
+      prev.map((item) => (item.id === itemId ? { ...item, available: !item.available } : item)),
+    );
+  };
+  /** Open a card for editing. The same card, the same form, in place. */
+  const startEditing = (item: MenuItem) => {
+    setDraftMode('edit');
+    setEditPriceError("");
+    setEditingItem({ ...item });
+    setExpandedId(String(item.id));
+  };
+
+  /**
+   * Collapse whatever is open.
+   *
+   * Discarding the draft rather than keeping it: reopening a card should show
+   * what is actually saved. A half-typed price that silently reappears later
+   * is worse than losing the typing.
+   */
+  const stopEditing = () => {
+    setExpandedId(null);
+    setEditingItem(null);
+    setEditPriceError("");
+    // Back to the list too.
+    //
+    // The form is its own screen now, so every path out of it has to leave that
+    // screen: cancel, save and delete all end here, and without this you were
+    // dropped onto an empty editor with no dish loaded and no way back but the
+    // browser.
+    setView('list');
+  };
+
+  /**
+   * A blank dish, open and ready to fill in, filed under the category asked for.
+   */
+  const startAdding = (sectionId?: string | null) => {
+    if (expandedId !== null) stopEditing();
+    setDraftMode('add');
+    setEditPriceError("");
+    setEditingItem(blankDraft(sectionId));
+    setExpandedId('new');
+    setSelectedSection('all');
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  };
+
+  /**
+   * Save, whichever way the card was opened.
+   *
+   * A blank draft card has no id, so "update that row" is not something it can
+   * mean — it appends instead. A real card keeps its id and replaces in place.
+   */
   const saveEditedItem = () => {
     if (!editingItem) return;
     if (!editingItem.price || editingItem.price <= 0) {
@@ -562,154 +667,32 @@ export default function BusinessMenu() {
       return;
     }
     setEditPriceError("");
-    setMenuItems(menuItems.map(item =>
-      item.id === editingItem.id ? editingItem : item
-    ));
-    setShowEditItem(false);
-    setEditingItem(null);
-  };
 
-  const addNewItem = () => {
-    if (!newItem.price || newItem.price <= 0) {
-      setPriceError("Price must be greater than zero.");
-      return;
-    }
-    setPriceError("");
-
-    const item: MenuItem = {
-      id: Date.now(),
-      sectionId: newItem.sectionId ?? sections[0]?.id ?? null,
-      name: newItem.name || "",
-      description: newItem.description || "",
-      price: newItem.price || 0,
-      category: newItem.category || categories.find(c => c.id !== "All")?.id || "Menu",
-      available: newItem.available ?? true,
-      image: newItem.image || "https://images.unsplash.com/photo-1546069901-ba9599a7e63c?w=400",
-    };
-    setMenuItems([...menuItems, item]);
-    setShowAddItem(false);
-    setNewItem({
-      name: "",
-      description: "",
-      price: 0,
-      category: "Silog",
-      available: true,
-      image: ""
-    });
-  };
-
-  const toggleBulkSelection = (id: number) => {
-    setSelectedItems(prev =>
-      prev.includes(id) ? prev.filter(i => i !== id) : [...prev, id]
-    );
-  };
-
-  /*
-   * Per-item jobs for the Edit Menu sheet.
-   *
-   * These only move local state. The debounced sync effect above watches
-   * `menuItems` and writes it to Supabase, so going through state is what
-   * keeps one code path for persistence rather than a second, differently-
-   * shaped writer next to the first.
-   */
-  const changeItemCategory = (itemId: number | string, sectionId: string | null) => {
-    setMenuItems((prev) =>
-      prev.map((item) => (item.id === itemId ? { ...item, sectionId } : item)),
-    );
-  };
-
-  const toggleItemAvailability = (itemId: number | string) => {
-    setMenuItems((prev) =>
-      prev.map((item) => (item.id === itemId ? { ...item, available: !item.available } : item)),
-    );
-  };
-
-  /** Move every item in one category into another, or out of all of them. */
-  const moveCategoryItems = (fromId: string, toId: string | null) => {
-    setMenuItems((prev) =>
-      prev.map((item) => (item.sectionId === fromId ? { ...item, sectionId: toId } : item)),
-    );
-  };
-
-  /** Delete one item, from the row itself rather than through a modal. */
-  const deleteItemDirect = async (itemId: number | string, name: string) => {
-    if (typeof itemId === 'string' && restaurantId) {
-      const { error } = await supabase
-        .from('menu_items')
-        .delete()
-        .eq('id', itemId)
-        .eq('restaurant_id', restaurantId);
-      if (error) {
-        setMenuEditorNote(`Could not delete ${name}: ${error.message}`);
-        return;
-      }
-    }
-    setMenuItems((prev) => prev.filter((item) => item.id !== itemId));
-    setSelectedItems((prev) => prev.filter((id) => id !== itemId));
-    setMenuEditorNote(`${name} deleted.`);
-  };
-
-  const toggleAllAvailability = () => {
-    const allAvailable = menuItems.length > 0 && menuItems.every((i) => i.available);
-    setMenuItems((prev) => prev.map((i) => ({ ...i, available: !allAvailable })));
-    setMenuEditorNote(allAvailable ? 'All items hidden.' : 'All items available.');
-  };
-
-  const bulkToggleAvailability = () => {
-    setShowBulkActions(false);
-    setShowBulkToggleModal(true);
-  };
-
-  const confirmBulkToggleAvailability = () => {
-    const count = selectedItems.length;
-    // Determine new status based on first selected item
-    const firstItem = menuItems.find(i => selectedItems.includes(i.id));
-    const newStatus = firstItem ? !firstItem.available : true;
-
-    setMenuItems(menuItems.map(item =>
-      selectedItems.includes(item.id) ? { ...item, available: newStatus } : item
-    ));
-    setSelectedItems([]);
-    setShowBulkToggleModal(false);
-
-    setDeleteSuccessMessage(`${count} item${count !== 1 ? 's' : ''} ${newStatus ? 'made available' : 'hidden'}.`);
-    setShowDeleteSuccess(true);
-    setTimeout(() => setShowDeleteSuccess(false), 2500);
-  };
-
-  const bulkDelete = () => {
-    setShowBulkActions(false);
-    setShowBulkDeleteModal(true);
-  };
-
-  const confirmBulkDelete = async () => {
-    const count = selectedItems.length;
-
-    // Delete from Supabase
-    if (restaurantId) {
-      for (const id of selectedItems) {
-        if (typeof id === 'string') {
-          try {
-            await supabase
-              .from('menu_items')
-              .delete()
-              .eq('id', id)
-              .eq('restaurant_id', restaurantId);
-          } catch (error) {
-            console.error('Error deleting item from Supabase:', error);
-          }
-        }
-      }
+    if (draftMode === "add") {
+      const item: MenuItem = {
+        id: Date.now(),
+        // New dishes go to the end. Without this it took whatever number the draft
+        // happened to carry and could land anywhere, including ahead of dishes that
+        // have been on the menu for months.
+        sortOrder: menuItems.length,
+        sectionId: editingItem.sectionId ?? null,
+        name: editingItem.name || "",
+        description: editingItem.description || "",
+        price: editingItem.price || 0,
+        category: editingItem.category || "Menu",
+        available: editingItem.available ?? true,
+        image:
+          editingItem.image ||
+          "https://images.unsplash.com/photo-1546069901-ba9599a7e63c?w=400",
+      };
+      setMenuItems([...menuItems, item]);
+    } else {
+      setMenuItems(menuItems.map((item) => (item.id === editingItem.id ? editingItem : item)));
     }
 
-    setMenuItems(menuItems.filter(item => !selectedItems.includes(item.id)));
-    setSelectedItems([]);
-    setShowBulkDeleteModal(false);
-
-    setDeleteSuccessMessage(`${count} item${count !== 1 ? 's' : ''} deleted successfully.`);
-    setShowDeleteSuccess(true);
-    setTimeout(() => setShowDeleteSuccess(false), 2500);
+    stopEditing();
   };
+
 
   const pendingOrders = 5;
 
@@ -784,6 +767,145 @@ export default function BusinessMenu() {
    */
   const sectionColumn = (item: { sectionId?: string | null }) =>
     sectionsTableExists.current ? { section_id: item.sectionId ?? null } : {};
+
+  /**
+   * Write the whole menu.
+   *
+   * Every item, every time, rather than a diff: the menu is at most a few dozen
+   * rows and the write is one statement per row. A diff would have to remember what
+   * the last save looked like in order to be correct, which is exactly the state
+   * that goes wrong when something else touches the menu.
+   *
+   * New items get their database id back and are swapped into local state, so the
+   * next save updates rows rather than inserting duplicates.
+   */
+  /**
+   * Write the menu. Returns whether it worked.
+   *
+   * The return value is what "Save and leave" acts on. Navigating away after a
+   * failed write would throw the work away under a button that promised to keep it,
+   * and would do it looking deliberate.
+   */
+  const saveChanges = async (): Promise<boolean> => {
+    if (isSaving) return false;
+    setIsSaving(true);
+    setSaveError(null);
+
+    if (user?.email) {
+      localStorage.setItem(`menuItems_${user.email}`, JSON.stringify(menuItems));
+    }
+
+    if (!restaurantId) {
+      setSaveError("No shop is linked to this account yet.");
+      setIsSaving(false);
+      return false;
+    }
+
+    try {
+      const nextItems = [...menuItems];
+
+      for (let i = 0; i < nextItems.length; i++) {
+        const item = nextItems[i];
+
+        if (typeof item.id === 'number') {
+          const { data: inserted, error } = await supabase
+            .from('menu_items')
+            .insert([{
+              restaurant_id: restaurantId,
+              name: item.name,
+              description: item.description,
+              price: item.price,
+              category: item.category,
+              ...sectionColumn(item),
+              image_url: item.image,
+              is_available: item.available,
+              sort_order: item.sortOrder ?? 0,
+              badge: item.badge || null,
+              created_at: new Date().toISOString(),
+            }])
+            .select()
+            .single();
+
+          if (error) throw error;
+          if (inserted?.id) nextItems[i] = { ...item, id: inserted.id };
+          continue;
+        }
+
+        const { error } = await supabase
+          .from('menu_items')
+          .update({
+            name: item.name,
+            description: item.description,
+            price: item.price,
+            category: item.category,
+            ...sectionColumn(item),
+            image_url: item.image,
+            is_available: item.available,
+            sort_order: item.sortOrder ?? 0,
+            badge: item.badge || null,
+            updated_at: new Date().toISOString(),
+          })
+          .eq('id', item.id);
+
+        if (error) throw error;
+      }
+
+      setMenuItems(nextItems);
+      setSavedSnapshot(snapshotOf(nextItems));
+      setNotice({ kind: 'saved' });
+    } catch (error: any) {
+      console.error('[Menu] Save failed:', error);
+
+      const message = String(error?.message || '');
+      const missingSortOrder =
+        error?.code === 'PGRST204' || /sort_order|column .* does not exist/i.test(message);
+
+      // A raw PostgREST 400 says "column menu_items.sort_order does not exist",
+      // which is true and useless to a shop owner. Name the file to run instead.
+      setSaveError(
+        missingSortOrder
+          ? 'Saving needs a database update. Run ADD_MENU_ITEM_SORT_ORDER.sql in Supabase.'
+          : message || "Could not save the menu. Your changes are still here - try again.",
+      );
+      return false;
+    } finally {
+      setIsSaving(false);
+    }
+
+    return true;
+  };
+
+  /*
+   * Losing unsaved menu edits to a stray refresh is the cost of explicit saving,
+   * and it is the one that has to be paid for: the browser cannot ask its own
+   * question for us.
+   */
+  useEffect(() => {
+    if (!isDirty) return;
+    const warn = (event: BeforeUnloadEvent) => {
+      event.preventDefault();
+      event.returnValue = '';
+    };
+    window.addEventListener('beforeunload', warn);
+    return () => window.removeEventListener('beforeunload', warn);
+  }, [isDirty]);
+
+  const blocker = useBlocker(
+    ({ currentLocation, nextLocation }) =>
+      isDirty && currentLocation.pathname !== nextLocation.pathname,
+  );
+
+  /**
+   * Accept the edits as they stand and stop guarding.
+   *
+   * Without this the pending move would be re-blocked the moment the dialog closed,
+   * because the state is still dirty — the shop chose to discard, and the guard has
+   * to be told so rather than left to argue.
+   */
+  const discardUnsaved = () => {
+    setSavedSnapshot(snapshotOf(menuItems));
+    setNotice(null);
+  };
 
   // Writing through Supabase where possible, local state as the source of
   // truth either way: this screen already has no single backend, and a
@@ -1039,6 +1161,815 @@ const addSection = async () => {
     loadCategories();
   }, [restaurantId, user?.email]);
 
+  /**
+   * Which screen the editor is on.
+   *
+   * The form used to open underneath its row, in the middle of a list, so editing
+   * a dish meant scrolling a long form through someone else's dishes. It gets its
+   * own screen now: one thing on it, with room to actually fill it in.
+   */
+  const [view, setView] = useState<'list' | 'detail'>('list');
+
+  /**
+   * Multi-select, entered by holding a row.
+   *
+   * The mode is reached by holding rather than by a button because the only two
+   * things it offers — show/hide and delete — are the two things you might want to
+   * do to a dozen dishes at once, and a checkbox sitting permanently on every row
+   * is a control that is almost never what you wanted.
+   */
+  const [selectionMode, setSelectionMode] = useState(false);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [selectedCategoryIds, setSelectedCategoryIds] = useState<Set<string>>(new Set());
+
+  /** The row being dragged, and the row it is currently over. */
+  const [dragId, setDragId] = useState<string | null>(null);
+  const [dragOverId, setDragOverId] = useState<string | null>(null);
+
+  /*
+   * Refs mirroring the two drag values.
+   *
+   * A drag sends pointerdown, then moves, then up — often inside one frame. React
+   * has not re-rendered between them, so handlers reading `dragId` from state saw
+   * null and the drop did nothing. Refs are written synchronously, so every event
+   * in the gesture reads what the last one wrote.
+   */
+  const dragIdRef = useRef<string | null>(null);
+  const dragOverIdRef = useRef<string | null>(null);
+
+  /** Row elements, for hit-testing where a drop would land. */
+  const rowEls = useRef(new Map<string, HTMLElement>());
+
+  /** A press in progress, so we can tell a tap from a hold from a drag. */
+  const pressTimer = useRef<number | null>(null);
+  const pressMoved = useRef(false);
+  const pressConsumed = useRef(false);
+
+  /*
+   * Refs the gesture handlers read.
+   *
+   * Everything a gesture decides happens inside one press, often within a single
+   * frame, so the state values those handlers closed over were stale: the hold
+   * timer could not see that selection mode was already on, and the drag handlers
+   * could not see that a drag had started.
+   */
+  const armTimer = useRef<number | null>(null);
+  const dragArmed = useRef(false);
+  const dragMoved = useRef(false);
+  const pressStartY = useRef(0);
+  const pressItemId = useRef<string | null>(null);
+  const selectionModeRef = useRef(false);
+
+  useEffect(() => {
+    selectionModeRef.current = selectionMode;
+  }, [selectionMode]);
+
+  /** Where a category sits among the others, for the move-up / move-down guards. */
+  const sectionIndexOf = (sectionId: string) =>
+    sections.findIndex((s) => s.id === sectionId);
+
+  /**
+   * The dishes, numbered, grouped, with the unsaved new one filed under the
+   * category it is going into.
+   *
+   * The number runs through the whole list rather than restarting per category, so
+   * "dish 3" means one dish in this menu, in the shop's mouth and on the storefront.
+   */
+  const renderedGroups = useMemo(() => {
+    const draft =
+      draftMode === 'add' && editingItem
+        ? ({ item: { ...editingItem, id: 'new' } as MenuItem, isDraft: true } as const)
+        : null;
+
+    let counter = 0;
+    const next = sectionGroups.map((group) => ({
+      key: group.key,
+      title: group.title,
+      section: sections.find((s) => s.id === group.key) ?? null,
+      isRenaming: group.key !== '__unfiled' && renamingSectionId === group.key,
+      rows: group.items.map((item) => ({ item, number: ++counter, isDraft: false })),
+    }));
+
+    if (draft) {
+      // Filed under its own heading, so the new dish appears where it will live.
+      const target = draft.item.sectionId
+        ? next.find((g) => g.section?.id === draft.item.sectionId)
+        : undefined;
+
+      if (target) {
+        target.rows.push({ item: draft.item, number: ++counter, isDraft: true });
+      } else {
+        next.unshift({
+          key: '__new',
+          title: 'New dish',
+          section: null,
+          isRenaming: false,
+          rows: [{ item: draft.item, number: ++counter, isDraft: true }],
+        });
+      }
+    }
+
+    return next;
+  }, [sectionGroups, sections, draftMode, editingItem, renamingSectionId]);
+
+  /**
+   * One dish.
+   *
+   * Two buttons: show/hide, and edit. Delete lives inside the form rather than on
+   * the row — it is the only one of the three that cannot be undone, and a row
+   * that a shop owner clicks dozens of times a day is the wrong home for it.
+   *
+   * A hidden dish is dimmed and greyscaled the way a closed folder does, and says
+   * so in words as well, because a greyed row on a screen that is meant to show
+   * every dish you have needs explaining.
+   */
+  /*
+   * Four gestures on one card, told apart by how long and how far.
+   *
+   *   tap                     → open the dish
+   *   hold                    → selection mode on; holding again turns it off
+   *   drag (mouse)            → move the dish, anywhere on the card
+   *   hold then drag (touch)  → move the dish, anywhere on the card
+   *
+   * The card is the drag target, not a grip in its corner: reaching for a 24px
+   * handle to reorder a list of twenty is a worse thing to do than the reordering
+   * itself.
+   *
+   * Touch needs the 250ms arm before movement counts. A finger that moves at once
+   * is scrolling — the list is mostly cards, so the page has to keep winning the
+   * common gesture — and a finger that pauses first has said it wants to pick
+   * something up. A mouse has no such ambiguity and arms immediately.
+   */
+  const beginPress = (itemId: string) => (event: React.PointerEvent) => {
+    pressMoved.current = false;
+    pressConsumed.current = false;
+    pressItemId.current = itemId;
+    pressStartY.current = event.clientY;
+
+    dragArmed.current = event.pointerType !== 'touch';
+    if (!dragArmed.current) {
+      armTimer.current = window.setTimeout(() => {
+        armTimer.current = null;
+        dragArmed.current = true;
+      }, 250);
+    }
+
+    pressTimer.current = window.setTimeout(() => {
+      pressTimer.current = null;
+      pressConsumed.current = true;
+
+      // Holding again leaves selection mode. Getting out of it by finding
+      // precisely the right button is more work than getting into it was.
+      if (selectionModeRef.current) {
+        endSelection();
+        return;
+      }
+
+      setSelectionMode(true);
+      setSelectedIds((prev) => new Set(prev).add(String(itemId)));
+      if (typeof navigator !== 'undefined' && navigator.vibrate) navigator.vibrate(12);
+    }, 450);
+  };
+
+  const movePress = (event: React.PointerEvent) => {
+    if (pressItemId.current == null) return;
+
+    // Movement past a few pixels is a decision, and it cancels the hold.
+    if (!pressMoved.current && Math.abs(event.clientY - pressStartY.current) > 8) {
+      pressMoved.current = true;
+      if (pressTimer.current != null) {
+        window.clearTimeout(pressTimer.current);
+        pressTimer.current = null;
+      }
+    }
+
+    if (!dragArmed.current || !pressMoved.current) return;
+
+    // Starting the drag from here means the click that ends the gesture has to
+    // be swallowed, or every reorder also opens the editor it just moved.
+    if (!dragIdRef.current) {
+      pressConsumed.current = true;
+      startDragNow(pressItemId.current, event);
+    }
+    moveDragNow(event);
+  };
+
+  const endPress = (event: React.PointerEvent) => {
+    if (pressTimer.current != null) {
+      window.clearTimeout(pressTimer.current);
+      pressTimer.current = null;
+    }
+    if (armTimer.current != null) {
+      window.clearTimeout(armTimer.current);
+      armTimer.current = null;
+    }
+
+    if (dragIdRef.current) {
+      pressConsumed.current = true;
+      endDragNow(event);
+    }
+
+    dragArmed.current = false;
+    pressItemId.current = null;
+  };
+
+  const toggleSelected = (itemId: string | number) => {
+    const key = String(itemId);
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  };
+
+  /**
+   * Tick a category, and everything filed under it.
+   *
+   * "Delete this whole section" is the operation people actually want, and making
+   * them tick a heading and then every dish under it one at a time is how a bulk
+   * delete never gets done. Un-ticking gives the dishes back, so a stray tap on a
+   * heading is undoable.
+   */
+  const toggleSelectedCategory = (sectionId: string) => {
+    const inside = menuItems
+      .filter((item) => item.sectionId === sectionId)
+      .map((item) => String(item.id));
+
+    const wasSelected = selectedCategoryIds.has(sectionId);
+
+    setSelectedCategoryIds((prev) => {
+      const next = new Set(prev);
+      if (wasSelected) next.delete(sectionId);
+      else next.add(sectionId);
+      return next;
+    });
+
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      for (const id of inside) {
+        if (wasSelected) next.delete(id);
+        else next.add(id);
+      }
+      return next;
+    });
+  };
+
+  const selectionCount = selectedIds.size + selectedCategoryIds.size;
+
+  const endSelection = () => {
+    setSelectionMode(false);
+    setSelectedIds(new Set());
+    setSelectedCategoryIds(new Set());
+  };
+
+  /**
+   * One availability rule for everything ticked.
+   *
+   * Availability is flipped, not set: a mix of shown and hidden dishes means "the
+   * opposite of each of these", which is what someone marking a whole category out
+   * of stock in one go actually means.
+   */
+  const toggleSelectedAvailability = () => {
+    if (selectedIds.size === 0) return;
+    const picked = menuItems.filter((i) => selectedIds.has(String(i.id)));
+    const allAvailable = picked.length > 0 && picked.every((i) => i.available);
+
+    setMenuItems((prev) =>
+      prev.map((item) =>
+        selectedIds.has(String(item.id))
+          ? { ...item, available: !allAvailable }
+          : item,
+      ),
+    );
+    endSelection();
+  };
+
+  /**
+   * Delete everything ticked — dishes and categories together.
+   *
+   * Categories go through the same confirm as everywhere else, and their dishes are
+   * unfiled rather than removed: deleting a heading must never delete food.
+   */
+  const deleteSelectedItems = () => {
+    const ids = new Set(selectedIds);
+    const categoryIds = new Set(selectedCategoryIds);
+    const count = ids.size + categoryIds.size;
+    if (count === 0) return;
+    endSelection();
+
+    if (categoryIds.size > 0) {
+      setMenuItems((prev) =>
+        prev.map((item) =>
+          item.sectionId && categoryIds.has(item.sectionId)
+            ? { ...item, sectionId: null }
+            : item,
+        ),
+      );
+      if (selectedSection !== 'all' && categoryIds.has(selectedSection)) {
+        setSelectedSection('all');
+      }
+    }
+
+    void (async () => {
+      if (!restaurantId) return;
+      for (const sectionId of categoryIds) {
+        const { error } = await supabase
+          .from('menu_sections')
+          .delete()
+          .eq('id', sectionId);
+        if (error) console.error('[Menu] Category delete failed:', error);
+      }
+      for (const id of ids) {
+        const { error } = await supabase
+          .from('menu_items')
+          .delete()
+          .eq('id', id)
+          .eq('restaurant_id', restaurantId);
+        if (error) console.error('[Menu] Item delete failed:', error);
+      }
+    })();
+
+    setMenuItems((prev) => prev.filter((item) => !ids.has(String(item.id))));
+    setSections((prev) => prev.filter((sec) => !categoryIds.has(sec.id)));
+
+    setDeleteSuccessMessage(
+      `${count} ${count === 1 ? 'thing' : 'things'} deleted.`
+    );
+    setShowDeleteSuccess(true);
+    setTimeout(() => setShowDeleteSuccess(false), 2500);
+  };
+
+  /**
+   * Move a dish to where it was dropped, and renumber the lot.
+   *
+   * Every dish gets a new position rather than just the one that moved: two halves
+   * of a list with gaps and ties in them are a list whose order depends on which
+   * rows the database happens to return first, which is the bug this whole column
+   * exists to remove.
+   */
+  const moveItemTo = (from: string, to: string) => {
+    if (from === to) return;
+    setMenuItems((prev) => {
+      const a = prev.findIndex((i) => String(i.id) === from);
+      const b = prev.findIndex((i) => String(i.id) === to);
+      if (a === -1 || b === -1) return prev;
+      const next = [...prev];
+      const [moved] = next.splice(a, 1);
+      next.splice(b, 0, moved);
+      return next.map((item, at) => ({ ...item, sortOrder: at }));
+    });
+  };
+
+  /** Which row is under the pointer, by comparing against the ones on screen. */
+  const rowUnderPointer = (clientY: number): string | null => {
+    for (const [id, el] of rowEls.current) {
+      const rect = el.getBoundingClientRect();
+      if (clientY >= rect.top && clientY <= rect.bottom) return id;
+    }
+    return null;
+  };
+
+  const startDragNow = (itemId: string, event: React.PointerEvent) => {
+    dragIdRef.current = itemId;
+    dragOverIdRef.current = itemId;
+    setDragId(itemId);
+    setDragOverId(itemId);
+    try {
+      (event.currentTarget as HTMLElement)?.setPointerCapture?.(event.pointerId);
+    } catch {
+      // Capture is an optimisation, not a requirement: without it the moves still
+      // arrive while the pointer is over the element. A throw here — a pointer that
+      // has already been released, a synthetic event — must not abort the drag.
+    }
+  };
+
+  const moveDragNow = (event: React.PointerEvent) => {
+    const from = dragIdRef.current;
+    if (!from) return;
+    const over = rowUnderPointer(event.clientY);
+    if (over && over !== from && over !== dragOverIdRef.current) {
+      dragOverIdRef.current = over;
+      setDragOverId(over);
+    }
+  };
+
+  const endDragNow = (event: React.PointerEvent) => {
+    const from = dragIdRef.current;
+    if (!from) return;
+    try {
+      (event.target as HTMLElement).releasePointerCapture?.(event.pointerId);
+    } catch {
+      // Never captured, or already released.
+    }
+    const over = dragOverIdRef.current;
+    dragIdRef.current = null;
+    dragOverIdRef.current = null;
+    setDragId(null);
+    setDragOverId(null);
+    if (over && over !== from) moveItemTo(from, over);
+  };
+
+  /** Is this row showing its form? The draft always is; a row is while it is edited. */
+  const isFormOpen = (row: { item: MenuItem; isDraft: boolean }) =>
+    row.isDraft ? draftMode === 'add' : expandedId === String(row.item.id);
+  const renderRow = (item: MenuItem, isDraft: boolean) => {
+    const key = String(item.id);
+    const selected = selectedIds.has(key);
+    const isDragging = dragId === key;
+    const isDropTarget = Boolean(dragId) && dragOverId === key && dragId !== key;
+    const badge = item.badge ? getBadgeLabel(item.badge) : 'None';
+
+    return (
+      <div
+        ref={(el) => {
+          if (el) rowEls.current.set(key, el);
+          else rowEls.current.delete(key);
+        }}
+        onPointerDown={beginPress(item.id)}
+        onPointerMove={movePress}
+        onPointerUp={endPress}
+        onPointerCancel={endPress}
+        onClick={() => {
+          /*
+           * The hold already did its work; the click that follows it must not also
+           * open the dish.
+           *
+           * Read and clear, rather than clear and return. It used to clear the flag
+           * only on the swallowed click, so a hold that started while selection mode
+           * was already on — where no press timer ever runs — left the flag set for
+           * good and every later tap was eaten.
+           */
+          const consumedByHold = pressConsumed.current;
+          pressConsumed.current = false;
+          if (consumedByHold) return;
+          if (isDraft) return;
+          if (selectionMode) {
+            toggleSelected(item.id);
+            return;
+          }
+          startEditing(item);
+          setView('detail');
+        }}
+        className={`flex items-center gap-2 rounded-xl border p-2 select-none transition-all ${
+          isDragging
+            ? 'opacity-40'
+            : isDropTarget
+              ? 'border-t-2 border-t-[var(--primary)]'
+              : isDraft
+                ? 'border-dashed border-[var(--primary)]'
+                : selected
+                  ? 'border-[var(--info)] bg-[var(--info-soft)]'
+                  : 'border-[var(--border)]'
+        } ${isDraft ? 'bg-[var(--surface)]' : 'bg-[var(--surface)]'} ${selectionMode ? 'cursor-pointer' : 'cursor-pointer'}`}
+      >
+        {/* Selection tick, only while selecting. */}
+        {selectionMode && !isDraft && (
+          <span
+            role="checkbox"
+            aria-checked={selected}
+            aria-label={`Select ${item.name}`}
+            tabIndex={0}
+            onKeyDown={(e) => {
+              if (e.key === ' ' || e.key === 'Enter') {
+                e.preventDefault();
+                toggleSelected(item.id);
+              }
+            }}
+            className={`grid size-6 shrink-0 place-items-center rounded border-2 ${
+              selected
+                ? 'border-[var(--info)] bg-[var(--info)]'
+                : 'border-[var(--border)]'
+            }`}
+          >
+            {selected && <Check className="size-3.5 text-white" aria-hidden="true" />}
+          </span>
+        )}
+
+
+        <div
+          className={`size-12 shrink-0 overflow-hidden rounded-lg bg-[var(--muted)] transition-all ${
+            item.available ? '' : 'opacity-45 grayscale'
+          }`}
+        >
+          <ImageWithFallback
+            src={item.image}
+            alt={item.name}
+            className="size-full object-cover"
+          />
+        </div>
+
+        <div className="min-w-0 flex-1">
+          <p className="truncate text-sm font-bold text-[var(--ink)] lg:text-base">
+            {item.name || 'Untitled dish'}
+          </p>
+          <p className="mt-0.5 truncate text-xs text-[var(--muted-foreground)]">
+            {item.description || 'No description yet.'}
+            {!item.available && (
+              <span className="font-semibold text-[var(--muted-foreground)]"> · Hidden</span>
+            )}
+          </p>
+          <p className="mt-1 text-[11px] tabular-nums text-[var(--muted-foreground)]">
+            <span className="font-bold text-[var(--primary)]">
+              ₱{Number(item.price) || 0}
+            </span>
+            {' | '}
+            {item.badge ? (
+              <span className={getBadgeColor(item.badge)}>{badge}</span>
+            ) : (
+              <span>{badge}</span>
+            )}
+          </p>
+        </div>
+
+        <div className="flex shrink-0 items-center gap-1.5">
+          {!isDraft && (
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                toggleItemAvailability(item.id);
+              }}
+              aria-label={item.available ? `Hide ${item.name}` : `Show ${item.name}`}
+              title={item.available ? 'Hide from customers' : 'Show to customers'}
+              className={`grid size-9 place-items-center rounded-lg border transition-colors ${
+                item.available
+                  ? 'border-[var(--success)] text-[var(--success)]'
+                  : 'border-[var(--error)] text-[var(--error)]'
+              }`}
+            >
+              {/*
+  A shut eye, not a cross. A red cross on a row you are only looking at reads as
+  an error on that dish; an eye that is closed reads as the thing it is — off the
+  menu — and matches the wording next to it.
+*/}
+{item.available ? (
+              <Eye className="w-4 h-4" aria-hidden="true" />
+            ) : (
+              <EyeOff className="w-4 h-4" aria-hidden="true" />
+            )}
+            </button>
+          )}
+
+          {!isDraft && !selectionMode && (
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                startEditing(item);
+                setView('detail');
+              }}
+              aria-label={`Edit ${item.name}`}
+              title="Edit"
+              className="grid size-9 place-items-center rounded-lg border border-line text-[var(--muted-foreground)] transition-colors hover:bg-[var(--muted)]"
+            >
+              <Settings className="w-4 h-4" aria-hidden="true" />
+            </button>
+          )}
+        </div>
+      </div>
+    );
+  };
+
+  /**
+   * The dish form, inline under its row.
+   *
+   * Rendered once and reused for both jobs. Adding and editing used to be separate
+   * dialogs with separate copies of these fields, which meant the price rule and
+   * the image upload existed twice and could disagree.
+   */
+  const renderForm = (isNew: boolean) => (
+    <div className="overflow-hidden rounded-xl border border-[var(--primary)] bg-[var(--surface)]">
+                            {/*
+                             * The modal this form came out of had a title bar naming
+                             * what it was editing. A card in a list has no such thing, and
+                             * a form open mid-scroll reads as part of whichever card it
+                             * sits in — so it says what it is, and offers a way out.
+                             */}
+                            <div className="flex items-center justify-between gap-3 border-b border-[var(--border)] bg-[var(--muted)] px-4 py-3">
+                              <p className="min-w-0 truncate text-sm font-bold text-[var(--ink)]">
+                                {isNew ? 'New item' : editingItem.name || 'Untitled'}
+                              </p>
+                              <button
+                                type="button"
+                                onClick={stopEditing}
+                                className="shrink-0 text-xs font-bold text-[var(--muted-foreground)] hover:underline"
+                              >
+                                Close
+                              </button>
+                            </div>
+
+                            {/*
+                             * One padded column with an even rhythm.
+                             *
+                             * The wrapper this used to have was lost when the form
+                             * moved out of the list row and onto its own screen, which
+                             * left every field flush against the one above it — the badge
+                             * grid and the availability toggle looked like one block.
+                             */}
+                            <div className="space-y-5 p-4 lg:p-5">
+                    <div>
+                      <label className="text-sm font-bold text-[var(--ink)] mb-2 block">Item Photo</label>
+                      <div className="h-48 rounded-2xl overflow-hidden mb-3 border border-line">
+                        <ImageWithFallback
+                          src={editingItem.image}
+                          alt={editingItem.name}
+                          className="w-full h-full object-cover"
+                        />
+                      </div>
+                      <div className="flex gap-2">
+                        <Button
+                          onClick={handleUploadClick}
+                          disabled={uploadingImage}
+                          className="flex-1 bg-[var(--primary)] hover:bg-[var(--primary)]"
+                        >
+                          <Upload className="w-4 h-4 mr-2" />
+                          {uploadingImage ? 'Uploading...' : 'Change Photo'}
+                        </Button>
+                        <Button
+                          onClick={() => setEditingItem({ ...editingItem, image: "" })}
+                          variant="outline"
+                          className="border-[var(--primary)] text-[var(--primary)] hover:bg-[var(--primary-soft)]"
+                        >
+                          <X className="w-4 h-4" />
+                        </Button>
+                      </div>
+                      <p className="text-xs text-[var(--muted-foreground)] mt-2 text-center">Recommended: 800x800px, max 5MB</p>
+                    </div>
+
+                    <div>
+                      <label className="text-sm font-bold text-[var(--ink)] mb-2 block">Item Name *</label>
+                      <input
+                        type="text"
+                        value={editingItem.name}
+                        onChange={(e) => setEditingItem({ ...editingItem, name: e.target.value })}
+                        className="w-full p-3 border border-line rounded-xl font-semibold"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="text-sm font-bold text-[var(--ink)] mb-2 block">Description</label>
+                      <textarea
+                        value={editingItem.description}
+                        onChange={(e) => setEditingItem({ ...editingItem, description: e.target.value })}
+                        className="w-full p-3 border border-line rounded-xl min-h-[100px]"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="text-sm font-bold text-[var(--ink)] mb-2 block">Price (₱) *</label>
+                      <div className="relative">
+                        <span className="absolute left-4 top-1/2 -translate-y-1/2 text-xl text-[var(--muted-foreground)]">₱</span>
+                        <input
+                          type="number"
+                          value={editingItem.price}
+                          onChange={(e) => { setEditingItem({ ...editingItem, price: parseFloat(e.target.value) }); setEditPriceError(""); }}
+                          className={`w-full p-3 pl-10 border-2 rounded-xl text-xl font-bold ${editPriceError ? 'border-[var(--primary)]' : 'border-[var(--border)]'}`}
+                        />
+                      </div>
+                      {editPriceError && <p className="text-sm text-[var(--primary)] font-semibold mt-1">{editPriceError}</p>}
+                    </div>
+
+                    <div>
+                      <label className="text-sm font-bold text-[var(--ink)] mb-2 block">Category</label>
+                      {/* Sections are the grouping control now. The old category dropdown
+                          is gone; dishes keep a stored category behind the scenes so the
+                          customer cuisine filter rail is unaffected. */}
+                      {sections.length === 0 ? (
+                        <p className="text-xs text-[var(--muted-foreground)]">
+                          No categories yet. Create one from the menu screen — dishes stay unfiled until you do.
+                        </p>
+                      ) : (
+                        <select
+                          value={editingItem.sectionId ?? ""}
+                          onChange={(e) => setEditingItem({ ...editingItem, sectionId: e.target.value || null })}
+                          className="w-full p-3 border border-line rounded-xl font-semibold"
+                        >
+                          <option value="">Unfiled</option>
+                          {sections.map((section) => (
+                            <option key={section.id} value={section.id}>{section.name}</option>
+                          ))}
+                        </select>
+                      )}
+                    </div>
+                    <div>
+                      <label className="text-sm font-bold text-[var(--ink)] mb-2 block">Badge (Optional)</label>
+                      <p className="text-xs text-[var(--muted-foreground)] mb-3">Highlight special items to attract customers</p>
+                      <div className="grid grid-cols-2 gap-2.5">
+                        <button
+                          type="button"
+                          onClick={() => setEditingItem({ ...editingItem, badge: undefined })}
+                          className={`flex items-center justify-center gap-2 p-3 rounded-xl border-2 text-sm font-semibold transition-all ${
+                            !editingItem.badge
+                              ? "border-[var(--primary)] bg-[var(--primary-soft)] text-[var(--primary)]"
+                              : "border-[var(--border)] bg-surface text-[var(--muted-foreground)]"
+                          }`}
+                        >
+                          No Badge
+                        </button>
+                        <button
+                          onClick={() => setEditingItem({ ...editingItem, badge: "most-ordered" })}
+                          className={`p-3 rounded-xl border-2 font-semibold transition-all flex items-center justify-center gap-2 ${
+                            editingItem.badge === "most-ordered"
+                              ? "border-[var(--primary)] bg-[var(--primary-soft)] text-[var(--primary)]"
+                              : "border-[var(--border)] bg-surface text-[var(--muted-foreground)]"
+                          }`}
+                        >
+                          <TrendingUp className="w-4 h-4" />
+                          Most Ordered
+                        </button>
+                        <button
+                          onClick={() => setEditingItem({ ...editingItem, badge: "most-liked" })}
+                          className={`p-3 rounded-xl border-2 font-semibold transition-all flex items-center justify-center gap-2 ${
+                            editingItem.badge === "most-liked"
+                              ? "border-[var(--info)] bg-[var(--info-soft)] text-[var(--info)]"
+                              : "border-[var(--border)] bg-surface text-[var(--muted-foreground)]"
+                          }`}
+                        >
+                          <Star className="w-4 h-4" />
+                          Most Liked
+                        </button>
+                        <button
+                          onClick={() => setEditingItem({ ...editingItem, badge: "signature" })}
+                          className={`p-3 rounded-xl border-2 font-semibold transition-all flex items-center justify-center gap-2 ${
+                            editingItem.badge === "signature"
+                              ? "border-[var(--amber)] bg-[var(--amber-soft)] text-[var(--amber)]"
+                              : "border-[var(--border)] bg-surface text-[var(--muted-foreground)]"
+                          }`}
+                        >
+                          <Award className="w-4 h-4" />
+                          Signature
+                        </button>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center justify-between p-4 bg-[var(--muted)] rounded-xl">
+                      <div>
+                        <p className="font-bold text-[var(--ink)]">Available to customers</p>
+                        <p className="text-xs text-[var(--muted-foreground)]">Toggle visibility on the customer menu</p>
+                      </div>
+                      <button
+                        onClick={() => setEditingItem({ ...editingItem, available: !editingItem.available })}
+                        className={`w-14 h-8 rounded-full transition-all ${
+                          editingItem.available ? "bg-[var(--success)]" : "bg-[var(--border)]"
+                        }`}
+                      >
+                        <div
+                          className={`w-6 h-6 bg-surface rounded-full shadow-md transition-transform ${
+                            editingItem.available ? "translate-x-7" : "translate-x-1"
+                          }`}
+                        />
+                      </button>
+                    </div>
+
+                            </div>
+
+                            {/*
+                             * Save and delete, as icons.
+                             *
+                             * Two full-width buttons saying what they do, for actions you
+                             * already know how to undo or confirm: cancel and delete sat
+                             * in a row as loud as the Save, and cancel next to save on a
+                             * long form is a question asked every time — the form has a
+                             * back button and the list throws changes away, so there is
+                             * nothing here to cancel.
+                             *
+                             * Icons keep the labels for screen readers and for the
+                             * tooltip, and keep a destructive action from being the biggest
+                             * thing on the screen.
+                             */}
+                            <div className="flex items-center justify-end gap-2 border-t border-[var(--border)] px-4 py-3 lg:px-5">
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  const target = editingItem;
+                                  stopEditing();
+                                  if (target) deleteItem(target.id);
+                                }}
+                                aria-label="Delete item"
+                                title="Delete item"
+                                className="grid size-11 place-items-center rounded-xl border border-line text-[var(--error)] transition-colors hover:bg-[var(--error-soft)]"
+                              >
+                                <Trash2 className="size-5" aria-hidden="true" />
+                              </button>
+
+                              <button
+                                type="button"
+                                onClick={saveEditedItem}
+                                aria-label={isNew ? "Add item" : "Save item"}
+                                title={isNew ? "Add item" : "Save item"}
+                                className="grid size-11 place-items-center rounded-xl bg-[var(--success)] text-white transition-opacity hover:opacity-90"
+                              >
+                                {isNew ? (
+                                  <Plus className="size-5" aria-hidden="true" />
+                                ) : (
+                                  <Check className="size-5" aria-hidden="true" />
+                                )}
+                              </button>
+                            </div>
+    </div>
+  );
+
   return (
     <div className="min-h-screen bg-[var(--muted)] flex overflow-x-hidden">
       {/* Sidebar Navigation */}
@@ -1049,567 +1980,428 @@ const addSection = async () => {
 
       {/* Main Content */}
       <div className="flex-1 lg:ml-64 bg-[var(--muted)] w-full min-w-0">
-        {/* Header */}
-        <div className="bg-surface px-3 lg:px-4 py-3 lg:py-4 border-b border-[var(--border)]">
-          <div className="flex items-center gap-2 lg:gap-3 mb-0.5 lg:mb-1">
-            {/* Hamburger Menu - Mobile Only */}
-            <button
-              onClick={() => setIsMobileMenuOpen(true)}
-              className="lg:hidden flex-shrink-0"
-            >
-              <Menu className="w-5 h-5 lg:w-6 lg:h-6 text-[var(--ink)]" />
-            </button>
-            <h1 className="text-lg lg:text-2xl xl:text-3xl font-extrabold text-[var(--ink)]">Menu</h1>
-          </div>
-          <p className="text-xs lg:text-sm text-[var(--muted-foreground)] lg:ml-0 ml-7">
-            {menuItems.length} items • {menuItems.filter(i => i.available).length} available
-          </p>
-        </div>
-
-            {/* Search Bar */}
-            <div className="bg-surface px-4 pb-3 sticky top-0 z-40 border-b border-[var(--border)]">
-              <div className="relative">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-[var(--muted-foreground)]" />
-                <input
-                  type="text"
-                  placeholder="Search menu items..."
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  className="w-full pl-10 pr-4 py-2.5 border border-line rounded-xl text-sm bg-[var(--muted)]"
-                />
-              </div>
-            </div>
-
-            {/* Sections. These replaced the category pills as the organising
-                control, so the rail is always rendered — a shop with none yet
-                needs the button to create its first one. */}
-            <div className="px-3 lg:px-4 py-3 bg-surface border-b border-[var(--border)]">
-              <div className="flex items-center justify-between gap-2 mb-2">
-                <p className="text-[11px] font-bold uppercase tracking-wider text-[var(--muted-foreground)]">
-                  Categories
-                </p>
-                <button
-                  type="button"
-                  onClick={() => setShowMenuEditor(true)}
-                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold bg-[var(--ink-solid)] text-white hover:opacity-90 transition-opacity"
-                >
-                  <Settings className="w-3.5 h-3.5" aria-hidden="true" />
-                  Edit Menu
-                </button>
-                <button
-                  onClick={() => { setRenamingSection(null); setNewSectionName(""); setSectionError(""); setShowAddSection(true); }}
-                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold bg-[var(--primary-soft)] text-[var(--primary)] hover:opacity-90 transition-opacity"
-                >
-                  <Plus className="w-3.5 h-3.5" aria-hidden="true" />
-                  Add Category
-                </button>
-              </div>
-              <div className="flex gap-2 overflow-x-auto scrollbar-hide pb-1">
-                <button
-                  onClick={() => setSelectedSection("all")}
-                  className={`px-4 py-2 rounded-full text-sm font-semibold whitespace-nowrap transition-all flex-shrink-0 ${
-                    selectedSection === "all"
-                      ? "bg-[var(--primary)] text-white"
-                      : "bg-[var(--muted)] text-[var(--muted-foreground)] hover:bg-[var(--border)]"
-                  }`}
-                >
-                  All ({menuItems.length})
-                </button>
-                {sections.map((section) => (
-                  <button
-                    key={section.id}
-                    onClick={() => setSelectedSection(section.id)}
-                    className={`px-4 py-2 rounded-full text-sm font-semibold whitespace-nowrap transition-all flex-shrink-0 ${
-                      selectedSection === section.id
-                        ? "bg-[var(--primary)] text-white"
-                        : "bg-[var(--muted)] text-[var(--muted-foreground)] hover:bg-[var(--border)]"
-                    }`}
-                  >
-                    {section.name}
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            {/* Add Item Button */}
-            <div className="px-4 py-3">
-              <Button
-                onClick={() => setShowAddItem(true)}
-                className="w-full bg-[var(--primary)] hover:bg-[var(--primary)] py-5 text-sm font-bold rounded-xl"
+        {/*
+         * The dish editor, on its own screen.
+         *
+         * This used to open underneath the dish, in the middle of everybody else's
+         * dishes — a long form threaded through a list, half of it off-screen at
+         * any moment, and you had to remember which row belonged to it when you
+         * scrolled back up. A full screen has room for the photo, the price and the
+         * category on one screen, and only one thing on it to be confused about.
+         */}
+        {view === 'detail' && (
+          <div className="min-h-screen">
+            <header className="sticky top-0 z-30 flex items-center gap-3 border-b border-[var(--border)] bg-surface px-3 py-3 lg:px-5">
+              <button
+                type="button"
+                onClick={() => {
+                  stopEditing();
+                  setView('list');
+                }}
+                className="inline-flex items-center gap-1.5 rounded-lg px-2 py-1.5 text-sm font-bold text-[var(--primary)] transition-colors hover:bg-[var(--muted)]"
               >
-                <Plus className="w-5 h-5 mr-2" />
-                Add New Menu Item
-              </Button>
-            </div>
-
-            {/* Menu Items - Card Layout */}
-            <div className="px-4 pb-6 space-y-6">
-              {filteredItems.length > 0 ? (
-                sectionGroups.map((group) => (
-                  <div key={group.key} className="space-y-3">
-                    <div className="flex items-center justify-between gap-2">
-                      <h2 className="text-xs font-bold uppercase tracking-wider text-[var(--muted-foreground)]">
-                        {group.title}
-                      </h2>
-                      <span className="text-[11px] text-[var(--muted-foreground)]">
-                        {group.items.length} {group.items.length === 1 ? "item" : "items"}
-                      </span>
-                    </div>
-                    {group.items.map((item) => (
-                  <Card 
-                    key={item.id} 
-                    className={`p-0 overflow-hidden bg-surface border border-[var(--border)] ${selectedItems.includes(item.id) ? 'ring-2 ring-[var(--info)]' : ''}`}
-                    onClick={() => handleEditItem(item)}
-                  >
-                    <div className="p-3 lg:p-4">
-                      {/* Top Row: Name, Badge, Price, Time */}
-                      <div className="flex items-start justify-between mb-2">
-                        <div className="flex items-center gap-1.5 lg:gap-2 flex-1">
-                          {/* Checkbox */}
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              toggleBulkSelection(item.id);
-                            }}
-                            className={`w-4 h-4 lg:w-5 lg:h-5 rounded border-2 flex items-center justify-center flex-shrink-0 ${
-                              selectedItems.includes(item.id)
-                                ? 'bg-[var(--info)] border-[var(--info)]'
-                                : 'border-[var(--border)]'
-                            }`}
-                          >
-                            {selectedItems.includes(item.id) && <Check className="w-2.5 h-2.5 lg:w-3 lg:h-3 text-white" />}
-                          </button>
-                          
-                          <div className="flex-1 min-w-0">
-                            <div className="flex items-center gap-1.5 lg:gap-2 flex-wrap">
-                              <h3 className="font-bold text-[var(--ink)] text-sm lg:text-base">{item.name}</h3>
-                              {item.badge && (
-                                <Badge className={`${getBadgeColor(item.badge)} text-[9px] lg:text-[10px] px-1.5 lg:px-2 py-0.5`}>
-                                  {getBadgeLabel(item.badge)}
-                                </Badge>
-                              )}
-                            </div>
-                          </div>
-                        </div>
-                        
-                        <div className="text-right ml-2 lg:ml-3">
-                          <p className="text-base lg:text-lg font-bold text-[var(--primary)]">₱{item.price}</p>
-                        </div>
-                      </div>
-
-                      {/* Product Image and Description */}
-                      <div className="flex gap-2 lg:gap-3">
-                        <div className="w-16 h-16 lg:w-20 lg:h-20 rounded-lg overflow-hidden flex-shrink-0 ml-5 lg:ml-7">
-                          <ImageWithFallback
-                            src={item.image}
-                            alt={item.name}
-                            className="w-full h-full object-cover"
-                          />
-                        </div>
-                        <div className="flex-1 min-w-0">
-                          <p className="text-xs lg:text-sm text-[var(--muted-foreground)] line-clamp-3 mb-2 lg:mb-3">
-                            {item.description}
-                          </p>
-                        </div>
-                      </div>
-
-                      {/* Bottom Row: Status Badge and Customizations */}
-                      <div className="flex items-center justify-between mt-2 lg:mt-3 ml-5 lg:ml-7">
-                        <div className="flex items-center gap-1.5 lg:gap-2 flex-wrap">
-                          {item.available ? (
-                            <Badge className="bg-[var(--success)] text-white text-[10px] lg:text-xs px-2 lg:px-3 py-0.5 lg:py-1">
-                              Available
-                            </Badge>
-                          ) : (
-                            <Badge className="bg-[var(--muted-foreground)] text-white text-[10px] lg:text-xs px-2 lg:px-3 py-0.5 lg:py-1">
-                              Hidden
-                            </Badge>
-                          )}
-                          {sectionNameFor(item.sectionId) && (
-                            <span className="text-[10px] lg:text-xs text-[var(--muted-foreground)]">
-                              {sectionNameFor(item.sectionId)}
-                            </span>
-                          )}
-                        </div>
-                      </div>
-                    </div>
-                  </Card>
-                    ))}
-                  </div>
-                ))
-              ) : (
-                <div className="text-center py-12">
-                  <Package className="w-16 h-16 text-[var(--border)] mx-auto mb-3" />
-                  <p className="text-[var(--muted-foreground)] mb-4">No items found</p>
-                  <Button
-                    onClick={() => setShowAddItem(true)}
-                    className="bg-[var(--primary)] hover:bg-[var(--primary)]"
-                  >
-                    <Plus className="w-4 h-4 mr-2" />
-                    Add First Item
-                  </Button>
-                </div>
-              )}
-            </div>
-
-            {/* Bulk Actions FAB */}
-            {selectedItems.length > 0 && (
-              <div className="fixed bottom-6 right-6 z-50">
-                <button
-                  onClick={() => setShowBulkActions(true)}
-                  className="bg-[var(--info)] text-white rounded-full shadow-2xl px-6 py-4 font-bold text-sm flex items-center gap-2"
-                >
-                  {selectedItems.length} Selected
-                  <ChevronRight className="w-5 h-5" />
-                </button>
-              </div>
-            )}
-        {/* Add Item Modal */}
-        {showAddItem && (
-          <div className="fixed inset-0 bg-black/50 z-[2000] flex items-end">
-            <div className="bg-surface w-full rounded-t-3xl max-h-[90vh] overflow-y-auto">
-              <div className="sticky top-0 bg-surface border-b border-[var(--border)] px-5 py-4 flex items-center justify-between">
-                <h2 className="text-xl font-bold text-[var(--ink)]">Add New Item</h2>
-                <button onClick={() => { setShowAddItem(false); setPriceError(""); }}>
-                  <X className="w-6 h-6 text-[var(--muted-foreground)]" />
-                </button>
-              </div>
-
-              <div className="p-5 space-y-4">
-                <div>
-                  <label className="text-sm font-bold text-[var(--ink)] mb-2 block">Item Photo</label>
-                  <div className="h-48 rounded-2xl overflow-hidden mb-3 border-2 border-dashed border-[var(--border)] bg-[var(--muted)] flex items-center justify-center">
-                    {newItem.image ? (
-                      <ImageWithFallback
-                        src={newItem.image}
-                        alt="Item photo preview"
-                        className="w-full h-full object-cover"
-                      />
-                    ) : (
-                      <div className="text-center">
-                        <ImageIcon className="w-12 h-12 text-[var(--border)] mx-auto mb-2" />
-                        <p className="text-sm text-[var(--muted-foreground)]">No image selected</p>
-                      </div>
-                    )}
-                  </div>
-                  <div className="flex gap-2">
-                    <Button
-                      onClick={() => handleUploadClick('new')}
-                      disabled={uploadingImage}
-                      className="flex-1 bg-[var(--primary)] hover:bg-[var(--primary)]"
-                    >
-                      <Upload className="w-4 h-4 mr-2" />
-                      {uploadingImage ? 'Uploading...' : 'Upload Photo'}
-                    </Button>
-                    {newItem.image && (
-                      <Button
-                        onClick={() => setNewItem({ ...newItem, image: "" })}
-                        variant="outline"
-                        className="border-[var(--primary)] text-[var(--primary)] hover:bg-[var(--primary-soft)]"
-                      >
-                        <X className="w-4 h-4" />
-                      </Button>
-                    )}
-                  </div>
-                  <p className="text-xs text-[var(--muted-foreground)] mt-2 text-center">Recommended: 800x800px, max 5MB</p>
-                </div>
-
-                <div>
-                  <label className="text-sm font-bold text-[var(--ink)] mb-2 block">Item Name *</label>
-                  <input
-                    type="text"
-                    value={newItem.name}
-                    onChange={(e) => setNewItem({ ...newItem, name: e.target.value })}
-                    className="w-full p-3 border border-line rounded-xl font-semibold"
-                    placeholder="e.g., Chicken Adobo"
-                  />
-                </div>
-
-                <div>
-                  <label className="text-sm font-bold text-[var(--ink)] mb-2 block">Description</label>
-                  <textarea
-                    value={newItem.description}
-                    onChange={(e) => setNewItem({ ...newItem, description: e.target.value })}
-                    className="w-full p-3 border border-line rounded-xl min-h-[100px]"
-                    placeholder="Describe your dish, ingredients, or what makes it special"
-                  />
-                  <p className="text-xs text-[var(--muted-foreground)] mt-1">Help customers understand what they're ordering</p>
-                </div>
-
-                <div>
-                  <label className="text-sm font-bold text-[var(--ink)] mb-2 block">Price (₱) *</label>
-                  <div className="relative">
-                    <span className="absolute left-4 top-1/2 -translate-y-1/2 text-xl text-[var(--muted-foreground)]">₱</span>
-                    <input
-                      type="number"
-                      value={newItem.price}
-                      onChange={(e) => { setNewItem({ ...newItem, price: parseFloat(e.target.value) }); setPriceError(""); }}
-                      className={`w-full p-3 pl-10 border-2 rounded-xl text-xl font-bold ${priceError ? 'border-[var(--primary)]' : 'border-[var(--border)]'}`}
-                      placeholder="0.00"
-                    />
-                  </div>
-                  {priceError && <p className="text-sm text-[var(--primary)] font-semibold mt-1">{priceError}</p>}
-                </div>
-
-                <div>
-                  <div className="flex items-center justify-between mb-2">
-                    <label className="text-sm font-bold text-[var(--ink)]">Category</label>
-                    <button
-                      type="button"
-                      onClick={() => { setRenamingSection(null); setNewSectionName(""); setSectionError(""); setShowAddSection(true); }}
-                      className="inline-flex items-center gap-1 text-xs font-bold text-[var(--primary)] hover:underline"
-                    >
-                      <Plus className="w-3.5 h-3.5" aria-hidden="true" />
-                      New category
-                    </button>
-                  </div>
-                  {/* Sections are the grouping control now. The old category dropdown
-                      is gone; dishes keep a stored category behind the scenes so the
-                      customer cuisine filter rail is unaffected. */}
-                  {sections.length === 0 ? (
-                    <p className="text-xs text-[var(--muted-foreground)]">
-                      No categories yet. Use "New category" above to group your menu — items stay unfiled until you do.
-                    </p>
-                  ) : (
-                    <select
-                      value={newItem.sectionId ?? ""}
-                      onChange={(e) => setNewItem({ ...newItem, sectionId: e.target.value || null })}
-                      className="w-full p-3 border border-line rounded-xl font-semibold"
-                    >
-                      <option value="">Unfiled</option>
-                      {sections.map((section) => (
-                        <option key={section.id} value={section.id}>{section.name}</option>
-                      ))}
-                    </select>
-                  )}
-                </div>
-                <div className="flex items-center justify-between p-4 bg-[var(--muted)] rounded-xl">
-                  <div>
-                    <p className="font-bold text-[var(--ink)]">Make available immediately</p>
-                    <p className="text-xs text-[var(--muted-foreground)]">Customers can order this item right away</p>
-                  </div>
-                  <button
-                    onClick={() => setNewItem({ ...newItem, available: !newItem.available })}
-                    className={`w-14 h-8 rounded-full transition-all ${
-                      newItem.available ? "bg-[var(--success)]" : "bg-[var(--border)]"
-                    }`}
-                  >
-                    <div
-                      className={`w-6 h-6 bg-surface rounded-full shadow-md transition-transform ${
-                        newItem.available ? "translate-x-7" : "translate-x-1"
-                      }`}
-                    />
-                  </button>
-                </div>
-
-                <Button
-                  onClick={addNewItem}
-                  className="w-full bg-[var(--primary)] hover:bg-[var(--primary)] py-6 text-base"
-                  disabled={!newItem.name || !newItem.price}
-                >
-                  <Plus className="w-5 h-5 mr-2" />
-                  Add to Menu
-                </Button>
-              </div>
+                <ChevronRight className="w-4 h-4 rotate-180" aria-hidden="true" />
+                Back to menu
+              </button>
+              <h1 className="min-w-0 truncate text-lg font-extrabold text-[var(--ink)]">
+                {draftMode === 'add' ? 'New dish' : editingItem?.name || 'Edit dish'}
+              </h1>
+            </header>
+            <div className="px-3 py-4 lg:px-5">
+              {renderForm(draftMode === 'add')}
             </div>
           </div>
         )}
 
-        {/* Edit Item Modal - Similar structure with pre-filled values */}
-        {showEditItem && editingItem && (
-          <div className="fixed inset-0 bg-black/50 z-[2000] flex items-end">
-            <div className="bg-surface w-full rounded-t-3xl max-h-[90vh] overflow-y-auto">
-              <div className="sticky top-0 bg-surface border-b border-[var(--border)] px-5 py-4 flex items-center justify-between">
-                <h2 className="text-xl font-bold text-[var(--ink)]">Edit Item</h2>                <button onClick={() => { setShowEditItem(false); setEditPriceError(""); }}>
-                  <X className="w-6 h-6 text-[var(--muted-foreground)]" />
+        {/* The list. The editor itself is its own screen — see view === 'detail'. */}
+        {view === 'list' && (
+          <div className="min-h-screen">
+            <header className="bg-surface border-b border-[var(--border)] px-3 py-4 lg:px-5">
+              <div className="flex items-center gap-3">
+                <button
+                  onClick={() => setIsMobileMenuOpen(true)}
+                  className="lg:hidden flex-shrink-0 -ml-1 p-1 rounded-lg hover:bg-[var(--muted)]"
+                  aria-label="Open menu"
+                >
+                  <Menu className="w-5 h-5 text-[var(--ink)]" />
                 </button>
-
+                <h1 className="text-lg lg:text-2xl font-extrabold tracking-tight text-[var(--ink)]">
+                  Menu Editor
+                </h1>
+                <p className="ml-auto text-xs lg:text-sm tabular-nums text-[var(--muted-foreground)]">
+                  {menuItems.length} items · {menuItems.filter((i) => i.available).length} available
+                </p>
               </div>
 
-              <div className="p-5 space-y-4">
-                <div>
-                  <label className="text-sm font-bold text-[var(--ink)] mb-2 block">Item Photo</label>
-                  <div className="h-48 rounded-2xl overflow-hidden mb-3 border border-line">
-                    <ImageWithFallback
-                      src={editingItem.image}
-                      alt={editingItem.name}
-                      className="w-full h-full object-cover"
-                    />
-                  </div>
-                  <div className="flex gap-2">
-                    <Button
-                      onClick={() => handleUploadClick('edit')}
-                      disabled={uploadingImage}
-                      className="flex-1 bg-[var(--primary)] hover:bg-[var(--primary)]"
-                    >
-                      <Upload className="w-4 h-4 mr-2" />
-                      {uploadingImage ? 'Uploading...' : 'Change Photo'}
-                    </Button>
-                    <Button
-                      onClick={() => setEditingItem({ ...editingItem, image: "" })}
-                      variant="outline"
-                      className="border-[var(--primary)] text-[var(--primary)] hover:bg-[var(--primary-soft)]"
-                    >
-                      <X className="w-4 h-4" />
-                    </Button>
-                  </div>
-                  <p className="text-xs text-[var(--muted-foreground)] mt-2 text-center">Recommended: 800x800px, max 5MB</p>
-                </div>
+              {/* Narrows the list and nothing else — categories are renamed, reordered
+                  and deleted from their own headings. */}
+              <div className="relative mt-3">
+                <select
+                  id="menu-filter"
+                  value={selectedSection}
+                  onChange={(e) => setSelectedSection(e.target.value)}
+                  className="w-full appearance-none rounded-xl border border-line bg-[var(--muted)] py-2 pl-3 pr-9 text-sm font-semibold text-[var(--ink)] outline-none focus:border-[var(--primary)]"
+                >
+                  <option value="all">All dishes ({menuItems.length})</option>
+                  {sections.map((section) => (
+                    <option key={section.id} value={section.id}>
+                      {section.name} ({menuItems.filter((i) => i.sectionId === section.id).length})
+                    </option>
+                  ))}
+                </select>
+                <ChevronRight
+                  className="pointer-events-none absolute right-3 top-1/2 w-4 h-4 -translate-y-1/2 rotate-90 text-[var(--muted-foreground)]"
+                  aria-hidden="true"
+                />
+              </div>
 
-                <div>
-                  <label className="text-sm font-bold text-[var(--ink)] mb-2 block">Item Name *</label>
-                  <input
-                    type="text"
-                    value={editingItem.name}
-                    onChange={(e) => setEditingItem({ ...editingItem, name: e.target.value })}
-                    className="w-full p-3 border border-line rounded-xl font-semibold"
-                  />
-                </div>
+              {/* Toolbar, above the divider.
+                  It was at the foot of the page, which meant reaching past every dish
+                  to get at the button that saves them. */}
+              <div className="mt-3 flex flex-wrap items-center gap-2 border-t border-[var(--border)] pt-3">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setRenamingSection(null);
+                    setNewSectionName("");
+                    setSectionError("");
+                    setShowAddSection(true);
+                  }}
+                  className="inline-flex items-center gap-1.5 rounded-xl border border-line px-3 py-2 text-xs font-bold text-[var(--ink)] transition-colors hover:bg-[var(--muted)]"
+                >
+                  <Plus className="w-4 h-4" aria-hidden="true" />
+                  Add Category
+                </button>
 
-                <div>
-                  <label className="text-sm font-bold text-[var(--ink)] mb-2 block">Description</label>
-                  <textarea
-                    value={editingItem.description}
-                    onChange={(e) => setEditingItem({ ...editingItem, description: e.target.value })}
-                    className="w-full p-3 border border-line rounded-xl min-h-[100px]"
-                  />
-                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    startAdding();
+                    setView('detail');
+                  }}
+                  className="inline-flex items-center gap-1.5 rounded-xl border border-line px-3 py-2 text-xs font-bold text-[var(--ink)] transition-colors hover:bg-[var(--muted)]"
+                >
+                  <Plus className="w-4 h-4" aria-hidden="true" />
+                  Add Item
+                </button>
 
-                <div>
-                  <label className="text-sm font-bold text-[var(--ink)] mb-2 block">Price (₱) *</label>
-                  <div className="relative">
-                    <span className="absolute left-4 top-1/2 -translate-y-1/2 text-xl text-[var(--muted-foreground)]">₱</span>
-                    <input
-                      type="number"
-                      value={editingItem.price}
-                      onChange={(e) => { setEditingItem({ ...editingItem, price: parseFloat(e.target.value) }); setEditPriceError(""); }}
-                      className={`w-full p-3 pl-10 border-2 rounded-xl text-xl font-bold ${editPriceError ? 'border-[var(--primary)]' : 'border-[var(--border)]'}`}
-                    />
-                  </div>
-                  {editPriceError && <p className="text-sm text-[var(--primary)] font-semibold mt-1">{editPriceError}</p>}
-                </div>
-
-                <div>
-                  <div className="flex items-center justify-between mb-2">
-                    <label className="text-sm font-bold text-[var(--ink)]">Category</label>
-                    <button
-                      type="button"
-                      onClick={() => { setRenamingSection(null); setNewSectionName(""); setSectionError(""); setShowAddSection(true); }}
-                      className="inline-flex items-center gap-1 text-xs font-bold text-[var(--primary)] hover:underline"
-                    >
-                      <Plus className="w-3.5 h-3.5" aria-hidden="true" />
-                      New category
-                    </button>
-                  </div>
-                  {/* Sections are the grouping control now. The old category dropdown
-                      is gone; dishes keep a stored category behind the scenes so the
-                      customer cuisine filter rail is unaffected. */}
-                  {sections.length === 0 ? (
-                    <p className="text-xs text-[var(--muted-foreground)]">
-                      No categories yet. Use "New category" above to group your menu — items stay unfiled until you do.
-                    </p>
-                  ) : (
-                    <select
-                      value={editingItem.sectionId ?? ""}
-                      onChange={(e) => setEditingItem({ ...editingItem, sectionId: e.target.value || null })}
-                      className="w-full p-3 border border-line rounded-xl font-semibold"
-                    >
-                      <option value="">Unfiled</option>
-                      {sections.map((section) => (
-                        <option key={section.id} value={section.id}>{section.name}</option>
-                      ))}
-                    </select>
+                <div className="ml-auto flex items-center gap-2">
+                  {saveError && (
+                    <span role="alert" className="text-xs font-semibold text-[var(--error)]">
+                      {saveError}
+                    </span>
                   )}
-                </div>
-                <div>
-                  <label className="text-sm font-bold text-[var(--ink)] mb-2 block">Badge (Optional)</label>
-                  <p className="text-xs text-[var(--muted-foreground)] mb-3">Highlight special items to attract customers</p>
-                  <div className="grid grid-cols-2 gap-2">
-                    <button
-                      onClick={() => setEditingItem({ ...editingItem, badge: undefined })}
-                      className={`p-3 rounded-xl border-2 font-semibold transition-all ${
-                        !editingItem.badge
-                          ? "border-[var(--primary)] bg-[var(--primary-soft)] text-[var(--primary)]"
-                          : "border-[var(--border)] bg-surface text-[var(--muted-foreground)]"
+                  {!saveError && notice && (
+                    <span
+                      role="status"
+                      className={`text-xs font-semibold ${
+                        notice.kind === 'saved'
+                          ? 'text-[var(--success)]'
+                          : 'text-[var(--muted-foreground)]'
                       }`}
                     >
-                      No Badge
-                    </button>
-                    <button
-                      onClick={() => setEditingItem({ ...editingItem, badge: "most-ordered" })}
-                      className={`p-3 rounded-xl border-2 font-semibold transition-all flex items-center justify-center gap-2 ${
-                        editingItem.badge === "most-ordered"
-                          ? "border-[var(--primary)] bg-[var(--primary-soft)] text-[var(--primary)]"
-                          : "border-[var(--border)] bg-surface text-[var(--muted-foreground)]"
-                      }`}
-                    >
-                      <TrendingUp className="w-4 h-4" />
-                      Most Ordered
-                    </button>
-                    <button
-                      onClick={() => setEditingItem({ ...editingItem, badge: "most-liked" })}
-                      className={`p-3 rounded-xl border-2 font-semibold transition-all flex items-center justify-center gap-2 ${
-                        editingItem.badge === "most-liked"
-                          ? "border-[var(--info)] bg-[var(--info-soft)] text-[var(--info)]"
-                          : "border-[var(--border)] bg-surface text-[var(--muted-foreground)]"
-                      }`}
-                    >
-                      <Star className="w-4 h-4" />
-                      Most Liked
-                    </button>
-                    <button
-                      onClick={() => setEditingItem({ ...editingItem, badge: "signature" })}
-                      className={`p-3 rounded-xl border-2 font-semibold transition-all flex items-center justify-center gap-2 ${
-                        editingItem.badge === "signature"
-                          ? "border-[var(--amber)] bg-[var(--amber-soft)] text-[var(--amber)]"
-                          : "border-[var(--border)] bg-surface text-[var(--muted-foreground)]"
-                      }`}
-                    >
-                      <Award className="w-4 h-4" />
-                      Signature
-                    </button>
-                  </div>
-                </div>
+                      {notice.kind === 'saved' ? 'Saved' : 'Unsaved changes'}
+                    </span>
+                  )}
 
-                <div className="flex items-center justify-between p-4 bg-[var(--muted)] rounded-xl">
-                  <div>
-                    <p className="font-bold text-[var(--ink)]">Available to customers</p>
-                    <p className="text-xs text-[var(--muted-foreground)]">Toggle visibility on the customer menu</p>
-                  </div>
                   <button
-                    onClick={() => setEditingItem({ ...editingItem, available: !editingItem.available })}
-                    className={`w-14 h-8 rounded-full transition-all ${
-                      editingItem.available ? "bg-[var(--success)]" : "bg-[var(--border)]"
+                    type="button"
+                    onClick={saveChanges}
+                    disabled={!isDirty || isSaving}
+                    className={`inline-flex items-center gap-1.5 rounded-xl px-3 py-2 text-xs font-bold transition-colors ${
+                      isDirty
+                        ? 'bg-[var(--success)] text-white hover:opacity-90'
+                        : 'bg-[var(--border)] text-[var(--muted-foreground)]'
                     }`}
                   >
-                    <div
-                      className={`w-6 h-6 bg-surface rounded-full shadow-md transition-transform ${
-                        editingItem.available ? "translate-x-7" : "translate-x-1"
-                      }`}
-                    />
+                    <Save className="w-4 h-4" aria-hidden="true" />
+                    {isSaving ? 'Saving…' : 'Save Changes'}
                   </button>
                 </div>
+              </div>
+            </header>
 
-                <Button
-                  onClick={saveEditedItem}
-                  className="w-full bg-[var(--success)] hover:bg-[var(--success)] py-6 text-base"
-                >
-                  <Check className="w-5 h-5 mr-2" />
-                  Save Changes
-                </Button>
+            <div className="px-3 py-4 lg:px-5">
+              {renderedGroups.length === 0 ? (
+                <div className="py-16 text-center">
+                  <Package className="mx-auto mb-3 size-14 text-[var(--border)]" aria-hidden="true" />
+                  <p className="mb-4 text-[var(--muted-foreground)]">
+                    {searchQuery ? 'Nothing matches that search.' : 'No dishes yet.'}
+                  </p>
+                  <Button
+                    onClick={() => {
+                      startAdding();
+                      setView('detail');
+                    }}
+                    className="bg-[var(--primary)] hover:bg-[var(--primary)]"
+                  >
+                    <Plus className="mr-2 size-4" aria-hidden="true" />
+                    Add your first dish
+                  </Button>
+                </div>
+              ) : (
+                <div className="space-y-7">
+                  {renderedGroups.map((group) => (
+                    <section key={group.key}>
+                      <div className="mb-2 flex items-center gap-2">
+                        {/* A tick on the heading while selecting: deleting a category is
+                            as much a bulk job as hiding a dish. */}
+                        {selectionMode && group.section && (
+                          <span
+                            role="checkbox"
+                            aria-checked={selectedCategoryIds.has(group.section.id)}
+                            aria-label={`Select category ${group.title}`}
+                            tabIndex={0}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              toggleSelectedCategory(group.section!.id);
+                            }}
+                            onKeyDown={(e) => {
+                              if (e.key === ' ' || e.key === 'Enter') {
+                                e.preventDefault();
+                                toggleSelectedCategory(group.section!.id);
+                              }
+                            }}
+                            className={`grid size-6 shrink-0 place-items-center rounded border-2 ${
+                              selectedCategoryIds.has(group.section.id)
+                                ? 'border-[var(--info)] bg-[var(--info)]'
+                                : 'border-[var(--border)]'
+                            }`}
+                          >
+                            {selectedCategoryIds.has(group.section.id) && (
+                              <Check className="size-3.5 text-white" aria-hidden="true" />
+                            )}
+                          </span>
+                        )}
 
-                <Button
-                  onClick={() => {
-                    setShowEditItem(false);
-                    setEditingItem(null);
-                    if (editingItem) deleteItem(editingItem.id);
+                        <h2 className="min-w-0 truncate text-sm font-extrabold tracking-wide text-[var(--ink)]">
+                          {group.title}
+                        </h2>
+                        <span className="shrink-0 text-[11px] tabular-nums text-[var(--muted-foreground)]">
+                          {group.rows.filter((r) => !r.isDraft).length}
+                        </span>
+
+                        {group.section ? (
+                          <div className="ml-auto flex shrink-0 items-center gap-1">
+                            {group.isRenaming ? (
+                              <>
+                                <input
+                                  type="text"
+                                  autoFocus
+                                  value={sectionNameDraft}
+                                  onChange={(e) => setSectionNameDraft(e.target.value)}
+                                  onKeyDown={(e) => {
+                                    if (e.key === 'Enter') {
+                                      e.preventDefault();
+                                      commitSectionName();
+                                    } else if (e.key === 'Escape') {
+                                      e.preventDefault();
+                                      cancelRenamingSection();
+                                    }
+                                  }}
+                                  onBlur={commitSectionName}
+                                  aria-label={`Rename ${group.title}`}
+                                  className="w-32 min-w-0 rounded-lg border border-[var(--primary)] bg-[var(--surface)] px-2 py-1 text-sm font-bold text-[var(--ink)] outline-none"
+                                />
+                                <button
+                                  type="button"
+                                  onClick={() => moveSection(group.section!.id, -1)}
+                                  disabled={sectionIndexOf(group.section!.id) === 0}
+                                  aria-label={`Move ${group.title} up`}
+                                  className="grid size-8 place-items-center rounded-lg border border-line text-[var(--muted-foreground)] disabled:opacity-30"
+                                >
+                                  <ChevronRight className="size-4 rotate-180" aria-hidden="true" />
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => moveSection(group.section!.id, 1)}
+                                  disabled={sectionIndexOf(group.section!.id) === sections.length - 1}
+                                  aria-label={`Move ${group.title} down`}
+                                  className="grid size-8 place-items-center rounded-lg border border-line text-[var(--muted-foreground)] disabled:opacity-30"
+                                >
+                                  <ChevronRight className="size-4" aria-hidden="true" />
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    cancelRenamingSection();
+                                    setSectionToDelete(group.section!);
+                                    setShowDeleteSectionModal(true);
+                                  }}
+                                  aria-label={`Delete ${group.title}`}
+                                  className="grid size-8 place-items-center rounded-lg border border-line text-[var(--error)]"
+                                >
+                                  <Trash2 className="size-4" aria-hidden="true" />
+                                </button>
+                              </>
+                            ) : (
+                              <>
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                    startAdding(group.section!.id);
+                    setView('detail');
                   }}
-                  variant="outline"
-                  className="w-full border-[var(--primary)] text-[var(--primary)] hover:bg-[var(--primary-soft)] py-6 text-base"
+                                  aria-label={`Add a dish to ${group.title}`}
+                                  title="Add a dish here"
+                                  className="grid size-8 place-items-center rounded-lg border border-line text-[var(--primary)]"
+                                >
+                                  <Plus className="size-4" aria-hidden="true" />
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    startRenamingSection(group.section!.id, group.section!.name)
+                                  }
+                                  aria-label={`Rename ${group.title}`}
+                                  title="Rename"
+                                  className="grid size-8 place-items-center rounded-lg border border-line text-[var(--muted-foreground)]"
+                                >
+                                  <Edit2 className="size-4" aria-hidden="true" />
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setSectionToDelete(group.section!);
+                                    setShowDeleteSectionModal(true);
+                                  }}
+                                  aria-label={`Delete ${group.title}`}
+                                  title="Delete"
+                                  className="grid size-8 place-items-center rounded-lg border border-line text-[var(--error)]"
+                                >
+                                  <Trash2 className="size-4" aria-hidden="true" />
+                                </button>
+                              </>
+                            )}
+                          </div>
+                        ) : (
+                          <span className="ml-auto text-[11px] text-[var(--muted-foreground)]">
+                            not filed
+                          </span>
+                        )}
+                      </div>
+
+                      <ul className="space-y-1.5">
+                        {group.rows.map((row) => (
+                          <li key={String(row.item.id)}>
+                            {renderRow(row.item, row.isDraft)}
+                          </li>
+                        ))}
+                      </ul>
+                    </section>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {/* The selection bar. Fixed to the bottom because it acts on things you
+                have scrolled past, not the thing at the top of the screen. */}
+            {selectionMode && (
+              <div className="fixed inset-x-0 bottom-0 z-40 border-t border-[var(--border)] bg-surface px-3 py-2.5 shadow-lg lg:left-64">
+                <div className="flex items-center gap-2">
+                  <span className="text-xs font-bold text-[var(--ink)]">
+                    {selectionCount} selected
+                  </span>
+                  {/* Cancel, not "Done": this discards the selection rather than
+                      committing to it, and holding a row again does the same thing.
+                      The count stays visible so a long selection is not lost behind a
+                      mis-tap. */}
+                  <button
+                    type="button"
+                    onClick={endSelection}
+                    className="rounded-lg px-2 py-1 text-xs font-bold text-[var(--muted-foreground)]"
+                  >
+                    Cancel
+                  </button>
+                  <div className="ml-auto flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={toggleSelectedAvailability}
+                      disabled={selectedIds.size === 0}
+                      className="inline-flex items-center gap-1.5 rounded-xl border border-line px-3 py-2 text-xs font-bold text-[var(--ink)] disabled:opacity-40"
+                    >
+                      <Eye className="size-4" aria-hidden="true" />
+                      Toggle
+                    </button>
+                    <button
+                      type="button"
+                      onClick={deleteSelectedItems}
+                      disabled={selectionCount === 0}
+                      className="inline-flex items-center gap-1.5 rounded-xl bg-[var(--error)] px-3 py-2 text-xs font-bold text-white disabled:opacity-40"
+                    >
+                      <Trash2 className="size-4" aria-hidden="true" />
+                      Delete
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/*
+         * Leaving with unsaved work.
+         *
+         * Tapping another tab in the sidebar is the easiest way in the whole app to
+         * throw away a menu edit, and it happened with no warning at all until now —
+         * the browser dialog only covers reloading and closing the tab, which is the
+         * rare case.
+         *
+         * Three answers, not two. "Save" is offered because most of the time losing
+         * the work was not what anyone wanted, only what they had not thought about
+         * yet, and making them click Discard to get there would be a small trap.
+         */}
+        {blocker.state === 'blocked' && (
+          <div className="fixed inset-0 z-[3000] flex items-center justify-center bg-black/50 p-4">
+            <div
+              role="alertdialog"
+              aria-modal="true"
+              aria-labelledby="unsaved-title"
+              className="w-full max-w-md rounded-2xl border border-[var(--border)] bg-surface p-6 shadow-2xl"
+            >
+              <h2 id="unsaved-title" className="text-lg font-bold text-[var(--ink)]">
+                Unsaved changes
+              </h2>
+              <p className="mt-2 text-sm text-[var(--muted-foreground)]">
+                Your edits to this menu haven't been saved yet. Leaving this page now
+                will lose them.
+              </p>
+
+              <div className="mt-5 flex flex-col gap-2 sm:flex-row-reverse">
+                <button
+                  type="button"
+                  disabled={isSaving}
+                  onClick={async () => {
+                    const ok = await saveChanges();
+                    // A failed write stays on this page. Leaving would throw the
+                    // edits away behind a button that said it would keep them.
+                    if (!ok) return;
+                    discardUnsaved();
+                    blocker.proceed?.();
+                  }}
+                  className="rounded-xl bg-[var(--success)] px-4 py-3 text-sm font-bold text-white transition-opacity hover:opacity-90"
                 >
-                  <Trash2 className="w-5 h-5 mr-2" />
-                  Delete Item
-                </Button>
+                  Save and leave
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    discardUnsaved();
+                    blocker.proceed?.();
+                  }}
+                  className="rounded-xl border border-line px-4 py-3 text-sm font-bold text-[var(--error)] transition-colors hover:bg-[var(--error-soft)]"
+                >
+                  Discard changes
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => blocker.reset?.()}
+                  className="rounded-xl px-4 py-3 text-sm font-bold text-[var(--muted-foreground)] transition-colors hover:bg-[var(--muted)]"
+                >
+                  Stay on this page
+                </button>
               </div>
             </div>
           </div>
@@ -1655,253 +2447,6 @@ const addSection = async () => {
           </div>
         )}
 
-        {/*
-         * The one menu editor.
-         *
-         * Everything that used to be scattered across a gear on every category
-         * chip, a selection bar that only appeared once you had ticked things,
-         * and the add-item form:
-         *
-         *   - add an item
-         *   - delete one item, or every item ticked
-         *   - move an item (or a whole category) to a different category
-         *   - toggle availability, one item, the ticked ones, or the whole menu
-         *   - rename, reorder and delete categories
-         *
-         * A full-height sheet rather than a dialog: the item list is the thing
-         * being worked through, and a dialog sized to a phone screen showed a
-         * handful of rows with the rest behind a scroll of their own.
-         */}
-        {showMenuEditor && (
-          <div className="fixed inset-0 z-[2100] flex flex-col bg-surface">
-            <div className="flex items-start justify-between gap-3 px-4 py-4 border-b border-[var(--border)]">
-              <div>
-                <h3 className="text-xl font-bold text-[var(--ink)]">Edit Menu</h3>
-                <p className="text-xs text-[var(--muted-foreground)]">
-                  {menuItems.length} item{menuItems.length !== 1 ? 's' : ''} in {sections.length}
-                  {' '}
-                  categor{sections.length === 1 ? 'y' : 'ies'}
-                </p>
-              </div>
-              <button
-                type="button"
-                onClick={() => { setShowMenuEditor(false); setMenuEditorNote(null); }}
-                aria-label="Close"
-                className="p-1.5 -mr-1.5 rounded-lg hover:bg-[var(--muted)]"
-              >
-                <X className="w-5 h-5 text-[var(--muted-foreground)]" aria-hidden="true" />
-              </button>
-            </div>
-
-            {/* Category management */}
-            <div className="px-4 py-3 border-b border-[var(--border)] bg-[var(--muted)]">
-              <p className="text-xs font-bold uppercase tracking-wider text-[var(--muted-foreground)] mb-2">
-                Categories
-              </p>
-              <div className="space-y-2">
-                {sections.map((section, at) => (
-                  <div key={section.id} className="flex items-center gap-2">
-                    <input
-                      type="text"
-                      value={section.name}
-                      onChange={(e) =>
-                        setSections((prev) =>
-                          prev.map((s) => (s.id === section.id ? { ...s, name: e.target.value } : s)),
-                        )
-                      }
-                      aria-label={`Category name: ${section.name}`}
-                      className="flex-1 min-w-0 h-10 rounded-lg border border-line bg-[var(--surface)] px-3 text-sm font-semibold outline-none focus:border-[var(--primary)]"
-                    />
-                    <span className="text-xs text-[var(--muted-foreground)] tabular-nums w-10 text-right flex-shrink-0">
-                      {menuItems.filter((i) => i.sectionId === section.id).length}
-                    </span>
-                    {/* Reordering survived the removal of the chip arrows, so a
-                        shop can still choose the order its categories appear in. */}
-                    <button
-                      type="button"
-                      onClick={() => moveSection(section.id, -1)}
-                      disabled={at === 0}
-                      aria-label={`Move ${section.name} up`}
-                      className="grid size-9 place-items-center rounded-lg border border-line text-[var(--muted-foreground)] disabled:opacity-30"
-                    >
-                      <ChevronRight className="w-4 h-4 rotate-180" aria-hidden="true" />
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => moveSection(section.id, 1)}
-                      disabled={at === sections.length - 1}
-                      aria-label={`Move ${section.name} down`}
-                      className="grid size-9 place-items-center rounded-lg border border-line text-[var(--muted-foreground)] disabled:opacity-30"
-                    >
-                      <ChevronRight className="w-4 h-4" aria-hidden="true" />
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => { setRenamingSection(section); setNewSectionName(section.name); setSectionError(""); }}
-                      aria-label={`Rename ${section.name}`}
-                      className="grid size-9 place-items-center rounded-lg border border-line text-[var(--muted-foreground)]"
-                    >
-                      <Settings className="w-4 h-4" aria-hidden="true" />
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => { setSectionToDelete(section); setShowDeleteSectionModal(true); }}
-                      aria-label={`Delete ${section.name}`}
-                      className="grid size-9 place-items-center rounded-lg border border-line text-[var(--error)]"
-                    >
-                      <Trash2 className="w-4 h-4" aria-hidden="true" />
-                    </button>
-                  </div>
-                ))}
-              </div>
-              <button
-                type="button"
-                onClick={() => { setRenamingSection(null); setNewSectionName(""); setSectionError(""); setShowAddSection(true); }}
-                className="mt-2 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold bg-[var(--primary-soft)] text-[var(--primary)]"
-              >
-                <Plus className="w-3.5 h-3.5" aria-hidden="true" />
-                Add Category
-              </button>
-            </div>
-
-            {/* Bulk bar. Always visible now, not only once something is ticked:
-                the whole-menu actions are here too. */}
-            <div className="flex flex-wrap items-center gap-2 px-4 py-3 border-b border-[var(--border)]">
-              <button
-                type="button"
-                onClick={() =>
-                  setSelectedItems(selectedItems.length === menuItems.length ? [] : menuItems.map((i) => i.id))
-                }
-                className="px-3 py-2 rounded-lg border border-line text-xs font-bold text-[var(--ink)]"
-              >
-                {selectedItems.length === menuItems.length && menuItems.length > 0 ? 'Clear selection' : 'Select all'}
-              </button>
-              <button
-                type="button"
-                onClick={() =>
-                  selectedItems.length > 0 ? bulkToggleAvailability() : toggleAllAvailability()
-                }
-                className="px-3 py-2 rounded-lg bg-[var(--success)] text-white text-xs font-bold"
-              >
-                {selectedItems.length > 0
-                  ? `Toggle ${selectedItems.length} selected`
-                  : 'Toggle whole menu'}
-              </button>
-              <button
-                type="button"
-                onClick={() => (selectedItems.length > 0 ? bulkDelete() : setShowAddItem(true))}
-                className="px-3 py-2 rounded-lg border border-[var(--error)] text-[var(--error)] text-xs font-bold"
-              >
-                {selectedItems.length > 0 ? `Delete ${selectedItems.length} selected` : 'Add item'}
-              </button>
-            </div>
-
-            {/* Items */}
-            <div className="flex-1 overflow-y-auto px-4 py-3 space-y-2">
-              {menuItems.length === 0 ? (
-                <p className="py-10 text-center text-sm text-[var(--muted-foreground)]">
-                  No items yet. Add one to get started.
-                </p>
-              ) : (
-                menuItems.map((item) => {
-                  const selected = selectedItems.includes(item.id);
-                  return (
-                    <div
-                      key={item.id}
-                      className={`rounded-xl border p-3 ${selected ? 'border-[var(--info)] ring-2 ring-[var(--info)]' : 'border-line'}`}
-                    >
-                      <div className="flex items-start gap-3">
-                        <button
-                          type="button"
-                          onClick={() => toggleBulkSelection(item.id)}
-                          aria-label={`Select ${item.name}`}
-                          aria-pressed={selected}
-                          className={`mt-0.5 w-5 h-5 rounded border-2 flex items-center justify-center flex-shrink-0 ${
-                            selected ? 'bg-[var(--info)] border-[var(--info)]' : 'border-[var(--border)]'
-                          }`}
-                        >
-                          {selected && <Check className="w-3 h-3 text-white" aria-hidden="true" />}
-                        </button>
-
-                        <div className="min-w-0 flex-1">
-                          <div className="flex items-baseline justify-between gap-2">
-                            <p className="font-bold text-[var(--ink)] text-sm truncate">{item.name}</p>
-                            <p className="text-sm font-bold text-[var(--primary)] flex-shrink-0">₱{item.price}</p>
-                          </div>
-
-                          {/* Category as a select, so moving an item is one tap
-                              here rather than a trip through a category editor. */}
-                          <select
-                            value={item.sectionId ?? ''}
-                            onChange={(e) => changeItemCategory(item.id, e.target.value || null)}
-                            aria-label={`Category for ${item.name}`}
-                            className="mt-2 w-full h-9 rounded-lg border border-line bg-[var(--surface)] px-2 text-xs font-semibold outline-none focus:border-[var(--primary)]"
-                          >
-                            <option value="">Unfiled</option>
-                            {sections.map((s) => (
-                              <option key={s.id} value={s.id}>{s.name}</option>
-                            ))}
-                          </select>
-                        </div>
-
-                        <div className="flex flex-col gap-1.5 flex-shrink-0">
-                          <button
-                            type="button"
-                            onClick={() => toggleItemAvailability(item.id)}
-                            aria-label={`${item.available ? 'Hide' : 'Show'} ${item.name}`}
-                            className={`grid size-9 place-items-center rounded-lg border ${
-                              item.available
-                                ? 'border-[var(--success)] text-[var(--success)]'
-                                : 'border-[var(--border)] text-[var(--muted-foreground)]'
-                            }`}
-                          >
-                            {item.available ? (
-                              <Eye className="w-4 h-4" aria-hidden="true" />
-                            ) : (
-                              <EyeOff className="w-4 h-4" aria-hidden="true" />
-                            )}
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => handleEditItem(item)}
-                            aria-label={`Edit ${item.name}`}
-                            className="grid size-9 place-items-center rounded-lg border border-line text-[var(--muted-foreground)]"
-                          >
-                            <Edit2 className="w-4 h-4" aria-hidden="true" />
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => deleteItemDirect(item.id, item.name)}
-                            aria-label={`Delete ${item.name}`}
-                            className="grid size-9 place-items-center rounded-lg border border-line text-[var(--error)]"
-                          >
-                            <Trash2 className="w-4 h-4" aria-hidden="true" />
-                          </button>
-                        </div>
-                      </div>
-                    </div>
-                  );
-                })
-              )}
-            </div>
-
-            {menuEditorNote && (
-              <p role="status" className="px-4 py-2 border-t border-[var(--border)] bg-[var(--muted)] text-xs font-semibold text-[var(--ink)]">
-                {menuEditorNote}
-              </p>
-            )}
-
-            <div className="px-4 py-3 border-t border-[var(--border)]">
-              <Button
-                onClick={() => setShowAddItem(true)}
-                className="w-full bg-[var(--primary)] hover:bg-[var(--primary)] py-4 text-sm font-bold rounded-xl"
-              >
-                <Plus className="w-5 h-5 mr-2" aria-hidden="true" />
-                Add New Menu Item
-              </Button>
-            </div>
-          </div>
-        )}
         {showDeleteSectionModal && sectionToDelete && (
           <div className="fixed inset-0 bg-black/50 z-[2000] flex items-center justify-center p-4">
             <Card className="w-full max-w-md p-6 border border-line bg-surface text-center">
@@ -1923,41 +2468,6 @@ const addSection = async () => {
         )}
 
         {/* Bulk Actions Modal */}
-        {showBulkActions && (
-          <div className="fixed inset-0 bg-black/50 z-[2000] flex items-end">
-            <div className="bg-surface w-full rounded-t-3xl p-5">
-              <h3 className="text-xl font-bold text-[var(--ink)] mb-4">
-                Bulk Actions ({selectedItems.length} items)
-              </h3>
-              <div className="space-y-2">
-                <Button
-                  onClick={bulkToggleAvailability}
-                  className="w-full bg-[var(--success)] hover:bg-[var(--success)] py-4"
-                >
-                  Toggle Availability
-                </Button>
-                <Button
-                  onClick={bulkDelete}
-                  variant="outline"
-                  className="w-full border-[var(--primary)] text-[var(--primary)] py-4"
-                >
-                  <Trash2 className="w-4 h-4 mr-2" />
-                  Delete Selected
-                </Button>
-                <Button
-                  onClick={() => {
-                    setSelectedItems([]);
-                    setShowBulkActions(false);
-                  }}
-                  variant="outline"
-                  className="w-full py-4"
-                >
-                  Cancel
-                </Button>
-              </div>
-            </div>
-          </div>
-        )}
 
         {/* Customization Modal */}
         {customizingItem && (
@@ -2010,38 +2520,6 @@ const addSection = async () => {
         )}
 
         {/* Bulk Delete Confirmation Modal */}
-        {showBulkDeleteModal && (
-          <div className="fixed inset-0 bg-black/50 z-[2000] flex items-center justify-center p-4">
-            <Card className="bg-surface p-6 max-w-md w-full rounded-2xl shadow-2xl">
-              <div className="flex items-center justify-center mb-4">
-                <div className="w-12 h-12 bg-[var(--error-soft)] rounded-full flex items-center justify-center">
-                  <Trash2 className="w-6 h-6 text-[var(--primary)]" />
-                </div>
-              </div>
-              <h3 className="text-xl font-bold text-[var(--ink)] text-center mb-2">
-                Delete {selectedItems.length} Item{selectedItems.length !== 1 ? 's' : ''}?
-              </h3>
-              <p className="text-sm text-[var(--muted-foreground)] text-center mb-6">
-                {selectedItems.length} item{selectedItems.length !== 1 ? 's' : ''} will be permanently removed. This action cannot be undone.
-              </p>
-              <div className="flex gap-2">
-                <Button
-                  onClick={() => setShowBulkDeleteModal(false)}
-                  variant="outline"
-                  className="flex-1"
-                >
-                  Cancel
-                </Button>
-                <Button
-                  onClick={confirmBulkDelete}
-                  className="flex-1 bg-[var(--primary)] hover:bg-[var(--primary)] text-white font-bold"
-                >
-                  Delete All
-                </Button>
-              </div>
-            </Card>
-          </div>
-        )}
 
         {/* Toggle Availability Confirmation Modal */}
         {showToggleAvailabilityModal && itemToToggle !== null && (
@@ -2084,42 +2562,6 @@ const addSection = async () => {
         )}
 
         {/* Bulk Toggle Availability Confirmation Modal */}
-        {showBulkToggleModal && (
-          <div className="fixed inset-0 bg-black/50 z-[2000] flex items-center justify-center p-4">
-            <Card className="bg-surface p-6 max-w-md w-full rounded-2xl shadow-2xl">
-              <div className="flex items-center justify-center mb-4">
-                <div className="w-12 h-12 bg-[var(--amber-soft)] rounded-full flex items-center justify-center">
-                  <Eye className="w-6 h-6 text-[var(--amber)]" />
-                </div>
-              </div>
-              <h3 className="text-xl font-bold text-[var(--ink)] text-center mb-2">
-                Toggle Availability?
-              </h3>
-              <p className="text-sm text-[var(--muted-foreground)] text-center mb-6">
-                {(() => {
-                  const firstItem = menuItems.find(i => selectedItems.includes(i.id));
-                  const newStatus = firstItem ? !firstItem.available : true;
-                  return `${selectedItems.length} item${selectedItems.length !== 1 ? 's' : ''} will be ${newStatus ? 'made available' : 'hidden'} from customers.`;
-                })()}
-              </p>
-              <div className="flex gap-2">
-                <Button
-                  onClick={() => setShowBulkToggleModal(false)}
-                  variant="outline"
-                  className="flex-1"
-                >
-                  Cancel
-                </Button>
-                <Button
-                  onClick={confirmBulkToggleAvailability}
-                  className="flex-1 bg-[var(--amber)] hover:bg-[var(--amber)] text-white font-bold"
-                >
-                  Confirm
-                </Button>
-              </div>
-            </Card>
-          </div>
-        )}
 
         {/* Delete Success Toast */}
         {showDeleteSuccess && (

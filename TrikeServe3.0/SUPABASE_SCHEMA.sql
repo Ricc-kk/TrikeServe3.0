@@ -228,6 +228,9 @@ CREATE TABLE IF NOT EXISTS menu_items (
   category VARCHAR(100) NOT NULL,
   image_url VARCHAR(500),
   is_available BOOLEAN DEFAULT true,
+  -- Where the dish sits in the menu, lowest first. Dragging reorders by
+  -- rewriting this. Added by ADD_MENU_ITEM_SORT_ORDER.sql.
+  sort_order INTEGER DEFAULT 0,
   created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
   updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
