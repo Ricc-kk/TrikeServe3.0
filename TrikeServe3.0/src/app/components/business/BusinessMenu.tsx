@@ -2347,9 +2347,14 @@ const addSection = async () => {
          * the browser dialog only covers reloading and closing the tab, which is the
          * rare case.
          *
-         * Three answers, not two. "Save" is offered because most of the time losing
+         * Two answers, not three. "Save" is offered because most of the time losing
          * the work was not what anyone wanted, only what they had not thought about
          * yet, and making them click Discard to get there would be a small trap.
+         *
+         * Staying is not on the list. It is the X, which does the same thing without
+         * spending a whole button to say "do nothing" — a third option sitting next to
+         * two consequential ones invites a reading of the dialog where the safe choice
+         * is one of the offered answers, and the only safe choice here is to close it.
          */}
         {blocker.state === 'blocked' && (
           <div className="fixed inset-0 z-[3000] flex items-center justify-center bg-black/50 p-4">
@@ -2357,9 +2362,18 @@ const addSection = async () => {
               role="alertdialog"
               aria-modal="true"
               aria-labelledby="unsaved-title"
-              className="w-full max-w-md rounded-2xl border border-[var(--border)] bg-surface p-6 shadow-2xl"
+              className="relative w-full max-w-md rounded-2xl border border-[var(--border)] bg-surface p-6 shadow-2xl"
             >
-              <h2 id="unsaved-title" className="text-lg font-bold text-[var(--ink)]">
+              <button
+                type="button"
+                aria-label="Stay on this page"
+                onClick={() => blocker.reset?.()}
+                className="absolute right-3 top-3 rounded-full p-1.5 text-[var(--muted-foreground)] transition-colors hover:bg-[var(--muted)] hover:text-[var(--ink)]"
+              >
+                <X className="h-5 w-5" />
+              </button>
+
+              <h2 id="unsaved-title" className="pr-8 text-lg font-bold text-[var(--ink)]">
                 Unsaved changes
               </h2>
               <p className="mt-2 text-sm text-[var(--muted-foreground)]">
@@ -2393,14 +2407,6 @@ const addSection = async () => {
                   className="rounded-xl border border-line px-4 py-3 text-sm font-bold text-[var(--error)] transition-colors hover:bg-[var(--error-soft)]"
                 >
                   Discard changes
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => blocker.reset?.()}
-                  className="rounded-xl px-4 py-3 text-sm font-bold text-[var(--muted-foreground)] transition-colors hover:bg-[var(--muted)]"
-                >
-                  Stay on this page
                 </button>
               </div>
             </div>
