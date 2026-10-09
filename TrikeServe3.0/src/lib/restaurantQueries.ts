@@ -1,4 +1,5 @@
 import { supabase } from "../utils/supabase";
+import { isEffectivelyOpen } from "./shopHours";
 
 /**
  * Reading restaurants, tolerating a database that has not been migrated yet.
@@ -29,11 +30,20 @@ export type RestaurantRow = {
   cuisine: string[];
   latitude: number | null;
   longitude: number | null;
+  /** From ADD_SHOP_HOURS.sql. Null until that migration has been run. */
+  open_time: string | null;
+  close_time: string | null;
+  open_days: number[] | null;
 };
 
 const FULL_COLUMNS =
-  "id, name, address, rating, is_open, banner_image, logo_image, subtitle, delivery_time, operating_hours, business_user_id, cuisine, latitude, longitude";
+  "id, name, address, rating, is_open, banner_image, logo_image, subtitle, delivery_time, operating_hours, business_user_id, cuisine, latitude, longitude, open_time, close_time, open_days";
 
+/*
+ * Before ADD_SHOP_HOURS.sql. `is_open` alone is all there is, which is exactly
+ * how the app behaved before the schedule existed — so an un-migrated database
+ * degrades to the old behaviour rather than to "every shop closed".
+ */
 const LEGACY_COLUMNS =
   "id, name, address, rating, is_open, banner_image, logo_image, subtitle, delivery_time, operating_hours, business_user_id";
 
@@ -92,12 +102,29 @@ export async function fetchRestaurants(limit?: number): Promise<{
 }
 
 function normalize(row: any): RestaurantRow {
+  const openTime = row.open_time ?? null;
+  const closeTime = row.close_time ?? null;
+  const openDays = Array.isArray(row.open_days) ? row.open_days : null;
+
   return {
     id: row.id,
     name: row.name,
     address: row.address || "",
     rating: Number(row.rating) || 0,
-    is_open: row.is_open !== false,
+    /*
+     * The customer's view of "open".
+     *
+     * Not `is_open` on its own: that is the owner's switch, and it lies after
+     * closing time because nobody came back to flip it. With a schedule set the
+     * shop closes itself, which is the whole reason the shop was asked for its
+     * hours. With no schedule, this falls back to the switch exactly as before.
+     */
+    is_open: isEffectivelyOpen({
+      is_open: row.is_open,
+      open_time: openTime,
+      close_time: closeTime,
+      open_days: openDays,
+    }),
     banner_image: row.banner_image ?? null,
     logo_image: row.logo_image ?? null,
     subtitle: row.subtitle ?? null,
@@ -107,5 +134,8 @@ function normalize(row: any): RestaurantRow {
     cuisine: Array.isArray(row.cuisine) ? row.cuisine : [],
     latitude: row.latitude ?? null,
     longitude: row.longitude ?? null,
+    open_time: openTime,
+    close_time: closeTime,
+    open_days: openDays,
   };
 }

@@ -205,6 +205,46 @@ export default function AppHeader({
               <Menu className="size-6" aria-hidden="true" />
             </button>
           ) : null}
+          {/*
+            The greeting sits alone on the left now.
+
+            The avatar used to sit here, between the menu button and the name, and
+            it moved the identity control to the far side of the person it belongs
+            to — a shop's logo pressed against its own greeting while the bell had
+            the right edge to itself. It is on the right now, next to the bell,
+            where the two controls are grouped as controls.
+          */}
+          <div className="min-w-0">
+            <p className="truncate text-sm font-bold text-white/75">
+              {resolvedGreeting}
+            </p>
+            <h1 className="truncate text-2xl font-bold leading-tight tracking-tight">
+              {resolvedTitle}
+            </h1>
+          </div>
+        </div>
+
+        {/* Controls, right-aligned: bell first, then the profile. */}
+        <div className="flex shrink-0 items-center gap-2">
+          {onNotificationsClick ? (
+            <button
+              type="button"
+              onClick={onNotificationsClick}
+              aria-label={notificationLabel}
+              className={notificationClasses}
+            >
+              {notificationInner}
+            </button>
+          ) : (
+            <Link
+              to={resolvedHref}
+              aria-label={notificationLabel}
+              className={notificationClasses}
+            >
+              {notificationInner}
+            </Link>
+          )}
+
           <Link
             to={meta.settingsHref}
             aria-label={`${avatarAlt ?? resolvedTitle} — open settings`}
@@ -225,34 +265,7 @@ export default function AppHeader({
               </span>
             )}
           </Link>
-          <div className="min-w-0">
-            <p className="truncate text-sm font-bold text-white/75">
-              {resolvedGreeting}
-            </p>
-            <h1 className="truncate text-2xl font-bold leading-tight tracking-tight">
-              {resolvedTitle}
-            </h1>
-          </div>
         </div>
-
-        {onNotificationsClick ? (
-          <button
-            type="button"
-            onClick={onNotificationsClick}
-            aria-label={notificationLabel}
-            className={notificationClasses}
-          >
-            {notificationInner}
-          </button>
-        ) : (
-          <Link
-            to={resolvedHref}
-            aria-label={notificationLabel}
-            className={notificationClasses}
-          >
-            {notificationInner}
-          </Link>
-        )}
       </div>
 
       {hint ? (

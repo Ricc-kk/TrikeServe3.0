@@ -13,6 +13,15 @@ import { supabase } from "../../../utils/supabase";
 import { supabaseHelpers } from "@/lib/supabase";
 import { CUISINES, isCuisineId, type CuisineId } from "@/lib/foodTaxonomy";
 import { useRestaurantProfile } from "@/lib/restaurantProfile";
+import {
+  DAY_LABELS,
+  DAY_NAMES,
+  describeClock,
+  describeOpenState,
+  describeSchedule,
+  isEffectivelyOpen,
+  resolveHours,
+} from "@/lib/shopHours";
 
 export default function BusinessHome() {
   const navigate = useNavigate();
@@ -84,6 +93,25 @@ export default function BusinessHome() {
      */
     paymentInstructions: ""
   });
+
+  /*
+   * Trading hours.
+   *
+   * Separate from `restaurantData` because this one saves itself the moment it
+   * changes, rather than waiting on the shop-details form's Save and its
+   * Super Admin review. Hours are not a claim about the shop that a platform
+   * needs to vet — they are the owner saying when their own door is open — and
+   * holding them in a queue means customers keep ordering from a shop that has
+   * been shut since 10pm.
+   */
+  const [hours, setHours] = useState({
+    openTime: '08:00',
+    closeTime: '22:00',
+    days: [0, 1, 2, 3, 4, 5, 6] as number[],
+  });
+  const [isSavingHours, setIsSavingHours] = useState(false);
+  const [hoursSaved, setHoursSaved] = useState(false);
+  const [hoursError, setHoursError] = useState<string | null>(null);
   /** The customer preview reads the menu in sections, like the storefront does. */
   const menuGroups = useMemo(() => {
     const available = menuItems.filter((item) => item.available);
@@ -149,6 +177,48 @@ export default function BusinessHome() {
         if (restaurant.is_open !== undefined) {
           setIsStoreOpen(restaurant.is_open);
         }
+        if (restaurant.open_time && restaurant.close_time) {
+          setHours({
+            openTime: restaurant.open_time,
+            closeTime: restaurant.close_time,
+            days:
+              Array.isArray(restaurant.open_days) && restaurant.open_days.length > 0
+                ? restaurant.open_days
+                : [0, 1, 2, 3, 4, 5, 6],
+          });
+        }
+
+        /*
+         * Trading hours, read on their own rather than folded into the select
+         * above.
+         *
+         * PostgREST rejects a whole SELECT that names a column the project does
+         * not have, so putting `open_time` up there would take the shop's name,
+         * address, hours and map pin down with it on any database where
+         * ADD_SHOP_HOURS.sql has not been run — which is every database until
+         * someone runs it. A failure here costs the owner their schedule and
+         * nothing else.
+         */
+        supabase
+          .from('restaurants')
+          .select('open_time, close_time, open_days')
+          .eq('id', restaurant.id)
+          .maybeSingle()
+          .then(({ data: hoursRow }) => {
+            if (!hoursRow?.open_time || !hoursRow.close_time) return;
+            setHours({
+              openTime: hoursRow.open_time,
+              closeTime: hoursRow.close_time,
+              days:
+                Array.isArray(hoursRow.open_days) && hoursRow.open_days.length > 0
+                  ? hoursRow.open_days
+                  : [0, 1, 2, 3, 4, 5, 6],
+            });
+          })
+          .catch(() => {
+            // Migration not applied yet. The editor keeps its defaults and says so
+            // when the owner tries to save.
+          });
 
         // Load the hero banner from the database if the business has uploaded one
         if (restaurant.banner_image) {
@@ -704,6 +774,160 @@ const savePaymentInstructions = async () => {
   }
 };
 
+/*
+ * Save the trading hours, immediately.
+ *
+ * Straight to the row, unlike the shop details above which stage for Super Admin
+ * review. Hours are the owner stating when their own door is open: they affect
+ * nobody else's listing, and an admin queue here means customers keep ordering
+ * from a shop that shut hours ago.
+ *
+ * Also writes `is_open` so the storefront's own simple check agrees with the
+ * hours the moment the owner saves them. `isEffectivelyOpen` on the customer
+ * side is what keeps it honest after that, when the shop does not come back to
+ * this screen to close itself.
+ */
+const saveHours = async (next: {
+  openTime: string;
+  closeTime: string;
+  days: number[];
+}) => {
+  setHoursError(null);
+
+  if (!user?.id) return;
+
+  if (next.days.length === 0) {
+    setHoursError('Pick at least one day, or clear the schedule to leave the shop always open.');
+    return;
+  }
+  if (next.openTime === next.closeTime) {
+    setHoursError('Opening and closing times cannot be the same.');
+    return;
+  }
+
+  setIsSavingHours(true);
+
+  try {
+    let restaurantId: string | null = null;
+
+    const { data: row, error: lookupError } = await supabase
+      .from('restaurants')
+      .select('id')
+      .eq('business_user_id', user.id)
+      .maybeSingle();
+
+    if (lookupError) {
+      setHoursError(lookupError.message);
+      return;
+    }
+    restaurantId = row?.id ?? null;
+
+    if (!restaurantId) {
+      setHoursError('No shop is linked to this account yet.');
+      return;
+    }
+
+    const { error: updateError } = await supabase
+      .from('restaurants')
+      .update({
+        open_time: next.openTime,
+        close_time: next.closeTime,
+        open_days: next.days,
+        // The plain-text field the storefront shows, kept in step so it cannot
+        // contradict the schedule that is actually enforced.
+        operating_hours: `${describeClock(next.openTime)} - ${describeClock(next.closeTime)}`,
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', restaurantId);
+
+    if (updateError) {
+      // The most likely cause is the migration not having been run, in which
+      // case the columns simply are not there to write to.
+      const missingColumns =
+        updateError.code === 'PGRST204' || /column .* does not exist/i.test(updateError.message);
+      setHoursError(
+        missingColumns
+          ? 'Opening hours need a database update. Run ADD_SHOP_HOURS.sql in Supabase.'
+          : updateError.message,
+      );
+      return;
+    }
+
+    setRestaurantData((prev) => ({
+      ...prev,
+      operatingHours: `${describeClock(next.openTime)} - ${describeClock(next.closeTime)}`,
+    }));
+
+    setHoursSaved(true);
+    setTimeout(() => setHoursSaved(false), 2000);
+  } catch (error) {
+    console.error('[BusinessHome] Failed to save opening hours:', error);
+    setHoursError('Could not save your opening hours.');
+  } finally {
+    setIsSavingHours(false);
+  }
+};
+
+/** Change one field and persist the whole schedule. */
+const updateHours = (patch: Partial<{ openTime: string; closeTime: string; days: number[] }>) => {
+  const next = { ...hours, ...patch };
+  setHours(next);
+  void saveHours(next);
+};
+
+const toggleHoursDay = (day: number) => {
+  const days = hours.days.includes(day)
+    ? hours.days.filter((d) => d !== day)
+    : [...hours.days, day].sort((a, b) => a - b);
+  updateHours({ days });
+};
+
+/*
+ * The shop's *effective* state, not its switch.
+ *
+ * Recomputed on a timer because time passes: a shop that closes at 10pm has to
+ * become closed at 10pm without anyone opening this screen. A minute is coarse
+ * enough to be free and fine enough that "Open Now" never sits there visibly
+ * wrong for long.
+ */
+const [now, setNow] = useState(() => new Date());
+useEffect(() => {
+  const tick = setInterval(() => setNow(new Date()), 60000);
+  return () => clearInterval(tick);
+}, []);
+
+const hoursConfigured = resolveHours({
+  open_time: hours.openTime,
+  close_time: hours.closeTime,
+  open_days: hours.days,
+}).configured;
+
+const storeState = describeOpenState(
+  { is_open: isStoreOpen, open_time: hours.openTime, close_time: hours.closeTime, open_days: hours.days },
+  now,
+);
+
+/** Back to "always open", i.e. the shop's manual switch decides again. */
+const clearHours = () => {
+  setHours({ openTime: '08:00', closeTime: '22:00', days: [0, 1, 2, 3, 4, 5, 6] });
+
+  if (!user?.id) return;
+
+  void supabase
+    .from('restaurants')
+    .update({ open_time: null, close_time: null, open_days: [] })
+    .eq('business_user_id', user.id)
+    .then(({ error }) => {
+      if (error) {
+        setHoursError(
+          /column .* does not exist|PGRST204/i.test(error.message)
+            ? 'Opening hours need a database update. Run ADD_SHOP_HOURS.sql in Supabase.'
+            : error.message,
+        );
+      }
+    });
+};
+
 // Save the shop details.
   //
   // This used to write the restaurants row directly, which made the edit modal
@@ -744,33 +968,24 @@ const savePaymentInstructions = async () => {
 
       {/* Main Content */}
       <div className="flex-1 lg:ml-64">
-        {/* Header with Preview Toggle */}
+        {/* Header. The Preview toggle used to sit here, opposite the title, so it sat
+            in the top-right of every Shop screen doing nothing until tapped —
+            while the "Preview Store" quick action below did exactly the same job
+            in the place the eye expects it. The preview is entered there and left
+            from its own banner. */}
         <div className="px-5 py-4 border-b border-[var(--border)] sticky top-0 bg-surface z-50">
-          <div className="flex items-center justify-between mb-2">
-            <div className="flex items-center gap-3">
-              {/* Hamburger Menu - Mobile Only */}
-              <button
-                onClick={() => setIsMobileMenuOpen(true)}
-                className="lg:hidden p-2 hover:bg-[var(--muted)] rounded-xl transition-all"
-              >
-                <Menu className="w-6 h-6 text-[var(--ink)]" />
-              </button>
-              <div>
-                <h1 className="text-3xl font-extrabold text-[var(--ink)]\">My Shop</h1>
-                <p className="text-sm text-[var(--muted-foreground)]\">Manage your store</p>
-              </div>
-            </div>
+          <div className="flex items-center gap-3">
+            {/* Hamburger Menu - Mobile Only */}
             <button
-              onClick={() => setPreviewMode(!previewMode)}
-              className={`px-4 py-2 rounded-xl font-semibold transition-all flex items-center gap-2 ${
-                previewMode
-                  ? "bg-[var(--primary)] text-white"
-                  : "bg-[var(--muted)] text-[var(--muted-foreground)] border border-line"
-              }`}
+              onClick={() => setIsMobileMenuOpen(true)}
+              className="lg:hidden p-2 hover:bg-[var(--muted)] rounded-xl transition-all"
             >
-              <Eye className="w-4 h-4" />
-              {previewMode ? "Exit Preview" : "Preview"}
+              <Menu className="w-6 h-6 text-[var(--ink)]" />
             </button>
+            <div>
+              <h1 className="text-3xl font-extrabold text-[var(--ink)]\">My Shop</h1>
+              <p className="text-sm text-[var(--muted-foreground)]\">Manage your store</p>
+            </div>
           </div>
         </div>
 
@@ -789,8 +1004,13 @@ const savePaymentInstructions = async () => {
                 </div>
                 <button
                   onClick={() => setPreviewMode(false)}
-                  className="px-3 py-1.5 bg-[var(--primary)] text-white rounded-lg text-sm font-semibold"
+                  className="px-3 py-1.5 bg-[var(--primary)] text-white rounded-lg text-sm font-semibold inline-flex items-center gap-1.5"
                 >
+                  {/* An open eye to leave the preview with. The banner is about
+                      seeing as a customer, so the way out is the eye closing —
+                      a bare word next to an open eye on the left read as two
+                      unrelated labels. */}
+                  <EyeOff className="w-4 h-4" aria-hidden="true" />
                   Exit
                 </button>
               </div>
@@ -816,9 +1036,17 @@ const savePaymentInstructions = async () => {
 
                 {/* Store Status Badge */}
                 <div className="absolute top-4 right-4">
-                  <Badge className={isStoreOpen ? "bg-[var(--success)]" : "bg-[var(--muted-foreground)]"}>
-                    {isStoreOpen ? "Open Now" : "Closed"}
+                  <Badge className={storeState.open ? "bg-[var(--success)]" : "bg-[var(--muted-foreground)]"}>
+                    {storeState.open ? "Open Now" : "Closed"}
                   </Badge>
+                  {/* Why it is closed, when it is. With hours set the switch
+                      alone does not decide, and a bare "Closed" on a shop that
+                      plainly opened an hour ago reads as a bug. */}
+                  {hoursConfigured && !storeState.open && (
+                    <span className="mt-1 max-w-[190px] text-right text-[10px] leading-tight text-white/85">
+                      {storeState.detail}
+                    </span>
+                  )}
                 </div>
               </div>
 
@@ -1373,6 +1601,123 @@ const savePaymentInstructions = async () => {
                     placeholder="8:00 AM - 10:00 PM"
                   />
                   <p className="text-xs text-[var(--muted-foreground)] mt-1">Daily operating hours</p>
+                </div>
+                {/*
+                 * Opening hours that actually close the shop.
+                 *
+                 * The field above is free text nothing reads — it cannot say
+                 * which days, and nothing compared it against the clock. These
+                 * controls do: pick the days and the window, and the storefront
+                 * stops showing the shop as open outside them. Each change saves
+                 * on its own, with no Save button and no admin approval, because a
+                 * shop that cannot tell a customer it is closed is the whole
+                 * problem.
+                 */}
+                <div className="rounded-2xl border-2 border-line p-4">
+                  <div className="flex items-start justify-between gap-3 mb-1">
+                    <p className="text-sm font-bold text-[var(--ink)]">Opening hours</p>
+                    {isSavingHours ? (
+                      <Loader2 className="size-4 shrink-0 animate-spin text-[var(--primary)]" aria-hidden="true" />
+                    ) : hoursSaved ? (
+                      <span className="inline-flex items-center gap-1 text-xs font-semibold text-[var(--success-ink)]">
+                        <Check className="size-3.5" aria-hidden="true" />
+                        Saved
+                      </span>
+                    ) : null}
+                  </div>
+                  <p className="text-xs text-[var(--muted-foreground)] mb-3">
+                    Your shop closes itself outside these hours. Changes save straight
+                    away — no approval needed.
+                  </p>
+
+                  <p className="text-xs font-bold uppercase tracking-wider text-[var(--muted-foreground)] mb-1.5">
+                    Trading days
+                  </p>
+                  <div className="flex flex-wrap gap-1.5 mb-4">
+                    {/* Week order, Monday first — the order the days actually
+                        happen in. DAY_LABELS is indexed from Sunday, so the list
+                        is [1..6, 0] rather than 0..6. */}
+                    {[1, 2, 3, 4, 5, 6, 0].map((day) => {
+                      const on = hours.days.includes(day);
+                      return (
+                        <button
+                          key={day}
+                          type="button"
+                          onClick={() => toggleHoursDay(day)}
+                          aria-pressed={on}
+                          aria-label={DAY_NAMES[day]}
+                          title={DAY_NAMES[day]}
+                          className={`min-w-11 rounded-xl border-2 px-2 py-2 text-xs font-bold transition-colors ${
+                            on
+                              ? 'border-[var(--primary)] bg-[var(--primary-soft)] text-[var(--primary)]'
+                              : 'border-line text-[var(--muted-foreground)]'
+                          }`}
+                        >
+                          {DAY_LABELS[day]}
+                        </button>
+                      );
+                    })}
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label
+                        htmlFor="shop-open-time"
+                        className="text-xs font-bold uppercase tracking-wider text-[var(--muted-foreground)] mb-1.5 block"
+                      >
+                        Opens
+                      </label>
+                      <input
+                        id="shop-open-time"
+                        type="time"
+                        value={hours.openTime}
+                        onChange={(e) => updateHours({ openTime: e.target.value })}
+                        className="w-full p-3 border border-line rounded-xl outline-none focus:border-[var(--primary)]"
+                      />
+                    </div>
+                    <div>
+                      <label
+                        htmlFor="shop-close-time"
+                        className="text-xs font-bold uppercase tracking-wider text-[var(--muted-foreground)] mb-1.5 block"
+                      >
+                        Closes
+                      </label>
+                      <input
+                        id="shop-close-time"
+                        type="time"
+                        value={hours.closeTime}
+                        onChange={(e) => updateHours({ closeTime: e.target.value })}
+                        className="w-full p-3 border border-line rounded-xl outline-none focus:border-[var(--primary)]"
+                      />
+                    </div>
+                  </div>
+
+                  {/* The overnight case is worth saying out loud: a shop open
+                      6PM to 2AM is a real thing, and "the close time looks wrong"
+                      is the obvious misreading of the two inputs above. */}
+                  {hours.closeTime <= hours.openTime && (
+                    <p className="mt-2 flex items-start gap-1.5 text-xs text-[var(--info)]">
+                      <Clock className="mt-0.5 size-3.5 shrink-0" aria-hidden="true" />
+                      Closes after midnight — you are trading past {describeClock(hours.openTime).split(' ')[1]}.
+                    </p>
+                  )}
+
+                  <button
+                    type="button"
+                    onClick={clearHours}
+                    className="mt-3 text-xs font-semibold text-[var(--muted-foreground)] underline"
+                  >
+                    Always open (remove the schedule)
+                  </button>
+
+                  {hoursError && (
+                    <p
+                      role="alert"
+                      className="mt-2 rounded-xl bg-[var(--error-soft)] px-3 py-2 text-xs text-[var(--error)]"
+                    >
+                      {hoursError}
+                    </p>
+                  )}
                 </div>
 
                 {/*

@@ -72,10 +72,19 @@ export default function BusinessMenu() {
   // One editor per section, reached from a single button on the section chip.
   // Replaces the inline pencil + X pair, which put two destructive-looking
   // controls a finger-width apart on every chip in a horizontal scroller.
-  const [sectionEditor, setSectionEditor] = useState<MenuSection | null>(null);
-  const [sectionEditorName, setSectionEditorName] = useState("");
-  const [sectionEditorItemIds, setSectionEditorItemIds] = useState<number[]>([]);
-  const [sectionEditorError, setSectionEditorError] = useState("");
+  /*
+   * The one place menu maintenance happens.
+   *
+   * This replaces a per-category editor that hung off a gear on every chip.
+   * There were then two places to look for the same jobs — a gear on the chip
+   * for renaming and regrouping, a bar that only appeared once items were
+   * ticked for availability and deletion — and the second was invisible until
+   * you had already selected things. One sheet, always in the same place,
+   * holding every job.
+   */
+  const [showMenuEditor, setShowMenuEditor] = useState(false);
+  const [menuEditorNote, setMenuEditorNote] = useState<string | null>(null);
+
   const [isSavingSection, setIsSavingSection] = useState(false);
   const [showAddItem, setShowAddItem] = useState(false);
   const [showEditItem, setShowEditItem] = useState(false);
@@ -595,6 +604,57 @@ export default function BusinessMenu() {
     );
   };
 
+  /*
+   * Per-item jobs for the Edit Menu sheet.
+   *
+   * These only move local state. The debounced sync effect above watches
+   * `menuItems` and writes it to Supabase, so going through state is what
+   * keeps one code path for persistence rather than a second, differently-
+   * shaped writer next to the first.
+   */
+  const changeItemCategory = (itemId: number | string, sectionId: string | null) => {
+    setMenuItems((prev) =>
+      prev.map((item) => (item.id === itemId ? { ...item, sectionId } : item)),
+    );
+  };
+
+  const toggleItemAvailability = (itemId: number | string) => {
+    setMenuItems((prev) =>
+      prev.map((item) => (item.id === itemId ? { ...item, available: !item.available } : item)),
+    );
+  };
+
+  /** Move every item in one category into another, or out of all of them. */
+  const moveCategoryItems = (fromId: string, toId: string | null) => {
+    setMenuItems((prev) =>
+      prev.map((item) => (item.sectionId === fromId ? { ...item, sectionId: toId } : item)),
+    );
+  };
+
+  /** Delete one item, from the row itself rather than through a modal. */
+  const deleteItemDirect = async (itemId: number | string, name: string) => {
+    if (typeof itemId === 'string' && restaurantId) {
+      const { error } = await supabase
+        .from('menu_items')
+        .delete()
+        .eq('id', itemId)
+        .eq('restaurant_id', restaurantId);
+      if (error) {
+        setMenuEditorNote(`Could not delete ${name}: ${error.message}`);
+        return;
+      }
+    }
+    setMenuItems((prev) => prev.filter((item) => item.id !== itemId));
+    setSelectedItems((prev) => prev.filter((id) => id !== itemId));
+    setMenuEditorNote(`${name} deleted.`);
+  };
+
+  const toggleAllAvailability = () => {
+    const allAvailable = menuItems.length > 0 && menuItems.every((i) => i.available);
+    setMenuItems((prev) => prev.map((i) => ({ ...i, available: !allAvailable })));
+    setMenuEditorNote(allAvailable ? 'All items hidden.' : 'All items available.');
+  };
+
   const bulkToggleAvailability = () => {
     setShowBulkActions(false);
     setShowBulkToggleModal(true);
@@ -1029,6 +1089,14 @@ const addSection = async () => {
                   Categories
                 </p>
                 <button
+                  type="button"
+                  onClick={() => setShowMenuEditor(true)}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold bg-[var(--ink-solid)] text-white hover:opacity-90 transition-opacity"
+                >
+                  <Settings className="w-3.5 h-3.5" aria-hidden="true" />
+                  Edit Menu
+                </button>
+                <button
                   onClick={() => { setRenamingSection(null); setNewSectionName(""); setSectionError(""); setShowAddSection(true); }}
                   className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold bg-[var(--primary-soft)] text-[var(--primary)] hover:opacity-90 transition-opacity"
                 >
@@ -1047,30 +1115,18 @@ const addSection = async () => {
                 >
                   All ({menuItems.length})
                 </button>
-                {sections.map((section, at) => (
-                  <div key={section.id} className="relative flex-shrink-0 flex items-stretch">
-                    <button
-                      onClick={() => setSelectedSection(section.id)}
-                      className={`px-4 py-2 rounded-l-full text-sm font-semibold whitespace-nowrap transition-all ${
-                        selectedSection === section.id
-                          ? "bg-[var(--primary)] text-white"
-                          : "bg-[var(--muted)] text-[var(--muted-foreground)] hover:bg-[var(--border)]"
-                      }`}
-                    >
-                      {section.name}
-                    </button>
-                    <span className={`flex items-stretch rounded-r-full ${selectedSection === section.id ? "bg-[var(--primary)]" : "bg-[var(--muted)]"}`}>
-                      <button onClick={() => moveSection(section.id, -1)} disabled={at === 0} aria-label={`Move ${section.name} up`} className="px-1.5 text-[var(--muted-foreground)] disabled:opacity-30 hover:opacity-100">
-                        <ChevronRight className="w-3 h-3 rotate-180" aria-hidden="true" />
-                      </button>
-                      <button onClick={() => moveSection(section.id, 1)} disabled={at === sections.length - 1} aria-label={`Move ${section.name} down`} className="px-1.5 text-[var(--muted-foreground)] disabled:opacity-30 hover:opacity-100">
-                        <ChevronRight className="w-3 h-3" aria-hidden="true" />
-                      </button>
-                      <button onClick={() => openSectionEditor(section)} aria-label={`Edit ${section.name}`} className="px-1.5 text-[var(--muted-foreground)] hover:opacity-100">
-                        <Settings className="w-3 h-3" aria-hidden="true" />
-                      </button>
-                    </span>
-                  </div>
+                {sections.map((section) => (
+                  <button
+                    key={section.id}
+                    onClick={() => setSelectedSection(section.id)}
+                    className={`px-4 py-2 rounded-full text-sm font-semibold whitespace-nowrap transition-all flex-shrink-0 ${
+                      selectedSection === section.id
+                        ? "bg-[var(--primary)] text-white"
+                        : "bg-[var(--muted)] text-[var(--muted-foreground)] hover:bg-[var(--border)]"
+                    }`}
+                  >
+                    {section.name}
+                  </button>
                 ))}
               </div>
             </div>
@@ -1599,130 +1655,253 @@ const addSection = async () => {
           </div>
         )}
 
-        {/* One editor per section: rename it, choose which products sit under it, and
-            delete it — the three things the old pencil + X pair used to do. */}
-        {sectionEditor && (
-          <div className="fixed inset-0 bg-black/50 z-[2000] flex items-end sm:items-center sm:justify-center">
-            <div className="bg-surface w-full sm:max-w-md sm:rounded-2xl rounded-t-3xl p-5 max-h-[85vh] flex flex-col">
-              <div className="flex items-start justify-between gap-3 mb-4">
-                <h3 className="text-xl font-bold text-[var(--ink)]">Edit category</h3>
-                <button
-                  type="button"
-                  onClick={closeSectionEditor}
-                  aria-label="Close"
-                  className="p-1.5 -mr-1.5 rounded-lg hover:bg-[var(--muted)]"
-                >
-                  <X className="w-5 h-5 text-[var(--muted-foreground)]" aria-hidden="true" />
-                </button>
+        {/*
+         * The one menu editor.
+         *
+         * Everything that used to be scattered across a gear on every category
+         * chip, a selection bar that only appeared once you had ticked things,
+         * and the add-item form:
+         *
+         *   - add an item
+         *   - delete one item, or every item ticked
+         *   - move an item (or a whole category) to a different category
+         *   - toggle availability, one item, the ticked ones, or the whole menu
+         *   - rename, reorder and delete categories
+         *
+         * A full-height sheet rather than a dialog: the item list is the thing
+         * being worked through, and a dialog sized to a phone screen showed a
+         * handful of rows with the rest behind a scroll of their own.
+         */}
+        {showMenuEditor && (
+          <div className="fixed inset-0 z-[2100] flex flex-col bg-surface">
+            <div className="flex items-start justify-between gap-3 px-4 py-4 border-b border-[var(--border)]">
+              <div>
+                <h3 className="text-xl font-bold text-[var(--ink)]">Edit Menu</h3>
+                <p className="text-xs text-[var(--muted-foreground)]">
+                  {menuItems.length} item{menuItems.length !== 1 ? 's' : ''} in {sections.length}
+                  {' '}
+                  categor{sections.length === 1 ? 'y' : 'ies'}
+                </p>
               </div>
+              <button
+                type="button"
+                onClick={() => { setShowMenuEditor(false); setMenuEditorNote(null); }}
+                aria-label="Close"
+                className="p-1.5 -mr-1.5 rounded-lg hover:bg-[var(--muted)]"
+              >
+                <X className="w-5 h-5 text-[var(--muted-foreground)]" aria-hidden="true" />
+              </button>
+            </div>
 
-              <div className="flex-1 overflow-y-auto space-y-4">
-                <div>
-                  <label
-                    htmlFor="sectionName"
-                    className="block text-sm font-bold text-[var(--ink)] mb-2"
-                  >
-                    Category name
-                  </label>
-                  <input
-                    id="sectionName"
-                    type="text"
-                    value={sectionEditorName}
-                    onChange={(e) => {
-                      setSectionEditorName(e.target.value);
-                      setSectionEditorError("");
-                    }}
-                    className="w-full border border-line focus:border-[var(--primary)] rounded-lg h-12 px-4 text-sm outline-none"
-                    placeholder="e.g. Main Course"
-                  />
-                </div>
-
-                <div>
-                  <p className="block text-sm font-bold text-[var(--ink)] mb-1">
-                    Products in this category
-                  </p>
-                  <p className="text-xs text-[var(--muted-foreground)] mb-2">
-                    Tick a product to group it here. Unticking one moves it out of
-                    whichever category it was in.
-                  </p>
-
-                  {menuItems.length === 0 ? (
-                    <p className="text-sm text-[var(--muted-foreground)] py-3 text-center">
-                      No products yet. Add one first, then group it here.
-                    </p>
-                  ) : (
-                    <ul className="space-y-1.5">
-                      {menuItems.map((item) => {
-                        const checked = sectionEditorItemIds.includes(item.id);
-                        const inOther = !checked && item.sectionId && item.sectionId !== sectionEditor.id;
-                        return (
-                          <li key={item.id}>
-                            <label
-                              className={`flex items-center gap-3 rounded-xl border px-3 py-3 cursor-pointer transition-colors ${
-                                checked
-                                  ? "border-[var(--primary)] bg-[var(--primary-soft)]"
-                                  : "border-line hover:border-[var(--primary)]"
-                              }`}
-                            >
-                              <input
-                                type="checkbox"
-                                checked={checked}
-                                onChange={() => toggleSectionEditorItem(item.id)}
-                                className="size-4 accent-[var(--primary)] flex-shrink-0"
-                              />
-                              <span className="min-w-0 flex-1">
-                                <span className="block text-sm font-semibold text-[var(--ink)] truncate">
-                                  {item.name}
-                                </span>
-                                {inOther && (
-                                  <span className="block text-xs text-[var(--muted-foreground)] truncate">
-                                    Currently in another category
-                                  </span>
-                                )}
-                              </span>
-                            </label>
-                          </li>
-                        );
-                      })}
-                    </ul>
-                  )}
-                </div>
-
-                {sectionEditorError && (
-                  <p className="text-sm font-semibold text-[var(--error)]" role="alert">
-                    {sectionEditorError}
-                  </p>
-                )}
+            {/* Category management */}
+            <div className="px-4 py-3 border-b border-[var(--border)] bg-[var(--muted)]">
+              <p className="text-xs font-bold uppercase tracking-wider text-[var(--muted-foreground)] mb-2">
+                Categories
+              </p>
+              <div className="space-y-2">
+                {sections.map((section, at) => (
+                  <div key={section.id} className="flex items-center gap-2">
+                    <input
+                      type="text"
+                      value={section.name}
+                      onChange={(e) =>
+                        setSections((prev) =>
+                          prev.map((s) => (s.id === section.id ? { ...s, name: e.target.value } : s)),
+                        )
+                      }
+                      aria-label={`Category name: ${section.name}`}
+                      className="flex-1 min-w-0 h-10 rounded-lg border border-line bg-[var(--surface)] px-3 text-sm font-semibold outline-none focus:border-[var(--primary)]"
+                    />
+                    <span className="text-xs text-[var(--muted-foreground)] tabular-nums w-10 text-right flex-shrink-0">
+                      {menuItems.filter((i) => i.sectionId === section.id).length}
+                    </span>
+                    {/* Reordering survived the removal of the chip arrows, so a
+                        shop can still choose the order its categories appear in. */}
+                    <button
+                      type="button"
+                      onClick={() => moveSection(section.id, -1)}
+                      disabled={at === 0}
+                      aria-label={`Move ${section.name} up`}
+                      className="grid size-9 place-items-center rounded-lg border border-line text-[var(--muted-foreground)] disabled:opacity-30"
+                    >
+                      <ChevronRight className="w-4 h-4 rotate-180" aria-hidden="true" />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => moveSection(section.id, 1)}
+                      disabled={at === sections.length - 1}
+                      aria-label={`Move ${section.name} down`}
+                      className="grid size-9 place-items-center rounded-lg border border-line text-[var(--muted-foreground)] disabled:opacity-30"
+                    >
+                      <ChevronRight className="w-4 h-4" aria-hidden="true" />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => { setRenamingSection(section); setNewSectionName(section.name); setSectionError(""); }}
+                      aria-label={`Rename ${section.name}`}
+                      className="grid size-9 place-items-center rounded-lg border border-line text-[var(--muted-foreground)]"
+                    >
+                      <Settings className="w-4 h-4" aria-hidden="true" />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => { setSectionToDelete(section); setShowDeleteSectionModal(true); }}
+                      aria-label={`Delete ${section.name}`}
+                      className="grid size-9 place-items-center rounded-lg border border-line text-[var(--error)]"
+                    >
+                      <Trash2 className="w-4 h-4" aria-hidden="true" />
+                    </button>
+                  </div>
+                ))}
               </div>
+              <button
+                type="button"
+                onClick={() => { setRenamingSection(null); setNewSectionName(""); setSectionError(""); setShowAddSection(true); }}
+                className="mt-2 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold bg-[var(--primary-soft)] text-[var(--primary)]"
+              >
+                <Plus className="w-3.5 h-3.5" aria-hidden="true" />
+                Add Category
+              </button>
+            </div>
 
-              <div className="pt-4 mt-2 border-t border-[var(--border)] space-y-3">
-                <Button
-                  onClick={saveSectionEditor}
-                  disabled={isSavingSection}
-                  className="w-full bg-[var(--primary)] hover:bg-[var(--primary)] py-4 font-bold"
-                >
-                  {isSavingSection ? "Saving..." : "Save changes"}
-                </Button>
-                {/* Deletion stays behind its own confirmation — the editor is
-                    reached by tapping a chip, so a stray tap must not be able
-                    to remove a section and its grouping in one gesture. */}
-                <button
-                  type="button"
-                  disabled={isSavingSection}
-                  onClick={() => {
-                    setSectionToDelete(sectionEditor);
-                    setShowDeleteSectionModal(true);
-                    closeSectionEditor();
-                  }}
-                  className="w-full py-3 text-sm font-semibold text-[var(--error)] disabled:opacity-50"
-                >
-                  Delete this category
-                </button>
-              </div>
+            {/* Bulk bar. Always visible now, not only once something is ticked:
+                the whole-menu actions are here too. */}
+            <div className="flex flex-wrap items-center gap-2 px-4 py-3 border-b border-[var(--border)]">
+              <button
+                type="button"
+                onClick={() =>
+                  setSelectedItems(selectedItems.length === menuItems.length ? [] : menuItems.map((i) => i.id))
+                }
+                className="px-3 py-2 rounded-lg border border-line text-xs font-bold text-[var(--ink)]"
+              >
+                {selectedItems.length === menuItems.length && menuItems.length > 0 ? 'Clear selection' : 'Select all'}
+              </button>
+              <button
+                type="button"
+                onClick={() =>
+                  selectedItems.length > 0 ? bulkToggleAvailability() : toggleAllAvailability()
+                }
+                className="px-3 py-2 rounded-lg bg-[var(--success)] text-white text-xs font-bold"
+              >
+                {selectedItems.length > 0
+                  ? `Toggle ${selectedItems.length} selected`
+                  : 'Toggle whole menu'}
+              </button>
+              <button
+                type="button"
+                onClick={() => (selectedItems.length > 0 ? bulkDelete() : setShowAddItem(true))}
+                className="px-3 py-2 rounded-lg border border-[var(--error)] text-[var(--error)] text-xs font-bold"
+              >
+                {selectedItems.length > 0 ? `Delete ${selectedItems.length} selected` : 'Add item'}
+              </button>
+            </div>
+
+            {/* Items */}
+            <div className="flex-1 overflow-y-auto px-4 py-3 space-y-2">
+              {menuItems.length === 0 ? (
+                <p className="py-10 text-center text-sm text-[var(--muted-foreground)]">
+                  No items yet. Add one to get started.
+                </p>
+              ) : (
+                menuItems.map((item) => {
+                  const selected = selectedItems.includes(item.id);
+                  return (
+                    <div
+                      key={item.id}
+                      className={`rounded-xl border p-3 ${selected ? 'border-[var(--info)] ring-2 ring-[var(--info)]' : 'border-line'}`}
+                    >
+                      <div className="flex items-start gap-3">
+                        <button
+                          type="button"
+                          onClick={() => toggleBulkSelection(item.id)}
+                          aria-label={`Select ${item.name}`}
+                          aria-pressed={selected}
+                          className={`mt-0.5 w-5 h-5 rounded border-2 flex items-center justify-center flex-shrink-0 ${
+                            selected ? 'bg-[var(--info)] border-[var(--info)]' : 'border-[var(--border)]'
+                          }`}
+                        >
+                          {selected && <Check className="w-3 h-3 text-white" aria-hidden="true" />}
+                        </button>
+
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-baseline justify-between gap-2">
+                            <p className="font-bold text-[var(--ink)] text-sm truncate">{item.name}</p>
+                            <p className="text-sm font-bold text-[var(--primary)] flex-shrink-0">₱{item.price}</p>
+                          </div>
+
+                          {/* Category as a select, so moving an item is one tap
+                              here rather than a trip through a category editor. */}
+                          <select
+                            value={item.sectionId ?? ''}
+                            onChange={(e) => changeItemCategory(item.id, e.target.value || null)}
+                            aria-label={`Category for ${item.name}`}
+                            className="mt-2 w-full h-9 rounded-lg border border-line bg-[var(--surface)] px-2 text-xs font-semibold outline-none focus:border-[var(--primary)]"
+                          >
+                            <option value="">Unfiled</option>
+                            {sections.map((s) => (
+                              <option key={s.id} value={s.id}>{s.name}</option>
+                            ))}
+                          </select>
+                        </div>
+
+                        <div className="flex flex-col gap-1.5 flex-shrink-0">
+                          <button
+                            type="button"
+                            onClick={() => toggleItemAvailability(item.id)}
+                            aria-label={`${item.available ? 'Hide' : 'Show'} ${item.name}`}
+                            className={`grid size-9 place-items-center rounded-lg border ${
+                              item.available
+                                ? 'border-[var(--success)] text-[var(--success)]'
+                                : 'border-[var(--border)] text-[var(--muted-foreground)]'
+                            }`}
+                          >
+                            {item.available ? (
+                              <Eye className="w-4 h-4" aria-hidden="true" />
+                            ) : (
+                              <EyeOff className="w-4 h-4" aria-hidden="true" />
+                            )}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleEditItem(item)}
+                            aria-label={`Edit ${item.name}`}
+                            className="grid size-9 place-items-center rounded-lg border border-line text-[var(--muted-foreground)]"
+                          >
+                            <Edit2 className="w-4 h-4" aria-hidden="true" />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => deleteItemDirect(item.id, item.name)}
+                            aria-label={`Delete ${item.name}`}
+                            className="grid size-9 place-items-center rounded-lg border border-line text-[var(--error)]"
+                          >
+                            <Trash2 className="w-4 h-4" aria-hidden="true" />
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })
+              )}
+            </div>
+
+            {menuEditorNote && (
+              <p role="status" className="px-4 py-2 border-t border-[var(--border)] bg-[var(--muted)] text-xs font-semibold text-[var(--ink)]">
+                {menuEditorNote}
+              </p>
+            )}
+
+            <div className="px-4 py-3 border-t border-[var(--border)]">
+              <Button
+                onClick={() => setShowAddItem(true)}
+                className="w-full bg-[var(--primary)] hover:bg-[var(--primary)] py-4 text-sm font-bold rounded-xl"
+              >
+                <Plus className="w-5 h-5 mr-2" aria-hidden="true" />
+                Add New Menu Item
+              </Button>
             </div>
           </div>
         )}
-
         {showDeleteSectionModal && sectionToDelete && (
           <div className="fixed inset-0 bg-black/50 z-[2000] flex items-center justify-center p-4">
             <Card className="w-full max-w-md p-6 border border-line bg-surface text-center">

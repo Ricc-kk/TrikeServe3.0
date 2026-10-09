@@ -14,6 +14,23 @@ import { OrderProgressStepper } from "../ui/OrderProgress";
 import { GoogleMap, MarkerF, Polyline } from "@react-google-maps/api";
 import useMapLoader from "@/lib/mapLoader";
 import tricycleIcon from '../../../assets/0b76d1aa56b8ad6e15dd4efc8a0100b0ca5762a1.png'
+/**
+ * "9:08PM" / "1:00AM" — 12-hour, no space before the meridiem.
+ *
+ * The card used to show `toLocaleString()`, which put a full date and seconds on
+ * every row: "10/8/2026, 9:08:07 PM". On a list that gets scanned rather than read
+ * that is three times the width of the time it is there to convey, and it pushed
+ * the price onto a line of its own. The date is still on the detail screen, where
+ * it is worth reading.
+ */
+function formatOrderTime(value: string): string {
+  const at = new Date(value);
+  if (Number.isNaN(at.getTime())) return '';
+  const hours = at.getHours();
+  const suffix = hours < 12 ? 'AM' : 'PM';
+  const twelve = hours % 12 === 0 ? 12 : hours % 12;
+  return `${twelve}:${String(at.getMinutes()).padStart(2, '0')}${suffix}`;
+}
 
 interface Order {
   id: string;
@@ -21,7 +38,7 @@ interface Order {
   customerName: string;
   customerEmail: string;
   customerPhone?: string;
-  items: { name: string; quantity: number; price: number }[];
+  items: { name: string; quantity: number; price: number; image?: string }[];
   total: number;
   subtotal: number;
   /**
@@ -428,7 +445,9 @@ export default function BusinessOrders() {
           address: dbOrder.address || '',
           deliveryFee: dbOrder.delivery_fee || 0,
           estimatedTime: dbOrder.estimated_time || '30 mins',
-          date: new Date(dbOrder.created_at).toLocaleString(),
+          // Time only, on the compact format the cards use: "9:08PM". The full
+    // timestamp is still available via `createdAt` for the detail screen.
+    date: formatOrderTime(dbOrder.created_at),
           createdAt: dbOrder.created_at,
           deliveryMode: dbOrder.delivery_mode || 'delivery',
           needsCutlery: dbOrder.needs_cutlery || false,
@@ -555,13 +574,61 @@ export default function BusinessOrders() {
   // `payment-confirmed` is an active state, not history: the shop still has to
   // cook the food and hand it to a rider. Leaving it out put a paid order into
   // neither list, which is where "my order vanished" came from.
+  //
+  /*
+   * Orders this shop has accepted, newest acceptance first.
+   *
+   * Accepting an order is the moment the shop takes it on, and the order the
+   * owner is working right now is the one they need to see first. Sorting by
+   * `created_at` does not do that: accept four orders in a row and the list
+   * is still ordered by when they arrived, so the one just accepted lands
+   * wherever it happened to arrive.
+   *
+   * Held per tab rather than in the database. This is a working aid — where the
+   * list puts things for the next few minutes of this session — not a fact
+   * about the order, and a status column would have made two devices disagree
+   * about the same queue.
+   */
+  const [acceptedOrderIds, setAcceptedOrderIds] = useState<string[]>([]);
+
+  const markAccepted = (orderId: string) =>
+    setAcceptedOrderIds((prev) => [orderId, ...prev.filter((id) => id !== orderId)]);
+
+  /**
+   * What the All filter shows: just-accepted orders first, then everything else
+   * newest first as before.
+   *
+   * Only the All view reorders. Each status filter is a single state, so there
+   * is nothing to reorder within it, and reordering them would only move rows
+   * around under someone looking for one particular stage.
+   */
+  const prioritiseAccepted = (list: Order[]) => {
+    if (acceptedOrderIds.length === 0) return list;
+    const rank = new Map(acceptedOrderIds.map((id, i) => [id, i]));
+    return [...list].sort((a, b) => {
+      const ra = rank.get(a.id);
+      const rb = rank.get(b.id);
+      if (ra !== undefined && rb !== undefined) return ra - rb;
+      if (ra !== undefined) return -1;
+      if (rb !== undefined) return 1;
+      return 0;
+    });
+  };
   const activeOrders = orders.filter(o => ['pending', 'payment-confirmed', 'confirmed', 'preparing', 'ready', 'on-the-way'].includes(o.status));
   const historyOrders = orders.filter(o => ['delivered', 'cancelled'].includes(o.status));
 
-  // Filter active orders by selected status
-  const filteredActiveOrders = selectedStatusFilter === 'all' 
-    ? activeOrders 
-    : activeOrders.filter(o => o.status === selectedStatusFilter);
+  /*
+   * The active list for the current filter.
+   *
+   * Not memoised: `activeOrders` is rebuilt on every render, so a `useMemo`
+   * keyed on it would invalidate every render anyway and only add a dependency
+   * list to keep honest. The lists are a few dozen rows at most, and the 5-second
+   * poll is what actually costs anything.
+   */
+  const filteredActiveOrders =
+    selectedStatusFilter === 'all'
+      ? prioritiseAccepted(activeOrders)
+      : activeOrders.filter((o) => o.status === selectedStatusFilter);
 
   /**
    * Shop: the GCash transfer has arrived and been checked.
@@ -1074,16 +1141,23 @@ export default function BusinessOrders() {
         </div>
 
         {/* Orders List */}
-        <div className="px-3 md:px-5 py-3 md:py-4 space-y-2 md:space-y-3 pb-6">
+        {/* Tighter list spacing.
+
+            The rows were separated by a full card's worth of padding on every
+            side, so six orders filled two screens and only the order number and
+            the status were above the fold. Everything here is about the same
+            information in less space: one gap between rows, one inside the row,
+            and the meta line beside the price instead of under it. */}
+        <div className="px-3 md:px-5 py-3 md:py-4 space-y-1.5 md:space-y-2 pb-6">
           {selectedTab === 'active' ? (
             filteredActiveOrders.length > 0 ? (
               filteredActiveOrders.map((order) => (
                 <Card
                   key={order.id}
                   onClick={() => setSelectedOrder(order)}
-                  className="p-3 md:p-4 border border-line active:scale-[0.98] transition-transform cursor-pointer"
+                  className="p-2.5 md:p-3 border border-line active:scale-[0.98] transition-transform cursor-pointer"
                 >
-                  <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 md:gap-3 mb-3">
+                  <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-1 md:gap-3 mb-1.5">
                     <div className="min-w-0">
                       <div className="flex items-center gap-2 mb-1 flex-wrap">
                         <h3 className="font-bold text-[var(--ink)] text-sm md:text-base">#{order.orderNumber}</h3>
@@ -1099,7 +1173,7 @@ export default function BusinessOrders() {
                     </div>
                   </div>
 
-                  <div className="space-y-1 mb-3 text-xs md:text-sm">
+                  <div className="space-y-0.5 mb-1.5 text-xs md:text-sm">
                     {order.items.slice(0, 2).map((item, idx) => (
                       <p key={idx} className="text-xs md:text-sm text-[var(--muted-foreground)] truncate">
                         {item.quantity}x {item.name}
@@ -1235,8 +1309,30 @@ export default function BusinessOrders() {
                   <h3 className="font-bold text-[var(--ink)] mb-2 text-sm md:text-base">Items</h3>
                   <div className="space-y-2">
                     {selectedOrder.items.map((item, idx) => (
-                      <div key={idx} className="flex items-center justify-between p-2 md:p-3 bg-[var(--muted)] rounded-xl">
-                        <div className="min-w-0">
+                      <div key={idx} className="flex items-center gap-3 p-2 md:p-3 bg-[var(--muted)] rounded-xl">
+                        {/*
+                          The dish photo, which the line item already carries.
+
+                          This is the screen someone packing the bag works from, and
+                          a list of names is how the wrong thing goes in the bag.
+                          The image column is `image_url` everywhere else in this
+                          app, and a line item written before the shop had photos
+                          simply has none -- hence the fallback rather than a
+                          broken image.
+                        */}
+                        {item.image ? (
+                          <img
+                            src={item.image}
+                            alt={item.name}
+                            className="size-12 md:size-14 shrink-0 rounded-lg object-cover"
+                          />
+                        ) : (
+                          <span
+                            aria-hidden="true"
+                            className="size-12 md:size-14 shrink-0 rounded-lg bg-[var(--border)]/40"
+                          />
+                        )}
+                        <div className="min-w-0 flex-1">
                           <p className="font-semibold text-[var(--ink)] text-sm md:text-base truncate">{item.name}</p>
                           <p className="text-xs md:text-sm text-[var(--muted-foreground)]">Qty: {item.quantity}</p>
                         </div>
@@ -1607,6 +1703,9 @@ export default function BusinessOrders() {
               <Button
                 onClick={async () => {
                   await updateOrderStatus(selectedOrder.id, 'preparing');
+                  // Floats to the top of the All filter, so the order the shop
+                  // just took on is the one it sees when the modal closes.
+                  markAccepted(selectedOrder.id);
                   setConfirmAction(null);
                   // Stay on the order. This closed the detail modal entirely, so
                   // accepting dumped the shop owner back on the orders list and

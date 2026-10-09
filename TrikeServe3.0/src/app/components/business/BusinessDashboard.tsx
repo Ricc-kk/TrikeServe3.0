@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useMemo, useRef } from "react";
 import { 
   Store, Package, TrendingUp, PhilippinePeso, ChevronRight, 
   Users, MessageSquare, BarChart3, Settings, ShoppingBag,
@@ -12,7 +12,13 @@ import { ImageWithFallback } from "../figma/ImageWithFallback";
 import AppHeader from "../ui/AppHeader";
 import AppShell from "../ui/AppShell";
 import BusinessSidebar from "./BusinessSidebar";
-import { AnalyticsBarChart, type BarDatum } from "../ui/AnalyticsCharts";
+import { AnalyticsLineChart, AnalyticsSparkline } from "../ui/AnalyticsCharts";
+import {
+  buildSeries,
+  RANGE_OPTIONS,
+  RANGE_HEADLINE,
+  type RangeKey,
+} from "@/lib/salesSeries";
 import { useAuth } from "../../contexts/AuthContext";
 import { supabase } from "../../../lib/supabase";
 import { supabaseHelpers } from "@/lib/supabase";
@@ -139,14 +145,20 @@ export default function BusinessDashboard() {
   const [stats, setStats] = useState({
     totalOrders: 0,
     totalRevenue: 0,
-    totalItems: 0,
-    earnings: 0,
     rating: 0,
     ratingCount: 0
   });
   const [popularMenu, setPopularMenu] = useState<any[]>([]);
-  const [dailySales, setDailySales] = useState<any[]>([]);
-  const [dailyOrders, setDailyOrders] = useState<BarDatum[]>([]);
+  /*
+   * The orders this shop has, kept raw.
+   *
+   * The charts used to be pre-bucketed into state by a second set of loops over
+   * the same rows, which meant changing the range needed a refetch to re-bucket.
+   * Holding the rows and deriving the series means switching Today/Week/Month is a
+   * pure recomputation, so the filter responds on the spot.
+   */
+  const [loadedOrders, setLoadedOrders] = useState<any[]>([]);
+  const [range, setRange] = useState<RangeKey>('week');
   const [isLoading, setIsLoading] = useState(true);
   const [restaurantId, setRestaurantId] = useState<string | null>(null);
   const [notifications, setNotifications] = useState<any[]>([]);
@@ -314,16 +326,6 @@ export default function BusinessDashboard() {
         const totalOrders = orders.length;
         const totalRevenue = orders.reduce((sum: number, order: any) => sum + (order.total || 0), 0);
 
-        // Today's earnings - orders from today
-        const today = new Date();
-        today.setHours(0, 0, 0, 0);
-        const todaysOrders = orders.filter((order: any) => {
-          const orderDate = new Date(order.created_at);
-          orderDate.setHours(0, 0, 0, 0);
-          return orderDate.getTime() === today.getTime();
-        });
-        const earnings = todaysOrders.reduce((sum: number, order: any) => sum + (order.total || 0), 0);
-
         // Load the business's average rating from business_ratings.
         let rating = 0;
         let ratingCount = 0;
@@ -338,24 +340,16 @@ export default function BusinessDashboard() {
         setStats({
           totalOrders,
           totalRevenue,
-          totalItems: 0, // Will be loaded separately
-          earnings,
           rating,
           ratingCount
         });
 
-        // Calculate daily sales for last 7 days
-        const dailySalesData = calculateDailySales(orders);
-        setDailySales(dailySalesData);
-
-        // Calculate order volume for last 7 days
-        setDailyOrders(calculateDailyOrders(orders));
+        // Held raw; the charts bucket from this on every range change.
+        setLoadedOrders(orders);
       }
 
-      // Load every menu item: the "Total Items" stat needs the real count, and
-      // ranking by what actually sells needs the whole menu to rank. The old
-      // query capped at six, so the stat was reporting 6 for any shop with
-      // more dishes than that.
+      // Every menu item, because ranking by what actually sells needs the whole
+      // menu to rank, not the first page of it.
       const { data: menuItems } = await supabase
         .from('menu_items')
         .select('*')
@@ -363,10 +357,6 @@ export default function BusinessDashboard() {
         .order('created_at', { ascending: false });
 
       if (menuItems) {
-        setStats(prev => ({
-          ...prev,
-          totalItems: menuItems.length
-        }));
 
         // Popular means most ordered, not most recently added. Orders keep
         // their line items as a JSON string, so the counts come from walking
@@ -416,57 +406,47 @@ export default function BusinessDashboard() {
     }
   };
 
-  const calculateDailySales = (orders: any[]) => {
-    const days = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
-    const salesData = [];
+  /*
+ * The two chart series, derived rather than stored.
+ *
+ * Both read the same rows and differ only in what they add up — money for sales,
+ * one per order for volume — so `buildSeries` takes the measure as a callback and
+ * there is one bucketing implementation rather than two that can disagree about
+ * where a day ends.
+ *
+ * Memoised on the range, so switching it is instant and does not refetch.
+ */
+const salesSeries = useMemo(
+  () => buildSeries(loadedOrders, range, (order) => Number(order.total) || 0),
+  [loadedOrders, range],
+);
 
-    // Get last 7 days
-    for (let i = 6; i >= 0; i--) {
-      const date = new Date();
-      date.setDate(date.getDate() - i);
-      date.setHours(0, 0, 0, 0);
+const orderSeries = useMemo(
+  () => buildSeries(loadedOrders, range, () => 1),
+  [loadedOrders, range],
+);
 
-      const nextDate = new Date(date);
-      nextDate.setDate(nextDate.getDate() + 1);
+/** Both charts read the same window, so one label covers them. */
+const rangeHeadline = RANGE_HEADLINE[range];
 
-      const daySales = orders.filter((order: any) => {
-        const orderDate = new Date(order.created_at);
-        return orderDate >= date && orderDate < nextDate;
-      });
-
-      const amount = daySales.reduce((sum: number, order: any) => sum + (order.total || 0), 0);
-      salesData.push({
-        day: days[date.getDay()],
-        amount: Math.max(amount, 100) // Minimum 100 for chart visibility
-      });
-    }
-
-    return salesData;
+  /**
+   * Change against the previous window, as a badge.
+   *
+   * Null when there is no previous window to compare — a shop's first day has
+   * nothing behind it, and a percentage against zero is not information.
+   */
+const trend = (series: { changePct: number | null; previousTotal: number | null }) => {
+  if (series.changePct == null) return null;
+  const up = series.changePct >= 0;
+  return {
+    up,
+    text: `${up ? '+' : ''}${series.changePct.toFixed(0)}%`,
+    tone: up ? 'text-[var(--success)] bg-[var(--success-soft)]' : 'text-[var(--error)] bg-[var(--error-soft)]',
   };
+};
 
-  // Order counts for the last 7 days, for the analytics bar chart.
-  const calculateDailyOrders = (orders: any[]): BarDatum[] => {
-    const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-    const result: BarDatum[] = [];
-
-    for (let i = 6; i >= 0; i--) {
-      const date = new Date();
-      date.setDate(date.getDate() - i);
-      date.setHours(0, 0, 0, 0);
-
-      const nextDate = new Date(date);
-      nextDate.setDate(nextDate.getDate() + 1);
-
-      const count = orders.filter((order: any) => {
-        const orderDate = new Date(order.created_at);
-        return orderDate >= date && orderDate < nextDate;
-      }).length;
-
-      result.push({ label: days[date.getDay()], value: count });
-    }
-
-    return result;
-  };
+const salesTrend = trend(salesSeries);
+const orderTrend = trend(orderSeries);
 
   // Check if user is not verified
   if (!user?.isVerified) {
@@ -499,11 +479,6 @@ export default function BusinessDashboard() {
     );
   }
 
-  // Calculate max sales for chart scaling
-  const maxSales = dailySales.length > 0
-    ? Math.max(...dailySales.map(d => d.amount))
-    : 1;
-
   return (
     <div className="flex min-h-screen overflow-x-hidden">
       <BusinessSidebar
@@ -525,8 +500,43 @@ export default function BusinessDashboard() {
       }
     >
       <div className="space-y-6">
+          {/* Range filter. Sits above the charts *and* the period figure, because both
+              answer the same question — "how am I doing over what window". */}
+          <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <h2 className="text-xl lg:text-2xl font-bold text-[var(--ink)]">Overview</h2>
+              <p className="text-sm text-[var(--muted-foreground)]">
+                Sales and orders for the range you pick.
+              </p>
+            </div>
+            <div
+              role="group"
+              aria-label="Chart range"
+              className="inline-flex rounded-xl border border-line bg-[var(--muted)] p-1"
+            >
+              {RANGE_OPTIONS.map((option) => {
+                const selected = range === option.key;
+                return (
+                  <button
+                    key={option.key}
+                    type="button"
+                    onClick={() => setRange(option.key)}
+                    aria-pressed={selected}
+                    className={`rounded-lg px-4 py-2 text-sm font-bold transition-colors ${
+                      selected
+                        ? 'bg-[var(--surface)] text-[var(--ink)] shadow-sm'
+                        : 'text-[var(--muted-foreground)] hover:text-[var(--ink)]'
+                    }`}
+                  >
+                    {option.label}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
           {/* Stats Cards */}
-          <div className="grid grid-cols-2 xl:grid-cols-3 2xl:grid-cols-5 gap-3 lg:gap-4 mb-6 lg:mb-8">
+          <div className="grid grid-cols-2 xl:grid-cols-4 gap-3 lg:gap-4 mb-6 lg:mb-8">
             {/* Total Orders */}
             <Card className="p-4 lg:p-6 border border-line bg-surface">
               <div className="flex items-start justify-between mb-3 lg:mb-4">
@@ -538,16 +548,11 @@ export default function BusinessDashboard() {
                   <ShoppingBag className="w-5 h-5 lg:w-6 lg:h-6 text-[var(--primary)]" />
                 </div>
               </div>
-              {/* Mini Chart */}
-              <div className="flex items-end gap-0.5 lg:gap-1 h-8 lg:h-12">
-                {[40, 60, 35, 80, 45, 90, 70, 55, 85, 65, 75, 95].map((height, i) => (
-                  <div
-                    key={i}
-                    className={`flex-1 rounded-t ${i === 11 ? 'bg-[var(--primary)]' : 'bg-[var(--border)]'}`}
-                    style={{ height: `${height}%` }}
-                  />
-                ))}
-              </div>
+              <AnalyticsSparkline
+                data={orderSeries.points}
+                color="var(--primary)"
+                height={32}
+              />
             </Card>
 
             {/* Total Revenue */}
@@ -561,59 +566,34 @@ export default function BusinessDashboard() {
                   <PhilippinePeso className="w-5 h-5 lg:w-6 lg:h-6 text-[var(--amber)]" aria-hidden="true" />
                 </div>
               </div>
-              <div className="flex items-end gap-0.5 lg:gap-1 h-8 lg:h-12">
-                {[45, 55, 70, 50, 85, 60, 75, 90, 65, 80, 70, 95].map((height, i) => (
-                  <div
-                    key={i}
-                    className={`flex-1 rounded-t ${i === 11 ? 'bg-[var(--amber)]' : 'bg-[var(--border)]'}`}
-                    style={{ height: `${height}%` }}
-                  />
-                ))}
-              </div>
+              <AnalyticsSparkline
+                data={salesSeries.points}
+                color="var(--amber)"
+                height={32}
+              />
             </Card>
 
-            {/* Total Items */}
+            {/* Earnings — the figure the range filter applies to */}
             <Card className="p-4 lg:p-6 border border-line bg-surface">
               <div className="flex items-start justify-between mb-3 lg:mb-4">
                 <div className="min-w-0">
-                  <p className="text-xs lg:text-sm text-[var(--muted-foreground)] mb-1">Total Items</p>
-                  <h2 className="text-2xl lg:text-4xl font-bold text-[var(--ink)]">{stats.totalItems}</h2>
-                </div>
-                <div className="w-10 h-10 lg:w-12 lg:h-12 bg-[var(--success-soft)] rounded-xl flex shrink-0 items-center justify-center">
-                  <Package className="w-5 h-5 lg:w-6 lg:h-6 text-[var(--success)]" />
-                </div>
-              </div>
-              <div className="flex items-end gap-0.5 lg:gap-1 h-8 lg:h-12">
-                {[60, 70, 55, 85, 65, 75, 90, 70, 80, 65, 75, 95].map((height, i) => (
-                  <div
-                    key={i}
-                    className={`flex-1 rounded-t ${i === 11 ? 'bg-[var(--success)]' : 'bg-[var(--border)]'}`}
-                    style={{ height: `${height}%` }}
-                  />
-                ))}
-              </div>
-            </Card>
-
-            {/* Earnings */}
-            <Card className="p-4 lg:p-6 border border-line bg-surface">
-              <div className="flex items-start justify-between mb-3 lg:mb-4">
-                <div className="min-w-0">
-                  <p className="text-xs lg:text-sm text-[var(--muted-foreground)] mb-1">Today's Earnings</p>
-                  <h2 className="text-2xl lg:text-4xl font-bold text-[var(--ink)]">₱{(stats.earnings >= 1000 ? (stats.earnings / 1000).toFixed(1) : stats.earnings.toFixed(0))}{stats.earnings >= 1000 ? 'k' : ''}</h2>
+                  <p className="text-xs lg:text-sm text-[var(--muted-foreground)] mb-1">
+                    {rangeHeadline} Earnings
+                  </p>
+                  <h2 className="text-2xl lg:text-4xl font-bold text-[var(--ink)]">
+                    ₱{(salesSeries.total >= 1000 ? (salesSeries.total / 1000).toFixed(1) : salesSeries.total.toFixed(0))}
+                    {salesSeries.total >= 1000 ? 'k' : ''}
+                  </h2>
                 </div>
                 <div className="w-10 h-10 lg:w-12 lg:h-12 bg-[var(--info-soft)] rounded-xl flex shrink-0 items-center justify-center">
                   <TrendingUp className="w-5 h-5 lg:w-6 lg:h-6 text-[var(--info)]" />
                 </div>
               </div>
-              <div className="flex items-end gap-0.5 lg:gap-1 h-8 lg:h-12">
-                {[50, 65, 75, 60, 85, 70, 90, 75, 85, 70, 80, 95].map((height, i) => (
-                  <div
-                    key={i}
-                    className={`flex-1 rounded-t ${i === 11 ? 'bg-[var(--info)]' : 'bg-[var(--border)]'}`}
-                    style={{ height: `${height}%` }}
-                  />
-                ))}
-              </div>
+              <AnalyticsSparkline
+                data={salesSeries.points}
+                color="var(--info)"
+                height={32}
+              />
             </Card>
 
             {/* Rating */}
@@ -739,120 +719,64 @@ export default function BusinessDashboard() {
               )}
             </div>
 
-            {/* Daily Sales Chart */}
+            {/* Sales */}
             <div>
-              <h2 className="text-xl lg:text-2xl font-bold text-[var(--ink)] mb-4">Daily Sales</h2>
+              <h2 className="text-xl lg:text-2xl font-bold text-[var(--ink)] mb-4">Sales</h2>
               <Card className="p-5 lg:p-6 border border-line bg-surface">
-                {dailySales.length === 0 ? (
-                  <div className="text-center py-12">
-                    <BarChart3 className="w-16 h-16 text-[var(--border)] mx-auto mb-4" />
-                    <p className="text-[var(--muted-foreground)] text-sm">No sales data yet</p>
-                    <p className="text-[var(--muted-foreground)] text-xs mt-1">Start receiving orders to see your sales chart</p>
-                  </div>
-                ) : (
-                  <>
-                    <div className="mb-6">
-                      <p className="text-sm text-[var(--muted-foreground)] mb-1">This Week</p>
-                      <h3 className="text-2xl lg:text-3xl font-bold text-[var(--ink)]">
-                        ₱{((dailySales.reduce((sum, d) => sum + d.amount, 0) - dailySales.length * 100) >= 1000
-                          ? ((dailySales.reduce((sum, d) => sum + d.amount, 0) - dailySales.length * 100) / 1000).toFixed(1)
-                          : (dailySales.reduce((sum, d) => sum + d.amount, 0) - dailySales.length * 100).toFixed(0))}
-                        {(dailySales.reduce((sum, d) => sum + d.amount, 0) - dailySales.length * 100) >= 1000 ? 'k' : ''}
-                      </h3>
-                    </div>
-                    
-                    {/* Area Chart */}
-                    <div className="relative h-40 lg:h-48">
-                      <svg className="w-full h-full" viewBox="0 0 280 180" preserveAspectRatio="none">
-                        {/* Grid lines */}
-                        {[0, 1, 2, 3, 4].map((i) => (
-                          <line
-                            key={i}
-                            x1="0"
-                            y1={i * 45}
-                            x2="280"
-                            y2={i * 45}
-                            stroke="var(--border)"
-                            strokeWidth="1"
-                          />
-                        ))}
-                        
-                        {/* Area fill */}
-                        <path
-                          d={`M 0 ${180 - (dailySales[0].amount / maxSales) * 160} ${dailySales.map((d, i) => 
-                            `L ${(i * 40) + 20} ${180 - (d.amount / maxSales) * 160}`
-                          ).join(' ')} L 260 180 L 0 180 Z`}
-                          fill="url(#gradient)"
-                          opacity="0.3"
-                        />
-                        
-                        {/* Line */}
-                        <path
-                          d={`M 0 ${180 - (dailySales[0].amount / maxSales) * 160} ${dailySales.map((d, i) => 
-                            `L ${(i * 40) + 20} ${180 - (d.amount / maxSales) * 160}`
-                          ).join(' ')}`}
-                          fill="none"
-                          stroke="var(--primary)"
-                          strokeWidth="3"
-                          strokeLinecap="round"
-                        />
-                        
-                        {/* Gradient definition */}
-                        <defs>
-                          <linearGradient id="gradient" x1="0%" y1="0%" x2="0%" y2="100%">
-                            <stop offset="0%" stopColor="var(--primary)" stopOpacity="0.3" />
-                            <stop offset="100%" stopColor="var(--primary)" stopOpacity="0" />
-                          </linearGradient>
-                        </defs>
-                        
-                        {/* Points */}
-                        {dailySales.map((d, i) => (
-                          <circle
-                            key={i}
-                            cx={(i * 40) + 20}
-                            cy={180 - (d.amount / maxSales) * 160}
-                            r="4"
-                            fill="var(--primary)"
-                          />
-                        ))}
-                      </svg>
-                      
-                      {/* Labels */}
-                      <div className="flex justify-between mt-2">
-                        {dailySales.map((d) => (
-                          <span key={d.day} className="text-xs text-[var(--muted-foreground)] font-semibold">
-                            {d.day}
-                          </span>
-                        ))}
-                      </div>
-                      
-                      {/* Highlight badge */}
-                      <div className="absolute top-4 right-4">
-                        <Badge className="bg-[var(--primary)] text-white">+20%</Badge>
-                      </div>
-                    </div>
-                  </>
+                <div className="mb-5">
+                  <p className="text-sm text-[var(--muted-foreground)] mb-1">{rangeHeadline}</p>
+                  <h3 className="text-2xl lg:text-3xl font-bold text-[var(--ink)]">
+                    {salesSeries.total >= 1000
+                      ? `₱${(salesSeries.total / 1000).toFixed(1)}k`
+                      : `₱${salesSeries.total.toFixed(0)}`}
+                  </h3>
+                </div>
+
+                <AnalyticsLineChart
+                  data={salesSeries.points}
+                  hoverLabels={salesSeries.points.map((p) => p.fullLabel)}
+                  color="var(--primary)"
+                  valuePrefix="₱"
+                  height={200}
+                  emptyHint="Start receiving orders to see your sales trend"
+                />
+
+                {/* Real change against the window before this one. Was the
+                    literal text "+20%", which never moved whatever the data
+                    did. Hidden when there is no previous window to compare. */}
+                {salesTrend && (
+                  <span className={`mt-4 inline-block rounded-full px-2.5 py-1 text-xs font-bold ${salesTrend.tone}`}>
+                    {salesTrend.text} vs previous {range === 'today' ? 'day' : range}
+                  </span>
                 )}
               </Card>
             </div>
           </div>
 
-          {/* Orders Analytics */}
+          {/* Orders */}
           <div>
-            <h2 className="text-xl lg:text-2xl font-bold text-[var(--ink)] mb-4">Orders by Day</h2>
+            <h2 className="text-xl lg:text-2xl font-bold text-[var(--ink)] mb-4">Orders</h2>
             <Card className="p-5 lg:p-6 border border-line bg-surface">
               <div className="mb-5">
-                <p className="text-sm text-[var(--muted-foreground)] mb-1">Last 7 Days</p>
+                <p className="text-sm text-[var(--muted-foreground)] mb-1">{rangeHeadline}</p>
                 <h3 className="text-2xl lg:text-3xl font-bold text-[var(--ink)]">
-                  {dailyOrders.reduce((sum, d) => sum + d.value, 0)} orders
+                  {orderSeries.count} order{orderSeries.count !== 1 ? 's' : ''}
                 </h3>
               </div>
-              <AnalyticsBarChart
-                data={dailyOrders}
-                color="var(--primary)"
-                height={180}
+
+              <AnalyticsLineChart
+                data={orderSeries.points}
+                hoverLabels={orderSeries.points.map((p) => p.fullLabel)}
+                color="var(--info)"
+                height={200}
                 emptyHint="Start receiving orders to see your order trend"
               />
+
+              {orderTrend && (
+                <span className={`mt-4 inline-block rounded-full px-2.5 py-1 text-xs font-bold ${orderTrend.tone}`}>
+                  {orderTrend.text} vs previous {range === 'today' ? 'day' : range}
+                </span>
+              )}
             </Card>
           </div>
         </div>

@@ -1,11 +1,19 @@
+import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
 import { BarChart3 } from "lucide-react";
 
 /**
  * Lightweight analytics charts used by the driver and business dashboards.
  *
- * Plain SVG/CSS rather than a charting library: they render instantly, stay
+ * Plain SVG rather than a charting library: they render instantly, stay
  * responsive, and follow the theme's design tokens the same way the existing
  * dashboard charts do.
+ *
+ * The two line components measure their container and draw in pixel coordinates
+ * rather than stretching a fixed viewBox. That is not fussiness — a
+ * `preserveAspectRatio="none"` viewBox scales x and y by different factors, which
+ * turns every circle into an ellipse and makes stroke width depend on the width
+ * of the card. It also means a resize has to redraw, which is what the
+ * measurement is for.
  */
 
 export interface BarDatum {
@@ -27,6 +35,61 @@ export function formatCompact(value: number): string {
   return Number.isInteger(n) ? String(n) : n.toFixed(2);
 }
 
+/** Width reserved on the right for the value axis. */
+const Y_AXIS_WIDTH = 48;
+
+/**
+ * A gridline step that yields roughly four intervals at any magnitude.
+ *
+ * A fixed ladder of steps cannot do this across the range a shop operates in:
+ * 250 is sensible at ₱1,400 and produces fifty-seven gridlines at ₱14,000 — which
+ * is what overflowed the first version of this axis. Small integers are rounded
+ * up as a whole so an order count never gets a "0.50" axis label.
+ */
+function niceStep(rawMax: number): number {
+  if (rawMax <= 8) return 1;
+  const target = rawMax / 4;
+  const magnitude = Math.pow(10, Math.floor(Math.log10(target)));
+  const normalised = target / magnitude;
+  const multiple = normalised <= 1 ? 1 : normalised <= 2 ? 2 : normalised <= 5 ? 5 : 10;
+  return multiple * magnitude;
+}
+
+/**
+ * Track a container's width so the charts can draw in real pixels.
+ *
+ * A callback ref rather than an effect. Both charts render an empty state first
+ * and only draw once data arrives, so the measured element is not in the DOM on
+ * the first commit — an effect with an empty dependency list ran against a null
+ * ref, never re-ran, and the chart stayed permanently unmeasured with no SVG in
+ * it. A callback ref fires when the node actually attaches, whenever that is.
+ */
+function useElementWidth() {
+  const observerRef = useRef<ResizeObserver | null>(null);
+  const [width, setWidth] = useState(0);
+
+  const ref = useCallback((node: HTMLDivElement | null) => {
+    observerRef.current?.disconnect();
+    observerRef.current = null;
+    if (!node) return;
+
+    const measure = () => setWidth(node.getBoundingClientRect().width);
+    measure();
+
+    // Older WebViews have no ResizeObserver. The measurement above still works;
+    // the chart simply does not redraw on a resize.
+    if (typeof ResizeObserver !== 'undefined') {
+      const observer = new ResizeObserver(measure);
+      observer.observe(node);
+      observerRef.current = observer;
+    }
+  }, []);
+
+  useEffect(() => () => observerRef.current?.disconnect(), []);
+
+  return { ref, width };
+}
+
 function EmptyChart({ hint }: { hint?: string }) {
   return (
     <div className="flex flex-col items-center justify-center py-10 text-center">
@@ -37,10 +100,8 @@ function EmptyChart({ hint }: { hint?: string }) {
   );
 }
 
-/**
- * Vertical bar chart. Bar heights are relative to the largest value; the value
- * is printed above each bar so small datasets stay readable.
- */
+/** Vertical bar chart. Bar heights are relative to the largest value; the value
+ *  is printed above each bar so small datasets stay readable. */
 export function AnalyticsBarChart({
   data,
   color = "var(--primary)",
@@ -90,6 +151,306 @@ export function AnalyticsBarChart({
           </span>
         ))}
       </div>
+    </div>
+  );
+}
+
+/**
+ * Line chart with a value axis and a hover readout.
+ *
+ * A flat series is not "no data". A shop with no orders at 3am has a real series
+ * that happens to dip to the baseline at 3am, so the empty state is reserved for
+ * a series with no points at all — and for a series that is entirely zero, where
+ * a line along the axis would be a chart with nothing to say.
+ */
+export function AnalyticsLineChart({
+  data,
+  color = "var(--primary)",
+  valuePrefix = "",
+  valueSuffix = "",
+  height = 200,
+  emptyHint,
+  /** Parallel to `data`; falls back to `label` when omitted. */
+  hoverLabels,
+}: {
+  data: BarDatum[];
+  color?: string;
+  valuePrefix?: string;
+  valueSuffix?: string;
+  height?: number;
+  emptyHint?: string;
+  hoverLabels?: string[];
+}) {
+  const [active, setActive] = useState<number | null>(null);
+  const { ref: hostRef, width } = useElementWidth();
+  const fillId = useId();
+
+  const hasPoints = data.length > 0;
+  const hasMovement = data.some((d) => d.value > 0);
+  const rawMax = hasPoints ? Math.max(...data.map((d) => d.value), 0) : 0;
+
+  const max = useMemo(() => {
+    if (!hasPoints) return 0;
+    const step = niceStep(rawMax);
+    return Math.max(Math.ceil(rawMax / step) * step, step * 4);
+  }, [hasPoints, rawMax]);
+
+  const gridValues = useMemo(() => {
+    if (max <= 0) return [];
+    const step = niceStep(rawMax);
+    const values: number[] = [];
+    for (let v = 0; v <= max + 0.001; v += step) values.push(Number(v.toFixed(6)));
+    return values;
+  }, [max, rawMax]);
+
+  if (!hasPoints || !hasMovement) {
+    return <EmptyChart hint={emptyHint} />;
+  }
+
+  const plotWidth = Math.max(width - Y_AXIS_WIDTH, 1);
+
+  // First and last points sit on the plot edges: inset by half a step, the line
+  // visibly stops short of the chart it belongs to.
+  const xFor = (index: number) =>
+    data.length === 1 ? plotWidth / 2 : (index / (data.length - 1)) * plotWidth;
+  const yFor = (value: number) => (max > 0 ? height - (value / max) * height : height);
+
+  const points = data.map((d, i) => ({ x: xFor(i), y: yFor(d.value) }));
+  const linePath = points
+    .map((p, i) => `${i === 0 ? "M" : "L"} ${p.x} ${p.y}`)
+    .join(" ");
+  const areaPath = `${linePath} L ${points[points.length - 1].x} ${height} L ${points[0].x} ${height} Z`;
+
+  const labelStride = Math.max(1, Math.ceil(data.length / 7));
+
+  const handlePointer = (e: React.PointerEvent<HTMLDivElement>) => {
+    const rect = e.currentTarget.getBoundingClientRect();
+    if (rect.width === 0 || data.length === 0) return;
+    const ratio = (e.clientX - rect.left) / rect.width;
+    const index = Math.round(ratio * (data.length - 1));
+    setActive(Math.min(data.length - 1, Math.max(0, index)));
+  };
+
+  const activeIndex = active;
+  const activeValue = activeIndex != null ? data[activeIndex] : null;
+  const activePoint = activeIndex != null ? points[activeIndex] : null;
+  const peak = Math.max(...data.map((d) => d.value));
+
+  return (
+    <div>
+      <div className="relative" style={{ height }}>
+        {/* Value axis. HTML, positioned onto each gridline, so the text is never
+            scaled by the chart and never overlaps the plot. */}
+        <div className="pointer-events-none absolute inset-0" aria-hidden="true">
+          {gridValues.map((value, i) => (
+            <span
+              key={value}
+              /*
+               * The outermost labels hang *inside* the plot rather than being
+               * centred on their line. Centring put half of the top label above
+               * the chart and half of the baseline label below it, so both spilled
+               * out of the card.
+               */
+              className={`absolute right-0 text-[10px] font-bold text-[var(--muted-foreground)] tabular-nums ${
+                i === 0
+                  ? '-translate-y-full'
+                  : i === gridValues.length - 1
+                    ? ''
+                    : '-translate-y-1/2'
+              }`}
+              style={{ top: yFor(value) }}
+            >
+              {valuePrefix}
+              {formatCompact(value)}
+              {valueSuffix}
+            </span>
+          ))}
+        </div>
+
+        <div
+          ref={hostRef}
+          className="h-full cursor-crosshair"
+          style={{ marginRight: Y_AXIS_WIDTH }}
+          onPointerMove={handlePointer}
+          onPointerDown={handlePointer}
+          onPointerLeave={() => setActive(null)}
+          role="img"
+          aria-label={`Line chart over ${data.length} periods. Highest ${valuePrefix}${formatCompact(peak)}${valueSuffix}.`}
+        >
+          {/* Nothing is drawn until the width is known — a first paint at an
+              assumed width would visibly jump once measured. */}
+          {width > 0 && (
+            <svg width={width} height={height} viewBox={`0 0 ${width} ${height}`} aria-hidden="true">
+              <defs>
+                <linearGradient id={fillId} x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="0%" stopColor={color} stopOpacity="0.28" />
+                  <stop offset="100%" stopColor={color} stopOpacity="0" />
+                </linearGradient>
+              </defs>
+
+              {gridValues.map((value) => (
+                <line
+                  key={value}
+                  x1="0"
+                  x2={plotWidth}
+                  y1={yFor(value)}
+                  y2={yFor(value)}
+                  stroke="var(--border)"
+                  strokeWidth="1"
+                />
+              ))}
+
+              <path d={areaPath} fill={`url(#${fillId})`} />
+              <path
+                d={linePath}
+                fill="none"
+                stroke={color}
+                strokeWidth="2.5"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
+
+              {/* Dots only while they stay distinct — at 30 daily points on a
+                  phone they would merge into a smear. */}
+              {data.length <= 14 &&
+                points.map((p, i) => (
+                  <circle
+                    key={i}
+                    cx={p.x}
+                    cy={p.y}
+                    r={activeIndex === i ? 5 : 3}
+                    fill={color}
+                    stroke="var(--surface)"
+                    strokeWidth="1.5"
+                  />
+                ))}
+
+              {activePoint && (
+                <>
+                  <line
+                    x1={activePoint.x}
+                    x2={activePoint.x}
+                    y1="0"
+                    y2={height}
+                    stroke={color}
+                    strokeWidth="1"
+                    strokeDasharray="3 3"
+                    opacity="0.5"
+                  />
+                  <circle
+                    cx={activePoint.x}
+                    cy={activePoint.y}
+                    r="5"
+                    fill={color}
+                    stroke="var(--surface)"
+                    strokeWidth="2"
+                  />
+                </>
+              )}
+            </svg>
+          )}
+
+          {/* Hover readout, anchored to the point rather than the cursor: on touch
+              there is no cursor to follow. */}
+          {activeValue && activePoint && (
+            <div
+              className="pointer-events-none absolute top-0 z-10 -translate-x-1/2 -translate-y-full whitespace-nowrap rounded-lg bg-[var(--ink)] px-2 py-1 text-[11px] font-bold text-white shadow-lg"
+              style={{ left: activePoint.x }}
+            >
+              {hoverLabels?.[activeIndex!] ?? activeValue.label} · {valuePrefix}
+              {formatCompact(activeValue.value)}
+              {valueSuffix}
+            </div>
+          )}
+        </div>
+      </div>
+
+      <div className="mt-2 flex" style={{ width: Math.max(width, 0) || '100%' }}>
+        {data.map((d, i) => (
+          <span
+            key={`${d.label}-label-${i}`}
+            className="flex-1 text-center text-xs font-semibold text-[var(--muted-foreground)]"
+          >
+            {/* Blank rather than hidden, so every slot keeps its width and the row
+                does not reflow as the range changes. */}
+            {i % labelStride === 0 || i === data.length - 1 ? d.label : ""}
+          </span>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Sparkline for a stat card.
+ *
+ * This replaces the decorative bars the cards used to carry, which were a fixed
+ * array of percentages — the same twelve numbers on every card of every shop,
+ * changing nothing when the real figure changed. The number beside it already
+ * carries the value; the shape is here to be a real glance at the trend.
+ */
+export function AnalyticsSparkline({
+  data,
+  color = "var(--primary)",
+  height = 48,
+}: {
+  data: BarDatum[];
+  color?: string;
+  height?: number;
+}) {
+  const { ref, width } = useElementWidth();
+  const values = data.map((d) => d.value);
+
+  const max = Math.max(...values, 0);
+  const min = Math.min(...values, 0);
+  const span = max - min;
+
+  // Scaled to the data's own min and max, not from zero: a shop whose takings
+  // move between 2000 and 2500 should see that variation, not a line pinned to
+  // the bottom of the box.
+  const yFor = (value: number) => (span > 0 ? height - ((value - min) / span) * height : height / 2);
+
+  if (values.length < 2 || width <= 0) {
+    // One point has no shape, and a flat line would read as "steady" — which is a
+    // claim. An empty box is the honest answer.
+    return <div style={{ height }} aria-hidden="true" />;
+  }
+
+  const points = values.map((value, i) => ({
+    x: (i / (values.length - 1)) * width,
+    y: yFor(value),
+  }));
+  const line = points.map((p, i) => `${i === 0 ? "M" : "L"} ${p.x} ${p.y}`).join(" ");
+
+  return (
+    <div ref={ref} style={{ height }} className="w-full">
+      {width > 0 && (
+        <svg
+          width={width}
+          height={height}
+          viewBox={`0 0 ${width} ${height}`}
+          role="img"
+          aria-label={`Trend across ${values.length} periods, from ${formatCompact(values[0])} to ${formatCompact(values[values.length - 1])}`}
+        >
+          <path d={`${line} L ${width} ${height} L 0 ${height} Z`} fill={color} opacity="0.12" />
+          <path
+            d={line}
+            fill="none"
+            stroke={color}
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          />
+          <circle
+            cx={points[points.length - 1].x}
+            cy={points[points.length - 1].y}
+            r="3"
+            fill={color}
+            stroke="var(--surface)"
+            strokeWidth="1.5"
+          />
+        </svg>
+      )}
     </div>
   );
 }

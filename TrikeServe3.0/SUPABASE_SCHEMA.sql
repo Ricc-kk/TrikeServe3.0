@@ -199,6 +199,13 @@ CREATE TABLE IF NOT EXISTS restaurants (
   -- name, what to put in the reference. Free text, set by the business from the
   -- Shop tab. Added by ADD_ORDER_PAYMENT_AND_DELIVERY_PROOF.sql.
   payment_instructions TEXT,
+  -- Trading hours. `operating_hours` above is free text nothing reads; these
+  -- three are what the storefront checks to decide whether the shop is open.
+  -- NULL open_time means no schedule configured and the shop falls back to the
+  -- manual is_open switch. Added by ADD_SHOP_HOURS.sql.
+  open_time TEXT,
+  close_time TEXT,
+  open_days TEXT[] DEFAULT '{}',
   -- Pinned by the business; NULL until then, which sorts the shop last in
   -- distance rankings instead of hiding it.
   latitude DOUBLE PRECISION,
