@@ -16,6 +16,7 @@ import { supabaseHelpers } from "@/lib/supabase";
 import { useDeliveryAddress } from "../../contexts/useDeliveryAddress";
 import { cuisineLabels } from "@/lib/foodTaxonomy";
 import { formatDistance, haversineMetres, hasCoords } from "@/lib/distance";
+import { topDishesByUnits } from "@/lib/topDishes";
 
 interface MenuItem extends CustomizableMenuItem {
   available: boolean;
@@ -203,6 +204,30 @@ export default function RestaurantDetail() {
           ];
         }
 
+        /*
+         * Which dish is actually selling best.
+         *
+         * Worked out at read time rather than stored on the item. A stored badge is
+         * a claim made once, on the day somebody picked it, and it goes stale the
+         * moment the shop's best seller changes -- which is exactly the badge a
+         * customer should not be shown as current fact. Deriving it means the label
+         * is true whenever it is drawn.
+         *
+         * Only `items` and `status` are selected. The orders table holds customer
+         * names, addresses and phone numbers, and none of that is needed to count
+         * dishes, so it never leaves the database. Capped so a long-running shop
+         * cannot turn a storefront view into an unbounded read.
+         */
+        const { data: orderRows } = await supabase
+          .from('orders')
+          .select('items, status')
+          .eq('restaurant_email', restaurantId)
+          .neq('status', 'cancelled')
+          .limit(500);
+
+        const topItemId =
+          topDishesByUnits(orderRows ?? [], menuItems ?? [], 1)[0]?.id ?? null;
+
         // Map menu items to MenuItem format
         const mappedMenuItems = (menuItems || []).map((item: any) => ({
           id: item.id,
@@ -213,7 +238,16 @@ export default function RestaurantDetail() {
           category: item.category,
           sectionId: item.section_id ?? null,
           available: item.is_available,
-          badge: item.badge || undefined,
+          /*
+           * The real best seller wins over whatever is stored. Anything saved as
+           * "most-ordered" before this was derived is a stale guess about the same
+           * fact, and the shop's own badges ("Most liked", "Signature") are still
+           * honoured for every other dish.
+           */
+          badge:
+            (topItemId && String(item.id) === topItemId
+              ? "most-ordered"
+              : item.badge) || undefined,
           customizationGroups: []
         }));
 

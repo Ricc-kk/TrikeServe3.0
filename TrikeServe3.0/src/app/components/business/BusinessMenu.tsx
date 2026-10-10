@@ -1854,7 +1854,10 @@ const addSection = async () => {
                     </div>
                     <div>
                       <label className="text-sm font-bold text-[var(--ink)] mb-2 block">Badge (Optional)</label>
-                      <p className="text-xs text-[var(--muted-foreground)] mb-3">Highlight special items to attract customers</p>
+                      <p className="text-xs text-[var(--muted-foreground)] mb-3">
+                        Highlight special items to attract customers. "Most ordered" is not
+                        here because the app works it out from real sales and adds it for you.
+                      </p>
                       <div className="grid grid-cols-2 gap-2.5">
                         <button
                           type="button"
@@ -1866,17 +1869,6 @@ const addSection = async () => {
                           }`}
                         >
                           No Badge
-                        </button>
-                        <button
-                          onClick={() => setEditingItem({ ...editingItem, badge: "most-ordered" })}
-                          className={`p-3 rounded-xl border-2 font-semibold transition-all flex items-center justify-center gap-2 ${
-                            editingItem.badge === "most-ordered"
-                              ? "border-[var(--primary)] bg-[var(--primary-soft)] text-[var(--primary)]"
-                              : "border-[var(--border)] bg-surface text-[var(--muted-foreground)]"
-                          }`}
-                        >
-                          <TrendingUp className="w-4 h-4" />
-                          Most Ordered
                         </button>
                         <button
                           onClick={() => setEditingItem({ ...editingItem, badge: "most-liked" })}
