@@ -206,7 +206,18 @@ export default function CustomizationModal({
             {/* Customization Groups */}
             {item.customizationGroups && item.customizationGroups.length > 0 ? (
               <div className="space-y-6">
-                {item.customizationGroups.map((group) => (
+                {item.customizationGroups
+                  /*
+                   * Groups the shop has switched off are not offered.
+                   *
+                   * The storefront filters these out already; filtering again here
+                   * means a group cannot be forced onto a customer by a stale item
+                   * still in cart memory from before it was switched off. `=== false`
+                   * rather than a truthiness check, because options saved before the
+                   * flag existed have no `enabled` key at all and must still show.
+                   */
+                  .filter((group) => group.enabled !== false)
+                  .map((group) => (
                   <Card key={group.id} className="p-5 border border-line">
                     <div className="mb-4">
                       <div className="flex items-start justify-between mb-1">

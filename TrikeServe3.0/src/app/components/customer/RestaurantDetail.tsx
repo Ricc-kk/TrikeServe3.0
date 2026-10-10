@@ -11,6 +11,7 @@ import { useCart } from "../../contexts/CartContext";
 import { useFavorites } from "../../contexts/FavoritesContext";
 import { useNotification } from "../../contexts/NotificationContext";
 import CustomizationModal, { MenuItem as CustomizableMenuItem, CustomizationGroup } from "./CustomizationModal";
+import { parseChoiceGroups } from "@/lib/itemChoices";
 import { supabase } from "../../../utils/supabase";
 import { supabaseHelpers } from "@/lib/supabase";
 import { useDeliveryAddress } from "../../contexts/useDeliveryAddress";
@@ -248,7 +249,18 @@ export default function RestaurantDetail() {
             (topItemId && String(item.id) === topItemId
               ? "most-ordered"
               : item.badge) || undefined,
-          customizationGroups: []
+          /*
+           * The choices the shop set on this dish.
+           *
+           * Hardcoded to an empty array here, so every dish reached the customer
+           * with no options no matter what the shop had saved -- tapping one added
+           * it straight to the cart, skipping the picker entirely. `parseChoiceGroups`
+           * rather than the raw column because PostgREST returns jsonb as a string
+           * here, and a string has no `.length`.
+           */
+          customizationGroups: parseChoiceGroups(item.customization_groups).filter(
+            (g) => g.enabled,
+          ),
         }));
 
         // Compute the restaurant's real rating from business_ratings.
@@ -419,7 +431,12 @@ export default function RestaurantDetail() {
                    sectionId: item.section_id ?? null,
                    available: item.is_available,
                    badge: item.badge || undefined,
-                   customizationGroups: []
+                   // Same as the first load: the options belong to the dish, and
+// leaving this empty here would drop every choice the moment the
+// menu was refreshed in place.
+customizationGroups: parseChoiceGroups(item.customization_groups).filter(
+  (g) => g.enabled,
+),
                  }));
 
                  // Sections ride along with the items. Reloading only the items

@@ -8,7 +8,12 @@ import { ImageWithFallback } from "../figma/ImageWithFallback";
 import BusinessSidebar from "./BusinessSidebar";
 import { useMediaQuery } from "../../hooks/useMediaQuery";
 import { useRestaurantProfile } from "@/lib/restaurantProfile";
-import AddCustomizationModal, { CustomizationGroup } from "./AddCustomizationModal";
+import ItemOptionsEditor from "./ItemOptionsEditor";
+import {
+  parseChoiceGroups,
+  usableChoiceGroups,
+  type ItemChoiceGroup,
+} from "@/lib/itemChoices";
 import { useAuth } from "../../contexts/AuthContext";
 import { supabase } from "../../../utils/supabase";
 import { supabaseHelpers } from "@/lib/supabase";
@@ -45,7 +50,8 @@ interface MenuItem {
   available: boolean;
   /** Position in the menu. Written by dragging; read on every load. */
   sortOrder: number;
-  customizationGroups?: CustomizationGroup[];
+  /** Choice options ("Choice A: Iced Tea / Coke"). See `ItemOptionsEditor`. */
+  customizationGroups?: ItemChoiceGroup[];
 }
 
 export default function BusinessMenu() {
@@ -63,6 +69,13 @@ export default function BusinessMenu() {
   // left out of the payload until the table answers, rather than breaking menu
   // editing for every shop on the day this code ships.
   const sectionsTableExists = useRef(false);
+  // Whether menu_items.customization_groups can be written at all.
+  //
+  // Same reason as the sections probe: before ADD_MENU_ITEM_OPTIONS.sql has run the
+  // column does not exist and PostgREST rejects the whole insert with a 400, which
+  // would take menu editing down for every shop on the day this ships. Probed once
+  // on the first menu load, which already selects the column.
+  const optionsColumnExists = useRef(true);
   const [selectedSection, setSelectedSection] = useState("all");
   const [showAddSection, setShowAddSection] = useState(false);
   // When set, the section modal is renaming this one rather than creating a new one.
@@ -178,8 +191,6 @@ export default function BusinessMenu() {
   const [draftMode, setDraftMode] = useState<'edit' | 'add'>('edit');
   const [editingItem, setEditingItem] = useState<any>(null);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
-  const [showCustomizationModal, setShowCustomizationModal] = useState(false);
-  const [customizingItem, setCustomizingItem] = useState<MenuItem | null>(null);
   const [uploadingImage, setUploadingImage] = useState(false);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -301,6 +312,26 @@ export default function BusinessMenu() {
           }
         } else if (data) {
           console.log('[Menu Load] Loaded from Supabase:', data.length, 'items');
+
+          /*
+           * Whether the choices column is there at all.
+           *
+           * Read off the first row rather than probed separately: the load already
+           * selects it, so its absence is the signal, and a column that does not
+           * exist simply is not a key on the object. Decided once here because
+           * getting it wrong costs the whole menu -- writing a column PostgREST does
+           * not recognise fails every row, not just the ones with options.
+           */
+          if (data.length > 0 && !( 'customization_groups' in data[0])) {
+            if (optionsColumnExists.current) {
+              console.warn(
+                '[Menu Load] menu_items.customization_groups is missing. ' +
+                'Run ADD_MENU_ITEM_OPTIONS.sql in Supabase to save item options.',
+              );
+            }
+            optionsColumnExists.current = false;
+          }
+
           // Map Supabase data to MenuItem format
           const items = data.map((item: any, at: number) => ({
             id: item.id || Math.random(),
@@ -316,7 +347,14 @@ export default function BusinessMenu() {
             // ADD_MENU_ITEM_SORT_ORDER.sql yet still gets a stable, saveable order
             // instead of every row sitting on the same number.
             sortOrder: Number.isFinite(item.sort_order) ? item.sort_order : at,
-            customizationGroups: item.customization_groups || [],
+            /*
+             * JSONB arrives already parsed, but the localStorage fallback below
+             * re-reads a stringified snapshot, and PostgREST hands back a JSON string
+             * for json/jsonb when it is nested inside a row. Anything that is not an
+             * array of groups is treated as "no options" rather than left to throw
+             * on `.map` three edits later.
+             */
+            customizationGroups: parseChoiceGroups(item.customization_groups),
           }));
           setMenuItems(items);
           // A freshly loaded menu is the saved menu, by definition.
@@ -362,6 +400,17 @@ export default function BusinessMenu() {
         badge: item.badge ?? null,
         available: item.available,
         sortOrder: item.sortOrder ?? 0,
+        /*
+         * Choices, and only the ones that would actually be stored.
+         *
+         * This is the snapshot the unsaved-changes check compares against, so a
+         * field left out of it is a field the shop can change with no sign the menu
+         * is dirty: no Save prompt, no blocked navigation, and the edit lost on the
+         * next refresh. It compares the *stored* form rather than the raw groups so
+         * that typing into an empty option row -- which is not saved and should not
+         * count -- does not light up the "unsaved" state on its own.
+         */
+        customizationGroups: usableChoiceGroups(item.customizationGroups ?? []),
       })),
     );
 
@@ -558,25 +607,6 @@ export default function BusinessMenu() {
     setMenuItems([...menuItems, newItem]);
   };
 
-  const handleManageCustomizations = (item: MenuItem, e?: React.MouseEvent) => {
-    if (e) {
-      e.stopPropagation();
-    }
-    setCustomizingItem(item);
-    setShowCustomizationModal(true);
-  };
-
-  const handleSaveCustomizations = (groups: CustomizationGroup[]) => {
-    if (customizingItem) {
-      const updatedItems = menuItems.map((item) =>
-        item.id === customizingItem.id
-          ? { ...item, customizationGroups: groups }
-          : item
-      );
-      setMenuItems(updatedItems);
-    }
-  };
-
   const blankDraft = (sectionId?: string | null): Partial<MenuItem> => ({
     name: "",
     description: "",
@@ -684,6 +714,15 @@ export default function BusinessMenu() {
         image:
           editingItem.image ||
           "https://images.unsplash.com/photo-1546069901-ba9599a7e63c?w=400",
+        /*
+         * Choices set on the draft.
+         *
+         * This rebuilds the item field by field rather than spreading the draft, so
+         * anything added to the form later is dropped here unless it is listed --
+         * which is exactly what had happened to the options: they could be filled in
+         * on a brand new dish and were silently gone by the time it was added.
+         */
+        customizationGroups: editingItem.customizationGroups ?? [],
       };
       setMenuItems([...menuItems, item]);
     } else {
@@ -769,6 +808,17 @@ export default function BusinessMenu() {
     sectionsTableExists.current ? { section_id: item.sectionId ?? null } : {};
 
   /**
+   * The choices column, but only once the column behind it exists.
+   *
+   * Same shape as `sectionColumn` so a shop that has not run the migration keeps
+   * saving its menu; the options simply are not stored yet.
+   */
+  const optionsColumn = (item: { customizationGroups?: ItemChoiceGroup[] }) =>
+    optionsColumnExists.current
+      ? { customization_groups: usableChoiceGroups(item.customizationGroups ?? []) }
+      : {};
+
+  /**
    * Write the whole menu.
    *
    * Every item, every time, rather than a diff: the menu is at most a few dozen
@@ -817,6 +867,7 @@ export default function BusinessMenu() {
               price: item.price,
               category: item.category,
               ...sectionColumn(item),
+              ...optionsColumn(item),
               image_url: item.image,
               is_available: item.available,
               sort_order: item.sortOrder ?? 0,
@@ -839,6 +890,7 @@ export default function BusinessMenu() {
             price: item.price,
             category: item.category,
             ...sectionColumn(item),
+            ...optionsColumn(item),
             image_url: item.image,
             is_available: item.available,
             sort_order: item.sortOrder ?? 0,
@@ -857,14 +909,25 @@ export default function BusinessMenu() {
       console.error('[Menu] Save failed:', error);
 
       const message = String(error?.message || '');
-      const missingSortOrder =
-        error?.code === 'PGRST204' || /sort_order|column .* does not exist/i.test(message);
+      const missingColumn =
+        error?.code === 'PGRST204' || /column .* does not exist/i.test(message);
 
       // A raw PostgREST 400 says "column menu_items.sort_order does not exist",
       // which is true and useless to a shop owner. Name the file to run instead.
+      //
+      // Named per column, because "run this SQL file" is only actionable if the
+      // owner knows which one, and the options column is the newest of them.
+      const migration = /customization_groups/i.test(message)
+        ? 'ADD_MENU_ITEM_OPTIONS.sql'
+        : /sort_order/i.test(message)
+          ? 'ADD_MENU_ITEM_SORT_ORDER.sql'
+          : /section_id|menu_sections/i.test(message)
+            ? 'ADD_MENU_SECTIONS.sql'
+            : 'ADD_MENU_ITEM_SORT_ORDER.sql';
+
       setSaveError(
-        missingSortOrder
-          ? 'Saving needs a database update. Run ADD_MENU_ITEM_SORT_ORDER.sql in Supabase.'
+        missingColumn
+          ? `Saving needs a database update. Run ${migration} in Supabase.`
           : message || "Could not save the menu. Your changes are still here - try again.",
       );
       return false;
@@ -1852,6 +1915,24 @@ const addSection = async () => {
                         </select>
                       )}
                     </div>
+                    {/*
+                      Choices, in the item form rather than behind a separate
+                      screen.
+
+                      There was a whole customisation modal for this and nothing
+                      ever opened it -- the handler that would have launched it was
+                      never wired to anything, and no column existed to save to, so
+                      the feature was unreachable and unrecordable. Options are part
+                      of what a dish *is* here (a drink to go with it, a size), so
+                      they belong on the same form as the price they change.
+                    */}
+                    <ItemOptionsEditor
+                      groups={editingItem.customizationGroups ?? []}
+                      onChange={(groups) =>
+                        setEditingItem({ ...editingItem, customizationGroups: groups })
+                      }
+                    />
+
                     <div>
                       <label className="text-sm font-bold text-[var(--ink)] mb-2 block">Badge (Optional)</label>
                       <p className="text-xs text-[var(--muted-foreground)] mb-3">
@@ -2466,19 +2547,6 @@ const addSection = async () => {
         )}
 
         {/* Bulk Actions Modal */}
-
-        {/* Customization Modal */}
-        {customizingItem && (
-          <AddCustomizationModal
-            isOpen={showCustomizationModal}
-            onClose={() => {
-              setShowCustomizationModal(false);
-              setCustomizingItem(null);
-            }}
-            onSave={handleSaveCustomizations}
-            existingGroups={customizingItem.customizationGroups}
-          />
-        )}
 
         {/* Delete Item Confirmation Modal */}
         {showDeleteItemModal && itemToDelete !== null && (
