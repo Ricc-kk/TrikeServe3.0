@@ -12,13 +12,18 @@ import { ImageWithFallback } from "../figma/ImageWithFallback";
 import AppHeader from "../ui/AppHeader";
 import AppShell from "../ui/AppShell";
 import BusinessSidebar from "./BusinessSidebar";
-import { AnalyticsLineChart, AnalyticsSparkline } from "../ui/AnalyticsCharts";
+import { AnalyticsLineChart, AnalyticsSparkline, AnalyticsDonutChart } from "../ui/AnalyticsCharts";
 import {
   buildSeries,
+  buildGrowthSeries,
+  ordersInRange,
+  isCancelled,
+  revenueOf,
   RANGE_OPTIONS,
   RANGE_HEADLINE,
   type RangeKey,
 } from "@/lib/salesSeries";
+import { topDishesByUnits, countUnitsByMenuItem, DISH_SLICE_COLORS } from "@/lib/topDishes";
 import { useAuth } from "../../contexts/AuthContext";
 import { supabase } from "../../../lib/supabase";
 import { supabaseHelpers } from "@/lib/supabase";
@@ -45,6 +50,19 @@ import { cuisineLabels } from "@/lib/foodTaxonomy";
  */
 const DEFAULT_MENU_IMAGE =
   "https://images.unsplash.com/photo-1546069901-ba9599a7e63c?w=400";
+
+/**
+ * Money for a stat tile.
+ *
+ * Abbreviates past a thousand because the figure is set at four digits in a tile
+ * two columns wide, and "₱12.4k" is read at a glance where "₱12,400" has to be
+ * parsed. Written once here because the tile and the chart header were each
+ * carrying their own copy of the same ternary, and they had already drifted.
+ */
+function formatPeso(value: number): string {
+  const n = Number(value) || 0;
+  return Math.abs(n) >= 1000 ? `₱${(n / 1000).toFixed(1)}k` : `₱${n.toFixed(0)}`;
+}
 
 function PopularMenuRows({ items }: { items: any[] }) {
   const topRef = useRef<HTMLDivElement | null>(null);
@@ -142,13 +160,19 @@ export default function BusinessDashboard() {
   const [restaurantLogo, setRestaurantLogo] = useState<string | null>(null);
   const [showNotifications, setShowNotifications] = useState(false);
   const [showMessages, setShowMessages] = useState(false);
+  /*
+   * Only the rating lives in state now.
+   *
+   * Total orders and revenue used to be summed here, over every order the shop has
+   * ever had, and shown beside a range filter that silently did nothing to them --
+   * so "Total Orders" beside the period figure compared a lifetime against a
+   * week, and the pair looked like a bug. Everything below is derived from the raw
+   * rows instead, so the filter is the only thing deciding what a tile shows.
+   */
   const [stats, setStats] = useState({
-    totalOrders: 0,
-    totalRevenue: 0,
     rating: 0,
     ratingCount: 0
   });
-  const [popularMenu, setPopularMenu] = useState<any[]>([]);
   /*
    * The orders this shop has, kept raw.
    *
@@ -158,6 +182,12 @@ export default function BusinessDashboard() {
    * pure recomputation, so the filter responds on the spot.
    */
   const [loadedOrders, setLoadedOrders] = useState<any[]>([]);
+  /*
+   * The menu, raw, for the same reason the orders are: the charts and the pie need
+   * to re-rank against whichever window is selected, and a pre-ranked list cannot
+   * do that.
+   */
+  const [loadedMenuItems, setLoadedMenuItems] = useState<any[]>([]);
   const [range, setRange] = useState<RangeKey>('week');
   const [isLoading, setIsLoading] = useState(true);
   const [restaurantId, setRestaurantId] = useState<string | null>(null);
@@ -322,31 +352,25 @@ export default function BusinessDashboard() {
         .order('created_at', { ascending: false });
 
       if (orders && orders.length > 0) {
-        // Calculate stats
-        const totalOrders = orders.length;
-        const totalRevenue = orders.reduce((sum: number, order: any) => sum + (order.total || 0), 0);
-
-        // Load the business's average rating from business_ratings.
-        let rating = 0;
-        let ratingCount = 0;
-        if (currentUser.id) {
-          const ratingRes = await supabaseHelpers.getBusinessRating(currentUser.id);
-          if (ratingRes && ratingRes.average != null) {
-            rating = Number(ratingRes.average.toFixed(1));
-            ratingCount = ratingRes.count;
-          }
-        }
-
-        setStats({
-          totalOrders,
-          totalRevenue,
-          rating,
-          ratingCount
-        });
-
-        // Held raw; the charts bucket from this on every range change.
+        // Held raw; everything below buckets from this on every range change.
         setLoadedOrders(orders);
       }
+
+      // Load the business's average rating from business_ratings.
+      //
+      // Outside the orders branch: a shop with no orders yet still has a rating to
+      // show, and tying it to the order count meant the card sat blank on the one
+      // screen a new shop is most likely to be looking at.
+      let rating = 0;
+      let ratingCount = 0;
+      if (currentUser.id) {
+        const ratingRes = await supabaseHelpers.getBusinessRating(currentUser.id);
+        if (ratingRes && ratingRes.average != null) {
+          rating = Number(ratingRes.average.toFixed(1));
+          ratingCount = ratingRes.count;
+        }
+      }
+      setStats({ rating, ratingCount });
 
       // Every menu item, because ranking by what actually sells needs the whole
       // menu to rank, not the first page of it.
@@ -356,48 +380,10 @@ export default function BusinessDashboard() {
         .eq('restaurant_id', businessRestaurantId)
         .order('created_at', { ascending: false });
 
-      if (menuItems) {
-
-        // Popular means most ordered, not most recently added. Orders keep
-        // their line items as a JSON string, so the counts come from walking
-        // them rather than from a column on the item.
-        const sold = new Map<string, number>();
-        for (const order of orders ?? []) {
-          let lines: any[] = [];
-          try {
-            const raw = typeof order.items === 'string' ? JSON.parse(order.items) : order.items;
-            if (Array.isArray(raw)) lines = raw;
-          } catch {
-            // A malformed line-item blob costs us this order's counts only.
-          }
-          for (const line of lines) {
-            const id = String(line?.id ?? '');
-            if (!id) continue;
-            sold.set(id, (sold.get(id) ?? 0) + Number(line?.quantity ?? 1));
-          }
-        }
-
-        const ranked = [...menuItems]
-          .sort((a: any, b: any) => {
-            const diff = (sold.get(String(b.id)) ?? 0) - (sold.get(String(a.id)) ?? 0);
-            // Ties fall back to newest first so the order is still stable.
-            return diff !== 0 ? diff : 0;
-          })
-          .slice(0, 12);
-
-        setPopularMenu(ranked.map((item: any) => ({
-          id: item.id,
-          name: item.name,
-          price: item.price,
-          // image_url, not image. The column is named image_url everywhere else
-          // in this app, so reading `image` here always found nothing and every
-          // dish fell through to the fallback -- which was via.placeholder.com, a
-          // service that has since been shut down, so the cards rendered a broken
-          // image glyph even for dishes that do have a photo uploaded.
-          image: item.image_url || DEFAULT_MENU_IMAGE,
-          sold: sold.get(String(item.id)) ?? 0
-        })));
-      }
+      // Held raw. The ranking is range-dependent, so it is derived below rather
+      // than baked in here -- otherwise switching Today/Week/Month would leave the
+      // cards showing a ranking the pie beside them no longer agreed with.
+      setLoadedMenuItems(menuItems ?? []);
 
       setIsLoading(false);
     } catch (error) {
@@ -407,26 +393,113 @@ export default function BusinessDashboard() {
   };
 
   /*
- * The two chart series, derived rather than stored.
+ * Cancelled orders are dropped once, here, so nothing downstream has to remember.
+ * Every tile, every chart and the pie all read this list, so they cannot disagree
+ * about whether a cancelled order counts.
+ */
+const liveOrders = useMemo(() => loadedOrders.filter((order) => !isCancelled(order)), [loadedOrders]);
+
+/*
+ * The two measures the tiles show, derived rather than stored.
  *
- * Both read the same rows and differ only in what they add up — money for sales,
- * one per order for volume — so `buildSeries` takes the measure as a callback and
- * there is one bucketing implementation rather than two that can disagree about
- * where a day ends.
+ * They read the same rows and differ only in what they add up -- one per order, or
+ * the money -- so `buildSeries` takes the measure as a callback and there is one
+ * bucketing implementation rather than two that can disagree about where a day
+ * ends.
  *
  * Memoised on the range, so switching it is instant and does not refetch.
  */
-const salesSeries = useMemo(
-  () => buildSeries(loadedOrders, range, (order) => Number(order.total) || 0),
-  [loadedOrders, range],
-);
-
 const orderSeries = useMemo(
-  () => buildSeries(loadedOrders, range, () => 1),
-  [loadedOrders, range],
+  () => buildSeries(liveOrders, range, () => 1),
+  [liveOrders, range],
 );
 
-/** Both charts read the same window, so one label covers them. */
+const revenueSeries = useMemo(
+  () => buildSeries(liveOrders, range, revenueOf),
+  [liveOrders, range],
+);
+
+/**
+ * Revenue growth, period over period.
+ *
+ * Derived from the revenue series rather than the orders, so it covers exactly the
+ * window the tile and the revenue chart are showing. Three views of one number
+ * that can be read against each other is the point; three independently computed
+ * ones would eventually disagree.
+ */
+const revenueGrowth = useMemo(() => buildGrowthSeries(revenueSeries), [revenueSeries]);
+
+/**
+ * The orders inside the window, for the figures that are not series-shaped.
+ *
+ * Counts units per dish rather than summing a column, so it needs the orders
+ * themselves. Memoised on the same key as the series, because it reads the same
+ * window -- two different notions of "this week" on one screen would be a trap.
+ */
+const rangeOrders = useMemo(() => ordersInRange(liveOrders, range), [liveOrders, range]);
+
+/**
+ * Units per dish, counted once.
+ *
+ * The pie and the menu cards both rank by this, so counting it in one place is what
+ * stops the top slice and the top card from disagreeing. One pass over the window
+ * rather than three.
+ */
+const unitsSold = useMemo(() => countUnitsByMenuItem(rangeOrders), [rangeOrders]);
+
+/** The best sellers, for the pie. */
+const topDishes = useMemo(
+  () => topDishesByUnits(rangeOrders, loadedMenuItems, 5, unitsSold),
+  [rangeOrders, loadedMenuItems, unitsSold],
+);
+
+/** Every unit sold in the window, across the whole menu. */
+const unitsSoldInRange = useMemo(() => {
+  let sum = 0;
+  for (const n of unitsSold.values()) sum += n;
+  return sum;
+}, [unitsSold]);
+
+/**
+ * Units covered by the slices actually drawn.
+ *
+ * Separate from the total above because the pie only shows the top five: a centre
+ * reading "47 units" over a ring that sums to 31 would be a number describing
+ * something the reader cannot see. This one is what the ring is worth.
+ */
+const topUnits = useMemo(
+  () => topDishes.reduce((sum, dish) => sum + dish.units, 0),
+  [topDishes],
+);
+
+/**
+ * The menu cards.
+ *
+ * Unlike the pie these include dishes nobody has ordered, because their job is to
+ * show what the shop sells -- a brand new shop has a full menu and no orders, and
+ * an empty row here would read as "no menu items yet" while the menu screen had
+ * four dishes on it. Sorted by the same range-scoped counts, so the top card is
+ * the top slice of the pie beside it.
+ */
+const popularMenu = useMemo(() => {
+  return [...loadedMenuItems]
+    .sort((a: any, b: any) => (unitsSold.get(String(b.id)) ?? 0) - (unitsSold.get(String(a.id)) ?? 0))
+    .slice(0, 12)
+    .map((item: any) => ({
+      id: item.id,
+      name: item.name,
+      price: item.price,
+      // image_url, not image. The column is named image_url everywhere else in
+      // this app, so reading `image` here always found nothing and every dish
+      // fell through to the fallback -- which was via.placeholder.com, a service
+      // that has since been shut down, so the cards rendered a broken image glyph
+      // even for dishes that do have a photo uploaded.
+      image: item.image_url || DEFAULT_MENU_IMAGE,
+      sold: unitsSold.get(String(item.id)) ?? 0,
+    }));
+}, [unitsSold, loadedMenuItems]);
+
+/** Every chart on the screen reads the same window, so one label covers them. */
 const rangeHeadline = RANGE_HEADLINE[range];
 
   /**
@@ -445,8 +518,11 @@ const trend = (series: { changePct: number | null; previousTotal: number | null 
   };
 };
 
-const salesTrend = trend(salesSeries);
+const revenueTrend = trend(revenueSeries);
 const orderTrend = trend(orderSeries);
+
+/** "vs previous week" reads wrong for Today; a day has a day behind it. */
+const previousWindowWord = range === 'today' ? 'day' : range;
 
   // Check if user is not verified
   if (!user?.isVerified) {
@@ -537,12 +613,16 @@ const orderTrend = trend(orderSeries);
 
           {/* Stats Cards */}
           <div className="grid grid-cols-2 xl:grid-cols-4 gap-3 lg:gap-4 mb-6 lg:mb-8">
-            {/* Total Orders */}
+            {/* Orders placed */}
             <Card className="p-4 lg:p-6 border border-line bg-surface">
               <div className="flex items-start justify-between mb-3 lg:mb-4">
                 <div className="min-w-0">
-                  <p className="text-xs lg:text-sm text-[var(--muted-foreground)] mb-1">Total Orders</p>
-                  <h2 className="text-2xl lg:text-4xl font-bold text-[var(--ink)]">{stats.totalOrders}</h2>
+                  <p className="text-xs lg:text-sm text-[var(--muted-foreground)] mb-1">
+                    {rangeHeadline} Orders
+                  </p>
+                  <h2 className="text-2xl lg:text-4xl font-bold text-[var(--ink)]">
+                    {orderSeries.count}
+                  </h2>
                 </div>
                 <div className="w-10 h-10 lg:w-12 lg:h-12 bg-[var(--primary-soft)] rounded-xl flex shrink-0 items-center justify-center">
                   <ShoppingBag className="w-5 h-5 lg:w-6 lg:h-6 text-[var(--primary)]" />
@@ -555,43 +635,67 @@ const orderTrend = trend(orderSeries);
               />
             </Card>
 
-            {/* Total Revenue */}
+            {/* Revenue — the food only; the delivery fee goes to the rider */}
             <Card className="p-4 lg:p-6 border border-line bg-surface">
               <div className="flex items-start justify-between mb-3 lg:mb-4">
                 <div className="min-w-0">
-                  <p className="text-xs lg:text-sm text-[var(--muted-foreground)] mb-1">Total Revenue</p>
-                  <h2 className="text-2xl lg:text-4xl font-bold text-[var(--ink)]">₱{(stats.totalRevenue >= 1000 ? (stats.totalRevenue / 1000).toFixed(1) : stats.totalRevenue.toFixed(0))}{stats.totalRevenue >= 1000 ? 'k' : ''}</h2>
+                  <p className="text-xs lg:text-sm text-[var(--muted-foreground)] mb-1">
+                    {rangeHeadline} Revenue
+                  </p>
+                  <h2 className="text-2xl lg:text-4xl font-bold text-[var(--ink)]">{formatPeso(revenueSeries.total)}</h2>
                 </div>
                 <div className="w-10 h-10 lg:w-12 lg:h-12 bg-[var(--amber-soft)] rounded-xl flex shrink-0 items-center justify-center">
                   <PhilippinePeso className="w-5 h-5 lg:w-6 lg:h-6 text-[var(--amber)]" aria-hidden="true" />
                 </div>
               </div>
               <AnalyticsSparkline
-                data={salesSeries.points}
+                data={revenueSeries.points}
                 color="var(--amber)"
                 height={32}
               />
             </Card>
 
-            {/* Earnings — the figure the range filter applies to */}
+            {/* Revenue growth — sits directly after Revenue, because it is that
+                figure's rate of change and reading them apart would be asking the
+                shop to hold both in their head to make sense of either. */}
             <Card className="p-4 lg:p-6 border border-line bg-surface">
               <div className="flex items-start justify-between mb-3 lg:mb-4">
                 <div className="min-w-0">
                   <p className="text-xs lg:text-sm text-[var(--muted-foreground)] mb-1">
-                    {rangeHeadline} Earnings
+                    {rangeHeadline} Growth
                   </p>
-                  <h2 className="text-2xl lg:text-4xl font-bold text-[var(--ink)]">
-                    ₱{(salesSeries.total >= 1000 ? (salesSeries.total / 1000).toFixed(1) : salesSeries.total.toFixed(0))}
-                    {salesSeries.total >= 1000 ? 'k' : ''}
+                  <h2
+                    className={`text-2xl lg:text-4xl font-bold ${
+                      revenueGrowth.averagePct == null
+                        ? 'text-[var(--muted-foreground)]'
+                        : revenueGrowth.averagePct >= 0
+                          ? 'text-[var(--ink)]'
+                          : 'text-[var(--error)]'
+                    }`}
+                  >
+                    {revenueGrowth.averagePct == null
+                      ? '—'
+                      : `${revenueGrowth.averagePct >= 0 ? '+' : ''}${revenueGrowth.averagePct.toFixed(0)}%`}
                   </h2>
                 </div>
-                <div className="w-10 h-10 lg:w-12 lg:h-12 bg-[var(--info-soft)] rounded-xl flex shrink-0 items-center justify-center">
-                  <TrendingUp className="w-5 h-5 lg:w-6 lg:h-6 text-[var(--info)]" />
+                <div className="w-10 h-10 lg:w-12 lg:h-12 bg-[var(--success-soft)] rounded-xl flex shrink-0 items-center justify-center">
+                  <TrendingUp className="w-5 h-5 lg:w-6 lg:h-6 text-[var(--success)]" />
                 </div>
               </div>
+              {/*
+                * The comparable periods only.
+                *
+                * A sparkline draws one continuous line, so a period with nothing to
+                * compare against would have to become a zero and drag the shape
+                * toward the axis -- claiming revenue held flat through days it did
+                * not trade. Dropping the gaps keeps this a picture of the shape; the
+                * chart further down is the version that shows where they were.
+                */}
               <AnalyticsSparkline
-                data={salesSeries.points}
-                color="var(--info)"
+                data={revenueGrowth.points
+                  .filter((p): p is { label: string; fullLabel: string; value: number } => p.value != null)
+                  .map((p) => ({ label: p.label, value: p.value }))}
+                color="var(--success)"
                 height={32}
               />
             </Card>
@@ -719,65 +823,160 @@ const orderTrend = trend(orderSeries);
               )}
             </div>
 
-            {/* Sales */}
+            {/* Most ordered */}
             <div>
-              <h2 className="text-xl lg:text-2xl font-bold text-[var(--ink)] mb-4">Sales</h2>
+              <h2 className="text-xl lg:text-2xl font-bold text-[var(--ink)] mb-4">
+                Most Ordered
+              </h2>
               <Card className="p-5 lg:p-6 border border-line bg-surface">
-                <div className="mb-5">
+                <div className="mb-4">
                   <p className="text-sm text-[var(--muted-foreground)] mb-1">{rangeHeadline}</p>
                   <h3 className="text-2xl lg:text-3xl font-bold text-[var(--ink)]">
-                    {salesSeries.total >= 1000
-                      ? `₱${(salesSeries.total / 1000).toFixed(1)}k`
-                      : `₱${salesSeries.total.toFixed(0)}`}
+                    {unitsSoldInRange} unit{unitsSoldInRange === 1 ? '' : 's'} sold
                   </h3>
                 </div>
 
-                <AnalyticsLineChart
-                  data={salesSeries.points}
-                  hoverLabels={salesSeries.points.map((p) => p.fullLabel)}
-                  color="var(--primary)"
-                  valuePrefix="₱"
-                  height={200}
-                  emptyHint="Start receiving orders to see your sales trend"
+                <AnalyticsDonutChart
+                  data={topDishes.map((dish, i) => ({
+                    label: dish.name,
+                    value: dish.units,
+                    color: DISH_SLICE_COLORS[i % DISH_SLICE_COLORS.length],
+                  }))}
+                  centerLabel={`Top ${topDishes.length || 0}`}
+                  centerValue={String(topUnits)}
+                  valuePrefix=""
+                  emptyHint="Once orders come in, your best sellers show up here"
                 />
 
-                {/* Real change against the window before this one. Was the
-                    literal text "+20%", which never moved whatever the data
-                    did. Hidden when there is no previous window to compare. */}
-                {salesTrend && (
-                  <span className={`mt-4 inline-block rounded-full px-2.5 py-1 text-xs font-bold ${salesTrend.tone}`}>
-                    {salesTrend.text} vs previous {range === 'today' ? 'day' : range}
-                  </span>
+                {/*
+                 * The ring only holds the top five, so say so rather than letting a
+                 * shop read the percentages as the whole menu. Anything past the
+                 * cut still counted towards the figure in the headline above.
+                 */}
+                {topDishes.length > 0 && topDishes.length < 5 && (
+                  <p className="mt-4 text-xs text-[var(--muted-foreground)]">
+                    {topDishes.length} of your dishes sold in this range.
+                  </p>
                 )}
               </Card>
             </div>
           </div>
 
-          {/* Orders */}
-          <div>
-            <h2 className="text-xl lg:text-2xl font-bold text-[var(--ink)] mb-4">Orders</h2>
-            <Card className="p-5 lg:p-6 border border-line bg-surface">
-              <div className="mb-5">
-                <p className="text-sm text-[var(--muted-foreground)] mb-1">{rangeHeadline}</p>
-                <h3 className="text-2xl lg:text-3xl font-bold text-[var(--ink)]">
-                  {orderSeries.count} order{orderSeries.count !== 1 ? 's' : ''}
-                </h3>
-              </div>
+          {/*
+           * Two line charts, one per tile the range filter drives, plus revenue
+           * growth.
+           *
+           * The tiles answer "how much"; these answer "when". Same measures in the
+           * same order, so a shop can match a figure on the row above to the line
+           * that produced it without reading any labels.
+           */}
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 lg:gap-8">
+            <div>
+              <h2 className="text-xl lg:text-2xl font-bold text-[var(--ink)] mb-4">Orders</h2>
+              <Card className="p-5 lg:p-6 border border-line bg-surface">
+                <div className="mb-5">
+                  <p className="text-sm text-[var(--muted-foreground)] mb-1">{rangeHeadline}</p>
+                  <h3 className="text-2xl lg:text-3xl font-bold text-[var(--ink)]">
+                    {orderSeries.count} order{orderSeries.count !== 1 ? 's' : ''}
+                  </h3>
+                </div>
 
-              <AnalyticsLineChart
-                data={orderSeries.points}
-                hoverLabels={orderSeries.points.map((p) => p.fullLabel)}
-                color="var(--info)"
-                height={200}
-                emptyHint="Start receiving orders to see your order trend"
-              />
+                <AnalyticsLineChart
+                  data={orderSeries.points}
+                  hoverLabels={orderSeries.points.map((p) => p.fullLabel)}
+                  color="var(--primary)"
+                  height={200}
+                  emptyHint="Start receiving orders to see your order trend"
+                />
 
-              {orderTrend && (
-                <span className={`mt-4 inline-block rounded-full px-2.5 py-1 text-xs font-bold ${orderTrend.tone}`}>
-                  {orderTrend.text} vs previous {range === 'today' ? 'day' : range}
-                </span>
-              )}
-            </Card>
+                {/* Real change against the window before this one. Was the literal
+                    text "+20%", which never moved whatever the data did. Hidden when
+                    there is no previous window to compare. */}
+                {orderTrend && (
+                  <span className={`mt-4 inline-block rounded-full px-2.5 py-1 text-xs font-bold ${orderTrend.tone}`}>
+                    {orderTrend.text} vs previous {previousWindowWord}
+                  </span>
+                )}
+              </Card>
+            </div>
+
+            <div>
+              <h2 className="text-xl lg:text-2xl font-bold text-[var(--ink)] mb-4">Revenue</h2>
+              <Card className="p-5 lg:p-6 border border-line bg-surface">
+                <div className="mb-5">
+                  <p className="text-sm text-[var(--muted-foreground)] mb-1">{rangeHeadline}</p>
+                  <h3 className="text-2xl lg:text-3xl font-bold text-[var(--ink)]">
+                    {formatPeso(revenueSeries.total)}
+                  </h3>
+                  <p className="mt-1 text-xs text-[var(--muted-foreground)]">
+                    Food only — the delivery fee goes to the rider
+                  </p>
+                </div>
+
+                <AnalyticsLineChart
+                  data={revenueSeries.points}
+                  hoverLabels={revenueSeries.points.map((p) => p.fullLabel)}
+                  color="var(--amber)"
+                  valuePrefix="₱"
+                  height={200}
+                  emptyHint="Start receiving orders to see your revenue trend"
+                />
+
+                {revenueTrend && (
+                  <span className={`mt-4 inline-block rounded-full px-2.5 py-1 text-xs font-bold ${revenueTrend.tone}`}>
+                    {revenueTrend.text} vs previous {previousWindowWord}
+                  </span>
+                )}
+              </Card>
+            </div>
+
+            <div>
+              <h2 className="text-xl lg:text-2xl font-bold text-[var(--ink)] mb-4">Revenue Growth</h2>
+              <Card className="p-5 lg:p-6 border border-line bg-surface">
+                <div className="mb-5">
+                  <p className="text-sm text-[var(--muted-foreground)] mb-1">{rangeHeadline}</p>
+                  <h3
+                    className={`text-2xl lg:text-3xl font-bold ${
+                      revenueGrowth.averagePct == null
+                        ? 'text-[var(--muted-foreground)]'
+                        : revenueGrowth.averagePct >= 0
+                          ? 'text-[var(--ink)]'
+                          : 'text-[var(--error)]'
+                    }`}
+                  >
+                    {revenueGrowth.averagePct == null
+                      ? '—'
+                      : `${revenueGrowth.averagePct >= 0 ? '+' : ''}${revenueGrowth.averagePct.toFixed(0)}%`}
+                  </h3>
+                  <p className="mt-1 text-xs text-[var(--muted-foreground)]">
+                    {revenueGrowth.averagePct == null
+                      ? 'Average change, period over period'
+                      : 'Average change vs the previous period'}
+                  </p>
+                </div>
+
+                <AnalyticsLineChart
+                  data={revenueGrowth.points}
+                  hoverLabels={revenueGrowth.points.map((p) => p.fullLabel)}
+                  color="var(--success)"
+                  valueSuffix="%"
+                  height={200}
+                  emptyHint="Needs two periods with sales in this range to compare them"
+                />
+
+                {/*
+                  * Gaps are drawn as gaps, so the periods that could not be
+                  * compared need saying out loud -- otherwise a broken line reads
+                  * as a broken chart rather than as "no sales the day before".
+                 */}
+                {revenueGrowth.skipped > 0 && revenueGrowth.averagePct != null && (
+                  <p className="mt-4 text-xs text-[var(--muted-foreground)]">
+                    {revenueGrowth.skipped} period{revenueGrowth.skipped === 1 ? '' : 's'} not
+                    compared — no sales the period before.
+                  </p>
+                )}
+              </Card>
+            </div>
           </div>
         </div>
 

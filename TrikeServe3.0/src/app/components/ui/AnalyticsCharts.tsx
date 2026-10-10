@@ -21,6 +21,18 @@ export interface BarDatum {
   value: number;
 }
 
+/**
+ * A point on a line, which may be missing.
+ *
+ * `null` is a gap, not a zero. It matters for growth, where a period after one
+ * with no revenue has no percentage to report and drawing it as 0% would claim
+ * the shop held steady through a day it did not trade.
+ */
+export interface LineDatum {
+  label: string;
+  value: number | null;
+}
+
 export interface DonutDatum {
   label: string;
   value: number;
@@ -162,6 +174,11 @@ export function AnalyticsBarChart({
  * that happens to dip to the baseline at 3am, so the empty state is reserved for
  * a series with no points at all — and for a series that is entirely zero, where
  * a line along the axis would be a chart with nothing to say.
+ *
+ * Handles a negative series and missing points, both of which a growth chart
+ * needs: zero always sits on the plot, so the line's position relative to it
+ * reads as gain or loss at a glance, and a `null` breaks the line rather than
+ * being drawn through.
  */
 export function AnalyticsLineChart({
   data,
@@ -173,7 +190,7 @@ export function AnalyticsLineChart({
   /** Parallel to `data`; falls back to `label` when omitted. */
   hoverLabels,
 }: {
-  data: BarDatum[];
+  data: LineDatum[];
   color?: string;
   valuePrefix?: string;
   valueSuffix?: string;
@@ -185,23 +202,39 @@ export function AnalyticsLineChart({
   const { ref: hostRef, width } = useElementWidth();
   const fillId = useId();
 
-  const hasPoints = data.length > 0;
-  const hasMovement = data.some((d) => d.value > 0);
-  const rawMax = hasPoints ? Math.max(...data.map((d) => d.value), 0) : 0;
+  const values = data.map((d) => d.value);
+  const readings = values.filter((v): v is number => v != null);
 
-  const max = useMemo(() => {
-    if (!hasPoints) return 0;
-    const step = niceStep(rawMax);
-    return Math.max(Math.ceil(rawMax / step) * step, step * 4);
-  }, [hasPoints, rawMax]);
+  const hasPoints = readings.length > 0;
+  // Any departure from zero counts, in either direction: a line that only ever
+  // fell is declining revenue, which is the thing most worth seeing.
+  const hasMovement = readings.some((v) => v !== 0);
+
+  // Zero is always on the plot, so a chart of percentages has a reference the
+  // eye can compare against rather than a floating axis.
+  const rawMax = hasPoints ? Math.max(...readings, 0) : 0;
+  const rawMin = hasPoints ? Math.min(...readings, 0) : 0;
+
+  const bound = useMemo(() => {
+    if (!hasPoints) return { max: 0, min: 0 };
+    const step = niceStep(Math.max(Math.abs(rawMax), Math.abs(rawMin)));
+    return {
+      max: Math.max(Math.ceil(rawMax / step) * step, step),
+      min: Math.min(Math.floor(rawMin / step) * step, 0),
+    };
+  }, [hasPoints, rawMax, rawMin]);
+
+  const span = bound.max - bound.min;
 
   const gridValues = useMemo(() => {
-    if (max <= 0) return [];
-    const step = niceStep(rawMax);
+    if (!hasPoints || span <= 0) return [];
+    const step = niceStep(Math.max(Math.abs(rawMax), Math.abs(rawMin)));
     const values: number[] = [];
-    for (let v = 0; v <= max + 0.001; v += step) values.push(Number(v.toFixed(6)));
+    for (let v = bound.min; v <= bound.max + 0.001; v += step) {
+      values.push(Number(v.toFixed(6)));
+    }
     return values;
-  }, [max, rawMax]);
+  }, [bound.min, bound.max, hasPoints, rawMax, rawMin, span]);
 
   if (!hasPoints || !hasMovement) {
     return <EmptyChart hint={emptyHint} />;
@@ -213,13 +246,31 @@ export function AnalyticsLineChart({
   // visibly stops short of the chart it belongs to.
   const xFor = (index: number) =>
     data.length === 1 ? plotWidth / 2 : (index / (data.length - 1)) * plotWidth;
-  const yFor = (value: number) => (max > 0 ? height - (value / max) * height : height);
+  const yFor = (value: number) =>
+    span > 0 ? height - ((value - bound.min) / span) * height : height;
 
-  const points = data.map((d, i) => ({ x: xFor(i), y: yFor(d.value) }));
-  const linePath = points
-    .map((p, i) => `${i === 0 ? "M" : "L"} ${p.x} ${p.y}`)
-    .join(" ");
-  const areaPath = `${linePath} L ${points[points.length - 1].x} ${height} L ${points[0].x} ${height} Z`;
+  const points = values.map((value, i) =>
+    value == null ? null : { x: xFor(i), y: yFor(value) },
+  );
+
+  /*
+   * The line, broken wherever a reading is missing.
+   *
+   * Joining across a gap would draw a slope from one side of it to the other, and
+   * that slope is a claim about the days in between that nobody measured. One
+   * segment per run of consecutive readings instead, so a gap is visibly a gap.
+   */
+  const segments: Array<Array<{ x: number; y: number }>> = [];
+  let run: Array<{ x: number; y: number }> = [];
+  for (const point of points) {
+    if (point == null) {
+      if (run.length > 0) segments.push(run);
+      run = [];
+      continue;
+    }
+    run.push(point);
+  }
+  if (run.length > 0) segments.push(run);
 
   const labelStride = Math.max(1, Math.ceil(data.length / 7));
 
@@ -232,9 +283,10 @@ export function AnalyticsLineChart({
   };
 
   const activeIndex = active;
-  const activeValue = activeIndex != null ? data[activeIndex] : null;
+  const activeValue = activeIndex != null ? values[activeIndex] : null;
   const activePoint = activeIndex != null ? points[activeIndex] : null;
-  const peak = Math.max(...data.map((d) => d.value));
+  const peak = Math.max(...readings);
+  const trough = Math.min(...readings);
 
   return (
     <div>
@@ -275,7 +327,7 @@ export function AnalyticsLineChart({
           onPointerDown={handlePointer}
           onPointerLeave={() => setActive(null)}
           role="img"
-          aria-label={`Line chart over ${data.length} periods. Highest ${valuePrefix}${formatCompact(peak)}${valueSuffix}.`}
+          aria-label={`Line chart over ${data.length} periods. Highest ${valuePrefix}${formatCompact(peak)}${valueSuffix}, lowest ${valuePrefix}${formatCompact(trough)}${valueSuffix}.`}
         >
           {/* Nothing is drawn until the width is known — a first paint at an
               assumed width would visibly jump once measured. */}
@@ -300,30 +352,44 @@ export function AnalyticsLineChart({
                 />
               ))}
 
-              <path d={areaPath} fill={`url(#${fillId})`} />
-              <path
-                d={linePath}
-                fill="none"
-                stroke={color}
-                strokeWidth="2.5"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              />
+              {segments.map((segment, si) => (
+                <path
+                  key={`seg-${si}`}
+                  d={`${segment
+                    .map((p, i) => `${i === 0 ? "M" : "L"} ${p.x} ${p.y}`)
+                    .join(" ")} L ${segment[segment.length - 1].x} ${height} L ${segment[0].x} ${height} Z`}
+                  fill={`url(#${fillId})`}
+                />
+              ))}
+
+              {segments.map((segment, si) => (
+                <path
+                  key={`line-${si}`}
+                  d={segment.map((p, i) => `${i === 0 ? "M" : "L"} ${p.x} ${p.y}`).join(" ")}
+                  fill="none"
+                  stroke={color}
+                  strokeWidth="2.5"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                />
+              ))}
 
               {/* Dots only while they stay distinct — at 30 daily points on a
                   phone they would merge into a smear. */}
               {data.length <= 14 &&
-                points.map((p, i) => (
-                  <circle
-                    key={i}
-                    cx={p.x}
-                    cy={p.y}
-                    r={activeIndex === i ? 5 : 3}
-                    fill={color}
-                    stroke="var(--surface)"
-                    strokeWidth="1.5"
-                  />
-                ))}
+                points.map((p, i) =>
+                  p == null ? null : (
+                    <circle
+                      key={i}
+                      cx={p.x}
+                      cy={p.y}
+                      r={activeIndex === i ? 5 : 3}
+                      fill={color}
+                      stroke="var(--surface)"
+                      strokeWidth="1.5"
+                    />
+                  ),
+                )}
 
               {activePoint && (
                 <>
@@ -351,14 +417,15 @@ export function AnalyticsLineChart({
           )}
 
           {/* Hover readout, anchored to the point rather than the cursor: on touch
-              there is no cursor to follow. */}
-          {activeValue && activePoint && (
+              there is no cursor to follow. Nothing is shown over a gap — there is
+              no reading there to report. */}
+          {activeValue != null && activePoint && (
             <div
               className="pointer-events-none absolute top-0 z-10 -translate-x-1/2 -translate-y-full whitespace-nowrap rounded-lg bg-[var(--ink)] px-2 py-1 text-[11px] font-bold text-white shadow-lg"
               style={{ left: activePoint.x }}
             >
-              {hoverLabels?.[activeIndex!] ?? activeValue.label} · {valuePrefix}
-              {formatCompact(activeValue.value)}
+              {hoverLabels?.[activeIndex!] ?? data[activeIndex!].label} · {valuePrefix}
+              {formatCompact(activeValue)}
               {valueSuffix}
             </div>
           )}
@@ -410,9 +477,15 @@ export function AnalyticsSparkline({
   // the bottom of the box.
   const yFor = (value: number) => (span > 0 ? height - ((value - min) / span) * height : height / 2);
 
-  if (values.length < 2 || width <= 0) {
+  if (values.length < 2) {
     // One point has no shape, and a flat line would read as "steady" — which is a
     // claim. An empty box is the honest answer.
+    //
+    // Note what is *not* tested here: width. The div carrying the measuring ref
+    // lives in the branch below, so returning early on `width <= 0` meant the ref
+    // was never attached, width never got set, and the condition could never be
+    // satisfied — every sparkline stayed an empty box for good. The line chart
+    // avoided this by testing only its data and guarding the drawing separately.
     return <div style={{ height }} aria-hidden="true" />;
   }
 

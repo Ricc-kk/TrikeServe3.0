@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from "react";
-import { Store, Package, Clock, User, ChevronRight, CheckCircle, XCircle, AlertCircle, Menu, Navigation, MessageCircle } from "lucide-react";
+import { Store, Package, Clock, User, CheckCircle, XCircle, AlertCircle, Menu, Navigation, MessageCircle } from "lucide-react";
 import { Link, useNavigate, useLocation } from "react-router";
 import { Card } from "../ui/card";
 import { Badge } from "../ui/badge";
@@ -30,6 +30,174 @@ function formatOrderTime(value: string): string {
   const suffix = hours < 12 ? 'AM' : 'PM';
   const twelve = hours % 12 === 0 ? 12 : hours % 12;
   return `${twelve}:${String(at.getMinutes()).padStart(2, '0')}${suffix}`;
+}
+
+/** A run of skipped pages, drawn as an ellipsis rather than a button. */
+const PAGE_GAP = -1;
+
+/**
+ * Which page numbers to draw, and where the gaps go.
+ *
+ * First and last are always shown, plus the current page and two either side of
+ * it. Two rather than one because being able to see page 50 in a window of 48-52
+ * is what tells someone they are deep in the list; a window of 49-51 in a list of
+ * 99 says the same thing with less to look at.
+ *
+ * A gap of exactly one page is drawn as that page instead of an ellipsis. "1 2 3 …
+ * 5" is strictly worse than "1 2 3 4 5" -- it spends the same room hiding a single
+ * number that was perfectly well able to fit.
+ */
+function pageWindow(current: number, pageCount: number): number[] {
+  // Seven or fewer is small enough to just list.
+  if (pageCount <= 7) return Array.from({ length: pageCount }, (_, i) => i + 1);
+
+  const kept = new Set<number>([1, pageCount]);
+  for (let p = current - 2; p <= current + 2; p++) {
+    if (p >= 1 && p <= pageCount) kept.add(p);
+  }
+
+  const sorted = [...kept].sort((a, b) => a - b);
+  const out: number[] = [];
+
+  for (let i = 0; i < sorted.length; i++) {
+    if (i > 0) {
+      const jump = sorted[i] - sorted[i - 1];
+      if (jump === 2) out.push(sorted[i] - 1);
+      else if (jump > 2) out.push(PAGE_GAP);
+    }
+    out.push(sorted[i]);
+  }
+
+  return out;
+}
+
+/**
+ * Page controls for a long order list.
+ *
+ * Renders nothing at all when there is a single page, so a shop with six orders is
+ * never shown furniture for a problem it does not have.
+ *
+ * The four arrows are the ones a reader will actually reach for on a long list:
+ * first, previous, next, last. Numbered pages cover the middle, because a shop with
+ * ninety pages of orders is looking for one it has seen before rather than the one
+ * after the current.
+ *
+ * The jump box is there for the same reason. When someone knows the order is on
+ * page 60, walking there 60 times is not a reasonable thing to ask of them, and
+ * they should not have to know it is on page 60 in order to ask.
+ */
+function OrderPagination({
+  page,
+  pageCount,
+  onChange,
+}: {
+  page: number;
+  pageCount: number;
+  onChange: (page: number) => void;
+}) {
+  /*
+   * The typed page. Kept as a string because an <input> mid-edit is allowed to be
+   * nonsense -- "1" on the way to "19" -- and clamping on every keystroke would
+   * fight the person typing. It is only interpreted when they commit it.
+   */
+  const [draft, setDraft] = useState(String(page));
+
+  // Follow the page when it moves for a reason other than typing.
+  useEffect(() => setDraft(String(page)), [page]);
+
+  // Declared before the early return below; hooks cannot be conditional.
+  const pages = pageWindow(page, pageCount);
+
+  if (pageCount <= 1) return null;
+
+  const go = (next: number) => {
+    // A jump past either end lands on the end rather than on nothing.
+    onChange(Math.min(Math.max(next, 1), pageCount));
+  };
+
+  const commitDraft = () => {
+    const wanted = Number.parseInt(draft, 10);
+    if (Number.isFinite(wanted)) go(wanted);
+  };
+
+  const arrow =
+    'grid h-8 w-8 shrink-0 place-items-center rounded-lg border border-line text-sm font-bold text-[var(--ink)] transition-colors hover:bg-[var(--muted)] disabled:opacity-30 disabled:cursor-not-allowed disabled:hover:bg-transparent';
+  const numberButton =
+    'grid h-8 min-w-8 shrink-0 place-items-center rounded-lg px-1.5 text-xs font-bold tabular-nums transition-colors';
+
+  return (
+    <nav
+      aria-label="Order pages"
+      className="flex flex-wrap items-center justify-center gap-1 pt-2 pb-1"
+    >
+      <button type="button" onClick={() => go(1)} disabled={page === 1}
+        aria-label="First page" className={arrow}>
+        <span aria-hidden="true">«</span>
+      </button>
+
+      <button type="button" onClick={() => go(page - 1)} disabled={page === 1}
+        aria-label="Previous page" className={arrow}>
+        <span aria-hidden="true">‹</span>
+      </button>
+
+      {pages.map((p, i) =>
+        p === PAGE_GAP ? (
+          <span
+            key={`gap-${i}`}
+            aria-hidden="true"
+            className="grid h-8 w-6 shrink-0 place-items-center text-xs text-[var(--muted-foreground)]"
+          >
+            …
+          </span>
+        ) : (
+          <button
+            key={p}
+            type="button"
+            onClick={() => go(p)}
+            aria-current={p === page ? 'page' : undefined}
+            aria-label={`Page ${p}`}
+            className={`${numberButton} ${
+              p === page
+                ? 'bg-[var(--primary)] text-white'
+                : 'border border-line text-[var(--ink)] hover:bg-[var(--muted)]'
+            }`}
+          >
+            {p}
+          </button>
+        ),
+      )}
+
+      <button type="button" onClick={() => go(page + 1)} disabled={page === pageCount}
+        aria-label="Next page" className={arrow}>
+        <span aria-hidden="true">›</span>
+      </button>
+
+      <button type="button" onClick={() => go(pageCount)} disabled={page === pageCount}
+        aria-label="Last page" className={arrow}>
+        <span aria-hidden="true">»</span>
+      </button>
+
+      <form
+        onSubmit={(e) => {
+          e.preventDefault();
+          commitDraft();
+        }}
+        className="ml-1 flex shrink-0 items-center gap-1.5"
+      >
+        <label htmlFor="order-page-jump" className="text-xs text-[var(--muted-foreground)]">
+          Go to
+        </label>
+        <input
+          id="order-page-jump"
+          type="text"
+          inputMode="numeric"
+          value={draft}
+          onChange={(e) => setDraft(e.target.value.replace(/[^0-9]/g, ''))}
+          className="h-8 w-12 rounded-lg border border-line bg-surface px-2 text-center text-xs font-bold tabular-nums text-[var(--ink)] focus:border-[var(--primary)] focus:outline-none"
+        />
+      </form>
+    </nav>
+  );
 }
 
 interface Order {
@@ -591,6 +759,19 @@ export default function BusinessOrders() {
    */
   const [acceptedOrderIds, setAcceptedOrderIds] = useState<string[]>([]);
 
+  /** Orders shown per page. Ten is roughly one screen on a phone. */
+  const PAGE_SIZE = 10;
+
+  /*
+   * Held as the raw number the reader chose, clamped when read.
+   *
+   * Storing the clamped value instead would mean writing back to state during
+   * render, and the list can shrink between renders -- on a timer, from a poll --
+   * so the clamp has to be re-derivable every time rather than latched once.
+   */
+  const [rawActivePage, setRawActivePage] = useState(1);
+  const [rawHistoryPage, setRawHistoryPage] = useState(1);
+
   const markAccepted = (orderId: string) =>
     setAcceptedOrderIds((prev) => [orderId, ...prev.filter((id) => id !== orderId)]);
 
@@ -629,6 +810,43 @@ export default function BusinessOrders() {
     selectedStatusFilter === 'all'
       ? prioritiseAccepted(activeOrders)
       : activeOrders.filter((o) => o.status === selectedStatusFilter);
+
+  /*
+   * Paging, ten at a time.
+   *
+   * The two lists page independently: a shop with three active orders and forty in
+   * history should not have to scroll past three rows of nothing to reach the ones
+   * it is looking for.
+   *
+   * The page is clamped rather than corrected in an effect. This list shrinks under
+   * the reader's feet -- accepting an order moves it out of Active into History --
+   * and an effect would correct it one render later, which is a frame of an empty
+   * list before the clamp lands. Deriving the safe page means the list is never
+   * wrong, only ever out of date.
+   */
+  const activePageCount = Math.max(1, Math.ceil(filteredActiveOrders.length / PAGE_SIZE));
+  const historyPageCount = Math.max(1, Math.ceil(historyOrders.length / PAGE_SIZE));
+  const activePage = Math.min(rawActivePage, activePageCount);
+  const historyPage = Math.min(rawHistoryPage, historyPageCount);
+
+  const pagedActiveOrders = filteredActiveOrders.slice(
+    (activePage - 1) * PAGE_SIZE,
+    activePage * PAGE_SIZE,
+  );
+  const pagedHistoryOrders = historyOrders.slice(
+    (historyPage - 1) * PAGE_SIZE,
+    historyPage * PAGE_SIZE,
+  );
+
+  /*
+   * A filter change throws away the reader's place, so it takes them back to the
+   * first page. Without this, someone on page 4 of All who taps Pending lands on
+   * page 4 of two rows and is told there is nothing there.
+   */
+  useEffect(() => {
+    setRawActivePage(1);
+    setRawHistoryPage(1);
+  }, [selectedTab, selectedStatusFilter]);
 
   /**
    * Shop: the GCash transfer has arrived and been checked.
@@ -1151,7 +1369,8 @@ export default function BusinessOrders() {
         <div className="px-3 md:px-5 py-3 md:py-4 space-y-1.5 md:space-y-2 pb-6">
           {selectedTab === 'active' ? (
             filteredActiveOrders.length > 0 ? (
-              filteredActiveOrders.map((order) => (
+              <>
+                {pagedActiveOrders.map((order) => (
                 <Card
                   key={order.id}
                   onClick={() => setSelectedOrder(order)}
@@ -1159,7 +1378,11 @@ export default function BusinessOrders() {
                 >
                   <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-1 md:gap-3 mb-1.5">
                     <div className="min-w-0">
-                      <div className="flex items-center gap-2 mb-1 flex-wrap">
+                      {/* No margin under the order number. The customer name
+                          belongs to it, not to the items further down, and a gap
+                          there split one thing into two lines that read as
+                          separate rows. */}
+                      <div className="flex items-center gap-2 flex-wrap">
                         <h3 className="font-bold text-[var(--ink)] text-sm md:text-base">#{order.orderNumber}</h3>
                         <Badge className={`${getStatusColor(order.status)} text-white text-xs`}>
                           {getStatusLabel(order.status)}
@@ -1196,7 +1419,13 @@ export default function BusinessOrders() {
                     )}
                   </div>
                 </Card>
-              ))
+                ))}
+                <OrderPagination
+                  page={activePage}
+                  pageCount={activePageCount}
+                  onChange={setRawActivePage}
+                />
+              </>
             ) : (
               <div className="text-center py-12">
                 <Clock className="w-12 md:w-16 h-12 md:h-16 text-[var(--border)] mx-auto mb-3" />
@@ -1205,7 +1434,8 @@ export default function BusinessOrders() {
             )
           ) : (
             historyOrders.length > 0 ? (
-              historyOrders.map((order) => (
+              <>
+                {pagedHistoryOrders.map((order) => (
                 <Card
                   key={order.id}
                   onClick={() => setSelectedOrder(order)}
@@ -1213,7 +1443,11 @@ export default function BusinessOrders() {
                 >
                   <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 md:gap-3 mb-3">
                     <div className="min-w-0">
-                      <div className="flex items-center gap-2 mb-1 flex-wrap">
+                      {/* No margin under the order number. The customer name
+                          belongs to it, not to the items further down, and a gap
+                          there split one thing into two lines that read as
+                          separate rows. */}
+                      <div className="flex items-center gap-2 flex-wrap">
                         <h3 className="font-bold text-[var(--ink)] text-sm md:text-base">#{order.orderNumber}</h3>
                         <Badge className={`${getStatusColor(order.status)} text-white text-xs`}>
                           {getStatusLabel(order.status)}
@@ -1248,7 +1482,13 @@ export default function BusinessOrders() {
                     </div>
                   )}
                 </Card>
-              ))
+                ))}
+                <OrderPagination
+                  page={historyPage}
+                  pageCount={historyPageCount}
+                  onChange={setRawHistoryPage}
+                />
+              </>
             ) : (
               <div className="text-center py-12">
                 <Package className="w-12 md:w-16 h-12 md:h-16 text-[var(--border)] mx-auto mb-3" />

@@ -100,6 +100,66 @@ function windowFor(range: RangeKey, now: Date): Window {
   return { start, buckets: 30, bucketMs: DAY };
 }
 
+/* ------------------------------------------------------------------ measures */
+
+/**
+ * A cancelled order is not part of any of this.
+ *
+ * It was placed and then withdrawn, so no money changed hands and no food left the
+ * shop. Counting one inflates the order count and adds a total that was never
+ * earned — which matters most exactly when a shop needs to trust the number,
+ * because the orders it cancelled are the ones it already knows did not pay.
+ */
+export function isCancelled(order: Record<string, any>): boolean {
+  return String(order?.status ?? "").toLowerCase() === "cancelled";
+}
+
+/**
+ * Revenue: what the shop is actually paid.
+ *
+ * The delivery fee is not part of it. Checkout takes the food by GCash
+ * (`gcash_amount` is the subtotal) and the rider collects the fee in cash at
+ * handover, so it passes straight through to the rider and never lands in the
+ * shop's account. Summing the whole bill would report money the business does not
+ * have, and a shop comparing that figure against what actually arrived would
+ * think it had been shorted every week.
+ *
+ * The fallback is for rows written before `subtotal` was stored: the bill is the
+ * food plus the delivery, so the food is whatever is left once the fee is off.
+ */
+export function revenueOf(order: Record<string, any>): number {
+  const subtotal = Number(order?.subtotal);
+  if (Number.isFinite(subtotal) && subtotal > 0) return subtotal;
+  return Math.max(
+    (Number(order?.total) || 0) - (Number(order?.delivery_fee) || 0),
+    0,
+  );
+}
+
+/**
+ * The orders inside one window.
+ *
+ * `buildSeries` does its own bucketing, so this is not needed for a series — it is
+ * here for the figures that are not series-shaped, like which dishes sold. Those
+ * need the orders themselves rather than a sum per bucket.
+ */
+export function ordersInRange(
+  orders: Array<Record<string, any>>,
+  range: RangeKey,
+  now: Date = new Date(),
+): Array<Record<string, any>> {
+  const win = windowFor(range, now);
+  const end = new Date(win.start.getTime() + win.buckets * win.bucketMs);
+
+  return (orders ?? []).filter((order) => {
+    const at = new Date(order?.created_at);
+    if (Number.isNaN(at.getTime())) return false;
+    // Half-open, matching buildSeries, so an order on a boundary lands in one
+    // window and not two.
+    return at >= win.start && at < end;
+  });
+}
+
 const WEEKDAY = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
 function labelFor(bucketStart: Date, range: RangeKey): { label: string; fullLabel: string } {
@@ -198,4 +258,63 @@ export function buildSeries(
     previousTotal: canCompare ? previousTotal : null,
     changePct,
   };
+}
+
+/* -------------------------------------------------------------------- growth */
+
+export interface GrowthPoint {
+  label: string;
+  fullLabel: string;
+  /**
+   * Change against the previous period, as a percentage.
+   *
+   * Null where there is no percentage to report: the first period has nothing
+   * before it, and a period following a period with no revenue has a zero
+   * denominator. Those are drawn as gaps rather than as 0%, because "no revenue
+   * last period" and "revenue was exactly the same" are different facts, and a
+   * reader cannot tell them apart from a flat line.
+   */
+  value: number | null;
+}
+
+export interface GrowthSeries {
+  points: GrowthPoint[];
+  /** Mean of the comparable periods, or null when nothing could be compared. */
+  averagePct: number | null;
+  /** How many periods had nothing to compare against. */
+  skipped: number;
+}
+
+/**
+ * Period-over-period revenue growth, as percentages.
+ *
+ * Reads off a revenue series rather than the raw orders, so it always covers
+ * exactly the window the rest of the overview is showing and cannot drift from it.
+ *
+ * Negative values are kept. A period that took less than the one before it is the
+ * single most useful thing this chart can say, and clamping it away would leave a
+ * line that only ever rises.
+ */
+export function buildGrowthSeries(sales: SalesSeries): GrowthSeries {
+  const points: GrowthPoint[] = sales.points.map((point, i) => {
+    if (i === 0) return { label: point.label, fullLabel: point.fullLabel, value: null };
+
+    const base = sales.points[i - 1].value;
+    if (base <= 0) return { label: point.label, fullLabel: point.fullLabel, value: null };
+
+    return {
+      label: point.label,
+      fullLabel: point.fullLabel,
+      value: ((point.value - base) / base) * 100,
+    };
+  });
+
+  const comparable = points
+    .map((p) => p.value)
+    .filter((v): v is number => v != null);
+
+  const averagePct =
+    comparable.length > 0 ? comparable.reduce((sum, v) => sum + v, 0) / comparable.length : null;
+
+  return { points, averagePct, skipped: points.length - comparable.length };
 }
