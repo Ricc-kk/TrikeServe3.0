@@ -13,6 +13,13 @@ export type { ItemChoiceGroup, ItemOption };
 interface ItemOptionsEditorProps {
   groups: ItemChoiceGroup[];
   onChange: (groups: ItemChoiceGroup[]) => void;
+  /**
+   * True when the database has nowhere to keep these.
+   *
+   * Shown before the shop types anything, because otherwise they fill the whole
+   * thing in, press Save, and are told it worked.
+   */
+  savingBlocked?: boolean;
 }
 
 /**
@@ -23,7 +30,11 @@ interface ItemOptionsEditorProps {
  * label they will not use. New groups are lettered rather than numbered so the
  * list reads the way a menu does.
  */
-export default function ItemOptionsEditor({ groups, onChange }: ItemOptionsEditorProps) {
+export default function ItemOptionsEditor({
+  groups,
+  onChange,
+  savingBlocked = false,
+}: ItemOptionsEditorProps) {
   /*
    * What the price boxes are showing right now, for the option being typed in.
    *
@@ -120,6 +131,19 @@ export default function ItemOptionsEditor({ groups, onChange }: ItemOptionsEdito
         Let the customer pick from a list before they add it &mdash; a drink to go
         with, a size, a flavour. Rename a choice to whatever your shop calls it.
       </p>
+
+      {savingBlocked && (
+        <div className="mb-3 rounded-xl border border-[var(--amber)] bg-[var(--amber-soft)] p-3">
+          <p className="text-xs font-bold text-[var(--amber-ink)]">
+            Choices can&rsquo;t be saved yet
+          </p>
+          <p className="mt-1 text-xs text-[var(--amber-ink)]">
+            The database needs updating before choices can be kept. Run
+            ADD_MENU_ITEM_OPTIONS.sql in Supabase. Anything you type here now will
+            be lost when you close this page.
+          </p>
+        </div>
+      )}
 
       {groups.length === 0 ? (
         <button

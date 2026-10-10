@@ -76,6 +76,19 @@ export default function BusinessMenu() {
   // would take menu editing down for every shop on the day this ships. Probed once
   // on the first menu load, which already selects the column.
   const optionsColumnExists = useRef(true);
+  /*
+   * Set when the menu holds options that cannot be written.
+   *
+   * Without ADD_MENU_ITEM_OPTIONS.sql the column does not exist, so options are
+   * left out of the write rather than failing the whole menu. That trade is right
+   * for the rest of the menu and terrible for the options: the shop fills in the
+   * choices, presses Save, sees "Saved", and the choices are gone -- they were only
+   * ever in the page. It then reads as though signing out threw them away, because
+   * they survive until the page is reloaded and not one moment longer.
+   *
+   * So this says so plainly, and names the file to run.
+   */
+  const [optionsNotSaved, setOptionsNotSaved] = useState(false);
   const [selectedSection, setSelectedSection] = useState("all");
   const [showAddSection, setShowAddSection] = useState(false);
   // When set, the section modal is renaming this one rather than creating a new one.
@@ -979,6 +992,20 @@ const itemFingerprint = (item: MenuItem) =>
       setMenuItems(nextItems);
       setSavedSnapshot(snapshotOf(nextItems));
       setNotice({ kind: 'saved' });
+
+      /*
+       * Did the choices actually make it to the database?
+       *
+       * Asked after the write, because that is the only moment it is knowable, and
+       * the answer decides whether "Saved" is true. When the column is missing the
+       * options were dropped from the payload and the rest of the menu is fine, so
+       * the save still succeeds -- but it must not claim to have kept something it
+       * threw away.
+       */
+      const optionsDropped =
+        !optionsColumnExists.current &&
+        nextItems.some((item) => usableChoiceGroups(item.customizationGroups ?? []).length > 0);
+      setOptionsNotSaved(optionsDropped);
     } catch (error: any) {
       console.error('[Menu] Save failed:', error);
 
@@ -2004,6 +2031,7 @@ const addSection = async () => {
                     */}
                     <ItemOptionsEditor
                       groups={editingItem.customizationGroups ?? []}
+                      savingBlocked={!optionsColumnExists.current}
                       onChange={(groups) =>
                         setEditingItem({ ...editingItem, customizationGroups: groups })
                       }
@@ -2235,6 +2263,22 @@ const addSection = async () => {
                 </button>
 
                 <div className="ml-auto flex items-center gap-2">
+                  {/*
+                    Options that were not kept.
+
+                    Says it here rather than only in the console, because the whole
+                    point is that the shop cannot otherwise tell: the save succeeds,
+                    the screen says "Saved", and the choices are gone the next time
+                    the page loads.
+                  */}
+                  {optionsNotSaved && (
+                    <span
+                      role="alert"
+                      className="text-xs font-semibold text-[var(--amber-ink)]"
+                    >
+                      Choices not saved — run ADD_MENU_ITEM_OPTIONS.sql
+                    </span>
+                  )}
                   {saveError && (
                     <span role="alert" className="text-xs font-semibold text-[var(--error)]">
                       {saveError}
@@ -2253,19 +2297,32 @@ const addSection = async () => {
                     </span>
                   )}
 
-                  <button
-                    type="button"
-                    onClick={saveChanges}
-                    disabled={!isDirty || isSaving}
-                    className={`inline-flex items-center gap-1.5 rounded-xl px-3 py-2 text-xs font-bold transition-colors ${
-                      isDirty
-                        ? 'bg-[var(--success)] text-white hover:opacity-90'
-                        : 'bg-[var(--border)] text-[var(--muted-foreground)]'
-                    }`}
-                  >
-                    <Save className="w-4 h-4" aria-hidden="true" />
-                    {isSaving ? 'Saving…' : 'Save Changes'}
-                  </button>
+                  {/*
+                    Save, only when there is something to save.
+
+                    It used to sit there permanently, greyed out whenever the menu
+                    matched what was stored. That is the one button on the screen
+                    that is always asking for a decision and is almost never
+                    actionable: for most of a session there is nothing to write, so
+                    it read as part of the furniture and invited a press that did
+                    nothing. Hiding it makes it mean something again -- it appears
+                    the moment the menu stops matching what is saved, and that is
+                    also the moment there is a second unsaved-changes dialog.
+
+                    Not merely disabled while saving, because a save in flight has
+                    to stay on screen or the bar appears to jump.
+                  */}
+                  {(isDirty || isSaving) && (
+                    <button
+                      type="button"
+                      onClick={saveChanges}
+                      disabled={isSaving}
+                      className="inline-flex items-center gap-1.5 rounded-xl bg-[var(--success)] px-3 py-2 text-xs font-bold text-white transition-colors hover:opacity-90 active:scale-[0.97]"
+                    >
+                      <Save className="w-4 h-4" aria-hidden="true" />
+                      {isSaving ? 'Saving…' : 'Save Changes'}
+                    </button>
+                  )}
                 </div>
               </div>
             </header>
