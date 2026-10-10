@@ -1811,6 +1811,29 @@ export default function BusinessOrders() {
                         <div className="min-w-0 flex-1">
                           <p className="font-semibold text-[var(--ink)] text-sm md:text-base truncate">{item.name}</p>
                           <p className="text-xs md:text-sm text-[var(--muted-foreground)]">Qty: {item.quantity}</p>
+                          {/*
+                            The choices and the note, on the shop's own copy of the
+                            order.
+
+                            This list showed the dish name, the quantity and the price,
+                            and nothing else -- so a customer who asked for the rice
+                            done differently, or picked one drink over another, gave
+                            the kitchen no way of knowing. The customer is shown both
+                            on their side, but a note the shop cannot read is a note
+                            that was never said.
+                          */}
+                          {Array.isArray(item.customizations) && item.customizations.length > 0 && (
+                            <p className="text-xs text-[var(--muted-foreground)]">
+                              {item.customizations
+                                .map((c: any) => c.optionName)
+                                .join(" · ")}
+                            </p>
+                          )}
+                          {item.note && (
+                            <p className="text-xs text-[var(--amber-ink)]">
+                              Note: {item.note}
+                            </p>
+                          )}
                         </div>
                         <p className="font-bold text-[var(--ink)] text-sm md:text-base flex-shrink-0">₱{(item.price * item.quantity).toFixed(2)}</p>
                       </div>

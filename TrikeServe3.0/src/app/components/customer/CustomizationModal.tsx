@@ -34,7 +34,13 @@ interface CustomizationModalProps {
   item: MenuItem;
   isOpen: boolean;
   onClose: () => void;
-  onAddToCart: (item: MenuItem, quantity: number, customizations: any[]) => void;
+  onAddToCart: (
+    item: MenuItem,
+    quantity: number,
+    customizations: any[],
+    /** The customer's own words for the kitchen, if they left any. */
+    note?: string,
+  ) => void;
 }
 
 export default function CustomizationModal({
@@ -44,12 +50,16 @@ export default function CustomizationModal({
   onAddToCart,
 }: CustomizationModalProps) {
   const [quantity, setQuantity] = useState(1);
+  const [note, setNote] = useState("");
   const [selections, setSelections] = useState<Record<number, number[]>>({});
   const [validationErrors, setValidationErrors] = useState<Record<number, string>>({});
 
   useEffect(() => {
     if (isOpen) {
       setQuantity(1);
+      // Cleared with everything else: a note left over from the last dish would
+      // be silently attached to this one.
+      setNote("");
       setSelections({});
       setValidationErrors({});
     }
@@ -139,7 +149,7 @@ export default function CustomizationModal({
       });
     }
 
-    onAddToCart(item, quantity, customizations);
+    onAddToCart(item, quantity, customizations, note.trim() || undefined);
     onClose();
   };
 
@@ -288,6 +298,41 @@ export default function CustomizationModal({
                 <p className="text-[var(--muted-foreground)]">No customization options available for this item.</p>
               </Card>
             )}
+
+            {/* Note for the kitchen.
+
+                Sits with the choices rather than at checkout because most of what
+                people need to say is about the food itself -- "well done", "no
+                onions", "less sweet" -- and asking for it a screen later, once the
+                dish is already in the cart, means the customer has to go back and
+                find it again.
+
+                Optional, and blank by default: most orders need nothing said, and a
+                required box on every dish is friction the shop would rather not
+                collect. */}
+            <Card className="p-5 border border-line">
+              <label
+                htmlFor="dish-note"
+                className="mb-1 flex items-baseline gap-2 font-bold text-[var(--ink)]"
+              >
+                Note for the restaurant
+                <span className="text-xs font-normal text-[var(--muted-foreground)]">
+                  Optional
+                </span>
+              </label>
+              <p className="mb-3 text-xs text-[var(--muted-foreground)]">
+                Anything the kitchen should know about this dish.
+              </p>
+              <textarea
+                id="dish-note"
+                value={note}
+                onChange={(e) => setNote(e.target.value.slice(0, 200))}
+                rows={2}
+                maxLength={200}
+                placeholder="e.g. Less sweet, please"
+                className="w-full resize-none rounded-lg border border-line bg-surface px-3 py-2 text-sm outline-none placeholder:text-[var(--muted-foreground)] focus:border-[var(--primary)]"
+              />
+            </Card>
 
             {/* Quantity Selector */}
             <Card className="p-5 border border-line">

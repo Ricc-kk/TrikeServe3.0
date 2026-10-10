@@ -304,6 +304,22 @@ export function useRestaurantProfile() {
   return {
     restaurant,
     restaurantId: restaurant?.id ?? null,
+    /**
+     * The one name to show for this shop, everywhere.
+     *
+     * `restaurants.name` is the shop as the customers see it; `users.business_name`
+     * is a copy of it. Screens that used the copy went stale whenever the row was
+     * renamed from the other end, so they now read this instead of reaching for
+     * either column themselves.
+     *
+     * Falls back to the copy only while the shop row has not loaded, so the first
+     * paint is never blank.
+     */
+    shopName:
+      restaurant?.name?.trim() ||
+      user?.businessName?.trim() ||
+      user?.name?.trim() ||
+      "My Restaurant",
     pending,
     pendingValues,
     hasPending: pending != null,

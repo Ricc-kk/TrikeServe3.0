@@ -89,6 +89,19 @@ export default function RestaurantDetail() {
   const [showSearchModal, setShowSearchModal] = useState(false);
   const [showRatingsModal, setShowRatingsModal] = useState(false);
   const [showCustomizationModal, setShowCustomizationModal] = useState(false);
+  /*
+   * The dish just added, held so its details can be shown back.
+   *
+   * Null when there is nothing worth confirming -- a dish with no choices and no
+   * note goes straight into the cart as before.
+   */
+  const [addedItem, setAddedItem] = useState<{
+    item: MenuItem;
+    quantity: number;
+    customizations: any[];
+    note: string;
+    total: number;
+  } | null>(null);
   const [selectedItem, setSelectedItem] = useState<MenuItem | null>(null);
   const [restaurantData, setRestaurantData] = useState<RestaurantData | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -550,12 +563,12 @@ customizationGroups: parseChoiceGroups(item.customization_groups).filter(
       setSelectedItem(item);
       setShowCustomizationModal(true);
     } else {
-      // Add directly to cart without customizations
+      // No choices to make, so there is no sheet to write a note on either.
       addToCartWithCustomizations(item, 1, []);
     }
   };
 
-   const addToCartWithCustomizations = (item: MenuItem, quantity: number, customizations: any[]) => {
+   const addToCartWithCustomizations = (item: MenuItem, quantity: number, customizations: any[], note?: string) => {
      const restaurantInfo = {
        id: restaurantId || restaurantData.name, // Use restaurant ID
        businessUserId: restaurantData.businessUserId, // ✅ CRITICAL: Add business user ID for orders
@@ -585,9 +598,33 @@ customizationGroups: parseChoiceGroups(item.customization_groups).filter(
        image: item.image,
        category: item.category,
        badge: item.badge,
-       customizations: customizations
+       customizations: customizations,
+       note: note || undefined
      });
 
+     /*
+      * Show what was just added.
+      *
+      * A toast saying "1 item added" confirms that something happened but not
+      * what: the dish, the drink that was picked, the price it moved to and the
+      * note written for the kitchen all disappear into the cart. Each of those is
+      * something the customer may have got wrong, and the choices are what they
+      * were most likely to misread. This is the last point at which they can see
+      * it before the order is placed.
+      *
+      * Only when there is something to show. A dish with no choices and no note
+      * has nothing to confirm, and interrupting every plain add with a dialog
+      * would be noise on a menu.
+      */
+     if (customizations.length > 0 || note) {
+       setAddedItem({
+         item,
+         quantity,
+         customizations,
+         note: note || "",
+         total: itemPrice * quantity,
+       });
+     }
      // Show notification with View Cart action
      showNotification(
        `${quantity} item${quantity > 1 ? 's' : ''} added to the cart`,
@@ -1270,7 +1307,93 @@ if (unfiledItems.length > 0) sectionGroups.push({ id: "__unfiled", name: "More",
          />
        )}
 
-       {/* Store Closed Modal */}
+       {/* What was just added.
+
+            The receipt for the choice sheet: the dish, what was chosen for it and
+            what it now costs, plus the customer's own note back to them verbatim.
+            They can still fix it here -- nothing is placed yet. */}
+        {addedItem && (
+          <div className="fixed inset-0 z-[2000] flex items-center justify-center bg-black/60 p-4">
+            <div
+              className="w-full max-w-sm rounded-2xl bg-[var(--surface)] p-6 shadow-2xl"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="mb-4 flex items-center gap-3">
+                <div className="grid size-11 shrink-0 place-items-center rounded-full bg-[var(--success)]/10">
+                  <Check className="size-5 text-[var(--success)]" strokeWidth={3} />
+                </div>
+                <div className="min-w-0">
+                  <h2 className="text-lg font-bold text-[var(--ink)]">Added to cart</h2>
+                  <p className="text-xs text-[var(--muted-foreground)]">
+                    Check this over before you order.
+                  </p>
+                </div>
+              </div>
+
+              <div className="mb-4 rounded-xl border border-line p-3">
+                <div className="flex items-start justify-between gap-3">
+                  <p className="min-w-0 text-sm font-bold text-[var(--ink)]">
+                    {addedItem.item.name}
+                    {addedItem.quantity > 1 && (
+                      <span className="ml-1 font-normal text-[var(--muted-foreground)]">
+                        ×{addedItem.quantity}
+                      </span>
+                    )}
+                  </p>
+                  <p className="shrink-0 text-sm font-bold text-[var(--ink)]">
+                    ₱{addedItem.total.toFixed(2)}
+                  </p>
+                </div>
+
+                {addedItem.customizations.length > 0 && (
+                  <div className="mt-2 space-y-0.5">
+                    {addedItem.customizations.map((c: any, idx: number) => (
+                      <p key={idx} className="text-xs text-[var(--muted-foreground)]">
+                        • {c.optionName}
+                        {c.price > 0 && (
+                          <span className="text-[var(--primary)]"> +₱{c.price.toFixed(2)}</span>
+                        )}
+                      </p>
+                    ))}
+                  </div>
+                )}
+
+                {addedItem.note && (
+                  <div className="mt-2 border-t border-line pt-2">
+                    <p className="text-[10px] font-bold uppercase tracking-wide text-[var(--muted-foreground)]">
+                      Note for the restaurant
+                    </p>
+                    <p className="mt-0.5 text-xs italic text-[var(--ink)]">
+                      &ldquo;{addedItem.note}&rdquo;
+                    </p>
+                  </div>
+                )}
+              </div>
+
+              <div className="flex gap-3">
+                <button
+                  type="button"
+                  onClick={() => setAddedItem(null)}
+                  className="flex-1 rounded-xl border border-line px-4 py-3 font-bold text-[var(--ink)] transition-colors hover:bg-[var(--muted)] active:scale-[0.97]"
+                >
+                  Keep shopping
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setAddedItem(null);
+                    navigate('/customer/cart');
+                  }}
+                  className="flex-1 rounded-xl bg-[var(--primary)] px-4 py-3 font-bold text-white transition-opacity hover:opacity-90 active:scale-[0.97]"
+                >
+                  View cart
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Store Closed Modal */}
        {showStoreClosedModal && (
          <div className="fixed inset-0 bg-black/50 z-[2000] flex items-center justify-center px-4">
            <div className="bg-surface rounded-3xl p-6 max-w-sm w-full shadow-2xl animate-in zoom-in duration-300">

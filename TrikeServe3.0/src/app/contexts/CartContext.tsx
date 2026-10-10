@@ -19,7 +19,66 @@ export interface CartItem {
   category: string;
   badge?: "most-ordered" | "most-liked" | "signature";
   customizations?: CustomizationSelection[];
+  /**
+   * The customer's own words for the kitchen, written while choosing the dish.
+   *
+   * Kept per cart row rather than per order: "less sweet" applies to the one dish
+   * it was written for, and folding it into a single order-wide note would put it
+   * against every item on the ticket.
+   *
+   * Part of the row's identity, so the same dish with and without a note is two
+   * rows -- otherwise adding it a second time with a different note would bump the
+   * quantity of the first and lose what the customer said.
+   */
+  note?: string;
+  /**
+   * What makes this row one row.
+   *
+   * The same dish with a different drink is a different thing to order, so the
+   * cart has to be able to hold two of them. Rows used to be identified by the
+   * menu item id alone, which quietly assumed one dish could only be in the cart
+   * one way -- true until items had options. After they did, adding "Silog
+   * Tocilog with Coke" to a cart already holding "Silog Tocilog with Iced Tea"
+   * merged into the existing row and threw the new drink away: the customer got
+   * two of the drink they had not chosen. The quantity buttons and the remove
+   * button had the same problem, acting on whichever row came first.
+   *
+   * Derived rather than stored randomly, so the same dish with the same choices
+   * always lands on the same row, wherever the cart was loaded from.
+   */
+  lineKey?: string;
 }
+
+/**
+ * The identity of a cart row: the dish, plus exactly what was chosen for it.
+ *
+ * Order-independent, so re-picking the same options in a different order is
+ * recognised as the same row rather than a second copy of it.
+ */
+export const cartLineKey = (
+  itemId: number | string,
+  customizations?: CustomizationSelection[],
+  note?: string,
+): string => {
+  const choices = (customizations ?? [])
+    .map((c) => `${c.groupId}:${c.optionId}`)
+    .sort()
+    .join(",");
+  // The note is part of the key. Two rows for the same dish that differ only in
+  // what the customer asked the kitchen to do are genuinely different orders.
+  const said = (note ?? "").trim();
+  return said ? `${itemId}#${choices}#${said}` : `${itemId}#${choices}`;
+};
+
+/**
+ * Fall back for a row saved before `lineKey` existed.
+ *
+ * Carts are persisted in localStorage, so a real customer's cart can arrive from
+ * a previous version without the field. Treating those as "no choices" keeps them
+ * working instead of dropping the whole cart on a missing property.
+ */
+const keyOf = (item: CartItem): string =>
+  item.lineKey ?? cartLineKey(item.id, item.customizations, item.note);
 
 export interface CartRestaurant {
   id: string; // Changed from number to string to store business email
@@ -107,16 +166,17 @@ export function CartProvider({ children }: { children: ReactNode }) {
         // Restaurant exists, check if item exists
         const updatedRestaurants = [...prev];
         const restaurant = updatedRestaurants[existingRestaurantIndex];
+        const incoming = { ...item, lineKey: keyOf(item) };
         const existingItemIndex = restaurant.items.findIndex(
-          (i) => i.id === item.id
+          (i) => keyOf(i) === incoming.lineKey
         );
 
         if (existingItemIndex !== -1) {
-          // Item exists, increase quantity
+          // Same dish and same choices: increase quantity
           restaurant.items[existingItemIndex].quantity += 1;
         } else {
-          // Item doesn't exist, add it
-          restaurant.items.push({ ...item, quantity: 1 });
+          // A different set of choices is a different order, not more of this one
+          restaurant.items.push({ ...incoming, quantity: 1 });
         }
 
         return updatedRestaurants;
@@ -129,7 +189,7 @@ export function CartProvider({ children }: { children: ReactNode }) {
           distance: restaurantData.distance,
           estimatedTime: restaurantData.time,
           image: restaurantData.image,
-          items: [{ ...item, quantity: 1 }],
+          items: [{ ...item, lineKey: keyOf(item), quantity: 1 }],
           deliveryFee: restaurantData.deliveryFee,
           businessUserId: restaurantData.businessUserId,
           supabaseRestaurantId: restaurantData.supabaseRestaurantId,
@@ -140,7 +200,15 @@ export function CartProvider({ children }: { children: ReactNode }) {
     });
   };
 
-  const updateItemQuantity = (restaurantId: string, itemId: number | string, change: number) => {
+  const updateItemQuantity = (
+    restaurantId: string,
+    itemId: number | string,
+    change: number,
+  ) => {
+    // The caller may pass either the line key or the bare menu item id. Falling
+    // back keeps every existing call site working while they migrate.
+    const itemKey =
+      typeof itemId === "string" ? itemId : cartLineKey(itemId);
     setCartRestaurants((prev) =>
       prev.map((restaurant) => {
         if (restaurant.id === restaurantId) {
@@ -148,7 +216,7 @@ export function CartProvider({ children }: { children: ReactNode }) {
             ...restaurant,
             items: restaurant.items
               .map((item) =>
-                item.id === itemId
+                keyOf(item) === itemKey
                   ? { ...item, quantity: Math.max(0, Math.min(50, item.quantity + change)) }
                   : item
               )
@@ -161,13 +229,18 @@ export function CartProvider({ children }: { children: ReactNode }) {
   };
 
   const removeItem = (restaurantId: string, itemId: number | string) => {
+    const itemKey =
+      typeof itemId === "string" ? itemId : cartLineKey(itemId);
     setCartRestaurants((prev) =>
       prev
         .map((restaurant) => {
           if (restaurant.id === restaurantId) {
             return {
               ...restaurant,
-              items: restaurant.items.filter((item) => item.id !== itemId),
+              // Only the row asked for. Removing by the bare menu id took out every
+              // version of the dish in the cart, so "remove the one with Coke" also
+              // removed the one with Iced Tea.
+              items: restaurant.items.filter((item) => keyOf(item) !== itemKey),
             };
           }
           return restaurant;

@@ -13,7 +13,7 @@ import { Navigate, useLocation, useNavigate } from "react-router";
 import { Card } from "../ui/card";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { ImageWithFallback } from "../figma/ImageWithFallback";
-import { useCart } from "../../contexts/CartContext";
+import { useCart, cartLineKey } from "../../contexts/CartContext";
 import { useOrders } from "../../contexts/OrderContext";
 import { useAuth } from "../../contexts/AuthContext";
 import { usePreviousPage } from "../../hooks/usePreviousPage";
@@ -389,6 +389,7 @@ export default function CartCheckout() {
           image: item.image,
           category: item.category,
           customizations: item.customizations || [],
+          note: item.note || undefined,
         })),
         subtotal,
         deliveryFee,
@@ -768,6 +769,15 @@ export default function CartCheckout() {
                         ))}
                       </div>
                     )}
+                    {/* The note the customer wrote for the kitchen, carried all
+                        the way from the choice sheet. It is what the shop reads to
+                        know the dish needs doing differently, so it has to be on the
+                        order they are about to accept -- not just in the cart. */}
+                    {item.note && (
+                      <p className="mt-1 text-xs italic text-[var(--muted-foreground)]">
+                        Note: {item.note}
+                      </p>
+                    )}
                   </div>
 
                   <div className="text-right">
@@ -794,11 +804,11 @@ export default function CartCheckout() {
                           if (isLastItem) {
                             setPendingRemoveItem({
                               restaurantId: restaurant.id,
-                              itemId: item.id,
+                              itemId: cartLineKey(item.id, item.customizations),
                             });
                             setShowRemoveConfirm(true);
                           } else {
-                            removeItem(restaurant.id, item.id);
+                            removeItem(restaurant.id, cartLineKey(item.id, item.customizations));
                           }
                         }}
                         className="grid size-8 place-items-center rounded-full border-2 border-[var(--error)] transition-transform active:scale-90"
@@ -808,7 +818,7 @@ export default function CartCheckout() {
                     ) : (
                       <button
                         type="button"
-                        onClick={() => updateItemQuantity(restaurant.id, item.id, -1)}
+                        onClick={() => updateItemQuantity(restaurant.id, cartLineKey(item.id, item.customizations), -1)}
                         className="grid size-8 place-items-center rounded-full border border-line transition-transform active:scale-90"
                       >
                         <Minus size={14} className="text-[var(--ink)]" />
@@ -819,7 +829,7 @@ export default function CartCheckout() {
                     </span>
                     <button
                       type="button"
-                      onClick={() => updateItemQuantity(restaurant.id, item.id, 1)}
+                      onClick={() => updateItemQuantity(restaurant.id, cartLineKey(item.id, item.customizations), 1)}
                       disabled={item.quantity >= 50}
                       className={`grid size-8 place-items-center rounded-full border-2 transition-transform active:scale-90 ${
                         item.quantity >= 50

@@ -597,6 +597,27 @@ export async function applyBusinessProfileUpdate(
       }
     }
 
+    /*
+     * Same problem, same fix, for the name.
+     *
+     * `restaurants.name` is the shop as customers see it and as orders are made
+     * out; `users.business_name` is what the app header and the Settings screen
+     * read. A rename applied here used to update only the first, so approving a
+     * staged rename moved the storefront and left the owner's own header showing
+     * the old name. This is the path a rename actually travels -- the business
+     * proposes, the Super Admin applies -- so this is where the copy has to be
+     * brought along.
+     */
+    if (patch.business_user_id && typeof patch.name === 'string' && patch.name.trim()) {
+      const { error: nameError } = await supabase
+        .from('users')
+        .update({ business_name: patch.name.trim(), updated_at: new Date().toISOString() })
+        .eq('id', patch.business_user_id);
+      if (nameError) {
+        console.warn('[applyBusinessProfileUpdate] users.business_name not mirrored:', nameError);
+      }
+    }
+
     return { success: true };
   } catch (error) {
     console.error('[applyBusinessProfileUpdate] error:', error);

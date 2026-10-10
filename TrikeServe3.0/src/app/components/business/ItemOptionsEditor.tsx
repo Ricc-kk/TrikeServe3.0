@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { Plus, Trash2, Check, X } from "lucide-react";
 
 import {
@@ -23,6 +24,50 @@ interface ItemOptionsEditorProps {
  * list reads the way a menu does.
  */
 export default function ItemOptionsEditor({ groups, onChange }: ItemOptionsEditorProps) {
+  /*
+   * What the price boxes are showing right now, for the option being typed in.
+   *
+   * The stored price is a number and an option with no surcharge is `0`, so a
+   * field driven straight off it shows a `0` in every empty box and cannot be
+   * emptied: delete the digits and it puts `0` straight back, which reads as the
+   * shop having set a price of zero rather than left it blank. Half-typed values
+   * are worse -- typing "10." or clearing it to type a new number both fight a
+   * controlled numeric input.
+   *
+   * So the raw text is held here while an option is being edited, and the model
+   * keeps the number. The draft is dropped on blur, which is also what normalises
+   * "10." into "10" and clears a box the owner emptied and walked away from.
+   */
+  const [priceDrafts, setPriceDrafts] = useState<Record<string, string>>({});
+
+  const draftKey = (groupId: number, optionId: number) => `${groupId}:${optionId}`;
+
+  const priceText = (groupId: number, option: ItemOption) => {
+    const key = draftKey(groupId, option.id);
+    if (key in priceDrafts) return priceDrafts[key];
+    return option.price > 0 ? String(option.price) : "";
+  };
+
+  const setPriceDraft = (
+    groupId: number,
+    optionId: number,
+    text: string,
+    commit: (price: number) => void,
+  ) => {
+    setPriceDrafts((prev) => ({ ...prev, [draftKey(groupId, optionId)]: text }));
+    // Kept in step with every keystroke so the value is never lost if the owner
+    // hits Save without leaving the field. Anything unparseable is no surcharge.
+    const parsed = parseFloat(text);
+    commit(Number.isFinite(parsed) && parsed > 0 ? parsed : 0);
+  };
+
+  const clearPriceDraft = (groupId: number, optionId: number) =>
+    setPriceDrafts((prev) => {
+      const next = { ...prev };
+      delete next[draftKey(groupId, optionId)];
+      return next;
+    });
+
   const updateGroup = (groupId: number, updates: Partial<ItemChoiceGroup>) =>
     onChange(groups.map((g) => (g.id === groupId ? { ...g, ...updates } : g)));
 
@@ -161,16 +206,31 @@ export default function ItemOptionsEditor({ groups, onChange }: ItemOptionsEdito
                     />
                     <div className="flex shrink-0 items-center gap-1">
                       <span className="text-xs text-[var(--muted-foreground)]">+&#8369;</span>
+                      {/*
+                         `type="text"`, not `type="number"`.
+
+                         A number input sanitises anything that is not a complete
+                         number as you type: clearing it is fine, but "10." and
+                         "-1" are thrown away mid-edit and the box empties itself
+                         while the caret is still in it. That is the same "cannot
+                         be blank" problem wearing a different hat, and it cannot
+                         be fixed from the state layer because the DOM never holds
+                         the half-typed value to hand back.
+
+                         `inputMode="decimal"` keeps the numeric keypad on a phone,
+                         which is the part that actually mattered here.
+                       */}
                       <input
-                        type="number"
-                        min="0"
-                        step="0.01"
-                        value={option.price}
+                        type="text"
+                        inputMode="decimal"
+                        value={priceText(group.id, option)}
+                        placeholder="0"
                         onChange={(e) =>
-                          updateOption(group.id, option.id, {
-                            price: Math.max(0, parseFloat(e.target.value) || 0),
-                          })
+                          setPriceDraft(group.id, option.id, e.target.value, (price) =>
+                            updateOption(group.id, option.id, { price }),
+                          )
                         }
+                        onBlur={() => clearPriceDraft(group.id, option.id)}
                         aria-label={`${option.name || "Option"} extra price`}
                         className="w-16 rounded-lg border border-line bg-surface px-2 py-1.5 text-sm focus:border-[var(--primary)] focus:outline-none"
                       />

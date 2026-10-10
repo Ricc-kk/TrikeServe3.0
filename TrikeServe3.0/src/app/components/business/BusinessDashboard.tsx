@@ -579,7 +579,18 @@ const previousWindowWord = range === 'today' ? 'day' : range;
           {/* Range filter. Sits above the charts *and* the period figure, because both
               answer the same question — "how am I doing over what window". */}
           <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
-            <div>
+            <div className="min-w-0">
+              {/*
+                The shop's own name.
+
+                This screen was the only one of the three that showed no name at
+                all -- Overview and Shop said one thing and Settings said another,
+                with nothing here to tell you which was the shop's. It reads the
+                same `shopName` the others do, so all three agree by construction.
+              */}
+              <h2 className="truncate text-xl font-bold text-[var(--muted-foreground)] lg:text-2xl">
+                {profile.shopName}
+              </h2>
               <h2 className="text-xl lg:text-2xl font-bold text-[var(--ink)]">Overview</h2>
               <p className="text-sm text-[var(--muted-foreground)]">
                 Sales and orders for the range you pick.

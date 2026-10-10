@@ -108,15 +108,22 @@ export default function BusinessProfile() {
     setSaveError(null);
 
     try {
-      // Contact details are the owner's own, and nobody else reads them, so
-      // they still write straight through. The shop-facing fields go through
-      // the shared writer, which stages them for Super Admin review.
+      /*
+       * Contact details only.
+       *
+       * The business name used to be written to `users.business_name` here as well
+       * as to the shop row below. Those are not the same save: a name change to a
+       * shop that already has a pin is *staged* for Super Admin review, so writing
+       * the copy immediately published a name the storefront had not accepted yet --
+       * which is how the two ended up disagreeing, with Settings showing a name
+       * customers had never seen. `applyBusinessProfileUpdate` mirrors the name once
+       * the change is actually live, for both the staged and the first-pin path.
+       */
       const { error: userError } = await supabase
         .from("users")
         .update({
           name: formData.name,
           phone: formData.phone,
-          business_name: formData.businessName,
           updated_at: new Date().toISOString(),
         })
         .eq("id", user.id);

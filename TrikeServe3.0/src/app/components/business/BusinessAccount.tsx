@@ -7,6 +7,7 @@ import { Badge } from "../ui/badge";
 import { useState, useEffect } from "react";
 import BusinessSidebar from "./BusinessSidebar";
 import { useAuth } from "../../contexts/AuthContext";
+import { useRestaurantProfile } from "@/lib/restaurantProfile";
 import { supabase } from "../../../lib/supabase";
 import ThemeModeSwitcher from "../ui/ThemeModeSwitcher";
 
@@ -16,6 +17,16 @@ export default function BusinessAccount() {
   // because there is no history entry before it to return to.
   const goBack = usePreviousPage("/business/dashboard");
   const { user, logout, switchUiRole, restoreOriginalRole } = useAuth();
+  /*
+   * The shop name, from the same place Overview and Shop read it.
+   *
+   * This header used to read `user.businessName`, a copy kept on the user row
+   * that nothing guaranteed to agree with the shop's actual name -- so the same
+   * shop was "Boss A Silogan" in Shop and "Nemia's Kakanin" here. Settings is
+   * also where the name is edited, so having it display a different value from
+   * the one you just typed was the most confusing place for that to show up.
+   */
+  const profile = useRestaurantProfile();
   const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
   const [showSwitchConfirm, setShowSwitchConfirm] = useState(false);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
@@ -96,7 +107,7 @@ export default function BusinessAccount() {
             </div>
             <div className="flex-1 min-w-0">
               <div className="flex items-center gap-2 mb-1">
-                <h2 className="text-lg lg:text-xl font-bold text-white truncate">{(user as any).businessName || user?.name || 'Business'}</h2>
+                <h2 className="text-lg lg:text-xl font-bold text-white truncate">{profile.shopName}</h2>
                 {user?.isVerified && (
                   <Badge className="bg-[var(--success)] text-white text-[10px] px-1.5 py-0.5">Verified</Badge>
                 )}

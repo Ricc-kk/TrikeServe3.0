@@ -664,6 +664,13 @@ export default function OrderDetail() {
                       ))}
                     </div>
                   )}
+                  {/* Kept visible after the fact, so a customer looking back at an
+                      order can see what they actually asked for. */}
+                  {item.note && (
+                    <p className="mt-1 text-[10px] italic text-[var(--amber-ink)]">
+                      Note: {item.note}
+                    </p>
+                  )}
                 </div>
                 <p className="font-bold text-[var(--ink)] text-sm flex-shrink-0">₱{(item.price * item.quantity).toFixed(2)}</p>
               </div>

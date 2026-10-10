@@ -383,13 +383,50 @@ export default function BusinessHome() {
     };
   }, [user?.id]);
 
-  // Update restaurant data when user data is available
+  /*
+   * The shop's own fields, seeded once from the shop row.
+   *
+   * This screen used to build its form entirely out of localStorage, seeded from
+   * `user.businessName` the very first time it was ever opened and never looked at
+   * again. The shop row -- the one customers are shown, and the one this screen
+   * saves to -- was never read back into the form at all, so renaming the shop
+   * anywhere else left this screen showing the old name indefinitely, and the
+   * next save here silently wrote that stale name back over the real one.
+   *
+   * So the shop row wins: seeded once when it arrives, and only fields it does not
+   * have fall back to the local copy. Seeded rather than tracked, because this form
+   * is editable and re-syncing on every change of `restaurant` would overwrite
+   * whatever the owner is typing.
+   */
+  const [shopSeeded, setShopSeeded] = useState(false);
   useEffect(() => {
-    if (user) {
-      // Load saved restaurant data or initialize with user data
+    if (shopSeeded) return;
+    const shop = profile.restaurant;
+    if (!shop) return;
+
+    setShopSeeded(true);
+    setRestaurantData((prev) => ({
+      ...prev,
+      // The name is the shop's, full stop. Not `prev.name`: that is the stale
+      // localStorage copy this is here to replace.
+      name: shop.name || prev.name || "",
+      subtitle: shop.subtitle ?? prev.subtitle ?? "",
+      address: shop.address || prev.address || "",
+      deliveryTime: shop.delivery_time ?? prev.deliveryTime ?? "",
+      operatingHours: shop.operating_hours ?? prev.operatingHours ?? "",
+      cuisine: Array.isArray(shop.cuisine) && shop.cuisine.length > 0 ? shop.cuisine : prev.cuisine,
+      latitude: shop.latitude ?? prev.latitude ?? null,
+      longitude: shop.longitude ?? prev.longitude ?? null,
+    }));
+  }, [profile.restaurant, shopSeeded]);
+
+  // First run only: before the shop row lands, seed from the registration answers
+  // so the form is not empty while it loads.
+  useEffect(() => {
+    if (user && !shopSeeded) {
       const storageKey = `restaurantData_${user.email}`;
       const savedData = localStorage.getItem(storageKey);
-      
+
       if (savedData) {
         try {
           setRestaurantData(JSON.parse(savedData));
@@ -397,15 +434,14 @@ export default function BusinessHome() {
           console.error('Error loading restaurant data:', error);
         }
       } else {
-        // Initialize with user data if no saved data exists
-        setRestaurantData(prev => ({
+        setRestaurantData((prev) => ({
           ...prev,
           name: (user as any).businessName || user.name || "",
           address: (user as any).businessAddress || "",
         }));
       }
     }
-  }, [user]);
+  }, [user, shopSeeded]);
 
   // Save restaurant data to localStorage whenever it changes
   useEffect(() => {

@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo, useRef } from "react";
-import { Store, Package, Clock, User, Plus, Edit2, Image as ImageIcon, X, Search, ChevronRight, Eye, EyeOff, Trash2, Check, BarChart3, Camera, Upload, TrendingUp, Star, Award, Menu, Settings, Save } from "lucide-react";
+import { Store, Package, Clock, User, Plus, Edit2, Image as ImageIcon, X, Search, ChevronRight, Eye, EyeOff, Trash2, Check, BarChart3, Camera, Upload, TrendingUp, Star, Award, Menu, Settings, Save, AlertTriangle } from "lucide-react";
 import { Link, useBlocker } from "react-router";
 import { Card } from "../ui/card";
 import { Badge } from "../ui/badge";
@@ -190,6 +190,20 @@ export default function BusinessMenu() {
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [draftMode, setDraftMode] = useState<'edit' | 'add'>('edit');
   const [editingItem, setEditingItem] = useState<any>(null);
+  /*
+   * The open dish as it was when the form opened.
+   *
+   * `editingItem` is the working copy, so "has this been changed" cannot be read
+   * off it -- there is nothing in it that says what it started as. Closing used to
+   * throw the working copy away unconditionally, which silently discarded a typed
+   * name, a new photo and a set of options with no warning: the dish went back to
+   * exactly what was saved and there was nothing on screen to say why.
+   *
+   * Held separately so closing can ask before discarding.
+   */
+  const [editSnapshot, setEditSnapshot] = useState("");
+  /** Set when the owner tries to close a dish they have changed. */
+  const [confirmDiscard, setConfirmDiscard] = useState(false);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [uploadingImage, setUploadingImage] = useState(false);
 
@@ -413,6 +427,31 @@ export default function BusinessMenu() {
         customizationGroups: usableChoiceGroups(item.customizationGroups ?? []),
       })),
     );
+
+  /**
+ * What counts as "the dish you are editing has been changed".
+ *
+ * Compares the fields the form can actually edit, so opening a dish and closing it
+ * again is not reported as a change. `id` is deliberately excluded: a new dish has
+ * a temporary one and a saved one has a real one, and that difference is not
+ * something the owner did.
+ *
+ * Options go through `usableChoiceGroups` for the same reason the save does -- a
+ * half-typed option row is dropped rather than stored, so it must not count as an
+ * edit here either, or the confirm would appear for a row that would never have
+ * been saved.
+ */
+const itemFingerprint = (item: MenuItem) =>
+  JSON.stringify({
+    name: item.name ?? "",
+    description: item.description ?? "",
+    price: item.price ?? 0,
+    image: item.image ?? "",
+    sectionId: item.sectionId ?? null,
+    badge: item.badge ?? null,
+    available: item.available ?? true,
+    customizationGroups: usableChoiceGroups(item.customizationGroups ?? []),
+  });
 
   // Both sides go through snapshotOf. Comparing a raw JSON.stringify of the state
   // against a filtered snapshot compares two different things and is therefore
@@ -648,6 +687,7 @@ export default function BusinessMenu() {
     setDraftMode('edit');
     setEditPriceError("");
     setEditingItem({ ...item });
+    setEditSnapshot(itemFingerprint(item));
     setExpandedId(String(item.id));
   };
 
@@ -661,7 +701,9 @@ export default function BusinessMenu() {
   const stopEditing = () => {
     setExpandedId(null);
     setEditingItem(null);
+    setEditSnapshot("");
     setEditPriceError("");
+    setConfirmDiscard(false);
     // Back to the list too.
     //
     // The form is its own screen now, so every path out of it has to leave that
@@ -671,14 +713,46 @@ export default function BusinessMenu() {
     setView('list');
   };
 
+  /** Whether the open dish differs from what was saved. */
+  const isEditDirty = () =>
+    !!editingItem && itemFingerprint(editingItem) !== editSnapshot;
+
+  /**
+   * Leaving the form.
+   *
+   * Asks first when the dish has been changed, because closing is the one way out
+   * of this screen that throws work away without saving it. Save and Delete do not
+   * need the question -- one keeps the work and one is already behind its own
+   * confirmation -- so this is the only place it is asked.
+   *
+   * Returns whether it actually closed, so the callers that also have other work to
+   * do (starting another dish, deleting) know whether to carry on.
+   */
+  const requestClose = (): boolean => {
+    if (isEditDirty()) {
+      setConfirmDiscard(true);
+      return false;
+    }
+    stopEditing();
+    return true;
+  };
+
   /**
    * A blank dish, open and ready to fill in, filed under the category asked for.
    */
   const startAdding = (sectionId?: string | null) => {
-    if (expandedId !== null) stopEditing();
+    // Starting a new dish closes whatever is open. If that one had changes, this
+    // is still a discard, so it asks too rather than doing it behind the owner's
+    // back -- the confirm below then opens over the form they were working in.
+    if (expandedId !== null && !requestClose()) return;
     setDraftMode('add');
     setEditPriceError("");
-    setEditingItem(blankDraft(sectionId));
+    const draft = blankDraft(sectionId);
+    setEditingItem(draft);
+    // A new dish has nothing to lose, but the fingerprint is still needed: the
+    // form must be able to tell "untouched" from "typed into and typed out of",
+    // and only the fields that count towards a fingerprint.
+    setEditSnapshot(itemFingerprint({ ...draft, id: 'new' } as MenuItem));
     setExpandedId('new');
     setSelectedSection('all');
     window.scrollTo({ top: 0, behavior: "smooth" });
@@ -1815,10 +1889,12 @@ const addSection = async () => {
                               </p>
                               <button
                                 type="button"
-                                onClick={stopEditing}
-                                className="shrink-0 text-xs font-bold text-[var(--muted-foreground)] hover:underline"
+                                onClick={requestClose}
+                                aria-label="Close"
+                                title="Close"
+                                className="grid size-8 shrink-0 place-items-center rounded-lg text-[var(--muted-foreground)] transition-colors hover:bg-[var(--muted)] hover:text-[var(--ink)] active:scale-90"
                               >
-                                Close
+                                <X className="size-4" aria-hidden="true" />
                               </button>
                             </div>
 
@@ -2547,6 +2623,42 @@ const addSection = async () => {
         )}
 
         {/* Bulk Actions Modal */}
+
+        {/* Delete Item Confirmation Modal */}
+        {confirmDiscard && (
+          <div className="fixed inset-0 z-[2000] flex items-center justify-center bg-black/60 p-4">
+            <div className="w-full max-w-sm rounded-2xl bg-[var(--surface)] p-6 shadow-2xl">
+              <div className="mb-4 flex items-center gap-3">
+                <div className="grid size-11 shrink-0 place-items-center rounded-full bg-[var(--amber-soft)]">
+                  <AlertTriangle className="size-5 text-[var(--amber)]" aria-hidden="true" />
+                </div>
+                <h3 className="text-lg font-bold text-[var(--ink)]">
+                  Discard your changes?
+                </h3>
+              </div>
+              <p className="mb-6 text-sm text-[var(--muted-foreground)]">
+                This {draftMode === 'add' ? 'new dish' : 'dish'} has changes that
+                have not been saved. Closing now throws them away.
+              </p>
+              <div className="flex gap-3">
+                <button
+                  type="button"
+                  onClick={() => setConfirmDiscard(false)}
+                  className="flex-1 rounded-xl border border-line px-4 py-3 font-bold text-[var(--ink)] transition-colors hover:bg-[var(--muted)] active:scale-[0.97]"
+                >
+                  Keep editing
+                </button>
+                <button
+                  type="button"
+                  onClick={stopEditing}
+                  className="flex-1 rounded-xl bg-[var(--error)] px-4 py-3 font-bold text-white transition-opacity hover:opacity-90 active:scale-[0.97]"
+                >
+                  Discard
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* Delete Item Confirmation Modal */}
         {showDeleteItemModal && itemToDelete !== null && (
