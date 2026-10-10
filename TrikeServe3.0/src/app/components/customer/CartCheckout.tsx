@@ -1,11 +1,13 @@
 import {
   ChevronLeft,
+  ChevronRight,
   Trash2,
   Plus,
   Minus,
   MapPin,
   Info,
   Check,
+  AlertCircle,
 } from "lucide-react";
 import { Navigate, useLocation, useNavigate } from "react-router";
 import { Card } from "../ui/card";
@@ -78,7 +80,6 @@ export default function CartCheckout() {
   const [proofPreview, setProofPreview] = useState<string | null>(null);
   const [isUploadingProof, setIsUploadingProof] = useState(false);
   const [proofError, setProofError] = useState<string | null>(null);
-  const [showProofError, setShowProofError] = useState(false);
 
   /** What this shop told customers to do before paying. */
   const [paymentInstructions, setPaymentInstructions] = useState<string | null>(null);
@@ -91,7 +92,43 @@ export default function CartCheckout() {
     restaurantId: string;
     itemId: string | number;
   } | null>(null);
-  const [showAddressError, setShowAddressError] = useState(false);
+  /** The address field, so a failed order can be scrolled back to where it was left. */
+  const addressRef = useRef<HTMLDivElement | null>(null);
+
+  /*
+   * Inline validation on the address, shown where the address is.
+   *
+   * Not a dialog: a modal covers the very field it is complaining about, so reading
+   * it and fixing it takes two dismissals. Marked on the field itself it is read and
+   * fixed in the same glance.
+   */
+  const [addressError, setAddressError] = useState(false);
+
+  /*
+   * Bring the field back into view when it becomes the thing that is wrong.
+   *
+   * Driven by the flag rather than called at the point of failure, because the
+   * error message is inserted below the field and the page grows by its height in
+   * between asking to scroll and scrolling. Scrolling in the same tick measured
+   * the old layout, landed somewhere unhelpful, and read as a scroll that did
+   * nothing at all -- which is worse than not scrolling, because the person has
+   * been told the address is wrong and cannot see the address.
+   */
+  useEffect(() => {
+    if (!addressError) return;
+    /*
+     * Instantly, not smoothly.
+     *
+     * A smooth scroll is a no-op in some engines — headless Chromium here will
+     * sit at the bottom of the page through every frame of a "smooth" scroll and
+     * never move — and when it does nothing, the outcome is the worst version of
+     * this feature: the customer is told their address is wrong, the field they
+     * need to fix is still off screen, and nothing says why. A jump cannot fail
+     * that way, and for a message that has to be read the arrival matters more
+     * than the journey.
+     */
+    addressRef.current?.scrollIntoView({ block: 'center' });
+  }, [addressError]);
   const [placedOrderNumber, setPlacedOrderNumber] = useState<string | null>(null);
   const [placedOrderId, setPlacedOrderId] = useState<string | null>(null);
   /**
@@ -185,7 +222,6 @@ export default function CartCheckout() {
 
   const handleProofSelected = (file: File) => {
     setProofError(null);
-    setShowProofError(false);
     if (proofPreview) URL.revokeObjectURL(proofPreview);
     setProofFile(file);
     setProofPreview(URL.createObjectURL(file));
@@ -193,7 +229,6 @@ export default function CartCheckout() {
 
   const handleProofCleared = () => {
     setProofError(null);
-    setShowProofError(false);
     if (proofPreview) URL.revokeObjectURL(proofPreview);
     setProofPreview(null);
     setProofFile(null);
@@ -241,22 +276,37 @@ export default function CartCheckout() {
   const handlePlaceOrder = async () => {
     if (!restaurant) return;
     if (!hasSelectedAddress) {
-      setShowAddressError(true);
+      /*
+       * Send them to the field, not to the map.
+       *
+       * This used to open a dialog whose only button opened the map. That asked
+       * for a pin the customer has never seen chosen for them, before they had
+       * been shown the empty field they left blank -- so the person who just
+       * skipped the address was dropped into the most unfamiliar screen in the
+       * flow, one tap from picking a location for an order they have not finished
+       * writing.
+       *
+       * The field is on the same page and is what they actually left blank, so
+       * that is where the correction goes: marked, focused, and scrolled into
+       * view. The map is still one tap away, right there, for whoever wants it.
+       */
+      setAddressError(true);
       return;
     }
     /*
-     * No proof, no order.
+     * Payment proof is optional for now.
      *
-     * The shop's only way to tell a paid order from an unpaid one is the
-     * screenshot, so an order placed without one is an order nobody can verify
-     * -- it would sit in the payment queue looking identical to one that was
-     * paid. Blocked here rather than warned about, because "please attach proof"
-     * after the fact is how an unverified order gets accepted.
+     * This used to block the order outright. That was the right default when the
+     * screenshot was the *only* thing telling a shop which orders had been paid,
+     * because an unverifiable order in the payment queue looks identical to a paid
+     * one. It also meant a customer who transferred from a phone that would not let
+     * them screenshot the receipt could not order at all, and blocking a sale over
+     * an attachment is a worse failure than a shop having to ask.
+     *
+     * The shop still gets told the difference: the order is placed without a proof
+     * and the shop's payment step stays available to them. Nothing about the order
+     * is lost, and an order can still have its proof added afterwards.
      */
-    if (!proofFile) {
-      setShowProofError(true);
-      return;
-    }
     // Don't let a previous order's ids leak into this confirmation.
     setPlacedOrderNumber(null);
     setPlacedOrderId(null);
@@ -826,19 +876,36 @@ export default function CartCheckout() {
         </div>
 
         {/* Address */}
-        <div>
+        <div ref={addressRef}>
           <button
             type="button"
-            onClick={() => setShowMapSelector(true)}
-            className="mb-2 flex w-full items-center gap-3 rounded-xl border border-[var(--border)] bg-surface p-4 transition-transform active:scale-[0.98]"
+            onClick={() => {
+              setAddressError(false);
+              setShowMapSelector(true);
+            }}
+            aria-invalid={addressError}
+            style={
+              addressError
+                ? { borderColor: "var(--error)", boxShadow: "0 0 0 2px var(--error-soft)" }
+                : undefined
+            }
+            className={`mb-2 flex w-full items-center gap-3 rounded-xl border bg-surface p-4 text-left transition-colors ${
+              addressError ? "border-[var(--error)]" : "border-[var(--border)]"
+            }`}
           >
-            <MapPin className="size-5 flex-shrink-0 text-[var(--primary)]" />
+            <MapPin
+              className={`size-5 flex-shrink-0 ${
+                addressError ? "text-[var(--error)]" : "text-[var(--primary)]"
+              }`}
+            />
             <div className="flex-1 text-left">
               <p
                 className={`mb-0.5 font-semibold ${
-                  hasSelectedAddress
-                    ? "text-[var(--ink)]"
-                    : "text-[var(--muted-foreground)]"
+                  addressError
+                    ? "text-[var(--error)]"
+                    : hasSelectedAddress
+                      ? "text-[var(--ink)]"
+                      : "text-[var(--muted-foreground)]"
                 }`}
               >
                 {selectedAddress.name}
@@ -847,7 +914,28 @@ export default function CartCheckout() {
                 {selectedAddress.full}
               </p>
             </div>
+            {/* A chevron, so the field reads as something you go and fill in rather
+                than a static label. */}
+            <ChevronRight className="size-5 flex-shrink-0 text-[var(--muted-foreground)]" />
           </button>
+
+          {/*
+           * The validation message. Announced, because scrolling a field into view
+           * on its own tells a screen-reader user nothing about why they were moved.
+           */}
+          {addressError && (
+            <p
+              role="alert"
+              style={{ color: "var(--error)" }}
+              className="mb-2 flex items-start gap-1.5 text-sm font-semibold"
+            >
+              <AlertCircle className="mt-0.5 size-4 flex-shrink-0" />
+              <span>
+                Add a delivery address to place this order. Tap the field above to
+                pick one on the map.
+              </span>
+            </p>
+          )}
 
           {fromDefaultAddress && (
             <p className="mb-3 flex items-center gap-1.5 text-xs text-[var(--muted-foreground)]">
@@ -973,23 +1061,14 @@ export default function CartCheckout() {
 
           <ProofCapture
             mode="upload"
-            label="GCash payment proof"
-            hint="Screenshot of the transfer receipt. The shop checks this before accepting your order."
+            label="GCash payment proof (optional)"
+            hint="Screenshot of the transfer receipt. Attaching it lets the shop check your payment faster, but you can order without it."
             value={proofPreview}
             busy={isUploadingProof}
             error={proofError}
             onSelect={handleProofSelected}
             onClear={handleProofCleared}
           />
-
-          {showProofError && !proofFile && (
-            <p
-              role="alert"
-              className="mt-2 rounded-xl bg-[var(--error-soft)] px-3 py-2 text-xs text-[var(--error)]"
-            >
-              Attach your GCash payment proof before placing the order.
-            </p>
-          )}
 
           {/* Say plainly that the rider collects cash, before it is a surprise. */}
           <p className="mt-3 flex items-start gap-2 rounded-xl bg-[var(--amber-soft)] px-3 py-2.5 text-xs text-[var(--amber-ink)]">
@@ -1151,45 +1230,6 @@ export default function CartCheckout() {
         </div>
       )}
 
-      {/* Address Error Modal */}
-      {showAddressError && (
-        <div className="fixed inset-0 z-[2000] flex items-center justify-center bg-black/60 p-4">
-          <Card
-            className="w-full max-w-sm bg-surface p-6"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="mb-4 text-center">
-              <div className="mx-auto mb-3 grid size-14 place-items-center rounded-full bg-[var(--amber-soft)]">
-                <MapPin className="size-7 text-[var(--amber)]" />
-              </div>
-              <h2 className="mb-1 text-xl font-bold text-[var(--ink)]">
-                Delivery Address Required
-              </h2>
-              <p className="text-sm text-[var(--muted-foreground)]">
-                Please select a delivery address before placing your order.
-              </p>
-            </div>
-            <button
-              type="button"
-              onClick={() => {
-                setShowAddressError(false);
-                setShowMapSelector(true);
-              }}
-              className="w-full rounded-2xl bg-[var(--primary)] py-3 font-bold text-white transition-transform active:scale-95"
-            >
-              Select Address
-            </button>
-            <button
-              type="button"
-              onClick={() => setShowAddressError(false)}
-              className="mt-2 w-full rounded-2xl bg-[var(--muted)] py-3 font-bold text-[var(--muted-foreground)] transition-transform active:scale-95"
-            >
-              Cancel
-            </button>
-          </Card>
-        </div>
-      )}
-
       {/* Map Selector */}
       {showMapSelector && (
         <MapSelector
@@ -1203,9 +1243,17 @@ export default function CartCheckout() {
             });
             setHasSelectedAddress(true);
             setFromDefaultAddress(false);
+            // The field it was complaining about is now right: clearing the mark
+            // here rather than only on the next failed order attempt means the
+            // error does not outlive the thing that caused it.
+            setAddressError(false);
             setShowMapSelector(false);
           }}
           currentLocation={selectedAddress}
+          // Tells the map whether to pin the customer where they are on open. False
+          // for a first-time address, true when they are back to adjust one they
+          // already chose -- in which case their pin is left alone.
+          hasSavedAddress={hasSelectedAddress}
         />
       )}
     </div>

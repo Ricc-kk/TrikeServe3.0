@@ -5,7 +5,20 @@ import { cva, type VariantProps } from "class-variance-authority";
 import { cn } from "./utils";
 
 const buttonVariants = cva(
-  "inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-md text-sm font-medium transition-all disabled:pointer-events-none disabled:opacity-50 [&_svg]:pointer-events-none [&_svg:not([class*='size-'])]:size-4 shrink-0 [&_svg]:shrink-0 outline-none focus-visible:border-ring focus-visible:ring-ring/50 focus-visible:ring-[3px] aria-invalid:ring-destructive/20 dark:aria-invalid:ring-destructive/40 aria-invalid:border-destructive",
+  /*
+   * `active:scale-[0.97]` on every button.
+   *
+   * These buttons are used on screens where tapping one starts a network write
+   * that takes a moment to come back, and the tap had no visible effect at all
+   * until the screen changed -- so a shop pressing "Ready for Delivery" on a phone
+   * could not tell whether the press had landed, the network was slow, or they had
+   * missed it, and would press again. The press state answers "did that register",
+   * and it costs one transform.
+   *
+   * `brightness-90` alongside it, because on the large coloured action buttons the
+   * scale alone is a subtle cue, and these are often pressed at arm's length.
+   */
+  "inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-md text-sm font-medium transition-all active:scale-[0.97] active:brightness-90 disabled:pointer-events-none disabled:opacity-50 disabled:active:scale-100 [&_svg]:pointer-events-none [&_svg:not([class*='size-'])]:size-4 shrink-0 [&_svg]:shrink-0 outline-none focus-visible:border-ring focus-visible:ring-ring/50 focus-visible:ring-[3px] aria-invalid:ring-destructive/20 dark:aria-invalid:ring-destructive/40 aria-invalid:border-destructive",
   {
     variants: {
       variant: {

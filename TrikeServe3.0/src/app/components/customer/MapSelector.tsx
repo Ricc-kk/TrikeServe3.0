@@ -15,6 +15,16 @@ interface MapSelectorProps {
   onClose: () => void;
   onSelectLocation: (location: { name: string; full: string; lat: number; lng: number }) => void;
   currentLocation: { name: string; full: string; lat?: number; lng?: number };
+  /**
+   * Whether this customer already has an address chosen for this order.
+   *
+   * Needed separately from `currentLocation`, because that object always carries
+   * coordinates -- the checkout seeds it with the town centre so the map has
+   * somewhere to open -- so `lat` being a number says nothing about whether anyone
+   * picked anything. Reading the coordinates as the answer made this screen think
+   * every order already had an address and skip the pin it had just resolved.
+   */
+  hasSavedAddress?: boolean;
 }
 
 // Red app-branded pin for the location the customer placed on the map
@@ -34,7 +44,7 @@ const createSelectedPinIcon = () => {
   } as any;
 };
 
-export default function MapSelector({ onClose, onSelectLocation, currentLocation }: MapSelectorProps) {
+export default function MapSelector({ onClose, onSelectLocation, currentLocation, hasSavedAddress = false }: MapSelectorProps) {
   const { isLoaded, loadError, blocked, apiKeyPresent } = useMapLoader();
 
   // Gen T Deleon, Valenzuela City coordinates (also used as the default map center)
@@ -101,9 +111,9 @@ export default function MapSelector({ onClose, onSelectLocation, currentLocation
     return null;
   }, []);
 
-  // Resolve the device position once on open to back the "Current location"
-  // row. Denial or timeout is not an error: the row is omitted and search /
-  // tap-to-place still work.
+  // Resolve the device position once on open to pin it and back the "Current
+  // location" row. Denial or timeout is not an error: the pin is simply not
+  // placed, the row is omitted, and search / tap-to-place still work.
   useEffect(() => {
     if (deviceLocatedRef.current) return;
     if (typeof navigator === "undefined" || !navigator.geolocation) return;
@@ -114,11 +124,34 @@ export default function MapSelector({ onClose, onSelectLocation, currentLocation
         const lat = pos.coords.latitude;
         const lng = pos.coords.longitude;
         const address = await reverseGeocode(lat, lng);
-        setDeviceLocation(
-          address
-            ? { lat, lng, name: address.name, full: address.full }
-            : { lat, lng, name: 'Your current location', full: 'Your current location' },
-        );
+        const resolved = address
+          ? { lat, lng, name: address.name, full: address.full }
+          : { lat, lng, name: 'Your current location', full: 'Your current location' };
+        setDeviceLocation(resolved);
+
+        /*
+         * Pin it, and centre on it.
+         *
+         * The map used to open on Valenzuela with no pin and a button reading "Tap
+         * the map to select a location" that did nothing until you worked out what
+         * it meant. For a delivery address the customer's own doorstep is the right
+         * answer more often than not, and this screen had just resolved it -- so
+         * making them tap a pin they are standing in to agree with something they
+         * already told us is work with no other purpose.
+         *
+         * Skipped when they already have an address. Re-opening the map to adjust a
+         * pin they deliberately put somewhere other than here must not quietly move
+         * it back to the building they are standing in; the panel would then be
+         * offering to save their own address straight back at them.
+         *
+         * `hasSavedAddress`, not the coordinates: the checkout seeds the address
+         * with the town centre so the map has a centre to open on, so `lat` is
+         * always a number and checking it said "already has an address" every time.
+         */
+        if (!hasSavedAddress) {
+          setPickedPin(resolved);
+          setMapCenter({ lat, lng });
+        }
         setLocating(false);
       },
       () => {
@@ -127,7 +160,7 @@ export default function MapSelector({ onClose, onSelectLocation, currentLocation
       },
       { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 },
     );
-  }, [reverseGeocode]);
+  }, [reverseGeocode, hasSavedAddress]);
 
   // Tapping the "Current location" row is the same as tapping that point on
   // the map: drop the pin there, pan to it, show its bubble.

@@ -452,14 +452,35 @@ export default function PassengerRequests() {
 
     if (request.type === 'delivery' && (request.orderId || request.orderNumber)) {
       if (request.orderId) {
+        /*
+         * Accepting records the rider; it does not start the delivery.
+         *
+         * This used to write `status: 'on-the-way'` here, in the same statement as
+         * the rider's name. That collapsed two distinct facts into one write: a
+         * rider existing, and a rider having the food and moving. So the moment
+         * anyone accepted, the order claimed to be on the way -- and the shop, whose
+         * screen had no "assigned" state to sit in, went from searching for a rider
+         * straight to a delivery already under way, with nothing in between.
+         *
+         * The order stays where the shop left it (`confirmed`) until the rider
+         * actually collects the food, which `updateStatus('pickup')` records. So
+         * "rider assigned" is a state the shop can be in, not a step it misses.
+         */
         const { error: directErr } = await supabase
           .from('orders')
-          .update({ status: 'on-the-way', driver_name: user.name || 'Driver', updated_at: new Date().toISOString() })
+          .update({ driver_name: user.name || 'Driver', updated_at: new Date().toISOString() })
           .eq('id', request.orderId);
         if (directErr) console.error('❌ Direct orders update failed:', directErr);
-        else console.log('✅ Orders table updated to on-the-way (direct)');
+        else console.log('✅ Orders table updated with rider name (direct)');
       }
-      await supabaseHelpers.updateDeliveryOrderStatus(request.orderId, request.orderNumber, 'on-the-way');
+      /*
+       * The order's status is left alone here. It used to be forced to
+       * 'on-the-way' on accept, which made every accepted delivery announce
+       * itself as under way before the rider had touched the food -- and, on the
+       * shop's screen, left no state in which a rider was assigned but the
+       * delivery had not started. ActiveRide moves it when the rider confirms
+       * pickup.
+       */
       if (request.id && !request.id.startsWith('lobby_')) {
         await supabaseHelpers.updateRideRequest(request.id, { status: 'accepted', driver_id: user.id });
       }

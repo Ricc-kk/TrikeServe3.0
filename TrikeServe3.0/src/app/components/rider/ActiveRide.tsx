@@ -609,6 +609,23 @@ export default function ActiveRide() {
       supabaseHelpers.updateDriverRideStatus(rideData.id, dbMap[newStatus], 'Status updated');
       // Deliveries: notify the customer and the business.
       notifyDeliveryStatus(rideData, dbMap[newStatus], messageMap[newStatus]);
+
+      /*
+       * Accepting no longer moves the order itself -- it only records the rider,
+       * so the shop can sit in a real "rider assigned" state instead of going
+       * from searching for one straight to a delivery already under way. That makes
+       * this the point where the food is genuinely in the rider's hands and the
+       * delivery starts, so the order moves now.
+       *
+       * `arrived` is deliberately not included: the rider reaching the shop is
+       * still the "assigned / heading to the restaurant" phase, and flipping to
+       * on-the-way at the door would announce a delivery that has not left yet.
+       */
+      if (newStatus === 'pickup' && (rideData.orderId || rideData.orderNumber)) {
+        supabaseHelpers
+          .updateDeliveryOrderStatus(rideData.orderId, rideData.orderNumber, 'on-the-way')
+          .catch(() => {});
+      }
     }
   };
 

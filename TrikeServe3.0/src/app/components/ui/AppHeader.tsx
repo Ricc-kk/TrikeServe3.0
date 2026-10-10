@@ -184,7 +184,14 @@ export default function AppHeader({
         // which painted this header cream-on-cream with its own text and left the
         // greeting at roughly 1.1:1. The customer food header has always used
         // --ink-solid here for the same reason.
-        "relative overflow-hidden bg-ink-solid px-5 pb-7 pt-safe text-white sm:px-7 sm:pt-6",
+        //
+        // The top padding adds to the safe-area inset rather than using `pt-safe`
+        // beside a `sm:pt-*`. `.pt-safe` is unlayered CSS, so it outranks every
+        // Tailwind padding utility and the `sm:pt-6` that used to sit next to it
+        // could never apply -- the header was getting 4px on a desktop and the
+        // bare inset on a phone, which is what left the greeting hard against the
+        // top edge. Same fix FoodHomeHeader made, for the same reason.
+        "relative overflow-hidden bg-ink-solid px-5 pb-7 text-white pt-[calc(max(0.25rem,env(safe-area-inset-top))+0.75rem)] sm:px-7 sm:pt-[calc(max(0.25rem,env(safe-area-inset-top))+1.5rem)]",
         className,
       )}
     >
