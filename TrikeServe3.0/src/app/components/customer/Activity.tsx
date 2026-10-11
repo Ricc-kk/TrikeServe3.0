@@ -1,4 +1,4 @@
-import { ArrowLeft, Home as HomeIcon, Calendar, MessageCircle, User, Users, Navigation, Search, ShoppingCart, ClipboardList, Package, MapPin, Flag, X, Check } from "lucide-react";
+import { ArrowLeft, Home as HomeIcon, Calendar, MessageCircle, User, Users, Navigation, Search, ShoppingCart, ClipboardList, Package, MapPin, Flag, X, Check, Star } from "lucide-react";
 import { Link, useNavigate } from "react-router";
 import { Button } from "../ui/button";
 import { Card } from "../ui/card";
@@ -47,6 +47,25 @@ interface RideDisplay {
   paymentMethod?: string;
   passengerCount?: number;
   driverId?: string;
+  lobbyId?: string;
+}
+
+const ratedRidesStorageKey = (userId: string) => `trikeserve_rated_rides_${userId}`;
+
+function loadRatedRideIds(userId?: string): string[] {
+  if (!userId) return [];
+  try {
+    const raw = localStorage.getItem(ratedRidesStorageKey(userId));
+    const parsed = raw ? JSON.parse(raw) : [];
+    return Array.isArray(parsed) ? parsed.filter((id) => typeof id === 'string') : [];
+  } catch {
+    return [];
+  }
+}
+
+function persistRatedRideId(userId: string, rideId: string) {
+  const next = Array.from(new Set([...loadRatedRideIds(userId), rideId]));
+  localStorage.setItem(ratedRidesStorageKey(userId), JSON.stringify(next));
 }
 
 export default function Activity() {
@@ -63,6 +82,12 @@ export default function Activity() {
   const [isSubmittingReport, setIsSubmittingReport] = useState(false);
   const [reportError, setReportError] = useState<string | null>(null);
   const [reportSubmitted, setReportSubmitted] = useState(false);
+  const [rateRide, setRateRide] = useState<RideDisplay | null>(null);
+  const [selectedRating, setSelectedRating] = useState(0);
+  const [ratingSubmitting, setRatingSubmitting] = useState(false);
+  const [ratingSubmitted, setRatingSubmitted] = useState(false);
+  const [ratingError, setRatingError] = useState<string | null>(null);
+  const [ratedRideIds, setRatedRideIds] = useState<string[]>([]);
 
   const openReport = (ride: RideDisplay) => {
     setReportRide(ride);
@@ -76,6 +101,45 @@ export default function Activity() {
     setReportRide(null);
     setReportSubmitted(false);
     setReportError(null);
+  };
+
+  const openRate = (ride: RideDisplay) => {
+    if (!ride.driverId) return;
+    if (ratedRideIds.includes(ride.id)) return;
+    setRateRide(ride);
+    setSelectedRating(0);
+    setRatingSubmitted(false);
+    setRatingError(null);
+  };
+
+  const closeRate = () => {
+    setRateRide(null);
+    setRatingSubmitted(false);
+    setSelectedRating(0);
+    setRatingError(null);
+  };
+
+  const submitRideRating = async () => {
+    if (!rateRide || !selectedRating || !user?.id || !rateRide.driverId) return;
+    setRatingSubmitting(true);
+    setRatingError(null);
+    try {
+      const { error } = await supabaseHelpers.rateDriver({
+        driverId: rateRide.driverId,
+        customerId: user.id,
+        rating: selectedRating,
+        lobbyId: rateRide.lobbyId,
+      });
+      if (error) throw error;
+      persistRatedRideId(user.id, rateRide.id);
+      setRatedRideIds((prev) => (prev.includes(rateRide.id) ? prev : [...prev, rateRide.id]));
+      setRatingSubmitted(true);
+    } catch (err) {
+      console.error('[Activity] Failed to submit ride rating:', err);
+      setRatingError('Could not submit your rating. Please try again.');
+    } finally {
+      setRatingSubmitting(false);
+    }
   };
 
   const submitReport = async (e: React.FormEvent) => {
@@ -126,6 +190,7 @@ export default function Activity() {
 
   // Fetch orders and rides from Supabase on component mount
   useEffect(() => {
+    setRatedRideIds(loadRatedRideIds(user?.id));
     loadActivityFromSupabase();
   }, [user]);
 
@@ -200,7 +265,7 @@ export default function Activity() {
       } else if (completedRides && completedRides.length > 0) {
         // Resolve driver names: collect unique driver_ids where driver_name is missing/generic
         const ridesWithoutName = completedRides.filter((r: any) => !r.driver_name || r.driver_name === 'Driver');
-        const driverIds = [...new Set(ridesWithoutName.map((r: any) => r.driver_id).filter(Boolean))] as string[];
+        const driverIds = [...new Set(ridesWithoutName.map((r: any) => r.driver_id || r.accepted_driver_id).filter(Boolean))] as string[];
         let driverNameMap: Record<string, string> = {};
         if (driverIds.length > 0) {
           const { data: drivers } = await supabase
@@ -216,9 +281,10 @@ export default function Activity() {
         const transformedRides: RideDisplay[] = completedRides
           .filter((dbRide: any) => !isDeliveryRide(dbRide))
           .map((dbRide: any) => {
+          const resolvedDriverId = dbRide.driver_id || dbRide.accepted_driver_id || undefined;
           const resolvedName = (dbRide.driver_name && dbRide.driver_name !== 'Driver')
             ? dbRide.driver_name
-            : (dbRide.driver_id && driverNameMap[dbRide.driver_id]) || dbRide.driver_name || 'Driver';
+            : (resolvedDriverId && driverNameMap[resolvedDriverId]) || dbRide.driver_name || 'Driver';
           return {
             id: dbRide.id,
             pickupLocation: dbRide.pickup_location || 'Pickup',
@@ -234,7 +300,8 @@ export default function Activity() {
             rideType: dbRide.ride_type || 'ride',
             paymentMethod: dbRide.payment_method || 'COD',
             passengerCount: dbRide.passenger_count || 1,
-            driverId: dbRide.driver_id || undefined,
+            driverId: resolvedDriverId,
+            lobbyId: dbRide.lobby_id || undefined,
           };
         });
 
@@ -343,8 +410,15 @@ export default function Activity() {
           <div>
             {displayRides.length > 0 ? (
               <div className="space-y-3">
-                {displayRides.map((ride) => (
-                  <Card key={ride.id} className="p-3.5 sm:p-4 border border-line shadow-sm">
+                {displayRides.map((ride) => {
+                  const alreadyRated = ratedRideIds.includes(ride.id);
+                  const canRate = Boolean(ride.driverId) && !alreadyRated;
+                  return (
+                  <Card
+                    key={ride.id}
+                    className={`p-3.5 sm:p-4 border border-line shadow-sm ${canRate ? 'cursor-pointer active:scale-[0.98] transition-transform' : ''}`}
+                    onClick={() => canRate && openRate(ride)}
+                  >
                     <div className="flex items-start gap-3">
                       {/* Ride Icon */}
                       <div className={`w-12 h-12 rounded-lg flex items-center justify-center flex-shrink-0 ${ride.rideType === 'share' ? 'bg-[var(--info-soft)]' : 'bg-[var(--primary-soft)]'}`}>
@@ -406,17 +480,26 @@ export default function Activity() {
                             {ride.driverRating && ride.driverRating !== 'Driver' && <span> • ⭐ {ride.driverRating}</span>}
                           </p>
                           <button
-                            onClick={() => openReport(ride)}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              openReport(ride);
+                            }}
                             className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg border border-[var(--error)] text-[var(--error)] text-[11px] font-bold hover:bg-[var(--error-soft)] active:scale-95 transition-all flex-shrink-0"
                           >
                             <Flag className="w-3.5 h-3.5" />
                             Report
                           </button>
                         </div>
+                        {alreadyRated ? (
+                          <p className="text-xs font-bold text-[var(--success)] mt-2">⭐ Thanks for rating this driver</p>
+                        ) : canRate ? (
+                          <p className="text-xs font-bold text-[var(--primary)] mt-2">⭐ Tap to rate this driver</p>
+                        ) : null}
                       </div>
                     </div>
                   </Card>
-                ))}
+                  );
+                })}
               </div>
             ) : (
               <div className="text-center py-16">
@@ -564,6 +647,73 @@ export default function Activity() {
                   {isSubmittingReport ? 'Submitting...' : 'Submit report'}
                 </button>
               </form>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Rate Driver Modal — same star picker as delivered orders */}
+      {rateRide && (
+        <div className="fixed inset-0 bg-black/60 z-[2000] flex items-end sm:items-center justify-center p-0 sm:p-4">
+          <div className="bg-surface w-full sm:max-w-md sm:rounded-2xl rounded-t-3xl shadow-xl">
+            <div className="flex items-center justify-between p-5 border-b border-[var(--border)]">
+              <h3 className="text-lg font-bold text-[var(--ink)]">Rate this ride</h3>
+              <button onClick={closeRate} className="p-1.5 hover:bg-[var(--muted)] rounded-full transition-colors">
+                <X className="w-5 h-5 text-[var(--muted-foreground)]" />
+              </button>
+            </div>
+
+            {ratingSubmitted ? (
+              <div className="p-6 text-center">
+                <div className="w-14 h-14 bg-[var(--success-soft)] rounded-full flex items-center justify-center mx-auto mb-3 text-2xl">
+                  🙏
+                </div>
+                <h4 className="text-base font-bold text-[var(--ink)]">Thank you!</h4>
+                <p className="text-sm text-[var(--muted-foreground)] mt-1">
+                  Your rating for {rateRide.driverName || 'your driver'} has been saved.
+                </p>
+                <button
+                  onClick={closeRate}
+                  className="mt-5 w-full py-3.5 bg-[var(--primary)] text-white font-bold rounded-2xl active:scale-95 transition-transform"
+                >
+                  Done
+                </button>
+              </div>
+            ) : (
+              <div className="p-5">
+                <div className="p-3 rounded-xl bg-[var(--muted)] text-xs text-[var(--muted-foreground)] mb-4">
+                  <p className="font-semibold text-[var(--ink)] truncate">
+                    {rateRide.pickupLocation} → {rateRide.dropoffLocation}
+                  </p>
+                  <p className="mt-0.5">Driver: {rateRide.driverName || 'Driver'} · {rateRide.date}</p>
+                </div>
+                <div className="flex items-center gap-2 mb-2 justify-center">
+                  <Star className="w-5 h-5 text-[var(--amber)] fill-[var(--amber)]" />
+                  <h4 className="font-bold text-[var(--ink)]">Rate {rateRide.driverName || 'your driver'}</h4>
+                </div>
+                <p className="text-sm text-[var(--muted-foreground)] mb-3 text-center">How was your ride?</p>
+                <div className="flex justify-center gap-2 mb-3">
+                  {[1, 2, 3, 4, 5].map((star) => (
+                    <button
+                      key={star}
+                      type="button"
+                      onClick={() => setSelectedRating(star)}
+                      className="transition-transform hover:scale-110"
+                    >
+                      <Star className={`w-8 h-8 ${star <= selectedRating ? 'fill-[var(--amber)] text-[var(--amber)]' : 'fill-[var(--border)] text-[var(--border)]'}`} />
+                    </button>
+                  ))}
+                </div>
+                {ratingError && <p className="text-xs text-[var(--error)] text-center mb-2">{ratingError}</p>}
+                <button
+                  type="button"
+                  onClick={submitRideRating}
+                  disabled={!selectedRating || ratingSubmitting || !rateRide.driverId}
+                  className="w-full py-3.5 bg-[var(--primary)] text-white font-bold rounded-2xl active:scale-95 transition-transform disabled:opacity-50"
+                >
+                  {ratingSubmitting ? 'Submitting...' : 'Submit Rating'}
+                </button>
+              </div>
             )}
           </div>
         </div>
