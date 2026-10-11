@@ -1,5 +1,4 @@
 import { useState, useEffect, useRef, useCallback } from "react";
-import { useNavigate } from "react-router";
 import { MapPin, Users, Clock, X, ChevronDown, MessageCircle, User, Minimize2, Star, Navigation } from "lucide-react";
 import { Button } from "../ui/button";
 import { Card } from "../ui/card";
@@ -111,7 +110,6 @@ export default function ShareRideLobby({
   onClose
 }: ShareRideLobbyProps) {
   const { user } = useAuth();
-  const navigate = useNavigate();
   const [openingChat, setOpeningChat] = useState(false);
   /**
    * Floating chat head state, mirroring the driver's ride screen.
@@ -206,31 +204,6 @@ export default function ShareRideLobby({
     return data;
   };
 
-  const handleOpenDriverChat = async () => {
-    if (!user?.id || !lobby?.driver_id || openingChat) return;
-    setOpeningChat(true);
-    try {
-      const data = await ensureDriverThread();
-      if (!data) {
-        alert('Failed to open chat. Please try again.');
-        return;
-      }
-      // Hand the thread the ride context so it renders the floating chat-head
-      // icon (tapping it returns here) and its back arrow returns to the lobby,
-      // rather than dropping the customer on the messages list mid-ride.
-      navigate(`/customer/messages/thread/${data.id}`, {
-        state: {
-          fromActiveRide: true,
-          rideBackTo: '/customer',
-          peerAvatar: driverProfileAvatar || undefined,
-          peerLabel: lobby.driver_name || 'Driver',
-        },
-      });
-    } finally {
-      setOpeningChat(false);
-    }
-  };
-
   /**
    * Open the driver chat as an overlay, the way the driver's ride screen does.
    *
@@ -244,7 +217,12 @@ export default function ShareRideLobby({
     setOpeningChat(true);
     try {
       const data = await ensureDriverThread();
-      if (!data) return;
+      if (!data) {
+        // Both the head and the driver card's Message button come here, so the
+        // failure is reported once, here, rather than at each call site.
+        alert('Failed to open chat. Please try again.');
+        return;
+      }
       // Read here rather than on close: the badge would otherwise keep counting
       // the very message the customer is looking at.
       await supabaseHelpers.markChatConversationRead(data.id, user.id);
@@ -1150,10 +1128,65 @@ export default function ShareRideLobby({
 
   if (!lobby) return null;
 
+  /*
+   * The chat layer: the floating head and the overlay it opens.
+   *
+   * Built once and rendered by both the minimized icon and the full sheet. The
+   * customer asked for the head to survive minimizing, and the minimized branch
+   * is an early return that never reached the markup below -- so a second copy
+   * there would have been two places to keep the gates in step. The overlay
+   * lives here too, so it works from either view and closing it returns to
+   * whichever one is on screen.
+   *
+   * `terminalStatus` rather than `isTerminal`, because that const is declared
+   * further down, after this branch.
+   *
+   * Raised to z-[2100]: this screen's sheet and minimized icon are z-[2000],
+   * above the components' own defaults (1600/1700), so without the override the
+   * head would paint behind them and be untappable. Dialogs (terminal 2200,
+   * status popup 2300, rating 2400) still cover it, and the leave-confirm
+   * dialog ties it at 2100 while rendering later in the DOM, so paint order
+   * keeps that one on top.
+   */
+  const chatLayer = (
+    <>
+      {/* Chat with the driver as an overlay, so the lobby stays behind it the
+          way the driver's ride screen keeps its map. */}
+      <RideChatOverlay
+        open={lobbyChatPopup}
+        conversationId={driverChatId.current}
+        peerId={lobby.driver_id || null}
+        currentUserId={user?.id ?? null}
+        peerAvatar={driverProfileAvatar}
+        peerName={lobby.driver_name || 'Driver'}
+        senderRole="customer"
+        onClose={() => setLobbyChatPopup(false)}
+        zIndexClass="z-[2100]"
+      />
+
+      {/* Floating chat head -- the same component the driver's ride screen uses.
+          Hidden while the overlay is open so two heads never stack. */}
+      {lobby.driver_id && lobby.status === 'driver_found' && terminalStatus === null && !lobbyChatPopup && (
+        <FloatingChatHead
+          zIndexClass="z-[2100]"
+          storageKey="trikeserve_chat_head_pos_customer"
+          peerAvatar={driverProfileAvatar}
+          peerLabel={lobby.driver_name || 'Driver'}
+          unread={driverUnread}
+          pulseKey={chatPulseKey}
+          opened={chatOpened}
+          onOpen={openLobbyChatThread}
+        />
+      )}
+    </>
+  );
+
   // Minimized floating icon
   if (isMinimized) {
     return (
-      <button
+      <>
+        {chatLayer}
+        <button
         onClick={() => setIsMinimized(false)}
         className="fixed bottom-24 right-4 z-[2000] shadow-2xl"
       >
@@ -1168,7 +1201,8 @@ export default function ShareRideLobby({
           </div>
           <div className="absolute inset-0 bg-[var(--primary)] rounded-full animate-ping opacity-20"></div>
         </div>
-      </button>
+        </button>
+      </>
     );
   }
 
@@ -1420,11 +1454,14 @@ export default function ShareRideLobby({
                       )}
                     </div>
                   </div>
+                  {/* Opens the same chat the floating head does, in place.
+                      It used to navigate to the Messages tab, which unmounted
+                      the lobby -- two different behaviours for one thread. */}
                   <Button
                     size="icon"
                     aria-label="Message driver"
                     className="bg-[var(--success)] hover:bg-[var(--success)] text-white h-10 w-10"
-                    onClick={handleOpenDriverChat}
+                    onClick={openLobbyChatThread}
                     disabled={openingChat}
                   >
                     <MessageCircle className="w-5 h-5" />
@@ -1670,41 +1707,9 @@ export default function ShareRideLobby({
         </div>
       )}
 
-      {/* Chat with the driver as an overlay, so the lobby stays behind it the
-          way the driver's ride screen keeps its map. Raised above the lobby
-          sheet (z-[2000]); every dialog on this screen still paints over it. */}
-      <RideChatOverlay
-        open={lobbyChatPopup}
-        conversationId={driverChatId.current}
-        peerId={lobby.driver_id || null}
-        currentUserId={user?.id ?? null}
-        peerAvatar={driverProfileAvatar}
-        peerName={lobby.driver_name || 'Driver'}
-        senderRole="customer"
-        onClose={() => setLobbyChatPopup(false)}
-        zIndexClass="z-[2100]"
-      />
-
-      {/* Floating chat head -- the same component the driver's ride screen uses.
-          Raised to z-[2100] because this screen's sheet is z-[2000], which the
-          default stacking order sits beneath: the head would have painted behind
-          the dim backdrop and been untappable. Dialogs (terminal 2200, status
-          popup 2300, rating 2400) still cover it, and the leave-confirm dialog
-          ties it at 2100 while rendering later in the DOM, so paint order keeps
-          that one on top. Hidden while the overlay is open so two heads never
-          stack in the same corner. */}
-      {lobby.driver_id && lobby.status === 'driver_found' && !isTerminal && !lobbyChatPopup && (
-        <FloatingChatHead
-          zIndexClass="z-[2100]"
-          storageKey="trikeserve_chat_head_pos_customer"
-          peerAvatar={driverProfileAvatar}
-          peerLabel={lobby.driver_name || 'Driver'}
-          unread={driverUnread}
-          pulseKey={chatPulseKey}
-          opened={chatOpened}
-          onOpen={openLobbyChatThread}
-        />
-      )}
+      {/* Chat layer (floating head + overlay). Defined once above the minimized
+          branch so the head stays on screen in both views. */}
+      {chatLayer}
 
       {/* Driver Status Update Popup (same as private rides) */}
       {driverStatusPopup && (
