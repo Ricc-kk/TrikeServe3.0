@@ -7,6 +7,7 @@ import { supabaseHelpers } from "@/lib/supabase";
 import { uploadErrorMessage } from "@/lib/uploadErrors";
 import PhotoAdjustModal from "../ui/PhotoAdjustModal";
 import ConfirmationModal from "../ui/confirmation-modal";
+import ChangePasswordSection from "../ui/ChangePasswordSection";
 
 import BottomNav from "../ui/BottomNav";
 
@@ -309,6 +310,16 @@ export default function EditProfile() {
             reach you about your account.
           </p>
         </section>
+
+        {/*
+          Password sits after the details but ahead of Save changes, and is
+          deliberately not part of that form: it saves on its own button, so the
+          page's "Save changes" never claims to have stored a password, and the
+          leave-without-saving prompt never fires over credentials that leaving
+          was never going to store either way. The same reasoning that keeps the
+          photo out of `hasUnsavedChanges`.
+        */}
+        <ChangePasswordSection />
 
         {error && (
           <p role="alert" className="text-sm font-semibold text-[var(--error)]">

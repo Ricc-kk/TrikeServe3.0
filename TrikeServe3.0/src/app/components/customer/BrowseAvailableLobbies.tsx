@@ -21,14 +21,25 @@ interface AvailableLobby {
 }
 
 interface BrowseAvailableLobbiesProps {
+  /** Short display name for the pickup -- for a terminal ride, the terminal's name. */
+  pickup: string;
+  /** Full/geocoded pickup address, when the customer typed one. */
   pickupAddress: string;
+  /** Terminal the pickup came from, when it came from the terminal picker. */
+  terminalId?: string | null;
+  /** Short display name for the drop-off. */
+  dropoff: string;
+  /** Full/geocoded drop-off address. */
   dropoffAddress: string;
   onLobbyJoined: (lobbyId: string) => void;
   onClose: () => void;
 }
 
 export default function BrowseAvailableLobbies({
+  pickup,
   pickupAddress,
+  terminalId,
+  dropoff,
   dropoffAddress,
   onLobbyJoined,
   onClose
@@ -40,10 +51,20 @@ export default function BrowseAvailableLobbies({
   const [selectedLobby, setSelectedLobby] = useState<string | null>(null);
   const [joiningLobby, setJoiningLobby] = useState(false);
 
-  // Fuzzy route match: same place can come back from Google Maps with
-  // different formatted strings, so compare short names + full addresses.
+  /*
+   * Route matching passes the display name AND the full address, not just one
+   * of them.
+   *
+   * A pickup chosen from the terminal picker has two different values: the
+   * terminal's name ("SANPA TODA Terminal") and its boundary ("Main Road,
+   * Valenzuela City"). Lobbies record the name, so matching on the boundary
+   * alone found nothing in common and every lobby was filtered out -- the
+   * screen reported "No lobbies available" for a route that already had a
+   * lobby waiting on it. The boundary is not a substitute for the name; it is
+   * a different fact about the same place.
+   */
   const routeMatches = (lobby: any) =>
-    isSimilarRoute(lobby, pickupAddress, dropoffAddress, pickupAddress, dropoffAddress);
+    isSimilarRoute(lobby, pickup, dropoff, pickupAddress, dropoffAddress, terminalId);
 
   // Fetch available lobbies on mount
   useEffect(() => {
@@ -130,7 +151,7 @@ export default function BrowseAvailableLobbies({
       supabase.removeChannel(channel);
       clearInterval(pollInterval);
     };
-  }, [pickupAddress, dropoffAddress, user?.id]);
+  }, [pickup, pickupAddress, terminalId, dropoff, dropoffAddress, user?.id]);
 
   const handleJoinLobby = async (lobbyId: string) => {
     if (!user) {

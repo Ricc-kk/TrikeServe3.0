@@ -606,7 +606,7 @@ export default function ShareRideLobby({
         });
 
         const routeMatchedLobby = userLobbyCandidates
-          .filter((l: any) => isSimilarRoute(l, pickup, dropoff, pickupAddress, dropoffAddress))
+          .filter((l: any) => isSimilarRoute(l, pickup, dropoff, pickupAddress, dropoffAddress, selectedTerminalId))
           .sort((a: any, b: any) => toTime(b.updated_at || b.created_at) - toTime(a.updated_at || a.created_at))[0];
 
         const existingUserLobby = routeMatchedLobby || userLobbyCandidates
@@ -628,7 +628,8 @@ export default function ShareRideLobby({
         pickupAddress,
         dropoffAddress,
         pickup,
-        dropoff
+        dropoff,
+        selectedTerminalId
       );
 
       if (!matchError && matchingLobby) {

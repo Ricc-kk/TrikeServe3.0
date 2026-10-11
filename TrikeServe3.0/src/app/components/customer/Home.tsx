@@ -3748,8 +3748,23 @@ export default function CustomerHome() {
       {/* Browse Available Lobbies Modal */}
       {showLobbyList && (
         <BrowseAvailableLobbies
-          pickupAddress={pickupAddress || pickup}
-          dropoffAddress={dropoffAddress || dropoff}
+          /*
+           * Name and address are handed over separately, on purpose.
+           *
+           * These used to be collapsed into `pickupAddress || pickup`, which
+           * silently threw the terminal's name away and left the browse screen
+           * matching lobbies against its boundary text instead -- so it found
+           * no route match and showed "No lobbies available" no matter what was
+           * waiting. The terminal id goes too: it is the only unambiguous way to
+           * say two people are leaving the same place, since two terminals
+           * ("GTDL TODA TERMINAL" and "IN TODA TERMINAL") share the boundary
+           * "Marulas".
+           */
+          pickup={pickup}
+          pickupAddress={pickupAddress}
+          terminalId={selectedTerminalId}
+          dropoff={dropoff}
+          dropoffAddress={dropoffAddress}
           onLobbyJoined={(lobbyId) => {
             setActiveShareLobbyId(lobbyId);
             setShowLobbyList(false);

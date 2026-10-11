@@ -5,6 +5,7 @@ import { Button } from "../ui/button";
 import { Input } from "../ui/input";
 import { supabase } from "../../../lib/supabase";
 import { getAuthLinkParams, waitForSession } from "../../../lib/authLink";
+import { passwordRuleFailures } from "../../../lib/passwordRules";
 
 /** Detect if user is on a mobile device (browser on phone, not inside the app) */
 function isMobileDevice() {
@@ -103,20 +104,15 @@ export default function SetPassword() {
     e.preventDefault();
     setError("");
 
-    if (newPassword.length < 8) {
-      setError("Password must be at least 8 characters");
-      return;
-    }
-    if (!/[A-Z]/.test(newPassword)) {
-      setError("Password must contain at least one uppercase letter");
-      return;
-    }
-    if (!/[a-z]/.test(newPassword)) {
-      setError("Password must contain at least one lowercase letter");
-      return;
-    }
-    if (!/[0-9]/.test(newPassword)) {
-      setError("Password must contain at least one number");
+    /*
+     * One rule list, shared with sign-up and the customer's change-password
+     * screen. This used to spell the four checks out as separate `if`s with
+     * their own wording, which is how a reset flow ends up quietly accepting a
+     * password the sign-up form would have refused.
+     */
+    const unmet = passwordRuleFailures(newPassword);
+    if (unmet.length > 0) {
+      setError(`Password needs: ${unmet.map((rule) => rule.toLowerCase()).join(", ")}`);
       return;
     }
     if (newPassword !== confirmPassword) {

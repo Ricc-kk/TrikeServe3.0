@@ -1180,23 +1180,39 @@ export function placesMatch(a?: string | null, b?: string | null): boolean {
 
 // Compare a lobby's pickup/dropoff against the user's. Both legs must match;
 // each leg matches if the short display name OR the full address matches.
+//
+// `userTerminalId` is the strongest pickup signal available and is checked
+// first. A lobby created from the terminal picker records the terminal id,
+// while the strings are a description of where that terminal sits -- and
+// descriptions are not unique: GTDL and IN TODA TERMINAL both have the
+// boundary "Marulas", so matching those two on their address alone would
+// merge them into one pickup point. It only settles the pickup leg, because
+// two people leaving the same terminal for different places are not a shared
+// ride.
 export function isSimilarRoute(
   lobby: any,
   userPickup: string,
   userDropoff: string,
   userPickupAddress?: string,
-  userDropoffAddress?: string
+  userDropoffAddress?: string,
+  userTerminalId?: string | null
 ): boolean {
+  const sameTerminal =
+    !!userTerminalId && !!lobby.terminal_id && lobby.terminal_id === userTerminalId;
+
   const pickupMatch =
+    sameTerminal ||
     placesMatch(lobby.pickup_location, userPickup) ||
     placesMatch(lobby.pickup_location, userPickupAddress) ||
     placesMatch(lobby.pickup_address, userPickupAddress) ||
     placesMatch(lobby.pickup_address, userPickup);
+
   const dropoffMatch =
     placesMatch(lobby.dropoff_location, userDropoff) ||
     placesMatch(lobby.dropoff_location, userDropoffAddress) ||
     placesMatch(lobby.dropoff_address, userDropoffAddress) ||
     placesMatch(lobby.dropoff_address, userDropoff);
+
   return pickupMatch && dropoffMatch;
 }
 
@@ -1521,7 +1537,7 @@ export const supabaseHelpers = {
   },
 
   // Enhanced Shared Ride Lobby Operations
-  async getAvailableLobbyByRoute(pickupAddr: string, dropoffAddr: string, pickupLoc?: string, dropoffLoc?: string) {
+  async getAvailableLobbyByRoute(pickupAddr: string, dropoffAddr: string, pickupLoc?: string, dropoffLoc?: string, terminalId?: string | null) {
     const { data, error } = await supabase
       .from('shared_ride_lobbies')
       .select('*')
@@ -1533,7 +1549,7 @@ export const supabaseHelpers = {
 
     // Match on short display names first, falling back to the full addresses.
     const match = (data || []).find((l: any) =>
-      isSimilarRoute(l, pickupLoc || pickupAddr, dropoffLoc || dropoffAddr, pickupAddr, dropoffAddr)
+      isSimilarRoute(l, pickupLoc || pickupAddr, dropoffLoc || dropoffAddr, pickupAddr, dropoffAddr, terminalId)
     );
 
     return { data: match || null, error };

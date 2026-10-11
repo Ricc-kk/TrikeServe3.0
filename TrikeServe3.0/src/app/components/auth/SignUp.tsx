@@ -9,6 +9,7 @@ import { Input } from "../ui/input";
 import { Badge } from "../ui/badge";
 import { useAuth, UserRole } from "../../contexts/AuthContext";
 import { CUISINES, type CuisineId } from "../../../lib/foodTaxonomy";
+import { PASSWORD_RULES } from "../../../lib/passwordRules";
 import BusinessMapSelector from "../business/BusinessMapSelector";
 
 interface SignUpFormData {
@@ -32,15 +33,8 @@ interface SignUpFormData {
   businessCuisine?: CuisineId[];
 }
 
-/** The password requirements, declared once so the checklist and
- *  `handleSubmitForm` can't drift apart — the form must not reject a password
- *  the checklist just told the user was good, or accept one it flagged. */
-const PASSWORD_RULES = [
-  { label: "At least 8 characters", test: (v: string) => v.length >= 8 },
-  { label: "One uppercase letter", test: (v: string) => /[A-Z]/.test(v) },
-  { label: "One lowercase letter", test: (v: string) => /[a-z]/.test(v) },
-  { label: "One number", test: (v: string) => /[0-9]/.test(v) },
-] as const;
+/** The password requirements, shared with the customer's change-password screen
+ *  so a password accepted at sign-up is accepted here and rejected identically. */
 
 /** Per-field validators. Each returns an error string, or null when the value
  *  is acceptable. Kept next to PASSWORD_RULES so the blur-time messages, the
