@@ -105,3 +105,91 @@ export function useActiveRideLock(customerId: string | null | undefined) {
 
   return { locked, checked };
 }
+
+/**
+ * The customer's currently blocking ride, if any.
+ *
+ * Two things mean "this customer is already travelling": an active private ride
+ * request, and membership of a shared-ride lobby that is still gathering or
+ * carrying passengers. Read live rather than from screen state, because the
+ * booking surfaces can be reached by deep link, the browser back button, or a
+ * tab that was opened before the ride started.
+ *
+ * The private ride is the customer's *latest* request only, for the same reason
+ * `hasActiveRide` is: a superseded booking never reaches a terminal status, and
+ * counting those would lock the customer out indefinitely.
+ */
+export async function getActiveRideContext(customerId: string): Promise<{
+  privateRide: any | null;
+  lobby: any | null;
+}> {
+  const [{ data: ride, error: rideError }, { data: lobbies, error: lobbyError }] = await Promise.all([
+    supabase
+      .from("ride_requests")
+      .select("*")
+      .eq("customer_id", customerId)
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle(),
+    supabase
+      .from("shared_ride_lobbies")
+      .select("*")
+      .in("status", ["waiting", "driver_found", "in_progress"])
+      .order("created_at", { ascending: false }),
+  ]);
+
+  const privateRide = !rideError && ride && isActiveRideStatus(ride.status) ? ride : null;
+
+  const lobby =
+    (!lobbyError &&
+      (lobbies || []).find((l: any) => {
+        const passengers = Array.isArray(l.passengers_json) ? l.passengers_json : [];
+        return passengers.some(
+          (p: any) =>
+            p?.id === customerId || String(p?.id || "").startsWith(`${customerId}_companion_`)
+        );
+      })) ||
+    null;
+
+  return { privateRide, lobby };
+}
+
+/**
+ * `getActiveRideContext` as a polling hook.
+ *
+ * Polled because a ride can start (a driver accepts) or end while the booking
+ * screen stays mounted, and a customer who books a second ride in that window is
+ * exactly the case this guards. The lookup is two indexed reads.
+ */
+export function useActiveRideContext(customerId: string | null | undefined, pollMs = 8000) {
+  const [context, setContext] = useState<{ privateRide: any | null; lobby: any | null }>({
+    privateRide: null,
+    lobby: null,
+  });
+  const [checked, setChecked] = useState(false);
+
+  useEffect(() => {
+    if (!customerId) {
+      setContext({ privateRide: null, lobby: null });
+      setChecked(true);
+      return;
+    }
+    let active = true;
+
+    const check = async () => {
+      const result = await getActiveRideContext(customerId);
+      if (!active) return;
+      setContext(result);
+      setChecked(true);
+    };
+
+    check();
+    const interval = setInterval(check, pollMs);
+    return () => {
+      active = false;
+      clearInterval(interval);
+    };
+  }, [customerId, pollMs]);
+
+  return { ...context, checked };
+}

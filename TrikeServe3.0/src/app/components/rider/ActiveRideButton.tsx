@@ -1,6 +1,8 @@
 import { useEffect, useState } from "react";
 import { useLocation, useNavigate } from "react-router";
 import { Navigation } from "lucide-react";
+import { useAuth } from "../../contexts/AuthContext";
+import { readRiderActiveRide, isRiderRideActive, fetchRiderActiveRide } from "../../../lib/riderActiveRide";
 
 /**
  * Floating "Active Ride" button shown on rider screens while a ride is in
@@ -10,25 +12,37 @@ import { Navigation } from "lucide-react";
 export default function ActiveRideButton() {
   const navigate = useNavigate();
   const location = useLocation();
+  const { user } = useAuth();
   const [hasActiveRide, setHasActiveRide] = useState(false);
 
   useEffect(() => {
-    const check = () => {
-      try {
-        setHasActiveRide(!!localStorage.getItem("trikeserve_active_ride"));
-      } catch {
-        setHasActiveRide(false);
+    let active = true;
+
+    const check = async () => {
+      const saved = readRiderActiveRide();
+      if (saved && isRiderRideActive(saved.status)) {
+        if (active) setHasActiveRide(true);
+        return;
       }
+      // Fall back to the database, so the button still appears on a device that
+      // never accepted the ride, or that lost its saved copy.
+      if (user?.id) {
+        const dbRide = await fetchRiderActiveRide(user.id);
+        if (active) setHasActiveRide(!!dbRide);
+        return;
+      }
+      if (active) setHasActiveRide(false);
     };
 
     check();
     window.addEventListener("storage", check);
-    const interval = setInterval(check, 3000);
+    const interval = setInterval(check, 5000);
     return () => {
+      active = false;
       window.removeEventListener("storage", check);
       clearInterval(interval);
     };
-  }, []);
+  }, [user?.id]);
 
   // Nothing to show without an active ride, or while already on the ride screen.
   if (!hasActiveRide || location.pathname === "/rider/active-ride") return null;

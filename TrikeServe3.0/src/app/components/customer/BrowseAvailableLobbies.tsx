@@ -4,7 +4,7 @@ import { Button } from "../ui/button";
 import { Card } from "../ui/card";
 import { Badge } from "../ui/badge";
 import { useAuth } from "../../contexts/AuthContext";
-import { supabaseHelpers, isSimilarRoute } from "@/lib/supabase";
+import { supabaseHelpers, isSamePickup } from "@/lib/supabase";
 import { supabase } from "@/lib/supabase";
 
 interface AvailableLobby {
@@ -13,7 +13,14 @@ interface AvailableLobby {
   pickup_address: string;
   dropoff_location: string;
   dropoff_address: string;
-  passengers_json?: Array<{ id: string; name: string; emoji: string }>;
+  passengers_json?: Array<{
+    id: string;
+    name: string;
+    emoji: string;
+    avatar?: string;
+    dropoff?: string;
+    dropoffAddress?: string;
+  }>;
   max_seats: number;
   price_per_seat: number;
   status: 'waiting' | 'driver_found' | 'in_progress' | 'completed' | 'cancelled';
@@ -27,12 +34,25 @@ interface BrowseAvailableLobbiesProps {
   pickupAddress: string;
   /** Terminal the pickup came from, when it came from the terminal picker. */
   terminalId?: string | null;
-  /** Short display name for the drop-off. */
+  /** The joining customer's own drop-off, recorded on their lobby passenger. */
   dropoff: string;
-  /** Full/geocoded drop-off address. */
   dropoffAddress: string;
+  dropoffCoords?: { lat: number; lng: number } | null;
   onLobbyJoined: (lobbyId: string) => void;
   onClose: () => void;
+}
+
+/**
+ * A lobby passenger's avatar.
+ *
+ * The stored value is a profile photo URL or an emoji placeholder; a URL must
+ * render as an image, while anything else is the emoji it looks like.
+ */
+function PassengerAvatar({ value }: { value?: string }) {
+  const src = (value || '👤').trim();
+  const isImage = /^https?:\/\//i.test(src) || src.startsWith('data:image/');
+  if (!isImage) return <span>{src}</span>;
+  return <img src={src} alt="" className="size-full object-cover" />;
 }
 
 export default function BrowseAvailableLobbies({
@@ -41,6 +61,7 @@ export default function BrowseAvailableLobbies({
   terminalId,
   dropoff,
   dropoffAddress,
+  dropoffCoords,
   onLobbyJoined,
   onClose
 }: BrowseAvailableLobbiesProps) {
@@ -52,19 +73,23 @@ export default function BrowseAvailableLobbies({
   const [joiningLobby, setJoiningLobby] = useState(false);
 
   /*
-   * Route matching passes the display name AND the full address, not just one
-   * of them.
+   * Lobbies are listed by terminal, not by full route.
    *
-   * A pickup chosen from the terminal picker has two different values: the
-   * terminal's name ("SANPA TODA Terminal") and its boundary ("Main Road,
-   * Valenzuela City"). Lobbies record the name, so matching on the boundary
-   * alone found nothing in common and every lobby was filtered out -- the
-   * screen reported "No lobbies available" for a route that already had a
-   * lobby waiting on it. The boundary is not a substitute for the name; it is
-   * a different fact about the same place.
+   * What a customer is actually asking here is "who else is waiting at my
+   * terminal?" -- the people they could share a vehicle with. Requiring the
+   * drop-off to match as well hid almost everything: two people leaving the
+   * same terminal almost never pick the exact same destination string, and when
+   * they did the list still said there was nobody there. Matching on the pickup
+   * alone shows every lobby leaving that terminal, each with its own drop-off
+   * shown on the card, so the choice is still an informed one.
+   *
+   * The name AND the address are both passed, because a pickup chosen from the
+   * terminal picker has two different values -- the terminal's name ("SANPA
+   * TODA Terminal") and its boundary ("Main Road, Valenzuela City") -- and
+   * lobbies record the name. Matching on the boundary alone found nothing in
+   * common and filtered out every lobby on screen.
    */
-  const routeMatches = (lobby: any) =>
-    isSimilarRoute(lobby, pickup, dropoff, pickupAddress, dropoffAddress, terminalId);
+  const routeMatches = (lobby: any) => isSamePickup(lobby, pickup, pickupAddress, terminalId);
 
   // Fetch available lobbies on mount
   useEffect(() => {
@@ -151,7 +176,7 @@ export default function BrowseAvailableLobbies({
       supabase.removeChannel(channel);
       clearInterval(pollInterval);
     };
-  }, [pickup, pickupAddress, terminalId, dropoff, dropoffAddress, user?.id]);
+  }, [pickup, pickupAddress, terminalId, user?.id]);
 
   const handleJoinLobby = async (lobbyId: string) => {
     if (!user) {
@@ -170,14 +195,21 @@ export default function BrowseAvailableLobbies({
         return;
       }
 
-      // Create passenger object
+      // Create passenger object. The joiner's own profile and destination ride
+      // with them, so the lobby can show who is in it and where each person gets
+      // off -- not just the lobby creator's details.
       const passenger = {
         id: user.id,
         name: user.name || 'Customer',
         emoji: '👤',
+        avatar: user.avatarUrl || undefined,
         joinedAt: new Date().toISOString(),
         pickup: lobby.pickup_location,
-        pickupAddress: lobby.pickup_address
+        pickupAddress: lobby.pickup_address,
+        dropoff: dropoff || lobby.dropoff_location,
+        dropoffAddress: dropoffAddress || lobby.dropoff_address,
+        dropoffLat: dropoffCoords?.lat ?? null,
+        dropoffLng: dropoffCoords?.lng ?? null
       };
 
       // Join the lobby
@@ -249,7 +281,12 @@ export default function BrowseAvailableLobbies({
               <Users className="w-5 h-5 text-[var(--primary)]" />
             </div>
             <h2 className="text-xl font-bold text-[var(--ink)]">Available Lobbies</h2>
-          </div>
+              {/* Says where the list came from, because these are every lobby at
+                  this terminal -- not just the ones going where you are going. */}
+              <p className="text-xs text-[var(--muted-foreground)] mt-0.5">
+                Everyone waiting at {pickup || 'your terminal'}
+              </p>
+            </div>
           <button
             onClick={onClose}
             className="w-9 h-9 flex items-center justify-center rounded-full bg-[var(--muted)] hover:bg-[var(--border)] transition-colors"
@@ -267,7 +304,8 @@ export default function BrowseAvailableLobbies({
               </div>
               <p className="text-lg font-semibold text-[var(--ink)] mb-1">No lobbies available</p>
               <p className="text-sm text-[var(--muted-foreground)]">
-                Be the first to create a lobby for this route!
+                Nobody else is waiting at this terminal right now. Be the first to
+                start a lobby.
               </p>
             </div>
           ) : (
@@ -292,7 +330,9 @@ export default function BrowseAvailableLobbies({
                         <div className="flex items-start gap-2">
                           <MapPin className="w-4 h-4 text-[var(--ink)] mt-0.5 flex-shrink-0" />
                           <div className="flex-1 min-w-0">
-                            <p className="text-xs text-[var(--muted-foreground)] uppercase tracking-widest font-semibold">Drop-off</p>
+                            <p className="text-xs text-[var(--muted-foreground)] uppercase tracking-widest font-semibold">
+                              Going to
+                            </p>
                             <p className="font-bold text-[var(--ink)]">{lobby.dropoff_location}</p>
                           </div>
                         </div>
@@ -304,9 +344,9 @@ export default function BrowseAvailableLobbies({
                           {passengers.slice(0, 3).map(passenger => (
                             <div
                               key={passenger.id}
-                              className="w-7 h-7 rounded-full bg-[var(--primary)] flex items-center justify-center text-xs border-2 border-white"
+                              className="w-7 h-7 overflow-hidden rounded-full bg-[var(--primary)] flex items-center justify-center text-xs border-2 border-white"
                             >
-                              {passenger.emoji}
+                              <PassengerAvatar value={passenger.avatar || passenger.emoji} />
                             </div>
                           ))}
                           {passengers.length > 3 && (

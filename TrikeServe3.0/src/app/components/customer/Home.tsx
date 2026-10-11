@@ -6,7 +6,7 @@ import { Card } from "../ui/card";
 import { Badge } from "../ui/badge";
 import { Input } from "../ui/input";
 import BottomNav from "../ui/BottomNav";
-import { isActiveRideStatus } from "../../../lib/rideLock";
+import { isActiveRideStatus, getActiveRideContext, useActiveRideContext } from "../../../lib/rideLock";
 import { useRideResume } from "../../../lib/rideResume";
 import ChoiceCard from "../ui/ChoiceCard";
 import SectionHeading from "../ui/SectionHeading";
@@ -399,6 +399,16 @@ export default function CustomerHome() {
     }
   }, [isRideLive, currentRequestId, syncRideResume]);
    const [currentSharedRideId, setCurrentSharedRideId] = useState<string | null>(null);
+   /*
+    * The live ride this customer is already in, straight from the database.
+    *
+    * `activeRide`/`rideStatus` only know about a booking made in this tab. The
+    * booking screen can also be reached by deep link, by Back, or after the tab
+    * that started the ride was closed -- and booking a second ride in any of
+    * those cases is what this tracks. `lobby` covers a shared ride that has not
+    * been given a driver yet.
+    */
+   const { privateRide: activeRideRequest, lobby: activeRideLobby, checked: rideContextChecked } = useActiveRideContext(user?.id);
    const [showPassengerCount, setShowPassengerCount] = useState(false);
    const [passengerCount, setPassengerCount] = useState(1);
    const [showLobbyList, setShowLobbyList] = useState(false);
@@ -611,6 +621,12 @@ export default function CustomerHome() {
    const hasManualPickupSelectionRef = useRef(false);
    const unsubscribeRef = useRef<(() => void) | null>(null);
    const driverStatusTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+   // Clear any pending status-popup timer on unmount, so it cannot fire a
+   // setState on a component that is no longer mounted.
+   useEffect(() => () => {
+     if (driverStatusTimerRef.current) clearTimeout(driverStatusTimerRef.current);
+   }, []);
 
    const readValidCoords = (latValue: any, lngValue: any) => {
      const latNum = Number(latValue);
@@ -1114,7 +1130,76 @@ export default function CustomerHome() {
         setShowShareLobby(true);
       });
     }
-  }, [user]);   // Poll unread delivery notifications for the bell badge.
+  }, [user]);
+
+  /*
+   * Return the customer to the shared ride they are already in.
+   *
+   * A lobby that is still going is reopened whenever it is found in the
+   * database, so closing the sheet, reloading, or opening the app on another
+   * device drops them back onto their ride rather than onto the booking screen.
+   * Leaving or cancelling the lobby moves it to a terminal status, so it stops
+   * being found and this stops firing.
+   */
+  useEffect(() => {
+    if (!activeRideLobby?.id) return;
+    setActiveShareLobbyId(activeRideLobby.id);
+    setShowShareLobby(true);
+    try {
+      localStorage.setItem('trikeserve_active_share_lobby', activeRideLobby.id);
+    } catch {
+      // Storage unavailable; the lobby still opens for this mount.
+    }
+  }, [activeRideLobby?.id]);
+
+  /*
+   * Rebuild the active private ride card when this tab holds no copy of it.
+   *
+   * Without this, arriving on the booking screen with a ride that was accepted
+   * in another tab showed the booking options and no ride, inviting a second
+   * booking while the first was under way. Only a ride with an assigned driver is
+   * rebuilt; one still waiting for a driver is left to the normal search flow.
+   */
+  useEffect(() => {
+    if (!activeRideRequest?.id) return;
+    if (activeRideLobby) return;
+    if (activeRide || rideStatus) return;
+    let hasStoredRide = true;
+    try {
+      hasStoredRide = !!localStorage.getItem('trikeserve_active_ride');
+    } catch {
+      // Storage unavailable; prefer the database copy.
+    }
+    if (hasStoredRide) return;
+
+    const r = activeRideRequest;
+    setPickup(r.pickup_location || '');
+    setPickupAddress(r.pickup_address || '');
+    setDropoff(r.dropoff_location || '');
+    setDropoffAddress(r.dropoff_address || '');
+    if (r.pickup_lat != null && r.pickup_lng != null) {
+      setPickupCoords({ lat: Number(r.pickup_lat), lng: Number(r.pickup_lng) });
+    }
+    if (r.dropoff_lat != null && r.dropoff_lng != null) {
+      setDropoffCoords({ lat: Number(r.dropoff_lat), lng: Number(r.dropoff_lng) });
+    }
+    setSelectedVehicle('special');
+    setCurrentRequestId(r.id);
+    if (r.amount != null && Number.isFinite(Number(r.amount))) setBookedFare(Number(r.amount));
+    if (r.accepted_driver_id) {
+      setRideDriverId(r.accepted_driver_id);
+      setActiveRide({
+        driver: r.driver_name || 'Driver',
+        plateNumber: r.driver_plate || 'N/A',
+        rating: r.driver_rating || '4.8',
+        eta: r.eta || '5 mins',
+      });
+      setRideStatus('driver-found');
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeRideRequest?.id]);
+
+   // Poll unread delivery notifications for the bell badge.
    useEffect(() => {
      if (!user?.id) return;
      const loadUnread = async () => {
@@ -1224,10 +1309,10 @@ export default function CustomerHome() {
           });
           localStorage.setItem(lastShownStatusKey, normalizedStatus);
 
-          if (normalizedStatus === 'payment' || normalizedStatus === 'awaiting-payment') {
-            if (driverStatusTimerRef.current) clearTimeout(driverStatusTimerRef.current);
-            driverStatusTimerRef.current = setTimeout(() => setDriverStatusPopup(null), 4000);
-          }
+          // Every status update is a glance, not a screen to dismiss: it closes on
+          // its own after 2s, or the moment the customer taps anywhere.
+          if (driverStatusTimerRef.current) clearTimeout(driverStatusTimerRef.current);
+          driverStatusTimerRef.current = setTimeout(() => setDriverStatusPopup(null), 2000);
         }
       }
     };
@@ -1631,13 +1716,13 @@ export default function CustomerHome() {
           });
           localStorage.setItem(rtLastShownStatusKey, realtimeStatus);
 
-          // Auto-dismiss after 4 seconds (payment stage only)
-          if (realtimeStatus === 'payment' || realtimeStatus === 'awaiting-payment') {
-            if (driverStatusTimerRef.current) clearTimeout(driverStatusTimerRef.current);
-            driverStatusTimerRef.current = setTimeout(() => {
-              setDriverStatusPopup(null);
-            }, 4000);
-          }
+          // Auto-dismiss after 2 seconds, for every status rather than only the
+          // payment stage, so a milestone never sits over the map waiting for an
+          // OK tap. The popup also closes on any tap (see its overlay).
+          if (driverStatusTimerRef.current) clearTimeout(driverStatusTimerRef.current);
+          driverStatusTimerRef.current = setTimeout(() => {
+            setDriverStatusPopup(null);
+          }, 2000);
         }
       }
     });
@@ -1933,9 +2018,18 @@ export default function CustomerHome() {
     return true;
   };
 
+  /*
+   * True while the customer is already in a ride, however it was started.
+   *
+   * Gated on `checked` so the booking options are not shown for a moment and
+   * then yanked away once the database answers -- that flash is long enough to
+   * tap Book a Ride.
+   */
+  const rideBlocked = rideContextChecked && (!!activeRideRequest || !!activeRideLobby);
+
   // The booking UI lives on top of the map and stays out of the way while a
-  // ride is active or a request is already being searched for.
-  const showBookingFlow = !activeRide && rideStatus !== 'searching';
+  // ride is active, already being searched for, or already running elsewhere.
+  const showBookingFlow = !activeRide && rideStatus !== 'searching' && !rideBlocked;
 
   /**
    * Watch the driver's messages so the floating head's badge is honest.
@@ -2020,7 +2114,36 @@ export default function CustomerHome() {
 
   const handleBookRide = async () => {
     if (!selectedVehicle) return;
-    
+
+    /*
+     * Refuse a second ride while one is under way.
+     *
+     * Checked against the database, not local state, so a booking made in
+     * another tab (or restored onto a device that never saw it) is caught too.
+     * A shared lobby that is still running reopens instead of erroring, and a
+     * private ride leaves the customer on the ride card already on screen.
+     */
+    if (user?.id) {
+      try {
+        const { privateRide, lobby } = await getActiveRideContext(user.id);
+        if (lobby) {
+          setActiveShareLobbyId(lobby.id);
+          setShowShareLobby(true);
+          try {
+            localStorage.setItem('trikeserve_active_share_lobby', lobby.id);
+          } catch {
+            // Storage unavailable; the lobby still opens for this mount.
+          }
+          return;
+        }
+        if (privateRide) {
+          return;
+        }
+      } catch (error) {
+        console.error('Error checking active ride before booking:', error);
+      }
+    }
+
     // Validate pickup terminal is selected (for private rides)
     if (selectedVehicle === 'special' && !selectedTerminalId) {
       alert('Please select a pickup terminal first.');
@@ -2295,7 +2418,17 @@ export default function CustomerHome() {
         alert('Failed to open chat. Please try again.');
         return;
       }
-      navigate(`/customer/messages/thread/${data.id}`);
+      // Pass the ride context so the thread renders the floating chat-head icon
+      // (tap it to come back here) and its back arrow returns to the ride instead
+      // of the messages list.
+      navigate(`/customer/messages/thread/${data.id}`, {
+        state: {
+          fromActiveRide: true,
+          rideBackTo: '/customer',
+          peerAvatar: rideDriverAvatar || undefined,
+          peerLabel: activeRide?.driver || 'Driver',
+        },
+      });
     } finally {
       setOpeningChat(false);
     }
@@ -2639,6 +2772,37 @@ export default function CustomerHome() {
           opened={chatOpened}
           onOpen={openDriverChatThread}
         />
+      )}
+
+      {/* Already on a ride, but no ride card is on screen yet -- the shared lobby
+          is still opening, or a restored ride lands a beat late. Says so rather
+          than offering a second booking. */}
+      {rideBlocked && !showShareLobby && !activeRide && rideStatus !== 'searching' && bookingStep === 'home' && (
+        <div className="relative z-[999] px-4 pt-3 pb-24">
+          <Card className="mx-auto max-w-3xl bg-surface p-6 text-center">
+            <div className="mx-auto mb-3 grid h-14 w-14 place-items-center rounded-full bg-[var(--primary-soft)]">
+              <Navigation className="h-6 w-6 text-[var(--primary)]" />
+            </div>
+            <h3 className="text-lg font-bold text-[var(--ink)]">You&apos;re on a ride right now</h3>
+            <p className="mt-1 text-sm text-[var(--muted-foreground)]">
+              Finish this trip before booking another ride.
+            </p>
+            {(activeRideLobby?.id || activeShareLobbyId) && (
+              <Button
+                className="mt-4 bg-[var(--primary)] hover:bg-[var(--primary)] text-white"
+                onClick={() => {
+                  const id = activeRideLobby?.id || activeShareLobbyId;
+                  if (id) {
+                    setActiveShareLobbyId(id);
+                    setShowShareLobby(true);
+                  }
+                }}
+              >
+                Back to my ride
+              </Button>
+            )}
+          </Card>
+        </div>
       )}
 
       {/* A business or driver awaiting superadmin approval is routed here as a
@@ -3765,6 +3929,7 @@ export default function CustomerHome() {
           terminalId={selectedTerminalId}
           dropoff={dropoff}
           dropoffAddress={dropoffAddress}
+          dropoffCoords={dropoffCoords}
           onLobbyJoined={(lobbyId) => {
             setActiveShareLobbyId(lobbyId);
             setShowLobbyList(false);
@@ -3781,7 +3946,10 @@ export default function CustomerHome() {
 
       {/* Driver Status Update Popup */}
       {driverStatusPopup && (
-        <div className="fixed inset-0 bg-black/50 z-[3000] flex items-end">
+        <div
+          className="fixed inset-0 bg-black/50 z-[3000] flex items-end"
+          onClick={() => setDriverStatusPopup(null)}
+        >
           <div className="bg-surface w-full rounded-t-3xl p-6 animate-in slide-in-from-bottom duration-300">
             <div className="max-w-sm mx-auto">
               {/* Status Icon — while a driver is assigned this is their actual

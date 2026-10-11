@@ -455,7 +455,19 @@ function getConversationPeer(conversation: ChatConversation) {
 
   /** Sends the composer text, or `override` when a quick reply chip calls it. */
   const sendMessage = async (override?: string) => {
-    const text = (override ?? messageText).trim();
+    /*
+     * Only a string override is a message.
+     *
+     * The send button used to be wired as `onClick={sendMessage}`, so the click
+     * event arrived here as `override`. `??` treats the (truthy) event object as
+     * the text, `.trim()` then throws "is not a function", and the send is
+     * swallowed -- tapping Send could never deliver a message, while the Enter
+     * key (which calls `sendMessage()` with no argument) worked. Typing is fixed
+     * at the call site; reading the override defensively means a future caller
+     * passing anything non-string falls back to the composer text instead of
+     * silently failing.
+     */
+    const text = (typeof override === 'string' ? override : messageText).trim();
     if (!user?.id || !text || !activeConversation) return;
 
     const isParticipantA = activeConversation.participant_a_id === user.id;
@@ -754,7 +766,9 @@ function getConversationPeer(conversation: ChatConversation) {
                 }
               }}
             />
-            <Button onClick={sendMessage} disabled={!messageText.trim()} className="bg-[var(--primary)] hover:bg-[var(--primary)] px-6">
+            {/* Wrapped, not passed directly: `onClick={sendMessage}` handed the
+                click event in as the message text. See sendMessage. */}
+            <Button onClick={() => sendMessage()} disabled={!messageText.trim()} className="bg-[var(--primary)] hover:bg-[var(--primary)] px-6">
               <Send className="w-5 h-5" />
             </Button>
           </div>

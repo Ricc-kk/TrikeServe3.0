@@ -3,6 +3,7 @@ import { useNavigate, useParams } from "react-router";
 import { ArrowLeft, Send, MessageCircle } from "lucide-react";
 import { Button } from "../ui/button";
 import { useAuth } from "../../contexts/AuthContext";
+import { readRiderActiveRide } from "../../../lib/riderActiveRide";
 
 interface Message {
   id: string;
@@ -28,10 +29,9 @@ export default function RiderMessageChat() {
     // Load passenger info
     const loadPassengerInfo = () => {
       // Check active ride
-      const activeRideData = localStorage.getItem('trikeserve_active_ride');
-      if (activeRideData) {
+      const activeRide = readRiderActiveRide();
+      if (activeRide) {
         try {
-          const activeRide = JSON.parse(activeRideData);
           if (activeRide.id === rideId && activeRide.passengerDetails) {
             const passenger = activeRide.passengerDetails.find((p: any) => p.id === passengerId);
             if (passenger) {

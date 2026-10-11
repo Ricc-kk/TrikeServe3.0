@@ -12,6 +12,7 @@ import LocationBanner, { type LocationProblem } from "../ui/LocationBanner";
 import ProofCapture from "../ui/ProofCapture";
 import { useAuth } from "../../contexts/AuthContext";
 import { supabaseHelpers, logAudit } from "@/lib/supabase";
+import { readRiderActiveRide, writeRiderActiveRide, clearRiderActiveRide, fetchRiderActiveRide } from "../../../lib/riderActiveRide";
 import { supabase } from "../../../utils/supabase";
 import useMapLoader from "@/lib/mapLoader";
 import PassengerMessagingDB from "./PassengerMessagingDB";
@@ -196,7 +197,7 @@ export default function ActiveRide() {
     if (location.state?.acceptedRide) {
       const ride = { ...location.state.acceptedRide, status: 'on-the-way' as RideStatus };
       setRideData(ride);
-      localStorage.setItem('trikeserve_active_ride', JSON.stringify(ride));
+      writeRiderActiveRide(ride);
       // Shared-ride lobbies are accepted in PassengerRequests (acceptLobbyAsDriver),
       // so skip the ride_requests calls which only apply to private/delivery rides.
       if (ride.id && user?.id) {
@@ -221,8 +222,19 @@ export default function ActiveRide() {
         }
       }
     } else {
-      const saved = localStorage.getItem('trikeserve_active_ride');
-      if (saved) try { setRideData(JSON.parse(saved)); } catch (e) {}
+      const saved = readRiderActiveRide();
+      if (saved) {
+        setRideData(saved);
+      } else if (user?.id) {
+        // Rebuild from the database when this device holds no copy: a ride
+        // accepted on another device, or after storage was cleared, is still the
+        // driver's, and an empty ride screen left them unable to continue it.
+        fetchRiderActiveRide(user.id).then((dbRide) => {
+          if (!dbRide) return;
+          writeRiderActiveRide(dbRide);
+          setRideData(dbRide);
+        });
+      }
     }
   }, [location.state, user]);
 
@@ -538,7 +550,7 @@ export default function ActiveRide() {
           const loc = data.results[0].geometry.location;
           const updated = { ...rideData, pickupLat: loc.lat, pickupLng: loc.lng };
           setRideData(updated);
-          localStorage.setItem('trikeserve_active_ride', JSON.stringify(updated));
+          writeRiderActiveRide(updated);
         }
       })
       .catch(() => {});
@@ -592,7 +604,7 @@ export default function ActiveRide() {
     if (!rideData) return;
     const updated = { ...rideData, status: newStatus };
     setRideData(updated);
-    localStorage.setItem('trikeserve_active_ride', JSON.stringify(updated));
+    writeRiderActiveRide(updated);
     const dbMap: Record<RideStatus, string> = { 'on-the-way': 'on-the-way', 'arrived': 'arrived', 'pickup': 'picked-up', 'drop-off': 'dropped-off', 'payment': 'awaiting-payment' };
     const messageMap: Record<RideStatus, string> = {
       'on-the-way': 'Driver is on the way!',
@@ -788,7 +800,7 @@ export default function ActiveRide() {
       actorName: user?.name,
     });
 
-    localStorage.removeItem('trikeserve_active_ride');
+    clearRiderActiveRide();
     setShowRideComplete(true);
     setTimeout(() => {
       navigate('/rider');

@@ -1178,17 +1178,37 @@ export function placesMatch(a?: string | null, b?: string | null): boolean {
   return na.length >= 4 && nb.length >= 4 && (na.includes(nb) || nb.includes(na));
 }
 
+// Whether a lobby leaves from the same place the user does.
+//
+// `userTerminalId` is the strongest signal available and is checked first. A
+// lobby created from the terminal picker records the terminal id, while the
+// strings are a description of where that terminal sits -- and descriptions are
+// not unique: GTDL and IN TODA TERMINAL both have the boundary "Marulas", so
+// matching those two on their address alone would merge them into one pickup
+// point. Falls back to the fuzzy name/address comparison for lobbies recorded
+// before a terminal was chosen.
+export function isSamePickup(
+  lobby: any,
+  userPickup: string,
+  userPickupAddress?: string,
+  userTerminalId?: string | null
+): boolean {
+  if (userTerminalId && lobby.terminal_id && lobby.terminal_id === userTerminalId) return true;
+
+  return (
+    placesMatch(lobby.pickup_location, userPickup) ||
+    placesMatch(lobby.pickup_location, userPickupAddress) ||
+    placesMatch(lobby.pickup_address, userPickupAddress) ||
+    placesMatch(lobby.pickup_address, userPickup)
+  );
+}
+
 // Compare a lobby's pickup/dropoff against the user's. Both legs must match;
 // each leg matches if the short display name OR the full address matches.
 //
-// `userTerminalId` is the strongest pickup signal available and is checked
-// first. A lobby created from the terminal picker records the terminal id,
-// while the strings are a description of where that terminal sits -- and
-// descriptions are not unique: GTDL and IN TODA TERMINAL both have the
-// boundary "Marulas", so matching those two on their address alone would
-// merge them into one pickup point. It only settles the pickup leg, because
-// two people leaving the same terminal for different places are not a shared
-// ride.
+// Used where a shared ride means the same trip for both parties -- quietly
+// joining someone else's lobby on the way to a different place is not that.
+// The browse list deliberately does not use this; see isSamePickup's callers.
 export function isSimilarRoute(
   lobby: any,
   userPickup: string,
@@ -1197,23 +1217,13 @@ export function isSimilarRoute(
   userDropoffAddress?: string,
   userTerminalId?: string | null
 ): boolean {
-  const sameTerminal =
-    !!userTerminalId && !!lobby.terminal_id && lobby.terminal_id === userTerminalId;
-
-  const pickupMatch =
-    sameTerminal ||
-    placesMatch(lobby.pickup_location, userPickup) ||
-    placesMatch(lobby.pickup_location, userPickupAddress) ||
-    placesMatch(lobby.pickup_address, userPickupAddress) ||
-    placesMatch(lobby.pickup_address, userPickup);
-
   const dropoffMatch =
     placesMatch(lobby.dropoff_location, userDropoff) ||
     placesMatch(lobby.dropoff_location, userDropoffAddress) ||
     placesMatch(lobby.dropoff_address, userDropoffAddress) ||
     placesMatch(lobby.dropoff_address, userDropoff);
 
-  return pickupMatch && dropoffMatch;
+  return isSamePickup(lobby, userPickup, userPickupAddress, userTerminalId) && dropoffMatch;
 }
 
 /**
@@ -2517,7 +2527,15 @@ export const supabaseHelpers = {
       .select('*')
       .eq('id', conversationId)
       .single();
-    return { data, error };
+
+    if (error || !data) return { data, error };
+
+    // Resolve the live names/photos, exactly as the inbox does. A thread opened
+    // straight by id ("Chat with Driver" on a ride) used to skip this and render
+    // the snapshot stored on the row -- a name initial or an emoji -- so the
+    // driver was shown as a pilot glyph even though their photo was on file.
+    const merged = await supabaseHelpers.resolveChatDisplayProfiles([data]);
+    return { data: merged[0], error };
   },
 
   async ensureChatConversation(conversation: {
@@ -2657,31 +2675,28 @@ export const supabaseHelpers = {
   },
 
   /**
-   * Conversations for a user, with each participant's avatar resolved live.
+   * Overlay each participant's live name and profile photo onto conversation rows.
    *
-   * The `participant_*_avatar` columns on `chat_conversations` are a snapshot
-   * written once when the thread is created, and they were seeded with a name
-   * initial and an emoji rather than a photo — so every conversation showed a
-   * letter no matter what the person had uploaded, and a photo added later
-   * never appeared. Reading `users.avatar_url` here instead means the real
-   * profile picture shows up, including for threads that already exist.
+   * The `participant_*_avatar` / `participant_*_name` columns on
+   * `chat_conversations` are a snapshot written once when the thread is created,
+   * and they were seeded with a name initial and an emoji rather than a photo —
+   * so a thread showed a letter or a glyph no matter what the person had
+   * uploaded, and a photo added later never appeared. Reading `users.avatar_url`
+   * here means the real person is shown, including for threads that already
+   * exist.
+   *
+   * Shared by the inbox and the single-thread lookup so the two agree; a thread
+   * opened directly by id used to skip this and showed the stored emoji.
    */
-  async getChatConversations(userId: string) {
-    const { data, error } = await supabase
-      .from('chat_conversations')
-      .select('*')
-      .or(`participant_a_id.eq.${userId},participant_b_id.eq.${userId}`)
-      .order('updated_at', { ascending: false });
+  async resolveChatDisplayProfiles(rows: any[]) {
+    if (!rows || rows.length === 0) return rows || [];
 
-    if (error || !data || data.length === 0) return { data, error };
-
-    // One lookup for every distinct participant across all visible threads,
-    // rather than one per conversation.
+    // One lookup for every distinct participant across all the rows.
     const ids = Array.from(
-      new Set(data.flatMap((c: any) => [c.participant_a_id, c.participant_b_id]).filter(Boolean))
+      new Set(rows.flatMap((c: any) => [c.participant_a_id, c.participant_b_id]).filter(Boolean))
     );
 
-    let profiles: Record<string, { avatar_url: string | null; name: string | null; role?: string | null }> = {};
+    const profiles: Record<string, { avatar_url: string | null; name: string | null; role?: string | null }> = {};
     try {
       const { data: people } = await supabase
         .from('users')
@@ -2695,9 +2710,9 @@ export const supabaseHelpers = {
         };
       }
     } catch (e) {
-      // A failed profile read must not take the conversation list down with it;
-      // the denormalised snapshot is still on the row as a fallback.
-      console.warn('[supabase] Could not resolve chat avatars:', e);
+      // A failed profile read must not take the conversation down with it; the
+      // denormalised snapshot is still on the row as a fallback.
+      console.warn('[supabase] Could not resolve chat profiles:', e);
     }
 
     /**
@@ -2706,8 +2721,8 @@ export const supabaseHelpers = {
      * A conversation with a shop should be labelled by the shop, not by the
      * person who owns it. "Nemia's Kakanin" tells a customer who they are
      * talking to; "John Marc Balagot" does not, and they may be messaging three
-     * branches run by one person. Looked up in a single query; a failure here
-     * leaves the owner's name in place, which is the old behaviour.
+     * branches run by one person. A failure here leaves the owner's name in
+     * place, which is the old behaviour.
      */
     const shopNames: Record<string, string> = {};
     const businessIds = ids.filter((id) => profiles[id]?.role === 'business');
@@ -2729,14 +2744,25 @@ export const supabaseHelpers = {
 
     // Prefer the live profile photo. Fall back to the stored value, which is an
     // initial or emoji for older threads.
-    const merged = data.map((c: any) => ({
+    return rows.map((c: any) => ({
       ...c,
       participant_a_avatar: profiles[c.participant_a_id]?.avatar_url || c.participant_a_avatar,
       participant_b_avatar: profiles[c.participant_b_id]?.avatar_url || c.participant_b_avatar,
       participant_a_name: shopNames[c.participant_a_id] || profiles[c.participant_a_id]?.name || c.participant_a_name,
       participant_b_name: shopNames[c.participant_b_id] || profiles[c.participant_b_id]?.name || c.participant_b_name,
     }));
+  },
 
+  async getChatConversations(userId: string) {
+    const { data, error } = await supabase
+      .from('chat_conversations')
+      .select('*')
+      .or(`participant_a_id.eq.${userId},participant_b_id.eq.${userId}`)
+      .order('updated_at', { ascending: false });
+
+    if (error || !data || data.length === 0) return { data, error };
+
+    const merged = await supabaseHelpers.resolveChatDisplayProfiles(data);
     return { data: merged, error };
   },
 

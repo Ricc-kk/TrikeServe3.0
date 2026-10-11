@@ -5,7 +5,7 @@ import { Button } from "../ui/button";
 import { Card } from "../ui/card";
 import { Badge } from "../ui/badge";
 import { useAuth } from "../../contexts/AuthContext";
-import { supabaseHelpers, isSimilarRoute, isDropoffWithinAnyTerminalBoundary } from "@/lib/supabase";
+import { supabase, supabaseHelpers, isSimilarRoute, isDropoffWithinAnyTerminalBoundary, haversineDistanceMeters } from "@/lib/supabase";
 import { GoogleMap, MarkerF, Polyline } from "@react-google-maps/api";
 import useMapLoader from "@/lib/mapLoader";
 import tricycleIcon from '../../../assets/0b76d1aa56b8ad6e15dd4efc8a0100b0ca5762a1.png'
@@ -14,9 +14,44 @@ interface LobbyPassenger {
   id: string;
   name: string;
   emoji: string;
+  /** The passenger's own avatar: a profile photo URL, or an emoji fallback. */
+  avatar?: string;
   joinedAt: string;
   pickup: string;  // Individual pickup location
   pickupAddress: string;  // Individual pickup address
+  // Each passenger rides to their own destination, captured when they join, so
+  // the lobby can show every drop-off and the order they happen in.
+  dropoff?: string;
+  dropoffAddress?: string;
+  dropoffLat?: number | null;
+  dropoffLng?: number | null;
+}
+
+/**
+ * A passenger's avatar.
+ *
+ * `avatar` holds either a real profile photo URL or an emoji placeholder, so a
+ * bare string cannot be dropped into the JSX: a URL would print as its own
+ * address. Anything that looks like an image renders as one; everything else is
+ * treated as the emoji it is. Falls back to the legacy `emoji` field for
+ * passengers stored before avatars were captured.
+ */
+function PassengerAvatar({
+  passenger,
+  resolvedAvatar,
+  className,
+}: {
+  passenger: LobbyPassenger;
+  /** The passenger's live photo from `users.avatar_url`, when known. */
+  resolvedAvatar?: string | null;
+  className?: string;
+}) {
+  // The live profile photo wins: it is the only source that also covers a
+  // passenger who joined before the lobby row stored an avatar.
+  const value = (resolvedAvatar || passenger.avatar || passenger.emoji || '👤').trim();
+  const isImage = /^https?:\/\//i.test(value) || value.startsWith('data:image/');
+  if (!isImage) return <span className={className}>{value}</span>;
+  return <img src={value} alt="" className={`size-full object-cover ${className || ''}`} />;
 }
 
 interface ShareRideLobby {
@@ -76,6 +111,17 @@ export default function ShareRideLobby({
   const { user } = useAuth();
   const navigate = useNavigate();
   const [openingChat, setOpeningChat] = useState(false);
+  /*
+   * Profile photos resolved from the users table.
+   *
+   * The lobby row itself carries only a name and an emoji, so a passenger who
+   * joined before avatars were captured -- or who set a photo afterwards -- kept
+   * showing a glyph. Reading `users.avatar_url` by id shows the real photo for
+   * existing passengers too, and refreshes it when it changes. The driver's is
+   * resolved the same way, because the accept payload has no photo column.
+   */
+  const [passengerAvatars, setPassengerAvatars] = useState<Record<string, string>>({});
+  const [driverProfileAvatar, setDriverProfileAvatar] = useState<string | null>(null);
   const [lobby, setLobby] = useState<ShareRideLobby | null>(null);
   const [isMinimized, setIsMinimized] = useState(false);
   const [showLeaveConfirm, setShowLeaveConfirm] = useState(false);
@@ -119,7 +165,17 @@ export default function ShareRideLobby({
         alert('Failed to open chat. Please try again.');
         return;
       }
-      navigate(`/customer/messages/thread/${data.id}`);
+      // Hand the thread the ride context so it renders the floating chat-head
+      // icon (tapping it returns here) and its back arrow returns to the lobby,
+      // rather than dropping the customer on the messages list mid-ride.
+      navigate(`/customer/messages/thread/${data.id}`, {
+        state: {
+          fromActiveRide: true,
+          rideBackTo: '/customer',
+          peerAvatar: driverProfileAvatar || undefined,
+          peerLabel: lobby.driver_name || 'Driver',
+        },
+      });
     } finally {
       setOpeningChat(false);
     }
@@ -222,10 +278,11 @@ export default function ShareRideLobby({
       });
       localStorage.setItem(lastShownKey, normalizedStatus);
 
-      if (normalizedStatus === 'payment' || normalizedStatus === 'awaiting-payment') {
-        if (driverStatusTimerRef.current) clearTimeout(driverStatusTimerRef.current);
-        driverStatusTimerRef.current = setTimeout(() => setDriverStatusPopup(null), 4000);
-      }
+      // Auto-dismiss after 2 seconds for every status, not only payment, so the
+      // popup never sits over the lobby waiting for an OK tap. It also closes on
+      // any tap (see its overlay).
+      if (driverStatusTimerRef.current) clearTimeout(driverStatusTimerRef.current);
+      driverStatusTimerRef.current = setTimeout(() => setDriverStatusPopup(null), 2000);
     }
   };
 
@@ -560,6 +617,66 @@ export default function ShareRideLobby({
     });
   }, [pickupCoords, dropoffCoords, isMapsLoaded]);
 
+  /*
+   * Resolve the profile photo of everyone in the lobby.
+   *
+   * Keyed on the sorted ids rather than the passenger array: the array is
+   * rebuilt on every poll, so depending on it would re-query the users table
+   * every couple of seconds for the same people. Companions are excluded -- they
+   * are extra seats, not accounts with a profile.
+   */
+  const passengerIdsKey = Array.from(
+    new Set(
+      (lobby?.passengers_json || [])
+        .map((p) => p.id)
+        .filter((id): id is string => !!id && !id.includes('_companion_'))
+    )
+  )
+    .sort()
+    .join(',');
+
+  useEffect(() => {
+    const ids = passengerIdsKey.split(',').filter(Boolean);
+    if (ids.length === 0) return;
+    let active = true;
+    supabase
+      .from('users')
+      .select('id, avatar_url')
+      .in('id', ids)
+      .then(({ data }) => {
+        if (!active || !data) return;
+        const next: Record<string, string> = {};
+        for (const row of data as any[]) {
+          if (row?.id && row.avatar_url) next[row.id] = row.avatar_url;
+        }
+        setPassengerAvatars(next);
+      });
+    return () => {
+      active = false;
+    };
+  }, [passengerIdsKey]);
+
+  // Resolve the assigned driver's profile photo by id.
+  useEffect(() => {
+    const driverId = lobby?.driver_id;
+    if (!driverId) {
+      setDriverProfileAvatar(null);
+      return;
+    }
+    let active = true;
+    supabase
+      .from('users')
+      .select('avatar_url')
+      .eq('id', driverId)
+      .maybeSingle()
+      .then(({ data }) => {
+        if (active) setDriverProfileAvatar(data?.avatar_url || null);
+      });
+    return () => {
+      active = false;
+    };
+  }, [lobby?.driver_id]);
+
   const decodePolyline = (encoded: string): Array<{ lat: number; lng: number }> => {
     const points: Array<{ lat: number; lng: number }> = [];
     let index = 0, lat = 0, lng = 0;
@@ -644,9 +761,16 @@ export default function ShareRideLobby({
             id: user?.id || `user_${Date.now()}`,
             name: user?.name || 'Customer',
             emoji: getRandomEmoji(),
+            // The signed-in customer's own profile photo, so the lobby shows the
+            // person rather than a random glyph. Falls back to the emoji above.
+            avatar: user?.avatarUrl || undefined,
             joinedAt: new Date().toISOString(),
             pickup,
-            pickupAddress
+            pickupAddress,
+            dropoff,
+            dropoffAddress,
+            dropoffLat: dropoffCoords?.lat ?? null,
+            dropoffLng: dropoffCoords?.lng ?? null
           };
 
           const newPassengers = [...passengers, mainPassenger];
@@ -659,7 +783,11 @@ export default function ShareRideLobby({
               emoji: '👥',
               joinedAt: new Date().toISOString(),
               pickup,
-              pickupAddress
+              pickupAddress,
+              dropoff,
+              dropoffAddress,
+              dropoffLat: dropoffCoords?.lat ?? null,
+              dropoffLng: dropoffCoords?.lng ?? null
             });
           }
 
@@ -689,9 +817,16 @@ export default function ShareRideLobby({
         id: user?.id || `user_${Date.now()}`,
         name: user?.name || 'Customer',
         emoji: getRandomEmoji(),
+        // Uses the customer's profile photo when they have one, so the lobby
+        // shows the person instead of a random glyph; the emoji is the fallback.
+        avatar: user?.avatarUrl || undefined,
         joinedAt: new Date().toISOString(),
         pickup,
-        pickupAddress
+        pickupAddress,
+        dropoff,
+        dropoffAddress,
+        dropoffLat: dropoffCoords?.lat ?? null,
+        dropoffLng: dropoffCoords?.lng ?? null
       };
 
       const passengers: LobbyPassenger[] = [mainPassenger];
@@ -704,7 +839,11 @@ export default function ShareRideLobby({
           emoji: '👥',
           joinedAt: new Date().toISOString(),
           pickup,
-          pickupAddress
+          pickupAddress,
+          dropoff,
+          dropoffAddress,
+          dropoffLat: dropoffCoords?.lat ?? null,
+          dropoffLng: dropoffCoords?.lng ?? null
         });
       }
 
@@ -916,6 +1055,31 @@ export default function ShareRideLobby({
     lobby && Number(lobby.price_per_seat) > 0 ? Number(lobby.price_per_seat) : pricePerSeat;
   const perSeatFare = lobbyTripTotal / Math.max(1, passengers.length);
 
+  /*
+   * Drop-off order: the destination closest to the pickup is reached first.
+   *
+   * Measured from the trip's own pickup, because the sequence of stops is a fact
+   * about the route, not about who joined when. A passenger whose destination has
+   * no coordinates keeps their join position and sorts after the ones that do, so
+   * a missing pin never pushes a known stop down the list.
+   */
+  const dropoffOrder = passengers
+    .map((passenger, index) => {
+      const lat = passenger.dropoffLat;
+      const lng = passenger.dropoffLng;
+      const distance =
+        pickupCoords && Number.isFinite(lat) && Number.isFinite(lng)
+          ? haversineDistanceMeters(pickupCoords, { lat: Number(lat), lng: Number(lng) })
+          : null;
+      return { passenger, index, distance };
+    })
+    .sort((a, b) => {
+      if (a.distance == null && b.distance == null) return a.index - b.index;
+      if (a.distance == null) return 1;
+      if (b.distance == null) return -1;
+      return a.distance - b.distance;
+    });
+
   // Full lobby view
   return (
     <>
@@ -1013,19 +1177,28 @@ export default function ShareRideLobby({
                       }`}
                     >
                       <div className="flex items-center gap-3">
-                        <div className="w-12 h-12 rounded-full bg-[var(--primary)] flex items-center justify-center text-2xl">
-                          {passenger.emoji || '👤'}
+                        <div className="w-12 h-12 flex-shrink-0 overflow-hidden rounded-full bg-[var(--primary)] flex items-center justify-center text-2xl">
+                          <PassengerAvatar
+                            passenger={passenger}
+                            resolvedAvatar={passengerAvatars[passenger.id]}
+                          />
                         </div>
-                        <div className="flex-1">
+                        <div className="flex-1 min-w-0">
                           <div className="flex items-center gap-2">
-                            <p className="font-bold text-[var(--ink)]">{passenger.name}</p>
+                            <p className="font-bold text-[var(--ink)] truncate">{passenger.name}</p>
                             {passenger.id === user?.id && (
                               <Badge variant="outline" className="border-[var(--primary)] text-[var(--primary)] text-[10px]">
                                 YOU
                               </Badge>
                             )}
                           </div>
-                          <p className="text-xs text-[var(--muted-foreground)]">
+                          <p className="mt-0.5 flex items-center gap-1 text-xs text-[var(--muted-foreground)]">
+                            <MapPin className="h-3 w-3 flex-shrink-0" />
+                            <span className="truncate">
+                              Drop-off: {passenger.dropoff || passenger.dropoffAddress || lobby.dropoff_location}
+                            </span>
+                          </p>
+                          <p className="text-[10px] text-[var(--muted-foreground)]">
                             Joined {new Date(passenger.joinedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                           </p>
                         </div>
@@ -1054,14 +1227,57 @@ export default function ShareRideLobby({
                   </Card>
                 ))}
               </div>
+
+              {/* Drop-off order — every passenger's stop, soonest first, with the
+                  first one called out so the group knows whose stop is next. */}
+              {passengers.length > 0 && (
+                <div className="mt-4 rounded-xl border border-[var(--border)] bg-[var(--muted)] p-3">
+                  <p className="mb-2 text-xs font-bold uppercase tracking-widest text-[var(--muted-foreground)]">
+                    Drop-off order
+                  </p>
+                  <div className="space-y-1.5">
+                    {dropoffOrder.map((entry, order) => (
+                      <div key={entry.passenger.id} className="flex items-center gap-2">
+                        <span
+                          className={`grid h-5 w-5 flex-shrink-0 place-items-center rounded-full text-[10px] font-bold ${
+                            order === 0 ? 'bg-[var(--primary)] text-white' : 'bg-[var(--border)] text-[var(--ink)]'
+                          }`}
+                        >
+                          {order + 1}
+                        </span>
+                        <span className="min-w-0 flex-1 truncate text-xs font-semibold text-[var(--ink)]">
+                          {entry.passenger.id === user?.id ? 'You' : entry.passenger.name}
+                        </span>
+                        <span className="max-w-[45%] truncate text-right text-[10px] text-[var(--muted-foreground)]">
+                          {entry.passenger.dropoff || entry.passenger.dropoffAddress || lobby.dropoff_location}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                  <p className="mt-2 text-[10px] font-semibold text-[var(--primary)]">
+                    Drop off first:{' '}
+                    {dropoffOrder[0]?.passenger.id === user?.id ? 'You' : dropoffOrder[0]?.passenger.name}
+                  </p>
+                </div>
+              )}
             </div>
 
             {/* Driver Info (when found) */}
             {lobby.status === 'driver_found' && lobby.driver_name && (
               <div className="bg-gradient-to-r from-[var(--success-soft)] to-[var(--success-soft)] border-2 border-[var(--success)] rounded-xl p-3.5 mb-3">
                 <div className="flex items-center gap-3">
-                  <div className="w-12 h-12 rounded-full bg-[var(--success)] flex items-center justify-center flex-shrink-0">
-                    <span className="text-2xl">👨‍✈️</span>
+                  <div className="w-12 h-12 flex-shrink-0 overflow-hidden rounded-full bg-[var(--success)] flex items-center justify-center">
+                    {driverProfileAvatar ? (
+                      <img
+                        src={driverProfileAvatar}
+                        alt={`${lobby.driver_name || 'Driver'}'s profile`}
+                        className="size-full object-cover"
+                      />
+                    ) : (
+                      <span className="text-lg font-bold text-white">
+                        {(lobby.driver_name || 'D').trim().charAt(0).toUpperCase()}
+                      </span>
+                    )}
                   </div>
                   <div className="flex-1 min-w-0">
                     <p className="text-[10px] text-[var(--success)] font-bold tracking-wider">Your Driver</p>
@@ -1078,6 +1294,7 @@ export default function ShareRideLobby({
                   </div>
                   <Button
                     size="icon"
+                    aria-label="Message driver"
                     className="bg-[var(--success)] hover:bg-[var(--success)] text-white h-10 w-10"
                     onClick={handleOpenDriverChat}
                     disabled={openingChat}
@@ -1327,7 +1544,10 @@ export default function ShareRideLobby({
 
       {/* Driver Status Update Popup (same as private rides) */}
       {driverStatusPopup && (
-        <div className="fixed inset-0 bg-black/50 z-[2300] flex items-end">
+        <div
+          className="fixed inset-0 bg-black/50 z-[2300] flex items-end"
+          onClick={() => setDriverStatusPopup(null)}
+        >
           <div className="bg-surface w-full rounded-t-3xl p-6 animate-in slide-in-from-bottom duration-300">
             <div className="max-w-sm mx-auto">
               {/* Status Icon */}

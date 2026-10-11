@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { useParams } from "react-router";
 import ChatHub from "../chat/ChatHub";
+import { readRiderActiveRide } from "../../../lib/riderActiveRide";
 
 interface PassengerInfo {
   name: string;
@@ -15,10 +16,9 @@ export default function RiderDirectChat() {
     if (!rideId || !passengerId) return;
 
     const loadPassengerInfo = () => {
-      const activeRideData = localStorage.getItem('trikeserve_active_ride');
-      if (activeRideData) {
+      const activeRide = readRiderActiveRide();
+      if (activeRide) {
         try {
-          const activeRide = JSON.parse(activeRideData);
           if (activeRide.id === rideId && activeRide.passengerDetails) {
             const passenger = activeRide.passengerDetails.find((p: any) => p.id === passengerId);
             if (passenger) {

@@ -32,6 +32,7 @@ import { Input } from "../ui/input";
 import { useAuth } from "../../contexts/AuthContext";
 import { consumeWelcomeGreeting } from "../../../lib/welcomeGreeting";
 import { supabaseHelpers } from "@/lib/supabase";
+import { readRiderActiveRide, writeRiderActiveRide, clearRiderActiveRide, isRiderRideActive, fetchRiderActiveRide } from "../../../lib/riderActiveRide";
 import { useTerminalQueue } from "../../hooks/useTerminalQueue";
 import TerminalQueueCard from "./TerminalQueueCard";
 import tricycleIcon from "../../../assets/0b76d1aa56b8ad6e15dd4efc8a0100b0ca5762a1.png";
@@ -192,36 +193,42 @@ export default function RiderDashboard() {
     }
   }, [isOnline, selectedServices, currentSeats, user, updateProfile]);
 
-  // Check for active ride in localStorage
+  // Check for an active ride: the saved one first, then the database.
   useEffect(() => {
-    const checkActiveRide = () => {
-      const savedRide = localStorage.getItem('trikeserve_active_ride');
-      if (savedRide) {
-        try {
-          const ride = JSON.parse(savedRide);
+    let active = true;
 
-          // Only consider it an active ride if status is truly active
-          const activeStatuses = ['accepted', 'on-the-way', 'arrived', 'in-progress'];
-          if (ride.status && activeStatuses.includes(ride.status)) {
-            setHasActiveRide(true);
-            setActiveRideData(ride);
-          } else {
-            // Clear completed or invalid rides
-            localStorage.removeItem('trikeserve_active_ride');
-            setHasActiveRide(false);
-            setActiveRideData(null);
-          }
-        } catch (error) {
-          console.error('Error loading active ride:', error);
-          // Clear invalid data
-          localStorage.removeItem('trikeserve_active_ride');
-          setHasActiveRide(false);
-          setActiveRideData(null);
+    const checkActiveRide = async () => {
+      const savedRide = readRiderActiveRide();
+      // A saved ride counts only when it is live and belongs to this driver --
+      // the customer's record is a different shape and used to be read here.
+      if (
+        savedRide &&
+        isRiderRideActive(savedRide.status) &&
+        (!savedRide.driverId || savedRide.driverId === user?.id)
+      ) {
+        if (active) {
+          setHasActiveRide(true);
+          setActiveRideData(savedRide);
         }
-      } else {
-        setHasActiveRide(false);
-        setActiveRideData(null);
+        return;
       }
+      if (savedRide) clearRiderActiveRide();
+
+      // Nothing usable saved: rebuild from the database, so a ride accepted on
+      // another device (or after storage was cleared) still counts as active.
+      if (user?.id) {
+        const dbRide = await fetchRiderActiveRide(user.id);
+        if (!active) return;
+        if (dbRide) {
+          writeRiderActiveRide(dbRide);
+          setHasActiveRide(true);
+          setActiveRideData(dbRide);
+          return;
+        }
+      }
+      if (!active) return;
+      setHasActiveRide(false);
+      setActiveRideData(null);
     };
 
     checkActiveRide();
@@ -229,8 +236,11 @@ export default function RiderDashboard() {
     // Poll for active ride updates
     const interval = setInterval(checkActiveRide, 2000);
 
-    return () => clearInterval(interval);
-  }, []);
+    return () => {
+      active = false;
+      clearInterval(interval);
+    };
+  }, [user?.id]);
 
     // Load and monitor passenger requests from Supabase with real-time updates
     useEffect(() => {
