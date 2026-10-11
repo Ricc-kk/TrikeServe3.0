@@ -1,5 +1,5 @@
-import { useState, useEffect, useMemo } from "react";
-import { ArrowLeft, Heart, Users, Calendar, Share2, Clock, Star, MapPin, Route, ChevronDown, ChevronRight, Home as HomeIcon, ShoppingCart, MessageCircle, ClipboardList, User, Search, BadgeCheck, X, Check } from "lucide-react";
+import { useState, useEffect, useMemo, useRef } from "react";
+import { ArrowLeft, Heart, Users, Calendar, Share2, Clock, Star, MapPin, Route, ChevronDown, ChevronRight, Home as HomeIcon, ShoppingCart, MessageCircle, ClipboardList, User, Search, BadgeCheck, X, Check, Trash2 } from "lucide-react";
 import { Link, useNavigate, useSearchParams } from "react-router";
 import { usePreviousPage } from "../../hooks/usePreviousPage";
 import { Card } from "../ui/card";
@@ -69,16 +69,157 @@ export default function RestaurantDetail() {
   const [searchParams] = useSearchParams();
   const restaurantId = searchParams.get("id");
   const restaurantName = searchParams.get("name") || "Restaurant";
-  const { addToCart: addItemToCart, getTotalItems, cartRestaurants } = useCart();
-  // The same address the food home and search use, so the three never disagree
-  // about where the order is going or how far away the shop is.
-  const delivery = useDeliveryAddress();
+  const { addToCart: addItemToCart, getTotalItems, cartRestaurants, removeRestaurant } = useCart();
 
-  // Check if this restaurant has items in the cart
+  /*
+   * This shop's basket, worked out before anything else uses it.
+   *
+   * Declared here rather than further down because the swipe gesture below counts
+   * the items, and reading a `const` from inside an effect that runs before its
+   * declaration is a crash rather than a stale value -- the screen died on
+   * "Cannot access 'cartItemCount' before initialization", which the production
+   * build did not catch.
+   */
   const cartItemsForThisStore = cartRestaurants.find(
     (r) => r.supabaseRestaurantId === restaurantId || r.id === restaurantId || r.name === restaurantName
   );
   const cartItemCount = cartItemsForThisStore?.items.reduce((sum, item) => sum + item.quantity, 0) || 0;
+
+  /*
+   * Swipe-to-remove on the floating cart bar.
+   *
+   * The bar follows the finger horizontally and settles open or closed, the way a
+   * list row does on a phone. It is tracked by hand rather than with a gesture
+   * library because it is one element and one axis, and a library would bring its
+   * own opinion about what counts as a swipe.
+   *
+   * `touch-pan-y` on the bar is what makes this work at all: without it the
+   * browser claims the gesture for scrolling the menu underneath, which is a
+   * vertical drag, and the bar never moves. With it, the browser keeps the
+   * vertical axis and hands over the horizontal one.
+   */
+  const SWIPE_REVEAL_WIDTH = 108;
+  const [cartBarOffset, setCartBarOffset] = useState(0);
+  const [isDraggingCartBar, setIsDraggingCartBar] = useState(false);
+  const [confirmingSwipeRemove, setConfirmingSwipeRemove] = useState(false);
+  const dragStartRef = useRef<{
+    x: number;
+    y: number;
+    started: boolean;
+    /** Where the bar was when the finger went down, so a drag from open closes. */
+    base: number;
+  } | null>(null);
+
+  // Which basket Remove empties: this shop's, not every basket.
+  const cartRestaurantId = cartItemsForThisStore?.id;
+
+  /**
+   * The live offset, mirrored out of state.
+   *
+   * Settling on touch-end has to read where the bar actually ended up, and reading
+   * it from state meant reading whatever the render that created this handler
+   * happened to hold. A quick flick lifts the finger before React has re-rendered
+   * from the last move, so the bar snapped back to shut no matter how far it had
+   * travelled. A ref is written as the finger moves and is always current.
+   */
+  const cartBarOffsetRef = useRef(0);
+  const moveCartBarTo = (next: number) => {
+    cartBarOffsetRef.current = next;
+    setCartBarOffset(next);
+  };
+
+  /** Settle open when past halfway, shut otherwise. */
+  const settleCartBar = (offset: number) => {
+    moveCartBarTo(offset <= -SWIPE_REVEAL_WIDTH / 2 ? -SWIPE_REVEAL_WIDTH : 0);
+    setIsDraggingCartBar(false);
+  };
+
+  const cartBarGestures = {
+    onTouchStart: (e: React.TouchEvent) => {
+      const touch = e.touches[0];
+      dragStartRef.current = {
+        x: touch.clientX,
+        y: touch.clientY,
+        started: false,
+        base: cartBarOffset,
+      };
+    },
+    onTouchMove: (e: React.TouchEvent) => {
+      const start = dragStartRef.current;
+      if (!start) return;
+      const touch = e.touches[0];
+      const dx = touch.clientX - start.x;
+      const dy = touch.clientY - start.y;
+
+      if (!start.started) {
+        /*
+         * Wait for the gesture to declare itself before capturing it.
+         *
+         * Claiming every touchstart would make the bar capture a vertical scroll
+         * of the menu and drag sideways out from under it. Waiting for a mostly
+         * horizontal move means the menu scrolls normally and the bar is only
+         * taken over once the swipe is unmistakably sideways.
+         */
+        if (Math.abs(dx) < 8 && Math.abs(dy) < 8) return;
+        if (Math.abs(dx) <= Math.abs(dy)) {
+          dragStartRef.current = null;
+          return;
+        }
+        start.started = true;
+        setIsDraggingCartBar(true);
+      }
+
+      /*
+         * Measured from where the bar sat when the finger went down, not from
+         * wherever it happens to be mid-drag. Using the live offset instead would
+         * compound the movement on every move event and the bar would run away
+         * from the finger the moment it started moving.
+         *
+         * Clamped so it cannot be dragged wider than the Remove button, nor
+         * further shut than shut.
+         */
+      const raw = start.base + dx;
+      moveCartBarTo(Math.max(-SWIPE_REVEAL_WIDTH, Math.min(0, raw)));
+    },
+    onTouchEnd: () => {
+      // From the ref, not from state: see `cartBarOffsetRef`.
+      settleCartBar(cartBarOffsetRef.current);
+      dragStartRef.current = null;
+    },
+    onTouchCancel: () => {
+      moveCartBarTo(0);
+      setIsDraggingCartBar(false);
+      dragStartRef.current = null;
+    },
+  };
+
+  /*
+   * Removing is not one tap.
+   *
+   * The swipe opens the button; the tap on the button arms the removal and asks,
+   * because until now the only way to empty a cart was to go and find it on the
+   * cart screen, and a single stray tap next to "View cart" should not throw away
+   * a basket of food. The bar stays put until Remove is confirmed.
+   */
+  const confirmSwipeRemove = () => {
+    if (!confirmingSwipeRemove) {
+      setConfirmingSwipeRemove(true);
+      return;
+    }
+    if (cartRestaurantId) removeRestaurant(cartRestaurantId);
+    setConfirmingSwipeRemove(false);
+    moveCartBarTo(0);
+  };
+
+  // Ask again the moment the cart changes underneath, so a second removal never
+  // skips straight through on the strength of a confirmation for the first.
+  useEffect(() => {
+    setConfirmingSwipeRemove(false);
+  }, [cartItemCount]);
+  // The same address the food home and search use, so the three never disagree
+  // about where the order is going or how far away the shop is.
+  const delivery = useDeliveryAddress();
+
   const { toggleFavorite, isFavorite: checkIsFavorite, toggleFavoriteItem, isFavoriteItem } = useFavorites();
   const { showNotification } = useNotification();
 
@@ -89,19 +230,6 @@ export default function RestaurantDetail() {
   const [showSearchModal, setShowSearchModal] = useState(false);
   const [showRatingsModal, setShowRatingsModal] = useState(false);
   const [showCustomizationModal, setShowCustomizationModal] = useState(false);
-  /*
-   * The dish just added, held so its details can be shown back.
-   *
-   * Null when there is nothing worth confirming -- a dish with no choices and no
-   * note goes straight into the cart as before.
-   */
-  const [addedItem, setAddedItem] = useState<{
-    item: MenuItem;
-    quantity: number;
-    customizations: any[];
-    note: string;
-    total: number;
-  } | null>(null);
   const [selectedItem, setSelectedItem] = useState<MenuItem | null>(null);
   const [restaurantData, setRestaurantData] = useState<RestaurantData | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -602,29 +730,6 @@ customizationGroups: parseChoiceGroups(item.customization_groups).filter(
        note: note || undefined
      });
 
-     /*
-      * Show what was just added.
-      *
-      * A toast saying "1 item added" confirms that something happened but not
-      * what: the dish, the drink that was picked, the price it moved to and the
-      * note written for the kitchen all disappear into the cart. Each of those is
-      * something the customer may have got wrong, and the choices are what they
-      * were most likely to misread. This is the last point at which they can see
-      * it before the order is placed.
-      *
-      * Only when there is something to show. A dish with no choices and no note
-      * has nothing to confirm, and interrupting every plain add with a dialog
-      * would be noise on a menu.
-      */
-     if (customizations.length > 0 || note) {
-       setAddedItem({
-         item,
-         quantity,
-         customizations,
-         note: note || "",
-         total: itemPrice * quantity,
-       });
-     }
      // Show notification with View Cart action
      showNotification(
        `${quantity} item${quantity > 1 ? 's' : ''} added to the cart`,
@@ -758,22 +863,59 @@ if (unfiledItems.length > 0) sectionGroups.push({ id: "__unfiled", name: "More",
 
   return (
     <div className="min-h-screen bg-[var(--muted)] pb-20">
-      {/* Floating View Cart Bar */}
-      {cartItemCount > 0 && (
-        <Link
-          to="/customer/cart"
-          className="fixed bottom-20 left-4 right-4 z-[900] bg-[var(--primary)] text-white rounded-2xl px-5 py-3 flex items-center justify-between shadow-xl shadow-[var(--primary)]/30 active:scale-[0.98] transition-transform"
-        >
-          <div className="flex items-center gap-3">
-            <div className="w-8 h-8 bg-white/20 rounded-full flex items-center justify-center">
-              <ShoppingCart className="w-4 h-4 text-white" />
-            </div>
-            <span className="font-bold text-sm">
-              View Cart · {cartItemCount} item{cartItemCount > 1 ? 's' : ''}
-            </span>
+      {/* Floating View Cart Bar.
+
+          Swipe left to remove.
+
+          The bar is a link, so tapping it opens the cart -- but on a phone the
+          thumb rests right on it, and until now there was no way to clear a
+          mistake made while browsing without leaving the menu and hunting on the
+          cart screen. Swiping is the gesture people already expect on a row like
+          this, so it was the one worth adding.
+
+          The gesture reveals a Remove button rather than emptying the cart on the
+          swipe itself. A cart is not a notification: it is the thing the customer
+          is about to pay for, and a fling that silently threw away two dishes
+          would be the worst possible response to misfiring a finger. So the swipe
+          asks, and the tap decides. */}
+{cartItemCount > 0 && (
+        <div className="fixed bottom-20 left-4 right-4 z-[900]">
+          {/* Sits behind the sliding bar so it is uncovered as the bar moves. */}
+          <button
+            type="button"
+            onClick={confirmSwipeRemove}
+            aria-label={`Remove ${cartItemCount} item${cartItemCount > 1 ? 's' : ''} from cart`}
+            className="absolute inset-y-0 right-0 flex items-center gap-2 rounded-2xl bg-[var(--error)] pl-5 pr-6 font-bold text-white transition-opacity active:opacity-80"
+            style={{ width: SWIPE_REVEAL_WIDTH }}
+          >
+            <Trash2 className="size-5" aria-hidden="true" />
+            Remove
+          </button>
+
+          <div
+            className="relative touch-pan-y overflow-hidden rounded-2xl shadow-xl shadow-[var(--primary)]/30"
+            style={{
+              transform: `translateX(${cartBarOffset}px)`,
+              transition: isDraggingCartBar ? 'none' : 'transform 200ms ease-out',
+            }}
+            {...cartBarGestures}
+          >
+            <Link
+              to="/customer/cart"
+              className="bg-[var(--primary)] text-white rounded-2xl px-5 py-3 flex items-center justify-between active:scale-[0.98] transition-transform"
+            >
+              <div className="flex items-center gap-3">
+                <div className="w-8 h-8 bg-white/20 rounded-full flex items-center justify-center">
+                  <ShoppingCart className="w-4 h-4 text-white" />
+                </div>
+                <span className="font-bold text-sm">
+                  View Cart · {cartItemCount} item{cartItemCount > 1 ? 's' : ''}
+                </span>
+              </div>
+              <span className="text-lg font-bold">→</span>
+            </Link>
           </div>
-          <span className="text-lg font-bold">→</span>
-        </Link>
+        </div>
       )}
 
       {/* Hero Image */}
@@ -1306,92 +1448,6 @@ if (unfiledItems.length > 0) sectionGroups.push({ id: "__unfiled", name: "More",
            onAddToCart={addToCartWithCustomizations}
          />
        )}
-
-       {/* What was just added.
-
-            The receipt for the choice sheet: the dish, what was chosen for it and
-            what it now costs, plus the customer's own note back to them verbatim.
-            They can still fix it here -- nothing is placed yet. */}
-        {addedItem && (
-          <div className="fixed inset-0 z-[2000] flex items-center justify-center bg-black/60 p-4">
-            <div
-              className="w-full max-w-sm rounded-2xl bg-[var(--surface)] p-6 shadow-2xl"
-              onClick={(e) => e.stopPropagation()}
-            >
-              <div className="mb-4 flex items-center gap-3">
-                <div className="grid size-11 shrink-0 place-items-center rounded-full bg-[var(--success)]/10">
-                  <Check className="size-5 text-[var(--success)]" strokeWidth={3} />
-                </div>
-                <div className="min-w-0">
-                  <h2 className="text-lg font-bold text-[var(--ink)]">Added to cart</h2>
-                  <p className="text-xs text-[var(--muted-foreground)]">
-                    Check this over before you order.
-                  </p>
-                </div>
-              </div>
-
-              <div className="mb-4 rounded-xl border border-line p-3">
-                <div className="flex items-start justify-between gap-3">
-                  <p className="min-w-0 text-sm font-bold text-[var(--ink)]">
-                    {addedItem.item.name}
-                    {addedItem.quantity > 1 && (
-                      <span className="ml-1 font-normal text-[var(--muted-foreground)]">
-                        ×{addedItem.quantity}
-                      </span>
-                    )}
-                  </p>
-                  <p className="shrink-0 text-sm font-bold text-[var(--ink)]">
-                    ₱{addedItem.total.toFixed(2)}
-                  </p>
-                </div>
-
-                {addedItem.customizations.length > 0 && (
-                  <div className="mt-2 space-y-0.5">
-                    {addedItem.customizations.map((c: any, idx: number) => (
-                      <p key={idx} className="text-xs text-[var(--muted-foreground)]">
-                        • {c.optionName}
-                        {c.price > 0 && (
-                          <span className="text-[var(--primary)]"> +₱{c.price.toFixed(2)}</span>
-                        )}
-                      </p>
-                    ))}
-                  </div>
-                )}
-
-                {addedItem.note && (
-                  <div className="mt-2 border-t border-line pt-2">
-                    <p className="text-[10px] font-bold uppercase tracking-wide text-[var(--muted-foreground)]">
-                      Note for the restaurant
-                    </p>
-                    <p className="mt-0.5 text-xs italic text-[var(--ink)]">
-                      &ldquo;{addedItem.note}&rdquo;
-                    </p>
-                  </div>
-                )}
-              </div>
-
-              <div className="flex gap-3">
-                <button
-                  type="button"
-                  onClick={() => setAddedItem(null)}
-                  className="flex-1 rounded-xl border border-line px-4 py-3 font-bold text-[var(--ink)] transition-colors hover:bg-[var(--muted)] active:scale-[0.97]"
-                >
-                  Keep shopping
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setAddedItem(null);
-                    navigate('/customer/cart');
-                  }}
-                  className="flex-1 rounded-xl bg-[var(--primary)] px-4 py-3 font-bold text-white transition-opacity hover:opacity-90 active:scale-[0.97]"
-                >
-                  View cart
-                </button>
-              </div>
-            </div>
-          </div>
-        )}
 
         {/* Store Closed Modal */}
        {showStoreClosedModal && (

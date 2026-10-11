@@ -169,30 +169,42 @@ export default function CustomizationModal({
     return total * quantity;
   };
 
+  /*
+   * A whole page, not a dialog.
+   *
+   * This was a sheet over a dimmed menu: the backdrop was still there, tapping it
+   * closed the sheet, and everything outside was one stray tap from throwing the
+   * choices away. It also ran out of room -- the choices, the note and the
+   * quantity are three separate things to read and decide on, and cramming them
+   * into half a screen with the kitchen menu showing through underneath made it
+   * feel like a popup rather than the decision it actually is.
+   *
+   * So it fills the screen, owns the whole viewport, and leaves only an explicit
+   * back button to leave. Nothing behind it to tap by accident.
+   */
   return (
-    <div className="fixed inset-0 bg-black/50 z-50 flex items-end sm:items-center justify-center">
-      <div 
-        className="absolute inset-0" 
-        onClick={onClose}
-      />
-      
-      <div className="relative bg-surface w-full sm:max-w-2xl sm:rounded-3xl max-h-[90vh] flex flex-col rounded-t-3xl">
-        {/* Header */}
-        <div className="sticky top-0 bg-surface border-b-2 border-[var(--border)] px-5 py-4 z-10 rounded-t-3xl">
-          <div className="flex items-center justify-between">
-            <h2 className="text-xl font-extrabold text-[var(--ink)]">Customize Your Order</h2>
-            <button
-              onClick={onClose}
-              className="p-2 hover:bg-[var(--muted)] rounded-full transition-colors"
-            >
-              <X className="w-6 h-6 text-[var(--ink)]" />
-            </button>
-          </div>
+    <div className="fixed inset-0 z-[1500] bg-[var(--surface)] flex flex-col">
+      {/* Header */}
+      <div className="shrink-0 bg-[var(--surface)] border-b border-[var(--border)] px-4 py-3">
+        <div className="flex items-center gap-3">
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label="Back to menu"
+            title="Back to menu"
+            className="grid size-10 shrink-0 place-items-center rounded-full text-[var(--ink)] transition-colors hover:bg-[var(--muted)] active:scale-90"
+          >
+            <X className="w-6 h-6" aria-hidden="true" />
+          </button>
+          <h2 className="min-w-0 truncate text-lg font-extrabold text-[var(--ink)]">
+            Customize Your Order
+          </h2>
         </div>
+      </div>
 
-        {/* Scrollable Content */}
-        <div className="flex-1 overflow-y-auto">
-          <div className="p-5 space-y-6">
+      {/* Scrollable Content */}
+      <div className="flex-1 overflow-y-auto">
+        <div className="mx-auto w-full max-w-2xl p-4 pb-6 space-y-6">
             {/* Item Info */}
             <Card className="p-5 border border-line">
               <div className="flex gap-4">
@@ -340,9 +352,11 @@ export default function CustomizationModal({
                 <span className="font-bold text-[var(--ink)]">Quantity</span>
                 <div className="flex items-center gap-4">
                   <button
+                    type="button"
                     onClick={() => setQuantity(Math.max(1, quantity - 1))}
                     disabled={quantity <= 1}
-                    className={`w-10 h-10 rounded-full flex items-center justify-center transition-colors ${
+                    aria-label="Decrease quantity"
+                    className={`w-11 h-11 rounded-full flex items-center justify-center transition-all active:scale-90 ${
                       quantity <= 1
                         ? "bg-[var(--muted)] text-[var(--border)]"
                         : "bg-[var(--primary)] text-white hover:bg-[var(--primary)]"
@@ -354,8 +368,10 @@ export default function CustomizationModal({
                     {quantity}
                   </span>
                   <button
+                    type="button"
                     onClick={() => setQuantity(quantity + 1)}
-                    className="w-10 h-10 rounded-full bg-[var(--primary)] text-white hover:bg-[var(--primary)] flex items-center justify-center transition-colors"
+                    aria-label="Increase quantity"
+                    className="w-11 h-11 rounded-full bg-[var(--primary)] text-white hover:bg-[var(--primary)] flex items-center justify-center transition-all active:scale-90"
                   >
                     <Plus className="w-5 h-5" />
                   </button>
@@ -363,10 +379,18 @@ export default function CustomizationModal({
               </div>
             </Card>
           </div>
-        </div>
+      </div>
 
-        {/* Footer - Add to Cart Button */}
-        <div className="sticky bottom-0 bg-surface border-t-2 border-[var(--border)] p-5">
+      {/*
+        Footer, always reachable.
+
+        Pinned to the bottom of the page rather than stuck inside the scrolling
+        area, so "Add to Cart" and the running total stay in the same place however
+        long the choices are. As a page this is a real footer, not a floating bar
+        over a sheet.
+      */}
+      <div className="shrink-0 border-t border-[var(--border)] bg-[var(--surface)] px-4 py-3">
+        <div className="mx-auto w-full max-w-2xl">
           <Button
             onClick={handleAddToCart}
             className="w-full bg-[var(--primary)] hover:bg-[var(--primary)] text-white font-bold py-4 rounded-2xl text-base flex items-center justify-between"
