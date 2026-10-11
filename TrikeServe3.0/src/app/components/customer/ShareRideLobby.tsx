@@ -9,6 +9,8 @@ import { supabase, supabaseHelpers, isSimilarRoute, isDropoffWithinAnyTerminalBo
 import { GoogleMap, MarkerF, Polyline } from "@react-google-maps/api";
 import useMapLoader from "@/lib/mapLoader";
 import tricycleIcon from '../../../assets/0b76d1aa56b8ad6e15dd4efc8a0100b0ca5762a1.png'
+import FloatingChatHead from "../ui/FloatingChatHead";
+import RideChatOverlay from "../rider/RideChatOverlay";
 
 interface LobbyPassenger {
   id: string;
@@ -111,6 +113,37 @@ export default function ShareRideLobby({
   const { user } = useAuth();
   const navigate = useNavigate();
   const [openingChat, setOpeningChat] = useState(false);
+  /**
+   * Floating chat head state, mirroring the driver's ride screen.
+   *
+   * The lobby is the customer's active shared ride, yet it only had a Message
+   * button that navigated away -- no way to reach the driver without leaving the
+   * screen. Same shared component as the driver's side, so the drag, snap, badge
+   * and ripple cannot drift apart between the two.
+   */
+  const driverChatId = useRef<string | null>(null);
+  /** Whether the ride chat overlay is showing. */
+  const [lobbyChatPopup, setLobbyChatPopup] = useState(false);
+  /** Messages from the driver the customer has not looked at yet. */
+  const [driverUnread, setDriverUnread] = useState(0);
+  /** Counts from the last poll, so a rise can be told apart from steady state. */
+  const lastDriverCount = useRef(0);
+  /** Bumped to replay the ripple; a finished CSS animation needs a remount. */
+  const [chatPulseKey, setChatPulseKey] = useState(0);
+  /**
+   * Whether chat has been opened on this ride.
+   *
+   * Read from storage on mount because navigating to the Messages tab unmounts
+   * this screen; without it, coming back would drop the head out of the corner.
+   * Shares the customer-side key with Home so the head keeps one parked spot.
+   */
+  const [chatOpened, setChatOpened] = useState(() => {
+    try {
+      return localStorage.getItem('trikeserve_chat_opened_customer') === '1';
+    } catch {
+      return false;
+    }
+  });
   /*
    * Profile photos resolved from the users table.
    *
@@ -148,20 +181,37 @@ export default function ShareRideLobby({
   const [destinationRoutePath, setDestinationRoutePath] = useState<Array<{ lat: number; lng: number }>>([]);
   const driverLocationIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
+  /**
+   * The driver thread for this lobby, found or created in one place.
+   *
+   * Shared by the Message button and the floating chat head so both land in the
+   * same conversation rather than two parallel ones. Null means it could not be
+   * opened; each caller decides how to say so.
+   */
+  const ensureDriverThread = async (): Promise<{ id: string } | null> => {
+    if (!user?.id || !lobby?.driver_id) return null;
+    const { data, error } = await supabaseHelpers.findOrCreateRideChat({
+      currentUserId: user.id,
+      currentUserName: user.name,
+      currentUserRole: user.role,
+      peerId: lobby.driver_id,
+      peerName: lobby.driver_name || 'Driver',
+      contextId: lobby.id,
+    });
+    if (error || !data) {
+      console.error('❌ Failed to open driver chat:', error);
+      return null;
+    }
+    driverChatId.current = data.id;
+    return data;
+  };
+
   const handleOpenDriverChat = async () => {
     if (!user?.id || !lobby?.driver_id || openingChat) return;
     setOpeningChat(true);
     try {
-      const { data, error } = await supabaseHelpers.findOrCreateRideChat({
-        currentUserId: user.id,
-        currentUserName: user.name,
-        currentUserRole: user.role,
-        peerId: lobby.driver_id,
-        peerName: lobby.driver_name || 'Driver',
-        contextId: lobby.id,
-      });
-      if (error || !data) {
-        console.error('❌ Failed to open driver chat:', error);
+      const data = await ensureDriverThread();
+      if (!data) {
         alert('Failed to open chat. Please try again.');
         return;
       }
@@ -180,6 +230,84 @@ export default function ShareRideLobby({
       setOpeningChat(false);
     }
   };
+
+  /**
+   * Open the driver chat as an overlay, the way the driver's ride screen does.
+   *
+   * Navigating away unmounts this lobby, so the head vanished the moment the
+   * chat opened and the customer lost sight of the ride. Opening in place keeps
+   * the sheet, the map and the head all mounted behind the conversation, and
+   * closing it costs nothing.
+   */
+  const openLobbyChatThread = async () => {
+    if (!user?.id || !lobby?.driver_id || openingChat) return;
+    setOpeningChat(true);
+    try {
+      const data = await ensureDriverThread();
+      if (!data) return;
+      // Read here rather than on close: the badge would otherwise keep counting
+      // the very message the customer is looking at.
+      await supabaseHelpers.markChatConversationRead(data.id, user.id);
+      setDriverUnread(0);
+      setChatOpened(true);
+      try {
+        localStorage.setItem('trikeserve_chat_opened_customer', '1');
+      } catch {
+        // Not fatal; the head still repositions for this mount.
+      }
+      setLobbyChatPopup(true);
+    } finally {
+      setOpeningChat(false);
+    }
+  };
+
+  /**
+   * Watch the driver's messages so the floating head's badge is honest.
+   *
+   * Finds the thread rather than creating one -- a customer who has not
+   * messaged yet should get no badge, not an empty conversation invented for
+   * them -- and keeps only the count, because the overlay is the source of
+   * truth for the messages themselves.
+   */
+  useEffect(() => {
+    if (!user?.id || !lobby?.driver_id) return;
+    let cancelled = false;
+
+    const check = async () => {
+      const { data } = await supabase
+        .from('chat_conversations')
+        .select('id, participant_a_id, participant_b_id, updated_at')
+        .or(`participant_a_id.eq.${user.id},participant_b_id.eq.${user.id}`);
+      if (cancelled) return;
+      const mine = ((data || []) as any[]).filter((c: any) => {
+        const other = c.participant_a_id === user.id ? c.participant_b_id : c.participant_a_id;
+        return other === lobby.driver_id;
+      });
+      if (mine.length === 0) return;
+      // Newest first, so a thread with duplicates resolves to the one in use.
+      mine.sort((a: any, b: any) => (b.updated_at || '').localeCompare(a.updated_at || ''));
+      const cid = mine[0].id;
+      driverChatId.current = cid;
+
+      const { data: msgs } = await supabaseHelpers.getChatMessages(cid);
+      if (cancelled) return;
+      const count = ((msgs || []) as any[]).filter(
+        (m: any) => m.sender_id !== user.id && m.read === false
+      ).length;
+
+      // Ripple only when the count actually grows, never on the first poll.
+      if (count > lastDriverCount.current) setChatPulseKey((k) => k + 1);
+      lastDriverCount.current = count;
+      setDriverUnread(count);
+    };
+
+    check();
+    const interval = setInterval(check, 5000);
+    return () => {
+      cancelled = true;
+      clearInterval(interval);
+    };
+  }, [user?.id, lobby?.driver_id]);
 
   const handleTerminalLobbyStatus = (status?: string) => {
     if (hasHandledTerminalLobbyStatus.current) return;
@@ -1540,6 +1668,42 @@ export default function ShareRideLobby({
             )}
           </Card>
         </div>
+      )}
+
+      {/* Chat with the driver as an overlay, so the lobby stays behind it the
+          way the driver's ride screen keeps its map. Raised above the lobby
+          sheet (z-[2000]); every dialog on this screen still paints over it. */}
+      <RideChatOverlay
+        open={lobbyChatPopup}
+        conversationId={driverChatId.current}
+        peerId={lobby.driver_id || null}
+        currentUserId={user?.id ?? null}
+        peerAvatar={driverProfileAvatar}
+        peerName={lobby.driver_name || 'Driver'}
+        senderRole="customer"
+        onClose={() => setLobbyChatPopup(false)}
+        zIndexClass="z-[2100]"
+      />
+
+      {/* Floating chat head -- the same component the driver's ride screen uses.
+          Raised to z-[2100] because this screen's sheet is z-[2000], which the
+          default stacking order sits beneath: the head would have painted behind
+          the dim backdrop and been untappable. Dialogs (terminal 2200, status
+          popup 2300, rating 2400) still cover it, and the leave-confirm dialog
+          ties it at 2100 while rendering later in the DOM, so paint order keeps
+          that one on top. Hidden while the overlay is open so two heads never
+          stack in the same corner. */}
+      {lobby.driver_id && lobby.status === 'driver_found' && !isTerminal && !lobbyChatPopup && (
+        <FloatingChatHead
+          zIndexClass="z-[2100]"
+          storageKey="trikeserve_chat_head_pos_customer"
+          peerAvatar={driverProfileAvatar}
+          peerLabel={lobby.driver_name || 'Driver'}
+          unread={driverUnread}
+          pulseKey={chatPulseKey}
+          opened={chatOpened}
+          onOpen={openLobbyChatThread}
+        />
       )}
 
       {/* Driver Status Update Popup (same as private rides) */}

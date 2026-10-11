@@ -63,7 +63,17 @@ export default function FloatingChatHead({
   opened,
   onOpen,
   onInitialResolve,
+  zIndexClass = Z_INDEX,
 }: {
+  /**
+   * Stacking order override.
+   *
+   * Defaults to `Z_INDEX`, which clears the ride card and the bottom tab bar.
+   * The shared-ride lobby sheet sits at `z-[2000]` -- above that default -- so a
+   * head rendered on that screen has to be raised or it paints behind the sheet's
+   * dim backdrop and cannot be tapped.
+   */
+  zIndexClass?: string;
   /** Distinct per side, e.g. `trikeserve_chat_head_pos_rider`. */
   storageKey: string;
   peerAvatar: string | null;
@@ -293,7 +303,7 @@ export default function FloatingChatHead({
         onOpen();
       }}
       aria-label={`Chat with ${peerLabel}. Drag to move.`}
-      className={`fixed ${Z_INDEX} grid size-14 place-items-center overflow-visible rounded-full bg-[var(--surface)] border-2 border-[var(--primary)] shadow-xl touch-none select-none`}
+      className={`fixed ${zIndexClass} grid size-14 place-items-center overflow-visible rounded-full bg-[var(--surface)] border-2 border-[var(--primary)] shadow-xl touch-none select-none`}
     >
       {/*
           Ripple.

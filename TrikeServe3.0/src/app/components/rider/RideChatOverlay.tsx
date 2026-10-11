@@ -48,7 +48,17 @@ export default function RideChatOverlay({
   peerIsGroup,
   senderRole,
   onClose,
+  zIndexClass = "z-[1700]",
 }: {
+  /**
+   * Stacking order override.
+   *
+   * `z-[1700]` clears the ride card and the floating head on the ride screens,
+   * but the shared-ride lobby sheet is `z-[2000]` -- above it -- so opening the
+   * chat from that screen needs the whole overlay raised or the conversation
+   * would be painted behind the lobby's dim backdrop.
+   */
+  zIndexClass?: string;
   open: boolean;
   conversationId: string | null;
   peerAvatar: string | null;
@@ -234,7 +244,7 @@ export default function RideChatOverlay({
    * merely painted, it is still live -- a tap beside the head reaches the map.
    */
   return (
-    <div className="pointer-events-none fixed inset-0 z-[1700]">
+    <div className={`pointer-events-none fixed inset-0 ${zIndexClass}`}>
       <div
         className={`ride-chat-sheet pointer-events-none absolute inset-0 flex flex-col ${
           closing ? 'ride-chat-sheet--closing' : ''
