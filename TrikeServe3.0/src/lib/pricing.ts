@@ -29,6 +29,19 @@ export const DEFAULT_RATES: RideRates = {
   privateRide: 50,
 };
 
+/**
+ * Riders a terminal carries when it has no limit of its own.
+ *
+ * Lives here rather than on the admin screen because two screens read it: the
+ * admin field that sets a terminal's limit, and the customer seat picker that
+ * obeys it. When each had its own fallback they could disagree -- a terminal
+ * showing "4" in the admin list and offering three seats to the customer.
+ *
+ * The database column defaults to the same number, so a terminal that has never
+ * been edited still has a real seat count.
+ */
+export const DEFAULT_MAX_PASSENGERS = 4;
+
 /** Numeric coercion that treats null/blank/missing as "use the fallback". */
 function num(value: any, fallback: number): number {
   if (value == null || value === '') return fallback;

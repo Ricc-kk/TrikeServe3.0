@@ -20,7 +20,7 @@ import { autocompletePlacesNew, createPlacesSessionToken, fetchPlaceDetailsNew, 
 import tricycleIcon from '../../../assets/0b76d1aa56b8ad6e15dd4efc8a0100b0ca5762a1.png';
 import { useAuth } from "../../contexts/AuthContext";
 import { supabaseHelpers, isDropoffWithinAnyTerminalBoundary, isPointInPolygon, normalizeBoundaryPolygon, logAudit } from "@/lib/supabase";
-import { computeRideFare, normalizeRates, terminalRates } from "@/lib/pricing";
+import { computeRideFare, normalizeRates, terminalRates, DEFAULT_MAX_PASSENGERS } from "@/lib/pricing";
 import ReasonPromptModal from "../ui/reason-prompt-modal";
 import { supabase } from "../../../utils/supabase";
 import { isAwaitingApproval } from "../../../lib/roleAccess";
@@ -592,7 +592,7 @@ export default function CustomerHome() {
      backendRouteStatus: 'idle',
    });
     const [mapsBlocked, setMapsBlocked] = useState<string | null>(null);
-   const [terminals, setTerminals] = useState<{ id: string; name: string; boundary: string; center_lat: number; center_lng: number; base_fare?: number | null; per_km?: number | null; boundary_polygon?: any }[]>([]);
+   const [terminals, setTerminals] = useState<{ id: string; name: string; boundary: string; center_lat: number; center_lng: number; base_fare?: number | null; per_km?: number | null; delivery_fee?: number | null; delivery_fee_per_km?: number | null; max_passengers?: number | null; boundary_polygon?: any }[]>([]);
    const [showTerminalPicker, setShowTerminalPicker] = useState(false);
    const [selectedTerminalId, setSelectedTerminalId] = useState<string | null>(null);
   // Hub state: what they want (all / a ride / a meal) and whether they have
@@ -1986,6 +1986,38 @@ export default function CustomerHome() {
     };
   }, [rideDriverId, user?.id]);
 
+  /*
+   * How many seats this customer may choose.
+   *
+   * A tricycle that seats two should not be offered a party of three. The admin
+   * sets a limit per terminal; when the chosen terminal has one, the seat list
+   * stops there instead of always offering the same fixed set and failing later at
+   * the point of no driver being found.
+   *
+   * Falls back to the same default the admin screen uses, rather than a number
+   * typed in here: two screens disagreeing about the default is how a terminal
+   * ends up advertising four seats and capping them at three.
+   */
+  const terminalSeatLimit = (() => {
+    const terminal = terminals.find((t) => t.id === selectedTerminalId);
+    const limit = terminal?.max_passengers;
+    return typeof limit === "number" && limit >= 1 ? limit : DEFAULT_MAX_PASSENGERS;
+  })();
+
+  const seatChoices = Array.from({ length: Math.max(1, terminalSeatLimit) }, (_, i) => i + 1);
+
+  /*
+   * Bring the chosen seat count back inside the new limit.
+   *
+   * A customer can pick three seats and then switch to a terminal that only takes
+   * two. Without this the seat list shrinks to 1 and 2, nothing is highlighted,
+   * and the button still says "Continue with 3 Seats" -- booking a party the
+   * vehicle cannot carry.
+   */
+  useEffect(() => {
+    if (passengerCount > terminalSeatLimit) setPassengerCount(terminalSeatLimit);
+  }, [passengerCount, terminalSeatLimit]);
+
   const handleBookRide = async () => {
     if (!selectedVehicle) return;
     
@@ -2031,7 +2063,23 @@ export default function CustomerHome() {
       }
     }
     
-    // Ask for passenger count for both share and private rides
+    /*
+     * Share rides ask how many seats they need; private rides do not.
+     *
+     * A private ride books the whole vehicle, so this step had exactly one answer:
+     * the modal rendered a single "1 passenger" tile and a "Continue with 1 Seat"
+     * button. A screen whose only choice is "carry on" is not a decision, it is a
+     * toll gate -- one more tap and one more screen between the customer and a
+     * booking, on the one vehicle type where nothing is actually being decided.
+     *
+     * Straight to the confirmation, which still shows the trip and the fare.
+     */
+    if (selectedVehicle === 'special') {
+      setShowBookingConfirm(true);
+      return;
+    }
+
+    // Ask for passenger count for share rides
     setShowPassengerCount(true);
   };
 
@@ -3244,6 +3292,27 @@ export default function CustomerHome() {
                       <p className="text-xs font-semibold text-[var(--primary)] mt-0.5">
                         Fare: ₱{terminal.base_fare ?? activeRates.baseFare} base + ₱{terminal.per_km ?? activeRates.perKm}/km
                       </p>
+                      {/*
+                        This terminal's delivery charge, when the admin has set one.
+
+                        Shown only when it is set, because a terminal that charges the
+                        platform's flat default has nothing of its own to say -- and a
+                        row reading "Delivery: platform rate" would imply a choice the
+                        customer does not have.
+                      */}
+                      {(terminal.delivery_fee != null || terminal.delivery_fee_per_km != null) && (
+                        <p className="text-xs font-semibold text-[var(--success)] mt-0.5">
+                          Delivery: ₱{terminal.delivery_fee ?? 0} base
+                          {terminal.delivery_fee_per_km != null && (
+                            <> + ₱{terminal.delivery_fee_per_km}/km</>
+                          )}
+                        </p>
+                      )}
+                      {terminal.max_passengers != null && (
+                        <p className="text-xs text-[var(--muted-foreground)] mt-0.5">
+                          Up to {terminal.max_passengers} on a shared ride
+                        </p>
+                      )}
                       {isMapsLoaded && (
                         <div className="mt-2 rounded-lg overflow-hidden border border-[var(--border)]" style={{ height: 120 }}>
                           <GoogleMap
@@ -3388,8 +3457,15 @@ export default function CustomerHome() {
             <h2 className="text-2xl font-bold text-[var(--ink)] mb-2">How many passengers?</h2>
             <p className="text-sm text-[var(--muted-foreground)] mb-6">Select the number of seats you need for this trip.</p>
 
-            {/* Passenger Count Selection */}
-            <div className={`grid gap-3 mb-6 ${selectedVehicle === 'special' ? 'grid-cols-1' : 'grid-cols-3'}`}>
+            {/*
+              Passenger Count Selection.
+
+              The seat list is however many this terminal allows, which is usually
+              four, so the grid is sized for four rather than the old fixed three --
+              `grid-cols-3` left the fourth seat alone on a row of its own, which
+              read as a different kind of option to the other three.
+            */}
+            <div className={`grid gap-3 mb-6 ${selectedVehicle === 'special' ? 'grid-cols-1' : 'grid-cols-2 sm:grid-cols-4'}`}>
               {selectedVehicle === 'special'
                 ? [1].map(count => (
                     <button
@@ -3414,7 +3490,7 @@ export default function CustomerHome() {
                       </div>
                     </button>
                   ))
-                : [1, 2, 3].map(count => (
+                : seatChoices.map(count => (
                     <button
                       key={count}
                       onClick={() => setPassengerCount(count)}

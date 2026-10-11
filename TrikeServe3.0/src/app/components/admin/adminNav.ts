@@ -1,5 +1,6 @@
 import type { LucideIcon } from "lucide-react";
 import {
+  Banknote,
   BarChart3,
   ClipboardCheck,
   ClipboardList,
@@ -46,6 +47,7 @@ export function adminNavFor(user: AdminLikeUser): AdminNavItem[] {
       { path: "/admin/analytics", label: "Analytics", filipino: "Analitiks", Icon: BarChart3 },
       { path: "/admin/users", label: "Users", filipino: "Mga gumagamit", Icon: Users },
       { path: "/admin/terminals", label: "Terminals", filipino: "Mga terminal", Icon: MapPin },
+      { path: "/admin/delivery", label: "Fares & Delivery", filipino: "Bayarin at delivery", Icon: Banknote },
       { path: "/admin/approvals", label: "Approvals", filipino: "Mga kahiling", Icon: ClipboardCheck },
       { path: "/admin/reports", label: "Reports", filipino: "Mga ulat", Icon: Flag },
       { path: "/admin/audit", label: "Audit Trail", filipino: "Bakas", Icon: ClipboardList },

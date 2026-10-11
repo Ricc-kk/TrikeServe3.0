@@ -55,6 +55,7 @@ import AdminDashboard from "./components/admin/AdminDashboard";
 import AdminAnalyticsPage from "./components/admin/AdminAnalyticsPage";
 import AdminUsers from "./components/admin/AdminUsers";
 import AdminTerminals from "./components/admin/AdminTerminals";
+import AdminFaresDelivery from "./components/admin/AdminFaresDelivery";
 import AdminApprovals from "./components/admin/AdminApprovals";
 import AuditTrail from "./components/admin/AuditTrail";
 import AdminReports from "./components/admin/AdminReports";
@@ -538,6 +539,14 @@ export const router = createBrowserRouter([
         element: (
           <ProtectedRoute allowedRoles={['admin']}>
             <AdminTerminals />
+          </ProtectedRoute>
+        )
+      },
+      {
+        path: "admin/delivery",
+        element: (
+          <ProtectedRoute allowedRoles={['admin']}>
+            <AdminFaresDelivery />
           </ProtectedRoute>
         )
       },

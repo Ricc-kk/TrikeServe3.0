@@ -8,12 +8,10 @@ import { Tricycle } from "../ui/Tricycle";
 import { useNavigate } from "react-router";
 import { Card } from "../ui/card";
 import { Badge } from "../ui/badge";
-import { Input } from "../ui/input";
 import { useAuth } from "../../contexts/AuthContext";
 import AdminShell from "./AdminShell";
 import { supabase } from "../../../utils/supabase";
 import { adminDeleteUser, adminVerifyUser, logAudit } from "../../../lib/supabase";
-import { normalizeRates } from "@/lib/pricing";
 import ConfirmationModal from "../ui/confirmation-modal";
 import Toast from "../ui/Toast";
 import AdminAnalytics from "./AdminAnalytics";
@@ -69,51 +67,17 @@ export default function AdminDashboard() {
   const [activeUsers, setActiveUsers] = useState<ActiveUser[]>([]);
   const [toast, setToast] = useState<{ message: string; variant?: 'success' | 'error' | 'warning' } | null>(null);
 
-  const [rateConfig, setRateConfig] = useState({
-    baseFare: 20,
-    perKm: 10,
-    sharedRide: 15,
-    privateRide: 50,
-    deliveryBaseFee: 30,
-  });
-
   const notifications: any[] = [];
 
   // Load users from localStorage
+  //
+  // Rates are no longer loaded here. This screen used to fetch the platform
+  // rates from admin_settings purely to show them in its own editable cards; with
+  // those gone the fetch had nothing to feed, and rates are read where they are
+  // set -- the Fares & Delivery tab, per terminal.
   useEffect(() => {
     loadUsers();
-    loadRates();
   }, [user]);
-
-  const loadRates = async () => {
-    // Supabase is the source of truth (it's what the customer app reads);
-    // localStorage is only an offline fallback.
-    try {
-      const { data, error } = await supabase
-        .from('admin_settings')
-        .select('setting_value')
-        .eq('setting_key', 'rates')
-        .single();
-
-      if (!error && data?.setting_value) {
-        const rates = normalizeRates(JSON.parse(data.setting_value));
-        setRateConfig(rates);
-        localStorage.setItem('trikeserve_rates', JSON.stringify(rates));
-        return;
-      }
-    } catch (error) {
-      console.warn('Error loading rates from Supabase:', error);
-    }
-
-    const savedRates = localStorage.getItem('trikeserve_rates');
-    if (savedRates) {
-      try {
-        setRateConfig(normalizeRates(JSON.parse(savedRates)));
-      } catch (error) {
-        console.error('Error loading rates:', error);
-      }
-    }
-  };
 
   const loadUsers = async () => {
     try {
@@ -317,56 +281,6 @@ export default function AdminDashboard() {
         loadUsers();
         closeModal();
         setToast({ message: 'User rejected and deleted', variant: 'success' });
-      },
-    });
-  };
-
-  const RATE_LABELS: Record<'baseFare' | 'perKm' | 'sharedRide' | 'privateRide' | 'deliveryBaseFee', string> = {
-    baseFare: 'Base Fare',
-    perKm: 'Rate per Kilometer',
-    sharedRide: 'Shared Ride',
-    privateRide: 'Private Ride',
-    deliveryBaseFee: 'Delivery Fee',
-  };
-
-  const handleUpdateRate = (rateType: keyof typeof RATE_LABELS) => {
-    const label = RATE_LABELS[rateType];
-    openModal({
-      title: 'Save Rate Change',
-      message: `Save the updated ${label} rate?`,
-      variant: 'success',
-      confirmLabel: 'Save',
-      onConfirm: async () => {
-        closeModal();
-        localStorage.setItem('trikeserve_rates', JSON.stringify(rateConfig));
-        try {
-          const { error } = await supabase
-            .from('admin_settings')
-            .upsert({
-              setting_key: 'rates',
-              setting_value: JSON.stringify(rateConfig),
-              updated_at: new Date().toISOString(),
-            }, { onConflict: 'setting_key' });
-
-          logAudit({
-            action: 'update_rate',
-            actorRole: 'admin',
-            entityType: 'settings',
-            entityId: rateType,
-            summary: `${label} set to ₱${rateConfig[rateType]}`,
-            details: { ...rateConfig },
-            actorEmail: user?.email,
-            actorName: user?.name,
-          });
-          setToast(
-            error
-              ? { message: 'Saved on this device — cloud sync failed.', variant: 'warning' }
-              : { message: `${label} rate updated successfully!`, variant: 'success' }
-          );
-        } catch (error) {
-          console.error('Error saving rates to Supabase:', error);
-          setToast({ message: 'Saved on this device — cloud sync failed.', variant: 'warning' });
-        }
       },
     });
   };
@@ -679,97 +593,6 @@ export default function AdminDashboard() {
             </div>
           </div>
 
-          {/* Delivery Fee Configuration - Super Admin */}
-          {isSuperAdmin && (
-            <div>
-              <h2 className="text-xl lg:text-2xl font-bold text-[var(--ink)] mb-4">Delivery Fee Configuration</h2>
-              <Card className="p-5 lg:p-6 border border-line bg-surface max-w-md">
-                <div className="flex items-start justify-between mb-4">
-                  <div>
-                    <Store className="w-8 h-8 lg:w-10 lg:h-10 text-[var(--success)] mb-2" />
-                    <h3 className="font-bold text-base lg:text-lg text-[var(--ink)]">Delivery Fee</h3>
-                    <p className="text-xs text-[var(--muted-foreground)]">Food delivery (base rate)</p>
-                  </div>
-                </div>
-                <div className="flex items-center gap-2 mb-3">
-                  <span className="text-lg text-[var(--muted-foreground)] font-bold">₱</span>
-                  <Input
-                    type="number"
-                    value={rateConfig.deliveryBaseFee}
-                    onChange={(e) => setRateConfig({ ...rateConfig, deliveryBaseFee: Number(e.target.value) })}
-                    className="text-2xl lg:text-3xl font-bold text-center border border-line"
-                  />
-                </div>
-                <button
-                  onClick={() => handleUpdateRate('deliveryBaseFee')}
-                  className="w-full py-3 bg-[var(--primary)] hover:bg-[var(--primary)] text-white font-bold rounded-xl transition-all"
-                >
-                  Update Rate
-                </button>
-              </Card>
-            </div>
-          )}
-
-          {/* Fixed Rate Configuration - Super Admin */}
-          {isSuperAdmin && (
-            <div>
-              <h2 className="text-xl lg:text-2xl font-bold text-[var(--ink)] mb-4">Fixed Rate Configuration</h2>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 lg:gap-6">
-                <Card className="p-5 lg:p-6 border border-line bg-surface">
-                  <div className="flex items-start justify-between mb-4">
-                    <div>
-                      <Store className="w-8 h-8 lg:w-10 lg:h-10 text-[var(--violet)] mb-2" />
-                      <h3 className="font-bold text-base lg:text-lg text-[var(--ink)]">Base Fare</h3>
-                      <p className="text-xs text-[var(--muted-foreground)]">Flat amount added to every ride</p>
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-2 mb-3">
-                    <span className="text-lg text-[var(--muted-foreground)] font-bold">₱</span>
-                    <Input
-                      type="number"
-                      value={rateConfig.baseFare}
-                      onChange={(e) => setRateConfig({ ...rateConfig, baseFare: Number(e.target.value) })}
-                      className="text-2xl lg:text-3xl font-bold text-center border border-line"
-                    />
-                  </div>
-                  <button
-                    onClick={() => handleUpdateRate('baseFare')}
-                    className="w-full py-3 bg-[var(--primary)] hover:bg-[var(--primary)] text-white font-bold rounded-xl transition-all"
-                  >
-                    Update Rate
-                  </button>
-                </Card>
-
-                <Card className="p-5 lg:p-6 border border-line bg-surface">
-                  <div className="flex items-start justify-between mb-4">
-                    <div>
-                      <Tricycle className="w-8 h-8 lg:w-10 lg:h-10 text-[var(--violet)] mb-2" />
-                      <h3 className="font-bold text-base lg:text-lg text-[var(--ink)]">Rate per Kilometer</h3>
-                      <p className="text-xs text-[var(--muted-foreground)]">Charged for each km travelled</p>
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-2 mb-3">
-                    <span className="text-lg text-[var(--muted-foreground)] font-bold">₱</span>
-                    <Input
-                      type="number"
-                      value={rateConfig.perKm}
-                      onChange={(e) => setRateConfig({ ...rateConfig, perKm: Number(e.target.value) })}
-                      className="text-2xl lg:text-3xl font-bold text-center border border-line"
-                    />
-                    <span className="text-sm text-[var(--muted-foreground)] font-semibold">/km</span>
-                  </div>
-                  <button
-                    onClick={() => handleUpdateRate('perKm')}
-                    className="w-full py-3 bg-[var(--primary)] hover:bg-[var(--primary)] text-white font-bold rounded-xl transition-all"
-                  >
-                    Update Rate
-                  </button>
-                </Card>
-
-  
-              </div>
-            </div>
-          )}
         </div>
 
       {/* Notifications Panel */}

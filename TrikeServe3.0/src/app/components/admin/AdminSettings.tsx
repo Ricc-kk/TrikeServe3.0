@@ -1,132 +1,19 @@
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import {
-  Settings, Menu, Save, PhilippinePeso,
-  Store,
   LogOut, AlertTriangle, Palette
 } from "lucide-react";
-import { Tricycle } from "../ui/Tricycle";
 import { useNavigate } from "react-router";
 import { Card } from "../ui/card";
-import { Input } from "../ui/input";
 import { Badge } from "../ui/badge";
 import { useAuth } from "../../contexts/AuthContext";
 
-import { supabase } from "../../../utils/supabase";
-import { normalizeRates } from "@/lib/pricing";
-import ConfirmationModal from "../ui/confirmation-modal";
-import Toast from "../ui/Toast";
 import ThemeModeSwitcher from "../ui/ThemeModeSwitcher";
 import AdminShell from "./AdminShell";
 
 export default function AdminSettings() {
   const navigate = useNavigate();
   const { user, logout } = useAuth();
-  const [toast, setToast] = useState<{ message: string; variant?: 'success' | 'error' | 'warning' } | null>(null);
   const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
-
-  // Rate Configuration
-  const [rateConfig, setRateConfig] = useState({
-    baseFare: 20,
-    perKm: 10,
-    sharedRide: 15,
-    privateRide: 50,
-    deliveryBaseFee: 30,
-  });
-
-  useEffect(() => {
-    loadSettings();
-  }, []);
-
-  const loadSettings = async () => {
-    // Load rates from Supabase
-    try {
-      const { data: ratesData, error } = await supabase
-        .from('admin_settings')
-        .select('*')
-        .eq('setting_key', 'rates')
-        .single();
-
-      if (!error && ratesData) {
-        try {
-          setRateConfig(normalizeRates(JSON.parse(ratesData.setting_value)));
-        } catch (e) {
-          console.error('Error parsing rates:', e);
-          loadRatesFromLocalStorage();
-        }
-      } else {
-        loadRatesFromLocalStorage();
-      }
-    } catch (error) {
-      console.error('Error loading rates from Supabase:', error);
-      loadRatesFromLocalStorage();
-    }
-
-  };
-
-  const loadRatesFromLocalStorage = () => {
-    const savedRates = localStorage.getItem('trikeserve_rates');
-    if (savedRates) {
-      try {
-        setRateConfig(normalizeRates(JSON.parse(savedRates)));
-      } catch (error) {
-        console.error('Error loading rates:', error);
-      }
-    }
-  };
-
-  // Modal state
-  const [modalOpen, setModalOpen] = useState(false);
-  const [modalConfig, setModalConfig] = useState<{
-    title: string;
-    message: string;
-    variant: 'danger' | 'warning' | 'success';
-    confirmLabel: string;
-    onConfirm: () => void;
-  } | null>(null);
-
-  const openModal = (config: typeof modalConfig) => {
-    setModalConfig(config);
-    setModalOpen(true);
-  };
-
-  const closeModal = () => {
-    setModalOpen(false);
-    setModalConfig(null);
-  };
-
-  const handleSaveRates = async () => {
-    openModal({
-      title: "Save Rates",
-      message: "Save rate configuration changes?",
-      variant: "success",
-      confirmLabel: "Save",
-      onConfirm: async () => {
-        closeModal();
-        try {
-          const { error } = await supabase
-            .from('admin_settings')
-            .upsert({
-              setting_key: 'rates',
-              setting_value: JSON.stringify(rateConfig),
-              updated_at: new Date().toISOString()
-            }, {
-              onConflict: 'setting_key'
-            });
-          localStorage.setItem('trikeserve_rates', JSON.stringify(rateConfig));
-          if (error) {
-            console.error('Error saving to Supabase:', error);
-            setToast({ message: 'Saved on this device — cloud sync failed.', variant: 'warning' });
-          } else {
-            setToast({ message: 'Rate configuration saved successfully!', variant: 'success' });
-          }
-        } catch (error) {
-          console.error('Error in handleSaveRates:', error);
-          localStorage.setItem('trikeserve_rates', JSON.stringify(rateConfig));
-          setToast({ message: 'Rate configuration saved on this device.', variant: 'success' });
-        }
-      },
-    });
-  };
 
   const handleLogout = () => {
     logout();
@@ -140,149 +27,28 @@ export default function AdminSettings() {
   return (
     <AdminShell
       title="Settings"
-      subtitle="Configure platform settings and rates"
+      subtitle="Your account and how the app looks"
     >
 
         {/* Content */}
         <div className="space-y-6">
-          {/* Rider Admin: no rate configuration, but Account & Security stays */}
+          {/*
+            Rider Admin sees less, and the reason is no longer rates.
+
+            This card used to say rate and platform configuration was the Super
+            Admin's job, which made sense while this screen held those settings.
+            Fares and delivery now live on their own tab, per terminal, and nothing
+            here is Super Admin only -- so a notice explaining a restriction that
+            does not apply would be worse than no notice.
+          */}
           {!isSuperAdmin && (
             <Card className="p-4 border-2 border-[var(--info-soft)] bg-[var(--info-soft)]">
               <p className="text-sm text-[var(--info)] font-semibold">Limited access</p>
               <p className="text-xs text-[var(--info)]/80 mt-0.5">
-                Rate and platform configuration is managed by the Super Admin. You can still manage your account below.
+                Fares and delivery settings are managed by the Super Admin on the Fares
+                &amp; Delivery tab. You can still manage your account below.
               </p>
             </Card>
-          )}
-
-          {/* Delivery Fee Configuration - Super Admin */}
-          {isSuperAdmin && (
-            <div>
-              <div className="flex items-center gap-3 mb-4">
-                <div className="w-10 h-10 bg-[var(--success-soft)] rounded-xl flex items-center justify-center">
-                  <Store className="w-6 h-6 text-[var(--success)]" />
-                </div>
-                <div>
-                  <h2 className="text-xl lg:text-2xl font-bold text-[var(--ink)]">Delivery Fee Configuration</h2>
-                  <p className="text-sm text-[var(--muted-foreground)]">Set the base delivery fee for food orders</p>
-                </div>
-              </div>
-
-              <Card className="p-5 lg:p-6 border border-line bg-surface max-w-md">
-                <div className="flex items-start justify-between mb-4">
-                  <div>
-                    <Store className="w-8 h-8 lg:w-10 lg:h-10 text-[var(--success)] mb-2" />
-                    <h3 className="font-bold text-base lg:text-lg text-[var(--ink)]">Delivery Fee</h3>
-                    <p className="text-xs text-[var(--muted-foreground)]">Food delivery (base rate)</p>
-                  </div>
-                </div>
-                <div className="flex items-center gap-2 mb-3">
-                  <span className="text-lg text-[var(--muted-foreground)] font-bold">₱</span>
-                  <Input
-                    type="number"
-                    value={rateConfig.deliveryBaseFee}
-                    onChange={(e) => setRateConfig({ ...rateConfig, deliveryBaseFee: Number(e.target.value) })}
-                    className="text-2xl lg:text-3xl font-bold text-center border border-line"
-                  />
-                </div>
-              </Card>
-
-              <button
-                onClick={handleSaveRates}
-                className="mt-4 px-6 py-3 bg-[var(--primary)] hover:bg-[var(--primary)] text-white font-bold rounded-xl transition-all flex items-center gap-2"
-              >
-                <Save className="w-5 h-5" />
-                Save Delivery Fee
-              </button>
-            </div>
-          )}
-
-          {/* Fixed Rate Configuration - Super Admin */}
-          {isSuperAdmin && (
-            <div>
-              <div className="flex items-center gap-3 mb-4">
-                <div className="w-10 h-10 bg-[var(--primary-soft)] rounded-xl flex items-center justify-center">
-                  <PhilippinePeso className="w-6 h-6 text-[var(--primary)]" aria-hidden="true" />
-                </div>
-                <div>
-                  <h2 className="text-xl lg:text-2xl font-bold text-[var(--ink)]">Fixed Rate Configuration</h2>
-                  <p className="text-sm text-[var(--muted-foreground)]">Rides are charged per kilometer: base fare + rate × distance</p>
-                </div>
-              </div>
-
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 lg:gap-6">
-              {/* Base Fare */}
-              <Card className="p-5 lg:p-6 border border-line bg-surface">
-                <div className="flex items-start justify-between mb-4">
-                  <div>
-                    <PhilippinePeso className="w-8 h-8 lg:w-10 lg:h-10 text-[var(--violet)] mb-2" aria-hidden="true" />
-                    <h3 className="font-bold text-base lg:text-lg text-[var(--ink)]">Base Fare</h3>
-                    <p className="text-xs text-[var(--muted-foreground)]">Flat amount added to every ride</p>
-                  </div>
-                </div>
-                <div className="flex items-center gap-2 mb-3">
-                  <span className="text-lg text-[var(--muted-foreground)] font-bold">₱</span>
-                  <Input
-                    type="number"
-                    value={rateConfig.baseFare}
-                    onChange={(e) => setRateConfig({ ...rateConfig, baseFare: Number(e.target.value) })}
-                    className="text-2xl lg:text-3xl font-bold text-center border border-line"
-                  />
-                </div>
-              </Card>
-
-              {/* Rate per Kilometer */}
-              <Card className="p-5 lg:p-6 border border-line bg-surface">
-                <div className="flex items-start justify-between mb-4">
-                  <div>
-                    <Tricycle className="w-8 h-8 lg:w-10 lg:h-10 text-[var(--violet)] mb-2" />
-                    <h3 className="font-bold text-base lg:text-lg text-[var(--ink)]">Rate per Kilometer</h3>
-                    <p className="text-xs text-[var(--muted-foreground)]">Charged for each km the customer travels</p>
-                  </div>
-                </div>
-                <div className="flex items-center gap-2 mb-3">
-                  <span className="text-lg text-[var(--muted-foreground)] font-bold">₱</span>
-                  <Input
-                    type="number"
-                    value={rateConfig.perKm}
-                    onChange={(e) => setRateConfig({ ...rateConfig, perKm: Number(e.target.value) })}
-                    className="text-2xl lg:text-3xl font-bold text-center border border-line"
-                  />
-                  <span className="text-sm text-[var(--muted-foreground)] font-semibold">/km</span>
-                </div>
-              </Card>
-
-              {/* Delivery Base Fee */}
-              <Card className="p-5 lg:p-6 border border-line bg-surface">
-                <div className="flex items-start justify-between mb-4">
-                  <div>
-                    <Store className="w-8 h-8 lg:w-10 lg:h-10 text-[var(--info)] mb-2" />
-                    <h3 className="font-bold text-base lg:text-lg text-[var(--ink)]">Delivery Fee</h3>
-                    <p className="text-xs text-[var(--muted-foreground)]">Flat fee per delivery</p>
-                  </div>
-                </div>
-                <div className="flex items-center gap-2 mb-3">
-                  <span className="text-lg text-[var(--muted-foreground)] font-bold">₱</span>
-                  <Input
-                    type="number"
-                    value={rateConfig.deliveryBaseFee}
-                    onChange={(e) => setRateConfig({ ...rateConfig, deliveryBaseFee: Number(e.target.value) })}
-                    className="text-2xl lg:text-3xl font-bold text-center border border-line"
-                  />
-                </div>
-              </Card>
-
-
-            </div>
-
-            <button
-              onClick={handleSaveRates}
-              className="mt-4 px-6 py-3 bg-[var(--primary)] hover:bg-[var(--primary)] text-white font-bold rounded-xl transition-all flex items-center gap-2"
-            >
-              <Save className="w-5 h-5" />
-              Save Rate Configuration
-            </button>
-          </div>
           )}
 
           {/* Appearance — Super Admin sees English-only labels */}
@@ -394,21 +160,6 @@ export default function AdminSettings() {
         </>
       )}
 
-      {/* Confirmation Modal */}
-      <ConfirmationModal
-        isOpen={modalOpen}
-        onConfirm={modalConfig?.onConfirm || (() => {})}
-        onCancel={closeModal}
-        title={modalConfig?.title || ''}
-        message={modalConfig?.message || ''}
-        variant={modalConfig?.variant || 'danger'}
-        confirmLabel={modalConfig?.confirmLabel || 'Confirm'}
-      />
-
-      {/* Save feedback popup */}
-      {toast && (
-        <Toast message={toast.message} variant={toast.variant} onClose={() => setToast(null)} />
-      )}
-    </AdminShell>
+      </AdminShell>
   );
 }
