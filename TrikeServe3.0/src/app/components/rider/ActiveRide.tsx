@@ -64,10 +64,42 @@ const distanceInMeters = (a: { lat: number; lng: number }, b: { lat: number; lng
 // less than two pixels, so real movement still tracks while jitter disappears.
 const MIN_LOCATION_DELTA_METERS = 8;
 
-// Zoom the camera returns to when following or re-centring the driver. Kept in one
-// place because the map's initial `zoom` must match it, or the first re-centre
-// visibly jumps the view.
-const DRIVER_FOLLOW_ZOOM = 15;
+// Zoom the map opens at. The driver chooses their own zoom after that: re-centring
+// deliberately does NOT reset it, so snapping back to the tricycle never yanks the
+// view out of the detail level they picked.
+const INITIAL_MAP_ZOOM = 15;
+
+// Below this speed a device compass heading is meaningless -- a parked phone keeps
+// reporting whichever way it happens to be lying -- so it is not used for rotation.
+const MIN_HEADING_SPEED_MPS = 1.5;
+
+// Distance the driver must cover before a derived bearing is trusted. Two fixes a
+// metre apart sit at an arbitrary angle to each other, and rotating the map to that
+// would make it spin on the spot.
+const MIN_HEADING_BASELINE_METERS = 10;
+
+// Ceiling on how fast the map is allowed to rotate, in degrees per second. GPS fixes
+// arrive seconds apart, so without a limit each one would snap the map to a new
+// angle and the rotation would be unreadable.
+const MAX_TURN_DEG_PER_SEC = 90;
+
+// Initial forward bearing in degrees from `a` to `b`, where north is 0.
+const bearingBetween = (a: { lat: number; lng: number }, b: { lat: number; lng: number }) => {
+  const lat1 = toRadians(a.lat);
+  const lat2 = toRadians(b.lat);
+  const deltaLng = toRadians(b.lng - a.lng);
+  const y = Math.sin(deltaLng) * Math.cos(lat2);
+  const x = Math.cos(lat1) * Math.sin(lat2) - Math.sin(lat1) * Math.cos(lat2) * Math.cos(deltaLng);
+  return (Math.atan2(y, x) * 180 / Math.PI + 360) % 360;
+};
+
+// Signed shortest rotation from `from` to `to`, in the range (-180, 180].
+const shortestAngleDelta = (from: number, to: number) => {
+  let delta = (to - from) % 360;
+  if (delta > 180) delta -= 360;
+  if (delta < -180) delta += 360;
+  return delta;
+};
 
 export default function ActiveRide() {
   const navigate = useNavigate();
@@ -95,6 +127,8 @@ export default function ActiveRide() {
   // Whether the camera is locked to the driver. Defaults on so the opening view is
   // the driver, and turns off by itself the first time they pan or zoom.
   const [followDriver, setFollowDriver] = useState(true);
+  // Direction of travel the map is rotated to face, null until we know it.
+  const [mapHeading, setMapHeading] = useState<number | null>(null);
 
   const isCompleting = useRef(false);
   const lastReportedLocationRef = useRef<{ lat: number; lng: number } | null>(null);
@@ -107,6 +141,11 @@ export default function ActiveRide() {
   // `stopFollowingOnZoom`.
   const mapMoveRef = useRef(false);
   const mapMoveTimeoutRef = useRef<number | undefined>(undefined);
+  // Last fix good enough to derive a bearing from, and the rotation the map has
+  // actually been given. Kept as refs because the smoothing loop reads and writes
+  // them every frame; routing them through state would re-render 60 times a second.
+  const headingBaselineRef = useRef<{ lat: number; lng: number } | null>(null);
+  const appliedHeadingRef = useRef<number | null>(null);
 
   /*
    * Hold the marker for as long as this ride is live, and release it the moment it
@@ -458,9 +497,9 @@ export default function ActiveRide() {
   }, []);
 
   /*
-   * `zoom_changed` is different: our own `setZoom` on re-centre raises it too, so
-   * that one has to be filtered out or following would switch itself off the
-   * instant the driver tapped re-centre.
+   * A zoom gesture by the driver stops following too -- they are inspecting the
+   * map, so the camera is theirs. `mapMoveRef` is kept as a filter so that if any
+   * future code zooms the map itself, that does not read as the driver zooming.
    */
   const stopFollowingOnZoom = useCallback(() => {
     if (mapMoveRef.current) return;
@@ -468,16 +507,9 @@ export default function ActiveRide() {
   }, []);
 
   const handleRecenter = useCallback(() => {
-    const map = mapRef.current;
-    if (map) {
-      // Re-centring also restores the navigation zoom. Tapping the button after
-      // having zoomed out to read the wider area should give a usable map back,
-      // not just the same view at the same zoom.
-      mapMoveRef.current = true;
-      window.clearTimeout(mapMoveTimeoutRef.current);
-      mapMoveTimeoutRef.current = window.setTimeout(() => { mapMoveRef.current = false; }, 300);
-      map.setZoom(DRIVER_FOLLOW_ZOOM);
-    }
+    // Position and orientation only. The zoom the driver is looking at is left
+    // exactly as it is: re-centring is about getting the tricycle back on screen,
+    // not about overriding how closely they chose to view it.
     setFollowDriver(true);
     panMapToDriver();
   }, [panMapToDriver]);
@@ -485,6 +517,62 @@ export default function ActiveRide() {
   useEffect(() => {
     if (followDriver) panMapToDriver();
   }, [followDriver, panMapToDriver]);
+
+  /*
+   * Ease the map's rotation towards the direction of travel.
+   *
+   * GPS fixes arrive seconds apart, so applying each one directly would snap the
+   * map between angles. Instead a single animation frame advances the applied
+   * heading by at most MAX_TURN_DEG_PER_SEC, which turns the same data into a
+   * readable rotation through a turn.
+   *
+   * Only runs while following: once the driver takes the camera the map keeps the
+   * angle it had, which is what a navigation app does rather than spinning under
+   * a finger.
+   */
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !followDriver || mapHeading == null) return;
+
+    let frame = 0;
+    let last = performance.now();
+
+    const tick = (now: number) => {
+      const map2 = mapRef.current;
+      if (map2 !== map || !map2) return;
+
+      const dt = Math.min((now - last) / 1000, 0.1);
+      last = now;
+
+      const target = mapHeading;
+      if (target == null) return;
+
+      const applied = appliedHeadingRef.current;
+      if (applied == null) {
+        appliedHeadingRef.current = target;
+        map2.setHeading(target);
+      } else {
+        const delta = shortestAngleDelta(applied, target);
+        // Close enough that continuing to animate is invisible; snap and stop.
+        if (Math.abs(delta) < 0.5) {
+          if (delta !== 0) {
+            appliedHeadingRef.current = target;
+            map2.setHeading(target);
+          }
+          return;
+        }
+        const step = Math.sign(delta) * Math.min(Math.abs(delta), MAX_TURN_DEG_PER_SEC * dt);
+        const next = (applied + step + 360) % 360;
+        appliedHeadingRef.current = next;
+        map2.setHeading(next);
+      }
+
+      frame = requestAnimationFrame(tick);
+    };
+
+    frame = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(frame);
+  }, [followDriver, mapHeading]);
 
   // Drop the programmatic-move flag timer on unmount so it cannot write to state
   // (or to a map instance that is gone) after the ride screen is closed.
@@ -503,6 +591,43 @@ export default function ActiveRide() {
     lastReportedLocationRef.current = loc;
     setDriverLocation(loc);
     return true;
+  };
+
+  /*
+   * Work out which way the driver is travelling, so the map can face that way.
+   *
+   * Two sources, in order of trust:
+   *
+   * 1. The device compass (`coords.heading`). Accurate, but only meaningful while
+   *    actually moving, and absent entirely on iOS.
+   * 2. The bearing between successive accepted fixes. Always available, but only
+   *    as good as the distance covered, hence MIN_HEADING_BASELINE_METERS.
+   *
+   * Deliberately does nothing while stationary: a parked driver has no direction
+   * of travel, and rotating the map to a compass bearing the phone happens to be
+   * facing would spin it for no reason.
+   */
+  const recordHeading = (coords: GeolocationCoordinates) => {
+    const loc = { lat: coords.latitude, lng: coords.longitude };
+    const speed = coords.speed ?? 0;
+
+    if (typeof coords.heading === 'number' && Number.isFinite(coords.heading) && speed > MIN_HEADING_SPEED_MPS) {
+      headingBaselineRef.current = loc;
+      setMapHeading((current) => {
+        // A heading arriving within a couple of degrees of the one already applied
+        // is just GPS jitter; ignoring it keeps the rotation loop from working to
+        // move the map that is already correctly oriented.
+        if (current != null && Math.abs(shortestAngleDelta(current, coords.heading as number)) < 2) return current;
+        return coords.heading as number;
+      });
+      return;
+    }
+
+    const baseline = headingBaselineRef.current;
+    if (baseline && distanceInMeters(baseline, loc) >= MIN_HEADING_BASELINE_METERS) {
+      headingBaselineRef.current = loc;
+      setMapHeading(bearingBetween(baseline, loc));
+    }
   };
 
   // Write the driver's current position to the active ride's backing store so
@@ -531,6 +656,7 @@ export default function ActiveRide() {
       (pos) => {
         console.log('[ActiveRide] Got device location:', pos.coords.latitude, pos.coords.longitude);
         setLocationProblem(null);
+        recordHeading(pos.coords);
         const loc = { lat: pos.coords.latitude, lng: pos.coords.longitude };
         reportDriverLocation(loc, { force: true });
         // Persist the first fix even if the driver is parked and never moves.
@@ -545,6 +671,7 @@ export default function ActiveRide() {
           navigator.geolocation.getCurrentPosition(
             (pos2) => {
               const loc = { lat: pos2.coords.latitude, lng: pos2.coords.longitude };
+              recordHeading(pos2.coords);
               reportDriverLocation(loc, { force: true });
               if (!hasPersistedLocationRef.current && persistDriverLocation(loc)) {
                 hasPersistedLocationRef.current = true;
@@ -573,6 +700,7 @@ export default function ActiveRide() {
     const watchId = navigator.geolocation.watchPosition(
       (pos) => {
         const loc = { lat: pos.coords.latitude, lng: pos.coords.longitude };
+        recordHeading(pos.coords);
         setLocationProblem(null);
         // Ignore sub-threshold drift so the map does not twitch while parked and
         // customers are not sent a stream of meaningless position updates. The
@@ -1037,13 +1165,17 @@ export default function ActiveRide() {
             center={mapCenter}
             onLoad={(map) => {
               mapRef.current = map;
+              // The map opens north-up, so that is the angle the rotation loop
+              // should ease away from. Without this the first heading would snap
+              // the map round in one jump.
+              appliedHeadingRef.current = 0;
               // Hand the camera back to the driver on the first deliberate gesture.
               // Listeners are attached here rather than in an effect because the
               // map instance only exists from `onLoad` onwards.
               map.addListener('dragstart', stopFollowingOnDrag);
               map.addListener('zoom_changed', stopFollowingOnZoom);
             }}
-            zoom={DRIVER_FOLLOW_ZOOM}
+            zoom={INITIAL_MAP_ZOOM}
             options={{ disableDefaultUI: true }}
           >
             {driverLocation && (
@@ -1158,20 +1290,26 @@ export default function ActiveRide() {
         }} className="absolute top-3 right-3 bg-surface text-black shadow-md hover:bg-[var(--muted)]"><Navigation className="w-4 h-4 mr-2" />Navigate</Button>
         {/* Re-centre on the driver.
             Appears only once following has stopped, i.e. only when the camera is
-            somewhere the driver chose. Tapping it snaps back to the tricycle,
-            restores the navigation zoom, and resumes following.
+            somewhere the driver chose. Tapping it brings the tricycle back to the
+            middle of the map, resumes following, and resumes facing the direction
+            of travel. The zoom is deliberately untouched.
 
-            Top-right rather than bottom-right: the detail sheet overlays the lower
-            part of the map whenever it is expanded, so a bottom-anchored button
-            would be unreachable exactly when the map is largest. */}
+            Centred rather than tucked into a corner because the driver's attention
+            is on the road: the control is reached for without looking, and the
+            middle of the map is where the thing it acts on -- their own position --
+            has just been restored. It is labelled rather than a bare icon because
+            a pin-free target arrow reads as "the driver", and there is no reason
+            for the driver to doubt where they are; the text says what tapping it
+            does. */}
         {!followDriver && driverLocation && (
           <button
             type="button"
             onClick={handleRecenter}
             aria-label="Re-centre map on my location"
-            className="absolute top-16 right-3 w-11 h-11 bg-surface rounded-full shadow-lg flex items-center justify-center active:scale-95 transition-transform z-[4003]"
+            className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 z-[4003] inline-flex items-center gap-2 rounded-full bg-surface pl-3 pr-5 py-3 shadow-xl active:scale-95 transition-transform"
           >
             <Navigation className="w-5 h-5 text-[var(--primary)]" />
+            <span className="text-sm font-bold text-[var(--ink)]">Re-centre</span>
           </button>
         )}
         {/* Route phase indicator banner */}
