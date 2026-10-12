@@ -64,6 +64,11 @@ const distanceInMeters = (a: { lat: number; lng: number }, b: { lat: number; lng
 // less than two pixels, so real movement still tracks while jitter disappears.
 const MIN_LOCATION_DELTA_METERS = 8;
 
+// Zoom the camera returns to when following or re-centring the driver. Kept in one
+// place because the map's initial `zoom` must match it, or the first re-centre
+// visibly jumps the view.
+const DRIVER_FOLLOW_ZOOM = 15;
+
 export default function ActiveRide() {
   const navigate = useNavigate();
   const location = useLocation();
@@ -87,6 +92,9 @@ export default function ActiveRide() {
   const [locationProblem, setLocationProblem] = useState<LocationProblem | null>(null);
   const [directions, setDirections] = useState<google.maps.DirectionsResult | null>(null);
   const [mapCenter, setMapCenter] = useState<{ lat: number; lng: number }>({ lat: 14.6037, lng: 120.9793 });
+  // Whether the camera is locked to the driver. Defaults on so the opening view is
+  // the driver, and turns off by itself the first time they pan or zoom.
+  const [followDriver, setFollowDriver] = useState(true);
 
   const isCompleting = useRef(false);
   const lastReportedLocationRef = useRef<{ lat: number; lng: number } | null>(null);
@@ -94,6 +102,11 @@ export default function ActiveRide() {
   // one GPS fix has been pushed to the database for the current ride.
   const rideDataRef = useRef<ActiveRideData | null>(null);
   const hasPersistedLocationRef = useRef(false);
+  // Set briefly while we change the zoom ourselves, so the resulting
+  // `zoom_changed` is not read as the driver zooming in by hand. See
+  // `stopFollowingOnZoom`.
+  const mapMoveRef = useRef(false);
+  const mapMoveTimeoutRef = useRef<number | undefined>(undefined);
 
   /*
    * Hold the marker for as long as this ride is live, and release it the moment it
@@ -399,34 +412,85 @@ export default function ActiveRide() {
     return () => { active = false; };
   }, [rideData?.customerId, rideData?.passengerDetails]);
 
-  useEffect(() => { if (driverLocation) setMapCenter(driverLocation); }, [driverLocation]);
-
-  /**
-   * Keep the camera on the driver.
+  /*
+   * The `center` prop is only meaningful before the map exists.
    *
-   * Only pans, never zooms, and only when the driver has moved far enough to
-   * matter. The imperative pan is what actually moves an already-mounted map --
-   * re-passing `center` as a prop after mount does not, which is why the driver
-   * drifted off screen while the route kept re-fitting the viewport.
+   * `@react-google-maps/api` re-applies `center` on every change of the value
+   * (`instance.setCenter(center)` in an effect keyed on `[center, instance]`), so
+   * feeding it the live driver position kept dragging the camera back onto the
+   * tricycle after every GPS tick -- including after the driver had deliberately
+   * panned away, and it also fired while following was off, which would have made
+   * the re-centre button a no-op. All camera movement after creation is therefore
+   * imperative and driven by `panMapToDriver`.
    */
   useEffect(() => {
+    if (driverLocation && !mapRef.current) setMapCenter(driverLocation);
+  }, [driverLocation]);
+
+  /*
+   * Camera follows the driver -- until the driver takes the camera themselves.
+   *
+   * Previously a `setInterval` panned to the driver every second, unconditionally.
+   * That made the map unusable: panning ahead to read the next turn, or zooming in
+   * on the pickup pin, was undone within a second, so the driver could never
+   * inspect the map. Following now stops on the first deliberate gesture and the
+   * re-centre button takes over.
+   */
+  const panMapToDriver = useCallback(() => {
     const map = mapRef.current;
     if (!map || !driverLocation) return;
 
-    let cancelled = false;
-    const pan = () => {
-      if (cancelled || mapRef.current !== map) return;
-      map.panTo(driverLocation);
-    };
-    // panTo interrupts any in-flight pan animation, so a slow gesture would
-    // otherwise be cut short and leave the camera behind the vehicle.
-    const interval = setInterval(pan, 1000);
-    pan();
-    return () => {
-      cancelled = true;
-      clearInterval(interval);
-    };
+    mapMoveRef.current = true;
+    map.panTo(driverLocation);
+    window.clearTimeout(mapMoveTimeoutRef.current);
+    mapMoveTimeoutRef.current = window.setTimeout(() => { mapMoveRef.current = false; }, 300);
   }, [driverLocation]);
+
+  /*
+   * A programmatic `panTo` does not raise `dragstart`, so anything that does is a
+   * real gesture and needs no suppression. No guard here on purpose: a blanket
+   * "ignore input right after we moved the camera" rule would swallow the driver's
+   * own drags for as long as the flag was held, which is precisely the input this
+   * whole change exists to honour.
+   */
+  const stopFollowingOnDrag = useCallback(() => {
+    setFollowDriver(false);
+  }, []);
+
+  /*
+   * `zoom_changed` is different: our own `setZoom` on re-centre raises it too, so
+   * that one has to be filtered out or following would switch itself off the
+   * instant the driver tapped re-centre.
+   */
+  const stopFollowingOnZoom = useCallback(() => {
+    if (mapMoveRef.current) return;
+    setFollowDriver(false);
+  }, []);
+
+  const handleRecenter = useCallback(() => {
+    const map = mapRef.current;
+    if (map) {
+      // Re-centring also restores the navigation zoom. Tapping the button after
+      // having zoomed out to read the wider area should give a usable map back,
+      // not just the same view at the same zoom.
+      mapMoveRef.current = true;
+      window.clearTimeout(mapMoveTimeoutRef.current);
+      mapMoveTimeoutRef.current = window.setTimeout(() => { mapMoveRef.current = false; }, 300);
+      map.setZoom(DRIVER_FOLLOW_ZOOM);
+    }
+    setFollowDriver(true);
+    panMapToDriver();
+  }, [panMapToDriver]);
+
+  useEffect(() => {
+    if (followDriver) panMapToDriver();
+  }, [followDriver, panMapToDriver]);
+
+  // Drop the programmatic-move flag timer on unmount so it cannot write to state
+  // (or to a map instance that is gone) after the ride screen is closed.
+  useEffect(() => {
+    return () => window.clearTimeout(mapMoveTimeoutRef.current);
+  }, []);
 
   // Accept a GPS fix only when it has moved far enough to be worth acting on.
   // Returns false for sub-threshold wobble so callers can skip both the map
@@ -966,17 +1030,20 @@ export default function ActiveRide() {
         {isMapsLoaded ? (
           <GoogleMap
             mapContainerStyle={{ width: '100%', height: '100%' }}
-            // Re-centre imperatively on every accepted fix.
-            //
-            // Passing `center` as a prop does not re-centre after mount: React
-            // only applies it when the value changes by identity, and the map
-            // had already taken over the camera. So the driver icon walked off
-            // screen while the route re-fit the viewport around itself.
-            // `reportDriverLocation` already throttles to meaningful movement, so
-            // this does not fire on GPS jitter.
-            center={driverLocation || mapCenter}
-            onLoad={(map) => { mapRef.current = map; }}
-            zoom={15}
+            // Initial camera only. Deliberately NOT the live driver position: this library
+            // re-applies `center` whenever the value changes, which would override
+            // both the driver's own panning and the follow toggle. See the
+            // `mapCenter` effect. The camera is moved imperatively from here on.
+            center={mapCenter}
+            onLoad={(map) => {
+              mapRef.current = map;
+              // Hand the camera back to the driver on the first deliberate gesture.
+              // Listeners are attached here rather than in an effect because the
+              // map instance only exists from `onLoad` onwards.
+              map.addListener('dragstart', stopFollowingOnDrag);
+              map.addListener('zoom_changed', stopFollowingOnZoom);
+            }}
+            zoom={DRIVER_FOLLOW_ZOOM}
             options={{ disableDefaultUI: true }}
           >
             {driverLocation && (
@@ -1089,6 +1156,24 @@ export default function ActiveRide() {
             : { lat: rideData.dropoffLat, lng: rideData.dropoffLng };
           if (dest && dest.lat) window.open(`https://www.google.com/maps/dir/?api=1&origin=${driverLocation?.lat},${driverLocation?.lng}&destination=${dest.lat},${dest.lng}&travelmode=driving`, '_blank');
         }} className="absolute top-3 right-3 bg-surface text-black shadow-md hover:bg-[var(--muted)]"><Navigation className="w-4 h-4 mr-2" />Navigate</Button>
+        {/* Re-centre on the driver.
+            Appears only once following has stopped, i.e. only when the camera is
+            somewhere the driver chose. Tapping it snaps back to the tricycle,
+            restores the navigation zoom, and resumes following.
+
+            Top-right rather than bottom-right: the detail sheet overlays the lower
+            part of the map whenever it is expanded, so a bottom-anchored button
+            would be unreachable exactly when the map is largest. */}
+        {!followDriver && driverLocation && (
+          <button
+            type="button"
+            onClick={handleRecenter}
+            aria-label="Re-centre map on my location"
+            className="absolute top-16 right-3 w-11 h-11 bg-surface rounded-full shadow-lg flex items-center justify-center active:scale-95 transition-transform z-[4003]"
+          >
+            <Navigation className="w-5 h-5 text-[var(--primary)]" />
+          </button>
+        )}
         {/* Route phase indicator banner */}
         <div className={`absolute top-3 left-3 px-3 py-1.5 rounded-full text-white text-xs font-bold shadow-md flex items-center gap-1.5 ${isHeadingToPickup ? 'bg-[var(--success)]' : 'bg-[var(--primary)]'}`}>
           <div className={`w-2 h-2 rounded-full ${isHeadingToPickup ? 'bg-surface animate-pulse' : 'bg-surface animate-pulse'}`} />

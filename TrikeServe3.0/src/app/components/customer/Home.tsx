@@ -196,6 +196,35 @@ const createCustomerMarkerIcon = () => {
   } as any;
 };
 
+/**
+ * "You are here" marker for the customer's own device position.
+ *
+ * A circle rather than a pin, for two reasons. It is the conventional shape for a
+ * live GPS fix, so it reads as "the device is here" instead of "a place you chose";
+ * and it stays visually distinct from the pickup pin, which shares the customer's
+ * blue and is a chosen location. A pin also anchors at its tip, while a dot has to
+ * anchor at its centre or the circle sits beside the real fix rather than on it.
+ */
+const createCurrentLocationIcon = () => {
+  const google = (window as any)?.google;
+  if (!google?.maps?.Size || !google?.maps?.Point) {
+    return buildNavigationMarkerIcon('#1D4ED8');
+  }
+
+  // 34x34 with the dot centred, plus a soft halo standing in for the accuracy
+  // radius that geolocation reports but this marker does not carry.
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 34 34">
+    <circle cx="17" cy="17" r="15" fill="#1D4ED8" fill-opacity="0.15"/>
+    <circle cx="17" cy="17" r="8" fill="#1D4ED8" stroke="#FFFFFF" stroke-width="2.5"/>
+  </svg>`;
+
+  return {
+    url: 'data:image/svg+xml;charset=UTF-8,' + encodeURIComponent(svg),
+    scaledSize: new google.maps.Size(34, 34),
+    anchor: new google.maps.Point(17, 17),
+  } as any;
+};
+
 const createDropoffMarkerIcon = () => {
   const google = (window as any)?.google;
   if (!google?.maps?.Size || !google?.maps?.Point) {
@@ -917,11 +946,18 @@ export default function CustomerHome() {
           },
           (result: any, status: string) => {
             setMapsDiagnostics(prev => ({ ...prev, directionsAvailable: Boolean((window as any).google?.maps?.DirectionsService), directionsStatus: status || 'unknown' }));
-            if (status === 'OK' && result?.routes?.[0]?.overview_polyline?.points) {
-              setRouteApiError(null);
-              const poly = result.routes[0].overview_polyline.points;
-              const decoded = decodeGooglePolyline(poly);
-              setRoutePath(decoded);
+            if (status === 'OK' && result?.routes?.[0]) {
+              // Resolve the path before deciding whether routing worked. Deciding
+              // on `overview_polyline.points` reported a failure -- and blanked the
+              // map -- for routes that were perfectly routable and only lacked an
+              // overview, which `routePathFromResult` recovers from the steps.
+              const path = routePathFromResult(result.routes[0]);
+              if (path.length > 0) {
+                setRouteApiError(null);
+                setRoutePath(path);
+              } else {
+                setRouteApiError(`Directions status: ${status}`);
+              }
             } else {
               setRouteApiError(`Directions status: ${status}`);
             }
@@ -1783,9 +1819,13 @@ export default function CustomerHome() {
        (result: any, status: string) => {
          if (status === 'OK' && result?.routes?.[0]) {
            const route = result.routes[0];
-           if (route.overview_polyline?.points) {
-             setDriverRoutePath(routePathFromResult(route));
-           }
+           // Guard on the resolved path, not on `overview_polyline.points`.
+            // `routePathFromResult` exists precisely to recover geometry from the
+            // per-step polylines when the overview comes back null, so testing the
+            // overview first discarded every route that needed that fallback and
+            // left the map with no line at all during the ride.
+            const path = routePathFromResult(route);
+            if (path.length > 0) setDriverRoutePath(path);
          }
        }
      );
@@ -1806,9 +1846,11 @@ export default function CustomerHome() {
        (result: any, status: string) => {
          if (status === 'OK' && result?.routes?.[0]) {
            const route = result.routes[0];
-           if (route.overview_polyline?.points) {
-             setDestinationRoutePath(routePathFromResult(route));
-           }
+           // Same guard fix as the driver-to-pickup leg: resolve first, then test.
+           // The pickup-to-drop-off line is the one the customer watches for the
+           // whole ride, and it was the one most often left undrawn.
+           const path = routePathFromResult(route);
+           if (path.length > 0) setDestinationRoutePath(path);
            // Extract ETA from legs
            const leg = route.legs?.[0];
            if (leg?.duration?.text) {
@@ -2694,7 +2736,7 @@ export default function CustomerHome() {
                position={currentLocation}
                onClick={() => setSelectedMarker(currentLocation)}
                title="Your location (start)"
-                icon={createCustomerMarkerIcon()}
+                icon={createCurrentLocationIcon()}
              />
 
               {/* Pickup and drop-off both, once a ride is live. The pickup pin
@@ -3608,7 +3650,7 @@ export default function CustomerHome() {
                   mapTypeControl: false,
                 }}
               >
-                <MarkerF position={currentLocation} title="Current location" icon={createCustomerMarkerIcon()} />
+                <MarkerF position={currentLocation} title="Current location" icon={createCurrentLocationIcon()} />
                 {/* The terminal's service area, so it is obvious where a drop-off is allowed */}
                 {selectedTerminalBoundary.polygon && (
                   <Polygon
