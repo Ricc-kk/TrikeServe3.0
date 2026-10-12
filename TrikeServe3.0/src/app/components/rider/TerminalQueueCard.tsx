@@ -1,7 +1,7 @@
 import { useState } from "react";
 import {
   Car,
-  ChevronRight,
+  ChevronDown,
   ListOrdered,
   Lock,
   LogOut,
@@ -198,6 +198,15 @@ export default function TerminalQueueCard({ queue, variant = "full", canJoin = t
   } = queue;
 
   const [actionError, setActionError] = useState<string | null>(null);
+  /*
+   * Whether the driver list is open.
+   *
+   * Starts open: on a shared ride the queue is the reason the driver is looking at
+   * this card, and who is ahead of them is the one thing they came to check.
+   * Collapsing it is for the driver whose own position is already shown in the
+   * hero above and who wants the card out of the way.
+   */
+  const [queueExpanded, setQueueExpanded] = useState(true);
 
   const runAction = async (action: () => Promise<{ error: unknown }>) => {
     setActionError(null);
@@ -408,29 +417,46 @@ export default function TerminalQueueCard({ queue, variant = "full", canJoin = t
 
           {/* Drivers in the queue */}
           <div className="rounded-2xl border border-[var(--border)] overflow-hidden">
-            <div className="flex items-center justify-between px-3 py-2 bg-[var(--muted)]">
+            <button
+              type="button"
+              onClick={() => setQueueExpanded((open) => !open)}
+              aria-expanded={queueExpanded}
+              className="w-full flex items-center justify-between px-3 py-2 bg-[var(--muted)] text-left"
+            >
               <p className="text-[10px] font-extrabold tracking-wide text-[var(--muted-foreground)]">
                 IN QUEUE ({entries.length})
               </p>
-              <p className="text-[10px] font-semibold text-[var(--muted-foreground)]">oldest first</p>
-            </div>
-            <div className="divide-y divide-[var(--muted)]">
-              {visibleDrivers.map((entry, index) => (
-                <DriverRow
-                  key={entry.id}
-                  entry={entry}
-                  index={index}
-                  isMe={entry.driver_id === myEntry.driver_id}
+              <span className="flex items-center gap-1 text-[10px] font-semibold text-[var(--muted-foreground)]">
+                oldest first
+                {/* Rotates rather than swapping icons, so the control looks like one
+                    thing that changes state instead of two unrelated arrows. */}
+                <ChevronDown
+                  className={`w-3.5 h-3.5 transition-transform duration-200 ${
+                    queueExpanded ? "rotate-180" : ""
+                  }`}
                 />
-              ))}
-            </div>
-            {hiddenDrivers > 0 && (
-              <div className="flex items-center justify-center gap-1 px-3 py-2 bg-[var(--muted)] border-t border-[var(--muted)]">
-                <span className="text-[10px] font-bold text-[var(--muted-foreground)]">
-                  +{hiddenDrivers} more driver{hiddenDrivers !== 1 ? "s" : ""}
-                </span>
-                <ChevronRight className="w-3 h-3 text-[var(--muted-foreground)]" />
-              </div>
+              </span>
+            </button>
+            {queueExpanded && (
+              <>
+                <div className="divide-y divide-[var(--muted)]">
+                  {visibleDrivers.map((entry, index) => (
+                    <DriverRow
+                      key={entry.id}
+                      entry={entry}
+                      index={index}
+                      isMe={entry.driver_id === myEntry.driver_id}
+                    />
+                  ))}
+                </div>
+                {hiddenDrivers > 0 && (
+                  <div className="flex items-center justify-center px-3 py-2 bg-[var(--muted)] border-t border-[var(--muted)]">
+                    <span className="text-[10px] font-bold text-[var(--muted-foreground)]">
+                      +{hiddenDrivers} more driver{hiddenDrivers !== 1 ? "s" : ""} waiting
+                    </span>
+                  </div>
+                )}
+              </>
             )}
           </div>
 
