@@ -152,6 +152,21 @@ export default function AdminTerminals() {
   const [showMapPicker, setShowMapPicker] = useState(false);
   // The map picker either moves the terminal pin or draws the coverage area.
   const [mapPickerMode, setMapPickerMode] = useState<'location' | 'boundary'>('location');
+  // Undo/redo for plotting the coverage area. `boundaryPast` holds the states the
+  // current polygon can be stepped back to; `boundaryFuture` holds the ones it was
+  // stepped away from, which Redo walks forward through. The polygon in `form`
+  // stays the single source of truth — these are just the states either side of it.
+  const [boundaryPast, setBoundaryPast] = useState<LatLngPoint[][]>([]);
+  const [boundaryFuture, setBoundaryFuture] = useState<LatLngPoint[][]>([]);
+  // Bound on the stacks so a long plotting session can't grow them without limit.
+  const BOUNDARY_HISTORY_MAX = 50;
+  // What the pin and boundary looked like when the map picker opened, so closing
+  // can tell whether the admin has work in there that closing would throw away.
+  const [mapPickerSnapshot, setMapPickerSnapshot] = useState<{
+    center_lat: number;
+    center_lng: number;
+    polygon: LatLngPoint[];
+  } | null>(null);
   const { isLoaded: isMapsLoaded } = useMapLoader();
   const formMapRef = useRef<google.maps.Map | null>(null);
   // The admin's live GPS position — the map picker opens here so a terminal is
@@ -173,7 +188,104 @@ export default function AdminTerminals() {
 
   function openMapPicker() {
     refreshAdminLocation();
+    setMapPickerSnapshot({
+      center_lat: form.center_lat,
+      center_lng: form.center_lng,
+      polygon: [...form.boundary_polygon],
+    });
     setShowMapPicker(true);
+  }
+
+  /** True when the pin moved or the boundary was edited since the picker opened. */
+  const hasUnsavedMapChanges =
+    !!mapPickerSnapshot &&
+    (form.center_lat !== mapPickerSnapshot.center_lat ||
+      form.center_lng !== mapPickerSnapshot.center_lng ||
+      form.boundary_polygon.length !== mapPickerSnapshot.polygon.length ||
+      form.boundary_polygon.some(
+        (p, i) => p.lat !== mapPickerSnapshot.polygon[i].lat || p.lng !== mapPickerSnapshot.polygon[i].lng
+      ));
+
+  /** Closes the picker outright. Going through requestCloseMapPicker is the user-facing path. */
+  function closeMapPicker() {
+    setShowMapPicker(false);
+    setShowMapSearchDropdown(false);
+    setMapSearchQuery("");
+    setMapPickerSnapshot(null);
+  }
+
+  // Closing without saving is the easy way to lose a plotted boundary, so ask
+  // first — but only when there is genuinely something to lose.
+  function requestCloseMapPicker() {
+    if (!hasUnsavedMapChanges) {
+      closeMapPicker();
+      return;
+    }
+
+    const plotted = form.boundary_polygon.length;
+    openModal({
+      title: 'Discard Map Changes?',
+      message:
+        plotted > 0
+          ? `You have ${plotted} plotted point${plotted === 1 ? '' : 's'} and a moved pin that have not been saved yet. Closing now discards them.`
+          : 'You have moved the terminal pin and it has not been saved yet. Closing now discards it.',
+      variant: 'warning',
+      confirmLabel: 'Discard Changes',
+      zIndexClassName: 'z-[2030]',
+      onConfirm: () => {
+        closeModal();
+        closeMapPicker();
+      },
+    });
+  }
+
+  // Saving from the picker runs the same checks the form's Save does — the picker
+  // can be opened before the terminal has a name or area, so those aren't optional.
+  function saveChangesFromPicker() {
+    if (!form.name || !form.boundary) {
+      setToast({ message: 'Add a terminal name and boundary area before saving.', variant: 'error' });
+      return;
+    }
+
+    const validationError = boundaryValidationError();
+    if (validationError) {
+      setToast({ message: validationError, variant: 'error' });
+      return;
+    }
+
+    confirmSaveTerminal();
+  }
+
+  // Every edit to the coverage area goes through commitBoundary, so undo/redo
+  // can't miss one. It records the polygon as it stands and replaces it with
+  // `next`, and drops any redo branch — editing after an undo starts a new one.
+  function commitBoundary(next: LatLngPoint[]) {
+    setBoundaryPast(p => [...p, form.boundary_polygon].slice(-BOUNDARY_HISTORY_MAX));
+    setBoundaryFuture([]);
+    setForm(f => ({ ...f, boundary_polygon: next }));
+  }
+
+  function undoBoundary() {
+    if (boundaryPast.length === 0) return;
+    const previous = boundaryPast[boundaryPast.length - 1];
+    setBoundaryPast(p => p.slice(0, -1));
+    setBoundaryFuture(future => [form.boundary_polygon, ...future].slice(0, BOUNDARY_HISTORY_MAX));
+    setForm(f => ({ ...f, boundary_polygon: previous }));
+  }
+
+  function redoBoundary() {
+    if (boundaryFuture.length === 0) return;
+    const next = boundaryFuture[0];
+    setBoundaryFuture(future => future.slice(1));
+    setBoundaryPast(past => [...past, form.boundary_polygon].slice(-BOUNDARY_HISTORY_MAX));
+    setForm(f => ({ ...f, boundary_polygon: next }));
+  }
+
+  // Opening a different terminal starts a fresh polygon, so it also starts a
+  // fresh history — otherwise Redo could walk back into another terminal's area.
+  function resetBoundaryHistory() {
+    setBoundaryPast([]);
+    setBoundaryFuture([]);
   }
   const [mapSearchQuery, setMapSearchQuery] = useState("");
   const [mapSearchResults, setMapSearchResults] = useState<any[]>([]);
@@ -385,6 +497,7 @@ export default function AdminTerminals() {
     setForm({ name: "", boundary: "", center_lat: DEFAULT_TERMINAL_CENTER.lat, center_lng: DEFAULT_TERMINAL_CENTER.lng, is_active: true, boundary_polygon: [], base_fare: 20, per_km: 10 });
     setEditTerminal(null);
     setMapPickerMode('location');
+    resetBoundaryHistory();
     setShowForm(true);
   }
 
@@ -401,6 +514,7 @@ export default function AdminTerminals() {
     });
     setEditTerminal(t);
     setMapPickerMode('location');
+    resetBoundaryHistory();
     setShowForm(true);
   }
 
@@ -410,13 +524,16 @@ export default function AdminTerminals() {
     const lng = e.latLng.lng();
 
     // In boundary mode every tap adds a corner of the coverage area; otherwise
-    // the tap just moves the terminal pin.
-    setForm(f =>
-      mapPickerMode === 'boundary'
-        ? { ...f, boundary_polygon: [...f.boundary_polygon, { lat, lng }] }
-        : { ...f, center_lat: lat, center_lng: lng }
-    );
-  }, [mapPickerMode]);
+    // the tap just moves the terminal pin. Only the polygon is undoable — moving
+    // the pin stays out of the history so Undo can't yank it somewhere unexpected.
+    if (mapPickerMode === 'boundary') {
+      setBoundaryPast(p => [...p, form.boundary_polygon].slice(-BOUNDARY_HISTORY_MAX));
+      setBoundaryFuture([]);
+      setForm(f => ({ ...f, boundary_polygon: [...f.boundary_polygon, { lat, lng }] }));
+      return;
+    }
+    setForm(f => ({ ...f, center_lat: lat, center_lng: lng }));
+  }, [mapPickerMode, form.boundary_polygon]);
 
   const handleFormMapLoad = useCallback((map: google.maps.Map) => {
     formMapRef.current = map;
@@ -545,11 +662,11 @@ export default function AdminTerminals() {
       message: `Remove all ${points} plotted point${points === 1 ? '' : 's'}? This terminal will have no coverage area until you plot one again, so its drop-offs will not be checked.`,
       variant: 'warning',
       confirmLabel: 'Clear Area',
-      // The map picker sits at z-[500], so the dialog has to outrank it.
-      zIndexClassName: 'z-[600]',
+      // The map picker sits at z-[2010], so the dialog has to outrank it.
+      zIndexClassName: 'z-[2030]',
       onConfirm: () => {
         closeModal();
-        setForm(f => ({ ...f, boundary_polygon: [] }));
+        commitBoundary([]);
       },
     });
   }
@@ -628,7 +745,8 @@ export default function AdminTerminals() {
         editTerminal ? ts.map(t => (t.id === editTerminal.id ? target : t)) : [...ts, target]
       );
       setShowForm(false);
-      setShowMapPicker(false);
+      closeMapPicker();
+      resetBoundaryHistory();
       setToast({ message: editTerminal ? 'Terminal updated' : 'Terminal created', variant: 'success' });
       return;
     }
@@ -652,7 +770,8 @@ export default function AdminTerminals() {
     }
 
     setShowForm(false);
-    setShowMapPicker(false);
+    closeMapPicker();
+    resetBoundaryHistory();
     await loadMyRequests();
     setToast({ message: 'Terminal change submitted for Super Admin approval', variant: 'warning' });
   }
@@ -1182,11 +1301,14 @@ export default function AdminTerminals() {
           )}
         </div>
 
-      {/* Form modal */}
+      {/* Form modal
+          Admin chrome (the nav drawer) is z-[1001], so every overlay on this page has to
+          clear it — otherwise the sidebar paints over a "full-screen" modal and hides its
+          close button. This matches the z-[2000] scale the other admin pages use. */}
       {showForm && (
-        <div className="fixed inset-0 bg-black/50 z-[300] flex items-center justify-center p-4">
+        <div className="fixed inset-0 bg-black/50 z-[2000] flex items-center justify-center p-3 sm:p-4">
           <div className="w-full max-w-md max-h-[90vh] overflow-y-auto bg-surface rounded-2xl shadow-2xl">
-            <div className="flex items-center justify-between p-5 border-b-2 border-[var(--border)] sticky top-0 bg-surface z-10">
+            <div className="flex items-center justify-between p-4 sm:p-5 border-b-2 border-[var(--border)] sticky top-0 bg-surface z-10">
               <h3 className="font-extrabold text-lg text-[var(--ink)]">
                 {editTerminal ? "Edit Terminal" : "New Terminal"}
               </h3>
@@ -1197,7 +1319,7 @@ export default function AdminTerminals() {
                 <X size={16} className="text-[var(--muted-foreground)]" />
               </button>
             </div>
-            <div className="p-5 space-y-4">
+            <div className="p-4 sm:p-5 space-y-4">
               {([
                 ["name", "Terminal Name", "e.g. Valenzuela Terminal"],
                 ["boundary", "Boundary / Area", "e.g. Main Road, Valenzuela City"],
@@ -1221,7 +1343,7 @@ export default function AdminTerminals() {
                   Terminal Location
                 </label>
                 <div
-                  className="w-full h-40 bg-[var(--muted)] border border-line rounded-xl overflow-hidden cursor-pointer relative"
+                  className="w-full h-44 sm:h-52 bg-[var(--muted)] border border-line rounded-xl overflow-hidden cursor-pointer relative"
                   onClick={openMapPicker}
                 >
                   {isMapsLoaded ? (
@@ -1257,8 +1379,10 @@ export default function AdminTerminals() {
                       <p className="text-xs text-[var(--muted-foreground)]">Loading map...</p>
                     </div>
                   )}
-                  <div className="absolute inset-0 flex items-center justify-center">
-                    <span className="bg-white/90 px-3 py-1 rounded-full text-xs font-semibold text-[var(--ink)] shadow">
+                  {/* Hint only — pointer-events-none so it never swallows a tap meant for the map,
+                      and it stays clear of the map edges once the text wraps on narrow screens. */}
+                  <div className="absolute inset-0 flex items-center justify-center p-2.5 pointer-events-none">
+                    <span className="max-w-full bg-white/90 px-2.5 sm:px-3 py-1 rounded-full text-[11px] sm:text-xs font-semibold leading-snug text-center text-[var(--ink)] shadow">
                       📍 Tap to set location & boundary
                     </span>
                   </div>
@@ -1268,10 +1392,10 @@ export default function AdminTerminals() {
                 </p>
 
                 {/* Boundary area status */}
-                <div className="flex items-center justify-between mt-2 p-2.5 bg-[var(--muted)] rounded-xl">
-                  <div className="min-w-0">
+                <div className="flex items-start justify-between gap-2 mt-2 p-2.5 bg-[var(--muted)] rounded-xl">
+                  <div className="flex-1 min-w-0">
                     <p className="text-xs font-semibold text-[var(--ink)]">Boundary Area</p>
-                    <p className="text-xs text-[var(--muted-foreground)]">
+                    <p className="text-xs leading-snug text-[var(--muted-foreground)] break-words">
                       {form.boundary_polygon.length >= 3
                         ? `${form.boundary_polygon.length} points plotted — drop-offs outside every terminal's area are rejected`
                         : form.boundary_polygon.length > 0
@@ -1282,7 +1406,7 @@ export default function AdminTerminals() {
                   {form.boundary_polygon.length > 0 && (
                     <button
                       onClick={confirmClearBoundary}
-                      className="ml-3 flex-shrink-0 text-xs font-bold text-[var(--primary)] active:scale-95"
+                      className="flex-shrink-0 text-xs font-bold text-[var(--primary)] active:scale-95"
                     >
                       Clear
                     </button>
@@ -1364,15 +1488,13 @@ export default function AdminTerminals() {
         </div>
       )}
 
-      {/* Full-screen Map Picker */}
+      {/* Full-screen Map Picker — opens on top of the still-open form modal beneath it */}
       {showMapPicker && (
-        <div className="fixed inset-0 z-[500] bg-surface flex flex-col">
-          <div className="bg-surface border-b border-[var(--border)] px-4 py-3 flex items-center justify-between gap-3">
-            <button onClick={() => { setShowMapPicker(false); setShowMapSearchDropdown(false); setMapSearchQuery(""); }} className="active:scale-90 flex-shrink-0">
-              <X className="w-6 h-6 text-[var(--ink)]" />
-            </button>
+        <div className="fixed inset-0 z-[2010] bg-surface flex flex-col">
+          {/* Stacks on narrow screens so the search bar keeps a usable width. */}
+          <div className="bg-surface border-b border-[var(--border)] px-4 py-3 flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-3">
             {/* Search Bar */}
-            <div className="flex-1 relative">
+            <div className="flex-1 relative min-w-0">
               <div className="flex items-center gap-2 px-3 py-2 bg-[var(--muted)] border border-line rounded-xl">
                 <Search className="w-4 h-4 text-[var(--muted-foreground)] flex-shrink-0" />
                 <input
@@ -1399,7 +1521,7 @@ export default function AdminTerminals() {
               </div>
               {/* Search Results Dropdown */}
               {showMapSearchDropdown && (
-                <div className="absolute top-full left-0 right-0 mt-2 bg-surface border border-line rounded-xl shadow-xl max-h-60 overflow-y-auto z-[600]">
+                <div className="absolute top-full left-0 right-0 mt-2 bg-surface border border-line rounded-xl shadow-xl max-h-60 overflow-y-auto z-[2020]">
                   {mapSearchResults.length > 0 ? (
                     mapSearchResults.map((result: any, index: number) => (
                       <button
@@ -1430,12 +1552,24 @@ export default function AdminTerminals() {
                 </div>
               )}
             </div>
-            <button
-              onClick={() => setShowMapPicker(false)}
-              className="px-4 py-1.5 bg-[var(--primary)] text-white text-sm font-bold rounded-lg flex-shrink-0"
-            >
-              Done
-            </button>
+            <div className="flex items-center gap-2 sm:flex-none">
+              <button
+                type="button"
+                onClick={saveChangesFromPicker}
+                className="flex-1 sm:flex-none h-10 px-4 bg-[var(--primary)] text-white text-sm font-bold rounded-xl active:scale-95 whitespace-nowrap"
+              >
+                Save Changes
+              </button>
+              {/* Close sits last, top-right, and warns before discarding unsaved work. */}
+              <button
+                type="button"
+                onClick={requestCloseMapPicker}
+                aria-label="Close map picker"
+                className="h-10 w-10 flex items-center justify-center rounded-xl bg-[var(--muted)] active:scale-90 flex-shrink-0"
+              >
+                <X className="w-6 h-6 text-[var(--ink)]" />
+              </button>
+            </div>
           </div>
 
           {/* Move the pin, or draw the coverage area */}
@@ -1513,21 +1647,35 @@ export default function AdminTerminals() {
                           ? `${form.boundary_polygon.length} point${form.boundary_polygon.length === 1 ? '' : 's'} — add ${3 - form.boundary_polygon.length} more to enclose the area`
                           : `${form.boundary_polygon.length} points — area closed`}
                     </p>
+                    {/* Undo/Redo stay visible whenever there's anything to step through — including
+                        after every point has been undone, where the polygon is empty but
+                        Redo still has work to do. Clear Area only applies to a plotted area. */}
+                    <div className="grid grid-cols-2 gap-2 mt-3">
+                      <button
+                        type="button"
+                        onClick={undoBoundary}
+                        disabled={boundaryPast.length === 0}
+                        className="h-9 border border-line text-[var(--muted-foreground)] text-xs font-bold rounded-lg active:scale-95 disabled:opacity-40 disabled:active:scale-100 disabled:cursor-not-allowed"
+                      >
+                        Undo Point
+                      </button>
+                      <button
+                        type="button"
+                        onClick={redoBoundary}
+                        disabled={boundaryFuture.length === 0}
+                        className="h-9 border border-line text-[var(--muted-foreground)] text-xs font-bold rounded-lg active:scale-95 disabled:opacity-40 disabled:active:scale-100 disabled:cursor-not-allowed"
+                      >
+                        Redo Point
+                      </button>
+                    </div>
                     {form.boundary_polygon.length > 0 && (
-                      <div className="flex gap-2 mt-3">
-                        <button
-                          onClick={() => setForm(f => ({ ...f, boundary_polygon: f.boundary_polygon.slice(0, -1) }))}
-                          className="flex-1 h-9 border border-line text-[var(--muted-foreground)] text-xs font-bold rounded-lg active:scale-95"
-                        >
-                          Undo Point
-                        </button>
-                        <button
-                          onClick={confirmClearBoundary}
-                          className="flex-1 h-9 border-2 border-[var(--primary)] text-[var(--primary)] text-xs font-bold rounded-lg active:scale-95"
-                        >
-                          Clear Area
-                        </button>
-                      </div>
+                      <button
+                        type="button"
+                        onClick={confirmClearBoundary}
+                        className="w-full h-9 mt-2 border-2 border-[var(--primary)] text-[var(--primary)] text-xs font-bold rounded-lg active:scale-95"
+                      >
+                        Clear Area
+                      </button>
                     )}
                   </>
                 ) : (
@@ -1546,7 +1694,9 @@ export default function AdminTerminals() {
         </div>
       )}
 
-      {/* Confirmation Modal */}
+      {/* Confirmation Modal
+          The component's own default of z-[400] would sit under this page's z-[2000] form
+          modal, so every dialog raised here names a z-index above it. */}
       <ConfirmationModal
         isOpen={modalOpen}
         onCancel={closeModal}
@@ -1555,7 +1705,7 @@ export default function AdminTerminals() {
         message={modalConfig?.message || ''}
         variant={modalConfig?.variant || 'danger'}
         confirmLabel={modalConfig?.confirmLabel || 'Confirm'}
-        zIndexClassName={modalConfig?.zIndexClassName}
+        zIndexClassName={modalConfig?.zIndexClassName ?? 'z-[2030]'}
       />
 
       {/* Toast */}
