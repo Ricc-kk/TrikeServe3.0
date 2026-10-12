@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import {
   Plus, Edit2, Trash2, UserPlus, UserMinus, MapPin, Users, Menu, X, Navigation, Search, Loader2, Save, Shield,
-  ClipboardCheck, CheckCircle, XCircle, Clock, ShieldCheck, ChevronDown
+  ClipboardCheck, Clock, ShieldCheck, ChevronDown
 } from "lucide-react";
 import { GoogleMap, MarkerF, InfoWindow, Polygon, Polyline } from "@react-google-maps/api";
 import useMapLoader from "@/lib/mapLoader";
@@ -1290,16 +1290,16 @@ export default function AdminTerminals() {
             </div>
           )}
 
-          {/* Rider Admin: status of their own submitted requests */}
-          {isRiderAdmin && myRequests.length > 0 && (
+          {/* A Rider Admin's submitted requests have their own screen now
+              (Submitted Requests), which lists all of them with search and status
+              filters rather than the eight most recent here. */}
+          {isRiderAdmin && myRequests.some(req => req.status === 'pending') && (
             <div className="mb-6">
               <h2 className="text-sm font-bold uppercase tracking-widest text-[var(--muted-foreground)] mb-2 flex items-center gap-2">
-                <ClipboardCheck size={16} /> My Submitted Requests
+                <ClipboardCheck size={16} /> Awaiting Approval
               </h2>
               <div className="space-y-2">
-                {myRequests.slice(0, 8).map(req => {
-                  const pending = req.status === 'pending';
-                  const approved = req.status === 'approved';
+                {myRequests.filter(req => req.status === 'pending').map(req => {
                   const p = req.payload || {};
                   const summary = req.request_type.startsWith('terminal')
                     ? `${p.name || p.id || 'Terminal'}`
@@ -1307,27 +1307,16 @@ export default function AdminTerminals() {
                   return (
                     <div
                       key={req.id}
-                      className={`flex items-center justify-between gap-3 px-4 py-2.5 rounded-xl border-2 ${
-                        pending ? 'bg-[var(--amber-soft)] border-[var(--amber-soft)]' : approved ? 'bg-[var(--success-soft)] border-[var(--success-soft)]' : 'bg-[var(--error-soft)] border-[var(--error-soft)]'
-                      }`}
+                      className="flex items-center justify-between gap-3 px-4 py-2.5 rounded-xl border-2 bg-[var(--amber-soft)] border-[var(--amber-soft)]"
                     >
                       <div className="flex items-center gap-3 min-w-0">
-                        {pending ? <Clock size={15} className="text-[var(--amber-ink)] flex-shrink-0" />
-                          : approved ? <CheckCircle size={15} className="text-[var(--success)] flex-shrink-0" />
-                          : <XCircle size={15} className="text-[var(--error)] flex-shrink-0" />}
-                        <div className="min-w-0">
-                          <p className="text-sm font-semibold text-[var(--ink)] truncate">
-                            {APPROVAL_REQUEST_LABELS[req.request_type]} — {summary}
-                          </p>
-                          {!pending && req.rejection_reason && (
-                            <p className="text-xs text-[var(--error)] truncate">Reason: {req.rejection_reason}</p>
-                          )}
-                        </div>
+                        <Clock size={15} className="text-[var(--amber-ink)] flex-shrink-0" />
+                        <p className="text-sm font-semibold text-[var(--ink)] truncate">
+                          {APPROVAL_REQUEST_LABELS[req.request_type]} — {summary}
+                        </p>
                       </div>
-                      <span className={`text-xs font-bold flex-shrink-0 ${
-                        pending ? 'text-[var(--amber-ink)]' : approved ? 'text-[var(--success)]' : 'text-[var(--error)]'
-                      }`}>
-                        {pending ? 'Awaiting approval' : req.status}
+                      <span className="text-xs font-bold flex-shrink-0 text-[var(--amber-ink)]">
+                        Awaiting approval
                       </span>
                     </div>
                   );
