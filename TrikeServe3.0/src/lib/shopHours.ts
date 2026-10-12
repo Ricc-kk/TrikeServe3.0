@@ -20,8 +20,50 @@ export interface ShopHours {
   /** "HH:MM", 24-hour. Null/undefined means no schedule. */
   open_time?: string | null;
   close_time?: string | null;
-  /** 0 = Sunday .. 6 = Saturday. Null/empty means every day. */
-  open_days?: number[] | null;
+  /**
+   * 0 = Sunday .. 6 = Saturday. Null/empty means every day.
+   *
+   * Typed to allow strings because the column is `TEXT[]` (see
+   * ADD_SHOP_HOURS.sql), so a row read back through PostgREST arrives as
+   * `["1","2"]`. Run it through `normalizeOpenDays` before comparing.
+   */
+  open_days?: Array<number | string> | null;
+  /**
+   * ISO timestamp; the shop is trading until then regardless of its schedule.
+   *
+   * A time rather than a flag on purpose. "Open now anyway" that only clears
+   * when the owner remembers to clear it is how a shop ends up serving at 3am a
+   * week later; a deadline is compared against the clock at read time, so it
+   * expires by itself and nothing has to run to expire it. Set to midnight by
+   * `openOverrideUntil`.
+   */
+  force_open_until?: string | null;
+}
+
+/**
+ * Trading days as plain numbers, whatever the driver hands back.
+ *
+ * `open_days` is `TEXT[]` in Postgres, so a row read through PostgREST arrives
+ * as `["1","2"]` — strings — even though the editor wrote numbers and even
+ * though the column is a list of small integers either way. That mismatch was
+ * silently dropping the schedule in two places at once:
+ *
+ *   - `resolveHours` filtered with `Number.isInteger(d)`, which is false for
+ *     "1", so every day was discarded and the shop fell back to "open every
+ *     day" the moment the row was re-read.
+ *   - the editor asks `days.includes(day)` with a number, which never matches
+ *     a string, so the day chips came back with nothing selected after a
+ *     reload — which reads to the owner as "my days did not save".
+ *
+ * Sorting and de-duplicating here also means callers get the same ordering
+ * whether they passed the raw row or a hand-built array.
+ */
+export function normalizeOpenDays(value: unknown): number[] {
+  if (!Array.isArray(value)) return [];
+  const days = value
+    .map((day) => Number(day))
+    .filter((day) => Number.isInteger(day) && day >= 0 && day <= 6);
+  return [...new Set(days)].sort((a, b) => a - b);
 }
 
 export interface ResolvedHours {
@@ -99,12 +141,7 @@ export function resolveHours(hours: ShopHours | null | undefined): ResolvedHours
     };
   }
 
-  const rawDays = Array.isArray(hours?.open_days)
-    ? hours!.open_days!
-    : [];
-  const days = [...new Set(rawDays.filter((d) => Number.isInteger(d) && d >= 0 && d <= 6))].sort(
-    (a, b) => a - b,
-  );
+  const days = normalizeOpenDays(hours?.open_days);
 
   return {
     configured: true,
@@ -154,6 +191,24 @@ export function isOpenAt(hours: ShopHours | null | undefined, now: Date = new Da
 }
 
 /**
+ * Is the shop trading under a standing "open now anyway", right now?
+ *
+ * No-op when the column is absent (an un-migrated database), which leaves
+ * `resolveHours` reporting nothing configured and the manual switch in charge —
+ * exactly how the app behaved before the column existed.
+ */
+export function isForcedOpen(
+  hours: ShopHours | null | undefined,
+  now: Date = new Date(),
+): boolean {
+  const raw = hours?.force_open_until;
+  if (typeof raw !== "string" || !raw) return false;
+  const until = new Date(raw);
+  if (Number.isNaN(until.getTime())) return false;
+  return now.getTime() < until.getTime();
+}
+
+/**
  * The shop's real open state: their switch AND their hours.
  *
  * This is the value the storefront should use. `is_open` alone lets a shop that
@@ -166,6 +221,9 @@ export function isEffectivelyOpen(
 ): boolean {
   if (!row) return false;
   if (row.is_open === false) return false;
+  // An explicit "still open" beats the schedule. Checked after the manual switch
+  // so turning the shop off always closes it, override or not.
+  if (isForcedOpen(row, now)) return true;
   if (!resolveHours(row).configured) return row.is_open !== false;
   return isOpenAt(row, now);
 }
@@ -196,6 +254,18 @@ export function describeOpenState(
       open: false,
       label: 'Manually closed',
       detail: 'Outside your hours, or you have the shop switched off.',
+    };
+  }
+
+  if (isForcedOpen(row, now)) {
+    const until = new Date(row.force_open_until as string);
+    const clock = Number.isNaN(until.getTime())
+      ? 'later'
+      : until.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+    return {
+      open: true,
+      label: 'Open — late opening',
+      detail: `Trading outside your usual hours until ${clock}. Your schedule has not changed.`,
     };
   }
 

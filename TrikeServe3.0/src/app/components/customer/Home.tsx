@@ -20,7 +20,7 @@ import { autocompletePlacesNew, createPlacesSessionToken, fetchPlaceDetailsNew, 
 import tricycleIcon from '../../../assets/0b76d1aa56b8ad6e15dd4efc8a0100b0ca5762a1.png';
 import { useAuth } from "../../contexts/AuthContext";
 import { supabaseHelpers, isDropoffWithinAnyTerminalBoundary, isPointInPolygon, normalizeBoundaryPolygon, logAudit } from "@/lib/supabase";
-import { computeRideFare, normalizeRates, terminalRates, DEFAULT_MAX_PASSENGERS } from "@/lib/pricing";
+import { computeRideFare, normalizeRates, terminalRates, privateRideRates, DEFAULT_MAX_PASSENGERS } from "@/lib/pricing";
 import ReasonPromptModal from "../ui/reason-prompt-modal";
 import { supabase } from "../../../utils/supabase";
 import { isAwaitingApproval } from "../../../lib/roleAccess";
@@ -602,7 +602,7 @@ export default function CustomerHome() {
      backendRouteStatus: 'idle',
    });
     const [mapsBlocked, setMapsBlocked] = useState<string | null>(null);
-   const [terminals, setTerminals] = useState<{ id: string; name: string; boundary: string; center_lat: number; center_lng: number; base_fare?: number | null; per_km?: number | null; delivery_fee?: number | null; delivery_fee_per_km?: number | null; max_passengers?: number | null; boundary_polygon?: any }[]>([]);
+   const [terminals, setTerminals] = useState<{ id: string; name: string; boundary: string; center_lat: number; center_lng: number; base_fare?: number | null; per_km?: number | null; delivery_fee?: number | null; delivery_fee_per_km?: number | null; max_passengers?: number | null; private_ride_fee?: number | null; private_ride_fee_per_km?: number | null; boundary_polygon?: any }[]>([]);
    const [showTerminalPicker, setShowTerminalPicker] = useState(false);
    const [selectedTerminalId, setSelectedTerminalId] = useState<string | null>(null);
   // Hub state: what they want (all / a ride / a meal) and whether they have
@@ -2457,9 +2457,33 @@ export default function CustomerHome() {
     ? `₱${activeRates.baseFare} base + ₱${activeRates.perKm}/km × ${fareInfo.distanceKm.toFixed(1)} km${selectedTerminal ? ` · ${selectedTerminal.name}` : ''}`
     : `Fixed rate${selectedTerminal ? ` · ${selectedTerminal.name}` : ''}`;
 
+  /*
+   * A private ride books the whole vehicle, so the terminal can price it on its
+   * own terms rather than as a share of the seat fare. Both halves fall back to
+   * the terminal's share rate, which is what a private ride cost before the
+   * separate private columns existed -- so a terminal that has never set them
+   * quotes the customer exactly the same number as it used to.
+   *
+   * Computed unconditionally rather than inside getPrice, because the terminal
+   * picker below lists terminals the customer has not chosen yet and needs the
+   * same answer for each of them.
+   */
+  const privateActiveRates = useMemo(
+    () => privateRideRates(selectedTerminal, activeRates),
+    [selectedTerminal, activeRates.baseFare, activeRates.perKm]
+  );
+  const privateFareInfo = useMemo(
+    () => computeRideFare(privateActiveRates, pickupCoords, dropoffCoords),
+    [privateActiveRates.baseFare, privateActiveRates.perKm, pickupCoords, dropoffCoords]
+  );
+  const privateTotal = privateFareInfo.distanceKm != null ? privateFareInfo.total : privateRidePrice;
+  const privateBreakdown = privateFareInfo.distanceKm != null
+    ? `₱${privateActiveRates.baseFare} base + ₱${privateActiveRates.perKm}/km × ${privateFareInfo.distanceKm.toFixed(1)} km${selectedTerminal ? ` · ${selectedTerminal.name}` : ''}`
+    : `Fixed rate${selectedTerminal ? ` · ${selectedTerminal.name}` : ''}`;
+
   const getPrice = () => {
     if (selectedVehicle === 'share') return passengerCount > 0 ? Math.round((rideTotal / passengerCount) * 100) / 100 : sharedRidePrice;
-    if (selectedVehicle === 'special') return rideTotal;
+    if (selectedVehicle === 'special') return privateTotal;
     return 0;
   };
 
@@ -3454,8 +3478,21 @@ export default function CustomerHome() {
                       </div>
                       <p className="text-xs text-[var(--muted-foreground)] mt-0.5">📍 {terminal.boundary}</p>
                       <p className="text-xs font-semibold text-[var(--primary)] mt-0.5">
-                        Fare: ₱{terminal.base_fare ?? activeRates.baseFare} base + ₱{terminal.per_km ?? activeRates.perKm}/km
+                        Share: ₱{terminal.base_fare ?? activeRates.baseFare} base + ₱{terminal.per_km ?? activeRates.perKm}/km
                       </p>
+                      {/*
+                        This terminal's private ride charge, when it has set one.
+
+                        Shown only when set. A private ride that falls back to the
+                        share rate is already covered by the line above, and
+                        repeating the same two numbers under a second heading
+                        would imply a choice where there is none.
+                      */}
+                      {(terminal.private_ride_fee != null || terminal.private_ride_fee_per_km != null) && (
+                        <p className="text-xs font-semibold text-[var(--primary)] mt-0.5">
+                          Private: ₱{privateRideRates(terminal).baseFare} base + ₱{privateRideRates(terminal).perKm}/km
+                        </p>
+                      )}
                       {/*
                         This terminal's delivery charge, when the admin has set one.
 
@@ -3695,8 +3732,8 @@ export default function CustomerHome() {
                     </>
                   ) : (
                     <>
-                      <p className="text-sm text-[var(--amber-ink)] mt-0.5">{fareBreakdown}</p>
-                      <p className="text-3xl font-bold text-[var(--amber)]">₱{rideTotal}</p>
+                      <p className="text-sm text-[var(--amber-ink)] mt-0.5">{privateBreakdown}</p>
+                      <p className="text-3xl font-bold text-[var(--amber)]">₱{privateTotal}</p>
                     </>
                   )}
                 </div>

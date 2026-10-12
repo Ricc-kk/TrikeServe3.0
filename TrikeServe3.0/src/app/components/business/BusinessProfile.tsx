@@ -21,7 +21,7 @@ export default function BusinessProfile() {
   const profile = useRestaurantProfile();
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
-  const [saveState, setSaveState] = useState<"idle" | "saved" | "staged">("idle");
+  const [saveState, setSaveState] = useState<"idle" | "saved">("idle");
   const [saveError, setSaveError] = useState<string | null>(null);
   const [showMapSelector, setShowMapSelector] = useState(false);
   const [showConfirmSave, setShowConfirmSave] = useState(false);
@@ -112,12 +112,10 @@ export default function BusinessProfile() {
        * Contact details only.
        *
        * The business name used to be written to `users.business_name` here as well
-       * as to the shop row below. Those are not the same save: a name change to a
-       * shop that already has a pin is *staged* for Super Admin review, so writing
-       * the copy immediately published a name the storefront had not accepted yet --
-       * which is how the two ended up disagreeing, with Settings showing a name
-       * customers had never seen. `applyBusinessProfileUpdate` mirrors the name once
-       * the change is actually live, for both the staged and the first-pin path.
+       * as to the shop row below. Those are not the same save: writing the copy
+       * before the shop row meant Settings could show a name the storefront had
+       * not accepted yet, which is how the two ended up disagreeing.
+       * `applyBusinessProfileUpdate` mirrors the name once the shop row is live.
        */
       const { error: userError } = await supabase
         .from("users")
@@ -146,7 +144,8 @@ export default function BusinessProfile() {
 
       await updateProfile({ name: formData.name, phone: formData.phone });
 
-      setSaveState(result.staged ? "staged" : "saved");
+      // Saves apply directly, so there is no "queued" outcome left to report.
+    setSaveState("saved");
       setTimeout(() => setSaveState("idle"), 4000);
     } catch (err) {
       console.error("[BusinessProfile] Save error:", err);
@@ -249,20 +248,22 @@ export default function BusinessProfile() {
         </div>
 
         <div className="px-4 lg:px-6 py-5 space-y-5">
-          {/* A staged change is not live. Saying so, with a way back, beats
-              letting the owner save and watch the storefront ignore them. */}
+          {/* Only reachable for a change queued before saves applied directly. Saving
+              above discards it automatically, and the button is here for a shop
+              that would rather drop it without touching anything else. */}
           {profile.hasPending && (
             <div className="rounded-2xl border-2 border-[var(--amber-soft)] bg-[var(--amber-soft)] p-4">
               <div className="flex items-start gap-3">
                 <Clock className="w-5 h-5 text-[var(--amber-ink)] flex-shrink-0 mt-0.5" aria-hidden="true" />
                 <div className="min-w-0 flex-1">
-                  <p className="font-bold text-[var(--amber-ink)] text-sm">Waiting for Super Admin approval</p>
+                  <p className="font-bold text-[var(--amber-ink)] text-sm">A change is still queued from before</p>
                   <p className="text-sm text-[var(--amber-ink)] mt-0.5 break-words">
-                    These shop details go live only once they are approved. Customers still see the previous ones.
+                    Shop details no longer wait for approval — saving here goes live straight away.
+                    This is an older change still sitting in the queue.
                   </p>
                   {profile.pendingValues?.address && (
                     <p className="text-xs text-[var(--amber-ink)] mt-1 break-words">
-                      Proposed address: {profile.pendingValues.address}
+                      Queued address: {profile.pendingValues.address}
                     </p>
                   )}
                   <button
@@ -271,7 +272,7 @@ export default function BusinessProfile() {
                     disabled={isSaving}
                     className="mt-2 min-h-11 inline-flex items-center gap-1.5 px-3 py-2 rounded-xl bg-[var(--surface)] border border-[var(--amber)] text-[var(--amber-ink)] font-bold text-xs hover:opacity-90 disabled:opacity-50 transition-opacity"
                   >
-                    <X className="w-4 h-4" aria-hidden="true" /> Withdraw change
+                    <X className="w-4 h-4" aria-hidden="true" /> Discard queued change
                   </button>
                 </div>
               </div>
@@ -444,11 +445,6 @@ export default function BusinessProfile() {
               <>
                 <Loader2 className="w-5 h-5 animate-spin" />
                 Saving...
-              </>
-            ) : saveState === "staged" ? (
-              <>
-                <Clock className="w-5 h-5" />
-                Sent for approval
               </>
             ) : saveState === "saved" ? (
               <>

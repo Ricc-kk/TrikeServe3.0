@@ -34,9 +34,24 @@ export type RestaurantRow = {
   open_time: string | null;
   close_time: string | null;
   open_days: number[] | null;
+  /** From ADD_SHOP_FORCE_OPEN.sql. Trading regardless of hours until this. */
+  force_open_until: string | null;
 };
 
 const FULL_COLUMNS =
+  "id, name, address, rating, is_open, banner_image, logo_image, subtitle, delivery_time, operating_hours, business_user_id, cuisine, latitude, longitude, open_time, close_time, open_days, force_open_until";
+
+/*
+ * Trading hours only, for a project that has run ADD_SHOP_HOURS.sql but not yet
+ * ADD_SHOP_FORCE_OPEN.sql.
+ *
+ * Needed as its own step. Selecting a column the project does not have fails the
+ * *entire* query, not just that field, so jumping straight from "hours too" to
+ * "neither" would silently cost someone their schedule: their shops would go
+ * back to following the manual switch alone, which is the bug the hours
+ * migration exists to fix.
+ */
+const HOURS_COLUMNS =
   "id, name, address, rating, is_open, banner_image, logo_image, subtitle, delivery_time, operating_hours, business_user_id, cuisine, latitude, longitude, open_time, close_time, open_days";
 
 /*
@@ -60,9 +75,13 @@ export function isMissingColumnError(error: any): boolean {
 }
 
 /**
- * Loads restaurants, retrying without the new columns when the migration has
- * not been run. `hasLocationColumns` reports which shape came back so the UI
- * can explain a missing distance instead of hiding it.
+ * Loads restaurants, retrying without the newer columns when the migration has
+ * not been run. `hasLocationColumns` reports which shape came back so the UI can
+ * explain a missing distance instead of hiding it.
+ *
+ * Steps down one optional group at a time rather than all-or-nothing, so a
+ * project partway through the migrations keeps the features it does have. The
+ * extra round trip only happens on a database that needs it.
  */
 export async function fetchRestaurants(limit?: number): Promise<{
   rows: RestaurantRow[];
@@ -71,34 +90,27 @@ export async function fetchRestaurants(limit?: number): Promise<{
 }> {
   const applyLimit = (query: any) => (limit ? query.limit(limit) : query);
 
-  const first = await applyLimit(
-    supabase.from("restaurants").select(FULL_COLUMNS).order("name"),
-  );
+  for (const columns of [FULL_COLUMNS, HOURS_COLUMNS, LEGACY_COLUMNS]) {
+    const attempt = await applyLimit(
+      supabase.from("restaurants").select(columns).order("name"),
+    );
 
-  if (!first.error) {
-    return {
-      rows: (first.data || []).map(normalize),
-      error: null,
-      hasLocationColumns: true,
-    };
+    if (!attempt.error) {
+      return {
+        rows: (attempt.data || []).map(normalize),
+        error: null,
+        hasLocationColumns: columns !== LEGACY_COLUMNS,
+      };
+    }
+
+    // Anything other than a missing column will not be fixed by trying fewer of
+    // them, so stop and report it rather than burning the remaining attempts.
+    if (!isMissingColumnError(attempt.error)) {
+      return { rows: [], error: attempt.error, hasLocationColumns: false };
+    }
   }
 
-  if (!isMissingColumnError(first.error)) {
-    return { rows: [], error: first.error, hasLocationColumns: false };
-  }
-
-  const legacy = await applyLimit(
-    supabase.from("restaurants").select(LEGACY_COLUMNS).order("name"),
-  );
-  if (legacy.error) {
-    return { rows: [], error: legacy.error, hasLocationColumns: false };
-  }
-
-  return {
-    rows: (legacy.data || []).map(normalize),
-    error: null,
-    hasLocationColumns: false,
-  };
+  return { rows: [], error: null, hasLocationColumns: false };
 }
 
 function normalize(row: any): RestaurantRow {
@@ -124,6 +136,7 @@ function normalize(row: any): RestaurantRow {
       open_time: openTime,
       close_time: closeTime,
       open_days: openDays,
+      force_open_until: row.force_open_until ?? null,
     }),
     banner_image: row.banner_image ?? null,
     logo_image: row.logo_image ?? null,
@@ -137,5 +150,6 @@ function normalize(row: any): RestaurantRow {
     open_time: openTime,
     close_time: closeTime,
     open_days: openDays,
+    force_open_until: row.force_open_until ?? null,
   };
 }

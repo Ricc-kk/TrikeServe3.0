@@ -5,7 +5,6 @@ import {
   PROFILE_REVIEWED_FIELDS,
   applyBusinessProfileUpdate,
   getPendingBusinessProfileUpdate,
-  submitBusinessProfileUpdate,
   withdrawBusinessProfileUpdate,
   type ApprovalRequest,
   type BusinessProfileUpdate,
@@ -26,8 +25,8 @@ import { useAuth } from "@/app/contexts/AuthContext";
  * Both screens now read and write through this hook, so there is a single row,
  * a single set of values, and one save path to reason about.
  *
- * Saving is staged rather than applied (see `save`). A business proposes; the
- * Super Admin applies.
+ * Saving applies directly (see `save`). A business edits its own shop; there is
+ * no queue in front of it.
  */
 
 /** The live row, as the storefront and the customers see it. */
@@ -40,14 +39,15 @@ export type RestaurantRecord = BusinessProfileUpdate & {
 
 export type SaveOutcome = {
   ok: boolean;
-  /** True when the change is waiting for the Super Admin, false when live. */
+  /**
+   * Always false now that saves apply directly.
+   *
+   * Kept so callers that branch on it keep compiling, and so it has somewhere to
+   * go if staging ever comes back for a narrow case.
+   */
   staged: boolean;
   error?: string;
 };
-
-/** A shop that has never been pinned has no address worth reviewing yet. */
-const isNeverPinned = (r: RestaurantRecord | null) =>
-  r?.latitude == null || r?.longitude == null;
 
 /** Only the reviewed fields travel, so an unrelated column can never be staged. */
 function toPatch(values: Partial<RestaurantRecord>): BusinessProfileUpdate {
@@ -62,6 +62,14 @@ function toPatch(values: Partial<RestaurantRecord>): BusinessProfileUpdate {
 export function useRestaurantProfile() {
   const { user } = useAuth();
   const [restaurant, setRestaurant] = useState<RestaurantRecord | null>(null);
+  /**
+   * A change staged before saves applied directly.
+   *
+   * Nothing creates these any more. It is still read so a shop that had one
+   * queued can withdraw it, and so `save` can clear it -- otherwise an admin
+   * applying that leftover request would overwrite the shop's newer direct edit
+   * with the older proposal.
+   */
   const [pending, setPending] = useState<ApprovalRequest | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -221,12 +229,24 @@ export function useRestaurantProfile() {
   }, [restaurant, businessUserId, user]);
 
   /**
-   * Save a change.
+   * Save a change, straight to the row.
    *
-   * The first map pin applies immediately. A shop that has never been pinned
-   * has no live address for the change to be reviewed against, and requiring an
-   * approval to say "I am here" would leave it unplaceable and sorting last in
-   * every "near you" list forever. Every change after that is staged.
+   * This used to stage everything for Super Admin review, and the staging is the
+   * part that stopped making sense: a shop correcting its own facts — a moved
+   * pin, a fixed spelling, a cuisine tag, a branch that renamed itself — had its
+   * storefront frozen until someone reviewed it. None of those touch another
+   * shop or need a platform decision, and a queue in front of "I moved" is a
+   * queue that quietly loses every customer who searched for the old address.
+   *
+   * What the gate was actually protecting still runs: the same single write
+   * path, the same reviewed-field allowlist, and the same address/name
+   * mirroring onto the owner row. A shop still cannot write a column it does not
+   * own -- what it can no longer do is wait for permission to fix itself.
+   *
+   * A change staged under the old rule is withdrawn rather than left queued.
+   * That is not housekeeping: an admin applying it later would write the older
+   * proposal over this newer direct save, which is the one way this could lose
+   * an edit.
    */
   const save = useCallback(
     async (patch: Partial<RestaurantRecord>): Promise<SaveOutcome> => {
@@ -247,32 +267,28 @@ export function useRestaurantProfile() {
           business_user_id: businessUserId,
         };
 
-        if (isNeverPinned(current)) {
-          const applied = await applyBusinessProfileUpdate(after);
-          if (!applied.success) {
-            setError(applied.error ?? null);
-            return { ok: false, staged: false, error: applied.error };
+        const applied = await applyBusinessProfileUpdate(after);
+        if (!applied.success) {
+          setError(applied.error ?? null);
+          return { ok: false, staged: false, error: applied.error };
+        }
+
+        if (pending) {
+          const dropped = await withdrawBusinessProfileUpdate(pending.id);
+          if (dropped.success) {
+            setPending(null);
+          } else {
+            // The save itself is already committed; a stale queue entry must not
+            // be reported as a failed save, but it does need to be traceable.
+            console.warn(
+              '[useRestaurantProfile] saved, but a stale staged change could not be withdrawn:',
+              dropped.error,
+            );
           }
-          await load();
-          return { ok: true, staged: false };
         }
 
-        const submitted = await submitBusinessProfileUpdate({
-          restaurantId: current.id,
-          businessUserId,
-          before: { ...toPatch(current), restaurant_id: current.id },
-          after,
-          requestedByEmail: user?.email,
-          requestedByName: user?.businessName || user?.name,
-        });
-
-        if (!submitted.success) {
-          setError(submitted.error ?? null);
-          return { ok: false, staged: true, error: submitted.error };
-        }
-
-        await loadPending(current.id);
-        return { ok: true, staged: true };
+        await load();
+        return { ok: true, staged: false };
       } catch (err) {
         const message = err instanceof Error ? err.message : "Could not save the shop profile";
         setError(message);
@@ -281,7 +297,7 @@ export function useRestaurantProfile() {
         setSaving(false);
       }
     },
-    [businessUserId, ensureRestaurant, load, loadPending, user, error],
+    [businessUserId, ensureRestaurant, load, pending, user, error],
   );
 
   /** Take a staged change back before the Super Admin acts on it. */

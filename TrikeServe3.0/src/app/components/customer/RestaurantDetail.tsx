@@ -16,6 +16,7 @@ import { supabase } from "../../../utils/supabase";
 import { supabaseHelpers } from "@/lib/supabase";
 import { useDeliveryAddress } from "../../contexts/useDeliveryAddress";
 import { cuisineLabels } from "@/lib/foodTaxonomy";
+import { isEffectivelyOpen } from "@/lib/shopHours";
 import { formatDistance, haversineMetres, hasCoords } from "@/lib/distance";
 import { topDishesByUnits } from "@/lib/topDishes";
 
@@ -432,7 +433,13 @@ export default function RestaurantDetail() {
           menuSections: mappedSections,
           menuItems: mappedMenuItems,
           reviews: [],
-          is_open: restaurant.is_open !== undefined ? restaurant.is_open : true,
+          is_open: isEffectivelyOpen({
+            is_open: restaurant.is_open,
+            open_time: restaurant.open_time ?? null,
+            close_time: restaurant.close_time ?? null,
+            open_days: restaurant.open_days ?? null,
+            force_open_until: restaurant.force_open_until ?? null,
+          }),
           businessUserId: restaurant.business_user_id || undefined,
           cuisine: Array.isArray(restaurant.cuisine) ? restaurant.cuisine : [],
           latitude: restaurant.latitude ?? null,
@@ -639,9 +646,19 @@ customizationGroups: parseChoiceGroups(item.customization_groups).filter(
           console.log('[RestaurantDetail] Restaurant status changed:', payload);
 
           if (restaurantData && payload.new) {
+            // Re-derived rather than copied, so an owner editing their trading
+            // hours updates this screen too. Reading `payload.new.is_open` alone
+            // meant the page kept saying Open long after the schedule had closed
+            // the shop -- and disagreed with the shop list, which does honour it.
             setRestaurantData({
               ...restaurantData,
-              is_open: payload.new.is_open !== undefined ? payload.new.is_open : true
+              is_open: isEffectivelyOpen({
+                is_open: payload.new.is_open,
+                open_time: payload.new.open_time ?? null,
+                close_time: payload.new.close_time ?? null,
+                open_days: payload.new.open_days ?? null,
+                force_open_until: payload.new.force_open_until ?? null,
+              }),
             });
           }
         }

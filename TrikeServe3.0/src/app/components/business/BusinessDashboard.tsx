@@ -29,6 +29,11 @@ import { supabase } from "../../../lib/supabase";
 import { supabaseHelpers } from "@/lib/supabase";
 import { useRestaurantProfile } from "@/lib/restaurantProfile";
 import { cuisineLabels } from "@/lib/foodTaxonomy";
+import {
+  describeOpenState,
+  describeSchedule,
+  type ShopHours,
+} from "@/lib/shopHours";
 
 /**
  * Popular dishes across two rows that scroll as one.
@@ -155,6 +160,79 @@ export default function BusinessDashboard() {
   const profile = useRestaurantProfile();
   const profileCuisineLabels = cuisineLabels(profile.restaurant?.cuisine);
   const profileLocation = profile.restaurant;
+
+  /*
+   * Trading hours, for the Open/Closed indicator below.
+   *
+   * Read in their own query rather than added to the profile hook's select. That
+   * hook's select names the shop's name, address, cuisine and pin, and PostgREST
+   * rejects a whole SELECT that mentions a column the project does not have --
+   * so until ADD_SHOP_HOURS.sql has been run, asking for `open_time` there would
+   * take every other field on this screen down with it. A failure here costs the
+   * status indicator and nothing else, which is the right way round: no schedule
+   * simply falls back to the manual switch, which is how this always worked.
+   */
+  const [shopHours, setShopHours] = useState<
+    (ShopHours & { is_open?: boolean | null }) | null
+  >(null);
+
+  useEffect(() => {
+    const restaurantId = profile.restaurantId;
+    if (!restaurantId) {
+      setShopHours(null);
+      return;
+    }
+    let cancelled = false;
+
+    void supabase
+      .from("restaurants")
+      .select("is_open, open_time, close_time, open_days, force_open_until")
+      .eq("id", restaurantId)
+      .maybeSingle()
+      .then(({ data }) => {
+        if (cancelled || !data) return;
+        setShopHours({
+          is_open: data.is_open,
+          open_time: data.open_time ?? null,
+          close_time: data.close_time ?? null,
+          open_days: (data.open_days as Array<number | string> | null) ?? null,
+          force_open_until: data.force_open_until ?? null,
+        });
+      })
+      .catch(() => {
+        // Migration not applied. The indicator then reads from the switch alone.
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [profile.restaurantId]);
+
+  /*
+   * Ticks so the indicator changes on its own.
+   *
+   * Without this the status is frozen at whatever the clock said when the screen
+   * loaded: a shop open until 10pm still reads Open at midnight, which is the one
+   * thing this is here to prevent. A minute is coarse enough to be free and fine
+   * enough that a wrong "Open" is never sitting there for long.
+   */
+  const [now, setNow] = useState(() => new Date());
+  useEffect(() => {
+    const tick = setInterval(() => setNow(new Date()), 60_000);
+    return () => clearInterval(tick);
+  }, []);
+
+  const shopStatus = useMemo(() => describeOpenState(shopHours, now), [shopHours, now]);
+  const shopSchedule = useMemo(
+    () =>
+      shopHours
+        ? describeSchedule({
+            open_time: shopHours.open_time,
+            close_time: shopHours.close_time,
+            open_days: shopHours.open_days,
+          })
+        : null,
+  );
   const [activeNav, setActiveNav] = useState("overview");
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [restaurantLogo, setRestaurantLogo] = useState<string | null>(null);
@@ -760,7 +838,7 @@ const previousWindowWord = range === 'today' ? 'day' : range;
               </Link>
             </div>
 
-            <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
               <div className="min-w-0">
                 <p className="text-[11px] font-bold uppercase tracking-wider text-[var(--muted-foreground)]">
                   What we serve
@@ -796,12 +874,53 @@ const previousWindowWord = range === 'today' ? 'day' : range;
                     : 'Not pinned — this shop sorts last in "near you" lists'}
                 </p>
               </div>
+
+              {/*
+                Open or closed, right now.
+
+                On the Overview because this is the screen a shop opens first, and
+                "is my shop actually trading?" was answerable on the Shop page and
+                nowhere else. It says *why* it reads closed, since "Closed" on a
+                shop the owner can see the door open to is indistinguishable from a
+                bug.
+              */}
+              <div className="min-w-0">
+                <p className="text-[11px] font-bold uppercase tracking-wider text-[var(--muted-foreground)]">
+                  Open now
+                </p>
+                <div className="mt-2 flex items-center gap-2">
+                  <span
+                    className={`inline-flex items-center gap-1.5 rounded-lg px-2 py-1 text-sm font-bold ${
+                      shopStatus.open
+                        ? "bg-[var(--success-soft)] text-[var(--success-ink)]"
+                        : "bg-[var(--error-soft)] text-[var(--error)]"
+                    }`}
+                  >
+                    <span
+                      className={`size-2 rounded-full ${
+                        shopStatus.open ? "bg-[var(--success)]" : "bg-[var(--error)]"
+                      }`}
+                      aria-hidden="true"
+                    />
+                    {shopStatus.label}
+                  </span>
+                </div>
+                <p className="mt-1 text-xs text-[var(--muted-foreground)]">{shopStatus.detail}</p>
+                {shopSchedule && (
+                  <p className="mt-0.5 text-xs text-[var(--muted-foreground)] break-words">
+                    {shopSchedule}
+                  </p>
+                )}
+              </div>
             </div>
 
+            {/* Legacy queue entry only. The values above are what customers see, and they
+                are always live now -- this can only be a change queued under the
+                old approval rule, which saving on any Shop screen discards. */}
             {profile.hasPending && (
               <p className="mt-4 rounded-xl border border-[var(--amber-soft)] bg-[var(--amber-soft)] px-3 py-2 text-xs text-[var(--amber-ink)] break-words">
-                You have a shop details change waiting for Super Admin approval. The values above are
-                what customers see until it is approved.
+                An older shop details change is still queued from before approval was removed.
+                The values above are live; saving on the Shop screen discards the queued one.
               </p>
             )}
           </Card>

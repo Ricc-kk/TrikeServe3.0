@@ -61,14 +61,19 @@ export function normalizeRates(raw: any): RideRates {
 }
 
 /**
- * A terminal's own ride fare (terminals.base_fare / terminals.per_km).
+ * A terminal's own ride pricing.
  *
- * Added by ADD_TERMINAL_FARES.sql. Any field can be null when the terminal has
- * not set its own fare, in which case the admin-wide default applies.
+ * `base_fare` / `per_km` are added by ADD_TERMINAL_FARES.sql and price a shared
+ * ride; `private_ride_fee` / `private_ride_fee_per_km` are added by
+ * ADD_TERMINAL_PRIVATE_RIDE_FEE.sql and price a private one. Any field can be
+ * null when the terminal has not set it, in which case the value it stands in
+ * for applies.
  */
 export interface TerminalFare {
   base_fare?: number | null;
   per_km?: number | null;
+  private_ride_fee?: number | null;
+  private_ride_fee_per_km?: number | null;
 }
 
 /**
@@ -80,6 +85,30 @@ export function terminalRates(terminal?: TerminalFare | null): RideRates {
     ...DEFAULT_RATES,
     baseFare: num(terminal?.base_fare, DEFAULT_RATES.baseFare),
     perKm: num(terminal?.per_km, DEFAULT_RATES.perKm),
+  };
+}
+
+/**
+ * A private ride's own base and per-km rate.
+ *
+ * A private ride books the whole vehicle, so a terminal can price it separately
+ * from a shared seat. The fallback is the terminal's *shared* rate rather than
+ * the platform default, and that is deliberate: before this existed, a private
+ * ride was priced at exactly the shared base + per-km, so falling back to the
+ * share rate keeps every terminal that has not been edited here charging
+ * precisely what it charged before.
+ *
+ * `shared` is the already-resolved share rate to inherit from, so a caller that
+ * has no terminal picked yet still gets the platform defaults rather than
+ * treating "no terminal" as "private rides are free".
+ */
+export function privateRideRates(
+  terminal?: TerminalFare | null,
+  shared: Pick<RideRates, "baseFare" | "perKm"> = DEFAULT_RATES,
+): { baseFare: number; perKm: number } {
+  return {
+    baseFare: num(terminal?.private_ride_fee, num(terminal?.base_fare, shared.baseFare)),
+    perKm: num(terminal?.private_ride_fee_per_km, num(terminal?.per_km, shared.perKm)),
   };
 }
 
