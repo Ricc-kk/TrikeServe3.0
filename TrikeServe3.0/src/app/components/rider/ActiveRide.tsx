@@ -1176,7 +1176,19 @@ export default function ActiveRide() {
               map.addListener('zoom_changed', stopFollowingOnZoom);
             }}
             zoom={INITIAL_MAP_ZOOM}
-            options={{ disableDefaultUI: true }}
+            options={{
+              disableDefaultUI: true,
+              // One finger pans the map. Two fingers zoom only -- they cannot drag
+              // it. The default, 'cooperative', lets a two-finger drag pan as well,
+              // and on a phone held at handlebar height that is easy to trigger by
+              // accident, which threw the camera somewhere the driver did not ask
+              // for and silently switched following off.
+              gestureHandling: 'greedy',
+              // Double-tap zoom off for the same reason: a stray double tap while
+              // steering would change the zoom under a driver who is looking at the
+              // road, and re-centring deliberately no longer restores zoom.
+              disableDoubleClickZoom: true,
+            }}
           >
             {driverLocation && (
               <Marker position={driverLocation} icon={{ url: tricycleIcon, scaledSize: new (window as any).google.maps.Size(44, 44), anchor: new (window as any).google.maps.Point(22, 22) }} zIndex={100} />
@@ -1294,19 +1306,18 @@ export default function ActiveRide() {
             middle of the map, resumes following, and resumes facing the direction
             of travel. The zoom is deliberately untouched.
 
-            Centred rather than tucked into a corner because the driver's attention
-            is on the road: the control is reached for without looking, and the
-            middle of the map is where the thing it acts on -- their own position --
-            has just been restored. It is labelled rather than a bare icon because
-            a pin-free target arrow reads as "the driver", and there is no reason
-            for the driver to doubt where they are; the text says what tapping it
-            does. */}
+            Centred horizontally but sitting at the bottom of the map rather than dead in the
+            middle: the centre is where the driver is looking and where the tricycle
+            marker is drawn, so a control there covered the very thing it acts on.
+            At the bottom it is in thumb reach and clear of the marker. `bottom-4`
+            is measured against the map's own container, which ends above the detail
+            sheet, so the button never ends up underneath it. */}
         {!followDriver && driverLocation && (
           <button
             type="button"
             onClick={handleRecenter}
             aria-label="Re-centre map on my location"
-            className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 z-[4003] inline-flex items-center gap-2 rounded-full bg-surface pl-3 pr-5 py-3 shadow-xl active:scale-95 transition-transform"
+            className="absolute left-1/2 bottom-4 -translate-x-1/2 z-[4003] inline-flex items-center gap-2 rounded-full bg-surface pl-3 pr-5 py-3 shadow-xl active:scale-95 transition-transform"
           >
             <Navigation className="w-5 h-5 text-[var(--primary)]" />
             <span className="text-sm font-bold text-[var(--ink)]">Re-centre</span>
