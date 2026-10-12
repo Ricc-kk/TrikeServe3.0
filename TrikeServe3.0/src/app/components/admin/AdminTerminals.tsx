@@ -1,9 +1,9 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import {
-  Plus, Edit2, Trash2, UserPlus, UserMinus, MapPin, Users, Menu, X, Navigation, Search, Loader2, Save,
+  Plus, Edit2, Trash2, UserPlus, UserMinus, MapPin, Users, Menu, X, Navigation, Search, Loader2, Save, Shield,
   ClipboardCheck, CheckCircle, XCircle, Clock, ShieldCheck, ChevronDown
 } from "lucide-react";
-import { GoogleMap, MarkerF, InfoWindow, Polygon } from "@react-google-maps/api";
+import { GoogleMap, MarkerF, InfoWindow, Polygon, Polyline } from "@react-google-maps/api";
 import useMapLoader from "@/lib/mapLoader";
 import { autocompletePlacesNew, createPlacesSessionToken, fetchPlaceDetailsNew } from "@/lib/placesApi";
 
@@ -15,7 +15,10 @@ import {
   getRiderAdmins,
   assignRiderAdminTerminal,
   getAdminTerminalAssignment,
-  normalizeBoundaryPolygon,
+  normalizeBoundaryRoad,
+  normalizeBoundaryArea,
+  normalizeRoadWidth,
+  DEFAULT_ROAD_WIDTH_M,
   logAudit,
   APPROVAL_REQUEST_LABELS,
   type ApprovalRequest,
@@ -34,6 +37,10 @@ const GOOGLE_MAPS_API_KEY = import.meta.env.VITE_GOOGLE_MAPS_API_KEY || "";
 // Valenzuela City (same point the customer/business map selectors default to).
 const DEFAULT_TERMINAL_CENTER = { lat: 14.7244, lng: 120.9668 };
 
+// Named in save errors, because a missing column fails the whole upsert and would
+// otherwise look like the admin's edits simply weren't sticking.
+const MIGRATION_HINT = 'ADD_TERMINAL_ROAD_BOUNDARY.sql / ADD_TERMINAL_BORDER_AREA.sql';
+
 interface Terminal {
   id: string;
   name: string;
@@ -43,8 +50,16 @@ interface Terminal {
   radius_km: number;
   is_active: boolean;
   rider_count: number;
-  // Coverage area plotted on the map; null when no area has been drawn yet.
+  // The road this terminal runs along, plotted on the map; null when none yet.
   boundary_polygon: LatLngPoint[] | null;
+  // Closed ring enclosing that road; null when none yet.
+  boundary_area: LatLngPoint[] | null;
+  // Full width of that road's corridor in metres (ADD_TERMINAL_ROAD_BOUNDARY.sql).
+  // A drop-off is accepted within half of this distance of the plotted road.
+  road_width_m: number;
+  // Whether the road is enforced on drop-off checks. The road itself is kept
+  // either way, so this can be switched off and back on without replotting.
+  boundary_enabled: boolean;
   // This terminal's own ride fare, set by the terminal admin
   // (ADD_TERMINAL_FARES.sql). Falls back to the platform default when null.
   base_fare: number;
@@ -145,27 +160,118 @@ export default function AdminTerminals() {
     center_lng: DEFAULT_TERMINAL_CENTER.lng,
     is_active: true,
     boundary_polygon: [] as LatLngPoint[],
+    // The closed ring that encloses the road. Separate from the road because the
+    // two are plotted independently and either can be absent.
+    boundary_area: [] as LatLngPoint[],
+    road_width_m: DEFAULT_ROAD_WIDTH_M,
+    boundary_enabled: true,
     // This terminal's own ride fare, editable by the terminal admin.
     base_fare: 20,
     per_km: 10,
   });
   const [showMapPicker, setShowMapPicker] = useState(false);
-  // The map picker either moves the terminal pin or draws the coverage area.
-  const [mapPickerMode, setMapPickerMode] = useState<'location' | 'boundary'>('location');
-  // Undo/redo for plotting the coverage area. `boundaryPast` holds the states the
-  // current polygon can be stepped back to; `boundaryFuture` holds the ones it was
-  // stepped away from, which Redo walks forward through. The polygon in `form`
-  // stays the single source of truth — these are just the states either side of it.
-  const [boundaryPast, setBoundaryPast] = useState<LatLngPoint[][]>([]);
-  const [boundaryFuture, setBoundaryFuture] = useState<LatLngPoint[][]>([]);
+  // The map picker either moves the terminal pin, plots the road, or plots the
+  // area that encloses it.
+  const [mapPickerMode, setMapPickerMode] = useState<'location' | 'boundary' | 'area'>('location');
+  // Undo/redo for plotting. `boundaryPast` holds the states the current shape can
+  // be stepped back to; `boundaryFuture` holds the ones it was stepped away from,
+  // which Redo walks forward through. The shapes in `form` stay the single source
+  // of truth — these are just the states either side of them.
+  const [boundaryPast, setBoundaryPast] = useState<{ road: LatLngPoint[]; area: LatLngPoint[] }[]>([]);
+  const [boundaryFuture, setBoundaryFuture] = useState<{ road: LatLngPoint[]; area: LatLngPoint[] }[]>([]);
   // Bound on the stacks so a long plotting session can't grow them without limit.
   const BOUNDARY_HISTORY_MAX = 50;
-  // What the pin and boundary looked like when the map picker opened, so closing
-  // can tell whether the admin has work in there that closing would throw away.
+  const [isSnappingRoad, setIsSnappingRoad] = useState(false);
+  // Set once the Roads API turns out to be unusable (most often simply not
+  // enabled on the Google Cloud project), so the picker can say why the plotted
+  // line isn't following the road instead of leaving the admin to guess.
+  const [roadSnapUnavailable, setRoadSnapUnavailable] = useState(false);
+
+  /**
+   * Pull a tapped point onto the nearest real road via the Roads API, so the
+   * plotted line follows the road instead of cutting across it. Falls back to
+   * the raw tap whenever the API is unavailable or unhappy — a slightly crooked
+   * road is better than refusing to plot one.
+   */
+  const snapToRoad = useCallback(async (point: LatLngPoint): Promise<LatLngPoint> => {
+    const apiKey = import.meta.env.VITE_GOOGLE_MAPS_API_KEY;
+    if (!apiKey) {
+      setRoadSnapUnavailable(true);
+      return point;
+    }
+
+    setIsSnappingRoad(true);
+    try {
+      // A path is comma-separated lat,lng pairs; `|` would separate whole points.
+      const url =
+        'https://roads.googleapis.com/v1/snapToRoads' +
+        `?path=${point.lat.toFixed(6)},${point.lng.toFixed(6)}` +
+        `&interpolate=false&key=${encodeURIComponent(apiKey)}`;
+
+      const res = await fetch(url);
+      if (!res.ok) {
+        // 403 means the Roads API isn't enabled on this key's project; 400 is
+        // usually a bad key. Either way, snapping won't happen for this session.
+        if (res.status === 403 || res.status === 400) setRoadSnapUnavailable(true);
+        return point;
+      }
+
+      const json = await res.json();
+      const snapped = json?.snappedPoints?.[0]?.location;
+      if (!snapped) return point;
+
+      setRoadSnapUnavailable(false);
+      return { lat: Number(snapped.latitude), lng: Number(snapped.longitude) };
+    } catch {
+      return point;
+    } finally {
+      setIsSnappingRoad(false);
+    }
+  }, []);
+
+  /**
+   * Densify a whole plotted path along the road network. Each tap already snaps
+   * to the nearest road, but two taps on a curving road would still be joined by
+   * a straight line that cuts the corner; interpolating between them fills in the
+   * road's own vertices. Falls back to the taps as given if the API is unusable.
+   */
+  const densifyRoad = useCallback(async (points: LatLngPoint[]): Promise<LatLngPoint[]> => {
+    if (points.length < 2) return points;
+
+    const apiKey = import.meta.env.VITE_GOOGLE_MAPS_API_KEY;
+    if (!apiKey) return points;
+
+    try {
+      const path = points.map(p => `${p.lat.toFixed(6)},${p.lng.toFixed(6)}`).join('|');
+      const url =
+        'https://roads.googleapis.com/v1/snapToRoads' +
+        `?path=${path}&interpolate=true&key=${encodeURIComponent(apiKey)}`;
+
+      const res = await fetch(url);
+      if (!res.ok) return points;
+
+      const json = await res.json();
+      const snapped: LatLngPoint[] = (json?.snappedPoints || [])
+        .map((p: any) => ({ lat: Number(p?.location?.latitude), lng: Number(p?.location?.longitude) }))
+        .filter((p: LatLngPoint) => Number.isFinite(p.lat) && Number.isFinite(p.lng));
+
+      // Keep the taps themselves if interpolation came back empty or thinner than
+      // what we already had — never let a road get saved with fewer points.
+      return snapped.length >= points.length ? snapped : points;
+    } catch {
+      return points;
+    }
+  }, []);
+
+  /**
+   * What the pin and road looked like when the map picker opened, so closing
+   * can tell whether the admin has work in there that closing would throw away.
+   */
   const [mapPickerSnapshot, setMapPickerSnapshot] = useState<{
     center_lat: number;
     center_lng: number;
     polygon: LatLngPoint[];
+    area: LatLngPoint[];
   } | null>(null);
   const { isLoaded: isMapsLoaded } = useMapLoader();
   const formMapRef = useRef<google.maps.Map | null>(null);
@@ -192,19 +298,21 @@ export default function AdminTerminals() {
       center_lat: form.center_lat,
       center_lng: form.center_lng,
       polygon: [...form.boundary_polygon],
+      area: [...form.boundary_area],
     });
     setShowMapPicker(true);
   }
 
-  /** True when the pin moved or the boundary was edited since the picker opened. */
+  const samePoints = (a: LatLngPoint[], b: LatLngPoint[]) =>
+    a.length === b.length && a.every((p, i) => p.lat === b[i].lat && p.lng === b[i].lng);
+
+  /** True when the pin moved or either boundary shape was edited since the picker opened. */
   const hasUnsavedMapChanges =
     !!mapPickerSnapshot &&
     (form.center_lat !== mapPickerSnapshot.center_lat ||
       form.center_lng !== mapPickerSnapshot.center_lng ||
-      form.boundary_polygon.length !== mapPickerSnapshot.polygon.length ||
-      form.boundary_polygon.some(
-        (p, i) => p.lat !== mapPickerSnapshot.polygon[i].lat || p.lng !== mapPickerSnapshot.polygon[i].lng
-      ));
+      !samePoints(form.boundary_polygon, mapPickerSnapshot.polygon) ||
+      !samePoints(form.boundary_area, mapPickerSnapshot.area));
 
   /** Closes the picker outright. Going through requestCloseMapPicker is the user-facing path. */
   function closeMapPicker() {
@@ -222,7 +330,7 @@ export default function AdminTerminals() {
       return;
     }
 
-    const plotted = form.boundary_polygon.length;
+    const plotted = form.boundary_polygon.length + form.boundary_area.length;
     openModal({
       title: 'Discard Map Changes?',
       message:
@@ -256,32 +364,50 @@ export default function AdminTerminals() {
     confirmSaveTerminal();
   }
 
-  // Every edit to the coverage area goes through commitBoundary, so undo/redo
-  // can't miss one. It records the polygon as it stands and replaces it with
-  // `next`, and drops any redo branch — editing after an undo starts a new one.
-  function commitBoundary(next: LatLngPoint[]) {
-    setBoundaryPast(p => [...p, form.boundary_polygon].slice(-BOUNDARY_HISTORY_MAX));
+  /** Snapshot of both shapes as they stand, for the undo stacks. */
+  const boundaryNow = () => ({
+    road: form.boundary_polygon,
+    area: form.boundary_area,
+  });
+
+  // Every edit to either shape goes through commitBoundary, so undo/redo can't
+  // miss one. It records both shapes as they stand and applies `next`, and drops
+  // any redo branch — editing after an undo starts a new one.
+  function commitBoundary(next: Partial<{ road: LatLngPoint[]; area: LatLngPoint[] }>) {
+    setBoundaryPast(p => [...p, boundaryNow()].slice(-BOUNDARY_HISTORY_MAX));
     setBoundaryFuture([]);
-    setForm(f => ({ ...f, boundary_polygon: next }));
+    setForm(f => ({
+      ...f,
+      ...(next.road ? { boundary_polygon: next.road } : {}),
+      ...(next.area ? { boundary_area: next.area } : {}),
+    }));
   }
 
   function undoBoundary() {
     if (boundaryPast.length === 0) return;
     const previous = boundaryPast[boundaryPast.length - 1];
     setBoundaryPast(p => p.slice(0, -1));
-    setBoundaryFuture(future => [form.boundary_polygon, ...future].slice(0, BOUNDARY_HISTORY_MAX));
-    setForm(f => ({ ...f, boundary_polygon: previous }));
+    setBoundaryFuture(future => [boundaryNow(), ...future].slice(0, BOUNDARY_HISTORY_MAX));
+    setForm(f => ({
+      ...f,
+      boundary_polygon: previous.road,
+      boundary_area: previous.area,
+    }));
   }
 
   function redoBoundary() {
     if (boundaryFuture.length === 0) return;
     const next = boundaryFuture[0];
     setBoundaryFuture(future => future.slice(1));
-    setBoundaryPast(past => [...past, form.boundary_polygon].slice(-BOUNDARY_HISTORY_MAX));
-    setForm(f => ({ ...f, boundary_polygon: next }));
+    setBoundaryPast(past => [...past, boundaryNow()].slice(-BOUNDARY_HISTORY_MAX));
+    setForm(f => ({
+      ...f,
+      boundary_polygon: next.road,
+      boundary_area: next.area,
+    }));
   }
 
-  // Opening a different terminal starts a fresh polygon, so it also starts a
+  // Opening a different terminal starts fresh shapes, so it also starts a
   // fresh history — otherwise Redo could walk back into another terminal's area.
   function resetBoundaryHistory() {
     setBoundaryPast([]);
@@ -361,7 +487,10 @@ export default function AdminTerminals() {
         radius_km: t.radius_km ?? 2.0,
         is_active: t.is_active ?? true,
         rider_count: t.rider_count ?? 0,
-        boundary_polygon: normalizeBoundaryPolygon(t.boundary_polygon),
+        boundary_polygon: normalizeBoundaryRoad(t.boundary_polygon),
+        boundary_area: normalizeBoundaryArea(t.boundary_area),
+        road_width_m: normalizeRoadWidth(t.road_width_m),
+        boundary_enabled: t.boundary_enabled !== false,
         base_fare: t.base_fare ?? 20,
         per_km: t.per_km ?? 10,
       }));
@@ -494,7 +623,7 @@ export default function AdminTerminals() {
     : terminals;
 
   function openCreate() {
-    setForm({ name: "", boundary: "", center_lat: DEFAULT_TERMINAL_CENTER.lat, center_lng: DEFAULT_TERMINAL_CENTER.lng, is_active: true, boundary_polygon: [], base_fare: 20, per_km: 10 });
+    setForm({ name: "", boundary: "", center_lat: DEFAULT_TERMINAL_CENTER.lat, center_lng: DEFAULT_TERMINAL_CENTER.lng, is_active: true, boundary_polygon: [], boundary_area: [], road_width_m: DEFAULT_ROAD_WIDTH_M, boundary_enabled: true, base_fare: 20, per_km: 10 });
     setEditTerminal(null);
     setMapPickerMode('location');
     resetBoundaryHistory();
@@ -509,6 +638,9 @@ export default function AdminTerminals() {
       center_lng: t.center_lng,
       is_active: t.is_active,
       boundary_polygon: t.boundary_polygon ? [...t.boundary_polygon] : [],
+      boundary_area: t.boundary_area ? [...t.boundary_area] : [],
+      road_width_m: normalizeRoadWidth(t.road_width_m),
+      boundary_enabled: t.boundary_enabled !== false,
       base_fare: t.base_fare ?? 20,
       per_km: t.per_km ?? 10,
     });
@@ -518,22 +650,31 @@ export default function AdminTerminals() {
     setShowForm(true);
   }
 
-  const handleFormMapClick = useCallback((e: google.maps.MapMouseEvent) => {
+  const handleFormMapClick = useCallback(async (e: google.maps.MapMouseEvent) => {
     if (!e.latLng) return;
     const lat = e.latLng.lat();
     const lng = e.latLng.lng();
 
-    // In boundary mode every tap adds a corner of the coverage area; otherwise
-    // the tap just moves the terminal pin. Only the polygon is undoable — moving
-    // the pin stays out of the history so Undo can't yank it somewhere unexpected.
-    if (mapPickerMode === 'boundary') {
-      setBoundaryPast(p => [...p, form.boundary_polygon].slice(-BOUNDARY_HISTORY_MAX));
-      setBoundaryFuture([]);
-      setForm(f => ({ ...f, boundary_polygon: [...f.boundary_polygon, { lat, lng }] }));
+    // Only the shapes are undoable — moving the pin stays out of the history so
+    // Undo can't yank it somewhere unexpected.
+    if (mapPickerMode === 'location') {
+      setForm(f => ({ ...f, center_lat: lat, center_lng: lng }));
       return;
     }
-    setForm(f => ({ ...f, center_lat: lat, center_lng: lng }));
-  }, [mapPickerMode, form.boundary_polygon]);
+
+    if (mapPickerMode === 'area') {
+      // The area is a hand-drawn ring, so taps go down exactly as given.
+      setBoundaryPast(p => [...p, { road: form.boundary_polygon, area: form.boundary_area }].slice(-BOUNDARY_HISTORY_MAX));
+      setBoundaryFuture([]);
+      setForm(f => ({ ...f, boundary_area: [...f.boundary_area, { lat, lng }] }));
+      return;
+    }
+
+    const point = await snapToRoad({ lat, lng });
+    setBoundaryPast(p => [...p, { road: form.boundary_polygon, area: form.boundary_area }].slice(-BOUNDARY_HISTORY_MAX));
+    setBoundaryFuture([]);
+    setForm(f => ({ ...f, boundary_polygon: [...f.boundary_polygon, point] }));
+  }, [mapPickerMode, form.boundary_polygon, form.boundary_area, snapToRoad]);
 
   const handleFormMapLoad = useCallback((map: google.maps.Map) => {
     formMapRef.current = map;
@@ -608,17 +749,21 @@ export default function AdminTerminals() {
     }
   };
 
-  /** Error message when the plotted area can't be saved as-is, else null. */
+  /** Error message when a plotted shape can't be saved as-is, else null. */
   function boundaryValidationError(): string | null {
-    // A started-but-unfinished shape (1–2 corners) can't enclose an area.
-    if (form.boundary_polygon.length > 0 && form.boundary_polygon.length < 3) {
-      return 'Add at least 3 points to the boundary area, or clear it.';
+    // A single tap doesn't describe a road yet — two points do.
+    if (form.boundary_polygon.length > 0 && form.boundary_polygon.length < 2) {
+      return 'Add at least 2 points to the road, or clear it.';
+    }
+    // A ring needs three corners before it encloses anything.
+    if (form.boundary_area.length > 0 && form.boundary_area.length < 3) {
+      return `Add at least 3 points to the border area (${form.boundary_area.length} so far), or clear it.`;
     }
     return null;
   }
 
-  // Confirm before applying a coverage area — it decides which customer
-  // drop-offs this terminal accepts.
+  // Confirm before applying a boundary — it decides which customer drop-offs this
+  // terminal accepts and where its drivers may queue up.
   function confirmSaveTerminal() {
     if (!form.name || !form.boundary) return;
 
@@ -628,23 +773,35 @@ export default function AdminTerminals() {
       return;
     }
 
-    const points = form.boundary_polygon.length;
-    const hadArea = (editTerminal?.boundary_polygon?.length ?? 0) >= 3;
+    const roadPts = form.boundary_polygon.length;
+    const areaPts = form.boundary_area.length;
+    const hadBoundary =
+      (editTerminal?.boundary_polygon?.length ?? 0) >= 2 ||
+      (editTerminal?.boundary_area?.length ?? 0) >= 3;
+    const halfWidth = Math.round(normalizeRoadWidth(form.road_width_m) / 2);
 
-    // Nothing area-related to confirm when no area was ever or is being plotted.
-    if (points < 3 && !hadArea) {
+    const describe = () => {
+      const parts: string[] = [];
+      if (roadPts >= 2) parts.push(`a road with ${roadPts} points (${halfWidth} m either side)`);
+      if (areaPts >= 3) parts.push(`a border area with ${areaPts} points`);
+      return parts.join(' and ');
+    };
+
+    // Nothing boundary-related to confirm when none was ever or is being plotted.
+    if (roadPts < 2 && areaPts < 3 && !hadBoundary) {
       saveTerminal();
       return;
     }
 
+    const removing = roadPts < 2 && areaPts < 3;
+
     openModal({
-      title: points >= 3 ? 'Confirm Boundary Area' : 'Remove Boundary Area',
-      message:
-        points >= 3
-          ? `Save ${form.name} with this coverage area? It has ${points} plotted points, and ride requests whose drop-off falls outside every terminal's area will be rejected.${isRiderAdmin ? ' Your change will be sent to the Super Admin for approval.' : ''}`
-          : `Save ${form.name} without a coverage area? Its boundary will no longer restrict customer drop-offs.`,
-      variant: points >= 3 ? 'success' : 'warning',
-      confirmLabel: points >= 3 ? 'Save Area' : 'Save',
+      title: removing ? 'Remove Boundary' : 'Confirm Boundary',
+      message: removing
+        ? `Save ${form.name} with no boundary? Its road and border area will no longer restrict where customers are dropped off or where drivers can queue.`
+        : `Save ${form.name} with ${describe()}? Customers can't be dropped off and drivers can't queue outside every terminal's boundary.${isRiderAdmin ? ' Your change will be sent to the Super Admin for approval.' : ''}`,
+      variant: removing ? 'warning' : 'success',
+      confirmLabel: removing ? 'Save' : 'Save Boundary',
       onConfirm: async () => {
         closeModal();
         await saveTerminal();
@@ -652,21 +809,26 @@ export default function AdminTerminals() {
     });
   }
 
-  // Confirm before wiping the plotted area (available from the form and the map picker).
+  // Confirm before wiping a plotted shape (available from the form and the map picker).
   function confirmClearBoundary() {
-    const points = form.boundary_polygon.length;
-    if (points === 0) return;
+    const roadPts = form.boundary_polygon.length;
+    const areaPts = form.boundary_area.length;
+    if (roadPts === 0 && areaPts === 0) return;
+
+    const shape =
+      areaPts > 0 && roadPts > 0 ? 'road and border area' : areaPts > 0 ? 'border area' : 'road';
+    const total = roadPts + areaPts;
 
     openModal({
-      title: 'Clear Boundary Area',
-      message: `Remove all ${points} plotted point${points === 1 ? '' : 's'}? This terminal will have no coverage area until you plot one again, so its drop-offs will not be checked.`,
+      title: `Clear ${shape === 'road' ? 'Road' : 'Border Area'}`,
+      message: `Remove all ${total} plotted point${total === 1 ? '' : 's'}? This terminal will have no ${shape} until you plot again, so its drop-offs will not be checked and its drivers can queue from anywhere.`,
       variant: 'warning',
-      confirmLabel: 'Clear Area',
+      confirmLabel: 'Clear',
       // The map picker sits at z-[2010], so the dialog has to outrank it.
       zIndexClassName: 'z-[2030]',
       onConfirm: () => {
         closeModal();
-        commitBoundary([]);
+        commitBoundary({ road: [], area: [] });
       },
     });
   }
@@ -675,7 +837,13 @@ export default function AdminTerminals() {
     if (!form.name || !form.boundary) return;
     if (boundaryValidationError()) return;
 
-    const boundaryPolygon = form.boundary_polygon.length >= 3 ? form.boundary_polygon : null;
+    // Two points already describe a road; three enclose an area. Anything less
+    // isn't worth saving.
+    const tappedRoad = form.boundary_polygon.length >= 2 ? form.boundary_polygon : null;
+    const boundaryArea = form.boundary_area.length >= 3 ? form.boundary_area : null;
+    const roadWidthM = normalizeRoadWidth(form.road_width_m);
+    // Store the road as the network actually runs it, not just the tapped corners.
+    const boundaryPolygon = tappedRoad ? await densifyRoad(tappedRoad) : null;
 
     // This terminal's own ride fare, kept non-negative with a safe default.
     const fareValue = (value: number, fallback: number) =>
@@ -684,7 +852,7 @@ export default function AdminTerminals() {
     const per_km = fareValue(Number(form.per_km), 10);
 
     const target: Terminal = editTerminal
-      ? { ...editTerminal, name: form.name, boundary: form.boundary, center_lat: form.center_lat, center_lng: form.center_lng, is_active: form.is_active, boundary_polygon: boundaryPolygon, base_fare, per_km }
+      ? { ...editTerminal, name: form.name, boundary: form.boundary, center_lat: form.center_lat, center_lng: form.center_lng, is_active: form.is_active, boundary_polygon: boundaryPolygon, boundary_area: boundaryArea, road_width_m: roadWidthM, boundary_enabled: form.boundary_enabled, base_fare, per_km }
       : {
           id: `t_${Date.now()}`,
           name: form.name,
@@ -695,6 +863,9 @@ export default function AdminTerminals() {
           is_active: form.is_active,
           rider_count: 0,
           boundary_polygon: boundaryPolygon,
+          boundary_area: boundaryArea,
+          road_width_m: roadWidthM,
+          boundary_enabled: true,
           base_fare,
           per_km,
         };
@@ -712,6 +883,11 @@ export default function AdminTerminals() {
           is_active: target.is_active,
           rider_count: target.rider_count,
           boundary_polygon: target.boundary_polygon,
+          boundary_area: target.boundary_area,
+          road_width_m: target.road_width_m,
+          // Carried through on edit so saving an unrelated field never silently
+          // switches a deliberately disabled road back on.
+          boundary_enabled: target.boundary_enabled,
           base_fare: target.base_fare,
           per_km: target.per_km,
           updated_at: new Date().toISOString(),
@@ -720,7 +896,20 @@ export default function AdminTerminals() {
       );
 
       if (error) {
-        setToast({ message: `Save failed: ${error.message}`, variant: 'error' });
+        // A missing column makes PostgREST reject the entire upsert, so a forgotten
+        // migration looks like "my edits aren't saving" rather than a schema problem.
+        // Name the migration instead of leaking the raw code.
+        const quoted = error.message.match(/['"]([\w.]+)['"] column of/i);
+        const missing = quoted
+          ? quoted[1]
+          : error.message.match(/column ([\w.]+) does not exist/i)?.[1];
+
+        setToast({
+          message: missing
+            ? `Save failed — the database has no "${missing.split('.').pop()}" column. Run ${MIGRATION_HINT} in the Supabase SQL Editor.`
+            : `Save failed: ${error.message}`,
+          variant: 'error',
+        });
         return;
       }
 
@@ -774,6 +963,61 @@ export default function AdminTerminals() {
     resetBoundaryHistory();
     await loadMyRequests();
     setToast({ message: 'Terminal change submitted for Super Admin approval', variant: 'warning' });
+  }
+
+  /**
+   * Switch one terminal's boundary check on or off, leaving the road and the
+   * enclosing area plotted.
+   *
+   * Applied straight to the row rather than through the form, so it takes effect
+   * immediately without the admin having to reopen and re-save the terminal. Both
+   * shapes stay on the map either way — this only decides whether drop-offs and
+   * driver queues are checked against them.
+   */
+  async function toggleBoundaryEnabled(terminal: Terminal) {
+    const next = !terminal.boundary_enabled;
+
+    // Optimistic, with the old value kept so a failure can put it back.
+    setTerminals(ts =>
+      ts.map(t => (t.id === terminal.id ? { ...t, boundary_enabled: next } : t))
+    );
+    if (editTerminal?.id === terminal.id) {
+      setEditTerminal({ ...editTerminal, boundary_enabled: next });
+    }
+
+    const { error } = await supabase
+      .from('terminals')
+      .update({ boundary_enabled: next })
+      .eq('id', terminal.id);
+
+    if (error) {
+      setTerminals(ts =>
+        ts.map(t => (t.id === terminal.id ? { ...t, boundary_enabled: !next } : t))
+      );
+      if (editTerminal?.id === terminal.id) {
+        setEditTerminal({ ...editTerminal, boundary_enabled: !next });
+      }
+      setToast({ message: `Could not update the boundary: ${error.message}`, variant: 'error' });
+      return;
+    }
+
+    logAudit({
+      action: next ? 'enable_terminal_boundary' : 'disable_terminal_boundary',
+      actorRole: 'admin',
+      entityType: 'terminal',
+      entityId: terminal.id,
+      summary: `${next ? 'Enabled' : 'Disabled'} the road boundary check for: ${terminal.name}`,
+      details: { boundary_enabled: next },
+      actorEmail: user?.email,
+      actorName: user?.name,
+    });
+
+    setToast({
+      message: next
+        ? `Boundary check enabled — drop-offs and driver queues are checked against ${terminal.name}`
+        : `Boundary check disabled — ${terminal.name}'s boundary is kept but not enforced`,
+      variant: next ? 'success' : 'warning',
+    });
   }
 
   function confirmDeleteTerminal(id: string) {
@@ -1137,14 +1381,23 @@ export default function AdminTerminals() {
                             </span>
                             <span
                               className={`text-xs font-bold px-2 py-0.5 rounded-full ${
-                                t.boundary_polygon && t.boundary_polygon.length >= 3
-                                  ? "bg-[var(--primary-soft)] text-[var(--primary)]"
+                                (t.boundary_polygon && t.boundary_polygon.length >= 2) ||
+                                (t.boundary_area && t.boundary_area.length >= 3)
+                                  ? t.boundary_enabled
+                                    ? "bg-[var(--primary-soft)] text-[var(--primary)]"
+                                    : "bg-[var(--muted)] text-[var(--muted-foreground)]"
                                   : "bg-[var(--muted)] text-[var(--muted-foreground)]"
                               }`}
                             >
-                              {t.boundary_polygon && t.boundary_polygon.length >= 3
-                                ? `Boundary: ${t.boundary_polygon.length} pts`
-                                : "No boundary"}
+                              {(() => {
+                                const hasRoad = !!t.boundary_polygon && t.boundary_polygon.length >= 2;
+                                const hasArea = !!t.boundary_area && t.boundary_area.length >= 3;
+                                if (!hasRoad && !hasArea) return "No boundary";
+                                const shape = hasRoad && hasArea ? 'Road + area' : hasRoad ? 'Road' : 'Area';
+                                return t.boundary_enabled
+                                  ? `${shape}: ${normalizeRoadWidth(t.road_width_m)} m`
+                                  : `${shape} not enforced`;
+                              })()}
                             </span>
                             <span className="text-xs font-bold px-2 py-0.5 rounded-full bg-[var(--success-soft)] text-[var(--success)]">
                               {`Fare: ₱${t.base_fare ?? 20} + ₱${t.per_km ?? 10}/km`}
@@ -1175,6 +1428,26 @@ export default function AdminTerminals() {
                         >
                           {isExpanded ? "Hide" : "Drivers"}
                         </button>
+                        {/* Boundary check on/off. Only meaningful once something is
+                            plotted, so it stays hidden until then rather than offering a
+                            toggle for a boundary that doesn't exist. */}
+                        {(isSuperAdmin || (isRiderAdmin && t.id === assignedTerminalId)) &&
+                          ((t.boundary_polygon && t.boundary_polygon.length >= 2) ||
+                            (t.boundary_area && t.boundary_area.length >= 3)) && (
+                            <button
+                              onClick={() => toggleBoundaryEnabled(t)}
+                              aria-pressed={t.boundary_enabled}
+                              aria-label={`${t.boundary_enabled ? 'Disable' : 'Enable'} boundary check for ${t.name}`}
+                              className={`h-11 px-3 rounded-xl border-2 text-xs font-bold flex items-center gap-1.5 transition-all active:scale-90 ${
+                                t.boundary_enabled
+                                  ? "bg-[var(--success-soft)] border-[var(--success)] text-[var(--success)]"
+                                  : "bg-[var(--muted)] border-line text-[var(--muted-foreground)]"
+                              }`}
+                            >
+                              <Shield size={14} />
+                              Boundary {t.boundary_enabled ? "On" : "Off"}
+                            </button>
+                          )}
                         {(isSuperAdmin || (isRiderAdmin && t.id === assignedTerminalId)) && (
                           <button
                             onClick={() => openEdit(t)}
@@ -1360,15 +1633,28 @@ export default function AdminTerminals() {
                         draggable: false,
                       }}
                     >
-                      {form.boundary_polygon.length >= 3 && (
+                      {form.boundary_area.length >= 3 && (
                         <Polygon
-                          path={form.boundary_polygon}
+                          path={form.boundary_area}
                           options={{
                             fillColor: 'var(--primary)',
-                            fillOpacity: 0.2,
+                            fillOpacity: 0.12,
                             strokeColor: 'var(--primary)',
                             strokeWeight: 2,
+                            strokeOpacity: 0.6,
                             clickable: false,
+                          }}
+                        />
+                      )}
+                      {form.boundary_polygon.length >= 2 && (
+                        <Polyline
+                          path={form.boundary_polygon}
+                          options={{
+                            strokeColor: 'var(--primary)',
+                            strokeWeight: 5,
+                            strokeOpacity: 0.9,
+                            clickable: false,
+                            geodesic: true,
                           }}
                         />
                       )}
@@ -1383,34 +1669,121 @@ export default function AdminTerminals() {
                       and it stays clear of the map edges once the text wraps on narrow screens. */}
                   <div className="absolute inset-0 flex items-center justify-center p-2.5 pointer-events-none">
                     <span className="max-w-full bg-white/90 px-2.5 sm:px-3 py-1 rounded-full text-[11px] sm:text-xs font-semibold leading-snug text-center text-[var(--ink)] shadow">
-                      📍 Tap to set location & boundary
+                      📍 Tap to set the location, road & border
                     </span>
                   </div>
                 </div>
-                <p className="text-xs text-[var(--muted-foreground)] mt-1">
+                <p className="text-xs text-[var(--muted-foreground)] mt-1.5 mb-3">
                   Lat: {form.center_lat.toFixed(4)}, Lng: {form.center_lng.toFixed(4)}
                 </p>
 
-                {/* Boundary area status */}
-                <div className="flex items-start justify-between gap-2 mt-2 p-2.5 bg-[var(--muted)] rounded-xl">
+                {/* The boundary controls belong together, so they carry their own
+                    consistent rhythm instead of one-off margins that drift apart
+                    as the section grows. */}
+                <div className="space-y-2">
+                {/* Road status */}
+                <div className="flex items-start justify-between gap-2 p-3 bg-[var(--muted)] rounded-xl">
                   <div className="flex-1 min-w-0">
-                    <p className="text-xs font-semibold text-[var(--ink)]">Boundary Area</p>
+                    <p className="text-xs font-semibold text-[var(--ink)]">Road Boundary</p>
                     <p className="text-xs leading-snug text-[var(--muted-foreground)] break-words">
-                      {form.boundary_polygon.length >= 3
-                        ? `${form.boundary_polygon.length} points plotted — drop-offs outside every terminal's area are rejected`
+                      {form.boundary_polygon.length >= 2
+                        ? `${form.boundary_polygon.length} points along the road — accepts drop-offs within ${Math.round(normalizeRoadWidth(form.road_width_m) / 2)} m of it`
                         : form.boundary_polygon.length > 0
-                          ? `${form.boundary_polygon.length} point${form.boundary_polygon.length === 1 ? '' : 's'} — add at least 3`
-                          : 'Not set — tap the map to plot an area'}
+                          ? `${form.boundary_polygon.length} point${form.boundary_polygon.length === 1 ? '' : 's'} — add at least 2`
+                          : 'Not set — tap the map to plot the road'}
                     </p>
                   </div>
                   {form.boundary_polygon.length > 0 && (
                     <button
                       onClick={confirmClearBoundary}
-                      className="flex-shrink-0 text-xs font-bold text-[var(--primary)] active:scale-95"
+                      className="flex-shrink-0 self-center min-h-11 px-3 -mr-1.5 rounded-lg text-xs font-bold text-[var(--primary)] hover:bg-[var(--primary-soft)] transition-colors active:scale-95"
                     >
                       Clear
                     </button>
                   )}
+                </div>
+
+                {/* The enclosing area the road runs through. */}
+                <div className="flex items-start justify-between gap-2 p-3 bg-[var(--muted)] rounded-xl">
+                  <div className="flex-1 min-w-0">
+                    <p className="text-xs font-semibold text-[var(--ink)]">Border Area</p>
+                    <p className="text-xs leading-snug text-[var(--muted-foreground)] break-words">
+                      {form.boundary_area.length >= 3
+                        ? `${form.boundary_area.length} points enclosing the road — drivers and drop-offs outside every terminal's border are rejected`
+                        : form.boundary_area.length > 0
+                          ? `${form.boundary_area.length} point${form.boundary_area.length === 1 ? '' : 's'} — add at least ${3 - form.boundary_area.length} more`
+                          : 'Not set — tap the map to plot the border area'}
+                    </p>
+                  </div>
+                  {form.boundary_area.length > 0 && (
+                    <button
+                      onClick={confirmClearBoundary}
+                      className="flex-shrink-0 self-center min-h-11 px-3 -mr-1.5 rounded-lg text-xs font-bold text-[var(--primary)] hover:bg-[var(--primary-soft)] transition-colors active:scale-95"
+                    >
+                      Clear
+                    </button>
+                  )}
+                </div>
+
+                {/* Enforce the boundary or keep it without using it. Neither shape is
+                    lost either way, so this can be flipped back at any time. */}
+                {(form.boundary_polygon.length >= 2 || form.boundary_area.length >= 3) && (
+                  <div className="flex items-center justify-between gap-3 p-3 bg-[var(--muted)] rounded-xl">
+                    <div className="min-w-0">
+                      <p className="text-sm font-semibold text-[var(--ink)]">Enforce Boundary</p>
+                      <p className="text-xs text-[var(--muted-foreground)]">
+                        {form.boundary_enabled
+                          ? 'Drop-offs and driver queues are checked against this boundary'
+                          : 'Kept as drawn, but not checked against'}
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      role="switch"
+                      aria-checked={form.boundary_enabled}
+                      aria-label="Enforce boundary"
+                      onClick={() =>
+                        setForm(f => ({ ...f, boundary_enabled: !f.boundary_enabled }))
+                      }
+                      className={`relative w-12 h-7 rounded-full flex-shrink-0 transition-colors ${
+                        form.boundary_enabled ? "bg-[var(--success)]" : "bg-[var(--border)]"
+                      }`}
+                    >
+                      <span
+                        className={`absolute top-0.5 left-0.5 w-6 h-6 bg-surface rounded-full shadow transition-transform ${
+                          form.boundary_enabled ? "translate-x-5" : ""
+                        }`}
+                      />
+                    </button>
+                  </div>
+                )}
+
+                {/* How far off the road a drop-off may be and still be accepted. */}
+                <div className="p-3 bg-[var(--muted)] rounded-xl">
+                  <label className="text-xs font-semibold text-[var(--ink)] block mb-1.5">
+                    Road corridor width
+                  </label>
+                  <div className="flex items-center gap-3">
+                    <input
+                      type="number"
+                      min={20}
+                      max={2000}
+                      step={10}
+                      inputMode="numeric"
+                      value={form.road_width_m}
+                      onChange={e =>
+                        setForm(f => ({
+                          ...f,
+                          road_width_m: e.target.value === '' ? DEFAULT_ROAD_WIDTH_M : Number(e.target.value),
+                        }))
+                      }
+                      className="w-24 h-10 px-3 border border-line focus:border-[var(--primary)] rounded-xl text-sm outline-none flex-shrink-0"
+                    />
+                    <span className="text-xs leading-snug text-[var(--muted-foreground)]">
+                      Accepts drop-offs within {Math.round(normalizeRoadWidth(form.road_width_m) / 2)} m of the road
+                    </span>
+                  </div>
+                </div>
                 </div>
               </div>
 
@@ -1426,47 +1799,6 @@ export default function AdminTerminals() {
                 >
                   <span className={`absolute top-0.5 left-0.5 w-6 h-6 bg-surface rounded-full shadow transition-transform ${form.is_active ? 'translate-x-5' : ''}`} />
                 </button>
-              </div>
-
-              {/* This terminal's own ride fare */}
-              <div className="p-3 bg-[var(--primary-soft)] border-2 border-[var(--primary-soft)] rounded-xl space-y-3">
-                <div>
-                  <p className="text-sm font-semibold text-[var(--ink)]">Ride Fare for this Terminal</p>
-                  <p className="text-xs text-[var(--muted-foreground)]">
-                    Rides booked from {form.name || 'this terminal'} are charged this fare: base + rate per km.
-                  </p>
-                </div>
-                <div className="grid grid-cols-2 gap-2">
-                  {([
-                    ['base_fare', 'Base Fare'],
-                    ['per_km', 'Rate / km'],
-                  ] as const).map(([key, label]) => (
-                    <div key={key}>
-                      <label className="text-[10px] font-bold uppercase tracking-widest text-[var(--muted-foreground)] block mb-1">
-                        {label}
-                      </label>
-                      <div className="flex items-center px-2 h-10 border border-line focus-within:border-[var(--primary)] rounded-xl bg-surface">
-                        <span className="text-sm text-[var(--muted-foreground)] mr-1">₱</span>
-                        <input
-                          type="number"
-                          min={0}
-                          inputMode="decimal"
-                          value={form[key]}
-                          onChange={e =>
-                            setForm(f => ({
-                              ...f,
-                              [key]: e.target.value === '' ? 0 : Number(e.target.value),
-                            }))
-                          }
-                          className="w-full min-w-0 text-sm font-semibold text-[var(--ink)] outline-none bg-transparent"
-                        />
-                      </div>
-                    </div>
-                  ))}
-                </div>
-                <p className="text-xs font-semibold text-[var(--primary)]">
-                  Preview: ₱{form.base_fare} base + ₱{form.per_km}/km
-                </p>
               </div>
 
               <div className="flex gap-3 pt-2">
@@ -1572,14 +1904,16 @@ export default function AdminTerminals() {
             </div>
           </div>
 
-          {/* Move the pin, or draw the coverage area */}
+          {/* Move the pin, draw the road, or enclose it in an area */}
           <div className="flex gap-2 px-4 py-2 bg-surface border-b border-[var(--border)]">
             {([
-              ['location', 'Terminal Location'],
-              ['boundary', 'Boundary Area'],
+              ['location', 'Location'],
+              ['boundary', 'Road'],
+              ['area', 'Border Area'],
             ] as const).map(([mode, label]) => (
               <button
                 key={mode}
+                type="button"
                 onClick={() => setMapPickerMode(mode)}
                 className={`flex-1 h-9 rounded-lg text-xs font-bold uppercase tracking-widest transition-colors ${
                   mapPickerMode === mode ? 'bg-[var(--primary)] text-white' : 'bg-[var(--muted)] text-[var(--muted-foreground)]'
@@ -1605,16 +1939,31 @@ export default function AdminTerminals() {
               }}
             >
               <MarkerF position={{ lat: form.center_lat, lng: form.center_lng }} />
-              {/* Plotted coverage area */}
-              {form.boundary_polygon.length >= 3 && (
+              {/* The enclosing area, drawn under the road it contains. */}
+              {form.boundary_area.length >= 3 && (
                 <Polygon
-                  path={form.boundary_polygon}
+                  path={form.boundary_area}
                   options={{
                     fillColor: 'var(--primary)',
-                    fillOpacity: 0.2,
+                    fillOpacity: 0.12,
                     strokeColor: 'var(--primary)',
                     strokeWeight: 2,
+                    strokeOpacity: 0.6,
                     clickable: false,
+                  }}
+                />
+              )}
+              {/* Plotted road. A thick translucent casing under a solid line reads as a
+                  corridor, which is what the drop-off check actually allows. */}
+              {form.boundary_polygon.length >= 2 && (
+                <Polyline
+                  path={form.boundary_polygon}
+                  options={{
+                    strokeColor: 'var(--primary)',
+                    strokeWeight: 5,
+                    strokeOpacity: 0.9,
+                    clickable: false,
+                    geodesic: true,
                   }}
                 />
               )}
@@ -1626,30 +1975,39 @@ export default function AdminTerminals() {
                     label={`${index + 1}`}
                   />
                 ))}
+              {mapPickerMode === 'area' &&
+                form.boundary_area.map((point, index) => (
+                  <MarkerF
+                    key={`${point.lat}_${point.lng}_${index}`}
+                    position={point}
+                    label={`${index + 1}`}
+                  />
+                ))}
             </GoogleMap>
-            {/* Center crosshair — only while positioning the terminal pin */}
-            {mapPickerMode === 'location' && (
-              <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-full pointer-events-none">
-                <MapPin className="w-8 h-8 text-[var(--primary)] drop-shadow-lg" />
-              </div>
-            )}
             <div className="absolute bottom-4 left-4 right-4">
               <div className="bg-white/95 backdrop-blur rounded-xl shadow-lg p-3">
                 {mapPickerMode === 'boundary' ? (
                   <>
                     <p className="text-sm font-semibold text-[var(--ink)] text-center">
-                      Tap the map to plot the boundary area
+                      Tap along the road to plot it
                     </p>
                     <p className="text-xs text-[var(--muted-foreground)] text-center mt-0.5">
-                      {form.boundary_polygon.length === 0
-                        ? 'Add at least 3 points to close the area'
-                        : form.boundary_polygon.length < 3
-                          ? `${form.boundary_polygon.length} point${form.boundary_polygon.length === 1 ? '' : 's'} — add ${3 - form.boundary_polygon.length} more to enclose the area`
-                          : `${form.boundary_polygon.length} points — area closed`}
+                      {isSnappingRoad
+                        ? 'Snapping to the nearest road...'
+                        : form.boundary_polygon.length < 2
+                          ? `Add at least 2 points — ${Math.round(normalizeRoadWidth(form.road_width_m) / 2)} m either side of the road is accepted`
+                          : `${form.boundary_polygon.length} points — accepts drop-offs within ${Math.round(normalizeRoadWidth(form.road_width_m) / 2)} m of the road`}
                     </p>
+                    {roadSnapUnavailable && (
+                      <p className="text-[11px] text-center mt-1 text-[var(--amber-dark)]">
+                        Snapping to roads is unavailable, so points are placed exactly where
+                        you tap. Allow the Roads API on the Maps key (Credentials → your key
+                        → API restrictions) for lines that follow the road network.
+                      </p>
+                    )}
                     {/* Undo/Redo stay visible whenever there's anything to step through — including
-                        after every point has been undone, where the polygon is empty but
-                        Redo still has work to do. Clear Area only applies to a plotted area. */}
+                        after every point has been undone, where the road is empty but
+                        Redo still has work to do. Clear Road only applies to a plotted road. */}
                     <div className="grid grid-cols-2 gap-2 mt-3">
                       <button
                         type="button"
@@ -1674,7 +2032,49 @@ export default function AdminTerminals() {
                         onClick={confirmClearBoundary}
                         className="w-full h-9 mt-2 border-2 border-[var(--primary)] text-[var(--primary)] text-xs font-bold rounded-lg active:scale-95"
                       >
-                        Clear Area
+                        Clear Road
+                      </button>
+                    )}
+                  </>
+                ) : mapPickerMode === 'area' ? (
+                  <>
+                    <p className="text-sm font-semibold text-[var(--ink)] text-center">
+                      Tap the corners of the border area
+                    </p>
+                    <p className="text-xs text-[var(--muted-foreground)] text-center mt-0.5">
+                      {form.boundary_area.length < 3
+                        ? `Add at least 3 points — ${form.boundary_area.length} so far`
+                        : `${form.boundary_area.length} points — area closed`}
+                    </p>
+                    <p className="text-[11px] text-center mt-1 text-[var(--muted-foreground)]">
+                      Draw this around the road. Drivers and drop-offs outside every
+                      terminal's border are rejected.
+                    </p>
+                    <div className="grid grid-cols-2 gap-2 mt-3">
+                      <button
+                        type="button"
+                        onClick={undoBoundary}
+                        disabled={boundaryPast.length === 0}
+                        className="h-9 border border-line text-[var(--muted-foreground)] text-xs font-bold rounded-lg active:scale-95 disabled:opacity-40 disabled:active:scale-100 disabled:cursor-not-allowed"
+                      >
+                        Undo Point
+                      </button>
+                      <button
+                        type="button"
+                        onClick={redoBoundary}
+                        disabled={boundaryFuture.length === 0}
+                        className="h-9 border border-line text-[var(--muted-foreground)] text-xs font-bold rounded-lg active:scale-95 disabled:opacity-40 disabled:active:scale-100 disabled:cursor-not-allowed"
+                      >
+                        Redo Point
+                      </button>
+                    </div>
+                    {form.boundary_area.length > 0 && (
+                      <button
+                        type="button"
+                        onClick={confirmClearBoundary}
+                        className="w-full h-9 mt-2 border-2 border-[var(--primary)] text-[var(--primary)] text-xs font-bold rounded-lg active:scale-95"
+                      >
+                        Clear Border Area
                       </button>
                     )}
                   </>

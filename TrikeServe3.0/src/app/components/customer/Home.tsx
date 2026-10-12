@@ -19,7 +19,7 @@ import { GOOGLE_MAPS_LIBRARIES } from "@/lib/googleMaps";
 import { autocompletePlacesNew, createPlacesSessionToken, fetchPlaceDetailsNew, searchPlacesText, type PlaceResult, type PlacesAutocompleteSuggestion } from "@/lib/placesApi";
 import tricycleIcon from '../../../assets/0b76d1aa56b8ad6e15dd4efc8a0100b0ca5762a1.png';
 import { useAuth } from "../../contexts/AuthContext";
-import { supabaseHelpers, isDropoffWithinAnyTerminalBoundary, isPointInPolygon, normalizeBoundaryPolygon, logAudit } from "@/lib/supabase";
+import { supabaseHelpers, isDropoffWithinAnyTerminalBoundary, isWithinTerminalBoundary, normalizeBoundaryRoad, normalizeBoundaryArea, normalizeRoadWidth, logAudit } from "@/lib/supabase";
 import { computeRideFare, normalizeRates, terminalRates, privateRideRates, DEFAULT_MAX_PASSENGERS } from "@/lib/pricing";
 import { useElapsedTime } from "@/app/hooks/useElapsedTime";
 import ReasonPromptModal from "../ui/reason-prompt-modal";
@@ -653,16 +653,21 @@ export default function CustomerHome() {
    const [selectedTerminalId, setSelectedTerminalId] = useState<string | null>(null);
   // Hub state: what they want (all / a ride / a meal) and whether they have
   // opened the header's search field.
-   // The chosen pickup terminal and its plotted service area. Drives the search
-   // filter, the picker's map view, and the pin guard, so all three agree on
-   // where the customer is allowed to be dropped off.
-   const selectedTerminalBoundary = useMemo(() => {
-     const terminal = terminals.find(t => t.id === selectedTerminalId) || null;
-     return {
-       terminal,
-       polygon: terminal ? normalizeBoundaryPolygon(terminal.boundary_polygon) : null,
-     };
-   }, [terminals, selectedTerminalId]);
+    // The chosen pickup terminal and its plotted service road. Drives the search
+    // filter, the picker's map view, and the pin guard, so all three agree on
+    // where the customer is allowed to be dropped off.
+    const selectedTerminalBoundary = useMemo(() => {
+      const terminal = terminals.find(t => t.id === selectedTerminalId) || null;
+      // A terminal with its boundary check off still has its shapes drawn, but it
+      // must not restrict the customer's drop-off, so it is treated as unbounded.
+      const enforced = terminal && terminal.boundary_enabled !== false ? terminal : null;
+      return {
+        terminal,
+        road: enforced ? normalizeBoundaryRoad(enforced.boundary_polygon) : null,
+        area: enforced ? normalizeBoundaryArea(enforced.boundary_area) : null,
+        widthM: enforced ? normalizeRoadWidth(enforced.road_width_m) : undefined,
+      };
+    }, [terminals, selectedTerminalId]);
    const mapRef = useRef<any>(null);
    const hasManualPickupSelectionRef = useRef(false);
    const unsubscribeRef = useRef<(() => void) | null>(null);
@@ -845,23 +850,23 @@ export default function CustomerHome() {
       const query = input.trim();
 
       // The pickup terminal decides where a customer is allowed to be dropped
-      // off, so once one is chosen the search is limited to its plotted area.
-      const { terminal, polygon: boundary } = selectedTerminalBoundary;
+      // off, so once one is chosen the search is limited to its boundary.
+      const { terminal, road, area, widthM } = selectedTerminalBoundary;
 
-      if (boundary && terminal) {
+      if ((road || area) && terminal) {
         // Autocomplete suggestions carry no coordinates, so they cannot be
-        // tested against the polygon. Text Search returns a location per hit,
+        // tested against the boundary. Text Search returns a location per hit,
         // which lets each result be checked before it is ever shown.
         const hits = await searchPlacesText({
           textQuery: query,
           apiKey,
           bias: { lat: terminal.center_lat, lng: terminal.center_lng },
-          biasRadiusMeters: polygonBiasRadius(boundary),
+          biasRadiusMeters: polygonBiasRadius((area || road) as { lat: number; lng: number }[]),
         });
 
         setPredictions(
           hits
-            .filter(hit => isPointInPolygon(hit.lat!, hit.lng!, boundary))
+            .filter(hit => isWithinTerminalBoundary(hit.lat!, hit.lng!, { road, area, widthM }))
             .map(hit => ({
               place_id: hit.place_id || '',
               displayName: hit.display_name || hit.name || hit.formatted_address || 'Drop-off point',
@@ -1998,12 +2003,13 @@ export default function CustomerHome() {
     const lat = latLng.lat();
     const lng = latLng.lng();
 
-    // A tap outside the selected terminal's area is refused outright, so the
+    // A tap outside the selected terminal's boundary is refused outright, so the
     // customer cannot pin a drop-off the search would never have offered.
-    const { polygon, terminal } = selectedTerminalBoundary;
-    if (polygon && !isPointInPolygon(lat, lng, polygon)) {
+    const { road, area, widthM, terminal } = selectedTerminalBoundary;
+    if ((road || area) && !isWithinTerminalBoundary(lat, lng, { road, area, widthM })) {
+      const half = Math.round(normalizeRoadWidth(widthM) / 2);
       setPickerBoundaryWarning(
-        `That spot is outside ${terminal?.name || 'this terminal'}'s service area. Tap inside the highlighted border.`
+        `That spot is outside ${terminal?.name || 'this terminal'}'s boundary. Tap inside the shaded area or within ${half} m of the road.`
       );
       return;
     }
@@ -3699,15 +3705,39 @@ const getPrice = () => {
               >
                 <MarkerF position={currentLocation} title="Current location" icon={createCurrentLocationIcon()} />
                 {/* The terminal's service area, so it is obvious where a drop-off is allowed */}
-                {selectedTerminalBoundary.polygon && (
+                {selectedTerminalBoundary.area && (
                   <Polygon
-                    path={selectedTerminalBoundary.polygon}
+                    path={selectedTerminalBoundary.area}
                     options={{
                       fillColor: '#bc4b1f',
-                      fillOpacity: 0.15,
+                      fillOpacity: 0.12,
+                      strokeColor: '#bc4b1f',
+                      strokeWeight: 2,
+                      strokeOpacity: 0.6,
+                      clickable: false,
+                    }}
+                  />
+                )}
+                {selectedTerminalBoundary.road && (
+                  <Polyline
+                    path={selectedTerminalBoundary.road}
+                    options={{
+                      strokeColor: '#bc4b1f',
+                      strokeWeight: 7,
+                      strokeOpacity: 0.35,
+                      clickable: false,
+                      geodesic: true,
+                    }}
+                  />
+                )}
+                {selectedTerminalBoundary.road && (
+                  <Polyline
+                    path={selectedTerminalBoundary.road}
+                    options={{
                       strokeColor: '#bc4b1f',
                       strokeWeight: 3,
                       clickable: false,
+                      geodesic: true,
                     }}
                   />
                 )}

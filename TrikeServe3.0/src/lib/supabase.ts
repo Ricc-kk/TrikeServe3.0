@@ -312,14 +312,24 @@ export async function getAdminTerminalAssignment(
 }
 
 // ---------------------------------------------------------------------------
-// Terminal boundary area
+// Terminal boundary: a road, and the area that encloses it
 // ---------------------------------------------------------------------------
-// A terminal's coverage area is a polygon plotted on the map
-// (terminals.boundary_polygon, added by ADD_TERMINAL_BOUNDARY_POLYGON.sql).
-// A booking is rejected only when the drop-off point falls outside EVERY active
-// terminal that has a plotted area — terminals often share or overlap routes, so
-// being inside any one of them is enough. Terminals without a plotted boundary
-// are ignored, which keeps bookings working until the first area is drawn.
+// A terminal has two plotted shapes (ADD_TERMINAL_ROAD_BOUNDARY.sql and
+// ADD_TERMINAL_BORDER_AREA.sql):
+//
+//   terminals.boundary_polygon  the road it runs along — a line snapped to the
+//                               road network, accepted within half of
+//                               terminals.road_width_m
+//   terminals.boundary_area     a closed polygon enclosing that road
+//
+// The polygon is the outer bound and the road runs through it, so a point is
+// accepted if it is inside the polygon OR on the road corridor. Requiring both
+// would reject someone standing on the road because a hand-drawn edge cut a
+// corner. A terminal with only one of the two still works on its own.
+//
+// Either shape can be switched off per terminal with terminals.boundary_enabled,
+// which keeps the shape but stops enforcing it. Terminals with neither plotted
+// are ignored, so this never blocks bookings until something is drawn.
 // ---------------------------------------------------------------------------
 
 export interface LatLngPoint {
@@ -327,20 +337,26 @@ export interface LatLngPoint {
   lng: number;
 }
 
+/**
+ * How far from a plotted road a drop-off may sit and still be accepted, in
+ * metres. This is the full width of the corridor, so each side gets half of it.
+ */
+export const DEFAULT_ROAD_WIDTH_M = 200;
+
 /** Coerce a raw JSON value from Supabase into a list of valid vertices. */
-export function normalizeBoundaryPolygon(raw: any): LatLngPoint[] | null {
-  if (!raw) return null;
+function coerceVertices(raw: any): LatLngPoint[] {
+  if (!raw) return [];
 
   let value = raw;
   if (typeof value === 'string') {
     try {
       value = JSON.parse(value);
     } catch {
-      return null;
+      return [];
     }
   }
 
-  if (!Array.isArray(value)) return null;
+  if (!Array.isArray(value)) return [];
 
   const points: LatLngPoint[] = [];
   for (const entry of value) {
@@ -348,14 +364,36 @@ export function normalizeBoundaryPolygon(raw: any): LatLngPoint[] | null {
     const lng = Number(entry?.lng);
     if (Number.isFinite(lat) && Number.isFinite(lng)) points.push({ lat, lng });
   }
+  return points;
+}
 
-  // A polygon needs at least three corners to enclose an area.
-  return points.length >= 3 ? points : null;
+/** The road as an ordered list of points. Two points already describe a stretch. */
+export function normalizeBoundaryRoad(raw: any): LatLngPoint[] | null {
+  const points = coerceVertices(raw);
+  // Two points already describe a stretch of road — there is no closure to make.
+  return points.length >= 2 ? points : null;
 }
 
 /**
- * Ray-casting point-in-polygon test. The polygon is always treated as closed, so
- * the last vertex connects back to the first.
+ * The enclosing area as a closed ring. Three points already enclose something,
+ * which is the whole difference from a road.
+ */
+export function normalizeBoundaryArea(raw: any): LatLngPoint[] | null {
+  const points = coerceVertices(raw);
+  return points.length >= 3 ? points : null;
+}
+
+/** Fall back to the default corridor when a terminal has no usable width saved. */
+export function normalizeRoadWidth(raw: any): number {
+  const width = Number(raw);
+  if (!Number.isFinite(width) || width <= 0) return DEFAULT_ROAD_WIDTH_M;
+  // A sane ceiling, so a typo can't silently turn the corridor into the whole city.
+  return Math.min(width, 2000);
+}
+
+/**
+ * Ray-casting point-in-polygon test. The ring is always treated as closed, so the
+ * last vertex connects back to the first.
  */
 export function isPointInPolygon(lat: number, lng: number, polygon: LatLngPoint[]): boolean {
   if (!Array.isArray(polygon) || polygon.length < 3) return false;
@@ -375,6 +413,68 @@ export function isPointInPolygon(lat: number, lng: number, polygon: LatLngPoint[
   }
 
   return inside;
+}
+
+/**
+ * Shortest distance in metres from a point to a polyline.
+ *
+ * The road is short enough (a few kilometres within one terminal) that a local
+ * equirectangular projection is accurate to well under a metre, and it lets the
+ * per-segment maths run in plain 2D instead of a haversine per segment.
+ */
+export function distanceToRoadMeters(lat: number, lng: number, road: LatLngPoint[]): number {
+  if (!Array.isArray(road) || road.length === 0) return Number.POSITIVE_INFINITY;
+  if (road.length === 1) {
+    return haversineDistanceMeters({ lat, lng }, road[0]);
+  }
+
+  const toRad = (x: number) => (x * Math.PI) / 180;
+  // Scale longitude by the latitude halfway between the point and the road's mean,
+  // so the projection stays accurate over the length of the road.
+  const roadMeanLat = road.reduce((s, p) => s + p.lat, 0) / road.length;
+  const meanLat = toRad((lat + roadMeanLat) / 2);
+
+  const mPerDegLat = 111132;
+  const mPerDegLng = 111320 * Math.cos(meanLat);
+
+  const toXY = (p: LatLngPoint) => ({ x: p.lng * mPerDegLng, y: p.lat * mPerDegLat });
+  const px = lng * mPerDegLng;
+  const py = lat * mPerDegLat;
+
+  let best = Number.POSITIVE_INFINITY;
+  for (let i = 1; i < road.length; i++) {
+    const a = toXY(road[i - 1]);
+    const b = toXY(road[i]);
+
+    const dx = b.x - a.x;
+    const dy = b.y - a.y;
+    const lengthSquared = dx * dx + dy * dy;
+
+    // Project onto this segment, clamped to its ends so a point beyond either
+    // end measures to that end rather than to the infinite line through it.
+    let t = lengthSquared === 0 ? 0 : ((px - a.x) * dx + (py - a.y) * dy) / lengthSquared;
+    t = Math.max(0, Math.min(1, t));
+
+    const cx = a.x + t * dx;
+    const cy = a.y + t * dy;
+    const distance = Math.hypot(px - cx, py - cy);
+    if (distance < best) best = distance;
+  }
+
+  return best;
+}
+
+/**
+ * Whether a point sits within the terminal's road corridor — half the road's
+ * width to either side of the plotted line.
+ */
+export function isPointOnRoadCorridor(
+  lat: number,
+  lng: number,
+  road: LatLngPoint[],
+  widthM: number = DEFAULT_ROAD_WIDTH_M
+): boolean {
+  return distanceToRoadMeters(lat, lng, road) <= normalizeRoadWidth(widthM) / 2;
 }
 
 /**
@@ -402,32 +502,62 @@ export function haversineDistanceMeters(
 }
 
 /**
+ * Whether a point is covered by one terminal's boundary.
+ *
+ * Inside the enclosing area counts, and so does sitting on the road corridor —
+ * the road runs through the area, so either alone is enough. With neither shape
+ * plotted there is nothing to enforce and the point is covered.
+ */
+export function isWithinTerminalBoundary(
+  lat: number,
+  lng: number,
+  boundary: { road?: LatLngPoint[] | null; area?: LatLngPoint[] | null; widthM?: number | null } = {}
+): boolean {
+  if (boundary.area && boundary.area.length >= 3 && isPointInPolygon(lat, lng, boundary.area)) {
+    return true;
+  }
+  if (boundary.road && boundary.road.length >= 2) {
+    return isPointOnRoadCorridor(lat, lng, boundary.road, normalizeRoadWidth(boundary.widthM));
+  }
+  return false;
+}
+
+/**
  * Check a drop-off point against every active terminal boundary.
  *
- * `allowed` is true when the point sits inside at least one plotted area, or when
- * no terminal has a plotted area yet (so the feature never blocks bookings before
- * boundaries are configured). A failed lookup also fails open.
+ * `allowed` is true when the point is covered by at least one terminal's road or
+ * enclosing area, or when no terminal has anything plotted yet (so the feature
+ * never blocks bookings before boundaries are configured). A failed lookup also
+ * fails open.
  */
 export async function isDropoffWithinAnyTerminalBoundary(
   lat: number,
   lng: number
 ): Promise<{ allowed: boolean; checkedCount: number }> {
   try {
-    // `select('*')` keeps this working even before the boundary migration runs.
+    // `select('*')` keeps this working before the boundary migrations run.
     const { data, error } = await supabase.from('terminals').select('*');
     if (error || !data) return { allowed: true, checkedCount: 0 };
 
-    const polygons = data
-      .filter((t: any) => t.is_active !== false)
-      .map((t: any) => normalizeBoundaryPolygon(t.boundary_polygon))
-      .filter((p: LatLngPoint[] | null): p is LatLngPoint[] => Array.isArray(p));
+    // A terminal with its boundary check switched off is skipped, but keeps both
+    // shapes: the admin turns this on while correcting a boundary, not to discard one.
+    const boundaries = data
+      .filter((t: any) => t.is_active !== false && t.boundary_enabled !== false)
+      .map((t: any) => ({
+        road: normalizeBoundaryRoad(t.boundary_polygon),
+        area: normalizeBoundaryArea(t.boundary_area),
+        widthM: t.road_width_m,
+      }))
+      .filter((b: { road: LatLngPoint[] | null; area: LatLngPoint[] | null }) =>
+        Array.isArray(b.road) || Array.isArray(b.area)
+      );
 
-    if (polygons.length === 0) return { allowed: true, checkedCount: 0 };
+    if (boundaries.length === 0) return { allowed: true, checkedCount: 0 };
 
-    const allowed = polygons.some(polygon => isPointInPolygon(lat, lng, polygon));
-    return { allowed, checkedCount: polygons.length };
+    const allowed = boundaries.some(b => isWithinTerminalBoundary(lat, lng, b));
+    return { allowed, checkedCount: boundaries.length };
   } catch (error) {
-    console.warn('[isDropoffWithinAnyTerminalBoundary] check failed, allowing booking:', error);
+    console.warn('[isDropoffWithinAnyTerminalRoad] check failed, allowing booking:', error);
     return { allowed: true, checkedCount: 0 };
   }
 }
@@ -644,8 +774,13 @@ async function applyApprovalRequest(
             radius_km: payload.radius_km ?? 2.0,
             is_active: payload.is_active ?? true,
             rider_count: payload.rider_count ?? 0,
-            // Carried through so a Rider Admin's plotted coverage area survives approval.
+            // Carried through so a Rider Admin's plotted boundary survives approval:
+            // the road, the area that encloses it, the corridor width, and whether
+            // the check is enforced at all.
             boundary_polygon: payload.boundary_polygon ?? null,
+            boundary_area: payload.boundary_area ?? null,
+            road_width_m: payload.road_width_m ?? DEFAULT_ROAD_WIDTH_M,
+            boundary_enabled: payload.boundary_enabled !== false,
             // This terminal's own ride fare (ADD_TERMINAL_FARES.sql).
             base_fare: payload.base_fare ?? 20,
             per_km: payload.per_km ?? 10,

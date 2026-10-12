@@ -8,7 +8,7 @@ import { Badge } from "../ui/badge";
 import { useAuth } from "../../contexts/AuthContext";
 import { isDeliveryServiceMode, isQueueGatedType, useTerminalQueue } from "../../hooks/useTerminalQueue";
 import TerminalQueueCard from "./TerminalQueueCard";
-import { isPointInPolygon, normalizeBoundaryPolygon, supabaseHelpers, logAudit, type LatLngPoint } from "@/lib/supabase";
+import { isWithinTerminalBoundary, normalizeBoundaryRoad, normalizeBoundaryArea, normalizeRoadWidth, DEFAULT_ROAD_WIDTH_M, supabaseHelpers, logAudit, type LatLngPoint } from "@/lib/supabase";
 import { supabase } from "../../../lib/supabase";
 import useMapLoader from "@/lib/mapLoader";
 import tricycleIcon from "../../../assets/0b76d1aa56b8ad6e15dd4efc8a0100b0ca5762a1.png";
@@ -155,6 +155,11 @@ export default function PassengerRequests() {
   // The assigned TODA's plotted boundary, shown as a map so the driver can see
   // the area their terminal covers.
   const [todaBoundary, setTodaBoundary] = useState<LatLngPoint[] | null>(null);
+  const [todaArea, setTodaArea] = useState<LatLngPoint[] | null>(null);
+  const [todaRoadWidth, setTodaRoadWidth] = useState<number>(DEFAULT_ROAD_WIDTH_M);
+  // A disabled boundary is still drawn, but the on/off badge stays hidden rather
+  // than telling the driver they're on a road that isn't being enforced.
+  const [todaBoundaryEnabled, setTodaBoundaryEnabled] = useState<boolean>(true);
   const [todaCenter, setTodaCenter] = useState<{ lat: number; lng: number } | null>(null);
   const [todaName, setTodaName] = useState<string | null>(user?.terminalName || null);
   const [showTodaMap, setShowTodaMap] = useState(true);
@@ -191,7 +196,10 @@ export default function PassengerRequests() {
       .getTerminalGeofence(driverTerminalId)
       .then(({ data }) => {
         if (cancelled) return;
-        setTodaBoundary(normalizeBoundaryPolygon(data?.boundary_polygon));
+        setTodaBoundary(normalizeBoundaryRoad(data?.boundary_polygon));
+        setTodaArea(normalizeBoundaryArea(data?.boundary_area));
+        setTodaRoadWidth(normalizeRoadWidth(data?.road_width_m));
+        setTodaBoundaryEnabled(data?.boundary_enabled !== false);
         const lat = Number(data?.center_lat);
         const lng = Number(data?.center_lng);
         setTodaCenter(Number.isFinite(lat) && Number.isFinite(lng) ? { lat, lng } : null);
@@ -204,17 +212,24 @@ export default function PassengerRequests() {
     };
   }, [driverTerminalId]);
 
-  // Centre the boundary map on the terminal centre, or the polygon's centroid,
-  // or the driver when neither is available.
-  const todaMapCenter = todaCenter ?? (todaBoundary
-    ? {
-        lat: todaBoundary.reduce((sum, p) => sum + p.lat, 0) / todaBoundary.length,
-        lng: todaBoundary.reduce((sum, p) => sum + p.lng, 0) / todaBoundary.length,
-      }
+  // Centre the boundary map on the terminal centre, or the middle of whatever the
+  // admin plotted, or the driver when neither is available.
+  const todaMapCenter = todaCenter ?? (todaBoundary || todaArea
+    ? (() => {
+        const shape = (todaBoundary || todaArea) as LatLngPoint[];
+        return {
+          lat: shape.reduce((sum, p) => sum + p.lat, 0) / shape.length,
+          lng: shape.reduce((sum, p) => sum + p.lng, 0) / shape.length,
+        };
+      })()
     : currentLocation);
 
-  const insideToda = todaBoundary
-    ? isPointInPolygon(currentLocation.lat, currentLocation.lng, todaBoundary)
+  const insideToda = (todaBoundary || todaArea) && todaBoundaryEnabled
+    ? isWithinTerminalBoundary(currentLocation.lat, currentLocation.lng, {
+        road: todaBoundary,
+        area: todaArea,
+        widthM: todaRoadWidth,
+      })
     : null;
 
   useEffect(() => {
@@ -586,7 +601,9 @@ export default function PassengerRequests() {
                   <p className="text-sm font-extrabold text-[var(--ink)] truncate">Your TODA Boundary</p>
                   <p className="text-[11px] text-[var(--muted-foreground)] truncate">
                     {todaName || "Assigned terminal"}
-                    {todaBoundary ? ` • ${todaBoundary.length} plotted points` : " • no area set yet"}
+                    {todaBoundary || todaArea
+                      ? ` • ${todaArea && todaBoundary ? 'road + area' : todaArea ? 'area' : 'road'} plotted`
+                      : ' • no boundary set yet'}
                   </p>
                 </div>
               </div>
@@ -597,7 +614,7 @@ export default function PassengerRequests() {
 
             {showTodaMap && (
               <div className="border-t border-[var(--border)]">
-                {todaBoundary ? (
+                {todaBoundary || todaArea ? (
                   <div className="relative w-full h-56 md:h-64">
                     {isMapsLoaded ? (
                       <GoogleMap
@@ -606,16 +623,31 @@ export default function PassengerRequests() {
                         zoom={14}
                         options={{ zoomControl: true, streetViewControl: false, mapTypeControl: false, fullscreenControl: false }}
                       >
-                        <Polygon
-                          path={todaBoundary}
-                          options={{
-                            fillColor: "#bc4b1f",
-                            fillOpacity: 0.18,
-                            strokeColor: "#bc4b1f",
-                            strokeWeight: 2,
-                            clickable: false,
-                          }}
-                        />
+                        {todaArea && (
+                          <Polygon
+                            path={todaArea}
+                            options={{
+                              fillColor: "#bc4b1f",
+                              fillOpacity: 0.12,
+                              strokeColor: "#bc4b1f",
+                              strokeWeight: 2,
+                              strokeOpacity: 0.6,
+                              clickable: false,
+                            }}
+                          />
+                        )}
+                        {todaBoundary && (
+                          <Polyline
+                            path={todaBoundary}
+                            options={{
+                              strokeColor: "#bc4b1f",
+                              strokeWeight: 5,
+                              strokeOpacity: 0.9,
+                              clickable: false,
+                              geodesic: true,
+                            }}
+                          />
+                        )}
                         <Marker position={currentLocation} icon={createDriverMarkerIcon()} title="Your Location" />
                       </GoogleMap>
                     ) : (
@@ -629,7 +661,7 @@ export default function PassengerRequests() {
                           insideToda ? "bg-[var(--success)] text-white" : "bg-[var(--amber)] text-[var(--amber-dark)]"
                         }`}
                       >
-                        {insideToda ? "Inside TODA boundary" : "Outside TODA boundary"}
+                        {insideToda ? "Inside boundary" : "Outside boundary"}
                       </span>
                     )}
                   </div>

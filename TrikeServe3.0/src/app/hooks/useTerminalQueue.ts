@@ -1,8 +1,11 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   haversineDistanceMeters,
-  isPointInPolygon,
-  normalizeBoundaryPolygon,
+  isWithinTerminalBoundary,
+  normalizeBoundaryRoad,
+  normalizeBoundaryArea,
+  normalizeRoadWidth,
+  DEFAULT_ROAD_WIDTH_M,
   supabase,
   supabaseHelpers,
   type LatLngPoint,
@@ -11,14 +14,26 @@ import { useAuth } from "../contexts/AuthContext";
 
 export interface TerminalGeometry {
   /**
-   * Coverage area the admin plotted on the map (terminals.boundary_polygon).
-   * This is the terminal's "given radius" — whatever the admin draws is what
+   * The road the admin plotted on the map (terminals.boundary_polygon).
+   * This is the terminal's "given area" — whatever the admin draws is what
    * drivers are told about when they queue.
    */
   boundary: LatLngPoint[] | null;
-  /** Terminal centre — only used as a fallback when no area is plotted. */
+  /**
+   * The enclosing border area (terminals.boundary_area). A driver must be inside
+   * it to join the queue.
+   */
+  area: LatLngPoint[] | null;
+  /** Full corridor width (m) either side of that road the terminal accepts. */
+  roadWidthM: number;
+  /**
+   * Whether the admin has the boundary check switched on. When false both shapes
+   * are still plotted, so they are kept for display but not used to judge the driver.
+   */
+  boundaryEnabled: boolean;
+  /** Terminal centre — only used as a fallback when no road is plotted. */
   center: { lat: number; lng: number } | null;
-  /** Fallback radius (km) used only when no boundary area exists. */
+  /** Fallback radius (km) used only when no road is plotted. */
   radiusKm: number | null;
 }
 
@@ -83,6 +98,9 @@ export function useTerminalQueue() {
   // — it never gates joining the queue.
   const [terminalGeometry, setTerminalGeometry] = useState<TerminalGeometry>({
     boundary: null,
+    area: null,
+    roadWidthM: DEFAULT_ROAD_WIDTH_M,
+    boundaryEnabled: true,
     center: null,
     radiusKm: null,
   });
@@ -148,7 +166,7 @@ export function useTerminalQueue() {
   // fetched whenever the driver's terminal assignment settles.
   useEffect(() => {
     if (!terminalId) {
-      setTerminalGeometry({ boundary: null, center: null, radiusKm: null });
+      setTerminalGeometry({ boundary: null, area: null, roadWidthM: DEFAULT_ROAD_WIDTH_M, boundaryEnabled: true, center: null, radiusKm: null });
       return;
     }
     let cancelled = false;
@@ -159,7 +177,10 @@ export function useTerminalQueue() {
       const lng = Number(data?.center_lng);
       const radius = Number(data?.radius_km);
       setTerminalGeometry({
-        boundary: normalizeBoundaryPolygon(data?.boundary_polygon),
+        boundary: normalizeBoundaryRoad(data?.boundary_polygon),
+        area: normalizeBoundaryArea(data?.boundary_area),
+        roadWidthM: normalizeRoadWidth(data?.road_width_m),
+        boundaryEnabled: data?.boundary_enabled !== false,
         center:
           Number.isFinite(lat) && Number.isFinite(lng) ? { lat, lng } : null,
         radiusKm: Number.isFinite(radius) ? radius : null,
@@ -286,14 +307,21 @@ export function useTerminalQueue() {
     return haversineDistanceMeters(driverLocation, terminalGeometry.center);
   }, [terminalGeometry.center, driverLocation]);
 
-  // Whether the driver sits inside the terminal's coverage. The admin's plotted
-  // boundary area wins; the centre + radius circle is only a fallback for
-  // terminals that have no area drawn yet. Null when we can't tell.
+  // Whether the driver sits inside the terminal's boundary — the enclosing area
+  // or the road corridor. The admin's plotted shapes win; the centre + radius
+  // circle is only a fallback for terminals with nothing drawn. Null when we
+  // can't tell, or when the admin has switched the check off.
   const isWithinBoundary = useMemo(() => {
     if (!driverLocation) return null;
 
-    if (terminalGeometry.boundary) {
-      return isPointInPolygon(driverLocation.lat, driverLocation.lng, terminalGeometry.boundary);
+    if (terminalGeometry.boundary || terminalGeometry.area) {
+      // A disabled boundary is kept for display, so it can't judge the driver.
+      if (!terminalGeometry.boundaryEnabled) return null;
+      return isWithinTerminalBoundary(driverLocation.lat, driverLocation.lng, {
+        road: terminalGeometry.boundary,
+        area: terminalGeometry.area,
+        widthM: terminalGeometry.roadWidthM,
+      });
     }
     if (terminalGeometry.center && terminalGeometry.radiusKm != null) {
       return (
