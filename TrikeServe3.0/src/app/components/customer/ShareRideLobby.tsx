@@ -7,6 +7,7 @@ import { useAuth } from "../../contexts/AuthContext";
 import { supabase, supabaseHelpers, isSimilarRoute, isDropoffWithinAnyTerminalBoundary, haversineDistanceMeters } from "@/lib/supabase";
 import { GoogleMap, MarkerF, Polyline } from "@react-google-maps/api";
 import useMapLoader from "@/lib/mapLoader";
+import { useElapsedTime } from "@/app/hooks/useElapsedTime";
 import tricycleIcon from '../../../assets/0b76d1aa56b8ad6e15dd4efc8a0100b0ca5762a1.png'
 import FloatingChatHead from "../ui/FloatingChatHead";
 import RideChatOverlay from "../rider/RideChatOverlay";
@@ -1034,16 +1035,18 @@ export default function ShareRideLobby({
      }
    };
 
-  const getWaitingTime = () => {
-    if (!lobby) return '0s';
-    const elapsed = Date.now() - new Date(lobby.created_at).getTime();
-    const seconds = Math.floor(elapsed / 1000);
-    if (seconds < 60) return `${seconds}s`;
-    const minutes = Math.floor(seconds / 60);
-    return `${minutes}m ${seconds % 60}s`;
-  };
+  /*
+ * Live waiting time.
+ *
+ * This was a plain function called during render, which meant the number only moved
+ * when something else re-rendered the lobby -- and the lobby polls every 5s, so the
+ * counter visibly jumped five seconds at a time. The hook drives it off its own
+ * 1s timer instead, anchored to the lobby's own created_at so the count is correct
+ * even after a reload rather than restarting from zero.
+ */
+const waitingTime = useElapsedTime(lobby?.created_at);
 
-  if (loading) {
+if (loading) {
     return (
       <div className="fixed inset-0 bg-black/50 z-[2000] flex items-center justify-center">
         <div className="bg-surface rounded-lg p-8 text-center">
@@ -1259,7 +1262,7 @@ export default function ShareRideLobby({
                   <div className="flex items-center gap-2">
                     <div className={`w-2 h-2 rounded-full ${lobby.status === 'driver_found' ? 'bg-[var(--success)]' : 'bg-[var(--amber)] animate-pulse'}`} />
                     <p className="text-xs text-white/80">
-                      {lobby.status === 'driver_found' ? 'Driver Found!' : `Finding driver... ${getWaitingTime()}`}
+                      {lobby.status === 'driver_found' ? 'Driver Found!' : `Finding driver... ${waitingTime}`}
                     </p>
                   </div>
                 </div>

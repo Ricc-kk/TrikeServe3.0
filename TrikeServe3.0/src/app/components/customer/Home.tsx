@@ -21,6 +21,7 @@ import tricycleIcon from '../../../assets/0b76d1aa56b8ad6e15dd4efc8a0100b0ca5762
 import { useAuth } from "../../contexts/AuthContext";
 import { supabaseHelpers, isDropoffWithinAnyTerminalBoundary, isPointInPolygon, normalizeBoundaryPolygon, logAudit } from "@/lib/supabase";
 import { computeRideFare, normalizeRates, terminalRates, privateRideRates, DEFAULT_MAX_PASSENGERS } from "@/lib/pricing";
+import { useElapsedTime } from "@/app/hooks/useElapsedTime";
 import ReasonPromptModal from "../ui/reason-prompt-modal";
 import { supabase } from "../../../utils/supabase";
 import { isAwaitingApproval } from "../../../lib/roleAccess";
@@ -381,6 +382,11 @@ export default function CustomerHome() {
   const [paymentMethod] = useState<'COD'>('COD');
   const [activeRide, setActiveRide] = useState<any>(null);
   const [rideStatus, setRideStatus] = useState<'searching' | 'driver-found' | 'picking-up' | 'in-transit' | null>(null);
+   // When the current driver search began, so the "Finding a Driver" screen can show
+   // a running wait. Persisted with the rest of the ride data, otherwise a reload
+   // mid-search restarted the count at zero and understated how long the customer
+   // had already been waiting.
+   const [requestedAt, setRequestedAt] = useState<number | null>(null);
 
   /*
    * Keeps a pointer to the active ride and restores it after a session drop.
@@ -417,6 +423,17 @@ export default function CustomerHome() {
    */
   const hadRideRef = useRef(false);
   const isRideLive = rideStatus !== null && rideStatus !== 'searching';
+
+   // Running wait on the current driver search. Driven by its own 1s timer rather
+   // than by the ride polling, so it counts in real seconds while the request is
+   // still being polled for a driver.
+   //
+   // Gated on `searching` rather than on the timestamp being non-null: `rideStatus`
+   // moves to 'driver-found' or null from a dozen different places, and clearing
+   // `requestedAt` in each of them would be a dozen chances to miss one. Passing
+   // null here is the single point that stops the clock, and it also means the
+   // 1s interval is not left running in the background for the rest of the ride.
+   const searchingTime = useElapsedTime(rideStatus === 'searching' ? requestedAt : null);
   useEffect(() => {
     if (isRideLive && currentRequestId) {
       hadRideRef.current = true;
@@ -1006,6 +1023,11 @@ export default function CustomerHome() {
             : null;
 
         setRideStatus(rideData.status);
+        // Restore the search start time so the waiting counter picks up where it
+        // left off instead of restarting. Older saved rides have no such field.
+        if (typeof rideData?.requestedAt === 'number') {
+          setRequestedAt(rideData.requestedAt);
+        }
         if (typeof rideData?.rideDriverId === 'string') {
           setRideDriverId(rideData.rideDriverId);
         }
@@ -1779,6 +1801,7 @@ export default function CustomerHome() {
     if (rideStatus) {
       const rideData = {
         status: rideStatus,
+        requestedAt,
         pickup,
         pickupAddress,
         pickupCoords,
@@ -1799,7 +1822,7 @@ export default function CustomerHome() {
     } else {
       localStorage.removeItem('trikeserve_active_ride');
     }
-   }, [rideStatus, pickup, pickupAddress, pickupCoords, dropoff, dropoffAddress, dropoffCoords, selectedVehicle, paymentMethod, activeRide, currentRequestId, rideDriverId, bookedFare]);
+   }, [rideStatus, requestedAt, pickup, pickupAddress, pickupCoords, dropoff, dropoffAddress, dropoffCoords, selectedVehicle, paymentMethod, activeRide, currentRequestId, rideDriverId, bookedFare]);
 
    // Compute driver's route to pickup/dropoff location (real-time tracking)
    useEffect(() => {
@@ -2262,6 +2285,7 @@ export default function CustomerHome() {
 
       // For private rides, save to Supabase database
       setRideStatus('searching');
+      setRequestedAt(Date.now());
       
       try {
         // Validate user is authenticated
@@ -2523,11 +2547,34 @@ export default function CustomerHome() {
     ? `₱${privateActiveRates.baseFare} base + ₱${privateActiveRates.perKm}/km × ${privateFareInfo.distanceKm.toFixed(1)} km${selectedTerminal ? ` · ${selectedTerminal.name}` : ''}`
     : `Fixed rate${selectedTerminal ? ` · ${selectedTerminal.name}` : ''}`;
 
-  const getPrice = () => {
-    if (selectedVehicle === 'share') return passengerCount > 0 ? Math.round((rideTotal / passengerCount) * 100) / 100 : sharedRidePrice;
-    if (selectedVehicle === 'special') return privateTotal;
-    return 0;
-  };
+  /*
+ * What one seat costs on a shared ride: the trip fare divided between the seats in
+ * the vehicle, rounded UP to a whole peso.
+ *
+ * Rounded up rather than to the nearest peso for the same reason `computeRideFare`
+ * rounds the trip fare up: this is a cash fare for a short tricycle hop, and a
+ * figure with centavos on it reads as a miscalculation to the rider. Rounding up
+ * also never leaves the driver short of the quoted amount.
+ *
+ * Worth being explicit about the consequence: rounding each seat up means the seats
+ * together pay slightly more than the trip fare they are splitting. A ₱34 trip
+ * shared three ways is ₱12 a seat, ₱36 collected. That is the trade for carrying
+ * the extra passengers, but it is a deliberate choice, not an accident of the
+ * division -- hence computing it in one place rather than letting the two screens
+ * that show a fare each derive it separately.
+ */
+const shareFarePerSeat = useMemo(() => {
+  if (passengerCount <= 0) return sharedRidePrice;
+  return Math.ceil(rideTotal / passengerCount);
+}, [rideTotal, passengerCount, sharedRidePrice]);
+
+const getPrice = () => {
+  if (selectedVehicle === 'share') return shareFarePerSeat;
+  // A private ride is not shared, so there is nothing to divide: `privateTotal` is
+  // the trip fare itself, already rounded up to a whole peso by `computeRideFare`.
+  if (selectedVehicle === 'special') return privateTotal;
+  return 0;
+};
 
   const resetCustomerRideVisuals = () => {
     setPickup('');
@@ -3769,7 +3816,10 @@ export default function CustomerHome() {
                       <p className="text-sm text-[var(--amber-ink)] mt-0.5">
                         ₱{rideTotal} trip ÷ {passengerCount} {passengerCount === 1 ? 'passenger' : 'passengers'}
                       </p>
-                      <p className="text-3xl font-bold text-[var(--amber)]">₱{(rideTotal / passengerCount).toFixed(2)}</p>
+                      {/* The same rounded-up figure `getPrice` charges. This used to divide and print
+                             the raw total, so the seat picker offered ₱11.33 and
+                             the next screen charged ₱12. */}
+                         <p className="text-3xl font-bold text-[var(--amber)]">₱{shareFarePerSeat}</p>
                       <p className="text-[10px] text-[var(--amber-ink)] mt-0.5">{fareBreakdown}</p>
                     </>
                   ) : (
@@ -3921,7 +3971,12 @@ export default function CustomerHome() {
               <span className="text-4xl">🔍</span>
             </div>
             <h3 className="text-xl font-bold text-[var(--ink)] mb-2">Finding a Driver...</h3>
-            <p className="text-[var(--muted-foreground)] mb-6">Please wait while we find you a nearby driver</p>
+            <p className="text-[var(--muted-foreground)] mb-1">Please wait while we find you a nearby driver</p>
+            {/* Ticks once a second. Shown because a search that feels long feels
+                longer when there is no way to tell how long it has actually been. */}
+            <p className="text-2xl font-bold text-[var(--primary)] tabular-nums mb-6" aria-live="polite">
+              {searchingTime}
+            </p>
             <Button
               onClick={() => setShowCancelConfirm(true)}
               variant="outline"
@@ -3944,6 +3999,12 @@ export default function CustomerHome() {
             <div className="absolute -top-1 -right-1 w-3 h-3 bg-[var(--success)] rounded-full animate-ping"></div>
             <div className="absolute -top-1 -right-1 w-3 h-3 bg-[var(--success)] rounded-full"></div>
           </div>
+          {/* The wait keeps running while the dialog is minimised. Hiding it would
+              mean minimising is what makes the customer stop being told how long
+              they have been waiting. */}
+          <span className="absolute -bottom-1 -right-2 bg-surface text-[var(--ink)] text-[10px] font-bold px-1.5 py-0.5 rounded-full shadow tabular-nums">
+            {searchingTime}
+          </span>
         </button>
       )}
 
