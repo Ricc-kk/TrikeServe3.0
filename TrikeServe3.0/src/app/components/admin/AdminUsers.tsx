@@ -534,7 +534,13 @@ export default function AdminUsers() {
                       <th scope="col" className="px-4 py-3 text-left text-xs font-bold text-[var(--muted-foreground)] tracking-wider">Email</th>
                       <th scope="col" className="hidden lg:table-cell px-4 py-3 text-left text-xs font-bold text-[var(--muted-foreground)] tracking-wider">Phone</th>
                       <th scope="col" className="hidden lg:table-cell px-4 py-3 text-left text-xs font-bold text-[var(--muted-foreground)] tracking-wider">Details</th>
-                      <th scope="col" className="px-4 py-3 text-center text-xs font-bold text-[var(--muted-foreground)] tracking-wider">Actions</th>
+                      {/* Only the Super Admin can verify or delete, so a Rider Admin
+                          is just given an inert column of disabled buttons. Hide it
+                          from them instead and let the remaining columns use the
+                          space. */}
+                      {!isRiderReadOnly && (
+                        <th scope="col" className="px-4 py-3 text-center text-xs font-bold text-[var(--muted-foreground)] tracking-wider">Actions</th>
+                      )}
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-[var(--border)]">
@@ -641,8 +647,9 @@ export default function AdminUsers() {
                             )}
                           </div>
                         </td>
-                        <td className="px-4 py-4">
-                          <div className="flex items-center justify-center gap-2">
+                        {!isRiderReadOnly && (
+                          <td className="px-4 py-4">
+                            <div className="flex items-center justify-center gap-2">
                             <button
                               onClick={canVerifyUser(u.role) ? (u.isVerified ? () => handleUnverifyUser(u.id) : () => handleVerifyUser(u.id)) : undefined}
                               disabled={!canVerifyUser(u.role)}
@@ -671,8 +678,9 @@ export default function AdminUsers() {
                               <Trash2 className="w-4 h-4" />
                               Delete
                             </button>
-                          </div>
-                        </td>
+                            </div>
+                          </td>
+                        )}
                       </tr>
                     ))}
                   </tbody>

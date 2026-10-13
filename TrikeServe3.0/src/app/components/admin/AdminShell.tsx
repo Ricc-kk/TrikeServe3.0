@@ -100,7 +100,15 @@ export default function AdminShell({
             <div className="min-w-0">
               <span className="block text-xl font-bold text-[var(--ink)]">ADMIN</span>
               <p className="text-xs text-[var(--muted-foreground)] truncate">
-                {superAdmin ? "Super Admin" : "Rider Admin"}
+                {/* A Rider Admin is scoped to one terminal, so naming it says far
+                    more than the generic role label, and tells them at a glance
+                    which terminal they are operating on. Falls back to the role
+                    while they have no assignment yet. */}
+                {superAdmin
+                  ? "Super Admin"
+                  : user?.terminalName
+                    ? `${user.terminalName} Admin`
+                    : "Rider Admin"}
               </p>
             </div>
           </div>
