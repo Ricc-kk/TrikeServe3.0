@@ -41,6 +41,10 @@ const DEFAULT_TERMINAL_CENTER = { lat: 14.7244, lng: 120.9668 };
 // otherwise look like the admin's edits simply weren't sticking.
 const MIGRATION_HINT = 'ADD_TERMINAL_ROAD_BOUNDARY.sql / ADD_TERMINAL_BORDER_AREA.sql';
 
+// How often a Rider Admin re-reads their terminal scope, so a Super Admin's
+// unassignment takes effect on a screen that is already open.
+const ASSIGNMENT_POLL_MS = 15000;
+
 interface Terminal {
   id: string;
   name: string;
@@ -459,6 +463,36 @@ export default function AdminTerminals() {
     loadMyAssignment();
     loadRiderAdmins();
   }, [user?.email]);
+
+  // A Rider Admin's scope can be pulled away by the Super Admin at any moment,
+  // and this screen used to read it exactly once on mount. Someone left sitting
+  // on the page therefore carried on seeing — and could still open and edit — a
+  // terminal they were no longer assigned to, which reads to the Super Admin as
+  // "the unassign didn't work". Poll for it, and re-check whenever the tab comes
+  // back to the foreground, which is when someone is most likely to have been
+  // switched to another tab to make the change.
+  useEffect(() => {
+    if (!isRiderAdmin || !user?.email) return;
+
+    const refresh = () => { loadMyAssignment(); };
+    const interval = setInterval(refresh, ASSIGNMENT_POLL_MS);
+    window.addEventListener('focus', refresh);
+    return () => {
+      clearInterval(interval);
+      window.removeEventListener('focus', refresh);
+    };
+  }, [isRiderAdmin, user?.email]);
+
+  // Losing the assignment while the edit form is open would leave it saving
+  // against a terminal this admin can no longer touch. Close it instead.
+  useEffect(() => {
+    if (!isRiderAdmin) return;
+    if (!assignedTerminalId) {
+      setShowForm(false);
+      setShowMapPicker(false);
+      setEditTerminal(null);
+    }
+  }, [isRiderAdmin, assignedTerminalId]);
 
   async function loadData() {
     setLoading(true);

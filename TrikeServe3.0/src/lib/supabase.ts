@@ -270,13 +270,18 @@ export async function assignRiderAdminTerminal(
   terminalName?: string | null
 ): Promise<{ success: boolean; error?: string }> {
   try {
-    const { error } = await supabase
+    // `.select()` matters: without it an update that matches no row — a stale id,
+    // or an RLS policy quietly filtering the row out — comes back as a success
+    // with no error, so the admin is told the assignment changed when nothing did.
+    const { data, error } = await supabase
       .from('admins')
       .update({
         terminal_id: terminalId,
         terminal_name: terminalId ? (terminalName ?? null) : null,
       })
-      .eq('id', adminId);
+      .eq('id', adminId)
+      .select('id, terminal_id, terminal_name')
+      .maybeSingle();
 
     if (error) {
       if (error.code === '42703') {
@@ -284,6 +289,15 @@ export async function assignRiderAdminTerminal(
       }
       return { success: false, error: error.message };
     }
+
+    if (!data) {
+      return {
+        success: false,
+        error:
+          'No Rider Admin row was updated — the account may have been removed, or your role cannot edit it.',
+      };
+    }
+
     return { success: true };
   } catch (error) {
     console.error('[assignRiderAdminTerminal] error:', error);
