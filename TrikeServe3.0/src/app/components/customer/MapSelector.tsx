@@ -379,8 +379,12 @@ export default function MapSelector({ onClose, onSelectLocation, currentLocation
       {/* Header */}
       <div className="absolute top-0 left-0 right-0 bg-white/95 backdrop-blur-sm z-[4002] px-4 py-3 border-b border-[var(--border)]">
         <div className="flex items-center justify-between">
-          <button onClick={onClose} className="active:scale-90 transition-transform">
-            <ArrowLeft className="w-6 h-6 text-[var(--ink)]" />
+          <button
+            onClick={onClose}
+            aria-label="Close map"
+            className="active:scale-90 transition-transform"
+          >
+            <ArrowLeft className="w-6 h-6 text-[#122724]" />
           </button>
 
           <div className="flex-1 mx-3 relative">
@@ -470,7 +474,7 @@ export default function MapSelector({ onClose, onSelectLocation, currentLocation
         {/* Hint chip for tap-to-place */}
         {!pickedPin && (
           <div className="absolute top-20 left-0 right-0 flex justify-center z-[4003] pointer-events-none">
-            <div className="bg-white/95 backdrop-blur-sm border border-[var(--border)] shadow-lg rounded-full px-4 py-2 text-xs font-semibold text-[var(--ink)]">
+            <div className="bg-white/95 backdrop-blur-sm border border-[var(--border)] shadow-lg rounded-full px-4 py-2 text-xs font-semibold text-[#122724]">
               📍 Tap anywhere on the map to set your delivery location
             </div>
           </div>

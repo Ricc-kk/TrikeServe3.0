@@ -17,10 +17,10 @@ import {
   Camera,
   Palette
 } from "lucide-react";
-import { GoogleMap, MarkerF } from "@react-google-maps/api";
+import { GoogleMap, MarkerF, Polygon, Polyline } from "@react-google-maps/api";
 import useMapLoader from "@/lib/mapLoader";
 import { supabase } from "../../../utils/supabase";
-import { supabaseHelpers } from "@/lib/supabase";
+import { supabaseHelpers, normalizeBoundaryRoad, normalizeBoundaryArea, type LatLngPoint } from "@/lib/supabase";
 import { Button } from "../ui/button";
 import { Card } from "../ui/card";
 import { Badge } from "../ui/badge";
@@ -94,7 +94,15 @@ export default function RiderProfile() {
     setIsSaving(false);
   };
 
-  const [terminalData, setTerminalData] = useState<{ name: string; lat: number; lng: number; boundary: string } | null>(null);
+  const [terminalData, setTerminalData] = useState<{
+    name: string;
+    lat: number;
+    lng: number;
+    boundary: string;
+    /** Plotted road corridor and enclosing border, drawn on the terminal map. */
+    polygon: LatLngPoint[] | null;
+    area: LatLngPoint[] | null;
+  } | null>(null);
   const { isLoaded: isMapsLoaded } = useMapLoader();
 
   // Fetch terminal details from DB - always check Supabase for fresh terminal assignment
@@ -103,10 +111,17 @@ export default function RiderProfile() {
     // First check if user has terminal_id in localStorage
     const terminalId = user.terminalId;
     if (terminalId) {
-      supabase.from('terminals').select('name, center_lat, center_lng, boundary').eq('id', terminalId).single()
+      supabase.from('terminals').select('name, center_lat, center_lng, boundary, boundary_polygon, boundary_area').eq('id', terminalId).single()
         .then(({ data }) => {
           if (data) {
-            setTerminalData({ name: data.name, lat: data.center_lat || 14.7294, lng: data.center_lng || 120.9349, boundary: data.boundary || '' });
+            setTerminalData({
+              name: data.name,
+              lat: data.center_lat || 14.7294,
+              lng: data.center_lng || 120.9349,
+              boundary: data.boundary || '',
+              polygon: normalizeBoundaryRoad((data as any).boundary_polygon),
+              area: normalizeBoundaryArea((data as any).boundary_area),
+            });
           }
         })
         .catch(() => {});
@@ -121,13 +136,20 @@ export default function RiderProfile() {
             stored.terminalName = data.terminal_name;
             localStorage.setItem('trikeserve_current_user', JSON.stringify(stored));
             // Fetch terminal details
-            return supabase.from('terminals').select('name, center_lat, center_lng, boundary').eq('id', data.terminal_id).single();
+            return supabase.from('terminals').select('name, center_lat, center_lng, boundary, boundary_polygon, boundary_area').eq('id', data.terminal_id).single();
           }
           return null;
         })
         .then(({ data }) => {
           if (data) {
-            setTerminalData({ name: data.name, lat: data.center_lat || 14.7294, lng: data.center_lng || 120.9349, boundary: data.boundary || '' });
+            setTerminalData({
+              name: data.name,
+              lat: data.center_lat || 14.7294,
+              lng: data.center_lng || 120.9349,
+              boundary: data.boundary || '',
+              polygon: normalizeBoundaryRoad((data as any).boundary_polygon),
+              area: normalizeBoundaryArea((data as any).boundary_area),
+            });
           }
         })
         .catch(() => {});
@@ -421,7 +443,7 @@ export default function RiderProfile() {
                 <GoogleMap
                   mapContainerStyle={{ width: '100%', height: '100%' }}
                   center={{ lat: terminalData.lat, lng: terminalData.lng }}
-                  zoom={15}
+                  zoom={14}
                   options={{
                     zoomControl: false,
                     fullscreenControl: false,
@@ -431,6 +453,33 @@ export default function RiderProfile() {
                     draggable: false,
                   }}
                 >
+                  {/* Enclosing border area first, under the road it contains, so
+                      the corridor reads on top of its coverage area. */}
+                  {terminalData.area && (
+                    <Polygon
+                      path={terminalData.area}
+                      options={{
+                        fillColor: "#bc4b1f",
+                        fillOpacity: 0.12,
+                        strokeColor: "#bc4b1f",
+                        strokeWeight: 2,
+                        strokeOpacity: 0.6,
+                        clickable: false,
+                      }}
+                    />
+                  )}
+                  {terminalData.polygon && (
+                    <Polyline
+                      path={terminalData.polygon}
+                      options={{
+                        strokeColor: "#bc4b1f",
+                        strokeWeight: 5,
+                        strokeOpacity: 0.9,
+                        clickable: false,
+                        geodesic: true,
+                      }}
+                    />
+                  )}
                   <MarkerF position={{ lat: terminalData.lat, lng: terminalData.lng }} />
                 </GoogleMap>
               </div>

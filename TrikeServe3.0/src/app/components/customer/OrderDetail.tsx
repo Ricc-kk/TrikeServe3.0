@@ -504,8 +504,14 @@ export default function OrderDetail() {
                 <span className="text-[9px] font-semibold text-[var(--primary)]">Restaurant</span>
               </button>
             )}
-            <button onClick={handleRefresh} disabled={isRefreshing} className="p-2 hover:bg-[var(--muted)] rounded-full transition-colors disabled:opacity-50">
+            <button
+              onClick={handleRefresh}
+              disabled={isRefreshing}
+              title="Refresh order"
+              className="flex flex-col items-center gap-0.5 p-1.5 hover:bg-[var(--muted)] rounded-lg transition-colors disabled:opacity-50"
+            >
               <RefreshCw className={`w-5 h-5 text-[var(--muted-foreground)] ${isRefreshing ? 'animate-spin' : ''}`} />
+              <span className="text-[9px] font-semibold text-[var(--muted-foreground)]">Refresh</span>
             </button>
           </div>
         </div>

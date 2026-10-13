@@ -100,7 +100,7 @@ export default function ChoiceCard({
       </span>
 
       {description ? (
-        <span className="mt-1 block text-sm leading-snug text-muted-foreground">
+        <span className="mt-1 block pr-9 text-sm leading-snug text-muted-foreground">
           {description}
         </span>
       ) : null}

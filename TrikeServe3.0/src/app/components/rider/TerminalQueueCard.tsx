@@ -101,7 +101,7 @@ function AccessChips({ isFirst }: { isFirst: boolean }) {
     <div
       key={label}
       className={`flex items-center gap-1.5 rounded-lg px-2 py-1.5 border transition-colors ${
-        active ? "bg-surface border-[var(--success)]/50" : "bg-white/60 border-[var(--border)]"
+        active ? "bg-surface border-[var(--success)]/50" : "bg-[var(--muted)] border-[var(--border)]"
       }`}
     >
       <Icon className={`w-3.5 h-3.5 ${active ? "text-[var(--success)]" : "text-[var(--muted-foreground)]"}`} />
@@ -111,7 +111,7 @@ function AccessChips({ isFirst }: { isFirst: boolean }) {
       {active ? (
         <Unlock className="w-3 h-3 text-[var(--success)]" />
       ) : (
-        <Lock className="w-3 h-3 text-[var(--border)]" />
+        <Lock className="w-3 h-3 text-[var(--muted-foreground)]" />
       )}
     </div>
   );

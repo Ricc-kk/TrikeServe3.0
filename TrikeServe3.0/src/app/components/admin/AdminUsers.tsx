@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import {
   Users, Store, Search, Edit2, Trash2, CheckCircle,
-  XCircle, Menu, User as UserIcon, Shield, Filter, MoreVertical
+  XCircle, Menu, User as UserIcon, Shield, Filter, MoreVertical, ChevronDown
 } from "lucide-react";
 import { Tricycle } from "../ui/Tricycle";
 import { useNavigate } from "react-router";
@@ -389,7 +389,7 @@ export default function AdminUsers() {
               </div>
 
               {/* Role Filter */}
-              <div>
+              <div className="relative">
                 <label htmlFor="admin-user-filter-role" className="sr-only">
                   Filter by role
                 </label>
@@ -397,7 +397,7 @@ export default function AdminUsers() {
                   id="admin-user-filter-role"
                   value={filterRole}
                   onChange={(e) => setFilterRole(e.target.value)}
-                  className="w-full min-h-11 p-3 border border-line rounded-xl font-semibold"
+                  className="w-full min-h-11 appearance-none pl-3 pr-10 py-3 border border-line rounded-xl font-semibold bg-surface text-[var(--ink)]"
                 >
                   <option value="all">All Roles</option>
                   {(!user?.adminType || user?.adminType === 'business_customer') && (
@@ -411,10 +411,14 @@ export default function AdminUsers() {
                     <option value="rider">Drivers</option>
                   )}
                 </select>
+                <ChevronDown
+                  className="pointer-events-none absolute right-3 top-1/2 w-4 h-4 -translate-y-1/2 text-[var(--muted-foreground)]"
+                  aria-hidden="true"
+                />
               </div>
 
               {/* Status Filter */}
-              <div>
+              <div className="relative">
                 <label htmlFor="admin-user-filter-status" className="sr-only">
                   Filter by verification status
                 </label>
@@ -422,12 +426,16 @@ export default function AdminUsers() {
                   id="admin-user-filter-status"
                   value={filterStatus}
                   onChange={(e) => setFilterStatus(e.target.value)}
-                  className="w-full min-h-11 p-3 border border-line rounded-xl font-semibold"
+                  className="w-full min-h-11 appearance-none pl-3 pr-10 py-3 border border-line rounded-xl font-semibold bg-surface text-[var(--ink)]"
                 >
                   <option value="all">All Status</option>
                   <option value="verified">Verified Only</option>
                   <option value="pending">Pending Only</option>
                 </select>
+                <ChevronDown
+                  className="pointer-events-none absolute right-3 top-1/2 w-4 h-4 -translate-y-1/2 text-[var(--muted-foreground)]"
+                  aria-hidden="true"
+                />
               </div>
             </div>
           </Card>
@@ -567,22 +575,28 @@ export default function AdminUsers() {
                         <td className="px-4 py-4">
                           {editingUserId === u.id ? (
                             <div className="flex items-center gap-2">
-                              <select
-                                value={editRole}
-                                onChange={(e) => setEditRole(e.target.value)}
-                                className="px-3 py-1 border-2 border-[var(--primary)] rounded-lg font-semibold text-sm"
-                              >
-                                {(!user?.adminType || user?.adminType === 'business_customer') && (
-                                  <>
-                                    <option value="customer">Customer</option>
-                                    <option value="business">Business</option>
+                              <div className="relative">
+                                <select
+                                  value={editRole}
+                                  onChange={(e) => setEditRole(e.target.value)}
+                                  className="appearance-none pl-3 pr-8 py-1 border-2 border-[var(--primary)] rounded-lg font-semibold text-sm bg-surface text-[var(--ink)]"
+                                >
+                                  {(!user?.adminType || user?.adminType === 'business_customer') && (
+                                    <>
+                                      <option value="customer">Customer</option>
+                                      <option value="business">Business</option>
+                                      <option value="rider">Driver</option>
+                                    </>
+                                  )}
+                                  {(!user?.adminType || user?.adminType === 'rider') && (
                                     <option value="rider">Driver</option>
-                                  </>
-                                )}
-                                {(!user?.adminType || user?.adminType === 'rider') && (
-                                  <option value="rider">Driver</option>
-                                )}
-                              </select>
+                                  )}
+                                </select>
+                                <ChevronDown
+                                  className="pointer-events-none absolute right-2 top-1/2 w-4 h-4 -translate-y-1/2 text-[var(--muted-foreground)]"
+                                  aria-hidden="true"
+                                />
+                              </div>
                               <button
                                 onClick={() => handleSaveRole(u.id)}
                                 className="p-1.5 bg-[var(--success)] hover:bg-[var(--success)] rounded-lg transition-all"
