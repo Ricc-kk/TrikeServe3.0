@@ -950,7 +950,7 @@ if (unfiledItems.length > 0) sectionGroups.push({ id: "__unfiled", name: "More",
             onClick={goBack}
             className="w-11 h-11 bg-white/95 backdrop-blur-sm rounded-full flex items-center justify-center shadow-lg active:scale-90 transition-all"
           >
-            <ArrowLeft className="w-6 h-6 text-[var(--ink)]" />
+            <ArrowLeft className="w-6 h-6 text-[#122724]" />
           </button>
           <div className="flex items-center gap-3">
             <button
@@ -976,7 +976,7 @@ if (unfiledItems.length > 0) sectionGroups.push({ id: "__unfiled", name: "More",
               }}
               className="w-11 h-11 bg-white/95 backdrop-blur-sm rounded-full flex items-center justify-center shadow-lg active:scale-90 transition-all"
             >
-              <Heart className={`w-6 h-6 ${checkIsFavorite(restaurantId || restaurantName) ? 'fill-[var(--primary)] text-[var(--primary)]' : 'text-[var(--ink)]'}`} />
+              <Heart className={`w-6 h-6 ${checkIsFavorite(restaurantId || restaurantName) ? 'fill-[#bc4b1f] text-[#bc4b1f]' : 'text-[#122724]'}`} />
             </button>
           </div>
         </div>

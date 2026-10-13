@@ -1285,17 +1285,23 @@ export default function AdminTerminals() {
                           <p className="text-xs text-[var(--muted-foreground)] truncate">{admin.email}</p>
                         </div>
                         <div className="flex items-center gap-2">
-                          <select
-                            value={admin.terminal_id || ''}
-                            disabled={savingAssignmentId === admin.id}
-                            onChange={(e) => confirmAssignRiderAdmin(admin, e.target.value)}
-                            className="px-3 py-2 border border-line rounded-xl font-semibold text-sm disabled:opacity-50"
-                          >
-                            <option value="">No terminal</option>
-                            {terminals.map(t => (
-                              <option key={t.id} value={t.id}>{t.name}</option>
-                            ))}
-                          </select>
+                          <div className="relative">
+                            <select
+                              value={admin.terminal_id || ''}
+                              disabled={savingAssignmentId === admin.id}
+                              onChange={(e) => confirmAssignRiderAdmin(admin, e.target.value)}
+                              className="appearance-none pl-3 pr-9 py-2 border border-line rounded-xl font-semibold text-sm bg-surface text-[var(--ink)] disabled:opacity-50"
+                            >
+                              <option value="">No terminal</option>
+                              {terminals.map(t => (
+                                <option key={t.id} value={t.id}>{t.name}</option>
+                              ))}
+                            </select>
+                            <ChevronDown
+                              className="pointer-events-none absolute right-3 top-1/2 w-4 h-4 -translate-y-1/2 text-[var(--muted-foreground)]"
+                              aria-hidden="true"
+                            />
+                          </div>
                           {savingAssignmentId === admin.id && (
                             <Loader2 size={16} className="text-[var(--muted-foreground)] animate-spin" />
                           )}
@@ -2011,10 +2017,10 @@ export default function AdminTerminals() {
               <div className="bg-white/95 backdrop-blur rounded-xl shadow-lg p-3">
                 {mapPickerMode === 'boundary' ? (
                   <>
-                    <p className="text-sm font-semibold text-[var(--ink)] text-center">
+                    <p className="text-sm font-semibold text-[#122724] text-center">
                       Tap along the road to plot it
                     </p>
-                    <p className="text-xs text-[var(--muted-foreground)] text-center mt-0.5">
+                    <p className="text-xs text-[#5c6b68] text-center mt-0.5">
                       {isSnappingRoad
                         ? 'Snapping to the nearest road...'
                         : form.boundary_polygon.length < 2
@@ -2036,7 +2042,7 @@ export default function AdminTerminals() {
                         type="button"
                         onClick={undoBoundary}
                         disabled={boundaryPast.length === 0}
-                        className="h-9 border border-line text-[var(--muted-foreground)] text-xs font-bold rounded-lg active:scale-95 disabled:opacity-40 disabled:active:scale-100 disabled:cursor-not-allowed"
+                        className="h-9 border border-line text-[#5c6b68] text-xs font-bold rounded-lg active:scale-95 disabled:opacity-40 disabled:active:scale-100 disabled:cursor-not-allowed"
                       >
                         Undo Point
                       </button>
@@ -2044,7 +2050,7 @@ export default function AdminTerminals() {
                         type="button"
                         onClick={redoBoundary}
                         disabled={boundaryFuture.length === 0}
-                        className="h-9 border border-line text-[var(--muted-foreground)] text-xs font-bold rounded-lg active:scale-95 disabled:opacity-40 disabled:active:scale-100 disabled:cursor-not-allowed"
+                        className="h-9 border border-line text-[#5c6b68] text-xs font-bold rounded-lg active:scale-95 disabled:opacity-40 disabled:active:scale-100 disabled:cursor-not-allowed"
                       >
                         Redo Point
                       </button>
@@ -2053,7 +2059,7 @@ export default function AdminTerminals() {
                       <button
                         type="button"
                         onClick={confirmClearBoundary}
-                        className="w-full h-9 mt-2 border-2 border-[var(--primary)] text-[var(--primary)] text-xs font-bold rounded-lg active:scale-95"
+                        className="w-full h-9 mt-2 border-2 border-[#bc4b1f] text-[#bc4b1f] text-xs font-bold rounded-lg active:scale-95"
                       >
                         Clear Road
                       </button>
@@ -2061,15 +2067,15 @@ export default function AdminTerminals() {
                   </>
                 ) : mapPickerMode === 'area' ? (
                   <>
-                    <p className="text-sm font-semibold text-[var(--ink)] text-center">
+                    <p className="text-sm font-semibold text-[#122724] text-center">
                       Tap the corners of the border area
                     </p>
-                    <p className="text-xs text-[var(--muted-foreground)] text-center mt-0.5">
+                    <p className="text-xs text-[#5c6b68] text-center mt-0.5">
                       {form.boundary_area.length < 3
                         ? `Add at least 3 points — ${form.boundary_area.length} so far`
                         : `${form.boundary_area.length} points — area closed`}
                     </p>
-                    <p className="text-[11px] text-center mt-1 text-[var(--muted-foreground)]">
+                    <p className="text-[11px] text-center mt-1 text-[#5c6b68]">
                       Draw this around the road. Drivers and drop-offs outside every
                       terminal's border are rejected.
                     </p>
@@ -2078,7 +2084,7 @@ export default function AdminTerminals() {
                         type="button"
                         onClick={undoBoundary}
                         disabled={boundaryPast.length === 0}
-                        className="h-9 border border-line text-[var(--muted-foreground)] text-xs font-bold rounded-lg active:scale-95 disabled:opacity-40 disabled:active:scale-100 disabled:cursor-not-allowed"
+                        className="h-9 border border-line text-[#5c6b68] text-xs font-bold rounded-lg active:scale-95 disabled:opacity-40 disabled:active:scale-100 disabled:cursor-not-allowed"
                       >
                         Undo Point
                       </button>
@@ -2086,7 +2092,7 @@ export default function AdminTerminals() {
                         type="button"
                         onClick={redoBoundary}
                         disabled={boundaryFuture.length === 0}
-                        className="h-9 border border-line text-[var(--muted-foreground)] text-xs font-bold rounded-lg active:scale-95 disabled:opacity-40 disabled:active:scale-100 disabled:cursor-not-allowed"
+                        className="h-9 border border-line text-[#5c6b68] text-xs font-bold rounded-lg active:scale-95 disabled:opacity-40 disabled:active:scale-100 disabled:cursor-not-allowed"
                       >
                         Redo Point
                       </button>
@@ -2095,7 +2101,7 @@ export default function AdminTerminals() {
                       <button
                         type="button"
                         onClick={confirmClearBoundary}
-                        className="w-full h-9 mt-2 border-2 border-[var(--primary)] text-[var(--primary)] text-xs font-bold rounded-lg active:scale-95"
+                        className="w-full h-9 mt-2 border-2 border-[#bc4b1f] text-[#bc4b1f] text-xs font-bold rounded-lg active:scale-95"
                       >
                         Clear Border Area
                       </button>
@@ -2103,10 +2109,10 @@ export default function AdminTerminals() {
                   </>
                 ) : (
                   <>
-                    <p className="text-sm font-semibold text-[var(--ink)] text-center">
+                    <p className="text-sm font-semibold text-[#122724] text-center">
                       Tap anywhere to set terminal location
                     </p>
-                    <p className="text-xs text-[var(--muted-foreground)] text-center mt-0.5">
+                    <p className="text-xs text-[#5c6b68] text-center mt-0.5">
                       Current: {form.center_lat.toFixed(4)}, {form.center_lng.toFixed(4)}
                     </p>
                   </>

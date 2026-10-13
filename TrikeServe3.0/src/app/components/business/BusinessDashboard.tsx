@@ -2,7 +2,7 @@ import { useState, useEffect, useMemo, useRef } from "react";
 import { 
   Store, Package, TrendingUp, PhilippinePeso, ChevronRight, 
   Users, MessageSquare, BarChart3, Settings, ShoppingBag,
-  Clock, Eye, Edit2, Bell, User as UserIcon, Search, Menu, X, Star, Check
+  Clock, Eye, Edit2, Bell, User as UserIcon, Search, X, Star, Check
 } from "lucide-react";
 import { Link, useNavigate } from "react-router";
 import { consumeWelcomeGreeting } from "../../../lib/welcomeGreeting";
@@ -649,7 +649,6 @@ const previousWindowWord = range === 'today' ? 'day' : range;
           onNotificationsClick={() => setShowNotifications(true)}
           avatarSrc={restaurantLogo || undefined}
           avatarAlt={restaurantLogo ? "Your restaurant profile" : undefined}
-          onMenuClick={() => setIsMobileMenuOpen(true)}
         />
       }
     >

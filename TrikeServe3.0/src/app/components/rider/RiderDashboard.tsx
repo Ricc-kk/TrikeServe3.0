@@ -968,13 +968,18 @@ export default function RiderDashboard() {
                   onClick={handleToggleOnline}
                   className={`${
                 isOnline 
-                  ? 'bg-[var(--primary)] hover:bg-[var(--primary)] text-white'
+                  ? 'bg-[var(--success)] hover:bg-[var(--success)] text-white'
                   : 'bg-[var(--ink-solid)] hover:bg-[var(--ink-solid)] text-white'
               } px-8 py-3 rounded-full font-bold shadow-xl flex items-center gap-2`}
             >
               {isOnline ? (
                 <>
-                  <div className="w-3 h-3 rounded-full bg-surface animate-pulse" />
+                  {/* Blinking green status dot: a pinging halo over a solid dot, so
+                      "online" reads as a live green signal rather than a flat mark. */}
+                  <span className="relative flex h-3 w-3" aria-hidden="true">
+                    <span className="absolute inline-flex h-full w-full rounded-full bg-[var(--mint)] opacity-75 animate-ping" />
+                    <span className="relative inline-flex h-3 w-3 rounded-full bg-[var(--mint)]" />
+                  </span>
                   <span>You're Online</span>
                 </>
               ) : (

@@ -3181,7 +3181,7 @@ const getPrice = () => {
             */}
             <div className="pointer-events-none absolute left-3 top-24 z-[1101] sm:top-28 bg-white/95 backdrop-blur-sm rounded-full px-3 py-1.5 shadow-lg flex items-center gap-2">
               <div className="w-2 h-2 bg-[var(--success)] rounded-full animate-pulse" />
-              <span className="text-xs font-bold text-[var(--ink)]">Live Tracking</span>
+              <span className="text-xs font-bold text-[#122724]">Live Tracking</span>
             </div>
 
             <div className="absolute bottom-16 left-0 right-0 z-[1100] p-3">
@@ -3644,13 +3644,17 @@ const getPrice = () => {
             <Card className="bg-white/95 backdrop-blur shadow-xl border-0 p-4">
               <div className="flex items-center justify-between gap-3">
                 <div className="flex-1">
-                  <p className="text-xs uppercase tracking-widest text-[var(--muted-foreground)] font-semibold">
+                  <p className="text-xs uppercase tracking-widest text-[#5c6b68] font-semibold">
                     {activeLocationInput === 'pickup' ? 'Pickup — search or tap map' : 'Drop-off — search or tap map'}
                   </p>
-                  <h2 className="text-lg font-bold text-[var(--ink)]">Find a nearby place or tap the map</h2>
+                  <h2 className="text-lg font-bold text-[#122724]">Find a nearby place or tap the map</h2>
                 </div>
-                <button onClick={() => { setShowLocationPicker(false); setActiveLocationInput(null); setLocationPreview(null); setPredictions([]); setSearchQuery(""); setPickerBoundaryWarning(null); }}>
-                  <X className="w-6 h-6 text-[var(--muted-foreground)]" />
+                <button
+                  type="button"
+                  aria-label="Close location picker"
+                  onClick={() => { setShowLocationPicker(false); setActiveLocationInput(null); setLocationPreview(null); setPredictions([]); setSearchQuery(""); setPickerBoundaryWarning(null); }}
+                >
+                  <X className="w-6 h-6 text-[#b3261e]" />
                 </button>
               </div>
 
@@ -3664,7 +3668,13 @@ const getPrice = () => {
                      <span>{pickerBoundaryWarning}</span>
                    </div>
                  )}
-                 <Input value={searchQuery} onChange={(e) => { fetchPredictions((e.target as HTMLInputElement).value); }} placeholder="Search restaurants, parks, hotels, terminals..." />
+                 <Input
+                   value={searchQuery}
+                   onChange={(e) => { fetchPredictions((e.target as HTMLInputElement).value); }}
+                   placeholder="Search restaurants, parks, hotels, terminals..."
+                   aria-label="Search for a place"
+                   className="text-[#122724] placeholder:text-[#5c6b68]"
+                 />
                  {predictions.length > 0 && (
                    <div className="mt-2 bg-surface border border-[var(--border)] rounded-lg max-h-48 overflow-y-auto">
                      {predictions.map((p, i) => (
