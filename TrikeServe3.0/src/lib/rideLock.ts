@@ -20,9 +20,14 @@ import { supabase } from "./supabase";
  */
 export const ACTIVE_RIDE_STATUSES = [
   "accepted",
+  // The hyphen and underscore spellings both occur in the codebase for the same
+  // step. Two lists that differ by a character is how a ride ends up live for the
+  // driver and free for the customer, so both are covered here and nowhere else.
   "driver-found",
+  "driver_found",
   "picked-up",
   "in-transit",
+  "in-progress",
   "arrived",
   "on-the-way",
   "payment",
@@ -63,7 +68,7 @@ export async function hasActiveRide(customerId: string): Promise<boolean> {
    */
   const { data, error } = await supabase
     .from("ride_requests")
-    .select("id, status")
+    .select("id, status, accepted_driver_id")
     .eq("customer_id", customerId)
     .order("created_at", { ascending: false })
     .limit(1)
@@ -74,7 +79,26 @@ export async function hasActiveRide(customerId: string): Promise<boolean> {
   // an order they place anyway, while a wrong "on a ride" blocks a paying action
   // with no explanation and no way to tell why.
   if (error) return false;
-  return isActiveRideStatus(data?.status);
+  return isLiveRideForCustomer(data);
+}
+
+/**
+ * Whether a `ride_requests` row represents a ride the customer is actually on.
+ *
+ * An active status alone is not enough. `accepted_driver_id` is the one column
+ * that means "a driver is on this ride": it is what the customer's own ride
+ * screen keys off, what the driver's active-ride lookup filters on, and what the
+ * delivery screens join against.
+ *
+ * `driver_id` is deliberately NOT accepted as a substitute. It is null on an open
+ * request, and one accept path used to write it without `accepted_driver_id`,
+ * which produced exactly this bug -- a row that read `accepted` to the customer
+ * while the driver, filtering on `accepted_driver_id`, saw no ride at all and the
+ * customer stayed locked out with nobody coming.
+ */
+function isLiveRideForCustomer(ride: any): boolean {
+  if (!ride || !isActiveRideStatus(ride.status)) return false;
+  return !!ride.accepted_driver_id;
 }
 
 /**
@@ -138,7 +162,7 @@ export async function getActiveRideContext(customerId: string): Promise<{
       .order("created_at", { ascending: false }),
   ]);
 
-  const privateRide = !rideError && ride && isActiveRideStatus(ride.status) ? ride : null;
+  const privateRide = !rideError && ride && isLiveRideForCustomer(ride) ? ride : null;
 
   const lobby =
     (!lobbyError &&

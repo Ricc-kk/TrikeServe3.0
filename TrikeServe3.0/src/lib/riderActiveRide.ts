@@ -1,4 +1,5 @@
 import { supabase } from "./supabase";
+import { ACTIVE_RIDE_STATUSES, isActiveRideStatus } from "./rideLock";
 
 /**
  * The rider's pointer to the ride they are on.
@@ -16,11 +17,18 @@ export const RIDER_ACTIVE_RIDE_KEY = "trikeserve_active_ride_rider";
 /** The key the customer app uses; read only to adopt a legacy driver record. */
 const CUSTOMER_KEY = "trikeserve_active_ride";
 
-/** Statuses that mean the driver has a ride in hand. */
-export const RIDER_ACTIVE_STATUSES = ["accepted", "on-the-way", "arrived", "in-progress", "driver_found", "picked-up"];
+/**
+ * Statuses that mean the driver has a ride in hand.
+ *
+ * Imported from rideLock rather than kept separate. These two lists used to differ
+ * (`in-progress` here, `in-transit` there; `driver_found` here, `driver-found`
+ * there), so a ride could be live for the driver and free for the customer, or the
+ * reverse, depending only on which screen asked.
+ */
+export const RIDER_ACTIVE_STATUSES = ACTIVE_RIDE_STATUSES;
 
 export function isRiderRideActive(status: unknown): boolean {
-  return typeof status === "string" && RIDER_ACTIVE_STATUSES.includes(status);
+  return isActiveRideStatus(typeof status === "string" ? status : null);
 }
 
 /**

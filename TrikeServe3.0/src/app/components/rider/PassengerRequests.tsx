@@ -497,7 +497,17 @@ export default function PassengerRequests() {
        * pickup.
        */
       if (request.id && !request.id.startsWith('lobby_')) {
-        await supabaseHelpers.updateRideRequest(request.id, { status: 'accepted', driver_id: user.id });
+        // `accepted_driver_id` as well as `driver_id`. The customer's ride screen,
+        // the delivery screens and the driver's own active-ride lookup all read
+        // `accepted_driver_id`; the two other accept paths set both. Setting only
+        // `driver_id` here left the row looking accepted to the customer -- who was
+        // therefore locked out of booking -- while the driver, who looks rides up
+        // by `accepted_driver_id`, saw nothing at all.
+        await supabaseHelpers.updateRideRequest(request.id, {
+          status: 'accepted',
+          driver_id: user.id,
+          accepted_driver_id: user.id,
+        });
       }
     }
 
