@@ -4,7 +4,7 @@ import {
   ClipboardCheck, Clock, ShieldCheck, ChevronDown, ArrowLeft, Pen,
   ChevronLeft, ChevronRight, Pentagon, Milestone, SlidersHorizontal
 } from "lucide-react";
-import { GoogleMap, Marker, MarkerF, InfoWindow, Polygon, Polyline } from "@react-google-maps/api";
+import { GoogleMap, Marker, InfoWindow, Polygon, Polyline } from "@react-google-maps/api";
 import useMapLoader from "@/lib/mapLoader";
 import { autocompletePlacesNew, createPlacesSessionToken, fetchPlaceDetailsNew } from "@/lib/placesApi";
 
@@ -33,6 +33,8 @@ import { StatSkeleton } from "./AdminSkeleton";
 import EmptyState from "../ui/EmptyState";
 import TerminalIcon, {
   terminalMarkerIcon,
+  numberedPinIcon,
+  shapePinIcon,
   normalizeTerminalColor,
   normalizeRouteColor,
   normalizeBorderColor,
@@ -2161,7 +2163,26 @@ export default function AdminTerminals() {
                 mapTypeControl: false,
               }}
             >
-              <MarkerF position={{ lat: form.center_lat, lng: form.center_lng }} />
+              {/* The pin changes with the tab, so what is under the finger is
+                  never ambiguous: the terminal's own icon on Terminal, and the
+                  shape's colour on the two plotting tabs. */}
+              {mapPickerMode === 'location' ? (
+                <Marker
+                  position={{ lat: form.center_lat, lng: form.center_lng }}
+                  title={form.name}
+                  icon={terminalMarkerIcon(normalizeTerminalColor(form.marker_color), 54)}
+                />
+              ) : (
+                <Marker
+                  position={{ lat: form.center_lat, lng: form.center_lng }}
+                  title={form.name}
+                  icon={shapePinIcon(
+                    mapPickerMode === 'road'
+                      ? normalizeRouteColor(form.route_color)
+                      : normalizeBorderColor(form.border_color),
+                  )}
+                />
+              )}
               {/* The enclosing area, drawn under the road it contains. */}
               {form.boundary_area.length >= 3 && (
                 <Polygon
@@ -2190,20 +2211,24 @@ export default function AdminTerminals() {
                   }}
                 />
               )}
+              {/* Plotted points, numbered in the shape's own colour so a route
+                  point never reads as a border point on the same map. */}
               {mapPickerMode === 'road' &&
                 form.boundary_polygon.map((point, index) => (
-                  <MarkerF
+                  <Marker
                     key={`${point.lat}_${point.lng}_${index}`}
                     position={point}
-                    label={`${index + 1}`}
+                    title={`Route point ${index + 1}`}
+                    icon={numberedPinIcon(index + 1, normalizeRouteColor(form.route_color))}
                   />
                 ))}
               {mapPickerMode === 'area' &&
                 form.boundary_area.map((point, index) => (
-                  <MarkerF
+                  <Marker
                     key={`${point.lat}_${point.lng}_${index}`}
                     position={point}
-                    label={`${index + 1}`}
+                    title={`Border point ${index + 1}`}
+                    icon={numberedPinIcon(index + 1, normalizeBorderColor(form.border_color))}
                   />
                 ))}
             </GoogleMap>
@@ -2229,14 +2254,18 @@ export default function AdminTerminals() {
                 {mapPickerMode === 'road' ? (
                   <>
                     <p className="text-sm font-semibold text-[#122724] text-center">
-                      Tap along the road to plot it
+                      Tap along the route to plot it
                     </p>
                     <p className="text-xs text-[#5c6b68] text-center mt-0.5">
                       {isSnappingRoad
                         ? 'Snapping to the nearest road...'
                         : form.boundary_polygon.length < 2
-                          ? `Add at least 2 points — ${Math.round(normalizeRoadWidth(form.road_width_m) / 2)} m either side of the road is accepted`
-                          : `${form.boundary_polygon.length} points — accepts drop-offs within ${Math.round(normalizeRoadWidth(form.road_width_m) / 2)} m of the road`}
+                          ? `Add at least 2 points — drop-offs and food orders are accepted within ${Math.round(normalizeRoadWidth(form.road_width_m) / 2)} m of the route`
+                          : `${form.boundary_polygon.length} points — accepts drop-offs / food orders within ${Math.round(normalizeRoadWidth(form.road_width_m) / 2)} m of the road`}
+                    </p>
+                    <p className="text-[11px] text-center mt-1 text-[#5c6b68]">
+                      The route tricycle drivers can use to drop off a customer or
+                      pick up a food order.
                     </p>
                     {roadSnapUnavailable && (
                       <p className="text-[11px] text-center mt-1 text-[var(--amber-dark)]">
@@ -2287,8 +2316,8 @@ export default function AdminTerminals() {
                         : `${form.boundary_area.length} points — area closed`}
                     </p>
                     <p className="text-[11px] text-center mt-1 text-[#5c6b68]">
-                      Draw this around the road. Drivers and drop-offs outside every
-                      terminal's border are rejected.
+                      The radius where a tricycle driver can join the queue to pick
+                      up a customer — share ride or private ride.
                     </p>
                     <div className="grid grid-cols-2 gap-2 mt-3">
                       <button
@@ -2365,11 +2394,12 @@ export default function AdminTerminals() {
                         )}
                       </div>
 
-                      {/* Descriptive address. Optional — the boundary that actually
-                          restricts drop-offs is the plotted road and area below. */}
+                      {/* Descriptive address. Optional — the shapes that actually
+                          restrict drop-offs and queues are the plotted route and
+                          border area on the map. */}
                       <div>
                         <label className="text-xs font-semibold uppercase tracking-widest text-[var(--muted-foreground)] block mb-1">
-                          Boundary / Area
+                          Location Area
                         </label>
                         <input
                           value={form.boundary}
@@ -2381,7 +2411,7 @@ export default function AdminTerminals() {
 
                       <div>
                         <label className="text-xs font-semibold uppercase tracking-widest text-[var(--muted-foreground)] block mb-1">
-                          Road corridor width
+                          Road Distance
                         </label>
                         <div className="flex items-center gap-3">
                           <input
@@ -2404,7 +2434,8 @@ export default function AdminTerminals() {
                             className={`w-28 px-3 rounded-xl flex-shrink-0 ${field} ${errors.road_width_m ? invalid : ''}`}
                           />
                           <span className="text-xs leading-snug text-[var(--muted-foreground)]">
-                            Accepts drop-offs within {Math.round(normalizeRoadWidth(form.road_width_m) / 2)} m of the road
+                            Accepts drop offs / food order within{' '}
+                            {Math.round(normalizeRoadWidth(form.road_width_m) / 2)} m of the road
                           </span>
                         </div>
                         {errors.road_width_m && (
@@ -2442,7 +2473,7 @@ export default function AdminTerminals() {
                             <p className="text-sm font-semibold text-[var(--ink)]">Enforce Boundary</p>
                             <p className="text-xs text-[var(--muted-foreground)]">
                               {form.boundary_enabled
-                                ? 'Drop-offs and driver queues are checked against this boundary'
+                                ? 'Drop-offs, food orders and driver queues are checked against the route and border'
                                 : 'Kept as drawn, but not checked against'}
                             </p>
                           </div>

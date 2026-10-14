@@ -144,6 +144,52 @@ type Props = {
   title?: string;
 };
 
+/**
+ * A teardrop pin carrying a number, for the plotted points of a shape.
+ *
+ * Numbering is what makes a half-drawn route editable: an admin needs to know
+ * which tap is point 4 to undo or fix it. The fill is the shape's own colour so
+ * a route point never reads as a border point on the same map.
+ *
+ * `label` is interpolated as text, so it is coerced to a short digit run here —
+ * the colour goes through the normalisers for the same reason.
+ */
+export function numberedPinIcon(label: string | number, color: string, size = 30) {
+  const text = String(label).replace(/[^0-9]/g, '').slice(0, 3) || '';
+  const fill = normalizeRouteColor(color);
+  const svg =
+    `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 40" width="32" height="40">` +
+    `<path d="M16 38 C 10 28 3 22 3 15 A 13 13 0 1 1 29 15 C 29 22 22 28 16 38 Z" ` +
+    `fill="${fill}" stroke="#FFFFFF" stroke-width="2"/>` +
+    `<text x="16" y="20" font-family="Arial, Helvetica, sans-serif" font-size="13" ` +
+    `font-weight="700" fill="#FFFFFF" text-anchor="middle">${text}</text>` +
+    `</svg>`;
+  return {
+    url: `data:image/svg+xml;charset=UTF-8,${encodeURIComponent(svg)}`,
+    scaledSize: { width: size, height: Math.round((size * 40) / 32) },
+    anchor: { x: size / 2, y: Math.round((size * 40) / 32) },
+  };
+}
+
+/**
+ * A plain pin in a shape's colour, used for the terminal's centre while that
+ * shape is being edited.
+ */
+export function shapePinIcon(color: string, size = 26) {
+  const fill = normalizeRouteColor(color);
+  const svg =
+    `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 40" width="32" height="40">` +
+    `<path d="M16 38 C 10 28 3 22 3 15 A 13 13 0 1 1 29 15 C 29 22 22 28 16 38 Z" ` +
+    `fill="${fill}" stroke="#FFFFFF" stroke-width="2.5"/>` +
+    `<circle cx="16" cy="15" r="5" fill="#FFFFFF"/>` +
+    `</svg>`;
+  return {
+    url: `data:image/svg+xml;charset=UTF-8,${encodeURIComponent(svg)}`,
+    scaledSize: { width: size, height: Math.round((size * 40) / 32) },
+    anchor: { x: size / 2, y: Math.round((size * 40) / 32) },
+  };
+}
+
 export default function TerminalIcon({
   size = 32,
   color = DEFAULT_TERMINAL_COLOR,
