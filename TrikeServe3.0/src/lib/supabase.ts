@@ -1,5 +1,6 @@
 import { createClient } from '@supabase/supabase-js';
 import { buildChatThreadKey } from './chat';
+import { normalizeTerminalColor } from '../app/components/ui/TerminalIcon';
 
 // Initialize Supabase client
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
@@ -798,6 +799,10 @@ async function applyApprovalRequest(
             // This terminal's own ride fare (ADD_TERMINAL_FARES.sql).
             base_fare: payload.base_fare ?? 20,
             per_km: payload.per_km ?? 10,
+            // Icon colour (ADD_TERMINAL_MARKER_COLOR.sql). Carried through so a
+            // Rider Admin's chosen colour survives approval rather than snapping
+            // back to the default the moment a Super Admin taps Approve.
+            marker_color: normalizeTerminalColor(payload.marker_color),
             updated_at: new Date().toISOString(),
           },
           { onConflict: 'id' }

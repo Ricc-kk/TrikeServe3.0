@@ -1,9 +1,10 @@
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect, useRef, useCallback, Fragment as ReactFragment } from "react";
 import {
   Plus, Edit2, Trash2, UserPlus, UserMinus, MapPin, Users, Menu, X, Navigation, Search, Loader2, Save, Shield,
-  ClipboardCheck, Clock, ShieldCheck, ChevronDown
+  ClipboardCheck, Clock, ShieldCheck, ChevronDown, ArrowLeft, Pen,
+  ChevronLeft, ChevronRight, Pentagon, Milestone, SlidersHorizontal
 } from "lucide-react";
-import { GoogleMap, MarkerF, InfoWindow, Polygon, Polyline } from "@react-google-maps/api";
+import { GoogleMap, Marker, MarkerF, InfoWindow, Polygon, Polyline } from "@react-google-maps/api";
 import useMapLoader from "@/lib/mapLoader";
 import { autocompletePlacesNew, createPlacesSessionToken, fetchPlaceDetailsNew } from "@/lib/placesApi";
 
@@ -30,6 +31,12 @@ import Toast from "../ui/Toast";
 import AdminShell from "./AdminShell";
 import { StatSkeleton } from "./AdminSkeleton";
 import EmptyState from "../ui/EmptyState";
+import TerminalIcon, {
+  terminalMarkerIcon,
+  normalizeTerminalColor,
+  DEFAULT_TERMINAL_COLOR,
+} from "../ui/TerminalIcon";
+import ColorPicker from "../ui/ColorPicker";
 
 const GOOGLE_MAPS_API_KEY = import.meta.env.VITE_GOOGLE_MAPS_API_KEY || "";
 
@@ -37,9 +44,14 @@ const GOOGLE_MAPS_API_KEY = import.meta.env.VITE_GOOGLE_MAPS_API_KEY || "";
 // Valenzuela City (same point the customer/business map selectors default to).
 const DEFAULT_TERMINAL_CENTER = { lat: 14.7244, lng: 120.9668 };
 
+// Bounds the road corridor input accepts. Mirrored by the validator so a value
+// typed, pasted or nudged into the field can't slip past the checks.
+const MIN_ROAD_WIDTH_M = 20;
+const MAX_ROAD_WIDTH_M = 2000;
+
 // Named in save errors, because a missing column fails the whole upsert and would
 // otherwise look like the admin's edits simply weren't sticking.
-const MIGRATION_HINT = 'ADD_TERMINAL_ROAD_BOUNDARY.sql / ADD_TERMINAL_BORDER_AREA.sql';
+const MIGRATION_HINT = 'ADD_TERMINAL_ROAD_BOUNDARY.sql / ADD_TERMINAL_BORDER_AREA.sql / ADD_TERMINAL_MARKER_COLOR.sql';
 
 // How often a Rider Admin re-reads their terminal scope, so a Super Admin's
 // unassignment takes effect on a screen that is already open.
@@ -68,6 +80,10 @@ interface Terminal {
   // (ADD_TERMINAL_FARES.sql). Falls back to the platform default when null.
   base_fare: number;
   per_km: number;
+  // Hex colour for this terminal's icon on the Terminal Location map
+  // (ADD_TERMINAL_MARKER_COLOR.sql). Per terminal, so neighbouring TODAs can be
+  // told apart. Presentation only — no boundary check reads it.
+  marker_color: string;
 }
 
 interface StoredRider {
@@ -154,7 +170,6 @@ export default function AdminTerminals() {
   // skeleton instead of a half-populated list.
   const [loading, setLoading] = useState(true);
   const [users, setUsers] = useState<StoredRider[]>(getAllUsers());
-  const [showForm, setShowForm] = useState(false);
   const [editTerminal, setEditTerminal] = useState<Terminal | null>(null);
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [form, setForm] = useState({
@@ -172,11 +187,34 @@ export default function AdminTerminals() {
     // This terminal's own ride fare, editable by the terminal admin.
     base_fare: 20,
     per_km: 10,
+    // This terminal's icon colour. Always a valid hex: the form holds what the
+    // admin last chose, and only valid values are ever written.
+    marker_color: DEFAULT_TERMINAL_COLOR,
   });
   const [showMapPicker, setShowMapPicker] = useState(false);
-  // The map picker either moves the terminal pin, plots the road, or plots the
-  // area that encloses it.
-  const [mapPickerMode, setMapPickerMode] = useState<'location' | 'boundary' | 'area'>('location');
+  /*
+   * Which part of the terminal the editor is on, as one value rather than a
+   * "page" plus a "map mode" — they were the same choice split in two, and the
+   * two could disagree. 'configuration' is the only section with no map.
+   */
+  const [editorSection, setEditorSection] = useState<
+    'terminal' | 'border' | 'route' | 'configuration'
+  >('terminal');
+  // Collapses the editor's sidebar to icons alone, handing the width back to the
+  // map without losing the way out of a section.
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+
+  /**
+   * How the map should treat a tap, derived from the selected section.
+   *
+   * Configuration has no map, so it falls back to moving the pin: harmless, and
+   * it keeps this a total function rather than something every caller has to
+   * guard.
+   */
+  const mapPickerMode: 'location' | 'road' | 'area' =
+    editorSection === 'route' ? 'road' :
+    editorSection === 'border' ? 'area' :
+    'location';
   // Undo/redo for plotting. `boundaryPast` holds the states the current shape can
   // be stepped back to; `boundaryFuture` holds the ones it was stepped away from,
   // which Redo walks forward through. The shapes in `form` stay the single source
@@ -268,15 +306,12 @@ export default function AdminTerminals() {
   }, []);
 
   /**
-   * What the pin and road looked like when the map picker opened, so closing
-   * can tell whether the admin has work in there that closing would throw away.
+   * What the terminal looked like when the editor opened, across every field it
+   * can change. The floating Save button keys off this, and so does the warning
+   * before closing — a plotted road is the obvious thing to lose, but a typed
+   * name or a changed colour is just as easy to walk away from.
    */
-  const [mapPickerSnapshot, setMapPickerSnapshot] = useState<{
-    center_lat: number;
-    center_lng: number;
-    polygon: LatLngPoint[];
-    area: LatLngPoint[];
-  } | null>(null);
+  const [editorSnapshot, setEditorSnapshot] = useState<EditorSnapshot | null>(null);
   const { isLoaded: isMapsLoaded } = useMapLoader();
   const formMapRef = useRef<google.maps.Map | null>(null);
   // The admin's live GPS position — the map picker opens here so a terminal is
@@ -296,51 +331,90 @@ export default function AdminTerminals() {
     refreshAdminLocation();
   }, [refreshAdminLocation]);
 
-  function openMapPicker() {
-    refreshAdminLocation();
-    setMapPickerSnapshot({
-      center_lat: form.center_lat,
-      center_lng: form.center_lng,
-      polygon: [...form.boundary_polygon],
-      area: [...form.boundary_area],
-    });
+  /** The fields the editor tracks as "changed since it opened". */
+  type EditorSnapshot = {
+    center_lat: number;
+    center_lng: number;
+    polygon: LatLngPoint[];
+    area: LatLngPoint[];
+    name: string;
+    boundary: string;
+    road_width_m: number;
+    is_active: boolean;
+    marker_color: string;
+  };
+
+  /**
+   * Everything the editor tracks as "changed since it opened".
+   *
+   * Read from the form object the editor is about to be given, not from the form
+   * state as it currently stands: `openEdit` seeds that state and opens the
+   * editor in the same tick, so snapshotting the live `form` would capture the
+   * *previous* terminal and leave the editor looking dirty the moment it opens.
+   */
+  function snapshotFrom(f: typeof form): EditorSnapshot {
+    return {
+      center_lat: f.center_lat,
+      center_lng: f.center_lng,
+      polygon: [...f.boundary_polygon],
+      area: [...f.boundary_area],
+      name: f.name,
+      boundary: f.boundary,
+      road_width_m: f.road_width_m,
+      is_active: f.is_active,
+      marker_color: normalizeTerminalColor(f.marker_color),
+    };
+  }
+
+  /** Seeds the form and opens the editor on it, with a snapshot taken at the same value. */
+  function openEditorWith(next: typeof form) {
+    setForm(next);
+    setEditorSnapshot(snapshotFrom(next));
+    setEditorSection('terminal');
     setShowMapPicker(true);
+    refreshAdminLocation();
   }
 
   const samePoints = (a: LatLngPoint[], b: LatLngPoint[]) =>
     a.length === b.length && a.every((p, i) => p.lat === b[i].lat && p.lng === b[i].lng);
 
-  /** True when the pin moved or either boundary shape was edited since the picker opened. */
-  const hasUnsavedMapChanges =
-    !!mapPickerSnapshot &&
-    (form.center_lat !== mapPickerSnapshot.center_lat ||
-      form.center_lng !== mapPickerSnapshot.center_lng ||
-      !samePoints(form.boundary_polygon, mapPickerSnapshot.polygon) ||
-      !samePoints(form.boundary_area, mapPickerSnapshot.area));
+  /** True when anything in the editor differs from how it was when it opened. */
+  const hasUnsavedEditorChanges =
+    !!editorSnapshot &&
+    (form.center_lat !== editorSnapshot.center_lat ||
+      form.center_lng !== editorSnapshot.center_lng ||
+      !samePoints(form.boundary_polygon, editorSnapshot.polygon) ||
+      !samePoints(form.boundary_area, editorSnapshot.area) ||
+      form.name !== editorSnapshot.name ||
+      form.boundary !== editorSnapshot.boundary ||
+      form.road_width_m !== editorSnapshot.road_width_m ||
+      form.is_active !== editorSnapshot.is_active ||
+      normalizeTerminalColor(form.marker_color) !== editorSnapshot.marker_color);
 
-  /** Closes the picker outright. Going through requestCloseMapPicker is the user-facing path. */
+  /** Closes the editor outright. Going through requestCloseMapPicker is the user-facing path. */
   function closeMapPicker() {
     setShowMapPicker(false);
     setShowMapSearchDropdown(false);
     setMapSearchQuery("");
-    setMapPickerSnapshot(null);
+    setEditorSnapshot(null);
+    setEditorSection('terminal');
   }
 
   // Closing without saving is the easy way to lose a plotted boundary, so ask
   // first — but only when there is genuinely something to lose.
   function requestCloseMapPicker() {
-    if (!hasUnsavedMapChanges) {
+    if (!hasUnsavedEditorChanges) {
       closeMapPicker();
       return;
     }
 
     const plotted = form.boundary_polygon.length + form.boundary_area.length;
     openModal({
-      title: 'Discard Map Changes?',
+      title: 'Discard Changes?',
       message:
         plotted > 0
-          ? `You have ${plotted} plotted point${plotted === 1 ? '' : 's'} and a moved pin that have not been saved yet. Closing now discards them.`
-          : 'You have moved the terminal pin and it has not been saved yet. Closing now discards it.',
+          ? `You have ${plotted} plotted point${plotted === 1 ? '' : 's'} and other unsaved changes to this terminal. Closing now discards them.`
+          : 'You have unsaved changes to this terminal. Closing now discards them.',
       variant: 'warning',
       confirmLabel: 'Discard Changes',
       zIndexClassName: 'z-[2030]',
@@ -351,17 +425,19 @@ export default function AdminTerminals() {
     });
   }
 
-  // Saving from the picker runs the same checks the form's Save does — the picker
-  // can be opened before the terminal has a name or area, so those aren't optional.
+  // Saving from the editor runs the same checks as the boundary confirm — the
+  // editor can be opened before the terminal has a name or a valid shape.
   function saveChangesFromPicker() {
-    if (!form.name || !form.boundary) {
-      setToast({ message: 'Add a terminal name and boundary area before saving.', variant: 'error' });
-      return;
-    }
+    const { errors, firstField } = validateEditor();
 
-    const validationError = boundaryValidationError();
-    if (validationError) {
-      setToast({ message: validationError, variant: 'error' });
+    if (firstField) {
+      setToast({ message: errors[firstField]!, variant: 'error' });
+      // Send them to the section that owns the offending field, so the fix is one
+      // tap away instead of a hunt through the editor.
+      if (firstField === 'road') setEditorSection('route');
+      else if (firstField === 'area') setEditorSection('border');
+      else if (firstField === 'location') setEditorSection('terminal');
+      else setEditorSection('configuration');
       return;
     }
 
@@ -456,6 +532,11 @@ export default function AdminTerminals() {
 
   const hasPendingChanges = Object.keys(pendingChanges).length > 0;
 
+  // Super Admin's two views of this page; a Rider Admin stays on the assignment view.
+  const [terminalView, setTerminalView] = useState<'assignment' | 'map'>('assignment');
+  // The Terminal Location map, so the legend beside it can pan to one terminal.
+  const overviewMapRef = useRef<google.maps.Map | null>(null);
+
   // Load from Supabase when available; fall back to localStorage data otherwise.
   useEffect(() => {
     loadData();
@@ -488,8 +569,7 @@ export default function AdminTerminals() {
   useEffect(() => {
     if (!isRiderAdmin) return;
     if (!assignedTerminalId) {
-      setShowForm(false);
-      setShowMapPicker(false);
+      closeMapPicker();
       setEditTerminal(null);
     }
   }, [isRiderAdmin, assignedTerminalId]);
@@ -527,6 +607,9 @@ export default function AdminTerminals() {
         boundary_enabled: t.boundary_enabled !== false,
         base_fare: t.base_fare ?? 20,
         per_km: t.per_km ?? 10,
+        // Rows from before ADD_TERMINAL_MARKER_COLOR.sql have no value; resolving
+        // here means every consumer below can treat it as a usable colour.
+        marker_color: normalizeTerminalColor(t.marker_color),
       }));
     } catch {
       return null;
@@ -630,6 +713,36 @@ export default function AdminTerminals() {
 
   const riders = users.filter(u => u.role === "rider");
 
+  /** Pan the Terminal Location map to one terminal, from the legend. */
+  function focusTerminal(t: Terminal) {
+    overviewMapRef.current?.panTo({ lat: t.center_lat, lng: t.center_lng });
+  }
+
+  /**
+   * Frame every terminal on the Terminal Location map.
+   *
+   * A fixed centre only ever showed whichever terminal happened to sit under it;
+   * the point of this view is that all of them, and their borders, are visible at
+   * once. Falls back to the Gen T Deleon default when there is nothing to fit.
+   */
+  function fitTerminalsOnMap(map: google.maps.Map) {
+    const points = visibleTerminals.map(t => ({ lat: t.center_lat, lng: t.center_lng }));
+    if (points.length === 0) {
+      map.setCenter({ lat: 14.6867, lng: 120.9950 });
+      map.setZoom(13);
+      return;
+    }
+    if (points.length === 1) {
+      map.setCenter(points[0]);
+      map.setZoom(14);
+      return;
+    }
+
+    const bounds = new google.maps.LatLngBounds();
+    points.forEach(p => bounds.extend(p));
+    map.fitBounds(bounds, 80);
+  }
+
   const riderTerminalId = (r: StoredRider) => r.terminalId || r.terminal_id;
   const riderTerminalName = (r: StoredRider) => r.terminalName || r.terminal_name;
   const riderPlate = (r: StoredRider) => r.todaPlate || r.toda_plate || "";
@@ -656,16 +769,42 @@ export default function AdminTerminals() {
     ? terminals.filter(t => t.id === assignedTerminalId)
     : terminals;
 
+  /*
+   * Frame the terminals once they have actually loaded.
+   *
+   * The map's onLoad fires well before the terminal query resolves, so fitting
+   * there alone framed an empty list and left every marker off-screen. Keyed on
+   * the terminal count and the visible tab rather than the whole list, so editing
+   * a terminal's name doesn't yank the map out from under the admin.
+   */
+  useEffect(() => {
+    if (!isSuperAdmin || terminalView !== 'map') return;
+    const map = overviewMapRef.current;
+    if (!map || visibleTerminals.length === 0) return;
+    fitTerminalsOnMap(map);
+  }, [terminalView, visibleTerminals.length]);
+
+
   function openCreate() {
-    setForm({ name: "", boundary: "", center_lat: DEFAULT_TERMINAL_CENTER.lat, center_lng: DEFAULT_TERMINAL_CENTER.lng, is_active: true, boundary_polygon: [], boundary_area: [], road_width_m: DEFAULT_ROAD_WIDTH_M, boundary_enabled: true, base_fare: 20, per_km: 10 });
     setEditTerminal(null);
-    setMapPickerMode('location');
+    setEditorSection('terminal');
     resetBoundaryHistory();
-    setShowForm(true);
+    openEditorWith({
+      name: "", boundary: "",
+      center_lat: DEFAULT_TERMINAL_CENTER.lat, center_lng: DEFAULT_TERMINAL_CENTER.lng,
+      is_active: true,
+      boundary_polygon: [], boundary_area: [],
+      road_width_m: DEFAULT_ROAD_WIDTH_M, boundary_enabled: true,
+      base_fare: 20, per_km: 10,
+      marker_color: DEFAULT_TERMINAL_COLOR,
+    });
   }
 
   function openEdit(t: Terminal) {
-    setForm({
+    setEditTerminal(t);
+    setEditorSection('terminal');
+    resetBoundaryHistory();
+    openEditorWith({
       name: t.name,
       boundary: t.boundary,
       center_lat: t.center_lat,
@@ -677,11 +816,8 @@ export default function AdminTerminals() {
       boundary_enabled: t.boundary_enabled !== false,
       base_fare: t.base_fare ?? 20,
       per_km: t.per_km ?? 10,
+      marker_color: normalizeTerminalColor(t.marker_color),
     });
-    setEditTerminal(t);
-    setMapPickerMode('location');
-    resetBoundaryHistory();
-    setShowForm(true);
   }
 
   const handleFormMapClick = useCallback(async (e: google.maps.MapMouseEvent) => {
@@ -783,17 +919,66 @@ export default function AdminTerminals() {
     }
   };
 
+  /** Which page or tab a validation message belongs to, so Save can route to it. */
+  type EditorField =
+    | 'name' | 'location' | 'road' | 'area' | 'road_width_m' | 'marker_color';
+  type EditorErrors = Partial<Record<EditorField, string>>;
+
+  /**
+   * Everything that would make this terminal unsaveable or wrong once written.
+   *
+   * Road and area are checked as "none or enough", not "enough": a terminal with
+   * no boundary is legitimate (nothing enforces a boundary that was never
+   * plotted), but a half-drawn one silently becomes no boundary at all, so a
+   * single stray tap has to be an error rather than a quiet discard.
+   */
+  function validateEditor(): { errors: EditorErrors; firstField: EditorField | null } {
+    const errors: EditorErrors = {};
+
+    const name = form.name.trim();
+    if (!name) errors.name = 'Give the terminal a name before saving.';
+    else if (name.length < 2) errors.name = 'Terminal name must be at least 2 characters.';
+
+    // A dropped pin leaves the default, which is a valid place — so this only
+    // catches coordinates that are out of range or not numbers at all.
+    if (
+      !Number.isFinite(form.center_lat) || !Number.isFinite(form.center_lng) ||
+      Math.abs(form.center_lat) > 90 || Math.abs(form.center_lng) > 180
+    ) {
+      errors.location = 'That location is not a valid point on the map. Tap the map to set it again.';
+    }
+
+    if (form.boundary_polygon.length > 0 && form.boundary_polygon.length < 2) {
+      errors.road = 'A road needs at least 2 points. Add another, or clear the road.';
+    }
+
+    if (form.boundary_area.length > 0 && form.boundary_area.length < 3) {
+      errors.area = `A border area needs at least 3 points (${form.boundary_area.length} so far). Add another, or clear it.`;
+    }
+
+    const width = Number(form.road_width_m);
+    if (!Number.isFinite(width) || width < MIN_ROAD_WIDTH_M || width > MAX_ROAD_WIDTH_M) {
+      errors.road_width_m = `Road corridor width must be between ${MIN_ROAD_WIDTH_M} and ${MAX_ROAD_WIDTH_M} metres.`;
+    }
+
+    if (!/^#[0-9a-fA-F]{6}$/.test(form.marker_color.trim())) {
+      errors.marker_color = 'Map icon color must be a hex value like #2E75B6.';
+    }
+
+    // Order matters only in that the first entry is the one reported; it follows
+    // the order the admin meets the fields, with the shapes before the settings.
+    const order: EditorField[] = ['name', 'location', 'road', 'area', 'road_width_m', 'marker_color'];
+    const firstField = order.find(f => errors[f]) ?? null;
+    return { errors, firstField };
+  }
+
   /** Error message when a plotted shape can't be saved as-is, else null. */
   function boundaryValidationError(): string | null {
-    // A single tap doesn't describe a road yet — two points do.
-    if (form.boundary_polygon.length > 0 && form.boundary_polygon.length < 2) {
-      return 'Add at least 2 points to the road, or clear it.';
-    }
-    // A ring needs three corners before it encloses anything.
-    if (form.boundary_area.length > 0 && form.boundary_area.length < 3) {
-      return `Add at least 3 points to the border area (${form.boundary_area.length} so far), or clear it.`;
-    }
-    return null;
+    const { errors, firstField } = validateEditor();
+    if (!firstField) return null;
+    // Only the shape problems belong in this narrower check; a missing name is
+    // reported by the editor's own validation with a route to the right page.
+    return firstField === 'road' || firstField === 'area' ? errors[firstField]! : null;
   }
 
   // Confirm before applying a boundary — it decides which customer drop-offs this
@@ -885,8 +1070,12 @@ export default function AdminTerminals() {
     const base_fare = fareValue(Number(form.base_fare), 20);
     const per_km = fareValue(Number(form.per_km), 10);
 
+    // Normalised on the way out too, so a value that somehow slipped past the
+    // picker (a restored draft, a pasted form state) can't write a bad colour.
+    const markerColor = normalizeTerminalColor(form.marker_color);
+
     const target: Terminal = editTerminal
-      ? { ...editTerminal, name: form.name, boundary: form.boundary, center_lat: form.center_lat, center_lng: form.center_lng, is_active: form.is_active, boundary_polygon: boundaryPolygon, boundary_area: boundaryArea, road_width_m: roadWidthM, boundary_enabled: form.boundary_enabled, base_fare, per_km }
+      ? { ...editTerminal, name: form.name, boundary: form.boundary, center_lat: form.center_lat, center_lng: form.center_lng, is_active: form.is_active, boundary_polygon: boundaryPolygon, boundary_area: boundaryArea, road_width_m: roadWidthM, boundary_enabled: form.boundary_enabled, base_fare, per_km, marker_color: markerColor }
       : {
           id: `t_${Date.now()}`,
           name: form.name,
@@ -902,6 +1091,7 @@ export default function AdminTerminals() {
           boundary_enabled: true,
           base_fare,
           per_km,
+          marker_color: markerColor,
         };
 
     // Super Admin changes apply immediately.
@@ -924,6 +1114,7 @@ export default function AdminTerminals() {
           boundary_enabled: target.boundary_enabled,
           base_fare: target.base_fare,
           per_km: target.per_km,
+          marker_color: target.marker_color,
           updated_at: new Date().toISOString(),
         },
         { onConflict: "id" }
@@ -958,6 +1149,7 @@ export default function AdminTerminals() {
           boundary: target.boundary,
           base_fare: target.base_fare,
           per_km: target.per_km,
+          marker_color: target.marker_color,
           is_active: target.is_active,
         },
         actorEmail: user?.email,
@@ -967,7 +1159,7 @@ export default function AdminTerminals() {
       setTerminals(ts =>
         editTerminal ? ts.map(t => (t.id === editTerminal.id ? target : t)) : [...ts, target]
       );
-      setShowForm(false);
+      closeMapPicker();
       closeMapPicker();
       resetBoundaryHistory();
       setToast({ message: editTerminal ? 'Terminal updated' : 'Terminal created', variant: 'success' });
@@ -992,7 +1184,7 @@ export default function AdminTerminals() {
       return;
     }
 
-    setShowForm(false);
+    closeMapPicker();
     closeMapPicker();
     resetBoundaryHistory();
     await loadMyRequests();
@@ -1235,6 +1427,38 @@ export default function AdminTerminals() {
 
         {/* Content */}
         <div className="space-y-6">
+          {/* Super Admin sees this page as two jobs: scoping who runs which
+              terminal, and seeing the whole network at once. Splitting them keeps
+              a long assignment form from pushing the map out of reach. A Rider
+              Admin only ever does the first, so they get no tabs. */}
+          {isSuperAdmin && (
+            <div
+              className="flex flex-1 min-w-[260px] gap-2 p-1 bg-[var(--muted)] rounded-xl"
+              role="tablist"
+              aria-label="Terminal views"
+            >
+              {([
+                ['assignment', 'Toda Assignment'],
+                ['map', 'Terminal Location'],
+              ] as const).map(([value, label]) => (
+                <button
+                  key={value}
+                  type="button"
+                  role="tab"
+                  aria-selected={terminalView === value}
+                  onClick={() => setTerminalView(value)}
+                  className={`flex-1 h-11 rounded-lg text-sm font-bold transition-colors ${
+                    terminalView === value
+                      ? "bg-surface text-[var(--ink)] shadow-sm"
+                      : "text-[var(--muted-foreground)] hover:text-[var(--ink)]"
+                  }`}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+          )}
+
           {/* Pending Changes Banner */}
           {isRiderAdmin && hasPendingChanges && (
             <div className="mb-4 p-4 bg-[var(--amber-soft)] border-2 border-[var(--amber-soft)] rounded-xl">
@@ -1265,8 +1489,143 @@ export default function AdminTerminals() {
             </div>
           )}
 
+          {/* Super Admin: every terminal on one map, with the tricycle marker and
+              the border each admin plotted — the thing you cannot see from a list. */}
+          {isSuperAdmin && terminalView === 'map' && (
+            <div className="space-y-4">
+              <div className="relative w-full h-[420px] lg:h-[500px] bg-[var(--muted)] border border-line rounded-2xl overflow-hidden">
+                {isMapsLoaded ? (
+                  <GoogleMap
+                    mapContainerStyle={{ width: '100%', height: '100%' }}
+                    center={{ lat: 14.6867, lng: 120.9950 }}
+                    zoom={13}
+                    options={{
+                      zoomControl: true,
+                      fullscreenControl: false,
+                      streetViewControl: false,
+                      mapTypeControl: false,
+                    }}
+                    onLoad={m => {
+                      overviewMapRef.current = m;
+                      fitTerminalsOnMap(m);
+                    }}
+                  >
+                    {visibleTerminals.map(t => {
+                      const area = t.boundary_area && t.boundary_area.length >= 3 ? t.boundary_area : null;
+                      const road = t.boundary_polygon && t.boundary_polygon.length >= 2 ? t.boundary_polygon : null;
+                      return (
+                        <ReactFragment key={t.id}>
+                          {area && (
+                            <Polygon
+                              path={area}
+                              options={{
+                                fillColor: t.is_active ? '#22C55E' : '#94A3B8',
+                                fillOpacity: 0.12,
+                                strokeColor: t.is_active ? '#22C55E' : '#94A3B8',
+                                strokeWeight: 2,
+                                clickable: false,
+                              }}
+                            />
+                          )}
+                          {road && (
+                            <Polyline
+                              path={road}
+                              options={{
+                                strokeColor: t.is_active ? '#22C55E' : '#94A3B8',
+                                strokeWeight: 4,
+                                strokeOpacity: 0.9,
+                                clickable: false,
+                                geodesic: true,
+                              }}
+                            />
+                          )}
+                          {/* The classic `Marker`, not `MarkerF`. MarkerF is backed by
+                              AdvancedMarkerElement, which ignores an `icon` URL and
+                              needs a Google Cloud map ID before it renders anything
+                              at all — so switching to it silently empties the map.
+                              The deprecation warning it logs is the lesser problem. */}
+                          <Marker
+                            position={{ lat: t.center_lat, lng: t.center_lng }}
+                            title={t.name}
+                            icon={terminalMarkerIcon(t.marker_color, 76)}
+                            zIndex={area || road ? 20 : 30}
+                          />
+                        </ReactFragment>
+                      );
+                    })}
+                  </GoogleMap>
+                ) : (
+                  <div className="w-full h-full flex items-center justify-center">
+                    <p className="text-xs text-[var(--muted-foreground)]">Loading map...</p>
+                  </div>
+                )}
+              </div>
+
+              {/* The icon list, below the map and doubling as the way to jump to
+                  one. Full width under the map means it spreads into columns
+                  rather than stacking six tall rows in a narrow strip. */}
+              <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
+                {visibleTerminals.length === 0 ? (
+                  <p className="text-sm text-[var(--muted-foreground)] italic">No terminals yet</p>
+                ) : (
+                  visibleTerminals.map(t => {
+                    const roadPts = t.boundary_polygon?.length ?? 0;
+                    const areaPts = t.boundary_area?.length ?? 0;
+                    const enforced = t.boundary_enabled !== false;
+                    return (
+                      /* A div rather than a button: the row pans the map and the
+                         edit control has to sit inside it, and a button cannot
+                         contain one. The pan target is the icon-and-text region
+                         only, so tapping Edit never also zooms the map. */
+                      <div
+                        key={t.id}
+                        className="w-full flex items-start gap-2 p-3 bg-surface border border-line rounded-xl hover:border-[var(--primary)] transition-colors"
+                      >
+                        <button
+                          type="button"
+                          onClick={() => focusTerminal(t)}
+                          className="flex items-start gap-3 text-left flex-1 min-w-0"
+                        >
+                          <TerminalIcon size={56} color={t.marker_color} className="flex-shrink-0 mt-0.5" />
+                          <div className="min-w-0 flex-1">
+                            <p className="font-bold text-sm text-[var(--ink)] truncate">
+                              {t.name}
+                            </p>
+                            <p className="text-xs text-[var(--muted-foreground)] truncate">
+                              {areaPts >= 3
+                                ? `Border ${areaPts} pts`
+                                : roadPts >= 2
+                                  ? `Road ${roadPts} pts · ${normalizeRoadWidth(t.road_width_m)} m`
+                                  : 'No border plotted'}
+                              {areaPts >= 3 && roadPts >= 2 ? ` · road ${roadPts} pts` : ''}
+                            </p>
+                          </div>
+                          <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full flex-shrink-0 ${
+                            enforced
+                              ? 'bg-[var(--success-soft)] text-[var(--success)]'
+                              : 'bg-[var(--muted)] text-[var(--muted-foreground)]'
+                          }`}>
+                            {enforced ? 'On' : 'Off'}
+                          </span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => openEdit(t)}
+                          aria-label={`Edit ${t.name}`}
+                          className="w-10 h-10 flex-shrink-0 flex items-center justify-center rounded-lg bg-[var(--muted)] active:scale-90"
+                        >
+                          <Pen className="w-4 h-4 text-[var(--ink)]" />
+                        </button>
+                      </div>
+                    );
+                  })
+                )}
+              </div>
+            </div>
+          )}
+
           {/* Super Admin: assign each Rider Admin to a terminal */}
-          {isSuperAdmin && (
+          {isSuperAdmin && terminalView !== 'map' && (
             <div className="mb-6">
               <h2 className="text-sm font-bold uppercase tracking-widest text-[var(--muted-foreground)] mb-2 flex items-center gap-2">
                 <ShieldCheck size={16} /> Rider Admin Assignments
@@ -1365,7 +1724,11 @@ export default function AdminTerminals() {
             </div>
           )}
 
-          {loading ? (
+          {/* The cards are the management surface — edit, delete, driver
+              assignment, and they belong with the assignment list. In the
+              Terminal Location view the map and its legend cover the same
+              terminals more compactly, so the cards stay off that tab. */}
+          {terminalView === 'map' ? null : loading ? (
             <StatSkeleton count={4} />
           ) : isRiderAdmin && visibleTerminals.length === 0 ? (
             <EmptyState
@@ -1603,284 +1966,52 @@ export default function AdminTerminals() {
           )}
         </div>
 
-      {/* Form modal
+
+      {/* Terminal editor.
           Admin chrome (the nav drawer) is z-[1001], so every overlay on this page has to
           clear it — otherwise the sidebar paints over a "full-screen" modal and hides its
           close button. This matches the z-[2000] scale the other admin pages use. */}
-      {showForm && (
-        <div className="fixed inset-0 bg-black/50 z-[2000] flex items-center justify-center p-3 sm:p-4">
-          <div className="w-full max-w-md max-h-[90vh] overflow-y-auto bg-surface rounded-2xl shadow-2xl">
-            <div className="flex items-center justify-between p-4 sm:p-5 border-b-2 border-[var(--border)] sticky top-0 bg-surface z-10">
-              <h3 className="font-extrabold text-lg text-[var(--ink)]">
-                {editTerminal ? "Edit Terminal" : "New Terminal"}
-              </h3>
-              <button
-                onClick={() => setShowForm(false)}
-                className="w-8 h-8 rounded-full bg-[var(--muted)] flex items-center justify-center"
-              >
-                <X size={16} className="text-[var(--muted-foreground)]" />
-              </button>
-            </div>
-            <div className="p-4 sm:p-5 space-y-4">
-              {([
-                ["name", "Terminal Name", "e.g. Valenzuela Terminal"],
-                ["boundary", "Boundary / Area", "e.g. Main Road, Valenzuela City"],
-              ] as const).map(([k, label, placeholder]) => (
-                <div key={k}>
-                  <label className="text-xs font-semibold uppercase tracking-widest text-[var(--muted-foreground)] block mb-1">
-                    {label}
-                  </label>
-                  <input
-                    value={form[k]}
-                    onChange={e => setForm(f => ({ ...f, [k]: e.target.value }))}
-                    placeholder={placeholder}
-                    className="w-full h-11 px-4 border border-line focus:border-[var(--primary)] rounded-xl text-sm outline-none"
-                  />
-                </div>
-              ))}
-
-              {/* Terminal Location on Map */}
-              <div>
-                <label className="text-xs font-semibold uppercase tracking-widest text-[var(--muted-foreground)] block mb-1">
-                  Terminal Location
-                </label>
-                <div
-                  className="w-full h-44 sm:h-52 bg-[var(--muted)] border border-line rounded-xl overflow-hidden cursor-pointer relative"
-                  onClick={openMapPicker}
-                >
-                  {isMapsLoaded ? (
-                    <GoogleMap
-                      mapContainerStyle={{ width: '100%', height: '100%' }}
-                      center={{ lat: form.center_lat, lng: form.center_lng }}
-                      zoom={15}
-                      options={{
-                        zoomControl: false,
-                        fullscreenControl: false,
-                        streetViewControl: false,
-                        mapTypeControl: false,
-                        scrollwheel: false,
-                        draggable: false,
-                      }}
-                    >
-                      {form.boundary_area.length >= 3 && (
-                        <Polygon
-                          path={form.boundary_area}
-                          options={{
-                            fillColor: 'var(--primary)',
-                            fillOpacity: 0.12,
-                            strokeColor: 'var(--primary)',
-                            strokeWeight: 2,
-                            strokeOpacity: 0.6,
-                            clickable: false,
-                          }}
-                        />
-                      )}
-                      {form.boundary_polygon.length >= 2 && (
-                        <Polyline
-                          path={form.boundary_polygon}
-                          options={{
-                            strokeColor: 'var(--primary)',
-                            strokeWeight: 5,
-                            strokeOpacity: 0.9,
-                            clickable: false,
-                            geodesic: true,
-                          }}
-                        />
-                      )}
-                      <MarkerF position={{ lat: form.center_lat, lng: form.center_lng }} />
-                    </GoogleMap>
-                  ) : (
-                    <div className="w-full h-full flex items-center justify-center">
-                      <p className="text-xs text-[var(--muted-foreground)]">Loading map...</p>
-                    </div>
-                  )}
-                  {/* Hint only — pointer-events-none so it never swallows a tap meant for the map,
-                      and it stays clear of the map edges once the text wraps on narrow screens. */}
-                  <div className="absolute inset-0 flex items-center justify-center p-2.5 pointer-events-none">
-                    <span className="max-w-full bg-white/90 px-2.5 sm:px-3 py-1 rounded-full text-[11px] sm:text-xs font-semibold leading-snug text-center text-[var(--ink)] shadow">
-                      📍 Tap to set the location, road & border
-                    </span>
-                  </div>
-                </div>
-                <p className="text-xs text-[var(--muted-foreground)] mt-1.5 mb-3">
-                  Lat: {form.center_lat.toFixed(4)}, Lng: {form.center_lng.toFixed(4)}
-                </p>
-
-                {/* The boundary controls belong together, so they carry their own
-                    consistent rhythm instead of one-off margins that drift apart
-                    as the section grows. */}
-                <div className="space-y-2">
-                {/* Road status */}
-                <div className="flex items-start justify-between gap-2 p-3 bg-[var(--muted)] rounded-xl">
-                  <div className="flex-1 min-w-0">
-                    <p className="text-xs font-semibold text-[var(--ink)]">Road Boundary</p>
-                    <p className="text-xs leading-snug text-[var(--muted-foreground)] break-words">
-                      {form.boundary_polygon.length >= 2
-                        ? `${form.boundary_polygon.length} points along the road — accepts drop-offs within ${Math.round(normalizeRoadWidth(form.road_width_m) / 2)} m of it`
-                        : form.boundary_polygon.length > 0
-                          ? `${form.boundary_polygon.length} point${form.boundary_polygon.length === 1 ? '' : 's'} — add at least 2`
-                          : 'Not set — tap the map to plot the road'}
-                    </p>
-                  </div>
-                  {form.boundary_polygon.length > 0 && (
-                    <button
-                      onClick={confirmClearBoundary}
-                      className="flex-shrink-0 self-center min-h-11 px-3 -mr-1.5 rounded-lg text-xs font-bold text-[var(--primary)] hover:bg-[var(--primary-soft)] transition-colors active:scale-95"
-                    >
-                      Clear
-                    </button>
-                  )}
-                </div>
-
-                {/* The enclosing area the road runs through. */}
-                <div className="flex items-start justify-between gap-2 p-3 bg-[var(--muted)] rounded-xl">
-                  <div className="flex-1 min-w-0">
-                    <p className="text-xs font-semibold text-[var(--ink)]">Border Area</p>
-                    <p className="text-xs leading-snug text-[var(--muted-foreground)] break-words">
-                      {form.boundary_area.length >= 3
-                        ? `${form.boundary_area.length} points enclosing the road — drivers and drop-offs outside every terminal's border are rejected`
-                        : form.boundary_area.length > 0
-                          ? `${form.boundary_area.length} point${form.boundary_area.length === 1 ? '' : 's'} — add at least ${3 - form.boundary_area.length} more`
-                          : 'Not set — tap the map to plot the border area'}
-                    </p>
-                  </div>
-                  {form.boundary_area.length > 0 && (
-                    <button
-                      onClick={confirmClearBoundary}
-                      className="flex-shrink-0 self-center min-h-11 px-3 -mr-1.5 rounded-lg text-xs font-bold text-[var(--primary)] hover:bg-[var(--primary-soft)] transition-colors active:scale-95"
-                    >
-                      Clear
-                    </button>
-                  )}
-                </div>
-
-                {/* Enforce the boundary or keep it without using it. Neither shape is
-                    lost either way, so this can be flipped back at any time. */}
-                {(form.boundary_polygon.length >= 2 || form.boundary_area.length >= 3) && (
-                  <div className="flex items-center justify-between gap-3 p-3 bg-[var(--muted)] rounded-xl">
-                    <div className="min-w-0">
-                      <p className="text-sm font-semibold text-[var(--ink)]">Enforce Boundary</p>
-                      <p className="text-xs text-[var(--muted-foreground)]">
-                        {form.boundary_enabled
-                          ? 'Drop-offs and driver queues are checked against this boundary'
-                          : 'Kept as drawn, but not checked against'}
-                      </p>
-                    </div>
-                    <button
-                      type="button"
-                      role="switch"
-                      aria-checked={form.boundary_enabled}
-                      aria-label="Enforce boundary"
-                      onClick={() =>
-                        setForm(f => ({ ...f, boundary_enabled: !f.boundary_enabled }))
-                      }
-                      className={`relative w-12 h-7 rounded-full flex-shrink-0 transition-colors ${
-                        form.boundary_enabled ? "bg-[var(--success)]" : "bg-[var(--border)]"
-                      }`}
-                    >
-                      <span
-                        className={`absolute top-0.5 left-0.5 w-6 h-6 bg-surface rounded-full shadow transition-transform ${
-                          form.boundary_enabled ? "translate-x-5" : ""
-                        }`}
-                      />
-                    </button>
-                  </div>
-                )}
-
-                {/* How far off the road a drop-off may be and still be accepted. */}
-                <div className="p-3 bg-[var(--muted)] rounded-xl">
-                  <label className="text-xs font-semibold text-[var(--ink)] block mb-1.5">
-                    Road corridor width
-                  </label>
-                  <div className="flex items-center gap-3">
-                    <input
-                      type="number"
-                      min={20}
-                      max={2000}
-                      step={10}
-                      inputMode="numeric"
-                      value={form.road_width_m}
-                      onChange={e =>
-                        setForm(f => ({
-                          ...f,
-                          road_width_m: e.target.value === '' ? DEFAULT_ROAD_WIDTH_M : Number(e.target.value),
-                        }))
-                      }
-                      className="w-24 h-10 px-3 border border-line focus:border-[var(--primary)] rounded-xl text-sm outline-none flex-shrink-0"
-                    />
-                    <span className="text-xs leading-snug text-[var(--muted-foreground)]">
-                      Accepts drop-offs within {Math.round(normalizeRoadWidth(form.road_width_m) / 2)} m of the road
-                    </span>
-                  </div>
-                </div>
-                </div>
-              </div>
-
-              {/* Active/Inactive Toggle */}
-              <div className="flex items-center justify-between p-3 bg-[var(--muted)] rounded-xl">
-                <div>
-                  <p className="text-sm font-semibold text-[var(--ink)]">Active Terminal</p>
-                  <p className="text-xs text-[var(--muted-foreground)]">Visible to customers for pickup</p>
-                </div>
-                <button
-                  onClick={() => setForm(f => ({ ...f, is_active: !f.is_active }))}
-                  className={`relative w-12 h-7 rounded-full transition-colors ${form.is_active ? 'bg-[var(--success)]' : 'bg-[var(--border)]'}`}
-                >
-                  <span className={`absolute top-0.5 left-0.5 w-6 h-6 bg-surface rounded-full shadow transition-transform ${form.is_active ? 'translate-x-5' : ''}`} />
-                </button>
-              </div>
-
-              <div className="flex gap-3 pt-2">
-                <button
-                  onClick={() => setShowForm(false)}
-                  className="flex-1 h-11 border border-line text-[var(--muted-foreground)] font-bold text-sm rounded-xl active:scale-95"
-                >
-                  Cancel
-                </button>
-                <button
-                  onClick={confirmSaveTerminal}
-                  className="flex-1 h-11 bg-[var(--primary)] text-white font-bold text-sm rounded-xl active:scale-95 hover:bg-[var(--primary)] transition-all"
-                >
-                  Save
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Full-screen Map Picker — opens on top of the still-open form modal beneath it */}
       {showMapPicker && (
         <div className="fixed inset-0 z-[2010] bg-surface flex flex-col">
-          {/* Stacks on narrow screens so the search bar keeps a usable width. */}
-          <div className="bg-surface border-b border-[var(--border)] px-4 py-3 flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-3">
-            {/* Search Bar */}
-            <div className="flex-1 relative min-w-0">
-              <div className="flex items-center gap-2 px-3 py-2 bg-[var(--muted)] border border-line rounded-xl">
-                <Search className="w-4 h-4 text-[var(--muted-foreground)] flex-shrink-0" />
-                <input
-                  type="text"
-                  value={mapSearchQuery}
-                  onChange={(e) => {
-                    setMapSearchQuery(e.target.value);
-                    if (e.target.value.length > 0) setShowMapSearchDropdown(true);
-                    else setShowMapSearchDropdown(false);
-                  }}
-                  onFocus={() => { if (mapSearchQuery.trim()) setShowMapSearchDropdown(true); }}
-                  placeholder="Search location..."
-                  className="flex-1 text-sm font-semibold text-[var(--ink)] placeholder:text-[var(--muted-foreground)] placeholder:font-normal outline-none bg-transparent"
-                />
-                {isMapSearching ? (
-                  <Loader2 className="w-4 h-4 text-[var(--muted-foreground)] animate-spin flex-shrink-0" />
-                ) : (
-                  mapSearchQuery && (
-                    <button onClick={() => { setMapSearchQuery(""); setMapSearchResults([]); setShowMapSearchDropdown(false); }} className="flex-shrink-0">
-                      <X className="w-4 h-4 text-[var(--muted-foreground)]" />
-                    </button>
-                  )
-                )}
-              </div>
-              {/* Search Results Dropdown */}
+          {/* Page 1: the map. Back, then the location search. */}
+          {editorSection !== 'configuration' && (
+            <>
+              <div className="bg-surface border-b border-[var(--border)] px-3 py-3 flex items-center gap-2 sm:gap-3">
+                <button
+                  type="button"
+                  onClick={requestCloseMapPicker}
+                  aria-label="Back to terminals"
+                  className="w-11 h-11 flex-shrink-0 flex items-center justify-center rounded-xl bg-[var(--muted)] active:scale-90"
+                >
+                  <ArrowLeft className="w-5 h-5 text-[var(--ink)]" />
+                </button>
+                {/* Search Bar */}
+                <div className="flex-1 relative min-w-0">
+                  <div className="flex items-center gap-2 px-3 py-2 bg-[var(--muted)] border border-line rounded-xl">
+                    <Search className="w-4 h-4 text-[var(--muted-foreground)] flex-shrink-0" />
+                    <input
+                      type="text"
+                      value={mapSearchQuery}
+                      onChange={(e) => {
+                        setMapSearchQuery(e.target.value);
+                        if (e.target.value.length > 0) setShowMapSearchDropdown(true);
+                        else setShowMapSearchDropdown(false);
+                      }}
+                      onFocus={() => { if (mapSearchQuery.trim()) setShowMapSearchDropdown(true); }}
+                      placeholder="Search location..."
+                      className="flex-1 text-sm font-semibold text-[var(--ink)] placeholder:text-[var(--muted-foreground)] placeholder:font-normal outline-none bg-transparent"
+                    />
+                    {isMapSearching ? (
+                      <Loader2 className="w-4 h-4 text-[var(--muted-foreground)] animate-spin flex-shrink-0" />
+                    ) : (
+                      mapSearchQuery && (
+                        <button onClick={() => { setMapSearchQuery(""); setMapSearchResults([]); setShowMapSearchDropdown(false); }} className="flex-shrink-0">
+                          <X className="w-4 h-4 text-[var(--muted-foreground)]" />
+                        </button>
+                      )
+                    )}
+                  </div>
+                  {/* Search Results Dropdown */}
               {showMapSearchDropdown && (
                 <div className="absolute top-full left-0 right-0 mt-2 bg-surface border border-line rounded-xl shadow-xl max-h-60 overflow-y-auto z-[2020]">
                   {mapSearchResults.length > 0 ? (
@@ -1912,47 +2043,62 @@ export default function AdminTerminals() {
                   )}
                 </div>
               )}
-            </div>
-            <div className="flex items-center gap-2 sm:flex-none">
-              <button
-                type="button"
-                onClick={saveChangesFromPicker}
-                className="flex-1 sm:flex-none h-10 px-4 bg-[var(--primary)] text-white text-sm font-bold rounded-xl active:scale-95 whitespace-nowrap"
-              >
-                Save Changes
-              </button>
-              {/* Close sits last, top-right, and warns before discarding unsaved work. */}
-              <button
-                type="button"
-                onClick={requestCloseMapPicker}
-                aria-label="Close map picker"
-                className="h-10 w-10 flex items-center justify-center rounded-xl bg-[var(--muted)] active:scale-90 flex-shrink-0"
-              >
-                <X className="w-6 h-6 text-[var(--ink)]" />
-              </button>
-            </div>
-          </div>
+                </div>
+              </div>
+            </>
+          )}
 
-          {/* Move the pin, draw the road, or enclose it in an area */}
-          <div className="flex gap-2 px-4 py-2 bg-surface border-b border-[var(--border)]">
-            {([
-              ['location', 'Location'],
-              ['boundary', 'Road'],
-              ['area', 'Border Area'],
-            ] as const).map(([mode, label]) => (
-              <button
-                key={mode}
-                type="button"
-                onClick={() => setMapPickerMode(mode)}
-                className={`flex-1 h-9 rounded-lg text-xs font-bold uppercase tracking-widest transition-colors ${
-                  mapPickerMode === mode ? 'bg-[var(--primary)] text-white' : 'bg-[var(--muted)] text-[var(--muted-foreground)]'
-                }`}
-              >
-                {label}
-              </button>
-            ))}
-          </div>
+          {/* Sidebar navigation. Collapsed, it shows icons alone so the map keeps
+              the width; expanded, each section names itself. */}
+          <div className="flex-1 flex min-h-0">
+            <aside
+              className={`relative flex flex-col gap-1 p-2 bg-surface border-r border-[var(--border)] shrink-0 transition-[width] duration-200 ${sidebarCollapsed ? 'w-16' : 'w-44'}`}
+            >
+              {([
+                ['terminal', 'Terminal', MapPin],
+                ['border', 'Border', Pentagon],
+                ['route', 'Route', Milestone],
+                ['configuration', 'Configuration', SlidersHorizontal],
+              ] as const).map(([id, label, Icon]) => {
+                const active = editorSection === id;
+                return (
+                  <button
+                    key={id}
+                    type="button"
+                    onClick={() => setEditorSection(id)}
+                    aria-current={active ? 'page' : undefined}
+                    title={sidebarCollapsed ? label : undefined}
+                    className={`flex items-center gap-3 h-12 px-3 rounded-xl transition-colors ${
+                      active
+                        ? 'bg-[var(--primary)] text-white'
+                        : 'text-[var(--muted-foreground)] hover:bg-[var(--muted)] hover:text-[var(--ink)]'
+                    }`}
+                  >
+                    <Icon className="w-5 h-5 flex-shrink-0" />
+                    {/* Collapsed shows the icon only; the tooltip keeps the name reachable. */}
+                    {!sidebarCollapsed && (
+                      <span className="text-sm font-bold truncate">{label}</span>
+                    )}
+                  </button>
+                );
+              })}
 
+              {/* Halfway down the rail, on the edge facing the panel. */}
+              <button
+                type="button"
+                onClick={() => setSidebarCollapsed(c => !c)}
+                aria-label={sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+                aria-expanded={!sidebarCollapsed}
+                className="absolute top-1/2 -translate-y-1/2 right-[-14px] z-[2016] w-7 h-14 flex items-center justify-center rounded-full bg-surface border border-line shadow-lg active:scale-95"
+              >
+                {sidebarCollapsed
+                  ? <ChevronRight className="w-4 h-4 text-[var(--ink)]" />
+                  : <ChevronLeft className="w-4 h-4 text-[var(--ink)]" />}
+              </button>
+            </aside>
+
+            <div className="flex-1 flex flex-col min-h-0 min-w-0">
+          {editorSection !== 'configuration' && (
           <div className="flex-1 relative">
             <GoogleMap
               mapContainerStyle={{ width: '100%', height: '100%' }}
@@ -1996,7 +2142,7 @@ export default function AdminTerminals() {
                   }}
                 />
               )}
-              {mapPickerMode === 'boundary' &&
+              {mapPickerMode === 'road' &&
                 form.boundary_polygon.map((point, index) => (
                   <MarkerF
                     key={`${point.lat}_${point.lng}_${index}`}
@@ -2013,9 +2159,26 @@ export default function AdminTerminals() {
                   />
                 ))}
             </GoogleMap>
-            <div className="absolute bottom-4 left-4 right-4">
+
+            {/* Floating save, bottom-right. Only appears once something has actually
+                changed — a permanent button would invite saving an untouched form. */}
+            {hasUnsavedEditorChanges && (
+              <button
+                type="button"
+                onClick={saveChangesFromPicker}
+                className="absolute bottom-4 right-4 h-12 px-5 flex items-center gap-2 bg-[var(--primary)] text-white text-sm font-bold rounded-xl shadow-xl active:scale-[0.98] z-[2015]"
+              >
+                <Save className="w-4 h-4" />
+                Save Changes
+              </button>
+            )}
+
+            {/* Hint panel sits along the top, clear of both the gear and the
+                floating save. pointer-events-none so it never swallows a tap meant
+                for the map; its buttons opt back in. */}
+            <div className="absolute top-3 left-3 right-16 pointer-events-none">
               <div className="bg-white/95 backdrop-blur rounded-xl shadow-lg p-3">
-                {mapPickerMode === 'boundary' ? (
+                {mapPickerMode === 'road' ? (
                   <>
                     <p className="text-sm font-semibold text-[#122724] text-center">
                       Tap along the road to plot it
@@ -2042,7 +2205,7 @@ export default function AdminTerminals() {
                         type="button"
                         onClick={undoBoundary}
                         disabled={boundaryPast.length === 0}
-                        className="h-9 border border-line text-[#5c6b68] text-xs font-bold rounded-lg active:scale-95 disabled:opacity-40 disabled:active:scale-100 disabled:cursor-not-allowed"
+                        className="pointer-events-auto h-9 border border-line text-[#5c6b68] text-xs font-bold rounded-lg active:scale-95 disabled:opacity-40 disabled:active:scale-100 disabled:cursor-not-allowed"
                       >
                         Undo Point
                       </button>
@@ -2050,7 +2213,7 @@ export default function AdminTerminals() {
                         type="button"
                         onClick={redoBoundary}
                         disabled={boundaryFuture.length === 0}
-                        className="h-9 border border-line text-[#5c6b68] text-xs font-bold rounded-lg active:scale-95 disabled:opacity-40 disabled:active:scale-100 disabled:cursor-not-allowed"
+                        className="pointer-events-auto h-9 border border-line text-[#5c6b68] text-xs font-bold rounded-lg active:scale-95 disabled:opacity-40 disabled:active:scale-100 disabled:cursor-not-allowed"
                       >
                         Redo Point
                       </button>
@@ -2059,7 +2222,7 @@ export default function AdminTerminals() {
                       <button
                         type="button"
                         onClick={confirmClearBoundary}
-                        className="w-full h-9 mt-2 border-2 border-[#bc4b1f] text-[#bc4b1f] text-xs font-bold rounded-lg active:scale-95"
+                        className="pointer-events-auto w-full h-9 mt-2 border-2 border-[#bc4b1f] text-[#bc4b1f] text-xs font-bold rounded-lg active:scale-95"
                       >
                         Clear Road
                       </button>
@@ -2084,7 +2247,7 @@ export default function AdminTerminals() {
                         type="button"
                         onClick={undoBoundary}
                         disabled={boundaryPast.length === 0}
-                        className="h-9 border border-line text-[#5c6b68] text-xs font-bold rounded-lg active:scale-95 disabled:opacity-40 disabled:active:scale-100 disabled:cursor-not-allowed"
+                        className="pointer-events-auto h-9 border border-line text-[#5c6b68] text-xs font-bold rounded-lg active:scale-95 disabled:opacity-40 disabled:active:scale-100 disabled:cursor-not-allowed"
                       >
                         Undo Point
                       </button>
@@ -2092,7 +2255,7 @@ export default function AdminTerminals() {
                         type="button"
                         onClick={redoBoundary}
                         disabled={boundaryFuture.length === 0}
-                        className="h-9 border border-line text-[#5c6b68] text-xs font-bold rounded-lg active:scale-95 disabled:opacity-40 disabled:active:scale-100 disabled:cursor-not-allowed"
+                        className="pointer-events-auto h-9 border border-line text-[#5c6b68] text-xs font-bold rounded-lg active:scale-95 disabled:opacity-40 disabled:active:scale-100 disabled:cursor-not-allowed"
                       >
                         Redo Point
                       </button>
@@ -2101,7 +2264,7 @@ export default function AdminTerminals() {
                       <button
                         type="button"
                         onClick={confirmClearBoundary}
-                        className="w-full h-9 mt-2 border-2 border-[#bc4b1f] text-[#bc4b1f] text-xs font-bold rounded-lg active:scale-95"
+                        className="pointer-events-auto w-full h-9 mt-2 border-2 border-[#bc4b1f] text-[#bc4b1f] text-xs font-bold rounded-lg active:scale-95"
                       >
                         Clear Border Area
                       </button>
@@ -2118,6 +2281,174 @@ export default function AdminTerminals() {
                   </>
                 )}
               </div>
+            </div>
+          </div>
+          )}
+
+          {/* Configuration: everything with no natural place on the map — name,
+              corridor width, visibility, colour. */}
+          {editorSection === 'configuration' && (
+            <div className="flex-1 overflow-y-auto">
+              <div className="max-w-lg mx-auto p-4 space-y-4">
+                {(() => {
+                  const { errors } = validateEditor();
+                  // No width in the shared class: the text fields want w-full and the
+                  // road-width number wants a narrow box, and whichever declared a
+                  // width last would win and squash the hint beside it.
+                  const field =
+                    'border border-line h-11 px-4 rounded-xl text-sm outline-none focus:border-[var(--primary)]';
+                  const invalid = 'border-[var(--error)]';
+
+                  return (
+                    <>
+                      <div>
+                        <label className="text-xs font-semibold uppercase tracking-widest text-[var(--muted-foreground)] block mb-1">
+                          Terminal Name
+                        </label>
+                        <input
+                          value={form.name}
+                          onChange={e => setForm(f => ({ ...f, name: e.target.value }))}
+                          placeholder="e.g. Valenzuela Terminal"
+                          aria-invalid={!!errors.name}
+                          className={`w-full ${field} ${errors.name ? invalid : ''}`}
+                        />
+                        {errors.name && (
+                          <p className="text-xs text-[var(--error)] mt-1">{errors.name}</p>
+                        )}
+                      </div>
+
+                      {/* Descriptive address. Optional — the boundary that actually
+                          restricts drop-offs is the plotted road and area below. */}
+                      <div>
+                        <label className="text-xs font-semibold uppercase tracking-widest text-[var(--muted-foreground)] block mb-1">
+                          Boundary / Area
+                        </label>
+                        <input
+                          value={form.boundary}
+                          onChange={e => setForm(f => ({ ...f, boundary: e.target.value }))}
+                          placeholder="e.g. Main Road, Valenzuela City"
+                          className={`w-full ${field}`}
+                        />
+                      </div>
+
+                      <div>
+                        <label className="text-xs font-semibold uppercase tracking-widest text-[var(--muted-foreground)] block mb-1">
+                          Road corridor width
+                        </label>
+                        <div className="flex items-center gap-3">
+                          <input
+                            type="number"
+                            min={MIN_ROAD_WIDTH_M}
+                            max={MAX_ROAD_WIDTH_M}
+                            step={10}
+                            inputMode="numeric"
+                            value={form.road_width_m}
+                            onChange={e =>
+                              setForm(f => ({
+                                ...f,
+                                // NaN rather than 0 or '' so the validator can tell
+                                // "cleared the field" from "typed 20"; normalizeRoadWidth
+                                // already falls back to the default for a non-number.
+                                road_width_m: e.target.value === '' ? NaN : Number(e.target.value),
+                              }))
+                            }
+                            aria-invalid={!!errors.road_width_m}
+                            className={`w-28 px-3 rounded-xl flex-shrink-0 ${field} ${errors.road_width_m ? invalid : ''}`}
+                          />
+                          <span className="text-xs leading-snug text-[var(--muted-foreground)]">
+                            Accepts drop-offs within {Math.round(normalizeRoadWidth(form.road_width_m) / 2)} m of the road
+                          </span>
+                        </div>
+                        {errors.road_width_m && (
+                          <p className="text-xs text-[var(--error)] mt-1">{errors.road_width_m}</p>
+                        )}
+                      </div>
+
+                      <div className="flex items-center justify-between gap-3 p-3 bg-[var(--muted)] rounded-xl">
+                        <div className="min-w-0">
+                          <p className="text-sm font-semibold text-[var(--ink)]">Active Terminal</p>
+                          <p className="text-xs text-[var(--muted-foreground)]">Visible to customers for pickup</p>
+                        </div>
+                        <button
+                          type="button"
+                          role="switch"
+                          aria-checked={form.is_active}
+                          aria-label="Active terminal"
+                          onClick={() => setForm(f => ({ ...f, is_active: !f.is_active }))}
+                          className={`relative w-12 h-7 rounded-full flex-shrink-0 transition-colors ${
+                            form.is_active ? 'bg-[var(--success)]' : 'bg-[var(--border)]'
+                          }`}
+                        >
+                          <span className={`absolute top-0.5 left-0.5 w-6 h-6 bg-surface rounded-full shadow transition-transform ${
+                            form.is_active ? 'translate-x-5' : ''
+                          }`} />
+                        </button>
+                      </div>
+
+                      {/* Whether the plotted road is enforced. It sits with the width
+                          because both decide how far from the road a drop-off lands,
+                          and flipping it must not discard the road either way. */}
+                      {(form.boundary_polygon.length >= 2 || form.boundary_area.length >= 3) && (
+                        <div className="flex items-center justify-between gap-3 p-3 bg-[var(--muted)] rounded-xl">
+                          <div className="min-w-0">
+                            <p className="text-sm font-semibold text-[var(--ink)]">Enforce Boundary</p>
+                            <p className="text-xs text-[var(--muted-foreground)]">
+                              {form.boundary_enabled
+                                ? 'Drop-offs and driver queues are checked against this boundary'
+                                : 'Kept as drawn, but not checked against'}
+                            </p>
+                          </div>
+                          <button
+                            type="button"
+                            role="switch"
+                            aria-checked={form.boundary_enabled}
+                            aria-label="Enforce boundary"
+                            onClick={() => setForm(f => ({ ...f, boundary_enabled: !f.boundary_enabled }))}
+                            className={`relative w-12 h-7 rounded-full flex-shrink-0 transition-colors ${
+                              form.boundary_enabled ? 'bg-[var(--success)]' : 'bg-[var(--border)]'
+                            }`}
+                          >
+                            <span className={`absolute top-0.5 left-0.5 w-6 h-6 bg-surface rounded-full shadow transition-transform ${
+                              form.boundary_enabled ? 'translate-x-5' : ''
+                            }`} />
+                          </button>
+                        </div>
+                      )}
+
+                      <div className="flex items-center justify-between gap-3 p-3 bg-[var(--muted)] rounded-xl">
+                        <div className="flex min-w-0 items-center gap-3">
+                          <TerminalIcon size={44} color={form.marker_color} className="flex-shrink-0" />
+                          <div className="min-w-0">
+                            <p className="text-sm font-semibold text-[var(--ink)]">Map Icon Color</p>
+                            <p className="text-xs text-[var(--muted-foreground)]">
+                              How this terminal appears on the location map
+                            </p>
+                          </div>
+                        </div>
+                        <ColorPicker
+                          value={normalizeTerminalColor(form.marker_color)}
+                          onChange={marker_color => setForm(f => ({ ...f, marker_color }))}
+                          resetTo={DEFAULT_TERMINAL_COLOR}
+                          label="Edit Color"
+                        />
+                      </div>
+
+                      <div className="sticky bottom-0 -mx-4 px-4 py-3 bg-surface border-t border-[var(--border)]">
+                        <button
+                          type="button"
+                          onClick={saveChangesFromPicker}
+                          disabled={!hasUnsavedEditorChanges}
+                          className="w-full h-12 bg-[var(--primary)] text-white text-sm font-bold rounded-xl active:scale-[0.98] disabled:opacity-40 disabled:active:scale-100"
+                        >
+                          Save Changes
+                        </button>
+                      </div>
+                    </>
+                  );
+                })()}
+              </div>
+            </div>
+          )}
             </div>
           </div>
         </div>
