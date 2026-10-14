@@ -19,6 +19,10 @@ import { useMemo } from "react";
 /** Matches the reference artwork this was traced from. */
 export const DEFAULT_TERMINAL_COLOR = "#2E75B6";
 
+/** Defaults for the two plotted shapes, matching what the app drew before they were per-terminal. */
+export const DEFAULT_ROUTE_COLOR = "#22C55E";
+export const DEFAULT_BORDER_COLOR = "#22C55E";
+
 /** Drawn extent. Cropped artboard; the marker anchor is the middle of the ground line. */
 const GLYPH = { x: 0, y: 0, w: 320, h: 344 };
 
@@ -37,6 +41,23 @@ const GROUND_Y = 309;
 export function normalizeTerminalColor(raw: string | null | undefined): string {
   const v = (raw ?? "").trim();
   return /^#[0-9a-fA-F]{6}$/.test(v) ? v.toUpperCase() : DEFAULT_TERMINAL_COLOR;
+}
+
+/**
+ * The same resolution for the road and border colours, with their own defaults.
+ *
+ * These live here rather than beside the icon because they are one concern —
+ * "a terminal's colours, made safe to draw" — and because the map, the editor and
+ * the approval path all need them from the same place.
+ */
+export function normalizeRouteColor(raw: string | null | undefined): string {
+  const v = (raw ?? "").trim();
+  return /^#[0-9a-fA-F]{6}$/.test(v) ? v.toUpperCase() : DEFAULT_ROUTE_COLOR;
+}
+
+export function normalizeBorderColor(raw: string | null | undefined): string {
+  const v = (raw ?? "").trim();
+  return /^#[0-9a-fA-F]{6}$/.test(v) ? v.toUpperCase() : DEFAULT_BORDER_COLOR;
 }
 
 function markup(color: string): string {

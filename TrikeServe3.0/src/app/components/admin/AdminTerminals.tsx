@@ -34,7 +34,11 @@ import EmptyState from "../ui/EmptyState";
 import TerminalIcon, {
   terminalMarkerIcon,
   normalizeTerminalColor,
+  normalizeRouteColor,
+  normalizeBorderColor,
   DEFAULT_TERMINAL_COLOR,
+  DEFAULT_ROUTE_COLOR,
+  DEFAULT_BORDER_COLOR,
 } from "../ui/TerminalIcon";
 import ColorPicker from "../ui/ColorPicker";
 
@@ -51,7 +55,7 @@ const MAX_ROAD_WIDTH_M = 2000;
 
 // Named in save errors, because a missing column fails the whole upsert and would
 // otherwise look like the admin's edits simply weren't sticking.
-const MIGRATION_HINT = 'ADD_TERMINAL_ROAD_BOUNDARY.sql / ADD_TERMINAL_BORDER_AREA.sql / ADD_TERMINAL_MARKER_COLOR.sql';
+const MIGRATION_HINT = 'ADD_TERMINAL_ROAD_BOUNDARY.sql / ADD_TERMINAL_BORDER_AREA.sql / ADD_TERMINAL_MARKER_COLOR.sql / ADD_TERMINAL_SHAPE_COLORS.sql';
 
 // How often a Rider Admin re-reads their terminal scope, so a Super Admin's
 // unassignment takes effect on a screen that is already open.
@@ -84,6 +88,11 @@ interface Terminal {
   // (ADD_TERMINAL_MARKER_COLOR.sql). Per terminal, so neighbouring TODAs can be
   // told apart. Presentation only — no boundary check reads it.
   marker_color: string;
+  // Hex colours for the two plotted shapes (ADD_TERMINAL_SHAPE_COLORS.sql).
+  // Separate from each other so a road can read differently from the area around
+  // it, and from marker_color so the icon stays distinct from its own boundary.
+  route_color: string;
+  border_color: string;
 }
 
 interface StoredRider {
@@ -190,6 +199,9 @@ export default function AdminTerminals() {
     // This terminal's icon colour. Always a valid hex: the form holds what the
     // admin last chose, and only valid values are ever written.
     marker_color: DEFAULT_TERMINAL_COLOR,
+    // Colours for the two plotted shapes.
+    route_color: DEFAULT_ROUTE_COLOR,
+    border_color: DEFAULT_BORDER_COLOR,
   });
   const [showMapPicker, setShowMapPicker] = useState(false);
   /*
@@ -342,6 +354,8 @@ export default function AdminTerminals() {
     road_width_m: number;
     is_active: boolean;
     marker_color: string;
+    route_color: string;
+    border_color: string;
   };
 
   /**
@@ -363,6 +377,8 @@ export default function AdminTerminals() {
       road_width_m: f.road_width_m,
       is_active: f.is_active,
       marker_color: normalizeTerminalColor(f.marker_color),
+      route_color: normalizeRouteColor(f.route_color),
+      border_color: normalizeBorderColor(f.border_color),
     };
   }
 
@@ -389,7 +405,9 @@ export default function AdminTerminals() {
       form.boundary !== editorSnapshot.boundary ||
       form.road_width_m !== editorSnapshot.road_width_m ||
       form.is_active !== editorSnapshot.is_active ||
-      normalizeTerminalColor(form.marker_color) !== editorSnapshot.marker_color);
+      normalizeTerminalColor(form.marker_color) !== editorSnapshot.marker_color ||
+      normalizeRouteColor(form.route_color) !== editorSnapshot.route_color ||
+      normalizeBorderColor(form.border_color) !== editorSnapshot.border_color);
 
   /** Closes the editor outright. Going through requestCloseMapPicker is the user-facing path. */
   function closeMapPicker() {
@@ -610,6 +628,8 @@ export default function AdminTerminals() {
         // Rows from before ADD_TERMINAL_MARKER_COLOR.sql have no value; resolving
         // here means every consumer below can treat it as a usable colour.
         marker_color: normalizeTerminalColor(t.marker_color),
+        route_color: normalizeRouteColor(t.route_color),
+        border_color: normalizeBorderColor(t.border_color),
       }));
     } catch {
       return null;
@@ -797,6 +817,8 @@ export default function AdminTerminals() {
       road_width_m: DEFAULT_ROAD_WIDTH_M, boundary_enabled: true,
       base_fare: 20, per_km: 10,
       marker_color: DEFAULT_TERMINAL_COLOR,
+      route_color: DEFAULT_ROUTE_COLOR,
+      border_color: DEFAULT_BORDER_COLOR,
     });
   }
 
@@ -817,6 +839,8 @@ export default function AdminTerminals() {
       base_fare: t.base_fare ?? 20,
       per_km: t.per_km ?? 10,
       marker_color: normalizeTerminalColor(t.marker_color),
+      route_color: normalizeRouteColor(t.route_color),
+      border_color: normalizeBorderColor(t.border_color),
     });
   }
 
@@ -921,7 +945,8 @@ export default function AdminTerminals() {
 
   /** Which page or tab a validation message belongs to, so Save can route to it. */
   type EditorField =
-    | 'name' | 'location' | 'road' | 'area' | 'road_width_m' | 'marker_color';
+    | 'name' | 'location' | 'road' | 'area' | 'road_width_m'
+    | 'marker_color' | 'route_color' | 'border_color';
   type EditorErrors = Partial<Record<EditorField, string>>;
 
   /**
@@ -964,10 +989,19 @@ export default function AdminTerminals() {
     if (!/^#[0-9a-fA-F]{6}$/.test(form.marker_color.trim())) {
       errors.marker_color = 'Map icon color must be a hex value like #2E75B6.';
     }
+    if (!/^#[0-9a-fA-F]{6}$/.test(form.route_color.trim())) {
+      errors.route_color = 'Route color must be a hex value like #22C55E.';
+    }
+    if (!/^#[0-9a-fA-F]{6}$/.test(form.border_color.trim())) {
+      errors.border_color = 'Border color must be a hex value like #22C55E.';
+    }
 
     // Order matters only in that the first entry is the one reported; it follows
     // the order the admin meets the fields, with the shapes before the settings.
-    const order: EditorField[] = ['name', 'location', 'road', 'area', 'road_width_m', 'marker_color'];
+    const order: EditorField[] = [
+      'name', 'location', 'road', 'area', 'road_width_m',
+      'marker_color', 'route_color', 'border_color',
+    ];
     const firstField = order.find(f => errors[f]) ?? null;
     return { errors, firstField };
   }
@@ -1073,9 +1107,11 @@ export default function AdminTerminals() {
     // Normalised on the way out too, so a value that somehow slipped past the
     // picker (a restored draft, a pasted form state) can't write a bad colour.
     const markerColor = normalizeTerminalColor(form.marker_color);
+    const routeColor = normalizeRouteColor(form.route_color);
+    const borderColor = normalizeBorderColor(form.border_color);
 
     const target: Terminal = editTerminal
-      ? { ...editTerminal, name: form.name, boundary: form.boundary, center_lat: form.center_lat, center_lng: form.center_lng, is_active: form.is_active, boundary_polygon: boundaryPolygon, boundary_area: boundaryArea, road_width_m: roadWidthM, boundary_enabled: form.boundary_enabled, base_fare, per_km, marker_color: markerColor }
+      ? { ...editTerminal, name: form.name, boundary: form.boundary, center_lat: form.center_lat, center_lng: form.center_lng, is_active: form.is_active, boundary_polygon: boundaryPolygon, boundary_area: boundaryArea, road_width_m: roadWidthM, boundary_enabled: form.boundary_enabled, base_fare, per_km, marker_color: markerColor, route_color: routeColor, border_color: borderColor }
       : {
           id: `t_${Date.now()}`,
           name: form.name,
@@ -1092,6 +1128,8 @@ export default function AdminTerminals() {
           base_fare,
           per_km,
           marker_color: markerColor,
+          route_color: routeColor,
+          border_color: borderColor,
         };
 
     // Super Admin changes apply immediately.
@@ -1115,6 +1153,8 @@ export default function AdminTerminals() {
           base_fare: target.base_fare,
           per_km: target.per_km,
           marker_color: target.marker_color,
+          route_color: target.route_color,
+          border_color: target.border_color,
           updated_at: new Date().toISOString(),
         },
         { onConflict: "id" }
@@ -1150,6 +1190,8 @@ export default function AdminTerminals() {
           base_fare: target.base_fare,
           per_km: target.per_km,
           marker_color: target.marker_color,
+          route_color: target.route_color,
+          border_color: target.border_color,
           is_active: target.is_active,
         },
         actorEmail: user?.email,
@@ -1513,15 +1555,21 @@ export default function AdminTerminals() {
                     {visibleTerminals.map(t => {
                       const area = t.boundary_area && t.boundary_area.length >= 3 ? t.boundary_area : null;
                       const road = t.boundary_polygon && t.boundary_polygon.length >= 2 ? t.boundary_polygon : null;
+                      // An inactive terminal keeps its own colour and is dimmed
+                      // instead. Overriding the hue would throw away the one cue
+                      // that tells two nearby TODAs apart, which is the reason
+                      // these are per-terminal in the first place.
+                      const dim = t.is_active === false;
                       return (
                         <ReactFragment key={t.id}>
                           {area && (
                             <Polygon
                               path={area}
                               options={{
-                                fillColor: t.is_active ? '#22C55E' : '#94A3B8',
-                                fillOpacity: 0.12,
-                                strokeColor: t.is_active ? '#22C55E' : '#94A3B8',
+                                fillColor: t.border_color,
+                                fillOpacity: dim ? 0.05 : 0.12,
+                                strokeColor: t.border_color,
+                                strokeOpacity: dim ? 0.4 : 1,
                                 strokeWeight: 2,
                                 clickable: false,
                               }}
@@ -1531,9 +1579,9 @@ export default function AdminTerminals() {
                             <Polyline
                               path={road}
                               options={{
-                                strokeColor: t.is_active ? '#22C55E' : '#94A3B8',
+                                strokeColor: t.route_color,
                                 strokeWeight: 4,
-                                strokeOpacity: 0.9,
+                                strokeOpacity: dim ? 0.35 : 0.9,
                                 clickable: false,
                                 geodesic: true,
                               }}
@@ -2119,11 +2167,11 @@ export default function AdminTerminals() {
                 <Polygon
                   path={form.boundary_area}
                   options={{
-                    fillColor: 'var(--primary)',
+                    fillColor: normalizeBorderColor(form.border_color),
                     fillOpacity: 0.12,
-                    strokeColor: 'var(--primary)',
+                    strokeColor: normalizeBorderColor(form.border_color),
                     strokeWeight: 2,
-                    strokeOpacity: 0.6,
+                    strokeOpacity: 0.9,
                     clickable: false,
                   }}
                 />
@@ -2134,7 +2182,7 @@ export default function AdminTerminals() {
                 <Polyline
                   path={form.boundary_polygon}
                   options={{
-                    strokeColor: 'var(--primary)',
+                    strokeColor: normalizeRouteColor(form.route_color),
                     strokeWeight: 5,
                     strokeOpacity: 0.9,
                     clickable: false,
@@ -2429,6 +2477,76 @@ export default function AdminTerminals() {
                           value={normalizeTerminalColor(form.marker_color)}
                           onChange={marker_color => setForm(f => ({ ...f, marker_color }))}
                           resetTo={DEFAULT_TERMINAL_COLOR}
+                          label="Edit Color"
+                        />
+                      </div>
+
+                      {/* The two plotted shapes. Each preview is drawn the way it
+                          appears on the map — a stroke for the route, a fill with a
+                          stroke for the border — so the choice is made against
+                          something that looks like the result. */}
+                      <div className="flex items-center justify-between gap-3 p-3 bg-[var(--muted)] rounded-xl">
+                        <div className="flex min-w-0 items-center gap-3">
+                          <svg
+                            viewBox="0 0 48 24"
+                            width="48"
+                            height="24"
+                            aria-hidden="true"
+                            className="flex-shrink-0"
+                          >
+                            <polyline
+                              points="2,18 12,8 24,14 38,4 46,10"
+                              fill="none"
+                              stroke={normalizeRouteColor(form.route_color)}
+                              strokeWidth="5"
+                              strokeLinecap="round"
+                              strokeLinejoin="round"
+                            />
+                          </svg>
+                          <div className="min-w-0">
+                            <p className="text-sm font-semibold text-[var(--ink)]">Route Color</p>
+                            <p className="text-xs text-[var(--muted-foreground)]">
+                              The road this terminal runs along
+                            </p>
+                          </div>
+                        </div>
+                        <ColorPicker
+                          value={normalizeRouteColor(form.route_color)}
+                          onChange={route_color => setForm(f => ({ ...f, route_color }))}
+                          resetTo={DEFAULT_ROUTE_COLOR}
+                          label="Edit Color"
+                        />
+                      </div>
+
+                      <div className="flex items-center justify-between gap-3 p-3 bg-[var(--muted)] rounded-xl">
+                        <div className="flex min-w-0 items-center gap-3">
+                          <svg
+                            viewBox="0 0 48 24"
+                            width="48"
+                            height="24"
+                            aria-hidden="true"
+                            className="flex-shrink-0"
+                          >
+                            <polygon
+                              points="4,19 14,5 36,3 45,15 22,21"
+                              fill={normalizeBorderColor(form.border_color)}
+                              fillOpacity="0.12"
+                              stroke={normalizeBorderColor(form.border_color)}
+                              strokeWidth="2.5"
+                              strokeLinejoin="round"
+                            />
+                          </svg>
+                          <div className="min-w-0">
+                            <p className="text-sm font-semibold text-[var(--ink)]">Border Color</p>
+                            <p className="text-xs text-[var(--muted-foreground)]">
+                              The area enclosing that road
+                            </p>
+                          </div>
+                        </div>
+                        <ColorPicker
+                          value={normalizeBorderColor(form.border_color)}
+                          onChange={border_color => setForm(f => ({ ...f, border_color }))}
+                          resetTo={DEFAULT_BORDER_COLOR}
                           label="Edit Color"
                         />
                       </div>
