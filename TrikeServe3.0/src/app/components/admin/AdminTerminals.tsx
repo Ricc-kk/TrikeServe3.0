@@ -1,9 +1,10 @@
-import { useState, useEffect, useRef, useCallback, Fragment as ReactFragment } from "react";
+import { useState, useEffect, useRef, useCallback, Fragment as ReactFragment, type ReactNode } from "react";
 import { useNavigate } from "react-router";
 import {
   Plus, Edit2, Trash2, UserPlus, UserMinus, MapPin, Users, Menu, X, Navigation, Search, Loader2, Save, Shield,
-  ClipboardCheck, Clock, ShieldCheck, ChevronDown, ArrowLeft, Pen,
-  ChevronLeft, ChevronRight, Pentagon, Milestone, SlidersHorizontal, Banknote
+  ClipboardCheck, Clock, ShieldCheck, ChevronDown, ArrowLeft,
+  ChevronLeft, ChevronRight, Pentagon, Milestone, SlidersHorizontal, Banknote,
+  Settings, Eye, EyeOff, Car, Truck
 } from "lucide-react";
 import { GoogleMap, Marker, InfoWindow, Polygon, Polyline } from "@react-google-maps/api";
 import useMapLoader from "@/lib/mapLoader";
@@ -58,7 +59,7 @@ const MAX_ROAD_WIDTH_M = 2000;
 
 // Named in save errors, because a missing column fails the whole upsert and would
 // otherwise look like the admin's edits simply weren't sticking.
-const MIGRATION_HINT = 'ADD_TERMINAL_ROAD_BOUNDARY.sql / ADD_TERMINAL_BORDER_AREA.sql / ADD_TERMINAL_MARKER_COLOR.sql / ADD_TERMINAL_SHAPE_COLORS.sql';
+const MIGRATION_HINT = 'ADD_TERMINAL_ROAD_BOUNDARY.sql / ADD_TERMINAL_BORDER_AREA.sql / ADD_TERMINAL_MARKER_COLOR.sql / ADD_TERMINAL_SHAPE_COLORS.sql / ADD_TERMINAL_PRIVATE_RIDE_FEE.sql / ADD_TERMINAL_DELIVERY_AND_CAPACITY.sql';
 
 // How often a Rider Admin re-reads their terminal scope, so a Super Admin's
 // unassignment takes effect on a screen that is already open.
@@ -96,6 +97,14 @@ interface Terminal {
   // it, and from marker_color so the icon stays distinct from its own boundary.
   route_color: string;
   border_color: string;
+  // Private ride and delivery pricing. These arrived in two separate migrations,
+  // so they are optional here: a terminal row created before either has no value
+  // at all. null means "not set on this terminal", which the resolver reads as
+  // "charge the share ride rate" / "use the platform default" -- never as zero.
+  private_ride_fee?: number | null;
+  private_ride_fee_per_km?: number | null;
+  delivery_fee?: number | null;
+  delivery_fee_per_km?: number | null;
 }
 
 interface StoredRider {
@@ -206,6 +215,14 @@ export default function AdminTerminals() {
     // Colours for the two plotted shapes.
     route_color: DEFAULT_ROUTE_COLOR,
     border_color: DEFAULT_BORDER_COLOR,
+    // Private ride and delivery. null is the empty box -- "fall back to the share
+    // ride rate / the platform default" -- which is why these are nullable rather
+    // than 0: writing 0 would quietly start charging nothing for the whole vehicle
+    // or the delivery.
+    private_ride_fee: null as number | null,
+    private_ride_fee_per_km: null as number | null,
+    delivery_fee: null as number | null,
+    delivery_fee_per_km: null as number | null,
   });
   const [showMapPicker, setShowMapPicker] = useState(false);
   /*
@@ -216,6 +233,15 @@ export default function AdminTerminals() {
   const [editorSection, setEditorSection] = useState<
     'terminal' | 'border' | 'route' | 'configuration' | 'fares'
   >('terminal');
+  /**
+   * Which sections are the map, and therefore the only ones that plot points.
+   *
+   * Read in three places -- the top bar (search only makes sense over a map),
+   * the map itself, and the sections that replace it -- so it is derived once
+   * here rather than re-tested as a three-way comparison at each.
+   */
+  const editorSectionIsMap =
+    editorSection === 'terminal' || editorSection === 'border' || editorSection === 'route';
   // Collapses the editor's sidebar to icons alone, handing the width back to the
   // map without losing the way out of a section.
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
@@ -362,6 +388,10 @@ export default function AdminTerminals() {
     border_color: string;
     base_fare: number;
     per_km: number;
+    private_ride_fee: number | null;
+    private_ride_fee_per_km: number | null;
+    delivery_fee: number | null;
+    delivery_fee_per_km: number | null;
   };
 
   /**
@@ -387,6 +417,10 @@ export default function AdminTerminals() {
       border_color: normalizeBorderColor(f.border_color),
       base_fare: f.base_fare,
       per_km: f.per_km,
+      private_ride_fee: f.private_ride_fee,
+      private_ride_fee_per_km: f.private_ride_fee_per_km,
+      delivery_fee: f.delivery_fee,
+      delivery_fee_per_km: f.delivery_fee_per_km,
     };
   }
 
@@ -417,7 +451,11 @@ export default function AdminTerminals() {
       normalizeRouteColor(form.route_color) !== editorSnapshot.route_color ||
       normalizeBorderColor(form.border_color) !== editorSnapshot.border_color ||
       Number(form.base_fare) !== editorSnapshot.base_fare ||
-      Number(form.per_km) !== editorSnapshot.per_km);
+      Number(form.per_km) !== editorSnapshot.per_km ||
+      form.private_ride_fee !== editorSnapshot.private_ride_fee ||
+      form.private_ride_fee_per_km !== editorSnapshot.private_ride_fee_per_km ||
+      form.delivery_fee !== editorSnapshot.delivery_fee ||
+      form.delivery_fee_per_km !== editorSnapshot.delivery_fee_per_km);
 
   /** Closes the editor outright. Going through requestCloseMapPicker is the user-facing path. */
   function closeMapPicker() {
@@ -465,7 +503,11 @@ export default function AdminTerminals() {
       if (firstField === 'road') setEditorSection('route');
       else if (firstField === 'area') setEditorSection('border');
       else if (firstField === 'location') setEditorSection('terminal');
-      else if (firstField === 'base_fare' || firstField === 'per_km') setEditorSection('fares');
+      else if (
+        firstField === 'base_fare' || firstField === 'per_km' ||
+        firstField === 'private_ride_fee' || firstField === 'private_ride_fee_per_km' ||
+        firstField === 'delivery_fee' || firstField === 'delivery_fee_per_km'
+      ) setEditorSection('fares');
       else setEditorSection('configuration');
       return;
     }
@@ -566,12 +608,37 @@ export default function AdminTerminals() {
   // The Terminal Location map, so the legend beside it can pan to one terminal.
   const overviewMapRef = useRef<google.maps.Map | null>(null);
 
+  /**
+   * Terminals whose route, marker and border the Super Admin has switched off.
+   *
+   * Per-session and not a saved setting, on purpose. Hiding is a way to read one
+   * TODA without a neighbour's four-kilometre border drawn straight through the
+   * middle of it -- a temporary act of looking, not a decision about the terminal.
+   * Persisting it would mean opening the page to find a terminal silently missing.
+   */
+  const [hiddenTerminalIds, setHiddenTerminalIds] = useState<string[]>([]);
+  const toggleTerminalHidden = useCallback((id: string) => {
+    setHiddenTerminalIds(ids => (ids.includes(id) ? ids.filter(x => x !== id) : [...ids, id]));
+  }, []);
+
+  /**
+   * Which optional fare columns this database actually has.
+   *
+   * Two flags, not one: the private ride columns and the delivery/capacity
+   * columns came from separate migrations and a project is routinely between
+   * them. PostgREST rejects the *whole* upsert over one absent column, so sending
+   * them blind would turn a partially-migrated database into a terminal editor
+   * that cannot save anything at all.
+   */
+  const [fareColumns, setFareColumns] = useState({ delivery: true, privateRide: true });
+
   // Load from Supabase when available; fall back to localStorage data otherwise.
   useEffect(() => {
     loadData();
     loadMyRequests();
     loadMyAssignment();
     loadRiderAdmins();
+    probeFareColumns();
   }, [user?.email]);
 
   // A Rider Admin's scope can be pulled away by the Super Admin at any moment,
@@ -641,6 +708,13 @@ export default function AdminTerminals() {
         marker_color: normalizeTerminalColor(t.marker_color),
         route_color: normalizeRouteColor(t.route_color),
         border_color: normalizeBorderColor(t.border_color),
+        // `select *` returns whatever exists; the columns that did not arrive are
+        // simply absent, and `?? null` turns both "no column" and "NULL" into the
+        // same empty box rather than showing a 0 the admin would have to undo.
+        private_ride_fee: t.private_ride_fee ?? null,
+        private_ride_fee_per_km: t.private_ride_fee_per_km ?? null,
+        delivery_fee: t.delivery_fee ?? null,
+        delivery_fee_per_km: t.delivery_fee_per_km ?? null,
       }));
     } catch {
       return null;
@@ -692,6 +766,38 @@ export default function AdminTerminals() {
     setRiderAdmins(data);
   }
 
+  /**
+   * Find out which optional fare columns exist, by asking for them.
+   *
+   * Stepping down a query at a time is the only way to tell "this database never
+   * ran the private ride migration" from "the query failed for some other
+   * reason": a select naming one missing column fails outright, and the error
+   * names the column. Starts optimistic -- the flags only ever turn columns *off*,
+   * so a database that answers nothing at all (offline, or no table yet) still
+   * behaves as it did before this existed rather than silently dropping fares
+   * from every save.
+   */
+  async function probeFareColumns() {
+    const attempts = [
+      {
+        columns: 'id, delivery_fee, delivery_fee_per_km, private_ride_fee, private_ride_fee_per_km',
+        delivery: true,
+        privateRide: true,
+      },
+      { columns: 'id, delivery_fee, delivery_fee_per_km', delivery: true, privateRide: false },
+      { columns: 'id, delivery_fee, delivery_fee_per_km, private_ride_fee, private_ride_fee_per_km', delivery: false, privateRide: true },
+      { columns: 'id', delivery: false, privateRide: false },
+    ];
+
+    for (const attempt of attempts) {
+      const { error } = await supabase.from('terminals').select(attempt.columns).limit(1);
+      if (!error) {
+        setFareColumns({ delivery: attempt.delivery, privateRide: attempt.privateRide });
+        return;
+      }
+    }
+  }
+
   async function handleAssignRiderAdmin(adminId: string, terminalId: string) {
     const terminal = terminals.find(t => t.id === terminalId) || null;
     setSavingAssignmentId(adminId);
@@ -708,9 +814,13 @@ export default function AdminTerminals() {
       actorRole: 'admin',
       entityType: 'rider_admin',
       entityId: adminId,
+      // `adminId`, not `admin`: this function never had an `admin` in scope, so
+      // naming one threw a ReferenceError *after* the row was already written --
+      // which meant the write stuck, the list never refreshed and no toast ever
+      // appeared, so the select looked like it had silently refused to change.
       summary: terminal
-        ? `Assigned ${admin.email} to ${terminal.name}`
-        : `Unassigned ${admin.email}`,
+        ? `Assigned ${adminId} to ${terminal.name}`
+        : `Unassigned ${adminId}`,
       details: { terminal_id: terminalId, terminal_name: terminal?.name ?? null },
       actorEmail: user?.email,
       actorName: user?.name,
@@ -830,6 +940,13 @@ export default function AdminTerminals() {
       marker_color: DEFAULT_TERMINAL_COLOR,
       route_color: DEFAULT_ROUTE_COLOR,
       border_color: DEFAULT_BORDER_COLOR,
+      // Left unset on purpose: a new terminal inherits the share ride rate for a
+      // private ride and the platform default for delivery until an admin says
+      // otherwise.
+      private_ride_fee: null,
+      private_ride_fee_per_km: null,
+      delivery_fee: null,
+      delivery_fee_per_km: null,
     });
   }
 
@@ -852,6 +969,12 @@ export default function AdminTerminals() {
       marker_color: normalizeTerminalColor(t.marker_color),
       route_color: normalizeRouteColor(t.route_color),
       border_color: normalizeBorderColor(t.border_color),
+      // A column that does not exist and a column that is NULL both come back as
+      // nothing to show; either way the box stays empty, which means "fall back".
+      private_ride_fee: t.private_ride_fee ?? null,
+      private_ride_fee_per_km: t.private_ride_fee_per_km ?? null,
+      delivery_fee: t.delivery_fee ?? null,
+      delivery_fee_per_km: t.delivery_fee_per_km ?? null,
     });
   }
 
@@ -958,7 +1081,9 @@ export default function AdminTerminals() {
   type EditorField =
     | 'name' | 'location' | 'road' | 'area' | 'road_width_m'
     | 'marker_color' | 'route_color' | 'border_color'
-    | 'base_fare' | 'per_km';
+    | 'base_fare' | 'per_km'
+    | 'private_ride_fee' | 'private_ride_fee_per_km'
+    | 'delivery_fee' | 'delivery_fee_per_km';
   type EditorErrors = Partial<Record<EditorField, string>>;
 
   /**
@@ -1022,12 +1147,36 @@ export default function AdminTerminals() {
       errors.per_km = 'Fare per km must be a number of 0 or more.';
     }
 
+    /*
+     * The private ride and delivery boxes have a third state beyond "a number":
+     * empty. Empty is not zero -- it is "charge the share ride rate" or "use the
+     * platform default" -- so the validator has to accept null as well as a
+     * non-negative amount, and only rejects the junk in between (a half-typed
+     * "2." typed then cleared can leave NaN behind).
+     */
+    const optionalFare = (value: number | null): boolean =>
+      value === null || (Number.isFinite(value) && value >= 0);
+    if (!optionalFare(form.private_ride_fee)) {
+      errors.private_ride_fee = 'Private ride price must be a number of 0 or more, or left empty.';
+    }
+    if (!optionalFare(form.private_ride_fee_per_km)) {
+      errors.private_ride_fee_per_km = 'Private ride price per km must be a number of 0 or more, or left empty.';
+    }
+    if (!optionalFare(form.delivery_fee)) {
+      errors.delivery_fee = 'Delivery price must be a number of 0 or more, or left empty.';
+    }
+    if (!optionalFare(form.delivery_fee_per_km)) {
+      errors.delivery_fee_per_km = 'Delivery price per km must be a number of 0 or more, or left empty.';
+    }
+
     // Order matters only in that the first entry is the one reported; it follows
     // the order the admin meets the fields, with the shapes before the settings.
     const order: EditorField[] = [
       'name', 'location', 'road', 'area', 'road_width_m',
       'marker_color', 'route_color', 'border_color',
       'base_fare', 'per_km',
+      'private_ride_fee', 'private_ride_fee_per_km',
+      'delivery_fee', 'delivery_fee_per_km',
     ];
     const firstField = order.find(f => errors[f]) ?? null;
     return { errors, firstField };
@@ -1131,6 +1280,19 @@ export default function AdminTerminals() {
     const base_fare = fareValue(Number(form.base_fare), 20);
     const per_km = fareValue(Number(form.per_km), 10);
 
+    /*
+     * Private ride and delivery keep their empty state all the way to the row.
+     * Collapsing null to 0 here would be the one mistake that costs a driver
+     * money rather than making a form look wrong: a private ride that silently
+     * becomes free, or a delivery nobody is paid for.
+     */
+    const optionalFareValue = (value: number | null): number | null =>
+      typeof value === 'number' && Number.isFinite(value) && value >= 0 ? value : null;
+    const private_ride_fee = optionalFareValue(form.private_ride_fee);
+    const private_ride_fee_per_km = optionalFareValue(form.private_ride_fee_per_km);
+    const delivery_fee = optionalFareValue(form.delivery_fee);
+    const delivery_fee_per_km = optionalFareValue(form.delivery_fee_per_km);
+
     // Normalised on the way out too, so a value that somehow slipped past the
     // picker (a restored draft, a pasted form state) can't write a bad colour.
     const markerColor = normalizeTerminalColor(form.marker_color);
@@ -1138,7 +1300,7 @@ export default function AdminTerminals() {
     const borderColor = normalizeBorderColor(form.border_color);
 
     const target: Terminal = editTerminal
-      ? { ...editTerminal, name: form.name, boundary: form.boundary, center_lat: form.center_lat, center_lng: form.center_lng, is_active: form.is_active, boundary_polygon: boundaryPolygon, boundary_area: boundaryArea, road_width_m: roadWidthM, boundary_enabled: form.boundary_enabled, base_fare, per_km, marker_color: markerColor, route_color: routeColor, border_color: borderColor }
+      ? { ...editTerminal, name: form.name, boundary: form.boundary, center_lat: form.center_lat, center_lng: form.center_lng, is_active: form.is_active, boundary_polygon: boundaryPolygon, boundary_area: boundaryArea, road_width_m: roadWidthM, boundary_enabled: form.boundary_enabled, base_fare, per_km, marker_color: markerColor, route_color: routeColor, border_color: borderColor, private_ride_fee, private_ride_fee_per_km, delivery_fee, delivery_fee_per_km }
       : {
           id: `t_${Date.now()}`,
           name: form.name,
@@ -1151,16 +1313,39 @@ export default function AdminTerminals() {
           boundary_polygon: boundaryPolygon,
           boundary_area: boundaryArea,
           road_width_m: roadWidthM,
-          boundary_enabled: true,
+          // Taken from the form, not hard-coded: the Enforce Boundary switch is
+          // only shown once something is plotted, so a new terminal with a drawn
+          // route can legitimately start with enforcement off.
+          boundary_enabled: form.boundary_enabled,
           base_fare,
           per_km,
           marker_color: markerColor,
           route_color: routeColor,
           border_color: borderColor,
+          private_ride_fee,
+          private_ride_fee_per_km,
+          delivery_fee,
+          delivery_fee_per_km,
         };
 
     // Super Admin changes apply immediately.
     if (isSuperAdmin) {
+      /*
+       * Only the fare columns this database was found to have go in the upsert.
+       * PostgREST fails the whole statement over one unknown column, so sending
+       * them blind would cost a partially-migrated project every terminal edit,
+       * not just the delivery ones.
+       */
+      const farePatch: Record<string, number | null> = {};
+      if (fareColumns.privateRide) {
+        farePatch.private_ride_fee = target.private_ride_fee ?? null;
+        farePatch.private_ride_fee_per_km = target.private_ride_fee_per_km ?? null;
+      }
+      if (fareColumns.delivery) {
+        farePatch.delivery_fee = target.delivery_fee ?? null;
+        farePatch.delivery_fee_per_km = target.delivery_fee_per_km ?? null;
+      }
+
       const { error } = await supabase.from("terminals").upsert(
         {
           id: target.id,
@@ -1182,6 +1367,7 @@ export default function AdminTerminals() {
           marker_color: target.marker_color,
           route_color: target.route_color,
           border_color: target.border_color,
+          ...farePatch,
           updated_at: new Date().toISOString(),
         },
         { onConflict: "id" }
@@ -1219,6 +1405,10 @@ export default function AdminTerminals() {
           marker_color: target.marker_color,
           route_color: target.route_color,
           border_color: target.border_color,
+          private_ride_fee: target.private_ride_fee,
+          private_ride_fee_per_km: target.private_ride_fee_per_km,
+          delivery_fee: target.delivery_fee,
+          delivery_fee_per_km: target.delivery_fee_per_km,
           is_active: target.is_active,
         },
         actorEmail: user?.email,
@@ -1261,6 +1451,40 @@ export default function AdminTerminals() {
   }
 
   /**
+   * Write a terminal's boundary-enforcement flag straight to the row.
+   *
+   * Both the card's toggle and the editor's Enforce Boundary switch come through
+   * here. That is the whole point of splitting it out: enforcement is a live
+   * operational decision — "stop checking drop-offs against this road right now"
+   * — not a field on the terminal's settings, so it must never sit in the editor's
+   * unsaved-changes set waiting for someone to press Save Changes. Applying it
+   * on tap is what makes it safe to flip in the middle of plotting.
+   *
+   * Returns whether it stuck, so the caller can put its own optimistic state back.
+   */
+  async function persistBoundaryEnabled(terminalId: string, next: boolean): Promise<boolean> {
+    const { error } = await supabase
+      .from('terminals')
+      .update({ boundary_enabled: next })
+      .eq('id', terminalId);
+
+    if (error) return false;
+
+    logAudit({
+      action: next ? 'enable_terminal_boundary' : 'disable_terminal_boundary',
+      actorRole: 'admin',
+      entityType: 'terminal',
+      entityId: terminalId,
+      summary: `${next ? 'Enabled' : 'Disabled'} the road boundary check for: ${terminals.find(t => t.id === terminalId)?.name ?? terminalId}`,
+      details: { boundary_enabled: next },
+      actorEmail: user?.email,
+      actorName: user?.name,
+    });
+
+    return true;
+  }
+
+  /**
    * Switch one terminal's boundary check on or off, leaving the road and the
    * enclosing area plotted.
    *
@@ -1280,37 +1504,54 @@ export default function AdminTerminals() {
       setEditTerminal({ ...editTerminal, boundary_enabled: next });
     }
 
-    const { error } = await supabase
-      .from('terminals')
-      .update({ boundary_enabled: next })
-      .eq('id', terminal.id);
-
-    if (error) {
+    if (!(await persistBoundaryEnabled(terminal.id, next))) {
       setTerminals(ts =>
         ts.map(t => (t.id === terminal.id ? { ...t, boundary_enabled: !next } : t))
       );
       if (editTerminal?.id === terminal.id) {
         setEditTerminal({ ...editTerminal, boundary_enabled: !next });
       }
-      setToast({ message: `Could not update the boundary: ${error.message}`, variant: 'error' });
+      setToast({ message: 'Could not update the boundary', variant: 'error' });
       return;
     }
-
-    logAudit({
-      action: next ? 'enable_terminal_boundary' : 'disable_terminal_boundary',
-      actorRole: 'admin',
-      entityType: 'terminal',
-      entityId: terminal.id,
-      summary: `${next ? 'Enabled' : 'Disabled'} the road boundary check for: ${terminal.name}`,
-      details: { boundary_enabled: next },
-      actorEmail: user?.email,
-      actorName: user?.name,
-    });
 
     setToast({
       message: next
         ? `Boundary check enabled — drop-offs and driver queues are checked against ${terminal.name}`
         : `Boundary check disabled — ${terminal.name}'s boundary is kept but not enforced`,
+      variant: next ? 'success' : 'warning',
+    });
+  }
+
+  /**
+   * The Enforce Boundary switch inside the editor.
+   *
+   * Deliberately does not touch the unsaved-changes snapshot: flipping it must
+   * not light up Save Changes, and must not be lost by walking away from the
+   * editor. For a terminal that already exists the write goes out immediately;
+   * for one being created there is no row to write to, so it stays a plain form
+   * value and is saved with the rest of the terminal.
+   */
+  async function setEditorBoundaryEnabled(next: boolean) {
+    setForm(f => ({ ...f, boundary_enabled: next }));
+
+    const id = editTerminal?.id;
+    if (!id) return;
+
+    const ok = await persistBoundaryEnabled(id, next);
+    if (!ok) {
+      // Put the switch back where it was; a toggle that silently didn't take is
+      // worse than one that visibly failed.
+      setForm(f => ({ ...f, boundary_enabled: !next }));
+      setToast({ message: 'Could not update the boundary', variant: 'error' });
+      return;
+    }
+
+    setTerminals(ts => ts.map(t => (t.id === id ? { ...t, boundary_enabled: next } : t)));
+    setToast({
+      message: next
+        ? 'Boundary check enabled — applied now'
+        : 'Boundary check disabled — the shape is kept, the check is not',
       variant: next ? 'success' : 'warning',
     });
   }
@@ -1419,6 +1660,142 @@ export default function AdminTerminals() {
     });
   }
 
+  /*
+   * Super Admin's driver assignment, applied at once.
+   *
+   * A Rider Admin's changes are queued and submitted for approval, which is what
+   * the pending-changes banner and savePendingChanges above are for. A Super Admin
+   * is the approver, so routing their own taps through a queue they would then
+   * have to approve would be a second, slower path to the same row — the two are
+   * deliberately separate rather than one function with a flag.
+   */
+
+  /** Move a driver onto a terminal now. Optimistic, and rolls back on failure. */
+  async function applyAssignDriver(rider: StoredRider, terminal: Terminal) {
+    const previousId = riderTerminalId(rider);
+    const previousName = riderTerminalName(rider);
+
+    setUsers(list =>
+      list.map(u =>
+        u.id === rider.id
+          ? {
+              ...u,
+              terminalId: terminal.id,
+              terminal_id: terminal.id,
+              terminalName: terminal.name,
+              terminal_name: terminal.name,
+            }
+          : u
+      )
+    );
+
+    const { error } = await supabase
+      .from('users')
+      .update({ terminal_id: terminal.id, terminal_name: terminal.name })
+      .eq('id', rider.id);
+
+    if (error) {
+      setUsers(list =>
+        list.map(u =>
+          u.id === rider.id
+            ? { ...u, terminalId: previousId, terminal_id: previousId, terminalName: previousName, terminal_name: previousName }
+            : u
+        )
+      );
+      setToast({ message: `Could not assign ${riderName(rider)}: ${error.message}`, variant: 'error' });
+      return;
+    }
+
+    logAudit({
+      action: 'assign_terminal_driver',
+      actorRole: 'admin',
+      entityType: 'terminal',
+      entityId: terminal.id,
+      summary: `Assigned ${riderName(rider)} to ${terminal.name}`,
+      details: { driver_id: rider.id, terminal_id: terminal.id, previous_terminal_id: previousId ?? null },
+      actorEmail: user?.email,
+      actorName: user?.name,
+    });
+
+    setTerminals(ts =>
+      ts.map(t => (t.id === terminal.id ? { ...t, rider_count: (t.rider_count ?? 0) + 1 } : t))
+    );
+    setToast({ message: `${riderName(rider)} assigned to ${terminal.name}`, variant: 'success' });
+  }
+
+  /** Take a driver off their terminal now. Optimistic, and rolls back on failure. */
+  async function applyUnassignDriver(rider: StoredRider, terminal: Terminal) {
+    const previousId = riderTerminalId(rider);
+    const previousName = riderTerminalName(rider);
+
+    setUsers(list =>
+      list.map(u =>
+        u.id === rider.id
+          ? { ...u, terminalId: undefined, terminal_id: undefined, terminalName: undefined, terminal_name: undefined }
+          : u
+      )
+    );
+
+    const { error } = await supabase
+      .from('users')
+      .update({ terminal_id: null, terminal_name: null })
+      .eq('id', rider.id);
+
+    if (error) {
+      setUsers(list =>
+        list.map(u =>
+          u.id === rider.id
+            ? { ...u, terminalId: previousId, terminal_id: previousId, terminalName: previousName, terminal_name: previousName }
+            : u
+        )
+      );
+      setToast({ message: `Could not remove ${riderName(rider)}: ${error.message}`, variant: 'error' });
+      return;
+    }
+
+    logAudit({
+      action: 'unassign_terminal_driver',
+      actorRole: 'admin',
+      entityType: 'terminal',
+      entityId: terminal.id,
+      summary: `Removed ${riderName(rider)} from ${terminal.name}`,
+      details: { driver_id: rider.id, terminal_id: terminal.id, previous_terminal_id: previousId ?? null },
+      actorEmail: user?.email,
+      actorName: user?.name,
+    });
+
+    setTerminals(ts =>
+      ts.map(t => (t.id === terminal.id ? { ...t, rider_count: Math.max(0, (t.rider_count ?? 0) - 1) } : t))
+    );
+    setToast({ message: `${riderName(rider)} removed from ${terminal.name}`, variant: 'success' });
+  }
+
+  function confirmAssignDriver(rider: StoredRider, terminal: Terminal) {
+    openModal({
+      title: 'Assign Driver',
+      message: `Assign ${riderName(rider)} to ${terminal.name}? They will start picking up rides from this terminal.`,
+      variant: 'success',
+      confirmLabel: 'Assign',
+      onConfirm: async () => {
+        closeModal();
+        await applyAssignDriver(rider, terminal);
+      },
+    });
+  }
+
+  function confirmUnassignDriver(rider: StoredRider, terminal: Terminal) {
+    openModal({
+      title: 'Remove Driver',
+      message: `Remove ${riderName(rider)} from ${terminal.name}? They will have no terminal to pick up rides from until one is assigned.`,
+      variant: 'warning',
+      confirmLabel: 'Remove',
+      onConfirm: async () => {
+        closeModal();
+        await applyUnassignDriver(rider, terminal);
+      },
+    });
+  }
+
   function savePendingChanges() {
     const count = Object.keys(pendingChanges).length;
     if (count === 0 || !isRiderAdmin) return;
@@ -1484,15 +1861,20 @@ export default function AdminTerminals() {
         isSuperAdmin ? (
           /* The label drops below sm, where the header only has whatever the title
              leaves over. The icon carries the meaning and the aria-label keeps the
-             button identifiable once the words are gone. */
+             button identifiable once the words are gone.
+
+             The "+" stays at every width. Below sm the label is gone, and a lone
+             terminal icon reads as "this terminal" rather than "add one" -- the
+             glyph is what carries the verb on its own. */
           <button
             type="button"
             onClick={openCreate}
             aria-label="Add Terminal"
             title="Add Terminal"
-            className="inline-flex min-h-11 items-center gap-2 rounded-xl bg-[var(--primary)] px-3 sm:px-4 py-2 text-sm font-bold text-white shadow-sm transition-opacity hover:opacity-90 active:scale-[0.98]"
+            className="inline-flex min-h-11 items-center gap-1.5 sm:gap-2 rounded-xl bg-[var(--primary)] px-3 sm:px-4 py-2 text-sm font-bold text-white shadow-sm transition-opacity hover:opacity-90 active:scale-[0.98]"
           >
             <TerminalIcon size={22} color="#FFFFFF" />
+            <span aria-hidden="true" className="text-xl font-bold leading-none -ml-0.5">+</span>
             <span className="hidden sm:inline">Add Terminal</span>
           </button>
         ) : null
@@ -1563,6 +1945,67 @@ export default function AdminTerminals() {
             </div>
           )}
 
+          {/*
+            Which Rider Admin runs which terminal.
+
+            It leads the tab because it is the widest-reaching decision on it: this
+            decides who can edit a terminal and who can queue drivers on it, and
+            the driver cards below only exist because of the answer. Reading it
+            first means the rest of the page is already explained — a Rider Admin
+            listed here is the reason the matching terminal card says anything
+            about approvals at all.
+
+            Only on this tab, never Terminal Location: that one is about where the
+            terminals are, and this is about who works them.
+          */}
+          {isSuperAdmin && terminalView !== 'map' && (
+            <div>
+              <h2 className="text-sm font-bold uppercase tracking-widest text-[var(--muted-foreground)] mb-2 flex items-center gap-2">
+                <ShieldCheck size={16} /> Rider Admin Assignments
+              </h2>
+              <div className="bg-surface border border-line rounded-2xl p-4">
+                {riderAdmins.length === 0 ? (
+                  <p className="text-sm text-[var(--muted-foreground)] italic">No Rider Admin accounts found</p>
+                ) : (
+                  <div className="space-y-3">
+                    {riderAdmins.map(admin => (
+                      <div key={admin.id} className="flex items-center justify-between gap-4 flex-wrap">
+                        <div className="min-w-0">
+                          <p className="text-sm font-semibold text-[var(--ink)] truncate">
+                            {admin.name || 'Rider Admin'}
+                          </p>
+                          <p className="text-xs text-[var(--muted-foreground)] truncate">{admin.email}</p>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <div className="relative">
+                            <select
+                              value={admin.terminal_id || ''}
+                              disabled={savingAssignmentId === admin.id}
+                              onChange={(e) => confirmAssignRiderAdmin(admin, e.target.value)}
+                              className="appearance-none pl-3 pr-9 py-2 border border-line rounded-xl font-semibold text-sm bg-surface text-[var(--ink)] disabled:opacity-50"
+                            >
+                              <option value="">No terminal</option>
+                              {terminals.map(t => (
+                                <option key={t.id} value={t.id}>{t.name}</option>
+                              ))}
+                            </select>
+                            <ChevronDown
+                              className="pointer-events-none absolute right-3 top-1/2 w-4 h-4 -translate-y-1/2 text-[var(--muted-foreground)]"
+                              aria-hidden="true"
+                            />
+                          </div>
+                          {savingAssignmentId === admin.id && (
+                            <Loader2 size={16} className="text-[var(--muted-foreground)] animate-spin" />
+                          )}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
           {/* Super Admin: every terminal on one map, with the tricycle marker and
               the border each admin plotted — the thing you cannot see from a list. */}
           {isSuperAdmin && terminalView === 'map' && (
@@ -1585,7 +2028,12 @@ export default function AdminTerminals() {
                       fitTerminalsOnMap(m);
                     }}
                   >
-                    {visibleTerminals.map(t => {
+                    {/* Everything a hidden terminal draws — marker, route and border
+                        together. Leaving any one of them behind would defeat the
+                        point: a terminal with its pin gone but its border still
+                        painted over a neighbour reads as a mapping bug, not as
+                        something the admin switched off. */}
+                    {visibleTerminals.filter(t => !hiddenTerminalIds.includes(t.id)).map(t => {
                       const area = t.boundary_area && t.boundary_area.length >= 3 ? t.boundary_area : null;
                       const road = t.boundary_polygon && t.boundary_polygon.length >= 2 ? t.boundary_polygon : null;
                       // An inactive terminal keeps its own colour and is dimmed
@@ -1653,14 +2101,19 @@ export default function AdminTerminals() {
                     const roadPts = t.boundary_polygon?.length ?? 0;
                     const areaPts = t.boundary_area?.length ?? 0;
                     const enforced = t.boundary_enabled !== false;
+                    const hidden = hiddenTerminalIds.includes(t.id);
                     return (
                       /* A div rather than a button: the row pans the map and the
-                         edit control has to sit inside it, and a button cannot
+                         two controls have to sit inside it, and a button cannot
                          contain one. The pan target is the icon-and-text region
-                         only, so tapping Edit never also zooms the map. */
+                         only, so tapping either control never also zooms the map. */
                       <div
                         key={t.id}
-                        className="w-full flex items-start gap-2 p-3 bg-surface border border-line rounded-xl hover:border-[var(--primary)] transition-colors"
+                        className={`w-full flex items-start gap-2 p-3 bg-surface border rounded-xl transition-colors ${
+                          hidden
+                            ? 'border-line opacity-60'
+                            : 'border-line hover:border-[var(--primary)]'
+                        }`}
                       >
                         <button
                           type="button"
@@ -1673,12 +2126,14 @@ export default function AdminTerminals() {
                               {t.name}
                             </p>
                             <p className="text-xs text-[var(--muted-foreground)] truncate">
-                              {areaPts >= 3
-                                ? `Border ${areaPts} pts`
-                                : roadPts >= 2
-                                  ? `Road ${roadPts} pts · ${normalizeRoadWidth(t.road_width_m)} m`
-                                  : 'No border plotted'}
-                              {areaPts >= 3 && roadPts >= 2 ? ` · road ${roadPts} pts` : ''}
+                              {hidden
+                                ? 'Hidden from the map'
+                                : areaPts >= 3
+                                  ? `Border ${areaPts} pts`
+                                  : roadPts >= 2
+                                    ? `Road ${roadPts} pts · ${normalizeRoadWidth(t.road_width_m)} m`
+                                    : 'No border plotted'}
+                              {!hidden && areaPts >= 3 && roadPts >= 2 ? ` · road ${roadPts} pts` : ''}
                             </p>
                           </div>
                           <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full flex-shrink-0 ${
@@ -1689,66 +2144,39 @@ export default function AdminTerminals() {
                             {enforced ? 'On' : 'Off'}
                           </span>
                         </button>
+                        {/* Hide / show this terminal's route, marker and border.
+                            Beside the settings cog because it is the other half of
+                            looking at a terminal on this map, and next to it rather
+                            than tucked into the row for the same reason. */}
+                        <button
+                          type="button"
+                          onClick={() => toggleTerminalHidden(t.id)}
+                          aria-pressed={!hidden}
+                          aria-label={`${hidden ? 'Show' : 'Hide'} ${t.name} on the map`}
+                          title={hidden ? 'Show on map' : 'Hide route, terminal and border'}
+                          className="w-10 h-10 flex-shrink-0 flex items-center justify-center rounded-lg bg-[var(--muted)] active:scale-90"
+                        >
+                          {hidden
+                            ? <EyeOff className="w-4 h-4 text-[var(--muted-foreground)]" />
+                            : <Eye className="w-4 h-4 text-[var(--ink)]" />}
+                        </button>
+                        {/* A cog, not a pencil. What this opens is the terminal's
+                            whole configuration -- name, corridor width, visibility,
+                            colours, fares -- not a text field, and the pencil on a
+                            row that already shows the terminal's name said "rename
+                            this" when what it actually did was open a form. */}
                         <button
                           type="button"
                           onClick={() => openEdit(t)}
-                          aria-label={`Edit ${t.name}`}
+                          aria-label={`Settings for ${t.name}`}
+                          title="Terminal settings"
                           className="w-10 h-10 flex-shrink-0 flex items-center justify-center rounded-lg bg-[var(--muted)] active:scale-90"
                         >
-                          <Pen className="w-4 h-4 text-[var(--ink)]" />
+                          <Settings className="w-4 h-4 text-[var(--ink)]" />
                         </button>
                       </div>
                     );
                   })
-                )}
-              </div>
-            </div>
-          )}
-
-          {/* Super Admin: assign each Rider Admin to a terminal */}
-          {isSuperAdmin && terminalView !== 'map' && (
-            <div className="mb-6">
-              <h2 className="text-sm font-bold uppercase tracking-widest text-[var(--muted-foreground)] mb-2 flex items-center gap-2">
-                <ShieldCheck size={16} /> Rider Admin Assignments
-              </h2>
-              <div className="bg-surface border border-line rounded-2xl p-4">
-                {riderAdmins.length === 0 ? (
-                  <p className="text-sm text-[var(--muted-foreground)] italic">No Rider Admin accounts found</p>
-                ) : (
-                  <div className="space-y-3">
-                    {riderAdmins.map(admin => (
-                      <div key={admin.id} className="flex items-center justify-between gap-4 flex-wrap">
-                        <div className="min-w-0">
-                          <p className="text-sm font-semibold text-[var(--ink)] truncate">
-                            {admin.name || 'Rider Admin'}
-                          </p>
-                          <p className="text-xs text-[var(--muted-foreground)] truncate">{admin.email}</p>
-                        </div>
-                        <div className="flex items-center gap-2">
-                          <div className="relative">
-                            <select
-                              value={admin.terminal_id || ''}
-                              disabled={savingAssignmentId === admin.id}
-                              onChange={(e) => confirmAssignRiderAdmin(admin, e.target.value)}
-                              className="appearance-none pl-3 pr-9 py-2 border border-line rounded-xl font-semibold text-sm bg-surface text-[var(--ink)] disabled:opacity-50"
-                            >
-                              <option value="">No terminal</option>
-                              {terminals.map(t => (
-                                <option key={t.id} value={t.id}>{t.name}</option>
-                              ))}
-                            </select>
-                            <ChevronDown
-                              className="pointer-events-none absolute right-3 top-1/2 w-4 h-4 -translate-y-1/2 text-[var(--muted-foreground)]"
-                              aria-hidden="true"
-                            />
-                          </div>
-                          {savingAssignmentId === admin.id && (
-                            <Loader2 size={16} className="text-[var(--muted-foreground)] animate-spin" />
-                          )}
-                        </div>
-                      </div>
-                    ))}
-                  </div>
                 )}
               </div>
             </div>
@@ -1805,10 +2233,20 @@ export default function AdminTerminals() {
             </div>
           )}
 
-          {/* The cards are the management surface — edit, delete, driver
-              assignment, and they belong with the assignment list. In the
-              Terminal Location view the map and its legend cover the same
-              terminals more compactly, so the cards stay off that tab. */}
+          {/*
+            Two different cards, because the two tabs answer two different
+            questions.
+
+            Toda Assignment asks one question — which drivers sit at which
+            terminal — so the Super Admin's card there is the terminal's own icon,
+            its name and its drivers, with assign and remove. Everything else about
+            a terminal (boundary pills, corridor width, fares, colours) belongs to
+            Terminal Location, which is where it is all configured and all of it
+            is on screen at once.
+
+            A Rider Admin has no tabs: they get one terminal and need the whole
+            card, so they keep the existing expandable one below.
+          */}
           {terminalView === 'map' ? null : loading ? (
             <StatSkeleton count={4} />
           ) : isRiderAdmin && visibleTerminals.length === 0 ? (
@@ -1818,6 +2256,118 @@ export default function AdminTerminals() {
               description="The Super Admin must assign you to a terminal before you can manage it."
               filipino="Wala pang terminal na nakatalaga sa iyo. Itinalaga ito ng Super Admin."
             />
+          ) : isSuperAdmin ? (
+            visibleTerminals.length === 0 ? (
+              <EmptyState
+                icon={MapPin}
+                title="No terminals yet"
+                description="Add a terminal first, then put drivers on it."
+              />
+            ) : (
+              <div className="grid gap-4">
+                {visibleTerminals.map(t => {
+                  const termRiders = getRidersForTerminal(t.id);
+                  const unassigned = getUnassignedRiders();
+                  return (
+                    <div key={t.id} className="bg-surface rounded-2xl border border-line overflow-hidden">
+                      <div className="flex items-center gap-3 p-4">
+                        {/* The terminal's own icon, in its own colour — not a generic
+                            pin. This row is identified by that artwork everywhere else
+                            in the app, and a row of identical pins gives an admin no
+                            way to tell two TODAs apart at a glance. */}
+                        <TerminalIcon
+                          size={48}
+                          color={normalizeTerminalColor(t.marker_color)}
+                          className="flex-shrink-0"
+                        />
+                        <div className="min-w-0 flex-1">
+                          <h3 className="font-bold text-[var(--ink)] text-lg truncate">{t.name}</h3>
+                          <p className="text-xs text-[var(--muted-foreground)]">
+                            {termRiders.length} driver{termRiders.length === 1 ? '' : 's'}
+                            {unassigned.length > 0 ? ` · ${unassigned.length} waiting to be assigned` : ''}
+                          </p>
+                        </div>
+                        {/* Deletion stays reachable from here even though the rest of
+                            the terminal's controls moved to Terminal Location: it is
+                            the only place a Super Admin can remove one, and a tab
+                            that cannot delete is a dead end. */}
+                        <button
+                          type="button"
+                          onClick={() => confirmDeleteTerminal(t.id)}
+                          aria-label={`Delete ${t.name}`}
+                          className="w-11 h-11 flex-shrink-0 bg-[var(--error-soft)] border-2 border-[var(--error-soft)] rounded-xl flex items-center justify-center hover:border-[var(--error)] transition-all active:scale-90"
+                        >
+                          <Trash2 size={14} className="text-[var(--error)]" />
+                        </button>
+                      </div>
+
+                      <div className="border-t-2 border-[var(--border)] p-4 bg-[var(--muted)] space-y-4">
+                        <div className="space-y-2">
+                          {termRiders.length === 0 ? (
+                            <p className="text-sm text-[var(--muted-foreground)] italic">
+                              No drivers assigned yet
+                            </p>
+                          ) : (
+                            termRiders.map(r => (
+                              <div
+                                key={r.id}
+                                className="flex items-center justify-between gap-3 rounded-xl border-2 border-[var(--border)] bg-surface px-4 py-2.5"
+                              >
+                                <div className="flex items-center gap-3 min-w-0">
+                                  <div className="w-8 h-8 flex-shrink-0 bg-[var(--info-soft)] rounded-lg flex items-center justify-center text-[var(--info)] font-bold text-xs">
+                                    {riderName(r)[0]?.toUpperCase()}
+                                  </div>
+                                  <div className="min-w-0">
+                                    <p className="text-sm font-semibold text-[var(--ink)] truncate">
+                                      {riderName(r)}
+                                    </p>
+                                    <p className="text-xs text-[var(--muted-foreground)] truncate">
+                                      {riderPlate(r) || 'No plate'}
+                                    </p>
+                                  </div>
+                                </div>
+                                <button
+                                  type="button"
+                                  onClick={() => confirmUnassignDriver(r, t)}
+                                  aria-label={`Remove ${riderName(r)} from ${t.name}`}
+                                  className="flex-shrink-0 flex items-center gap-1 text-xs font-semibold text-[var(--error)] bg-[var(--error-soft)] border border-[var(--error-soft)] px-2.5 py-1.5 rounded-lg hover:border-[var(--error)] transition-all active:scale-95"
+                                >
+                                  <UserMinus size={12} /> Remove
+                                </button>
+                              </div>
+                            ))
+                          )}
+                        </div>
+
+                        {unassigned.length > 0 && (
+                          <div>
+                            <h4 className="text-xs font-semibold uppercase tracking-widest text-[var(--muted-foreground)] mb-2">
+                              Assign a driver
+                            </h4>
+                            <div className="flex flex-wrap gap-2">
+                              {unassigned.map(r => (
+                                <button
+                                  key={r.id}
+                                  type="button"
+                                  onClick={() => confirmAssignDriver(r, t)}
+                                  className="flex items-center gap-2 px-3 py-2 bg-surface border border-line hover:border-[var(--success)] rounded-xl transition-all active:scale-95 text-sm font-medium"
+                                >
+                                  <UserPlus size={13} className="text-[var(--success)]" />
+                                  {riderName(r)}
+                                  {riderPlate(r) && (
+                                    <span className="text-xs text-[var(--muted-foreground)]">{riderPlate(r)}</span>
+                                  )}
+                                </button>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )
           ) : (
           <div className="grid gap-4">
             {visibleTerminals.map(t => {
@@ -1843,12 +2393,15 @@ export default function AdminTerminals() {
                         aria-controls={`terminal-drivers-${t.id}`}
                         className="flex items-start gap-3 min-w-0 flex-1 text-left rounded-xl -m-2 p-2 hover:bg-[var(--muted)] transition-colors active:scale-[0.99]"
                       >
-                        <div className="w-11 h-11 bg-[var(--info-soft)] rounded-xl flex items-center justify-center flex-shrink-0">
-                          <MapPin size={20} className="text-[var(--info)]" />
+                        <div className="w-11 h-11 flex-shrink-0">
+                          <TerminalIcon
+                            size={44}
+                            color={normalizeTerminalColor(t.marker_color)}
+                          />
                         </div>
                         <div className="min-w-0">
                           <div className="flex items-center gap-2 flex-wrap">
-                            <h3 className="font-bold text-[var(--ink)] text-lg">🚏 {t.name}</h3>
+                            <h3 className="font-bold text-[var(--ink)] text-lg">{t.name}</h3>
                             <span className={`text-xs font-bold px-2 py-0.5 rounded-full ${t.is_active ? "bg-[var(--success-soft)] text-[var(--success)]" : "bg-[var(--muted)] text-[var(--muted-foreground)]"}`}>
                               {t.is_active ? "● Active" : "○ Inactive"}
                             </span>
@@ -2054,80 +2607,108 @@ export default function AdminTerminals() {
           close button. This matches the z-[2000] scale the other admin pages use. */}
       {showMapPicker && (
         <div className="fixed inset-0 z-[2010] bg-surface flex flex-col">
-          {/* Page 1: the map. Back, then the location search. */}
-          {editorSection !== 'configuration' && (
-            <>
-              <div className="bg-surface border-b border-[var(--border)] px-3 py-3 flex items-center gap-2 sm:gap-3">
-                <button
-                  type="button"
-                  onClick={requestCloseMapPicker}
-                  aria-label="Back to terminals"
-                  className="w-11 h-11 flex-shrink-0 flex items-center justify-center rounded-xl bg-[var(--muted)] active:scale-90"
-                >
-                  <ArrowLeft className="w-5 h-5 text-[var(--ink)]" />
-                </button>
-                {/* Search Bar */}
-                <div className="flex-1 relative min-w-0">
-                  <div className="flex items-center gap-2 px-3 py-2 bg-[var(--muted)] border border-line rounded-xl">
-                    <Search className="w-4 h-4 text-[var(--muted-foreground)] flex-shrink-0" />
-                    <input
-                      type="text"
-                      value={mapSearchQuery}
-                      onChange={(e) => {
-                        setMapSearchQuery(e.target.value);
-                        if (e.target.value.length > 0) setShowMapSearchDropdown(true);
-                        else setShowMapSearchDropdown(false);
-                      }}
-                      onFocus={() => { if (mapSearchQuery.trim()) setShowMapSearchDropdown(true); }}
-                      placeholder="Search location..."
-                      className="flex-1 text-sm font-semibold text-[var(--ink)] placeholder:text-[var(--muted-foreground)] placeholder:font-normal outline-none bg-transparent"
-                    />
-                    {isMapSearching ? (
-                      <Loader2 className="w-4 h-4 text-[var(--muted-foreground)] animate-spin flex-shrink-0" />
-                    ) : (
-                      mapSearchQuery && (
-                        <button onClick={() => { setMapSearchQuery(""); setMapSearchResults([]); setShowMapSearchDropdown(false); }} className="flex-shrink-0">
-                          <X className="w-4 h-4 text-[var(--muted-foreground)]" />
-                        </button>
-                      )
-                    )}
-                  </div>
-                  {/* Search Results Dropdown */}
-              {showMapSearchDropdown && (
-                <div className="absolute top-full left-0 right-0 mt-2 bg-surface border border-line rounded-xl shadow-xl max-h-60 overflow-y-auto z-[2020]">
-                  {mapSearchResults.length > 0 ? (
-                    mapSearchResults.map((result: any, index: number) => (
-                      <button
-                        key={result.place_id || index}
-                        onClick={() => handleMapSearchPick(result)}
-                        className="w-full p-3 border-b border-[var(--border)] last:border-b-0 hover:bg-[var(--muted)] active:bg-[var(--muted)] transition-colors text-left"
-                      >
-                        <div className="flex items-center gap-3">
-                          <div className="w-8 h-8 bg-[var(--muted)] rounded-full flex items-center justify-center flex-shrink-0">
-                            <MapPin className="w-4 h-4 text-[var(--muted-foreground)]" />
-                          </div>
-                          <div className="flex-1 min-w-0">
-                            <p className="font-semibold text-sm text-[var(--ink)] truncate">{result.displayName}</p>
-                            {result.secondaryText && (
-                              <p className="text-xs text-[var(--muted-foreground)] truncate">{result.secondaryText}</p>
-                            )}
-                          </div>
-                        </div>
-                      </button>
-                    ))
+          {/*
+            One top bar for every section, spanning the full width of the editor —
+            over the sidebar rail as well as the content.
+
+            Configuration and Fares & Delivery used to carry their own sticky
+            header *inside* the content pane while the map sections carried this
+            one above it, so the rail started level with the top of the screen on
+            two tabs and level with the back button on the other three. The same
+            place for the way out, on every tab, is what makes the editor read as
+            one screen.
+
+            The back button does the same thing on all five: it leaves the editor
+            and goes back to the terminal list. It used to step back to the map
+            section from Configuration and Fares, which meant the same arrow did
+            two different things depending on which tab it was on — and on those
+            two it read as "back to the previous step" while three tabs over it
+            read as "back to the list", which is the only thing it can mean when
+            the editor is a full-screen overlay over the list. Leaving from
+            Fares & Delivery mid-edit now goes through the same discard prompt
+            the map sections always did, rather than quietly parking the edits.
+          */}
+          <div className="flex-shrink-0 bg-surface border-b border-[var(--border)] px-3 py-3 flex items-center gap-2 sm:gap-3">
+            <button
+              type="button"
+              onClick={requestCloseMapPicker}
+              aria-label="Back to terminals"
+              className="w-11 h-11 flex-shrink-0 flex items-center justify-center rounded-xl bg-[var(--muted)] active:scale-90"
+            >
+              <ArrowLeft className="w-5 h-5 text-[var(--ink)]" />
+            </button>
+
+            {/* The map sections search for a place to put the terminal; the other
+                two have no map to search, so they name themselves instead. */}
+            {editorSectionIsMap ? (
+              /* Search Bar */
+              <div className="flex-1 relative min-w-0">
+                <div className="flex items-center gap-2 px-3 py-2 bg-[var(--muted)] border border-line rounded-xl">
+                  <Search className="w-4 h-4 text-[var(--muted-foreground)] flex-shrink-0" />
+                  <input
+                    type="text"
+                    value={mapSearchQuery}
+                    onChange={(e) => {
+                      setMapSearchQuery(e.target.value);
+                      if (e.target.value.length > 0) setShowMapSearchDropdown(true);
+                      else setShowMapSearchDropdown(false);
+                    }}
+                    onFocus={() => { if (mapSearchQuery.trim()) setShowMapSearchDropdown(true); }}
+                    placeholder="Search location..."
+                    className="flex-1 text-sm font-semibold text-[var(--ink)] placeholder:text-[var(--muted-foreground)] placeholder:font-normal outline-none bg-transparent"
+                  />
+                  {isMapSearching ? (
+                    <Loader2 className="w-4 h-4 text-[var(--muted-foreground)] animate-spin flex-shrink-0" />
                   ) : (
-                    <div className="p-3">
-                      <p className="text-sm text-[var(--muted-foreground)] text-center">
-                        {isMapSearching ? "Searching..." : !GOOGLE_MAPS_API_KEY ? "Search unavailable" : "No results found"}
-                      </p>
-                    </div>
+                    mapSearchQuery && (
+                      <button onClick={() => { setMapSearchQuery(""); setMapSearchResults([]); setShowMapSearchDropdown(false); }} className="flex-shrink-0">
+                        <X className="w-4 h-4 text-[var(--muted-foreground)]" />
+                      </button>
+                    )
                   )}
                 </div>
-              )}
-                </div>
+                {/* Search Results Dropdown */}
+                {showMapSearchDropdown && (
+                  <div className="absolute top-full left-0 right-0 mt-2 bg-surface border border-line rounded-xl shadow-xl max-h-60 overflow-y-auto z-[2020]">
+                    {mapSearchResults.length > 0 ? (
+                      mapSearchResults.map((result: any, index: number) => (
+                        <button
+                          key={result.place_id || index}
+                          onClick={() => handleMapSearchPick(result)}
+                          className="w-full p-3 border-b border-[var(--border)] last:border-b-0 hover:bg-[var(--muted)] active:bg-[var(--muted)] transition-colors text-left"
+                        >
+                          <div className="flex items-center gap-3">
+                            <div className="w-8 h-8 bg-[var(--muted)] rounded-full flex items-center justify-center flex-shrink-0">
+                              <MapPin className="w-4 h-4 text-[var(--muted-foreground)]" />
+                            </div>
+                            <div className="flex-1 min-w-0">
+                              <p className="font-semibold text-sm text-[var(--ink)] truncate">{result.displayName}</p>
+                              {result.secondaryText && (
+                                <p className="text-xs text-[var(--muted-foreground)] truncate">{result.secondaryText}</p>
+                              )}
+                            </div>
+                          </div>
+                        </button>
+                      ))
+                    ) : (
+                      <div className="p-3">
+                        <p className="text-sm text-[var(--muted-foreground)] text-center">
+                          {isMapSearching ? "Searching..." : !GOOGLE_MAPS_API_KEY ? "Search unavailable" : "No results found"}
+                        </p>
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
-            </>
-          )}
+            ) : (
+              <h3 className="min-w-0 font-extrabold text-base text-[var(--ink)] truncate">
+                {/* A plain "&" in a JS string, not "&amp;": entities are only decoded
+                    in JSX text, so writing the entity here would put the literal
+                    characters "&amp;" in the title. */}
+                {editorSection === 'fares' ? 'Fares & Delivery' : editTerminal ? 'Edit Terminal' : 'New Terminal'}
+              </h3>
+            )}
+          </div>
 
           {/* Sidebar navigation. Collapsed, it shows icons alone so the map keeps
               the width; expanded, each section names itself. */}
@@ -2139,8 +2720,12 @@ export default function AdminTerminals() {
                 ['terminal', 'Terminal', MapPin],
                 ['border', 'Border', Pentagon],
                 ['route', 'Route', Milestone],
-                ['configuration', 'Configuration', SlidersHorizontal],
                 ['fares', 'Fares & Delivery', Banknote],
+                // Last, always. Configuration is what you go to once the shape of
+                // the terminal is settled — name, corridor width, colours — so it
+                // sits below the three that draw the terminal rather than between
+                // the route and the things read alongside it.
+                ['configuration', 'Configuration', SlidersHorizontal],
               ] as const).map(([id, label, Icon]) => {
                 const active = editorSection === id;
                 return (
@@ -2196,6 +2781,14 @@ export default function AdminTerminals() {
                 // One finger pans. The default is two-finger on touch, which makes the
                 // map feel stuck on a phone when the admin is trying to place a pin.
                 gestureHandling: 'greedy',
+                // Shops, landmarks, churches, every point of interest the base map
+                // draws: none of them can be tapped, so a tap on a POI label falls
+                // through to the map and plots a point where the admin was aiming at
+                // the road behind it. Plotting a route is a long series of these, and
+                // every one that landed on a bakery icon instead of the street was a
+                // point to go back and undo. Nothing on this map is selectable by
+                // design — the admin is drawing a shape, not picking a place.
+                clickableIcons: false,
               }}
             >
               {/* The pin changes with the tab, so what is under the finger is
@@ -2246,17 +2839,45 @@ export default function AdminTerminals() {
                   }}
                 />
               )}
-              {/* Plotted points, numbered in the shape's own colour so a route
-                  point never reads as a border point on the same map. */}
+              {/*
+                The route's two ends, numbered in the route's own colour so a
+                route point never reads as a border point on the same map.
+
+                Only the ends are marked, though every tap is still stored. The
+                intermediate pins were the single loudest thing on this map: a
+                thirty-point route was thirty overlapping teardrops sitting on the
+                road being plotted, hiding the very thing being judged — where the
+                line actually falls — and making it impossible to see which of two
+                nearby taps was which. What an admin needs from the shape is "where
+                does it start and stop"; the bends are read off the line itself.
+
+                The polyline is untouched and still passes through every stored
+                point, so nothing is lost about the route -- only the waypoints
+                that were crowding it are gone.
+
+                The two ends are numbered 1 and 2, not 1 and N. Once the
+                intermediate pins are gone the last point's real index is
+                meaningless to anyone reading the map: a route of 110 plotted
+                points ending in a "110" pin implies there were 109 others still
+                standing, which is the opposite of what the map now shows. 1 and 2
+                is the whole story the markers need to tell -- first tap, last tap
+                -- and it stays true no matter how long the route is.
+              */}
               {mapPickerMode === 'road' &&
-                form.boundary_polygon.map((point, index) => (
-                  <Marker
-                    key={`${point.lat}_${point.lng}_${index}`}
-                    position={point}
-                    title={`Route point ${index + 1}`}
-                    icon={numberedPinIcon(index + 1, normalizeRouteColor(form.route_color))}
-                  />
-                ))}
+                form.boundary_polygon
+                  .map((point, index) => ({ point, index }))
+                  .filter(
+                    ({ index }) =>
+                      index === 0 || index === form.boundary_polygon.length - 1
+                  )
+                  .map(({ point, index }) => (
+                    <Marker
+                      key={`${point.lat}_${point.lng}_${index}`}
+                      position={point}
+                      title={index === 0 ? 'Route start' : 'Route end'}
+                      icon={numberedPinIcon(index === 0 ? 1 : 2, normalizeRouteColor(form.route_color))}
+                    />
+                  ))}
               {mapPickerMode === 'area' &&
                 form.boundary_area.map((point, index) => (
                   <Marker
@@ -2398,24 +3019,11 @@ export default function AdminTerminals() {
           )}
 
           {/* Configuration: everything with no natural place on the map — name,
-              corridor width, visibility, colour. */}
+              corridor width, visibility, colour. The back button and title live in
+              the editor's top bar now, so nothing needs to stick to the top of this
+              scroller to survive a long form on a phone. */}
           {editorSection === 'configuration' && (
             <div className="flex-1 overflow-y-auto">
-              {/* Sticks to the top of the scroller so it survives a long form on a
-                  phone, where the sidebar rail is the only other way back. */}
-              <div className="sticky top-0 z-[2015] bg-surface border-b border-[var(--border)] px-3 py-3 flex items-center gap-2">
-                <button
-                  type="button"
-                  onClick={() => setEditorSection('terminal')}
-                  aria-label="Back to map"
-                  className="w-11 h-11 flex-shrink-0 flex items-center justify-center rounded-xl bg-[var(--muted)] active:scale-90"
-                >
-                  <ArrowLeft className="w-5 h-5 text-[var(--ink)]" />
-                </button>
-                <h3 className="font-extrabold text-base text-[var(--ink)] truncate">
-                  {editTerminal ? "Edit Terminal" : "New Terminal"}
-                </h3>
-              </div>
               {/* Full width on a phone, capped on a desktop: the colour rows each
                   hold a preview, a label and a button, and at max-w-lg on a narrow
                   screen the label was the thing that got squeezed out. */}
@@ -2535,7 +3143,7 @@ export default function AdminTerminals() {
                             role="switch"
                             aria-checked={form.boundary_enabled}
                             aria-label="Enforce boundary"
-                            onClick={() => setForm(f => ({ ...f, boundary_enabled: !f.boundary_enabled }))}
+                            onClick={() => setEditorBoundaryEnabled(!form.boundary_enabled)}
                             className={`relative w-12 h-7 rounded-full flex-shrink-0 transition-colors ${
                               form.boundary_enabled ? 'bg-[var(--success)]' : 'bg-[var(--border)]'
                             }`}
@@ -2544,6 +3152,13 @@ export default function AdminTerminals() {
                               form.boundary_enabled ? 'translate-x-5' : ''
                             }`} />
                           </button>
+                          {/* Says out loud what the switch does, because "Save
+                              Changes" sitting right below it invites the reading
+                              that this is one more setting to save. It is not: it
+                              goes to the row on tap. */}
+                          <p className="text-[11px] text-[var(--muted-foreground)] mt-1 sm:mt-0 sm:ml-1">
+                            Applied straight away — saving the terminal does not change it.
+                          </p>
                         </div>
                       )}
 
@@ -2652,22 +3267,13 @@ export default function AdminTerminals() {
             </div>
           )}
 
-          {/* Fares & Delivery. Share-ride pricing lives here; private ride and
-              delivery are owned by the dedicated page, which carries the extra
-              columns this editor does not load. */}
+          {/* Fares & Delivery. Everything a customer can buy at this terminal — the shared
+              seat, the whole vehicle, and the delivery — in one place, because the
+              dedicated Fares & Delivery page is a list of every terminal and the
+              admin is usually already standing in this one. No header of its own:
+              the editor's top bar carries the back button and the title. */}
           {editorSection === 'fares' && (
             <div className="flex-1 overflow-y-auto">
-              <div className="sticky top-0 z-[2015] bg-surface border-b border-[var(--border)] px-3 py-3 flex items-center gap-2">
-                <button
-                  type="button"
-                  onClick={() => setEditorSection('terminal')}
-                  aria-label="Back to map"
-                  className="w-11 h-11 flex-shrink-0 flex items-center justify-center rounded-xl bg-[var(--muted)] active:scale-90"
-                >
-                  <ArrowLeft className="w-5 h-5 text-[var(--ink)]" />
-                </button>
-                <h3 className="font-extrabold text-base text-[var(--ink)] truncate">Fares & Delivery</h3>
-              </div>
               <div className="mx-auto w-full max-w-2xl p-4 space-y-4">
                 {(() => {
                   const { errors } = validateEditor();
@@ -2712,40 +3318,172 @@ export default function AdminTerminals() {
                     </div>
                   );
 
+                  /*
+                   * The optional fares, which have an empty state as well as a
+                   * number. Blank is null, not 0, all the way to the database — so
+                   * the box renders null as an empty string and parses "" straight
+                   * back to null rather than through Number(), which would make the
+                   * empty box look like an error and block the save.
+                   */
+                  type OptionalFareField =
+                    | 'private_ride_fee' | 'private_ride_fee_per_km'
+                    | 'delivery_fee' | 'delivery_fee_per_km';
+
+                  const optionalMoney = (
+                    key: OptionalFareField,
+                    label: string,
+                    hint: string,
+                    placeholder: string,
+                    disabled = false,
+                  ) => (
+                    <div>
+                      <label className="text-xs font-semibold uppercase tracking-widest text-[var(--muted-foreground)] block mb-1">
+                        {label}
+                      </label>
+                      <div className="flex items-center gap-2">
+                        <span className="text-sm text-[var(--muted-foreground)] flex-shrink-0">₱</span>
+                        <input
+                          type="number"
+                          min={0}
+                          step="0.5"
+                          inputMode="decimal"
+                          value={form[key] ?? ''}
+                          placeholder={placeholder}
+                          disabled={disabled}
+                          aria-invalid={!!errors[key]}
+                          aria-label={label}
+                          onChange={e =>
+                            setForm(f => ({
+                              ...f,
+                              [key]: e.target.value === '' ? null : Number(e.target.value),
+                            }))
+                          }
+                          className={`flex-1 min-w-0 px-3 rounded-xl ${field} ${errors[key] ? invalid : ''} disabled:opacity-50`}
+                        />
+                      </div>
+                      <p className="text-xs text-[var(--muted-foreground)] mt-1">{hint}</p>
+                      {errors[key] && (
+                        <p className="text-xs text-[var(--error)] mt-1">{errors[key]}</p>
+                      )}
+                    </div>
+                  );
+
+                  const fareGroup = (
+                    title: string,
+                    blurb: string,
+                    Icon: typeof Car,
+                    children: ReactNode,
+                  ) => (
+                    <div className="p-3 bg-[var(--muted)] rounded-xl">
+                      <div className="flex items-start gap-2.5 mb-3">
+                        <Icon className="mt-0.5 w-4 h-4 flex-shrink-0 text-[var(--primary)]" aria-hidden="true" />
+                        <div className="min-w-0">
+                          <p className="text-sm font-semibold text-[var(--ink)]">{title}</p>
+                          <p className="text-xs text-[var(--muted-foreground)]">{blurb}</p>
+                        </div>
+                      </div>
+                      <div className="grid gap-4 sm:grid-cols-2">{children}</div>
+                    </div>
+                  );
+
                   return (
                     <>
                       <p className="text-sm text-[var(--muted-foreground)]">
-                        Share-ride pricing for {form.name || 'this terminal'}.
+                        Pricing for {form.name || 'this terminal'}.
                       </p>
 
-                      {money(
-                        'base_fare',
-                        'Base Fare',
-                        'Charged once when a ride starts, before distance.',
-                        '20',
-                      )}
-                      {money(
-                        'per_km',
-                        'Fare per km',
-                        'Added on top of the base fare for each kilometre travelled.',
-                        '10',
+                      {fareGroup(
+                        'Share Ride',
+                        'One seat, split with whoever else is going your way.',
+                        Users,
+                        <>
+                          {money(
+                            'base_fare',
+                            'Base Fare',
+                            'Charged once when a ride starts, before distance.',
+                            '20',
+                          )}
+                          {money(
+                            'per_km',
+                            'Fare per km',
+                            'Added on top of the base fare for each kilometre travelled.',
+                            '10',
+                          )}
+                        </>,
                       )}
 
-                      <div className="p-3 bg-[var(--muted)] rounded-xl">
-                        <p className="text-sm font-semibold text-[var(--ink)]">Private ride & delivery</p>
-                        <p className="text-xs text-[var(--muted-foreground)] mt-0.5">
-                          These have their own fields, so they are set on the Fares &amp;
-                          Delivery page rather than here. Saving from this editor leaves
-                          them untouched.
+                      {/* Neither of these has a column on every database yet, and
+                          PostgREST rejects the whole upsert over one missing column.
+                          Rather than let that silently cost every other edit on this
+                          screen, the ones we could not find are disabled and named —
+                          the same treatment the Fares & Delivery page gives them. */}
+                      {fareGroup(
+                        'Private Ride',
+                        'The whole vehicle, booked by one person.',
+                        Car,
+                        <>
+                          {optionalMoney(
+                            'private_ride_fee',
+                            'Price',
+                            'Leave empty to charge the share ride base fare.',
+                            'Same as share',
+                            !fareColumns.privateRide,
+                          )}
+                          {optionalMoney(
+                            'private_ride_fee_per_km',
+                            'Price per km',
+                            'Leave empty to charge the share ride per-km rate.',
+                            'Same as share',
+                            !fareColumns.privateRide,
+                          )}
+                        </>,
+                      )}
+
+                      {fareGroup(
+                        'Delivery',
+                        'Riding a rider to a shop’s customer with their order.',
+                        Truck,
+                        <>
+                          {optionalMoney(
+                            'delivery_fee',
+                            'Price',
+                            'Leave empty to use the platform default.',
+                            'Platform default',
+                            !fareColumns.delivery,
+                          )}
+                          {optionalMoney(
+                            'delivery_fee_per_km',
+                            'Price per km',
+                            'Leave empty to charge a flat delivery fee.',
+                            'Flat fee',
+                            !fareColumns.delivery,
+                          )}
+                        </>,
+                      )}
+
+                      {(!fareColumns.privateRide || !fareColumns.delivery) && (
+                        <p className="text-xs text-[var(--amber-ink)] bg-[var(--amber-soft)] rounded-xl p-3">
+                          {[
+                            !fareColumns.privateRide ? 'ADD_TERMINAL_PRIVATE_RIDE_FEE.sql' : null,
+                            !fareColumns.delivery ? 'ADD_TERMINAL_DELIVERY_AND_CAPACITY.sql' : null,
+                          ]
+                            .filter(Boolean)
+                            .join(' and ')}{' '}
+                          has not been run, so the boxes above cannot be saved. Every
+                          other field on this terminal still saves.
                         </p>
-                        <button
-                          type="button"
-                          onClick={() => { closeMapPicker(); navigate('/admin/fares'); }}
-                          className="mt-3 inline-flex min-h-11 items-center gap-2 rounded-xl border border-line px-3 py-2 text-sm font-bold text-[var(--ink)]"
-                        >
-                          Open Fares &amp; Delivery
-                        </button>
-                      </div>
+                      )}
+
+                      {/* Seats and capacity are per terminal too, but they belong to
+                          the platform's own limits rather than to a fare, and they
+                          are edited alongside every other terminal there. */}
+                      <button
+                        type="button"
+                        onClick={() => { closeMapPicker(); navigate('/admin/fares'); }}
+                        className="inline-flex min-h-11 items-center gap-2 rounded-xl border border-line px-3 py-2 text-sm font-bold text-[var(--ink)]"
+                      >
+                        Seats and every terminal’s pricing on the Fares &amp; Delivery page
+                      </button>
 
                       <div className="sticky bottom-0 -mx-4 px-4 py-3 bg-surface border-t border-[var(--border)]">
                         <button

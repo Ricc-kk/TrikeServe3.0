@@ -16,6 +16,7 @@ import {
   describePayload,
   formatDate,
   requestLabel,
+  searchableText,
   typeBadgeColor,
   typeIcon,
 } from "./approvalView";
@@ -45,24 +46,6 @@ function StatusIcon({ status }: { status: ApprovalRequestStatus }) {
   if (status === "approved") return <CheckCircle className="w-4 h-4" aria-hidden="true" />;
   if (status === "rejected") return <XCircle className="w-4 h-4" aria-hidden="true" />;
   return <Clock className="w-4 h-4" aria-hidden="true" />;
-}
-
-/** Everything a search box should match against, as one lowercase string. */
-function searchableText(request: ApprovalRequest): string {
-  const payload = request.payload || {};
-  return [
-    requestLabel(request),
-    request.request_type,
-    payload.name,
-    payload.driver_name,
-    payload.terminal_name,
-    payload.new_plate,
-    payload.previous_plate,
-    payload.after?.name,
-  ]
-    .filter(Boolean)
-    .join(" ")
-    .toLowerCase();
 }
 
 /**

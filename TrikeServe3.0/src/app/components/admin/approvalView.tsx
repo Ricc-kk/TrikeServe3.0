@@ -1,7 +1,7 @@
-import { useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import {
   ClipboardCheck, IdCard, MapPin, Store, Trash2, UserMinus, UserPlus, UtensilsCrossed,
-  ChevronDown, ChevronUp,
+  Eye, X,
 } from "lucide-react";
 import {
   APPROVAL_REQUEST_LABELS,
@@ -110,18 +110,59 @@ export function requestLabel(request: ApprovalRequest) {
 }
 
 /**
- * A request's details, collapsed to a summary and expanded on tap.
+ * Everything a search box should match against, as one lowercase string.
  *
- * `describePayload` can return five lines, which is a wall inside a table cell
- * and pushes every other column off the row. The first line is the one that
- * identifies the request, so it stays visible and the rest sit behind a toggle —
- * with the whole control a single button, so a tap anywhere on it works rather
- * than only on the small word "more".
- *
- * Rendered as a button with aria-expanded rather than a <details> element so the
- * open/closed state is readable by assistive tech as well as visually.
+ * Shared rather than written twice: the Super Admin filters an inbox mixed with
+ * every request type and needs to search by who sent it, and the Rider Admin
+ * searches their own submissions by terminal, driver or plate. The two lists
+ * overlap but neither is a superset, and a second copy of this is exactly the
+ * thing that quietly drifts — one screen ends up matching on the requester's
+ * name and the other silently doesn't.
  */
-export function ExpandableDetails({
+export function searchableText(request: ApprovalRequest): string {
+  const payload = request.payload || {};
+  return [
+    requestLabel(request),
+    request.request_type,
+    // Who sent it, and why a rejection was rejected. A no-op for a Rider Admin,
+    // who only ever searches their own submissions — but it is how a Super Admin
+    // finds one admin's batch, or the request someone is looking for by the
+    // complaint that came with it.
+    request.requested_by_name,
+    request.requested_by_email,
+    request.rejection_reason,
+    payload.name,
+    payload.driver_name,
+    payload.terminal_name,
+    payload.new_plate,
+    payload.previous_plate,
+    payload.after?.name,
+  ]
+    .filter(Boolean)
+    .join(" ")
+    .toLowerCase();
+}
+
+/**
+ * A request's details: the identifying line inline, everything else in a modal.
+ *
+ * `describePayload` can return five lines. Inline, that is a wall of text that
+ * grows the row to five lines' height and, in the Reviewed table, pushes the
+ * Status and Reviewed columns off screen entirely — so the columns that decide
+ * at a glance whether anything still needs attention become the ones you have to
+ * scroll to find.
+ *
+ * Expanding in place was the wrong shape of fix: it made the row's height depend
+ * on whether someone happened to have opened it, so the table's rows no longer
+ * lined up with each other. A modal keeps every row exactly one line tall and
+ * gives the details room to be read properly, which matters most for the
+ * business profile diff — that one is a table of before/after values and has
+ * never fitted inside a cell.
+ *
+ * Escape and a click on the backdrop both close it, and the close button takes
+ * focus on open so a keyboard user is not left tabbing through the page behind.
+ */
+export function RequestDetails({
   request,
   lines,
   children,
@@ -132,13 +173,27 @@ export function ExpandableDetails({
   children?: ReactNode;
 }) {
   const [open, setOpen] = useState(false);
+  const closeRef = useRef<HTMLButtonElement>(null);
   const all = lines ?? describePayload(request);
-  const [summary, ...rest] = all;
-  const hasMore = rest.length > 0 || !!children;
+  const summary = all[0];
 
-  if (!summary && !hasMore) {
+  // Only listens while open, so a page full of these buttons does not accumulate
+  // one Escape handler each.
+  useEffect(() => {
+    if (!open) return;
+    closeRef.current?.focus();
+    const handleKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setOpen(false);
+    };
+    document.addEventListener("keydown", handleKey);
+    return () => document.removeEventListener("keydown", handleKey);
+  }, [open]);
+
+  if (all.length === 0 && !children) {
     return <p className="text-sm text-[var(--muted-foreground)] italic">No details</p>;
   }
+
+  const label = requestLabel(request);
 
   return (
     <div className="min-w-0">
@@ -146,32 +201,67 @@ export function ExpandableDetails({
         <p className="text-sm text-[var(--ink)] truncate">{summary}</p>
       )}
 
-      {hasMore && (
-        <>
-          <button
-            type="button"
-            onClick={() => setOpen(o => !o)}
-            aria-expanded={open}
-            aria-label={open ? "Hide full details" : "Show full details"}
-            className="mt-1 inline-flex items-center gap-1 text-xs font-bold text-[var(--primary)] hover:underline"
-          >
-            {open ? "Hide details" : "Show details"}
-            {open ? (
-              <ChevronUp className="w-3.5 h-3.5" aria-hidden="true" />
-            ) : (
-              <ChevronDown className="w-3.5 h-3.5" aria-hidden="true" />
-            )}
-          </button>
+      <button
+        type="button"
+        onClick={() => setOpen(true)}
+        aria-haspopup="dialog"
+        aria-label={`View full details of ${label}`}
+        className="mt-1 inline-flex items-center gap-1 text-xs font-bold text-[var(--primary)] hover:underline"
+      >
+        <Eye className="w-3.5 h-3.5" aria-hidden="true" />
+        View details
+      </button>
 
-          {open && (
-            <div className="mt-2 space-y-1 rounded-xl bg-[var(--muted)] p-3">
-              {rest.map((line, i) => (
-                <p key={i} className="text-xs text-[var(--muted-foreground)] break-words">{line}</p>
+      {open && (
+        <div
+          className="fixed inset-0 z-[2000] flex items-center justify-center p-4"
+          role="dialog"
+          aria-modal="true"
+          aria-label={`${label} details`}
+        >
+          <div className="absolute inset-0 bg-black/50" onClick={() => setOpen(false)} />
+
+          <div className="relative w-full max-w-lg max-h-[85vh] flex flex-col bg-surface rounded-2xl shadow-2xl overflow-hidden">
+            <div className="flex items-center gap-3 p-5 border-b-2 border-[var(--border)]">
+              <span className="flex-shrink-0">{typeIcon(request.request_type)}</span>
+              <div className="min-w-0 flex-1">
+                <h3 className="font-bold text-[var(--ink)] truncate">{label}</h3>
+                <p className="text-xs text-[var(--muted-foreground)] truncate">
+                  Requested by {request.requested_by_name || request.requested_by_email || "Rider Admin"}
+                  {" · "}{formatDate(request.requested_at)}
+                </p>
+              </div>
+              <button
+                ref={closeRef}
+                type="button"
+                onClick={() => setOpen(false)}
+                aria-label="Close details"
+                className="flex-shrink-0 w-10 h-10 flex items-center justify-center rounded-xl bg-[var(--muted)] active:scale-90"
+              >
+                <X className="w-5 h-5 text-[var(--ink)]" aria-hidden="true" />
+              </button>
+            </div>
+
+            {/* Scrolls rather than growing: the profile diff is the tall case, and a
+                dialog taller than the viewport puts its own close button off screen. */}
+            <div className="flex-1 overflow-y-auto p-5 space-y-2">
+              {all.map((line, i) => (
+                <p key={i} className="text-sm text-[var(--ink)] break-words">{line}</p>
               ))}
               {children}
             </div>
-          )}
-        </>
+
+            <div className="border-t-2 border-[var(--border)] p-3">
+              <button
+                type="button"
+                onClick={() => setOpen(false)}
+                className="w-full py-3 text-sm font-bold text-[var(--ink)] bg-[var(--muted)] hover:bg-[var(--border)] rounded-xl transition-colors"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

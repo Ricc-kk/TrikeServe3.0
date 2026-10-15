@@ -20,6 +20,7 @@ import { autocompletePlacesNew, createPlacesSessionToken, fetchPlaceDetailsNew, 
 import tricycleIcon from '../../../assets/0b76d1aa56b8ad6e15dd4efc8a0100b0ca5762a1.png';
 import { useAuth } from "../../contexts/AuthContext";
 import { supabaseHelpers, isPointWithinAnyTerminalBorder, isPointWithinAnyTerminalRoute, isPointInPolygon, isPointOnRoadCorridor, normalizeBoundaryRoad, normalizeBoundaryArea, normalizeRoadWidth, geocodeAddress, logAudit, type LatLngPoint } from "@/lib/supabase";
+import { terminalMarkerIcon, normalizeTerminalColor, normalizeRouteColor, normalizeBorderColor } from "../ui/TerminalIcon";
 import { computeRideFare, normalizeRates, terminalRates, privateRideRates, DEFAULT_MAX_PASSENGERS } from "@/lib/pricing";
 import { useElapsedTime } from "@/app/hooks/useElapsedTime";
 import ReasonPromptModal from "../ui/reason-prompt-modal";
@@ -347,7 +348,7 @@ export default function CustomerHome() {
   const navigate = useNavigate();
   const [selectedVehicle, setSelectedVehicle] = useState<'share' | 'special' | null>(null);
   // Booking is a three-step flow on top of the full-screen map:
-  // home (map + Book a Ride) → ride type → pickup / drop-off.
+  // home (map + Book a Ride) â†’ ride type â†’ pickup / drop-off.
   const [bookingStep, setBookingStep] = useState<'home' | 'ride' | 'locations'>('home');
   const [currentLocation, setCurrentLocation] = useState<{ lat: number; lng: number }>({ lat: 14.5995, lng: 120.9842 }); // Default: Manila
   const [mapCenter, setMapCenter] = useState<{ lat: number; lng: number }>({ lat: 14.5995, lng: 120.9842 });
@@ -607,12 +608,12 @@ export default function CustomerHome() {
    const [unreadDeliveryNotifications, setUnreadDeliveryNotifications] = useState(0);
    const [privateRidePrice, setPrivateRidePrice] = useState(50); // Legacy fixed private fare (fallback when distance is unknown)
    const [sharedRidePrice, setSharedRidePrice] = useState(15); // Legacy fixed share fare (fallback when distance is unknown)
-   // The fare captured when the ride was booked — the terminal fare at that
+   // The fare captured when the ride was booked â€” the terminal fare at that
    // moment. The active-ride card shows this instead of re-deriving the fare, so
    // it can't drift from the amount stored on the request when booking state is
    // recomputed or restored from storage.
    const [bookedFare, setBookedFare] = useState<number | null>(null);
-   // Per-km pricing set by the admin: fare = baseFare + perKm × distance.
+   // Per-km pricing set by the admin: fare = baseFare + perKm Ã— distance.
    const [baseFare, setBaseFare] = useState(20);
    const [perKm, setPerKm] = useState(10);
    const [driverLocation, setDriverLocation] = useState<{ lat: number; lng: number } | null>(null);
@@ -677,6 +678,21 @@ export default function CustomerHome() {
         widthM: enforced ? normalizeRoadWidth(enforced.road_width_m) : undefined,
       };
     }, [terminals, selectedTerminalId]);
+
+  /*
+   * The picker map draws the selected terminal's shapes in that terminal's own
+   * colours.
+   *
+   * The admin sets a colour per terminal so neighbouring TODAs are tellable
+   * apart; showing every one of them in the same orange threw that away and made
+   * the border on screen ambiguous about whose it was. The defaults are the same
+   * ones the admin panel falls back to, and they apply unchanged until
+   * ADD_TERMINAL_SHAPE_COLORS.sql has been run.
+   */
+  const pickerTerminal = selectedTerminalBoundary.terminal;
+  const pickerMarkerColor = normalizeTerminalColor(pickerTerminal?.marker_color);
+  const pickerRouteColor = normalizeRouteColor(pickerTerminal?.route_color);
+  const pickerBorderColor = normalizeBorderColor(pickerTerminal?.border_color);
    const mapRef = useRef<any>(null);
    const hasManualPickupSelectionRef = useRef(false);
    const unsubscribeRef = useRef<(() => void) | null>(null);
@@ -1011,7 +1027,7 @@ export default function CustomerHome() {
       setDropoffAddress('');
       setSelectedVehicle(null);
       
-      alert('✅ All ride data cleared! You can now create a new lobby.');
+      alert('âœ… All ride data cleared! You can now create a new lobby.');
       window.location.reload();
     }
   };
@@ -1166,7 +1182,7 @@ export default function CustomerHome() {
           
           // Show the lobby
           setShowShareLobby(true);
-          console.log('✅ Restored active lobby:', userLobby.id, 'Status:', userLobby.status);
+          console.log('âœ… Restored active lobby:', userLobby.id, 'Status:', userLobby.status);
         }
       } catch (error) {
         console.error('Error checking active lobby:', error);
@@ -1296,7 +1312,7 @@ export default function CustomerHome() {
           setPrivateRidePrice(settings.privateRide);
           setBaseFare(settings.baseFare);
           setPerKm(settings.perKm);
-          console.log(`✅ Loaded admin pricing - ₱${settings.baseFare} base + ₱${settings.perKm}/km`);
+          console.log(`âœ… Loaded admin pricing - â‚±${settings.baseFare} base + â‚±${settings.perKm}/km`);
         }
       } catch (error) {
         console.error('Error parsing pricing settings:', error);
@@ -1319,10 +1335,10 @@ export default function CustomerHome() {
        const inferredCompletionType: 'ride' | 'delivery' =
          rideType === 'delivery' || message?.toLowerCase().includes('delivery') ? 'delivery' : 'ride';
 
-        console.log('📣 PROCESS DRIVER STATUS UPDATE:', { status: normalizedStatus, message, source, currentRequestId, lastShownStatus, inferredCompletionType });
+        console.log('ðŸ“£ PROCESS DRIVER STATUS UPDATE:', { status: normalizedStatus, message, source, currentRequestId, lastShownStatus, inferredCompletionType });
 
         if (normalizedStatus === 'completed' && !rideCompletedPopup) {
-         console.log('✅✅✅ COMPLETION STATUS RECEIVED - showing completion popup now');
+         console.log('âœ…âœ…âœ… COMPLETION STATUS RECEIVED - showing completion popup now');
          console.log('   Source:', source);
          console.log('   Inferred Completion Type:', inferredCompletionType);
          console.log('   Setting rideCompletedPopup = TRUE');
@@ -1342,12 +1358,12 @@ export default function CustomerHome() {
 
         if (normalizedStatus && normalizedStatus !== 'pending' && normalizedStatus !== 'cancelled') {
         const statusDisplayMap: { [key: string]: string } = {
-          'on-the-way': 'Your driver is on the way to pick you up! 🚗',
-          'arrived': 'Your driver has arrived! 📍',
+          'on-the-way': 'Your driver is on the way to pick you up! ðŸš—',
+          'arrived': 'Your driver has arrived! ðŸ“',
             'pickup': 'You have been picked up! On the way to your destination.',
             'picked-up': 'You have been picked up! On the way to your destination.',
-            'drop-off': 'You have arrived at your destination! 🏁',
-            'dropped-off': 'You have arrived at your destination! 🏁',
+            'drop-off': 'You have arrived at your destination! ðŸ',
+            'dropped-off': 'You have arrived at your destination! ðŸ',
           'in-progress': 'Your ride is in progress!',
           'payment': message || 'Please complete the payment.',
             'awaiting-payment': message || 'Please complete the payment.',
@@ -1397,7 +1413,7 @@ export default function CustomerHome() {
               eta: myRide.eta || '5 mins',
             });
 
-            // ❌ REMOVED: Popup will be shown from real-time subscription instead
+            // âŒ REMOVED: Popup will be shown from real-time subscription instead
             // This prevents duplicate popups from multiple triggers
 
             setRideStatus('driver-found');
@@ -1412,7 +1428,7 @@ export default function CustomerHome() {
     // Check for driver status updates (all ride types)
     const checkForDriverStatusUpdate = async () => {
       if (!currentRequestId) {
-        console.log('❌ No currentRequestId, skipping driver status check');
+        console.log('âŒ No currentRequestId, skipping driver status check');
         return;
       }
 
@@ -1420,19 +1436,19 @@ export default function CustomerHome() {
       try {
         const { data: rideRequest, error } = await supabaseHelpers.getRideRequest(currentRequestId);
 
-        console.log('🔍 CHECKING DATABASE for Ride Status Update:');
+        console.log('ðŸ” CHECKING DATABASE for Ride Status Update:');
         console.log('   Request ID:', currentRequestId);
         console.log('   DB Driver Status:', rideRequest?.driver_status);
         console.log('   DB Accepted Driver ID:', rideRequest?.accepted_driver_id);
         console.log('   Status Message:', rideRequest?.driver_status_message);
 
         if (error) {
-          console.error('❌ Database error:', error);
+          console.error('âŒ Database error:', error);
           return;
         }
 
         if (!rideRequest) {
-          console.log('❌ Ride request not found in database');
+          console.log('âŒ Ride request not found in database');
           return;
         }
 
@@ -1442,7 +1458,7 @@ export default function CustomerHome() {
       // in the DB after the ride is completed.
         // Normalize status fields. If the ride is explicitly completed in any
         // column, prefer that over intermediate payment-stage values.
-        console.log('🔍 POLLING: Raw DB fields:');
+        console.log('ðŸ” POLLING: Raw DB fields:');
         console.log('   rideRequest.status:', rideRequest.status);
         console.log('   rideRequest.driver_status:', rideRequest.driver_status);
         console.log('   rideRequest.ride_status:', (rideRequest as any).ride_status);
@@ -1454,18 +1470,18 @@ export default function CustomerHome() {
             ? 'completed'
             : rideRequest.driver_status || rideRequest.status || (rideRequest as any).ride_status;
 
-         console.log('🔍 POLLING: Normalized dbStatus:', dbStatus);
+         console.log('ðŸ” POLLING: Normalized dbStatus:', dbStatus);
 
        // CRITICAL: Check for completion FIRST before checking driver acceptance
         if (dbStatus === 'completed') {
-          console.log('✅🎉 POLLING: DB HAS COMPLETED STATUS - calling processDriverStatusUpdate');
+          console.log('âœ…ðŸŽ‰ POLLING: DB HAS COMPLETED STATUS - calling processDriverStatusUpdate');
           processDriverStatusUpdate('completed', rideRequest.driver_status_message || rideRequest.status_message || 'Delivery completed!', 'polling-db-completed', rideRequest);
           return;
         }
 
        // CRITICAL: Check if driver has been accepted (this means driver info card should show)
         if (rideRequest.accepted_driver_id && !activeRide) {
-          console.log('✅ DRIVER ACCEPTED (Polling detected):', rideRequest.accepted_driver_id);
+          console.log('âœ… DRIVER ACCEPTED (Polling detected):', rideRequest.accepted_driver_id);
           console.log('   Driver Name:', rideRequest.driver_name);
           console.log('   Driver Plate:', rideRequest.driver_plate);
           console.log('   Driver Rating:', rideRequest.driver_rating);
@@ -1481,17 +1497,17 @@ export default function CustomerHome() {
             eta: rideRequest.eta || '5 mins',
           };
 
-          console.log('🎯 Active Ride Object:', newActiveRide);
+          console.log('ðŸŽ¯ Active Ride Object:', newActiveRide);
 
           setActiveRide(newActiveRide);
-          setRideStatus('driver-found');  // ← CRITICAL! This makes the card appear!
+          setRideStatus('driver-found');  // â† CRITICAL! This makes the card appear!
 
           // Show acceptance popup
           setDriverAcceptedPopup({
             driverName: rideRequest.driver_name || 'Driver',
             driverPlate: rideRequest.driver_plate || 'N/A',
             driverRating: rideRequest.driver_rating || '4.8',
-            driverPhoto: '👨‍✈️', // replaced by rideDriverAvatar once it loads // replaced by rideDriverAvatar once it loads
+            driverPhoto: 'ðŸ‘¨â€âœˆï¸', // replaced by rideDriverAvatar once it loads // replaced by rideDriverAvatar once it loads
           });
 
           // Use the driver's real average rating from driver_ratings when available.
@@ -1541,7 +1557,7 @@ export default function CustomerHome() {
           processDriverStatusUpdate(rideRequest.driver_status, rideRequest.driver_status_message || rideRequest.status_message, 'polling-driver_status', rideRequest);
         }
       } catch (error) {
-        console.error('❌ Error checking driver status from database:', error);
+        console.error('âŒ Error checking driver status from database:', error);
       }
     };
 
@@ -1557,13 +1573,13 @@ export default function CustomerHome() {
 
     // Listen for storage events (cross-tab sync AND same-tab events)
     const handleStorageChange = (e: StorageEvent) => {
-      console.log('📡 Storage Event Received:', e.key);
+      console.log('ðŸ“¡ Storage Event Received:', e.key);
       if (e.key === 'trikeserve_accepted_rides') {
-        console.log('🔄 Accepted rides changed, checking...');
+        console.log('ðŸ”„ Accepted rides changed, checking...');
         checkForAcceptedRide();
       }
       if (e.key?.startsWith('driver_status_')) {
-        console.log('🔄 Driver status changed, checking...', e.key);
+        console.log('ðŸ”„ Driver status changed, checking...', e.key);
         try {
           const parsed = e.newValue ? JSON.parse(e.newValue) : null;
           if (parsed?.status) {
@@ -1571,7 +1587,7 @@ export default function CustomerHome() {
             return;
           }
         } catch (parseError) {
-          console.warn('⚠️ Could not parse driver status storage payload:', parseError);
+          console.warn('âš ï¸ Could not parse driver status storage payload:', parseError);
         }
         checkForDriverStatusUpdate();
       }
@@ -1579,7 +1595,7 @@ export default function CustomerHome() {
 
     // Also listen for custom events dispatched by driver
     const handleCustomStorageEvent = (e: any) => {
-      console.log('🎯 Custom Storage Event:', e.detail?.key);
+      console.log('ðŸŽ¯ Custom Storage Event:', e.detail?.key);
       if (e.detail?.key?.startsWith('driver_status_')) {
         if (e.detail?.value?.status) {
           processDriverStatusUpdate(e.detail.value.status, e.detail.value.message, 'custom-storage-event');
@@ -1603,14 +1619,14 @@ export default function CustomerHome() {
   useEffect(() => {
     if (!currentRequestId || !user?.id) return;
 
-    console.log('📡 Setting up real-time database subscriptions for ride:', currentRequestId);
+    console.log('ðŸ“¡ Setting up real-time database subscriptions for ride:', currentRequestId);
 
     // Subscribe to ride updates (driver status, acceptance, completion)
     const unsubscribe = supabaseHelpers.subscribeToRideUpdates(currentRequestId, (updatedRide) => {
-      console.log('🔄 Real-time ride update received:', updatedRide);
+      console.log('ðŸ”„ Real-time ride update received:', updatedRide);
 
       // DEBUG: Log all driver-related fields
-      console.log('📊 DRIVER INFO FROM DATABASE:');
+      console.log('ðŸ“Š DRIVER INFO FROM DATABASE:');
       console.log('   accepted_driver_id:', updatedRide.accepted_driver_id);
       console.log('   driver_name:', updatedRide.driver_name);
       console.log('   driver_plate:', updatedRide.driver_plate);
@@ -1632,7 +1648,7 @@ export default function CustomerHome() {
             : updatedRide.driver_status || updatedRide.status || (updatedRide as any).ride_status || ''
         ).toLowerCase();
 
-      console.log('🔍 REALTIME STATUS NORMALIZATION:');
+      console.log('ðŸ” REALTIME STATUS NORMALIZATION:');
       console.log('   Normalized realtimeStatus:', realtimeStatus);
 
        // Follow the amount stored on the request (the terminal fare).
@@ -1642,7 +1658,7 @@ export default function CustomerHome() {
        // Check if driver was accepted - THIS IS THE KEY!
        // Don't show acceptance if the ride is already completed.
        if (updatedRide.accepted_driver_id && !activeRide && realtimeStatus !== 'completed') {
-         console.log('✅ DRIVER ACCEPTED (Real-time):', updatedRide.accepted_driver_id);
+         console.log('âœ… DRIVER ACCEPTED (Real-time):', updatedRide.accepted_driver_id);
 
          // Remember who the driver is so the customer can rate them later.
          setRideDriverId(updatedRide.accepted_driver_id);
@@ -1654,18 +1670,18 @@ export default function CustomerHome() {
            eta: updatedRide.eta || '5 mins',
          };
 
-         console.log('🎯 Setting activeRide state with:', rideState);
-         console.log('🎯 Setting rideStatus to: driver-found');
+         console.log('ðŸŽ¯ Setting activeRide state with:', rideState);
+         console.log('ðŸŽ¯ Setting rideStatus to: driver-found');
 
          setActiveRide(rideState);
-         setRideStatus('driver-found');  // ← CRITICAL! This makes the card appear!
+         setRideStatus('driver-found');  // â† CRITICAL! This makes the card appear!
 
          // Show acceptance popup
          setDriverAcceptedPopup({
            driverName: updatedRide.driver_name || 'Driver',
            driverPlate: updatedRide.driver_plate || 'N/A',
            driverRating: updatedRide.driver_rating || '4.8',
-           driverPhoto: '👨‍✈️', // replaced by rideDriverAvatar once it loads
+           driverPhoto: 'ðŸ‘¨â€âœˆï¸', // replaced by rideDriverAvatar once it loads
          });
 
          // Use the driver's real average rating from driver_ratings when available.
@@ -1677,7 +1693,7 @@ export default function CustomerHome() {
          });
        }
 
-       // Hydrate route coordinates from realtime payload — only update if changed
+       // Hydrate route coordinates from realtime payload â€” only update if changed
        const realtimePickupCoords = readValidCoords(updatedRide.pickup_lat, updatedRide.pickup_lng);
        if (realtimePickupCoords) {
          setPickupCoords(prev => {
@@ -1694,7 +1710,7 @@ export default function CustomerHome() {
          });
        }
 
-       // Update driver location on map — only update if changed
+       // Update driver location on map â€” only update if changed
        if (updatedRide.accepted_driver_id && updatedRide.driver_lat && updatedRide.driver_lng) {
          const newLat = Number(updatedRide.driver_lat);
          const newLng = Number(updatedRide.driver_lng);
@@ -1704,7 +1720,7 @@ export default function CustomerHome() {
              return { lat: newLat, lng: newLng };
            });
          }
-         console.log('📍 Driver location updated');
+         console.log('ðŸ“ Driver location updated');
        }
 
        // Handle completion status only.
@@ -1718,15 +1734,15 @@ export default function CustomerHome() {
              ? 'delivery'
              : 'ride';
 
-         console.log('🔍 REALTIME COMPLETION CHECK:');
+         console.log('ðŸ” REALTIME COMPLETION CHECK:');
          console.log('   realtimeStatus:', realtimeStatus);
          console.log('   lastShownStatus:', lastShownStatus);
          console.log('   Inferred Type:', inferredCompletionType);
          console.log('   Will Show?', realtimeStatus !== lastShownStatus);
 
          if (!rideCompletedPopup) {
-           console.log('✅ REALTIME HAS NEW COMPLETED - showing popup');
-           console.log('🎉 RIDE COMPLETED (Real-time):', updatedRide);
+           console.log('âœ… REALTIME HAS NEW COMPLETED - showing popup');
+           console.log('ðŸŽ‰ RIDE COMPLETED (Real-time):', updatedRide);
            console.log('   Inferred Completion Type:', inferredCompletionType);
            console.log('   Setting rideCompletedPopup = true');
            setCompletionPopupType(inferredCompletionType);
@@ -1748,12 +1764,12 @@ export default function CustomerHome() {
       // Check for other driver status updates (for popup messages)
        if (realtimeStatus && realtimeStatus !== 'pending' && realtimeStatus !== 'completed' && realtimeStatus !== 'cancelled') {
         const statusDisplayMap: { [key: string]: string } = {
-          'on-the-way': 'Your driver is on the way to pick you up! 🚗',
-          'arrived': 'Your driver has arrived! 📍',
+          'on-the-way': 'Your driver is on the way to pick you up! ðŸš—',
+          'arrived': 'Your driver has arrived! ðŸ“',
           'pickup': 'You have been picked up! On the way to your destination.',
           'picked-up': 'You have been picked up! On the way to your destination.',
-          'drop-off': 'You have arrived at your destination! 🏁',
-          'dropped-off': 'You have arrived at your destination! 🏁',
+          'drop-off': 'You have arrived at your destination! ðŸ',
+          'dropped-off': 'You have arrived at your destination! ðŸ',
           'in-progress': 'Your ride is in progress!',
           'payment': updatedRide.driver_status_message || 'Please complete the payment.',
           'awaiting-payment': updatedRide.driver_status_message || 'Please complete the payment.',
@@ -1796,7 +1812,7 @@ export default function CustomerHome() {
 
     return () => {
       if (unsubscribeRef.current) {
-        console.log('🛑 Cleaning up real-time subscription');
+        console.log('ðŸ›‘ Cleaning up real-time subscription');
         unsubscribeRef.current();
       }
     };
@@ -1961,27 +1977,27 @@ export default function CustomerHome() {
   }, [user]);
 
   const popularLocations = [
-    { name: "Adelfa Street", address: "Adelfa Street, Valenzuela", icon: "📍" },
-    { name: "B.Garcia Street", address: "B.Garcia Street, Valenzuela", icon: "📍" },
-    { name: "Cadena de Amor Street", address: "Cadena de Amor Street, Valenzuela", icon: "📍" },
-    { name: "Carnation Street", address: "Carnation Street, Valenzuela", icon: "🌸" },
-    { name: "Daffodil Street", address: "Daffodil Street, Valenzuela", icon: "🌼" },
-    { name: "Dama de Noche Street", address: "Dama de Noche Street, Valenzuela", icon: "🌙" },
-    { name: "Gladiola Street", address: "Gladiola Street, Valenzuela", icon: "🌹" },
-    { name: "Ilang-Ilang Street", address: "Ilang-Ilang Street, Valenzuela", icon: "🌸" },
-    { name: "Lilac Street", address: "Lilac Street, Valenzuela", icon: "💜" },
-    { name: "Jasmin Street", address: "Jasmin Street, Valenzuela", icon: "🌸" },
-    { name: "Morning Glory Street", address: "Morning Glory Street, Valenzuela", icon: "🌺" },
-    { name: "Marigold Street", address: "Marigold Street, Valenzuela", icon: "🌼" },
-    { name: "Orchid Street", address: "Orchid Street, Valenzuela", icon: "🌸" },
-    { name: "Rosal Street", address: "Rosal Street, Valenzuela", icon: "🌹" },
-    { name: "Balikatan Street", address: "Balikatan Street, Valenzuela", icon: "📍" },
-    { name: "Rose Mary Street", address: "Rose Mary Street, Valenzuela", icon: "🌹" },
-    { name: "Sampaguita Street", address: "Sampaguita Street, Valenzuela", icon: "🌼" },
-    { name: "Everlasting Street", address: "Everlasting Street, Valenzuela", icon: "🌸" },
-    { name: "Gen T Deleon Terminal", address: "Main Road, Gen T Deleon", icon: "🚏" },
-    { name: "Barangay Hall", address: "Gen T Deleon Center", icon: "🏛️" },
-    { name: "Gen T Deleon Market", address: "Market District", icon: "🏪" },
+    { name: "Adelfa Street", address: "Adelfa Street, Valenzuela", icon: "ðŸ“" },
+    { name: "B.Garcia Street", address: "B.Garcia Street, Valenzuela", icon: "ðŸ“" },
+    { name: "Cadena de Amor Street", address: "Cadena de Amor Street, Valenzuela", icon: "ðŸ“" },
+    { name: "Carnation Street", address: "Carnation Street, Valenzuela", icon: "ðŸŒ¸" },
+    { name: "Daffodil Street", address: "Daffodil Street, Valenzuela", icon: "ðŸŒ¼" },
+    { name: "Dama de Noche Street", address: "Dama de Noche Street, Valenzuela", icon: "ðŸŒ™" },
+    { name: "Gladiola Street", address: "Gladiola Street, Valenzuela", icon: "ðŸŒ¹" },
+    { name: "Ilang-Ilang Street", address: "Ilang-Ilang Street, Valenzuela", icon: "ðŸŒ¸" },
+    { name: "Lilac Street", address: "Lilac Street, Valenzuela", icon: "ðŸ’œ" },
+    { name: "Jasmin Street", address: "Jasmin Street, Valenzuela", icon: "ðŸŒ¸" },
+    { name: "Morning Glory Street", address: "Morning Glory Street, Valenzuela", icon: "ðŸŒº" },
+    { name: "Marigold Street", address: "Marigold Street, Valenzuela", icon: "ðŸŒ¼" },
+    { name: "Orchid Street", address: "Orchid Street, Valenzuela", icon: "ðŸŒ¸" },
+    { name: "Rosal Street", address: "Rosal Street, Valenzuela", icon: "ðŸŒ¹" },
+    { name: "Balikatan Street", address: "Balikatan Street, Valenzuela", icon: "ðŸ“" },
+    { name: "Rose Mary Street", address: "Rose Mary Street, Valenzuela", icon: "ðŸŒ¹" },
+    { name: "Sampaguita Street", address: "Sampaguita Street, Valenzuela", icon: "ðŸŒ¼" },
+    { name: "Everlasting Street", address: "Everlasting Street, Valenzuela", icon: "ðŸŒ¸" },
+    { name: "Gen T Deleon Terminal", address: "Main Road, Gen T Deleon", icon: "ðŸš" },
+    { name: "Barangay Hall", address: "Gen T Deleon Center", icon: "ðŸ›ï¸" },
+    { name: "Gen T Deleon Market", address: "Market District", icon: "ðŸª" },
   ];
 
   const handleLocationSelect = (location: any) => {
@@ -2087,10 +2103,10 @@ export default function CustomerHome() {
    *
    * They answer different questions and are checked separately:
    *
-   *   1. The BORDER — the customer has to be standing inside a terminal's area.
+   *   1. The BORDER â€” the customer has to be standing inside a terminal's area.
    *      This is "who does the terminal serve"; without it a customer standing
    *      a kilometre away could book, because the road corridor is wide.
-   *   2. The ROUTE — the drop-off has to sit on a terminal's road corridor.
+   *   2. The ROUTE â€” the drop-off has to sit on a terminal's road corridor.
    *      This is "where can a tricycle actually go".
    *
    * Terminals overlap, so passing either gate means passing at least one
@@ -2104,7 +2120,7 @@ export default function CustomerHome() {
   const checkRideGates = async (): Promise<boolean> => {
     // A booking only requires the location *text*. If it was typed rather than
     // dropped on the map, the coordinates come from a background geocode that
-    // fails freely on a typo or an address Google has not indexed — and a null
+    // fails freely on a typo or an address Google has not indexed â€” and a null
     // here used to mean "allowed", which is how bookings were getting through
     // unchecked. Resolve both on demand before deciding anything.
     let pickup = pickupCoords;
@@ -2130,7 +2146,7 @@ export default function CustomerHome() {
     // Gate 1: the customer must be at a terminal.
     const border = await isPointWithinAnyTerminalBorder(pickup.lat, pickup.lng);
     if (!border.allowed) {
-      console.log('🚫 Pickup outside every terminal border:', pickup, {
+      console.log('ðŸš« Pickup outside every terminal border:', pickup, {
         checkedCount: border.checkedCount,
       });
       setShowOutOfBoundaryError(true);
@@ -2140,7 +2156,7 @@ export default function CustomerHome() {
     // Gate 2: the drop-off must be on a terminal's route.
     const route = await isPointWithinAnyTerminalRoute(dropoff.lat, dropoff.lng);
     if (!route.allowed) {
-      console.log('🚫 Drop-off outside every terminal route:', dropoff, {
+      console.log('ðŸš« Drop-off outside every terminal route:', dropoff, {
         checkedCount: route.checkedCount,
       });
       setShowOutsideRouteError(true);
@@ -2357,13 +2373,13 @@ export default function CustomerHome() {
       try {
         // Validate user is authenticated
         if (!user?.id) {
-          console.error('❌ User ID not found');
-          alert('❌ Error: User not authenticated. Please log in again.');
+          console.error('âŒ User ID not found');
+          alert('âŒ Error: User not authenticated. Please log in again.');
           setRideStatus(null);
           return;
         }
 
-        console.log('📋 Booking ride for user:', user.id);
+        console.log('ðŸ“‹ Booking ride for user:', user.id);
 
         // Capture the terminal fare at booking time so the request, the
         // active-ride card, and any restored state all agree.
@@ -2391,47 +2407,47 @@ export default function CustomerHome() {
            updated_at: new Date().toISOString(),
          };
 
-        console.log('📤 Sending request to Supabase:', rideRequest);
+        console.log('ðŸ“¤ Sending request to Supabase:', rideRequest);
 
         // Save to Supabase database
         const { data: savedRequest, error: dbError } = await supabaseHelpers.createRideRequest(rideRequest);
 
-        console.log('📥 Supabase response:', { data: savedRequest, error: dbError });
+        console.log('ðŸ“¥ Supabase response:', { data: savedRequest, error: dbError });
 
         if (dbError) {
-          console.error('❌ Database error:', dbError);
-          console.error('❌ Error code:', dbError.code);
-          console.error('❌ Error message:', dbError.message);
-          alert(`❌ Error booking ride: ${dbError.message || 'Please try again.'}`);
+          console.error('âŒ Database error:', dbError);
+          console.error('âŒ Error code:', dbError.code);
+          console.error('âŒ Error message:', dbError.message);
+          alert(`âŒ Error booking ride: ${dbError.message || 'Please try again.'}`);
           setRideStatus(null);
           return;
         }
 
         if (savedRequest) {
           setCurrentRequestId(savedRequest.id);
-          console.log('✅ Ride request saved to database:', savedRequest);
-          console.log('📱 Request ID:', savedRequest.id);
-          console.log('🗄️ Saved in Supabase ride_requests table');
+          console.log('âœ… Ride request saved to database:', savedRequest);
+          console.log('ðŸ“± Request ID:', savedRequest.id);
+          console.log('ðŸ—„ï¸ Saved in Supabase ride_requests table');
           logAudit({
             action: 'create_ride',
             actorRole: 'customer',
             entityType: 'ride_request',
             entityId: savedRequest.id,
-            summary: `Booked a private ride: ${pickup} → ${dropoff}`,
+            summary: `Booked a private ride: ${pickup} â†’ ${dropoff}`,
             details: { amount: fareAmount, terminal_id: selectedTerminalId },
             actorEmail: user?.email,
             actorName: user?.name,
           });
         } else {
-          console.error('❌ No data returned from database');
-          alert('❌ Error: No response from database. Please try again.');
+          console.error('âŒ No data returned from database');
+          alert('âŒ Error: No response from database. Please try again.');
           setRideStatus(null);
         }
       } catch (error: any) {
-        console.error('❌ Error creating ride request:', error);
-        console.error('❌ Error stack:', error.stack);
-        console.error('❌ Error message:', error.message);
-        alert(`❌ Error booking ride: ${error.message || 'Please try again.'}`);
+        console.error('âŒ Error creating ride request:', error);
+        console.error('âŒ Error stack:', error.stack);
+        console.error('âŒ Error message:', error.message);
+        alert(`âŒ Error booking ride: ${error.message || 'Please try again.'}`);
         setRideStatus(null);
       }
     }
@@ -2450,13 +2466,13 @@ export default function CustomerHome() {
             ? parsedRide.id
             : null;
       } catch (error) {
-        console.warn('⚠️ Unable to read stored ride request for cancellation:', error);
+        console.warn('âš ï¸ Unable to read stored ride request for cancellation:', error);
         return null;
       }
     })();
 
     try {
-      // A lobby id ("lobby_…") isn't a ride_requests row — a shared ride is left
+      // A lobby id ("lobby_â€¦") isn't a ride_requests row â€” a shared ride is left
       // from the lobby screen instead.
       if (storedRequestId && !storedRequestId.startsWith('lobby_')) {
         // Read the row first so a cancelled delivery can cancel its order too.
@@ -2475,8 +2491,8 @@ export default function CustomerHome() {
         });
 
         if (error) {
-          console.error('❌ Failed to cancel ride request:', error);
-          alert(`❌ Failed to cancel ride: ${error.message || 'Please try again.'}`);
+          console.error('âŒ Failed to cancel ride request:', error);
+          alert(`âŒ Failed to cancel ride: ${error.message || 'Please try again.'}`);
           return;
         }
 
@@ -2491,7 +2507,7 @@ export default function CustomerHome() {
           actorName: user?.name,
         });
 
-        // A delivery ride is backed by an orders row — cancel that too so the
+        // A delivery ride is backed by an orders row â€” cancel that too so the
         // business sees the order as cancelled and can read the customer's reason.
         const linkedOrderId =
           rideRequest?.order_id ||
@@ -2513,9 +2529,9 @@ export default function CustomerHome() {
             .neq('status', 'delivered');
 
           if (orderError) {
-            console.error('⚠️ Ride cancelled but the linked order was not:', orderError);
+            console.error('âš ï¸ Ride cancelled but the linked order was not:', orderError);
           } else {
-            console.log('✅ Linked order cancelled with the customer\'s reason:', linkedOrderId);
+            console.log('âœ… Linked order cancelled with the customer\'s reason:', linkedOrderId);
           }
         }
       }
@@ -2529,8 +2545,8 @@ export default function CustomerHome() {
       setCurrentRequestId(null);
       setShowBookingConfirm(false);
     } catch (error: any) {
-      console.error('❌ Error cancelling ride:', error);
-      alert(`❌ Failed to cancel ride: ${error?.message || 'Please try again.'}`);
+      console.error('âŒ Error cancelling ride:', error);
+      alert(`âŒ Failed to cancel ride: ${error?.message || 'Please try again.'}`);
     }
   };
 
@@ -2547,7 +2563,7 @@ export default function CustomerHome() {
         contextId: currentRequestId || undefined,
       });
       if (error || !data) {
-        console.error('❌ Failed to open driver chat:', error);
+        console.error('âŒ Failed to open driver chat:', error);
         alert('Failed to open chat. Please try again.');
         return;
       }
@@ -2579,7 +2595,7 @@ export default function CustomerHome() {
     perKm: selectedTerminal?.per_km != null ? terminalFare.perKm : perKm,
   };
 
-  // Fare is per kilometer: base + (rate × straight-line km between pickup and drop-off).
+  // Fare is per kilometer: base + (rate Ã— straight-line km between pickup and drop-off).
   const fareInfo = useMemo(
     () => computeRideFare(activeRates, pickupCoords, dropoffCoords),
     [activeRates.baseFare, activeRates.perKm, pickupCoords, dropoffCoords]
@@ -2587,8 +2603,8 @@ export default function CustomerHome() {
   // Falls back to the legacy fixed fare when the two points have no coordinates yet.
   const rideTotal = fareInfo.distanceKm != null ? fareInfo.total : privateRidePrice;
   const fareBreakdown = fareInfo.distanceKm != null
-    ? `₱${activeRates.baseFare} base + ₱${activeRates.perKm}/km × ${fareInfo.distanceKm.toFixed(1)} km${selectedTerminal ? ` · ${selectedTerminal.name}` : ''}`
-    : `Fixed rate${selectedTerminal ? ` · ${selectedTerminal.name}` : ''}`;
+    ? `â‚±${activeRates.baseFare} base + â‚±${activeRates.perKm}/km Ã— ${fareInfo.distanceKm.toFixed(1)} km${selectedTerminal ? ` Â· ${selectedTerminal.name}` : ''}`
+    : `Fixed rate${selectedTerminal ? ` Â· ${selectedTerminal.name}` : ''}`;
 
   /*
    * A private ride books the whole vehicle, so the terminal can price it on its
@@ -2611,8 +2627,8 @@ export default function CustomerHome() {
   );
   const privateTotal = privateFareInfo.distanceKm != null ? privateFareInfo.total : privateRidePrice;
   const privateBreakdown = privateFareInfo.distanceKm != null
-    ? `₱${privateActiveRates.baseFare} base + ₱${privateActiveRates.perKm}/km × ${privateFareInfo.distanceKm.toFixed(1)} km${selectedTerminal ? ` · ${selectedTerminal.name}` : ''}`
-    : `Fixed rate${selectedTerminal ? ` · ${selectedTerminal.name}` : ''}`;
+    ? `â‚±${privateActiveRates.baseFare} base + â‚±${privateActiveRates.perKm}/km Ã— ${privateFareInfo.distanceKm.toFixed(1)} km${selectedTerminal ? ` Â· ${selectedTerminal.name}` : ''}`
+    : `Fixed rate${selectedTerminal ? ` Â· ${selectedTerminal.name}` : ''}`;
 
   /*
  * What one seat costs on a shared ride: the trip fare divided between the seats in
@@ -2624,8 +2640,8 @@ export default function CustomerHome() {
  * also never leaves the driver short of the quoted amount.
  *
  * Worth being explicit about the consequence: rounding each seat up means the seats
- * together pay slightly more than the trip fare they are splitting. A ₱34 trip
- * shared three ways is ₱12 a seat, ₱36 collected. That is the trade for carrying
+ * together pay slightly more than the trip fare they are splitting. A â‚±34 trip
+ * shared three ways is â‚±12 a seat, â‚±36 collected. That is the trade for carrying
  * the extra passengers, but it is a deliberate choice, not an accident of the
  * division -- hence computing it in one place rather than letting the two screens
  * that show a fare each derive it separately.
@@ -2697,7 +2713,7 @@ const getPrice = () => {
         });
       }
     } catch (err) {
-      console.error('❌ Failed to capture delivery business:', err);
+      console.error('âŒ Failed to capture delivery business:', err);
     }
   };
 
@@ -2725,7 +2741,7 @@ const getPrice = () => {
 
     setRatingSubmitting(false);
     if (error) {
-      console.error('❌ Failed to submit rating:', error);
+      console.error('âŒ Failed to submit rating:', error);
       alert('Failed to submit rating. Please try again.');
       return;
     }
@@ -2767,7 +2783,7 @@ const getPrice = () => {
    * rather than showing a stale default like "Manila".
    */
   const hubLocationLabel =
-    (pickupAddress && pickupAddress.trim()) || (pickup && pickup !== 'Current Location' ? pickup : '') || 'Locating you…';
+    (pickupAddress && pickupAddress.trim()) || (pickup && pickup !== 'Current Location' ? pickup : '') || 'Locating youâ€¦';
 
   /**
    * The page gets a mint wash that fades to the base colour over the first
@@ -2781,7 +2797,7 @@ const getPrice = () => {
    * whole page.
    *
    * (It is a JSDoc comment on the return rather than a `{/* ... *\/}` one
-   * because a JSX expression container is only legal as a child element — as
+   * because a JSX expression container is only legal as a child element â€” as
    * the root of `return (...)` the parser reads it as an object literal and
    * fails on the very next tag.)
    */
@@ -2793,14 +2809,14 @@ const getPrice = () => {
         {!GOOGLE_MAPS_API_KEY ? (
           <div className="w-full h-full flex items-center justify-center bg-[var(--border)]">
             <div className="text-center">
-              <p className="text-xl font-bold text-[var(--error)] mb-4">⚠️ Google Maps API Key Missing</p>
+              <p className="text-xl font-bold text-[var(--error)] mb-4">âš ï¸ Google Maps API Key Missing</p>
               <p className="text-[var(--ink-soft)] mb-4">To use Google Maps, please add your API key to .env.local</p>
             </div>
           </div>
          ) : mapsBlocked || mapsLoadError ? (
             <div className="w-full h-full flex items-center justify-center bg-[var(--muted)]">
               <div className="text-center max-w-md px-6">
-                <p className="text-lg font-bold text-[var(--error)] mb-3">⚠️ Map resources blocked</p>
+                <p className="text-lg font-bold text-[var(--error)] mb-3">âš ï¸ Map resources blocked</p>
                 <p className="text-sm text-[var(--ink-soft)] mb-4">Your browser or a network filter is blocking Google Maps resources (maps.googleapis.com). This commonly happens when an ad-blocker or privacy extension blocks Google domains.</p>
                 {mapsBlocked && <p className="text-xs text-[var(--muted-foreground)] mb-3">Diagnostic: {mapsBlocked}</p>}
                 <div className="flex gap-3 justify-center">
@@ -2999,13 +3015,13 @@ const getPrice = () => {
               You&apos;re using TrikeServe as a customer for now. A superadmin needs to
               verify your account before you can open the{' '}
               {user?.role === 'business' ? 'business' : 'driver'} dashboard. You&apos;ll get access as soon as
-              that&apos;s done — no need to register again.
+              that&apos;s done â€” no need to register again.
             </p>
           </div>
         </div>
       )}
 
-        {/* Hub — three layers in normal flow: the app bar, then "What do you
+        {/* Hub â€” three layers in normal flow: the app bar, then "What do you
             need today?", then the recommended feed. None of them float over the
             content any more, which is what lets the feed scroll underneath the
             sticky bar. */}
@@ -3031,7 +3047,7 @@ const getPrice = () => {
           </div>
         )}
 
-        {/* Booking flow — Steps 2 & 3: ride type first, then pickup and drop-off */}
+        {/* Booking flow â€” Steps 2 & 3: ride type first, then pickup and drop-off */}
         {showBookingFlow && bookingStep !== 'home' && (
           <>
             <div
@@ -3040,7 +3056,7 @@ const getPrice = () => {
             />
             <div className="absolute bottom-20 left-0 right-0 z-[999] mx-auto max-w-3xl px-4">
             <Card className="max-h-[calc(100vh-7rem)] overflow-y-auto rounded-3xl bg-surface shadow-2xl">
-              {/* Step header — back control plus plain-language context */}
+              {/* Step header â€” back control plus plain-language context */}
               <div className="sticky top-0 z-10 flex items-center gap-3 border-b border-line bg-surface px-4 py-3">
                 <button
                   type="button"
@@ -3062,7 +3078,7 @@ const getPrice = () => {
                 </div>
               </div>
               <div className="px-5 pb-6 pt-5">
-                {/* Step 2 — ride type: Sabay / Pribado */}
+                {/* Step 2 â€” ride type: Sabay / Pribado */}
                 <div className={bookingStep === 'ride' ? '' : 'hidden'}>
                 <SectionHeading
                   eyebrow="Easy booking"
@@ -3100,7 +3116,7 @@ const getPrice = () => {
                 </div>
                 </div>
 
-                {/* Step 3 — pickup and drop-off, only after the ride type is chosen */}
+                {/* Step 3 â€” pickup and drop-off, only after the ride type is chosen */}
                 <div className={bookingStep === 'locations' ? '' : 'hidden'}>
                 <div className="mb-3 flex items-center justify-between gap-3 rounded-2xl border border-line bg-[var(--muted)] px-4 py-3">
                   <div className="min-w-0">
@@ -3108,7 +3124,7 @@ const getPrice = () => {
                       Ride type
                     </p>
                     <p className="truncate text-sm font-bold text-[var(--ink)]">
-                      {selectedVehicle === 'share' ? 'Shared ride · Sabay' : 'Private ride · Pribado'}
+                      {selectedVehicle === 'share' ? 'Shared ride Â· Sabay' : 'Private ride Â· Pribado'}
                     </p>
                   </div>
                   <button
@@ -3198,7 +3214,7 @@ const getPrice = () => {
                   </Card>
                 </div>
 
-                {/* Book Ride Button — stays visible but disabled until the ride is complete */}
+                {/* Book Ride Button â€” stays visible but disabled until the ride is complete */}
                 <Button
                   onClick={handleBookRide}
                   disabled={!selectedVehicle || !dropoff}
@@ -3206,7 +3222,7 @@ const getPrice = () => {
                 >
                   <span className="block">
                     {selectedVehicle
-                      ? `Book this ride · ₱${getPrice()}`
+                      ? `Book this ride Â· â‚±${getPrice()}`
                       : 'Choose a ride first'}
                   </span>
                   <span className="block text-xs font-semibold tracking-normal opacity-90">
@@ -3269,7 +3285,7 @@ const getPrice = () => {
                         className="w-full h-full object-cover"
                       />
                     ) : (
-                      <span className="text-2xl" aria-hidden="true">👨‍✈️</span>
+                      <span className="text-2xl" aria-hidden="true">ðŸ‘¨â€âœˆï¸</span>
                     )}
                   </div>
                   <div className="flex-1 min-w-0">
@@ -3313,7 +3329,7 @@ const getPrice = () => {
                   </div>
                   <div className="text-right flex-shrink-0">
                     <div className="flex items-center gap-1 text-[var(--amber)]">
-                      <span className="text-sm">⭐</span>
+                      <span className="text-sm">â­</span>
                       <span className="font-bold text-sm text-[var(--ink)]">{activeRide.rating}</span>
                     </div>
                     <p className="text-xs text-[var(--muted-foreground)]">ETA: {activeRide.eta}</p>
@@ -3342,7 +3358,7 @@ const getPrice = () => {
                     </div>
                     {etaToDestination && (
                       <div className="flex-shrink-0 bg-[var(--error-soft)] text-[var(--error)] px-2 py-1 rounded-lg">
-                        <p className="text-[10px] font-bold">🏁 {etaToDestination}</p>
+                        <p className="text-[10px] font-bold">ðŸ {etaToDestination}</p>
                       </div>
                     )}
                   </div>
@@ -3352,7 +3368,7 @@ const getPrice = () => {
                 <div className="flex items-center gap-3">
                   <div className="flex-1">
                     <p className="text-[10px] text-[var(--muted-foreground)] font-semibold">Fare</p>
-                    <p className="text-xl font-bold text-[var(--primary)]">₱{bookedFare ?? getPrice()}</p>                     <p className="text-[10px] text-[var(--muted-foreground)]">💵 Cash</p>
+                    <p className="text-xl font-bold text-[var(--primary)]">â‚±{bookedFare ?? getPrice()}</p>                     <p className="text-[10px] text-[var(--muted-foreground)]">ðŸ’µ Cash</p>
                   </div>
                   <Button
                     variant="outline"
@@ -3384,9 +3400,9 @@ const getPrice = () => {
         {/* Validation Error Popup */}
         {showValidationError && (
           <div className="fixed inset-0 bg-black/50 z-[2100] flex items-center justify-center p-4">
-            <Card className="bg-surface p-8 max-w-sm w-full text-center animate-infinite-bounce">
+            <Card className="bg-surface p-8 max-w-sm w-full text-center">
               <div className="w-20 h-20 bg-[var(--error-soft)] rounded-full flex items-center justify-center mx-auto mb-4">
-                <span className="text-4xl">⚠️</span>
+                <span className="text-4xl">âš ï¸</span>
               </div>
               <h3 className="text-xl font-bold text-[var(--error)] mb-2">Incomplete Information</h3>
               <p className="text-sm text-[var(--muted-foreground)] mb-6">
@@ -3406,9 +3422,9 @@ const getPrice = () => {
         {/* Same Location Error Popup */}
         {showSameLocationError && (
           <div className="fixed inset-0 bg-black/50 z-[2100] flex items-center justify-center p-4">
-            <Card className="bg-surface p-8 max-w-sm w-full text-center animate-infinite-bounce">
+            <Card className="bg-surface p-8 max-w-sm w-full text-center">
               <div className="w-20 h-20 bg-[var(--error-soft)] rounded-full flex items-center justify-center mx-auto mb-4">
-                <span className="text-4xl">⚠️</span>
+                <span className="text-4xl">âš ï¸</span>
               </div>
               <h3 className="text-xl font-bold text-[var(--error)] mb-2">Invalid Route</h3>
               <p className="text-sm text-[var(--muted-foreground)] mb-6">
@@ -3429,9 +3445,9 @@ const getPrice = () => {
             is right now, not where they want to go. */}
         {showOutOfBoundaryError && (
           <div className="fixed inset-0 bg-black/50 z-[2200] flex items-center justify-center p-4">
-            <Card className="bg-surface p-8 max-w-sm w-full text-center animate-infinite-bounce">
+            <Card className="bg-surface p-8 max-w-sm w-full text-center">
               <div className="w-20 h-20 bg-[var(--error-soft)] rounded-full flex items-center justify-center mx-auto mb-4">
-                <span className="text-4xl">📍</span>
+                <span className="text-4xl">ðŸ“</span>
               </div>
               <h3 className="text-xl font-bold text-[var(--error)] mb-2">You're not at a terminal</h3>
               <p className="text-sm text-[var(--muted-foreground)] mb-6">
@@ -3456,9 +3472,9 @@ const getPrice = () => {
             tricycle cannot be shown driving. */}
         {showOutsideRouteError && (
           <div className="fixed inset-0 bg-black/50 z-[2200] flex items-center justify-center p-4">
-            <Card className="bg-surface p-8 max-w-sm w-full text-center animate-infinite-bounce">
+            <Card className="bg-surface p-8 max-w-sm w-full text-center">
               <div className="w-20 h-20 bg-[var(--error-soft)] rounded-full flex items-center justify-center mx-auto mb-4">
-                <span className="text-4xl">🛣️</span>
+                <span className="text-4xl">ðŸ›£ï¸</span>
               </div>
               <h3 className="text-xl font-bold text-[var(--error)] mb-2">Drop-off not on our route</h3>
               <p className="text-sm text-[var(--muted-foreground)] mb-6">
@@ -3485,7 +3501,7 @@ const getPrice = () => {
           <div className="fixed inset-0 bg-black/50 z-[2200] flex items-center justify-center p-4">
             <Card className="bg-surface p-8 max-w-sm w-full text-center">
               <div className="w-20 h-20 bg-[var(--amber-soft)] rounded-full flex items-center justify-center mx-auto mb-4">
-                <span className="text-4xl">📍</span>
+                <span className="text-4xl">ðŸ“</span>
               </div>
               <h3 className="text-xl font-bold text-[var(--ink)] mb-2">We couldn't locate that drop-off</h3>
               <p className="text-sm text-[var(--muted-foreground)] mb-6">
@@ -3511,7 +3527,7 @@ const getPrice = () => {
             <div className="bg-surface w-full rounded-t-3xl p-6 animate-in slide-in-from-bottom duration-300">
               <div className="max-w-sm mx-auto text-center">
                 <div className="w-16 h-16 bg-[var(--info-soft)] rounded-full flex items-center justify-center mx-auto mb-4">
-                  <span className="text-3xl">🎉</span>
+                  <span className="text-3xl">ðŸŽ‰</span>
                 </div>
                 <h3 className="text-2xl font-bold text-[var(--ink)] mb-2">
                   {completionPopupType === 'delivery' ? 'Delivery Completed!' : 'Ride Completed!'}
@@ -3569,7 +3585,7 @@ const getPrice = () => {
               {ratingSubmitted ? (
                 <>
                   <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-[var(--success-soft)] flex items-center justify-center text-3xl">
-                    🙏
+                    ðŸ™
                   </div>
                   <h3 className="text-xl font-bold text-[var(--ink)] mb-2">Thank you!</h3>
                   <p className="text-sm text-[var(--muted-foreground)] mb-6">Your rating has been submitted.</p>
@@ -3624,7 +3640,7 @@ const getPrice = () => {
         )}
 
         {/* Driver Status Update Popup */}
-        {/* ❌ REMOVED: Driver status popup that appeared at top of screen */}
+        {/* âŒ REMOVED: Driver status popup that appeared at top of screen */}
         {/* This was showing status updates like "On the Way", "Arrived", etc. */}
 
       {/* Bottom Navigation */}
@@ -3677,7 +3693,7 @@ const getPrice = () => {
                     <div className={`w-10 h-10 rounded-full flex items-center justify-center flex-shrink-0 ${
                       selectedTerminalId === terminal.id ? 'bg-[var(--primary)]' : 'bg-[var(--info-soft)]'
                     }`}>
-                      <span className="text-lg">🚏</span>
+                      <span className="text-lg">ðŸš</span>
                     </div>
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2">
@@ -3688,9 +3704,9 @@ const getPrice = () => {
                           </span>
                         )}
                       </div>
-                      <p className="text-xs text-[var(--muted-foreground)] mt-0.5">📍 {terminal.boundary}</p>
+                      <p className="text-xs text-[var(--muted-foreground)] mt-0.5">ðŸ“ {terminal.boundary}</p>
                       <p className="text-xs font-semibold text-[var(--primary)] mt-0.5">
-                        Share: ₱{terminal.base_fare ?? activeRates.baseFare} base + ₱{terminal.per_km ?? activeRates.perKm}/km
+                        Share: â‚±{terminal.base_fare ?? activeRates.baseFare} base + â‚±{terminal.per_km ?? activeRates.perKm}/km
                       </p>
                       {/*
                         This terminal's private ride charge, when it has set one.
@@ -3702,7 +3718,7 @@ const getPrice = () => {
                       */}
                       {(terminal.private_ride_fee != null || terminal.private_ride_fee_per_km != null) && (
                         <p className="text-xs font-semibold text-[var(--primary)] mt-0.5">
-                          Private: ₱{privateRideRates(terminal).baseFare} base + ₱{privateRideRates(terminal).perKm}/km
+                          Private: â‚±{privateRideRates(terminal).baseFare} base + â‚±{privateRideRates(terminal).perKm}/km
                         </p>
                       )}
                       {/*
@@ -3715,9 +3731,9 @@ const getPrice = () => {
                       */}
                       {(terminal.delivery_fee != null || terminal.delivery_fee_per_km != null) && (
                         <p className="text-xs font-semibold text-[var(--success)] mt-0.5">
-                          Delivery: ₱{terminal.delivery_fee ?? 0} base
+                          Delivery: â‚±{terminal.delivery_fee ?? 0} base
                           {terminal.delivery_fee_per_km != null && (
-                            <> + ₱{terminal.delivery_fee_per_km}/km</>
+                            <> + â‚±{terminal.delivery_fee_per_km}/km</>
                           )}
                         </p>
                       )}
@@ -3762,7 +3778,7 @@ const getPrice = () => {
               <div className="flex items-center justify-between gap-3">
                 <div className="flex-1">
                   <p className="text-xs uppercase tracking-widest text-[#5c6b68] font-semibold">
-                    {activeLocationInput === 'pickup' ? 'Pickup — search or tap map' : 'Drop-off — search or tap map'}
+                    {activeLocationInput === 'pickup' ? 'Pickup â€” search or tap map' : 'Drop-off â€” search or tap map'}
                   </p>
                   <h2 className="text-lg font-bold text-[#122724]">Find a nearby place or tap the map</h2>
                 </div>
@@ -3781,7 +3797,7 @@ const getPrice = () => {
                      role="alert"
                      className="mb-2 flex items-start gap-2 rounded-xl border-2 border-[var(--error)] bg-[var(--error-soft)] px-3 py-2 text-sm font-semibold text-[var(--error)]"
                    >
-                     <span aria-hidden="true">📍</span>
+                     <span aria-hidden="true">ðŸ“</span>
                      <span>{pickerBoundaryWarning}</span>
                    </div>
                  )}
@@ -3831,27 +3847,45 @@ const getPrice = () => {
                 }}
               >
                 <MarkerF position={currentLocation} title="Current location" icon={createCurrentLocationIcon()} />
-                {/* The terminal's service area, so it is obvious where a drop-off is allowed */}
+
+                {/* The terminal this pickup/drop-off belongs to. Without it the
+                    two shapes below float on the map with nothing explaining whose
+                    they are -- the customer sees a border and a road but has no way
+                    to tell it is GTDL rather than any other. */}
+                {pickerTerminal && (
+                  <MarkerF
+                    position={{ lat: pickerTerminal.center_lat, lng: pickerTerminal.center_lng }}
+                    title={pickerTerminal.name}
+                    icon={terminalMarkerIcon(pickerMarkerColor, 44)}
+                    zIndex={5}
+                  />
+                )}
+
+                {/* The border: the area a customer must be standing in to book. */}
                 {selectedTerminalBoundary.area && (
                   <Polygon
                     path={selectedTerminalBoundary.area}
                     options={{
-                      fillColor: '#bc4b1f',
+                      fillColor: pickerBorderColor,
                       fillOpacity: 0.12,
-                      strokeColor: '#bc4b1f',
+                      strokeColor: pickerBorderColor,
                       strokeWeight: 2,
                       strokeOpacity: 0.6,
                       clickable: false,
                     }}
                   />
                 )}
+
+                {/* The route: the corridor a drop-off has to sit in. Drawn twice,
+                    a wide translucent casing under a crisp line, so it reads as a
+                    road the tricycle drives rather than a single thin stroke. */}
                 {selectedTerminalBoundary.road && (
                   <Polyline
                     path={selectedTerminalBoundary.road}
                     options={{
-                      strokeColor: '#bc4b1f',
-                      strokeWeight: 7,
-                      strokeOpacity: 0.35,
+                      strokeColor: pickerRouteColor,
+                      strokeWeight: 9,
+                      strokeOpacity: 0.25,
                       clickable: false,
                       geodesic: true,
                     }}
@@ -3861,8 +3895,9 @@ const getPrice = () => {
                   <Polyline
                     path={selectedTerminalBoundary.road}
                     options={{
-                      strokeColor: '#bc4b1f',
-                      strokeWeight: 3,
+                      strokeColor: pickerRouteColor,
+                      strokeWeight: 4,
+                      strokeOpacity: 0.95,
                       clickable: false,
                       geodesic: true,
                     }}
@@ -3927,7 +3962,7 @@ const getPrice = () => {
                       <div className="flex flex-col items-center gap-2">
                         <div className="flex items-center gap-1">
                           {Array.from({ length: count }).map((_, i) => (
-                            <span key={i} className="text-2xl">👤</span>
+                            <span key={i} className="text-2xl">ðŸ‘¤</span>
                           ))}
                         </div>
                         <span className="font-bold text-lg text-[var(--ink)]">{count}</span>
@@ -3950,7 +3985,7 @@ const getPrice = () => {
                       <div className="flex flex-col items-center gap-2">
                         <div className="flex items-center gap-1">
                           {Array.from({ length: count }).map((_, i) => (
-                            <span key={i} className="text-2xl">👤</span>
+                            <span key={i} className="text-2xl">ðŸ‘¤</span>
                           ))}
                         </div>
                         <span className="font-bold text-lg text-[var(--ink)]">{count}</span>
@@ -3971,18 +4006,18 @@ const getPrice = () => {
                   {selectedVehicle === 'share' ? (
                     <>
                       <p className="text-sm text-[var(--amber-ink)] mt-0.5">
-                        ₱{rideTotal} trip ÷ {passengerCount} {passengerCount === 1 ? 'passenger' : 'passengers'}
+                        â‚±{rideTotal} trip Ã· {passengerCount} {passengerCount === 1 ? 'passenger' : 'passengers'}
                       </p>
                       {/* The same rounded-up figure `getPrice` charges. This used to divide and print
-                             the raw total, so the seat picker offered ₱11.33 and
-                             the next screen charged ₱12. */}
-                         <p className="text-3xl font-bold text-[var(--amber)]">₱{shareFarePerSeat}</p>
+                             the raw total, so the seat picker offered â‚±11.33 and
+                             the next screen charged â‚±12. */}
+                         <p className="text-3xl font-bold text-[var(--amber)]">â‚±{shareFarePerSeat}</p>
                       <p className="text-[10px] text-[var(--amber-ink)] mt-0.5">{fareBreakdown}</p>
                     </>
                   ) : (
                     <>
                       <p className="text-sm text-[var(--amber-ink)] mt-0.5">{privateBreakdown}</p>
-                      <p className="text-3xl font-bold text-[var(--amber)]">₱{privateTotal}</p>
+                      <p className="text-3xl font-bold text-[var(--amber)]">â‚±{privateTotal}</p>
                     </>
                   )}
                 </div>
@@ -3993,7 +4028,7 @@ const getPrice = () => {
             {selectedVehicle !== 'special' && (
               <div className="bg-[var(--info-soft)] border border-[var(--info-soft)] rounded-lg p-3 mb-6">
                 <p className="text-xs text-[var(--info)]">
-                  💡 <span className="font-semibold">Tip:</span> You'll join a shared lobby and wait for other passengers heading the same route. More passengers = faster match!
+                  ðŸ’¡ <span className="font-semibold">Tip:</span> You'll join a shared lobby and wait for other passengers heading the same route. More passengers = faster match!
                 </p>
               </div>
             )}
@@ -4065,7 +4100,7 @@ const getPrice = () => {
             <div className="bg-[var(--primary-soft)] border-2 border-[var(--primary)] rounded-xl p-4 mb-6">
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-3">
-                  <span className="text-4xl">{selectedVehicle === 'share' ? '👥' : '👤'}</span>
+                  <span className="text-4xl">{selectedVehicle === 'share' ? 'ðŸ‘¥' : 'ðŸ‘¤'}</span>
                   <div>
                     <p className="font-bold text-[var(--ink)]">
                       {selectedVehicle === 'share' ? 'Share Ride' : 'Private Ride'}
@@ -4075,7 +4110,7 @@ const getPrice = () => {
                     </p>
                   </div>
                 </div>
-                <p className="text-2xl font-bold text-[var(--primary)]">₱{getPrice()}</p>
+                <p className="text-2xl font-bold text-[var(--primary)]">â‚±{getPrice()}</p>
               </div>
             </div>
 
@@ -4085,7 +4120,7 @@ const getPrice = () => {
               <div className="grid grid-cols-1 gap-3">
                 <div className="p-4 border-2 rounded-xl border-[var(--primary)] bg-[var(--primary-soft)]">
                   <div className="flex flex-col items-center gap-2">
-                    <span className="text-2xl">💵</span>
+                    <span className="text-2xl">ðŸ’µ</span>
                     <span className="font-semibold text-[var(--ink)]">Cash / Bayad cash</span>
                   </div>
                 </div>
@@ -4125,7 +4160,7 @@ const getPrice = () => {
             </button>
 
             <div className="w-20 h-20 bg-[var(--primary-soft)] rounded-full flex items-center justify-center mx-auto mb-4 animate-pulse">
-              <span className="text-4xl">🔍</span>
+              <span className="text-4xl">ðŸ”</span>
             </div>
             <h3 className="text-xl font-bold text-[var(--ink)] mb-2">Finding a Driver...</h3>
             <p className="text-[var(--muted-foreground)] mb-1">Please wait while we find you a nearby driver</p>
@@ -4152,7 +4187,7 @@ const getPrice = () => {
           className="fixed bottom-24 right-4 z-[2000] w-16 h-16 bg-[var(--primary)] rounded-full shadow-2xl flex items-center justify-center hover:bg-[var(--primary)] transition-all hover:scale-110"
         >
           <div className="relative">
-            <span className="text-3xl animate-pulse">🔍</span>
+            <span className="text-3xl animate-pulse">ðŸ”</span>
             <div className="absolute -top-1 -right-1 w-3 h-3 bg-[var(--success)] rounded-full animate-ping"></div>
             <div className="absolute -top-1 -right-1 w-3 h-3 bg-[var(--success)] rounded-full"></div>
           </div>
@@ -4191,7 +4226,7 @@ const getPrice = () => {
             setRideStatus('driver-found');
             // Remember the active lobby so the customer can return after leaving.
             localStorage.setItem('trikeserve_active_share_lobby', lobbyId);
-            console.log('✅ Driver found for lobby:', lobbyId);
+            console.log('âœ… Driver found for lobby:', lobbyId);
           }}
           onClose={(status) => {
             setShowShareLobby(false);
@@ -4250,7 +4285,7 @@ const getPrice = () => {
         >
           <div className="bg-surface w-full rounded-t-3xl p-6 animate-in slide-in-from-bottom duration-300">
             <div className="max-w-sm mx-auto">
-              {/* Status Icon — while a driver is assigned this is their actual
+              {/* Status Icon â€” while a driver is assigned this is their actual
                   profile photo, not a car. "On the way" reads as *their*
                   progress, so the person is the more useful thing to show; the
                   later milestones (arrived, picked up, payment) stay symbolic
@@ -4264,12 +4299,12 @@ const getPrice = () => {
                   />
                 ) : (
                   <>
-                    {driverStatusPopup.status === 'on-the-way' && '🚗'}
-                    {driverStatusPopup.status === 'arrived' && '📍'}
-                    {driverStatusPopup.status === 'pickup' && '🚀'}
-                    {driverStatusPopup.status === 'drop-off' && '🏁'}
-                    {driverStatusPopup.status === 'payment' && '💰'}
-                    {driverStatusPopup.status === 'completed' && '🎉'}
+                    {driverStatusPopup.status === 'on-the-way' && 'ðŸš—'}
+                    {driverStatusPopup.status === 'arrived' && 'ðŸ“'}
+                    {driverStatusPopup.status === 'pickup' && 'ðŸš€'}
+                    {driverStatusPopup.status === 'drop-off' && 'ðŸ'}
+                    {driverStatusPopup.status === 'payment' && 'ðŸ’°'}
+                    {driverStatusPopup.status === 'completed' && 'ðŸŽ‰'}
                   </>
                 )}
               </div>
@@ -4309,14 +4344,14 @@ const getPrice = () => {
                 onClick={() => setDriverStatusPopup(null)}
                 className="w-full bg-[var(--primary)] hover:bg-[var(--primary)] text-white py-3 text-lg font-bold"
               >
-                OK 👍
+                OK ðŸ‘
               </Button>
             </div>
            </div>
          </div>
        )}
 
-      {/* Cancel Ride Popup — asks for a reason before dropping the ride */}
+      {/* Cancel Ride Popup â€” asks for a reason before dropping the ride */}
       <ReasonPromptModal
         isOpen={showCancelConfirm}
         title={rideStatus === 'driver-found' ? 'Cancel this ride? / Kanselahin ang biyahe?' : 'Cancel Request? / Kanselahin ang request?'}
@@ -4326,7 +4361,7 @@ const getPrice = () => {
             : 'Are you sure you want to cancel this ride request?'
         }
         confirmLabel={rideStatus === 'driver-found' ? 'Yes, Cancel Ride' : 'Yes, Cancel'}
-        placeholder="e.g. Changed my mind, found another ride, wrong pickup point…"
+        placeholder="e.g. Changed my mind, found another ride, wrong pickup pointâ€¦"
         variant="danger"
         zIndexClassName="z-[3500]"
         onCancel={() => setShowCancelConfirm(false)}

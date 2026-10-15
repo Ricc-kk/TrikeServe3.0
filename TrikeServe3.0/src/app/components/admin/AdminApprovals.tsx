@@ -1,5 +1,5 @@
-import { useState, useEffect } from "react";
-import { CheckCircle, XCircle, Clock, AlertTriangle, ArrowRight } from "lucide-react";
+import { useMemo, useState, useEffect } from "react";
+import { CheckCircle, XCircle, Clock, AlertTriangle, ArrowRight, Search, X } from "lucide-react";
 import { Card } from "../ui/card";
 import { Badge } from "../ui/badge";
 import { useAuth } from "../../contexts/AuthContext";
@@ -13,13 +13,14 @@ import {
   APPROVAL_REQUEST_LABELS,
   PROFILE_REVIEWED_FIELDS,
   type ApprovalRequest,
+  type ApprovalRequestType,
   type BusinessProfileUpdate,
 } from "../../../lib/supabase";
 import { cuisineLabels } from "../../../lib/foodTaxonomy";
 import ConfirmationModal from "../ui/confirmation-modal";
 import Toast from "../ui/Toast";
 // Shared with the Rider Admin's Submitted Requests screen, so the two can't drift.
-import { describePayload, formatDate, typeBadgeColor, typeIcon, ExpandableDetails } from "./approvalView";
+import { describePayload, formatDate, searchableText, typeBadgeColor, typeIcon, requestLabel, RequestDetails } from "./approvalView";
 
 /** One field of a shop-profile change, rendered as before → after. */
 type ProfileDiffRow = { key: string; label: string; from: string; to: string };
@@ -123,6 +124,24 @@ export default function AdminApprovals() {
   const [rejectTarget, setRejectTarget] = useState<ApprovalRequest | null>(null);
   const [rejectReason, setRejectReason] = useState("");
 
+  /*
+   * Filters.
+   *
+   * Type rather than status, because status is already what the two sections are:
+   * everything above the line is pending and everything below has been reviewed.
+   * A status filter here would be a second, worse way of saying that. Type is the
+   * axis that isn't otherwise visible — this inbox mixes shop profile changes,
+   * plate changes, terminal edits and driver moves, which are reviewed by
+   * different eyes, and nothing on the card says "only look at shop changes"
+   * except picking through them.
+   *
+   * "all" is a sentinel rather than a real value, so `useState<ApprovalRequestType
+   * | "all">` cannot be accidentally narrowed to a type the backend may add
+   * later without this file noticing at compile time.
+   */
+  const [query, setQuery] = useState("");
+  const [typeFilter, setTypeFilter] = useState<ApprovalRequestType | "all">("all");
+
   const openModal = (config: typeof modalConfig) => {
     setModalConfig(config);
     setModalOpen(true);
@@ -151,8 +170,61 @@ export default function AdminApprovals() {
     return () => clearInterval(interval);
   }, []);
 
+  // The unfiltered split. The stat cards read from these, so narrowing the list
+  // below never makes the dashboard claim there are fewer requests than there
+  // are — a filtered "Pending 2" is a number nobody can act on.
   const pending = requests.filter(r => r.status === "pending");
   const history = requests.filter(r => r.status !== "pending");
+
+  /**
+   * The request types actually present, with a count each.
+   *
+   * Derived from the data rather than a fixed list, so the chips are only ever
+   * the ones that have something behind them: a chip reading "Shop profile
+   * change 0" is a dead control that costs a tap to discover it is dead. Order
+   * follows APPROVAL_REQUEST_LABELS, so the chips read the same way round
+   * whatever order the query happened to return rows in.
+   */
+  const typeCounts = useMemo(() => {
+    const counts = new Map<ApprovalRequestType, number>();
+    for (const r of requests) {
+      counts.set(r.request_type, (counts.get(r.request_type) ?? 0) + 1);
+    }
+    // APPROVAL_REQUEST_LABELS is keyed by the type, so iterating it gives the
+    // types in the order they are meant to be read rather than in whatever order
+    // the query happened to return rows.
+    return (Object.entries(APPROVAL_REQUEST_LABELS) as [ApprovalRequestType, string][])
+      .filter(([value]) => counts.has(value))
+      .map(([value, label]) => ({ value, label, count: counts.get(value) ?? 0 }));
+  }, [requests]);
+
+  /**
+   * The filtered split, by type and free text.
+   *
+   * Split out as one predicate rather than two so Pending and Reviewed can never
+   * disagree about what is being shown — the same request must not appear in one
+   * section and vanish from the other because a filter was applied twice with
+   * slightly different rules.
+   */
+  const { visiblePending, visibleHistory, filterActive } = useMemo(() => {
+    const needle = query.trim().toLowerCase();
+    const active = typeFilter !== "all" || needle !== "";
+    const matches = (r: ApprovalRequest) => {
+      if (typeFilter !== "all" && r.request_type !== typeFilter) return false;
+      if (!needle) return true;
+      return searchableText(r).includes(needle);
+    };
+    return {
+      visiblePending: requests.filter(r => r.status === "pending" && matches(r)),
+      visibleHistory: requests.filter(r => r.status !== "pending" && matches(r)),
+      filterActive: active,
+    };
+  }, [requests, query, typeFilter]);
+
+  const clearFilters = () => {
+    setQuery("");
+    setTypeFilter("all");
+  };
 
   const handleApprove = (request: ApprovalRequest) => {
     openModal({
@@ -245,6 +317,90 @@ export default function AdminApprovals() {
             </Card>
           )}
 
+          {/* Search + type filter. Hidden until there's something to filter, so an
+              empty inbox isn't showing controls that do nothing. */}
+          {requests.length > 0 && (
+            <Card className="p-4 border border-line bg-surface">
+              <div className="flex flex-col sm:flex-row sm:items-center gap-3">
+                <div className="relative flex-1 min-w-0">
+                  <Search
+                    className="w-4 h-4 text-[var(--muted-foreground)] absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none"
+                    aria-hidden="true"
+                  />
+                  <input
+                    type="search"
+                    value={query}
+                    onChange={e => setQuery(e.target.value)}
+                    placeholder="Search by admin, terminal, driver or shop…"
+                    aria-label="Search approval requests"
+                    className="w-full h-11 pl-9 pr-9 border border-line focus:border-[var(--primary)] rounded-xl text-sm outline-none bg-surface"
+                  />
+                  {query && (
+                    <button
+                      onClick={() => setQuery("")}
+                      aria-label="Clear search"
+                      className="absolute right-2 top-1/2 -translate-y-1/2 p-1.5 rounded-lg hover:bg-[var(--muted)]"
+                    >
+                      <X className="w-4 h-4 text-[var(--muted-foreground)]" />
+                    </button>
+                  )}
+                </div>
+
+                {filterActive && (
+                  <button
+                    type="button"
+                    onClick={clearFilters}
+                    className="h-11 px-4 rounded-xl bg-[var(--muted)] text-[var(--muted-foreground)] text-sm font-bold hover:bg-[var(--border)] transition-colors"
+                  >
+                    Clear filters
+                  </button>
+                )}
+              </div>
+
+              {/* Type chips, each carrying its own count so a chip that would
+                  return nothing says so before it is pressed. */}
+              <div
+                className="mt-3 flex flex-wrap gap-2"
+                role="group"
+                aria-label="Filter by request type"
+              >
+                <button
+                  type="button"
+                  onClick={() => setTypeFilter("all")}
+                  aria-pressed={typeFilter === "all"}
+                  className={`h-9 px-3 rounded-lg text-xs font-bold transition-colors ${
+                    typeFilter === "all"
+                      ? "bg-[var(--primary)] text-white"
+                      : "bg-[var(--muted)] text-[var(--muted-foreground)] hover:text-[var(--ink)]"
+                  }`}
+                >
+                  All types ({requests.length})
+                </button>
+                {typeCounts.map(t => (
+                  <button
+                    key={t.value}
+                    type="button"
+                    onClick={() => setTypeFilter(t.value)}
+                    aria-pressed={typeFilter === t.value}
+                    className={`h-9 px-3 rounded-lg text-xs font-bold transition-colors ${
+                      typeFilter === t.value
+                        ? "bg-[var(--primary)] text-white"
+                        : "bg-[var(--muted)] text-[var(--muted-foreground)] hover:text-[var(--ink)]"
+                    }`}
+                  >
+                    {t.label} ({t.count})
+                  </button>
+                ))}
+              </div>
+
+              {filterActive && (
+                <p className="text-xs text-[var(--muted-foreground)] mt-3" aria-live="polite">
+                  Showing {visiblePending.length + visibleHistory.length} of {requests.length}
+                </p>
+              )}
+            </Card>
+          )}
+
           {/* Pending requests */}
           <h2 className="text-xl lg:text-2xl font-bold text-[var(--ink)] mb-4">Pending Requests</h2>
           {loading ? (
@@ -257,9 +413,22 @@ export default function AdminApprovals() {
               <p className="text-[var(--muted-foreground)] text-sm mb-2">No pending requests</p>
               <p className="text-[var(--muted-foreground)] text-xs">Rider Admin changes will appear here for review</p>
             </Card>
+          ) : visiblePending.length === 0 ? (
+            /* Requests exist and are pending, the filter just hides them. Saying
+               "No pending requests" here would be a lie that reads as an all-clear
+               — the stat card above still says how many are waiting. */
+            <Card className="p-12 border-2 border-dashed border-[var(--border)] text-center">
+              <Search className="w-12 h-12 text-[var(--muted-foreground)] mx-auto mb-4" aria-hidden="true" />
+              <p className="text-[var(--muted-foreground)] text-sm mb-2">
+                No pending requests match your filters
+              </p>
+              <button onClick={clearFilters} className="mt-1 text-sm font-bold text-[var(--primary)]">
+                Clear filters
+              </button>
+            </Card>
           ) : (
             <div className="space-y-3 mb-8">
-              {pending.map(request => (
+              {visiblePending.map(request => (
                 <Card key={request.id} className="p-4 lg:p-5 border border-line bg-surface">
                   {/* Narrow screens: the action buttons are flex-shrink-0, so a single row
                       leaves the request text only a few dozen px. Stack below sm. */}
@@ -282,11 +451,11 @@ export default function AdminApprovals() {
                           {" · "}{formatDate(request.requested_at)}
                         </p>
                         <div className="mt-2">
-                          <ExpandableDetails request={request}>
+                          <RequestDetails request={request}>
                             {request.request_type === "business_profile_update" && (
                               <ProfileDiff request={request} />
                             )}
-                          </ExpandableDetails>
+                          </RequestDetails>
                         </div>
                       </div>
                     </div>
@@ -322,12 +491,22 @@ export default function AdminApprovals() {
               <Clock className="w-10 h-10 text-[var(--border)] mx-auto mb-3" />
               <p className="text-[var(--muted-foreground)] text-sm">No reviewed requests yet</p>
             </Card>
+          ) : visibleHistory.length === 0 ? (
+            <Card className="p-12 border-2 border-dashed border-[var(--border)] text-center">
+              <Search className="w-12 h-12 text-[var(--muted-foreground)] mx-auto mb-4" aria-hidden="true" />
+              <p className="text-[var(--muted-foreground)] text-sm mb-2">
+                No reviewed requests match your filters
+              </p>
+              <button onClick={clearFilters} className="mt-1 text-sm font-bold text-[var(--primary)]">
+                Clear filters
+              </button>
+            </Card>
           ) : (
             <Card className="border border-line bg-surface overflow-hidden">
               {/* Mobile: the 5-column table needs ~760px, so below sm each reviewed
                   request becomes a stacked card instead of a scrolling grid. */}
               <div className="sm:hidden divide-y divide-[var(--border)]">
-                {history.map(request => (
+                {visibleHistory.map(request => (
                   <div key={request.id} className="p-4 space-y-2">
                     <div className="flex items-start gap-2 min-w-0">
                       <span className="flex-shrink-0">{typeIcon(request.request_type)}</span>
@@ -372,7 +551,7 @@ export default function AdminApprovals() {
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-[var(--border)]">
-                    {history.map(request => (
+                    {visibleHistory.map(request => (
                       <tr key={request.id} className="hover:bg-[var(--muted)] transition-colors">
                         <td className="px-4 py-4">
                           <div className="flex items-center gap-2">
@@ -383,11 +562,11 @@ export default function AdminApprovals() {
                           </div>
                         </td>
                         <td className="px-4 py-4">
-                          <ExpandableDetails request={request}>
+                          <RequestDetails request={request}>
                             {request.request_type === "business_profile_update" && (
                               <ProfileDiff request={request} />
                             )}
-                          </ExpandableDetails>
+                          </RequestDetails>
                           {request.status === "rejected" && request.rejection_reason && (
                             <p className="text-xs text-[var(--error)] mt-1">Reason: {request.rejection_reason}</p>
                           )}

@@ -1,0 +1,65 @@
+<!--
+  The TrikeServe terminal icon, traced from the supplied artwork and kept as the
+  one copy of it (TerminalIcon.tsx reads this file raw and substitutes the
+  terminal's colour into it).
+
+  The background is deliberately absent. The source image was a rounded white
+  tile, and that tile is exactly what has to go: painted onto a pale map or a
+  light card it reads as a box *around* the terminal rather than the terminal
+  itself, and the drop-off checks draw this icon on top of roads.
+
+  Every stroke and fill is `currentColor` — the token TerminalIcon.tsx replaces
+  with the terminal's own hex — except the sign board, the cabin and the window
+  interiors, which stay white so the icon keeps its internal contrast whatever
+  hue an admin picks. A single-colour icon is unreadable on a pale yellow
+  terminal.
+
+  Coordinates are absolute in a 320x320 box so this can be dropped straight into
+  either an <svg> element or a Google Maps data URI.
+-->
+<g>
+  <!-- canopy: flat underside, domed top -->
+  <path d="M 20 84 L 32 56 C 58 37 100 29 160 29 C 220 29 262 37 288 56 L 300 84 Z" fill="currentColor"/>
+  <!-- posts -->
+  <rect x="95" y="80" width="13" height="224" fill="currentColor"/>
+  <rect x="265" y="80" width="13" height="224" fill="currentColor"/>
+
+  <!-- hanging sign board; textLength forces it to fit whatever font resolves -->
+  <rect x="122" y="92" width="138" height="32" rx="6" fill="#FFFFFF" stroke="currentColor" stroke-width="9"/>
+  <text x="191" y="114" font-family="Arial, Helvetica, sans-serif" font-size="17"
+        font-weight="700" fill="currentColor" text-anchor="middle"
+        textLength="116" lengthAdjust="spacingAndGlyphs">TRICYCLE TERMINAL</text>
+
+  <!-- stop sign on its post, with a tiny tricycle pictogram inside -->
+  <circle cx="36" cy="176" r="23" fill="#FFFFFF" stroke="currentColor" stroke-width="9"/>
+  <rect x="30" y="163" width="13" height="9" rx="4.5" fill="currentColor"/>
+  <rect x="22" y="172" width="28" height="15" rx="4" fill="currentColor"/>
+  <circle cx="27" cy="190" r="5" fill="currentColor"/>
+  <circle cx="45" cy="190" r="5" fill="currentColor"/>
+  <rect x="31" y="199" width="10" height="103" fill="currentColor"/>
+  <rect x="14" y="300" width="44" height="12" rx="6" fill="currentColor"/>
+
+  <!-- bench -->
+  <rect x="58" y="256" width="56" height="9" rx="4.5" fill="currentColor"/>
+  <rect x="59" y="268" width="25" height="24" rx="4" fill="currentColor"/>
+  <rect x="88" y="268" width="25" height="24" rx="4" fill="currentColor"/>
+  <rect x="64" y="292" width="8" height="12" fill="currentColor"/>
+  <rect x="112" y="292" width="8" height="12" fill="currentColor"/>
+
+  <!-- tricycle: canopy bars, cabin, window, seat lines, rear wheel, handlebar -->
+  <rect x="190" y="150" width="76" height="20" rx="10" fill="currentColor"/>
+  <rect x="190" y="178" width="76" height="20" rx="10" fill="currentColor"/>
+  <rect x="132" y="192" width="76" height="86" rx="10" fill="#FFFFFF" stroke="currentColor" stroke-width="9"/>
+  <rect x="146" y="206" width="38" height="34" rx="4" fill="#FFFFFF" stroke="currentColor" stroke-width="8"/>
+  <rect x="146" y="250" width="42" height="9" rx="4.5" fill="currentColor"/>
+  <rect x="146" y="264" width="42" height="9" rx="4.5" fill="currentColor"/>
+  <rect x="118" y="246" width="28" height="52" rx="14" fill="currentColor"/>
+  <circle cx="238" cy="218" r="17" fill="#FFFFFF" stroke="currentColor" stroke-width="8"/>
+  <rect x="206" y="213" width="18" height="10" rx="5" fill="currentColor"/>
+  <rect x="253" y="213" width="20" height="10" rx="5" fill="currentColor"/>
+  <rect x="228" y="234" width="20" height="32" rx="9" fill="currentColor"/>
+  <rect x="223" y="264" width="30" height="34" rx="13" fill="currentColor"/>
+
+  <!-- ground -->
+  <rect x="16" y="302" width="288" height="15" rx="7.5" fill="currentColor"/>
+</g>
