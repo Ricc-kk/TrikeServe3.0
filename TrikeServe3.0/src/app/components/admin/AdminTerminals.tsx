@@ -1,8 +1,9 @@
 import { useState, useEffect, useRef, useCallback, Fragment as ReactFragment } from "react";
+import { useNavigate } from "react-router";
 import {
   Plus, Edit2, Trash2, UserPlus, UserMinus, MapPin, Users, Menu, X, Navigation, Search, Loader2, Save, Shield,
   ClipboardCheck, Clock, ShieldCheck, ChevronDown, ArrowLeft, Pen,
-  ChevronLeft, ChevronRight, Pentagon, Milestone, SlidersHorizontal
+  ChevronLeft, ChevronRight, Pentagon, Milestone, SlidersHorizontal, Banknote
 } from "lucide-react";
 import { GoogleMap, Marker, InfoWindow, Polygon, Polyline } from "@react-google-maps/api";
 import useMapLoader from "@/lib/mapLoader";
@@ -163,6 +164,7 @@ function getAllUsers(): StoredRider[] {
 }
 
 export default function AdminTerminals() {
+  const navigate = useNavigate();
   const { user } = useAuth();
   // The Super Admin manages terminals directly. A Rider Admin is scoped to the
   // single terminal assigned to them, and their changes are staged for approval.
@@ -212,7 +214,7 @@ export default function AdminTerminals() {
    * two could disagree. 'configuration' is the only section with no map.
    */
   const [editorSection, setEditorSection] = useState<
-    'terminal' | 'border' | 'route' | 'configuration'
+    'terminal' | 'border' | 'route' | 'configuration' | 'fares'
   >('terminal');
   // Collapses the editor's sidebar to icons alone, handing the width back to the
   // map without losing the way out of a section.
@@ -358,6 +360,8 @@ export default function AdminTerminals() {
     marker_color: string;
     route_color: string;
     border_color: string;
+    base_fare: number;
+    per_km: number;
   };
 
   /**
@@ -381,6 +385,8 @@ export default function AdminTerminals() {
       marker_color: normalizeTerminalColor(f.marker_color),
       route_color: normalizeRouteColor(f.route_color),
       border_color: normalizeBorderColor(f.border_color),
+      base_fare: f.base_fare,
+      per_km: f.per_km,
     };
   }
 
@@ -409,7 +415,9 @@ export default function AdminTerminals() {
       form.is_active !== editorSnapshot.is_active ||
       normalizeTerminalColor(form.marker_color) !== editorSnapshot.marker_color ||
       normalizeRouteColor(form.route_color) !== editorSnapshot.route_color ||
-      normalizeBorderColor(form.border_color) !== editorSnapshot.border_color);
+      normalizeBorderColor(form.border_color) !== editorSnapshot.border_color ||
+      Number(form.base_fare) !== editorSnapshot.base_fare ||
+      Number(form.per_km) !== editorSnapshot.per_km);
 
   /** Closes the editor outright. Going through requestCloseMapPicker is the user-facing path. */
   function closeMapPicker() {
@@ -457,6 +465,7 @@ export default function AdminTerminals() {
       if (firstField === 'road') setEditorSection('route');
       else if (firstField === 'area') setEditorSection('border');
       else if (firstField === 'location') setEditorSection('terminal');
+      else if (firstField === 'base_fare' || firstField === 'per_km') setEditorSection('fares');
       else setEditorSection('configuration');
       return;
     }
@@ -948,7 +957,8 @@ export default function AdminTerminals() {
   /** Which page or tab a validation message belongs to, so Save can route to it. */
   type EditorField =
     | 'name' | 'location' | 'road' | 'area' | 'road_width_m'
-    | 'marker_color' | 'route_color' | 'border_color';
+    | 'marker_color' | 'route_color' | 'border_color'
+    | 'base_fare' | 'per_km';
   type EditorErrors = Partial<Record<EditorField, string>>;
 
   /**
@@ -998,11 +1008,26 @@ export default function AdminTerminals() {
       errors.border_color = 'Border color must be a hex value like #22C55E.';
     }
 
+    // Fares must be a real, non-negative amount. The save path already falls back
+    // to a default for junk, but silently writing 20 when an admin typed "abc"
+    // reads as "my change was ignored".
+    const fare = (value: unknown): number | null => {
+      const n = Number(value);
+      return Number.isFinite(n) && n >= 0 ? n : null;
+    };
+    if (fare(form.base_fare) === null) {
+      errors.base_fare = 'Base fare must be a number of 0 or more.';
+    }
+    if (fare(form.per_km) === null) {
+      errors.per_km = 'Fare per km must be a number of 0 or more.';
+    }
+
     // Order matters only in that the first entry is the one reported; it follows
     // the order the admin meets the fields, with the shapes before the settings.
     const order: EditorField[] = [
       'name', 'location', 'road', 'area', 'road_width_m',
       'marker_color', 'route_color', 'border_color',
+      'base_fare', 'per_km',
     ];
     const firstField = order.find(f => errors[f]) ?? null;
     return { errors, firstField };
@@ -1457,13 +1482,18 @@ export default function AdminTerminals() {
          route to the same outcome and bypass that review. */
       actions={
         isSuperAdmin ? (
+          /* The label drops below sm, where the header only has whatever the title
+             leaves over. The icon carries the meaning and the aria-label keeps the
+             button identifiable once the words are gone. */
           <button
             type="button"
             onClick={openCreate}
-            className="inline-flex min-h-11 items-center gap-2 rounded-xl bg-[var(--primary)] px-4 py-2 text-sm font-bold text-white shadow-sm transition-opacity hover:opacity-90 active:scale-[0.98]"
+            aria-label="Add Terminal"
+            title="Add Terminal"
+            className="inline-flex min-h-11 items-center gap-2 rounded-xl bg-[var(--primary)] px-3 sm:px-4 py-2 text-sm font-bold text-white shadow-sm transition-opacity hover:opacity-90 active:scale-[0.98]"
           >
-            <Plus className="size-4" aria-hidden="true" />
-            Add Terminal
+            <TerminalIcon size={22} color="#FFFFFF" />
+            <span className="hidden sm:inline">Add Terminal</span>
           </button>
         ) : null
       }
@@ -1548,6 +1578,7 @@ export default function AdminTerminals() {
                       fullscreenControl: false,
                       streetViewControl: false,
                       mapTypeControl: false,
+                      gestureHandling: 'greedy',
                     }}
                     onLoad={m => {
                       overviewMapRef.current = m;
@@ -2109,6 +2140,7 @@ export default function AdminTerminals() {
                 ['border', 'Border', Pentagon],
                 ['route', 'Route', Milestone],
                 ['configuration', 'Configuration', SlidersHorizontal],
+                ['fares', 'Fares & Delivery', Banknote],
               ] as const).map(([id, label, Icon]) => {
                 const active = editorSection === id;
                 return (
@@ -2148,7 +2180,7 @@ export default function AdminTerminals() {
             </aside>
 
             <div className="flex-1 flex flex-col min-h-0 min-w-0">
-          {editorSection !== 'configuration' && (
+          {editorSection !== 'configuration' && editorSection !== 'fares' && (
           <div className="flex-1 relative">
             <GoogleMap
               mapContainerStyle={{ width: '100%', height: '100%' }}
@@ -2161,6 +2193,9 @@ export default function AdminTerminals() {
                 fullscreenControl: false,
                 streetViewControl: false,
                 mapTypeControl: false,
+                // One finger pans. The default is two-finger on touch, which makes the
+                // map feel stuck on a phone when the admin is trying to place a pin.
+                gestureHandling: 'greedy',
               }}
             >
               {/* The pin changes with the tab, so what is under the finger is
@@ -2366,7 +2401,25 @@ export default function AdminTerminals() {
               corridor width, visibility, colour. */}
           {editorSection === 'configuration' && (
             <div className="flex-1 overflow-y-auto">
-              <div className="max-w-lg mx-auto p-4 space-y-4">
+              {/* Sticks to the top of the scroller so it survives a long form on a
+                  phone, where the sidebar rail is the only other way back. */}
+              <div className="sticky top-0 z-[2015] bg-surface border-b border-[var(--border)] px-3 py-3 flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setEditorSection('terminal')}
+                  aria-label="Back to map"
+                  className="w-11 h-11 flex-shrink-0 flex items-center justify-center rounded-xl bg-[var(--muted)] active:scale-90"
+                >
+                  <ArrowLeft className="w-5 h-5 text-[var(--ink)]" />
+                </button>
+                <h3 className="font-extrabold text-base text-[var(--ink)] truncate">
+                  {editTerminal ? "Edit Terminal" : "New Terminal"}
+                </h3>
+              </div>
+              {/* Full width on a phone, capped on a desktop: the colour rows each
+                  hold a preview, a label and a button, and at max-w-lg on a narrow
+                  screen the label was the thing that got squeezed out. */}
+              <div className="mx-auto w-full max-w-2xl p-4 space-y-4">
                 {(() => {
                   const { errors } = validateEditor();
                   // No width in the shared class: the text fields want w-full and the
@@ -2443,7 +2496,7 @@ export default function AdminTerminals() {
                         )}
                       </div>
 
-                      <div className="flex items-center justify-between gap-3 p-3 bg-[var(--muted)] rounded-xl">
+                      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 p-3 bg-[var(--muted)] rounded-xl">
                         <div className="min-w-0">
                           <p className="text-sm font-semibold text-[var(--ink)]">Active Terminal</p>
                           <p className="text-xs text-[var(--muted-foreground)]">Visible to customers for pickup</p>
@@ -2468,7 +2521,7 @@ export default function AdminTerminals() {
                           because both decide how far from the road a drop-off lands,
                           and flipping it must not discard the road either way. */}
                       {(form.boundary_polygon.length >= 2 || form.boundary_area.length >= 3) && (
-                        <div className="flex items-center justify-between gap-3 p-3 bg-[var(--muted)] rounded-xl">
+                        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 p-3 bg-[var(--muted)] rounded-xl">
                           <div className="min-w-0">
                             <p className="text-sm font-semibold text-[var(--ink)]">Enforce Boundary</p>
                             <p className="text-xs text-[var(--muted-foreground)]">
@@ -2494,7 +2547,7 @@ export default function AdminTerminals() {
                         </div>
                       )}
 
-                      <div className="flex items-center justify-between gap-3 p-3 bg-[var(--muted)] rounded-xl">
+                      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 p-3 bg-[var(--muted)] rounded-xl">
                         <div className="flex min-w-0 items-center gap-3">
                           <TerminalIcon size={44} color={form.marker_color} className="flex-shrink-0" />
                           <div className="min-w-0">
@@ -2516,7 +2569,7 @@ export default function AdminTerminals() {
                           appears on the map — a stroke for the route, a fill with a
                           stroke for the border — so the choice is made against
                           something that looks like the result. */}
-                      <div className="flex items-center justify-between gap-3 p-3 bg-[var(--muted)] rounded-xl">
+                      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 p-3 bg-[var(--muted)] rounded-xl">
                         <div className="flex min-w-0 items-center gap-3">
                           <svg
                             viewBox="0 0 48 24"
@@ -2549,7 +2602,7 @@ export default function AdminTerminals() {
                         />
                       </div>
 
-                      <div className="flex items-center justify-between gap-3 p-3 bg-[var(--muted)] rounded-xl">
+                      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 p-3 bg-[var(--muted)] rounded-xl">
                         <div className="flex min-w-0 items-center gap-3">
                           <svg
                             viewBox="0 0 48 24"
@@ -2580,6 +2633,118 @@ export default function AdminTerminals() {
                           resetTo={DEFAULT_BORDER_COLOR}
                           label="Edit Color"
                         />
+                      </div>
+
+                      <div className="sticky bottom-0 -mx-4 px-4 py-3 bg-surface border-t border-[var(--border)]">
+                        <button
+                          type="button"
+                          onClick={saveChangesFromPicker}
+                          disabled={!hasUnsavedEditorChanges}
+                          className="w-full h-12 bg-[var(--primary)] text-white text-sm font-bold rounded-xl active:scale-[0.98] disabled:opacity-40 disabled:active:scale-100"
+                        >
+                          Save Changes
+                        </button>
+                      </div>
+                    </>
+                  );
+                })()}
+              </div>
+            </div>
+          )}
+
+          {/* Fares & Delivery. Share-ride pricing lives here; private ride and
+              delivery are owned by the dedicated page, which carries the extra
+              columns this editor does not load. */}
+          {editorSection === 'fares' && (
+            <div className="flex-1 overflow-y-auto">
+              <div className="sticky top-0 z-[2015] bg-surface border-b border-[var(--border)] px-3 py-3 flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setEditorSection('terminal')}
+                  aria-label="Back to map"
+                  className="w-11 h-11 flex-shrink-0 flex items-center justify-center rounded-xl bg-[var(--muted)] active:scale-90"
+                >
+                  <ArrowLeft className="w-5 h-5 text-[var(--ink)]" />
+                </button>
+                <h3 className="font-extrabold text-base text-[var(--ink)] truncate">Fares & Delivery</h3>
+              </div>
+              <div className="mx-auto w-full max-w-2xl p-4 space-y-4">
+                {(() => {
+                  const { errors } = validateEditor();
+                  const field =
+                    'border border-line h-11 px-4 rounded-xl text-sm outline-none focus:border-[var(--primary)]';
+                  const invalid = 'border-[var(--error)]';
+
+                  const money = (
+                    key: 'base_fare' | 'per_km',
+                    label: string,
+                    hint: string,
+                    placeholder: string,
+                  ) => (
+                    <div>
+                      <label className="text-xs font-semibold uppercase tracking-widest text-[var(--muted-foreground)] block mb-1">
+                        {label}
+                      </label>
+                      <div className="flex items-center gap-2">
+                        <span className="text-sm text-[var(--muted-foreground)] flex-shrink-0">₱</span>
+                        <input
+                          type="number"
+                          min={0}
+                          step="0.5"
+                          inputMode="decimal"
+                          value={form[key]}
+                          placeholder={placeholder}
+                          aria-invalid={!!errors[key]}
+                          aria-label={label}
+                          onChange={e =>
+                            setForm(f => ({
+                              ...f,
+                              [key]: e.target.value === '' ? NaN : Number(e.target.value),
+                            }))
+                          }
+                          className={`flex-1 min-w-0 px-3 rounded-xl ${field} ${errors[key] ? invalid : ''}`}
+                        />
+                      </div>
+                      <p className="text-xs text-[var(--muted-foreground)] mt-1">{hint}</p>
+                      {errors[key] && (
+                        <p className="text-xs text-[var(--error)] mt-1">{errors[key]}</p>
+                      )}
+                    </div>
+                  );
+
+                  return (
+                    <>
+                      <p className="text-sm text-[var(--muted-foreground)]">
+                        Share-ride pricing for {form.name || 'this terminal'}.
+                      </p>
+
+                      {money(
+                        'base_fare',
+                        'Base Fare',
+                        'Charged once when a ride starts, before distance.',
+                        '20',
+                      )}
+                      {money(
+                        'per_km',
+                        'Fare per km',
+                        'Added on top of the base fare for each kilometre travelled.',
+                        '10',
+                      )}
+
+                      <div className="p-3 bg-[var(--muted)] rounded-xl">
+                        <p className="text-sm font-semibold text-[var(--ink)]">Private ride & delivery</p>
+                        <p className="text-xs text-[var(--muted-foreground)] mt-0.5">
+                          These have their own fields, so they are set on the Fares &amp;
+                          Delivery page rather than here. Saving from this editor leaves
+                          them untouched.
+                        </p>
+                        <button
+                          type="button"
+                          onClick={() => { closeMapPicker(); navigate('/admin/fares'); }}
+                          className="mt-3 inline-flex min-h-11 items-center gap-2 rounded-xl border border-line px-3 py-2 text-sm font-bold text-[var(--ink)]"
+                        >
+                          Open Fares &amp; Delivery
+                        </button>
                       </div>
 
                       <div className="sticky bottom-0 -mx-4 px-4 py-3 bg-surface border-t border-[var(--border)]">

@@ -493,6 +493,32 @@ export function isPointOnRoadCorridor(
 }
 
 /**
+ * Turn a typed address into coordinates, or null when Google can't resolve it.
+ *
+ * Shared by every booking screen because a drop-off can be entered as text
+ * rather than pinned on the map, and the boundary check needs coordinates to
+ * have anything to check. Returns null on any non-OK geocode status -- callers
+ * must treat that as "unknown", never as "allowed".
+ */
+export function geocodeAddress(
+  address: string
+): Promise<{ lat: number; lng: number } | null> {
+  const Geocoder = (window as any)?.google?.maps?.Geocoder;
+  if (!Geocoder || !address.trim()) return Promise.resolve(null);
+
+  return new Promise(resolve => {
+    new Geocoder().geocode({ address }, (results: any, status: string) => {
+      const location = results?.[0]?.geometry?.location;
+      if (status === 'OK' && location) {
+        resolve({ lat: location.lat(), lng: location.lng() });
+      } else {
+        resolve(null);
+      }
+    });
+  });
+}
+
+/**
  * Great-circle distance in metres between two coordinates.
  *
  * Used to compare a driver's position against a terminal's given radius
@@ -517,63 +543,234 @@ export function haversineDistanceMeters(
 }
 
 /**
- * Whether a point is covered by one terminal's boundary.
+ * The two boundary shapes, kept apart because they answer different questions.
  *
- * Inside the enclosing area counts, and so does sitting on the road corridor —
- * the road runs through the area, so either alone is enough. With neither shape
- * plotted there is nothing to enforce and the point is covered.
+ * `area` (the border) decides *who* the terminal serves: the customer has to be
+ * standing in it to book, and a driver has to be in it to queue.
+ *
+ * `road` (the route) decides *where a tricycle can go*: the drop-off of a ride,
+ * or the delivery address of a food order, has to sit on the corridor.
+ *
+ * They are deliberately not interchangeable. Treating them as one shape (inside
+ * the area OR on the road) let a customer book from a street corner they were
+ * never at, because the road corridor is hundreds of metres wide.
  */
-export function isWithinTerminalBoundary(
-  lat: number,
-  lng: number,
-  boundary: { road?: LatLngPoint[] | null; area?: LatLngPoint[] | null; widthM?: number | null } = {}
-): boolean {
-  if (boundary.area && boundary.area.length >= 3 && isPointInPolygon(lat, lng, boundary.area)) {
-    return true;
+export type TerminalGateShape = {
+  id: string;
+  name: string;
+  /** The route: a road polyline with a corridor half-width. */
+  road: LatLngPoint[] | null;
+  /** The border: the area polygon a customer or driver must be standing in. */
+  area: LatLngPoint[] | null;
+  widthM: number | null;
+  center: { lat: number; lng: number } | null;
+};
+
+/**
+ * Every active, boundary-enabled terminal with its two shapes normalised.
+ *
+ * A terminal whose check is switched off is skipped, but keeps its shapes on the
+ * record: the admin turns the check off while correcting a boundary, not to
+ * discard one.
+ *
+ * Returns `null` when the lookup itself failed, which is deliberately distinct
+ * from "no terminal has anything plotted" -- callers decide what an unknown
+ * answer means, and the two must not collapse into one.
+ */
+async function loadTerminalGateShapes(): Promise<TerminalGateShape[] | null> {
+  // `select('*')` keeps this working before the boundary migrations run.
+  const { data, error } = await supabase.from('terminals').select('*');
+  if (error || !data) return null;
+
+  return data
+    .filter((t: any) => t.is_active !== false && t.boundary_enabled !== false)
+    .map((t: any) => ({
+      id: t.id,
+      name: t.name,
+      road: normalizeBoundaryRoad(t.boundary_polygon),
+      area: normalizeBoundaryArea(t.boundary_area),
+      widthM: t.road_width_m,
+      center:
+        Number.isFinite(Number(t.center_lat)) && Number.isFinite(Number(t.center_lng))
+          ? { lat: Number(t.center_lat), lng: Number(t.center_lng) }
+          : null,
+    }));
+}
+
+/** The shape of a gate's verdict, including which terminals said yes. */
+export type TerminalGateResult = {
+  allowed: boolean;
+  /** Terminals that actually had the relevant shape plotted. */
+  checkedCount: number;
+  /** The terminals that allowed the point, when it was allowed. */
+  matched: Array<{ id: string; name: string }>;
+  /**
+   * The lookup failed, so nothing was actually checked. Callers that must not
+   * block on an outage can allow; callers enforcing a rule should surface it.
+   */
+  lookupFailed: boolean;
+};
+
+function gateResult(
+  shapes: TerminalGateShape[],
+  test: (shape: TerminalGateShape) => boolean
+): TerminalGateResult {
+  // Nothing plotted for this gate anywhere: the feature is not configured yet,
+  // so it must not start rejecting people who could book before it existed.
+  if (shapes.length === 0) {
+    return { allowed: true, checkedCount: 0, matched: [], lookupFailed: false };
   }
-  if (boundary.road && boundary.road.length >= 2) {
-    return isPointOnRoadCorridor(lat, lng, boundary.road, normalizeRoadWidth(boundary.widthM));
-  }
-  return false;
+
+  const matched = shapes.filter(test).map(s => ({ id: s.id, name: s.name }));
+  return {
+    allowed: matched.length > 0,
+    checkedCount: shapes.length,
+    matched,
+    lookupFailed: false,
+  };
+}
+
+function failedLookup(what: string, error: unknown): TerminalGateResult {
+  console.warn(`[${what}] terminal lookup failed:`, error);
+  return { allowed: true, checkedCount: 0, matched: [], lookupFailed: true };
 }
 
 /**
- * Check a drop-off point against every active terminal boundary.
+ * The BORDER gate: is this point inside any terminal's area?
  *
- * `allowed` is true when the point is covered by at least one terminal's road or
- * enclosing area, or when no terminal has anything plotted yet (so the feature
- * never blocks bookings before boundaries are configured). A failed lookup also
- * fails open.
+ * Used for the customer standing at a terminal to book, and for a driver
+ * standing at a terminal to queue.
  */
-export async function isDropoffWithinAnyTerminalBoundary(
+export async function isPointWithinAnyTerminalBorder(
   lat: number,
   lng: number
-): Promise<{ allowed: boolean; checkedCount: number }> {
+): Promise<TerminalGateResult> {
   try {
-    // `select('*')` keeps this working before the boundary migrations run.
-    const { data, error } = await supabase.from('terminals').select('*');
-    if (error || !data) return { allowed: true, checkedCount: 0 };
+    const shapes = await loadTerminalGateShapes();
+    if (shapes === null) return failedLookup('terminal border', new Error('query failed'));
 
-    // A terminal with its boundary check switched off is skipped, but keeps both
-    // shapes: the admin turns this on while correcting a boundary, not to discard one.
-    const boundaries = data
-      .filter((t: any) => t.is_active !== false && t.boundary_enabled !== false)
-      .map((t: any) => ({
-        road: normalizeBoundaryRoad(t.boundary_polygon),
-        area: normalizeBoundaryArea(t.boundary_area),
-        widthM: t.road_width_m,
-      }))
-      .filter((b: { road: LatLngPoint[] | null; area: LatLngPoint[] | null }) =>
-        Array.isArray(b.road) || Array.isArray(b.area)
-      );
-
-    if (boundaries.length === 0) return { allowed: true, checkedCount: 0 };
-
-    const allowed = boundaries.some(b => isWithinTerminalBoundary(lat, lng, b));
-    return { allowed, checkedCount: boundaries.length };
+    return gateResult(
+      shapes.filter(s => Array.isArray(s.area)),
+      s => isPointInPolygon(lat, lng, s.area as LatLngPoint[])
+    );
   } catch (error) {
-    console.warn('[isDropoffWithinAnyTerminalRoad] check failed, allowing booking:', error);
-    return { allowed: true, checkedCount: 0 };
+    return failedLookup('terminal border', error);
+  }
+}
+
+/**
+ * The ROUTE gate: is this point within the corridor of any terminal's road?
+ *
+ * Used for the drop-off of a ride and for the delivery address of a food order --
+ * both are places a tricycle is expected to be able to reach.
+ */
+export async function isPointWithinAnyTerminalRoute(
+  lat: number,
+  lng: number
+): Promise<TerminalGateResult> {
+  try {
+    const shapes = await loadTerminalGateShapes();
+    if (shapes === null) return failedLookup('terminal route', new Error('query failed'));
+
+    return gateResult(
+      shapes.filter(s => Array.isArray(s.road)),
+      s => isPointOnRoadCorridor(lat, lng, s.road as LatLngPoint[], normalizeRoadWidth(s.widthM))
+    );
+  } catch (error) {
+    return failedLookup('terminal route', error);
+  }
+}
+
+/**
+ * The ROUTE gate against one specific terminal.
+ *
+ * The route search above accepts a point near *any* terminal's road. This asks
+ * the narrower question, used by the rider screens and the map overlays where a
+ * single terminal is already in context.
+ */
+export function isPointWithinTerminalRoute(
+  lat: number,
+  lng: number,
+  terminal: { road?: LatLngPoint[] | null; widthM?: number | null }
+): boolean {
+  if (!terminal.road || terminal.road.length < 2) return false;
+  return isPointOnRoadCorridor(lat, lng, terminal.road, normalizeRoadWidth(terminal.widthM));
+}
+
+/**
+ * Which terminal should take this food delivery?
+ *
+ * The route gate decides *whether* anyone can serve the address -- if no
+ * terminal's road runs near the customer, the order cannot be delivered and the
+ * customer is told so rather than having it silently rejected later.
+ *
+ * Among the terminals that can reach the customer, this picks the one nearest
+ * the restaurant, so the driver's run to collect the food is the shortest of the
+ * available options.
+ */
+export async function findDeliveryTerminalForOrder(params: {
+  dropoffLat: number;
+  dropoffLng: number;
+  /** The restaurant being collected from. Used to break the tie. */
+  pickupLat?: number | null;
+  pickupLng?: number | null;
+}): Promise<{
+  terminal: { id: string; name: string } | null;
+  allowed: boolean;
+  checkedCount: number;
+  /** Terminals whose route reaches the customer. Empty means nobody can. */
+  reachable: Array<{ id: string; name: string }>;
+}> {
+  try {
+    const shapes = await loadTerminalGateShapes();
+    if (shapes === null) {
+      return { terminal: null, allowed: true, checkedCount: 0, reachable: [] };
+    }
+
+    const withRoutes = shapes.filter(s => Array.isArray(s.road) && s.road.length >= 2);
+    if (withRoutes.length === 0) {
+      // No routes configured yet: leave the assignment to the existing behaviour.
+      return { terminal: null, allowed: true, checkedCount: 0, reachable: [] };
+    }
+
+    const reachable = withRoutes.filter(s =>
+      isPointOnRoadCorridor(params.dropoffLat, params.dropoffLng, s.road as LatLngPoint[], normalizeRoadWidth(s.widthM))
+    );
+
+    if (reachable.length === 0) {
+      return { terminal: null, allowed: false, checkedCount: withRoutes.length, reachable: [] };
+    }
+
+    // With no restaurant position to measure from there is nothing to rank by,
+    // so the nearest-to-customer fallback below takes over.
+    const hasPickup =
+      Number.isFinite(Number(params.pickupLat)) && Number.isFinite(Number(params.pickupLng));
+
+    const terminal = hasPickup
+      ? reachable.reduce((best, s) => {
+          // A terminal with no centre cannot be ranked; keep the one already held.
+          if (!best.center) return s.center ? s : best;
+          if (!s.center) return best;
+          const d = haversineDistanceMeters({ lat: Number(params.pickupLat), lng: Number(params.pickupLng) }, s.center);
+          const bd = haversineDistanceMeters({ lat: Number(params.pickupLat), lng: Number(params.pickupLng) }, best.center);
+          return d < bd ? s : best;
+        })
+      : reachable.reduce((best, s) => {
+          // Without the restaurant, rank by the customer instead.
+          if (!best.center) return s.center ? s : best;
+          if (!s.center) return best;
+          return haversineDistanceMeters(params, s.center) < haversineDistanceMeters(params, best.center) ? s : best;
+        });
+
+    return {
+      terminal: { id: terminal.id, name: terminal.name },
+      allowed: true,
+      checkedCount: withRoutes.length,
+      reachable: reachable.map(s => ({ id: s.id, name: s.name })),
+    };
+  } catch (error) {
+    console.warn('[findDeliveryTerminalForOrder] lookup failed:', error);
+    return { terminal: null, allowed: true, checkedCount: 0, reachable: [] };
   }
 }
 

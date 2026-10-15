@@ -8,7 +8,7 @@ import { Badge } from "../ui/badge";
 import { useAuth } from "../../contexts/AuthContext";
 import { isDeliveryServiceMode, isQueueGatedType, useTerminalQueue } from "../../hooks/useTerminalQueue";
 import TerminalQueueCard from "./TerminalQueueCard";
-import { isWithinTerminalBoundary, normalizeBoundaryRoad, normalizeBoundaryArea, normalizeRoadWidth, DEFAULT_ROAD_WIDTH_M, supabaseHelpers, logAudit, type LatLngPoint } from "@/lib/supabase";
+import { isPointInPolygon, normalizeBoundaryRoad, normalizeBoundaryArea, normalizeRoadWidth, DEFAULT_ROAD_WIDTH_M, supabaseHelpers, logAudit, type LatLngPoint } from "@/lib/supabase";
 import { supabase } from "../../../lib/supabase";
 import useMapLoader from "@/lib/mapLoader";
 import tricycleIcon from "../../../assets/0b76d1aa56b8ad6e15dd4efc8a0100b0ca5762a1.png";
@@ -224,12 +224,12 @@ export default function PassengerRequests() {
       })()
     : currentLocation);
 
-  const insideToda = (todaBoundary || todaArea) && todaBoundaryEnabled
-    ? isWithinTerminalBoundary(currentLocation.lat, currentLocation.lng, {
-        road: todaBoundary,
-        area: todaArea,
-        widthM: todaRoadWidth,
-      })
+  // Whether the driver is inside their terminal's BORDER -- the gate for being
+  // at the terminal at all. The road corridor is deliberately not used here:
+  // it is hundreds of metres wide, so it would call a driver who is nowhere near
+  // the terminal "inside".
+  const insideToda = todaArea && todaBoundaryEnabled
+    ? isPointInPolygon(currentLocation.lat, currentLocation.lng, todaArea)
     : null;
 
   useEffect(() => {

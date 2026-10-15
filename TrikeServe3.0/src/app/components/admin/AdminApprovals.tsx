@@ -19,7 +19,7 @@ import { cuisineLabels } from "../../../lib/foodTaxonomy";
 import ConfirmationModal from "../ui/confirmation-modal";
 import Toast from "../ui/Toast";
 // Shared with the Rider Admin's Submitted Requests screen, so the two can't drift.
-import { describePayload, formatDate, typeBadgeColor, typeIcon } from "./approvalView";
+import { describePayload, formatDate, typeBadgeColor, typeIcon, ExpandableDetails } from "./approvalView";
 
 /** One field of a shop-profile change, rendered as before → after. */
 type ProfileDiffRow = { key: string; label: string; from: string; to: string };
@@ -281,14 +281,13 @@ export default function AdminApprovals() {
                           Requested by {request.requested_by_name || request.requested_by_email || 'Rider Admin'}
                           {" · "}{formatDate(request.requested_at)}
                         </p>
-                        <div className="mt-2 space-y-0.5">
-                          {describePayload(request).map((line, i) => (
-                            <p key={i} className="text-sm text-[var(--muted-foreground)] break-words">{line}</p>
-                          ))}
+                        <div className="mt-2">
+                          <ExpandableDetails request={request}>
+                            {request.request_type === "business_profile_update" && (
+                              <ProfileDiff request={request} />
+                            )}
+                          </ExpandableDetails>
                         </div>
-                        {request.request_type === "business_profile_update" && (
-                          <ProfileDiff request={request} />
-                        )}
                       </div>
                     </div>
                     <div className="grid grid-cols-2 gap-2 w-full sm:w-auto sm:flex sm:items-center sm:flex-shrink-0">
@@ -384,7 +383,11 @@ export default function AdminApprovals() {
                           </div>
                         </td>
                         <td className="px-4 py-4">
-                          <p className="text-sm text-[var(--muted-foreground)]">{describePayload(request).join(" · ")}</p>
+                          <ExpandableDetails request={request}>
+                            {request.request_type === "business_profile_update" && (
+                              <ProfileDiff request={request} />
+                            )}
+                          </ExpandableDetails>
                           {request.status === "rejected" && request.rejection_reason && (
                             <p className="text-xs text-[var(--error)] mt-1">Reason: {request.rejection_reason}</p>
                           )}

@@ -1,5 +1,7 @@
+import { useState, type ReactNode } from "react";
 import {
   ClipboardCheck, IdCard, MapPin, Store, Trash2, UserMinus, UserPlus, UtensilsCrossed,
+  ChevronDown, ChevronUp,
 } from "lucide-react";
 import {
   APPROVAL_REQUEST_LABELS,
@@ -105,4 +107,72 @@ export function describePayload(request: ApprovalRequest): string[] {
 /** The request type in words, e.g. "Edit terminal". */
 export function requestLabel(request: ApprovalRequest) {
   return APPROVAL_REQUEST_LABELS[request.request_type] ?? request.request_type;
+}
+
+/**
+ * A request's details, collapsed to a summary and expanded on tap.
+ *
+ * `describePayload` can return five lines, which is a wall inside a table cell
+ * and pushes every other column off the row. The first line is the one that
+ * identifies the request, so it stays visible and the rest sit behind a toggle —
+ * with the whole control a single button, so a tap anywhere on it works rather
+ * than only on the small word "more".
+ *
+ * Rendered as a button with aria-expanded rather than a <details> element so the
+ * open/closed state is readable by assistive tech as well as visually.
+ */
+export function ExpandableDetails({
+  request,
+  lines,
+  children,
+}: {
+  request: ApprovalRequest;
+  /** Defaults to describePayload(request). */
+  lines?: string[];
+  children?: ReactNode;
+}) {
+  const [open, setOpen] = useState(false);
+  const all = lines ?? describePayload(request);
+  const [summary, ...rest] = all;
+  const hasMore = rest.length > 0 || !!children;
+
+  if (!summary && !hasMore) {
+    return <p className="text-sm text-[var(--muted-foreground)] italic">No details</p>;
+  }
+
+  return (
+    <div className="min-w-0">
+      {summary && (
+        <p className="text-sm text-[var(--ink)] truncate">{summary}</p>
+      )}
+
+      {hasMore && (
+        <>
+          <button
+            type="button"
+            onClick={() => setOpen(o => !o)}
+            aria-expanded={open}
+            aria-label={open ? "Hide full details" : "Show full details"}
+            className="mt-1 inline-flex items-center gap-1 text-xs font-bold text-[var(--primary)] hover:underline"
+          >
+            {open ? "Hide details" : "Show details"}
+            {open ? (
+              <ChevronUp className="w-3.5 h-3.5" aria-hidden="true" />
+            ) : (
+              <ChevronDown className="w-3.5 h-3.5" aria-hidden="true" />
+            )}
+          </button>
+
+          {open && (
+            <div className="mt-2 space-y-1 rounded-xl bg-[var(--muted)] p-3">
+              {rest.map((line, i) => (
+                <p key={i} className="text-xs text-[var(--muted-foreground)] break-words">{line}</p>
+              ))}
+              {children}
+            </div>
+          )}
+        </>
+      )}
+    </div>
+  );
 }

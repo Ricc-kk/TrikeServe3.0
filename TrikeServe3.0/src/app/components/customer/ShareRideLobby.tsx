@@ -4,7 +4,7 @@ import { Button } from "../ui/button";
 import { Card } from "../ui/card";
 import { Badge } from "../ui/badge";
 import { useAuth } from "../../contexts/AuthContext";
-import { supabase, supabaseHelpers, isSimilarRoute, isDropoffWithinAnyTerminalBoundary, haversineDistanceMeters } from "@/lib/supabase";
+import { supabase, supabaseHelpers, isSimilarRoute, isPointWithinAnyTerminalBorder, isPointWithinAnyTerminalRoute, haversineDistanceMeters } from "@/lib/supabase";
 import { GoogleMap, MarkerF, Polyline } from "@react-google-maps/api";
 import useMapLoader from "@/lib/mapLoader";
 import { useElapsedTime } from "@/app/hooks/useElapsedTime";
@@ -173,6 +173,13 @@ export default function ShareRideLobby({
   const [showFullCapacityPopup, setShowFullCapacityPopup] = useState(false);
   const [showLobbyFullPopup, setShowLobbyFullPopup] = useState(false);
   const [showOutOfBoundaryPopup, setShowOutOfBoundaryPopup] = useState(false);
+  // Distinguishes "we found it and it's outside every terminal" from "we could
+  // not find it at all" — the same dialog covers both and the wording differs.
+  // Which gate refused this lobby, so the dialog can explain the actual problem
+  // rather than a generic "out of area": the customer not being at a terminal,
+  // the drop-off not being on a route, and not being able to locate the drop-off
+  // are three different things a customer can fix in three different ways.
+  const [gateFailure, setGateFailure] = useState<'unresolved' | 'border' | 'route' | null>(null);
   const [fullLobbyInfo, setFullLobbyInfo] = useState<{ passengers: number; maxSeats: number } | null>(null);
   const [driverLocation, setDriverLocation] = useState<{ lat: number; lng: number } | null>(null);
   const [driverRoutePath, setDriverRoutePath] = useState<Array<{ lat: number; lng: number }>>([]);
@@ -806,19 +813,35 @@ export default function ShareRideLobby({
 
   const findOrCreateLobby = async (): Promise<ShareRideLobby | null> => {
     try {
-      // Refuse a lobby whose drop-off is outside every terminal's plotted
-      // coverage area — the booking screen blocks this too, but a lobby can
-      // also be opened directly from the shared-rides browser.
-      if (dropoffCoords) {
-        const { allowed } = await isDropoffWithinAnyTerminalBoundary(
-          dropoffCoords.lat,
-          dropoffCoords.lng
-        );
-        if (!allowed) {
-          console.log('🚫 Share ride drop-off outside all terminal boundaries:', dropoffCoords);
-          setShowOutOfBoundaryPopup(true);
-          return null;
-        }
+      // The booking screen runs these two gates too, but a lobby can also be
+      // opened directly from the shared-rides browser, so they cannot be assumed.
+      //
+      // 1. BORDER -- the customer has to be standing inside a terminal's area.
+      // 2. ROUTE  -- the drop-off has to sit on a terminal's road corridor.
+      //
+      // A location entered as text may never have been geocoded, and skipping
+      // the checks in that case is how lobbies got created outside every
+      // terminal. With no coordinates to test there is nothing safe but refuse.
+      if (!dropoffCoords || !pickupCoords) {
+        setGateFailure('unresolved');
+        setShowOutOfBoundaryPopup(true);
+        return null;
+      }
+
+      const border = await isPointWithinAnyTerminalBorder(pickupCoords.lat, pickupCoords.lng);
+      if (!border.allowed) {
+        console.log('🚫 Share ride pickup outside every terminal border:', pickupCoords);
+        setGateFailure('border');
+        setShowOutOfBoundaryPopup(true);
+        return null;
+      }
+
+      const route = await isPointWithinAnyTerminalRoute(dropoffCoords.lat, dropoffCoords.lng);
+      if (!route.allowed) {
+        console.log('🚫 Share ride drop-off outside every terminal route:', dropoffCoords);
+        setGateFailure('route');
+        setShowOutOfBoundaryPopup(true);
+        return null;
       }
 
       // First, check if user is already in a waiting lobby
@@ -1102,22 +1125,70 @@ if (loading) {
     );
   }
 
-  // Out of boundary area popup (can show even when lobby is null)
+  // Gate refusal popup (can show even when lobby is null). The copy follows the
+  // gate, because the customer's next action differs for each one.
   if (showOutOfBoundaryPopup) {
+    const copy = {
+      border: {
+        icon: '📍',
+        tone: 'error',
+        title: "You're not at a terminal",
+        body: (
+          <>
+            Shared rides can only be booked from inside a terminal. You're currently outside
+            every terminal's service area, so please move to one of our terminals and try again.
+          </>
+        ),
+      },
+      route: {
+        icon: '🛣️',
+        tone: 'error',
+        title: 'Drop-off not on our route',
+        body: (
+          <>
+            Your designated <strong>drop-off location</strong> is not within the route of the
+            selected terminal. Please choose a drop-off point on one of our routes.
+          </>
+        ),
+      },
+      unresolved: {
+        icon: '📍',
+        tone: 'warn',
+        title: "We couldn't locate that drop-off",
+        body: (
+          <>
+            Before we can check whether your <strong>drop-off point</strong> is on a terminal's
+            route we need to find it on the map. Tap the drop-off on the map, or try a more
+            complete address.
+          </>
+        ),
+      },
+    }[gateFailure || 'route'];
+
     return (
       <div className="fixed inset-0 bg-black/50 z-[2000] flex items-center justify-center p-4">
         <div className="bg-surface p-6 max-w-sm w-full rounded-2xl shadow-xl">
-          <div className="w-16 h-16 bg-[var(--error-soft)] rounded-full flex items-center justify-center mx-auto mb-4">
-            <span className="text-3xl">🚧</span>
+          <div
+            className={`w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4 ${
+              copy.tone === 'warn' ? 'bg-[var(--amber-soft)]' : 'bg-[var(--error-soft)]'
+            }`}
+          >
+            <span className="text-3xl">{copy.icon}</span>
           </div>
-          <h3 className="text-xl font-bold text-[var(--error)] text-center mb-2">Out of boundary area</h3>
+          <h3
+            className={`text-xl font-bold text-center mb-2 ${
+              copy.tone === 'warn' ? 'text-[var(--ink)]' : 'text-[var(--error)]'
+            }`}
+          >
+            {copy.title}
+          </h3>
           <p className="text-[var(--muted-foreground)] text-center mb-6 text-sm">
-            Your drop-off point is outside the service area covered by our terminals, so this
-            shared ride cannot be booked. Please choose a drop-off location inside the boundary area.
+            {copy.body}
           </p>
           <button
             onClick={() => {
               setShowOutOfBoundaryPopup(false);
+              setGateFailure(null);
               onClose();
             }}
             className="w-full py-3 bg-[var(--primary)] text-white font-bold rounded-xl active:scale-95 transition-transform"

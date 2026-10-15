@@ -7,7 +7,9 @@ import { Link, useLocation, useNavigate } from "react-router";
 import { Card } from "../ui/card";
 import { useAuth } from "../../contexts/AuthContext";
 import { supabase } from "../../../lib/supabase";
-import TrikeServeLogo from "../../../assets/TRIKESERVE_logo.png";
+// JPEG bytes under a .jpg name — see the note in AdminShell.
+import TrikeServeLogo from "../../../assets/TRIKESERVE_logo.jpg";
+import TrimmedLogo from "../ui/TrimmedLogo";
 
 interface BusinessSidebarProps {
   isMobileMenuOpen: boolean;
@@ -109,13 +111,11 @@ export default function BusinessSidebar({ isMobileMenuOpen, setIsMobileMenuOpen 
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-3">
                 {/* The brand mark, not a generic shop glyph: this panel is
-                    TrikeServe's navigation, so it should say who it is. */}
+                    TrikeServe's navigation, so it should say who it is.
+                    TrimmedLogo crops the asset's dead margin so the artwork
+                    fills this tile and the brand colour shows through. */}
                 <div className="w-10 h-10 rounded-xl overflow-hidden flex items-center justify-center bg-[var(--primary)]">
-                  <img
-                    src={TrikeServeLogo}
-                    alt="TrikeServe"
-                    className="size-full object-contain p-0.5"
-                  />
+                  <TrimmedLogo src={TrikeServeLogo} alt="TrikeServe" className="size-full object-contain p-0.5" />
                 </div>
                 <span className="text-xl font-bold text-[var(--ink)]">TRIKESERVE</span>
               </div>

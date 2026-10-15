@@ -7,7 +7,7 @@ import { Button } from "../ui/button";
 import ListPagination from "../ui/ListPagination";
 import BusinessSidebar from "./BusinessSidebar";
     import { supabase } from "../../../lib/supabase";
-    import { supabaseHelpers, logAudit } from "@/lib/supabase";
+    import { supabaseHelpers, findDeliveryTerminalForOrder, logAudit } from "@/lib/supabase";
     import { useAuth } from "../../contexts/AuthContext";
 import ReasonPromptModal from "../ui/reason-prompt-modal";
 import { getOrderProgress, isRiderHeadingToRestaurant } from "@/lib/orderProgress";
@@ -1089,6 +1089,61 @@ export default function BusinessOrders() {
       }
     }
 
+    /*
+     * Pick the terminal that will take this delivery.
+     *
+     * This is the moment the assignment belongs to. Checkout already refused any
+     * address no terminal can reach, so by the time the shop marks an order ready
+     * the customer is known to be servable -- what is left is choosing between
+     * terminals, and that is a decision about where the food is, so it waits until
+     * the food is ready. It also has to wait for the geocode above, because
+     * "nearest to the restaurant" is meaningless without the restaurant's point.
+     *
+     * Among the terminals whose route actually reaches the customer, the nearest
+     * one to this restaurant wins: the driver collecting the food takes the
+     * shortest run of the options, and the customer is unaffected because every
+     * candidate already reaches them.
+     */
+    let assignedTerminalId: string | null = null;
+    if (dropoffCoords) {
+      const assignment = await findDeliveryTerminalForOrder({
+        dropoffLat: dropoffCoords.lat,
+        dropoffLng: dropoffCoords.lng,
+        pickupLat,
+        pickupLng,
+      });
+
+      if (!assignment.allowed) {
+        console.log('[BusinessOrders] No terminal route reaches this customer:', dropoffCoords);
+        alert(
+          'No terminal route reaches this delivery address, so there is nobody to deliver it. ' +
+          'Ask the customer to choose an address on one of our routes, or cancel the order.'
+        );
+        return false;
+      }
+
+      assignedTerminalId = assignment.terminal?.id || null;
+
+      // Recorded on the order so the decision is auditable after the fact, and so
+      // it survives a boundary being redrawn later.
+      if (assignedTerminalId) {
+        const { error: assignError } = await supabase
+          .from('orders')
+          .update({
+            terminal_id: assignedTerminalId,
+            dropoff_lat: dropoffCoords.lat,
+            dropoff_lng: dropoffCoords.lng,
+          })
+          .eq('id', order.id);
+
+        if (assignError) {
+          // Not fatal: the request below still carries the terminal, so the rider
+          // is routed correctly even if the order row could not be annotated.
+          console.warn('[BusinessOrders] Could not record terminal on order:', assignError);
+        }
+      }
+    }
+
     const { error } = await supabase
       .from('ride_requests')
       .insert([{
@@ -1102,6 +1157,7 @@ export default function BusinessOrders() {
         dropoff_address: addressDisplayName || order.address,
         dropoff_lat: dropoffCoords?.lat || null,
         dropoff_lng: dropoffCoords?.lng || null,
+        terminal_id: assignedTerminalId,
         order_id: order.id,
         order_number: order.orderNumber || null,
         status: 'pending',

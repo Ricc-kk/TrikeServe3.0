@@ -18,7 +18,7 @@ import { useOrders } from "../../contexts/OrderContext";
 import { useAuth } from "../../contexts/AuthContext";
 import { usePreviousPage } from "../../hooks/usePreviousPage";
 import { supabase } from "../../../utils/supabase";
-import { supabaseHelpers, logAudit } from "@/lib/supabase";
+import { supabaseHelpers, findDeliveryTerminalForOrder, logAudit } from "@/lib/supabase";
 import MapSelector from "./MapSelector";
 import ProofCapture from "../ui/ProofCapture";
 import { getDefaultAddress, setDefaultAddress } from "@/lib/defaultAddress";
@@ -103,6 +103,16 @@ export default function CartCheckout() {
    * fixed in the same glance.
    */
   const [addressError, setAddressError] = useState(false);
+
+  // The chosen delivery address is not within the road distance of any terminal's
+  // route, so no tricycle could serve it. Kept apart from `addressError` because
+  // the address itself is perfectly valid -- it is just out of reach, and telling
+  // the customer to "fix the address" would be wrong.
+  const [routeError, setRouteError] = useState(false);
+
+  // The terminal that will take this delivery: the one nearest the restaurant
+  // among those whose route actually reaches the customer.
+  const [assignedTerminalId, setAssignedTerminalId] = useState<string | null>(null);
 
   /*
    * Bring the field back into view when it becomes the thing that is wrong.
@@ -293,6 +303,40 @@ export default function CartCheckout() {
       setAddressError(true);
       return;
     }
+
+    /*
+     * A delivery has to be somewhere a tricycle can be shown driving.
+     *
+     * Deliveries are gated on the ROUTE alone, never on the border: a food order
+     * is not a terminal ride, so the customer is under no obligation to be
+     * standing at a terminal. What matters is that their address sits within the
+     * road distance of some terminal's route, otherwise no driver could ever
+     * complete the job and the order would sit unfulfilled.
+     *
+     * Refused here rather than after the order is placed, so the customer is
+     * told before they have paid or waited on anything.
+     *
+     * The terminal is held in a local as well as in state: the insert below runs
+     * later in this same call, and React state read from the closure would still
+     * be the value from the previous render -- silently writing null.
+     */
+    let resolvedTerminalId: string | null = null;
+    if (selectedAddress.lat && selectedAddress.lng) {
+      const deliveryGate = await findDeliveryTerminalForOrder({
+        dropoffLat: selectedAddress.lat,
+        dropoffLng: selectedAddress.lng,
+      });
+
+      if (!deliveryGate.allowed) {
+        setRouteError(true);
+        return;
+      }
+
+      // Resolved up front so the order carries the terminal that will take it,
+      // instead of leaving the choice to whoever is free at the time.
+      resolvedTerminalId = deliveryGate.terminal?.id || null;
+      setAssignedTerminalId(resolvedTerminalId);
+    }
     /*
      * Payment proof is optional for now.
      *
@@ -459,6 +503,20 @@ export default function CartCheckout() {
               delivery_mode: order.deliveryMode,
               payment_method: order.paymentMethod,
               address: order.address,
+              /*
+               * The routing decision, recorded with the order.
+               *
+               * `address` already carries the coordinates inside its
+               * `full|lat,lng` string, but that cannot be queried, and re-parsing
+               * it at delivery time would re-run the route check against
+               * boundaries that may have been redrawn since. The order keeps the
+               * answer it was given.
+               *
+               * Requires ADD_ORDER_DELIVERY_ROUTE.sql.
+               */
+              terminal_id: resolvedTerminalId,
+              dropoff_lat: selectedAddress.lat || null,
+              dropoff_lng: selectedAddress.lng || null,
               estimated_time: order.estimatedTime,
               needs_cutlery: order.needsCutlery,
               created_at: order.createdAt,
@@ -496,9 +554,16 @@ export default function CartCheckout() {
             insertError.code === 'PGRST204' ||
             /column .* of .* in the schema cache/i.test(insertError.message || '');
 
+          // Name the migration the failing column actually belongs to. The insert
+          // now spans two migrations, and telling someone to run the payment one
+          // when the missing column is `terminal_id` sends them in circles.
+          const missingName = /terminal_id|dropoff_(lat|lng)/.test(insertError.message || '')
+            ? 'ADD_ORDER_DELIVERY_ROUTE.sql'
+            : 'ADD_ORDER_PAYMENT_AND_DELIVERY_PROOF.sql';
+
           alert(
             missingColumn
-              ? 'This checkout needs a database update before it can save orders. Please run ADD_ORDER_PAYMENT_AND_DELIVERY_PROOF.sql in Supabase.'
+              ? `This checkout needs a database update before it can save orders. Please run ${missingName} in Supabase.`
               : 'Error saving order: ' + (insertError?.message || 'Unknown error'),
           );
           return;
@@ -1240,6 +1305,30 @@ export default function CartCheckout() {
         </div>
       )}
 
+      {/* Delivery address is out of every terminal's road distance. */}
+      {routeError && (
+        <div className="fixed inset-0 bg-black/50 z-[2200] flex items-center justify-center p-4">
+          <Card className="bg-surface p-8 max-w-sm w-full text-center">
+            <div className="w-20 h-20 bg-[var(--error-soft)] rounded-full flex items-center justify-center mx-auto mb-4">
+              <span className="text-4xl">🛣️</span>
+            </div>
+            <h3 className="text-xl font-bold text-[var(--error)] mb-2">Drop-off not on our route</h3>
+            <p className="text-sm text-[var(--muted-foreground)] mb-6">
+              Your designated <strong>drop-off location</strong> is not within the route of
+              the selected terminal, so this delivery cannot be completed. Please choose a
+              delivery address on one of our routes.
+            </p>
+
+            <Button
+              onClick={() => setRouteError(false)}
+              className="w-full bg-[var(--error)] hover:bg-[var(--error)] text-white py-3 font-bold"
+            >
+              Choose another address
+            </Button>
+          </Card>
+        </div>
+      )}
+
       {/* Map Selector */}
       {showMapSelector && (
         <MapSelector
@@ -1257,6 +1346,11 @@ export default function CartCheckout() {
             // here rather than only on the next failed order attempt means the
             // error does not outlive the thing that caused it.
             setAddressError(false);
+            // Same for the route refusal: the new address has not been checked
+            // yet, and leaving the warning up would accuse an address that may
+            // well be fine.
+            setRouteError(false);
+            setAssignedTerminalId(null);
             setShowMapSelector(false);
           }}
           currentLocation={selectedAddress}

@@ -19,7 +19,7 @@ import { GOOGLE_MAPS_LIBRARIES } from "@/lib/googleMaps";
 import { autocompletePlacesNew, createPlacesSessionToken, fetchPlaceDetailsNew, searchPlacesText, type PlaceResult, type PlacesAutocompleteSuggestion } from "@/lib/placesApi";
 import tricycleIcon from '../../../assets/0b76d1aa56b8ad6e15dd4efc8a0100b0ca5762a1.png';
 import { useAuth } from "../../contexts/AuthContext";
-import { supabaseHelpers, isDropoffWithinAnyTerminalBoundary, isWithinTerminalBoundary, normalizeBoundaryRoad, normalizeBoundaryArea, normalizeRoadWidth, logAudit } from "@/lib/supabase";
+import { supabaseHelpers, isPointWithinAnyTerminalBorder, isPointWithinAnyTerminalRoute, isPointInPolygon, isPointOnRoadCorridor, normalizeBoundaryRoad, normalizeBoundaryArea, normalizeRoadWidth, geocodeAddress, logAudit, type LatLngPoint } from "@/lib/supabase";
 import { computeRideFare, normalizeRates, terminalRates, privateRideRates, DEFAULT_MAX_PASSENGERS } from "@/lib/pricing";
 import { useElapsedTime } from "@/app/hooks/useElapsedTime";
 import ReasonPromptModal from "../ui/reason-prompt-modal";
@@ -472,7 +472,16 @@ export default function CustomerHome() {
   const [driverLiveStatus, setDriverLiveStatus] = useState<string>('');
    const [showValidationError, setShowValidationError] = useState(false);
    const [showSameLocationError, setShowSameLocationError] = useState(false);
+   // The customer is not standing inside any terminal's border area. The border
+   // is the "who we serve" gate -- it decides whether they may book at all.
    const [showOutOfBoundaryError, setShowOutOfBoundaryError] = useState(false);
+  // The drop-off is not on any terminal's route corridor. The route is the
+  // "where a tricycle can go" gate, and it is a separate refusal from the above.
+  const [showOutsideRouteError, setShowOutsideRouteError] = useState(false);
+  // The drop-off could not be turned into coordinates, so it cannot be checked
+  // against any terminal. Distinct from "outside every terminal" and kept
+  // separate so the message can say which one happened.
+  const [unresolvedDropoffError, setUnresolvedDropoffError] = useState(false);
    // Shown when the customer taps the map outside the selected terminal's area.
    const [pickerBoundaryWarning, setPickerBoundaryWarning] = useState<string | null>(null);
    const [showCancelConfirm, setShowCancelConfirm] = useState(false);
@@ -800,28 +809,15 @@ export default function CustomerHome() {
     if (!isMapsLoaded || !(window as any).google) return;
 
     let cancelled = false;
-    const geocoder = new (window as any).google.maps.Geocoder();
-
-    const geocode = (address: string) =>
-      new Promise<{ lat: number; lng: number } | null>((resolve) => {
-        geocoder.geocode({ address }, (results: any, status: string) => {
-          if (status === 'OK' && results?.[0]?.geometry?.location) {
-            const location = results[0].geometry.location;
-            resolve({ lat: location.lat(), lng: location.lng() });
-          } else {
-            resolve(null);
-          }
-        });
-      });
 
     (async () => {
       if (!pickupCoords && pickupAddress && pickup !== 'Current Location') {
-        const coords = await geocode(pickupAddress);
+        const coords = await geocodeAddress(pickupAddress);
         if (!cancelled && coords) setPickupCoords(coords);
       }
 
       if (!dropoffCoords && dropoffAddress) {
-        const coords = await geocode(dropoffAddress);
+        const coords = await geocodeAddress(dropoffAddress);
         if (!cancelled && coords) setDropoffCoords(coords);
       }
     })();
@@ -849,11 +845,14 @@ export default function CustomerHome() {
 
       const query = input.trim();
 
-      // The pickup terminal decides where a customer is allowed to be dropped
-      // off, so once one is chosen the search is limited to its boundary.
+      // The selected terminal decides what the search may offer, and which gate
+      // applies depends on what is being searched for: a drop-off must stay on
+      // the route, a pickup must stay inside the border.
       const { terminal, road, area, widthM } = selectedTerminalBoundary;
+      const searchingForPickup = activeLocationInput === 'pickup';
+      const gateShape = searchingForPickup ? area : road;
 
-      if ((road || area) && terminal) {
+      if (gateShape && terminal) {
         // Autocomplete suggestions carry no coordinates, so they cannot be
         // tested against the boundary. Text Search returns a location per hit,
         // which lets each result be checked before it is ever shown.
@@ -861,12 +860,14 @@ export default function CustomerHome() {
           textQuery: query,
           apiKey,
           bias: { lat: terminal.center_lat, lng: terminal.center_lng },
-          biasRadiusMeters: polygonBiasRadius((area || road) as { lat: number; lng: number }[]),
+          biasRadiusMeters: polygonBiasRadius(gateShape as { lat: number; lng: number }[]),
         });
 
         setPredictions(
           hits
-            .filter(hit => isWithinTerminalBoundary(hit.lat!, hit.lng!, { road, area, widthM }))
+            .filter(hit => searchingForPickup
+              ? isPointInPolygon(hit.lat!, hit.lng!, gateShape as LatLngPoint[])
+              : isPointOnRoadCorridor(hit.lat!, hit.lng!, gateShape as LatLngPoint[], normalizeRoadWidth(widthM)))
             .map(hit => ({
               place_id: hit.place_id || '',
               displayName: hit.display_name || hit.name || hit.formatted_address || 'Drop-off point',
@@ -2003,15 +2004,28 @@ export default function CustomerHome() {
     const lat = latLng.lat();
     const lng = latLng.lng();
 
-    // A tap outside the selected terminal's boundary is refused outright, so the
-    // customer cannot pin a drop-off the search would never have offered.
+    // A tap that fails the relevant gate is refused outright, so the customer
+    // cannot pin somewhere the booking would refuse a moment later.
+    //
+    // Which gate depends on what is being placed: the customer has to stand in
+    // the border to book, but the drop-off only has to be on the route.
     const { road, area, widthM, terminal } = selectedTerminalBoundary;
-    if ((road || area) && !isWithinTerminalBoundary(lat, lng, { road, area, widthM })) {
-      const half = Math.round(normalizeRoadWidth(widthM) / 2);
-      setPickerBoundaryWarning(
-        `That spot is outside ${terminal?.name || 'this terminal'}'s boundary. Tap inside the shaded area or within ${half} m of the road.`
-      );
-      return;
+    const pickingPickup = activeLocationInput === 'pickup';
+
+    if (pickingPickup ? area : road) {
+      const inside = pickingPickup
+        ? isPointInPolygon(lat, lng, area as any)
+        : isPointOnRoadCorridor(lat, lng, road as any, normalizeRoadWidth(widthM));
+
+      if (!inside) {
+        const half = Math.round(normalizeRoadWidth(widthM) / 2);
+        setPickerBoundaryWarning(
+          pickingPickup
+            ? `That spot is outside ${terminal?.name || 'this terminal'}. Tap inside the shaded area.`
+            : `That spot is not on ${terminal?.name || 'this terminal'}'s route. Tap within ${half} m of the road.`
+        );
+        return;
+      }
     }
 
     setPickerBoundaryWarning(null);
@@ -2068,21 +2082,68 @@ export default function CustomerHome() {
     setLocationPreview(null);
   };
 
-  // Rejects a booking whose drop-off falls outside every active terminal's
-  // plotted coverage area. Terminals often overlap, so being inside any one of
-  // them is enough; terminals with no plotted area are ignored.
-  const checkDropoffBoundary = async (): Promise<boolean> => {
-    // Nothing to validate without coordinates.
-    if (!dropoffCoords) return true;
+  /**
+   * The two gates a share/private ride has to clear before it can be booked.
+   *
+   * They answer different questions and are checked separately:
+   *
+   *   1. The BORDER — the customer has to be standing inside a terminal's area.
+   *      This is "who does the terminal serve"; without it a customer standing
+   *      a kilometre away could book, because the road corridor is wide.
+   *   2. The ROUTE — the drop-off has to sit on a terminal's road corridor.
+   *      This is "where can a tricycle actually go".
+   *
+   * Terminals overlap, so passing either gate means passing at least one
+   * terminal. A terminal with nothing plotted for that gate is ignored, which
+   * is what keeps this from blocking everyone before boundaries are configured.
+   *
+   * Food deliveries are deliberately NOT checked here. They are placed from the
+   * restaurant's own screen and never reach this function; they are gated by the
+   * route alone, in `findDeliveryTerminalForOrder`.
+   */
+  const checkRideGates = async (): Promise<boolean> => {
+    // A booking only requires the location *text*. If it was typed rather than
+    // dropped on the map, the coordinates come from a background geocode that
+    // fails freely on a typo or an address Google has not indexed — and a null
+    // here used to mean "allowed", which is how bookings were getting through
+    // unchecked. Resolve both on demand before deciding anything.
+    let pickup = pickupCoords;
+    if (!pickup && pickupAddress.trim() && pickup !== 'Current Location') {
+      pickup = (await geocodeAddress(pickupAddress)) ?? null;
+      if (pickup) setPickupCoords(pickup);
+    }
 
-    const { allowed, checkedCount } = await isDropoffWithinAnyTerminalBoundary(
-      dropoffCoords.lat,
-      dropoffCoords.lng
-    );
+    let dropoff = dropoffCoords;
+    if (!dropoff && dropoffAddress.trim()) {
+      dropoff = (await geocodeAddress(dropoffAddress)) ?? null;
+      if (dropoff) setDropoffCoords(dropoff);
+    }
 
-    if (!allowed) {
-      console.log('🚫 Drop-off outside all terminal boundaries:', dropoffCoords, { checkedCount });
+    // Still nothing to check. Fail closed: refuse rather than wave it through,
+    // because the alternative is a boundary that everyone believes is enforced
+    // and which silently isn't.
+    if (!pickup || !dropoff) {
+      setUnresolvedDropoffError(true);
+      return false;
+    }
+
+    // Gate 1: the customer must be at a terminal.
+    const border = await isPointWithinAnyTerminalBorder(pickup.lat, pickup.lng);
+    if (!border.allowed) {
+      console.log('🚫 Pickup outside every terminal border:', pickup, {
+        checkedCount: border.checkedCount,
+      });
       setShowOutOfBoundaryError(true);
+      return false;
+    }
+
+    // Gate 2: the drop-off must be on a terminal's route.
+    const route = await isPointWithinAnyTerminalRoute(dropoff.lat, dropoff.lng);
+    if (!route.allowed) {
+      console.log('🚫 Drop-off outside every terminal route:', dropoff, {
+        checkedCount: route.checkedCount,
+      });
+      setShowOutsideRouteError(true);
       return false;
     }
 
@@ -2282,12 +2343,12 @@ export default function CustomerHome() {
     
     // For share rides, open the lobby system
     if (selectedVehicle === 'share') {
-      if (!(await checkDropoffBoundary())) return;
+      if (!(await checkRideGates())) return;
 
       setActiveShareLobbyId(null);
       setShowShareLobby(true);
     } else {
-      if (!(await checkDropoffBoundary())) return;
+      if (!(await checkRideGates())) return;
 
       // For private rides, save to Supabase database
       setRideStatus('searching');
@@ -3364,17 +3425,19 @@ const getPrice = () => {
           </div>
         )}
 
-        {/* Out of Boundary Area Popup */}
+        {/* Not standing in a terminal. This is the BORDER gate: where the customer
+            is right now, not where they want to go. */}
         {showOutOfBoundaryError && (
           <div className="fixed inset-0 bg-black/50 z-[2200] flex items-center justify-center p-4">
             <Card className="bg-surface p-8 max-w-sm w-full text-center animate-infinite-bounce">
               <div className="w-20 h-20 bg-[var(--error-soft)] rounded-full flex items-center justify-center mx-auto mb-4">
-                <span className="text-4xl">🚧</span>
+                <span className="text-4xl">📍</span>
               </div>
-              <h3 className="text-xl font-bold text-[var(--error)] mb-2">Out of boundary area</h3>
+              <h3 className="text-xl font-bold text-[var(--error)] mb-2">You're not at a terminal</h3>
               <p className="text-sm text-[var(--muted-foreground)] mb-6">
-                Your <strong>drop-off point</strong> is outside the service area covered by our terminals,
-                so this ride cannot be booked. Please choose a drop-off location inside the boundary area.
+                Rides can only be booked from inside a terminal. You're currently outside
+                every terminal's service area, so please move to one of our terminals and
+                try again.
               </p>
 
               <Button
@@ -3382,6 +3445,60 @@ const getPrice = () => {
                 className="w-full bg-[var(--error)] hover:bg-[var(--error)] text-white py-3 font-bold"
               >
                 Understood
+              </Button>
+            </Card>
+          </div>
+        )}
+
+        {/* Drop-off not on any terminal's route. This is the ROUTE gate, and it
+            is a different problem from the border above: the customer may well
+            be standing at a terminal, but the destination is somewhere a
+            tricycle cannot be shown driving. */}
+        {showOutsideRouteError && (
+          <div className="fixed inset-0 bg-black/50 z-[2200] flex items-center justify-center p-4">
+            <Card className="bg-surface p-8 max-w-sm w-full text-center animate-infinite-bounce">
+              <div className="w-20 h-20 bg-[var(--error-soft)] rounded-full flex items-center justify-center mx-auto mb-4">
+                <span className="text-4xl">🛣️</span>
+              </div>
+              <h3 className="text-xl font-bold text-[var(--error)] mb-2">Drop-off not on our route</h3>
+              <p className="text-sm text-[var(--muted-foreground)] mb-6">
+                Your designated <strong>drop-off location</strong> is not within the route of
+                the selected terminal. Please choose a drop-off point on one of our routes.
+              </p>
+
+              <Button
+                onClick={() => setShowOutsideRouteError(false)}
+                className="w-full bg-[var(--error)] hover:bg-[var(--error)] text-white py-3 font-bold"
+              >
+                Understood
+              </Button>
+            </Card>
+          </div>
+        )}
+
+        {/* Drop-off we could not locate.
+            Refused rather than allowed through: with no coordinates there is
+            nothing to compare against the terminals, and passing the booking
+            would mean the boundary only applies when geocoding happens to
+            succeed. */}
+        {unresolvedDropoffError && (
+          <div className="fixed inset-0 bg-black/50 z-[2200] flex items-center justify-center p-4">
+            <Card className="bg-surface p-8 max-w-sm w-full text-center">
+              <div className="w-20 h-20 bg-[var(--amber-soft)] rounded-full flex items-center justify-center mx-auto mb-4">
+                <span className="text-4xl">📍</span>
+              </div>
+              <h3 className="text-xl font-bold text-[var(--ink)] mb-2">We couldn't locate that drop-off</h3>
+              <p className="text-sm text-[var(--muted-foreground)] mb-6">
+                Before we can check whether your <strong>drop-off point</strong> is
+                inside a terminal's service area we need to find it on the map.
+                Tap the drop-off on the map, or try a more complete address.
+              </p>
+
+              <Button
+                onClick={() => setUnresolvedDropoffError(false)}
+                className="w-full bg-[var(--primary)] hover:bg-[var(--primary)] text-white py-3 font-bold"
+              >
+                Choose on map
               </Button>
             </Card>
           </div>
@@ -4106,6 +4223,7 @@ const getPrice = () => {
            */
           pickup={pickup}
           pickupAddress={pickupAddress}
+          pickupCoords={pickupCoords}
           terminalId={selectedTerminalId}
           dropoff={dropoff}
           dropoffAddress={dropoffAddress}

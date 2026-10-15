@@ -4,7 +4,7 @@ import { Button } from "../ui/button";
 import { Card } from "../ui/card";
 import { Badge } from "../ui/badge";
 import { useAuth } from "../../contexts/AuthContext";
-import { supabaseHelpers, isSamePickup } from "@/lib/supabase";
+import { supabaseHelpers, isSamePickup, isPointWithinAnyTerminalBorder, isPointWithinAnyTerminalRoute, geocodeAddress } from "@/lib/supabase";
 import { supabase } from "@/lib/supabase";
 
 interface AvailableLobby {
@@ -32,6 +32,11 @@ interface BrowseAvailableLobbiesProps {
   pickup: string;
   /** Full/geocoded pickup address, when the customer typed one. */
   pickupAddress: string;
+  /**
+   * Where the joining customer currently is. The border gate is checked against
+   * this, so without it a join cannot be validated.
+   */
+  pickupCoords?: { lat: number; lng: number } | null;
   /** Terminal the pickup came from, when it came from the terminal picker. */
   terminalId?: string | null;
   /** The joining customer's own drop-off, recorded on their lobby passenger. */
@@ -58,6 +63,7 @@ function PassengerAvatar({ value }: { value?: string }) {
 export default function BrowseAvailableLobbies({
   pickup,
   pickupAddress,
+  pickupCoords,
   terminalId,
   dropoff,
   dropoffAddress,
@@ -195,6 +201,44 @@ export default function BrowseAvailableLobbies({
         return;
       }
 
+      const joinedDropoffAddress = dropoffAddress || lobby.dropoff_address;
+
+      /*
+       * Joining is a booking like any other, so it has to clear the same two
+       * gates as booking from the home screen -- otherwise the shared-rides
+       * browser is a way straight past them: pick any waiting lobby, join, done.
+       * This path was completely unchecked.
+       *
+       *   1. BORDER -- the joiner must be standing inside a terminal's area.
+       *   2. ROUTE  -- the drop-off must sit on a terminal's road corridor.
+       *
+       * Resolve the destination before testing, because a text-only drop-off has
+       * no coordinates and "no coordinates" must never read as "allowed".
+       */
+      let coords = dropoffCoords;
+      if (!coords && joinedDropoffAddress) {
+        coords = (await geocodeAddress(joinedDropoffAddress)) ?? null;
+      }
+
+      if (!coords || !pickupCoords) {
+        setError("We couldn't locate your pickup and drop-off. Tap them on the map or enter more complete addresses.");
+        return;
+      }
+
+      const border = await isPointWithinAnyTerminalBorder(pickupCoords.lat, pickupCoords.lng);
+      if (!border.allowed) {
+        console.log('🚫 Lobby join pickup outside every terminal border:', pickupCoords);
+        setError("You're not at a terminal. Rides can only be booked from inside a terminal.");
+        return;
+      }
+
+      const route = await isPointWithinAnyTerminalRoute(coords.lat, coords.lng);
+      if (!route.allowed) {
+        console.log('🚫 Lobby join drop-off outside every terminal route:', coords);
+        setError("Your drop-off is not within the route of any terminal, so you can't join this ride.");
+        return;
+      }
+
       // Create passenger object. The joiner's own profile and destination ride
       // with them, so the lobby can show who is in it and where each person gets
       // off -- not just the lobby creator's details.
@@ -207,9 +251,9 @@ export default function BrowseAvailableLobbies({
         pickup: lobby.pickup_location,
         pickupAddress: lobby.pickup_address,
         dropoff: dropoff || lobby.dropoff_location,
-        dropoffAddress: dropoffAddress || lobby.dropoff_address,
-        dropoffLat: dropoffCoords?.lat ?? null,
-        dropoffLng: dropoffCoords?.lng ?? null
+        dropoffAddress: joinedDropoffAddress,
+        dropoffLat: coords.lat,
+        dropoffLng: coords.lng
       };
 
       // Join the lobby

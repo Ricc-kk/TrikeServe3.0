@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   haversineDistanceMeters,
-  isWithinTerminalBoundary,
+  isPointInPolygon,
   normalizeBoundaryRoad,
   normalizeBoundaryArea,
   normalizeRoadWidth,
@@ -307,21 +307,24 @@ export function useTerminalQueue() {
     return haversineDistanceMeters(driverLocation, terminalGeometry.center);
   }, [terminalGeometry.center, driverLocation]);
 
-  // Whether the driver sits inside the terminal's boundary — the enclosing area
-  // or the road corridor. The admin's plotted shapes win; the centre + radius
-  // circle is only a fallback for terminals with nothing drawn. Null when we
-  // can't tell, or when the admin has switched the check off.
+  /**
+   * Whether the driver is standing inside their terminal's BORDER.
+   *
+   * The border area is the gate, not the road: queueing up means being at the
+   * terminal, and the road corridor is hundreds of metres wide, so a driver
+   * parked a couple of streets away would pass a corridor test while being
+   * nowhere near the terminal. Only the area decides.
+   *
+   * The centre + radius circle is a fallback for terminals with no area plotted.
+   * Null when we can't tell, or when the admin has switched the check off.
+   */
   const isWithinBoundary = useMemo(() => {
     if (!driverLocation) return null;
 
-    if (terminalGeometry.boundary || terminalGeometry.area) {
+    if (terminalGeometry.area) {
       // A disabled boundary is kept for display, so it can't judge the driver.
       if (!terminalGeometry.boundaryEnabled) return null;
-      return isWithinTerminalBoundary(driverLocation.lat, driverLocation.lng, {
-        road: terminalGeometry.boundary,
-        area: terminalGeometry.area,
-        widthM: terminalGeometry.roadWidthM,
-      });
+      return isPointInPolygon(driverLocation.lat, driverLocation.lng, terminalGeometry.area);
     }
     if (terminalGeometry.center && terminalGeometry.radiusKm != null) {
       return (
@@ -343,6 +346,21 @@ export function useTerminalQueue() {
     }
     if (!terminalId) return { error: new Error("You are not assigned to a terminal yet.") };
 
+    /*
+     * A driver has to be standing inside the terminal's border to queue.
+     *
+     * `isWithinBoundary` is null when there is nothing plotted, or when the
+     * admin switched the check off -- that means "cannot tell", not "outside",
+     * so it must not block. Only an explicit false refuses.
+     */
+    if (isWithinBoundary === false) {
+      return {
+        error: new Error(
+          "You are outside your terminal's area. Move inside the terminal to join the queue."
+        ),
+      };
+    }
+
     setIsMutating(true);
     const { error: joinError } = await supabaseHelpers.joinTerminalQueue({
       terminalId,
@@ -354,7 +372,7 @@ export function useTerminalQueue() {
     setIsMutating(false);
 
     return { error: joinError };
-  }, [driverId, terminalId, isResolvingTerminal, user?.name, user?.todaPlate, refresh]);
+  }, [driverId, terminalId, isResolvingTerminal, isWithinBoundary, user?.name, user?.todaPlate, refresh]);
 
   const leave = useCallback(async () => {
     if (!driverId || !terminalId) return { error: null };

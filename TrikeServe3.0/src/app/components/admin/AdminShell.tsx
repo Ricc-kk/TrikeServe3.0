@@ -2,7 +2,11 @@ import { useEffect, useState, type ReactNode } from "react";
 import { Link, useLocation } from "react-router";
 import { Menu, X } from "lucide-react";
 
-import TrikeServeLogo from "../../../assets/TRIKESERVE_logo.png";
+// The bytes in this file are JPEG, not PNG, so it carries a .jpg name. Served
+// under a .png name it was sent as image/png and Chromium's sniffing rejected it
+// intermittently, leaving an empty logo box.
+import TrikeServeLogo from "../../../assets/TRIKESERVE_logo.jpg";
+import TrimmedLogo from "../ui/TrimmedLogo";
 import { useAuth } from "../../contexts/AuthContext";
 import { adminNavFor, isSuperAdmin } from "./adminNav";
 
@@ -90,12 +94,10 @@ export default function AdminShell({
             <div className="w-10 h-10 flex-shrink-0 bg-gradient-to-br from-[var(--primary)] to-[var(--ink)] rounded-xl flex items-center justify-center overflow-hidden">
               {/* The TrikeServe mark, not a generic shield: the admin panel is
                   part of this product, and the same logo already leads the
-                  business sidebar. A shield said "security" but not whose. */}
-              <img
-                src={TrikeServeLogo}
-                alt="TrikeServe"
-                className="size-full object-contain p-1"
-              />
+                  business sidebar. A shield said "security" but not whose.
+                  TrimmedLogo crops the asset's dead margin so the artwork fills
+                  this tile and the gradient shows through behind it. */}
+              <TrimmedLogo src={TrikeServeLogo} alt="TrikeServe" className="size-full object-contain p-0.5" />
             </div>
             <div className="min-w-0">
               <span className="block text-xl font-bold text-[var(--ink)]">ADMIN</span>
@@ -113,11 +115,13 @@ export default function AdminShell({
             </div>
           </div>
 
+          {/* Same missing-`flex` bug as the hamburger, and the same fix — without it
+              the X sat left of the middle of its own circle. */}
           <button
             type="button"
             onClick={() => setIsMenuOpen(false)}
             aria-label="Close navigation"
-            className="lg:hidden flex-shrink-0 w-11 h-11 items-center justify-center rounded-full bg-[var(--muted)]"
+            className="lg:hidden flex-shrink-0 w-11 h-11 flex items-center justify-center rounded-full bg-[var(--muted)]"
           >
             <X className="w-5 h-5 text-[var(--ink)]" aria-hidden="true" />
           </button>
@@ -154,15 +158,22 @@ export default function AdminShell({
       {/* Main column */}
       <div className="flex-1 lg:ml-64 min-w-0 flex flex-col">
         <header className="bg-surface border-b-2 border-[var(--border)] px-4 sm:px-5 lg:px-8 py-3 sm:py-4 lg:py-5 sticky top-0 z-50">
-          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 sm:gap-4">
-            <div className="flex items-center gap-2 sm:gap-3 min-w-0">
+          {/* One row at every width. Stacking on mobile pushed the bell onto its
+              own line and left a mostly-empty header; letting the title shrink
+              and truncate instead keeps the actions reachable, and `truncate` is
+              what supplies the ellipsis when the text doesn't fit. */}
+          <div className="flex items-center gap-3 sm:gap-4">
+            <div className="flex items-center gap-2 sm:gap-3 min-w-0 flex-1">
+              {/* `flex` is load-bearing: without it the button lays out as a block
+                  and the items/justify centring is inert, leaving the icon pinned
+                  to the left edge of its own button. */}
               <button
                 type="button"
                 onClick={() => setIsMenuOpen(true)}
                 aria-label="Open navigation"
                 aria-controls="admin-nav"
                 aria-expanded={isMenuOpen}
-                className="lg:hidden flex-shrink-0 w-11 h-11 items-center justify-center rounded-xl hover:bg-[var(--muted)] transition-colors"
+                className="lg:hidden flex-shrink-0 w-11 h-11 flex items-center justify-center rounded-xl hover:bg-[var(--muted)] transition-colors"
               >
                 <Menu className="w-6 h-6 text-[var(--ink)]" aria-hidden="true" />
               </button>
@@ -178,8 +189,10 @@ export default function AdminShell({
               </div>
             </div>
 
+            {/* flex-shrink-0 and no wrapping: these are the header's controls, and
+                they must not reflow when a long title is present. */}
             {actions && (
-              <div className="flex flex-wrap items-center gap-2 sm:gap-3">{actions}</div>
+              <div className="flex flex-shrink-0 items-center gap-2 sm:gap-3">{actions}</div>
             )}
           </div>
         </header>

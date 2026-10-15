@@ -33,6 +33,85 @@ interface StoredUser {
   businessName?: string;
   businessAddress?: string;
   address?: string;
+  /**
+   * The business's actual restaurant row, joined from `restaurants`.
+   *
+   * This is the source of truth. `businessName` / `businessAddress` on the user
+   * are a denormalised copy that several restaurant screens write past, so they
+   * can be stale or missing while the shop itself is perfectly intact — which is
+   * why the profile is read from here and the copy is only a fallback.
+   */
+  restaurant?: {
+    name?: string;
+    address?: string;
+    subtitle?: string;
+    rating?: number | null;
+    isOpen?: boolean | null;
+    cuisine?: string[] | null;
+    deliveryTime?: string | null;
+    logoImage?: string | null;
+  } | null;
+}
+
+/**
+ * A business user's restaurant profile.
+ *
+ * One component for both the mobile card and the desktop table so the two can't
+ * drift — the previous version showed only an address in the table and nothing
+ * at all on mobile, which is how the whole profile ended up looking missing.
+ *
+ * Falls back to the user-row copy when no restaurants row exists yet (a shop is
+ * only created once its owner sets one up), and says so rather than rendering an
+ * empty block.
+ */
+function RestaurantProfile({ user }: { user: StoredUser }) {
+  const r = user.restaurant;
+  const address = r?.address || user.businessAddress;
+
+  if (!r) {
+    return (
+      <p className="text-xs text-[var(--muted-foreground)]">
+        {address
+          ? `No restaurant set up yet — listed as ${address}`
+          : 'No restaurant set up yet'}
+      </p>
+    );
+  }
+
+  const cuisines = Array.isArray(r.cuisine) ? r.cuisine.filter(Boolean) : [];
+
+  return (
+    <div className="flex items-start gap-3 min-w-0">
+      {r.logoImage ? (
+        <img
+          src={r.logoImage}
+          alt=""
+          loading="lazy"
+          className="w-9 h-9 rounded-lg object-cover flex-shrink-0 border border-line"
+        />
+      ) : null}
+      <div className="min-w-0 text-xs text-[var(--muted-foreground)] space-y-0.5">
+        {r.subtitle && <p className="truncate font-medium text-[var(--ink)]">{r.subtitle}</p>}
+        {address && <p className="truncate">Addr: {address}</p>}
+        <div className="flex flex-wrap items-center gap-x-2 gap-y-1 pt-0.5">
+          {r.rating != null && (
+            <span className="font-semibold text-[var(--amber)]">★ {Number(r.rating).toFixed(1)}</span>
+          )}
+          {r.isOpen != null && (
+            <span
+              className={`font-semibold ${r.isOpen ? 'text-[var(--success)]' : 'text-[var(--error)]'}`}
+            >
+              {r.isOpen ? 'Open' : 'Closed'}
+            </span>
+          )}
+          {r.deliveryTime && <span>{r.deliveryTime}</span>}
+        </div>
+        {cuisines.length > 0 && (
+          <p className="truncate">{cuisines.join(' · ')}</p>
+        )}
+      </div>
+    </div>
+  );
 }
 
 export default function AdminUsers() {
@@ -54,9 +133,13 @@ export default function AdminUsers() {
   const loadUsers = async () => {
     setLoading(true);
     try {
+      // The restaurant profile is joined rather than read off the user row.
+      // `restaurants.business_user_id` -> `users.id` is the only link between
+      // them, and a shop row is not created at sign-up, so business users
+      // without one are expected — the mapping has to survive a null here.
       const { data: supabaseUsers, error } = await supabase
         .from('users')
-        .select('*');
+        .select('*, restaurants(name, address, subtitle, rating, is_open, cuisine, delivery_time, logo_image)');
 
       if (error) {
         console.error('Error loading users from Supabase:', error);
@@ -81,9 +164,23 @@ export default function AdminUsers() {
         adminType: u.admin_type,
         todaPlate: u.toda_plate,
         licenseNumber: u.license_number,
-        businessName: u.business_name,
-        businessAddress: u.business_address,
+        // The joined row wins; the user-row copy is only a fallback for a shop
+        // that has no restaurants row yet.
+        businessName: u.restaurants?.name || u.business_name,
+        businessAddress: u.restaurants?.address || u.business_address,
         address: u.address,
+        restaurant: u.restaurants
+          ? {
+              name: u.restaurants.name,
+              address: u.restaurants.address,
+              subtitle: u.restaurants.subtitle,
+              rating: u.restaurants.rating,
+              isOpen: u.restaurants.is_open,
+              cuisine: u.restaurants.cuisine,
+              deliveryTime: u.restaurants.delivery_time,
+              logoImage: u.restaurants.logo_image,
+            }
+          : null,
       }));
 
       const adminType = user?.adminType;
@@ -494,6 +591,15 @@ export default function AdminUsers() {
                       )}
                     </div>
 
+                    {/* Business users get their restaurant profile here too. It used
+                        to be desktop-only, so on a phone the card showed a shop
+                        name with nothing under it. */}
+                    {u.role === 'business' && (
+                      <div className="mt-3">
+                        <RestaurantProfile user={u} />
+                      </div>
+                    )}
+
                     <div className="mt-3 grid grid-cols-2 gap-2">
                       <button
                         onClick={canVerifyUser(u.role) ? (u.isVerified ? () => handleUnverifyUser(u.id) : () => handleVerifyUser(u.id)) : undefined}
@@ -653,9 +759,7 @@ export default function AdminUsers() {
                             {u.role === 'rider' && u.todaPlate && (
                               <p><span className="font-semibold">TODA:</span> {u.todaPlate}</p>
                             )}
-                            {u.role === 'business' && u.businessAddress && (
-                              <p className="max-w-xs truncate"><span className="font-semibold">Addr:</span> {u.businessAddress}</p>
-                            )}
+                            {u.role === 'business' && <RestaurantProfile user={u} />}
                             {u.role === 'customer' && u.address && (
                               <p className="max-w-xs truncate"><span className="font-semibold">Addr:</span> {u.address}</p>
                             )}
