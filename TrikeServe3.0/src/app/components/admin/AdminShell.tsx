@@ -10,10 +10,28 @@ import TrimmedLogo from "../ui/TrimmedLogo";
 import { useAuth } from "../../contexts/AuthContext";
 import { adminNavFor, isSuperAdmin } from "./adminNav";
 
+export type AdminShellTab = {
+  /** Value the page stores for this section. */
+  value: string;
+  /** What the button says. */
+  label: string;
+};
+
 type AdminShellProps = {
   title: string;
   /** Supporting line under the title. */
   subtitle?: ReactNode;
+  /**
+   * Section switcher for the header.
+   *
+   * It sits between the title and the page's actions rather than at the top of
+   * the content, so the sections read as parts of one screen: the title, the
+   * section you are on and the button that acts on it are all in the same row.
+   */
+  tabs?: AdminShellTab[];
+  /** Which entry of `tabs` is selected. */
+  activeTab?: string;
+  onTabChange?: (value: string) => void;
   /** Right-hand actions, e.g. a "New Terminal" button. */
   actions?: ReactNode;
   /** Skip the page padding when the child lays itself out. */
@@ -31,6 +49,9 @@ type AdminShellProps = {
 export default function AdminShell({
   title,
   subtitle,
+  tabs,
+  activeTab,
+  onTabChange,
   actions,
   bare = false,
   children,
@@ -161,8 +182,17 @@ export default function AdminShell({
           {/* One row at every width. Stacking on mobile pushed the bell onto its
               own line and left a mostly-empty header; letting the title shrink
               and truncate instead keeps the actions reachable, and `truncate` is
-              what supplies the ellipsis when the text doesn't fit. */}
-          <div className="flex items-center gap-3 sm:gap-4">
+              what supplies the ellipsis when the text doesn't fit.
+
+              `flex-wrap` is there for the tabs only. They take a row of their
+              own below xl, where the title, the sections and an action button
+              cannot share the header without truncating the title away to
+              nothing — and a truncated page title reads as a broken header, not
+              as a tight one. At xl and up they are `w-auto` and sit inline
+              between the title and the actions, which is the arrangement this
+              layout is designed around. Nothing else in this row can wrap, so no
+              page without tabs is affected. */}
+          <div className="flex flex-wrap items-center gap-3 sm:gap-4">
             <div className="flex items-center gap-2 sm:gap-3 min-w-0 flex-1">
               {/* `flex` is load-bearing: without it the button lays out as a block
                   and the items/justify centring is inert, leaving the icon pinned
@@ -189,8 +219,41 @@ export default function AdminShell({
               </div>
             </div>
 
+            {/* The sections this page is split into, in the header rather than in
+                the content, so switching between them never looks like it left
+                the page. Only one tab is ever selected, hence a plain tablist and
+                not `tab`/`tabpanel` wiring: the panel stays the only child of
+                `main` and is swapped inside it. */}
+            {tabs && tabs.length > 0 && (
+              <div
+                role="tablist"
+                aria-label={`${title} sections`}
+                className="order-last w-full xl:order-none xl:w-auto flex-shrink-0 flex items-center gap-1 p-1 bg-[var(--muted)] rounded-xl"
+              >
+                {tabs.map(tab => {
+                  const selected = activeTab === tab.value;
+                  return (
+                    <button
+                      key={tab.value}
+                      type="button"
+                      role="tab"
+                      aria-selected={selected}
+                      onClick={() => onTabChange?.(tab.value)}
+                      className={`flex-1 xl:flex-none h-10 px-3 sm:px-4 rounded-lg text-xs sm:text-sm font-bold whitespace-nowrap transition-colors ${
+                        selected
+                          ? "bg-surface text-[var(--ink)] shadow-sm"
+                          : "text-[var(--muted-foreground)] hover:text-[var(--ink)]"
+                      }`}
+                    >
+                      {tab.label}
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+
             {/* flex-shrink-0 and no wrapping: these are the header's controls, and
-                they must not reflow when a long title is present. */}
+                they must not reflow when a long title or the tabs are present. */}
             {actions && (
               <div className="flex flex-shrink-0 items-center gap-2 sm:gap-3">{actions}</div>
             )}

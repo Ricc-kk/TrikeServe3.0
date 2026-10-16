@@ -1003,6 +1003,11 @@ async function applyApprovalRequest(
             marker_color: normalizeTerminalColor(payload.marker_color),
             route_color: normalizeRouteColor(payload.route_color),
             border_color: normalizeBorderColor(payload.border_color),
+            // The terminal's routes (ADD_TERMINAL_ROUTES.sql). Spread
+            // conditionally, never written as null: a request made before this
+            // column existed carries no routes at all, and naming it would blank
+            // a terminal's plotted roads on approval.
+            ...(payload.routes !== undefined ? { routes: payload.routes } : {}),
             updated_at: new Date().toISOString(),
           },
           { onConflict: 'id' }

@@ -7,6 +7,7 @@ import {
   Flag,
   LayoutDashboard,
   MapPin,
+  Milestone,
   Send,
   Settings,
   Users,
