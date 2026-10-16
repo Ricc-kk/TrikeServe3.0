@@ -4,6 +4,7 @@ import {
   Plus, Edit2, Trash2, UserPlus, UserMinus, MapPin, Users, Menu, X, Navigation, Search, Loader2, Save, Shield,
   ClipboardCheck, Clock, ShieldCheck, ChevronDown, ArrowLeft,
   ChevronLeft, ChevronRight, Pentagon, Milestone, SlidersHorizontal, Banknote,
+  Undo2, Redo2, Eraser,
   Settings, Eye, EyeOff, Car, Truck
 } from "lucide-react";
 import { GoogleMap, Marker, InfoWindow, Polygon, Polyline } from "@react-google-maps/api";
@@ -309,17 +310,17 @@ export default function AdminTerminals() {
    */
   const [editorHiddenRouteIds, setEditorHiddenRouteIds] = useState<string[]>([]);
 
-  /*
-   * The route list, folded into the rail under the Route tab.
-   *
-   * Open by default on a terminal that has routes, because arriving at the Route
-   * tab with roads to choose between and no way to see them is a dead end; closed
-   * by default on one with none, where it is an empty list. The chevron folds it
-   * away so the map takes the rail's full width back.
-   */
-  const [routesExpanded, setRoutesExpanded] = useState(true);
   // Which route has its name open for editing.
   const [renamingRouteId, setRenamingRouteId] = useState<string | null>(null);
+  /*
+   * The how-to guide, folded behind the "?" on the map.
+   *
+   * It used to be the panel itself — a card of instruction text parked over the
+   * top of the map for the whole visit, saying what to tap after the admin had
+   * already been tapping it. The steps are read once and then never again, so the
+   * guide is a reference to open, not a step to take: closed by default.
+   */
+  const [guideOpen, setGuideOpen] = useState(false);
 
   /**
    * How the map should treat a tap, derived from the selected section.
@@ -1143,6 +1144,12 @@ export default function AdminTerminals() {
   }
 
   const activeRoute = form.routes.find(r => r.id === form.activeRouteId) ?? null;
+  // Whether the shape on the map has anything to erase. Road and border each
+  // gate their own Clear control on this, the way the old in-card button did.
+  const hasPlottedPoints =
+    mapPickerMode === 'road'
+      ? (activeRoute?.points.length ?? 0) > 0
+      : form.boundary_area.length > 0;
   const visibleEditorRoutes = form.routes.filter(r => !editorHiddenRouteIds.includes(r.id));
 
   /**
@@ -1153,7 +1160,7 @@ export default function AdminTerminals() {
    * Configuration it snaps back to the narrow rail rather than holding open a
    * column of nothing.
    */
-  const routesListOpen = editorSection === 'route' && routesExpanded && !sidebarCollapsed;
+  const routesListOpen = editorSection === 'route' && !sidebarCollapsed;
 
   /** Patch one route in place. Every route edit goes through here. */
   function updateRoute(id: string, patch: Partial<TerminalRoute>) {
@@ -3234,6 +3241,10 @@ export default function AdminTerminals() {
                 ['configuration', 'Configuration', SlidersHorizontal],
 ] as const).map(([id, label, Icon]) => {
                 const active = editorSection === id;
+                // No wrapper, no width class, no chevron beside it: the tab is a
+                // direct child of the rail, so it stretches edge to edge and the
+                // active highlight covers the tab's whole width. Anything sitting
+                // next to it in a flex row would squeeze the highlight short.
                 return (
                   <ReactFragment key={id}>
                     <button
@@ -3255,142 +3266,121 @@ export default function AdminTerminals() {
                     </button>
 
                     {/*
-                      The route list, folded in under the Route tab.
+                      The route list, under the Route tab.
 
-                      A sub-tab of Route rather than a sixth section: it is not a
+                      A sub-section of Route rather than a sixth tab: it is not a
                       different job from drawing a route, it is the list of roads
                       the Route tab draws. It sits directly under Route and only
                       while Route is open — elsewhere in the rail it would be a
-                      control for a tab nobody is looking at.
-
-                      The chevron on the same row folds the list away and hands the
-                      rail's width back to the map.
+                      control for a tab nobody is looking at. Nothing folds it away:
+                      the roads are what the tab is for.
                     */}
                     {id === 'route' && active && !sidebarCollapsed && (
                       <div className="mt-0.5 mb-1">
-                        <button
-                          type="button"
-                          onClick={() => setRoutesExpanded(open => !open)}
-                          aria-expanded={routesExpanded}
-                          aria-controls="editor-route-list"
-                          className="w-full flex items-center gap-2 h-10 pl-6 pr-2 rounded-xl text-left text-[var(--muted-foreground)] hover:bg-[var(--muted)] hover:text-[var(--ink)] transition-colors"
-                        >
-                          <span className="text-xs font-bold truncate flex-1">
-                            Routes{form.routes.length > 0 ? ` (${form.routes.length})` : ''}
-                          </span>
-                          <ChevronDown
-                            size={14}
-                            aria-hidden="true"
-                            className={`flex-shrink-0 transition-transform ${routesExpanded ? 'rotate-180' : ''}`}
-                          />
-                        </button>
-
-                        {routesExpanded && (
-                          <div id="editor-route-list" className="mt-1 space-y-1">
-                            {form.routes.length === 0 ? (
-                              <p className="px-3 py-2 text-[11px] leading-snug text-[var(--muted-foreground)] italic">
-                                No routes yet — add one, or tap the map to plot the first.
-                              </p>
-                            ) : (
-                              form.routes.map(route => {
-                                const isActive = route.id === activeRoute?.id;
-                                const hidden = editorHiddenRouteIds.includes(route.id);
-                                const renaming = renamingRouteId === route.id;
-                                return (
-                                  <div
-                                    key={route.id}
-                                    className={`rounded-xl px-2 py-1.5 transition-colors ${
-                                      isActive ? 'bg-[var(--muted)]' : 'hover:bg-[var(--muted)]'
-                                    }`}
-                                  >
-                                    <div className="flex items-center gap-1.5">
-                                      <span
-                                        aria-hidden="true"
-                                        className={`w-2.5 h-2.5 flex-shrink-0 rounded-full ${hidden ? 'opacity-30' : ''}`}
-                                        style={{ background: normalizeRouteColor(form.route_color) }}
-                                      />
-                                      {renaming ? (
-                                        /* An edit field the admin cannot see focus in
-                                           is worse than one that takes it on open;
-                                           Escape puts the old name back. */
-                                        <input
-                                          autoFocus
-                                          defaultValue={route.name}
-                                          maxLength={60}
-                                          aria-label={`Rename ${route.name}`}
-                                          onClick={e => e.stopPropagation()}
-                                          onBlur={e => commitRename(route.id, e.target.value)}
-                                          onKeyDown={e => {
-                                            if (e.key === 'Enter') {
-                                              commitRename(route.id, (e.target as HTMLInputElement).value);
-                                            }
-                                            if (e.key === 'Escape') setRenamingRouteId(null);
-                                          }}
-                                          className="min-w-0 flex-1 h-8 px-2 rounded-lg border border-line bg-surface text-xs font-bold text-[var(--ink)]"
-                                        />
-                                      ) : (
-                                        <button
-                                          type="button"
-                                          onClick={() => setForm(f => ({ ...f, activeRouteId: route.id }))}
-                                          aria-pressed={isActive}
-                                          className="min-w-0 flex-1 text-left"
-                                        >
-                                          <span className={`block text-xs font-bold truncate ${isActive ? 'text-[var(--ink)]' : 'text-[var(--ink-soft)]'}`}>
-                                            {route.name}
-                                          </span>
-                                          <span className="block text-[11px] text-[var(--muted-foreground)] truncate">
-                                            {route.points.length} pt{route.points.length === 1 ? '' : 's'}
-                                            {route.points.length >= 2 ? ` · ${formatRouteDistance(routeDistanceMeters(route.points))}` : ''}
-                                            {route.enabled ? '' : ' · off'}
-                                          </span>
-                                        </button>
-                                      )}
-                                      <button
-                                        type="button"
-                                        onClick={() => toggleEditorRouteHidden(route.id)}
-                                        aria-pressed={!hidden}
-                                        aria-label={`${hidden ? 'Show' : 'Hide'} ${route.name} on the map`}
-                                        title={hidden ? 'Show on map' : 'Hide on map'}
-                                        className="w-8 h-8 flex-shrink-0 flex items-center justify-center rounded-lg hover:bg-[var(--surface)] active:scale-90"
-                                      >
-                                        {hidden
-                                          ? <EyeOff size={14} className="text-[var(--muted-foreground)]" />
-                                          : <Eye size={14} className="text-[var(--ink)]" />}
-                                      </button>
-                                      <button
-                                        type="button"
-                                        onClick={() => setRenamingRouteId(route.id)}
+                        <div className="mt-1 space-y-1">
+                          {form.routes.length === 0 ? (
+                            <p className="px-3 py-2 text-[11px] leading-snug text-[var(--muted-foreground)] italic">
+                              No routes yet — add one, or tap the map to plot the first.
+                            </p>
+                          ) : (
+                            form.routes.map(route => {
+                              const isActive = route.id === activeRoute?.id;
+                              const hidden = editorHiddenRouteIds.includes(route.id);
+                              const renaming = renamingRouteId === route.id;
+                              return (
+                                <div
+                                  key={route.id}
+                                  className={`rounded-xl px-2 py-1.5 transition-colors ${
+                                    isActive ? 'bg-[var(--muted)]' : 'hover:bg-[var(--muted)]'
+                                  }`}
+                                >
+                                  <div className="flex items-center gap-1.5">
+                                    <span
+                                      aria-hidden="true"
+                                      className={`w-2.5 h-2.5 flex-shrink-0 rounded-full ${hidden ? 'opacity-30' : ''}`}
+                                      style={{ background: normalizeRouteColor(form.route_color) }}
+                                    />
+                                    {renaming ? (
+                                      /* An edit field the admin cannot see focus in
+                                         is worse than one that takes it on open;
+                                         Escape puts the old name back. */
+                                      <input
+                                        autoFocus
+                                        defaultValue={route.name}
+                                        maxLength={60}
                                         aria-label={`Rename ${route.name}`}
-                                        title={`Rename ${route.name}`}
-                                        className="w-8 h-8 flex-shrink-0 flex items-center justify-center rounded-lg hover:bg-[var(--surface)] active:scale-90"
-                                      >
-                                        <Edit2 size={14} className="text-[var(--muted-foreground)]" />
-                                      </button>
+                                        onClick={e => e.stopPropagation()}
+                                        onBlur={e => commitRename(route.id, e.target.value)}
+                                        onKeyDown={e => {
+                                          if (e.key === 'Enter') {
+                                            commitRename(route.id, (e.target as HTMLInputElement).value);
+                                          }
+                                          if (e.key === 'Escape') setRenamingRouteId(null);
+                                        }}
+                                        className="min-w-0 flex-1 h-8 px-2 rounded-lg border border-line bg-surface text-xs font-bold text-[var(--ink)]"
+                                      />
+                                    ) : (
                                       <button
                                         type="button"
-                                        onClick={() => deleteRoute(route)}
-                                        aria-label={`Delete ${route.name}`}
-                                        title={`Delete ${route.name}`}
-                                        className="w-8 h-8 flex-shrink-0 flex items-center justify-center rounded-lg hover:bg-[var(--error-soft)] active:scale-90"
+                                        onClick={() => setForm(f => ({ ...f, activeRouteId: route.id }))}
+                                        aria-pressed={isActive}
+                                        className="min-w-0 flex-1 text-left"
                                       >
-                                        <Trash2 size={14} className="text-[var(--error)]" />
+                                        <span className={`block text-xs font-bold truncate ${isActive ? 'text-[var(--ink)]' : 'text-[var(--ink-soft)]'}`}>
+                                          {route.name}
+                                        </span>
+                                        <span className="block text-[11px] text-[var(--muted-foreground)] truncate">
+                                          {route.points.length} pt{route.points.length === 1 ? '' : 's'}
+                                          {route.points.length >= 2 ? ` · ${formatRouteDistance(routeDistanceMeters(route.points))}` : ''}
+                                          {route.enabled ? '' : ' · off'}
+                                        </span>
                                       </button>
-                                    </div>
+                                    )}
+                                    <button
+                                      type="button"
+                                      onClick={() => toggleEditorRouteHidden(route.id)}
+                                      aria-pressed={!hidden}
+                                      aria-label={`${hidden ? 'Show' : 'Hide'} ${route.name} on the map`}
+                                      title={hidden ? 'Show on map' : 'Hide on map'}
+                                      className="w-8 h-8 flex-shrink-0 flex items-center justify-center rounded-lg hover:bg-[var(--surface)] active:scale-90"
+                                    >
+                                      {hidden
+                                        ? <EyeOff size={14} className="text-[var(--muted-foreground)]" />
+                                        : <Eye size={14} className="text-[var(--ink)]" />}
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={() => setRenamingRouteId(route.id)}
+                                      aria-label={`Rename ${route.name}`}
+                                      title={`Rename ${route.name}`}
+                                      className="w-8 h-8 flex-shrink-0 flex items-center justify-center rounded-lg hover:bg-[var(--surface)] active:scale-90"
+                                    >
+                                      <Edit2 size={14} className="text-[var(--muted-foreground)]" />
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={() => deleteRoute(route)}
+                                      aria-label={`Delete ${route.name}`}
+                                      title={`Delete ${route.name}`}
+                                      className="w-8 h-8 flex-shrink-0 flex items-center justify-center rounded-lg hover:bg-[var(--error-soft)] active:scale-90"
+                                    >
+                                      <Trash2 size={14} className="text-[var(--error)]" />
+                                    </button>
                                   </div>
-                                );
-                              })
-                            )}
+                                </div>
+                              );
+                            })
+                          )}
 
-                            <button
-                              type="button"
-                              onClick={addRoute}
-                              className="w-full flex items-center gap-1.5 h-9 px-3 rounded-xl border border-line text-xs font-bold text-[var(--ink)] hover:bg-[var(--muted)] active:scale-95"
-                            >
-                              <Plus size={14} aria-hidden="true" />
-                              Add route
-                            </button>
-                          </div>
-                        )}
+                          <button
+                            type="button"
+                            onClick={addRoute}
+                            className="w-full flex items-center gap-1.5 h-9 px-3 rounded-xl border border-line text-xs font-bold text-[var(--ink)] hover:bg-[var(--muted)] active:scale-95"
+                          >
+                            <Plus size={14} aria-hidden="true" />
+                            Add route
+                          </button>
+                        </div>
                       </div>
                     )}
                   </ReactFragment>
@@ -3563,120 +3553,154 @@ export default function AdminTerminals() {
               </button>
             )}
 
-            {/* Hint panel sits along the top, clear of both the gear and the
-                floating save. pointer-events-none so it never swallows a tap meant
-                for the map; its buttons opt back in. */}
-            <div className="absolute top-3 left-3 right-16 pointer-events-none">
-              <div className="bg-white/95 backdrop-blur rounded-xl shadow-lg p-3">
-                {mapPickerMode === 'road' ? (
+            {/*
+              The snapping warning, deliberately kept out of the guide.
+
+              It is not something to go looking for: it explains why every tap
+              landed away from the road, and behind a "?" an admin would be drawing
+              straight lines across the map and blaming the map. A warning earns the
+              corner the few times it is true.
+            */}
+            {mapPickerMode === 'road' && roadSnapUnavailable && (
+              <div className="absolute top-3 left-3 z-[2015] max-w-sm pointer-events-none bg-white/95 backdrop-blur rounded-xl shadow-lg p-3">
+                <p className="text-[11px] text-[var(--amber-dark)]">
+                  Snapping to roads is unavailable, so points are placed exactly where
+                  you tap. Allow the Roads API on the Maps key (Credentials → your key
+                  → API restrictions) for lines that follow the road network.
+                </p>
+              </div>
+            )}
+
+            {/*
+              The map's controls, left to right along the top-right corner: undo,
+              redo, clear, then the "?" that opens the guide.
+
+              One row, not a column. Read as a single toolbar — and the corner is
+              wide and shallow, so a column of controls grew taller than the guide it
+              replaced and started eating into the street the admin was plotting on.
+
+              Undo and redo stay visible whenever there is anything to step through,
+              including after every point has been undone, where the road is empty but
+              redo still has work to do. Clear appears only once there is something to
+              erase; the route and the border each gate it, which is what
+              hasPlottedPoints above resolves.
+
+              pointer-events-none on the wrapper so a tap between the buttons still
+              plots a point; every control opts back in.
+            */}
+            <div className="absolute top-3 right-3 z-[2015] flex flex-col items-end gap-2 pointer-events-none">
+              <div className="flex items-center gap-2">
+                {mapPickerMode !== 'location' && (
                   <>
-                    <p className="text-sm font-semibold text-[#122724] text-center">
-                      {activeRoute ? `Tap along ${activeRoute.name}` : 'Tap to start a route'}
-                    </p>
-                    <p className="text-xs text-[#5c6b68] text-center mt-0.5">
-                      {isSnappingRoad
-                        ? 'Snapping to the nearest road...'
-                        : !activeRoute
-                          ? 'A road is created for you — add more with Add route.'
-                          : activeRoute.points.length < 2
-                            ? `Add at least 2 points — drop-offs and food orders are accepted within ${Math.round(activeRoute.buffer_m / 2)} m of the route`
-                            : `${activeRoute.points.length} points — accepts drop-offs / food orders within ${Math.round(activeRoute.buffer_m / 2)} m of the road`}
-                    </p>
-                    <p className="text-[11px] text-center mt-1 text-[#5c6b68]">
-                      The route tricycle drivers can use to drop off a customer or
-                      pick up a food order.
-                    </p>
-                    {roadSnapUnavailable && (
-                      <p className="text-[11px] text-center mt-1 text-[var(--amber-dark)]">
-                        Snapping to roads is unavailable, so points are placed exactly where
-                        you tap. Allow the Roads API on the Maps key (Credentials → your key
-                        → API restrictions) for lines that follow the road network.
-                      </p>
-                    )}
-                    {/* Undo/Redo stay visible whenever there's anything to step through — including
-                        after every point has been undone, where the road is empty but
-                        Redo still has work to do. Clear Road only applies to a plotted road. */}
-                    <div className="grid grid-cols-2 gap-2 mt-3">
-                      <button
-                        type="button"
-                        onClick={undoBoundary}
-                        disabled={boundaryPast.length === 0}
-                        className="pointer-events-auto h-9 border border-line text-[#5c6b68] text-xs font-bold rounded-lg active:scale-95 disabled:opacity-40 disabled:active:scale-100 disabled:cursor-not-allowed"
-                      >
-                        Undo Point
-                      </button>
-                      <button
-                        type="button"
-                        onClick={redoBoundary}
-                        disabled={boundaryFuture.length === 0}
-                        className="pointer-events-auto h-9 border border-line text-[#5c6b68] text-xs font-bold rounded-lg active:scale-95 disabled:opacity-40 disabled:active:scale-100 disabled:cursor-not-allowed"
-                      >
-                        Redo Point
-                      </button>
-                    </div>
-                    {(activeRoute?.points.length ?? 0) > 0 && (
+                    <button
+                      type="button"
+                      onClick={undoBoundary}
+                      disabled={boundaryPast.length === 0}
+                      aria-label="Undo point"
+                      title="Undo point"
+                      className="pointer-events-auto w-11 h-11 flex items-center justify-center bg-white/95 backdrop-blur border border-line rounded-xl shadow-lg text-[#122724] active:scale-95 disabled:opacity-40 disabled:active:scale-100 disabled:cursor-not-allowed"
+                    >
+                      <Undo2 className="w-5 h-5" aria-hidden="true" />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={redoBoundary}
+                      disabled={boundaryFuture.length === 0}
+                      aria-label="Redo point"
+                      title="Redo point"
+                      className="pointer-events-auto w-11 h-11 flex items-center justify-center bg-white/95 backdrop-blur border border-line rounded-xl shadow-lg text-[#122724] active:scale-95 disabled:opacity-40 disabled:active:scale-100 disabled:cursor-not-allowed"
+                    >
+                      <Redo2 className="w-5 h-5" aria-hidden="true" />
+                    </button>
+                    {hasPlottedPoints && (
                       <button
                         type="button"
                         onClick={confirmClearBoundary}
-                        className="pointer-events-auto w-full h-9 mt-2 border-2 border-[#bc4b1f] text-[#bc4b1f] text-xs font-bold rounded-lg active:scale-95"
+                        aria-label={mapPickerMode === 'road' ? 'Clear road' : 'Clear border area'}
+                        title={mapPickerMode === 'road' ? 'Clear road' : 'Clear border area'}
+                        className="pointer-events-auto w-11 h-11 flex items-center justify-center bg-white/95 backdrop-blur border-2 border-[#bc4b1f] rounded-xl shadow-lg text-[#bc4b1f] active:scale-95"
                       >
-                        Clear Road
+                        <Eraser className="w-5 h-5" aria-hidden="true" />
                       </button>
                     )}
-                  </>
-                ) : mapPickerMode === 'area' ? (
-                  <>
-                    <p className="text-sm font-semibold text-[#122724] text-center">
-                      Tap the corners of the border area
-                    </p>
-                    <p className="text-xs text-[#5c6b68] text-center mt-0.5">
-                      {form.boundary_area.length < 3
-                        ? `Add at least 3 points — ${form.boundary_area.length} so far`
-                        : `${form.boundary_area.length} points — area closed`}
-                    </p>
-                    <p className="text-[11px] text-center mt-1 text-[#5c6b68]">
-                      The radius where a tricycle driver can join the queue to pick
-                      up a customer — share ride or private ride.
-                    </p>
-                    <div className="grid grid-cols-2 gap-2 mt-3">
-                      <button
-                        type="button"
-                        onClick={undoBoundary}
-                        disabled={boundaryPast.length === 0}
-                        className="pointer-events-auto h-9 border border-line text-[#5c6b68] text-xs font-bold rounded-lg active:scale-95 disabled:opacity-40 disabled:active:scale-100 disabled:cursor-not-allowed"
-                      >
-                        Undo Point
-                      </button>
-                      <button
-                        type="button"
-                        onClick={redoBoundary}
-                        disabled={boundaryFuture.length === 0}
-                        className="pointer-events-auto h-9 border border-line text-[#5c6b68] text-xs font-bold rounded-lg active:scale-95 disabled:opacity-40 disabled:active:scale-100 disabled:cursor-not-allowed"
-                      >
-                        Redo Point
-                      </button>
-                    </div>
-                    {form.boundary_area.length > 0 && (
-                      <button
-                        type="button"
-                        onClick={confirmClearBoundary}
-                        className="pointer-events-auto w-full h-9 mt-2 border-2 border-[#bc4b1f] text-[#bc4b1f] text-xs font-bold rounded-lg active:scale-95"
-                      >
-                        Clear Border Area
-                      </button>
-                    )}
-                  </>
-                ) : (
-                  <>
-                    <p className="text-sm font-semibold text-[#122724] text-center">
-                      Tap anywhere to set terminal location
-                    </p>
-                    <p className="text-xs text-[#5c6b68] text-center mt-0.5">
-                      Current: {form.center_lat.toFixed(4)}, {form.center_lng.toFixed(4)}
-                    </p>
                   </>
                 )}
+
+                {/*
+                  The guide, as a round "?".
+
+                  Round where the three beside it are square: it is the one control
+                  in the row that changes nothing on the map, and the shape stops it
+                  reading as a fourth action.
+                */}
+                <button
+                  type="button"
+                  onClick={() => setGuideOpen(open => !open)}
+                  aria-expanded={guideOpen}
+                  aria-controls="map-editor-guide"
+                  aria-label={guideOpen ? 'Hide the guide' : 'Show the guide'}
+                  title={guideOpen ? 'Hide the guide' : 'Show the guide'}
+                  className={`pointer-events-auto w-11 h-11 flex items-center justify-center rounded-full border shadow-lg text-base font-bold active:scale-95 ${
+                    guideOpen
+                      ? 'bg-[var(--primary)] border-[var(--primary)] text-white'
+                      : 'bg-white/95 backdrop-blur border-line text-[#122724]'
+                  }`}
+                >
+                  <span aria-hidden="true">?</span>
+                </button>
               </div>
+
+              {guideOpen && (
+                <div
+                  id="map-editor-guide"
+                  className="pointer-events-auto w-[22rem] max-w-[calc(100vw-1.5rem)] bg-white/95 backdrop-blur rounded-xl shadow-lg p-3"
+                >
+                  {mapPickerMode === 'road' ? (
+                    <>
+                      <p className="text-sm font-semibold text-[#122724]">
+                        {activeRoute ? `Tap along ${activeRoute.name}` : 'Tap to start a route'}
+                      </p>
+                      <p className="text-xs text-[#5c6b68] mt-1">
+                        {isSnappingRoad
+                          ? 'Snapping to the nearest road...'
+                          : !activeRoute
+                            ? 'A road is created for you — add more with Add route.'
+                            : activeRoute.points.length < 2
+                              ? `Add at least 2 points — drop-offs and food orders are accepted within ${Math.round(activeRoute.buffer_m / 2)} m of the route`
+                              : `${activeRoute.points.length} points — accepts drop-offs / food orders within ${Math.round(activeRoute.buffer_m / 2)} m of the road`}
+                      </p>
+                      <p className="text-[11px] mt-1 text-[#5c6b68]">
+                        The route tricycle drivers can use to drop off a customer or
+                        pick up a food order.
+                      </p>
+                    </>
+                  ) : mapPickerMode === 'area' ? (
+                    <>
+                      <p className="text-sm font-semibold text-[#122724]">
+                        Tap the corners of the border area
+                      </p>
+                      <p className="text-xs text-[#5c6b68] mt-1">
+                        {form.boundary_area.length < 3
+                          ? `Add at least 3 points — ${form.boundary_area.length} so far`
+                          : `${form.boundary_area.length} points — area closed`}
+                      </p>
+                      <p className="text-[11px] mt-1 text-[#5c6b68]">
+                        The radius where a tricycle driver can join the queue to pick
+                        up a customer — share ride or private ride.
+                      </p>
+                    </>
+                  ) : (
+                    <>
+                      <p className="text-sm font-semibold text-[#122724]">
+                        Tap anywhere to set terminal location
+                      </p>
+                      <p className="text-xs text-[#5c6b68] mt-1">
+                        Current: {form.center_lat.toFixed(4)}, {form.center_lng.toFixed(4)}
+                      </p>
+                    </>
+                  )}
+                </div>
+              )}
             </div>
             </div>
           </div>
