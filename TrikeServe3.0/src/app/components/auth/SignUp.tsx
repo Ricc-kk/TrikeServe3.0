@@ -100,6 +100,14 @@ const FIELD_VALIDATORS: Partial<
       return "Use letters and numbers only, 3-15 characters (e.g. TV-1234)";
     return null;
   },
+  terminalId: (d) => {
+    if (d.role !== "rider") return null;
+    // Required, so every driver arrives assigned to a TODA. The alternative
+    // was a driver who signs up, then sits on nobody's roster until a Super
+    // Admin spots them — and the fix for that is one tap at sign-up.
+    if (!d.terminalId) return "Select the TODA you drive out of";
+    return null;
+  },
   businessName: (d) => {
     if (d.role !== "business") return null;
     const v = d.businessName?.trim() ?? "";
@@ -125,6 +133,7 @@ const FIELD_ORDER: (keyof SignUpFormData)[] = [
   "email",
   "phoneNumber",
   "todaPlate",
+  "terminalId",
   "businessName",
   "businessAddress",
   "password",
@@ -144,12 +153,22 @@ function FieldError({ id, message }: { id: string; message?: string | null }) {
   );
 }
 
-function PasswordChecklist({ value }: { value: string }) {
-  // Nothing to report until there's something typed; an all-red list before
-  // the first keystroke just reads as an error the user can't fix yet.
+/**
+ * The password requirements, shown live under the field.
+ *
+ * Rendered only once the field has been typed in, and only once the user has
+ * moved away from the password at least once. Before that it is four grey lines
+ * of instructions sitting under an empty box — noise the user did not ask for
+ * and cannot act on yet. It stays put after the first blur, because from then on
+ * the requirements are the thing they are checking against, including when they
+ * come back to fix a rejected password.
+ */
+function PasswordChecklist({ value, visible }: { value: string; visible: boolean }) {
   const results = PASSWORD_RULES.map((rule) => ({ label: rule.label, met: rule.test(value) }));
   const metCount = results.filter((r) => r.met).length;
   const allMet = metCount === results.length;
+
+  if (!visible) return null;
 
   return (
     <ul className="mt-2 space-y-1" aria-live="polite">
@@ -600,19 +619,15 @@ export default function SignUp() {
                     <FieldError id="todaPlate-error" message={errorFor("todaPlate")} />
                   </div>
 
-                  {/* Which TODA they drive out of.
-
-                      Optional on purpose. A driver who does not know yet still
-                      needs an account, and an unassigned driver is a normal
-                      state the Super Admin resolves from Terminals ->
-                      Assignments — making it required would only push people to
-                      invent an answer. */}
+                  {/* Which TODA they drive out of. Required, and it is what makes the driver
+                      show up on that terminal's roster rather than waiting to be
+                      assigned by a Super Admin. */}
                   <div>
                     <label
                       htmlFor="toda-select"
                       className="block text-sm font-semibold text-[var(--ink)] mb-2"
                     >
-                      TODA <span className="font-normal text-[var(--muted-foreground)]">(optional)</span>
+                      TODA <span className="text-[var(--error)]">*</span>
                     </label>
                     <div className="relative">
                       <TerminalIconGlyph
@@ -623,6 +638,10 @@ export default function SignUp() {
                         id="toda-select"
                         value={formData.terminalId || ""}
                         disabled={isLoading || terminalsLoading}
+                        onBlur={() => handleBlur("terminalId")}
+                        data-field="terminalId"
+                        aria-invalid={!!errorFor("terminalId")}
+                        aria-describedby={errorFor("terminalId") ? "terminalId-error" : undefined}
                         onChange={(e) => {
                           const picked = terminals.find(t => t.id === e.target.value);
                           // Name resolved from the list rather than read off the
@@ -634,7 +653,9 @@ export default function SignUp() {
                             terminalName: picked?.name,
                           }));
                         }}
-                        className="w-full appearance-none pl-9 pr-9 py-2.5 border rounded-lg bg-surface text-sm text-[var(--ink)] focus:outline-none focus:border-[var(--primary)] disabled:opacity-60 border-line"
+                        className={`w-full appearance-none pl-9 pr-9 py-2.5 border rounded-lg bg-surface text-sm text-[var(--ink)] focus:outline-none focus:border-[var(--primary)] disabled:opacity-60 ${
+                          errorFor("terminalId") ? "border-[var(--error)]" : "border-line"
+                        }`}
                       >
                         <option value="">
                           {terminalsLoading
@@ -655,10 +676,21 @@ export default function SignUp() {
                         className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-[var(--muted-foreground)]"
                       />
                     </div>
-                    <p className="text-xs text-[var(--muted-foreground)] mt-1.5">
-                      Pick the terminal you drive out of. The Super Admin can change
-                      this later.
-                    </p>
+                    {/* The one thing this must never do is fail silently: with
+                        nothing to select, a driver is told so here rather than
+                        being told to pick a TODA and finding the list empty. */}
+                    {terminals.length === 0 && !terminalsLoading ? (
+                      <p className="text-xs text-[var(--error)] mt-1.5">
+                        No TODA is accepting drivers yet. Ask the office to add
+                        one before registering.
+                      </p>
+                    ) : (
+                      <p className="text-xs text-[var(--muted-foreground)] mt-1.5">
+                        Pick the terminal you drive out of. The Super Admin can
+                        change this later.
+                      </p>
+                    )}
+                    <FieldError id="terminalId-error" message={errorFor("terminalId")} />
                   </div>
                 </>
               )}
@@ -820,7 +852,14 @@ export default function SignUp() {
                     {showPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
                   </button>
                 </div>
-                <PasswordChecklist value={formData.password} />
+                <PasswordChecklist
+                  value={formData.password}
+                  // Shown once something has been typed, or once a submit has
+                  // already failed on it — the two moments it is worth reading.
+                  // `submitAttempted` covers the case where they submitted, were
+                  // sent back, and the field was emptied to start over.
+                  visible={formData.password.length > 0 || submitAttempted}
+                />
                 <FieldError id="password-error" message={errorFor("password")} />
               </div>
 

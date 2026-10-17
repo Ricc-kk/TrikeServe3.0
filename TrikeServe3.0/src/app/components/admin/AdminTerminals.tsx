@@ -282,21 +282,30 @@ function isDriverRow(u: StoredRider): boolean {
 type DriverPickerProps = {
   /** The TODA this picker adds to, named in the field's own label. */
   terminalName: string;
-  /** Everyone who could be added — already excluding the drivers on this TODA. */
+  /** Everyone. Includes the drivers already on another TODA — picking one moves
+   *  them — so the list has to say where each one sits right now. */
   candidates: StoredRider[];
+  /** The TODA's own id, so a driver already on it can be marked as such. */
+  terminalId: string;
+  /** Terminal id -> name, for the "on M TODA — will move" note. */
+  terminalNames: Record<string, string>;
   onPick: (rider: StoredRider) => void;
 };
 
 /**
- * Add a driver to one TODA.
+ * Add or move a driver to one TODA.
  *
  * A custom list rather than a native <select>, because the reason this exists
  * is that a terminal can have more drivers than a dropdown can usefully show:
  * a native select offers no way to narrow fifty names down to one, and the
  * Super Admin ends up scrolling to spot a spelling. The search field is the
  * point of the control, so it takes focus as the list opens.
+ *
+ * Offering everyone, not just the unassigned, is deliberate — see the call site.
+ * A driver on another terminal is listed with where they are, so a move is one
+ * tap and announces itself as a move rather than looking like an add.
  */
-function DriverPicker({ terminalName, candidates, onPick }: DriverPickerProps) {
+function DriverPicker({ terminalName, candidates, terminalId, terminalNames, onPick }: DriverPickerProps) {
   const [isOpen, setIsOpen] = useState(false);
   const [query, setQuery] = useState('');
   const wrapRef = useRef<HTMLDivElement>(null);
@@ -376,36 +385,63 @@ function DriverPicker({ terminalName, candidates, onPick }: DriverPickerProps) {
             {matches.length === 0 ? (
               <li className="px-4 py-6 text-center text-sm text-[var(--muted-foreground)] italic">
                 {candidates.length === 0
-                  ? 'Every driver is already on this TODA'
+                  ? 'No drivers registered yet'
                   : `No driver matches “${query.trim()}”`}
               </li>
             ) : (
-              matches.map(rider => (
-                <li key={rider.id}>
-                  <button
-                    type="button"
-                    role="option"
-                    aria-selected="false"
-                    onClick={() => {
-                      setIsOpen(false);
-                      onPick(rider);
-                    }}
-                    className="w-full flex items-center gap-3 px-3 py-2.5 text-left hover:bg-[var(--soft)] transition-colors"
-                  >
-                    <span className="w-8 h-8 flex-shrink-0 rounded-full bg-[var(--muted)] text-[var(--muted-foreground)] flex items-center justify-center text-[11px] font-bold">
-                      {driverInitials(rider)}
-                    </span>
-                    <span className="min-w-0 flex-1">
-                      <span className="block text-sm font-semibold text-[var(--ink)] truncate">
-                        {riderDisplayName(rider)}
+              matches.map(rider => {
+                const onId = rider.terminalId || rider.terminal_id;
+                const onThis = onId === terminalId;
+                const onOther = !!onId && !onThis;
+                const onName = onId ? terminalNames[onId] : null;
+                return (
+                  <li key={rider.id}>
+                    <button
+                      type="button"
+                      role="option"
+                      aria-selected="false"
+                      onClick={() => {
+                        setIsOpen(false);
+                        onPick(rider);
+                      }}
+                      className={`w-full flex items-center gap-3 px-3 py-2.5 text-left transition-colors ${
+                        // Already here: still listed, so the list is every driver
+                        // and not a moving target, but greyed to say there is
+                        // nothing this tap would do.
+                        onThis
+                          ? 'bg-[var(--soft)] opacity-60 cursor-default'
+                          : 'hover:bg-[var(--soft)]'
+                      }`}
+                    >
+                      <span className="w-8 h-8 flex-shrink-0 rounded-full bg-[var(--muted)] text-[var(--muted-foreground)] flex items-center justify-center text-[11px] font-bold">
+                        {driverInitials(rider)}
                       </span>
-                      <span className="block text-xs text-[var(--muted-foreground)] truncate">
-                        {rider.todaPlate || rider.toda_plate || rider.email}
+                      <span className="min-w-0 flex-1">
+                        <span className="block text-sm font-semibold text-[var(--ink)] truncate">
+                          {riderDisplayName(rider)}
+                        </span>
+                        <span className="block text-xs text-[var(--muted-foreground)] truncate">
+                          {/* Where they are now, before the plate. A driver being
+                              moved is the case where this matters — without it
+                              the row reads as a plain add and the admin has no
+                              idea they are about to pull someone off another
+                              TODA. */}
+                          {onThis
+                            ? `On ${terminalName}`
+                            : onOther
+                              ? `On ${onName ?? 'another TODA'} — will move`
+                              : rider.todaPlate || rider.toda_plate || rider.email}
+                        </span>
                       </span>
-                    </span>
-                  </button>
-                </li>
-              ))
+                      {rider.isTerminalAdmin ? (
+                        <span className="flex-shrink-0 px-1.5 py-0.5 rounded-full bg-[var(--teal-soft)] text-[var(--teal)] text-[10px] font-bold">
+                          Admin
+                        </span>
+                      ) : null}
+                    </button>
+                  </li>
+                );
+              })
             )}
           </ul>
         </div>
@@ -1270,6 +1306,17 @@ export default function AdminTerminals() {
   const visibleTerminals = isRiderAdmin
     ? terminals.filter(t => t.id === assignedTerminalId)
     : terminals;
+
+  /**
+   * Terminal id -> name, for the driver picker to say where somebody already is.
+   *
+   * `visibleTerminals` rather than `terminals`, so the "on M TODA" a Rider Admin
+   * reads never names a terminal they are not allowed to see.
+   */
+  const terminalNameById = useMemo(
+    () => Object.fromEntries(visibleTerminals.map(t => [t.id, t.name])),
+    [visibleTerminals]
+  );
 
   /**
    * The drivers the Super Admin has made admin of a terminal.
@@ -2441,9 +2488,16 @@ export default function AdminTerminals() {
    */
 
   /** Move a driver onto a terminal now. Optimistic, and rolls back on failure. */
-  async function applyAssignDriver(rider: StoredRider, terminal: Terminal) {
+async function applyAssignDriver(rider: StoredRider, terminal: Terminal) {
     const previousId = riderTerminalId(rider);
     const previousName = riderTerminalName(rider);
+    // Carried across, not dropped. This function is how a driver *moves* between
+    // terminals, and a driver who was the admin of the TODA they are being moved
+    // from is moving as that TODA's admin. Clearing the flag here is what made
+    // "assign the admin to a different TODA" silently fail: they arrived at the
+    // new terminal as an ordinary driver, with no way back short of opening the
+    // new terminal's roster and flipping the switch by hand.
+    const carriesAdminFlag = !!rider.isTerminalAdmin;
 
     setUsers(list =>
       list.map(u =>
@@ -2454,21 +2508,32 @@ export default function AdminTerminals() {
               terminal_id: terminal.id,
               terminalName: terminal.name,
               terminal_name: terminal.name,
+              isTerminalAdmin: carriesAdminFlag,
             }
           : u
       )
     );
 
+    // The flag is only written when the column is actually there. Sending it
+    // blind would have PostgREST reject the whole assignment on a database that
+    // has not run ADD_TERMINAL_ADMIN_FLAG.sql — breaking something that already
+    // worked in order to carry something new.
+    const patch: Record<string, unknown> = {
+      terminal_id: terminal.id,
+      terminal_name: terminal.name,
+    };
+    if (terminalAdminColumn) patch.is_terminal_admin = carriesAdminFlag;
+
     const { error } = await supabase
       .from('users')
-      .update({ terminal_id: terminal.id, terminal_name: terminal.name })
+      .update(patch)
       .eq('id', rider.id);
 
     if (error) {
       setUsers(list =>
         list.map(u =>
           u.id === rider.id
-            ? { ...u, terminalId: previousId, terminal_id: previousId, terminalName: previousName, terminal_name: previousName }
+            ? { ...u, terminalId: previousId, terminal_id: previousId, terminalName: previousName, terminal_name: previousName, isTerminalAdmin: !!rider.isTerminalAdmin }
             : u
         )
       );
@@ -2476,24 +2541,88 @@ export default function AdminTerminals() {
       return;
     }
 
+    const isMove = !!previousId && previousId !== terminal.id;
+
     logAudit({
       action: 'assign_terminal_driver',
       actorRole: 'admin',
       entityType: 'terminal',
       entityId: terminal.id,
-      summary: `Assigned ${riderName(rider)} to ${terminal.name}`,
-      details: { driver_id: rider.id, terminal_id: terminal.id, previous_terminal_id: previousId ?? null },
+      summary: isMove
+        ? `Moved ${riderName(rider)} from ${previousName ?? previousId} to ${terminal.name}`
+        : `Assigned ${riderName(rider)} to ${terminal.name}`,
+      details: {
+        driver_id: rider.id,
+        terminal_id: terminal.id,
+        previous_terminal_id: previousId ?? null,
+        // A move that also carried admin across is two changes in one tap, and
+        // this entry is the only record of who decided the second one.
+        is_terminal_admin: terminalAdminColumn ? carriesAdminFlag : undefined,
+      },
       actorEmail: user?.email,
       actorName: user?.name,
     });
 
+    // A move takes the driver off the old terminal as well as adding them to the
+    // new one, or the old terminal's count stays one too high for good.
+    if (isMove) {
+      setTerminals(ts =>
+        ts.map(t =>
+          t.id === previousId ? { ...t, rider_count: Math.max(0, (t.rider_count ?? 0) - 1) } : t
+        )
+      );
+    }
     setTerminals(ts =>
       ts.map(t => (t.id === terminal.id ? { ...t, rider_count: (t.rider_count ?? 0) + 1 } : t))
     );
-    setToast({ message: `${riderName(rider)} assigned to ${terminal.name}`, variant: 'success' });
+    setToast({
+      message: isMove
+        ? `${riderName(rider)} moved to ${terminal.name}${carriesAdminFlag ? ' — still a TODA admin' : ''}`
+        : `${riderName(rider)} assigned to ${terminal.name}`,
+      variant: 'success',
+    });
   }
 
-  /** Take a driver off their terminal now. Optimistic, and rolls back on failure. */
+  /**
+   * Confirm adding or moving a driver to a terminal.
+   *
+   * Moving gets its own sentence because it is a different thing to be agreeing
+   * to: the driver leaves another TODA, and if they were that TODA's admin their
+   * admin access moves with them. Both are said here rather than discovered
+   * afterwards on a roster that no longer adds up.
+   */
+  function confirmAssignDriver(rider: StoredRider, terminal: Terminal) {
+    const label = riderName(rider);
+    const fromTerminal = terminals.find(t => t.id === riderTerminalId(rider)) || null;
+    const isMove = !!fromTerminal && fromTerminal.id !== terminal.id;
+
+    openModal({
+      title: isMove ? 'Move Driver' : 'Assign Driver',
+      message: isMove
+        ? `Move ${label} from ${fromTerminal?.name} to ${terminal.name}?${
+            rider.isTerminalAdmin
+              ? ` They are the admin of ${fromTerminal?.name}, so they will be the admin of ${terminal.name} too.`
+              : ''
+          }`
+        : `Assign ${label} to ${terminal.name}? They will start picking up rides from this terminal.${
+            rider.isTerminalAdmin ? ' They are already a TODA admin.' : ''
+          }`,
+      variant: 'success',
+      confirmLabel: isMove ? 'Move' : 'Assign',
+      onConfirm: async () => {
+        closeModal();
+        await applyAssignDriver(rider, terminal);
+      },
+    });
+  }
+
+/**
+   * Take a driver off their terminal now. Optimistic, and rolls back on failure.
+   *
+   * Clears the admin flag as well as the assignment. Admin of a terminal they are
+   * no longer on is not a state this app can act on, and leaving the flag behind
+   * is how a driver ends up holding admin access to somebody else's TODA.
+   */
   async function applyUnassignDriver(rider: StoredRider, terminal: Terminal) {
     const previousId = riderTerminalId(rider);
     const previousName = riderTerminalName(rider);
@@ -2508,9 +2637,6 @@ export default function AdminTerminals() {
               terminal_id: undefined,
               terminalName: undefined,
               terminal_name: undefined,
-              // Admin of a terminal they are no longer on is not a state the
-              // app can act on, so it goes with the assignment rather than
-              // outliving it.
               isTerminalAdmin: false,
             }
           : u
@@ -2564,19 +2690,6 @@ export default function AdminTerminals() {
       ts.map(t => (t.id === terminal.id ? { ...t, rider_count: Math.max(0, (t.rider_count ?? 0) - 1) } : t))
     );
     setToast({ message: `${riderName(rider)} removed from ${terminal.name}`, variant: 'success' });
-  }
-
-  function confirmAssignDriver(rider: StoredRider, terminal: Terminal) {
-    openModal({
-      title: 'Assign Driver',
-      message: `Assign ${riderName(rider)} to ${terminal.name}? They will start picking up rides from this terminal.`,
-      variant: 'success',
-      confirmLabel: 'Assign',
-      onConfirm: async () => {
-        closeModal();
-        await applyAssignDriver(rider, terminal);
-      },
-    });
   }
 
   function confirmUnassignDriver(rider: StoredRider, terminal: Terminal) {
@@ -2833,7 +2946,18 @@ export default function AdminTerminals() {
                         // Already on this terminal, so not offered again: the
                         // picker adds, it does not move, and a driver listed as
                         // a candidate here is one the admin might add by mistake.
-                        const candidates = riders.filter(r => riderTerminalId(r) !== t.id);
+                        /*
+                         * Every driver, not only the unassigned ones.
+                         *
+                         * Excluding whoever is on another terminal made moving a
+                         * driver a two-step job — remove, then add — and the
+                         * removal cleared their admin flag on the way, so
+                         * "give this TODA an admin" meant first destroying the
+                         * last TODA's admin. The picker now offers everyone and
+                         * says where each one currently sits, so a move is one
+                         * tap and reads as a move.
+                         */
+                        const candidates = riders;
                         return (
                           <div key={t.id} className="border-b border-line last:border-b-0">
                             {/*
@@ -2916,6 +3040,8 @@ export default function AdminTerminals() {
                               <div id={`toda-roster-${t.id}`} className="px-4 pb-4 -mt-1">
                                 <DriverPicker
                                   terminalName={t.name}
+                                  terminalId={t.id}
+                                  terminalNames={terminalNameById}
                                   candidates={candidates}
                                   onPick={rider => confirmAssignDriver(rider, t)}
                                 />

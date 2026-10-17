@@ -19,17 +19,27 @@ interface TestAccount {
 /**
  * Password Quick Access fills in for customer, driver and business accounts.
  *
- * Those three roles are signed in through Supabase Auth, which verifies the
- * real password — so this only logs an account in if its password genuinely is
+ * Those roles are signed in through Supabase Auth, which verifies the real
+ * password — so this only logs an account in if its password genuinely is
  * Admin12345. It is a developer convenience for accounts seeded with that
- * password, not a bypass. Admins are deliberately left alone: their password
- * is stored in plain `admins.password_hash` and is already known here, so
- * there is nothing to guess.
+ * password, not a bypass.
+ *
+ * "admin" is in the set now too, and that needs saying plainly, because the role
+ * used to be excluded on the grounds that an admin's password is known already.
+ * That is true of a row in the `admins` table, whose `password_hash` this file
+ * reads — and those rows keep it, because Quick Access only fills in a blank.
+ * It is not true of a driver-admin: someone who drives for a TODA and runs it as
+ * a terminal admin is a `users` row whose `role` flips to 'admin' while they are
+ * inside the admin app. They have no `admins.password_hash` at all, so excluding
+ * the role left their Quick Access entry with no password and nothing to click.
+ *
+ * Quick Access still never overrides a password it knows; the fill is guarded on
+ * the password being absent, so this only reaches accounts with nothing stored.
  */
 const QUICK_ACCESS_PASSWORD = "Admin12345";
 
 /** Roles Quick Access supplies QUICK_ACCESS_PASSWORD for. */
-const QUICK_ACCESS_ROLES = new Set(["customer", "rider", "business"]);
+const QUICK_ACCESS_ROLES = new Set(["customer", "rider", "business", "admin"]);
 
 // Styling per role (matches the admin panel's role colors)
 const ROLE_BADGE: Record<string, string> = {
