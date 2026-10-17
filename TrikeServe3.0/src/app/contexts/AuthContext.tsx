@@ -12,6 +12,13 @@ export interface User {
   isVerified: boolean;
   createdAt: string;
   adminType?: 'business_customer' | 'rider';
+  /**
+   * Set by the Super Admin from Terminals -> Assignments: this driver is the
+   * admin of the terminal they are assigned to. It is what offers them the
+   * Admin app from their driver profile, and `adminType` above is derived from
+   * it so the admin app scopes them to that terminal on arrival.
+   */
+  isTerminalAdmin?: boolean;
   todaPlate?: string;
   licenseNumber?: string;
   pickupLocation?: string;
@@ -86,7 +93,16 @@ function mapSupabaseUser(row: any): User {
     phone: row.phone || '',
     isVerified: row.is_verified ?? defaultIsVerified(role),
     createdAt: row.created_at || new Date().toISOString(),
-    adminType: row.admin_type,
+    /*
+     * A TODA's admin is one of its own drivers, so a driver row has no
+     * `admin_type` of its own -- that column lives on the separate `admins`
+     * table. Deriving 'rider' here is what lets the whole admin app treat them
+     * as a terminal-scoped Rider Admin the moment they switch into it, with no
+     * second login and no branch in any admin screen. Gated on the terminal too:
+     * the flag without a terminal is not an admin of anything.
+     */
+    adminType: row.admin_type ?? (row.is_terminal_admin && row.terminal_id ? 'rider' : undefined),
+    isTerminalAdmin: row.is_terminal_admin ?? false,
     todaPlate: row.toda_plate,
     licenseNumber: row.license_number,
     businessName: row.business_name,

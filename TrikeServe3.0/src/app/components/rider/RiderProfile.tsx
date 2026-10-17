@@ -15,12 +15,13 @@ import {
   X,
   LogOut,
   Camera,
-  Palette
+  Palette,
+  Shield
 } from "lucide-react";
 import { GoogleMap, MarkerF, Polygon, Polyline } from "@react-google-maps/api";
 import useMapLoader from "@/lib/mapLoader";
 import { supabase } from "../../../utils/supabase";
-import { supabaseHelpers, normalizeBoundaryRoad, normalizeBoundaryArea, type LatLngPoint } from "@/lib/supabase";
+import { supabaseHelpers, getDriverTerminalAdmin, normalizeBoundaryRoad, normalizeBoundaryArea, type LatLngPoint } from "@/lib/supabase";
 import { Button } from "../ui/button";
 import { Card } from "../ui/card";
 import { Badge } from "../ui/badge";
@@ -43,6 +44,7 @@ export default function RiderProfile() {
   });
   const [showGoodbye, setShowGoodbye] = useState(false);
   const [showSwitchConfirm, setShowSwitchConfirm] = useState(false);
+  const [showAdminSwitchConfirm, setShowAdminSwitchConfirm] = useState(false);
   const [showConfirmSave, setShowConfirmSave] = useState(false);
   const [uploadingPhoto, setUploadingPhoto] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -104,6 +106,46 @@ export default function RiderProfile() {
     area: LatLngPoint[] | null;
   } | null>(null);
   const { isLoaded: isMapsLoaded } = useMapLoader();
+
+  /**
+   * Whether the Super Admin has made this driver the admin of their terminal,
+   * which is what unlocks the Admin app switch below.
+   *
+   * Asked of the database rather than read off the cached session, for the same
+   * reason the terminal is: being named a TODA admin happens while the driver is
+   * already signed in and driving, and a control that only appeared on their
+   * next login would read as the switch not working.
+   *
+   * Both halves are required. The flag without a terminal names nobody to be
+   * admin of, so it is not an admin of anything and the switch has nowhere to go.
+   */
+  const [todaAdminStatus, setTodaAdminStatus] = useState({
+    isTerminalAdmin: !!user?.isTerminalAdmin,
+    terminalId: user?.terminalId ?? null,
+    terminalName: user?.terminalName ?? null,
+  });
+
+  useEffect(() => {
+    if (!user?.id) return;
+    // Cancelled on unmount as well as on a user change: this is the only read
+    // on this screen that can land after the driver has already tapped back,
+    // and a state update then would put a stale answer on screen.
+    let cancelled = false;
+    void (async () => {
+      const status = await getDriverTerminalAdmin(user.id!);
+      if (cancelled) return;
+      setTodaAdminStatus({
+        isTerminalAdmin: status.isTerminalAdmin,
+        terminalId: status.terminal_id,
+        terminalName: status.terminal_name,
+      });
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [user?.id]);
+
+  const canOpenAdminApp = todaAdminStatus.isTerminalAdmin && !!todaAdminStatus.terminalId;
 
   // Fetch terminal details from DB - always check Supabase for fresh terminal assignment
   useEffect(() => {
@@ -592,6 +634,44 @@ export default function RiderProfile() {
           )}
         </div>
 
+        {/* --------------------------------------------------
+            TODA admin.
+
+            A terminal's admin is one of its own drivers, so there is no
+            second login: the Super Admin names them from Terminals ->
+            Assignments, and the switch appears here only once both halves
+            of that hold — the flag, and a terminal to be scoped to.
+
+            Hidden rather than disabled when it does not: an inert
+            control next to the role switch above reads as something
+            broken, and a driver who is not an admin has no reason to
+            wonder what it would have done.
+        -------------------------------------------------- */}
+        {canOpenAdminApp && (
+          <div className="mb-3">
+            {user.role === 'admin' ? (
+              <Button
+                onClick={() => setShowAdminSwitchConfirm(true)}
+                className="w-full bg-[var(--ink-solid)] hover:bg-[var(--ink-solid)] text-white font-bold py-4 rounded-lg flex items-center justify-center gap-2 shadow-md"
+              >
+                <ArrowLeft className="w-5 h-5" />
+                Switch back to Driver App
+              </Button>
+            ) : (
+              <Button
+                onClick={() => setShowAdminSwitchConfirm(true)}
+                className="w-full bg-[var(--violet)] hover:bg-[var(--violet)] text-white font-bold py-4 rounded-lg flex items-center justify-center gap-2 shadow-md"
+              >
+                <Shield className="w-5 h-5" />
+                Switch to Admin App
+              </Button>
+            )}
+            <p className="text-xs text-[var(--muted-foreground)] text-center mt-2">
+              You are the admin of {todaAdminStatus.terminalName || 'your terminal'}.
+            </p>
+          </div>
+        )}
+
         {/* Sign Out Button */}
         <Button
           onClick={() => {
@@ -717,6 +797,55 @@ export default function RiderProfile() {
               </button>
               <button
                 onClick={() => setShowSwitchConfirm(false)}
+                className="w-full py-3 bg-[var(--muted)] text-[var(--muted-foreground)] font-bold rounded-xl active:scale-95 transition-transform"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Admin App Switch Confirmation Modal */}
+      {showAdminSwitchConfirm && (
+        <div className="fixed inset-0 bg-black/50 z-[2000] flex items-center justify-center p-4">
+          <div className="bg-surface p-6 max-w-sm w-full rounded-2xl shadow-xl">
+            <div className="w-16 h-16 bg-[var(--violet-soft)] rounded-full flex items-center justify-center mx-auto mb-4">
+              <Shield className="w-8 h-8 text-[var(--violet)]" />
+            </div>
+            <h3 className="text-xl font-bold text-[var(--ink)] text-center mb-2">
+              {user.role === 'admin' ? 'Back to driving?' : 'Switch to the Admin App?'}
+            </h3>
+            <p className="text-[var(--muted-foreground)] text-center mb-6 text-sm">
+              {user.role === 'admin'
+                ? `You will go back to the Driver app for ${todaAdminStatus.terminalName || 'your terminal'}.`
+                : `You will manage ${todaAdminStatus.terminalName || 'your terminal'} — its drivers and settings. Any change you make still needs the Super Admin's approval.`}
+            </p>
+            <div className="space-y-3">
+              <button
+                onClick={async () => {
+                  setShowAdminSwitchConfirm(false);
+                  if (user.role === 'admin') {
+                    // Puts the stored role back to whatever they left from —
+                    // the driver app — rather than guessing at it.
+                    await restoreOriginalRole?.();
+                    navigate('/rider');
+                  } else {
+                    // The way back reads `trikeserve_original_role`, which
+                    // switchUiRole records for us the first time anyone switches.
+                    // Only ever set once, so it still names the app they came
+                    // from rather than the last one they hopped to.
+                    localStorage.setItem('trikeserve_post_switch_route', '/admin');
+                    switchUiRole && await switchUiRole('admin');
+                    navigate('/admin');
+                  }
+                }}
+                className="w-full py-3 bg-[var(--violet)] text-white font-bold rounded-xl active:scale-95 transition-transform"
+              >
+                Yes, Switch
+              </button>
+              <button
+                onClick={() => setShowAdminSwitchConfirm(false)}
                 className="w-full py-3 bg-[var(--muted)] text-[var(--muted-foreground)] font-bold rounded-xl active:scale-95 transition-transform"
               >
                 Cancel

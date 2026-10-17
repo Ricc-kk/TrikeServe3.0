@@ -24,6 +24,7 @@ const ACTION_META: Record<string, { label: string; badge: string; category: stri
   update_terminal: { label: "Updated terminal", badge: "bg-[var(--info)]", category: "Terminals" },
   delete_terminal: { label: "Deleted terminal", badge: "bg-[var(--error)]", category: "Terminals" },
   assign_rider_admin: { label: "Rider admin assignment", badge: "bg-[var(--violet)]", category: "Assignments" },
+  assign_toda_admin: { label: "TODA admin assignment", badge: "bg-[var(--violet)]", category: "Assignments" },
   update_rate: { label: "Updated rates", badge: "bg-[var(--amber)]", category: "Rates" },
   // Customer actions
   create_ride: { label: "Booked ride", badge: "bg-[var(--primary)]", category: "Rides" },

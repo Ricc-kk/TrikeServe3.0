@@ -16,8 +16,7 @@ import { useAuth } from "../../contexts/AuthContext";
 import {
   submitApprovalRequest,
   getApprovalRequests,
-  getRiderAdmins,
-  assignRiderAdminTerminal,
+  setDriverTerminalAdmin,
   getAdminTerminalAssignment,
   normalizeBoundaryRoad,
   normalizeBoundaryArea,
@@ -26,7 +25,6 @@ import {
   logAudit,
   APPROVAL_REQUEST_LABELS,
   type ApprovalRequest,
-  type RiderAdminSummary,
   type LatLngPoint,
 } from "../../../lib/supabase";
 import ConfirmationModal from "../ui/confirmation-modal";
@@ -165,6 +163,8 @@ interface StoredRider {
   terminal_id?: string;
   terminalName?: string;
   terminal_name?: string;
+  /** The Super Admin made this driver the admin of the terminal above. */
+  isTerminalAdmin?: boolean;
   [key: string]: unknown;
 }
 
@@ -225,9 +225,8 @@ export default function AdminTerminals() {
   // Terminal the current Rider Admin is limited to
   const [assignedTerminalId, setAssignedTerminalId] = useState<string | null>(user?.terminalId ?? null);
   const [assignedTerminalName, setAssignedTerminalName] = useState<string | null>(user?.terminalName ?? null);
-  // Rider Admin accounts + their terminal scope (Super Admin view)
-  const [riderAdmins, setRiderAdmins] = useState<RiderAdminSummary[]>([]);
-  const [savingAssignmentId, setSavingAssignmentId] = useState<string | null>(null);
+  // Which driver's admin flag is mid-write, so only that row shows the spinner.
+  const [savingAdminFlagId, setSavingAdminFlagId] = useState<string | null>(null);
 
   const [terminals, setTerminals] = useState<Terminal[]>(getStoredTerminals());
   // true until the first Supabase round-trip resolves, so the page can show a
@@ -727,13 +726,22 @@ export default function AdminTerminals() {
    */
   const [fareColumns, setFareColumns] = useState({ delivery: true, privateRide: true });
 
+  /**
+   * Whether this database has `users.is_terminal_admin` yet
+   * (ADD_TERMINAL_ADMIN_FLAG.sql). Same two-states-one-flag problem as the fare
+   * columns, and the same failure if it is guessed wrong: the flag is written
+   * alongside a driver unassignment, so an absent column would take that down
+   * with it.
+   */
+  const [terminalAdminColumn, setTerminalAdminColumn] = useState(true);
+
   // Load from Supabase when available; fall back to localStorage data otherwise.
   useEffect(() => {
     loadData();
     loadMyRequests();
     loadMyAssignment();
-    loadRiderAdmins();
     probeFareColumns();
+    probeTerminalAdminColumn();
   }, [user?.email]);
 
   // A Rider Admin's scope can be pulled away by the Super Admin at any moment,
@@ -821,23 +829,36 @@ export default function AdminTerminals() {
 
   async function loadRidersFromSupabase(): Promise<StoredRider[] | null> {
     try {
+      // `admin` is in the role filter because a driver who is admin of a TODA
+      // carries role = 'admin' while they are inside the admin app -- that is
+      // how the app switch works. They are still this terminal's driver, so a
+      // query that stopped at role = 'rider' would drop them off their own
+      // terminal's roster for exactly as long as they were doing their job.
+      // Rows that are admins without the terminal-admin flag are not drivers,
+      // so they are dropped again below.
       const { data, error } = await supabase
         .from("users")
         .select("*")
-        .eq("role", "rider");
+        .in("role", ["rider", "admin"]);
       if (error || !data) return null;
-      return data.map((u: any) => ({
-        id: u.id,
-        name: u.name,
-        email: u.email,
-        phone: u.phone,
-        role: u.role,
-        isVerified: u.is_verified,
-        todaPlate: u.toda_plate,
-        licenseNumber: u.license_number,
-        terminalId: u.terminal_id,
-        terminalName: u.terminal_name,
-      }));
+      return data
+        .filter((u: any) => u.role === "rider" || u.is_terminal_admin)
+        .map((u: any) => ({
+          id: u.id,
+          name: u.name,
+          email: u.email,
+          phone: u.phone,
+          role: u.role,
+          isVerified: u.is_verified,
+          todaPlate: u.toda_plate,
+          licenseNumber: u.license_number,
+          terminalId: u.terminal_id,
+          terminalName: u.terminal_name,
+          // `select *` returns whatever exists, so a database that has not run
+          // ADD_TERMINAL_ADMIN_FLAG.sql simply has no value here -- and nobody
+          // is an admin, which is the right reading of "the column isn't there".
+          isTerminalAdmin: u.is_terminal_admin ?? false,
+        }));
     } catch {
       return null;
     }
@@ -854,14 +875,39 @@ export default function AdminTerminals() {
   async function loadMyAssignment() {
     if (!isRiderAdmin || !user?.email) return;
     const { terminal_id, terminal_name } = await getAdminTerminalAssignment(user.email);
-    setAssignedTerminalId(terminal_id);
-    setAssignedTerminalName(terminal_name);
+
+    if (terminal_id) {
+      setAssignedTerminalId(terminal_id);
+      setAssignedTerminalName(terminal_name);
+      return;
+    }
+
+    // A driver who was made admin of a terminal has no row in `admins` at all --
+    // their scope lives on their own profile, and that is the one that decides
+    // what they can reach. Falling through to "no terminal assigned" here would
+    // show them an empty admin app despite the Super Admin having named them.
+    if (user.isTerminalAdmin && user.terminalId) {
+      setAssignedTerminalId(user.terminalId);
+      setAssignedTerminalName(user.terminalName ?? null);
+      return;
+    }
+
+    setAssignedTerminalId(null);
+    setAssignedTerminalName(null);
   }
 
-  async function loadRiderAdmins() {
-    if (!isSuperAdmin) return;
-    const { data } = await getRiderAdmins();
-    setRiderAdmins(data);
+  /**
+   * Whether this database has the terminal-admin flag yet.
+   *
+   * Probed, not assumed, and for the same reason the fare columns are: PostgREST
+   * rejects the *whole* statement over one absent column, so an un-migrated
+   * database would refuse to unassign a driver from a terminal at all -- the
+   * feature would break something that already worked in order to add something
+   * that does not. Starts optimistic and is only ever turned off.
+   */
+  async function probeTerminalAdminColumn() {
+    const { error } = await supabase.from('users').select('id, is_terminal_admin').limit(1);
+    if (error) setTerminalAdminColumn(false);
   }
 
   /**
@@ -896,61 +942,104 @@ export default function AdminTerminals() {
     }
   }
 
-  async function handleAssignRiderAdmin(adminId: string, terminalId: string) {
-    const terminal = terminals.find(t => t.id === terminalId) || null;
-    setSavingAssignmentId(adminId);
-    const result = await assignRiderAdminTerminal(adminId, terminalId || null, terminal?.name ?? null);
-    setSavingAssignmentId(null);
+  /**
+   * Super Admin: make this driver the admin of their terminal, or take it back.
+   *
+   * Optimistic like the driver assignment below it, and rolled back the same
+   * way — the toggle is the fastest thing on this page to tap, so a row that
+   * quietly refused to change would read as the app ignoring them.
+   */
+  async function applyDriverTerminalAdmin(rider: StoredRider, makeAdmin: boolean) {
+    const previous = !!rider.isTerminalAdmin;
+    const terminal = terminals.find(t => t.id === riderTerminalId(rider)) || null;
+
+    setUsers(list =>
+      list.map(u => (u.id === rider.id ? { ...u, isTerminalAdmin: makeAdmin } : u))
+    );
+
+    setSavingAdminFlagId(rider.id);
+    const result = await setDriverTerminalAdmin(
+      rider.id,
+      makeAdmin,
+      riderTerminalId(rider) ?? null,
+      riderTerminalName(rider) ?? null
+    );
+    setSavingAdminFlagId(null);
 
     if (!result.success) {
-      setToast({ message: `Assignment failed: ${result.error}`, variant: 'error' });
+      setUsers(list =>
+        list.map(u => (u.id === rider.id ? { ...u, isTerminalAdmin: previous } : u))
+      );
+      setToast({ message: `Could not update ${riderName(rider)}: ${result.error}`, variant: 'error' });
       return;
     }
 
     logAudit({
-      action: 'assign_rider_admin',
+      action: 'assign_toda_admin',
       actorRole: 'admin',
-      entityType: 'rider_admin',
-      entityId: adminId,
-      // `adminId`, not `admin`: this function never had an `admin` in scope, so
-      // naming one threw a ReferenceError *after* the row was already written --
-      // which meant the write stuck, the list never refreshed and no toast ever
-      // appeared, so the select looked like it had silently refused to change.
-      summary: terminal
-        ? `Assigned ${adminId} to ${terminal.name}`
-        : `Unassigned ${adminId}`,
-      details: { terminal_id: terminalId, terminal_name: terminal?.name ?? null },
+      entityType: 'driver',
+      entityId: rider.id,
+      summary: makeAdmin
+        ? `Made ${riderName(rider)} admin of ${terminal?.name ?? 'their terminal'}`
+        : `Removed ${riderName(rider)} as admin of ${terminal?.name ?? 'their terminal'}`,
+      details: {
+        driver_id: rider.id,
+        terminal_id: terminal?.id ?? null,
+        terminal_name: terminal?.name ?? null,
+        is_terminal_admin: makeAdmin,
+      },
       actorEmail: user?.email,
       actorName: user?.name,
     });
-    await loadRiderAdmins();
+
     setToast({
-      message: terminal ? `Rider admin assigned to ${terminal.name}` : 'Rider admin unassigned',
-      variant: 'success',
+      message: makeAdmin
+        ? `${riderName(rider)} can now open the Admin app for ${terminal?.name ?? 'their terminal'}`
+        : `${riderName(rider)} is no longer a TODA admin`,
+      variant: makeAdmin ? 'success' : 'warning',
     });
   }
 
-  // Confirm before changing a Rider Admin's scope — the select stays on the old
-  // value until the Super Admin actually accepts the change.
-  function confirmAssignRiderAdmin(admin: RiderAdminSummary, terminalId: string) {
-    const terminal = terminals.find(t => t.id === terminalId) || null;
-    const label = admin.name || admin.email || 'this Rider Admin';
+  // Confirm before changing someone's admin access — the toggle only moves
+  // after the Super Admin actually accepts.
+  function confirmDriverTerminalAdmin(rider: StoredRider, makeAdmin: boolean) {
+    const terminal = terminals.find(t => t.id === riderTerminalId(rider)) || null;
+    const label = riderName(rider);
+
+    // Admin of nothing is not a state this app can act on: there would be no
+    // terminal to scope them to, so the switch in their profile would either do
+    // nothing or point somewhere they do not drive out of.
+    if (makeAdmin && !terminal) {
+      setToast({
+        message: `Assign ${label} to a terminal first — admin access is scoped to one TODA`,
+        variant: 'warning',
+      });
+      return;
+    }
 
     openModal({
-      title: terminal ? "Assign Terminal" : "Remove Assignment",
-      message: terminal
-        ? `Assign ${label} to ${terminal.name}? They will only be able to edit this terminal and manage its drivers, and their changes will still need your approval.`
-        : `Remove the terminal assignment for ${label}? They will not be able to manage any terminal until you assign them again.`,
-      variant: terminal ? 'success' : 'warning',
-      confirmLabel: terminal ? 'Assign' : 'Remove',
+      title: makeAdmin ? 'Make TODA Admin' : 'Remove Admin Access',
+      message: makeAdmin
+        ? `Let ${label} open the Admin app for ${terminal?.name}? They will be able to edit that terminal and queue its drivers, and their changes still need your approval.`
+        : `Take admin access to ${terminal?.name ?? 'their terminal'} away from ${label}? They will go back to being an ordinary driver on it.`,
+      variant: makeAdmin ? 'success' : 'warning',
+      confirmLabel: makeAdmin ? 'Make Admin' : 'Remove',
       onConfirm: async () => {
         closeModal();
-        await handleAssignRiderAdmin(admin.id, terminalId);
+        await applyDriverTerminalAdmin(rider, makeAdmin);
       },
     });
   }
 
-  const riders = users.filter(u => u.role === "rider");
+  /*
+   * Everyone who can be put on a terminal.
+   *
+   * The role test alone is not enough: a driver inside the admin app carries
+   * role = 'admin', and they are still a driver of this terminal, so they have
+   * to stay in this list or they vanish off their own roster for as long as
+   * they are doing their job. The flag is what tells the two apart.
+   */
+  const riders = users.filter(u => u.role === "rider" || u.isTerminalAdmin);
 
   /** Pan the Map Editor map to one terminal, from the legend. */
   function focusTerminal(t: Terminal) {
@@ -1009,17 +1098,29 @@ export default function AdminTerminals() {
     : terminals;
 
   /**
+   * The drivers the Super Admin has made admin of a terminal.
+   *
+   * The people who run the network, which is what this section is about — not
+   * the whole driver roster. Both halves have to hold for the switch in their
+   * profile to do anything: the flag, and a terminal to be scoped to.
+   */
+  const todaAdmins = riders.filter(r => r.isTerminalAdmin);
+
+  /**
    * How much of the team is covered by an assignment.
    *
-   * Counted, not averaged: a Rider Admin pointed at a terminal is covered
+   * Counted, not averaged: a TODA admin pointed at a terminal is covered
    * whether or not that terminal is active or has drivers, because what decides
-   * whether their requests reach anyone is the scope, not the traffic.
+   * whether their requests reach anyone is the scope, not the traffic. An admin
+   * with no terminal is the case the rail exists to surface — the switch in
+   * their profile goes nowhere — so it is counted as uncovered rather than
+   * quietly dropped from the denominator.
    */
-  const assignedAdminCount = riderAdmins.filter(a => !!a.terminal_id).length;
-  const unassignedAdminCount = riderAdmins.length - assignedAdminCount;
-  const adminCoverage = riderAdmins.length === 0
+  const assignedAdminCount = todaAdmins.filter(a => !!riderTerminalId(a)).length;
+  const unassignedAdminCount = todaAdmins.length - assignedAdminCount;
+  const adminCoverage = todaAdmins.length === 0
     ? 0
-    : Math.round((assignedAdminCount / riderAdmins.length) * 100);
+    : Math.round((assignedAdminCount / todaAdmins.length) * 100);
 
   /**
    * Terminals with admins on them, busiest first.
@@ -1032,7 +1133,7 @@ export default function AdminTerminals() {
   const terminalsWithAdmins = terminals
     .map(t => ({
       terminal: t,
-      count: riderAdmins.filter(a => a.terminal_id === t.id).length,
+      count: todaAdmins.filter(a => riderTerminalId(a) === t.id).length,
     }))
     .filter(x => x.count > 0)
     .sort((a, b) => b.count - a.count || a.terminal.name.localeCompare(b.terminal.name));
@@ -1046,15 +1147,15 @@ export default function AdminTerminals() {
    * Two letters for the directory avatar.
    *
    * From the name where there is one, taking the first letter of the first two
-   * words ("Fetoda Admin" -> FA), so the initials say who it is rather than
+   * words ("Juan Dela Cruz" -> JD), so the initials say who it is rather than
    * repeating the first name twice. Falls back to the email's own initials for
    * the accounts that never filled in a name.
    */
-  function adminInitials(admin: RiderAdminSummary) {
-    const words = (admin.name || '').trim().split(/\s+/).filter(Boolean);
+  function adminInitials(rider: StoredRider) {
+    const words = (rider.name || '').trim().split(/\s+/).filter(Boolean);
     if (words.length >= 2) return (words[0][0] + words[1][0]).toUpperCase();
     if (words.length === 1) return words[0].slice(0, 2).toUpperCase();
-    return (admin.email || '?').slice(0, 2).toUpperCase();
+    return (rider.email || '?').slice(0, 2).toUpperCase();
   }
 
   /*
@@ -1925,8 +2026,19 @@ export default function AdminTerminals() {
     if (!target) return;
 
     try {
-      // Release drivers and unscope any Rider Admin pointed at this terminal.
-      await supabase.from("users").update({ terminal_id: null, terminal_name: null }).eq("terminal_id", id);
+      // Release drivers and unscope any admin pointed at this terminal.
+      // `is_terminal_admin` goes with the assignment: a driver kept as admin of
+      // a terminal that no longer exists would be offered an admin app scoped
+      // to nothing. Guarded by the probe so an un-migrated database still
+      // deletes the terminal instead of failing the whole release.
+      await supabase
+        .from("users")
+        .update({
+          terminal_id: null,
+          terminal_name: null,
+          ...(terminalAdminColumn ? { is_terminal_admin: false } : {}),
+        })
+        .eq("terminal_id", id);
       await supabase.from("admins").update({ terminal_id: null, terminal_name: null }).eq("terminal_id", id);
 
       const { error } = await supabase.from("terminals").delete().eq("id", id);
@@ -1957,7 +2069,13 @@ export default function AdminTerminals() {
         return next;
       });
 
-      await loadRiderAdmins();
+      // Re-read the roster. The release above cleared each driver's terminal
+      // and their admin flag in the database, and this list is the one place
+      // both of those are read from — leaving it stale here would show drivers
+      // still on a terminal that no longer exists, admin and all.
+      const releasedDrivers = await loadRidersFromSupabase();
+      if (releasedDrivers) setUsers(releasedDrivers);
+
       setToast({ message: 'Terminal deleted', variant: 'success' });
     } catch (error) {
       console.error('[AdminTerminals] delete failed:', error);
@@ -2076,25 +2194,44 @@ export default function AdminTerminals() {
   async function applyUnassignDriver(rider: StoredRider, terminal: Terminal) {
     const previousId = riderTerminalId(rider);
     const previousName = riderTerminalName(rider);
+    const previousAdminFlag = !!rider.isTerminalAdmin;
 
     setUsers(list =>
       list.map(u =>
         u.id === rider.id
-          ? { ...u, terminalId: undefined, terminal_id: undefined, terminalName: undefined, terminal_name: undefined }
+          ? {
+              ...u,
+              terminalId: undefined,
+              terminal_id: undefined,
+              terminalName: undefined,
+              terminal_name: undefined,
+              // Admin of a terminal they are no longer on is not a state the
+              // app can act on, so it goes with the assignment rather than
+              // outliving it.
+              isTerminalAdmin: false,
+            }
           : u
       )
     );
 
     const { error } = await supabase
       .from('users')
-      .update({ terminal_id: null, terminal_name: null })
+      .update({
+        terminal_id: null,
+        terminal_name: null,
+        // Only named when the column exists. PostgREST rejects the whole
+        // statement over one absent column, so sending it blind would stop
+        // drivers being unassigned at all on a database that has simply not run
+        // ADD_TERMINAL_ADMIN_FLAG.sql yet.
+        ...(terminalAdminColumn ? { is_terminal_admin: false } : {}),
+      })
       .eq('id', rider.id);
 
     if (error) {
       setUsers(list =>
         list.map(u =>
           u.id === rider.id
-            ? { ...u, terminalId: previousId, terminal_id: previousId, terminalName: previousName, terminal_name: previousName }
+            ? { ...u, terminalId: previousId, terminal_id: previousId, terminalName: previousName, terminal_name: previousName, isTerminalAdmin: previousAdminFlag }
             : u
         )
       );
@@ -2108,7 +2245,14 @@ export default function AdminTerminals() {
       entityType: 'terminal',
       entityId: terminal.id,
       summary: `Removed ${riderName(rider)} from ${terminal.name}`,
-      details: { driver_id: rider.id, terminal_id: terminal.id, previous_terminal_id: previousId ?? null },
+      details: {
+        driver_id: rider.id,
+        terminal_id: terminal.id,
+        previous_terminal_id: previousId ?? null,
+        // Noted because it is a second, quieter change: someone who was admin
+        // of this terminal stops being able to open the admin app at all.
+        was_terminal_admin: previousAdminFlag,
+      },
       actorEmail: user?.email,
       actorName: user?.name,
     });
@@ -2246,11 +2390,12 @@ export default function AdminTerminals() {
 
               Two audiences, so two shapes from one page. A Super Admin
               is holding the whole network in view: the directory is
-              every Rider Admin and the terminal each one is scoped to, and
-              the rail says how much of the team that covers. A Rider Admin
-              is scoped to one terminal already, so they get that answer
-              plus the requests of theirs waiting on the Super Admin —
-              never a directory they can read but not change.
+              every driver, the terminal each one drives out of, and
+              which of them runs it, and the rail says how much of the
+              network that covers. A Rider Admin is scoped to one
+              terminal already, so they get that answer plus the requests
+              of theirs waiting on the Super Admin — never a directory
+              they can read but not change.
           ------------------------------------------------------------------ */}
           {terminalView === 'assignments' && (
             <div className="space-y-6">
@@ -2264,11 +2409,11 @@ export default function AdminTerminals() {
                     Operations / Access
                   </p>
                   <h2 className="mt-1.5 text-2xl sm:text-3xl font-extrabold text-[var(--ink)]">
-                    {isSuperAdmin ? 'Rider admin assignments' : 'Your assignment'}
+                    {isSuperAdmin ? 'Driver assignments' : 'Your assignment'}
                   </h2>
                   <p className="mt-1 text-sm text-[var(--muted-foreground)]">
                     {isSuperAdmin
-                      ? 'Connect administrators to terminals and keep ownership clear across your network.'
+                      ? 'Put each driver on a terminal and name who runs it. That driver gets a switch to the Admin app in their profile.'
                       : 'Your terminal scope, and anything still waiting on the Super Admin.'}
                   </p>
                 </div>
@@ -2276,9 +2421,9 @@ export default function AdminTerminals() {
                 {isSuperAdmin && (
                   <div className="flex flex-shrink-0 self-stretch lg:self-auto rounded-2xl border border-line bg-surface divide-x divide-line overflow-hidden">
                     {([
-                      ['Rider admins', riderAdmins.length],
+                      ['TODA admins', todaAdmins.length],
                       ['Terminals', terminals.length],
-                      ['Assigned', assignedAdminCount],
+                      ['Covered', assignedAdminCount],
                     ] as const).map(([label, value]) => (
                       <div key={label} className="flex-1 px-4 sm:px-6 py-3 text-center">
                         <p className="text-xl sm:text-2xl font-extrabold leading-tight text-[var(--ink)]">
@@ -2328,55 +2473,78 @@ export default function AdminTerminals() {
               {isSuperAdmin ? (
                 <div className="grid gap-6 lg:grid-cols-3 items-start">
                   {/* --------------------------------------------------
-                      Team directory — the assignment itself.
-                      -------------------------------------------------- */}
+                      Driver directory — the assignment itself.
+
+                      One row per driver, and two decisions in it: which
+                      terminal they drive out of, and whether they run
+                      it. The second is what puts the Admin app switch in
+                      their profile, so it sits next to the terminal it
+                      is scoped to rather than on a separate screen —
+                      admin access without a terminal is not a state the
+                      app can act on, and neither control is worth
+                      reading without the other beside it.
+                  -------------------------------------------------- */}
                   <div className="lg:col-span-2 rounded-2xl bg-surface border border-line overflow-hidden">
                     <div className="flex items-center gap-3 p-4 border-b border-line">
                       <div className="w-10 h-10 flex-shrink-0 rounded-xl bg-[var(--teal-soft)] text-[var(--teal)] flex items-center justify-center">
                         <Users size={18} />
                       </div>
                       <div className="min-w-0">
-                        <p className="font-bold text-[var(--ink)] truncate">Team directory</p>
+                        <p className="font-bold text-[var(--ink)] truncate">Driver directory</p>
                         <p className="text-xs text-[var(--muted-foreground)] truncate">
-                          Manage terminal access
+                          Assign a terminal, then name who runs it
                         </p>
                       </div>
                       <span className="ml-auto flex-shrink-0 px-2.5 py-1 rounded-full bg-[var(--soft)] border border-line text-[11px] font-bold text-[var(--muted-foreground)]">
-                        {riderAdmins.length} member{riderAdmins.length === 1 ? '' : 's'}
+                        {riders.length} driver{riders.length === 1 ? '' : 's'}
                       </span>
                     </div>
 
-                    {/* Column heads. Hidden on the narrow layout, where the row stacks into
-                        one column: all that would be left to name is the select,
-                        and that already says what it holds. */}
-                    <div className="hidden sm:grid grid-cols-[1fr_minmax(0,320px)] gap-4 px-4 py-2.5 border-b border-line text-[11px] font-bold uppercase tracking-[0.14em] text-[var(--muted-foreground)]">
-                      <span>Rider administrator</span>
+                    {/* Column heads. Hidden on the narrow layout, where the row
+                        stacks into one column: all that would be left to name is
+                        the select, and that already says what it holds. */}
+                    <div className="hidden sm:grid grid-cols-[1fr_minmax(0,260px)_auto] gap-4 px-4 py-2.5 border-b border-line text-[11px] font-bold uppercase tracking-[0.14em] text-[var(--muted-foreground)]">
+                      <span>Driver</span>
                       <span>Assigned terminal</span>
+                      <span className="text-right">TODA admin</span>
                     </div>
 
-                    {riderAdmins.length === 0 ? (
+                    {!terminalAdminColumn ? (
+                      <div className="p-4 border-b border-line bg-[var(--amber-soft)]">
+                        <p className="text-sm font-bold text-[var(--amber-ink)]">
+                          Run ADD_TERMINAL_ADMIN_FLAG.sql to enable TODA admins
+                        </p>
+                        <p className="text-xs text-[var(--amber-ink)] mt-0.5">
+                          Drivers can still be assigned to terminals. Naming who runs one needs the
+                          column this database does not have yet.
+                        </p>
+                      </div>
+                    ) : null}
+
+                    {riders.length === 0 ? (
                       <p className="px-4 py-8 text-center text-sm text-[var(--muted-foreground)] italic">
-                        No Rider Admin accounts found
+                        No drivers found
                       </p>
                     ) : (
-                      riderAdmins.map(admin => {
-                        const assignedTerminal = terminals.find(t => t.id === admin.terminal_id) || null;
-                        const saving = savingAssignmentId === admin.id;
+                      riders.map(rider => {
+                        const assignedTerminal = terminals.find(t => t.id === riderTerminalId(rider)) || null;
+                        const savingFlag = savingAdminFlagId === rider.id;
+                        const isAdmin = !!rider.isTerminalAdmin;
                         return (
                           <div
-                            key={admin.id}
-                            className="grid grid-cols-1 sm:grid-cols-[1fr_minmax(0,320px)] gap-3 sm:gap-4 items-center px-4 py-3 border-b border-line last:border-b-0 hover:bg-[var(--soft)] transition-colors"
+                            key={rider.id}
+                            className="grid grid-cols-1 sm:grid-cols-[1fr_minmax(0,260px)_auto] gap-3 sm:gap-4 items-center px-4 py-3 border-b border-line last:border-b-0 hover:bg-[var(--soft)] transition-colors"
                           >
                             <div className="flex items-center gap-3 min-w-0">
                               <div className="w-9 h-9 flex-shrink-0 rounded-full bg-[var(--muted)] text-[var(--muted-foreground)] flex items-center justify-center text-xs font-bold">
-                                {adminInitials(admin)}
+                                {adminInitials(rider)}
                               </div>
                               <div className="min-w-0">
                                 <p className="font-semibold text-[var(--ink)] truncate">
-                                  {admin.name || 'Rider Admin'}
+                                  {rider.name || 'Driver'}
                                 </p>
                                 <p className="text-xs text-[var(--muted-foreground)] truncate">
-                                  {admin.email}
+                                  {rider.email}
                                 </p>
                               </div>
                             </div>
@@ -2394,11 +2562,21 @@ export default function AdminTerminals() {
                                 style={{ background: assignedTerminal ? normalizeTerminalColor(assignedTerminal.marker_color) : 'var(--error)' }}
                               />
                               <select
-                                aria-label={`Terminal for ${admin.name || admin.email}`}
-                                value={admin.terminal_id || ''}
-                                disabled={saving}
-                                onChange={e => confirmAssignRiderAdmin(admin, e.target.value)}
-                                className={`w-full appearance-none pl-8 pr-9 py-2.5 border border-line rounded-xl text-sm font-semibold bg-surface transition-colors focus:border-[var(--teal)] disabled:opacity-60 ${
+                                aria-label={`Terminal for ${rider.name || rider.email}`}
+                                value={riderTerminalId(rider) || ''}
+                                onChange={e => {
+                                  const next = e.target.value;
+                                  const terminal = terminals.find(t => t.id === next);
+                                  if (terminal) {
+                                    confirmAssignDriver(rider, terminal);
+                                  } else if (assignedTerminal) {
+                                    confirmUnassignDriver(rider, assignedTerminal);
+                                  }
+                                  // Neither branch reachable means the driver is
+                                  // already unassigned, so the select is
+                                  // unchanged and there is nothing to confirm.
+                                }}
+                                className={`w-full appearance-none pl-8 pr-9 py-2.5 border border-line rounded-xl text-sm font-semibold bg-surface transition-colors focus:border-[var(--teal)] ${
                                   assignedTerminal ? 'text-[var(--ink)]' : 'text-[var(--error)]'
                                 }`}
                               >
@@ -2407,17 +2585,47 @@ export default function AdminTerminals() {
                                   <option key={t.id} value={t.id}>{t.name}</option>
                                 ))}
                               </select>
-                              {saving ? (
+                              <ChevronDown
+                                aria-hidden="true"
+                                className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[var(--muted-foreground)]"
+                              />
+                            </div>
+
+                            {/* A real switch, not a checkbox: it is a state the
+                                driver carries between sessions, and a checkbox
+                                reads as an action to take once. Disabled without
+                                a terminal — there would be nothing to scope
+                                them to — and the hint says so rather than
+                                leaving the switch mysteriously inert. */}
+                            <div className="flex items-center justify-end gap-2 sm:min-w-[124px]">
+                              <button
+                                type="button"
+                                role="switch"
+                                aria-checked={isAdmin}
+                                aria-label={`TODA admin for ${rider.name || rider.email}`}
+                                disabled={!assignedTerminal || savingFlag || !terminalAdminColumn}
+                                onClick={() => confirmDriverTerminalAdmin(rider, !isAdmin)}
+                                className={`relative w-11 h-7 flex-shrink-0 rounded-full transition-colors disabled:opacity-40 disabled:cursor-not-allowed ${
+                                  isAdmin ? 'bg-[var(--teal)]' : 'bg-[var(--border)]'
+                                }`}
+                              >
+                                <span
+                                  aria-hidden="true"
+                                  className={`absolute top-1 w-5 h-5 rounded-full bg-white shadow transition-[left] ${
+                                    isAdmin ? 'left-5' : 'left-1'
+                                  }`}
+                                />
+                              </button>
+                              {savingFlag ? (
                                 <Loader2
                                   size={16}
                                   aria-label="Saving"
-                                  className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-[var(--muted-foreground)] animate-spin"
+                                  className="flex-shrink-0 text-[var(--muted-foreground)] animate-spin"
                                 />
                               ) : (
-                                <ChevronDown
-                                  aria-hidden="true"
-                                  className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[var(--muted-foreground)]"
-                                />
+                                <span className="hidden sm:inline text-xs font-bold text-[var(--muted-foreground)] sm:w-16 text-right">
+                                  {isAdmin ? 'Admin' : assignedTerminal ? 'Driver' : 'No TODA'}
+                                </span>
                               )}
                             </div>
                           </div>
@@ -2468,8 +2676,8 @@ export default function AdminTerminals() {
                     </div>
 
                     <p className="mt-4 text-center text-lg font-extrabold text-[var(--ink)]">
-                      {riderAdmins.length === 0
-                        ? 'No team yet'
+                      {todaAdmins.length === 0
+                        ? 'No admin yet'
                         : adminCoverage === 100
                           ? 'Fully covered'
                           : adminCoverage === 0
@@ -2477,11 +2685,11 @@ export default function AdminTerminals() {
                             : 'Almost there'}
                     </p>
                     <p className="mt-1 text-center text-sm text-[var(--muted-foreground)]">
-                      {riderAdmins.length === 0
-                        ? 'Rider Admin accounts appear here once one is created.'
+                      {todaAdmins.length === 0
+                        ? 'Name a driver as the admin of a terminal and they show up here.'
                         : adminCoverage === 100
-                          ? 'Every Rider Admin has a terminal, so every request reaches the right team.'
-                          : `${unassignedAdminCount} Rider Admin${unassignedAdminCount === 1 ? '' : 's'} still ${unassignedAdminCount === 1 ? 'has' : 'have'} no terminal, so their requests have nowhere to go.`}
+                          ? 'Every TODA admin is scoped to a terminal, so every request reaches the right TODA.'
+                          : `${unassignedAdminCount} TODA admin${unassignedAdminCount === 1 ? '' : 's'} still ${unassignedAdminCount === 1 ? 'has' : 'have'} no terminal, so their requests have nowhere to go.`}
                     </p>
 
                     <div className="mt-5 pt-4 border-t border-line">

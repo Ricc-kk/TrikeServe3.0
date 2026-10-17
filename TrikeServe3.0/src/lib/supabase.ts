@@ -327,6 +327,116 @@ export async function getAdminTerminalAssignment(
 }
 
 // ---------------------------------------------------------------------------
+// Driver as terminal admin
+// ---------------------------------------------------------------------------
+// A TODA's admin is one of that TODA's own drivers, not a second account. The
+// Super Admin marks them from Terminals -> Assignments, and the flag is what
+// puts a "Switch to Admin App" control in their driver profile.
+//
+// The two are read and written together on purpose: admin of nothing is not a
+// state this app can act on, so the terminal assignment is always the primary
+// half and the flag only refines it.
+// ---------------------------------------------------------------------------
+
+export interface TerminalAdminStatus {
+  /** Whether the Super Admin made this driver the admin of their terminal. */
+  isTerminalAdmin: boolean;
+  /** The terminal they are assigned to, which is the admin scope. */
+  terminal_id: string | null;
+  terminal_name: string | null;
+}
+
+/**
+ * Whether this driver is admin of their terminal, read fresh.
+ *
+ * `terminal_id` is deliberately not optional in the answer even when the column
+ * is absent: a database that has not run ADD_TERMINAL_ADMIN_FLAG.sql must read
+ * as "nobody is an admin", never as "an admin whose terminal is unknown".
+ */
+export async function getDriverTerminalAdmin(
+  userId: string
+): Promise<TerminalAdminStatus> {
+  try {
+    const { data, error } = await supabase
+      .from('users')
+      .select('is_terminal_admin, terminal_id, terminal_name')
+      .eq('id', userId)
+      .maybeSingle();
+
+    // A select naming a missing column fails outright, so an un-migrated
+    // database falls through to "not an admin" rather than throwing.
+    if (error || !data) return { isTerminalAdmin: false, terminal_id: null, terminal_name: null };
+
+    return {
+      isTerminalAdmin: !!data.is_terminal_admin,
+      terminal_id: data.terminal_id ?? null,
+      terminal_name: data.terminal_name ?? null,
+    };
+  } catch {
+    return { isTerminalAdmin: false, terminal_id: null, terminal_name: null };
+  }
+}
+
+/**
+ * Super Admin: make a driver the admin of the terminal they are assigned to,
+ * or take that back.
+ *
+ * The terminal is written in the same statement as the flag rather than trusted
+ * from the caller's copy of it. That is what keeps the two halves from
+ * disagreeing: a flag that outlived its terminal is how an admin ends up pointed
+ * at a TODA they do not drive out of, and re-asserting the id here means a stale
+ * row self-corrects on the next write rather than needing its own migration.
+ *
+ * Removing the flag deliberately does not clear the terminal — that is an
+ * assignment decision, made in one place, and quietly taking a driver off a
+ * terminal here would be a change nobody asked for.
+ */
+export async function setDriverTerminalAdmin(
+  userId: string,
+  isTerminalAdmin: boolean,
+  terminalId: string | null,
+  terminalName?: string | null
+): Promise<{ success: boolean; error?: string }> {
+  try {
+    // `.select()` matters, for the same reason it does in assignRiderAdminTerminal:
+    // an update that matches no row comes back as a success with no error, and
+    // the Super Admin would be told the flag changed when nothing did.
+    const { data, error } = await supabase
+      .from('users')
+      .update({
+        is_terminal_admin: isTerminalAdmin,
+        // Re-asserted with the flag rather than left alone, and only when there
+        // is a terminal to assert: the flag is meaningless without one.
+        ...(isTerminalAdmin && terminalId
+          ? { terminal_id: terminalId, terminal_name: terminalName ?? null }
+          : {}),
+      })
+      .eq('id', userId)
+      .select('id, is_terminal_admin, terminal_id, terminal_name')
+      .maybeSingle();
+
+    if (error) {
+      if (error.code === '42703') {
+        return { success: false, error: 'Run ADD_TERMINAL_ADMIN_FLAG.sql in Supabase first.' };
+      }
+      return { success: false, error: error.message };
+    }
+
+    if (!data) {
+      return {
+        success: false,
+        error: 'No driver row was updated — the account may have been removed, or your role cannot edit it.',
+      };
+    }
+
+    return { success: true };
+  } catch (error) {
+    console.error('[setDriverTerminalAdmin] error:', error);
+    return { success: false, error: 'Network error while updating the terminal admin' };
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Terminal boundary: a road, and the area that encloses it
 // ---------------------------------------------------------------------------
 // A terminal has two plotted shapes (ADD_TERMINAL_ROAD_BOUNDARY.sql and
