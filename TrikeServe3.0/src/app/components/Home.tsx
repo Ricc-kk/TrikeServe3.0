@@ -1,7 +1,7 @@
 import { Link } from "react-router";
 import { Store, User, Shield } from "lucide-react";
 
-import { Tricycle } from "./ui/Tricycle";
+import { TerminalIconGlyph } from "./ui/TerminalIcon";
 
 export default function Home() {
   const modules = [
@@ -17,7 +17,7 @@ export default function Home() {
       path: "/rider",
       title: "Driver",
       description: "Accept deliveries & rides",
-      icon: Tricycle,
+      icon: TerminalIconGlyph,
       gradient: "from-[var(--ink)] to-[var(--ink)]",
       bgAccent: "bg-[var(--ink-solid)]/5"
     },
@@ -52,7 +52,7 @@ export default function Home() {
         <div className="text-center mb-16">
           <div className="inline-block mb-6">
             <div className="w-20 h-20 bg-[var(--primary)] rounded-2xl flex items-center justify-center shadow-2xl shadow-[var(--primary)]/30">
-              <Tricycle className="w-10 h-10 text-white" />
+              <TerminalIconGlyph className="w-10 h-10 text-white" />
             </div>
           </div>
           <h1 className="text-6xl font-extrabold mb-4 bg-gradient-to-r from-white to-[var(--primary)] bg-clip-text text-transparent" style={{ letterSpacing: '-0.02em' }}>

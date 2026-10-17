@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Store, TrendingUp, Package, type LucideIcon } from "lucide-react";
 
-import { Tricycle } from "../ui/Tricycle";
+import { TerminalIconGlyph } from "../ui/TerminalIcon";
 import { Card } from "../ui/card";
 import {
   AnalyticsBarChart,
@@ -214,13 +214,13 @@ export default function AdminAnalytics() {
             label="Completed Trips"
             value={isLoading ? "—" : String(totalTrips)}
             tone="info"
-            icon={Tricycle}
+            icon={TerminalIconGlyph}
           />
           <StatCard
             label="Active Drivers"
             value={isLoading ? "—" : String(activeDrivers)}
             tone="success"
-            icon={Tricycle}
+            icon={TerminalIconGlyph}
           />
           <StatCard
             label="Driver Earnings"

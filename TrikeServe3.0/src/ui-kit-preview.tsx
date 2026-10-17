@@ -3,7 +3,7 @@ import { createRoot } from "react-dom/client";
 import { MemoryRouter } from "react-router";
 import { MapPin, ShoppingBag, Star, TrendingUp, Users } from "lucide-react";
 
-import { Tricycle } from "./app/components/ui/Tricycle";
+import { TerminalIconGlyph } from "./app/components/ui/TerminalIcon";
 
 import "./styles/index.css";
 import { AuthProvider } from "./app/contexts/AuthContext";
@@ -64,7 +64,7 @@ function KitPreview() {
           label="Private ride"
           filipino="Pribado"
           description="A direct ride reserved just for you."
-          icon={Tricycle}
+          icon={TerminalIconGlyph}
           price="50"
           meta="2-4 min wait"
         />

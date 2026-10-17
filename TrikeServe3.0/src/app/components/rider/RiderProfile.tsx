@@ -1,13 +1,13 @@
 import { useState, useEffect, useRef } from "react";
 import { useNavigate, Link } from "react-router";
 import {
-  ArrowLeft, 
-  User, 
-  Mail, 
-  Phone, 
-  MapPin, 
-  Car, 
-  CreditCard, 
+  ArrowLeft,
+  User,
+  Mail,
+  Phone,
+  MapPin,
+  Car,
+  CreditCard,
   Calendar,
   CheckCircle,
   Edit2,
@@ -27,6 +27,7 @@ import { Card } from "../ui/card";
 import { Badge } from "../ui/badge";
 import GoodbyeOverlay from "../ui/GoodbyeOverlay";
 import { useAuth } from "../../contexts/AuthContext";
+import { DRIVER_APPS, useDriverAppSwitch, type DriverAppKey } from "../../hooks/useDriverAppSwitch";
 import ActiveRideButton from "./ActiveRideButton";
 import ThemeModeSwitcher from "../ui/ThemeModeSwitcher";
 
@@ -44,7 +45,9 @@ export default function RiderProfile() {
   });
   const [showGoodbye, setShowGoodbye] = useState(false);
   const [showSwitchConfirm, setShowSwitchConfirm] = useState(false);
-  const [showAdminSwitchConfirm, setShowAdminSwitchConfirm] = useState(false);
+  // Which app a driver-admin is being asked about, and so which one the
+  // confirmation modal describes. Null means no question is open.
+  const [switchTarget, setSwitchTarget] = useState<DriverAppKey | null>(null);
   const [showConfirmSave, setShowConfirmSave] = useState(false);
   const [uploadingPhoto, setUploadingPhoto] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -146,6 +149,10 @@ export default function RiderProfile() {
   }, [user?.id]);
 
   const canOpenAdminApp = todaAdminStatus.isTerminalAdmin && !!todaAdminStatus.terminalId;
+
+  // Shared with the Admin shell, so the two never offer different apps or
+  // disagree about where "back" goes.
+  const { goToApp } = useDriverAppSwitch();
 
   // Fetch terminal details from DB - always check Supabase for fresh terminal assignment
   useEffect(() => {
@@ -613,62 +620,100 @@ export default function RiderProfile() {
           </div>
         </Card>
 
-        {/* Switch UI Role (Driver -> Customer) */}
-        <div>
-          {user.role === 'rider' ? (
-            <Button
-              onClick={() => setShowSwitchConfirm(true)}
-              className="w-full bg-[var(--success)] hover:bg-[var(--success)] text-white font-bold py-4 rounded-lg flex items-center justify-center gap-2 shadow-md mb-3"
-            >
-              Use Customer App
-            </Button>
-          ) : (
-            localStorage.getItem('trikeserve_original_role') && (
+        {/* --------------------------------------------------
+            App switching.
+
+            Two different shapes, because there are two different
+            situations. An ordinary driver has one other app to
+            hop to, so a pair of buttons is the whole of it and
+            reads as the quickest thing to do from here.
+
+            A TODA admin has three apps that are all genuinely
+            theirs -- the driver they are, the customer they eat
+            as, and the terminal they run -- so the pair of
+            buttons becomes a list. The driver app is named
+            first because it is the one they are usually coming
+            back to, and every row says which app it leads to
+            rather than only offering "back".
+
+            Hidden rather than disabled when they are not an
+            admin: an inert control next to the real switch
+            reads as something broken, and a driver who runs no
+            terminal has no reason to wonder what it would have
+            done.
+        -------------------------------------------------- */}
+        {canOpenAdminApp ? (
+          <Card className="p-5 border-0 shadow-md">
+            <h2 className="text-lg font-bold text-[var(--ink)] mb-1 flex items-center gap-2">
+              <Shield className="w-5 h-5 text-[var(--violet)]" />
+              Your Apps
+            </h2>
+            <p className="text-sm text-[var(--muted-foreground)] mb-4">
+              You are the admin of {todaAdminStatus.terminalName || 'your terminal'}. You can
+              drive, order, and run your terminal all from this one account.
+            </p>
+
+            <div className="space-y-2">
+              {DRIVER_APPS.map(app => {
+                const isCurrent = user.role === app.role;
+                const Icon = app.Icon;
+                return (
+                  <div
+                    key={app.key}
+                    className={`flex items-center gap-3 rounded-xl border px-3.5 py-3 transition-colors ${
+                      isCurrent
+                        ? 'border-[var(--teal)] bg-[var(--teal-soft)]'
+                        : 'border-line bg-surface'
+                    }`}
+                  >
+                    <div
+                      className={`w-9 h-9 flex-shrink-0 rounded-xl flex items-center justify-center ${
+                        isCurrent ? 'bg-[var(--teal)] text-white' : 'bg-[var(--muted)] text-[var(--muted-foreground)]'
+                      }`}
+                    >
+                      <Icon className="w-4 h-4" />
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <p className="text-sm font-bold text-[var(--ink)] truncate">{app.label}</p>
+                      <p className="text-xs text-[var(--muted-foreground)] truncate">{app.blurb}</p>
+                    </div>
+                    {isCurrent ? (
+                      <span className="flex-shrink-0 flex items-center gap-1 text-xs font-bold text-[var(--teal)]">
+                        <CheckCircle className="w-4 h-4" />
+                        <span className="hidden sm:inline">You are here</span>
+                      </span>
+                    ) : (
+                      <Button
+                        onClick={() => setSwitchTarget(app.key)}
+                        className="flex-shrink-0 bg-[var(--ink-solid)] hover:bg-[var(--ink-solid)] text-white font-bold text-xs px-3.5 py-2 rounded-lg"
+                      >
+                        Switch
+                      </Button>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          </Card>
+        ) : (
+          <div>
+            {user.role === 'rider' ? (
               <Button
                 onClick={() => setShowSwitchConfirm(true)}
-                className="w-full bg-[var(--ink-solid)] hover:bg-[var(--ink-solid)] text-white font-bold py-4 rounded-lg flex items-center justify-center gap-2 shadow-md mb-3"
+                className="w-full bg-[var(--success)] hover:bg-[var(--success)] text-white font-bold py-4 rounded-lg flex items-center justify-center gap-2 shadow-md mb-3"
               >
-                Switch back to Driver App
-              </Button>
-            )
-          )}
-        </div>
-
-        {/* --------------------------------------------------
-            TODA admin.
-
-            A terminal's admin is one of its own drivers, so there is no
-            second login: the Super Admin names them from Terminals ->
-            Assignments, and the switch appears here only once both halves
-            of that hold — the flag, and a terminal to be scoped to.
-
-            Hidden rather than disabled when it does not: an inert
-            control next to the role switch above reads as something
-            broken, and a driver who is not an admin has no reason to
-            wonder what it would have done.
-        -------------------------------------------------- */}
-        {canOpenAdminApp && (
-          <div className="mb-3">
-            {user.role === 'admin' ? (
-              <Button
-                onClick={() => setShowAdminSwitchConfirm(true)}
-                className="w-full bg-[var(--ink-solid)] hover:bg-[var(--ink-solid)] text-white font-bold py-4 rounded-lg flex items-center justify-center gap-2 shadow-md"
-              >
-                <ArrowLeft className="w-5 h-5" />
-                Switch back to Driver App
+                Use Customer App
               </Button>
             ) : (
-              <Button
-                onClick={() => setShowAdminSwitchConfirm(true)}
-                className="w-full bg-[var(--violet)] hover:bg-[var(--violet)] text-white font-bold py-4 rounded-lg flex items-center justify-center gap-2 shadow-md"
-              >
-                <Shield className="w-5 h-5" />
-                Switch to Admin App
-              </Button>
+              localStorage.getItem('trikeserve_original_role') && (
+                <Button
+                  onClick={() => setShowSwitchConfirm(true)}
+                  className="w-full bg-[var(--ink-solid)] hover:bg-[var(--ink-solid)] text-white font-bold py-4 rounded-lg flex items-center justify-center gap-2 shadow-md mb-3"
+                >
+                  Switch back to Driver App
+                </Button>
+              )
             )}
-            <p className="text-xs text-[var(--muted-foreground)] text-center mt-2">
-              You are the admin of {todaAdminStatus.terminalName || 'your terminal'}.
-            </p>
           </div>
         )}
 
@@ -806,54 +851,59 @@ export default function RiderProfile() {
         </div>
       )}
 
-      {/* Admin App Switch Confirmation Modal */}
-      {showAdminSwitchConfirm && (
-        <div className="fixed inset-0 bg-black/50 z-[2000] flex items-center justify-center p-4">
-          <div className="bg-surface p-6 max-w-sm w-full rounded-2xl shadow-xl">
-            <div className="w-16 h-16 bg-[var(--violet-soft)] rounded-full flex items-center justify-center mx-auto mb-4">
-              <Shield className="w-8 h-8 text-[var(--violet)]" />
-            </div>
-            <h3 className="text-xl font-bold text-[var(--ink)] text-center mb-2">
-              {user.role === 'admin' ? 'Back to driving?' : 'Switch to the Admin App?'}
-            </h3>
-            <p className="text-[var(--muted-foreground)] text-center mb-6 text-sm">
-              {user.role === 'admin'
-                ? `You will go back to the Driver app for ${todaAdminStatus.terminalName || 'your terminal'}.`
-                : `You will manage ${todaAdminStatus.terminalName || 'your terminal'} — its drivers and settings. Any change you make still needs the Super Admin's approval.`}
-            </p>
-            <div className="space-y-3">
-              <button
-                onClick={async () => {
-                  setShowAdminSwitchConfirm(false);
-                  if (user.role === 'admin') {
-                    // Puts the stored role back to whatever they left from —
-                    // the driver app — rather than guessing at it.
-                    await restoreOriginalRole?.();
-                    navigate('/rider');
-                  } else {
-                    // The way back reads `trikeserve_original_role`, which
-                    // switchUiRole records for us the first time anyone switches.
-                    // Only ever set once, so it still names the app they came
-                    // from rather than the last one they hopped to.
-                    localStorage.setItem('trikeserve_post_switch_route', '/admin');
-                    switchUiRole && await switchUiRole('admin');
-                    navigate('/admin');
-                  }
-                }}
-                className="w-full py-3 bg-[var(--violet)] text-white font-bold rounded-xl active:scale-95 transition-transform"
+      {/* Driver-admin app switch confirmation.
+          One modal for all three destinations, named off `switchTarget`, so the
+          wording always matches the app that was actually tapped. */}
+      {switchTarget && (() => {
+        const app = DRIVER_APPS.find(a => a.key === switchTarget);
+        if (!app) return null;
+        const Icon = app.Icon;
+        const terminalName = todaAdminStatus.terminalName || 'your terminal';
+        // Only the admin app has something to warn about; driving and ordering
+        // need no caveat, and saying so anyway would train the driver to skip
+        // the confirmation.
+        const note = app.key === 'admin'
+          ? `You will manage ${terminalName} — its drivers and settings. Any change you make still needs the Super Admin's approval.`
+          : app.key === 'driver'
+            ? `You will go back to driving out of ${terminalName}.`
+            : 'You will be switched to the Customer app to browse, book rides and order food.';
+        return (
+          <div className="fixed inset-0 bg-black/50 z-[2000] flex items-center justify-center p-4">
+            <div className="bg-surface p-6 max-w-sm w-full rounded-2xl shadow-xl">
+              <div
+                className={`w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4 ${
+                  app.key === 'admin' ? 'bg-[var(--violet-soft)]' : 'bg-[var(--info-soft)]'
+                }`}
               >
-                Yes, Switch
-              </button>
-              <button
-                onClick={() => setShowAdminSwitchConfirm(false)}
-                className="w-full py-3 bg-[var(--muted)] text-[var(--muted-foreground)] font-bold rounded-xl active:scale-95 transition-transform"
-              >
-                Cancel
-              </button>
+                <Icon className={`w-8 h-8 ${app.key === 'admin' ? 'text-[var(--violet)]' : 'text-[var(--info)]'}`} />
+              </div>
+              <h3 className="text-xl font-bold text-[var(--ink)] text-center mb-2">
+                Switch to the {app.label}?
+              </h3>
+              <p className="text-[var(--muted-foreground)] text-center mb-6 text-sm">{note}</p>
+              <div className="space-y-3">
+                <button
+                  onClick={async () => {
+                    setSwitchTarget(null);
+                    await goToApp(app.key);
+                  }}
+                  className={`w-full py-3 text-white font-bold rounded-xl active:scale-95 transition-transform ${
+                    app.key === 'admin' ? 'bg-[var(--violet)]' : 'bg-[var(--info)]'
+                  }`}
+                >
+                  Yes, Switch
+                </button>
+                <button
+                  onClick={() => setSwitchTarget(null)}
+                  className="w-full py-3 bg-[var(--muted)] text-[var(--muted-foreground)] font-bold rounded-xl active:scale-95 transition-transform"
+                >
+                  Cancel
+                </button>
+              </div>
             </div>
           </div>
-        </div>
-      )}
+        );
+      })()}
 
       {/* Goodbye Popup */}
       {showGoodbye && (

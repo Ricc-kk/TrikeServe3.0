@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { Flame, MapPin, Search, UtensilsCrossed } from "lucide-react";
 
-import { Tricycle } from "../ui/Tricycle";
+import { TerminalIconGlyph } from "../ui/TerminalIcon";
 import { supabase } from "../../../utils/supabase";
 
 export type HubFilter = "all" | "tricycle" | "food";
@@ -16,7 +16,7 @@ const RECENT_KEY = "trikeserve_recent_food_searches";
 
 const FILTERS: { id: HubFilter; label: string; Icon: typeof Search }[] = [
   { id: "all", label: "All", Icon: Search },
-  { id: "tricycle", label: "Tricycle", Icon: Tricycle },
+  { id: "tricycle", label: "Tricycle", Icon: TerminalIconGlyph },
   { id: "food", label: "Food", Icon: UtensilsCrossed },
 ];
 
@@ -189,7 +189,7 @@ export function HubTerminals({ terminals, onSelect }: TerminalsProps) {
   return (
     <section aria-label="Book a tricycle">
       <h2 className="mb-2 flex items-center gap-1.5 text-lg font-bold text-[var(--ink)]">
-        <Tricycle className="size-5" aria-hidden="true" />
+        <TerminalIconGlyph className="size-5" aria-hidden="true" />
         Book a Tricycle
         <span className="ml-1 text-sm font-normal text-[var(--muted-foreground)]">
           terminals

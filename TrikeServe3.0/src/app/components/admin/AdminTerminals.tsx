@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo, useRef, useCallback, Fragment as ReactFragment, type ReactNode } from "react";
 import { useNavigate } from "react-router";
 import {
-  Plus, Edit2, Trash2, UserPlus, UserMinus, MapPin, Users, Menu, X, Navigation, Search, Loader2, Save, Shield,
+  Plus, Edit2, Trash2, UserPlus, UserMinus, MapPin, MapPinned, Users, Menu, X, Navigation, Search, Loader2, Save, Shield,
   ClipboardCheck, Clock, ShieldCheck, ChevronDown, ArrowLeft,
   ChevronLeft, ChevronRight, Pentagon, Milestone, SlidersHorizontal, Banknote,
   Undo2, Redo2, Eraser,
@@ -82,21 +82,26 @@ const MIGRATION_HINT = 'ADD_TERMINAL_ROAD_BOUNDARY.sql / ADD_TERMINAL_BORDER_ARE
 const ASSIGNMENT_POLL_MS = 15000;
 
 /**
- * The three sections this page is split into.
+ * How long the tab guide stays up before it gets out of the way.
  *
- * They are three jobs, not three views of one screen: who drives out of which
- * terminal, what each terminal is configured as, and where on the map it sits.
- * Assignments leads because it is the widest-reaching of the three — it decides
- * who can edit a terminal and who can queue drivers on it — and reading it first
- * means the other two are already explained.
+ * Long enough to read the two short lines it actually shows, short enough that
+ * a panel sliding in over the map is never in the way while plotting a road.
  */
-type TerminalView = 'assignments' | 'terminals' | 'map';
+const GUIDE_AUTO_HIDE_MS = 3000;
 
-const TERMINAL_TABS = [
-  { value: 'assignments', label: 'Assignments' },
-  { value: 'terminals', label: 'Terminals' },
-  { value: 'map', label: 'Map Editor' },
-] as const;
+/**
+ * The one section this page is split into.
+ *
+ * It used to be three: Assignments, Terminals and a Map Editor overview. The
+ * Assignments directory already lists every terminal with its drivers, its
+ * admin and its shape, and tapping one opens that terminal's editor — so the
+ * other two became a second route to the same thing, reached by a tab that had
+ * to be kept in step with a directory that said all of it already.
+ *
+ * The work did not go away, it moved: the per-terminal cards and their cogs are
+ * now rows in the directory, and the network map is the editor's Toda tab.
+ */
+type TerminalView = 'assignments';
 
 interface Terminal {
   id: string;
@@ -214,6 +219,201 @@ function getAllUsers(): StoredRider[] {
   return [...stored, ...MOCK_RIDERS.filter(m => !stored.find(u => u.id === m.id))];
 }
 
+/**
+ * A driver's name, whichever shape the row carries.
+ *
+ * At module scope because the Assignments directory and the per-terminal driver
+ * picker both need it, and a second copy of "name, else first+last, else
+ * 'Driver'" is a second place for the fallback to drift.
+ */
+function riderDisplayName(r: StoredRider): string {
+  if (r.name) return r.name;
+  const first = (r.first_name as string) || "";
+  const last = (r.last_name as string) || "";
+  if (first || last) return `${first} ${last}`.trim();
+  return "Driver";
+}
+
+/**
+ * Two letters for a driver's avatar.
+ *
+ * From the name where there is one, taking the first letter of the first two
+ * words ("Juan Dela Cruz" -> JD), so the initials say who it is rather than
+ * repeating the first name twice. Falls back to the email's own initials for
+ * the accounts that never filled in a name.
+ */
+function driverInitials(r: StoredRider): string {
+  const words = (r.name || '').trim().split(/\s+/).filter(Boolean);
+  if (words.length >= 2) return (words[0][0] + words[1][0]).toUpperCase();
+  if (words.length === 1) return words[0].slice(0, 2).toUpperCase();
+  return (r.email || '?').slice(0, 2).toUpperCase();
+}
+
+/** Everything about a driver that a search should be able to match on. */
+function driverSearchText(r: StoredRider): string {
+  return [r.name, r.email, r.todaPlate || r.toda_plate]
+    .filter(v => typeof v === 'string' && v)
+    .join(' ')
+    .toLowerCase();
+}
+
+/**
+ * Whether a users row is one of this platform's drivers.
+ *
+ * Keyed off the driver's own fields, deliberately *not* off `role`.
+ *
+ * `users.role` is not a stable statement about what somebody is — it is the app
+ * they are currently in. `switchUiRole` rewrites it: a driver inside the admin
+ * app is role = 'admin', and one who has opened the customer app is
+ * role = 'customer'. So any roster filtered on `role = 'rider'` quietly loses
+ * exactly the drivers who are using another app, and a driver-admin loses them
+ * twice over, because the flag that held them in was the very thing taking them
+ * off a terminal clears.
+ *
+ * The plate and the licence number are what do not change: nobody switches app
+ * and loses their TODA plate. Both spellings are read because the mock and
+ * localStorage rows predate the snake_case columns.
+ */
+function isDriverRow(u: StoredRider): boolean {
+  if (u.role === 'rider') return true;
+  return !!(u.todaPlate || u.toda_plate || u.licenseNumber || u.license_number);
+}
+
+type DriverPickerProps = {
+  /** The TODA this picker adds to, named in the field's own label. */
+  terminalName: string;
+  /** Everyone who could be added — already excluding the drivers on this TODA. */
+  candidates: StoredRider[];
+  onPick: (rider: StoredRider) => void;
+};
+
+/**
+ * Add a driver to one TODA.
+ *
+ * A custom list rather than a native <select>, because the reason this exists
+ * is that a terminal can have more drivers than a dropdown can usefully show:
+ * a native select offers no way to narrow fifty names down to one, and the
+ * Super Admin ends up scrolling to spot a spelling. The search field is the
+ * point of the control, so it takes focus as the list opens.
+ */
+function DriverPicker({ terminalName, candidates, onPick }: DriverPickerProps) {
+  const [isOpen, setIsOpen] = useState(false);
+  const [query, setQuery] = useState('');
+  const wrapRef = useRef<HTMLDivElement>(null);
+  const searchRef = useRef<HTMLInputElement>(null);
+
+  // Closed by a tap anywhere else, and by Escape. `pointerdown` rather than
+  // `click`, so a tap that began outside never gets delivered to an option it
+  // was not aimed at — which would add the wrong driver to a terminal.
+  useEffect(() => {
+    if (!isOpen) return;
+    const onPointerDown = (event: PointerEvent) => {
+      if (!wrapRef.current?.contains(event.target as Node)) setIsOpen(false);
+    };
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setIsOpen(false);
+    };
+    document.addEventListener('pointerdown', onPointerDown);
+    document.addEventListener('keydown', onKeyDown);
+    return () => {
+      document.removeEventListener('pointerdown', onPointerDown);
+      document.removeEventListener('keydown', onKeyDown);
+    };
+  }, [isOpen]);
+
+  // The query is cleared on close rather than kept, so the next open starts
+  // from the whole list instead of the previous terminal's narrowed-down one.
+  useEffect(() => {
+    if (isOpen) searchRef.current?.focus();
+    else setQuery('');
+  }, [isOpen]);
+
+  const needle = query.trim().toLowerCase();
+  const matches = needle
+    ? candidates.filter(r => driverSearchText(r).includes(needle))
+    : candidates;
+
+  return (
+    <div ref={wrapRef} className="relative">
+      <button
+        type="button"
+        aria-haspopup="listbox"
+        aria-expanded={isOpen}
+        onClick={() => setIsOpen(open => !open)}
+        className="w-full flex items-center gap-2 px-3.5 py-2.5 border border-line rounded-xl bg-surface text-sm font-semibold text-[var(--ink)] transition-colors hover:border-[var(--teal)] focus:border-[var(--teal)] focus:outline-none"
+      >
+        <Plus size={16} className="flex-shrink-0 text-[var(--teal)]" aria-hidden="true" />
+        <span className="flex-1 text-left truncate">Add a driver to {terminalName}</span>
+        <ChevronDown
+          size={16}
+          aria-hidden="true"
+          className={`flex-shrink-0 text-[var(--muted-foreground)] transition-transform ${isOpen ? 'rotate-180' : ''}`}
+        />
+      </button>
+
+      {isOpen && (
+        <div className="absolute z-30 left-0 right-0 mt-1.5 rounded-xl border border-line bg-surface shadow-lg overflow-hidden">
+          <div className="p-2 border-b border-line">
+            <div className="relative">
+              <Search
+                size={15}
+                aria-hidden="true"
+                className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-[var(--muted-foreground)]"
+              />
+              <input
+                ref={searchRef}
+                type="search"
+                value={query}
+                onChange={e => setQuery(e.target.value)}
+                placeholder="Search name, email or plate"
+                aria-label={`Search drivers to add to ${terminalName}`}
+                className="w-full pl-9 pr-3 py-2 border border-line rounded-lg bg-[var(--muted)] text-sm text-[var(--ink)] placeholder:text-[var(--muted-foreground)] focus:border-[var(--teal)] focus:outline-none"
+              />
+            </div>
+          </div>
+
+          <ul role="listbox" aria-label={`Drivers available for ${terminalName}`} className="max-h-64 overflow-y-auto">
+            {matches.length === 0 ? (
+              <li className="px-4 py-6 text-center text-sm text-[var(--muted-foreground)] italic">
+                {candidates.length === 0
+                  ? 'Every driver is already on this TODA'
+                  : `No driver matches “${query.trim()}”`}
+              </li>
+            ) : (
+              matches.map(rider => (
+                <li key={rider.id}>
+                  <button
+                    type="button"
+                    role="option"
+                    aria-selected="false"
+                    onClick={() => {
+                      setIsOpen(false);
+                      onPick(rider);
+                    }}
+                    className="w-full flex items-center gap-3 px-3 py-2.5 text-left hover:bg-[var(--soft)] transition-colors"
+                  >
+                    <span className="w-8 h-8 flex-shrink-0 rounded-full bg-[var(--muted)] text-[var(--muted-foreground)] flex items-center justify-center text-[11px] font-bold">
+                      {driverInitials(rider)}
+                    </span>
+                    <span className="min-w-0 flex-1">
+                      <span className="block text-sm font-semibold text-[var(--ink)] truncate">
+                        {riderDisplayName(rider)}
+                      </span>
+                      <span className="block text-xs text-[var(--muted-foreground)] truncate">
+                        {rider.todaPlate || rider.toda_plate || rider.email}
+                      </span>
+                    </span>
+                  </button>
+                </li>
+              ))
+            )}
+          </ul>
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function AdminTerminals() {
   const navigate = useNavigate();
   const { user } = useAuth();
@@ -234,14 +434,6 @@ export default function AdminTerminals() {
   const [loading, setLoading] = useState(true);
   const [users, setUsers] = useState<StoredRider[]>(getAllUsers());
   const [editTerminal, setEditTerminal] = useState<Terminal | null>(null);
-  // Which section of this page is open. It opens on Assignments because the
-  // assignment is the decision the other two hang off: a terminal's drivers and
-  // the admin who runs it are both read there, and the Terminals and Map Editor
-  // sections are the configuration those answers explain.
-  //
-  // A Rider Admin opens on their own terminal's drivers, expanded, because they
-  // have exactly one and it is the reason they are on this page at all.
-  const [expandedId, setExpandedId] = useState<string | null>(assignedTerminalId);
   const [form, setForm] = useState({
     name: "",
     boundary: "",
@@ -285,7 +477,7 @@ export default function AdminTerminals() {
    * two could disagree. 'configuration' is the only section with no map.
    */
   const [editorSection, setEditorSection] = useState<
-    'terminal' | 'border' | 'route' | 'configuration' | 'fares'
+    'terminal' | 'border' | 'route' | 'toda' | 'configuration' | 'fares'
   >('terminal');
   /**
    * Which sections are the map, and therefore the only ones that plot points.
@@ -293,9 +485,28 @@ export default function AdminTerminals() {
    * Read in three places -- the top bar (search only makes sense over a map),
    * the map itself, and the sections that replace it -- so it is derived once
    * here rather than re-tested as a three-way comparison at each.
+   *
+   * 'toda' is deliberately not one of them. It is an index of the terminals
+   * rather than a way of drawing one, so the editor map must not be on screen
+   * there: a tap on it would fall through to the location picker and quietly
+   * move whichever terminal the editor happened to be open on.
    */
   const editorSectionIsMap =
     editorSection === 'terminal' || editorSection === 'border' || editorSection === 'route';
+
+  /**
+   * Which sections put a map on screen — a wider set than the three that draw.
+   *
+   * 'toda' shows one too, because an index you can only read as text is an
+   * index of a map: it is the whole point of seeing where six terminals sit
+   * relative to each other.
+   *
+   * Kept separate from `editorSectionIsMap` precisely so the two cannot be
+   * confused. Showing a map is not permission to plot on it — `toda` is not in
+   * the flag above, so its taps go to selecting a terminal rather than dropping
+   * a point into whichever terminal the editor happens to be open on.
+   */
+  const editorSectionShowsMap = editorSectionIsMap || editorSection === 'toda';
   // Collapses the editor's sidebar to icons alone, handing the width back to the
   // map without losing the way out of a section.
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
@@ -320,6 +531,10 @@ export default function AdminTerminals() {
    * guide is a reference to open, not a step to take: closed by default.
    */
   const [guideOpen, setGuideOpen] = useState(false);
+  // The pending auto-hide. Held in a ref rather than state because nothing
+  // renders from it — it only has to be cancellable, and a re-render should not
+  // be able to resurrect a timer that has already fired.
+  const guideTimerRef = useRef<number | null>(null);
 
   /**
    * How the map should treat a tap, derived from the selected section.
@@ -696,24 +911,9 @@ export default function AdminTerminals() {
 
   const hasPendingChanges = Object.keys(pendingChanges).length > 0;
 
-  // Super Admin's three views of this page, in the header between the title and
-  // "Add Terminal"; a Rider Admin sees the same three, scoped to their terminal.
-  const [terminalView, setTerminalView] = useState<TerminalView>('assignments');
-  // The Map Editor map, so the legend beside it can pan to one terminal.
-  const overviewMapRef = useRef<google.maps.Map | null>(null);
-
-  /**
-   * Terminals whose route, marker and border the Super Admin has switched off.
-   *
-   * Per-session and not a saved setting, on purpose. Hiding is a way to read one
-   * TODA without a neighbour's four-kilometre border drawn straight through the
-   * middle of it -- a temporary act of looking, not a decision about the terminal.
-   * Persisting it would mean opening the page to find a terminal silently missing.
-   */
-  const [hiddenTerminalIds, setHiddenTerminalIds] = useState<string[]>([]);
-  const toggleTerminalHidden = useCallback((id: string) => {
-    setHiddenTerminalIds(ids => (ids.includes(id) ? ids.filter(x => x !== id) : [...ids, id]));
-  }, []);
+  // The one view this page has, kept as state rather than inlined so the section
+// guard reads the same way it did when there were three.
+  const [terminalView] = useState<TerminalView>('assignments');
 
   /**
    * Which optional fare columns this database actually has.
@@ -829,20 +1029,17 @@ export default function AdminTerminals() {
 
   async function loadRidersFromSupabase(): Promise<StoredRider[] | null> {
     try {
-      // `admin` is in the role filter because a driver who is admin of a TODA
-      // carries role = 'admin' while they are inside the admin app -- that is
-      // how the app switch works. They are still this terminal's driver, so a
-      // query that stopped at role = 'rider' would drop them off their own
-      // terminal's roster for exactly as long as they were doing their job.
-      // Rows that are admins without the terminal-admin flag are not drivers,
-      // so they are dropped again below.
+      // Every user, narrowed in the client rather than in the query. A role
+      // filter here would drop any driver currently inside another app — the
+      // admin app, or the customer one — and a driver who is not sitting in the
+      // driver app is still a driver who needs a terminal. The table is a
+      // fleet list, not a log, so reading it whole is cheap.
       const { data, error } = await supabase
         .from("users")
-        .select("*")
-        .in("role", ["rider", "admin"]);
+        .select("*");
       if (error || !data) return null;
       return data
-        .filter((u: any) => u.role === "rider" || u.is_terminal_admin)
+        .filter(isDriverRow)
         .map((u: any) => ({
           id: u.id,
           name: u.name,
@@ -1034,55 +1231,22 @@ export default function AdminTerminals() {
   /*
    * Everyone who can be put on a terminal.
    *
-   * The role test alone is not enough: a driver inside the admin app carries
-   * role = 'admin', and they are still a driver of this terminal, so they have
-   * to stay in this list or they vanish off their own roster for as long as
-   * they are doing their job. The flag is what tells the two apart.
+   * `isDriverRow`, not `role === 'rider'` — see there for why the role cannot
+   * answer this. Keeping the filter in one place also means a driver who is
+   * currently in the admin or customer app is still offered on a terminal, so
+   * nobody silently goes missing from the roster just for using another app.
    */
-  const riders = users.filter(u => u.role === "rider" || u.isTerminalAdmin);
-
-  /** Pan the Map Editor map to one terminal, from the legend. */
-  function focusTerminal(t: Terminal) {
-    overviewMapRef.current?.panTo({ lat: t.center_lat, lng: t.center_lng });
-  }
-
-  /**
-   * Frame every terminal on the Map Editor map.
-   *
-   * A fixed centre only ever showed whichever terminal happened to sit under it;
-   * the point of this view is that all of them, and their borders, are visible at
-   * once. Falls back to the Gen T Deleon default when there is nothing to fit.
-   */
-  function fitTerminalsOnMap(map: google.maps.Map) {
-    const points = visibleTerminals.map(t => ({ lat: t.center_lat, lng: t.center_lng }));
-    if (points.length === 0) {
-      map.setCenter(OVERVIEW_CENTER);
-      map.setZoom(13);
-      return;
-    }
-    if (points.length === 1) {
-      map.setCenter(points[0]);
-      map.setZoom(14);
-      return;
-    }
-
-    const bounds = new google.maps.LatLngBounds();
-    points.forEach(p => bounds.extend(p));
-    map.fitBounds(bounds, 80);
-  }
+  const riders = users.filter(isDriverRow);
 
   const riderTerminalId = (r: StoredRider) => r.terminalId || r.terminal_id;
   const riderTerminalName = (r: StoredRider) => r.terminalName || r.terminal_name;
+  /** A driver's TODA plate, whichever casing the row carries it in. */
   const riderPlate = (r: StoredRider) => r.todaPlate || r.toda_plate || "";
   // Users are stored with `name` in this app and `first_name`/`last_name` in
-  // older/mock data — support both so existing localStorage isn't broken.
-  const riderName = (r: StoredRider): string => {
-    if (r.name) return r.name;
-    const first = r.first_name || "";
-    const last = r.last_name || "";
-    if (first || last) return `${first} ${last}`.trim();
-    return "Driver";
-  };
+  // older/mock data — support both so existing localStorage isn't broken. The
+  // fallback itself lives at module scope, next to the driver picker that needs
+  // the same answer.
+  const riderName = riderDisplayName;
 
   function getRidersForTerminal(tid: string) {
     return riders.filter(r => riderTerminalId(r) === tid);
@@ -1091,6 +1255,16 @@ export default function AdminTerminals() {
   function getUnassignedRiders() {
     return riders.filter(r => !riderTerminalId(r));
   }
+
+  /**
+   * Which terminals are open in the TODA directory, which is the whole page now.
+   *
+   * Its own list rather than a single id because the directory shows every
+   * terminal at once, and comparing two of them means having both open.
+   */
+  const [openTerminalIds, setOpenTerminalIds] = useState<string[]>([]);
+  const toggleTerminalOpen = (id: string) =>
+    setOpenTerminalIds(ids => (ids.includes(id) ? ids.filter(x => x !== id) : [...ids, id]));
 
   // A Rider Admin only ever sees the terminal they are scoped to.
   const visibleTerminals = isRiderAdmin
@@ -1144,35 +1318,17 @@ export default function AdminTerminals() {
     : 0;
 
   /**
-   * Two letters for the directory avatar.
+   * Open another terminal but stay on the section that opened it.
    *
-   * From the name where there is one, taking the first letter of the first two
-   * words ("Juan Dela Cruz" -> JD), so the initials say who it is rather than
-   * repeating the first name twice. Falls back to the email's own initials for
-   * the accounts that never filled in a name.
+   * `openEdit` returns the editor to the Terminal section, which is right when
+   * the Map Editor hands you a terminal and wrong from the Toda index: that
+   * index is for looking at several terminals at once, so a tap that threw you
+   * out of it meant the list could only ever be read one row at a time.
    */
-  function adminInitials(rider: StoredRider) {
-    const words = (rider.name || '').trim().split(/\s+/).filter(Boolean);
-    if (words.length >= 2) return (words[0][0] + words[1][0]).toUpperCase();
-    if (words.length === 1) return words[0].slice(0, 2).toUpperCase();
-    return (rider.email || '?').slice(0, 2).toUpperCase();
+  function openEditKeepingSection(t: Terminal, section: typeof editorSection) {
+    openEdit(t);
+    setEditorSection(section);
   }
-
-  /*
-   * Frame the terminals once they have actually loaded.
-   *
-   * The map's onLoad fires well before the terminal query resolves, so fitting
-   * there alone framed an empty list and left every marker off-screen. Keyed on
-   * the terminal count and the visible tab rather than the whole list, so editing
-   * a terminal's name doesn't yank the map out from under the admin.
-   */
-  useEffect(() => {
-    if (terminalView !== 'map') return;
-    const map = overviewMapRef.current;
-    if (!map || visibleTerminals.length === 0) return;
-    fitTerminalsOnMap(map);
-  }, [terminalView, visibleTerminals.length]);
-
 
   function openCreate() {
     setEditTerminal(null);
@@ -1261,7 +1417,8 @@ export default function AdminTerminals() {
    * Configuration it snaps back to the narrow rail rather than holding open a
    * column of nothing.
    */
-  const routesListOpen = editorSection === 'route' && !sidebarCollapsed;
+  const routesListOpen =
+    (editorSection === 'route' || editorSection === 'toda') && !sidebarCollapsed;
 
   /** Patch one route in place. Every route edit goes through here. */
   function updateRoute(id: string, patch: Partial<TerminalRoute>) {
@@ -1421,11 +1578,150 @@ export default function AdminTerminals() {
 
   const handleFormMapLoad = useCallback((map: google.maps.Map) => {
     formMapRef.current = map;
+    // The network view frames every terminal, so it must not be dragged back to
+    // whichever one is open — hence the branch, and hence fitting after the
+    // handler rather than letting the two fight over the camera.
+    if (editorSection === 'toda') {
+      fitTerminalsOnEditorMap(map);
+      return;
+    }
     // Open on the admin's current position; fall back to the terminal's pin and
     // then the Gen T Deleon default when GPS isn't available.
     map.setCenter(adminLocation ?? { lat: form.center_lat, lng: form.center_lng });
     map.setZoom(15);
-  }, [adminLocation, form.center_lat, form.center_lng]);
+  }, [adminLocation, form.center_lat, form.center_lng, editorSection]);
+
+  /**
+   * Frame every terminal on the editor's map.
+   *
+   * Only used by the Toda section. Re-run whenever the section is opened and
+   * whenever the terminal count changes, because the camera is otherwise left
+   * wherever the admin last panned it and a network view that opens zoomed in
+   * on one TODA answers none of the question it exists to answer.
+   */
+  const fitTerminalsOnEditorMap = useCallback((map: google.maps.Map) => {
+    const points = visibleTerminals.map(t => ({ lat: t.center_lat, lng: t.center_lng }));
+    if (points.length === 0) {
+      map.setCenter(OVERVIEW_CENTER);
+      map.setZoom(13);
+      return;
+    }
+    if (points.length === 1) {
+      map.setCenter(points[0]);
+      map.setZoom(14);
+      return;
+    }
+    const bounds = new google.maps.LatLngBounds();
+    points.forEach(p => bounds.extend(p));
+    map.fitBounds(bounds, 70);
+  }, [visibleTerminals]);
+
+  useEffect(() => {
+    if (editorSection !== 'toda') return;
+    const map = formMapRef.current;
+    if (!map) return;
+    fitTerminalsOnEditorMap(map);
+  }, [editorSection, visibleTerminals.length, fitTerminalsOnEditorMap]);
+
+  /**
+   * What the guide says about the section you are looking at.
+   *
+   * One entry per tab rather than one guide for the map. Three of the tabs draw
+   * on the map and three do not, and a guide that only ever explained plotting
+   * left Fares and Configuration with nothing — which are exactly the two a new
+   * admin is least sure about. Derived here so the tab, the guide and the "?"
+   * button can never describe different sections.
+   */
+  const editorGuide = useMemo((): { title: string; detail: string; note: string } => {
+    if (editorSection === 'toda') {
+      const n = visibleTerminals.length;
+      return {
+        title: 'Every TODA on one map',
+        detail: `${n} terminal${n === 1 ? '' : 's'} · tap a pin to open that terminal`,
+        note:
+          'The terminal you have open is drawn at full weight and the rest are dimmed, so you can find it again without reading the list.',
+      };
+    }
+    if (editorSection === 'border') {
+      return {
+        title: 'Tap the corners of the border area',
+        detail:
+          form.boundary_area.length < 3
+            ? `Add at least 3 points — ${form.boundary_area.length} so far`
+            : `${form.boundary_area.length} points — area closed`,
+        note: 'The radius where a tricycle driver can join the queue to pick up a customer — share ride or private ride.',
+      };
+    }
+    if (editorSection === 'route') {
+      return {
+        title: activeRoute ? `Tap along ${activeRoute.name}` : 'Tap to start a route',
+        detail: isSnappingRoad
+          ? 'Snapping to the nearest road...'
+          : !activeRoute
+            ? 'A road is created for you — add more with Add route.'
+            : activeRoute.points.length < 2
+              ? `Add at least 2 points — drop-offs and food orders are accepted within ${Math.round(activeRoute.buffer_m / 2)} m of the route`
+              : `${activeRoute.points.length} points — accepts drop-offs / food orders within ${Math.round(activeRoute.buffer_m / 2)} m of the road`,
+        note: 'The route tricycle drivers can use to drop off a customer or pick up a food order.',
+      };
+    }
+    if (editorSection === 'fares') {
+      return {
+        title: 'What customers can buy here',
+        detail: `Base fare ₱${form.base_fare} + ₱${form.per_km}/km · private ride and delivery override it`,
+        note: 'Leave a fare blank to fall back to the platform rate rather than charging nothing.',
+      };
+    }
+    if (editorSection === 'configuration') {
+      return {
+        title: 'Name, corridor and colour',
+        detail: 'Everything with no natural place on the map lives here.',
+        note: 'Save Changes at the bottom applies every section you have edited, not just this one.',
+      };
+    }
+    return {
+      title: 'Tap anywhere to set terminal location',
+      detail: `Current: ${form.center_lat.toFixed(4)}, ${form.center_lng.toFixed(4)}`,
+      note: 'The pin this terminal is known by — the queue and drop-off checks are measured from it.',
+    };
+  }, [
+    editorSection,
+    visibleTerminals.length,
+    form.boundary_area.length,
+    activeRoute,
+    isSnappingRoad,
+    form.base_fare,
+    form.per_km,
+    form.center_lat,
+    form.center_lng,
+  ]);
+
+  /**
+   * The guide opens on its own when the section changes, then gets out of the way.
+   *
+   * Three seconds is long enough to read two short lines and short enough that a
+   * panel sliding in over the map is never in the way while plotting. It is
+   * keyed on `editorSection` alone, deliberately: keyed on the content it would
+   * re-open every time a point was added, which is the one moment the admin is
+   * watching the map and least wants a panel appearing over it.
+   */
+  useEffect(() => {
+    setGuideOpen(true);
+    if (guideTimerRef.current !== null) window.clearTimeout(guideTimerRef.current);
+    guideTimerRef.current = window.setTimeout(() => setGuideOpen(false), GUIDE_AUTO_HIDE_MS);
+    return () => {
+      if (guideTimerRef.current !== null) window.clearTimeout(guideTimerRef.current);
+    };
+  }, [editorSection]);
+
+  /** Open or close the guide by hand. Cancels the pending auto-hide. */
+  function toggleGuide() {
+    if (guideTimerRef.current !== null) {
+      window.clearTimeout(guideTimerRef.current);
+      guideTimerRef.current = null;
+    }
+    setGuideOpen(open => !open);
+  }
 
   // GPS can resolve after the map mounts; once it does, move the picker to it.
   useEffect(() => {
@@ -2007,9 +2303,16 @@ export default function AdminTerminals() {
   }
 
   function confirmDeleteTerminal(id: string) {
+    const target = terminals.find(t => t.id === id);
+    const drivers = target ? getRidersForTerminal(target.id).length : 0;
     openModal({
       title: "Delete Terminal",
-      message: "Delete this terminal? Assigned drivers will be unassigned.",
+      // Named, and with the driver count, because this is now reached from the
+      // directory rather than from a card about that one terminal — and because
+      // unassigning drivers is the part of it that is not obvious.
+      message: target
+        ? `Delete ${target.name}? ${drivers} driver${drivers === 1 ? '' : 's'} will be unassigned from it, and anyone named as its TODA admin loses that access. This cannot be undone.`
+        : 'Delete this terminal? Assigned drivers will be unassigned.',
       variant: "danger",
       confirmLabel: "Delete",
       onConfirm: () => {
@@ -2342,15 +2645,11 @@ export default function AdminTerminals() {
     <AdminShell
       title="Terminal Management"
       subtitle="Terminals, drivers, fares and coverage areas"
-      /* The sections live in the header, between this title and the Add Terminal
-         button, so the page reads as one screen with three parts to it rather
-         than as a list that changes shape. Both roles get all three: a Rider
-         Admin is scoped to one terminal rather than shut out of the other two,
-         and hiding the switcher from them left their page looking like a
-         different, lesser version of this one. */
-      tabs={TERMINAL_TABS}
-      activeTab={terminalView}
-      onTabChange={value => setTerminalView(value as TerminalView)}
+      /* No tab strip. The page had three sections and this was how they were
+         switched; with one section left, a tablist of one is chrome that only
+         takes up the header and implies somewhere else to go. Both roles keep
+         the whole page — a Rider Admin is scoped to one terminal rather than
+         shut out of the directory. */
       /* The one way to reach the create form.
          `openCreate` was written and wired to nothing, so there was no way to add a
          terminal at all from this page -- the form existed, fully built, with no
@@ -2413,11 +2712,18 @@ export default function AdminTerminals() {
                   </h2>
                   <p className="mt-1 text-sm text-[var(--muted-foreground)]">
                     {isSuperAdmin
-                      ? 'Put each driver on a terminal and name who runs it. That driver gets a switch to the Admin app in their profile.'
+                      ? 'Open a terminal to staff it and name who runs it. That driver gets a switch to the Admin app in their profile.'
                       : 'Your terminal scope, and anything still waiting on the Super Admin.'}
                   </p>
                 </div>
 
+                {/*
+                    Terminal management moved into the directory below, so the
+                    cog that used to jump to the Map Editor is gone rather than
+                    repointed: it would have been a shortcut to a tab that no
+                    longer exists, and every terminal here now opens its own
+                    settings from its own row.
+                  */}
                 {isSuperAdmin && (
                   <div className="flex flex-shrink-0 self-stretch lg:self-auto rounded-2xl border border-line bg-surface divide-x divide-line overflow-hidden">
                     {([
@@ -2473,16 +2779,19 @@ export default function AdminTerminals() {
               {isSuperAdmin ? (
                 <div className="grid gap-6 lg:grid-cols-3 items-start">
                   {/* --------------------------------------------------
-                      Driver directory — the assignment itself.
+                      TODA directory — the assignment itself.
 
-                      One row per driver, and two decisions in it: which
-                      terminal they drive out of, and whether they run
-                      it. The second is what puts the Admin app switch in
-                      their profile, so it sits next to the terminal it
-                      is scoped to rather than on a separate screen —
-                      admin access without a terminal is not a state the
-                      app can act on, and neither control is worth
-                      reading without the other beside it.
+                      Grouped by terminal rather than by driver, because
+                      the question this page answers is "who runs this
+                      TODA", and answering it per driver meant scrolling a
+                      flat list of every driver to find the handful on any
+                      one terminal.
+
+                      One row per terminal, all of them — a terminal with
+                      nobody on it is exactly the one that needs an admin,
+                      so it cannot be hidden behind a filter. Opening one
+                      reveals its drivers, with the admin switch beside
+                      each, and a searchable picker for adding more.
                   -------------------------------------------------- */}
                   <div className="lg:col-span-2 rounded-2xl bg-surface border border-line overflow-hidden">
                     <div className="flex items-center gap-3 p-4 border-b border-line">
@@ -2490,23 +2799,14 @@ export default function AdminTerminals() {
                         <Users size={18} />
                       </div>
                       <div className="min-w-0">
-                        <p className="font-bold text-[var(--ink)] truncate">Driver directory</p>
+                        <p className="font-bold text-[var(--ink)] truncate">TODA directory</p>
                         <p className="text-xs text-[var(--muted-foreground)] truncate">
-                          Assign a terminal, then name who runs it
+                          Open a terminal to staff it and name who runs it
                         </p>
                       </div>
                       <span className="ml-auto flex-shrink-0 px-2.5 py-1 rounded-full bg-[var(--soft)] border border-line text-[11px] font-bold text-[var(--muted-foreground)]">
-                        {riders.length} driver{riders.length === 1 ? '' : 's'}
+                        {terminals.length} terminal{terminals.length === 1 ? '' : 's'}
                       </span>
-                    </div>
-
-                    {/* Column heads. Hidden on the narrow layout, where the row
-                        stacks into one column: all that would be left to name is
-                        the select, and that already says what it holds. */}
-                    <div className="hidden sm:grid grid-cols-[1fr_minmax(0,260px)_auto] gap-4 px-4 py-2.5 border-b border-line text-[11px] font-bold uppercase tracking-[0.14em] text-[var(--muted-foreground)]">
-                      <span>Driver</span>
-                      <span>Assigned terminal</span>
-                      <span className="text-right">TODA admin</span>
                     </div>
 
                     {!terminalAdminColumn ? (
@@ -2515,123 +2815,202 @@ export default function AdminTerminals() {
                           Run ADD_TERMINAL_ADMIN_FLAG.sql to enable TODA admins
                         </p>
                         <p className="text-xs text-[var(--amber-ink)] mt-0.5">
-                          Drivers can still be assigned to terminals. Naming who runs one needs the
+                          Drivers can still be added to terminals. Naming who runs one needs the
                           column this database does not have yet.
                         </p>
                       </div>
                     ) : null}
 
-                    {riders.length === 0 ? (
+                    {terminals.length === 0 ? (
                       <p className="px-4 py-8 text-center text-sm text-[var(--muted-foreground)] italic">
-                        No drivers found
+                        No terminals yet
                       </p>
                     ) : (
-                      riders.map(rider => {
-                        const assignedTerminal = terminals.find(t => t.id === riderTerminalId(rider)) || null;
-                        const savingFlag = savingAdminFlagId === rider.id;
-                        const isAdmin = !!rider.isTerminalAdmin;
+                      terminals.map(t => {
+                        const onThisTerminal = getRidersForTerminal(t.id);
+                        const adminsHere = todaAdmins.filter(a => riderTerminalId(a) === t.id).length;
+                        const isOpen = openTerminalIds.includes(t.id);
+                        // Already on this terminal, so not offered again: the
+                        // picker adds, it does not move, and a driver listed as
+                        // a candidate here is one the admin might add by mistake.
+                        const candidates = riders.filter(r => riderTerminalId(r) !== t.id);
                         return (
-                          <div
-                            key={rider.id}
-                            className="grid grid-cols-1 sm:grid-cols-[1fr_minmax(0,260px)_auto] gap-3 sm:gap-4 items-center px-4 py-3 border-b border-line last:border-b-0 hover:bg-[var(--soft)] transition-colors"
-                          >
-                            <div className="flex items-center gap-3 min-w-0">
-                              <div className="w-9 h-9 flex-shrink-0 rounded-full bg-[var(--muted)] text-[var(--muted-foreground)] flex items-center justify-center text-xs font-bold">
-                                {adminInitials(rider)}
-                              </div>
-                              <div className="min-w-0">
-                                <p className="font-semibold text-[var(--ink)] truncate">
-                                  {rider.name || 'Driver'}
-                                </p>
-                                <p className="text-xs text-[var(--muted-foreground)] truncate">
-                                  {rider.email}
-                                </p>
-                              </div>
-                            </div>
+                          <div key={t.id} className="border-b border-line last:border-b-0">
+                            {/*
+                              The row and its controls, as siblings.
 
-                            {/* The dot sits over the select rather than inside
-                                an option, because a native <option> cannot be
-                                given a per-terminal colour that survives in
-                                every browser — and the colour is the whole
-                                point: it is what tells two TODAs apart when the
-                                names run long. */}
-                            <div className="relative min-w-0">
-                              <span
-                                aria-hidden="true"
-                                className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 w-2.5 h-2.5 rounded-full"
-                                style={{ background: assignedTerminal ? normalizeTerminalColor(assignedTerminal.marker_color) : 'var(--error)' }}
-                              />
-                              <select
-                                aria-label={`Terminal for ${rider.name || rider.email}`}
-                                value={riderTerminalId(rider) || ''}
-                                onChange={e => {
-                                  const next = e.target.value;
-                                  const terminal = terminals.find(t => t.id === next);
-                                  if (terminal) {
-                                    confirmAssignDriver(rider, terminal);
-                                  } else if (assignedTerminal) {
-                                    confirmUnassignDriver(rider, assignedTerminal);
-                                  }
-                                  // Neither branch reachable means the driver is
-                                  // already unassigned, so the select is
-                                  // unchanged and there is nothing to confirm.
-                                }}
-                                className={`w-full appearance-none pl-8 pr-9 py-2.5 border border-line rounded-xl text-sm font-semibold bg-surface transition-colors focus:border-[var(--teal)] ${
-                                  assignedTerminal ? 'text-[var(--ink)]' : 'text-[var(--error)]'
-                                }`}
-                              >
-                                <option value="">No terminal assigned</option>
-                                {terminals.map(t => (
-                                  <option key={t.id} value={t.id}>{t.name}</option>
-                                ))}
-                              </select>
-                              <ChevronDown
-                                aria-hidden="true"
-                                className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[var(--muted-foreground)]"
-                              />
-                            </div>
-
-                            {/* A real switch, not a checkbox: it is a state the
-                                driver carries between sessions, and a checkbox
-                                reads as an action to take once. Disabled without
-                                a terminal — there would be nothing to scope
-                                them to — and the hint says so rather than
-                                leaving the switch mysteriously inert. */}
-                            <div className="flex items-center justify-end gap-2 sm:min-w-[124px]">
+                              The row itself only expands the roster. Opening the
+                              terminal's settings used to be a cog on the separate
+                              Terminals and Map Editor tabs, and with those gone
+                              there would be nothing on this page that opened it —
+                              so it lives here, beside the name it belongs to.
+                            */}
+                            <div className="flex items-stretch">
                               <button
                                 type="button"
-                                role="switch"
-                                aria-checked={isAdmin}
-                                aria-label={`TODA admin for ${rider.name || rider.email}`}
-                                disabled={!assignedTerminal || savingFlag || !terminalAdminColumn}
-                                onClick={() => confirmDriverTerminalAdmin(rider, !isAdmin)}
-                                className={`relative w-11 h-7 flex-shrink-0 rounded-full transition-colors disabled:opacity-40 disabled:cursor-not-allowed ${
-                                  isAdmin ? 'bg-[var(--teal)]' : 'bg-[var(--border)]'
-                                }`}
+                                aria-expanded={isOpen}
+                                aria-controls={`toda-roster-${t.id}`}
+                                onClick={() => toggleTerminalOpen(t.id)}
+                                className="flex-1 min-w-0 flex items-center gap-3 px-4 py-3.5 text-left hover:bg-[var(--soft)] transition-colors"
                               >
                                 <span
                                   aria-hidden="true"
-                                  className={`absolute top-1 w-5 h-5 rounded-full bg-white shadow transition-[left] ${
-                                    isAdmin ? 'left-5' : 'left-1'
-                                  }`}
+                                  className="w-3 h-3 flex-shrink-0 rounded-full"
+                                  style={{ background: normalizeTerminalColor(t.marker_color) }}
+                                />
+                                <span className="min-w-0 flex-1">
+                                  <span className="block font-bold text-[var(--ink)] truncate">{t.name}</span>
+                                  <span className="block text-xs text-[var(--muted-foreground)] truncate">
+                                    {onThisTerminal.length} driver{onThisTerminal.length === 1 ? '' : 's'}
+                                    {adminsHere > 0
+                                      ? ` · ${adminsHere} admin${adminsHere === 1 ? '' : 's'}`
+                                      : ' · no admin yet'}
+                                  </span>
+                                </span>
+                                {/* A terminal nobody runs is the one case worth
+                                    flagging on the row itself — the roster rail
+                                    reports the count, but this is where the eye
+                                    already is. */}
+                                {adminsHere === 0 ? (
+                                  <span className="flex-shrink-0 px-2 py-0.5 rounded-full bg-[var(--amber-soft)] text-[var(--amber-ink)] text-[11px] font-bold">
+                                    Needs admin
+                                  </span>
+                                ) : null}
+                                <ChevronDown
+                                  size={16}
+                                  aria-hidden="true"
+                                  className={`flex-shrink-0 text-[var(--muted-foreground)] transition-transform ${isOpen ? 'rotate-180' : ''}`}
                                 />
                               </button>
-                              {savingFlag ? (
-                                <Loader2
-                                  size={16}
-                                  aria-label="Saving"
-                                  className="flex-shrink-0 text-[var(--muted-foreground)] animate-spin"
-                                />
-                              ) : (
-                                <span className="hidden sm:inline text-xs font-bold text-[var(--muted-foreground)] sm:w-16 text-right">
-                                  {isAdmin ? 'Admin' : assignedTerminal ? 'Driver' : 'No TODA'}
-                                </span>
+
+                              {/* A cog, not a pencil: what this opens is the
+                                  terminal's whole configuration — name, location,
+                                  shape, fares, colour — not a text field. */}
+                              <button
+                                type="button"
+                                onClick={() => openEdit(t)}
+                                aria-label={`Settings for ${t.name}`}
+                                title="Terminal settings"
+                                className="w-11 flex-shrink-0 flex items-center justify-center hover:bg-[var(--soft)] transition-colors"
+                              >
+                                <Settings className="w-4 h-4 text-[var(--ink)]" />
+                              </button>
+
+                              {/* Super Admin only, matching the rule the delete
+                                  has always had: a Rider Admin is scoped to one
+                                  terminal and does not get to remove it. */}
+                              {isSuperAdmin && (
+                                <button
+                                  type="button"
+                                  onClick={() => confirmDeleteTerminal(t.id)}
+                                  aria-label={`Delete ${t.name}`}
+                                  title="Delete terminal"
+                                  className="w-11 flex-shrink-0 flex items-center justify-center hover:bg-[var(--error-soft)] transition-colors"
+                                >
+                                  <Trash2 className="w-4 h-4 text-[var(--error)]" />
+                                </button>
                               )}
                             </div>
+
+                            {isOpen && (
+                              <div id={`toda-roster-${t.id}`} className="px-4 pb-4 -mt-1">
+                                <DriverPicker
+                                  terminalName={t.name}
+                                  candidates={candidates}
+                                  onPick={rider => confirmAssignDriver(rider, t)}
+                                />
+
+                                {onThisTerminal.length === 0 ? (
+                                  <p className="mt-3 text-sm text-[var(--muted-foreground)] italic">
+                                    Nobody on this terminal yet
+                                  </p>
+                                ) : (
+                                  <ul className="mt-3 divide-y divide-line border border-line rounded-xl overflow-hidden">
+                                    {onThisTerminal.map(rider => {
+                                      const savingFlag = savingAdminFlagId === rider.id;
+                                      const isAdmin = !!rider.isTerminalAdmin;
+                                      return (
+                                        <li
+                                          key={rider.id}
+                                          className="flex items-center gap-3 px-3 py-2.5 bg-surface"
+                                        >
+                                          <div className="w-8 h-8 flex-shrink-0 rounded-full bg-[var(--muted)] text-[var(--muted-foreground)] flex items-center justify-center text-[11px] font-bold">
+                                            {driverInitials(rider)}
+                                          </div>
+                                          <div className="min-w-0 flex-1">
+                                            <p className="text-sm font-semibold text-[var(--ink)] truncate">
+                                              {riderName(rider)}
+                                            </p>
+                                            <p className="text-xs text-[var(--muted-foreground)] truncate">
+                                              {riderPlate(rider) || rider.email}
+                                            </p>
+                                          </div>
+
+                                          {/* A real switch, not a checkbox: it is a
+                                              state the driver carries between
+                                              sessions, and a checkbox reads as an
+                                              action to take once. Always live here —
+                                              being on this terminal is the
+                                              precondition, and the row only lists
+                                              drivers who meet it. */}
+                                          <button
+                                            type="button"
+                                            role="switch"
+                                            aria-checked={isAdmin}
+                                            aria-label={`TODA admin for ${riderName(rider)} on ${t.name}`}
+                                            disabled={savingFlag || !terminalAdminColumn}
+                                            onClick={() => confirmDriverTerminalAdmin(rider, !isAdmin)}
+                                            className={`relative w-11 h-7 flex-shrink-0 rounded-full transition-colors disabled:opacity-40 disabled:cursor-not-allowed ${
+                                              isAdmin ? 'bg-[var(--teal)]' : 'bg-[var(--border)]'
+                                            }`}
+                                          >
+                                            <span
+                                              aria-hidden="true"
+                                              className={`absolute top-1 w-5 h-5 rounded-full bg-white shadow transition-[left] ${
+                                                isAdmin ? 'left-5' : 'left-1'
+                                              }`}
+                                            />
+                                          </button>
+                                          {savingFlag ? (
+                                            <Loader2
+                                              size={16}
+                                              aria-label="Saving"
+                                              className="flex-shrink-0 text-[var(--muted-foreground)] animate-spin"
+                                            />
+                                          ) : (
+                                            <span className="hidden sm:inline w-14 flex-shrink-0 text-right text-xs font-bold text-[var(--muted-foreground)]">
+                                              {isAdmin ? 'Admin' : 'Driver'}
+                                            </span>
+                                          )}
+
+                                          <button
+                                            type="button"
+                                            aria-label={`Remove ${riderName(rider)} from ${t.name}`}
+                                            onClick={() => confirmUnassignDriver(rider, t)}
+                                            className="flex-shrink-0 w-9 h-9 flex items-center justify-center rounded-lg text-[var(--muted-foreground)] hover:bg-[var(--error-soft)] hover:text-[var(--error)] transition-colors"
+                                          >
+                                            <X size={15} />
+                                          </button>
+                                        </li>
+                                      );
+                                    })}
+                                  </ul>
+                                )}
+                              </div>
+                            )}
                           </div>
                         );
                       })
                     )}
+
+                    {/* Nobody at all is a different answer from "no terminal
+                        has them": without this the page looks complete when it
+                        has nothing to assign. */}
+                    {riders.length === 0 && terminals.length > 0 ? (
+                      <p className="px-4 py-6 text-center text-sm text-[var(--muted-foreground)] border-t border-line">
+                        No drivers registered yet
+                      </p>
+                    ) : null}
                   </div>
 
                   {/* --------------------------------------------------
@@ -2717,17 +3096,13 @@ export default function AdminTerminals() {
                         </ul>
                       )}
 
-                      {/* The one action this rail can offer: a terminal with
-                          nobody on it is usually a terminal that does not
-                          exist yet. */}
-                      <button
-                        type="button"
-                        onClick={() => setTerminalView('terminals')}
-                        className="mt-4 flex items-center gap-1 text-sm font-semibold text-[var(--teal)] hover:underline min-h-11"
-                      >
-                        Manage terminals
-                        <ChevronRight size={14} aria-hidden="true" />
-                      </button>
+                      {/*
+                        "Manage terminals" used to jump to the Terminals tab.
+                        The directory beside this rail is the terminal list now,
+                        and it is already on screen — a link to something you
+                        can see from where you are reading this is worse than no
+                        link.
+                      */}
                     </div>
                   </div>
                 </div>
@@ -2749,9 +3124,15 @@ export default function AdminTerminals() {
                           : 'Ask the Super Admin to assign you to a terminal before you can manage drivers.'}
                       </p>
                       {assignedTerminalId && (
+                        // Opens the terminal's own settings. It used to jump to
+                        // the Terminals tab, which is gone; opening the terminal
+                        // directly is one step fewer and lands on the same form.
                         <button
                           type="button"
-                          onClick={() => setTerminalView('terminals')}
+                          onClick={() => {
+                            const own = terminals.find(t => t.id === assignedTerminalId);
+                            if (own) openEdit(own);
+                          }}
                           className="mt-3 flex items-center gap-1 text-sm font-bold text-[var(--info)] hover:underline min-h-11"
                         >
                           Open this terminal
@@ -2807,517 +3188,22 @@ export default function AdminTerminals() {
                     <p className="text-sm text-[var(--muted-foreground)]">
                       driver{assignedRiderCount === 1 ? '' : 's'} on your terminal
                     </p>
-                    <button
-                      type="button"
-                      onClick={() => setTerminalView('terminals')}
-                      className="mt-4 flex items-center gap-1 text-sm font-semibold text-[var(--teal)] hover:underline min-h-11"
-                    >
-                      Manage drivers
-                      <ChevronRight size={14} aria-hidden="true" />
-                    </button>
+                    {/* "Manage drivers" used to jump to the Terminals tab. The
+                        roster is edited from the terminal's own row, which is
+                        reachable from the directory above, so a link to nowhere
+                        went rather than one that pretends to still work. */}
                   </div>
                 </div>
               )}
             </div>
           )}
 
-          {/* ------------------------------------------------------------------
-              Terminals — what each terminal is configured as.
-
-              Everything the Terminals section shows is a property of the terminal
-              itself: whether it is running, the boundary and corridor width it
-              enforces, the fare it charges, where it is — and which drivers are
-              on it. The drivers live here rather than on Assignments because
-              they are the terminal's own roster; the directory over there is
-              about who is allowed to edit all of this.
+          {/*
+              The Terminals and Map Editor sections used to stand here, and
+              everything the terminal editor can do now hangs off a row in the
+              directory above: tapping a terminal opens it, and its Toda tab
+              carries the network map that the separate overview used to draw.
           ------------------------------------------------------------------ */}
-          {terminalView === 'terminals' && (
-            loading ? (
-              <StatSkeleton count={4} />
-            ) : visibleTerminals.length === 0 ? (
-              <EmptyState
-                icon={MapPin}
-                title={isRiderAdmin ? 'No terminal assigned to you yet' : 'No terminals yet'}
-                description={
-                  isRiderAdmin
-                    ? 'The Super Admin must assign you to a terminal before you can edit it.'
-                    : 'Add a terminal from the button above to get started.'
-                }
-                filipino={
-                  isRiderAdmin
-                    ? 'Wala pang terminal na nakatalaga sa iyo. Itinalaga ito ng Super Admin.'
-                    : undefined
-                }
-              />
-            ) : (
-              <div className="grid gap-4">
-                {visibleTerminals.map(t => {
-                  const termRiders = getRidersForTerminal(t.id);
-                  const unassigned = getUnassignedRiders();
-                  const isExpanded = expandedId === t.id;
-                  const canEditTerminal =
-                    isSuperAdmin || (isRiderAdmin && t.id === assignedTerminalId);
-                  return (
-                    <div key={t.id} className="bg-surface rounded-2xl border border-line overflow-hidden">
-                      <div className="p-5">
-                        <div className="flex flex-wrap items-start justify-between gap-4">
-                          {/* The whole summary is the tap target for revealing the
-                              assigned drivers. A real <button> rather than a div
-                              with an onClick, so it is reachable by keyboard and
-                              announced as expandable; the boundary, edit and delete
-                              controls sit outside it, so none of them can toggle
-                              the list by accident. */}
-                          <button
-                            type="button"
-                            onClick={() => setExpandedId(isExpanded ? null : t.id)}
-                            aria-expanded={isExpanded}
-                            aria-controls={`terminal-drivers-${t.id}`}
-                            className="flex items-start gap-3 min-w-0 flex-1 text-left rounded-xl -m-2 p-2 hover:bg-[var(--soft)] transition-colors active:scale-[0.99]"
-                          >
-                            <div className="w-11 h-11 flex-shrink-0">
-                              <TerminalIcon
-                                size={44}
-                                color={normalizeTerminalColor(t.marker_color)}
-                              />
-                            </div>
-                            <div className="min-w-0">
-                              <div className="flex items-center gap-2 flex-wrap">
-                                <h3 className="font-bold text-[var(--ink)] text-lg">{t.name}</h3>
-                                <span className={`text-xs font-bold px-2 py-0.5 rounded-full ${t.is_active ? "bg-[var(--success-soft)] text-[var(--success)]" : "bg-[var(--muted)] text-[var(--muted-foreground)]"}`}>
-                                  {t.is_active ? "● Active" : "○ Inactive"}
-                                </span>
-                                <span
-                                  className={`text-xs font-bold px-2 py-0.5 rounded-full ${
-                                    (t.boundary_polygon && t.boundary_polygon.length >= 2) ||
-                                    (t.boundary_area && t.boundary_area.length >= 3)
-                                      ? t.boundary_enabled
-                                        ? "bg-[var(--primary-soft)] text-[var(--primary)]"
-                                        : "bg-[var(--muted)] text-[var(--muted-foreground)]"
-                                      : "bg-[var(--muted)] text-[var(--muted-foreground)]"
-                                  }`}
-                                >
-                                  {(() => {
-                                    const hasRoad = !!t.boundary_polygon && t.boundary_polygon.length >= 2;
-                                    const hasArea = !!t.boundary_area && t.boundary_area.length >= 3;
-                                    if (!hasRoad && !hasArea) return "No boundary";
-                                    const shape = hasRoad && hasArea ? 'Road + area' : hasRoad ? 'Road' : 'Area';
-                                    return t.boundary_enabled
-                                      ? `${shape}: ${normalizeRoadWidth(t.road_width_m)} m`
-                                      : `${shape} not enforced`;
-                                  })()}
-                                </span>
-                                <span className="text-xs font-bold px-2 py-0.5 rounded-full bg-[var(--success-soft)] text-[var(--success)]">
-                                  {`Fare: ₱${t.base_fare ?? 20} + ₱${t.per_km ?? 10}/km`}
-                                </span>
-                              </div>
-                              <p className="text-[var(--muted-foreground)] text-sm mt-0.5">📍 {t.boundary}</p>
-                              <div className="flex items-center gap-4 mt-2 text-xs text-[var(--muted-foreground)]">
-                                <span className="flex items-center gap-1"><Users size={12} />{termRiders.length} drivers</span>
-                                {/* Rotating chevron: the card expands on tap, so it
-                                    needs to say so. */}
-                                <span className="ml-auto flex items-center gap-1 font-semibold text-[var(--info)]">
-                                  {isExpanded ? "Hide drivers" : "Show drivers"}
-                                  <ChevronDown
-                                    size={14}
-                                    aria-hidden="true"
-                                    className={`transition-transform ${isExpanded ? "rotate-180" : ""}`}
-                                  />
-                                </span>
-                              </div>
-                            </div>
-                          </button>
-                          <div className="flex items-center gap-2 flex-shrink-0">
-                            {/* Boundary check on/off. Only meaningful once something is
-                                plotted, so it stays hidden until then rather than offering a
-                                toggle for a boundary that doesn't exist. */}
-                            {canEditTerminal &&
-                              ((t.boundary_polygon && t.boundary_polygon.length >= 2) ||
-                                (t.boundary_area && t.boundary_area.length >= 3)) && (
-                                <button
-                                  onClick={() => toggleBoundaryEnabled(t)}
-                                  aria-pressed={t.boundary_enabled}
-                                  aria-label={`${t.boundary_enabled ? 'Disable' : 'Enable'} boundary check for ${t.name}`}
-                                  className={`h-11 px-3 rounded-xl border-2 text-xs font-bold flex items-center gap-1.5 transition-all active:scale-90 ${
-                                    t.boundary_enabled
-                                      ? "bg-[var(--success-soft)] border-[var(--success)] text-[var(--success)]"
-                                      : "bg-[var(--muted)] border-line text-[var(--muted-foreground)]"
-                                  }`}
-                                >
-                                  <Shield size={14} />
-                                  Boundary {t.boundary_enabled ? "On" : "Off"}
-                                </button>
-                              )}
-                            {canEditTerminal && (
-                              <button
-                                onClick={() => openEdit(t)}
-                                aria-label={`Edit ${t.name}`}
-                                title={`Edit ${t.name}`}
-                                className="w-11 h-11 bg-[var(--muted)] border border-line rounded-xl flex items-center justify-center hover:border-[var(--info)] transition-all active:scale-90"
-                              >
-                                <Edit2 size={14} className="text-[var(--muted-foreground)]" />
-                              </button>
-                            )}
-                            {isSuperAdmin && (
-                              <button
-                                onClick={() => confirmDeleteTerminal(t.id)}
-                                aria-label={`Delete ${t.name}`}
-                                title={`Delete ${t.name}`}
-                                className="w-11 h-11 bg-[var(--error-soft)] border-2 border-[var(--error-soft)] rounded-xl flex items-center justify-center hover:border-[var(--error)] transition-all active:scale-90"
-                              >
-                                <Trash2 size={14} className="text-[var(--error)]" />
-                              </button>
-                            )}
-                          </div>
-                        </div>
-                      </div>
-
-                      {/* The terminal's roster. A Super Admin's changes land the
-                          moment they make them; a Rider Admin's are queued until
-                          they submit them and the Super Admin approves, which is
-                          why their rows carry the pending state and a cancel. */}
-                      {isExpanded && (
-                        <div
-                          id={`terminal-drivers-${t.id}`}
-                          className="border-t-2 border-[var(--border)] p-4 sm:p-5 bg-[var(--soft)] space-y-4"
-                        >
-                          <div>
-                            <h4 className="text-xs font-semibold uppercase tracking-widest text-[var(--muted-foreground)] mb-3">
-                              Assigned Drivers ({termRiders.length})
-                            </h4>
-                            <div className="space-y-2">
-                              {termRiders.length === 0 ? (
-                                <p className="text-sm text-[var(--muted-foreground)] italic">
-                                  No drivers assigned yet
-                                </p>
-                              ) : (
-                                termRiders.map(r => {
-                                  const isPending = !!pendingChanges[r.id];
-                                  const pendingAction = pendingChanges[r.id];
-                                  return (
-                                    <div
-                                      key={r.id}
-                                      className={`flex items-center justify-between gap-3 rounded-xl border-2 px-4 py-2.5 ${
-                                        isPending
-                                          ? 'bg-[var(--amber-soft)] border-[var(--amber-soft)]'
-                                          : 'bg-surface border-[var(--border)]'
-                                      }`}
-                                    >
-                                      <div className="flex items-center gap-3 min-w-0">
-                                        <div className="w-8 h-8 flex-shrink-0 bg-[var(--info-soft)] rounded-lg flex items-center justify-center text-[var(--info)] font-bold text-xs">
-                                          {riderName(r)[0]?.toUpperCase()}
-                                        </div>
-                                        <div className="min-w-0">
-                                          <p className="text-sm font-semibold text-[var(--ink)] truncate">
-                                            {riderName(r)}
-                                          </p>
-                                          <p className="text-xs text-[var(--muted-foreground)] truncate">
-                                            {riderPlate(r) || 'No plate'}
-                                          </p>
-                                        </div>
-                                        {isPending && pendingAction?.action === 'unassign' && (
-                                          <span className="text-xs font-bold text-[var(--amber-ink)] bg-[var(--amber-soft)] px-2 py-0.5 rounded-full flex-shrink-0">
-                                            ⏳ Pending removal
-                                          </span>
-                                        )}
-                                      </div>
-                                      {isRiderAdmin ? (isPending ? (
-                                        <button
-                                          type="button"
-                                          onClick={() => cancelPendingChange(r.id)}
-                                          className="flex-shrink-0 text-xs font-semibold text-[var(--amber-ink)] hover:underline"
-                                        >
-                                          Cancel
-                                        </button>
-                                      ) : (
-                                        <button
-                                          type="button"
-                                          onClick={() => queueUnassignRider(r.id, t.id, t.name)}
-                                          aria-label={`Remove ${riderName(r)} from ${t.name}`}
-                                          className="flex-shrink-0 flex items-center gap-1 text-xs font-semibold text-[var(--error)] bg-[var(--error-soft)] border border-[var(--error-soft)] px-2.5 py-1.5 rounded-lg hover:border-[var(--error)] transition-all active:scale-95"
-                                        >
-                                          <UserMinus size={12} /> Unassign
-                                        </button>
-                                      )) : (
-                                        <button
-                                          type="button"
-                                          onClick={() => confirmUnassignDriver(r, t)}
-                                          aria-label={`Remove ${riderName(r)} from ${t.name}`}
-                                          className="flex-shrink-0 flex items-center gap-1 text-xs font-semibold text-[var(--error)] bg-[var(--error-soft)] border border-[var(--error-soft)] px-2.5 py-1.5 rounded-lg hover:border-[var(--error)] transition-all active:scale-95"
-                                        >
-                                          <UserMinus size={12} /> Remove
-                                        </button>
-                                      )}
-                                    </div>
-                                  );
-                                })
-                              )}
-                            </div>
-                          </div>
-
-                          {unassigned.length > 0 && (
-                            <div>
-                              <h4 className="text-xs font-semibold uppercase tracking-widest text-[var(--muted-foreground)] mb-2">
-                                Assign a driver
-                              </h4>
-                              <div className="flex flex-wrap gap-2">
-                                {unassigned.map(r => {
-                                  const isPending = !!pendingChanges[r.id];
-                                  const pendingAction = pendingChanges[r.id];
-                                  return (
-                                    <div key={r.id} className="flex items-center gap-1">
-                                      {isRiderAdmin && isPending && pendingAction?.action === 'assign' ? (
-                                        <>
-                                          <button
-                                            disabled
-                                            className="flex items-center gap-2 px-3 py-2 bg-[var(--amber-soft)] border-2 border-[var(--amber-soft)] rounded-xl text-sm font-medium text-[var(--amber-ink)]"
-                                          >
-                                            <UserPlus size={13} className="text-[var(--amber)]" />
-                                            {riderName(r)}
-                                            <span className="text-xs text-[var(--amber)]">⏳ Queued</span>
-                                          </button>
-                                          <button
-                                            type="button"
-                                            onClick={() => cancelPendingChange(r.id)}
-                                            className="text-xs font-semibold text-[var(--amber-ink)] hover:underline"
-                                          >
-                                            Cancel
-                                          </button>
-                                        </>
-                                      ) : (
-                                        <button
-                                          type="button"
-                                          onClick={
-                                            isRiderAdmin
-                                              ? () => queueAssignRider(r.id, t.id, t.name)
-                                              : () => confirmAssignDriver(r, t)
-                                          }
-                                          className="flex items-center gap-2 px-3 py-2 bg-surface border border-line hover:border-[var(--success)] rounded-xl transition-all active:scale-95 text-sm font-medium"
-                                        >
-                                          <UserPlus size={13} className="text-[var(--success)]" />
-                                          {riderName(r)}
-                                          {riderPlate(r) && (
-                                            <span className="text-xs text-[var(--muted-foreground)]">{riderPlate(r)}</span>
-                                          )}
-                                        </button>
-                                      )}
-                                    </div>
-                                  );
-                                })}
-                              </div>
-                            </div>
-                          )}
-                        </div>
-                      )}
-                    </div>
-                  );
-                })}
-              </div>
-            )
-          )}
-
-          {/* ------------------------------------------------------------------
-              Map Editor — where the terminals are.
-
-              The third of the three and the only one that needs the Maps API, so
-              it is also the only one that waits on it: everything else renders
-              from data alone.
-          ------------------------------------------------------------------ */}
-          {/* Every terminal on one map, with the tricycle marker and the border
-              each admin plotted — the thing you cannot see from a list.
-
-              Both roles get this. A Rider Admin sees their own terminal alone,
-              which is still the point: it is where the boundary they enforce and
-              the fare they charge become visible, and the settings cog beside the
-              marker is the same editor they already had, still staged for
-              approval. */}
-          {terminalView === 'map' && (
-            <div className="space-y-4">
-              <div className="relative w-full h-[420px] lg:h-[500px] bg-[var(--muted)] border border-line rounded-2xl overflow-hidden">
-                {isMapsLoaded ? (
-                  <GoogleMap
-                    mapContainerStyle={{ width: '100%', height: '100%' }}
-                    center={OVERVIEW_CENTER}
-                    zoom={13}
-                    options={{
-                      zoomControl: true,
-                      fullscreenControl: false,
-                      streetViewControl: false,
-                      mapTypeControl: false,
-                      gestureHandling: 'greedy',
-                    }}
-                    onLoad={m => {
-                      overviewMapRef.current = m;
-                      fitTerminalsOnMap(m);
-                    }}
-                  >
-                    {/* Everything a hidden terminal draws — marker, route and border
-                        together. Leaving any one of them behind would defeat the
-                        point: a terminal with its pin gone but its border still
-                        painted over a neighbour reads as a mapping bug, not as
-                        something the admin switched off. */}
-                    {visibleTerminals.filter(t => !hiddenTerminalIds.includes(t.id)).map(t => {
-                      const area = t.boundary_area && t.boundary_area.length >= 3 ? t.boundary_area : null;
-                      // Every road this terminal runs, not just the mirrored first
-                      // one: a TODA with a main road and a service lane has to show
-                      // both here, or the map disagrees with what the editor holds.
-                      const routes = readTerminalRoutes(t).filter(r => r.points.length >= 2);
-                      // An inactive terminal keeps its own colour and is dimmed
-                      // instead. Overriding the hue would throw away the one cue
-                      // that tells two nearby TODAs apart, which is the reason
-                      // these are per-terminal in the first place.
-                      const dim = t.is_active === false;
-                      return (
-                        <ReactFragment key={t.id}>
-                          {area && (
-                            <Polygon
-                              path={area}
-                              options={{
-                                fillColor: t.border_color,
-                                fillOpacity: dim ? 0.05 : 0.12,
-                                strokeColor: t.border_color,
-                                strokeOpacity: dim ? 0.4 : 1,
-                                strokeWeight: 2,
-                                clickable: false,
-                              }}
-                            />
-                          )}
-                          {routes.map(route => (
-                            <Polyline
-                              key={`${t.id}_${route.id}`}
-                              path={route.points}
-                              options={{
-                                // One colour per terminal, as in the editor.
-                                strokeColor: normalizeRouteColor(t.route_color),
-                                strokeWeight: 4,
-                                strokeOpacity: dim ? 0.35 : 0.9,
-                                clickable: false,
-                                geodesic: true,
-                                zIndex: area ? 15 : 25,
-                              }}
-                            />
-                          ))}
-                          {/* The classic `Marker`, not `MarkerF`. MarkerF is backed by
-                              AdvancedMarkerElement, which ignores an `icon` URL and
-                              needs a Google Cloud map ID before it renders anything
-                              at all — so switching to it silently empties the map.
-                              The deprecation warning it logs is the lesser problem. */}
-                          <Marker
-                            position={{ lat: t.center_lat, lng: t.center_lng }}
-                            title={t.name}
-                            icon={terminalMarkerIcon(t.marker_color, 76)}
-                            zIndex={area || routes.length ? 20 : 30}
-                          />
-                        </ReactFragment>
-                      );
-                    })}
-                  </GoogleMap>
-                ) : (
-                  <div className="w-full h-full flex items-center justify-center">
-                    <p className="text-xs text-[var(--muted-foreground)]">Loading map...</p>
-                  </div>
-                )}
-              </div>
-
-              {/* The icon list, below the map and doubling as the way to jump to
-                  one. Full width under the map means it spreads into columns
-                  rather than stacking six tall rows in a narrow strip. */}
-              <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
-                {visibleTerminals.length === 0 ? (
-                  <p className="text-sm text-[var(--muted-foreground)] italic">No terminals yet</p>
-                ) : (
-                  visibleTerminals.map(t => {
-                    const areaPts = t.boundary_area?.length ?? 0;
-                    // Read through the same helper the map draws with, so the count
-                    // under a terminal's name is the count of lines actually drawn.
-                    const routeList = readTerminalRoutes(t).filter(r => r.points.length >= 2);
-                    const roadPts = routeList.reduce((sum, r) => sum + r.points.length, 0);
-                    const enforced = t.boundary_enabled !== false;
-                    const hidden = hiddenTerminalIds.includes(t.id);
-                    return (
-                      /* A div rather than a button: the row pans the map and the
-                         two controls have to sit inside it, and a button cannot
-                         contain one. The pan target is the icon-and-text region
-                         only, so tapping either control never also zooms the map. */
-                      <div
-                        key={t.id}
-                        className={`w-full flex items-start gap-2 p-3 bg-surface border rounded-xl transition-colors ${
-                          hidden
-                            ? 'border-line opacity-60'
-                            : 'border-line hover:border-[var(--primary)]'
-                        }`}
-                      >
-                        <button
-                          type="button"
-                          onClick={() => focusTerminal(t)}
-                          className="flex items-start gap-3 text-left flex-1 min-w-0"
-                        >
-                          <TerminalIcon size={56} color={t.marker_color} className="flex-shrink-0 mt-0.5" />
-                          <div className="min-w-0 flex-1">
-                            <p className="font-bold text-sm text-[var(--ink)] truncate">
-                              {t.name}
-                            </p>
-                            <p className="text-xs text-[var(--muted-foreground)] truncate">
-                              {hidden
-                                ? 'Hidden from the map'
-                                : areaPts >= 3
-                                  ? `Border ${areaPts} pts`
-                                  : roadPts >= 2
-                                    ? routeList.length > 1
-                                      ? `${routeList.length} routes · ${roadPts} pts`
-                                      : `Road ${roadPts} pts · ${normalizeRoadWidth(t.road_width_m)} m`
-                                    : 'No border plotted'}
-                              {!hidden && areaPts >= 3 && roadPts >= 2
-                                ? routeList.length > 1
-                                  ? ` · ${routeList.length} routes`
-                                  : ` · road ${roadPts} pts`
-                                : ''}
-                            </p>
-                          </div>
-                          <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full flex-shrink-0 ${
-                            enforced
-                              ? 'bg-[var(--success-soft)] text-[var(--success)]'
-                              : 'bg-[var(--muted)] text-[var(--muted-foreground)]'
-                          }`}>
-                            {enforced ? 'On' : 'Off'}
-                          </span>
-                        </button>
-                        {/* Hide / show this terminal's route, marker and border.
-                            Beside the settings cog because it is the other half of
-                            looking at a terminal on this map, and next to it rather
-                            than tucked into the row for the same reason. */}
-                        <button
-                          type="button"
-                          onClick={() => toggleTerminalHidden(t.id)}
-                          aria-pressed={!hidden}
-                          aria-label={`${hidden ? 'Show' : 'Hide'} ${t.name} on the map`}
-                          title={hidden ? 'Show on map' : 'Hide route, terminal and border'}
-                          className="w-10 h-10 flex-shrink-0 flex items-center justify-center rounded-lg bg-[var(--muted)] active:scale-90"
-                        >
-                          {hidden
-                            ? <EyeOff className="w-4 h-4 text-[var(--muted-foreground)]" />
-                            : <Eye className="w-4 h-4 text-[var(--ink)]" />}
-                        </button>
-                        {/* A cog, not a pencil. What this opens is the terminal's
-                            whole configuration -- name, corridor width, visibility,
-                            colours, fares -- not a text field, and the pencil on a
-                            row that already shows the terminal's name said "rename
-                            this" when what it actually did was open a form. */}
-                        <button
-                          type="button"
-                          onClick={() => openEdit(t)}
-                          aria-label={`Settings for ${t.name}`}
-                          title="Terminal settings"
-                          className="w-10 h-10 flex-shrink-0 flex items-center justify-center rounded-lg bg-[var(--muted)] active:scale-90"
-                        >
-                          <Settings className="w-4 h-4 text-[var(--ink)]" />
-                        </button>
-                      </div>
-                    );
-                  })
-                )}
-              </div>
-            </div>
-          )}
 
         </div>
 
@@ -3438,6 +3324,12 @@ export default function AdminTerminals() {
               className={`relative flex flex-col gap-1 p-2 bg-surface border-r border-[var(--border)] shrink-0 transition-[width] duration-200 ${sidebarCollapsed ? 'w-16' : routesListOpen ? 'w-72' : 'w-44'}`}
             >
               {([
+                // Toda first: it is the only tab that answers "what does this
+                // network look like", and it is the one an admin lands on from
+                // the Assignments list, which is where they usually start. The
+                // drawing tabs hang off it — a terminal you have picked out of
+                // the network is what you then draw.
+                ['toda', 'Toda', MapPinned],
                 ['terminal', 'Terminal', MapPin],
                 ['border', 'Border', Pentagon],
                 ['route', 'Route', Milestone],
@@ -3591,6 +3483,73 @@ export default function AdminTerminals() {
                         </div>
                       </div>
                     )}
+
+                    {/*
+                      The terminal list, under the Toda tab.
+
+                      Same shape as the route list above it and for the same
+                      reason: a sub-section of its own tab rather than a sixth
+                      tab, because it is not a different job from the tab it
+                      belongs to — it is the list of terminals the Toda tab is
+                      about. It only exists while Toda is open, so it is never a
+                      control for a tab nobody is looking at.
+
+                      `visibleTerminals`, not `terminals`: a Rider Admin is
+                      scoped to one terminal, and this list must not be the way
+                      round that.
+                    */}
+                    {id === 'toda' && active && !sidebarCollapsed && (
+                      <div className="mt-0.5 mb-1">
+                        <div className="mt-1 space-y-1">
+                          {visibleTerminals.length === 0 ? (
+                            <p className="px-3 py-2 text-[11px] leading-snug text-[var(--muted-foreground)] italic">
+                              {isRiderAdmin
+                                ? 'No terminal assigned to you yet.'
+                                : 'No terminals yet.'}
+                            </p>
+                          ) : (
+                            visibleTerminals.map(other => {
+                              const isCurrent = other.id === editTerminal?.id;
+                              const roadCount = readTerminalRoutes(other).filter(
+                                r => r.points.length >= 2
+                              ).length;
+                              return (
+                                <div
+                                  key={other.id}
+                                  className={`rounded-xl px-2 py-1.5 transition-colors ${
+                                    isCurrent ? 'bg-[var(--muted)]' : 'hover:bg-[var(--muted)]'
+                                  }`}
+                                >
+                                  <div className="flex items-center gap-1.5">
+                                    <span
+                                      aria-hidden="true"
+                                      className={`w-2.5 h-2.5 flex-shrink-0 rounded-full ${
+                                        other.is_active === false ? 'opacity-30' : ''
+                                      }`}
+                                      style={{ background: normalizeTerminalColor(other.marker_color) }}
+                                    />
+                                    <button
+                                      type="button"
+                                      onClick={() => openEditKeepingSection(other, 'toda')}
+                                      aria-pressed={isCurrent}
+                                      className="min-w-0 flex-1 text-left"
+                                    >
+                                      <span className={`block text-xs font-bold truncate ${isCurrent ? 'text-[var(--ink)]' : 'text-[var(--ink-soft)]'}`}>
+                                        {other.name}
+                                      </span>
+                                      <span className="block text-[11px] text-[var(--muted-foreground)] truncate">
+                                        {other.is_active === false ? 'Inactive' : 'Active'}
+                                        {roadCount > 0 ? ` · ${roadCount} route${roadCount === 1 ? '' : 's'}` : ''}
+                                      </span>
+                                    </button>
+                                  </div>
+                                </div>
+                              );
+                            })
+                          )}
+                        </div>
+                      </div>
+                    )}
                   </ReactFragment>
                 );
               })}
@@ -3609,15 +3568,29 @@ export default function AdminTerminals() {
               </button>
             </aside>
 
-            <div className="flex-1 flex flex-col min-h-0 min-w-0">
-          {editorSection !== 'configuration' && editorSection !== 'fares' && (
+            {/*
+            `relative` is what the guide floats against, so it stays in the same
+            corner on all six tabs. Without it the guide would anchor to the
+            editor's outer edge and sit half over the rail.
+          */}
+            <div className="flex-1 flex flex-col min-h-0 min-w-0 relative">
+          {/*
+            Read once from editorSectionIsMap rather than re-tested here as a
+            two-way comparison — that is what the flag is for, and re-listing the
+            sections here is how a new one ends up rendering a map that would
+            then plot into the wrong form.
+          */}
+          {editorSectionShowsMap && (
           <div className="flex-1 relative flex min-h-0">
             <div className="flex-1 relative min-w-0">
             <GoogleMap
               mapContainerStyle={{ width: '100%', height: '100%' }}
-              center={formMapCenter}
-              zoom={15}
-              onClick={handleFormMapClick}
+              center={editorSection === 'toda' ? OVERVIEW_CENTER : formMapCenter}
+              zoom={editorSection === 'toda' ? 13 : 15}
+              // No handler on the Toda section, so a tap on the map does
+              // nothing at all. Wiring this unconditionally is how a tap aimed
+              // at a terminal would move the open terminal's pin instead.
+              onClick={editorSectionIsMap ? handleFormMapClick : undefined}
               onLoad={handleFormMapLoad}
               options={{
                 zoomControl: true,
@@ -3639,8 +3612,63 @@ export default function AdminTerminals() {
             >
               {/* The pin changes with the tab, so what is under the finger is
                   never ambiguous: the terminal's own icon on Terminal, and the
-                  shape's colour on the two plotting tabs. */}
-              {mapPickerMode === 'location' ? (
+                  shape's colour on the two plotting tabs.
+
+                  On Toda it is the whole network instead of the one terminal
+                  being edited — borders and roads included, since two TODAs a
+                  few hundred metres apart are told apart by what they enclose,
+                  not by their pins. */}
+              {editorSection === 'toda'
+                ? visibleTerminals.map(other => {
+                    const area = other.boundary_area && other.boundary_area.length >= 3
+                      ? other.boundary_area
+                      : null;
+                    const roads = readTerminalRoutes(other).filter(r => r.points.length >= 2);
+                    const isCurrent = other.id === editTerminal?.id;
+                    const dim = other.is_active === false || !isCurrent;
+                    return (
+                      <ReactFragment key={other.id}>
+                        {area && (
+                          <Polygon
+                            path={area}
+                            options={{
+                              fillColor: other.border_color,
+                              // The open terminal keeps full weight so it stays
+                              // findable among its neighbours; the rest recede.
+                              fillOpacity: dim ? 0.05 : 0.16,
+                              strokeColor: other.border_color,
+                              strokeOpacity: dim ? 0.4 : 1,
+                              strokeWeight: isCurrent ? 3 : 2,
+                              clickable: false,
+                            }}
+                          />
+                        )}
+                        {roads.map(route => (
+                          <Polyline
+                            key={`${other.id}_${route.id}`}
+                            path={route.points}
+                            options={{
+                              strokeColor: normalizeRouteColor(other.route_color),
+                              strokeWeight: isCurrent ? 5 : 3,
+                              strokeOpacity: dim ? 0.35 : 0.9,
+                              clickable: false,
+                              geodesic: true,
+                            }}
+                          />
+                        ))}
+                        <Marker
+                          position={{ lat: other.center_lat, lng: other.center_lng }}
+                          title={other.name}
+                          icon={terminalMarkerIcon(other.marker_color, isCurrent ? 76 : 54)}
+                          // The one thing on this map you can tap. It opens that
+                          // terminal rather than moving this one.
+                          onClick={() => openEditKeepingSection(other, 'toda')}
+                          zIndex={isCurrent ? 40 : 30}
+                        />
+                      </ReactFragment>
+                    );
+                  })
+                : mapPickerMode === 'location' ? (
                 <Marker
                   position={{ lat: form.center_lat, lng: form.center_lng }}
                   title={form.name}
@@ -3657,8 +3685,13 @@ export default function AdminTerminals() {
                   )}
                 />
               )}
-              {/* The enclosing area, drawn under the road it contains. */}
-              {form.boundary_area.length >= 3 && (
+              {/* The enclosing area, drawn under the road it contains.
+
+                  Skipped on Toda: the network branch above already draws this
+                  terminal's border, with the open one at full weight, and
+                  drawing it twice puts a second, differently-weighted edge over
+                  the top of the first. */}
+              {editorSection !== 'toda' && form.boundary_area.length >= 3 && (
                 <Polygon
                   path={form.boundary_area}
                   options={{
@@ -3835,84 +3868,56 @@ export default function AdminTerminals() {
                 )}
 
                 {/*
-                  The guide, as a round "?".
-
-                  Round where the three beside it are square: it is the one control
-                  in the row that changes nothing on the map, and the shape stops it
-                  reading as a fourth action.
+                  The "?" moved out of this block and up to the section column,
+                  above the configuration and fares panels. It used to sit here
+                  because the map was the only place with something to explain —
+                  now every tab has a guide, and a "?" that vanished when you
+                  left the map was worse than none.
                 */}
-                <button
-                  type="button"
-                  onClick={() => setGuideOpen(open => !open)}
-                  aria-expanded={guideOpen}
-                  aria-controls="map-editor-guide"
-                  aria-label={guideOpen ? 'Hide the guide' : 'Show the guide'}
-                  title={guideOpen ? 'Hide the guide' : 'Show the guide'}
-                  className={`pointer-events-auto w-11 h-11 flex items-center justify-center rounded-full border shadow-lg text-base font-bold active:scale-95 ${
-                    guideOpen
-                      ? 'bg-[var(--primary)] border-[var(--primary)] text-white'
-                      : 'bg-white/95 backdrop-blur border-line text-[#122724]'
-                  }`}
-                >
-                  <span aria-hidden="true">?</span>
-                </button>
               </div>
-
-              {guideOpen && (
-                <div
-                  id="map-editor-guide"
-                  className="pointer-events-auto w-[22rem] max-w-[calc(100vw-1.5rem)] bg-white/95 backdrop-blur rounded-xl shadow-lg p-3"
-                >
-                  {mapPickerMode === 'road' ? (
-                    <>
-                      <p className="text-sm font-semibold text-[#122724]">
-                        {activeRoute ? `Tap along ${activeRoute.name}` : 'Tap to start a route'}
-                      </p>
-                      <p className="text-xs text-[#5c6b68] mt-1">
-                        {isSnappingRoad
-                          ? 'Snapping to the nearest road...'
-                          : !activeRoute
-                            ? 'A road is created for you — add more with Add route.'
-                            : activeRoute.points.length < 2
-                              ? `Add at least 2 points — drop-offs and food orders are accepted within ${Math.round(activeRoute.buffer_m / 2)} m of the route`
-                              : `${activeRoute.points.length} points — accepts drop-offs / food orders within ${Math.round(activeRoute.buffer_m / 2)} m of the road`}
-                      </p>
-                      <p className="text-[11px] mt-1 text-[#5c6b68]">
-                        The route tricycle drivers can use to drop off a customer or
-                        pick up a food order.
-                      </p>
-                    </>
-                  ) : mapPickerMode === 'area' ? (
-                    <>
-                      <p className="text-sm font-semibold text-[#122724]">
-                        Tap the corners of the border area
-                      </p>
-                      <p className="text-xs text-[#5c6b68] mt-1">
-                        {form.boundary_area.length < 3
-                          ? `Add at least 3 points — ${form.boundary_area.length} so far`
-                          : `${form.boundary_area.length} points — area closed`}
-                      </p>
-                      <p className="text-[11px] mt-1 text-[#5c6b68]">
-                        The radius where a tricycle driver can join the queue to pick
-                        up a customer — share ride or private ride.
-                      </p>
-                    </>
-                  ) : (
-                    <>
-                      <p className="text-sm font-semibold text-[#122724]">
-                        Tap anywhere to set terminal location
-                      </p>
-                      <p className="text-xs text-[#5c6b68] mt-1">
-                        Current: {form.center_lat.toFixed(4)}, {form.center_lng.toFixed(4)}
-                      </p>
-                    </>
-                  )}
-                </div>
-              )}
             </div>
             </div>
           </div>
           )}
+
+          {/*
+            The guide, for whichever tab is open.
+
+            Floated against the section column rather than the map, so it is in
+            the same place on all six tabs — a control that moved when you changed
+            section would be read as belonging to the one you just left.
+
+            pointer-events-none on the wrapper, as the undo controls above it:
+            on a map tab a tap between the controls still has to reach the map.
+          */}
+          <div className="absolute top-3 right-3 z-[2015] flex flex-col items-end gap-2 pointer-events-none">
+            <button
+              type="button"
+              onClick={toggleGuide}
+              aria-expanded={guideOpen}
+              aria-controls="map-editor-guide"
+              aria-label={guideOpen ? 'Hide the guide' : 'Show the guide'}
+              title={guideOpen ? 'Hide the guide' : 'Show the guide'}
+              className={`pointer-events-auto w-11 h-11 flex items-center justify-center rounded-full border shadow-lg text-base font-bold active:scale-95 ${
+                guideOpen
+                  ? 'bg-[var(--primary)] border-[var(--primary)] text-white'
+                  : 'bg-white/95 backdrop-blur border-line text-[#122724]'
+              }`}
+            >
+              <span aria-hidden="true">?</span>
+            </button>
+
+            {guideOpen && (
+              <div
+                id="map-editor-guide"
+                className="pointer-events-auto w-[22rem] max-w-[calc(100vw-1.5rem)] bg-white/95 backdrop-blur rounded-xl shadow-lg p-3"
+              >
+                <p className="text-sm font-semibold text-[#122724]">{editorGuide.title}</p>
+                <p className="text-xs text-[#5c6b68] mt-1">{editorGuide.detail}</p>
+                <p className="text-[11px] mt-1 text-[#5c6b68]">{editorGuide.note}</p>
+              </div>
+            )}
+          </div>
 
           {/* Configuration: everything with no natural place on the map — name,
               corridor width, visibility, colour. The back button and title live in

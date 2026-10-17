@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { ArrowLeft, Search, ShoppingBag, Users, User as UserIcon, MapPin, Clock, Star } from "lucide-react";
 
-import { Tricycle } from "../ui/Tricycle";
+import { TerminalIconGlyph } from "../ui/TerminalIcon";
 import { Link } from "react-router";
 import { Button } from "../ui/button";
 import { Card } from "../ui/card";
@@ -120,7 +120,7 @@ export default function CustomerApp() {
             <DialogTrigger asChild>
               <Card className="p-6 cursor-pointer hover:shadow-xl transition-all border border-line hover:border-[var(--primary)]">
                 <div className="w-14 h-14 bg-[var(--primary)] rounded-2xl flex items-center justify-center mb-3 mx-auto">
-                  <Tricycle className="w-7 h-7 text-white" />
+                  <TerminalIconGlyph className="w-7 h-7 text-white" />
                 </div>
                 <h3 className="font-bold text-center text-[var(--ink)]">Book a Ride</h3>
                 <p className="text-xs text-center text-[var(--muted-foreground)] mt-1">Shared or Private</p>
@@ -285,7 +285,7 @@ export default function CustomerApp() {
             <Card className="p-5 border border-line">
               <div className="flex items-center gap-3 mb-3">
                 <div className="w-10 h-10 bg-[var(--info-soft)] rounded-lg flex items-center justify-center">
-                  <Tricycle className="w-5 h-5 text-[var(--info)]" />
+                  <TerminalIconGlyph className="w-5 h-5 text-[var(--info)]" />
                 </div>
                 <div className="flex-1">
                   <h4 className="font-bold text-[var(--ink)]">Shared Ride</h4>

@@ -17,7 +17,7 @@ import {
   type LucideIcon,
 } from "lucide-react";
 
-import { Tricycle } from "./Tricycle";
+import { TerminalIconGlyph } from "./TerminalIcon";
 import { useCart } from "../../contexts/CartContext";
 
 type BottomNavVariant = "customer" | "rider" | "business" | "admin";
@@ -158,7 +158,7 @@ export default function BottomNav({
                   key: "drivers",
                   to: "/admin/users",
                   label: "Drivers",
-                  icon: Tricycle,
+                  icon: TerminalIconGlyph,
                 },
                 {
                   key: "settings",

@@ -58,6 +58,12 @@ interface SignupData {
   phone: string;
   role: UserRole;
   todaPlate?: string;
+  /** The TODA this driver signs up to drive out of. Written to
+   *  `users.terminal_id` / `terminal_name` so the new driver is already
+   *  assigned before anyone approves them, rather than sitting unassigned until
+   *  a Super Admin notices. Optional: a driver may not know the TODA yet. */
+  terminalId?: string;
+  terminalName?: string;
   licenseNumber?: string;
   businessName?: string;
   businessAddress?: string;
@@ -717,6 +723,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
               is_online: false,
               service_types: ['shared'],
               current_seats: 0,
+              // Set together, never one without the other: the roster, the
+              // driver profile and the terminal's own driver count all read the
+              // pair, and a terminal id with no name renders as an empty box.
+              terminal_id: data.terminalId ?? null,
+              terminal_name: data.terminalId ? data.terminalName ?? null : null,
             }),
             ...(data.role === 'business' && {
               business_name: data.businessName,

@@ -3,7 +3,7 @@ import {
   Users, Store, Search, Edit2, Trash2, CheckCircle,
   XCircle, Menu, User as UserIcon, Shield, Filter, MoreVertical, ChevronDown
 } from "lucide-react";
-import { Tricycle } from "../ui/Tricycle";
+import { TerminalIconGlyph } from "../ui/TerminalIcon";
 import { useNavigate } from "react-router";
 import { Card } from "../ui/card";
 import { Badge } from "../ui/badge";
@@ -380,7 +380,7 @@ export default function AdminUsers() {
       case 'customer':
         return <Users className="w-5 h-5 text-[var(--success)]" />;
       case 'rider':
-        return <Tricycle className="w-5 h-5 text-[var(--info)]" />;
+        return <TerminalIconGlyph className="w-5 h-5 text-[var(--info)]" />;
       case 'business':
         return <Store className="w-5 h-5 text-[var(--violet)]" />;
       default:

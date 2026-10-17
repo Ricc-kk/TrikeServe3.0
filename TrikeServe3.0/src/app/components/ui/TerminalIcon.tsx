@@ -22,7 +22,8 @@
  * Duplicating the markup between the two would guarantee they drift apart.
  */
 
-import { useMemo } from "react";
+import { forwardRef, useMemo } from "react";
+import type { LucideProps } from "lucide-react";
 // Read as text, not as a URL. A normal `.svg` import resolves to a file URL,
 // which cannot be recoloured, and the only thing standing between this file and
 // the screen is the one `currentColor` substitution in `markup` below.
@@ -72,7 +73,18 @@ export function normalizeBorderColor(raw: string | null | undefined): string {
   return /^#[0-9a-fA-F]{6}$/.test(v) ? v.toUpperCase() : DEFAULT_BORDER_COLOR;
 }
 
-function markup(color: string): string {
+/**
+ * The one colour this glyph will draw in without sanitising it.
+ *
+ * `normalizeTerminalColor` rejects anything that is not a hex, which is the
+ * right call for a value coming out of the colour picker — but it means
+ * `currentColor` can never survive, and `currentColor` is exactly what an icon
+ * sitting in running text needs in order to match that text. Hence the opt-in
+ * below rather than a hole in the validator.
+ */
+const INHERIT_COLOR = "currentColor";
+
+function markup(color: string, inheritColor = false): string {
   /*
    * The one substitution that turns the asset into a coloured icon.
    *
@@ -81,7 +93,9 @@ function markup(color: string): string {
    * normalizeTerminalColor, so a hand-edited hex in the colour picker cannot
    * smuggle markup into the document.
    */
-  return terminalGlyph.replace(/currentColor/g, normalizeTerminalColor(color));
+  const safe =
+    inheritColor && color === INHERIT_COLOR ? INHERIT_COLOR : normalizeTerminalColor(color);
+  return terminalGlyph.replace(/currentColor/g, safe);
 }
 
 export function terminalIconUrl(color: string) {
@@ -186,3 +200,44 @@ export default function TerminalIcon({
     />
   );
 }
+
+/**
+ * The terminal glyph dressed as a Lucide icon.
+ *
+ * The shared UI components — StatCard, EmptyState, ChoiceCard, BottomNav and
+ * the nav item arrays across the app — all type their icon prop as
+ * `LucideIcon` and all call it the way lucide icons are called: a `className`
+ * for size, a text colour class, and nothing else. `TerminalIcon` answers none
+ * of that. It wants a fixed hex rather than inheriting the text colour, and it
+ * is a plain component rather than a `forwardRef` exotic component.
+ *
+ * So this is the same geometry behind lucide's calling convention. It exists
+ * because dropping `TerminalIcon` straight into those call sites would type
+ * error, and — worse — would draw every icon on a coloured tile in the default
+ * terminal blue, since `text-white` would be silently ignored.
+ */
+export const TerminalIconGlyph = forwardRef<SVGSVGElement, LucideProps>(
+  function TerminalIconGlyph({ size = 24, color, className, ...rest }, ref) {
+    // Lucide lets `size` be a string ("1.5rem"); the SVG wants a number.
+    const px = typeof size === "number" ? size : parseFloat(String(size)) || 24;
+    const body = useMemo(() => markup(color ?? INHERIT_COLOR, true), [color]);
+    // Lucide icons are decorative unless labelled, and so is this one — but it
+    // has to stop hiding itself when a caller did supply a label.
+    const labelled = rest["aria-label"] != null || rest.title != null;
+
+    return (
+      <svg
+        {...rest}
+        ref={ref}
+        viewBox={`${GLYPH.x} ${GLYPH.y} ${GLYPH.w} ${GLYPH.h}`}
+        width={px}
+        height={px}
+        className={className}
+        role={labelled ? "img" : undefined}
+        aria-hidden={labelled ? undefined : true}
+        focusable="false"
+        dangerouslySetInnerHTML={{ __html: body }}
+      />
+    );
+  }
+);

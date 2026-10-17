@@ -1,6 +1,6 @@
 import { UtensilsCrossed } from "lucide-react";
 
-import { Tricycle } from "../ui/Tricycle";
+import { TerminalIconGlyph } from "../ui/TerminalIcon";
 import { useCart } from "../../contexts/CartContext";
 
 type CustomerServiceHubProps = {
@@ -51,7 +51,7 @@ export default function CustomerServiceHub({
           className="flex min-h-44 flex-col items-center justify-center gap-1.5 rounded-2xl border-2 border-[var(--coral-soft)] bg-[var(--primary-soft)] px-3 py-5 text-center transition-transform hover:scale-[1.02] active:scale-[0.98] sm:min-h-52"
         >
           <span className="grid size-14 place-items-center rounded-2xl bg-[var(--primary)] sm:size-16">
-            <Tricycle className="size-8 text-white sm:size-9" aria-hidden="true" />
+            <TerminalIconGlyph className="size-8 text-white sm:size-9" aria-hidden="true" />
           </span>
           <span className="text-base font-extrabold leading-tight text-[var(--ink)] sm:text-lg">
             Book a Ride

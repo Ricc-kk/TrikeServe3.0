@@ -4,7 +4,7 @@ import {
   AlertTriangle, User as UserIcon,
   Bell, Menu, X
 } from "lucide-react";
-import { Tricycle } from "../ui/Tricycle";
+import { TerminalIconGlyph } from "../ui/TerminalIcon";
 import { useNavigate } from "react-router";
 import { Card } from "../ui/card";
 import { Badge } from "../ui/badge";
@@ -358,7 +358,7 @@ export default function AdminDashboard() {
                   <h2 className="text-2xl lg:text-4xl font-bold text-[var(--ink)]">{stats.totalRiders}</h2>
                 </div>
                 <div className="w-10 h-10 lg:w-12 lg:h-12 bg-[var(--info-soft)] rounded-xl flex items-center justify-center">
-                  <Tricycle className="w-5 h-5 lg:w-6 lg:h-6 text-[var(--info)]" />
+                  <TerminalIconGlyph className="w-5 h-5 lg:w-6 lg:h-6 text-[var(--info)]" />
                 </div>
               </div>
               <div className="flex items-end gap-0.5 lg:gap-1 h-8 lg:h-12">
@@ -472,7 +472,7 @@ export default function AdminDashboard() {
                         <div className="flex items-start gap-3">
                           <div className={`w-10 h-10 ${user.type === 'rider' ? 'bg-[var(--info-soft)]' : 'bg-[var(--violet-soft)]'} rounded-lg flex items-center justify-center flex-shrink-0`}>
                             {user.type === 'rider' ? (
-                              <Tricycle className="w-5 h-5 text-[var(--info)]" />
+                              <TerminalIconGlyph className="w-5 h-5 text-[var(--info)]" />
                             ) : (
                               <Store className="w-5 h-5 text-[var(--violet)]" />
                             )}
@@ -537,7 +537,7 @@ export default function AdminDashboard() {
                               <div className="flex items-center gap-3">
                                 <div className={`w-10 h-10 ${user.type === 'rider' ? 'bg-[var(--info-soft)]' : 'bg-[var(--violet-soft)]'} rounded-lg flex items-center justify-center flex-shrink-0`}>
                                   {user.type === 'rider' ? (
-                                    <Tricycle className="w-5 h-5 text-[var(--info)]" />
+                                    <TerminalIconGlyph className="w-5 h-5 text-[var(--info)]" />
                                   ) : (
                                     <Store className="w-5 h-5 text-[var(--violet)]" />
                                   )}

@@ -1,8 +1,8 @@
-import { useState, useRef } from "react";
+import { useEffect, useState, useRef } from "react";
 import { useNavigate, Link } from "react-router";
-import { ArrowLeft, User, Mail, Phone, Lock, Check, MapPin, Store, UserCircle, Eye, EyeOff, AlertCircle } from "lucide-react";
+import { ArrowLeft, User, Mail, Phone, Lock, Check, MapPin, Store, UserCircle, Eye, EyeOff, AlertCircle, ChevronDown } from "lucide-react";
 
-import { Tricycle } from "../ui/Tricycle";
+import { TerminalIconGlyph } from "../ui/TerminalIcon";
 import { Button } from "../ui/button";
 import { Card } from "../ui/card";
 import { Input } from "../ui/input";
@@ -11,6 +11,7 @@ import { useAuth, UserRole } from "../../contexts/AuthContext";
 import { CUISINES, type CuisineId } from "../../../lib/foodTaxonomy";
 import { PASSWORD_RULES } from "../../../lib/passwordRules";
 import BusinessMapSelector from "../business/BusinessMapSelector";
+import { supabase } from "../../../utils/supabase";
 
 interface SignUpFormData {
   email: string;
@@ -22,6 +23,11 @@ interface SignUpFormData {
   role: UserRole;
   // Rider specific
   todaPlate?: string;
+  /** The TODA this driver signs up to drive out of. */
+  terminalId?: string;
+  /** Carried alongside the id so the new row names its terminal rather than
+   *  storing an id the driver list has to resolve on every read. */
+  terminalName?: string;
   // Business specific
   businessName?: string;
   businessAddress?: string;
@@ -185,6 +191,51 @@ export default function SignUp() {
   const [error, setError] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [showMapPicker, setShowMapPicker] = useState(false);
+
+  /**
+   * The TODAs a new driver can sign up to.
+   *
+   * Read once, and only while the rider form is on screen — a driver who
+   * chooses Driver is usually choosing because they know which TODA they drive
+   * out of, and this is the one place in the app they can say so without an
+   * account. Fetched lazily rather than on mount because a customer never sees
+   * the dropdown and should not wait on a query it will never read.
+   *
+   * Inactive terminals are dropped rather than shown disabled: they are not
+   * accepting drivers, and offering one reads as an invitation to join a TODA
+   * that is not running.
+   */
+  const [terminals, setTerminals] = useState<{ id: string; name: string }[]>([]);
+  const [terminalsLoading, setTerminalsLoading] = useState(false);
+
+  useEffect(() => {
+    if (step !== "form" || formData.role !== "rider") return;
+    let cancelled = false;
+    setTerminalsLoading(true);
+    supabase
+      .from("terminals")
+      .select("id, name")
+      .eq("is_active", true)
+      .order("name")
+      .then(({ data, error }) => {
+        if (cancelled) return;
+        if (error) {
+          // Not fatal. The dropdown reports itself as unavailable and the
+          // driver can still register unassigned — a Super Admin assigns them
+          // from Terminals -> Assignments afterwards, which is how every driver
+          // who has not picked a TODA is handled today.
+          setTerminals([]);
+        } else {
+          setTerminals(data || []);
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setTerminalsLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [step, formData.role]);
   // Password and confirm each toggle independently, so you can reveal one to
   // check it against the other without exposing both at once.
   const [showPassword, setShowPassword] = useState(false);
@@ -210,7 +261,13 @@ export default function SignUp() {
   };
 
   const handleRoleSelect = (role: UserRole) => {
-    setFormData(prev => ({ ...prev, role }));
+    // Dropped on the way away from Driver so switching to Customer and back does
+    // not silently re-apply a TODA picked for a role that never asked for one.
+    setFormData(prev => ({
+      ...prev,
+      role,
+      ...(role === "rider" ? {} : { terminalId: undefined, terminalName: undefined }),
+    }));
     // Role changes which fields are required, so clear the blur state —
     // otherwise errors from the previously selected role linger.
     setTouched({});
@@ -257,6 +314,9 @@ export default function SignUp() {
       phone: formData.phoneNumber,
       role: formData.role,
       todaPlate: formData.todaPlate,
+      // Both or neither, so the new row is never a terminal id with a blank name.
+      terminalId: formData.terminalId || undefined,
+      terminalName: formData.terminalId ? formData.terminalName : undefined,
       businessName: formData.businessName,
       businessAddress: formData.businessAddress,
       businessLat: formData.businessLat,
@@ -373,7 +433,7 @@ export default function SignUp() {
               >
                 <div className="flex items-center gap-4">
                   <div className="w-14 h-14 bg-[var(--info-soft)] rounded-xl flex items-center justify-center group-hover:bg-[var(--info)] transition-colors">
-                    <Tricycle className="w-8 h-8 text-[var(--info)] group-hover:text-white" />
+                    <TerminalIconGlyph className="w-8 h-8 text-[var(--info)] group-hover:text-white" />
                   </div>
                   <div>
                     <h3 className="font-bold text-lg text-[var(--ink)]">Driver</h3>
@@ -538,6 +598,67 @@ export default function SignUp() {
                       disabled={isLoading}
                     />
                     <FieldError id="todaPlate-error" message={errorFor("todaPlate")} />
+                  </div>
+
+                  {/* Which TODA they drive out of.
+
+                      Optional on purpose. A driver who does not know yet still
+                      needs an account, and an unassigned driver is a normal
+                      state the Super Admin resolves from Terminals ->
+                      Assignments — making it required would only push people to
+                      invent an answer. */}
+                  <div>
+                    <label
+                      htmlFor="toda-select"
+                      className="block text-sm font-semibold text-[var(--ink)] mb-2"
+                    >
+                      TODA <span className="font-normal text-[var(--muted-foreground)]">(optional)</span>
+                    </label>
+                    <div className="relative">
+                      <TerminalIconGlyph
+                        className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[var(--muted-foreground)]"
+                        aria-hidden="true"
+                      />
+                      <select
+                        id="toda-select"
+                        value={formData.terminalId || ""}
+                        disabled={isLoading || terminalsLoading}
+                        onChange={(e) => {
+                          const picked = terminals.find(t => t.id === e.target.value);
+                          // Name resolved from the list rather than read off the
+                          // option, so what gets stored is the terminal's real
+                          // name and not a label that could go stale.
+                          setFormData(prev => ({
+                            ...prev,
+                            terminalId: picked?.id,
+                            terminalName: picked?.name,
+                          }));
+                        }}
+                        className="w-full appearance-none pl-9 pr-9 py-2.5 border rounded-lg bg-surface text-sm text-[var(--ink)] focus:outline-none focus:border-[var(--primary)] disabled:opacity-60 border-line"
+                      >
+                        <option value="">
+                          {terminalsLoading
+                            ? "Loading TODAs..."
+                            : terminals.length === 0
+                              ? "No TODA available yet"
+                              : "Select your TODA"}
+                        </option>
+                        {terminals.map(t => (
+                          <option key={t.id} value={t.id}>
+                            {t.name}
+                          </option>
+                        ))}
+                      </select>
+                      <ChevronDown
+                        size={16}
+                        aria-hidden="true"
+                        className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-[var(--muted-foreground)]"
+                      />
+                    </div>
+                    <p className="text-xs text-[var(--muted-foreground)] mt-1.5">
+                      Pick the terminal you drive out of. The Super Admin can change
+                      this later.
+                    </p>
                   </div>
                 </>
               )}

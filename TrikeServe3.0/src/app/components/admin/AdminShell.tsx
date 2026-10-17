@@ -1,6 +1,6 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { Link, useLocation } from "react-router";
-import { Menu, X } from "lucide-react";
+import { ArrowLeft, Menu, X } from "lucide-react";
 
 // The bytes in this file are JPEG, not PNG, so it carries a .jpg name. Served
 // under a .png name it was sent as image/png and Chromium's sniffing rejected it
@@ -9,6 +9,7 @@ import TrikeServeLogo from "../../../assets/TRIKESERVE_logo.jpg";
 import TrimmedLogo from "../ui/TrimmedLogo";
 import { useAuth } from "../../contexts/AuthContext";
 import { adminNavFor, isSuperAdmin } from "./adminNav";
+import { DRIVER_APPS, useDriverAppSwitch } from "../../hooks/useDriverAppSwitch";
 
 export type AdminShellTab = {
   /** Value the page stores for this section. */
@@ -64,6 +65,23 @@ export default function AdminShell({
   const items = adminNavFor(user);
   // Rider Admin gets the short Filipino gloss; Super Admin is English-only.
   const showBilingual = !superAdmin;
+  const { goToApp, currentAppKey } = useDriverAppSwitch();
+
+  /*
+   * The way out of the admin app, for the people who drove in themselves.
+   *
+   * A driver-admin is one person with three apps, so the admin app has to offer
+   * a way back to the other two — otherwise the switch they were given in their
+   * Driver profile becomes a one-way door, since nothing inside this app leads
+   * out. The Super Admin is left out deliberately: they have no driver app to
+   * go back to, and offering them one would be a dead control.
+   *
+   * The admin entry itself is filtered rather than disabled: they are already in
+   * it, and a button that switches you to where you are is worse than no button.
+   */
+  const otherApps = user?.isTerminalAdmin
+    ? DRIVER_APPS.filter(app => app.key !== 'admin')
+    : [];
 
   // Close the drawer on navigation so tapping an item actually navigates.
   useEffect(() => {
@@ -174,6 +192,49 @@ export default function AdminShell({
             );
           })}
         </nav>
+
+        {/* Leaving the admin app. Sits under the sections rather than in the
+            header, because it is not a place in this app — it is the way to
+            somewhere else, and the header is for where you are. */}
+        {otherApps.length > 0 && (
+          <div className="p-4 pt-0 border-t border-line">
+            <p className="px-1 pb-2 text-[11px] font-bold uppercase tracking-[0.14em] text-[var(--muted-foreground)]">
+              Switch app
+            </p>
+            <div className="space-y-1">
+              {otherApps.map(app => {
+                const isCurrent = currentAppKey === app.key;
+                return (
+                  <button
+                    key={app.key}
+                    type="button"
+                    onClick={() => {
+                      // The drawer is a full-height overlay on mobile; closing it
+                      // first keeps the app they land in from being drawn behind
+                      // a scrim they have to dismiss to see anything.
+                      setIsMenuOpen(false);
+                      void goToApp(app.key);
+                    }}
+                    aria-current={isCurrent ? 'page' : undefined}
+                    className={[
+                      "w-full min-h-11 flex items-center gap-3 px-3 py-2.5 rounded-xl text-left transition-colors",
+                      isCurrent
+                        ? "bg-[var(--primary-soft)] text-[var(--primary)]"
+                        : "text-[var(--muted-foreground)] hover:bg-[var(--muted)] hover:text-[var(--ink)]",
+                    ].join(" ")}
+                  >
+                    <app.Icon className="w-4 h-4 flex-shrink-0" aria-hidden="true" />
+                    <span className="min-w-0 flex-1">
+                      <span className="block text-sm font-semibold truncate">{app.label}</span>
+                      <span className="block text-[11px] opacity-80 truncate">{app.blurb}</span>
+                    </span>
+                    <ArrowLeft className="w-4 h-4 flex-shrink-0 opacity-60" aria-hidden="true" />
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Main column */}
