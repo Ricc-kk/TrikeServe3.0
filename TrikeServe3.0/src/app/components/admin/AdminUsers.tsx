@@ -1,8 +1,9 @@
-import { useState, useEffect, useMemo, useRef } from "react";
+import { useState, useEffect, useMemo, useRef, useId } from "react";
+import { createPortal } from "react-dom";
 import {
   Users, Store, Search, Trash2, CheckCircle,
   XCircle, Menu, User as UserIcon, Shield, Filter, MoreVertical, ChevronDown,
-  ChevronRight, Mail, Phone, MapPin, CalendarDays, Hash, Check
+  Mail, Phone, MapPin, CalendarDays, Hash, Check
 } from "lucide-react";
 import { TerminalIconGlyph } from "../ui/TerminalIcon";
 import { useNavigate } from "react-router";
@@ -31,7 +32,6 @@ interface StoredUser {
   password: string;
   adminType?: 'business_customer' | 'rider';
   todaPlate?: string;
-  licenseNumber?: string;
   /** Which TODA this driver drives out of, for the TODA filter below. */
   terminalId?: string;
   terminalName?: string;
@@ -119,33 +119,22 @@ function RestaurantProfile({ user }: { user: StoredUser }) {
   );
 }
 
-/**
- * The frame every dialog on this screen is built from: backdrop, title, a
- * scrolling body and an optional footer.
- *
- * One implementation of the Escape key, the backdrop click and the focus move,
- * because the failure mode of three copies is not that one of them breaks -- it
- * is that they drift, and a dialog that no longer closes on Escape gets blamed on
- * the feature rather than on the frame.
- *
- * `zClass` is the whole reason this is a parameter. The screen stacks three
- * kinds of overlay: the detail dialog, a confirmation raised over it, and a
- * picker. They are given deliberately ordered bands -- 300 / 400 / 500 -- so a
- * confirmation opened from inside the detail dialog lands *above* it instead of
- * behind it, which is the failure that makes a confirm button look dead.
- */
+/** Shared dialog frame, above the admin navigation and below confirmations. */
 function ModalShell({
   open,
+  active = true,
   title,
   description,
   onClose,
   children,
   footer,
   maxWidth = 'max-w-sm',
-  zClass = 'z-[300]',
+  zClass = 'z-[1100]',
   initialFocusRef,
 }: {
   open: boolean;
+  /** Pause keyboard handling while a confirmation is above this dialog. */
+  active?: boolean;
   title: string;
   description?: string;
   onClose: () => void;
@@ -156,42 +145,85 @@ function ModalShell({
   /** Focused when the dialog opens, so the keyboard is inside it. */
   initialFocusRef?: React.RefObject<HTMLElement | null>;
 }) {
-  useEffect(() => {
-    if (open) initialFocusRef?.current?.focus();
-  }, [open, initialFocusRef]);
+  const dialogRef = useRef<HTMLDivElement>(null);
+  const titleId = useId();
+  const descriptionId = useId();
 
   useEffect(() => {
     if (!open) return;
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose();
+    const trigger = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      if (trigger?.isConnected) trigger.focus({ preventScroll: true });
     };
-    document.addEventListener('keydown', onKey);
-    return () => document.removeEventListener('keydown', onKey);
-  }, [open, onClose]);
+  }, [open]);
+
+  useEffect(() => {
+    if (open && active) (initialFocusRef?.current ?? dialogRef.current)?.focus();
+  }, [open, active, initialFocusRef]);
+
+  useEffect(() => {
+    if (!open || !active) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        e.stopPropagation();
+        onClose();
+      }
+      if (e.key !== 'Tab' || !dialogRef.current) return;
+
+      const controls = Array.from(dialogRef.current.querySelectorAll<HTMLElement>(
+        'button:not([disabled]), a[href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
+      )).filter(el => el.tabIndex >= 0 && el.getClientRects().length > 0);
+      const first = controls[0];
+      const last = controls[controls.length - 1];
+      if (!first) {
+        e.preventDefault();
+        dialogRef.current.focus();
+      } else if (!dialogRef.current.contains(document.activeElement)) {
+        e.preventDefault();
+        (e.shiftKey ? last : first).focus();
+      } else if (e.shiftKey && (document.activeElement === first || document.activeElement === dialogRef.current)) {
+        e.preventDefault();
+        last.focus();
+      } else if (!e.shiftKey && document.activeElement === last) {
+        e.preventDefault();
+        first.focus();
+      }
+    };
+    document.addEventListener('keydown', onKey, true);
+    return () => document.removeEventListener('keydown', onKey, true);
+  }, [open, active, onClose]);
 
   if (!open) return null;
 
-  return (
+  return createPortal(
     <div className={`fixed inset-0 ${zClass} flex items-center justify-center p-4`}>
-      <div className="absolute inset-0 bg-black/50" onClick={onClose} />
+      <div className="absolute inset-0 bg-black/50" data-modal-backdrop="" aria-hidden="true" onClick={active ? onClose : undefined} />
       <div
+        ref={dialogRef}
+        tabIndex={-1}
         role="dialog"
         aria-modal="true"
-        aria-label={title}
-        className={`relative w-full ${maxWidth} bg-surface rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[85vh]`}
+        aria-labelledby={titleId}
+        aria-describedby={description ? descriptionId : undefined}
+        className={`relative w-full ${maxWidth} bg-surface rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[85dvh]`}
       >
         <div className="p-5 border-b border-line shrink-0">
-          <h3 className="text-lg font-bold text-[var(--ink)]">{title}</h3>
+          <h3 id={titleId} className="text-lg font-bold text-[var(--ink)] break-words">{title}</h3>
           {description ? (
-            <p className="text-sm text-[var(--muted-foreground)] mt-1">{description}</p>
+            <p id={descriptionId} className="text-sm text-[var(--muted-foreground)] mt-1 break-words">{description}</p>
           ) : null}
         </div>
 
-        <div className="overflow-y-auto">{children}</div>
+        <div className="min-h-0 overflow-y-auto">{children}</div>
 
         {footer ? <div className="border-t border-line shrink-0">{footer}</div> : null}
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }
 
@@ -250,7 +282,7 @@ function OptionPicker({
       title={title}
       description={description}
       onClose={onClose}
-      zClass="z-[500]"
+      zClass="z-[1100]"
       initialFocusRef={firstOptionRef}
       footer={
         <button
@@ -481,12 +513,11 @@ function NotSet() {
  * fields. Showing a customer's "TODA Plate: not set" is worse than not showing
  * the field at all.
  *
- * Sits at z-300, below ConfirmationModal's 400, so tapping Verify or Delete here
- * raises its confirmation *above* this dialog instead of behind it. The dialog
- * stays open underneath and the updated record is what you see when it closes.
+ * Confirmations appear above this dialog without losing the selected record.
  */
 function UserDetailModal({
   user,
+  active,
   isSuperAdmin,
   onClose,
   onVerify,
@@ -494,6 +525,7 @@ function UserDetailModal({
   onDelete,
 }: {
   user: StoredUser | null;
+  active: boolean;
   isSuperAdmin: boolean;
   onClose: () => void;
   onVerify: () => void;
@@ -502,30 +534,25 @@ function UserDetailModal({
 }) {
   const closeRef = useRef<HTMLButtonElement>(null);
 
-  if (!user) {
-    // Still rendered (not conditionally by the parent) so the hooks below run in
-    // the same order every render rather than appearing on the render where the
-    // selected user finally resolves.
-    return <ModalShell open={false} title="User details" onClose={onClose}>{null}</ModalShell>;
-  }
+  if (!user) return null;
 
-  const displayName = user.role === 'business' ? (user.businessName || user.name) : user.name;
+  const displayName = displayNameOf(user);
 
   return (
     <ModalShell
       open
+      active={active}
       title={displayName}
       description={user.email}
       onClose={onClose}
       maxWidth="max-w-lg"
-      zClass="z-[300]"
+      zClass="z-[1100]"
       initialFocusRef={closeRef}
       footer={
         <div className="flex flex-wrap items-center gap-2 p-4">
           {isSuperAdmin ? (
             <>
               <button
-                ref={closeRef}
                 type="button"
                 onClick={user.isVerified ? onUnverify : onVerify}
                 className={`min-h-11 px-4 rounded-lg transition-all flex items-center gap-1.5 font-semibold text-xs ${
@@ -557,6 +584,7 @@ function UserDetailModal({
             </p>
           )}
           <button
+            ref={closeRef}
             type="button"
             onClick={onClose}
             className="ml-auto min-h-11 px-5 rounded-xl border border-line font-semibold text-sm text-[var(--ink)] hover:bg-[var(--muted)] transition-colors"
@@ -603,9 +631,6 @@ function UserDetailModal({
             <>
               <DetailField icon={<Hash className="w-4 h-4" />} label="TODA Plate">
                 {user.todaPlate || <NotSet />}
-              </DetailField>
-              <DetailField icon={<Hash className="w-4 h-4" />} label="License Number">
-                {user.licenseNumber || <NotSet />}
               </DetailField>
               {/* The terminal is set from Terminals -> Assignments, and a driver
                   can legitimately have none. Saying which TODA is the one thing
@@ -718,7 +743,6 @@ export default function AdminUsers() {
         password: '',
         adminType: u.admin_type,
         todaPlate: u.toda_plate,
-        licenseNumber: u.license_number,
         terminalId: u.terminal_id,
         terminalName: u.terminal_name,
         // The joined row wins; the user-row copy is only a fallback for a shop
@@ -1283,10 +1307,6 @@ export default function AdminUsers() {
                           {u.email}
                         </p>
                       </div>
-                      <ChevronRight
-                        className="w-5 h-5 flex-shrink-0 text-[var(--muted-foreground)]"
-                        aria-hidden="true"
-                      />
                     </div>
 
                     <div className="mt-3 flex flex-wrap items-center gap-2">
@@ -1354,13 +1374,17 @@ export default function AdminUsers() {
                   </thead>
                   <tbody className="divide-y divide-[var(--border)]">
                     {pagedUsers.map((u) => (
-                      <tr key={u.id} className="hover:bg-[var(--muted)] transition-colors">
+                      <tr
+                        key={u.id}
+                        onClick={event => {
+                          // Role and account-action buttons keep their own behavior.
+                          if ((event.target as Element).closest('button, a, input, select, textarea, [role="button"]')) return;
+                          openUserDetails(u.id);
+                        }}
+                        className="cursor-pointer hover:bg-[var(--muted)] transition-colors"
+                      >
                         <td className="px-4 py-2">
-                          {/* The whole identity cell is the button, rather than the
-                              <tr>. A clickable row would swallow the taps on the
-                              role picker and the verify/delete buttons inside it,
-                              and every one of those would have needed a
-                              stopPropagation to stay clickable. */}
+                          {/* Native button also supports opening details by keyboard. */}
                           <button
                             type="button"
                             onClick={() => openUserDetails(u.id)}
@@ -1368,13 +1392,6 @@ export default function AdminUsers() {
                             aria-haspopup="dialog"
                             className="flex w-full min-h-11 items-center gap-3 text-left rounded-lg group"
                           >
-                            {/* A plain chevron, not the rotating one an in-place
-                                disclosure uses -- it opens a dialog rather than
-                                pushing rows down the page. */}
-                            <ChevronRight
-                              className="w-4 h-4 flex-shrink-0 text-[var(--muted-foreground)] group-hover:text-[var(--ink)] transition-colors"
-                              aria-hidden="true"
-                            />
                             <div
                               className={`w-10 h-10 flex-shrink-0 rounded-xl flex items-center justify-center ${
                                 u.role === 'customer'
@@ -1543,6 +1560,7 @@ export default function AdminUsers() {
           not something that belongs to a particular <tr>. */}
       <UserDetailModal
         user={detailUser}
+        active={!modalOpen}
         isSuperAdmin={isSuperAdmin}
         onClose={() => setDetailUserId(null)}
         onVerify={() => detailUser && handleVerifyUser(detailUser.id)}
@@ -1608,6 +1626,7 @@ export default function AdminUsers() {
         message={modalConfig?.message || ''}
         variant={modalConfig?.variant || 'danger'}
         confirmLabel={modalConfig?.confirmLabel || 'Confirm'}
+        zIndexClassName="z-[1200]"
       />
 
       {/* Toast Notification */}

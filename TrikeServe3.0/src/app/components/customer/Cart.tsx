@@ -1,4 +1,4 @@
-import { ShoppingCart, Trash2, Plus, X, MoreVertical } from "lucide-react";
+import { ShoppingCart, Trash2, Plus, X, MoreVertical, Clock3, Store } from "lucide-react";
 import { Link, useNavigate } from "react-router";
 import { Button } from "../ui/button";
 import { Card } from "../ui/card";
@@ -75,6 +75,7 @@ function CartRestaurantCard({
   onAddMore,
   onDelete,
 }: CardProps) {
+  const itemCount = restaurant.items.reduce((total, item) => total + item.quantity, 0);
   const cardRef = useRef<HTMLDivElement>(null);
   const dragRef = useRef<{
     startX: number;
@@ -225,7 +226,7 @@ function CartRestaurantCard({
 
   return (
     <li
-      className={`relative overflow-hidden rounded-2xl ${
+      className={`relative overflow-hidden rounded-3xl border-2 border-line bg-card shadow-card ${
         revealed ? "z-[110]" : ""
       }`}
     >
@@ -269,12 +270,12 @@ function CartRestaurantCard({
           transform: `translateX(${dx}px)`,
           transition: settling ? `transform ${SWIPE_SETTLE_MS}ms ease-out` : "none",
         }}
-        className="relative touch-pan-y select-none rounded-2xl border border-line bg-surface p-4"
+        className="relative touch-pan-y select-none overflow-hidden rounded-[calc(1.5rem-2px)] bg-card"
       >
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-3 border-b border-b-line border-t-4 border-t-[var(--teal)] bg-[var(--teal-soft)] p-4">
           {/* Restaurant identity leads on the left, the way the restaurant
               cards and search results already present it. */}
-          <div className="size-12 flex-shrink-0 overflow-hidden rounded-full border border-line bg-[var(--muted)]">
+          <div className="size-12 flex-shrink-0 overflow-hidden rounded-xl border border-line bg-card shadow-sm">
             <ImageWithFallback
               src={restaurant.image}
               alt={restaurant.name}
@@ -283,14 +284,17 @@ function CartRestaurantCard({
           </div>
 
           <div className="min-w-0 flex-1">
-            <h3 className="truncate text-base font-bold text-[var(--ink)]">
+            <h3 className="truncate text-base font-extrabold text-[var(--ink)]">
               {restaurant.name}
             </h3>
-            <p className="text-sm text-[var(--muted-foreground)]">
-              {restaurant.items.length}{" "}
-              {restaurant.items.length === 1 ? "item" : "items"} · From{" "}
-              {restaurant.estimatedTime}
-            </p>
+            <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-[var(--muted-foreground)]">
+              <span className="font-semibold">{itemCount} {itemCount === 1 ? "item" : "items"}</span>
+              <span aria-hidden="true">·</span>
+              <span className="inline-flex items-center gap-1">
+                <Clock3 className="size-3.5" aria-hidden="true" />
+                {restaurant.estimatedTime}
+              </span>
+            </div>
           </div>
 
           <button
@@ -299,62 +303,74 @@ function CartRestaurantCard({
             onClick={() => onTap(onOpenOptions)}
             aria-haspopup="dialog"
             aria-label={`Cart options for ${restaurant.name}`}
-            className="grid size-10 flex-shrink-0 place-items-center rounded-full transition-transform active:scale-90"
+            className="grid size-11 flex-shrink-0 place-items-center rounded-xl border border-line bg-card transition-colors hover:bg-soft focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--teal)] active:scale-90"
           >
             <MoreVertical className="size-5 text-[var(--muted-foreground)]" />
           </button>
         </div>
 
-        {/* Items as icons in a row, with the add button as the last thing in
-            that row so it always sits beside the final item rather than being
-            pinned to the edge of the card. */}
-        <div className="mt-3 flex gap-2 overflow-x-auto snap-x">
-          {restaurant.items.map((item) => (
-            <button
-              key={item.id}
-              type="button"
-              onClick={() => onTap(onOpenCheckout)}
-              aria-label={`${item.name}, quantity ${item.quantity}. View cart`}
-              className="relative size-12 flex-shrink-0 snap-start overflow-hidden rounded-xl border border-line"
-            >
-              <ImageWithFallback
-                src={item.image}
-                alt={item.name}
-                className="size-full object-cover"
-              />
-              {item.quantity > 1 && (
-                <span className="absolute right-0 top-0 grid min-w-5 place-items-center rounded-bl-lg bg-[var(--ink-solid)] px-1 text-[10px] font-bold leading-none text-white">
-                  {item.quantity}
+        {/* Keep the item previews together, visually separate from the restaurant
+            header and the subtotal/action area. */}
+        <div className="p-4">
+          <p className="text-[11px] font-bold uppercase tracking-wider text-[var(--muted-foreground)]">
+            Items in this cart
+          </p>
+          <div className="mt-3 flex items-start gap-3 overflow-x-auto snap-x pb-1">
+            {restaurant.items.map((item) => (
+              <button
+                key={item.lineKey ?? item.id}
+                type="button"
+                onClick={() => onTap(onOpenCheckout)}
+                aria-label={`${item.name}, quantity ${item.quantity}. View cart`}
+                className="flex w-16 flex-shrink-0 snap-start flex-col gap-1.5 rounded-xl text-left focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--teal)]"
+              >
+                <span className="relative block aspect-square w-full overflow-hidden rounded-xl border border-line bg-soft">
+                  <ImageWithFallback
+                    src={item.image}
+                    alt={item.name}
+                    className="size-full object-cover"
+                  />
+                  <span className="absolute bottom-1 right-1 grid h-5 min-w-5 place-items-center rounded-md bg-[var(--ink-solid)] px-1 text-[10px] font-bold leading-none text-white shadow-sm">
+                    ×{item.quantity}
+                  </span>
                 </span>
-              )}
-            </button>
-          ))}
+                <span className="line-clamp-2 text-xs font-semibold leading-tight text-[var(--ink)]">
+                  {item.name}
+                </span>
+              </button>
+            ))}
 
+            <button
+              type="button"
+              onClick={() => onTap(onAddMore)}
+              aria-label={`Add more items from ${restaurant.name}`}
+              className="flex w-16 flex-shrink-0 snap-start flex-col gap-1.5 rounded-xl text-center transition-transform focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--teal)] active:scale-90"
+            >
+              <span className="grid aspect-square w-full place-items-center rounded-xl border-2 border-dashed border-[var(--teal)]/40 bg-[var(--teal-soft)]">
+                <Plus className="size-5 text-[var(--teal)]" aria-hidden="true" />
+              </span>
+              <span className="w-full text-xs font-semibold leading-tight text-[var(--teal)]">Add more</span>
+            </button>
+          </div>
+        </div>
+
+        <div className="border-t border-line bg-soft p-4">
+          <div className="flex items-baseline justify-between gap-3">
+            <span className="text-sm font-semibold text-[var(--muted-foreground)]">Subtotal</span>
+            <span className="text-xl font-extrabold tabular-nums text-[var(--ink)]">
+              ₱{restaurantSubtotal(restaurant).toFixed(2)}
+            </span>
+          </div>
           <button
             type="button"
-            onClick={() => onTap(onAddMore)}
-            aria-label={`Add more items from ${restaurant.name}`}
-            className="grid size-12 flex-shrink-0 snap-start place-items-center rounded-xl border-2 border-dashed border-[var(--border)] transition-transform active:scale-90"
+            onClick={() => onTap(onOpenCheckout)}
+            aria-label={`View cart for ${restaurant.name}`}
+            className="mt-3 flex min-h-11 w-full items-center justify-center gap-2 rounded-xl bg-[var(--primary)] px-4 py-3 text-[var(--primary-foreground)] shadow-sm transition-colors hover:bg-[var(--coral-dark)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--primary)] active:opacity-80"
           >
-            <Plus className="size-5 text-[var(--muted-foreground)]" />
+            <ShoppingCart className="size-4" aria-hidden="true" />
+            <span className="text-sm font-bold">View cart</span>
           </button>
         </div>
-
-        {/* The total sits above the button and stays right-aligned; the button
-            itself spans the full card width with its label centred. */}
-        <div className="mt-4 flex items-baseline justify-end">
-          <span className="text-lg font-bold text-[var(--ink)]">
-            ₱{restaurantSubtotal(restaurant).toFixed(2)}
-          </span>
-        </div>
-
-        <button
-          type="button"
-          onClick={() => onTap(onOpenCheckout)}
-          className="-mx-4 mt-1 flex w-[calc(100%+2rem)] items-center justify-center border-t border-line px-4 py-3 transition-opacity active:opacity-70"
-        >
-          <span className="text-sm font-bold text-[var(--ink)]">View cart</span>
-        </button>
       </div>
     </li>
   );
@@ -554,24 +570,26 @@ export default function Cart() {
   const totalItems = getTotalItems();
 
   return (
-    <div className="min-h-screen bg-surface pb-32">
-      <div className="sticky top-0 z-50 flex items-center justify-between border-b border-[var(--border)] bg-surface px-5 py-4">
-        <div className="flex items-center gap-3">
-          <button
-            type="button"
-            onClick={goBack}
-            aria-label="Back"
-            className="transition-transform active:scale-90"
-          >
-            <X className="size-6 text-[var(--ink)]" />
-          </button>
-          <h1 className="text-xl font-bold text-[var(--ink)]">My Cart</h1>
+    <div className="min-h-screen bg-[var(--canvas)] pb-32">
+      <div className="sticky top-0 z-50 border-b border-line bg-surface">
+        <div className="mx-auto flex w-full max-w-3xl items-center justify-between gap-3 px-4 py-4 sm:px-5">
+          <div className="flex items-center gap-3">
+            <button
+              type="button"
+              onClick={goBack}
+              aria-label="Back"
+              className="transition-transform active:scale-90"
+            >
+              <X className="size-6 text-[var(--ink)]" />
+            </button>
+            <h1 className="text-xl font-bold text-[var(--ink)]">My Cart</h1>
+          </div>
+          {cartRestaurants.length > 0 && (
+            <span className="flex-shrink-0 rounded-full bg-[var(--primary-soft)] px-3 py-1 text-sm font-bold text-[var(--primary)]">
+              {totalItems} {totalItems === 1 ? "item" : "items"}
+            </span>
+          )}
         </div>
-        {cartRestaurants.length > 0 && (
-          <span className="text-sm font-semibold text-[var(--muted-foreground)]">
-            {totalItems} {totalItems === 1 ? "item" : "items"}
-          </span>
-        )}
       </div>
 
       {cartRestaurants.length > 0 ? (
@@ -585,24 +603,39 @@ export default function Cart() {
               aria-hidden="true"
             />
           )}
-          <ul className="space-y-4 px-5 py-4">
-            {cartRestaurants.map((restaurant) => (
-              <CartRestaurantCard
-                key={restaurant.id}
-                restaurant={restaurant}
-                revealed={revealedId === restaurant.id}
-                onReveal={(on) => setRevealedId(on ? restaurant.id : null)}
-                onOpenOptions={() => setOptionsFor(restaurant)}
-                onOpenCheckout={() => openCheckout(restaurant)}
-                onAddMore={() => openRestaurant(restaurant)}
-                onDelete={() => {
-                  setOptionsFor(null);
-                  setRevealedId(null);
-                  removeRestaurant(restaurant.id);
-                }}
-              />
-            ))}
-          </ul>
+          <div className="mx-auto w-full max-w-3xl px-4 pt-5 sm:px-5">
+            <div className="mb-5 flex items-start gap-3">
+              <span className="grid size-10 flex-shrink-0 place-items-center rounded-xl bg-[var(--teal-soft)] text-[var(--teal)]">
+                <Store className="size-5" aria-hidden="true" />
+              </span>
+              <div>
+                <h2 className="text-sm font-bold text-[var(--ink)]">
+                  {cartRestaurants.length} restaurant {cartRestaurants.length === 1 ? "cart" : "carts"}
+                </h2>
+                <p className="mt-1 text-xs text-[var(--muted-foreground)]">
+                  Each restaurant has a separate cart and checkout.
+                </p>
+              </div>
+            </div>
+            <ul aria-label="Restaurant carts" className="space-y-6 pb-6">
+              {cartRestaurants.map((restaurant) => (
+                <CartRestaurantCard
+                  key={restaurant.id}
+                  restaurant={restaurant}
+                  revealed={revealedId === restaurant.id}
+                  onReveal={(on) => setRevealedId(on ? restaurant.id : null)}
+                  onOpenOptions={() => setOptionsFor(restaurant)}
+                  onOpenCheckout={() => openCheckout(restaurant)}
+                  onAddMore={() => openRestaurant(restaurant)}
+                  onDelete={() => {
+                    setOptionsFor(null);
+                    setRevealedId(null);
+                    removeRestaurant(restaurant.id);
+                  }}
+                />
+              ))}
+            </ul>
+          </div>
         </>
       ) : (
         <div className="flex flex-col items-center justify-center py-20">
