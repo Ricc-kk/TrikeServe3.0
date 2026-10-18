@@ -118,6 +118,16 @@ export async function fetchRiderActiveRide(driverId: string): Promise<any | null
   return null;
 }
 
+/** Rebuild the active screen phase from the driver's persisted progress. */
+function mapDriverStatusToRideStatus(value: unknown) {
+  const status = String(value || '').trim().toLowerCase().replace(/_/g, '-');
+  if (['picked-up', 'in-progress', 'on-the-way-to-customer'].includes(status)) return 'pickup';
+  if (['dropped-off', 'arrived-at-drop-off'].includes(status)) return 'drop-off';
+  if (['awaiting-payment', 'payment'].includes(status)) return 'payment';
+  if (status === 'arrived') return 'arrived';
+  return 'on-the-way';
+}
+
 function mapLobbyToRiderRide(lobby: any) {
   const passengers = Array.isArray(lobby.passengers_json) ? lobby.passengers_json : [];
   const names = passengers.map((p: any) => p?.name).filter(Boolean);
@@ -141,7 +151,7 @@ function mapLobbyToRiderRide(lobby: any) {
     maxPassengers: Number(lobby.max_seats || 3),
     customerId: lobby.customer_id,
     passengerDetails: passengers,
-    status: "on-the-way",
+    status: mapDriverStatusToRideStatus(lobby.driver_status),
     driverId: lobby.driver_id,
     driverName: lobby.driver_name,
     driverPlate: lobby.driver_plate,
@@ -174,7 +184,7 @@ function mapRideRequestToRiderRide(ride: any) {
     passengerDetails: [],
     orderId: ride.order_id || undefined,
     orderNumber: ride.order_number || undefined,
-    status: "on-the-way",
+    status: mapDriverStatusToRideStatus(ride.driver_status),
     driverId: ride.accepted_driver_id,
     driverName: ride.driver_name,
     driverPlate: ride.driver_plate,

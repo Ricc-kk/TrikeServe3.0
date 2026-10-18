@@ -101,18 +101,25 @@ export default function BusinessMapSelector({ onClose, onSelectLocation, current
     mapRef.current?.panTo(mapCenter);
   }, [mapCenter]);
 
-  // Reverse geocode a lat/lng pair into a readable address using the Google Geocoding API
+  // Resolve the nearest road address for a selected map pin using the loaded
+  // Maps JavaScript geocoder. Keep the pin coordinates even when no street
+  // address is available at that exact point.
   const reverseGeocode = useCallback(async (lat: number, lng: number) => {
-    if (!GOOGLE_MAPS_API_KEY) return null;
+    const google = (window as any)?.google;
+    if (!google?.maps?.Geocoder) return null;
     try {
-      const res = await fetch(
-        `https://maps.googleapis.com/maps/api/geocode/json?latlng=${lat},${lng}&key=${GOOGLE_MAPS_API_KEY}`
-      );
-      const data = await res.json();
-      if (data?.status === "OK" && data.results?.[0]?.formatted_address) {
-        const result = data.results[0];
+      const results = await new Promise<any[]>((resolve) => {
+        new google.maps.Geocoder().geocode(
+          { location: { lat, lng } },
+          (items: any[], status: string) => resolve(status === "OK" ? items || [] : []),
+        );
+      });
+      const result = results.find((item: any) => item.types?.includes("street_address"))
+        || results.find((item: any) => item.types?.includes("route"))
+        || results[0];
+      if (result?.formatted_address) {
         const full = result.formatted_address;
-        // Build a short name from street number + road if available
+        // Prefer the nearest road name for the short pickup label.
         const streetNumber = result.address_components?.find((c: any) => c.types.includes("street_number"))?.long_name;
         const route = result.address_components?.find((c: any) => c.types.includes("route"))?.long_name;
         const neighborhood = result.address_components?.find((c: any) => c.types.includes("neighborhood"))?.long_name;

@@ -1,7 +1,7 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useNavigate } from "react-router";
 import { ArrowLeft, Navigation, Package, Users, Car, Clock, Check, X, CheckCircle, MapPin, ChevronDown } from "lucide-react";
-import { GoogleMap, Marker, InfoWindow, Polyline, Polygon, DirectionsRenderer } from "@react-google-maps/api";
+import { GoogleMap, Marker, InfoWindow, Polyline, Polygon } from "@react-google-maps/api";
 import { Button } from "../ui/button";
 import { Card } from "../ui/card";
 import { Badge } from "../ui/badge";
@@ -11,9 +11,81 @@ import TerminalQueueCard from "./TerminalQueueCard";
 import { isPointInPolygon, normalizeBoundaryRoad, normalizeBoundaryArea, normalizeRoadWidth, DEFAULT_ROAD_WIDTH_M, supabaseHelpers, logAudit, geocodeAddress, type LatLngPoint } from "@/lib/supabase";
 import { supabase } from "../../../lib/supabase";
 import useMapLoader from "@/lib/mapLoader";
+import { searchPlacesText } from "@/lib/placesApi";
 import tricycleIcon from "../../../assets/0b76d1aa56b8ad6e15dd4efc8a0100b0ca5762a1.png";
 import ActiveRideButton from "./ActiveRideButton";
 import ReasonPromptModal from "../ui/reason-prompt-modal";
+
+function decodeRoutePolyline(encoded: string): google.maps.LatLngLiteral[] {
+  const points: google.maps.LatLngLiteral[] = [];
+  let index = 0;
+  let lat = 0;
+  let lng = 0;
+
+  while (index < encoded.length) {
+    let result = 0;
+    let shift = 0;
+    let byte: number;
+    do {
+      byte = encoded.charCodeAt(index++) - 63;
+      result |= (byte & 0x1f) << shift;
+      shift += 5;
+    } while (byte >= 0x20 && index < encoded.length);
+    lat += (result & 1) ? ~(result >> 1) : (result >> 1);
+
+    result = 0;
+    shift = 0;
+    do {
+      byte = encoded.charCodeAt(index++) - 63;
+      result |= (byte & 0x1f) << shift;
+      shift += 5;
+    } while (byte >= 0x20 && index < encoded.length);
+    lng += (result & 1) ? ~(result >> 1) : (result >> 1);
+
+    points.push({ lat: lat / 1e5, lng: lng / 1e5 });
+  }
+
+  return points;
+}
+
+function fitMapToRoute(map: google.maps.Map, points: google.maps.LatLngLiteral[]) {
+  if (points.length < 2) return;
+  const bounds = new google.maps.LatLngBounds();
+  points.forEach(point => bounds.extend(point));
+  map.fitBounds(bounds, 48);
+}
+
+function reverseGeocodeNearestRoad(point: google.maps.LatLngLiteral): Promise<string | null> {
+  const google = (window as any)?.google;
+  if (!google?.maps?.Geocoder) return Promise.resolve(null);
+  return new Promise(resolve => {
+    new google.maps.Geocoder().geocode({ location: point }, (results: any[], status: string) => {
+      if (status !== 'OK' || !results?.length) {
+        resolve(null);
+        return;
+      }
+      const nearestRoad = results.find((result: any) => result.types?.includes('street_address'))
+        || results.find((result: any) => result.types?.includes('route'))
+        || results[0];
+      resolve(nearestRoad?.formatted_address || null);
+    });
+  });
+}
+
+function readAddressCoordinates(address?: string | null): { lat: number; lng: number } | null {
+  if (!address) return null;
+  const coordinatePart = address.includes('|') ? address.split('|').at(-1) || '' : address;
+  const match = coordinatePart.match(/(-?\d+(?:\.\d+)?)\s*,\s*(-?\d+(?:\.\d+)?)/);
+  if (!match) return null;
+  const lat = Number(match[1]);
+  const lng = Number(match[2]);
+  return Number.isFinite(lat) && Number.isFinite(lng) ? { lat, lng } : null;
+}
+
+function displayOrderAddress(address?: string | null): string | undefined {
+  const readable = address?.split('|')[0]?.trim();
+  return readable || undefined;
+}
 
 interface PassengerRequest {
   id: string;
@@ -28,6 +100,9 @@ interface PassengerRequest {
   customerName: string;
   customerPhoto: string;
   restaurantName?: string;
+  restaurantAddress?: string;
+  restaurantLat?: number;
+  restaurantLng?: number;
   distance: string;
   estimatedTime: string;
   pickupAddress?: string;
@@ -57,11 +132,13 @@ export default function PassengerRequests() {
   const [requests, setRequests] = useState<PassengerRequest[]>([]);
   const [currentLocation, setCurrentLocation] = useState<{ lat: number; lng: number }>({ lat: 14.5995, lng: 120.9842 });
   const [previewRequest, setPreviewRequest] = useState<PassengerRequest | null>(null);
-  const [directionsResult, setDirectionsResult] = useState<google.maps.DirectionsResult | null>(null);
+  const [routePath, setRoutePath] = useState<google.maps.LatLngLiteral[] | null>(null);
   const [routeError, setRouteError] = useState<string | null>(null);
   const [resolvedPickupCoords, setResolvedPickupCoords] = useState<{ lat: number; lng: number } | null>(null);
+  const [resolvedPickupAddress, setResolvedPickupAddress] = useState<string | null>(null);
   const [resolvedDropoffCoords, setResolvedDropoffCoords] = useState<{ lat: number; lng: number } | null>(null);
   const [previewMapCenter, setPreviewMapCenter] = useState<{ lat: number; lng: number }>({ lat: 14.5995, lng: 120.9842 });
+  const previewMapRef = useRef<google.maps.Map | null>(null);
   const { isLoaded: isMapsLoaded } = useMapLoader();
   const [showAccepted, setShowAccepted] = useState(false);
   const [showConfirmAccept, setShowConfirmAccept] = useState(false);
@@ -260,9 +337,22 @@ export default function PassengerRequests() {
         if (orderIds.length > 0) {
           const { data: orderProfiles } = await supabase
             .from('orders')
-            .select('id, restaurant_name')
+            // business_id is present in the base schema and is written at
+            // checkout. restaurant_id is optional on older installs, so
+            // selecting it here can fail the entire lookup and hide the
+            // restaurant pin from the rider.
+            .select('id, business_id, restaurant_name, address')
             .in('id', orderIds);
           (orderProfiles || []).forEach((order: any) => { orderMap[order.id] = order; });
+        }
+        const businessIds = [...new Set(Object.values(orderMap).map((order: any) => order.business_id).filter(Boolean))];
+        const restaurantMap: Record<string, any> = {};
+        if (businessIds.length > 0) {
+          const { data: restaurantLocations } = await supabase
+            .from('restaurants')
+            .select('business_user_id, address, latitude, longitude')
+            .in('business_user_id', businessIds);
+          (restaurantLocations || []).forEach((restaurant: any) => { restaurantMap[restaurant.business_user_id] = restaurant; });
         }
         // Requests this rider already declined are hidden from them — they stay
         // available to every other rider, so the customer is unaffected.
@@ -273,16 +363,27 @@ export default function PassengerRequests() {
           (lobby: any) => !supabaseHelpers.isDeclinedByDriver(lobby, user?.id)
         );
 
-        const mappedRequests = visibleRideRequests.map((req: any) => ({
+        const mappedRequests = visibleRideRequests.map((req: any) => {
+          const orderAddress = orderMap[req.order_id]?.address as string | undefined;
+          const requestDropoffAddress = req.dropoff_address || req.dropoff_location;
+          const requestDropoffCoords = readAddressCoordinates(requestDropoffAddress);
+          const orderDropoffCoords = readAddressCoordinates(orderAddress);
+          return {
           id: req.id,
           type: mapRideType(req.ride_type, req.pickup_location),
           pickup: formatPickup(req.pickup_location),
-          dropoff: req.dropoff_location || 'Drop-off',
+          dropoff: displayOrderAddress(req.dropoff_location) || displayOrderAddress(orderAddress) || 'Drop-off',
           payment: req.payment_method === 'GCASH' ? 'PREPAID' : 'COD',
           amount: Number(req.amount || 0),
           foodCost: Number(req.food_cost || 0),
           customerName: req.customer_name || nameMap[req.customer_id] || 'Customer',
           restaurantName: orderMap[req.order_id]?.restaurant_name || formatPickup(req.pickup_location),
+          restaurantAddress: restaurantMap[orderMap[req.order_id]?.business_id]?.address
+            || (req.pickup_address && req.pickup_address.trim().toLowerCase() !== formatPickup(req.pickup_location).trim().toLowerCase()
+              ? req.pickup_address
+              : undefined),
+          restaurantLat: restaurantMap[orderMap[req.order_id]?.business_id]?.latitude ?? undefined,
+          restaurantLng: restaurantMap[orderMap[req.order_id]?.business_id]?.longitude ?? undefined,
           customerPhoto: '👤',
           distance: '2.5 km',
           estimatedTime: '7 mins',
@@ -290,23 +391,14 @@ export default function PassengerRequests() {
           customerId: req.customer_id,
           ...parseDeliveryTag(req.pickup_location),
           pickupAddress: req.pickup_address || undefined,
-          dropoffAddress: req.dropoff_address || undefined,
-          pickupLat: req.pickup_lat || undefined,
-          pickupLng: req.pickup_lng || undefined,
-          dropoffLat: req.dropoff_lat || (() => {
-            const addr = req.dropoff_address || req.dropoff_location || '';
-            const coordPart = addr.includes('|') ? addr.split('|')[1] : addr;
-            const m = coordPart.match(/(\d+\.\d+)\s*,\s*(\d+\.\d+)/);
-            return m ? parseFloat(m[1]) : undefined;
-          })(),
-          dropoffLng: req.dropoff_lng || (() => {
-            const addr = req.dropoff_address || req.dropoff_location || '';
-            const coordPart = addr.includes('|') ? addr.split('|')[1] : addr;
-            const m = coordPart.match(/(\d+\.\d+)\s*,\s*(\d+\.\d+)/);
-            return m ? parseFloat(m[2]) : undefined;
-          })(),
+          dropoffAddress: displayOrderAddress(req.dropoff_address) || displayOrderAddress(orderAddress) || undefined,
+          pickupLat: req.pickup_lat ?? undefined,
+          pickupLng: req.pickup_lng ?? undefined,
+          dropoffLat: req.dropoff_lat ?? requestDropoffCoords?.lat ?? orderDropoffCoords?.lat ?? undefined,
+          dropoffLng: req.dropoff_lng ?? requestDropoffCoords?.lng ?? orderDropoffCoords?.lng ?? undefined,
           created_at: req.created_at,
-        }));
+          };
+        });
         const mappedLobbies = visibleLobbies.map((lobby: any) => {
           const passengers = Array.isArray(lobby.passengers_json) ? lobby.passengers_json : [];
           return {
@@ -372,6 +464,11 @@ export default function PassengerRequests() {
   }, []);
 
   useEffect(() => {
+    if (!routePath || !previewMapRef.current || !(window as any).google) return;
+    fitMapToRoute(previewMapRef.current, routePath);
+  }, [routePath]);
+
+  useEffect(() => {
     if (!previewRequest || !isMapsLoaded || !(window as any).google) return;
 
     let cancelled = false;
@@ -383,38 +480,135 @@ export default function PassengerRequests() {
       }
       return address ? geocodeAddress(address) : null;
     };
-    const calculateRoute = (
+    const calculateRoute = async (
       origin: { lat: number; lng: number },
-      pickup: { lat: number; lng: number },
-      dropoff: { lat: number; lng: number } | null,
-    ) => new Promise<google.maps.DirectionsResult | null>((resolve) => {
-      const service = new (window as any).google.maps.DirectionsService();
-      service.route({
-        origin,
-        destination: dropoff || pickup,
-        waypoints: dropoff ? [{ location: pickup, stopover: true }] : [],
-        optimizeWaypoints: false,
-        travelMode: (window as any).google.maps.TravelMode.DRIVING,
-      }, (result: any, status: string) => resolve(status === 'OK' ? result : null));
-    });
+      destination: { lat: number; lng: number },
+    ): Promise<{ path: google.maps.LatLngLiteral[] | null; status: string }> => {
+      const apiKey = import.meta.env.VITE_GOOGLE_MAPS_API_KEY || '';
+      let routesApiStatus = 'Routes API unavailable';
+
+      if (apiKey) {
+        try {
+          const response = await fetch(`https://routes.googleapis.com/directions/v2:computeRoutes?key=${apiKey}`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'X-Goog-FieldMask': 'routes.polyline.encodedPolyline',
+            },
+            body: JSON.stringify({
+              origin: { location: { latLng: { latitude: origin.lat, longitude: origin.lng } } },
+              destination: { location: { latLng: { latitude: destination.lat, longitude: destination.lng } } },
+              travelMode: 'DRIVE',
+              computeAlternativeRoutes: false,
+            }),
+          });
+          const data = await response.json();
+          if (response.ok) {
+            const encodedPath = data.routes?.[0]?.polyline?.encodedPolyline;
+            const path = encodedPath ? decodeRoutePolyline(encodedPath) : [];
+            if (path.length > 1) return { path, status: 'OK' };
+            routesApiStatus = 'Routes API returned no route';
+          } else {
+            routesApiStatus = data.error?.status || `Routes API HTTP ${response.status}`;
+          }
+        } catch {
+          routesApiStatus = 'Routes API request failed';
+        }
+      } else {
+        routesApiStatus = 'Google Maps API key is missing';
+      }
+
+      // Keep support for projects that have the legacy Directions API enabled.
+      return new Promise(resolve => {
+        const service = new (window as any).google.maps.DirectionsService();
+        service.route({
+          origin,
+          destination,
+          travelMode: (window as any).google.maps.TravelMode.DRIVING,
+        }, (result: any, status: string) => {
+          const points = status === 'OK'
+            ? (result.routes?.[0]?.overview_path || []).map((point: any) => ({ lat: point.lat(), lng: point.lng() }))
+            : [];
+          resolve({ path: points.length > 1 ? points : null, status: status === 'OK' ? routesApiStatus : status });
+        });
+      });
+    };
 
     const loadRoute = async () => {
-      setDirectionsResult(null);
+      setRoutePath(null);
       setRouteError(null);
-      const isDelivery = previewRequest.type === 'delivery';
-      const pickup = await resolveCoords(
-        previewRequest.pickupLat,
-        previewRequest.pickupLng,
-        previewRequest.pickupAddress || previewRequest.pickup,
-      );
+      const savedPickupLat = previewRequest.restaurantLat ?? previewRequest.pickupLat;
+      const savedPickupLng = previewRequest.restaurantLng ?? previewRequest.pickupLng;
+      const pickupAddresses = previewRequest.type === 'delivery'
+        ? [previewRequest.restaurantAddress, previewRequest.pickupAddress]
+            .filter((address): address is string => Boolean(address?.trim()))
+            .filter((address, index, all) => all.findIndex(candidate => candidate.trim().toLowerCase() === address.trim().toLowerCase()) === index)
+        : [previewRequest.pickupAddress || previewRequest.pickup].filter(Boolean);
+      let pickup = await resolveCoords(savedPickupLat, savedPickupLng);
+      // A request may have been posted before the restaurant pin was saved, or
+      // may carry an older pickup address. Try each real address first.
+      for (const address of pickup ? [] : pickupAddresses) {
+        if (address.trim().toLowerCase() === previewRequest.restaurantName?.trim().toLowerCase()) continue;
+        pickup = await resolveCoords(undefined, undefined, address);
+        // Some map keys allow Places but not the Geocoding service. Search the
+        // saved address as text in that case; never search a storefront name.
+        if (!pickup) {
+          const apiKey = import.meta.env.VITE_GOOGLE_MAPS_API_KEY || '';
+          if (apiKey) {
+            try {
+              const matches = await searchPlacesText({
+                textQuery: address,
+                apiKey,
+                bias: currentLocation,
+                biasRadiusMeters: 5000,
+              });
+              const match = matches.find(place => Number.isFinite(place.lat) && Number.isFinite(place.lng));
+              if (match?.lat != null && match.lng != null) pickup = { lat: match.lat, lng: match.lng };
+            } catch (error) {
+              console.warn('[PassengerRequests] Could not resolve saved restaurant address with Places:', error);
+            }
+          }
+        }
+        if (pickup) break;
+      }
+
+      // A map pin or street address is optional for businesses. If neither is
+      // available, search the restaurant name near the rider and use the
+      // nearest nearby match instead of resolving a same-name business far away.
+      const restaurantName = previewRequest.restaurantName?.trim();
+      if (!pickup && restaurantName && !['restaurant pickup', 'pickup'].includes(restaurantName.toLowerCase())) {
+        const apiKey = import.meta.env.VITE_GOOGLE_MAPS_API_KEY || '';
+        if (apiKey) {
+          try {
+            const matches = await searchPlacesText({
+              textQuery: restaurantName,
+              apiKey,
+              bias: currentLocation,
+              biasRadiusMeters: 5000,
+            });
+            const nearby = matches
+              .filter((place): place is typeof place & { lat: number; lng: number } => place.lat != null && place.lng != null)
+              .map(place => ({ place, distance: haversineDistance(currentLocation, { lat: place.lat, lng: place.lng }) }))
+              .filter(result => result.distance <= 5000)
+              .sort((a, b) => a.distance - b.distance)[0];
+            if (nearby) pickup = { lat: nearby.place.lat, lng: nearby.place.lng };
+          } catch (error) {
+            console.warn('[PassengerRequests] Could not find nearby restaurant by name:', error);
+          }
+        }
+      }
       if (cancelled) return;
       if (!pickup) {
-        setRouteError('Could not locate the restaurant. Check its saved address and try again.');
+        setRouteError('Could not locate the restaurant near your current location. A business map pin or street address can improve directions.');
         return;
       }
 
       setResolvedPickupCoords(pickup);
       setPreviewMapCenter(pickup);
+      setResolvedPickupAddress(previewRequest.restaurantAddress || null);
+      reverseGeocodeNearestRoad(pickup).then(address => {
+        if (!cancelled && address) setResolvedPickupAddress(address);
+      });
       const dropoff = await resolveCoords(
         previewRequest.dropoffLat,
         previewRequest.dropoffLng,
@@ -423,17 +617,24 @@ export default function PassengerRequests() {
       if (cancelled) return;
       if (dropoff) setResolvedDropoffCoords(dropoff);
 
-      // Draw the complete road trip through the restaurant to the customer. If
-      // the customer address cannot be routed, still show the rider-to-store leg.
-      let route = await calculateRoute(currentLocation, pickup, dropoff);
-      if (!route && dropoff) route = await calculateRoute(currentLocation, pickup, null);
+      // Route each leg on its own so a bad customer pin cannot hide the rider's
+      // road route to the store.
+      const [toStore, toCustomer] = await Promise.all([
+        calculateRoute(currentLocation, pickup),
+        dropoff ? calculateRoute(pickup, dropoff) : Promise.resolve({ path: null, status: 'Customer drop-off not located' }),
+      ]);
       if (cancelled) return;
-      if (route) {
-        setDirectionsResult(route);
+      const combinedPath = [...(toStore.path || []), ...(toCustomer.path || [])];
+      if (combinedPath.length > 1) setRoutePath(combinedPath);
+
+      if (toStore.path && toCustomer.path) {
+        setRouteError(null);
+      } else if (toStore.path) {
+        setRouteError(`Route to the store is shown, but the customer route is unavailable (${toCustomer.status}). Check the customer drop-off pin.`);
+      } else if (toCustomer.path) {
+        setRouteError(`Store-to-customer route is shown, but directions to the store from your location are unavailable (${toStore.status}). Check your GPS location.`);
       } else {
-        setRouteError(isDelivery
-          ? 'Road directions are unavailable. Check the map API Directions service configuration.'
-          : 'Road directions are unavailable for this pickup.');
+        setRouteError(`No road route was found (${toStore.status}; customer leg: ${toCustomer.status}). Check your GPS location and both map pins.`);
       }
     };
 
@@ -443,7 +644,7 @@ export default function PassengerRequests() {
     return () => { cancelled = true; };
   }, [previewRequest, isMapsLoaded, currentLocation]);
 
-  const handleOpenPreview = (request: PassengerRequest) => { setDirectionsResult(null); setRouteError(null); setResolvedPickupCoords(null); setResolvedDropoffCoords(null); setPreviewRequest(request); };
+  const handleOpenPreview = (request: PassengerRequest) => { setRoutePath(null); setRouteError(null); setResolvedPickupCoords(null); setResolvedPickupAddress(null); setResolvedDropoffCoords(null); setPreviewRequest(request); };
 
   /**
    * Decline a request, recording the rider's reason against them.
@@ -496,7 +697,23 @@ export default function PassengerRequests() {
       if (acceptError) return alert('Failed to accept shared ride lobby.');
       passengerDetails = Array.isArray(updatedLobby?.passengers_json) ? updatedLobby.passengers_json : passengerDetails;
     }
-    const acceptedRide = { ...request, passengerDetails, driverId: user.id, driverName: user.name, driverPlate: user.todaPlate, driverRating: '4.8', status: 'accepted', acceptedAt: new Date().toISOString(), eta: '5 mins' };
+    const acceptedRide = {
+      ...request,
+      // Deliveries may get the shop pin from the business profile even when an
+      // older ride_requests row has no pickup coordinates. Carry that resolved
+      // pin into Active Ride so the first leg reliably targets the restaurant.
+      pickupLat: request.restaurantLat ?? request.pickupLat,
+      pickupLng: request.restaurantLng ?? request.pickupLng,
+      pickupAddress: request.restaurantAddress ?? request.pickupAddress,
+      passengerDetails,
+      driverId: user.id,
+      driverName: user.name,
+      driverPlate: user.todaPlate,
+      driverRating: '4.8',
+      status: 'accepted',
+      acceptedAt: new Date().toISOString(),
+      eta: '5 mins',
+    };
 
     if (request.type === 'delivery' && (request.orderId || request.orderNumber)) {
       if (request.orderId) {
@@ -780,6 +997,9 @@ export default function PassengerRequests() {
                     <div>
                       <p className="text-[10px] text-[var(--success)] font-bold">Pickup</p>
                       <p className="text-xs font-semibold text-[var(--ink)] truncate">{request.pickup}</p>
+                      {request.type === 'delivery' && request.restaurantAddress && (
+                        <p className="text-[10px] text-[var(--muted-foreground)] truncate">{request.restaurantAddress}</p>
+                      )}
                     </div>
                     <div>
                       <p className="text-[10px] text-[var(--primary)] font-bold">Drop-off</p>
@@ -813,7 +1033,7 @@ export default function PassengerRequests() {
                     ? '🚏 No Terminal Assigned'
                     : queueBlocked
                       ? (queueEntry ? `⏳ Wait — You're #${queuePosition}` : '🚏 Join Queue to Accept')
-                      : canAccept ? (request.lobbyId ? '👥 View Lobby' : '🛵 View & Accept') : 'Not Available'}
+                      : canAccept ? (request.lobbyId ? '👥 View Lobby' : 'View') : 'Not Available'}
                 </Button>
               </div>
             </Card>
@@ -873,20 +1093,30 @@ export default function PassengerRequests() {
             </div>
             {isMapsLoaded ? (
               <div className="w-full h-64 md:h-80 relative">
-                <GoogleMap mapContainerStyle={{ width: '100%', height: '100%' }} center={previewMapCenter} zoom={14} options={{ zoomControl: false, streetViewControl: false, mapTypeControl: false, gestureHandling: 'greedy' }}>
+                <GoogleMap
+                  mapContainerStyle={{ width: '100%', height: '100%' }}
+                  center={previewMapCenter}
+                  zoom={14}
+                  options={{ zoomControl: false, streetViewControl: false, mapTypeControl: false, gestureHandling: 'greedy' }}
+                  onLoad={(map) => {
+                    previewMapRef.current = map;
+                    if (routePath) fitMapToRoute(map, routePath);
+                  }}
+                  onUnmount={() => { previewMapRef.current = null; }}
+                >
                   <Marker position={currentLocation} icon={createDriverMarkerIcon()} title="Your Location" />
                   {resolvedPickupCoords && <Marker position={resolvedPickupCoords} icon={createCustomerMarkerIcon()} title={previewRequest.type === 'delivery' ? 'Store pickup' : 'Pickup'} />}
                   {resolvedDropoffCoords && (
                     <Marker position={resolvedDropoffCoords} icon={createDropoffMarkerIcon()} title={previewRequest.type === 'delivery' ? 'Customer' : 'Drop-off'} />
                   )}
-                  {directionsResult && <DirectionsRenderer directions={directionsResult} options={{ suppressMarkers: true, preserveViewport: false, polylineOptions: { strokeColor: "#bc4b1f", strokeWeight: 6, strokeOpacity: 0.9 } }} />}
+                  {routePath && <Polyline path={routePath} options={{ strokeColor: "#bc4b1f", strokeWeight: 7, strokeOpacity: 0.95, zIndex: 10 }} />}
                 </GoogleMap>
                 {routeError && (
                   <div className="absolute bottom-2 left-2 right-2 rounded-lg bg-white/95 px-3 py-2 text-xs font-semibold text-[var(--error)] shadow">
                     {routeError}
                   </div>
                 )}
-                {!routeError && directionsResult && (
+                {!routeError && routePath && (
                   <div className="absolute bottom-2 left-2 rounded-lg bg-white/95 px-3 py-2 text-xs font-semibold text-[var(--ink)] shadow">
                     Road route: Your location → {previewRequest.type === 'delivery' ? 'Store → Customer' : 'Pickup → Drop-off'}
                   </div>
@@ -910,7 +1140,7 @@ export default function PassengerRequests() {
                       </div>
                       <div className="min-w-0">
                         <p className="text-[10px] text-[var(--success)] font-bold">{previewRequest.type === 'delivery' ? 'Restaurant pickup' : 'Pickup'}</p>
-                        <p className="text-sm font-semibold truncate">{previewRequest.type === 'delivery' ? previewRequest.restaurantName || previewRequest.pickup : previewRequest.pickup}</p>
+                        <p className="text-sm font-semibold truncate">{previewRequest.type === 'delivery' ? resolvedPickupAddress || previewRequest.restaurantName || previewRequest.pickup : previewRequest.pickup}</p>
                       </div>
                     </div>
                   </div>

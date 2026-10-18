@@ -8,7 +8,7 @@ import ListPagination from "../ui/ListPagination";
 import BusinessSidebar from "./BusinessSidebar";
 import BusinessPageIntro from "./BusinessPageIntro";
     import { supabase } from "../../../lib/supabase";
-    import { supabaseHelpers, findDeliveryTerminalForOrder, logAudit } from "@/lib/supabase";
+    import { supabaseHelpers, findDeliveryTerminalForOrder, logAudit, geocodeAddress } from "@/lib/supabase";
     import { useAuth } from "../../contexts/AuthContext";
 import ReasonPromptModal from "../ui/reason-prompt-modal";
 import { getOrderProgress, isRiderHeadingToRestaurant } from "@/lib/orderProgress";
@@ -1066,38 +1066,45 @@ export default function BusinessOrders() {
     const addressForCoords = addressParts.length > 1 ? addressParts[1] : order.address;
     const dropoffCoords = parseCoords(addressForCoords);
 
-    // Look up restaurant address for pickup geocoding
+    // Use the business's saved map pin first so a café name cannot be mistaken
+    // for a similarly named place in another country.
     let pickupLat = null;
     let pickupLng = null;
     let pickupAddress = pickupLabel;
     try {
       const { data: restaurant } = await supabase
         .from('restaurants')
-        .select('address')
+        .select('address, latitude, longitude')
         .eq('business_user_id', currentUser?.id)
         .single();
       if (restaurant?.address) {
         pickupAddress = restaurant.address;
       }
+      const savedLat = Number(restaurant?.latitude);
+      const savedLng = Number(restaurant?.longitude);
+      if (restaurant?.latitude != null && restaurant?.longitude != null && Number.isFinite(savedLat) && Number.isFinite(savedLng)) {
+        pickupLat = savedLat;
+        pickupLng = savedLng;
+      }
     } catch (e) {}
 
-    // Geocode the restaurant address using Google Geocoding REST API
-    const GOOGLE_API_KEY = import.meta.env.VITE_GOOGLE_MAPS_API_KEY || '';
-    if (GOOGLE_API_KEY && pickupAddress && pickupAddress !== pickupLabel) {
+    // If the business has not pinned its location, geocode only a real address,
+    // never the storefront name.
+    if (pickupLat == null && pickupLng == null && pickupAddress && pickupAddress.trim() !== pickupLabel.trim()) {
       try {
-        const geoRes = await fetch(
-          `https://maps.googleapis.com/maps/api/geocode/json?address=${encodeURIComponent(pickupAddress)}&key=${GOOGLE_API_KEY}`
-        );
-        const geoData = await geoRes.json();
-        if (geoData.status === 'OK' && geoData.results?.[0]) {
-          pickupLat = geoData.results[0].geometry.location.lat;
-          pickupLng = geoData.results[0].geometry.location.lng;
+        const location = await geocodeAddress(pickupAddress);
+        if (location) {
+          pickupLat = location.lat;
+          pickupLng = location.lng;
           console.log('[BusinessOrders] ✅ Geocoded restaurant address:', pickupLat, pickupLng);
         }
       } catch (geoErr) {
         console.error('[BusinessOrders] Geocoding failed:', geoErr);
       }
     }
+
+    // Restaurant coordinates improve driver assignment and navigation, but a
+    // business may post an order before adding a map pin or street address.
 
     /*
      * Pick the terminal that will take this delivery.

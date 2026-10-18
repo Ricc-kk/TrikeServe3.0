@@ -78,6 +78,38 @@ const MIN_HEADING_SPEED_MPS = 1.5;
 // would make it spin on the spot.
 const MIN_HEADING_BASELINE_METERS = 10;
 
+function decodeRoutePolyline(encoded: string): google.maps.LatLngLiteral[] {
+  const points: google.maps.LatLngLiteral[] = [];
+  let index = 0;
+  let lat = 0;
+  let lng = 0;
+
+  while (index < encoded.length) {
+    let result = 0;
+    let shift = 0;
+    let byte: number;
+    do {
+      byte = encoded.charCodeAt(index++) - 63;
+      result |= (byte & 0x1f) << shift;
+      shift += 5;
+    } while (byte >= 0x20 && index < encoded.length);
+    lat += (result & 1) ? ~(result >> 1) : (result >> 1);
+
+    result = 0;
+    shift = 0;
+    do {
+      byte = encoded.charCodeAt(index++) - 63;
+      result |= (byte & 0x1f) << shift;
+      shift += 5;
+    } while (byte >= 0x20 && index < encoded.length);
+    lng += (result & 1) ? ~(result >> 1) : (result >> 1);
+
+    points.push({ lat: lat / 1e5, lng: lng / 1e5 });
+  }
+
+  return points;
+}
+
 // Ceiling on how fast the map is allowed to rotate, in degrees per second. GPS fixes
 // arrive seconds apart, so without a limit each one would snap the map to a new
 // angle and the rotation would be unreadable.
@@ -123,6 +155,7 @@ export default function ActiveRide() {
   // Drives the inline location banner; null while the device can give us a position.
   const [locationProblem, setLocationProblem] = useState<LocationProblem | null>(null);
   const [directions, setDirections] = useState<google.maps.DirectionsResult | null>(null);
+  const [routePath, setRoutePath] = useState<google.maps.LatLngLiteral[] | null>(null);
   const [mapCenter, setMapCenter] = useState<{ lat: number; lng: number }>({ lat: 14.6037, lng: 120.9793 });
   // Whether the camera is locked to the driver. Defaults on so the opening view is
   // the driver, and turns off by itself the first time they pan or zoom.
@@ -135,6 +168,9 @@ export default function ActiveRide() {
   // Latest ride data, readable from mount-only callbacks; and whether at least
   // one GPS fix has been pushed to the database for the current ride.
   const rideDataRef = useRef<ActiveRideData | null>(null);
+  const driverLocationRef = useRef<{ lat: number; lng: number } | null>(null);
+  const routePhaseRef = useRef<string | null>(null);
+  const fittedRoutePhaseRef = useRef<string | null>(null);
   const hasPersistedLocationRef = useRef(false);
   // Set briefly while we change the zoom ourselves, so the resulting
   // `zoom_changed` is not read as the driver zooming in by hand. See
@@ -171,6 +207,7 @@ export default function ActiveRide() {
     }
   }, [rideData?.id, rideData?.status, syncRideResume]);
   rideDataRef.current = rideData;
+  driverLocationRef.current = driverLocation;
   const [showRideComplete, setShowRideComplete] = useState(false);
 
   /*
@@ -750,31 +787,139 @@ export default function ActiveRide() {
 
   useEffect(() => {
     if (!rideData || !isMapsLoaded || !(window as any).google) return;
-    if (!driverLocation) return;
 
-    let dest: { lat: number; lng: number } | null = null;
-    if (isHeadingToPickup) {
-      dest = rideData.pickupLat && rideData.pickupLng ? { lat: Number(rideData.pickupLat), lng: Number(rideData.pickupLng) } : null;
-    } else if (['pickup', 'drop-off'].includes(rideData.status)) {
-      dest = rideData.dropoffLat && rideData.dropoffLng ? { lat: Number(rideData.dropoffLat), lng: Number(rideData.dropoffLng) } : null;
+    const phase = isHeadingToPickup ? 'restaurant' : 'customer';
+    const phaseKey = `${rideData.id}:${phase}`;
+    if (routePhaseRef.current !== phaseKey) {
+      // Remove the previous leg immediately when the rider confirms pickup.
+      routePhaseRef.current = phaseKey;
+      setDirections(null);
+      setRoutePath(null);
     }
 
-    if (!dest) { setDirections(null); return; }
+    let cancelled = false;
+    let inFlight = false;
+    let hasRoute = false;
+    let routeTimer: number | undefined;
 
-    const DirectionsService = new (window as any).google.maps.DirectionsService();
-    DirectionsService.route({
-      origin: new (window as any).google.maps.LatLng(driverLocation.lat, driverLocation.lng),
-      destination: new (window as any).google.maps.LatLng(dest.lat, dest.lng),
-      travelMode: (window as any).google.maps.TravelMode.DRIVING,
-    }, (result: any, status: string) => {
-      if (status === 'OK') {
-        setDirections(result);
-      } else {
-        console.error('[ActiveRide] Directions failed:', status);
-        setDirections(null);
+    const targetLat = isHeadingToPickup ? rideData.pickupLat : rideData.dropoffLat;
+    const targetLng = isHeadingToPickup ? rideData.pickupLng : rideData.dropoffLng;
+    const dest = targetLat != null && targetLng != null
+      ? { lat: Number(targetLat), lng: Number(targetLng) }
+      : null;
+
+    if (!dest || !Number.isFinite(dest.lat) || !Number.isFinite(dest.lng)) {
+      setDirections(null);
+      setRoutePath(null);
+      return;
+    }
+
+    const scheduleNext = () => {
+      if (cancelled) return;
+      // Retry quickly until GPS or a route is available. Once found, update the
+      // route periodically from the latest position without cancelling an
+      // in-flight request on every GPS tick.
+      routeTimer = window.setTimeout(() => { void calculateRoute(); }, hasRoute ? 12000 : 1500);
+    };
+
+    const calculateRoute = async () => {
+      if (cancelled || inFlight) return;
+      const origin = driverLocationRef.current;
+      if (!origin) {
+        scheduleNext();
+        return;
       }
-    });
-  }, [driverLocation, rideData?.status, rideData?.pickupLat, rideData?.pickupLng, rideData?.dropoffLat, rideData?.dropoffLng, isMapsLoaded, isHeadingToPickup]);
+
+      inFlight = true;
+      try {
+        const apiKey = import.meta.env.VITE_GOOGLE_MAPS_API_KEY || '';
+        if (apiKey) {
+          try {
+            const response = await fetch(`https://routes.googleapis.com/directions/v2:computeRoutes?key=${apiKey}`, {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                'X-Goog-FieldMask': 'routes.polyline.encodedPolyline',
+              },
+              body: JSON.stringify({
+                origin: { location: { latLng: { latitude: origin.lat, longitude: origin.lng } } },
+                destination: { location: { latLng: { latitude: dest.lat, longitude: dest.lng } } },
+                travelMode: 'DRIVE',
+                computeAlternativeRoutes: false,
+              }),
+            });
+            const data = await response.json();
+            const encoded = response.ok ? data.routes?.[0]?.polyline?.encodedPolyline : null;
+            const path = encoded ? decodeRoutePolyline(encoded) : [];
+            if (!cancelled && path.length > 1) {
+              setDirections(null);
+              setRoutePath(path);
+              hasRoute = true;
+              return;
+            }
+            if (!response.ok) console.warn('[ActiveRide] Routes API failed:', data.error?.status || response.status);
+          } catch (error) {
+            console.warn('[ActiveRide] Routes API request failed:', error);
+          }
+        }
+
+        // Keep compatibility with projects that have the legacy Directions
+        // service enabled, but prefer the same Routes API used in request preview.
+        const result = await new Promise<{ result: any; status: string }>(resolve => {
+          const DirectionsService = new (window as any).google.maps.DirectionsService();
+          DirectionsService.route({
+            origin: new (window as any).google.maps.LatLng(origin.lat, origin.lng),
+            destination: new (window as any).google.maps.LatLng(dest.lat, dest.lng),
+            travelMode: (window as any).google.maps.TravelMode.DRIVING,
+          }, (routeResult: any, status: string) => resolve({ result: routeResult, status }));
+        });
+        if (cancelled) return;
+        if (result.status === 'OK') {
+          setRoutePath(null);
+          setDirections(result.result);
+          hasRoute = true;
+        } else {
+          console.error(`[ActiveRide] Road route to ${phase} failed:`, result.status);
+          setDirections(null);
+          setRoutePath(null);
+          hasRoute = false;
+        }
+      } finally {
+        inFlight = false;
+        scheduleNext();
+      }
+    };
+
+    void calculateRoute();
+    return () => {
+      cancelled = true;
+      window.clearTimeout(routeTimer);
+    };
+  }, [rideData?.id, rideData?.status, rideData?.pickupLat, rideData?.pickupLng, rideData?.dropoffLat, rideData?.dropoffLng, isMapsLoaded, isHeadingToPickup]);
+
+  // Match the accept-preview map: zoom to the road route once for each leg so
+  // the route is in view when the rider enters the restaurant or customer phase.
+  // GPS following can then keep the rider centred without repeatedly changing
+  // the zoom or fighting the driver's map gestures.
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !rideData) return;
+    const phaseKey = `${rideData.id}:${isHeadingToPickup ? 'restaurant' : 'customer'}`;
+    if (fittedRoutePhaseRef.current === phaseKey) return;
+
+    const routePoints = routePath
+      || directions?.routes?.[0]?.overview_path?.map(point => ({ lat: point.lat(), lng: point.lng() }))
+      || [];
+    if (routePoints.length < 2) return;
+
+    const bounds = new (window as any).google.maps.LatLngBounds();
+    routePoints.forEach(point => bounds.extend(point));
+    fittedRoutePhaseRef.current = phaseKey;
+    mapMoveRef.current = true;
+    map.fitBounds(bounds, 48);
+    window.clearTimeout(mapMoveTimeoutRef.current);
+    mapMoveTimeoutRef.current = window.setTimeout(() => { mapMoveRef.current = false; }, 1000);
+  }, [directions, routePath, rideData?.id, isHeadingToPickup]);
 
   const isDeliveryRide = (ride: any) =>
     Boolean(ride?.orderId || ride?.orderNumber) ||
@@ -890,21 +1035,9 @@ export default function ActiveRide() {
     }
   };
 
-  /**
-   * The delivery leg's last step: photograph the handover, then complete.
-   *
-   * The photo is uploaded here rather than inside completeRide so that a
-   * failure leaves the rider on this screen with the ride still open, instead
-   * of delivering an order and losing the evidence for it.
-   */
+  /** The handover photo is optional and must never block completing delivery. */
   const completeDeliveryWithProof = async () => {
-    if (!proofFile) {
-      setProofError('Take a photo of the handover first.');
-      return;
-    }
-
-    const ok = await uploadDeliveryProof();
-    if (!ok) return;
+    if (proofFile) await uploadDeliveryProof();
 
     setShowProofSheet(false);
     await completeRide();
@@ -1076,7 +1209,7 @@ export default function ActiveRide() {
          */
         if (isDeliveryRide(rideData)) {
           return {
-            label: 'Photo handover & complete',
+            label: 'Complete delivery',
             onClick: () => setShowProofSheet(true),
             isComplete: true,
           };
@@ -1203,7 +1336,20 @@ export default function ActiveRide() {
               <Marker position={{ lat: Number(rideData.dropoffLat), lng: Number(rideData.dropoffLng) }} icon={markerIcon(DROPOFF_HEX)} title="Drop-off" zIndex={!isHeadingToPickup ? 90 : 70} />
             )}
 
-            {/* Google Directions route line */}
+            {/* Road route for the current leg from Routes API. */}
+            {routePath && (
+              <Polyline
+                path={routePath}
+                options={{
+                  strokeColor: isHeadingToPickup ? PICKUP_HEX : DROPOFF_HEX,
+                  strokeWeight: 6,
+                  strokeOpacity: 0.9,
+                  zIndex: 10,
+                }}
+              />
+            )}
+
+            {/* Legacy Directions service fallback route line. */}
             {directions && (
               <DirectionsRenderer
                 directions={directions}
@@ -1225,14 +1371,10 @@ export default function ActiveRide() {
               />
             )}
 
-            {/* Straight-line fallback.
-                The road route only exists if DirectionsService answered. When it
-                fails -- quota, offline, an unroutable pair -- there was no line at
-                all, so the driver saw two pins and no path between them. This
-                draws the direct connection from the driver to the active
-                destination, which at least shows which way to head. The real
-                route replaces it as soon as directions arrive. */}
-            {!directions && driverLocation && (() => {
+            {/* Straight-line fallback. If both road-routing APIs fail while the
+                destination coordinates are known, keep a visible line toward
+                the active destination until a road route can be loaded. */}
+            {!directions && !routePath && driverLocation && (() => {
               const dest = isHeadingToPickup
                 ? (rideData.pickupLat != null && rideData.pickupLng != null
                     ? { lat: Number(rideData.pickupLat), lng: Number(rideData.pickupLng) }
@@ -1294,12 +1436,6 @@ export default function ActiveRide() {
             </span>
           </div>
         )}
-        <Button onClick={() => {
-          const dest = isHeadingToPickup
-            ? { lat: rideData.pickupLat, lng: rideData.pickupLng }
-            : { lat: rideData.dropoffLat, lng: rideData.dropoffLng };
-          if (dest && dest.lat) window.open(`https://www.google.com/maps/dir/?api=1&origin=${driverLocation?.lat},${driverLocation?.lng}&destination=${dest.lat},${dest.lng}&travelmode=driving`, '_blank');
-        }} className="absolute top-3 right-3 bg-surface text-black shadow-md hover:bg-[var(--muted)]"><Navigation className="w-4 h-4 mr-2" />Navigate</Button>
         {/* Re-centre on the driver.
             Appears only once following has stopped, i.e. only when the camera is
             somewhere the driver chose. Tapping it brings the tricycle back to the
@@ -1581,9 +1717,9 @@ export default function ActiveRide() {
               <div>
                 <h2 className="text-lg font-bold text-[var(--ink)]">Handover photo</h2>
                 <p className="mt-1 text-sm text-[var(--muted-foreground)]">
-                  Take one photo of the food being handed over
+                  Take an optional photo of the food being handed over
                   {rideData?.customerName ? ` to ${rideData.customerName}` : ''}. It is
-                  kept on the order as proof of delivery.
+                  kept on the order as proof of delivery. You can complete without a photo.
                 </p>
               </div>
               <button
@@ -1621,7 +1757,7 @@ export default function ActiveRide() {
               </Button>
               <Button
                 onClick={completeDeliveryWithProof}
-                disabled={isUploadingProof || !proofFile}
+                disabled={isUploadingProof}
                 className="flex-1 bg-[var(--success)] hover:bg-[var(--success)] text-white font-bold disabled:opacity-50"
               >
                 {isUploadingProof ? 'Uploading…' : 'Complete delivery'}
