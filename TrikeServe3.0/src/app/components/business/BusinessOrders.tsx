@@ -1,11 +1,12 @@
 import { useState, useEffect, useRef } from "react";
-import { Store, Package, Clock, User, CheckCircle, XCircle, AlertCircle, Menu, Navigation, MessageCircle, Loader2 } from "lucide-react";
+import { Store, Package, ShoppingBag, Clock, User, CheckCircle, XCircle, AlertCircle, Menu, Navigation, MessageCircle, Loader2 } from "lucide-react";
 import { Link, useNavigate, useLocation } from "react-router";
 import { Card } from "../ui/card";
 import { Badge } from "../ui/badge";
 import { Button } from "../ui/button";
 import ListPagination from "../ui/ListPagination";
 import BusinessSidebar from "./BusinessSidebar";
+import BusinessPageIntro from "./BusinessPageIntro";
     import { supabase } from "../../../lib/supabase";
     import { supabaseHelpers, findDeliveryTerminalForOrder, logAudit } from "@/lib/supabase";
     import { useAuth } from "../../contexts/AuthContext";
@@ -1352,7 +1353,7 @@ export default function BusinessOrders() {
   const isRiderEnRouteToShop = isRiderHeadingToRestaurant(driverStatus ?? selectedOrder?.driverStatus);
 
   return (
-    <div className="min-h-screen bg-surface flex">
+    <div className="min-h-dvh bg-[var(--muted)] flex">
       {/* Sidebar Navigation */}
       <BusinessSidebar 
         isMobileMenuOpen={isMobileMenuOpen}
@@ -1360,14 +1361,14 @@ export default function BusinessOrders() {
       />
 
       {/* Main Content */}
-      <div className="flex-1 lg:ml-64 w-full">
+      <div className="@container flex-1 lg:ml-64 w-full min-w-0">
         {/* Header */}
         <div className="px-3 md:px-5 py-4 border-b border-[var(--border)]">
           <div className="flex items-center gap-3">
             {/* Hamburger Menu - Mobile Only */}
             <button
               onClick={() => setIsMobileMenuOpen(true)}
-              className="lg:hidden p-2 hover:bg-[var(--muted)] rounded-xl transition-all"
+              aria-label="Open navigation" className="lg:hidden grid size-11 shrink-0 place-items-center hover:bg-[var(--muted)] rounded-xl transition-all"
             >
               <Menu className="w-6 h-6 text-[var(--ink)]" />
             </button>
@@ -1378,17 +1379,22 @@ export default function BusinessOrders() {
           </div>
         </div>
 
+        <div className="mx-auto w-full max-w-[100rem] p-4 sm:p-6"><BusinessPageIntro section="Orders" title="Every order, handled with care." description="Follow payments, preparation, and delivery from one clear workspace. Open an order to review details before taking action." metrics={[
+          { label: 'Active orders', value: activeOrders.length, Icon: Package },
+          { label: 'Preparing', value: activeOrders.filter(order => order.status === 'preparing').length, Icon: Clock },
+          { label: 'Order history', value: historyOrders.length, Icon: ShoppingBag },
+        ]} /></div>
         {/* Tabs */}
         {/* The horizontal scroll belongs to the status row alone. While it was on
             this shared wrapper, swiping the chips dragged Active/History off-screen
             with them. */}
-        <div className="px-3 md:px-5 py-3 border-b border-[var(--border)] sticky top-0 bg-surface z-50 space-y-2 md:space-y-3">
+        <div className="mx-4 sm:mx-6 rounded-3xl border border-line p-4 bg-card space-y-3">
           <div className="flex gap-2">
             <button
               onClick={() => setSelectedTab('active')}
               className={`flex-1 md:flex-1 py-2.5 px-3 md:px-4 rounded-xl font-semibold transition-all text-sm md:text-base whitespace-nowrap ${
                 selectedTab === 'active'
-                  ? 'bg-[var(--primary)] text-white'
+                  ? 'bg-[var(--teal-soft)] text-[var(--teal)]'
                   : 'bg-[var(--muted)] text-[var(--muted-foreground)]'
               }`}
             >
@@ -1398,7 +1404,7 @@ export default function BusinessOrders() {
               onClick={() => setSelectedTab('history')}
               className={`flex-1 md:flex-1 py-2.5 px-3 md:px-4 rounded-xl font-semibold transition-all text-sm md:text-base whitespace-nowrap ${
                 selectedTab === 'history'
-                  ? 'bg-[var(--primary)] text-white'
+                  ? 'bg-[var(--teal-soft)] text-[var(--teal)]'
                   : 'bg-[var(--muted)] text-[var(--muted-foreground)]'
               }`}
             >
@@ -1408,12 +1414,12 @@ export default function BusinessOrders() {
 
            {/* Status Filter - Only for Active Tab */}
            {selectedTab === 'active' && (
-             <div className="flex gap-2 overflow-x-auto scrollbar-hide pb-1 md:flex-wrap md:gap-2">
+             <div className="flex flex-wrap gap-2">
                <button
                  onClick={() => setSelectedStatusFilter('all')}
-                 className={`px-3 md:px-4 py-2 rounded-full text-xs md:text-sm font-medium whitespace-nowrap transition-all flex-shrink-0 ${
+                 className={`min-h-11 px-3 md:px-4 py-2 rounded-xl text-xs md:text-sm font-medium whitespace-nowrap transition-all flex-shrink-0 ${
                    selectedStatusFilter === 'all'
-                     ? 'bg-[var(--primary)] text-white'
+                     ? 'bg-[var(--teal-soft)] text-[var(--teal)]'
                      : 'bg-[var(--muted)] text-[var(--muted-foreground)] hover:bg-[var(--border)]'
                  }`}
                >
@@ -1421,9 +1427,9 @@ export default function BusinessOrders() {
                </button>
                <button
                  onClick={() => setSelectedStatusFilter('pending')}
-                 className={`px-3 md:px-4 py-2 rounded-full text-xs md:text-sm font-medium whitespace-nowrap transition-all flex-shrink-0 ${
+                 className={`min-h-11 px-3 md:px-4 py-2 rounded-xl text-xs md:text-sm font-medium whitespace-nowrap transition-all flex-shrink-0 ${
                    selectedStatusFilter === 'pending'
-                     ? 'bg-[var(--primary)] text-white'
+                     ? 'bg-[var(--teal-soft)] text-[var(--teal)]'
                      : 'bg-[var(--muted)] text-[var(--muted-foreground)] hover:bg-[var(--border)]'
                  }`}
                >
@@ -1431,9 +1437,9 @@ export default function BusinessOrders() {
                 </button>
                <button
                  onClick={() => setSelectedStatusFilter('payment-confirmed')}
-                 className={`px-3 md:px-4 py-2 rounded-full text-xs md:text-sm font-medium whitespace-nowrap transition-all flex-shrink-0 ${
+                 className={`min-h-11 px-3 md:px-4 py-2 rounded-xl text-xs md:text-sm font-medium whitespace-nowrap transition-all flex-shrink-0 ${
                    selectedStatusFilter === 'payment-confirmed'
-                     ? 'bg-[var(--primary)] text-white'
+                     ? 'bg-[var(--teal-soft)] text-[var(--teal)]'
                      : 'bg-[var(--muted)] text-[var(--muted-foreground)] hover:bg-[var(--border)]'
                  }`}
                 >
@@ -1441,9 +1447,9 @@ export default function BusinessOrders() {
                </button>
                <button
                  onClick={() => setSelectedStatusFilter('preparing')}
-                 className={`px-3 md:px-4 py-2 rounded-full text-xs md:text-sm font-medium whitespace-nowrap transition-all flex-shrink-0 ${
+                 className={`min-h-11 px-3 md:px-4 py-2 rounded-xl text-xs md:text-sm font-medium whitespace-nowrap transition-all flex-shrink-0 ${
                    selectedStatusFilter === 'preparing'
-                     ? 'bg-[var(--primary)] text-white'
+                     ? 'bg-[var(--teal-soft)] text-[var(--teal)]'
                      : 'bg-[var(--muted)] text-[var(--muted-foreground)] hover:bg-[var(--border)]'
                  }`}
                >
@@ -1451,9 +1457,9 @@ export default function BusinessOrders() {
                </button>
                <button
                  onClick={() => setSelectedStatusFilter('ready')}
-                 className={`px-3 md:px-4 py-2 rounded-full text-xs md:text-sm font-medium whitespace-nowrap transition-all flex-shrink-0 ${
+                 className={`min-h-11 px-3 md:px-4 py-2 rounded-xl text-xs md:text-sm font-medium whitespace-nowrap transition-all flex-shrink-0 ${
                    selectedStatusFilter === 'ready'
-                     ? 'bg-[var(--primary)] text-white'
+                     ? 'bg-[var(--teal-soft)] text-[var(--teal)]'
                      : 'bg-[var(--muted)] text-[var(--muted-foreground)] hover:bg-[var(--border)]'
                  }`}
                >
@@ -1461,9 +1467,9 @@ export default function BusinessOrders() {
                </button>
                <button
                  onClick={() => setSelectedStatusFilter('confirmed')}
-                 className={`px-3 md:px-4 py-2 rounded-full text-xs md:text-sm font-medium whitespace-nowrap transition-all flex-shrink-0 ${
+                 className={`min-h-11 px-3 md:px-4 py-2 rounded-xl text-xs md:text-sm font-medium whitespace-nowrap transition-all flex-shrink-0 ${
                    selectedStatusFilter === 'confirmed'
-                     ? 'bg-[var(--primary)] text-white'
+                     ? 'bg-[var(--teal-soft)] text-[var(--teal)]'
                      : 'bg-[var(--muted)] text-[var(--muted-foreground)] hover:bg-[var(--border)]'
                  }`}
                >
@@ -1471,9 +1477,9 @@ export default function BusinessOrders() {
                </button>
                <button
                  onClick={() => setSelectedStatusFilter('on-the-way')}
-                 className={`px-3 md:px-4 py-2 rounded-full text-xs md:text-sm font-medium whitespace-nowrap transition-all flex-shrink-0 ${
+                 className={`min-h-11 px-3 md:px-4 py-2 rounded-xl text-xs md:text-sm font-medium whitespace-nowrap transition-all flex-shrink-0 ${
                    selectedStatusFilter === 'on-the-way'
-                     ? 'bg-[var(--primary)] text-white'
+                     ? 'bg-[var(--teal-soft)] text-[var(--teal)]'
                      : 'bg-[var(--muted)] text-[var(--muted-foreground)] hover:bg-[var(--border)]'
                  }`}
                >
@@ -1493,7 +1499,7 @@ export default function BusinessOrders() {
             the status were above the fold. Everything here is about the same
             information in less space: one gap between rows, one inside the row,
             and the meta line beside the price instead of under it. */}
-        <div className="px-3 md:px-5 py-3 md:py-4 space-y-1.5 md:space-y-2 pb-6">
+        <div className="mx-auto grid w-full max-w-[100rem] grid-cols-1 items-start gap-4 p-4 sm:p-6 @min-[60rem]:grid-cols-2 [&>nav]:col-span-full">
           {selectedTab === 'active' ? (
             filteredActiveOrders.length > 0 ? (
               <>
@@ -1501,7 +1507,8 @@ export default function BusinessOrders() {
                 <Card
                   key={order.id}
                   onClick={() => setSelectedOrder(order)}
-                  className="p-2.5 md:p-3 border border-line active:scale-[0.98] transition-transform cursor-pointer"
+                  role="button" tabIndex={0} aria-label={`View order ${order.orderNumber}`} onKeyDown={event => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); setSelectedOrder(order); } }}
+                  className="min-w-0 gap-3 rounded-3xl bg-card p-4 sm:p-5 border border-line active:scale-[0.98] transition-transform cursor-pointer"
                 >
                   <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-1 md:gap-3 mb-1.5">
                     <div className="min-w-0">
@@ -1567,7 +1574,8 @@ export default function BusinessOrders() {
                 <Card
                   key={order.id}
                   onClick={() => setSelectedOrder(order)}
-                  className="p-3 md:p-4 border border-line opacity-75 active:scale-[0.98] transition-transform cursor-pointer"
+                  role="button" tabIndex={0} aria-label={`View order ${order.orderNumber}`} onKeyDown={event => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); setSelectedOrder(order); } }}
+                  className="min-w-0 gap-3 rounded-3xl bg-card p-4 sm:p-5 border border-line active:scale-[0.98] transition-transform cursor-pointer"
                 >
                   <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 md:gap-3 mb-3">
                     <div className="min-w-0">
@@ -1629,12 +1637,12 @@ export default function BusinessOrders() {
 
         {/* Order Detail Modal */}
         {selectedOrder && (
-          <div className="fixed inset-0 bg-black/50 z-[2000] flex items-end">
-            <div className="bg-surface w-full h-full md:h-auto md:rounded-t-3xl md:max-h-[85vh] overflow-y-auto">
+          <div className="fixed inset-0 bg-black/50 z-[2000] flex items-end justify-center sm:items-center sm:p-5">
+            <div role="dialog" aria-modal="true" aria-label="Order details" className="bg-card w-full max-w-3xl h-full sm:h-auto sm:rounded-3xl sm:max-h-[90dvh] overflow-y-auto">
               <div className="sticky top-0 bg-surface border-b border-[var(--border)] px-4 md:px-5 py-3 md:py-4">
                 <div className="flex items-center justify-between mb-2">
                   <h2 className="text-lg md:text-xl font-bold text-[var(--ink)]">#{selectedOrder.orderNumber}</h2>
-                  <button onClick={() => setSelectedOrder(null)} className="text-lg font-semibold text-[var(--info)]">
+                  <button aria-label="Close order details" onClick={() => setSelectedOrder(null)} className="min-h-11 min-w-11 rounded-xl text-lg font-semibold text-[var(--info)]">
                     <span className="hidden md:inline">Close</span>
                     <span className="md:hidden">✕</span>
                   </button>

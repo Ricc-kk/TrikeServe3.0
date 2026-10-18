@@ -631,7 +631,7 @@ export default function PassengerRequests() {
                         mapContainerStyle={{ width: "100%", height: "100%" }}
                         center={todaMapCenter}
                         zoom={14}
-                        options={{ zoomControl: true, streetViewControl: false, mapTypeControl: false, fullscreenControl: false }}
+                        options={{ zoomControl: true, streetViewControl: false, mapTypeControl: false, fullscreenControl: false, gestureHandling: 'greedy' }}
                       >
                         {todaArea && (
                           <Polygon
@@ -840,7 +840,7 @@ export default function PassengerRequests() {
             </div>
             {isMapsLoaded ? (
               <div className="w-full h-64 md:h-80">
-                <GoogleMap mapContainerStyle={{ width: '100%', height: '100%' }} center={previewMapCenter} zoom={14} options={{ zoomControl: false, streetViewControl: false, mapTypeControl: false }}>
+                <GoogleMap mapContainerStyle={{ width: '100%', height: '100%' }} center={previewMapCenter} zoom={14} options={{ zoomControl: false, streetViewControl: false, mapTypeControl: false, gestureHandling: 'greedy' }}>
                   <Marker position={currentLocation} icon={createDriverMarkerIcon()} title="Your Location" />
                   {resolvedPickupCoords && <Marker position={resolvedPickupCoords} icon={createCustomerMarkerIcon()} title="Pickup" />}
                   {previewRequest.dropoffLat && previewRequest.dropoffLng && (

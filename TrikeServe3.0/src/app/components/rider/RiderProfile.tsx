@@ -231,13 +231,14 @@ export default function RiderProfile() {
   });
 
   return (
-    <div className="min-h-screen bg-[var(--muted)]">
+    <div className="min-h-dvh bg-[var(--muted)] pb-[env(safe-area-inset-bottom)]">
       {/* Header */}
-      <div className="bg-[var(--primary)] px-4 py-4 sticky top-0 z-50">
+      <div className="mx-auto max-w-6xl rounded-b-[2rem] bg-[var(--ink-solid)] px-5 py-5 text-white sm:px-8 sm:py-7">
         <div className="flex items-center justify-between mb-6">
           <button 
             onClick={() => navigate('/rider')}
-            className="w-10 h-10 bg-white/20 backdrop-blur-sm rounded-full flex items-center justify-center active:scale-90 transition-all"
+            aria-label="Back to Driver Home"
+            className="w-11 h-11 bg-white/20 backdrop-blur-sm rounded-full flex items-center justify-center active:scale-90 transition-all"
           >
             <ArrowLeft className="w-6 h-6 text-white" />
           </button>
@@ -248,7 +249,7 @@ export default function RiderProfile() {
             // there, so the two can't drift apart unnoticed.
             <Button
               onClick={() => navigate("/rider/edit-profile")}
-              className="bg-white/20 backdrop-blur-sm hover:bg-white/30 text-white font-bold text-sm px-4 py-2 rounded-lg flex items-center gap-2"
+              className="bg-white/20 backdrop-blur-sm hover:bg-white/30 text-white font-bold min-h-11 text-sm px-4 py-2 rounded-xl flex items-center gap-2"
             >
               <Edit2 className="w-4 h-4" />
               Edit Profile
@@ -258,14 +259,14 @@ export default function RiderProfile() {
               <Button
                 onClick={handleCancel}
                 variant="ghost"
-                className="bg-white/20 backdrop-blur-sm hover:bg-white/30 text-white font-bold text-sm px-4 py-2 rounded-lg"
+                className="bg-white/20 backdrop-blur-sm hover:bg-white/30 text-white font-bold min-h-11 text-sm px-4 py-2 rounded-xl"
               >
                 <X className="w-4 h-4" />
               </Button>
               <Button
                 onClick={handleSave}
                 disabled={isSaving}
-                className="bg-surface text-[var(--primary)] hover:bg-white/90 font-bold text-sm px-4 py-2 rounded-lg flex items-center gap-2"
+                className="bg-surface text-[var(--primary)] hover:bg-white/90 font-bold min-h-11 text-sm px-4 py-2 rounded-xl flex items-center gap-2"
               >
                 <Save className="w-4 h-4" />
                 {isSaving ? 'Saving...' : 'Save'}
@@ -275,7 +276,7 @@ export default function RiderProfile() {
         </div>
 
         {/* Profile Header */}
-        <div className="flex flex-col items-center">
+        <div className="flex flex-col items-center text-center sm:pb-2">
           <div className="relative mb-3">
             <div className="w-24 h-24 bg-white/20 backdrop-blur-sm rounded-full flex items-center justify-center border-4 border-white/30 overflow-hidden">
               {user.avatarUrl ? (
@@ -307,10 +308,11 @@ export default function RiderProfile() {
               </button>
             )}
           </div>
-          <h1 className="text-2xl font-bold text-white mb-1">
+          <p className="mb-2 text-[10px] font-bold uppercase tracking-[0.2em] text-[var(--mint)]">TrikeServe · Driver profile</p>
+          <h1 className="max-w-full break-words text-2xl sm:text-3xl font-extrabold tracking-tight text-white mb-2">
             {user.name}
           </h1>
-          <div className="flex items-center gap-2 mb-2">
+          <div className="flex flex-wrap justify-center items-center gap-2 mb-2">
             <Badge className="bg-white/20 backdrop-blur-sm text-white border-0">
               <Car className="w-3 h-3 mr-1" />
               Driver
@@ -329,9 +331,9 @@ export default function RiderProfile() {
       </div>
 
       {/* Profile Information */}
-      <div className="px-4 py-6 space-y-4">
+      <main className="mx-auto grid max-w-6xl grid-cols-1 items-start gap-4 px-4 py-6 sm:grid-cols-2 sm:gap-5 sm:px-6">
         {/* Personal Information */}
-        <Card className="p-5 border-0 shadow-md">
+        <Card className="min-w-0 gap-4 rounded-3xl border border-line bg-card p-5 sm:p-6">
           <h2 className="text-lg font-bold text-[var(--ink)] mb-4 flex items-center gap-2">
             <User className="w-5 h-5 text-[var(--primary)]" />
             Personal Information
@@ -352,7 +354,7 @@ export default function RiderProfile() {
                   placeholder="Enter your full name"
                 />
               ) : (
-                <p className="text-base font-semibold text-[var(--ink)]">{user.name}</p>
+                <p className="break-words text-base font-semibold text-[var(--ink)]">{user.name}</p>
               )}
             </div>
 
@@ -363,7 +365,7 @@ export default function RiderProfile() {
               </label>
               <div className="flex items-center gap-2">
                 <Mail className="w-4 h-4 text-[var(--muted-foreground)]" />
-                <p className="text-base text-[var(--ink)]">{user.email}</p>
+                <p className="min-w-0 break-all text-sm text-[var(--ink)]">{user.email}</p>
               </div>
               <p className="text-xs text-[var(--muted-foreground)] mt-1">Email cannot be changed</p>
             </div>
@@ -392,7 +394,7 @@ export default function RiderProfile() {
         </Card>
 
         {/* Driver Information */}
-        <Card className="p-5 border-0 shadow-md">
+        <Card className="min-w-0 gap-4 rounded-3xl border border-line bg-card p-5 sm:p-6">
           <h2 className="text-lg font-bold text-[var(--ink)] mb-4 flex items-center gap-2">
             <Car className="w-5 h-5 text-[var(--primary)]" />
             Driver Information
@@ -421,7 +423,7 @@ export default function RiderProfile() {
               </label>
               <div className="flex items-center gap-2">
                 <CreditCard className="w-4 h-4 text-[var(--muted-foreground)]" />
-                <p className="text-base font-mono text-[var(--ink)]">
+                <p className="min-w-0 break-all text-sm font-mono text-[var(--ink)]">
                   {user.licenseNumber || "Not provided"}
                 </p>
               </div>
@@ -468,7 +470,7 @@ export default function RiderProfile() {
 
         {/* Terminal Assignment */}
         {(user.terminalId || terminalData) && (
-          <Card className="p-5 border-0 shadow-md">
+          <Card className="min-w-0 gap-4 rounded-3xl border border-line bg-card p-5 sm:p-6">
             <h2 className="text-lg font-bold text-[var(--ink)] mb-4 flex items-center gap-2">
               <MapPin className="w-5 h-5 text-[var(--primary)]" />
               Assigned Terminal
@@ -537,7 +539,7 @@ export default function RiderProfile() {
         )}
 
         {/* Operating Locations */}
-        <Card className="p-5 border-0 shadow-md">
+        <Card className="min-w-0 gap-4 rounded-3xl border border-line bg-card p-5 sm:p-6">
           <h2 className="text-lg font-bold text-[var(--ink)] mb-4 flex items-center gap-2">
             <MapPin className="w-5 h-5 text-[var(--primary)]" />
             Operating Locations & Services
@@ -574,22 +576,22 @@ export default function RiderProfile() {
         </Card>
 
         {/* Account Information */}
-        <Card className="p-5 border-0 shadow-md">
+        <Card className="min-w-0 gap-4 rounded-3xl border border-line bg-card p-5 sm:p-6">
           <h2 className="text-lg font-bold text-[var(--ink)] mb-4 flex items-center gap-2">
             <Calendar className="w-5 h-5 text-[var(--primary)]" />
             Account Information
           </h2>
           
           <div className="space-y-3">
-            <div className="flex justify-between items-center py-2 border-b border-[var(--border)]">
+            <div className="flex flex-wrap justify-between items-center gap-2 py-2 border-b border-[var(--border)]">
               <span className="text-sm text-[var(--muted-foreground)]">User ID</span>
               <span className="text-sm font-mono text-[var(--ink)]">{user.id.substring(0, 12)}...</span>
             </div>
-            <div className="flex justify-between items-center py-2 border-b border-[var(--border)]">
+            <div className="flex flex-wrap justify-between items-center gap-2 py-2 border-b border-[var(--border)]">
               <span className="text-sm text-[var(--muted-foreground)]">Account Type</span>
               <span className="text-sm font-semibold text-[var(--primary)]">Driver</span>
             </div>
-            <div className="flex justify-between items-center py-2">
+            <div className="flex flex-wrap justify-between items-center gap-2 py-2">
               <span className="text-sm text-[var(--muted-foreground)]">Member Since</span>
               <span className="text-sm text-[var(--ink)]">{joinDate}</span>
             </div>
@@ -597,7 +599,7 @@ export default function RiderProfile() {
         </Card>
 
         {/* Appearance — Rider Admin / drivers get the bilingual gloss */}
-        <Card className="p-5 border-0 shadow-md">
+        <Card className="min-w-0 gap-4 rounded-3xl border border-line bg-card p-5 sm:p-6">
           <h2 className="text-lg font-bold text-[var(--ink)] mb-4 flex items-center gap-2">
             <Palette className="w-5 h-5 text-[var(--primary)]" />
             Appearance
@@ -643,7 +645,7 @@ export default function RiderProfile() {
             done.
         -------------------------------------------------- */}
         {canOpenAdminApp ? (
-          <Card className="p-5 border-0 shadow-md">
+          <Card className="min-w-0 gap-4 rounded-3xl border border-line bg-card p-5 sm:p-6">
             <h2 className="text-lg font-bold text-[var(--ink)] mb-1 flex items-center gap-2">
               <Shield className="w-5 h-5 text-[var(--violet)]" />
               Your Apps
@@ -773,8 +775,8 @@ export default function RiderProfile() {
         </Button>
 
         {/* Bottom spacing for safe area */}
-        <div className="h-8" />
-      </div>
+        <div className="h-8 sm:col-span-2" />
+      </main>
       <ActiveRideButton />
 
       {/* Confirm Save Modal */}

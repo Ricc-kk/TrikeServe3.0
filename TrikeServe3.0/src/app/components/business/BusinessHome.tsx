@@ -7,6 +7,7 @@ import { Button } from "../ui/button";
 import { ImageWithFallback } from "../figma/ImageWithFallback";
 import StoreLogo from "../figma/StoreLogo";
 import BusinessSidebar from "./BusinessSidebar";
+import BusinessPageIntro from "./BusinessPageIntro";
 import BusinessMapSelector from "./BusinessMapSelector";
 import { useAuth } from "../../contexts/AuthContext";
 import { supabase } from "../../../utils/supabase";
@@ -1166,8 +1167,28 @@ const clearHours = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [searchParams]);
 
+  /*
+   * Storefront readiness, for the desktop rail only.
+   *
+   * Every row is something this screen already edits, and its open() goes to
+   * that editor — so the checklist is a way in, not a second copy of the form.
+   */
+  const setupSteps: { label: string; done: boolean; open: () => void }[] = [
+    { label: "Banner photo", done: Boolean(restaurantData.heroImage), open: () => setShowEditBanner(true) },
+    { label: "Opening hours", done: hoursConfigured, open: openInfoEditor },
+    { label: "Map pin", done: restaurantData.latitude != null, open: () => setShowLocationPicker(true) },
+    {
+      label: "Cuisine selected",
+      done: Array.isArray(restaurantData.cuisine) && restaurantData.cuisine.length > 0,
+      open: openInfoEditor,
+    },
+    { label: "GCash instructions", done: restaurantData.paymentInstructions.trim().length > 0, open: openInfoEditor },
+    { label: "Menu items", done: menuItems.length > 0, open: () => navigate("/business/menu") },
+  ];
+  const setupDone = setupSteps.filter((step) => step.done).length;
+
   return (
-    <div className="min-h-screen bg-surface flex">
+    <div className="min-h-dvh bg-[var(--muted)] flex">
       {/* Sidebar Navigation */}
       <BusinessSidebar 
         isMobileMenuOpen={isMobileMenuOpen}
@@ -1175,34 +1196,35 @@ const clearHours = () => {
       />
 
       {/* Main Content */}
-      <div className="flex-1 lg:ml-64">
+      <div className="@container flex-1 lg:ml-64 w-full min-w-0">
         {/* Header. The Preview toggle used to sit here, opposite the title, so it sat
             in the top-right of every Shop screen doing nothing until tapped —
             while the "Preview Store" quick action below did exactly the same job
             in the place the eye expects it. The preview is entered there and left
             from its own banner. */}
-        <div className="px-5 py-4 border-b border-[var(--border)] sticky top-0 bg-surface z-50">
-          <div className="flex items-center gap-3">
+        <div className="sticky top-0 z-50 border-b border-[var(--border)] bg-surface">
+          <div className="mx-auto flex w-full max-w-[1400px] items-center gap-3 px-4 py-4 sm:px-6 lg:px-8">
             {/* Hamburger Menu - Mobile Only */}
             <button
               onClick={() => setIsMobileMenuOpen(true)}
-              className="lg:hidden p-2 hover:bg-[var(--muted)] rounded-xl transition-all"
+              aria-label="Open navigation" className="lg:hidden grid size-11 shrink-0 place-items-center hover:bg-[var(--muted)] rounded-xl transition-all"
             >
               <Menu className="w-6 h-6 text-[var(--ink)]" />
             </button>
             <div>
-              <h1 className="text-3xl font-extrabold text-[var(--ink)]\">My Shop</h1>
-              <p className="text-sm text-[var(--muted-foreground)]\">Manage your store</p>
+              <h1 className="text-2xl font-extrabold tracking-tight text-[var(--ink)] sm:text-3xl">My Shop</h1>
+              <p className="text-sm text-[var(--muted-foreground)]">Manage your store</p>
             </div>
           </div>
         </div>
 
+        {!previewMode && <div className="mx-auto w-full max-w-[1400px] px-4 pt-5 sm:px-6 lg:px-8 lg:pt-6"><BusinessPageIntro section="Shop" title="Make a great first impression." description="Shape your storefront, review how customers see your shop, and manage your business details and hours." /></div>}
         {previewMode ? (
           // CUSTOMER PREVIEW MODE
-          <div className="bg-[var(--muted)] min-h-screen">
+          <div className="min-h-screen bg-[var(--muted)] pb-12">
             {/* Preview Header Notice */}
-            <div className="bg-[var(--primary-soft)] border-b-2 border-[var(--primary)] px-5 py-3">
-              <div className="flex items-center justify-between">
+            <div className="border-b-2 border-[var(--primary)] bg-[var(--primary-soft)]">
+              <div className="mx-auto flex w-full max-w-2xl items-center justify-between gap-3 px-4 py-3 sm:px-6">
                 <div className="flex items-center gap-2">
                   <Eye className="w-5 h-5 text-[var(--primary)]" />
                   <div>
@@ -1224,8 +1246,10 @@ const clearHours = () => {
               </div>
             </div>
 
-            {/* Customer View */}
-            <div className="px-5 py-4">
+            {/* Customer View. Constrained to a customer-sized column: this is a
+                phone layout, and stretched across a desktop it stops reading as
+                the preview of what a customer sees. */}
+            <div className="mx-auto w-full max-w-2xl px-4 py-5 sm:px-6">
               {/* Hero Banner */}
               <div className="relative h-48 rounded-2xl overflow-hidden mb-4">
                 <ImageWithFallback
@@ -1345,9 +1369,20 @@ const clearHours = () => {
           </div>
         ) : (
           // EDIT MODE
-          <>
+          <div className="mx-auto w-full max-w-[1400px] px-4 py-5 sm:px-6 lg:px-8 lg:py-6">
+          {/*
+            The phone/tablet stack stays the stack: status, quick actions, then
+            the store editor.
+
+            From xl up the empty right-hand margin on a wide screen is used by a
+            rail that answers the questions the stack leaves open — what the
+            shop looks like right now, and what is still unfinished. The rail is
+            hidden below xl, so tablet and phone are unchanged.
+          */}
+          <div className="grid grid-cols-1 gap-5 xl:grid-cols-[minmax(0,1fr)_minmax(0,20rem)] xl:items-start">
+          <div className="min-w-0 space-y-5">
             {/* Store Status Toggle */}
-            <div className="px-5 py-4 border-b border-[var(--border)]">
+            <div className="rounded-3xl border border-line bg-card p-5 sm:p-6">
               <div className="flex items-center justify-between gap-3">
                 <div className="min-w-0">
                   <h3 className="font-bold text-[var(--ink)] mb-1">Store Status</h3>
@@ -1484,18 +1519,18 @@ const clearHours = () => {
             </div>
 
             {/* Quick Actions */}
-            <div className="px-5 py-4">
-              <h3 className="font-bold text-[var(--ink)] mb-3">⚡ Quick Actions</h3>
-              <div className="grid grid-cols-2 gap-3 mb-4">
+            <div className="rounded-3xl border border-line bg-card p-5 sm:p-6">
+              <h3 className="mb-3 font-bold text-[var(--ink)]">Quick Actions</h3>
+              <div className="mb-4 grid grid-cols-2 gap-3">
                 <Link to="/business/menu">
-                  <Card className="p-5 text-center border border-line hover:border-[var(--primary)] transition-all active:scale-95 bg-gradient-to-br from-[var(--primary-soft)] to-white">
+                  <Card className="p-5 text-center border border-line hover:border-[var(--primary)] transition-all active:scale-95 rounded-2xl bg-[var(--primary-soft)]">
                     <Package className="w-10 h-10 text-[var(--primary)] mx-auto mb-2" />
                     <p className="font-bold text-[var(--ink)] mb-1">Menu</p>
                     <p className="text-xs text-[var(--muted-foreground)]">Add & edit items</p>
                   </Card>
                 </Link>
                 <Link to="/business/orders">
-                  <Card className="p-5 text-center border border-line hover:border-[var(--info)] transition-all active:scale-95 bg-gradient-to-br from-[var(--info-soft)] to-white">
+                  <Card className="p-5 text-center border border-line hover:border-[var(--info)] transition-all active:scale-95 rounded-2xl bg-[var(--info-soft)]">
                     <Clock className="w-10 h-10 text-[var(--info)] mx-auto mb-2" />
                     <p className="font-bold text-[var(--ink)] mb-1">Orders</p>
                     <p className="text-xs text-[var(--muted-foreground)]">Manage orders</p>
@@ -1505,11 +1540,11 @@ const clearHours = () => {
             </div>
 
             {/* Store Appearance Section */}
-            <div className="px-5 py-4 border-t-8 border-[var(--muted)]">
-              <div className="mb-3">
-                <h3 className="font-bold text-[var(--ink)]">🎨 Store Appearance</h3>
-                <p className="text-xs text-[var(--muted-foreground)] mt-0.5">
-                  customer view of the store
+            <div className="min-w-0 rounded-3xl border border-line bg-card p-5 sm:p-6">
+              <div className="mb-4">
+                <h3 className="font-bold text-[var(--ink)]">Store Appearance</h3>
+                <p className="mt-0.5 text-sm text-[var(--muted-foreground)]">
+                  What customers see, and the details behind it
                 </p>
               </div>
 
@@ -1979,40 +2014,40 @@ const clearHours = () => {
                     {/* Icon per row. These are the three a shop owner scans for —
                         how customers reach it, where to reach it, and where it
                         sits — and they were three identical grey words. */}
-                    <div className="flex items-start gap-3 py-2 border-b border-[var(--border)]">
+                    <div className="flex min-w-0 flex-wrap items-start gap-3 py-3 border-b border-[var(--border)]">
                       <Store className="w-4 h-4 text-[var(--primary)] flex-shrink-0 mt-0.5" aria-hidden="true" />
                       <span className="text-[var(--muted-foreground)] w-24 flex-shrink-0">Name</span>
-                      <span className="font-semibold text-[var(--ink)] text-right flex-1">{restaurantData.name}</span>
+                      <span className="font-semibold text-[var(--ink)] text-right min-w-0 break-words flex-1">{restaurantData.name}</span>
                     </div>
-                    <div className="flex items-start gap-3 py-2 border-b border-[var(--border)]">
+                    <div className="flex min-w-0 flex-wrap items-start gap-3 py-3 border-b border-[var(--border)]">
                       <MapPin className="w-4 h-4 text-[var(--primary)] flex-shrink-0 mt-0.5" aria-hidden="true" />
                       <span className="text-[var(--muted-foreground)] w-24 flex-shrink-0">Address</span>
-                      <span className="font-semibold text-[var(--ink)] text-right flex-1">{restaurantData.address}</span>
+                      <span className="font-semibold text-[var(--ink)] text-right min-w-0 break-words flex-1">{restaurantData.address}</span>
                     </div>
-                    <div className="flex items-start gap-3 py-2 border-b border-[var(--border)]">
+                    <div className="flex min-w-0 flex-wrap items-start gap-3 py-3 border-b border-[var(--border)]">
                       <Mail className="w-4 h-4 text-[var(--primary)] flex-shrink-0 mt-0.5" aria-hidden="true" />
                       <span className="text-[var(--muted-foreground)] w-24 flex-shrink-0">Email</span>
-                      <span className="font-semibold text-[var(--ink)] text-right flex-1 break-all">{user?.email}</span>
+                      <span className="font-semibold text-[var(--ink)] text-right min-w-0 break-words flex-1 break-all">{user?.email}</span>
                     </div>
-                    <div className="flex items-start gap-3 py-2 border-b border-[var(--border)]">
+                    <div className="flex min-w-0 flex-wrap items-start gap-3 py-3 border-b border-[var(--border)]">
                       <Phone className="w-4 h-4 text-[var(--primary)] flex-shrink-0 mt-0.5" aria-hidden="true" />
                       <span className="text-[var(--muted-foreground)] w-24 flex-shrink-0">Phone</span>
-                      <span className="font-semibold text-[var(--ink)] text-right flex-1">{user?.phone}</span>
+                      <span className="font-semibold text-[var(--ink)] text-right min-w-0 break-words flex-1">{user?.phone}</span>
                     </div>
-                    <div className="flex items-start gap-3 py-2 border-b border-[var(--border)]">
+                    <div className="flex min-w-0 flex-wrap items-start gap-3 py-3 border-b border-[var(--border)]">
                       <BadgeCheck className="w-4 h-4 text-[var(--primary)] flex-shrink-0 mt-0.5" aria-hidden="true" />
                       <span className="text-[var(--muted-foreground)] w-24 flex-shrink-0">Subtitle</span>
-                      <span className="font-semibold text-[var(--ink)] text-right flex-1">{restaurantData.subtitle}</span>
+                      <span className="font-semibold text-[var(--ink)] text-right min-w-0 break-words flex-1">{restaurantData.subtitle}</span>
                     </div>
-                    <div className="flex items-start gap-3 py-2 border-b border-[var(--border)]">
+                    <div className="flex min-w-0 flex-wrap items-start gap-3 py-3 border-b border-[var(--border)]">
                       <Clock className="w-4 h-4 text-[var(--primary)] flex-shrink-0 mt-0.5" aria-hidden="true" />
                       <span className="text-[var(--muted-foreground)] w-24 flex-shrink-0">Delivery Time</span>
-                      <span className="font-semibold text-[var(--ink)] text-right flex-1">{restaurantData.deliveryTime}</span>
+                      <span className="font-semibold text-[var(--ink)] text-right min-w-0 break-words flex-1">{restaurantData.deliveryTime}</span>
                     </div>
-                    <div className="flex items-start gap-3 py-2 border-b border-[var(--border)]">
+                    <div className="flex min-w-0 flex-wrap items-start gap-3 py-3 border-b border-[var(--border)]">
                       <Truck className="w-4 h-4 text-[var(--primary)] flex-shrink-0 mt-0.5" aria-hidden="true" />
                       <span className="text-[var(--muted-foreground)] w-24 flex-shrink-0">Delivery Fee</span>
-                      <span className="font-semibold text-[var(--primary)] text-right flex-1">₱{adminDeliveryFee}</span>
+                      <span className="font-semibold text-[var(--primary)] text-right min-w-0 break-words flex-1">₱{adminDeliveryFee}</span>
                     </div>
                     {/*
                       Everything below is also in the editor, and it used to
@@ -2027,10 +2062,10 @@ const clearHours = () => {
                       free-text Hours box that used to sit above it duplicated the
                       same value and was overwritten by the schedule anyway.
                     */}
-                    <div className="flex items-start gap-3 py-2 border-b border-[var(--border)]">
+                    <div className="flex min-w-0 flex-wrap items-start gap-3 py-3 border-b border-[var(--border)]">
                       <UtensilsCrossed className="w-4 h-4 text-[var(--primary)] flex-shrink-0 mt-0.5" aria-hidden="true" />
                       <span className="text-[var(--muted-foreground)] w-24 flex-shrink-0">What we serve</span>
-                      <span className="font-semibold text-right flex-1">
+                      <span className="font-semibold text-right min-w-0 break-words flex-1">
                         {cuisineSummary ? (
                           <span className="text-[var(--ink)]">{cuisineSummary}</span>
                         ) : (
@@ -2044,10 +2079,10 @@ const clearHours = () => {
                       </span>
                     </div>
 
-                    <div className="flex items-start gap-3 py-2 border-b border-[var(--border)]">
+                    <div className="flex min-w-0 flex-wrap items-start gap-3 py-3 border-b border-[var(--border)]">
                       <Clock className="w-4 h-4 text-[var(--primary)] flex-shrink-0 mt-0.5" aria-hidden="true" />
                       <span className="text-[var(--muted-foreground)] w-24 flex-shrink-0">Opening hours</span>
-                      <span className="text-right flex-1">
+                      <span className="text-right min-w-0 break-words flex-1">
                         <span
                           className={`font-semibold ${hoursConfigured ? "text-[var(--ink)]" : "text-[var(--muted-foreground)]"}`}
                         >
@@ -2065,10 +2100,10 @@ const clearHours = () => {
                       </span>
                     </div>
 
-                    <div className="flex items-start gap-3 py-2 border-b border-[var(--border)]">
+                    <div className="flex min-w-0 flex-wrap items-start gap-3 py-3 border-b border-[var(--border)]">
                       <MapPin className="w-4 h-4 text-[var(--primary)] flex-shrink-0 mt-0.5" aria-hidden="true" />
                       <span className="text-[var(--muted-foreground)] w-24 flex-shrink-0">Map pin</span>
-                      <span className="text-right flex-1">
+                      <span className="text-right min-w-0 break-words flex-1">
                         {restaurantData.latitude != null ? (
                           <span className="font-semibold text-[var(--ink)]">
                             {restaurantData.latitude.toFixed(5)}, {restaurantData.longitude?.toFixed(5)}
@@ -2084,10 +2119,10 @@ const clearHours = () => {
                       </span>
                     </div>
 
-                    <div className="flex items-start gap-3 py-2">
+                    <div className="flex min-w-0 flex-wrap items-start gap-3 py-3">
                       <Wallet className="w-4 h-4 text-[var(--primary)] flex-shrink-0 mt-0.5" aria-hidden="true" />
                       <span className="text-[var(--muted-foreground)] w-24 flex-shrink-0">GCash</span>
-                      <span className="text-right flex-1">
+                      <span className="text-right min-w-0 break-words flex-1">
                         {restaurantData.paymentInstructions.trim() ? (
                           <>
                             <span className="font-semibold text-[var(--success-ink)]">Instructions set</span>
@@ -2143,13 +2178,122 @@ const clearHours = () => {
                 )}
               </Card>
             </div>
-          </>
+          </div>
+
+          {/* Desktop rail: storefront snapshot and setup checklist. */}
+          <aside aria-label="Storefront and setup" className="hidden min-w-0 space-y-5 xl:sticky xl:top-28 xl:block">
+            <section className="overflow-hidden rounded-3xl border border-line bg-card">
+              <div className="border-b border-line px-5 py-4">
+                <h3 className="font-bold text-[var(--ink)]">Storefront</h3>
+                <p className="mt-1 text-sm text-[var(--muted-foreground)]">How your shop appears to customers right now.</p>
+              </div>
+
+              <div className="relative h-32">
+                <ImageWithFallback
+                  src={restaurantData.heroImage}
+                  alt=""
+                  className="size-full object-cover"
+                />
+                <div aria-hidden="true" className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/25 to-transparent" />
+                <Badge className={`absolute right-3 top-3 ${shownOpen ? 'bg-[var(--success)]' : 'bg-[var(--muted-foreground)]'} text-white`}>
+                  {shownOpen ? 'Open now' : 'Closed'}
+                </Badge>
+                <div className="absolute inset-x-4 bottom-3 flex min-w-0 items-end gap-3">
+                  <span className="flex size-11 shrink-0 items-center justify-center overflow-hidden rounded-xl border border-white/40 bg-surface shadow-sm">
+                    <StoreLogo logo={restaurantData.logo} emojiClass="text-xl" />
+                  </span>
+                  <div className="min-w-0 pb-0.5">
+                    <p className="truncate text-sm font-bold text-white">{restaurantData.name || 'Your shop'}</p>
+                    <p className="truncate text-xs text-white/80">{restaurantData.subtitle || 'Add a subtitle in Store Information'}</p>
+                  </div>
+                </div>
+              </div>
+
+              <dl className="space-y-2 px-5 py-4 text-sm">
+                <div className="flex items-center justify-between gap-3">
+                  <dt className="text-[var(--muted-foreground)]">Rating</dt>
+                  <dd className="min-w-0 truncate text-right font-semibold text-[var(--ink)]">
+                    {restaurantData.rating > 0
+                      ? `${restaurantData.rating.toFixed(1)} · ${restaurantData.ratingCount} reviews`
+                      : 'No ratings yet'}
+                  </dd>
+                </div>
+                <div className="flex items-center justify-between gap-3">
+                  <dt className="shrink-0 text-[var(--muted-foreground)]">Delivery</dt>
+                  <dd className="min-w-0 truncate text-right font-semibold text-[var(--ink)]">
+                    {restaurantData.deliveryTime || 'Not set'} · ₱{adminDeliveryFee}
+                  </dd>
+                </div>
+                <div className="flex items-center justify-between gap-3">
+                  <dt className="shrink-0 text-[var(--muted-foreground)]">Hours</dt>
+                  <dd className="min-w-0 truncate text-right font-semibold text-[var(--ink)]">
+                    {hoursConfigured
+                      ? describeSchedule({ open_time: hours.openTime, close_time: hours.closeTime, open_days: hours.days })
+                      : 'Always open'}
+                  </dd>
+                </div>
+              </dl>
+
+              <div className="px-5 pb-5">
+                <Button
+                  onClick={() => {
+                    setPreviewMode(true);
+                    window.scrollTo({ top: 0, behavior: 'smooth' });
+                  }}
+                  variant="outline"
+                  className="flex min-h-11 w-full items-center justify-center gap-2 text-sm"
+                >
+                  <Eye className="size-4" aria-hidden="true" />
+                  Preview as a customer
+                </Button>
+              </div>
+            </section>
+
+            <section className="rounded-3xl border border-line bg-card p-5">
+              <div className="flex items-center justify-between gap-3">
+                <h3 className="font-bold text-[var(--ink)]">Finish your store</h3>
+                <span className="text-xs font-bold tabular-nums text-[var(--muted-foreground)]">
+                  {setupDone}/{setupSteps.length}
+                </span>
+              </div>
+              <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-[var(--muted)]" aria-hidden="true">
+                <div
+                  className="h-full rounded-full bg-[var(--success)] transition-all"
+                  style={{ width: `${Math.round((setupDone / setupSteps.length) * 100)}%` }}
+                />
+              </div>
+              <ul className="mt-4 space-y-1">
+                {setupSteps.map((step) => (
+                  <li key={step.label}>
+                    <button
+                      type="button"
+                      onClick={step.open}
+                      className="flex min-h-11 w-full items-center gap-3 rounded-xl px-2 text-left transition-colors hover:bg-[var(--muted)]"
+                    >
+                      <span
+                        aria-hidden="true"
+                        className={`grid size-5 shrink-0 place-items-center rounded-full border-2 ${step.done ? 'border-[var(--success)] bg-[var(--success)] text-white' : 'border-[var(--border)]'}`}
+                      >
+                        {step.done && <Check className="size-3" />}
+                      </span>
+                      <span className={`min-w-0 flex-1 text-sm ${step.done ? 'text-[var(--muted-foreground)]' : 'font-semibold text-[var(--ink)]'}`}>
+                        {step.label}
+                      </span>
+                      <ChevronRight className="size-4 shrink-0 text-[var(--border)]" aria-hidden="true" />
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            </section>
+          </aside>
+          </div>
+          </div>
         )}
 
         {/* Edit Banner Modal */}
         {showEditBanner && (
-          <div className="fixed inset-0 bg-black/50 z-[2000] flex items-end animate-in slide-in-from-bottom">
-            <div className="bg-surface w-full rounded-t-3xl max-h-[85vh] overflow-y-auto">
+          <div className="fixed inset-0 bg-black/50 z-[2000] flex items-end justify-center sm:items-center sm:p-6 animate-in slide-in-from-bottom">
+            <div role="dialog" aria-modal="true" aria-label="Edit banner and logo" className="bg-card w-full sm:max-w-2xl rounded-t-3xl sm:rounded-3xl max-h-[85dvh] overflow-y-auto">
               <div className="sticky top-0 bg-surface border-b border-[var(--border)] px-5 py-4 flex items-center justify-between">
                 <h2 className="text-xl font-bold text-[var(--ink)]">Edit Banner & Logo</h2>
                 <div className="flex items-center gap-2">
@@ -2260,7 +2404,8 @@ const clearHours = () => {
             Withdraw is the one way to clear it and an admin applying it would
             revert the shop to the older details. */}
         {profile.hasPending && !showEditInfo && (
-          <div className="mx-4 lg:mx-6 mt-4 rounded-2xl border-2 border-[var(--amber-soft)] bg-[var(--amber-soft)] p-4">
+          <div className="mx-auto mt-4 w-full max-w-[1400px] px-4 sm:px-6 lg:px-8">
+          <div className="rounded-2xl border-2 border-[var(--amber-soft)] bg-[var(--amber-soft)] p-4">
             <div className="flex items-start gap-3">
               <Clock className="w-5 h-5 text-[var(--amber-ink)] flex-shrink-0 mt-0.5" aria-hidden="true" />
               <div className="min-w-0 flex-1">
@@ -2278,6 +2423,7 @@ const clearHours = () => {
                 </button>
               </div>
             </div>
+          </div>
           </div>
         )}
 

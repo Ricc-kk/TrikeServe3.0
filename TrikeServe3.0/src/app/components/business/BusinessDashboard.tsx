@@ -12,6 +12,7 @@ import { ImageWithFallback } from "../figma/ImageWithFallback";
 import AppHeader from "../ui/AppHeader";
 import AppShell from "../ui/AppShell";
 import BusinessSidebar from "./BusinessSidebar";
+import BusinessPageIntro from "./BusinessPageIntro";
 import { AnalyticsLineChart, AnalyticsSparkline, AnalyticsDonutChart } from "../ui/AnalyticsCharts";
 import {
   buildSeries,
@@ -645,6 +646,7 @@ const previousWindowWord = range === 'today' ? 'day' : range;
       wide
       header={
         <AppHeader
+          onMenuClick={() => setIsMobileMenuOpen(true)}
           notificationCount={notifications.filter((n: any) => !n.read).length}
           onNotificationsClick={() => setShowNotifications(true)}
           avatarSrc={restaurantLogo || undefined}
@@ -652,7 +654,8 @@ const previousWindowWord = range === 'today' ? 'day' : range;
         />
       }
     >
-      <div className="space-y-6">
+      <div className="@container mx-auto w-full max-w-[100rem] space-y-6 sm:space-y-8">
+          <BusinessPageIntro section="Overview" title="Good food. Growing business." description="See how your shop is doing, follow your orders, and find your next opportunity to grow." />
           {/* Range filter. Sits above the charts *and* the period figure, because both
               answer the same question — "how am I doing over what window". */}
           <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
@@ -676,7 +679,7 @@ const previousWindowWord = range === 'today' ? 'day' : range;
             <div
               role="group"
               aria-label="Chart range"
-              className="inline-flex rounded-xl border border-line bg-[var(--muted)] p-1"
+              className="flex max-w-full flex-wrap gap-1 rounded-2xl border border-line bg-card p-1.5"
             >
               {RANGE_OPTIONS.map((option) => {
                 const selected = range === option.key;
@@ -686,7 +689,7 @@ const previousWindowWord = range === 'today' ? 'day' : range;
                     type="button"
                     onClick={() => setRange(option.key)}
                     aria-pressed={selected}
-                    className={`rounded-lg px-4 py-2 text-sm font-bold transition-colors ${
+                    className={`min-h-11 rounded-xl px-3 py-2 text-sm font-bold transition-colors ${
                       selected
                         ? 'bg-[var(--surface)] text-[var(--ink)] shadow-sm'
                         : 'text-[var(--muted-foreground)] hover:text-[var(--ink)]'
@@ -702,13 +705,13 @@ const previousWindowWord = range === 'today' ? 'day' : range;
           {/* Stats Cards */}
           <div className="grid grid-cols-2 xl:grid-cols-4 gap-3 lg:gap-4 mb-6 lg:mb-8">
             {/* Orders placed */}
-            <Card className="p-4 lg:p-6 border border-line bg-surface">
-              <div className="flex items-start justify-between mb-3 lg:mb-4">
+            <Card className="min-w-0 gap-0 rounded-3xl p-4 lg:p-6 border border-line bg-card">
+              <div className="flex flex-wrap items-start justify-between gap-2 mb-3 lg:mb-4">
                 <div className="min-w-0">
                   <p className="text-xs lg:text-sm text-[var(--muted-foreground)] mb-1">
                     {rangeHeadline} Orders
                   </p>
-                  <h2 className="text-2xl lg:text-4xl font-bold text-[var(--ink)]">
+                  <h2 className="break-all text-2xl @min-[48rem]:text-4xl font-bold text-[var(--ink)]">
                     {orderSeries.count}
                   </h2>
                 </div>
@@ -724,13 +727,13 @@ const previousWindowWord = range === 'today' ? 'day' : range;
             </Card>
 
             {/* Revenue — the food only; the delivery fee goes to the rider */}
-            <Card className="p-4 lg:p-6 border border-line bg-surface">
-              <div className="flex items-start justify-between mb-3 lg:mb-4">
+            <Card className="min-w-0 gap-0 rounded-3xl p-4 lg:p-6 border border-line bg-card">
+              <div className="flex flex-wrap items-start justify-between gap-2 mb-3 lg:mb-4">
                 <div className="min-w-0">
                   <p className="text-xs lg:text-sm text-[var(--muted-foreground)] mb-1">
                     {rangeHeadline} Revenue
                   </p>
-                  <h2 className="text-2xl lg:text-4xl font-bold text-[var(--ink)]">{formatPeso(revenueSeries.total)}</h2>
+                  <h2 className="break-all text-2xl @min-[48rem]:text-4xl font-bold text-[var(--ink)]">{formatPeso(revenueSeries.total)}</h2>
                 </div>
                 <div className="w-10 h-10 lg:w-12 lg:h-12 bg-[var(--amber-soft)] rounded-xl flex shrink-0 items-center justify-center">
                   <PhilippinePeso className="w-5 h-5 lg:w-6 lg:h-6 text-[var(--amber)]" aria-hidden="true" />
@@ -746,14 +749,14 @@ const previousWindowWord = range === 'today' ? 'day' : range;
             {/* Revenue growth — sits directly after Revenue, because it is that
                 figure's rate of change and reading them apart would be asking the
                 shop to hold both in their head to make sense of either. */}
-            <Card className="p-4 lg:p-6 border border-line bg-surface">
-              <div className="flex items-start justify-between mb-3 lg:mb-4">
+            <Card className="min-w-0 gap-0 rounded-3xl p-4 lg:p-6 border border-line bg-card">
+              <div className="flex flex-wrap items-start justify-between gap-2 mb-3 lg:mb-4">
                 <div className="min-w-0">
                   <p className="text-xs lg:text-sm text-[var(--muted-foreground)] mb-1">
                     {rangeHeadline} Growth
                   </p>
                   <h2
-                    className={`text-2xl lg:text-4xl font-bold ${
+                    className={`break-all text-2xl @min-[48rem]:text-4xl font-bold ${
                       revenueGrowth.averagePct == null
                         ? 'text-[var(--muted-foreground)]'
                         : revenueGrowth.averagePct >= 0
@@ -789,12 +792,12 @@ const previousWindowWord = range === 'today' ? 'day' : range;
             </Card>
 
             {/* Rating */}
-            <Card className="p-4 lg:p-6 border border-line bg-surface">
-              <div className="flex items-start justify-between mb-3 lg:mb-4">
+            <Card className="min-w-0 gap-0 rounded-3xl p-4 lg:p-6 border border-line bg-card">
+              <div className="flex flex-wrap items-start justify-between gap-2 mb-3 lg:mb-4">
                 <div className="min-w-0">
                   <p className="text-xs lg:text-sm text-[var(--muted-foreground)] mb-1">Rating</p>
                   <div className="flex items-center gap-2">
-                    <h2 className="text-2xl lg:text-4xl font-bold text-[var(--ink)]">{stats.rating > 0 ? stats.rating.toFixed(1) : '—'}</h2>
+                    <h2 className="break-all text-2xl @min-[48rem]:text-4xl font-bold text-[var(--ink)]">{stats.rating > 0 ? stats.rating.toFixed(1) : '—'}</h2>
                     <Star className="w-5 h-5 lg:w-6 lg:h-6 text-[var(--amber)] fill-[var(--amber)]" />
                   </div>
                   <p className="text-xs text-[var(--muted-foreground)] mt-1">{stats.ratingCount > 0 ? `${stats.ratingCount} rating${stats.ratingCount !== 1 ? 's' : ''}` : 'No ratings yet'}</p>
@@ -924,9 +927,9 @@ const previousWindowWord = range === 'today' ? 'day' : range;
             )}
           </Card>
 
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 lg:gap-8 mb-6 lg:mb-8">
+          <div className="grid grid-cols-1 @min-[60rem]:grid-cols-3 gap-6 lg:gap-8 mb-6 lg:mb-8">
             {/* Popular Menu */}
-            <div className="lg:col-span-2">
+            <div className="@min-[60rem]:col-span-2">
               <div className="flex items-center justify-between mb-4">
                 <h2 className="text-xl lg:text-2xl font-bold text-[var(--ink)]">Popular Menu</h2>
                 <Link to="/business/menu">
@@ -999,7 +1002,7 @@ const previousWindowWord = range === 'today' ? 'day' : range;
            * same order, so a shop can match a figure on the row above to the line
            * that produced it without reading any labels.
            */}
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 lg:gap-8">
+          <div className="grid grid-cols-1 @min-[60rem]:grid-cols-3 gap-6 lg:gap-8">
             <div>
               <h2 className="text-xl lg:text-2xl font-bold text-[var(--ink)] mb-4">Orders</h2>
               <Card className="p-5 lg:p-6 border border-line bg-surface">

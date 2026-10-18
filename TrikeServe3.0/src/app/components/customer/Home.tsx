@@ -2856,6 +2856,7 @@ const getPrice = () => {
                fitTripBounds();
              }}
              options={{
+               gestureHandling: 'greedy',
                zoomControl: false,
                fullscreenControl: true,
                streetViewControl: false,
@@ -3842,6 +3843,7 @@ const getPrice = () => {
                 zoom={16}
                 onClick={handleLocationPickerMapClick}
                 options={{
+                  gestureHandling: 'greedy',
                   zoomControl: true,
                   fullscreenControl: false,
                   streetViewControl: false,

@@ -337,6 +337,7 @@ export default function MapSelector({ onClose, onSelectLocation, currentLocation
         center={mapCenter}
         zoom={15}
         options={{
+          gestureHandling: 'greedy',
           zoomControl: true,
           fullscreenControl: false,
           streetViewControl: false,

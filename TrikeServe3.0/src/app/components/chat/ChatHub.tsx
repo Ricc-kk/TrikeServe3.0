@@ -5,6 +5,7 @@ import { Button } from '../ui/button';
 import FloatingChatHead from '../ui/FloatingChatHead';
 import { Card } from '../ui/card';
 import { Badge } from '../ui/badge';
+import BottomNav from '../ui/BottomNav';
 import { useAuth } from '../../contexts/AuthContext';
 import { supabaseHelpers } from '../../../lib/supabase';
 import { buildChatThreadKey, getPeerAvatar, getPeerName, getRoleLabel, ChatContextType, ChatRole } from '../../../lib/chat';
@@ -111,6 +112,11 @@ export default function ChatHub({
 
   const [messageText, setMessageText] = useState('');
   const [loading, setLoading] = useState(true);
+  const [inboxQuery, setInboxQuery] = useState('');
+  const driverLayout = basePath === '/rider/messages';
+  const businessLayout = basePath === '/business/messages';
+  const customerLayout = basePath === '/customer/messages';
+  const enhancedInbox = driverLayout || businessLayout || customerLayout;
   const [activeConversation, setActiveConversation] = useState<ChatConversation | null>(null);
   const [isCreatingThread, setIsCreatingThread] = useState(false);
 
@@ -534,7 +540,7 @@ function getConversationPeer(conversation: ChatConversation) {
       activeConversation.thread_type === 'ride';
 
     return (
-      <div className="flex-1 flex flex-col min-h-0">
+      <div className={`flex-1 flex flex-col min-h-0 ${driverLayout || customerLayout ? 'mx-auto w-full max-w-5xl border-x border-line' : ''}`}>
         {/*
             Clearance strip above the thread header.
 
@@ -735,7 +741,7 @@ function getConversationPeer(conversation: ChatConversation) {
           )}
         </div>
 
-        <div className="bg-surface border-t border-[var(--border)] p-4 sticky bottom-0">
+        <div className="bg-surface border-t border-[var(--border)] p-4 pb-[max(1rem,env(safe-area-inset-bottom))] sticky bottom-0">
           {/* Quick replies. See QUICK_REPLIES for why these are driver-only
               ride-thread phrases and why a tap sends immediately. */}
           {user.role === "rider" && isRideThread && (
@@ -745,7 +751,7 @@ function getConversationPeer(conversation: ChatConversation) {
                   key={q}
                   type="button"
                   onClick={() => sendMessage(q)}
-                  className="rounded-full border border-[var(--primary)] px-3 py-1.5 text-xs font-semibold text-[var(--primary)] hover:bg-[var(--primary-soft)] active:scale-95 transition-all"
+                  className="min-h-11 rounded-xl border border-[var(--primary)] px-3 py-1.5 text-xs font-semibold text-[var(--primary)] hover:bg-[var(--primary-soft)] active:scale-95 transition-all"
                 >
                   {q}
                 </button>
@@ -758,7 +764,7 @@ function getConversationPeer(conversation: ChatConversation) {
               onChange={(e) => setMessageText(e.target.value)}
               placeholder="Type your message..."
               rows={2}
-              className="flex-1 px-4 py-3 border border-[var(--border)] rounded-xl focus:outline-none focus:ring-2 focus:ring-[var(--primary)] focus:border-transparent resize-none"
+              aria-label="Message" className="min-w-0 flex-1 px-4 py-3 border border-[var(--border)] rounded-xl focus:outline-none focus:ring-2 focus:ring-[var(--primary)] focus:border-transparent resize-none"
               onKeyDown={(e) => {
                 if (e.key === 'Enter' && !e.shiftKey) {
                   e.preventDefault();
@@ -768,7 +774,7 @@ function getConversationPeer(conversation: ChatConversation) {
             />
             {/* Wrapped, not passed directly: `onClick={sendMessage}` handed the
                 click event in as the message text. See sendMessage. */}
-            <Button onClick={() => sendMessage()} disabled={!messageText.trim()} className="bg-[var(--primary)] hover:bg-[var(--primary)] px-6">
+            <Button aria-label="Send message" onClick={() => sendMessage()} disabled={!messageText.trim()} className="min-h-12 shrink-0 rounded-xl bg-[var(--primary)] hover:bg-[var(--primary)] px-4">
               <Send className="w-5 h-5" />
             </Button>
           </div>
@@ -779,38 +785,40 @@ function getConversationPeer(conversation: ChatConversation) {
 
   if (isDirectMode) {
     return (
-      <div className="min-h-screen bg-[var(--muted)] flex flex-col">
+      <div className={`${driverLayout || customerLayout ? 'h-dvh overflow-hidden' : businessLayout ? 'h-[calc(100dvh-4.5rem)] overflow-hidden' : 'min-h-screen'} bg-[var(--muted)] flex flex-col`}>
         {renderThread()}
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-[var(--muted)] flex flex-col">
+    <div className={`${driverLayout || customerLayout ? 'h-dvh overflow-hidden' : businessLayout ? 'h-[calc(100dvh-4.5rem)] overflow-hidden' : 'min-h-screen'} bg-[var(--muted)] flex flex-col`}>
       {!activeConversationId ? (
         <>
-          <div className="bg-surface border-b-2 border-[var(--border)] px-4 py-3 flex items-center gap-3 sticky top-0 z-10">
-            <Button variant="ghost" size="icon" onClick={() => navigate(backPath)}>
+          <div className="bg-card border-b border-line px-4 py-3 sm:px-6 flex items-center gap-3 sticky top-0 z-10">
+
+            <Button variant="ghost" size="icon" aria-label="Back to home" className="size-11 shrink-0 rounded-xl" onClick={() => navigate(backPath)}>
               <ArrowLeft className="w-5 h-5" />
             </Button>
             <div className="flex-1">
               <h1 className="text-xl font-extrabold text-[var(--primary)]" style={{ letterSpacing: '-0.02em' }}>{title}</h1>
-              <p className="text-xs text-[var(--muted-foreground)]">Message customers, drivers, and business owners</p>
+              <p className="text-xs text-[var(--muted-foreground)]">{customerLayout ? 'Your rides, deliveries, and conversations' : 'Message customers, drivers, and business owners'}</p>
             </div>
 
           </div>
 
-          <div className="flex-1 overflow-y-auto p-4 space-y-3">
+          <main className={`flex-1 min-h-0 overflow-y-auto p-4 sm:p-6 ${enhancedInbox ? 'mx-auto w-full max-w-5xl space-y-4' : 'space-y-3'} ${customerLayout ? 'pb-[calc(6rem+env(safe-area-inset-bottom))] sm:px-8' : ''}`}>
+            {enhancedInbox && <section className="rounded-3xl bg-[var(--ink-solid)] p-5 text-white sm:p-6"><p className="text-[10px] font-bold uppercase tracking-[0.2em] text-[var(--mint)]">{businessLayout ? 'Business inbox · Mga mensahe' : customerLayout ? 'Your inbox · Mga mensahe' : 'Driver inbox · Mga mensahe'}</p><h2 className="mt-2 text-2xl font-extrabold tracking-tight">{businessLayout ? 'Great service starts with a conversation.' : customerLayout ? 'A little closer, one message away.' : 'Stay connected on every trip.'}</h2><p className="mt-2 text-sm leading-relaxed text-white/75">{businessLayout ? 'Keep customer questions and delivery conversations together, so nothing gets lost between orders.' : customerLayout ? 'Chat with your driver or favorite shop. All your conversations, together in one place.' : 'Find your ride and delivery conversations in one place.'}</p><label className="mt-4 block"><span className="sr-only">Search conversations</span><input type="search" value={inboxQuery} onChange={event => setInboxQuery(event.target.value)} placeholder="Search a name or conversation…" className="min-h-12 w-full rounded-xl border border-white/20 bg-white/10 px-4 text-base text-white placeholder:text-white/60 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white" /></label></section>}
             {loading ? (
               <div className="text-center py-12 text-sm text-[var(--muted-foreground)]">Loading conversations...</div>
             ) : conversations.length === 0 ? (
-              <div className="text-center py-12">
+              <div className="rounded-3xl border border-line bg-surface px-5 py-12 text-center">
                 <MessageCircle className="w-12 h-12 text-[var(--border)] mx-auto mb-3" />
                 <h3 className="font-bold text-[var(--ink)] mb-1">No conversations yet</h3>
                 <p className="text-sm text-[var(--muted-foreground)]">Start a conversation from an order or ride.</p>
               </div>
             ) : (
-              conversations.map((conversation) => {
+              conversations.filter(conversation => !enhancedInbox || `${getConversationPeer(conversation).name} ${conversation.subject || ''} ${conversation.last_message_preview || ''}`.toLowerCase().includes(inboxQuery.trim().toLowerCase())).map((conversation) => {
                 const peer = getConversationPeer(conversation);
                 const peerTheme = getRoleTheme(peer.role);
                 // `_collapsedUnread` carries the total from every thread this card
@@ -825,7 +833,8 @@ function getConversationPeer(conversation: ChatConversation) {
                 return (
                   <Card
                     key={conversation.id}
-                    className={`p-4 bg-surface border-2 transition-colors cursor-pointer ${isUnread ? 'border-[var(--primary)] bg-[var(--muted)] shadow-sm' : 'border-[var(--border)] hover:border-[var(--primary)]'}`}
+                    role="button" tabIndex={0} aria-label={`Open conversation with ${peer.name}`} onKeyDown={event => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); openConversation(conversation); } }}
+                    className={`min-w-0 gap-0 rounded-2xl p-4 sm:p-5 bg-surface border transition-colors cursor-pointer ${isUnread ? 'border-[var(--primary)] bg-[var(--muted)] shadow-sm' : 'border-[var(--border)] hover:border-[var(--primary)]'}`}
                     onClick={() => openConversation(conversation)}
                   >
                     <div className="flex items-start gap-3">
@@ -852,8 +861,8 @@ function getConversationPeer(conversation: ChatConversation) {
                             </Badge>
                           )}
                         </div>
-                        <div className="flex items-end justify-between gap-2 mt-2">
-                          <p className="text-sm text-[var(--muted-foreground)] truncate">{conversation.last_message_preview || 'No messages yet'}</p>
+                        <div className={`min-w-0 flex gap-2 mt-2 ${enhancedInbox ? 'flex-col items-start sm:flex-row sm:items-end sm:justify-between' : 'items-end justify-between'}`}>
+                          <p className="min-w-0 max-w-full text-sm text-[var(--muted-foreground)] truncate">{conversation.last_message_preview || 'No messages yet'}</p>
                           {conversation.last_message_at && (
                             <p className="text-[11px] text-[var(--muted-foreground)] whitespace-nowrap">
                               {new Date(conversation.last_message_at).toLocaleDateString([], { month: 'short', day: 'numeric' })} {new Date(conversation.last_message_at).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}
@@ -866,10 +875,11 @@ function getConversationPeer(conversation: ChatConversation) {
                 );
               })
             )}
-          </div>
+            {enhancedInbox && inboxQuery.trim() && !conversations.some(conversation => `${getConversationPeer(conversation).name} ${conversation.subject || ''} ${conversation.last_message_preview || ''}`.toLowerCase().includes(inboxQuery.trim().toLowerCase())) && <div role="status" className="rounded-3xl border border-line bg-card p-6 text-center"><p className="font-bold text-[var(--ink)]">No matching conversations</p><button type="button" onClick={() => setInboxQuery('')} className="mt-3 min-h-11 rounded-xl px-4 text-sm font-bold text-[var(--teal)]">Clear search</button></div>}
+          </main>
         </>
       ) : renderThread()}
-
+      {customerLayout && !activeConversationId && <BottomNav active="messages" />}
     </div>
   );
 }

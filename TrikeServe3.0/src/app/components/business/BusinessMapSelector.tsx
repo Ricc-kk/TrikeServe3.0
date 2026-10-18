@@ -337,6 +337,7 @@ export default function BusinessMapSelector({ onClose, onSelectLocation, current
         center={mapCenter}
         zoom={15}
         options={{
+          gestureHandling: 'greedy',
           zoomControl: true,
           fullscreenControl: false,
           streetViewControl: false,

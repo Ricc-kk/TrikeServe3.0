@@ -1,4 +1,4 @@
-import { Store, Package, Clock, User, ChevronRight, LogOut, ArrowLeft, Menu, Shield, Bell, HelpCircle, CreditCard, Pencil } from "lucide-react";
+import { Store, Package, Clock, User, ChevronRight, LogOut, ArrowLeft, Menu, Shield, Bell, HelpCircle, CreditCard, Pencil, Mail, Phone, MapPin } from "lucide-react";
 import { Link, useNavigate } from "react-router";
 import { usePreviousPage } from "../../hooks/usePreviousPage";
 import { Card } from "../ui/card";
@@ -66,12 +66,12 @@ export default function BusinessAccount() {
       {/* Main Content */}
       <div className="flex-1 lg:ml-64 w-full min-w-0">
         {/* Header with Back Button */}
-        <div className="bg-surface px-3 lg:px-4 py-3 lg:py-4 border-b border-[var(--border)]">
-          <div className="flex items-center gap-2 lg:gap-3">
+        <div className="border-b border-[var(--border)] bg-surface">
+          <div className="mx-auto flex w-full max-w-[1400px] items-center gap-3 px-4 py-4 sm:px-6 lg:px-8 lg:py-5">
             {/* Hamburger Menu - Mobile Only */}
             <button
               onClick={() => setIsMobileMenuOpen(true)}
-              className="lg:hidden flex-shrink-0"
+              aria-label="Open navigation" className="lg:hidden grid size-11 shrink-0 place-items-center rounded-xl hover:bg-soft"
             >
               <Menu className="w-5 h-5 text-[var(--ink)]" />
             </button>
@@ -79,75 +79,86 @@ export default function BusinessAccount() {
             {/* Back Button - Shows on Mobile and Desktop */}
             <button
               onClick={goBack}
-              className="flex-shrink-0"
+              aria-label="Go back" className="grid size-11 shrink-0 place-items-center rounded-xl hover:bg-soft"
             >
-              <ArrowLeft className="w-5 h-5 lg:w-6 lg:h-6 text-[var(--ink)]" />
+              <ArrowLeft className="w-5 h-5 text-[var(--ink)]" />
             </button>
             
-            <div className="flex-1 min-w-0">
-              <h1 className="text-lg lg:text-2xl xl:text-3xl font-extrabold text-[var(--ink)]">Account</h1>
+            <div className="min-w-0 flex-1 basis-20">
+              <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-[var(--muted-foreground)]">Business workspace</p>
+              <h1 className="text-xl font-extrabold tracking-tight text-[var(--ink)] lg:text-2xl">Settings</h1>
+              <p className="mt-0.5 text-xs text-[var(--muted-foreground)] sm:text-sm">Manage your business settings</p>
             </div>
-            <Link to="/business/edit-profile" className="flex-shrink-0 flex items-center gap-1.5 px-3 py-1.5 bg-white/80 backdrop-blur-sm rounded-full text-[var(--primary)] text-xs font-semibold hover:bg-surface transition-colors shadow-sm">
+            <Link to="/business/edit-profile" className="min-h-11 flex-shrink-0 flex items-center gap-1.5 rounded-xl border border-line bg-card px-4 text-xs font-semibold text-[var(--primary)] transition-colors hover:border-[var(--primary)]">
               <Pencil className="w-3.5 h-3.5" />
-              Edit Profile
+              <span className="hidden sm:inline">Edit profile</span><span className="sm:hidden">Edit</span>
             </Link>
           </div>
-          <p className="text-xs lg:text-sm text-[var(--muted-foreground)] ml-7 lg:ml-11">Manage your business settings</p>
         </div>
 
-        {/* Profile Section - Gradient Header */}
-        <div className="relative bg-[var(--primary)] px-4 lg:px-6 py-6 lg:py-8">
-          <div className="flex items-center gap-4">
-            <div className="w-16 h-16 lg:w-20 lg:h-20 bg-white/20 backdrop-blur-sm rounded-2xl flex items-center justify-center border-2 border-white/30 shadow-lg overflow-hidden">
+        <div className="mx-auto w-full max-w-[1400px] px-4 py-5 sm:px-6 lg:px-8 lg:py-7">
+        {/*
+          Shop identity and contact details in one banner.
+
+          These were two stacked full-width cards: a 1117px-wide strip holding a
+          logo and a name, then another the same width holding three rows of
+          contact details floating in white space. Together they filled the top
+          third of a desktop screen without saying much. The details belong with
+          the shop they describe, so they sit under the name.
+        */}
+        <section className="relative isolate overflow-hidden rounded-3xl bg-[var(--ink-solid)] px-5 py-6 text-white sm:px-7 sm:py-7">
+          <div aria-hidden="true" className="pointer-events-none absolute -right-24 -top-28 -z-10 size-80 rounded-full border-[3rem] border-white/5" />
+          <div className="flex flex-wrap items-center gap-4 sm:gap-5">
+            <div className="flex size-16 shrink-0 items-center justify-center overflow-hidden rounded-2xl border-2 border-white/30 bg-white/20 shadow-lg backdrop-blur-sm lg:size-20">
               {logoUrl ? (
-                <img src={logoUrl} alt="Store Logo" className="w-full h-full object-cover" />
+                <img src={logoUrl} alt="Store logo" className="size-full object-cover" />
               ) : (
-                <Store className="w-8 h-8 lg:w-10 lg:h-10 text-white" />
+                <Store className="size-8 text-white lg:size-10" aria-hidden="true" />
               )}
             </div>
-            <div className="flex-1 min-w-0">
-              <div className="flex items-center gap-2 mb-1">
-                <h2 className="text-lg lg:text-xl font-bold text-white truncate">{profile.shopName}</h2>
+            <div className="min-w-0 flex-1">
+              <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-[var(--mint)]">Shop account</p>
+              <div className="mt-1 flex flex-wrap items-center gap-2">
+                <h2 className="break-words text-xl font-extrabold tracking-tight lg:text-2xl">{profile.shopName}</h2>
                 {user?.isVerified && (
-                  <Badge className="bg-[var(--success)] text-white text-[10px] px-1.5 py-0.5">Verified</Badge>
+                  <Badge className="bg-[var(--success)] text-white text-[10px] px-2 py-0.5">Verified</Badge>
                 )}
               </div>
-              <p className="text-white/80 text-xs lg:text-sm">{user?.name}</p>
-              <p className="text-white/60 text-[10px] lg:text-xs mt-1">Member since {new Date(user?.createdAt || Date.now()).toLocaleDateString('en-US', { month: 'long', year: 'numeric' })}</p>
+              <p className="mt-1 text-sm text-white/80">{user?.name}</p>
+              <p className="mt-0.5 text-xs text-white/60">Member since {new Date(user?.createdAt || Date.now()).toLocaleDateString('en-US', { month: 'long', year: 'numeric' })}</p>
             </div>
           </div>
-        </div>
 
-        {/* Contact Info Card */}
-        <div className="px-4 lg:px-6 mt-4 relative z-10">
-          <div className="bg-surface rounded-2xl shadow-sm border border-[var(--muted)] p-4">
-            <div className="space-y-3">
-              <div className="flex items-center gap-3">
-                <div className="w-8 h-8 bg-[var(--success-soft)] rounded-lg flex items-center justify-center">
-                  <span className="text-sm">📧</span>
-                </div>
-                <span className="text-sm text-[var(--ink)] break-all">{user?.email}</span>
-              </div>
-              <div className="flex items-center gap-3">
-                <div className="w-8 h-8 bg-[var(--info-soft)] rounded-lg flex items-center justify-center">
-                  <span className="text-sm">📱</span>
-                </div>
-                <span className="text-sm text-[var(--ink)]">{user?.phone}</span>
-              </div>
-              <div className="flex items-center gap-3">
-                <div className="w-8 h-8 bg-[var(--primary-soft)] rounded-lg flex items-center justify-center">
-                  <span className="text-sm">📍</span>
-                </div>
-                <span className="text-sm text-[var(--ink)] break-words">{(user as any).businessAddress || 'Address not provided'}</span>
+          <dl className="mt-5 grid gap-3 border-t border-white/15 pt-5 sm:grid-cols-2 xl:grid-cols-3">
+            <div className="flex min-w-0 items-start gap-3 rounded-2xl bg-white/10 px-3 py-3">
+              <Mail className="mt-0.5 size-4 shrink-0 text-[var(--mint)]" aria-hidden="true" />
+              <div className="min-w-0">
+                <dt className="text-[10px] font-bold uppercase tracking-[0.14em] text-white/60">Email</dt>
+                <dd className="mt-0.5 break-all text-sm font-semibold">{user?.email || 'Not set'}</dd>
               </div>
             </div>
-          </div>
-        </div>
+            <div className="flex min-w-0 items-start gap-3 rounded-2xl bg-white/10 px-3 py-3">
+              <Phone className="mt-0.5 size-4 shrink-0 text-[var(--mint)]" aria-hidden="true" />
+              <div className="min-w-0">
+                <dt className="text-[10px] font-bold uppercase tracking-[0.14em] text-white/60">Mobile</dt>
+                <dd className="mt-0.5 break-words text-sm font-semibold">{user?.phone || 'Not set'}</dd>
+              </div>
+            </div>
+            <div className="flex min-w-0 items-start gap-3 rounded-2xl bg-white/10 px-3 py-3 sm:col-span-2 xl:col-span-1">
+              <MapPin className="mt-0.5 size-4 shrink-0 text-[var(--mint)]" aria-hidden="true" />
+              <div className="min-w-0">
+                <dt className="text-[10px] font-bold uppercase tracking-[0.14em] text-white/60">Address</dt>
+                <dd className="mt-0.5 break-words text-sm font-semibold">{(user as any).businessAddress || 'Address not provided'}</dd>
+              </div>
+            </div>
+          </dl>
+        </section>
 
-        {/* Menu Sections */}
-        <div className="px-4 lg:px-6 py-5 space-y-5">
+        {/* Sections: two columns of settings at desktop widths, one on a phone. */}
+        <div className="mt-5 grid grid-cols-1 items-start gap-5 xl:grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)]">
+          <div className="min-w-0 space-y-5">
           {/* Business Management */}
-          <div className="bg-surface rounded-2xl shadow-sm border border-[var(--muted)] overflow-hidden">
+          <div className="min-w-0 bg-card rounded-3xl border border-line overflow-hidden">
             <div className="px-4 pt-4 pb-2">
               <div className="flex items-center gap-2">
                 <Shield className="w-4 h-4 text-[var(--muted-foreground)]" />
@@ -207,13 +218,14 @@ export default function BusinessAccount() {
               </div>
             </Link>
           </div>
+          </div>
 
-          {/* Quick Links Card */}
-          <div className="bg-surface rounded-2xl shadow-sm border border-[var(--muted)] overflow-hidden">
+          {/* Preferences */}
+          <div className="min-w-0 overflow-hidden rounded-3xl border border-line bg-card">
             <div className="px-4 pt-4 pb-2">
               <div className="flex items-center gap-2">
-                <Bell className="w-4 h-4 text-[var(--muted-foreground)]" />
-                <h3 className="text-xs font-semibold text-[var(--muted-foreground)] tracking-wider">Settings</h3>
+                <Bell className="w-4 h-4 text-[var(--muted-foreground)]" aria-hidden="true" />
+                <h3 className="text-xs font-bold uppercase tracking-wider text-[var(--muted-foreground)]">Preferences</h3>
               </div>
             </div>
 
@@ -239,19 +251,28 @@ export default function BusinessAccount() {
               <ChevronRight className="w-5 h-5 text-[var(--border)]" />
             </Link>
           </div>
+        </div>
 
+        {/*
+          Account actions, below the settings.
+
+          The session summary that used to sit here is gone — the shop, owner and
+          contact details are already in the banner above. These two remain, side
+          by side on a desktop and stacked on a phone.
+        */}
+        <div className="mt-5 grid grid-cols-1 gap-3 sm:grid-cols-2">
           {/* Use Customer App / Switch Back */}
           {localStorage.getItem('trikeserve_original_role') ? (
             <button
               onClick={() => setShowSwitchConfirm(true)}
-              className="w-full py-4 text-base font-semibold text-white bg-[var(--ink-solid)] hover:bg-[var(--ink-solid)] rounded-2xl transition-all active:scale-[0.98] flex items-center justify-center gap-2 mb-3"
+              className="flex min-h-12 w-full items-center justify-center gap-2 rounded-2xl bg-[var(--ink-solid)] px-4 text-sm font-semibold text-white transition-all active:scale-[0.98]"
             >
               Switch back to Business App
             </button>
           ) : (
             <button
               onClick={() => setShowSwitchConfirm(true)}
-              className="w-full py-4 text-base font-semibold text-white bg-[var(--success)] hover:bg-[var(--success)] rounded-2xl transition-all active:scale-[0.98] flex items-center justify-center gap-2 mb-3"
+              className="flex min-h-12 w-full items-center justify-center gap-2 rounded-2xl bg-[var(--success)] px-4 text-sm font-semibold text-white transition-all active:scale-[0.98]"
             >
               Use Customer App
             </button>
@@ -260,11 +281,12 @@ export default function BusinessAccount() {
           {/* Logout Button */}
           <button
             onClick={() => setShowLogoutConfirm(true)}
-            className="w-full py-4 text-base font-semibold text-[var(--primary)] bg-[var(--primary-soft)] rounded-2xl hover:bg-[var(--primary-soft)] transition-all active:scale-[0.98] flex items-center justify-center gap-2"
+            className="flex min-h-12 w-full items-center justify-center gap-2 rounded-2xl bg-[var(--primary-soft)] px-4 text-sm font-semibold text-[var(--primary)] transition-all active:scale-[0.98]"
           >
-            <LogOut className="w-5 h-5" />
-            Logout
+            <LogOut className="size-4" aria-hidden="true" />
+            Log out
           </button>
+        </div>
         </div>
 
         {/* Switch Confirmation Modal */}

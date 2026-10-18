@@ -31,6 +31,14 @@ export default function BusinessSidebar({ isMobileMenuOpen, setIsMobileMenuOpen 
     return () => clearInterval(interval);
   }, [user?.id]);
 
+  useEffect(() => { setIsMobileMenuOpen(false); }, [location.pathname]);
+  useEffect(() => {
+    if (!isMobileMenuOpen) return;
+    const onKey = (event: KeyboardEvent) => { if (event.key === 'Escape') setIsMobileMenuOpen(false); };
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, [isMobileMenuOpen, setIsMobileMenuOpen]);
+
   const loadPendingOrdersCount = async () => {
     try {
       /*
@@ -100,7 +108,7 @@ export default function BusinessSidebar({ isMobileMenuOpen, setIsMobileMenuOpen 
 
       {/* Sidebar */}
       <div className={`
-        fixed top-0 left-0 h-screen w-64 bg-[var(--sidebar)] border-r-2 border-[var(--border)] z-[1001]
+        fixed top-0 left-0 h-dvh w-64 max-w-[90vw] bg-[var(--sidebar)] border-r-2 border-[var(--border)] z-[1001]
         transition-transform duration-300 ease-in-out
         lg:translate-x-0
         ${isMobileMenuOpen ? 'translate-x-0' : '-translate-x-full'}
@@ -117,27 +125,23 @@ export default function BusinessSidebar({ isMobileMenuOpen, setIsMobileMenuOpen 
                 <div className="w-10 h-10 rounded-xl overflow-hidden flex items-center justify-center bg-[var(--primary)]">
                   <TrimmedLogo src={TrikeServeLogo} alt="TrikeServe" className="size-full object-contain p-0.5" />
                 </div>
-                <span className="text-xl font-bold text-[var(--ink)]">TRIKESERVE</span>
+                <div><span className="text-lg font-extrabold text-[var(--ink)]">TrikeServe</span><p className="text-xs text-[var(--muted-foreground)]">Business workspace</p></div>
               </div>
 
+              <button type="button" onClick={() => setIsMobileMenuOpen(false)} aria-label="Close navigation" className="grid size-11 shrink-0 place-items-center rounded-xl hover:bg-soft lg:hidden"><X className="size-5" /></button>
             </div>
           </div>
 
           {/* Navigation */}
-          <nav className="flex-1 p-4 space-y-1 overflow-y-auto">
+          <nav aria-label="Business sections" className="flex-1 p-4 space-y-1 overflow-y-auto">
             {menuItems.map((item) => (
               <Link 
                 key={item.path} 
                 to={item.path}
                 onClick={() => setIsMobileMenuOpen(false)}
+                aria-current={isActive(item.path) ? 'page' : undefined}
+                className={`min-h-12 w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-colors relative ${isActive(item.path) ? 'bg-[var(--teal-soft)] text-[var(--teal)]' : 'text-[var(--muted-foreground)] hover:bg-[var(--muted)]'}`}
               >
-                <button
-                  className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all relative ${
-                    isActive(item.path)
-                      ? "bg-[var(--primary-soft)] text-[var(--primary)]"
-                      : "text-[var(--muted-foreground)] hover:bg-[var(--muted)]"
-                  }`}
-                >
                   <item.icon className="w-5 h-5" />
                   <span className="font-semibold">{item.label}</span>
                   {item.path === "/business/orders" && pendingOrdersCount > 0 && (
@@ -145,7 +149,6 @@ export default function BusinessSidebar({ isMobileMenuOpen, setIsMobileMenuOpen 
                       <span className="text-xs font-bold text-white">{pendingOrdersCount}</span>
                     </div>
                   )}
-                </button>
               </Link>
             ))}
           </nav>

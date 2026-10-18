@@ -4,9 +4,7 @@ import { useNavigate } from "react-router";
 import { Button } from "../ui/button";
 import { Card } from "../ui/card";
 import { Badge } from "../ui/badge";
-import Slider from "react-slick";
-import "slick-carousel/slick/slick.css";
-import "slick-carousel/slick/slick-theme.css";
+import { supabase } from "../../../utils/supabase";
 import { useAuth } from "../../contexts/AuthContext";
 import { supabaseHelpers } from "@/lib/supabase";
 import { AnalyticsBarChart, AnalyticsDonutChart, type BarDatum, type DonutDatum } from "../ui/AnalyticsCharts";
@@ -19,6 +17,8 @@ interface CompletedTrip {
   amount: number;
   payment: 'Cash' | 'Prepaid';
   customerName?: string;
+  pickup?: string;
+  dropoff?: string;
 }
 
 export default function Earnings() {
@@ -297,10 +297,10 @@ export default function Earnings() {
   }, [completedTrips, filterTab]);
 
   return (
-    <div className="min-h-screen bg-[var(--muted)] pb-20">
+    <div className="min-h-dvh bg-[var(--muted)] pb-24">
       {/* Header */}
-      <div className="bg-surface border-b-2 border-[var(--border)] px-4 py-3 flex items-center gap-3">
-        <Button variant="ghost" size="icon" onClick={() => navigate('/rider')}>
+      <div className="sticky top-0 z-30 bg-card border-b border-line px-4 py-3 flex items-center gap-3 sm:px-6">
+        <Button variant="ghost" size="icon" aria-label="Back to Driver Home" className="size-11 shrink-0 rounded-xl bg-soft" onClick={() => navigate('/rider')}>
           <ArrowLeft className="w-5 h-5" />
         </Button>
         <div className="flex-1">
@@ -312,26 +312,14 @@ export default function Earnings() {
 
       </div>
 
-      <div className="p-4 space-y-4">
-        {/* Summary Cards Carousel */}
-        <div className="earnings-carousel -mx-4 -mt-2">
-          <Slider
-            dots={true}
-            infinite={true}
-            speed={500}
-            slidesToShow={1}
-            slidesToScroll={1}
-            arrows={false}
-            swipeToSlide={true}
-            touchThreshold={10}
-            centerMode={false}
-            variableWidth={true}
-          >
+      <main className="@container mx-auto grid max-w-6xl grid-cols-1 items-start gap-4 p-4 sm:grid-cols-2 sm:gap-5 sm:p-6">
+        {/* Period summaries stay visible without a fixed-width carousel. */}
+        <section aria-busy={isLoading} aria-label="Earnings summaries" className="grid min-w-0 grid-cols-1 gap-3 @min-[30rem]:grid-cols-3 sm:col-span-2">
             {/* Today Card */}
-            <div style={{ width: '335px' }} className="pl-4 pr-1">
-              <Card className="p-4 bg-[var(--primary)] text-white border-0 rounded-2xl">
+            <div className="min-w-0">
+              <Card className="h-full gap-2 rounded-3xl bg-[var(--ink-solid)] p-5 text-white border-0">
                 <p className="text-sm opacity-90 mb-1">Today</p>
-                <p className="text-4xl font-extrabold mb-2">₱{todayEarnings.toFixed(2)}</p>
+                <p className="break-all text-3xl font-extrabold tracking-tight tabular-nums">₱{todayEarnings.toFixed(2)}</p>
                 <div className="flex items-center gap-1 text-sm opacity-90">
                   <TrendingUp className="w-4 h-4" />
                   <span>{completedTrips.filter(t => {
@@ -344,10 +332,10 @@ export default function Earnings() {
             </div>
 
             {/* This Week Card */}
-            <div style={{ width: '335px' }} className="pl-4 pr-1">
-              <Card className="p-4 bg-gradient-to-br from-[var(--teal)] to-[var(--teal)] text-white border-0 rounded-2xl">
+            <div className="min-w-0">
+              <Card className="h-full gap-2 rounded-3xl border border-line bg-[var(--teal-soft)] p-5 text-[var(--teal)]">
                 <p className="text-sm opacity-90 mb-1">This Week</p>
-                <p className="text-4xl font-extrabold mb-2">₱{weekEarnings.toFixed(2)}</p>
+                <p className="break-all text-3xl font-extrabold tracking-tight tabular-nums">₱{weekEarnings.toFixed(2)}</p>
                 <div className="flex items-center gap-1 text-sm opacity-90">
                   <TrendingUp className="w-4 h-4" />
                   <span>{completedTrips.filter(t => {
@@ -361,10 +349,10 @@ export default function Earnings() {
             </div>
 
             {/* This Month Card */}
-            <div style={{ width: '335px' }} className="pl-4 pr-1">
-              <Card className="p-4 bg-gradient-to-br from-[var(--info)] to-[var(--info)] text-white border-0 rounded-2xl">
+            <div className="min-w-0">
+              <Card className="h-full gap-2 rounded-3xl border border-line bg-card p-5 text-[var(--ink)]">
                 <p className="text-sm opacity-90 mb-1">This Month</p>
-                <p className="text-4xl font-extrabold mb-2">₱{monthEarnings.toFixed(2)}</p>
+                <p className="break-all text-3xl font-extrabold tracking-tight tabular-nums">₱{monthEarnings.toFixed(2)}</p>
                 <div className="flex items-center gap-1 text-sm opacity-90">
                   <TrendingUp className="w-4 h-4" />
                   <span>{completedTrips.filter(t => {
@@ -376,13 +364,12 @@ export default function Earnings() {
                 </div>
               </Card>
             </div>
-          </Slider>
-        </div>
+        </section>
 
         {/* Quick Stats */}
-        <Card className="p-5 bg-surface border-0 shadow-sm">
+        <Card className="min-w-0 gap-3 rounded-3xl border border-line bg-card p-5 sm:p-6">
           <h3 className="font-extrabold text-[var(--ink)] mb-4" style={{ fontSize: '18px' }}>Overall Performance</h3>
-          <div className="grid grid-cols-2 gap-x-4 gap-y-4">
+          <div className="grid grid-cols-2 gap-4 [&>div]:min-w-0 [&_p]:break-words">
             <div>
               <p className="text-sm text-[var(--info)] mb-1">Trips Completed</p>
               <p className="text-2xl font-extrabold text-[var(--primary)]">{tripsCompletedCount}</p>
@@ -414,7 +401,7 @@ export default function Earnings() {
         </Card>
 
         {/* Analytics */}
-        <Card className="p-5 bg-surface border-0 shadow-sm">
+        <Card className="min-w-0 gap-3 rounded-3xl border border-line bg-card p-5 sm:p-6">
           <h3 className="font-extrabold text-[var(--ink)] mb-1" style={{ fontSize: '18px' }}>Weekly Earnings</h3>
           <p className="text-xs text-[var(--muted-foreground)] mb-4">Last 7 days</p>
           <AnalyticsBarChart
@@ -426,7 +413,7 @@ export default function Earnings() {
           />
         </Card>
 
-        <Card className="p-5 bg-surface border-0 shadow-sm">
+        <Card className="min-w-0 gap-3 rounded-3xl border border-line bg-card p-5 sm:p-6">
           <h3 className="font-extrabold text-[var(--ink)] mb-4" style={{ fontSize: '18px' }}>Trips by Type</h3>
           <AnalyticsDonutChart
             data={tripsByType}
@@ -437,20 +424,21 @@ export default function Earnings() {
         </Card>
 
         {/* Recent Trips */}
-        <div>
-          <div className="flex items-center justify-between mb-3">
+        <section className="min-w-0 sm:col-span-2" aria-label="Recent trips">
+          <div className="flex flex-wrap items-center justify-between gap-3 mb-3">
             <h3 className="font-extrabold text-[var(--ink)]" style={{ fontSize: '18px' }}>Recent Trips</h3>
           </div>
 
           {/* Filter Tabs */}
-          <div className="flex gap-2 mb-4 overflow-x-auto">
+          <div role="group" aria-label="Filter trips" className="flex flex-wrap gap-2 mb-4">
             {(['all', 'rides', 'deliveries'] as const).map(tab => (
               <button
                 key={tab}
                 onClick={() => setFilterTab(tab)}
-                className={`px-4 py-2 rounded-full text-sm font-medium whitespace-nowrap transition-all ${
+                aria-pressed={filterTab === tab}
+                className={`min-h-11 px-3 py-2 rounded-xl text-sm font-medium whitespace-nowrap transition-all ${
                   filterTab === tab
-                    ? 'bg-[var(--primary)] text-white'
+                    ? 'bg-[var(--teal-soft)] text-[var(--teal)]'
                     : 'bg-[var(--muted)] text-[var(--muted-foreground)]'
                 }`}
               >
@@ -467,8 +455,10 @@ export default function Earnings() {
             <Card className="p-4 bg-surface border-0 shadow-sm">
               <p className="text-center text-[var(--muted-foreground)]">No completed trips yet. Start accepting rides to see your recent trips here!</p>
             </Card>
+          ) : tripGroups.length === 0 ? (
+            <Card className="rounded-3xl border border-line bg-card p-6 text-center text-sm text-[var(--muted-foreground)]">No trips in this category yet. Choose another filter to see your history.</Card>
           ) : (
-            <div className="space-y-3">
+            <div className="space-y-5">
               {tripGroups.map((group) => (
                 <div key={group.key} className="space-y-3">
                   <div className="flex items-center justify-between gap-2">
@@ -485,7 +475,7 @@ export default function Earnings() {
                 }`}>
                   <div className="p-4">
                     {/* Top row: type + amount */}
-                    <div className="flex items-center justify-between mb-3">
+                    <div className="flex flex-wrap items-center justify-between gap-3 mb-3">
                       <div className="flex items-center gap-2">
                         <div className={`w-10 h-10 rounded-xl flex items-center justify-center text-lg ${
                           trip.type === 'Delivery' ? 'bg-[var(--info-soft)]' :
@@ -549,9 +539,9 @@ export default function Earnings() {
               ))}
             </div>
           )}
-        </div>
+        </section>
 
-      </div>
+      </main>
 
       {/* Active Ride Floating Button */}
       <ActiveRideButton />

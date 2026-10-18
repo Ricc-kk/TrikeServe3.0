@@ -845,7 +845,7 @@ export default function RiderDashboard() {
     };
 
   return (
-    <div className="h-screen flex flex-col bg-[var(--muted)] relative">
+    <div className="h-dvh min-h-[32rem] flex flex-col bg-[var(--muted)] relative overflow-hidden">
       {/* Full Screen Map */}
       <div className="absolute inset-0">
         {!GOOGLE_MAPS_API_KEY ? (
@@ -868,6 +868,7 @@ export default function RiderDashboard() {
             center={mapCenter}
             zoom={15}
             options={{
+              gestureHandling: 'greedy',
               zoomControl: false,
               fullscreenControl: true,
               streetViewControl: false,
@@ -952,10 +953,11 @@ export default function RiderDashboard() {
 
         {/* Service Types Floating Button */}
         {!activeTrip && (
-          <div className="absolute top-4 right-4 z-[1000]">
+          <div className="absolute right-4 top-4 z-[1000] sm:right-6 sm:top-6">
             <button
               onClick={() => setShowServiceTypes(true)}
-              className="w-14 h-14 bg-[var(--primary)] rounded-full shadow-xl flex items-center justify-center hover:shadow-2xl active:scale-95 transition-all border-2 border-white"
+              aria-label="Choose service types"
+              className="w-12 h-12 bg-[var(--primary)] rounded-2xl shadow-xl flex items-center justify-center hover:shadow-2xl active:scale-95 transition-all border-2 border-white"
             >
               <Settings className="w-7 h-7 text-white" />
             </button>
@@ -964,13 +966,13 @@ export default function RiderDashboard() {
 
         {/* Toggle Online/Offline Button */}
         {!activeTrip && (
-          <div className="absolute top-4 left-1/2 -translate-x-1/2 z-[1000]">                <Button
+          <div className="absolute top-4 left-4 z-[1000] sm:top-6 sm:left-6">                <Button
                   onClick={handleToggleOnline}
                   className={`${
                 isOnline 
                   ? 'bg-[var(--success)] hover:bg-[var(--success)] text-white'
                   : 'bg-[var(--ink-solid)] hover:bg-[var(--ink-solid)] text-white'
-              } px-8 py-3 rounded-full font-bold shadow-xl flex items-center gap-2`}
+              } min-h-12 px-5 py-3 rounded-2xl font-bold shadow-xl flex items-center gap-2`}
             >
               {isOnline ? (
                 <>
@@ -1057,8 +1059,8 @@ export default function RiderDashboard() {
 
         {/* Bottom Sheet - Always visible (Passenger Requests, More Options) */}
         {!activeTrip && (
-          <div className="absolute bottom-20 left-0 right-0 z-[999] px-4">
-            <Card className="bg-surface shadow-xl rounded-t-3xl max-h-[70vh] overflow-y-auto">
+          <div className="absolute bottom-[calc(5.5rem+env(safe-area-inset-bottom))] left-0 right-0 z-[999] px-3 sm:left-5 sm:right-auto sm:w-[25rem] sm:px-0">
+            <Card className="gap-0 rounded-3xl border border-line bg-card shadow-xl max-h-[calc(100dvh-12rem)] overflow-y-auto overscroll-contain">
 
               {/* Terminal Queue - determines which driver may accept private/share rides.
                   Only shown on the Rides service type: delivery is never queue-gated, and
@@ -1068,15 +1070,15 @@ export default function RiderDashboard() {
               )}
 
               {/* View All Passenger Requests Card - Always visible, button disabled when offline */}
-              <div className="border-t border-[var(--border)] px-6 py-6">
+              <div className="border-t border-line px-4 py-4 sm:px-5">
                 <div className="flex flex-col items-center text-center">
                   {/* Header */}
-                  <h3 className="font-bold text-lg text-[var(--ink)] mb-6">PASSENGER REQUESTS</h3>
+                  <h3 className="font-extrabold text-base text-[var(--ink)] mb-4">Nearby passenger requests</h3>
 
                   {/* Icon and Text Section */}
-                  <div className={`flex items-center justify-center gap-4 mb-6 ${!isOnline ? 'opacity-50' : ''}`}>
+                  <div className={`flex items-center justify-center gap-3 mb-4 ${!isOnline ? 'opacity-50' : ''}`}>
                     {/* Green Icon Circle */}
-                    <div className="w-16 h-16 rounded-full bg-[var(--success)] flex items-center justify-center flex-shrink-0">
+                    <div className="w-12 h-12 rounded-2xl bg-[var(--success-ink)] flex items-center justify-center flex-shrink-0">
                       <Users className="w-8 h-8 text-white" />
                     </div>
 
@@ -1090,7 +1092,7 @@ export default function RiderDashboard() {
                   {/* View All Button - offline taps explain themselves */}
                   {isOnline ? (
                     <Link to="/rider/passenger-requests" className="w-full">
-                      <Button className="w-full bg-[var(--primary)] hover:bg-[var(--primary)] text-white font-bold">
+                      <Button className="min-h-12 w-full rounded-xl bg-[var(--primary)] hover:bg-[var(--primary)] text-[var(--primary-foreground)] font-bold">
                         View All Passenger Requests
                       </Button>
                     </Link>
@@ -1108,8 +1110,8 @@ export default function RiderDashboard() {
 
 
               {showServiceTypes && (
-                <div className="fixed inset-0 bg-black/50 z-[2000] flex items-end animate-in slide-in-from-bottom duration-300">
-                  <div className="bg-surface w-full rounded-t-3xl max-h-[85vh] overflow-y-auto">
+                <div className="fixed inset-0 bg-black/50 z-[2000] flex items-end justify-center sm:items-center sm:p-6 animate-in slide-in-from-bottom duration-300">
+                  <div role="dialog" aria-modal="true" aria-label="Service types" className="bg-card w-full sm:max-w-lg rounded-t-3xl sm:rounded-3xl max-h-[85dvh] overflow-y-auto">
                     <div className="sticky top-0 bg-surface border-b border-[var(--border)] px-5 py-4 flex items-center justify-between">
                       <h2 className="text-xl font-bold text-[var(--ink)]">Service Types</h2>
                       <button onClick={() => setShowServiceTypes(false)}>
@@ -1267,7 +1269,7 @@ export default function RiderDashboard() {
                     setShowOfflineNotice(false);
                     handleToggleOnline();
                   }}
-                  className="w-full bg-[var(--primary)] hover:bg-[var(--primary)] text-white font-bold"
+                  className="min-h-12 w-full rounded-xl bg-[var(--primary)] hover:bg-[var(--primary)] text-[var(--primary-foreground)] font-bold"
                 >
                   Go Online
                 </Button>

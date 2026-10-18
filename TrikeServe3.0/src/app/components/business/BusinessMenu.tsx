@@ -6,6 +6,7 @@ import { Badge } from "../ui/badge";
 import { Button } from "../ui/button";
 import { ImageWithFallback } from "../figma/ImageWithFallback";
 import BusinessSidebar from "./BusinessSidebar";
+import BusinessPageIntro from "./BusinessPageIntro";
 import { useMediaQuery } from "../../hooks/useMediaQuery";
 import { useRestaurantProfile } from "@/lib/restaurantProfile";
 import ItemOptionsEditor from "./ItemOptionsEditor";
@@ -1775,7 +1776,7 @@ const addSection = async () => {
           startEditing(item);
           setView('detail');
         }}
-        className={`flex items-center gap-2 rounded-xl border p-2 select-none transition-all ${
+        className={`min-w-0 flex items-center gap-3 rounded-2xl border p-3 sm:p-4 select-none transition-all ${
           isDragging
             ? 'opacity-40'
             : isDropTarget
@@ -1812,7 +1813,7 @@ const addSection = async () => {
 
 
         <div
-          className={`size-12 shrink-0 overflow-hidden rounded-lg bg-[var(--muted)] transition-all ${
+          className={`size-14 sm:size-16 shrink-0 overflow-hidden rounded-xl bg-[var(--muted)] transition-all ${
             item.available ? '' : 'opacity-45 grayscale'
           }`}
         >
@@ -1856,7 +1857,7 @@ const addSection = async () => {
               }}
               aria-label={item.available ? `Hide ${item.name}` : `Show ${item.name}`}
               title={item.available ? 'Hide from customers' : 'Show to customers'}
-              className={`grid size-9 place-items-center rounded-lg border transition-colors ${
+              className={`grid size-11 place-items-center rounded-xl border transition-colors ${
                 item.available
                   ? 'border-[var(--success)] text-[var(--success)]'
                   : 'border-[var(--error)] text-[var(--error)]'
@@ -1885,7 +1886,7 @@ const addSection = async () => {
               }}
               aria-label={`Edit ${item.name}`}
               title="Edit"
-              className="grid size-9 place-items-center rounded-lg border border-line text-[var(--muted-foreground)] transition-colors hover:bg-[var(--muted)]"
+              className="grid size-11 place-items-center rounded-xl border border-line text-[var(--muted-foreground)] transition-colors hover:bg-[var(--muted)]"
             >
               <Settings className="w-4 h-4" aria-hidden="true" />
             </button>
@@ -2184,7 +2185,7 @@ const addSection = async () => {
                 {draftMode === 'add' ? 'New dish' : editingItem?.name || 'Edit dish'}
               </h1>
             </header>
-            <div className="px-3 py-4 lg:px-5">
+            <div className="mx-auto w-full max-w-[100rem] px-4 py-5 sm:px-6">
               {renderForm(draftMode === 'add')}
             </div>
           </div>
@@ -2197,19 +2198,25 @@ const addSection = async () => {
               <div className="flex items-center gap-3">
                 <button
                   onClick={() => setIsMobileMenuOpen(true)}
-                  className="lg:hidden flex-shrink-0 -ml-1 p-1 rounded-lg hover:bg-[var(--muted)]"
+                  className="lg:hidden grid size-11 flex-shrink-0 place-items-center rounded-xl hover:bg-[var(--muted)]"
                   aria-label="Open menu"
                 >
                   <Menu className="w-5 h-5 text-[var(--ink)]" />
                 </button>
                 <h1 className="text-lg lg:text-2xl font-extrabold tracking-tight text-[var(--ink)]">
-                  Menu Editor
+                  Products
                 </h1>
                 <p className="ml-auto text-xs lg:text-sm tabular-nums text-[var(--muted-foreground)]">
                   {menuItems.length} items · {menuItems.filter((i) => i.available).length} available
                 </p>
               </div>
 
+              <div className="mt-5"><BusinessPageIntro section="Products" title="A menu worth coming back for." description="Organize categories, fine-tune your dishes, and manage availability. Draft changes stay local until you save." metrics={[
+                { label: 'Products', value: menuItems.length, Icon: Package },
+                { label: 'Available', value: menuItems.filter(item => item.available).length, Icon: Eye },
+                { label: 'Categories', value: sections.length, Icon: Plus },
+              ]} /></div>
+              <div className="relative mt-4"><label htmlFor="business-product-search" className="sr-only">Search products</label><input id="business-product-search" type="search" value={searchQuery} onChange={event => setSearchQuery(event.target.value)} placeholder="Search products by name or description…" className="min-h-11 w-full rounded-xl border border-line bg-soft px-4 text-sm text-[var(--ink)]" /></div>
               {/* Narrows the list and nothing else — categories are renamed, reordered
                   and deleted from their own headings. */}
               <div className="relative mt-3">
@@ -2217,7 +2224,7 @@ const addSection = async () => {
                   id="menu-filter"
                   value={selectedSection}
                   onChange={(e) => setSelectedSection(e.target.value)}
-                  className="w-full appearance-none rounded-xl border border-line bg-[var(--muted)] py-2 pl-3 pr-9 text-sm font-semibold text-[var(--ink)] outline-none focus:border-[var(--primary)]"
+                  aria-label="Filter products by category" className="min-h-11 w-full appearance-none rounded-xl border border-line bg-[var(--muted)] py-2 pl-3 pr-9 text-sm font-semibold text-[var(--ink)] outline-none focus:border-[var(--primary)]"
                 >
                   <option value="all">All dishes ({menuItems.length})</option>
                   {sections.map((section) => (
@@ -2244,7 +2251,7 @@ const addSection = async () => {
                     setSectionError("");
                     setShowAddSection(true);
                   }}
-                  className="inline-flex items-center gap-1.5 rounded-xl border border-line px-3 py-2 text-xs font-bold text-[var(--ink)] transition-colors hover:bg-[var(--muted)]"
+                  className="inline-flex min-h-11 items-center gap-1.5 rounded-xl border border-line px-3 py-2 text-xs font-bold text-[var(--ink)] transition-colors hover:bg-[var(--muted)]"
                 >
                   <Plus className="w-4 h-4" aria-hidden="true" />
                   Add Category
@@ -2256,7 +2263,7 @@ const addSection = async () => {
                     startAdding();
                     setView('detail');
                   }}
-                  className="inline-flex items-center gap-1.5 rounded-xl border border-line px-3 py-2 text-xs font-bold text-[var(--ink)] transition-colors hover:bg-[var(--muted)]"
+                  className="inline-flex min-h-11 items-center gap-1.5 rounded-xl border border-line px-3 py-2 text-xs font-bold text-[var(--ink)] transition-colors hover:bg-[var(--muted)]"
                 >
                   <Plus className="w-4 h-4" aria-hidden="true" />
                   Add Item
@@ -2317,7 +2324,7 @@ const addSection = async () => {
                       type="button"
                       onClick={saveChanges}
                       disabled={isSaving}
-                      className="inline-flex items-center gap-1.5 rounded-xl bg-[var(--success)] px-3 py-2 text-xs font-bold text-white transition-colors hover:opacity-90 active:scale-[0.97]"
+                      className="inline-flex min-h-11 items-center gap-1.5 rounded-xl bg-[var(--success)] px-3 py-2 text-xs font-bold text-white transition-colors hover:opacity-90 active:scale-[0.97]"
                     >
                       <Save className="w-4 h-4" aria-hidden="true" />
                       {isSaving ? 'Saving…' : 'Save Changes'}
@@ -2327,7 +2334,7 @@ const addSection = async () => {
               </div>
             </header>
 
-            <div className="px-3 py-4 lg:px-5">
+            <div className="mx-auto w-full max-w-[100rem] px-4 py-5 sm:px-6">
               {renderedGroups.length === 0 ? (
                 <div className="py-16 text-center">
                   <Package className="mx-auto mb-3 size-14 text-[var(--border)]" aria-hidden="true" />
@@ -2349,7 +2356,7 @@ const addSection = async () => {
                 <div className="space-y-7">
                   {renderedGroups.map((group) => (
                     <section key={group.key}>
-                      <div className="mb-2 flex items-center gap-2">
+                      <div className="mb-3 flex flex-wrap items-center gap-2">
                         {/* A tick on the heading while selecting: deleting a category is
                             as much a bulk job as hiding a dish. */}
                         {selectionMode && group.section && (
@@ -2524,7 +2531,7 @@ const addSection = async () => {
                       type="button"
                       onClick={toggleSelectedAvailability}
                       disabled={selectedIds.size === 0}
-                      className="inline-flex items-center gap-1.5 rounded-xl border border-line px-3 py-2 text-xs font-bold text-[var(--ink)] disabled:opacity-40"
+                      className="inline-flex min-h-11 items-center gap-1.5 rounded-xl border border-line px-3 py-2 text-xs font-bold text-[var(--ink)] disabled:opacity-40"
                     >
                       <Eye className="size-4" aria-hidden="true" />
                       Toggle
@@ -2533,7 +2540,7 @@ const addSection = async () => {
                       type="button"
                       onClick={deleteSelectedItems}
                       disabled={selectionCount === 0}
-                      className="inline-flex items-center gap-1.5 rounded-xl bg-[var(--error)] px-3 py-2 text-xs font-bold text-white disabled:opacity-40"
+                      className="inline-flex min-h-11 items-center gap-1.5 rounded-xl bg-[var(--error)] px-3 py-2 text-xs font-bold text-white disabled:opacity-40"
                     >
                       <Trash2 className="size-4" aria-hidden="true" />
                       Delete

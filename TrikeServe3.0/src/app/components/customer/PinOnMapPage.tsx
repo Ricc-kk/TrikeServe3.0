@@ -317,7 +317,7 @@ export default function PinOnMapPage() {
               if (typeof lat !== "number" || typeof lng !== "number") return;
               dropPin({ lat, lng });
             }}
-            options={{ disableDefaultUI: true, zoomControl: true }}
+            options={{ disableDefaultUI: true, zoomControl: true, gestureHandling: 'greedy' }}
           >
             {pin && <MarkerF position={{ lat: draft.latitude!, lng: draft.longitude! }} />}
           </GoogleMap>

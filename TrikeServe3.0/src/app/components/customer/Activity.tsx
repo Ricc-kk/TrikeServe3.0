@@ -351,16 +351,24 @@ export default function Activity() {
   };
 
   return (
-    <div className="min-h-screen bg-surface pb-24">
+    <div className="min-h-screen bg-canvas pb-[calc(6rem+env(safe-area-inset-bottom))] text-[var(--ink)]">
+      <div className="mx-auto w-full max-w-4xl px-4 pt-5 sm:px-8 sm:pt-8">
       {/* Header */}
-      <div className="px-4 sm:px-5 pt-4 sm:pt-5 pb-3">
-        <h1 className="text-2xl sm:text-3xl font-extrabold text-[var(--ink)]">Activity</h1>
-      </div>
+      <header className="mb-5 rounded-3xl bg-[var(--ink-solid)] p-5 text-white sm:p-8">
+        <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-[var(--mint)]">Your journey · Mga biyahe</p>
+        <h1 className="mt-2 text-3xl font-extrabold tracking-tight sm:text-4xl">Activity</h1>
+        <p className="mt-2 max-w-lg text-sm leading-relaxed text-white/75">Good rides, great meals. Find your past trips and deliveries, all in one place.</p>
+        <div className="mt-5 grid grid-cols-2 gap-3">
+          <div className="rounded-2xl border border-white/15 bg-white/10 p-3 sm:p-4"><Navigation className="mb-2 size-5 text-[var(--mint)]" /><p className="text-2xl font-extrabold tabular-nums">{isLoading ? '—' : displayRides.length}</p><p className="text-xs text-white/75">Completed rides</p></div>
+          <div className="rounded-2xl border border-white/15 bg-white/10 p-3 sm:p-4"><Package className="mb-2 size-5 text-[var(--mint)]" /><p className="text-2xl font-extrabold tabular-nums">{isLoading ? '—' : displayOrders.length}</p><p className="text-xs text-white/75">Food orders</p></div>
+        </div>
+      </header>
 
       {/* Tab Buttons */}
-      <div className="px-4 sm:px-5 mb-4 sm:mb-5">
-        <div className="flex gap-2 sm:gap-3">
+      <div className="mb-5">
+        <div className="flex gap-2 rounded-2xl border border-line bg-surface p-1.5 sm:gap-3">
           <button
+            aria-pressed={activeTab === 'rides'}
             onClick={() => setActiveTab('rides')}
             className={`flex-1 flex items-center justify-center gap-1.5 sm:gap-2 py-3.5 sm:py-4 rounded-xl sm:rounded-2xl text-xs sm:text-sm font-bold transition-all duration-200 active:scale-[0.97] ${
               activeTab === 'rides'
@@ -379,6 +387,7 @@ export default function Activity() {
             )}
           </button>
           <button
+            aria-pressed={activeTab === 'deliveries'}
             onClick={() => setActiveTab('deliveries')}
             className={`flex-1 flex items-center justify-center gap-1.5 sm:gap-2 py-3.5 sm:py-4 rounded-xl sm:rounded-2xl text-xs sm:text-sm font-bold transition-all duration-200 active:scale-[0.97] ${
               activeTab === 'deliveries'
@@ -400,7 +409,8 @@ export default function Activity() {
       </div>
 
       {/* Content Section */}
-      <div className="px-4 sm:px-5">
+      <div>
+        <h2 className="mb-3 text-sm font-bold text-[var(--ink)]">{activeTab === 'rides' ? 'Your ride history' : 'Your delivery history'}</h2>
         {isLoading ? (
           <div className="text-center py-8">
             <Package className="w-8 h-8 text-[var(--info)] mx-auto animate-bounce" />
@@ -409,14 +419,14 @@ export default function Activity() {
         ) : activeTab === 'rides' ? (
           <div>
             {displayRides.length > 0 ? (
-              <div className="space-y-3">
+              <div className="space-y-4">
                 {displayRides.map((ride) => {
                   const alreadyRated = ratedRideIds.includes(ride.id);
                   const canRate = Boolean(ride.driverId) && !alreadyRated;
                   return (
                   <Card
                     key={ride.id}
-                    className={`p-3.5 sm:p-4 border border-line shadow-sm ${canRate ? 'cursor-pointer active:scale-[0.98] transition-transform' : ''}`}
+                    className={`gap-0 rounded-2xl bg-surface p-4 sm:p-6 border border-line shadow-sm ${canRate ? 'cursor-pointer active:scale-[0.98] transition-transform' : ''}`}
                     onClick={() => canRate && openRate(ride)}
                   >
                     <div className="flex items-start gap-3">
@@ -431,9 +441,9 @@ export default function Activity() {
 
                       {/* Content */}
                       <div className="flex-1 min-w-0">
-                        <div className="flex items-start justify-between gap-2">
+                        <div className="flex flex-wrap items-start justify-between gap-x-3 gap-y-2">
                           <div>
-                            <h3 className="font-semibold text-[var(--ink)] text-xs sm:text-sm mb-1 line-clamp-2">
+                            <h3 className="font-semibold text-[var(--ink)] text-sm sm:text-base mb-1 line-clamp-2">
                               {ride.pickupLocation} → {ride.dropoffLocation}
                             </h3>
                             <div className="flex items-center gap-2 mb-2">
@@ -484,7 +494,7 @@ export default function Activity() {
                               e.stopPropagation();
                               openReport(ride);
                             }}
-                            className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg border border-[var(--error)] text-[var(--error)] text-[11px] font-bold hover:bg-[var(--error-soft)] active:scale-95 transition-all flex-shrink-0"
+                            className="flex min-h-11 items-center gap-1 px-3 py-2 rounded-xl border border-[var(--error)] text-[var(--error)] text-[11px] font-bold hover:bg-[var(--error-soft)] active:scale-95 transition-all flex-shrink-0"
                           >
                             <Flag className="w-3.5 h-3.5" />
                             Report
@@ -502,7 +512,7 @@ export default function Activity() {
                 })}
               </div>
             ) : (
-              <div className="text-center py-16">
+              <div className="rounded-3xl border border-line bg-surface px-5 py-12 text-center sm:py-16">
                 <div className="w-24 h-24 bg-[var(--muted)] rounded-full flex items-center justify-center mx-auto mb-4">
                   <Navigation className="w-12 h-12 text-[var(--muted-foreground)]" />
                 </div>
@@ -519,9 +529,9 @@ export default function Activity() {
         ) : (
           <div>
             {displayOrders.length > 0 ? (
-              <div className="space-y-3">
+              <div className="space-y-4">
                 {displayOrders.map((order) => (
-                  <Card key={order.id} className="p-3.5 sm:p-4 border border-line shadow-sm cursor-pointer active:scale-[0.98] transition-transform">
+                  <Card key={order.id} className="gap-0 rounded-2xl bg-surface p-4 sm:p-6 border border-line shadow-sm cursor-pointer active:scale-[0.98] transition-transform">
                     <div onClick={() => navigate(`/customer/order-detail/${order.id}`)} className="flex items-start gap-3">
                       {/* Restaurant Image */}
                       <div className="w-12 h-12 rounded-lg overflow-hidden flex-shrink-0">
@@ -534,8 +544,8 @@ export default function Activity() {
 
                       {/* Content */}
                       <div className="flex-1 min-w-0">
-                        <div className="flex items-start justify-between gap-2">
-                          <div className="flex-1">                            <h3 className="font-semibold text-[var(--ink)] text-xs sm:text-sm mb-1 line-clamp-1">
+                        <div className="flex flex-wrap items-start justify-between gap-x-3 gap-y-2">
+                          <div className="min-w-0 flex-1">                            <h3 className="font-semibold text-[var(--ink)] text-sm sm:text-base mb-1 line-clamp-1">
                                 {order.restaurantName}
                               </h3>
                             <p className="text-xs text-[var(--muted-foreground)] mb-2">{order.date}</p>
@@ -560,7 +570,7 @@ export default function Activity() {
                 ))}
               </div>
             ) : (
-              <div className="text-center py-16">
+              <div className="rounded-3xl border border-line bg-surface px-5 py-12 text-center sm:py-16">
                 <div className="w-24 h-24 bg-[var(--muted)] rounded-full flex items-center justify-center mx-auto mb-4">
                   <Package className="w-12 h-12 text-[var(--muted-foreground)]" />
                 </div>
@@ -577,13 +587,14 @@ export default function Activity() {
         )}
       </div>
 
+      </div>
       {/* Report Ride Modal */}
       {reportRide && (
         <div className="fixed inset-0 bg-black/60 z-[2000] flex items-end sm:items-center justify-center p-0 sm:p-4">
           <div className="bg-surface w-full sm:max-w-md sm:rounded-2xl rounded-t-3xl shadow-xl max-h-[90vh] overflow-y-auto">
             <div className="flex items-center justify-between p-5 border-b border-[var(--border)]">
               <h3 className="text-lg font-bold text-[var(--ink)]">Report this ride</h3>
-              <button onClick={closeReport} className="p-1.5 hover:bg-[var(--muted)] rounded-full transition-colors">
+              <button aria-label="Close ride report" onClick={closeReport} className="grid size-11 place-items-center hover:bg-[var(--muted)] rounded-full transition-colors">
                 <X className="w-5 h-5 text-[var(--muted-foreground)]" />
               </button>
             </div>
@@ -655,10 +666,10 @@ export default function Activity() {
       {/* Rate Driver Modal — same star picker as delivered orders */}
       {rateRide && (
         <div className="fixed inset-0 bg-black/60 z-[2000] flex items-end sm:items-center justify-center p-0 sm:p-4">
-          <div className="bg-surface w-full sm:max-w-md sm:rounded-2xl rounded-t-3xl shadow-xl">
+          <div className="bg-surface w-full sm:max-w-md sm:rounded-2xl rounded-t-3xl shadow-xl max-h-[90dvh] overflow-y-auto">
             <div className="flex items-center justify-between p-5 border-b border-[var(--border)]">
               <h3 className="text-lg font-bold text-[var(--ink)]">Rate this ride</h3>
-              <button onClick={closeRate} className="p-1.5 hover:bg-[var(--muted)] rounded-full transition-colors">
+              <button aria-label="Close ride rating" onClick={closeRate} className="grid size-11 place-items-center hover:bg-[var(--muted)] rounded-full transition-colors">
                 <X className="w-5 h-5 text-[var(--muted-foreground)]" />
               </button>
             </div>
