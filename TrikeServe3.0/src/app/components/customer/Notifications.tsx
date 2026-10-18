@@ -291,13 +291,25 @@ export default function Notifications() {
     <div className="min-h-screen bg-[var(--muted)] pb-20">
       {/* Header */}
       <div className="bg-[var(--primary)] px-5 py-4 sticky top-0 z-50 shadow-lg">
-        <div className="flex items-center justify-between mb-2">
-          <button 
-            onClick={goBack}
-            className="w-10 h-10 bg-white/20 backdrop-blur-sm rounded-full flex items-center justify-center active:scale-90 transition-all"
-          >
-            <ArrowLeft className="w-6 h-6 text-white" />
-          </button>
+        <div className="flex items-center justify-between gap-3">
+          <div className="flex min-w-0 items-center gap-3">
+            <button
+              type="button"
+              aria-label="Go back"
+              onClick={goBack}
+              className="flex size-10 shrink-0 items-center justify-center rounded-full bg-white/20 backdrop-blur-sm transition-all active:scale-90"
+            >
+              <ArrowLeft className="size-6 text-white" />
+            </button>
+            <div className="min-w-0">
+              <h1 className="truncate text-xl font-bold text-white sm:text-2xl">Notifications</h1>
+              {unreadCount > 0 && (
+                <p className="text-sm text-white/90">
+                  {unreadCount} unread notification{unreadCount !== 1 ? 's' : ''}
+                </p>
+              )}
+            </div>
+          </div>
           <button
             onClick={markAllAsRead}
             disabled={unreadCount === 0}
@@ -309,19 +321,6 @@ export default function Notifications() {
           >
             Mark All Read
           </button>
-        </div>
-        <div className="flex items-center gap-3">
-          <div className="w-12 h-12 bg-white/20 backdrop-blur-sm rounded-full flex items-center justify-center">
-            <Bell className="w-6 h-6 text-white" />
-          </div>
-          <div>
-            <h1 className="text-2xl font-bold text-white">Notifications</h1>
-            {unreadCount > 0 && (
-              <p className="text-white/90 text-sm">
-                {unreadCount} unread notification{unreadCount !== 1 ? 's' : ''}
-              </p>
-            )}
-          </div>
         </div>
       </div>
 
@@ -359,35 +358,34 @@ export default function Notifications() {
                   navigate(notification.actionUrl);
                 }
               }}
-              className={`p-4 border-0 rounded-2xl shadow-md transition-all ${
+              className={`rounded-2xl border border-l-4 p-4 transition-all duration-200 ${
                 notification.actionUrl ? 'cursor-pointer active:scale-[0.98]' : ''
               } ${
-                notification.unread 
-                  ? 'bg-surface shadow-lg' 
-                  : 'bg-white/60'
+                notification.unread
+                  ? 'border-line border-l-[var(--primary)] bg-surface shadow-lg shadow-[var(--primary)]/10'
+                  : 'border-line border-l-transparent bg-surface shadow-sm hover:shadow-md'
               }`}
             >
               <div className="flex items-start gap-3">
                 {/* Icon */}
-                <div className={`w-12 h-12 ${getNotificationBgColor(notification.type)} rounded-xl flex items-center justify-center flex-shrink-0`}>
+                <div className={`flex size-14 shrink-0 items-center justify-center rounded-2xl ring-1 ring-black/5 dark:ring-white/10 ${getNotificationBgColor(notification.type)}`}>
                   <span className="text-2xl">{notification.icon}</span>
                 </div>
 
                 {/* Content */}
                 <div className="flex-1 min-w-0">
-                  <div className="flex items-start justify-between gap-2 mb-1">
-                    <h3 className={`text-base leading-tight ${
-                      notification.unread ? 'font-bold text-[var(--ink)]' : 'font-semibold text-[var(--muted-foreground)]'
-                    }`}>
+                  <div className="mb-2 flex items-start justify-between gap-2">
+                    <div className="flex min-w-0 items-center gap-2">
+                    <h3 className={`line-clamp-1 text-base leading-tight text-black dark:text-white ${notification.unread ? 'font-bold' : 'font-semibold'}`}>
                       {notification.title}
                     </h3>
-                    <span className="text-xs text-[var(--muted-foreground)] whitespace-nowrap">
+                    {notification.unread && <span className="shrink-0 rounded-full bg-[var(--primary-soft)] px-2 py-0.5 text-[10px] font-extrabold uppercase tracking-wide text-[var(--primary)]">New</span>}
+                    </div>
+                    <span className="text-xs text-black dark:text-white whitespace-nowrap">
                       {notification.time}
                     </span>
                   </div>
-                  <p className={`text-sm leading-relaxed ${
-                    notification.unread ? 'text-[var(--muted-foreground)]' : 'text-[var(--muted-foreground)]'
-                  }`}>
+                  <p className="text-sm leading-relaxed text-black dark:text-white">
                     {notification.message}
                   </p>
                   {notification.actionUrl && (
@@ -420,10 +418,6 @@ export default function Notifications() {
                   )}
                 </div>
 
-                {/* Unread Indicator */}
-                {notification.unread && (
-                  <div className="w-3 h-3 bg-[var(--primary)] rounded-full flex-shrink-0 mt-2"></div>
-                )}
               </div>
             </Card>
           ))}
