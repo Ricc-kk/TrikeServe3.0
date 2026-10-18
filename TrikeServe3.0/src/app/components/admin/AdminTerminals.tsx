@@ -283,13 +283,8 @@ function isDriverRow(u: StoredRider): boolean {
 type DriverPickerProps = {
   /** The TODA this picker adds to, named in the field's own label. */
   terminalName: string;
-  /** Everyone. Includes the drivers already on another TODA — picking one moves
-   *  them — so the list has to say where each one sits right now. */
+  /** Drivers without a terminal assignment. */
   candidates: StoredRider[];
-  /** The TODA's own id, so a driver already on it can be marked as such. */
-  terminalId: string;
-  /** Terminal id -> name, for the "on M TODA — will move" note. */
-  terminalNames: Record<string, string>;
   onPick: (rider: StoredRider) => void;
 };
 
@@ -302,11 +297,9 @@ type DriverPickerProps = {
  * Super Admin ends up scrolling to spot a spelling. The search field is the
  * point of the control, so it takes focus as the list opens.
  *
- * Offering everyone, not just the unassigned, is deliberate — see the call site.
- * A driver on another terminal is listed with where they are, so a move is one
- * tap and announces itself as a move rather than looking like an add.
+ * Drivers already assigned to a terminal are omitted from the candidates.
  */
-function DriverPicker({ terminalName, candidates, terminalId, terminalNames, onPick }: DriverPickerProps) {
+function DriverPicker({ terminalName, candidates, onPick }: DriverPickerProps) {
   const [isOpen, setIsOpen] = useState(false);
   const [query, setQuery] = useState('');
   const wrapRef = useRef<HTMLDivElement>(null);
@@ -386,63 +379,41 @@ function DriverPicker({ terminalName, candidates, terminalId, terminalNames, onP
             {matches.length === 0 ? (
               <li className="px-4 py-6 text-center text-sm text-[var(--muted-foreground)] italic">
                 {candidates.length === 0
-                  ? 'No drivers registered yet'
+                  ? 'No unassigned drivers available'
                   : `No driver matches “${query.trim()}”`}
               </li>
             ) : (
-              matches.map(rider => {
-                const onId = rider.terminalId || rider.terminal_id;
-                const onThis = onId === terminalId;
-                const onOther = !!onId && !onThis;
-                const onName = onId ? terminalNames[onId] : null;
-                return (
-                  <li key={rider.id}>
-                    <button
-                      type="button"
-                      role="option"
-                      aria-selected="false"
-                      onClick={() => {
-                        setIsOpen(false);
-                        onPick(rider);
-                      }}
-                      className={`w-full flex items-center gap-3 px-3 py-2.5 text-left transition-colors ${
-                        // Already here: still listed, so the list is every driver
-                        // and not a moving target, but greyed to say there is
-                        // nothing this tap would do.
-                        onThis
-                          ? 'bg-[var(--soft)] opacity-60 cursor-default'
-                          : 'hover:bg-[var(--soft)]'
-                      }`}
-                    >
-                      <span className="w-8 h-8 flex-shrink-0 rounded-full bg-[var(--muted)] text-[var(--muted-foreground)] flex items-center justify-center text-[11px] font-bold">
-                        {driverInitials(rider)}
+              matches.map(rider => (
+                <li key={rider.id}>
+                  <button
+                    type="button"
+                    role="option"
+                    aria-selected="false"
+                    onClick={() => {
+                      setIsOpen(false);
+                      onPick(rider);
+                    }}
+                    className="w-full flex items-center gap-3 px-3 py-2.5 text-left transition-colors hover:bg-[var(--soft)]"
+                  >
+                    <span className="w-8 h-8 flex-shrink-0 rounded-full bg-[var(--muted)] text-[var(--muted-foreground)] flex items-center justify-center text-[11px] font-bold">
+                      {driverInitials(rider)}
+                    </span>
+                    <span className="min-w-0 flex-1">
+                      <span className="block text-sm font-semibold text-[var(--ink)] truncate">
+                        {riderDisplayName(rider)}
                       </span>
-                      <span className="min-w-0 flex-1">
-                        <span className="block text-sm font-semibold text-[var(--ink)] truncate">
-                          {riderDisplayName(rider)}
-                        </span>
-                        <span className="block text-xs text-[var(--muted-foreground)] truncate">
-                          {/* Where they are now, before the plate. A driver being
-                              moved is the case where this matters — without it
-                              the row reads as a plain add and the admin has no
-                              idea they are about to pull someone off another
-                              TODA. */}
-                          {onThis
-                            ? `On ${terminalName}`
-                            : onOther
-                              ? `On ${onName ?? 'another TODA'} — will move`
-                              : rider.todaPlate || rider.toda_plate || rider.email}
-                        </span>
+                      <span className="block text-xs text-[var(--muted-foreground)] truncate">
+                        {rider.todaPlate || rider.toda_plate || rider.email}
                       </span>
-                      {rider.isTerminalAdmin ? (
-                        <span className="flex-shrink-0 px-1.5 py-0.5 rounded-full bg-[var(--teal-soft)] text-[var(--teal)] text-[10px] font-bold">
-                          Admin
-                        </span>
-                      ) : null}
-                    </button>
-                  </li>
-                );
-              })
+                    </span>
+                    {rider.isTerminalAdmin ? (
+                      <span className="flex-shrink-0 px-1.5 py-0.5 rounded-full bg-[var(--teal-soft)] text-[var(--teal)] text-[10px] font-bold">
+                        Admin
+                      </span>
+                    ) : null}
+                  </button>
+                </li>
+              ))
             )}
           </ul>
         </div>
@@ -1318,17 +1289,6 @@ export default function AdminTerminals() {
   const visibleTerminals = isRiderAdmin
     ? terminals.filter(t => t.id === assignedTerminalId)
     : terminals;
-
-  /**
-   * Terminal id -> name, for the driver picker to say where somebody already is.
-   *
-   * `visibleTerminals` rather than `terminals`, so the "on M TODA" a Rider Admin
-   * reads never names a terminal they are not allowed to see.
-   */
-  const terminalNameById = useMemo(
-    () => Object.fromEntries(visibleTerminals.map(t => [t.id, t.name])),
-    [visibleTerminals]
-  );
 
   /**
    * The drivers the Super Admin has made admin of a terminal.
@@ -2974,21 +2934,7 @@ async function applyAssignDriver(rider: StoredRider, terminal: Terminal) {
                         const onThisTerminal = getRidersForTerminal(t.id);
                         const adminsHere = todaAdmins.filter(a => riderTerminalId(a) === t.id).length;
                         const isOpen = openTerminalIds.includes(t.id);
-                        // Already on this terminal, so not offered again: the
-                        // picker adds, it does not move, and a driver listed as
-                        // a candidate here is one the admin might add by mistake.
-                        /*
-                         * Every driver, not only the unassigned ones.
-                         *
-                         * Excluding whoever is on another terminal made moving a
-                         * driver a two-step job — remove, then add — and the
-                         * removal cleared their admin flag on the way, so
-                         * "give this TODA an admin" meant first destroying the
-                         * last TODA's admin. The picker now offers everyone and
-                         * says where each one currently sits, so a move is one
-                         * tap and reads as a move.
-                         */
-                        const candidates = riders;
+                        const candidates = riders.filter(rider => !riderTerminalId(rider));
                         return (
                           <div key={t.id} className={`border-b border-line last:border-b-0 ${isOpen ? 'bg-soft/50' : ''}`}>
                             {/*
@@ -3073,8 +3019,6 @@ async function applyAssignDriver(rider: StoredRider, terminal: Terminal) {
                               <div id={`toda-roster-${t.id}`} className="px-3 pb-4 sm:px-5">
                                 <DriverPicker
                                   terminalName={t.name}
-                                  terminalId={t.id}
-                                  terminalNames={terminalNameById}
                                   candidates={candidates}
                                   onPick={rider => confirmAssignDriver(rider, t)}
                                 />
@@ -3119,14 +3063,14 @@ async function applyAssignDriver(rider: StoredRider, terminal: Terminal) {
                                             aria-label={`TODA admin for ${riderName(rider)} on ${t.name}`}
                                             disabled={savingFlag || !terminalAdminColumn}
                                             onClick={() => confirmDriverTerminalAdmin(rider, !isAdmin)}
-                                            className={`relative w-11 h-11 flex-shrink-0 rounded-full border-[8px] border-transparent bg-clip-padding transition-colors disabled:opacity-40 disabled:cursor-not-allowed ${
+                                            className={`relative h-7 w-12 flex-shrink-0 rounded-full transition-colors disabled:opacity-40 disabled:cursor-not-allowed ${
                                               isAdmin ? 'bg-[var(--teal)]' : 'bg-[var(--border)]'
                                             }`}
                                           >
                                             <span
                                               aria-hidden="true"
-                                              className={`absolute top-1 w-4 h-4 rounded-full bg-white shadow transition-[left] ${
-                                                isAdmin ? 'left-3' : 'left-0'
+                                              className={`absolute top-1 size-5 rounded-full bg-white shadow transition-[left] ${
+                                                isAdmin ? 'left-6' : 'left-1'
                                               }`}
                                             />
                                           </button>

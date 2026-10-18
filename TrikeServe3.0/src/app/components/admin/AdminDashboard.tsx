@@ -248,6 +248,7 @@ export default function AdminDashboard() {
 
   // Modal state
   const [modalOpen, setModalOpen] = useState(false);
+  const [isApprovingUser, setIsApprovingUser] = useState(false);
   const [modalConfig, setModalConfig] = useState<{
     title: string;
     message: string;
@@ -273,25 +274,46 @@ export default function AdminDashboard() {
       variant: "success",
       confirmLabel: "Approve",
       onConfirm: async () => {
-        const result = await adminVerifyUser(userId);
-        if (!result.success) {
-          setToast({ message: `Approve failed: ${result.error}`, variant: 'error' });
-          return;
+        setIsApprovingUser(true);
+        try {
+          const result = await adminVerifyUser(userId);
+          if (!result.success) {
+            setToast({ message: `Approve failed: ${result.error}`, variant: 'error' });
+            return;
+          }
+          const approved = pendingVerifications.find(p => p.id === userId);
+          logAudit({
+            action: 'verify_user',
+            actorRole: 'admin',
+            entityType: 'user',
+            entityId: userId,
+            summary: `Approved ${approved?.type || 'user'} account${approved?.name ? `: ${approved.name}` : ''}`,
+            details: approved ? { email: approved.email, type: approved.type } : null,
+            actorEmail: user?.email,
+            actorName: user?.name,
+          });
+          if (approved) {
+            setPendingVerifications(current => current.filter(account => account.id !== userId));
+            setActiveUsers(current => current.some(account => account.id === userId)
+              ? current
+              : [...current, {
+                  id: approved.id,
+                  name: approved.name,
+                  type: approved.type,
+                  email: approved.email,
+                  phone: approved.phone,
+                  verifiedDate: new Date().toLocaleDateString('en-PH'),
+                }]);
+          }
+          setLastUpdated(new Date());
+          setAnalyticsRefresh(value => value + 1);
+          closeModal();
+          setToast({ message: 'User approved successfully', variant: 'success' });
+        } catch (error) {
+          setToast({ message: `Approve failed: ${error instanceof Error ? error.message : 'Please try again.'}`, variant: 'error' });
+        } finally {
+          setIsApprovingUser(false);
         }
-        const approved = pendingVerifications.find(p => p.id === userId);
-        logAudit({
-          action: 'verify_user',
-          actorRole: 'admin',
-          entityType: 'user',
-          entityId: userId,
-          summary: `Approved ${approved?.type || 'user'} account${approved?.name ? `: ${approved.name}` : ''}`,
-          details: approved ? { email: approved.email, type: approved.type } : null,
-          actorEmail: user?.email,
-          actorName: user?.name,
-        });
-        loadUsers();
-        closeModal();
-        setToast({ message: 'User approved successfully', variant: 'success' });
       },
     });
   };
@@ -733,6 +755,8 @@ export default function AdminDashboard() {
         message={modalConfig?.message || ''}
         variant={modalConfig?.variant || 'danger'}
         confirmLabel={modalConfig?.confirmLabel || 'Confirm'}
+        isConfirming={isApprovingUser}
+        confirmingLabel="Approving..."
         zIndexClassName="z-[2300]"
       />
 

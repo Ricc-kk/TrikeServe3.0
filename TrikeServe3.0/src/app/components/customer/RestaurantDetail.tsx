@@ -235,7 +235,7 @@ export default function RestaurantDetail() {
   const [restaurantData, setRestaurantData] = useState<RestaurantData | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [showStoreClosedModal, setShowStoreClosedModal] = useState(false);
-  const [adminDeliveryFee, setAdminDeliveryFee] = useState<number>(35); // Admin-set base delivery fee
+  const [adminDeliveryFee, setAdminDeliveryFee] = useState<number>(0); // Admin-set base delivery fee
 
   // Declared after `restaurantData` exists -- reading it earlier would hit the
   // temporal dead zone.

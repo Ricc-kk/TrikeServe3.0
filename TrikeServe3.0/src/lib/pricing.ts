@@ -24,7 +24,7 @@ export interface RideRates {
 export const DEFAULT_RATES: RideRates = {
   baseFare: 20,
   perKm: 10,
-  deliveryBaseFee: 30,
+  deliveryBaseFee: 0,
   sharedRide: 15,
   privateRide: 50,
 };

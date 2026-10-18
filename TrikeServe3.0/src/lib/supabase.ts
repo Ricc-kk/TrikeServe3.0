@@ -3857,7 +3857,7 @@ export const supabaseHelpers = {
 
   // Load the admin-set base delivery fee (admin_settings > rates > deliveryBaseFee)
   async getAdminDeliveryFee(): Promise<number> {
-    const fallback = 35;
+    const fallback = 0;
     try {
       const { data, error } = await supabase
         .from('admin_settings')

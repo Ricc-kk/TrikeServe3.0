@@ -153,7 +153,7 @@ export default function FoodHome() {
   const [loading, setLoading] = useState(true);
   const [menuCategories, setMenuCategories] = useState<Record<string, string[]>>({});
   const [unreadNotifications, setUnreadNotifications] = useState(0);
-  const [adminDeliveryFee, setAdminDeliveryFee] = useState<number>(35);
+  const [adminDeliveryFee, setAdminDeliveryFee] = useState<number>(0);
 
   const [minRating, setMinRating] = useState(0);
   const [sortBy, setSortBy] = useState<SortId>("rating");

@@ -3,7 +3,8 @@ import { Car, ChevronDown, ChevronUp, Loader2, Save, Users, Truck, TriangleAlert
 
 import { supabase } from "../../../utils/supabase";
 import { useAuth } from "../../contexts/AuthContext";
-import { DEFAULT_MAX_PASSENGERS } from "@/lib/pricing";
+import { useBlocker } from "react-router";
+import { DEFAULT_MAX_PASSENGERS, DEFAULT_RATES, normalizeRates, type RideRates } from "@/lib/pricing";
 import { logAudit } from "../../../lib/supabase";
 import AdminShell from "./AdminShell";
 import AdminPageIntro, { AdminMetricCards } from "./AdminPageIntro";
@@ -162,7 +163,7 @@ function FareGroup({ title, blurb, icon: Icon, children }: FareGroupProps) {
  * summary says which it is, so "why is the private price the same?" has an
  * answer on screen.
  */
-function TerminalSummary({ draft }: { draft: Draft }) {
+function TerminalSummary({ draft, platformDeliveryDefault }: { draft: Draft; platformDeliveryDefault: number }) {
   const shareBase = draft.base_fare.trim();
   const sharePerKm = draft.per_km.trim();
   const privateBase = draft.private_ride_fee.trim();
@@ -212,8 +213,8 @@ function TerminalSummary({ draft }: { draft: Draft }) {
         deliveryBase !== ""
           ? `₱${deliveryBase}${deliveryPerKm !== "" ? ` + ₱${deliveryPerKm}/km` : " flat"}`
           : deliveryPerKm !== ""
-            ? `₱0 base + ₱${deliveryPerKm}/km`
-            : "Platform default",
+            ? `₱${platformDeliveryDefault} base + ₱${deliveryPerKm}/km`
+            : `₱${platformDeliveryDefault} · platform default`,
       )}
 
       {entry(
@@ -230,10 +231,11 @@ export default function AdminFaresDelivery() {
   const { user } = useAuth();
   const [terminals, setTerminals] = useState<Terminal[]>([]);
   const [drafts, setDrafts] = useState<Record<string, Draft>>({});
+  const [platformRates, setPlatformRates] = useState<RideRates>(DEFAULT_RATES);
   const [loading, setLoading] = useState(true);
   const [query, setQuery] = useState('');
   const [loadError, setLoadError] = useState<string | null>(null);
-  const [savingId, setSavingId] = useState<string | null>(null);
+  const [isSavingAll, setIsSavingAll] = useState(false);
   /**
    * Which terminals are folded down to their summary.
    *
@@ -327,13 +329,52 @@ export default function AdminFaresDelivery() {
     void load();
   }, [load]);
 
+  useEffect(() => {
+    let active = true;
+    const loadPlatformRates = async () => {
+      let loaded: RideRates | null = null;
+      try {
+        const { data, error } = await supabase
+          .from('admin_settings')
+          .select('setting_value')
+          .eq('setting_key', 'rates')
+          .maybeSingle();
+        if (!error && data?.setting_value != null) {
+          const raw = typeof data.setting_value === 'string'
+            ? JSON.parse(data.setting_value)
+            : data.setting_value;
+          loaded = normalizeRates(raw);
+        }
+      } catch {
+        // A missing/unavailable platform setting falls back to the local copy,
+        // then to DEFAULT_RATES (whose delivery default is zero).
+      }
+
+      if (!loaded) {
+        try {
+          const saved = localStorage.getItem('trikeserve_rates');
+          if (saved) loaded = normalizeRates(JSON.parse(saved));
+        } catch {
+          // Leave the platform defaults in place if the local backup is invalid.
+        }
+      }
+
+      const rates = loaded ?? DEFAULT_RATES;
+      if (active) {
+        setPlatformRates(rates);
+      }
+    };
+
+    void loadPlatformRates();
+    return () => { active = false; };
+  }, []);
+
   const setDraft = (id: string, patch: Partial<Draft>) =>
     setDrafts((prev) => ({ ...prev, [id]: { ...prev[id], ...patch } }));
 
-  const saveTerminal = async (terminal: Terminal) => {
+  const saveTerminal = async (terminal: Terminal, suppressToast = false): Promise<boolean> => {
     const draft = drafts[terminal.id];
-    if (!draft) return;
-    setSavingId(terminal.id);
+    if (!draft) return true;
 
     // A shop cannot set a fare below zero, and an empty box means "leave it as
     // the platform default" rather than "charge nothing".
@@ -366,12 +407,17 @@ export default function AdminFaresDelivery() {
       patch.private_ride_fee_per_km = private_ride_fee_per_km;
     }
 
-    const { error } = await supabase.from("terminals").update(patch).eq("id", terminal.id);
+    let saveError: string | null = null;
+    try {
+      const { error } = await supabase.from("terminals").update(patch).eq("id", terminal.id);
+      saveError = error?.message ?? null;
+    } catch (error) {
+      saveError = error instanceof Error ? error.message : "Please try again.";
+    }
 
-    if (error) {
-      setToast({ message: `Save failed: ${error.message}`, variant: "error" });
-      setSavingId(null);
-      return;
+    if (saveError) {
+      if (!suppressToast) setToast({ message: `Save failed: ${saveError}`, variant: "error" });
+      return false;
     }
 
     setTerminals((prev) =>
@@ -431,8 +477,8 @@ export default function AdminFaresDelivery() {
       actorName: user?.name,
     });
 
-    setToast({ message: `${terminal.name} saved`, variant: "success" });
-    setSavingId(null);
+    if (!suppressToast) setToast({ message: `${terminal.name} saved`, variant: "success" });
+    return true;
   };
 
   const dirty = (t: Terminal) => {
@@ -448,6 +494,44 @@ export default function AdminFaresDelivery() {
       d.private_ride_fee !== current.private_ride_fee ||
       d.private_ride_fee_per_km !== current.private_ride_fee_per_km
     );
+  };
+
+  const dirtyTerminals = terminals.filter(dirty);
+  const hasUnsavedChanges = dirtyTerminals.length > 0;
+  const blocker = useBlocker(
+    ({ currentLocation, nextLocation }) =>
+      hasUnsavedChanges && currentLocation.pathname !== nextLocation.pathname,
+  );
+
+  useEffect(() => {
+    if (!hasUnsavedChanges) return;
+    const warnBeforeUnload = (event: BeforeUnloadEvent) => {
+      event.preventDefault();
+      event.returnValue = '';
+    };
+    window.addEventListener('beforeunload', warnBeforeUnload);
+    return () => window.removeEventListener('beforeunload', warnBeforeUnload);
+  }, [hasUnsavedChanges]);
+
+  const saveAllTerminals = async () => {
+    if (isSavingAll || dirtyTerminals.length === 0) return;
+    const pending = [...dirtyTerminals];
+    setIsSavingAll(true);
+    let savedCount = 0;
+    let failedCount = 0;
+    try {
+      for (const terminal of pending) {
+        if (await saveTerminal(terminal, true)) savedCount++;
+        else failedCount++;
+      }
+      setToast(failedCount > 0
+        ? { message: `${savedCount} terminal${savedCount === 1 ? '' : 's'} saved; ${failedCount} failed. Review and try again.`, variant: 'error' }
+        : { message: `Saved fares for ${savedCount} terminal${savedCount === 1 ? '' : 's'}.`, variant: 'success' });
+    } catch (error) {
+      setToast({ message: error instanceof Error ? error.message : 'Some fares could not be saved. Try again.', variant: 'error' });
+    } finally {
+      setIsSavingAll(false);
+    }
   };
 
   const field =
@@ -471,9 +555,39 @@ export default function AdminFaresDelivery() {
     missingMigrations.length === 1
       ? missingMigrations[0]
       : `${missingMigrations[0]} and ${missingMigrations[1]}`;
+  const rateKeys: (keyof Pick<Draft, "base_fare" | "per_km" | "private_ride_fee" | "private_ride_fee_per_km" | "delivery_fee" | "delivery_fee_per_km">)[] = [
+    "base_fare",
+    "per_km",
+    "private_ride_fee",
+    "private_ride_fee_per_km",
+    "delivery_fee",
+    "delivery_fee_per_km",
+  ];
+  const configuredRateCount = terminals.reduce((count, terminal) => {
+    const draft = drafts[terminal.id] ?? draftOf(terminal);
+    return count + rateKeys.filter(key => draft[key].trim() !== "").length;
+  }, 0);
+  const totalRateCount = terminals.length * rateKeys.length;
+  const rateCompleteness = totalRateCount > 0
+    ? Math.round((configuredRateCount / totalRateCount) * 100)
+    : 0;
 
   return (
-    <AdminShell title="Fares & Delivery" subtitle="Share ride, private ride and delivery pricing per terminal">
+    <AdminShell
+      title="Fares & Delivery"
+      subtitle="Share ride, private ride and delivery pricing per terminal"
+      actions={hasUnsavedChanges ? (
+        <button
+          type="button"
+          onClick={() => void saveAllTerminals()}
+          disabled={isSavingAll}
+          className="inline-flex min-h-11 items-center gap-2 rounded-xl bg-[var(--success-ink)] px-4 py-2 font-bold text-[var(--background)] transition-opacity hover:opacity-90 disabled:cursor-wait disabled:opacity-60"
+        >
+          {isSavingAll ? <Loader2 className="size-4 animate-spin" aria-hidden="true" /> : <Save className="size-4" aria-hidden="true" />}
+          {isSavingAll ? 'Saving...' : 'Save changes'}
+        </button>
+      ) : undefined}
+    >
       <div className="@container mx-auto w-full max-w-[100rem] space-y-6 sm:space-y-8">
       <AdminPageIntro eyebrow="Fares & delivery" title="Clear pricing. Every terminal." description="Compare terminal rates, set ride and delivery prices, and manage shared-ride capacity." />
       <AdminMetricCards loading={loading} items={[
@@ -481,6 +595,46 @@ export default function AdminFaresDelivery() {
         { label: 'Active', value: terminals.filter(t => t.is_active).length, Icon: CheckCircle, tone: 'success' },
         { label: 'Unsaved drafts', value: terminals.filter(dirty).length, Icon: Pencil, tone: 'amber' },
       ]} />
+      <section aria-labelledby="fare-completeness-title" aria-busy={loading} className="flex flex-col items-center gap-5 rounded-3xl border border-line bg-card p-5 sm:flex-row sm:p-6">
+        <div className="relative size-[132px] shrink-0" role="img" aria-label={`Fare completeness: ${rateCompleteness}%`}>
+          <svg viewBox="0 0 120 120" className="size-full -rotate-90" aria-hidden="true">
+            <circle cx="60" cy="60" r="52" fill="none" stroke="var(--muted)" strokeWidth="10" />
+            {rateCompleteness > 0 && (
+              <circle
+                cx="60"
+                cy="60"
+                r="52"
+                fill="none"
+                stroke="var(--teal)"
+                strokeWidth="10"
+                strokeLinecap="round"
+                strokeDasharray={`${(rateCompleteness / 100) * 326.7} 326.7`}
+              />
+            )}
+          </svg>
+          <div className="absolute inset-0 flex flex-col items-center justify-center">
+            <span className="text-3xl font-extrabold text-[var(--ink)] tabular-nums">{loading ? '—' : `${rateCompleteness}%`}</span>
+            <span className="text-[10px] font-bold uppercase tracking-[0.14em] text-[var(--muted-foreground)]">Complete</span>
+          </div>
+        </div>
+        <div className="min-w-0 text-center sm:text-left">
+          <h2 id="fare-completeness-title" className="text-base font-bold text-[var(--ink)]">Fare completeness</h2>
+          <p className="mt-1 text-sm text-[var(--muted-foreground)]">
+            {loading
+              ? 'Loading terminal rates…'
+              : `${configuredRateCount} of ${totalRateCount} terminal rate fields filled`}
+          </p>
+          <p className="mt-1 text-xs leading-relaxed text-[var(--muted-foreground)]">
+            {loading
+              ? 'Checking share ride, private ride and delivery prices.'
+              : terminals.length === 0
+                ? 'Add a terminal to start setting fares and delivery prices.'
+                : rateCompleteness === 100
+                  ? 'Every terminal has explicit share ride, private ride and delivery rates.'
+                  : `${totalRateCount - configuredRateCount} rate fields still use their fallback prices.`}
+          </p>
+        </div>
+      </section>
       {loadError && <div role="alert" className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-line bg-[var(--amber-soft)] p-4 text-sm text-[var(--amber-ink)]"><p className="min-w-0 flex-1 break-words">{loadError}</p><button type="button" disabled={terminals.some(dirty)} onClick={() => void load()} className="min-h-11 rounded-xl border border-current px-3 text-xs font-bold disabled:opacity-50">Retry loading</button></div>}
       <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-line bg-card p-4">
         <div className="relative min-w-0 w-full sm:max-w-md"><Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-[var(--muted-foreground)]" aria-hidden="true" /><label htmlFor="fare-search" className="sr-only">Search terminal pricing</label><input id="fare-search" type="search" value={query} onChange={event => setQuery(event.target.value)} placeholder="Search terminal pricing…" className="min-h-11 w-full rounded-xl border border-line bg-soft pl-10 pr-3 text-sm" /></div>
@@ -492,6 +646,36 @@ export default function AdminFaresDelivery() {
           variant={toast.variant}
           onClose={() => setToast(null)}
         />
+      )}
+
+      {blocker.state === 'blocked' && (
+        <div className="fixed inset-0 z-[5000] flex items-center justify-center bg-black/50 p-4">
+          <div role="alertdialog" aria-modal="true" aria-labelledby="unsaved-fares-title" className="w-full max-w-md rounded-2xl border border-line bg-surface p-6 shadow-2xl">
+            <h2 id="unsaved-fares-title" className="text-lg font-bold text-[var(--ink)]">Unsaved fare changes</h2>
+            <p className="mt-2 text-sm leading-relaxed text-[var(--muted-foreground)]">
+              {isSavingAll
+                ? 'Fares are still saving. Stay on this page until the save finishes.'
+                : 'Your fare changes have not been saved. Leave this page and discard them?'}
+            </p>
+            <div className="mt-5 flex flex-col gap-2 sm:flex-row-reverse">
+              <button
+                type="button"
+                disabled={isSavingAll}
+                onClick={() => blocker.proceed?.()}
+                className="min-h-11 rounded-xl bg-[var(--error)] px-4 py-3 text-sm font-bold text-white transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                Leave without saving
+              </button>
+              <button
+                type="button"
+                onClick={() => blocker.reset?.()}
+                className="min-h-11 rounded-xl border border-line px-4 py-3 text-sm font-bold text-[var(--ink)] transition-colors hover:bg-soft"
+              >
+                Stay on page
+              </button>
+            </div>
+          </div>
+        </div>
       )}
 
       {missingMigrations.length > 0 && (
@@ -526,7 +710,6 @@ export default function AdminFaresDelivery() {
           {!terminals.some(t => t.name.toLowerCase().includes(query.trim().toLowerCase())) && <EmptyState title="No matching terminals" description="Try another terminal name." action={<button type="button" onClick={() => setQuery('')} className="min-h-11 rounded-xl border border-line px-4 text-sm font-bold">Clear search</button>} />}
           {terminals.filter(t => t.name.toLowerCase().includes(query.trim().toLowerCase())).map((terminal) => {
             const draft = drafts[terminal.id] ?? draftOf(terminal);
-            const saving = savingId === terminal.id;
             const changed = dirty(terminal);
             const isCollapsed = collapsed[terminal.id] !== false;
             return (
@@ -544,16 +727,6 @@ export default function AdminFaresDelivery() {
                       {terminal.is_active ? "Active" : "Inactive"}{changed ? ' · Unsaved changes' : ' · Saved rates'}
                     </p>
                   </div>
-                  {/*
-                    The two controls, grouped.
-
-                    They were siblings of the terminal name under justify-between,
-                    which spread all three across the row: the name pinned left,
-                    Save pinned right, and the chevron stranded somewhere in the
-                    middle, 300px from Save and reading as a stray icon rather than
-                    the control next to it. One wrapper puts them in a single
-                    cluster that shrink-wraps to the name.
-                  */}
                   <div className="relative z-20 flex shrink-0 items-center gap-2">
                     {/*
                       The "v" that folds a terminal down to its summary.
@@ -580,29 +753,11 @@ export default function AdminFaresDelivery() {
                           : `Summarise pricing for ${terminal.name}`}
                       </span>
                     </button>
-
-                    <button
-                      type="button"
-                      onClick={() => saveTerminal(terminal)}
-                      disabled={saving || !changed}
-                      className={`inline-flex min-h-11 items-center gap-2 rounded-xl px-4 py-2 font-bold transition-all active:scale-[0.97] ${
-                        changed
-                          ? "bg-[var(--success-ink)] text-[var(--background)] hover:opacity-90"
-                          : "bg-[var(--border)] text-[var(--muted-foreground)]"
-                      }`}
-                    >
-                      {saving ? (
-                        <Loader2 className="size-4 animate-spin" aria-hidden="true" />
-                      ) : (
-                        <Save className="size-4" aria-hidden="true" />
-                      )}
-                      {saving ? "Saving…" : "Save"}
-                    </button>
                   </div>
                 </div>
 
                 {isCollapsed ? (
-                  <TerminalSummary draft={draft} />
+                  <TerminalSummary draft={draft} platformDeliveryDefault={platformRates.deliveryBaseFee} />
                 ) : (
                   <div className="grid items-start gap-3 @min-[58rem]:grid-cols-3">
                   <FareGroup
@@ -621,6 +776,7 @@ export default function AdminFaresDelivery() {
                         min="0"
                         step="0.01"
                         value={draft.base_fare}
+                        disabled={isSavingAll}
                         onChange={(e) => setDraft(terminal.id, { base_fare: e.target.value })}
                         className={field}
                       />
@@ -640,6 +796,7 @@ export default function AdminFaresDelivery() {
                         min="0"
                         step="0.01"
                         value={draft.per_km}
+                        disabled={isSavingAll}
                         onChange={(e) => setDraft(terminal.id, { per_km: e.target.value })}
                         className={field}
                       />
@@ -661,7 +818,7 @@ export default function AdminFaresDelivery() {
                         step="1"
                         value={draft.max_passengers}
                         placeholder={String(DEFAULT_MAX_PASSENGERS)}
-                        disabled={!extraColumnsExist.current}
+                        disabled={!extraColumnsExist.current || isSavingAll}
                         onChange={(e) => setDraft(terminal.id, { max_passengers: e.target.value })}
                         className={`${field} sm:max-w-[12rem]`}
                       />
@@ -689,7 +846,7 @@ export default function AdminFaresDelivery() {
                         step="0.01"
                         value={draft.private_ride_fee}
                         placeholder="Same as share"
-                        disabled={!privateFeeColumnExists.current}
+                        disabled={!privateFeeColumnExists.current || isSavingAll}
                         onChange={(e) => setDraft(terminal.id, { private_ride_fee: e.target.value })}
                         className={field}
                       />
@@ -710,7 +867,7 @@ export default function AdminFaresDelivery() {
                         step="0.01"
                         value={draft.private_ride_fee_per_km}
                         placeholder="Same as share"
-                        disabled={!privateFeeColumnExists.current}
+                        disabled={!privateFeeColumnExists.current || isSavingAll}
                         onChange={(e) =>
                           setDraft(terminal.id, { private_ride_fee_per_km: e.target.value })
                         }
@@ -739,13 +896,13 @@ export default function AdminFaresDelivery() {
                         min="0"
                         step="0.01"
                         value={draft.delivery_fee}
-                        placeholder="Platform default"
-                        disabled={!extraColumnsExist.current}
+                        placeholder={`₱${platformRates.deliveryBaseFee} default`}
+                        disabled={!extraColumnsExist.current || isSavingAll}
                         onChange={(e) => setDraft(terminal.id, { delivery_fee: e.target.value })}
                         className={field}
                       />
                       <p className="mt-1 text-[11px] text-[var(--muted-foreground)]">
-                        Blank uses the platform default.
+                        Blank uses the platform default (₱{platformRates.deliveryBaseFee}).
                       </p>
                     </div>
 
@@ -761,7 +918,7 @@ export default function AdminFaresDelivery() {
                         step="0.01"
                         value={draft.delivery_fee_per_km}
                         placeholder="Flat fee"
-                        disabled={!extraColumnsExist.current}
+                        disabled={!extraColumnsExist.current || isSavingAll}
                         onChange={(e) =>
                           setDraft(terminal.id, { delivery_fee_per_km: e.target.value })
                         }

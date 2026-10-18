@@ -1,5 +1,5 @@
 import { useEffect, useRef } from "react";
-import { AlertTriangle, CheckCircle, XCircle, Info, X } from "lucide-react";
+import { AlertTriangle, CheckCircle, XCircle, Loader2 } from "lucide-react";
 
 type ModalVariant = "danger" | "warning" | "success";
 
@@ -11,6 +11,8 @@ interface ConfirmationModalProps {
   message: string;
   variant?: ModalVariant;
   confirmLabel?: string;
+  isConfirming?: boolean;
+  confirmingLabel?: string;
   /** Stacking class, raised when confirming over a full-screen overlay (e.g. a map picker). */
   zIndexClassName?: string;
 }
@@ -53,6 +55,8 @@ export default function ConfirmationModal({
   message,
   variant = "danger",
   confirmLabel = "Confirm",
+  isConfirming = false,
+  confirmingLabel = "Please wait...",
   zIndexClassName = "z-[400]",
 }: ConfirmationModalProps) {
   const cancelRef = useRef<HTMLButtonElement>(null);
@@ -65,11 +69,11 @@ export default function ConfirmationModal({
     const handleKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") onCancel();
     };
-    if (isOpen) {
+    if (isOpen && !isConfirming) {
       document.addEventListener("keydown", handleKey);
       return () => document.removeEventListener("keydown", handleKey);
     }
-  }, [isOpen, onCancel]);
+  }, [isOpen, isConfirming, onCancel]);
 
   if (!isOpen) return null;
 
@@ -78,7 +82,7 @@ export default function ConfirmationModal({
 
   return (
     <div className={`fixed inset-0 ${zIndexClassName} flex items-center justify-center p-4`}>
-      <div className="absolute inset-0 bg-black/50" onClick={onCancel} />
+      <div className="absolute inset-0 bg-black/50" onClick={isConfirming ? undefined : onCancel} />
       <div className="relative w-full max-w-sm bg-surface rounded-2xl shadow-2xl overflow-hidden">
         <div className="p-6 text-center">
           <div className={`w-14 h-14 ${config.iconBg} rounded-full flex items-center justify-center mx-auto mb-4`}>
@@ -91,6 +95,7 @@ export default function ConfirmationModal({
           <button
             ref={cancelRef}
             onClick={onCancel}
+            disabled={isConfirming}
             className="flex-1 py-3 text-sm font-semibold text-[var(--muted-foreground)] hover:bg-[var(--muted)] transition-colors"
           >
             Cancel
@@ -98,9 +103,12 @@ export default function ConfirmationModal({
           <div className="w-px bg-[var(--border)]" />
           <button
             onClick={onConfirm}
-            className={`flex-1 py-3 text-sm font-bold text-white ${config.confirmBg} ${config.confirmHover} transition-colors`}
+            disabled={isConfirming}
+            aria-busy={isConfirming}
+            className={`flex flex-1 items-center justify-center gap-2 py-3 text-sm font-bold text-white ${config.confirmBg} ${config.confirmHover} transition-colors disabled:cursor-wait disabled:opacity-80`}
           >
-            {confirmLabel}
+            {isConfirming && <Loader2 className="size-4 animate-spin" aria-hidden="true" />}
+            {isConfirming ? confirmingLabel : confirmLabel}
           </button>
         </div>
       </div>
