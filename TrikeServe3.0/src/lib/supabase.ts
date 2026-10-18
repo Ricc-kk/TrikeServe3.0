@@ -3238,8 +3238,59 @@ export const supabaseHelpers = {
 
     if (error || !data || data.length === 0) return { data, error };
 
-    const merged = await supabaseHelpers.resolveChatDisplayProfiles(data);
+    const visible = data.filter((conversation: any) =>
+      conversation.participant_a_id === userId
+        ? !conversation.deleted_by_a_at
+        : !conversation.deleted_by_b_at
+    );
+    const merged = await supabaseHelpers.resolveChatDisplayProfiles(visible);
     return { data: merged, error };
+  },
+
+  async deleteChatConversationForUser(conversationId: string, userId: string) {
+    const { data: conversation, error: readError } = await supabase
+      .from('chat_conversations')
+      .select('participant_a_id, participant_b_id')
+      .eq('id', conversationId)
+      .single();
+    if (readError || !conversation) return { error: readError || new Error('Conversation not found') };
+
+    const isParticipantA = conversation.participant_a_id === userId;
+    if (!isParticipantA && conversation.participant_b_id !== userId) {
+      return { error: new Error('You are not a participant in this conversation') };
+    }
+
+    const { error } = await supabase
+      .from('chat_conversations')
+      .update({ [isParticipantA ? 'deleted_by_a_at' : 'deleted_by_b_at']: new Date().toISOString() })
+      .eq('id', conversationId);
+    return { error };
+  },
+
+  async uploadChatAttachment(conversationId: string, userId: string, file: File) {
+    const extension = safeFileExtension(file);
+    const filePath = `${conversationId}/${userId}/${crypto.randomUUID()}.${extension}`;
+    const { error } = await supabase.storage
+      .from('chat_attachments')
+      .upload(filePath, file, { contentType: file.type, upsert: false });
+    if (error) return { data: null, error };
+
+    const { data } = supabase.storage.from('chat_attachments').getPublicUrl(filePath);
+    return { data, error: null };
+  },
+
+  async reportChatConversation(report: {
+    conversationId: string;
+    reporterId: string;
+    reportedUserId: string;
+    details: string;
+  }) {
+    return await supabase.from('chat_reports').insert({
+      conversation_id: report.conversationId,
+      reporter_id: report.reporterId,
+      reported_user_id: report.reportedUserId,
+      details: report.details,
+    });
   },
 
   async getChatMessages(conversationId: string) {
@@ -3324,7 +3375,7 @@ export const supabaseHelpers = {
       await supabase
         .from('chat_conversations')
         .update({
-          last_message_preview: message.message,
+          last_message_preview: message.message.startsWith('chat-image:') ? 'Photo' : message.message,
           last_message_sender_id: message.senderId,
           last_message_at: timestamp,
           // The receiver's counter is the one that moves: the sender is looking
@@ -3335,6 +3386,7 @@ export const supabaseHelpers = {
           unread_count_b: isSenderA
             ? (conversation.unread_count_b || 0) + 1
             : (conversation.unread_count_b || 0),
+          [isSenderA ? 'deleted_by_a_at' : 'deleted_by_b_at']: null,
           updated_at: timestamp,
         })
         .eq('id', message.conversationId);

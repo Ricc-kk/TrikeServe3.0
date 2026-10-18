@@ -1,6 +1,6 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { useNavigate, useParams, useLocation } from 'react-router';
-import { ArrowLeft, MessageCircle, Send, X } from 'lucide-react';
+import { ArrowLeft, Camera, ChevronRight, Flag, ImagePlus, MessageCircle, MoreVertical, Send, Trash2, X } from 'lucide-react';
 import { Button } from '../ui/button';
 import FloatingChatHead from '../ui/FloatingChatHead';
 import { Card } from '../ui/card';
@@ -89,6 +89,8 @@ interface ChatMessage {
   created_at: string;
 }
 
+const CHAT_IMAGE_PREFIX = 'chat-image:';
+
 export default function ChatHub({
   title,
   backPath,
@@ -119,6 +121,23 @@ export default function ChatHub({
   const enhancedInbox = driverLayout || businessLayout || customerLayout;
   const [activeConversation, setActiveConversation] = useState<ChatConversation | null>(null);
   const [isCreatingThread, setIsCreatingThread] = useState(false);
+  const [openMenuConversationId, setOpenMenuConversationId] = useState<string | null>(null);
+  const [attachmentControlsOpen, setAttachmentControlsOpen] = useState(true);
+  const [isChatHeadMode, setIsChatHeadMode] = useState(false);
+  const [minimizedConversation, setMinimizedConversation] = useState<ChatConversation | null>(null);
+  const [isUploadingImage, setIsUploadingImage] = useState(false);
+  const [reportDialogOpen, setReportDialogOpen] = useState(false);
+  const [reportConversation, setReportConversation] = useState<ChatConversation | null>(null);
+  const [reportDetails, setReportDetails] = useState('');
+  const [reportSubmitting, setReportSubmitting] = useState(false);
+  const [deleteConversationTarget, setDeleteConversationTarget] = useState<ChatConversation | null>(null);
+  const [deleteConversationError, setDeleteConversationError] = useState('');
+  const [isDeletingConversation, setIsDeletingConversation] = useState(false);
+  const imageInputRef = useRef<HTMLInputElement>(null);
+  const cameraInputRef = useRef<HTMLInputElement>(null);
+  const messageInputRef = useRef<HTMLTextAreaElement>(null);
+  const sendInProgressRef = useRef(false);
+  const [isSendingMessage, setIsSendingMessage] = useState(false);
 
   const messageListRef = useRef<HTMLDivElement>(null);
 
@@ -454,6 +473,8 @@ function getConversationPeer(conversation: ChatConversation) {
   }
 
   const openConversation = async (conversation: ChatConversation) => {
+    setMinimizedConversation(null);
+    setIsChatHeadMode(false);
     setActiveConversation(conversation);
     await loadMessages(conversation.id);
     navigate(`${basePath}/thread/${conversation.id}`);
@@ -474,32 +495,257 @@ function getConversationPeer(conversation: ChatConversation) {
      * silently failing.
      */
     const text = (typeof override === 'string' ? override : messageText).trim();
-    if (!user?.id || !text || !activeConversation) return;
+    if (!user?.id || !text || !activeConversation || sendInProgressRef.current) return;
+
+    sendInProgressRef.current = true;
+    setIsSendingMessage(true);
 
     const isParticipantA = activeConversation.participant_a_id === user.id;
     const receiverId = isParticipantA ? activeConversation.participant_b_id : activeConversation.participant_a_id;
     const receiverRole = isParticipantA ? activeConversation.participant_b_role : activeConversation.participant_a_role;
 
-    const { error } = await supabaseHelpers.sendChatMessage({
-      conversationId: activeConversation.id,
-      senderId: user.id,
-      receiverId,
-      senderName: user.name,
-      senderRole: user.role,
-      receiverRole,
-      message: text,
-    });
+    try {
+      const { error } = await supabaseHelpers.sendChatMessage({
+        conversationId: activeConversation.id,
+        senderId: user.id,
+        receiverId,
+        senderName: user.name,
+        senderRole: user.role,
+        receiverRole,
+        message: text,
+      });
 
-    if (error) {
-      console.error('[ChatHub] Send message failed:', error);
+      if (error) {
+        console.error('[ChatHub] Send message failed:', error);
+        alert('Message failed to send. Please try again.');
+        return;
+      }
+
+      setMessageText('');
+      setAttachmentControlsOpen(true);
+      if (messageInputRef.current) messageInputRef.current.style.height = '48px';
+      await loadMessages(activeConversation.id);
+      await loadInbox();
+    } catch (error) {
+      console.error('[ChatHub] Unexpected send failure:', error);
       alert('Message failed to send. Please try again.');
+    } finally {
+      sendInProgressRef.current = false;
+      setIsSendingMessage(false);
+    }
+  };
+
+  const handleImageSelected = async (file?: File) => {
+    if (!file || !activeConversation || !user?.id) return;
+    const allowedImageTypes = new Set([
+      'image/jpeg', 'image/png', 'image/webp', 'image/gif', 'image/heic', 'image/heif',
+    ]);
+    if (!allowedImageTypes.has(file.type.toLowerCase())) {
+      alert('Choose a JPEG, PNG, WebP, GIF, or HEIC image.');
+      return;
+    }
+    if (file.size > 10 * 1024 * 1024) {
+      alert('Images must be 10 MB or smaller.');
       return;
     }
 
-    setMessageText('');
-    await loadMessages(activeConversation.id);
-    await loadInbox();
+    setIsUploadingImage(true);
+    const { data, error } = await supabaseHelpers.uploadChatAttachment(
+      activeConversation.id,
+      user.id,
+      file,
+    );
+    if (error || !data?.publicUrl) {
+      console.error('[ChatHub] Image upload failed:', error);
+      alert('Could not upload the image. Please try again.');
+      setIsUploadingImage(false);
+      return;
+    }
+
+    await sendMessage(`${CHAT_IMAGE_PREFIX}${data.publicUrl}`);
+    setIsUploadingImage(false);
   };
+
+  const openChatHead = (conversation = activeConversation) => {
+    if (!conversation) return;
+    setOpenMenuConversationId(null);
+    if (isDirectMode && activeConversation?.id === conversation.id) {
+      setIsChatHeadMode(true);
+      return;
+    }
+    setMinimizedConversation(conversation);
+    if (activeConversationId === conversation.id) navigate(basePath);
+  };
+
+  const requestDeleteConversation = (conversation: ChatConversation) => {
+    setOpenMenuConversationId(null);
+    setDeleteConversationError('');
+    setDeleteConversationTarget(conversation);
+  };
+
+  const deleteConversation = async () => {
+    const conversation = deleteConversationTarget;
+    if (!conversation || !user?.id || isDeletingConversation) return;
+
+    setIsDeletingConversation(true);
+    try {
+      const { error } = await supabaseHelpers.deleteChatConversationForUser(conversation.id, user.id);
+      if (error) {
+        console.error('[ChatHub] Conversation delete failed:', error);
+        setDeleteConversationError('Could not delete this conversation. Please try again.');
+        return;
+      }
+
+      setDeleteConversationTarget(null);
+      setConversations(current => current.filter(item => item.id !== conversation.id));
+      const wasOpenThread = activeConversationId === conversation.id;
+      if (wasOpenThread) {
+        setActiveConversation(null);
+        setMessages([]);
+      }
+      await loadInbox();
+      if (wasOpenThread) navigate(threadBack);
+    } catch (error) {
+      console.error('[ChatHub] Conversation delete failed:', error);
+      setDeleteConversationError('Could not delete this conversation. Please try again.');
+    } finally {
+      setIsDeletingConversation(false);
+    }
+  };
+
+  const openReport = (conversation: ChatConversation) => {
+    setOpenMenuConversationId(null);
+    setReportConversation(conversation);
+    setReportDetails('');
+    setReportDialogOpen(true);
+  };
+
+  const renderConversationActions = (conversation: ChatConversation) =>
+    openMenuConversationId === conversation.id && (
+      <div className="absolute right-0 top-12 z-30 min-w-52 overflow-hidden rounded-xl border border-line bg-surface py-1 text-[var(--ink)] shadow-xl">
+        <button type="button" onClick={() => openChatHead(conversation)} className="flex min-h-11 w-full items-center gap-3 px-4 text-left text-sm hover:bg-[var(--muted)]">
+          <MessageCircle className="size-4" /> Open chat head
+        </button>
+        <button type="button" onClick={() => requestDeleteConversation(conversation)} className="flex min-h-11 w-full items-center gap-3 px-4 text-left text-sm text-[var(--error)] hover:bg-[var(--error-soft)]">
+          <Trash2 className="size-4" /> Delete conversation
+        </button>
+        <button type="button" onClick={() => openReport(conversation)} className="flex min-h-11 w-full items-center gap-3 px-4 text-left text-sm hover:bg-[var(--muted)]">
+          <Flag className="size-4" /> Report
+        </button>
+      </div>
+    );
+
+  const submitChatReport = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    const targetConversation = reportConversation ?? activeConversation;
+    if (!targetConversation || !user?.id || !reportDetails.trim()) return;
+
+    const isParticipantA = targetConversation.participant_a_id === user.id;
+    const reportedUserId = isParticipantA
+      ? targetConversation.participant_b_id
+      : targetConversation.participant_a_id;
+    setReportSubmitting(true);
+    const { error } = await supabaseHelpers.reportChatConversation({
+      conversationId: targetConversation.id,
+      reporterId: user.id,
+      reportedUserId,
+      details: reportDetails.trim(),
+    });
+    setReportSubmitting(false);
+
+    if (error) {
+      console.error('[ChatHub] Chat report failed:', error);
+      alert('Could not submit your report. Please try again.');
+      return;
+    }
+
+    setReportDetails('');
+    setReportDialogOpen(false);
+    setReportConversation(null);
+    alert('Your report has been submitted.');
+  };
+
+  const renderReportDialog = () => reportDialogOpen && (
+    <div className="fixed inset-0 z-[4000] flex items-center justify-center bg-black/50 p-4" role="presentation">
+      <form onSubmit={submitChatReport} className="w-full max-w-md space-y-4 rounded-2xl bg-surface p-5 shadow-xl">
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <h3 className="text-lg font-bold text-[var(--ink)]">Report conversation</h3>
+            <p className="mt-1 text-sm text-[var(--muted-foreground)]">Tell us what happened. This report will be recorded for review.</p>
+          </div>
+          <button type="button" aria-label="Close report form" onClick={() => setReportDialogOpen(false)} className="grid size-10 shrink-0 place-items-center rounded-full hover:bg-[var(--muted)]">
+            <X className="size-5" />
+          </button>
+        </div>
+        <textarea
+          required
+          value={reportDetails}
+          onChange={event => setReportDetails(event.target.value)}
+          placeholder="Describe the issue..."
+          rows={4}
+          className="w-full resize-y rounded-xl border border-line bg-surface p-3 text-sm text-[var(--ink)] focus:outline-none focus:ring-2 focus:ring-[var(--primary)]"
+        />
+        <div className="flex justify-end gap-2">
+          <Button type="button" variant="ghost" onClick={() => setReportDialogOpen(false)} className="min-h-11">Cancel</Button>
+          <Button type="submit" disabled={reportSubmitting || !reportDetails.trim()} className="min-h-11 bg-[var(--primary)] text-white hover:bg-[var(--primary)]">
+            {reportSubmitting ? 'Submitting...' : 'Submit report'}
+          </Button>
+        </div>
+      </form>
+    </div>
+  );
+
+  const renderDeleteConversationDialog = () => deleteConversationTarget && (
+    <div
+      className="fixed inset-0 z-[4000] flex items-center justify-center bg-black/55 p-4"
+      role="presentation"
+      onMouseDown={event => {
+        if (event.target === event.currentTarget && !isDeletingConversation) {
+          setDeleteConversationTarget(null);
+          setDeleteConversationError('');
+        }
+      }}
+    >
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="delete-conversation-title"
+        aria-describedby="delete-conversation-description"
+        className="w-full max-w-sm overflow-hidden rounded-3xl border border-line bg-surface shadow-2xl"
+      >
+        <div className="p-6">
+            <h2 id="delete-conversation-title" className="mb-4 text-xl font-extrabold text-[var(--ink)]">Delete chat history?</h2>
+          <p id="delete-conversation-description" className="mt-2 text-sm leading-relaxed text-[var(--muted-foreground)]">
+              This removes the entire conversation with {getConversationPeer(deleteConversationTarget).name}. The other person will still have their copy.
+          </p>
+          {deleteConversationError && (
+            <p role="alert" className="mt-3 rounded-xl bg-[var(--error-soft)] px-3 py-2 text-sm font-medium text-[var(--error)]">
+              {deleteConversationError}
+            </p>
+          )}
+        </div>
+        <div className="flex justify-end gap-2 border-t border-line bg-[var(--muted)]/50 px-5 py-4">
+          <Button
+            type="button"
+            variant="ghost"
+            disabled={isDeletingConversation}
+            onClick={() => { setDeleteConversationTarget(null); setDeleteConversationError(''); }}
+            className="min-h-11 rounded-xl px-4"
+          >
+            Cancel
+          </Button>
+          <Button
+            type="button"
+            disabled={isDeletingConversation}
+            onClick={() => void deleteConversation()}
+            className="min-h-11 rounded-xl bg-[var(--error)] px-4 font-bold text-white hover:opacity-90"
+          >
+              {isDeletingConversation ? 'Deleting...' : 'Delete'}
+          </Button>
+        </div>
+      </div>
+    </div>
+  );
 
   if (!user) return null;
 
@@ -538,6 +784,22 @@ function getConversationPeer(conversation: ChatConversation) {
     const isRideThread =
       activeConversation.context_type === 'ride' ||
       activeConversation.thread_type === 'ride';
+
+    if (isChatHeadMode) {
+      return (
+        <div className="relative flex-1 flex flex-col items-center justify-center gap-3 p-6 text-center">
+          <FloatingChatHead
+            storageKey={`trikeserve_chat_head_pos_${user.role}`}
+            peerAvatar={peer.avatar}
+            peerLabel={peer.name}
+            unread={0}
+            pulseKey={0}
+            onOpen={() => setIsChatHeadMode(false)}
+          />
+          <p className="text-sm text-[var(--muted-foreground)]">Chat minimized. Tap the chat head to reopen.</p>
+        </div>
+      );
+    }
 
     return (
       <div className={`flex-1 flex flex-col min-h-0 ${driverLayout || customerLayout ? 'mx-auto w-full max-w-5xl border-x border-line' : ''}`}>
@@ -583,7 +845,7 @@ function getConversationPeer(conversation: ChatConversation) {
             onOpen={() => navigate(threadBack)}
           />
         )}
-        <div className="bg-[var(--primary)] text-white px-4 py-4 flex items-center gap-3 sticky top-0 z-10">
+        <div className="relative bg-[var(--primary)] text-white px-4 py-4 flex items-center gap-3 sticky top-0 z-10">
           <Button
             variant="ghost"
             size="icon"
@@ -602,7 +864,7 @@ function getConversationPeer(conversation: ChatConversation) {
             type="button"
             onClick={() => peer.id && navigate(`/${basePath.split('/')[1]}/profile`)}
             aria-label={`View ${peer.name}'s profile`}
-            className="flex items-center gap-3 min-w-0 text-left hover:opacity-90 transition-opacity"
+            className="flex flex-1 items-center gap-3 min-w-0 text-left hover:opacity-90 transition-opacity"
           >
             <div className={`w-11 h-11 overflow-hidden rounded-full border flex items-center justify-center text-2xl flex-shrink-0 ${peerTheme.avatarWrap}`}>
               <PeerAvatar value={peer.avatar} />
@@ -615,12 +877,26 @@ function getConversationPeer(conversation: ChatConversation) {
               </div>
             </div>
           </button>
+          <div className="relative ml-auto shrink-0">
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              aria-label="Conversation options"
+              aria-expanded={openMenuConversationId === activeConversation.id}
+              onClick={() => setOpenMenuConversationId(open => open === activeConversation.id ? null : activeConversation.id)}
+              className="text-white hover:bg-white/20"
+            >
+              <MoreVertical className="w-5 h-5" />
+            </Button>
+            {renderConversationActions(activeConversation)}
+          </div>
         </div>
 
         <div
           ref={messageListRef}
           onScroll={handleMessageScroll}
-          className="flex-1 overflow-y-auto p-4 space-y-3 bg-[var(--muted)]"
+          className="scrollbar-hide flex-1 overflow-y-auto p-4 space-y-3 bg-[var(--muted)]"
         >
           {messages.length === 0 ? (
             <div className="text-center py-12">
@@ -666,6 +942,9 @@ function getConversationPeer(conversation: ChatConversation) {
                 hour: "numeric",
                 minute: "2-digit",
               });
+              const imageUrl = msg.message.startsWith(CHAT_IMAGE_PREFIX)
+                ? msg.message.slice(CHAT_IMAGE_PREFIX.length)
+                : null;
 
               return (
                 <div key={msg.id}>
@@ -715,7 +994,16 @@ function getConversationPeer(conversation: ChatConversation) {
                             : "bg-surface border border-[var(--border)]"
                         }`}
                       >
-                        <span className="block text-sm break-words">{msg.message}</span>
+                        {imageUrl ? (
+                          <img
+                            src={imageUrl}
+                            alt="Image sent in chat"
+                            className="max-h-72 max-w-full rounded-xl object-contain"
+                            loading="lazy"
+                          />
+                        ) : (
+                          <span className="block text-sm break-words">{msg.message}</span>
+                        )}
                       </button>
 
                       {/* Receipt and timestamp live outside the bubble, beneath it,
@@ -751,6 +1039,7 @@ function getConversationPeer(conversation: ChatConversation) {
                   key={q}
                   type="button"
                   onClick={() => sendMessage(q)}
+                  disabled={isSendingMessage}
                   className="min-h-11 rounded-xl border border-[var(--primary)] px-3 py-1.5 text-xs font-semibold text-[var(--primary)] hover:bg-[var(--primary-soft)] active:scale-95 transition-all"
                 >
                   {q}
@@ -758,13 +1047,86 @@ function getConversationPeer(conversation: ChatConversation) {
               ))}
             </div>
           )}
-          <div className="flex gap-2">
+          <div className="flex items-end gap-2">
+            <input
+              ref={imageInputRef}
+              type="file"
+              accept="image/jpeg,image/png,image/webp,image/gif"
+              className="hidden"
+              aria-label="Choose image to send"
+              onChange={event => {
+                const file = event.currentTarget.files?.[0];
+                event.currentTarget.value = '';
+                void handleImageSelected(file);
+              }}
+            />
+            <input
+              ref={cameraInputRef}
+              type="file"
+              accept="image/jpeg,image/png,image/webp,image/gif,image/heic,image/heif"
+              capture="environment"
+              className="hidden"
+              aria-label="Take a photo to send"
+              onChange={event => {
+                const file = event.currentTarget.files?.[0];
+                event.currentTarget.value = '';
+                void handleImageSelected(file);
+              }}
+            />
+            {attachmentControlsOpen ? (
+              <div className="flex shrink-0 items-end gap-1">
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon"
+                  aria-label="Upload image"
+                  title="Upload image"
+                  disabled={isUploadingImage || isSendingMessage}
+                  onClick={() => imageInputRef.current?.click()}
+                  className="min-h-12 min-w-11 rounded-xl text-[var(--primary)] hover:bg-[var(--primary-soft)]"
+                >
+                  <ImagePlus className="size-5" />
+                </Button>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon"
+                  aria-label="Take photo"
+                  title="Take photo"
+                  disabled={isUploadingImage || isSendingMessage}
+                  onClick={() => cameraInputRef.current?.click()}
+                  className="min-h-12 min-w-11 rounded-xl text-[var(--primary)] hover:bg-[var(--primary-soft)]"
+                >
+                  <Camera className="size-5" />
+                </Button>
+              </div>
+            ) : (
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                aria-label="Show image and camera options"
+                title="Show image and camera options"
+                onClick={() => setAttachmentControlsOpen(true)}
+                className="min-h-12 min-w-10 shrink-0 rounded-xl text-[var(--primary)] hover:bg-[var(--primary-soft)]"
+              >
+                <ChevronRight className="size-5" />
+              </Button>
+            )}
             <textarea
+              ref={messageInputRef}
               value={messageText}
-              onChange={(e) => setMessageText(e.target.value)}
-              placeholder="Type your message..."
-              rows={2}
-              aria-label="Message" className="min-w-0 flex-1 px-4 py-3 border border-[var(--border)] rounded-xl focus:outline-none focus:ring-2 focus:ring-[var(--primary)] focus:border-transparent resize-none"
+              onChange={(e) => {
+                const nextText = e.target.value;
+                setMessageText(nextText);
+                setAttachmentControlsOpen(nextText.length === 0);
+                e.currentTarget.style.height = '48px';
+                e.currentTarget.style.height = `${Math.min(e.currentTarget.scrollHeight, 144)}px`;
+              }}
+              placeholder={isUploadingImage ? 'Uploading image...' : 'Type your message...'}
+              rows={1}
+              disabled={isSendingMessage}
+              aria-label="Message" className="scrollbar-hide min-h-12 max-h-36 min-w-0 flex-1 overflow-y-auto px-4 py-3 border border-[var(--border)] rounded-xl focus:outline-none focus:ring-2 focus:ring-[var(--primary)] focus:border-transparent resize-none"
               onKeyDown={(e) => {
                 if (e.key === 'Enter' && !e.shiftKey) {
                   e.preventDefault();
@@ -774,7 +1136,7 @@ function getConversationPeer(conversation: ChatConversation) {
             />
             {/* Wrapped, not passed directly: `onClick={sendMessage}` handed the
                 click event in as the message text. See sendMessage. */}
-            <Button aria-label="Send message" onClick={() => sendMessage()} disabled={!messageText.trim()} className="min-h-12 shrink-0 rounded-xl bg-[var(--primary)] hover:bg-[var(--primary)] px-4">
+            <Button aria-label="Send message" onClick={() => sendMessage()} disabled={!messageText.trim() || isUploadingImage || isSendingMessage} className="min-h-12 shrink-0 rounded-xl bg-[var(--primary)] hover:bg-[var(--primary)] px-4">
               <Send className="w-5 h-5" />
             </Button>
           </div>
@@ -787,6 +1149,8 @@ function getConversationPeer(conversation: ChatConversation) {
     return (
       <div className={`${driverLayout || customerLayout ? 'h-dvh overflow-hidden' : businessLayout ? 'h-[calc(100dvh-4.5rem)] overflow-hidden' : 'min-h-screen'} bg-[var(--muted)] flex flex-col`}>
         {renderThread()}
+        {renderReportDialog()}
+        {renderDeleteConversationDialog()}
       </div>
     );
   }
@@ -808,7 +1172,16 @@ function getConversationPeer(conversation: ChatConversation) {
           </div>
 
           <main className={`flex-1 min-h-0 overflow-y-auto p-4 sm:p-6 ${enhancedInbox ? 'mx-auto w-full max-w-5xl space-y-4' : 'space-y-3'} ${customerLayout ? 'pb-[calc(6rem+env(safe-area-inset-bottom))] sm:px-8' : ''}`}>
-            {enhancedInbox && <section className="rounded-3xl bg-[var(--ink-solid)] p-5 text-white sm:p-6"><p className="text-[10px] font-bold uppercase tracking-[0.2em] text-[var(--mint)]">{businessLayout ? 'Business inbox · Mga mensahe' : customerLayout ? 'Your inbox · Mga mensahe' : 'Driver inbox · Mga mensahe'}</p><h2 className="mt-2 text-2xl font-extrabold tracking-tight">{businessLayout ? 'Great service starts with a conversation.' : customerLayout ? 'A little closer, one message away.' : 'Stay connected on every trip.'}</h2><p className="mt-2 text-sm leading-relaxed text-white/75">{businessLayout ? 'Keep customer questions and delivery conversations together, so nothing gets lost between orders.' : customerLayout ? 'Chat with your driver or favorite shop. All your conversations, together in one place.' : 'Find your ride and delivery conversations in one place.'}</p><label className="mt-4 block"><span className="sr-only">Search conversations</span><input type="search" value={inboxQuery} onChange={event => setInboxQuery(event.target.value)} placeholder="Search a name or conversation…" className="min-h-12 w-full rounded-xl border border-white/20 bg-white/10 px-4 text-base text-white placeholder:text-white/60 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white" /></label></section>}
+            <label className="block rounded-2xl border border-line bg-surface px-4 focus-within:ring-2 focus-within:ring-[var(--primary)]">
+              <span className="sr-only">Search conversations</span>
+              <input
+                type="search"
+                value={inboxQuery}
+                onChange={event => setInboxQuery(event.target.value)}
+                placeholder="Search a name or conversation…"
+                className="min-h-12 w-full bg-transparent text-base text-[var(--ink)] placeholder:text-[var(--muted-foreground)] focus-visible:outline-none"
+              />
+            </label>
             {loading ? (
               <div className="text-center py-12 text-sm text-[var(--muted-foreground)]">Loading conversations...</div>
             ) : conversations.length === 0 ? (
@@ -818,7 +1191,7 @@ function getConversationPeer(conversation: ChatConversation) {
                 <p className="text-sm text-[var(--muted-foreground)]">Start a conversation from an order or ride.</p>
               </div>
             ) : (
-              conversations.filter(conversation => !enhancedInbox || `${getConversationPeer(conversation).name} ${conversation.subject || ''} ${conversation.last_message_preview || ''}`.toLowerCase().includes(inboxQuery.trim().toLowerCase())).map((conversation) => {
+              conversations.filter(conversation => `${getConversationPeer(conversation).name} ${conversation.subject || ''} ${conversation.last_message_preview || ''}`.toLowerCase().includes(inboxQuery.trim().toLowerCase())).map((conversation) => {
                 const peer = getConversationPeer(conversation);
                 const peerTheme = getRoleTheme(peer.role);
                 // `_collapsedUnread` carries the total from every thread this card
@@ -833,52 +1206,83 @@ function getConversationPeer(conversation: ChatConversation) {
                 return (
                   <Card
                     key={conversation.id}
-                    role="button" tabIndex={0} aria-label={`Open conversation with ${peer.name}`} onKeyDown={event => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); openConversation(conversation); } }}
-                    className={`min-w-0 gap-0 rounded-2xl p-4 sm:p-5 bg-surface border transition-colors cursor-pointer ${isUnread ? 'border-[var(--primary)] bg-[var(--muted)] shadow-sm' : 'border-[var(--border)] hover:border-[var(--primary)]'}`}
-                    onClick={() => openConversation(conversation)}
+                    className={`min-w-0 gap-0 rounded-2xl p-4 sm:p-5 bg-surface border transition-colors ${isUnread ? 'border-[var(--primary)] bg-[var(--muted)] shadow-sm' : 'border-[var(--border)] hover:border-[var(--primary)]'}`}
                   >
-                    <div className="flex items-start gap-3">
-                      {/* `overflow-hidden` is what makes the photo round: the
-                          wrapper is the circle and the img inside is
-                          `size-full object-cover`. Rounded corners alone leave a
-                          square image poking out of the shape. */}
-                      <div className={`relative w-12 h-12 overflow-hidden rounded-full border flex items-center justify-center text-2xl flex-shrink-0 shadow-sm ${peerTheme.avatarWrap}`}>
-                        <PeerAvatar value={peer.avatar} />
-                        {isUnread && (
-                          <span className={`absolute -top-1 -right-1 w-3 h-3 rounded-full border-2 border-white ${peerTheme.unreadDot} animate-pulse`} />
-                        )}
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-start justify-between gap-2">
-                          <div className="min-w-0">
-                            <p className={`font-bold truncate leading-tight ${isUnread ? 'text-[var(--primary)]' : 'text-[var(--ink)]'}`}>{peer.name}</p>
-                            <p className="text-xs text-[var(--muted-foreground)] mt-0.5">{getRoleLabel(peer.role)}</p>
-                            {conversation.subject && <p className="text-[11px] text-[var(--muted-foreground)] mt-1 truncate">{conversation.subject}</p>}
-                          </div>
+                    <div className="flex items-start gap-2">
+                      <button
+                        type="button"
+                        aria-label={`Open conversation with ${peer.name}`}
+                        onClick={() => void openConversation(conversation)}
+                        className="flex min-w-0 flex-1 items-start gap-3 text-left"
+                      >
+                        {/* `overflow-hidden` keeps the photo clipped into its circle. */}
+                        <div className={`relative w-12 h-12 overflow-hidden rounded-full border flex items-center justify-center text-2xl flex-shrink-0 shadow-sm ${peerTheme.avatarWrap}`}>
+                          <PeerAvatar value={peer.avatar} />
                           {isUnread && (
-                            <Badge className="bg-[var(--primary)] text-white shadow-sm">
-                              {unread} unread
-                            </Badge>
+                            <span className={`absolute -top-1 -right-1 w-3 h-3 rounded-full border-2 border-white ${peerTheme.unreadDot} animate-pulse`} />
                           )}
                         </div>
-                        <div className={`min-w-0 flex gap-2 mt-2 ${enhancedInbox ? 'flex-col items-start sm:flex-row sm:items-end sm:justify-between' : 'items-end justify-between'}`}>
-                          <p className="min-w-0 max-w-full text-sm text-[var(--muted-foreground)] truncate">{conversation.last_message_preview || 'No messages yet'}</p>
-                          {conversation.last_message_at && (
-                            <p className="text-[11px] text-[var(--muted-foreground)] whitespace-nowrap">
-                              {new Date(conversation.last_message_at).toLocaleDateString([], { month: 'short', day: 'numeric' })} {new Date(conversation.last_message_at).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}
-                            </p>
-                          )}
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-start justify-between gap-2">
+                            <div className="min-w-0">
+                              <p className={`font-bold truncate leading-tight ${isUnread ? 'text-[var(--primary)]' : 'text-[var(--ink)]'}`}>{peer.name}</p>
+                              <p className="text-xs text-[var(--muted-foreground)] mt-0.5">{getRoleLabel(peer.role)}</p>
+                              {conversation.subject && <p className="text-[11px] text-[var(--muted-foreground)] mt-1 truncate">{conversation.subject}</p>}
+                            </div>
+                            {isUnread && (
+                              <Badge className="bg-[var(--primary)] text-white shadow-sm">
+                                {unread} unread
+                              </Badge>
+                            )}
+                          </div>
+                          <div className={`min-w-0 flex gap-2 mt-2 ${enhancedInbox ? 'flex-col items-start sm:flex-row sm:items-end sm:justify-between' : 'items-end justify-between'}`}>
+                            <p className="min-w-0 max-w-full text-sm text-[var(--muted-foreground)] truncate">{conversation.last_message_preview || 'No messages yet'}</p>
+                            {conversation.last_message_at && (
+                              <p className="text-[11px] text-[var(--muted-foreground)] whitespace-nowrap">
+                                {new Date(conversation.last_message_at).toLocaleDateString([], { month: 'short', day: 'numeric' })} {new Date(conversation.last_message_at).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}
+                              </p>
+                            )}
+                          </div>
                         </div>
+                      </button>
+                      <div className="relative shrink-0">
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="icon"
+                          aria-label={`Options for ${peer.name}`}
+                          aria-expanded={openMenuConversationId === conversation.id}
+                          onClick={() => setOpenMenuConversationId(open => open === conversation.id ? null : conversation.id)}
+                          className="-mr-2 -mt-2 size-10 rounded-xl text-[var(--muted-foreground)] hover:bg-[var(--muted)]"
+                        >
+                          <MoreVertical className="size-5" />
+                        </Button>
+                        {renderConversationActions(conversation)}
                       </div>
                     </div>
                   </Card>
                 );
               })
             )}
-            {enhancedInbox && inboxQuery.trim() && !conversations.some(conversation => `${getConversationPeer(conversation).name} ${conversation.subject || ''} ${conversation.last_message_preview || ''}`.toLowerCase().includes(inboxQuery.trim().toLowerCase())) && <div role="status" className="rounded-3xl border border-line bg-card p-6 text-center"><p className="font-bold text-[var(--ink)]">No matching conversations</p><button type="button" onClick={() => setInboxQuery('')} className="mt-3 min-h-11 rounded-xl px-4 text-sm font-bold text-[var(--teal)]">Clear search</button></div>}
+            {inboxQuery.trim() && conversations.length > 0 && !conversations.some(conversation => `${getConversationPeer(conversation).name} ${conversation.subject || ''} ${conversation.last_message_preview || ''}`.toLowerCase().includes(inboxQuery.trim().toLowerCase())) && <div role="status" className="rounded-3xl border border-line bg-card p-6 text-center"><p className="font-bold text-[var(--ink)]">No matching conversations</p><button type="button" onClick={() => setInboxQuery('')} className="mt-3 min-h-11 rounded-xl px-4 text-sm font-bold text-[var(--teal)]">Clear search</button></div>}
           </main>
         </>
       ) : renderThread()}
+      {renderReportDialog()}
+      {renderDeleteConversationDialog()}
+      {minimizedConversation && !activeConversationId && (() => {
+        const peer = getConversationPeer(minimizedConversation);
+        return (
+          <FloatingChatHead
+            storageKey={`trikeserve_chat_head_pos_${user.role}`}
+            peerAvatar={peer.avatar}
+            peerLabel={peer.name}
+            unread={0}
+            pulseKey={0}
+            onOpen={() => void openConversation(minimizedConversation)}
+          />
+        );
+      })()}
       {customerLayout && !activeConversationId && <BottomNav active="messages" />}
     </div>
   );

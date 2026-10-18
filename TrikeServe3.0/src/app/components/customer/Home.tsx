@@ -20,7 +20,7 @@ import { autocompletePlacesNew, createPlacesSessionToken, fetchPlaceDetailsNew, 
 import tricycleIcon from '../../../assets/0b76d1aa56b8ad6e15dd4efc8a0100b0ca5762a1.png';
 import { useAuth } from "../../contexts/AuthContext";
 import { supabaseHelpers, isPointWithinAnyTerminalBorder, isPointWithinAnyTerminalRoute, isPointInPolygon, isPointOnRoadCorridor, normalizeBoundaryRoad, normalizeBoundaryArea, normalizeRoadWidth, geocodeAddress, logAudit, type LatLngPoint } from "@/lib/supabase";
-import { terminalMarkerIcon, normalizeTerminalColor, normalizeRouteColor, normalizeBorderColor } from "../ui/TerminalIcon";
+import { TerminalIconGlyph, terminalMarkerIcon, normalizeTerminalColor, normalizeRouteColor, normalizeBorderColor } from "../ui/TerminalIcon";
 import { computeRideFare, normalizeRates, terminalRates, privateRideRates, DEFAULT_MAX_PASSENGERS } from "@/lib/pricing";
 import { useElapsedTime } from "@/app/hooks/useElapsedTime";
 import ReasonPromptModal from "../ui/reason-prompt-modal";
@@ -3127,7 +3127,7 @@ const getPrice = () => {
                       Ride type
                     </p>
                     <p className="truncate text-sm font-bold text-[var(--ink)]">
-                      {selectedVehicle === 'share' ? 'Shared ride Â· Sabay' : 'Private ride Â· Pribado'}
+                      {selectedVehicle === 'share' ? 'Shared ride \u00B7 Sabay' : 'Private ride \u00B7 Pribado'}
                     </p>
                   </div>
                   <button
@@ -3225,7 +3225,7 @@ const getPrice = () => {
                 >
                   <span className="block">
                     {selectedVehicle
-                      ? `Book this ride Â· â‚±${getPrice()}`
+                      ? `Book this ride \u00B7 \u20B1${getPrice()}`
                       : 'Choose a ride first'}
                   </span>
                   <span className="block text-xs font-semibold tracking-normal opacity-90">
@@ -3696,7 +3696,18 @@ const getPrice = () => {
                     <div className={`w-10 h-10 rounded-full flex items-center justify-center flex-shrink-0 ${
                       selectedTerminalId === terminal.id ? 'bg-[var(--primary)]' : 'bg-[var(--info-soft)]'
                     }`}>
-                      <span className="text-lg">ðŸš</span>
+                      {/*
+                        No aria-label. `TerminalIconGlyph` is decorative unless a
+                        caller labels it, and every row here was labelled "Pickup
+                        terminal" -- so a screen reader heard that same phrase once
+                        per terminal in the list and none of them named which one.
+                        The terminal's name is the adjacent text, so the glyph has
+                        nothing to add; it is left aria-hidden.
+                      */}
+                      <TerminalIconGlyph
+                        size={22}
+                        className={selectedTerminalId === terminal.id ? 'text-white' : 'text-[var(--primary)]'}
+                      />
                     </div>
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2">
@@ -3707,9 +3718,9 @@ const getPrice = () => {
                           </span>
                         )}
                       </div>
-                      <p className="text-xs text-[var(--muted-foreground)] mt-0.5">ðŸ“ {terminal.boundary}</p>
+                      <p className="text-xs text-[var(--muted-foreground)] mt-0.5">{terminal.boundary}</p>
                       <p className="text-xs font-semibold text-[var(--primary)] mt-0.5">
-                        Share: â‚±{terminal.base_fare ?? activeRates.baseFare} base + â‚±{terminal.per_km ?? activeRates.perKm}/km
+                        Share: &#8369;{terminal.base_fare ?? activeRates.baseFare} base + &#8369;{terminal.per_km ?? activeRates.perKm}/km
                       </p>
                       {/*
                         This terminal's private ride charge, when it has set one.
@@ -3721,7 +3732,7 @@ const getPrice = () => {
                       */}
                       {(terminal.private_ride_fee != null || terminal.private_ride_fee_per_km != null) && (
                         <p className="text-xs font-semibold text-[var(--primary)] mt-0.5">
-                          Private: â‚±{privateRideRates(terminal).baseFare} base + â‚±{privateRideRates(terminal).perKm}/km
+                          Private: &#8369;{privateRideRates(terminal).baseFare} base + &#8369;{privateRideRates(terminal).perKm}/km
                         </p>
                       )}
                       {/*
@@ -3734,9 +3745,9 @@ const getPrice = () => {
                       */}
                       {(terminal.delivery_fee != null || terminal.delivery_fee_per_km != null) && (
                         <p className="text-xs font-semibold text-[var(--success)] mt-0.5">
-                          Delivery: â‚±{terminal.delivery_fee ?? 0} base
+                          Delivery: &#8369;{terminal.delivery_fee ?? 0} base
                           {terminal.delivery_fee_per_km != null && (
-                            <> + â‚±{terminal.delivery_fee_per_km}/km</>
+                            <> + &#8369;{terminal.delivery_fee_per_km}/km</>
                           )}
                         </p>
                       )}
