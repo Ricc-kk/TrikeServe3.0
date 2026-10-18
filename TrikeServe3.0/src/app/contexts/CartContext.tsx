@@ -289,3 +289,8 @@ export function useCart() {
   }
   return context;
 }
+
+/** Optional cart access for shared UI that can render outside CartProvider. */
+export function useCartOptional() {
+  return useContext(CartContext);
+}

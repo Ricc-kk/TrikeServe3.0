@@ -137,6 +137,7 @@ export default function ChatHub({
   const cameraInputRef = useRef<HTMLInputElement>(null);
   const messageInputRef = useRef<HTMLTextAreaElement>(null);
   const sendInProgressRef = useRef(false);
+  const locallyDeletedConversationAtRef = useRef(new Map<string, number>());
   const [isSendingMessage, setIsSendingMessage] = useState(false);
 
   const messageListRef = useRef<HTMLDivElement>(null);
@@ -213,7 +214,21 @@ export default function ChatHub({
         c.participant_a_id === user.id ? c.participant_b_id : c.participant_a_id;
 
       const newestByPeer = new Map<string, any>();
-      for (const c of [...(data || [])] as any[]) {
+      const visibleRows = ([...(data || [])] as any[]).filter(conversation => {
+        const deletedAt = locallyDeletedConversationAtRef.current.get(conversation.id);
+        if (deletedAt === undefined) return true;
+
+        // A new message revives the thread; stale inbox responses do not.
+        const lastMessageAt = conversation.last_message_at
+          ? new Date(conversation.last_message_at).getTime()
+          : 0;
+        if (lastMessageAt > deletedAt) {
+          locallyDeletedConversationAtRef.current.delete(conversation.id);
+          return true;
+        }
+        return false;
+      });
+      for (const c of visibleRows) {
         const peer = peerOf(c);
         const held = newestByPeer.get(peer);
         if (
@@ -589,6 +604,7 @@ function getConversationPeer(conversation: ChatConversation) {
 
     setIsDeletingConversation(true);
     try {
+      const deletedAt = Date.now();
       const { error } = await supabaseHelpers.deleteChatConversationForUser(conversation.id, user.id);
       if (error) {
         console.error('[ChatHub] Conversation delete failed:', error);
@@ -596,6 +612,7 @@ function getConversationPeer(conversation: ChatConversation) {
         return;
       }
 
+      locallyDeletedConversationAtRef.current.set(conversation.id, deletedAt);
       setDeleteConversationTarget(null);
       setConversations(current => current.filter(item => item.id !== conversation.id));
       const wasOpenThread = activeConversationId === conversation.id;

@@ -1,4 +1,4 @@
-import { ArrowLeft, Package, Clock, MapPin, CreditCard, Star, Navigation, CheckCircle, AlertCircle, Phone, MessageCircle, RefreshCw } from "lucide-react";
+import { ArrowLeft, Package, Clock, MapPin, CreditCard, Star, Navigation, CheckCircle, AlertCircle, Phone, MessageCircle } from "lucide-react";
 import { useNavigate, useParams } from "react-router";
 import { Card } from "../ui/card";
 import { Button } from "../ui/button";
@@ -12,7 +12,7 @@ import ReasonPromptModal from "../ui/reason-prompt-modal";
 import { supabaseHelpers } from "@/lib/supabase";
 import { getOrderProgress } from "@/lib/orderProgress";
 import { OrderProgressStepper, OrderProgressTimeline } from "../ui/OrderProgress";
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect } from "react";
 import { GoogleMap, MarkerF, Polyline } from "@react-google-maps/api";
 import useMapLoader from "@/lib/mapLoader";
 import tricycleIcon from '../../../assets/0b76d1aa56b8ad6e15dd4efc8a0100b0ca5762a1.png'
@@ -144,7 +144,6 @@ export default function OrderDetail() {
   const { user } = useAuth();
   const [order, setOrder] = useState<OrderData | null>(null);
   const [isLoading, setIsLoading] = useState(true);
-  const [isRefreshing, setIsRefreshing] = useState(false);
   const [rating, setRating] = useState(0);
   const [ratingSubmitting, setRatingSubmitting] = useState(false);
   const [ratingSubmitted, setRatingSubmitted] = useState(false);
@@ -156,9 +155,6 @@ export default function OrderDetail() {
   const [driverLocation, setDriverLocation] = useState<{ lat: number; lng: number } | null>(null);
   const [routePath, setRoutePath] = useState<Array<{ lat: number; lng: number }>>([]);
   const [etaToCustomer, setEtaToCustomer] = useState<string | null>(null);
-  // Lets the refresh button call the loader defined in the mount effect.
-  const fetchOrderRef = useRef<(() => Promise<void>) | null>(null);
-
   // ─── Load order once ───────────────────────────────────────────────
   useEffect(() => {
     if (!orderId) { setIsLoading(false); return; }
@@ -231,8 +227,31 @@ export default function OrderDetail() {
       setIsLoading(false);
     };
 
-    fetchOrderRef.current = fetchOrder;
     fetchOrder();
+  }, [orderId]);
+
+  // Apply order status changes immediately when realtime is available. The
+  // three-second poll below remains as a fallback for delayed or missed events.
+  useEffect(() => {
+    if (!orderId) return;
+    const channel = supabase
+      .channel(`customer-order-status-${orderId}`)
+      .on('postgres_changes', {
+        event: 'UPDATE',
+        schema: 'public',
+        table: 'orders',
+        filter: `id=eq.${orderId}`,
+      }, payload => {
+        const updated = payload.new as { status?: string; cancel_reason?: string | null; cancelled_by?: string | null };
+        setOrder(prev => prev ? {
+          ...prev,
+          status: updated.status || prev.status,
+          cancelReason: updated.cancel_reason ?? prev.cancelReason,
+          cancelledBy: updated.cancelled_by ?? prev.cancelledBy,
+        } : prev);
+      })
+      .subscribe();
+    return () => { void supabase.removeChannel(channel); };
   }, [orderId]);
 
   // ─── POLLING: Every 3 seconds ─────────────────────────────────────
@@ -455,23 +474,15 @@ export default function OrderDetail() {
 
   const handleChatWithBusiness = () => {
     if (order.businessId) {
-      navigate(`/customer/messages/business/${order.businessId}`);
+      navigate(`/customer/messages/business/${order.businessId}`, {
+        state: { peerName: order.restaurantName, peerAvatar: order.restaurantImage },
+      });
     }
   };
 
   const handleChatWithDriver = () => {
     if (order.driverId) {
       navigate(`/customer/messages/driver/${order.driverId}`);
-    }
-  };
-
-  const handleRefresh = async () => {
-    if (isRefreshing) return;
-    setIsRefreshing(true);
-    try {
-      await fetchOrderRef.current?.();
-    } finally {
-      setIsRefreshing(false);
     }
   };
 
@@ -499,20 +510,11 @@ export default function OrderDetail() {
             {/* Available on every order status — the customer may need to reach the
                 restaurant about an order that hasn't been accepted yet. */}
             {order.businessId && (
-              <button onClick={handleChatWithBusiness} className="flex flex-col items-center gap-0.5 p-1.5 hover:bg-[var(--muted)] rounded-lg transition-colors" title="Chat with Restaurant">
-                <MessageCircle className="w-5 h-5 text-[var(--primary)]" />
-                <span className="text-[9px] font-semibold text-[var(--primary)]">Restaurant</span>
+              <button onClick={handleChatWithBusiness} aria-label="Chat with restaurant" className="flex min-h-12 min-w-16 flex-col items-center justify-center gap-0.5 rounded-xl border border-[var(--primary)]/30 bg-[var(--primary-soft)] px-2.5 py-1.5 shadow-sm transition-colors hover:brightness-95" title="Chat with Restaurant">
+                <MessageCircle className="size-6 stroke-[2.5] text-[var(--primary)]" />
+                <span className="text-[10px] font-bold leading-none text-[var(--primary)]">Restaurant</span>
               </button>
             )}
-            <button
-              onClick={handleRefresh}
-              disabled={isRefreshing}
-              title="Refresh order"
-              className="flex flex-col items-center gap-0.5 p-1.5 hover:bg-[var(--muted)] rounded-lg transition-colors disabled:opacity-50"
-            >
-              <RefreshCw className={`w-5 h-5 text-[var(--muted-foreground)] ${isRefreshing ? 'animate-spin' : ''}`} />
-              <span className="text-[9px] font-semibold text-[var(--muted-foreground)]">Refresh</span>
-            </button>
           </div>
         </div>
         <Badge className={`${statusColors[order.status]} text-xs`}>
@@ -626,7 +628,7 @@ export default function OrderDetail() {
         )}
 
         {/* Restaurant Info */}
-        <Card className="p-4 md:p-5 border border-line">
+        <Card className="gap-0 p-4 md:p-5 border border-line">
           <h3 className="font-bold text-[var(--ink)] text-sm md:text-base mb-2">Restaurant</h3>
           <div className="flex items-center gap-3">
             <div className="w-12 h-12 md:w-14 md:h-14 rounded-xl overflow-hidden flex-shrink-0">
@@ -643,7 +645,7 @@ export default function OrderDetail() {
 
         {/* Delivery Address */}
         {order.deliveryMode === 'delivery' && (
-          <Card className="p-4 md:p-5 border border-line">
+          <Card className="gap-0 p-4 md:p-5 border border-line">
             <h3 className="font-bold text-[var(--ink)] text-sm md:text-base mb-2">Delivery Address</h3>
             <div className="flex items-start gap-2">
               <MapPin className="w-4 h-4 text-[var(--primary)] mt-0.5 flex-shrink-0" />
@@ -653,7 +655,7 @@ export default function OrderDetail() {
         )}
 
         {/* Order Items */}
-        <Card className="p-4 md:p-5 border border-line">
+        <Card className="gap-0 p-4 md:p-5 border border-line">
           <h3 className="font-bold text-[var(--ink)] text-sm md:text-base mb-3">Items</h3>
           <div className="space-y-2">
             {order.items.map((item, index) => (
@@ -685,7 +687,7 @@ export default function OrderDetail() {
         </Card>
 
         {/* Payment */}
-        <Card className="p-4 md:p-5 border border-line">
+        <Card className="gap-0 p-4 md:p-5 border border-line">
           <div className="flex items-center gap-2 mb-3">
             <CreditCard className="w-4 h-4 text-[var(--primary)]" />
             <h3 className="font-bold text-[var(--ink)] text-sm md:text-base">Payment</h3>
@@ -792,11 +794,7 @@ export default function OrderDetail() {
             confirmed one is not: the money has moved and the kitchen may have
             started. */}
         {order.status === 'pending' && (
-          <Card className="p-4 md:p-5 border-2 border-[#E2E8F0]">
-            <h3 className="font-bold text-[#121212] text-sm md:text-base mb-1">Need to cancel?</h3>
-            <p className="text-sm text-[#64748B] mb-3">
-              You can cancel this order until the shop confirms your payment.
-            </p>
+          <div>
             <Button
               onClick={() => setShowCancelOrderPrompt(true)}
               variant="outline"
@@ -804,7 +802,7 @@ export default function OrderDetail() {
             >
               Cancel Order
             </Button>
-          </Card>
+          </div>
         )}
 
         {/* Cutlery */}

@@ -1102,17 +1102,9 @@ export default function BusinessOrders() {
     /*
      * Pick the terminal that will take this delivery.
      *
-     * This is the moment the assignment belongs to. Checkout already refused any
-     * address no terminal can reach, so by the time the shop marks an order ready
-     * the customer is known to be servable -- what is left is choosing between
-     * terminals, and that is a decision about where the food is, so it waits until
-     * the food is ready. It also has to wait for the geocode above, because
-     * "nearest to the restaurant" is meaningless without the restaurant's point.
-     *
-     * Among the terminals whose route actually reaches the customer, the nearest
-     * one to this restaurant wins: the driver collecting the food takes the
-     * shortest run of the options, and the customer is unaffected because every
-     * candidate already reaches them.
+     * Assign to the nearest active terminal without requiring its ride route to
+     * cover the delivery address. Restaurant coordinates are used when available
+     * so the assigned driver has the shortest run to collect the food.
      */
     let assignedTerminalId: string | null = null;
     if (dropoffCoords) {
@@ -1121,16 +1113,8 @@ export default function BusinessOrders() {
         dropoffLng: dropoffCoords.lng,
         pickupLat,
         pickupLng,
+        requireRoute: false,
       });
-
-      if (!assignment.allowed) {
-        console.log('[BusinessOrders] No terminal route reaches this customer:', dropoffCoords);
-        alert(
-          'No terminal route reaches this delivery address, so there is nobody to deliver it. ' +
-          'Ask the customer to choose an address on one of our routes, or cancel the order.'
-        );
-        return false;
-      }
 
       assignedTerminalId = assignment.terminal?.id || null;
 

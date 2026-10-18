@@ -18,9 +18,8 @@ import {
   X,
   MessageCircle,
   Clock,
-  Maximize,
   TrendingDown,
-  Check
+  Check,
 } from "lucide-react";
 import { Link, useNavigate } from "react-router";
 import { Button } from "../ui/button";
@@ -67,6 +66,10 @@ const SERVICE_OPTIONS: Record<'rides' | 'delivery', { key: string; name: string;
 export default function RiderDashboard() {
   const navigate = useNavigate();
   const { user, updateProfile } = useAuth();
+  const dashboardRef = useRef<HTMLDivElement>(null);
+  const mapRef = useRef<google.maps.Map | null>(null);
+  const [isMapFullscreen, setIsMapFullscreen] = useState(false);
+  const [mapType, setMapType] = useState<'roadmap' | 'satellite'>('roadmap');
   // Watches for private/delivery requests and auto-accepts them when enabled and the service type matches.
   const [isOnline, setIsOnline] = useState(user?.isOnline || false);
   const [mode, setMode] = useState<'shared' | 'delivery'>('shared');
@@ -87,6 +90,7 @@ export default function RiderDashboard() {
   };
   const initialServiceSelection = normalizeServiceSelection(user?.serviceTypes);
   const [selectedServices, setSelectedServices] = useState<string[]>(initialServiceSelection.category === 'delivery' ? ['delivery'] : initialServiceSelection.rides);
+  const activeServiceCategory = selectedServices.includes('delivery') ? 'delivery' : 'rides';
   const [serviceCategory, setServiceCategory] = useState<'rides' | 'delivery'>(initialServiceSelection.category);
   const [ridesSelection, setRidesSelection] = useState<string[]>(initialServiceSelection.rides);
   const [totalPendingRequests, setTotalPendingRequests] = useState(0);
@@ -115,6 +119,19 @@ export default function RiderDashboard() {
      const [locationError, setLocationError] = useState<string | null>(null);
     const [showWelcomeBack, setShowWelcomeBack] = useState(false);
     const [welcomeUserName, setWelcomeUserName] = useState('');
+
+  useEffect(() => {
+    const syncFullscreenState = () => {
+      setIsMapFullscreen(document.fullscreenElement === dashboardRef.current);
+    };
+    document.addEventListener('fullscreenchange', syncFullscreenState);
+    return () => document.removeEventListener('fullscreenchange', syncFullscreenState);
+  }, []);
+
+  const selectMapType = (next: 'roadmap' | 'satellite') => {
+    setMapType(next);
+    mapRef.current?.setMapTypeId(next);
+  };
 
     // Terminal queue — FIFO per terminal. Only the first driver may accept
     // private and share rides.
@@ -826,13 +843,20 @@ export default function RiderDashboard() {
    };
 
 
+    const openServiceTypes = () => {
+      const saved = normalizeServiceSelection(selectedServices);
+      setServiceCategory(saved.category);
+      setRidesSelection(saved.rides);
+      setShowServiceTypes(true);
+    };
+
+    const saveServiceTypes = () => {
+      setSelectedServices(serviceCategory === 'delivery' ? ['delivery'] : ridesSelection);
+      setShowServiceTypes(false);
+    };
+
     const selectServiceCategory = (next: 'rides' | 'delivery') => {
       setServiceCategory(next);
-      if (next === 'delivery') {
-        setSelectedServices(['delivery']);
-      } else {
-        setSelectedServices(ridesSelection);
-      }
     };
 
     const toggleServiceType = (key: string) => {
@@ -841,11 +865,10 @@ export default function RiderDashboard() {
         ? (ridesSelection.length > 1 ? ridesSelection.filter((s) => s !== key) : ridesSelection)
         : [...ridesSelection, key];
       setRidesSelection(next);
-      setSelectedServices(next);
     };
 
   return (
-    <div className="h-dvh min-h-[32rem] flex flex-col bg-[var(--muted)] relative overflow-hidden">
+    <div ref={dashboardRef} className="h-dvh min-h-[32rem] flex flex-col bg-[var(--muted)] relative overflow-hidden">
       {/* Full Screen Map */}
       <div className="absolute inset-0">
         {!GOOGLE_MAPS_API_KEY ? (
@@ -870,9 +893,16 @@ export default function RiderDashboard() {
             options={{
               gestureHandling: 'greedy',
               zoomControl: false,
-              fullscreenControl: true,
+              fullscreenControl: false,
               streetViewControl: false,
-              mapTypeControl: true,
+              mapTypeControl: false,
+            }}
+            onLoad={(map) => {
+              mapRef.current = map;
+              map.setMapTypeId(mapType);
+            }}
+            onUnmount={() => {
+              mapRef.current = null;
             }}
           >
             {/* Current Location Marker - Driver (Red Car) */}
@@ -951,28 +981,48 @@ export default function RiderDashboard() {
         )
         }
 
-        {/* Service Types Floating Button */}
-        {!activeTrip && (
-          <div className="absolute right-4 top-4 z-[1000] sm:right-6 sm:top-6">
+        {/* Service types control */}
+        <div className="absolute right-3 top-[calc(env(safe-area-inset-top)+0.75rem)] z-[1000] flex gap-1 sm:right-6 sm:top-[calc(env(safe-area-inset-top)+1.5rem)] sm:gap-2">
+          {!isMapFullscreen && !activeTrip && (
             <button
-              onClick={() => setShowServiceTypes(true)}
+              onClick={openServiceTypes}
               aria-label="Choose service types"
-              className="w-12 h-12 bg-[var(--primary)] rounded-2xl shadow-xl flex items-center justify-center hover:shadow-2xl active:scale-95 transition-all border-2 border-white"
+              className="w-10 h-10 sm:w-12 sm:h-12 bg-[var(--primary)] rounded-2xl shadow-xl flex items-center justify-center hover:shadow-2xl active:scale-95 transition-all border-2 border-white"
             >
               <Settings className="w-7 h-7 text-white" />
             </button>
-          </div>
-        )}
+          )}
+        </div>
+
+        {/* Explicit map type controls stay available when switching between map and satellite views. */}
+        <div className="absolute left-3 top-[calc(env(safe-area-inset-top)+0.75rem)] z-[1000] inline-flex rounded-xl bg-surface p-0.5 shadow-lg border border-[var(--border)] sm:left-6 sm:top-[calc(env(safe-area-inset-top)+1.5rem)] sm:p-1">
+            <button
+              onClick={() => selectMapType('roadmap')}
+              aria-pressed={mapType === 'roadmap'}
+              className={`min-h-9 sm:min-h-10 rounded-lg px-2 sm:px-4 text-xs sm:text-sm font-bold transition-colors ${mapType === 'roadmap' ? 'bg-[var(--primary)] text-white' : 'text-[var(--ink)] hover:bg-[var(--muted)]'}`}
+            >
+              Map
+            </button>
+            <button
+              onClick={() => selectMapType('satellite')}
+              aria-pressed={mapType === 'satellite'}
+              className={`min-h-9 sm:min-h-10 rounded-lg px-2 sm:px-4 text-xs sm:text-sm font-bold transition-colors ${mapType === 'satellite' ? 'bg-[var(--primary)] text-white' : 'text-[var(--ink)] hover:bg-[var(--muted)]'}`}
+            >
+              <span className="sm:hidden">Sat</span>
+              <span className="hidden sm:inline">Satellite</span>
+            </button>
+        </div>
 
         {/* Toggle Online/Offline Button */}
-        {!activeTrip && (
-          <div className="absolute top-4 left-4 z-[1000] sm:top-6 sm:left-6">                <Button
+        {!activeTrip && !isMapFullscreen && (
+          <div className="absolute left-1/2 top-[calc(env(safe-area-inset-top)+0.75rem)] z-[1000] -translate-x-1/2 sm:top-[calc(env(safe-area-inset-top)+1.5rem)]">
+            <Button
                   onClick={handleToggleOnline}
                   className={`${
                 isOnline 
                   ? 'bg-[var(--success)] hover:bg-[var(--success)] text-white'
                   : 'bg-[var(--ink-solid)] hover:bg-[var(--ink-solid)] text-white'
-              } min-h-12 px-5 py-3 rounded-2xl font-bold shadow-xl flex items-center gap-2`}
+              } min-h-10 px-2.5 sm:min-h-12 sm:px-5 py-2 sm:py-3 rounded-2xl font-bold shadow-xl flex items-center gap-1.5 sm:gap-2 text-xs sm:text-base`}
             >
               {isOnline ? (
                 <>
@@ -982,12 +1032,14 @@ export default function RiderDashboard() {
                     <span className="absolute inline-flex h-full w-full rounded-full bg-[var(--mint)] opacity-75 animate-ping" />
                     <span className="relative inline-flex h-3 w-3 rounded-full bg-[var(--mint)]" />
                   </span>
-                  <span>You're Online</span>
+                  <span className="sm:hidden">Online</span>
+                  <span className="hidden sm:inline">You're Online</span>
                 </>
               ) : (
                 <>
-                  <Power className="w-5 h-5" />
-                  <span>Go Online</span>
+                  <Power className="w-4 h-4 sm:w-5 sm:h-5" />
+                  <span className="sm:hidden">Online</span>
+                  <span className="hidden sm:inline">Go Online</span>
                 </>
               )}
             </Button>
@@ -995,9 +1047,9 @@ export default function RiderDashboard() {
         )}
 
         {/* Active Trip Card */}
-        {activeTrip && (
-          <div className="absolute bottom-20 left-0 right-0 z-[1000] p-4">
-            <Card className="p-6 bg-surface shadow-2xl border-2 border-[var(--primary)]">
+        {activeTrip && !isMapFullscreen && (
+          <div className="absolute bottom-[calc(5rem+env(safe-area-inset-bottom))] left-0 right-0 z-[1000] mx-auto w-full max-w-2xl px-3 sm:px-5">
+            <Card className="max-h-[calc(100dvh-8rem-env(safe-area-inset-top)-env(safe-area-inset-bottom))] overflow-y-auto p-4 sm:p-6 bg-surface shadow-2xl border-2 border-[var(--primary)]">
               <div className="flex items-start justify-between mb-4">
                 <div>
                   <Badge className="mb-2 bg-[var(--primary)]">
@@ -1015,14 +1067,14 @@ export default function RiderDashboard() {
                   <Navigation className="w-5 h-5 text-[var(--primary)] flex-shrink-0 mt-0.5" />
                   <div className="flex-1">
                     <p className="text-xs text-[var(--muted-foreground)]">Pickup</p>
-                    <p className="font-semibold text-[var(--ink)]">{activeTrip.pickup}</p>
+                    <p className="font-semibold text-[var(--ink)] break-words">{activeTrip.pickup}</p>
                   </div>
                 </div>
                 <div className="flex gap-2">
                   <Navigation className="w-5 h-5 text-[var(--success)] flex-shrink-0 mt-0.5" />
                   <div className="flex-1">
                     <p className="text-xs text-[var(--muted-foreground)]">Drop-off</p>
-                    <p className="font-semibold text-[var(--ink)]">{activeTrip.dropoff}</p>
+                    <p className="font-semibold text-[var(--ink)] break-words">{activeTrip.dropoff}</p>
                   </div>
                 </div>
               </div>
@@ -1058,14 +1110,14 @@ export default function RiderDashboard() {
         {/* Removed - requests only shown on Passenger Requests page */}
 
         {/* Bottom Sheet - Always visible (Passenger Requests, More Options) */}
-        {!activeTrip && (
-          <div className="absolute bottom-[calc(5.5rem+env(safe-area-inset-bottom))] left-0 right-0 z-[999] px-3 sm:left-5 sm:right-auto sm:w-[25rem] sm:px-0">
-            <Card className="gap-0 rounded-3xl border border-line bg-card shadow-xl max-h-[calc(100dvh-12rem)] overflow-y-auto overscroll-contain">
+        {!activeTrip && !isMapFullscreen && (
+          <div className="absolute bottom-[calc(5rem+env(safe-area-inset-bottom))] left-0 right-0 z-[999] px-3">
+            <Card className="w-full gap-0 rounded-3xl border border-line bg-card shadow-xl max-h-[calc(100dvh-10rem-env(safe-area-inset-top)-env(safe-area-inset-bottom))] sm:max-h-[min(76dvh,calc(100dvh-9rem))] overflow-y-auto overscroll-contain">
 
               {/* Terminal Queue - determines which driver may accept private/share rides.
                   Only shown on the Rides service type: delivery is never queue-gated, and
                   switching back to Rides brings the queue back. */}
-              {serviceCategory === 'rides' && (
+              {activeServiceCategory === 'rides' && (
                 <TerminalQueueCard queue={terminalQueueApi} canJoin={isOnline} />
               )}
 
@@ -1110,7 +1162,7 @@ export default function RiderDashboard() {
 
 
               {showServiceTypes && (
-                <div className="fixed inset-0 bg-black/50 z-[2000] flex items-end justify-center sm:items-center sm:p-6 animate-in slide-in-from-bottom duration-300">
+                <div className="fixed inset-0 bg-black/50 z-[2000] flex items-end justify-center sm:items-center sm:p-6 animate-in fade-in duration-200">
                   <div role="dialog" aria-modal="true" aria-label="Service types" className="bg-card w-full sm:max-w-lg rounded-t-3xl sm:rounded-3xl max-h-[85dvh] overflow-y-auto">
                     <div className="sticky top-0 bg-surface border-b border-[var(--border)] px-5 py-4 flex items-center justify-between">
                       <h2 className="text-xl font-bold text-[var(--ink)]">Service Types</h2>
@@ -1167,7 +1219,7 @@ export default function RiderDashboard() {
                       {/* Service type within category */}
                       <div className="space-y-2">
                         {SERVICE_OPTIONS[serviceCategory].map((option) => {
-                          const active = selectedServices.includes(option.key);
+                          const active = (serviceCategory === 'delivery' ? ['delivery'] : ridesSelection).includes(option.key);
                           const isMulti = serviceCategory === 'rides';
                           return (
                             <div
@@ -1201,7 +1253,7 @@ export default function RiderDashboard() {
                       </div>
 
                       <Button
-                        onClick={() => setShowServiceTypes(false)}
+                        onClick={saveServiceTypes}
                         className="w-full bg-[var(--primary)] hover:bg-[var(--primary)]"
                       >
                         Save Service Types
@@ -1243,7 +1295,7 @@ export default function RiderDashboard() {
       <BottomNav variant="rider" active="home" messagesBadge={unreadMessagesCount} />
 
       {/* Active Ride Floating Button */}
-      <ActiveRideButton />
+      {!isMapFullscreen && <ActiveRideButton />}
 
         {/* Offline Notice */}
         {showOfflineNotice && (

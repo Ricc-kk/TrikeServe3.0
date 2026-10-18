@@ -11,6 +11,7 @@ import {
 } from "lucide-react";
 import { Navigate, useLocation, useNavigate } from "react-router";
 import { Card } from "../ui/card";
+import { Button } from "../ui/button";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { ImageWithFallback } from "../figma/ImageWithFallback";
 import { useCart, cartLineKey } from "../../contexts/CartContext";
@@ -103,16 +104,6 @@ export default function CartCheckout() {
    * fixed in the same glance.
    */
   const [addressError, setAddressError] = useState(false);
-
-  // The chosen delivery address is not within the road distance of any terminal's
-  // route, so no tricycle could serve it. Kept apart from `addressError` because
-  // the address itself is perfectly valid -- it is just out of reach, and telling
-  // the customer to "fix the address" would be wrong.
-  const [routeError, setRouteError] = useState(false);
-
-  // The terminal that will take this delivery: the one nearest the restaurant
-  // among those whose route actually reaches the customer.
-  const [assignedTerminalId, setAssignedTerminalId] = useState<string | null>(null);
 
   /*
    * Bring the field back into view when it becomes the thing that is wrong.
@@ -304,38 +295,16 @@ export default function CartCheckout() {
       return;
     }
 
-    /*
-     * A delivery has to be somewhere a tricycle can be shown driving.
-     *
-     * Deliveries are gated on the ROUTE alone, never on the border: a food order
-     * is not a terminal ride, so the customer is under no obligation to be
-     * standing at a terminal. What matters is that their address sits within the
-     * road distance of some terminal's route, otherwise no driver could ever
-     * complete the job and the order would sit unfulfilled.
-     *
-     * Refused here rather than after the order is placed, so the customer is
-     * told before they have paid or waited on anything.
-     *
-     * The terminal is held in a local as well as in state: the insert below runs
-     * later in this same call, and React state read from the closure would still
-     * be the value from the previous render -- silently writing null.
-     */
+    // Assign the delivery to the nearest active terminal. Ride-route coverage
+    // is not a requirement for a food order.
     let resolvedTerminalId: string | null = null;
     if (selectedAddress.lat && selectedAddress.lng) {
-      const deliveryGate = await findDeliveryTerminalForOrder({
+      const terminalAssignment = await findDeliveryTerminalForOrder({
         dropoffLat: selectedAddress.lat,
         dropoffLng: selectedAddress.lng,
+        requireRoute: false,
       });
-
-      if (!deliveryGate.allowed) {
-        setRouteError(true);
-        return;
-      }
-
-      // Resolved up front so the order carries the terminal that will take it,
-      // instead of leaving the choice to whoever is free at the time.
-      resolvedTerminalId = deliveryGate.terminal?.id || null;
-      setAssignedTerminalId(resolvedTerminalId);
+      resolvedTerminalId = terminalAssignment.terminal?.id || null;
     }
     /*
      * Payment proof is optional for now.
@@ -1339,30 +1308,6 @@ export default function CartCheckout() {
         </div>
       )}
 
-      {/* Delivery address is out of every terminal's road distance. */}
-      {routeError && (
-        <div className="fixed inset-0 bg-black/50 z-[2200] flex items-center justify-center p-4">
-          <Card className="bg-surface p-8 max-w-sm w-full text-center">
-            <div className="w-20 h-20 bg-[var(--error-soft)] rounded-full flex items-center justify-center mx-auto mb-4">
-              <span className="text-4xl">🛣️</span>
-            </div>
-            <h3 className="text-xl font-bold text-[var(--error)] mb-2">Drop-off not on our route</h3>
-            <p className="text-sm text-[var(--muted-foreground)] mb-6">
-              Your designated <strong>drop-off location</strong> is not within the route of
-              the selected terminal, so this delivery cannot be completed. Please choose a
-              delivery address on one of our routes.
-            </p>
-
-            <Button
-              onClick={() => setRouteError(false)}
-              className="w-full bg-[var(--error)] hover:bg-[var(--error)] text-white py-3 font-bold"
-            >
-              Choose another address
-            </Button>
-          </Card>
-        </div>
-      )}
-
       {/* Map Selector */}
       {showMapSelector && (
         <MapSelector
@@ -1380,11 +1325,6 @@ export default function CartCheckout() {
             // here rather than only on the next failed order attempt means the
             // error does not outlive the thing that caused it.
             setAddressError(false);
-            // Same for the route refusal: the new address has not been checked
-            // yet, and leaving the warning up would accuse an address that may
-            // well be fine.
-            setRouteError(false);
-            setAssignedTerminalId(null);
             setShowMapSelector(false);
           }}
           currentLocation={selectedAddress}

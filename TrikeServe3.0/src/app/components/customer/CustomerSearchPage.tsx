@@ -170,7 +170,7 @@ export default function CustomerSearchPage() {
         {showTerminals && (
           <HubTerminals
             terminals={matchingTerminals}
-            onSelect={() => navigate("/customer")}
+            onSelect={(terminalId) => navigate("/customer", { state: { selectedPickupTerminalId: terminalId } })}
           />
         )}
 

@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { Search, MapPin, Users, User as UserIcon, ChevronDown, X, Clock, Utensils, Search as SearchIcon, User, Navigation, MessageCircle, Home as HomeIcon, ShoppingCart, ClipboardList, Star, ArrowLeft } from "lucide-react";
-import { Link, useNavigate } from "react-router";
+import { Link, useLocation, useNavigate } from "react-router";
 import { Button } from "../ui/button";
 import { Card } from "../ui/card";
 import { Badge } from "../ui/badge";
@@ -347,6 +347,8 @@ const polygonBiasRadius = (polygon: { lat: number; lng: number }[]): number => {
 export default function CustomerHome() {
   const { user } = useAuth();
   const navigate = useNavigate();
+  const location = useLocation();
+  const searchSelectedTerminalId = (location.state as { selectedPickupTerminalId?: string } | null)?.selectedPickupTerminalId;
   const [selectedVehicle, setSelectedVehicle] = useState<'share' | 'special' | null>(null);
   const [driverApprovalModalDismissed, setDriverApprovalModalDismissed] = useState(false);
   // Booking is a three-step flow on top of the full-screen map:
@@ -631,6 +633,7 @@ export default function CustomerHome() {
    * road line was frequently drawn off-screen or too small to read.
    */
   const customerMapRef = useRef<any>(null);
+  const pendingTerminalFocusRef = useRef<{ lat: number; lng: number } | null>(null);
 
   /**
    * Frame the whole trip: where the passenger is, the pickup, the driver, the
@@ -660,8 +663,9 @@ export default function CustomerHome() {
      backendRouteStatus: 'idle',
    });
     const [mapsBlocked, setMapsBlocked] = useState<string | null>(null);
-   const [terminals, setTerminals] = useState<{ id: string; name: string; boundary: string; center_lat: number; center_lng: number; base_fare?: number | null; per_km?: number | null; delivery_fee?: number | null; delivery_fee_per_km?: number | null; max_passengers?: number | null; private_ride_fee?: number | null; private_ride_fee_per_km?: number | null; boundary_polygon?: any }[]>([]);
+   const [terminals, setTerminals] = useState<{ id: string; name: string; boundary: string; center_lat: number; center_lng: number; base_fare?: number | null; per_km?: number | null; delivery_fee?: number | null; delivery_fee_per_km?: number | null; max_passengers?: number | null; private_ride_fee?: number | null; private_ride_fee_per_km?: number | null; boundary_polygon?: any; boundary_area?: any; route_color?: string | null; border_color?: string | null; marker_color?: string | null }[]>([]);
    const [showTerminalPicker, setShowTerminalPicker] = useState(false);
+   const [routePreviewTerminalId, setRoutePreviewTerminalId] = useState<string | null>(null);
    const [selectedTerminalId, setSelectedTerminalId] = useState<string | null>(null);
   // Hub state: what they want (all / a ride / a meal) and whether they have
   // opened the header's search field.
@@ -810,6 +814,35 @@ export default function CustomerHome() {
       })
       .catch(() => {});
   }, []);
+
+  // A terminal selected from /customer/search returns here as a pickup and
+  // opens the ride flow with the map focused on that terminal.
+  useEffect(() => {
+    if (!searchSelectedTerminalId || terminals.length === 0) return;
+    const terminal = terminals.find(item => item.id === searchSelectedTerminalId);
+    if (!terminal) return;
+
+    const coords = { lat: terminal.center_lat, lng: terminal.center_lng };
+    setPickup(terminal.name);
+    setPickupAddress(terminal.boundary);
+    setPickupCoords(coords);
+    setPickupMarker(coords);
+    setSelectedTerminalId(terminal.id);
+    setBookingStep('ride');
+    setMapCenter(coords);
+    hasManualPickupSelectionRef.current = true;
+
+    const map = customerMapRef.current;
+    if (map) {
+      map.panTo(coords);
+      map.setZoom(16);
+      pendingTerminalFocusRef.current = null;
+    } else {
+      pendingTerminalFocusRef.current = coords;
+    }
+
+    navigate(location.pathname, { replace: true, state: null });
+  }, [searchSelectedTerminalId, terminals, navigate, location.pathname]);
 
   // Reverse geocode pickup coords whenever Maps loads or coords change
   useEffect(() => {
@@ -2591,6 +2624,15 @@ export default function CustomerHome() {
     () => terminals.find(t => t.id === selectedTerminalId) || null,
     [terminals, selectedTerminalId]
   );
+  const routePreviewTerminal = useMemo(
+    () => terminals.find(t => t.id === routePreviewTerminalId) || null,
+    [terminals, routePreviewTerminalId]
+  );
+  const routePreviewRoad = normalizeBoundaryRoad(routePreviewTerminal?.boundary_polygon);
+  const routePreviewArea = normalizeBoundaryArea(routePreviewTerminal?.boundary_area);
+  const routePreviewRouteColor = normalizeRouteColor(routePreviewTerminal?.route_color);
+  const routePreviewBorderColor = normalizeBorderColor(routePreviewTerminal?.border_color);
+  const routePreviewMarkerColor = normalizeTerminalColor(routePreviewTerminal?.marker_color);
   const terminalFare = useMemo(() => terminalRates(selectedTerminal), [selectedTerminal]);
   const activeRates = {
     baseFare: selectedTerminal?.base_fare != null ? terminalFare.baseFare : baseFare,
@@ -2605,8 +2647,8 @@ export default function CustomerHome() {
   // Falls back to the legacy fixed fare when the two points have no coordinates yet.
   const rideTotal = fareInfo.distanceKm != null ? fareInfo.total : privateRidePrice;
   const fareBreakdown = fareInfo.distanceKm != null
-    ? `â‚±${activeRates.baseFare} base + â‚±${activeRates.perKm}/km Ã— ${fareInfo.distanceKm.toFixed(1)} km${selectedTerminal ? ` Â· ${selectedTerminal.name}` : ''}`
-    : `Fixed rate${selectedTerminal ? ` Â· ${selectedTerminal.name}` : ''}`;
+    ? `\u20B1${activeRates.baseFare} base + \u20B1${activeRates.perKm}/km \u00D7 ${fareInfo.distanceKm.toFixed(1)} km${selectedTerminal ? ` \u00B7 ${selectedTerminal.name}` : ''}`
+    : `Fixed rate${selectedTerminal ? ` \u00B7 ${selectedTerminal.name}` : ''}`;
 
   /*
    * A private ride books the whole vehicle, so the terminal can price it on its
@@ -2629,8 +2671,8 @@ export default function CustomerHome() {
   );
   const privateTotal = privateFareInfo.distanceKm != null ? privateFareInfo.total : privateRidePrice;
   const privateBreakdown = privateFareInfo.distanceKm != null
-    ? `â‚±${privateActiveRates.baseFare} base + â‚±${privateActiveRates.perKm}/km Ã— ${privateFareInfo.distanceKm.toFixed(1)} km${selectedTerminal ? ` Â· ${selectedTerminal.name}` : ''}`
-    : `Fixed rate${selectedTerminal ? ` Â· ${selectedTerminal.name}` : ''}`;
+    ? `\u20B1${privateActiveRates.baseFare} base + \u20B1${privateActiveRates.perKm}/km \u00D7 ${privateFareInfo.distanceKm.toFixed(1)} km${selectedTerminal ? ` \u00B7 ${selectedTerminal.name}` : ''}`
+    : `Fixed rate${selectedTerminal ? ` \u00B7 ${selectedTerminal.name}` : ''}`;
 
   /*
  * What one seat costs on a shared ride: the trip fare divided between the seats in
@@ -2851,6 +2893,13 @@ const getPrice = () => {
              zoom={15}
              onLoad={(map: any) => {
                customerMapRef.current = map;
+               const pendingTerminalFocus = pendingTerminalFocusRef.current;
+               if (pendingTerminalFocus) {
+                 map.panTo(pendingTerminalFocus);
+                 map.setZoom(16);
+                 pendingTerminalFocusRef.current = null;
+                 return;
+               }
                // The route may already be drawn by the time the map finishes
                // loading, in which case the fit effect above ran with no instance
                // to call and did nothing.
@@ -3085,9 +3134,9 @@ const getPrice = () => {
               aria-hidden="true"
             />
             <div className="absolute bottom-20 left-0 right-0 z-[999] mx-auto max-w-3xl px-4">
-            <Card className="max-h-[calc(100vh-7rem)] overflow-y-auto rounded-3xl bg-surface shadow-2xl">
+            <Card className="max-h-[calc(100vh-7rem)] gap-0 overflow-y-auto rounded-3xl bg-[var(--background)] shadow-2xl">
               {/* Step header â€” back control plus plain-language context */}
-              <div className="sticky top-0 z-10 flex items-center gap-3 border-b border-line bg-surface px-4 py-3">
+              <div className="sticky top-0 z-10 flex items-center gap-3 border-b border-line bg-[var(--background)] px-4 py-3">
                 <button
                   type="button"
                   onClick={() => setBookingStep(bookingStep === 'ride' ? 'home' : 'ride')}
@@ -3107,7 +3156,7 @@ const getPrice = () => {
                   </p>
                 </div>
               </div>
-              <div className="px-5 pb-6 pt-5">
+              <div className="bg-[var(--background)] px-5 pb-6 pt-5">
                 {/* Step 2 â€” ride type: Sabay / Pribado */}
                 <div className={bookingStep === 'ride' ? '' : 'hidden'}>
                 <SectionHeading
@@ -3148,37 +3197,13 @@ const getPrice = () => {
 
                 {/* Step 3 â€” pickup and drop-off, only after the ride type is chosen */}
                 <div className={bookingStep === 'locations' ? '' : 'hidden'}>
-                <div className="mb-3 flex items-center justify-between gap-3 rounded-2xl border border-line bg-[var(--muted)] px-4 py-3">
-                  <div className="min-w-0">
-                    <p className="text-[11px] font-semibold uppercase tracking-widest text-[var(--muted-foreground)]">
-                      Ride type
-                    </p>
-                    <p className="truncate text-sm font-bold text-[var(--ink)]">
-                      {selectedVehicle === 'share' ? 'Shared ride \u00B7 Sabay' : 'Private ride \u00B7 Pribado'}
-                    </p>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => setBookingStep('ride')}
-                    className="flex-shrink-0 rounded-lg px-3 py-2 text-xs font-bold text-[var(--primary)] underline-offset-2 hover:underline"
-                  >
-                    Change
-                  </button>
-                </div>
-                <SectionHeading
-                  eyebrow="Booking"
-                  title="Saan ka pupunta?"
-                  filipino="Piliin ang sakayan at iyong pupuntahan."
-                  as="h3"
-                  className="mb-3"
-                />
-
                 {/* Location Inputs */}
-                <div className="space-y-3 mb-4">
+                <div className="mb-5 space-y-4">
                   {/* Pick up Location Label */}
-                  <label className="text-xs font-semibold text-[var(--muted-foreground)] uppercase tracking-widest block mb-2">
-                    Pick up location
-                  </label>
+                  <div className="space-y-2">
+                    <label className="block text-xs font-semibold uppercase tracking-widest text-[var(--muted-foreground)]">
+                      Pick up location
+                    </label>
                   
                   {/* Terminal Pickup Selection */}
                   <Card
@@ -3204,11 +3229,13 @@ const getPrice = () => {
                       </button>
                     </div>
                   </Card>
+                  </div>
 
                   {/* Drop off Location Label */}
-                  <label className="text-xs font-semibold text-[var(--muted-foreground)] uppercase tracking-widest block mb-2 mt-4">
-                    Drop off location
-                  </label>
+                  <div className="space-y-2">
+                    <label className="block text-xs font-semibold uppercase tracking-widest text-[var(--muted-foreground)]">
+                      Drop off location
+                    </label>
 
                   {/* Destination */}
                   <Card 
@@ -3242,6 +3269,7 @@ const getPrice = () => {
                       </button>
                     </div>
                   </Card>
+                  </div>
                 </div>
 
                 {/* Book Ride Button â€” stays visible but disabled until the ride is complete */}
@@ -3388,7 +3416,7 @@ const getPrice = () => {
                     </div>
                     {etaToDestination && (
                       <div className="flex-shrink-0 bg-[var(--error-soft)] text-[var(--error)] px-2 py-1 rounded-lg">
-                        <p className="text-[10px] font-bold">ðŸ {etaToDestination}</p>
+                        <p className="text-[10px] font-bold">{"\u{1F3C1}"} {etaToDestination}</p>
                       </div>
                     )}
                   </div>
@@ -3398,7 +3426,8 @@ const getPrice = () => {
                 <div className="flex items-center gap-3">
                   <div className="flex-1">
                     <p className="text-[10px] text-[var(--muted-foreground)] font-semibold">Fare</p>
-                    <p className="text-xl font-bold text-[var(--primary)]">â‚±{bookedFare ?? getPrice()}</p>                     <p className="text-[10px] text-[var(--muted-foreground)]">ðŸ’µ Cash</p>
+                    <p className="text-xl font-bold text-[var(--primary)]">{"\u20B1"}{bookedFare ?? getPrice()}</p>
+                    <p className="text-[10px] text-[var(--muted-foreground)]">{"\u{1F4B5}"} Cash</p>
                   </div>
                   <Button
                     variant="outline"
@@ -3432,7 +3461,7 @@ const getPrice = () => {
           <div className="fixed inset-0 bg-black/50 z-[2100] flex items-center justify-center p-4">
             <Card className="bg-surface p-8 max-w-sm w-full text-center">
               <div className="w-20 h-20 bg-[var(--error-soft)] rounded-full flex items-center justify-center mx-auto mb-4">
-                <span className="text-4xl">âš ï¸</span>
+                <span className="text-4xl">{"\u26A0\uFE0F"}</span>
               </div>
               <h3 className="text-xl font-bold text-[var(--error)] mb-2">Incomplete Information</h3>
               <p className="text-sm text-[var(--muted-foreground)] mb-6">
@@ -3454,7 +3483,7 @@ const getPrice = () => {
           <div className="fixed inset-0 bg-black/50 z-[2100] flex items-center justify-center p-4">
             <Card className="bg-surface p-8 max-w-sm w-full text-center">
               <div className="w-20 h-20 bg-[var(--error-soft)] rounded-full flex items-center justify-center mx-auto mb-4">
-                <span className="text-4xl">âš ï¸</span>
+                <span className="text-4xl">{"\u26A0\uFE0F"}</span>
               </div>
               <h3 className="text-xl font-bold text-[var(--error)] mb-2">Invalid Route</h3>
               <p className="text-sm text-[var(--muted-foreground)] mb-6">
@@ -3477,7 +3506,7 @@ const getPrice = () => {
           <div className="fixed inset-0 bg-black/50 z-[2200] flex items-center justify-center p-4">
             <Card className="bg-surface p-8 max-w-sm w-full text-center">
               <div className="w-20 h-20 bg-[var(--error-soft)] rounded-full flex items-center justify-center mx-auto mb-4">
-                <span className="text-4xl">ðŸ“</span>
+                <span className="text-4xl">{"\u{1F4CD}"}</span>
               </div>
               <h3 className="text-xl font-bold text-[var(--error)] mb-2">You're not at a terminal</h3>
               <p className="text-sm text-[var(--muted-foreground)] mb-6">
@@ -3504,7 +3533,7 @@ const getPrice = () => {
           <div className="fixed inset-0 bg-black/50 z-[2200] flex items-center justify-center p-4">
             <Card className="bg-surface p-8 max-w-sm w-full text-center">
               <div className="w-20 h-20 bg-[var(--error-soft)] rounded-full flex items-center justify-center mx-auto mb-4">
-                <span className="text-4xl">ðŸ›£ï¸</span>
+                <span className="text-4xl">{"\u{1F6E3}\uFE0F"}</span>
               </div>
               <h3 className="text-xl font-bold text-[var(--error)] mb-2">Drop-off not on our route</h3>
               <p className="text-sm text-[var(--muted-foreground)] mb-6">
@@ -3531,7 +3560,7 @@ const getPrice = () => {
           <div className="fixed inset-0 bg-black/50 z-[2200] flex items-center justify-center p-4">
             <Card className="bg-surface p-8 max-w-sm w-full text-center">
               <div className="w-20 h-20 bg-[var(--amber-soft)] rounded-full flex items-center justify-center mx-auto mb-4">
-                <span className="text-4xl">ðŸ“</span>
+                <span className="text-4xl">{"\u{1F4CD}"}</span>
               </div>
               <h3 className="text-xl font-bold text-[var(--ink)] mb-2">We couldn't locate that drop-off</h3>
               <p className="text-sm text-[var(--muted-foreground)] mb-6">
@@ -3783,25 +3812,16 @@ const getPrice = () => {
                           Up to {terminal.max_passengers} on a shared ride
                         </p>
                       )}
-                      {isMapsLoaded && (
-                        <div className="mt-2 rounded-lg overflow-hidden border border-[var(--border)]" style={{ height: 120 }}>
-                          <GoogleMap
-                            mapContainerStyle={{ width: '100%', height: '100%' }}
-                            center={{ lat: terminal.center_lat, lng: terminal.center_lng }}
-                            zoom={16}
-                            options={{
-                              zoomControl: false,
-                              fullscreenControl: false,
-                              streetViewControl: false,
-                              mapTypeControl: false,
-                              scrollwheel: false,
-                              draggable: false,
-                            }}
-                          >
-                            <MarkerF position={{ lat: terminal.center_lat, lng: terminal.center_lng }} />
-                          </GoogleMap>
-                        </div>
-                      )}
+                      <button
+                        type="button"
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          setRoutePreviewTerminalId(terminal.id);
+                        }}
+                        className="mt-3 inline-flex min-h-10 items-center justify-center rounded-xl border border-[var(--primary)] px-3 py-2 text-sm font-semibold text-[var(--primary)] transition-colors hover:bg-[var(--primary-soft)]"
+                      >
+                        View route
+                      </button>
                     </div>
                   </div>
                 </div>
@@ -3811,24 +3831,102 @@ const getPrice = () => {
         </div>
       )}
 
+      {routePreviewTerminal && (
+        <div className="fixed inset-0 z-[2100] flex flex-col bg-[var(--background)]" role="dialog" aria-modal="true" aria-label={`${routePreviewTerminal.name} route`}>
+          <header className="flex items-center justify-between gap-3 border-b border-line bg-[var(--surface)] px-4 py-3">
+            <div className="min-w-0">
+              <p className="text-xs font-semibold uppercase tracking-widest text-[var(--muted-foreground)]">Terminal route</p>
+              <h2 className="truncate text-lg font-bold text-[var(--ink)]">{routePreviewTerminal.name}</h2>
+            </div>
+            <button
+              type="button"
+              onClick={() => setRoutePreviewTerminalId(null)}
+              aria-label="Close terminal route"
+              className="grid size-10 shrink-0 place-items-center rounded-full bg-[var(--muted)] text-[var(--muted-foreground)]"
+            >
+              <X className="size-5" />
+            </button>
+          </header>
+          <div className="relative min-h-0 flex-1">
+            {isMapsLoaded ? (
+              <GoogleMap
+                mapContainerStyle={{ width: '100%', height: '100%' }}
+                center={{ lat: routePreviewTerminal.center_lat, lng: routePreviewTerminal.center_lng }}
+                zoom={14}
+                onLoad={(map: any) => {
+                  const maps = (window as any).google?.maps;
+                  const points = [...(routePreviewRoad || []), ...(routePreviewArea || [])];
+                  if (!maps?.LatLngBounds || points.length === 0) return;
+                  const bounds = new maps.LatLngBounds();
+                  points.forEach(point => bounds.extend(point));
+                  map.fitBounds(bounds, 48);
+                }}
+                options={{ gestureHandling: 'greedy', zoomControl: true, fullscreenControl: false, streetViewControl: false, mapTypeControl: false }}
+              >
+                <MarkerF
+                  position={{ lat: routePreviewTerminal.center_lat, lng: routePreviewTerminal.center_lng }}
+                  title={routePreviewTerminal.name}
+                  icon={terminalMarkerIcon(routePreviewMarkerColor)}
+                />
+                {routePreviewArea && (
+                  <Polygon
+                    path={routePreviewArea}
+                    options={{ strokeColor: routePreviewBorderColor, strokeWeight: 2, fillColor: routePreviewBorderColor, fillOpacity: 0.12, clickable: false }}
+                  />
+                )}
+                {routePreviewRoad && (
+                  <Polyline
+                    path={routePreviewRoad}
+                    options={{ strokeColor: routePreviewRouteColor, strokeWeight: 6, strokeOpacity: 0.9, clickable: false, geodesic: true }}
+                  />
+                )}
+              </GoogleMap>
+            ) : (
+              <div className="grid h-full place-items-center bg-[var(--muted)] px-6 text-center text-sm text-[var(--muted-foreground)]">
+                Loading terminal route map...
+              </div>
+            )}
+          </div>
+          <div className="border-t border-line bg-[var(--surface)] p-4 pb-safe">
+            <Button
+              type="button"
+              className="min-h-12 w-full bg-[var(--primary)] font-bold text-[var(--primary-foreground)]"
+              onClick={() => {
+                const terminal = routePreviewTerminal;
+                setPickup(terminal.name);
+                setPickupAddress(terminal.boundary);
+                setPickupCoords({ lat: terminal.center_lat, lng: terminal.center_lng });
+                setPickupMarker({ lat: terminal.center_lat, lng: terminal.center_lng });
+                setSelectedTerminalId(terminal.id);
+                setShowTerminalPicker(false);
+                setRoutePreviewTerminalId(null);
+                hasManualPickupSelectionRef.current = true;
+              }}
+            >
+              Select this terminal
+            </Button>
+          </div>
+        </div>
+      )}
+
       {/* Location Picker Modal */}
       {showLocationPicker && (
-        <div className="fixed inset-0 z-[2000] bg-surface flex flex-col">
+        <div className="fixed inset-0 z-[2000] flex flex-col bg-[var(--background)]">
           <div className="absolute top-4 left-4 right-4 z-[2010]">
-            <Card className="bg-white/95 backdrop-blur shadow-xl border-0 p-4">
+            <Card className="gap-0 border border-line bg-[var(--card)] p-4 shadow-xl">
               <div className="flex items-center justify-between gap-3">
                 <div className="flex-1">
-                  <p className="text-xs uppercase tracking-widest text-[#5c6b68] font-semibold">
-                    {activeLocationInput === 'pickup' ? 'Pickup â€” search or tap map' : 'Drop-off â€” search or tap map'}
+                  <p className="text-xs uppercase tracking-widest text-[var(--muted-foreground)] font-semibold">
+                    {activeLocationInput === 'pickup' ? 'Pickup \u2014 search or tap map' : 'Drop-off \u2014 search or tap map'}
                   </p>
-                  <h2 className="text-lg font-bold text-[#122724]">Find a nearby place or tap the map</h2>
+                  <h2 className="text-lg font-bold text-[var(--ink)]">Find a nearby place or tap the map</h2>
                 </div>
                 <button
                   type="button"
                   aria-label="Close location picker"
                   onClick={() => { setShowLocationPicker(false); setActiveLocationInput(null); setLocationPreview(null); setPredictions([]); setSearchQuery(""); setPickerBoundaryWarning(null); }}
                 >
-                  <X className="w-6 h-6 text-[#b3261e]" />
+                  <X className="w-6 h-6 text-[var(--error)]" />
                 </button>
               </div>
 
@@ -3847,7 +3945,7 @@ const getPrice = () => {
                    onChange={(e) => { fetchPredictions((e.target as HTMLInputElement).value); }}
                    placeholder="Search restaurants, parks, hotels, terminals..."
                    aria-label="Search for a place"
-                   className="text-[#122724] placeholder:text-[#5c6b68]"
+                   className="text-[var(--ink)] placeholder:text-[var(--muted-foreground)]"
                  />
                  {predictions.length > 0 && (
                    <div className="mt-2 bg-surface border border-[var(--border)] rounded-lg max-h-48 overflow-y-auto">
@@ -4002,11 +4100,6 @@ const getPrice = () => {
                       }`}
                     >
                       <div className="flex flex-col items-center gap-2">
-                        <div className="flex items-center gap-1">
-                          {Array.from({ length: count }).map((_, i) => (
-                            <span key={i} className="text-2xl">ðŸ‘¤</span>
-                          ))}
-                        </div>
                         <span className="font-bold text-lg text-[var(--ink)]">{count}</span>
                         <span className="text-xs text-[var(--muted-foreground)]">
                           {count === 1 ? 'passenger' : 'passengers'}
@@ -4025,11 +4118,6 @@ const getPrice = () => {
                       }`}
                     >
                       <div className="flex flex-col items-center gap-2">
-                        <div className="flex items-center gap-1">
-                          {Array.from({ length: count }).map((_, i) => (
-                            <span key={i} className="text-2xl">ðŸ‘¤</span>
-                          ))}
-                        </div>
                         <span className="font-bold text-lg text-[var(--ink)]">{count}</span>
                         <span className="text-xs text-[var(--muted-foreground)]">
                           {count === 1 ? 'passenger' : 'passengers'}
@@ -4048,18 +4136,18 @@ const getPrice = () => {
                   {selectedVehicle === 'share' ? (
                     <>
                       <p className="text-sm text-[var(--amber-ink)] mt-0.5">
-                        â‚±{rideTotal} trip Ã· {passengerCount} {passengerCount === 1 ? 'passenger' : 'passengers'}
+                        {"\u20B1"}{rideTotal} trip {"\u00F7"} {passengerCount} {passengerCount === 1 ? 'passenger' : 'passengers'}
                       </p>
                       {/* The same rounded-up figure `getPrice` charges. This used to divide and print
                              the raw total, so the seat picker offered â‚±11.33 and
                              the next screen charged â‚±12. */}
-                         <p className="text-3xl font-bold text-[var(--amber)]">â‚±{shareFarePerSeat}</p>
+                         <p className="text-3xl font-bold text-[var(--amber)]">{"\u20B1"}{shareFarePerSeat}</p>
                       <p className="text-[10px] text-[var(--amber-ink)] mt-0.5">{fareBreakdown}</p>
                     </>
                   ) : (
                     <>
                       <p className="text-sm text-[var(--amber-ink)] mt-0.5">{privateBreakdown}</p>
-                      <p className="text-3xl font-bold text-[var(--amber)]">â‚±{privateTotal}</p>
+                      <p className="text-3xl font-bold text-[var(--amber)]">{"\u20B1"}{privateTotal}</p>
                     </>
                   )}
                 </div>
@@ -4070,7 +4158,7 @@ const getPrice = () => {
             {selectedVehicle !== 'special' && (
               <div className="bg-[var(--info-soft)] border border-[var(--info-soft)] rounded-lg p-3 mb-6">
                 <p className="text-xs text-[var(--info)]">
-                  ðŸ’¡ <span className="font-semibold">Tip:</span> You'll join a shared lobby and wait for other passengers heading the same route. More passengers = faster match!
+                  {"\u{1F4A1}"} <span className="font-semibold">Tip:</span> You'll join a shared lobby and wait for other passengers heading the same route. More passengers = faster match!
                 </p>
               </div>
             )}
@@ -4117,11 +4205,11 @@ const getPrice = () => {
       {/* Booking Confirmation Modal */}
       {showBookingConfirm && (
         <div className="fixed inset-0 bg-black/50 z-[2000] flex items-end">
-          <div className="bg-surface w-full rounded-t-3xl p-6">
-            <h2 className="text-2xl font-bold text-[var(--ink)] mb-6">Confirm Booking</h2>
+          <div className="bg-surface w-full rounded-t-3xl p-5">
+            <h2 className="text-2xl font-bold text-[var(--ink)] mb-4">Confirm Booking</h2>
 
             {/* Trip Details */}
-            <div className="space-y-4 mb-6">
+            <div className="space-y-3 mb-4">
               <div className="flex items-start gap-3">
                 <Navigation className="w-5 h-5 text-[var(--primary)] mt-1" />
                 <div>
@@ -4139,10 +4227,14 @@ const getPrice = () => {
             </div>
 
             {/* Ride Type */}
-            <div className="bg-[var(--primary-soft)] border-2 border-[var(--primary)] rounded-xl p-4 mb-6">
+            <div className="bg-[var(--primary-soft)] border-2 border-[var(--primary)] rounded-xl p-3 mb-4">
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-3">
-                  <span className="text-4xl">{selectedVehicle === 'share' ? 'ðŸ‘¥' : 'ðŸ‘¤'}</span>
+                  <span className="grid size-10 shrink-0 place-items-center rounded-xl bg-[var(--background)]">
+                    {selectedVehicle === 'share'
+                      ? <Users className="size-6 text-[var(--primary)]" aria-hidden="true" />
+                      : <UserIcon className="size-6 text-[var(--primary)]" aria-hidden="true" />}
+                  </span>
                   <div>
                     <p className="font-bold text-[var(--ink)]">
                       {selectedVehicle === 'share' ? 'Share Ride' : 'Private Ride'}
@@ -4152,18 +4244,18 @@ const getPrice = () => {
                     </p>
                   </div>
                 </div>
-                <p className="text-2xl font-bold text-[var(--primary)]">â‚±{getPrice()}</p>
+                <p className="text-2xl font-bold text-[var(--primary)]">{"\u20B1"}{getPrice()}</p>
               </div>
             </div>
 
             {/* Payment Method */}
-            <div className="mb-6">
-              <p className="text-sm font-semibold text-[var(--muted-foreground)] mb-3">Payment Method</p>
-              <div className="grid grid-cols-1 gap-3">
-                <div className="p-4 border-2 rounded-xl border-[var(--primary)] bg-[var(--primary-soft)]">
-                  <div className="flex flex-col items-center gap-2">
-                    <span className="text-2xl">ðŸ’µ</span>
-                    <span className="font-semibold text-[var(--ink)]">Cash / Bayad cash</span>
+            <div className="mb-4">
+              <p className="text-sm font-semibold text-[var(--muted-foreground)] mb-2">Payment Method</p>
+              <div className="grid grid-cols-1 gap-2">
+                <div className="p-3 border-2 rounded-xl border-[var(--primary)] bg-[var(--primary-soft)]">
+                  <div className="flex items-center justify-center gap-2">
+                    <span className="text-xl">{"\u{1F4B5}"}</span>
+                    <span className="font-semibold text-[var(--ink)]">Cash</span>
                   </div>
                 </div>
               </div>
@@ -4175,7 +4267,7 @@ const getPrice = () => {
                 onClick={handleConfirmBooking}
                 className="w-full bg-[var(--primary)] hover:bg-[var(--primary)] text-white py-6 text-lg font-bold"
               >
-                Confirm Booking / Kumpirmahin
+                Confirm Booking
               </Button>
               <Button
                 onClick={() => setShowBookingConfirm(false)}

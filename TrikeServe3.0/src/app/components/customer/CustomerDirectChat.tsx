@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { useParams } from "react-router";
+import { useLocation, useParams } from "react-router";
 import ChatHub from "../chat/ChatHub";
 import { supabase } from "../../../lib/supabase";
 
@@ -10,6 +10,8 @@ interface PeerInfo {
 
 export default function CustomerDirectChat() {
   const { businessId, driverId } = useParams();
+  const location = useLocation();
+  const routePeerInfo = location.state as { peerName?: string; peerAvatar?: string } | null;
   const [peerInfo, setPeerInfo] = useState<PeerInfo>({ name: "User", emoji: "💬" });
 
   const peerId = businessId || driverId;
@@ -21,13 +23,19 @@ export default function CustomerDirectChat() {
     const loadPeerInfo = async () => {
       try {
         if (businessId) {
+          if (routePeerInfo?.peerName || routePeerInfo?.peerAvatar) {
+            setPeerInfo((previous) => ({
+              name: routePeerInfo.peerName || previous.name,
+              emoji: routePeerInfo.peerAvatar || previous.emoji,
+            }));
+          }
           // Try loading from localStorage restaurant data first
           const keys = Object.keys(localStorage).filter((key) => key.startsWith("restaurantData_"));
           for (const key of keys) {
             try {
               const data = JSON.parse(localStorage.getItem(key) || "{}");
               if (data && (data.id === businessId || key.includes(businessId))) {
-                setPeerInfo({ name: data.name || "Business", emoji: data.logo || "🏪" });
+                setPeerInfo((previous) => ({ name: data.name || previous.name || "Business", emoji: data.logo || data.logo_image || previous.emoji }));
                 return;
               }
             } catch {
@@ -38,12 +46,12 @@ export default function CustomerDirectChat() {
           // Fallback to Supabase
           const { data: restaurant } = await supabase
             .from("restaurants")
-            .select("name")
+            .select("name, logo_image")
             .eq("business_user_id", businessId)
             .maybeSingle();
 
           if (restaurant) {
-            setPeerInfo({ name: restaurant.name || "Restaurant", emoji: "🏪" });
+            setPeerInfo((previous) => ({ name: restaurant.name || previous.name || "Restaurant", emoji: restaurant.logo_image || previous.emoji }));
           }
         } else if (driverId) {
           // Load driver info from users table. avatar_url matters: this used to
@@ -65,7 +73,7 @@ export default function CustomerDirectChat() {
     };
 
     loadPeerInfo();
-  }, [businessId, driverId]);
+  }, [businessId, driverId, routePeerInfo?.peerName, routePeerInfo?.peerAvatar]);
 
   if (!peerId) return null;
 

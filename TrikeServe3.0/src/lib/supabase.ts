@@ -687,13 +687,13 @@ export type TerminalGateShape = {
  * from "no terminal has anything plotted" -- callers decide what an unknown
  * answer means, and the two must not collapse into one.
  */
-async function loadTerminalGateShapes(): Promise<TerminalGateShape[] | null> {
+async function loadTerminalGateShapes(includeBoundaryDisabled = false): Promise<TerminalGateShape[] | null> {
   // `select('*')` keeps this working before the boundary migrations run.
   const { data, error } = await supabase.from('terminals').select('*');
   if (error || !data) return null;
 
   return data
-    .filter((t: any) => t.is_active !== false && t.boundary_enabled !== false)
+    .filter((t: any) => t.is_active !== false && (includeBoundaryDisabled || t.boundary_enabled !== false))
     .map((t: any) => ({
       id: t.id,
       name: t.name,
@@ -810,13 +810,10 @@ export function isPointWithinTerminalRoute(
 /**
  * Which terminal should take this food delivery?
  *
- * The route gate decides *whether* anyone can serve the address -- if no
- * terminal's road runs near the customer, the order cannot be delivered and the
- * customer is told so rather than having it silently rejected later.
- *
- * Among the terminals that can reach the customer, this picks the one nearest
- * the restaurant, so the driver's run to collect the food is the shortest of the
- * available options.
+ * By default, only terminals whose route reaches the drop-off are considered.
+ * Checkout can disable that restriction and assign the nearest active terminal;
+ * when restaurant coordinates are available, the nearest-to-pickup terminal is
+ * preferred to shorten the driver's collection trip.
  */
 export async function findDeliveryTerminalForOrder(params: {
   dropoffLat: number;
@@ -824,6 +821,8 @@ export async function findDeliveryTerminalForOrder(params: {
   /** The restaurant being collected from. Used to break the tie. */
   pickupLat?: number | null;
   pickupLng?: number | null;
+  /** Set false for delivery orders that can use the nearest terminal regardless of route coverage. */
+  requireRoute?: boolean;
 }): Promise<{
   terminal: { id: string; name: string } | null;
   allowed: boolean;
@@ -832,9 +831,34 @@ export async function findDeliveryTerminalForOrder(params: {
   reachable: Array<{ id: string; name: string }>;
 }> {
   try {
-    const shapes = await loadTerminalGateShapes();
+    const shapes = await loadTerminalGateShapes(params.requireRoute === false);
     if (shapes === null) {
       return { terminal: null, allowed: true, checkedCount: 0, reachable: [] };
+    }
+
+    const hasPickup =
+      Number.isFinite(Number(params.pickupLat)) && Number.isFinite(Number(params.pickupLng));
+
+    if (params.requireRoute === false) {
+      const candidates = shapes.filter(s => s.center);
+      const terminal = candidates.length === 0
+        ? null
+        : candidates.reduce((best, s) => {
+            const point = hasPickup
+              ? { lat: Number(params.pickupLat), lng: Number(params.pickupLng) }
+              : { lat: params.dropoffLat, lng: params.dropoffLng };
+            if (!best.center) return s;
+            return haversineDistanceMeters(point, s.center!) < haversineDistanceMeters(point, best.center)
+              ? s
+              : best;
+          });
+
+      return {
+        terminal: terminal ? { id: terminal.id, name: terminal.name } : null,
+        allowed: true,
+        checkedCount: shapes.length,
+        reachable: candidates.map(s => ({ id: s.id, name: s.name })),
+      };
     }
 
     const withRoutes = shapes.filter(s => Array.isArray(s.road) && s.road.length >= 2);
@@ -853,9 +877,6 @@ export async function findDeliveryTerminalForOrder(params: {
 
     // With no restaurant position to measure from there is nothing to rank by,
     // so the nearest-to-customer fallback below takes over.
-    const hasPickup =
-      Number.isFinite(Number(params.pickupLat)) && Number.isFinite(Number(params.pickupLng));
-
     const terminal = hasPickup
       ? reachable.reduce((best, s) => {
           // A terminal with no centre cannot be ranked; keep the one already held.

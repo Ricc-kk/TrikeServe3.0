@@ -18,7 +18,7 @@ import {
 } from "lucide-react";
 
 import { TerminalIconGlyph } from "./TerminalIcon";
-import { useCart } from "../../contexts/CartContext";
+import { useCartOptional } from "../../contexts/CartContext";
 
 type BottomNavVariant = "customer" | "rider" | "business" | "admin";
 
@@ -76,10 +76,10 @@ export default function BottomNav({
   adminVariant = "super",
   className = "",
 }: BottomNavProps) {
-  const { getTotalItems } = useCart();
+  const cart = useCartOptional();
   const accent = ACCENTS[variant];
   const inactive = "var(--muted-foreground)";
-  const cartCount = variant === "customer" ? getTotalItems() : 0;
+  const cartCount = variant === "customer" ? cart?.getTotalItems() ?? 0 : 0;
 
   const items: NavItem[] =
     variant === "rider"

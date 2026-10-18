@@ -1428,16 +1428,7 @@ const clearHours = () => {
               <p className="mt-2 text-xs text-[var(--muted-foreground)]">
                 {shownOpen ? (
                   hoursConfigured ? (
-                    <>
-                      Within your trading hours.{" "}
-                      <button
-                        type="button"
-                        onClick={openInfoEditor}
-                        className="underline font-semibold text-[var(--primary)]"
-                      >
-                        Edit hours
-                      </button>
-                    </>
+                    <>Within your trading hours.</>
                   ) : (
                     <>
                       No trading hours set, so this switch decides on its own.{" "}
@@ -1451,16 +1442,7 @@ const clearHours = () => {
                     </>
                   )
                 ) : closedByHours ? (
-                  <>
-                    Customers see your shop closed until your hours start again.{" "}
-                    <button
-                      type="button"
-                      onClick={openInfoEditor}
-                      className="underline font-semibold text-[var(--primary)]"
-                    >
-                      Edit hours
-                    </button>
-                  </>
+                  <>Customers see your shop closed until your hours start again.</>
                 ) : (
                   <>
                     You switched the shop off. Turning it back on here will not open it outside your

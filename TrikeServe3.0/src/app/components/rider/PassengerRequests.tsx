@@ -8,7 +8,7 @@ import { Badge } from "../ui/badge";
 import { useAuth } from "../../contexts/AuthContext";
 import { isDeliveryServiceMode, isQueueGatedType, useTerminalQueue } from "../../hooks/useTerminalQueue";
 import TerminalQueueCard from "./TerminalQueueCard";
-import { isPointInPolygon, normalizeBoundaryRoad, normalizeBoundaryArea, normalizeRoadWidth, DEFAULT_ROAD_WIDTH_M, supabaseHelpers, logAudit, type LatLngPoint } from "@/lib/supabase";
+import { isPointInPolygon, normalizeBoundaryRoad, normalizeBoundaryArea, normalizeRoadWidth, DEFAULT_ROAD_WIDTH_M, supabaseHelpers, logAudit, geocodeAddress, type LatLngPoint } from "@/lib/supabase";
 import { supabase } from "../../../lib/supabase";
 import useMapLoader from "@/lib/mapLoader";
 import tricycleIcon from "../../../assets/0b76d1aa56b8ad6e15dd4efc8a0100b0ca5762a1.png";
@@ -27,6 +27,7 @@ interface PassengerRequest {
   waitingPassengers?: number;
   customerName: string;
   customerPhoto: string;
+  restaurantName?: string;
   distance: string;
   estimatedTime: string;
   pickupAddress?: string;
@@ -57,8 +58,9 @@ export default function PassengerRequests() {
   const [currentLocation, setCurrentLocation] = useState<{ lat: number; lng: number }>({ lat: 14.5995, lng: 120.9842 });
   const [previewRequest, setPreviewRequest] = useState<PassengerRequest | null>(null);
   const [directionsResult, setDirectionsResult] = useState<google.maps.DirectionsResult | null>(null);
-  const [deliveryRouteResult, setDeliveryRouteResult] = useState<google.maps.DirectionsResult | null>(null);
+  const [routeError, setRouteError] = useState<string | null>(null);
   const [resolvedPickupCoords, setResolvedPickupCoords] = useState<{ lat: number; lng: number } | null>(null);
+  const [resolvedDropoffCoords, setResolvedDropoffCoords] = useState<{ lat: number; lng: number } | null>(null);
   const [previewMapCenter, setPreviewMapCenter] = useState<{ lat: number; lng: number }>({ lat: 14.5995, lng: 120.9842 });
   const { isLoaded: isMapsLoaded } = useMapLoader();
   const [showAccepted, setShowAccepted] = useState(false);
@@ -237,18 +239,30 @@ export default function PassengerRequests() {
       try {
         const { data: rideRequests } = await supabaseHelpers.getRideRequests({ status: 'pending' });
         const { data: waitingLobbies } = await supabaseHelpers.getWaitingLobbiesForDriver();
-        const missingNameIds = [...new Set(
-          (rideRequests || [])
-            .filter((req: any) => !req.customer_name && req.customer_id)
-            .map((req: any) => req.customer_id)
-        )];
+        const profileIds = [...new Set([
+          ...(rideRequests || []).map((req: any) => req.customer_id),
+          ...(waitingLobbies || []).flatMap((lobby: any) =>
+            Array.isArray(lobby.passengers_json) ? lobby.passengers_json.map((passenger: any) => passenger.id) : []
+          ),
+        ].filter(Boolean))];
         const nameMap: Record<string, string> = {};
-        if (missingNameIds.length > 0) {
+        if (profileIds.length > 0) {
           const { data: usersData } = await supabase
             .from('users')
             .select('id, name')
-            .in('id', missingNameIds);
-          (usersData || []).forEach((u: any) => { if (u.name) nameMap[u.id] = u.name; });
+            .in('id', profileIds);
+          (usersData || []).forEach((profile: any) => {
+            if (profile.name) nameMap[profile.id] = profile.name;
+          });
+        }
+        const orderIds = [...new Set((rideRequests || []).map((req: any) => req.order_id).filter(Boolean))];
+        const orderMap: Record<string, any> = {};
+        if (orderIds.length > 0) {
+          const { data: orderProfiles } = await supabase
+            .from('orders')
+            .select('id, restaurant_name')
+            .in('id', orderIds);
+          (orderProfiles || []).forEach((order: any) => { orderMap[order.id] = order; });
         }
         // Requests this rider already declined are hidden from them — they stay
         // available to every other rider, so the customer is unaffected.
@@ -268,6 +282,7 @@ export default function PassengerRequests() {
           amount: Number(req.amount || 0),
           foodCost: Number(req.food_cost || 0),
           customerName: req.customer_name || nameMap[req.customer_id] || 'Customer',
+          restaurantName: orderMap[req.order_id]?.restaurant_name || formatPickup(req.pickup_location),
           customerPhoto: '👤',
           distance: '2.5 km',
           estimatedTime: '7 mins',
@@ -309,13 +324,17 @@ export default function PassengerRequests() {
             amount: Number(lobby.price_per_seat || 15),
             passengers: passengers.length,
             maxPassengers: Number(lobby.max_seats || 3),
-            customerName: passengers.length > 1 ? passengers.map((p: any) => p.name || 'Passenger').join(', ') : (passengers[0]?.name || 'Customer'),
+            customerName: passengers.length > 1 ? passengers.map((p: any) => p.name || nameMap[p.id] || 'Passenger').join(', ') : (passengers[0]?.name || nameMap[passengers[0]?.id] || 'Customer'),
             customerPhoto: 'shared',
             distance: '2.5 km',
             estimatedTime: '7 mins',
             customerId: lobby.customer_id,
             lobbyId: lobby.id,
-            passengerDetails: passengers,
+            passengerDetails: passengers.map((passenger: any) => ({
+              ...passenger,
+              name: passenger.name || nameMap[passenger.id] || 'Passenger',
+              emoji: passenger.emoji || '👤',
+            })),
             created_at: lobby.created_at,
           } as PassengerRequest;
         });
@@ -355,62 +374,76 @@ export default function PassengerRequests() {
   useEffect(() => {
     if (!previewRequest || !isMapsLoaded || !(window as any).google) return;
 
-    const pLat = Number(previewRequest.pickupLat);
-    const pLng = Number(previewRequest.pickupLng);
-    const dLat = Number(previewRequest.dropoffLat);
-    const dLng = Number(previewRequest.dropoffLng);
-    const isDelivery = previewRequest.type === 'delivery';
-    const DirectionsService = new (window as any).google.maps.DirectionsService();
+    let cancelled = false;
+    const resolveCoords = async (lat?: number, lng?: number, address?: string) => {
+      const parsedLat = Number(lat);
+      const parsedLng = Number(lng);
+      if (Number.isFinite(parsedLat) && Number.isFinite(parsedLng) && (lat != null && lng != null)) {
+        return { lat: parsedLat, lng: parsedLng };
+      }
+      return address ? geocodeAddress(address) : null;
+    };
+    const calculateRoute = (
+      origin: { lat: number; lng: number },
+      pickup: { lat: number; lng: number },
+      dropoff: { lat: number; lng: number } | null,
+    ) => new Promise<google.maps.DirectionsResult | null>((resolve) => {
+      const service = new (window as any).google.maps.DirectionsService();
+      service.route({
+        origin,
+        destination: dropoff || pickup,
+        waypoints: dropoff ? [{ location: pickup, stopover: true }] : [],
+        optimizeWaypoints: false,
+        travelMode: (window as any).google.maps.TravelMode.DRIVING,
+      }, (result: any, status: string) => resolve(status === 'OK' ? result : null));
+    });
 
-    if (!isNaN(pLat) && !isNaN(pLng)) {
-      setResolvedPickupCoords({ lat: pLat, lng: pLng });
-      setPreviewMapCenter({ lat: pLat, lng: pLng });
-    }
+    const loadRoute = async () => {
+      setDirectionsResult(null);
+      setRouteError(null);
+      const isDelivery = previewRequest.type === 'delivery';
+      const pickup = await resolveCoords(
+        previewRequest.pickupLat,
+        previewRequest.pickupLng,
+        previewRequest.pickupAddress || previewRequest.pickup,
+      );
+      if (cancelled) return;
+      if (!pickup) {
+        setRouteError('Could not locate the restaurant. Check its saved address and try again.');
+        return;
+      }
 
-    const resolveAndRoute = (pickup: { lat: number; lng: number }) => {
       setResolvedPickupCoords(pickup);
       setPreviewMapCenter(pickup);
+      const dropoff = await resolveCoords(
+        previewRequest.dropoffLat,
+        previewRequest.dropoffLng,
+        previewRequest.dropoffAddress || previewRequest.dropoff,
+      );
+      if (cancelled) return;
+      if (dropoff) setResolvedDropoffCoords(dropoff);
 
-      DirectionsService.route({
-        origin: new (window as any).google.maps.LatLng(currentLocation.lat, currentLocation.lng),
-        destination: new (window as any).google.maps.LatLng(pickup.lat, pickup.lng),
-        travelMode: (window as any).google.maps.TravelMode.DRIVING,
-      }, (result: any, status: string) => {
-        if (status === 'OK') setDirectionsResult(result);
-      });
-
-      // Show drop-off route for ALL ride types, not just deliveries
-      if (!isNaN(dLat) && !isNaN(dLng)) {
-        DirectionsService.route({
-          origin: new (window as any).google.maps.LatLng(pickup.lat, pickup.lng),
-          destination: new (window as any).google.maps.LatLng(dLat, dLng),
-          travelMode: (window as any).google.maps.TravelMode.DRIVING,
-        }, (result: any, status: string) => {
-          if (status === 'OK') setDeliveryRouteResult(result);
-        });
+      // Draw the complete road trip through the restaurant to the customer. If
+      // the customer address cannot be routed, still show the rider-to-store leg.
+      let route = await calculateRoute(currentLocation, pickup, dropoff);
+      if (!route && dropoff) route = await calculateRoute(currentLocation, pickup, null);
+      if (cancelled) return;
+      if (route) {
+        setDirectionsResult(route);
+      } else {
+        setRouteError(isDelivery
+          ? 'Road directions are unavailable. Check the map API Directions service configuration.'
+          : 'Road directions are unavailable for this pickup.');
       }
     };
 
-    if (!isNaN(pLat) && !isNaN(pLng)) {
-      resolveAndRoute({ lat: pLat, lng: pLng });
-    } else if (isDelivery) {
-      const apiKey = import.meta.env.VITE_GOOGLE_MAPS_API_KEY || '';
-      const address = previewRequest.pickupAddress || previewRequest.pickup;
-      if (apiKey && address) {
-        fetch(`https://maps.googleapis.com/maps/api/geocode/json?address=${encodeURIComponent(address)}&key=${apiKey}`)
-          .then(res => res.json())
-          .then(data => {
-            if (data.status === 'OK' && data.results?.[0]) {
-              const loc = data.results[0].geometry.location;
-              resolveAndRoute({ lat: loc.lat, lng: loc.lng });
-            }
-          })
-          .catch(() => {});
-      }
-    }
+    loadRoute().catch(() => {
+      if (!cancelled) setRouteError('Could not load road directions. Please try again.');
+    });
+    return () => { cancelled = true; };
   }, [previewRequest, isMapsLoaded, currentLocation]);
 
-  const handleOpenPreview = (request: PassengerRequest) => { setDirectionsResult(null); setDeliveryRouteResult(null); setResolvedPickupCoords(null); setPreviewRequest(request); };
+  const handleOpenPreview = (request: PassengerRequest) => { setDirectionsResult(null); setRouteError(null); setResolvedPickupCoords(null); setResolvedDropoffCoords(null); setPreviewRequest(request); };
 
   /**
    * Decline a request, recording the rider's reason against them.
@@ -839,21 +872,30 @@ export default function PassengerRequests() {
               <button onClick={() => setPreviewRequest(null)} className="p-1 hover:bg-white/20 rounded-lg"><X className="w-5 h-5" /></button>
             </div>
             {isMapsLoaded ? (
-              <div className="w-full h-64 md:h-80">
+              <div className="w-full h-64 md:h-80 relative">
                 <GoogleMap mapContainerStyle={{ width: '100%', height: '100%' }} center={previewMapCenter} zoom={14} options={{ zoomControl: false, streetViewControl: false, mapTypeControl: false, gestureHandling: 'greedy' }}>
                   <Marker position={currentLocation} icon={createDriverMarkerIcon()} title="Your Location" />
-                  {resolvedPickupCoords && <Marker position={resolvedPickupCoords} icon={createCustomerMarkerIcon()} title="Pickup" />}
-                  {previewRequest.dropoffLat && previewRequest.dropoffLng && (
-                    <Marker position={{ lat: Number(previewRequest.dropoffLat), lng: Number(previewRequest.dropoffLng) }} icon={createDropoffMarkerIcon()} title="Drop-off" />
+                  {resolvedPickupCoords && <Marker position={resolvedPickupCoords} icon={createCustomerMarkerIcon()} title={previewRequest.type === 'delivery' ? 'Store pickup' : 'Pickup'} />}
+                  {resolvedDropoffCoords && (
+                    <Marker position={resolvedDropoffCoords} icon={createDropoffMarkerIcon()} title={previewRequest.type === 'delivery' ? 'Customer' : 'Drop-off'} />
                   )}
-                  {directionsResult && <DirectionsRenderer directions={directionsResult} options={{ suppressMarkers: true, polylineOptions: { strokeColor: "var(--success)", strokeWeight: 5, strokeOpacity: 0.85 } }} />}
-                  {deliveryRouteResult && <DirectionsRenderer directions={deliveryRouteResult} options={{ suppressMarkers: true, polylineOptions: { strokeColor: "var(--primary)", strokeWeight: 5, strokeOpacity: 0.85 } }} />}
+                  {directionsResult && <DirectionsRenderer directions={directionsResult} options={{ suppressMarkers: true, preserveViewport: false, polylineOptions: { strokeColor: "#bc4b1f", strokeWeight: 6, strokeOpacity: 0.9 } }} />}
                 </GoogleMap>
+                {routeError && (
+                  <div className="absolute bottom-2 left-2 right-2 rounded-lg bg-white/95 px-3 py-2 text-xs font-semibold text-[var(--error)] shadow">
+                    {routeError}
+                  </div>
+                )}
+                {!routeError && directionsResult && (
+                  <div className="absolute bottom-2 left-2 rounded-lg bg-white/95 px-3 py-2 text-xs font-semibold text-[var(--ink)] shadow">
+                    Road route: Your location → {previewRequest.type === 'delivery' ? 'Store → Customer' : 'Pickup → Drop-off'}
+                  </div>
+                )}
               </div>
             ) : (
               <div className="h-64 flex items-center justify-center"><p className="text-[var(--muted-foreground)]">Loading map...</p></div>
             )}
-            <div className="p-4 space-y-3">
+            <div className="p-4 space-y-3 overflow-y-auto">
               <div className="flex items-stretch gap-2">
                 <div className="flex flex-col items-center pt-1">
                   <div className="w-2.5 h-2.5 rounded-full bg-[var(--success)] shrink-0" />
@@ -862,15 +904,38 @@ export default function PassengerRequests() {
                 </div>
                 <div className="flex-1 space-y-2 min-w-0">
                   <div className="p-2 bg-[var(--success-soft)] rounded-lg">
-                    <p className="text-[10px] text-[var(--success)] font-bold">Pickup</p>
-                    <p className="text-sm font-semibold">{previewRequest.pickup}</p>
+                    <div className="flex items-center gap-2">
+                      <div className="size-9 shrink-0 rounded-full border border-[var(--border)] bg-surface flex items-center justify-center">
+                        {previewRequest.type === 'delivery' ? <Package className="size-4 text-[var(--success)]" /> : <MapPin className="size-4 text-[var(--success)]" />}
+                      </div>
+                      <div className="min-w-0">
+                        <p className="text-[10px] text-[var(--success)] font-bold">{previewRequest.type === 'delivery' ? 'Restaurant pickup' : 'Pickup'}</p>
+                        <p className="text-sm font-semibold truncate">{previewRequest.type === 'delivery' ? previewRequest.restaurantName || previewRequest.pickup : previewRequest.pickup}</p>
+                      </div>
+                    </div>
                   </div>
                   <div className={`p-2 rounded-lg ${previewRequest.type === 'delivery' ? 'bg-[var(--error-soft)]' : ''}`}>
-                    <p className={`text-[10px] font-bold ${previewRequest.type === 'delivery' ? 'text-[var(--primary)]' : 'text-[var(--muted-foreground)]'}`}>
-                      {previewRequest.type === 'delivery' ? 'Deliver to Customer' : 'Drop-off'}
-                    </p>
-                    <p className="text-sm font-semibold">{previewRequest.dropoff}</p>
+                    <div className="flex items-center gap-2">
+                      <div className="size-9 shrink-0 rounded-full border border-[var(--border)] bg-surface flex items-center justify-center">
+                        <MapPin className="size-4 text-[var(--primary)]" />
+                      </div>
+                      <div className="min-w-0">
+                        <p className={`text-[10px] font-bold ${previewRequest.type === 'delivery' ? 'text-[var(--primary)]' : 'text-[var(--muted-foreground)]'}`}>
+                          {previewRequest.type === 'delivery' ? `Customer · ${previewRequest.customerName}` : 'Drop-off'}
+                        </p>
+                        <p className="text-sm font-semibold">{previewRequest.dropoff}</p>
+                      </div>
+                    </div>
                   </div>
+                  {previewRequest.type === 'shared' && (previewRequest.passengerDetails?.length || 0) > 0 && (
+                    <div className="flex flex-wrap gap-2 pt-1">
+                      {previewRequest.passengerDetails?.map((passenger) => (
+                        <div key={passenger.id} className="flex items-center gap-1.5 rounded-full border border-[var(--border)] bg-surface px-2 py-1">
+                          <span className="max-w-28 truncate text-xs font-semibold text-[var(--ink)]">{passenger.name}</span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
                 </div>
               </div>
               <Button onClick={() => { setConfirmRequest(previewRequest); setShowConfirmAccept(true); }} className="w-full bg-[var(--primary)] hover:bg-[var(--primary)] py-6 font-bold">Accept & Navigate</Button>
