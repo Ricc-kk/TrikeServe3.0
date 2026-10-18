@@ -582,25 +582,59 @@ export default function CartCheckout() {
          * placed order they were told did not go through. So it is reported, the
          * order carries on, and the shop sees the payment row with no screenshot
          * and can ask for one.
+         *
+         * Only when a file was actually chosen. The proof is optional, so
+         * `proofFile` is null for every customer who skipped it -- which is most
+         * of them, and all of them on a phone that will not let them screenshot a
+         * receipt. Calling the upload anyway handed a null to a function typed for
+         * a File, which read `file.name` and threw a TypeError. That throw escaped
+         * this block to the catch at the end of the order, taking with it every
+         * line after it: `setPlacedOrderId`, the default-address save, the
+         * order-placed notification, the audit entry, the localStorage write that
+         * Activity reads, the `order_processing` row and the notification to the
+         * business. `setIsUploadingProof(false)` went with it, so the Place Order
+         * button stayed disabled reading "Uploading proof…" -- and the customer
+         * was told their order was placed, then "Track Order" dropped them on an
+         * Activity page that did not contain it. Nothing they did afterwards
+         * worked, because nothing after the throw had run.
          */
-        if (savedOrder?.id) {
+        if (savedOrder?.id && proofFile) {
           setIsUploadingProof(true);
-          const { data: proof, error: proofUploadError } =
-            await supabaseHelpers.uploadOrderPaymentProof(savedOrder.id, proofFile);
+          /*
+           * The upload is contained rather than merely reported.
+           *
+           * The paragraph above promises a failed upload cannot take the order
+           * down with it, and returning an `error` is the only failure this block
+           * used to handle. A thrown one -- a storage client that rejects, a
+           * network drop mid-upload -- unwound straight past the reset below and
+           * into the order's own catch, failing the order after all. `finally`
+           * is what makes the promise true: the button comes back either way.
+           */
+          try {
+            const { data: proof, error: proofUploadError } =
+              await supabaseHelpers.uploadOrderPaymentProof(savedOrder.id, proofFile);
 
-          if (proofUploadError) {
-            console.error("[Cart] Payment proof upload failed:", proofUploadError);
-            setProofError(proofUploadError);
-          } else {
-            await supabase
-              .from("orders")
-              .update({
-                payment_proof_url: proof?.publicUrl ?? null,
-                payment_proof_uploaded_at: new Date().toISOString(),
-              })
-              .eq("id", savedOrder.id);
+            if (proofUploadError) {
+              console.error("[Cart] Payment proof upload failed:", proofUploadError);
+              setProofError(proofUploadError);
+            } else {
+              await supabase
+                .from("orders")
+                .update({
+                  payment_proof_url: proof?.publicUrl ?? null,
+                  payment_proof_uploaded_at: new Date().toISOString(),
+                })
+                .eq("id", savedOrder.id);
+            }
+          } catch (uploadError) {
+            console.error("[Cart] Payment proof upload threw:", uploadError);
+            setProofError(
+              "We could not attach your payment proof. The order was still placed -- " +
+                "you can add the screenshot from your order details.",
+            );
+          } finally {
+            setIsUploadingProof(false);
           }
-          setIsUploadingProof(false);
         }
 
         // Remember the DB id so the confirmation can jump to the order details.

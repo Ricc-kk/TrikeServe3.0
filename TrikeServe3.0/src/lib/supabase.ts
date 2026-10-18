@@ -1599,8 +1599,15 @@ export async function getAuditLogs(limit = 200): Promise<{ data: AuditLog[]; err
 }
 
 // Extract a safe file extension (fallback 'jpg') so weird filenames can't break the storage path
+//
+// The empty check is not paranoia about the extension: `file` is typed `File`, which
+// is a promise no caller in a language without null checks can keep. `proofFile`
+// on the checkout screen is null whenever the customer skipped the optional
+// proof, and `safeFileExtension` read `.name` straight off it -- a TypeError that
+// unwound the whole order-placing call. Falling back to 'jpg' for a missing file
+// keeps a caller that forgets its guard from taking the screen down with it.
 function safeFileExtension(file: File): string {
-  const raw = file.name.split('.').pop() || '';
+  const raw = file?.name?.split('.').pop() || '';
   return /^[a-zA-Z0-9]{1,10}$/.test(raw) ? raw.toLowerCase() : 'jpg';
 }
 /**
