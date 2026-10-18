@@ -810,10 +810,9 @@ export function isPointWithinTerminalRoute(
 /**
  * Which terminal should take this food delivery?
  *
- * By default, only terminals whose route reaches the drop-off are considered.
- * Checkout can disable that restriction and assign the nearest active terminal;
- * when restaurant coordinates are available, the nearest-to-pickup terminal is
- * preferred to shorten the driver's collection trip.
+ * When routeToPickup is enabled, prefer terminals whose plotted route reaches
+ * the restaurant, ranking those terminals by distance to it. If no route reaches
+ * the restaurant, fall back to the nearest active terminal.
  */
 export async function findDeliveryTerminalForOrder(params: {
   dropoffLat: number;
@@ -821,13 +820,15 @@ export async function findDeliveryTerminalForOrder(params: {
   /** The restaurant being collected from. Used to break the tie. */
   pickupLat?: number | null;
   pickupLng?: number | null;
-  /** Set false for delivery orders that can use the nearest terminal regardless of route coverage. */
+  /** Set false to choose the nearest active terminal without checking any route. */
   requireRoute?: boolean;
+  /** Match route coverage against the restaurant pickup instead of the customer drop-off. */
+  routeToPickup?: boolean;
 }): Promise<{
   terminal: { id: string; name: string } | null;
   allowed: boolean;
   checkedCount: number;
-  /** Terminals whose route reaches the customer. Empty means nobody can. */
+  /** Terminals whose route reaches the selected route point. */
   reachable: Array<{ id: string; name: string }>;
 }> {
   try {
@@ -836,7 +837,7 @@ export async function findDeliveryTerminalForOrder(params: {
       return { terminal: null, allowed: true, checkedCount: 0, reachable: [] };
     }
 
-    const hasPickup =
+    const hasPickup = params.pickupLat != null && params.pickupLng != null &&
       Number.isFinite(Number(params.pickupLat)) && Number.isFinite(Number(params.pickupLng));
 
     if (params.requireRoute === false) {
@@ -863,15 +864,51 @@ export async function findDeliveryTerminalForOrder(params: {
 
     const withRoutes = shapes.filter(s => Array.isArray(s.road) && s.road.length >= 2);
     if (withRoutes.length === 0) {
-      // No routes configured yet: leave the assignment to the existing behaviour.
+      // Without plotted routes, still scope the delivery to the nearest
+      // terminal when restaurant coordinates are available.
+      if (params.routeToPickup) {
+        const candidates = shapes.filter(s => s.center);
+        const point = hasPickup
+          ? { lat: Number(params.pickupLat), lng: Number(params.pickupLng) }
+          : { lat: params.dropoffLat, lng: params.dropoffLng };
+        const nearest = candidates.reduce<TerminalGateShape | null>((best, s) => {
+          if (!best?.center || !s.center) return best?.center ? best : s;
+          return haversineDistanceMeters(point, s.center) < haversineDistanceMeters(point, best.center) ? s : best;
+        }, null);
+        return {
+          terminal: nearest ? { id: nearest.id, name: nearest.name } : null,
+          allowed: true,
+          checkedCount: shapes.length,
+          reachable: [],
+        };
+      }
       return { terminal: null, allowed: true, checkedCount: 0, reachable: [] };
     }
 
+    const routePoint = params.routeToPickup && hasPickup
+      ? { lat: Number(params.pickupLat), lng: Number(params.pickupLng) }
+      : { lat: params.dropoffLat, lng: params.dropoffLng };
     const reachable = withRoutes.filter(s =>
-      isPointOnRoadCorridor(params.dropoffLat, params.dropoffLng, s.road as LatLngPoint[], normalizeRoadWidth(s.widthM))
+      isPointOnRoadCorridor(routePoint.lat, routePoint.lng, s.road as LatLngPoint[], normalizeRoadWidth(s.widthM))
     );
 
     if (reachable.length === 0) {
+      if (params.routeToPickup) {
+        const candidates = shapes.filter(s => s.center);
+        const point = hasPickup
+          ? { lat: Number(params.pickupLat), lng: Number(params.pickupLng) }
+          : { lat: params.dropoffLat, lng: params.dropoffLng };
+        const nearest = candidates.reduce<TerminalGateShape | null>((best, s) => {
+          if (!best?.center || !s.center) return best?.center ? best : s;
+          return haversineDistanceMeters(point, s.center) < haversineDistanceMeters(point, best.center) ? s : best;
+        }, null);
+        return {
+          terminal: nearest ? { id: nearest.id, name: nearest.name } : null,
+          allowed: true,
+          checkedCount: withRoutes.length,
+          reachable: [],
+        };
+      }
       return { terminal: null, allowed: false, checkedCount: withRoutes.length, reachable: [] };
     }
 

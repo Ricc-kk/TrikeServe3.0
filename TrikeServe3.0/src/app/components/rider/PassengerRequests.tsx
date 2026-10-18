@@ -8,7 +8,7 @@ import { Badge } from "../ui/badge";
 import { useAuth } from "../../contexts/AuthContext";
 import { isDeliveryServiceMode, isQueueGatedType, useTerminalQueue } from "../../hooks/useTerminalQueue";
 import TerminalQueueCard from "./TerminalQueueCard";
-import { isPointInPolygon, normalizeBoundaryRoad, normalizeBoundaryArea, normalizeRoadWidth, DEFAULT_ROAD_WIDTH_M, supabaseHelpers, logAudit, geocodeAddress, type LatLngPoint } from "@/lib/supabase";
+import { isPointInPolygon, isPointWithinTerminalRoute, normalizeBoundaryRoad, normalizeBoundaryArea, normalizeRoadWidth, DEFAULT_ROAD_WIDTH_M, supabaseHelpers, logAudit, geocodeAddress, type LatLngPoint } from "@/lib/supabase";
 import { supabase } from "../../../lib/supabase";
 import useMapLoader from "@/lib/mapLoader";
 import { searchPlacesText } from "@/lib/placesApi";
@@ -133,6 +133,10 @@ export default function PassengerRequests() {
   const [currentLocation, setCurrentLocation] = useState<{ lat: number; lng: number }>({ lat: 14.5995, lng: 120.9842 });
   const [previewRequest, setPreviewRequest] = useState<PassengerRequest | null>(null);
   const [routePath, setRoutePath] = useState<google.maps.LatLngLiteral[] | null>(null);
+  const [pickupRoutePath, setPickupRoutePath] = useState<google.maps.LatLngLiteral[] | null>(null);
+  const [dropoffRoutePath, setDropoffRoutePath] = useState<google.maps.LatLngLiteral[] | null>(null);
+  const [showPickupRoute, setShowPickupRoute] = useState(true);
+  const [showDropoffRoute, setShowDropoffRoute] = useState(true);
   const [routeError, setRouteError] = useState<string | null>(null);
   const [resolvedPickupCoords, setResolvedPickupCoords] = useState<{ lat: number; lng: number } | null>(null);
   const [resolvedPickupAddress, setResolvedPickupAddress] = useState<string | null>(null);
@@ -536,6 +540,8 @@ export default function PassengerRequests() {
 
     const loadRoute = async () => {
       setRoutePath(null);
+      setPickupRoutePath(null);
+      setDropoffRoutePath(null);
       setRouteError(null);
       const savedPickupLat = previewRequest.restaurantLat ?? previewRequest.pickupLat;
       const savedPickupLng = previewRequest.restaurantLng ?? previewRequest.pickupLng;
@@ -625,6 +631,8 @@ export default function PassengerRequests() {
       ]);
       if (cancelled) return;
       const combinedPath = [...(toStore.path || []), ...(toCustomer.path || [])];
+      setPickupRoutePath(toStore.path);
+      setDropoffRoutePath(toCustomer.path);
       if (combinedPath.length > 1) setRoutePath(combinedPath);
 
       if (toStore.path && toCustomer.path) {
@@ -644,7 +652,18 @@ export default function PassengerRequests() {
     return () => { cancelled = true; };
   }, [previewRequest, isMapsLoaded, currentLocation]);
 
-  const handleOpenPreview = (request: PassengerRequest) => { setRoutePath(null); setRouteError(null); setResolvedPickupCoords(null); setResolvedPickupAddress(null); setResolvedDropoffCoords(null); setPreviewRequest(request); };
+  const handleOpenPreview = (request: PassengerRequest) => {
+    setRoutePath(null);
+    setPickupRoutePath(null);
+    setDropoffRoutePath(null);
+    setShowPickupRoute(true);
+    setShowDropoffRoute(true);
+    setRouteError(null);
+    setResolvedPickupCoords(null);
+    setResolvedPickupAddress(null);
+    setResolvedDropoffCoords(null);
+    setPreviewRequest(request);
+  };
 
   /**
    * Decline a request, recording the rider's reason against them.
@@ -789,9 +808,21 @@ export default function PassengerRequests() {
     return labels[type] || type.toUpperCase();
   };
 
-  // A request tagged to another TODA isn't this driver's to serve. Only rides are
-  // terminal-scoped — delivery reaches any rider, so it's never restricted.
+  // Private/share rides stay with their assigned terminal. Deliveries go to the
+  // nearest restaurant terminal, plus another terminal only when its plotted
+  // route also reaches the restaurant.
   const isWrongTerminal = (request: PassengerRequest) => {
+    if (request.type === 'delivery') {
+      if (!driverTerminalId) return true;
+      if (request.terminalId === driverTerminalId) return false;
+      const pickupLat = Number(request.restaurantLat ?? request.pickupLat);
+      const pickupLng = Number(request.restaurantLng ?? request.pickupLng);
+      if (!Number.isFinite(pickupLat) || !Number.isFinite(pickupLng)) return true;
+      return !isPointWithinTerminalRoute(pickupLat, pickupLng, {
+        road: todaBoundary,
+        widthM: todaRoadWidth,
+      });
+    }
     if (!isQueueGatedType(request.type)) return false;
     if (!driverTerminalId || !request.terminalId) return false; // No restriction if either has no terminal
     return request.terminalId !== driverTerminalId;
@@ -1109,8 +1140,35 @@ export default function PassengerRequests() {
                   {resolvedDropoffCoords && (
                     <Marker position={resolvedDropoffCoords} icon={createDropoffMarkerIcon()} title={previewRequest.type === 'delivery' ? 'Customer' : 'Drop-off'} />
                   )}
-                  {routePath && <Polyline path={routePath} options={{ strokeColor: "#bc4b1f", strokeWeight: 7, strokeOpacity: 0.95, zIndex: 10 }} />}
+                  {showPickupRoute && pickupRoutePath && (
+                    <Polyline path={pickupRoutePath} options={{ strokeColor: "#16a34a", strokeWeight: 7, strokeOpacity: 0.95, zIndex: 10 }} />
+                  )}
+                  {showDropoffRoute && dropoffRoutePath && (
+                    <Polyline path={dropoffRoutePath} options={{ strokeColor: "#2563eb", strokeWeight: 7, strokeOpacity: 0.95, zIndex: 11 }} />
+                  )}
                 </GoogleMap>
+                <div className="absolute top-2 left-2 z-10 flex gap-2">
+                  <button
+                    type="button"
+                    aria-pressed={showPickupRoute}
+                    disabled={!pickupRoutePath}
+                    onClick={() => setShowPickupRoute(visible => !visible)}
+                    className={`flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-xs font-bold shadow-md transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${showPickupRoute ? 'border-white bg-white text-gray-900' : 'border-gray-300 bg-white/80 text-gray-600'}`}
+                  >
+                    <span className="size-2.5 rounded-full bg-[#16a34a]" />
+                    Pickup
+                  </button>
+                  <button
+                    type="button"
+                    aria-pressed={showDropoffRoute}
+                    disabled={!dropoffRoutePath}
+                    onClick={() => setShowDropoffRoute(visible => !visible)}
+                    className={`flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-xs font-bold shadow-md transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${showDropoffRoute ? 'border-white bg-white text-gray-900' : 'border-gray-300 bg-white/80 text-gray-600'}`}
+                  >
+                    <span className="size-2.5 rounded-full bg-[#2563eb]" />
+                    Drop off
+                  </button>
+                </div>
                 {routeError && (
                   <div className="absolute bottom-2 left-2 right-2 rounded-lg bg-white/95 px-3 py-2 text-xs font-semibold text-[var(--error)] shadow">
                     {routeError}

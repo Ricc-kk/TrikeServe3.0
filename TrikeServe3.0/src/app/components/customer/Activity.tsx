@@ -6,7 +6,7 @@ import BottomNav from "../ui/BottomNav";
 import { useAuth } from "../../contexts/AuthContext";
 import { ImageWithFallback } from "../figma/ImageWithFallback";
 import { supabase, supabaseHelpers, logAudit } from "../../../lib/supabase";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 
 const REPORT_CATEGORIES = [
   'Driver behavior',
@@ -91,6 +91,7 @@ export default function Activity() {
   const [ratingSubmitted, setRatingSubmitted] = useState(false);
   const [ratingError, setRatingError] = useState<string | null>(null);
   const [ratedRideIds, setRatedRideIds] = useState<string[]>([]);
+  const hasInitialActivityTab = useRef(false);
 
   const openReport = (ride: RideDisplay) => {
     setSelectedActivityDetails(null);
@@ -195,9 +196,10 @@ export default function Activity() {
 
   // Fetch orders and rides from Supabase on component mount
   useEffect(() => {
+    hasInitialActivityTab.current = false;
     setRatedRideIds(loadRatedRideIds(user?.id));
     loadActivityFromSupabase();
-  }, [user]);
+  }, [user?.id]);
 
   const loadActivityFromSupabase = async () => {
     try {
@@ -316,6 +318,18 @@ export default function Activity() {
         console.log('[Activity] No completed rides in Supabase');
         setDisplayRides([]);
       }
+
+      // Open on whichever category has the newest activity, so a freshly
+      // placed food order is visible instead of leaving the customer on Rides.
+      if (!hasInitialActivityTab.current) {
+        const latestOrderAt = supabaseOrders?.[0]?.created_at
+          ? new Date(supabaseOrders[0].created_at).getTime()
+          : -Infinity;
+        const latestRide = completedRides?.find((ride: any) => !isDeliveryRide(ride));
+        const latestRideAt = latestRide?.created_at ? new Date(latestRide.created_at).getTime() : -Infinity;
+        setActiveTab((supabaseOrders?.length || 0) > 0 && latestOrderAt >= latestRideAt ? 'deliveries' : 'rides');
+        hasInitialActivityTab.current = true;
+      }
     } catch (error) {
       console.error('[Activity] Exception loading activity:', error);
       setDisplayOrders([]);
@@ -324,6 +338,30 @@ export default function Activity() {
       setIsLoading(false);
     }
   };
+
+  // Keep Activity current if an order is placed while this screen is open, or
+  // when the customer switches back to the app after checkout.
+  useEffect(() => {
+    if (!user?.id) return;
+    const refreshActivity = (payload?: { eventType?: string }) => {
+      if (payload?.eventType === 'INSERT') setActiveTab('deliveries');
+      void loadActivityFromSupabase();
+    };
+    const channel = supabase
+      .channel(`customer-activity-orders-${user.id}`)
+      .on('postgres_changes', {
+        event: '*',
+        schema: 'public',
+        table: 'orders',
+        filter: `customer_id=eq.${user.id}`,
+      }, refreshActivity)
+      .subscribe();
+    window.addEventListener('focus', refreshActivity);
+    return () => {
+      window.removeEventListener('focus', refreshActivity);
+      void supabase.removeChannel(channel);
+    };
+  }, [user?.id]);
 
   const getStatusColor = (status: string) => {
     switch (status) {

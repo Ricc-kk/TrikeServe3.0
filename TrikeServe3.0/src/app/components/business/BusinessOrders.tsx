@@ -1107,11 +1107,11 @@ export default function BusinessOrders() {
     // business may post an order before adding a map pin or street address.
 
     /*
-     * Pick the terminal that will take this delivery.
+     * Pick the nearest terminal whose plotted route reaches the restaurant.
      *
-     * Assign to the nearest active terminal without requiring its ride route to
-     * cover the delivery address. Restaurant coordinates are used when available
-     * so the assigned driver has the shortest run to collect the food.
+     * If no terminal route reaches the restaurant, use the nearest active
+     * terminal as the fallback. Riders in other terminals can still see this
+     * request when their route also reaches the restaurant.
      */
     let assignedTerminalId: string | null = null;
     if (dropoffCoords) {
@@ -1120,7 +1120,8 @@ export default function BusinessOrders() {
         dropoffLng: dropoffCoords.lng,
         pickupLat,
         pickupLng,
-        requireRoute: false,
+        requireRoute: true,
+        routeToPickup: true,
       });
 
       assignedTerminalId = assignment.terminal?.id || null;
@@ -1176,7 +1177,7 @@ export default function BusinessOrders() {
       return false;
     }
 
-    console.log('[BusinessOrders] ✅ Open delivery request created - visible to all drivers with delivery service');
+    console.log('[BusinessOrders] ✅ Open delivery request created for its restaurant terminal');
     return true;
   };
 
