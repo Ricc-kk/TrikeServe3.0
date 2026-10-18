@@ -1,10 +1,10 @@
 import { useState, useEffect, useMemo, useRef, useCallback, Fragment as ReactFragment, type ReactNode } from "react";
-import { useNavigate } from "react-router";
+import { Link, useNavigate } from "react-router";
 import {
   Plus, Edit2, Trash2, UserPlus, UserMinus, MapPin, MapPinned, Users, Menu, X, Navigation, Search, Loader2, Save, Shield,
   ClipboardCheck, Clock, ShieldCheck, ChevronDown, ArrowLeft,
   ChevronLeft, ChevronRight, Pentagon, Milestone, SlidersHorizontal, Banknote,
-  Undo2, Redo2, Eraser,
+  Undo2, Redo2, Eraser, RefreshCw, Filter,
   Settings, Eye, EyeOff, Car, Truck
 } from "lucide-react";
 import { GoogleMap, Marker, InfoWindow, Polygon, Polyline } from "@react-google-maps/api";
@@ -30,6 +30,7 @@ import {
 import ConfirmationModal from "../ui/confirmation-modal";
 import Toast from "../ui/Toast";
 import AdminShell from "./AdminShell";
+import { AdminMetricCards } from "./AdminPageIntro";
 import { StatSkeleton } from "./AdminSkeleton";
 import EmptyState from "../ui/EmptyState";
 import TerminalIcon, {
@@ -349,10 +350,10 @@ function DriverPicker({ terminalName, candidates, terminalId, terminalNames, onP
         aria-haspopup="listbox"
         aria-expanded={isOpen}
         onClick={() => setIsOpen(open => !open)}
-        className="w-full flex items-center gap-2 px-3.5 py-2.5 border border-line rounded-xl bg-surface text-sm font-semibold text-[var(--ink)] transition-colors hover:border-[var(--teal)] focus:border-[var(--teal)] focus:outline-none"
+        className="w-full min-h-11 flex items-center gap-2 px-3.5 py-2.5 border border-line rounded-xl bg-card text-sm font-semibold text-[var(--ink)] transition-colors hover:border-[var(--teal)]"
       >
         <Plus size={16} className="flex-shrink-0 text-[var(--teal)]" aria-hidden="true" />
-        <span className="flex-1 text-left truncate">Add a driver to {terminalName}</span>
+        <span className="min-w-0 flex-1 text-left break-words">Add a driver to {terminalName}</span>
         <ChevronDown
           size={16}
           aria-hidden="true"
@@ -468,6 +469,10 @@ export default function AdminTerminals() {
   // true until the first Supabase round-trip resolves, so the page can show a
   // skeleton instead of a half-populated list.
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
+  const [terminalQuery, setTerminalQuery] = useState('');
+  const [directoryFilter, setDirectoryFilter] = useState<'all' | 'needs-admin' | 'active' | 'inactive'>('all');
   const [users, setUsers] = useState<StoredRider[]>(getAllUsers());
   const [editTerminal, setEditTerminal] = useState<Terminal | null>(null);
   const [form, setForm] = useState({
@@ -757,6 +762,7 @@ export default function AdminTerminals() {
     setForm(next);
     setEditorSnapshot(snapshotFrom(next));
     setEditorSection('terminal');
+    setSidebarCollapsed(window.matchMedia('(max-width: 767px)').matches);
     setShowMapPicker(true);
     refreshAdminLocation();
   }
@@ -1011,6 +1017,7 @@ export default function AdminTerminals() {
 
   async function loadData() {
     setLoading(true);
+    setLoadError(null);
     try {
       const [dbTerminals, dbRiders] = await Promise.all([
         loadTerminalsFromSupabase(),
@@ -1018,6 +1025,11 @@ export default function AdminTerminals() {
       ]);
       if (dbTerminals) setTerminals(dbTerminals);
       if (dbRiders) setUsers(dbRiders);
+      if (dbTerminals === null || dbRiders === null) {
+        setLoadError('Some terminal or driver data could not be refreshed. Previously available data is still shown.');
+      } else {
+        setLastUpdated(new Date());
+      }
     } finally {
       setLoading(false);
     }
@@ -1026,7 +1038,7 @@ export default function AdminTerminals() {
   async function loadTerminalsFromSupabase(): Promise<Terminal[] | null> {
     try {
       const { data, error } = await supabase.from("terminals").select("*");
-      if (error || !data || data.length === 0) return null;
+      if (error || !data) return null;
       return data.map((t: any) => ({
         id: t.id,
         name: t.name,
@@ -1327,21 +1339,9 @@ export default function AdminTerminals() {
    */
   const todaAdmins = riders.filter(r => r.isTerminalAdmin);
 
-  /**
-   * How much of the team is covered by an assignment.
-   *
-   * Counted, not averaged: a TODA admin pointed at a terminal is covered
-   * whether or not that terminal is active or has drivers, because what decides
-   * whether their requests reach anyone is the scope, not the traffic. An admin
-   * with no terminal is the case the rail exists to surface — the switch in
-   * their profile goes nowhere — so it is counted as uncovered rather than
-   * quietly dropped from the denominator.
-   */
+  /** Keep admin assignment counts separate from terminal staffing coverage. */
   const assignedAdminCount = todaAdmins.filter(a => !!riderTerminalId(a)).length;
   const unassignedAdminCount = todaAdmins.length - assignedAdminCount;
-  const adminCoverage = todaAdmins.length === 0
-    ? 0
-    : Math.round((assignedAdminCount / todaAdmins.length) * 100);
 
   /**
    * Terminals with admins on them, busiest first.
@@ -1358,6 +1358,21 @@ export default function AdminTerminals() {
     }))
     .filter(x => x.count > 0)
     .sort((a, b) => b.count - a.count || a.terminal.name.localeCompare(b.terminal.name));
+
+  // Terminal coverage answers how much of the network has an admin, not how
+  // many already-designated admins have a terminal assignment.
+  const terminalsWithoutAdmins = terminals.length - terminalsWithAdmins.length;
+  const terminalCoverage = terminals.length === 0 ? 0 : Math.round(terminalsWithAdmins.length / terminals.length * 100);
+  const directoryTerminals = terminals.filter(t => {
+    const roster = getRidersForTerminal(t.id);
+    const matchesQuery = [t.name, t.boundary, ...roster.map(driverSearchText)]
+      .filter(Boolean).join(' ').toLowerCase().includes(terminalQuery.trim().toLowerCase());
+    const matchesFilter = directoryFilter === 'all'
+      || (directoryFilter === 'active' && t.is_active)
+      || (directoryFilter === 'inactive' && !t.is_active)
+      || (directoryFilter === 'needs-admin' && !todaAdmins.some(a => riderTerminalId(a) === t.id));
+    return matchesQuery && matchesFilter;
+  }).sort((a, b) => a.name.localeCompare(b.name));
 
   /** Drivers on the Rider Admin's own terminal — the one figure they can act on. */
   const assignedRiderCount = assignedTerminalId
@@ -2756,8 +2771,8 @@ async function applyAssignDriver(rider: StoredRider, terminal: Terminal) {
 
   return (
     <AdminShell
-      title="Terminal Management"
-      subtitle="Terminals, drivers, fares and coverage areas"
+      title={isRiderAdmin ? 'Your Terminal' : 'Terminal Management'}
+      subtitle={isRiderAdmin ? 'Terminal operations · Pamamahala ng iyong TODA' : 'Terminals, drivers, fares and coverage areas'}
       /* No tab strip. The page had three sections and this was how they were
          switched; with one section left, a tablist of one is chrome that only
          takes up the header and implies somewhere else to go. Both roles keep
@@ -2785,10 +2800,9 @@ async function applyAssignDriver(rider: StoredRider, terminal: Terminal) {
             onClick={openCreate}
             aria-label="Add Terminal"
             title="Add Terminal"
-            className="inline-flex min-h-11 items-center gap-1.5 sm:gap-2 rounded-xl bg-[var(--primary)] px-3 sm:px-4 py-2 text-sm font-bold text-white shadow-sm transition-opacity hover:opacity-90 active:scale-[0.98]"
+            className="inline-flex min-h-11 items-center gap-1.5 sm:gap-2 rounded-xl bg-[var(--primary)] px-3 sm:px-4 py-2 text-sm font-bold text-[var(--primary-foreground)] shadow-sm transition-opacity hover:opacity-90 active:scale-[0.98]"
           >
-            <TerminalIcon size={22} color="#FFFFFF" />
-            <span aria-hidden="true" className="text-xl font-bold leading-none -ml-0.5">+</span>
+            <Plus className="size-5" aria-hidden="true" />
             <span className="hidden sm:inline">Add Terminal</span>
           </button>
         ) : null
@@ -2796,7 +2810,7 @@ async function applyAssignDriver(rider: StoredRider, terminal: Terminal) {
     >
 
         {/* Content */}
-        <div className="space-y-6">
+        <div className="@container mx-auto w-full max-w-[100rem] space-y-6 sm:space-y-8">
 {/* ------------------------------------------------------------------
               Assignments — who runs which terminal.
 
@@ -2815,17 +2829,18 @@ async function applyAssignDriver(rider: StoredRider, terminal: Terminal) {
               {/* Page head. The three figures sit beside it rather than
                   above it because they are a reading of the same state the
                   title describes, not a fourth thing to look at. */}
-              <div className="flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
+              <section aria-labelledby="terminals-summary-title" className={`relative isolate overflow-hidden rounded-3xl p-5 sm:p-7 bg-[var(--ink-solid)] text-white`}>
+              <div className="flex flex-col gap-5 sm:flex-row sm:items-center sm:justify-between sm:gap-8">
                 <div className="min-w-0">
-                  <p className="text-[11px] font-bold uppercase tracking-[0.2em] text-[var(--teal)]">
-                    Operations / Access
+                  <p className={`text-[10px] sm:text-xs font-bold uppercase tracking-[0.2em] text-[var(--mint)]`}>
+                    TrikeServe · Terminal operations
                   </p>
-                  <h2 className="mt-1.5 text-2xl sm:text-3xl font-extrabold text-[var(--ink)]">
-                    {isSuperAdmin ? 'Driver assignments' : 'Your assignment'}
+                  <h2 id="terminals-summary-title" className={`mt-2 text-2xl sm:text-3xl font-extrabold tracking-tight text-white`}>
+                    {isSuperAdmin ? 'Your network, connected.' : 'Your TODA, in focus.'}
                   </h2>
-                  <p className="mt-1 text-sm text-[var(--muted-foreground)]">
+                  <p className={`mt-2 max-w-xl text-sm leading-relaxed text-white/75`}>
                     {isSuperAdmin
-                      ? 'Open a terminal to staff it and name who runs it. That driver gets a switch to the Admin app in their profile.'
+                      ? 'Manage your TODA network, assign drivers, and keep every terminal supported.'
                       : 'Your terminal scope, and anything still waiting on the Super Admin.'}
                   </p>
                 </div>
@@ -2838,25 +2853,36 @@ async function applyAssignDriver(rider: StoredRider, terminal: Terminal) {
                     settings from its own row.
                   */}
                 {isSuperAdmin && (
-                  <div className="flex flex-shrink-0 self-stretch lg:self-auto rounded-2xl border border-line bg-surface divide-x divide-line overflow-hidden">
-                    {([
-                      ['TODA admins', todaAdmins.length],
-                      ['Terminals', terminals.length],
-                      ['Covered', assignedAdminCount],
-                    ] as const).map(([label, value]) => (
-                      <div key={label} className="flex-1 px-4 sm:px-6 py-3 text-center">
-                        <p className="text-xl sm:text-2xl font-extrabold leading-tight text-[var(--ink)]">
-                          {value}
-                        </p>
-                        <p className="mt-0.5 text-[10px] font-bold uppercase tracking-[0.14em] text-[var(--muted-foreground)]">
-                          {label}
-                        </p>
-                      </div>
-                    ))}
+                  <div className="shrink-0 space-y-2 sm:text-right">
+                    <button type="button" disabled={loading} onClick={() => void loadData()} aria-label="Refresh terminals" className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl border border-white/20 bg-white/5 px-4 text-sm font-bold transition-colors hover:bg-white/10 disabled:opacity-60">
+                      <RefreshCw className={`size-4 ${loading ? 'animate-spin' : ''}`} aria-hidden="true" /> {loading ? 'Refreshing…' : 'Refresh data'}
+                    </button>
+                    <p role="status" className="flex items-center gap-1.5 text-xs text-white/70 sm:justify-end"><Clock className="size-3.5 shrink-0" aria-hidden="true" />{loading ? 'Loading network data…' : loadError ? 'Update unavailable' : lastUpdated ? `Updated ${lastUpdated.toLocaleTimeString('en-PH', { hour: '2-digit', minute: '2-digit' })}` : 'Not yet updated'}</p>
                   </div>
                 )}
               </div>
+              </section>
 
+              {loadError && <div role="alert" className="rounded-2xl border border-[var(--amber)]/40 bg-[var(--amber-soft)] p-4 text-sm text-[var(--amber-ink)]">{loadError}</div>}
+              {isSuperAdmin && (
+                <section aria-labelledby="terminal-network-title" aria-busy={loading}>
+                  <div className="mb-4 flex flex-wrap items-baseline gap-x-3 gap-y-1"><h2 id="terminal-network-title" className="text-lg font-bold tracking-tight text-[var(--ink)] sm:text-xl">Network at a glance</h2><p className="text-xs text-[var(--muted-foreground)]">Terminals, drivers, and admin coverage</p></div>
+                  {loading ? <StatSkeleton count={4} /> : <div className="grid grid-cols-2 gap-3 sm:gap-4 @min-[42rem]:grid-cols-4">
+                    {[
+                      { label: 'Terminals', value: terminals.length, detail: `${terminals.filter(t => t.is_active).length} active`, Icon: MapPin, tone: 'bg-[var(--teal-soft)] text-[var(--teal)]' },
+                      { label: 'Drivers', value: riders.length, detail: `${getUnassignedRiders().length} unassigned`, Icon: Users, tone: 'bg-[var(--info-soft)] text-[var(--info)]' },
+                      { label: 'TODA admins', value: todaAdmins.length, detail: `${assignedAdminCount} assigned to terminals`, Icon: ShieldCheck, tone: 'bg-[var(--success-soft)] text-[var(--success-ink)]' },
+                      { label: 'Needs admin', value: terminalsWithoutAdmins, detail: 'Terminals without an admin', Icon: Shield, tone: 'bg-[var(--amber-soft)] text-[var(--amber-ink)]' },
+                    ].map(({ label, value, detail, Icon, tone }) => <div key={label} className="min-w-0 rounded-2xl border border-line bg-card p-4 sm:p-5"><span className={`mb-4 grid size-9 place-items-center rounded-xl ${tone}`}><Icon className="size-[18px]" aria-hidden="true" /></span><p className="break-all text-3xl font-extrabold leading-none text-[var(--ink)] tabular-nums">{value.toLocaleString()}</p><h3 className="mt-2 text-sm font-bold text-[var(--ink)]">{label}</h3><p className="mt-1 text-xs leading-relaxed text-[var(--muted-foreground)]">{detail}</p></div>)}
+                  </div>}
+                </section>
+              )}
+
+              {isRiderAdmin && <AdminMetricCards loading={loading} items={[
+                { label: 'Terminal assignment', value: assignedTerminalId ? 1 : 0, detail: assignedTerminalName || 'Ask the Super Admin for an assignment', Icon: MapPin },
+                { label: 'Your drivers', value: assignedRiderCount, detail: 'Drivers on your assigned terminal', Icon: Users, tone: 'info' },
+                { label: 'Awaiting approval', value: myRequests.filter(request => request.status === 'pending').length, detail: 'Your submitted change requests', Icon: Clock, tone: 'amber' },
+              ]} />}
               {/* Pending Changes Banner */}
               {isRiderAdmin && hasPendingChanges && (
                 <div className="p-4 bg-[var(--amber-soft)] border-2 border-[var(--amber-soft)] rounded-2xl">
@@ -2873,14 +2899,14 @@ async function applyAssignDriver(rider: StoredRider, terminal: Terminal) {
                       <button
                         type="button"
                         onClick={() => setPendingChanges({})}
-                        className="text-xs font-semibold text-[var(--amber-ink)] hover:underline"
+                        className="min-h-11 rounded-xl px-3 text-xs font-semibold text-[var(--amber-ink)] hover:underline"
                       >
                         Discard All
                       </button>
                       <button
                         type="button"
                         onClick={savePendingChanges}
-                        className="flex items-center gap-1 px-3 py-1.5 bg-[var(--success)] text-white text-xs font-bold rounded-lg transition-all active:scale-95"
+                        className="flex min-h-11 items-center gap-1 px-3 py-1.5 bg-[var(--success-ink)] text-[var(--background)] text-xs font-bold rounded-xl transition-all active:scale-95"
                       >
                         <Save size={12} /> Save Now
                       </button>
@@ -2890,7 +2916,7 @@ async function applyAssignDriver(rider: StoredRider, terminal: Terminal) {
               )}
 
               {isSuperAdmin ? (
-                <div className="grid gap-6 lg:grid-cols-3 items-start">
+                <div className="grid gap-6 @min-[60rem]:grid-cols-[minmax(0,1fr)_18rem] items-start">
                   {/* --------------------------------------------------
                       TODA directory — the assignment itself.
 
@@ -2906,14 +2932,14 @@ async function applyAssignDriver(rider: StoredRider, terminal: Terminal) {
                       reveals its drivers, with the admin switch beside
                       each, and a searchable picker for adding more.
                   -------------------------------------------------- */}
-                  <div className="lg:col-span-2 rounded-2xl bg-surface border border-line overflow-hidden">
-                    <div className="flex items-center gap-3 p-4 border-b border-line">
+                  <section aria-labelledby="terminal-directory-title" className="min-w-0 rounded-3xl bg-card border border-line">
+                    <div className="flex flex-wrap items-center gap-3 p-4 sm:p-5 border-b border-line">
                       <div className="w-10 h-10 flex-shrink-0 rounded-xl bg-[var(--teal-soft)] text-[var(--teal)] flex items-center justify-center">
                         <Users size={18} />
                       </div>
                       <div className="min-w-0">
-                        <p className="font-bold text-[var(--ink)] truncate">TODA directory</p>
-                        <p className="text-xs text-[var(--muted-foreground)] truncate">
+                        <h2 id="terminal-directory-title" className="text-base font-bold text-[var(--ink)]">TODA directory</h2>
+                        <p className="mt-0.5 text-xs text-[var(--muted-foreground)]">
                           Open a terminal to staff it and name who runs it
                         </p>
                       </div>
@@ -2922,6 +2948,13 @@ async function applyAssignDriver(rider: StoredRider, terminal: Terminal) {
                       </span>
                     </div>
 
+                    <div className="space-y-3 border-b border-line p-4 sm:p-5">
+                      <div className="relative"><Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-[var(--muted-foreground)]" aria-hidden="true" /><label htmlFor="terminal-directory-search" className="sr-only">Search terminals or drivers</label><input id="terminal-directory-search" type="search" value={terminalQuery} onChange={event => setTerminalQuery(event.target.value)} placeholder="Search terminal, area, or driver…" className="min-h-11 w-full rounded-xl border border-line bg-soft pl-10 pr-3 text-sm text-[var(--ink)]" /></div>
+                      <div role="group" aria-label="Filter terminals" className="flex flex-wrap gap-2">
+                        {([['all', 'All terminals'], ['needs-admin', 'Needs admin'], ['active', 'Active'], ['inactive', 'Inactive']] as const).map(([value, label]) => <button key={value} type="button" onClick={() => setDirectoryFilter(value)} aria-pressed={directoryFilter === value} className={`min-h-11 rounded-xl border px-3 text-xs font-bold transition-colors ${directoryFilter === value ? 'border-[var(--teal)]/30 bg-[var(--teal-soft)] text-[var(--teal)]' : 'border-line text-[var(--muted-foreground)] hover:bg-soft'}`}>{label}</button>)}
+                      </div>
+                      <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-[var(--muted-foreground)]"><p role="status">{loading ? 'Refreshing directory…' : `${directoryTerminals.length} of ${terminals.length} terminals · A–Z`}</p>{(terminalQuery || directoryFilter !== 'all') && <button type="button" onClick={() => { setTerminalQuery(''); setDirectoryFilter('all'); }} className="min-h-11 rounded-lg px-2 font-bold text-[var(--teal)] hover:bg-[var(--teal-soft)]">Clear filters</button>}</div>
+                    </div>
                     {!terminalAdminColumn ? (
                       <div className="p-4 border-b border-line bg-[var(--amber-soft)]">
                         <p className="text-sm font-bold text-[var(--amber-ink)]">
@@ -2934,12 +2967,10 @@ async function applyAssignDriver(rider: StoredRider, terminal: Terminal) {
                       </div>
                     ) : null}
 
-                    {terminals.length === 0 ? (
-                      <p className="px-4 py-8 text-center text-sm text-[var(--muted-foreground)] italic">
-                        No terminals yet
-                      </p>
+                    {loading ? <div role="status" aria-label="Loading terminal directory" className="space-y-3 p-5">{[1, 2, 3].map(i => <div key={i} className="h-20 animate-pulse rounded-xl bg-soft" />)}</div> : directoryTerminals.length === 0 ? (
+                      <div className="px-5 py-10 text-center"><MapPin className="mx-auto mb-3 size-9 text-[var(--muted-foreground)]" aria-hidden="true" /><p className="text-sm font-bold text-[var(--ink)]">{terminals.length === 0 ? 'No terminals yet' : 'No matching terminals'}</p><p className="mt-1 text-xs text-[var(--muted-foreground)]">{terminals.length === 0 ? 'Use Add Terminal to create your first TODA.' : 'Try another name, driver, or status filter.'}</p></div>
                     ) : (
-                      terminals.map(t => {
+                      directoryTerminals.map(t => {
                         const onThisTerminal = getRidersForTerminal(t.id);
                         const adminsHere = todaAdmins.filter(a => riderTerminalId(a) === t.id).length;
                         const isOpen = openTerminalIds.includes(t.id);
@@ -2959,7 +2990,7 @@ async function applyAssignDriver(rider: StoredRider, terminal: Terminal) {
                          */
                         const candidates = riders;
                         return (
-                          <div key={t.id} className="border-b border-line last:border-b-0">
+                          <div key={t.id} className={`border-b border-line last:border-b-0 ${isOpen ? 'bg-soft/50' : ''}`}>
                             {/*
                               The row and its controls, as siblings.
 
@@ -2969,34 +3000,36 @@ async function applyAssignDriver(rider: StoredRider, terminal: Terminal) {
                               there would be nothing on this page that opened it —
                               so it lives here, beside the name it belongs to.
                             */}
-                            <div className="flex items-stretch">
+                            <div className="flex flex-wrap items-center gap-y-1 p-3 sm:p-4">
                               <button
                                 type="button"
                                 aria-expanded={isOpen}
                                 aria-controls={`toda-roster-${t.id}`}
                                 onClick={() => toggleTerminalOpen(t.id)}
-                                className="flex-1 min-w-0 flex items-center gap-3 px-4 py-3.5 text-left hover:bg-[var(--soft)] transition-colors"
+                                className="basis-full @min-[36rem]:basis-0 flex-1 min-w-0 flex items-center gap-3 rounded-xl px-1 py-2 text-left hover:bg-[var(--soft)] transition-colors"
                               >
                                 <span
                                   aria-hidden="true"
-                                  className="w-3 h-3 flex-shrink-0 rounded-full"
+                                  className="w-3 h-3 flex-shrink-0 rounded-full ring-4 ring-[var(--muted)]"
                                   style={{ background: normalizeTerminalColor(t.marker_color) }}
                                 />
                                 <span className="min-w-0 flex-1">
-                                  <span className="block font-bold text-[var(--ink)] truncate">{t.name}</span>
-                                  <span className="block text-xs text-[var(--muted-foreground)] truncate">
+                                  <span className="block text-sm font-bold text-[var(--ink)] break-words">{t.name}</span>
+                                  <span className="mt-1 block text-xs font-normal text-[var(--muted-foreground)]">
                                     {onThisTerminal.length} driver{onThisTerminal.length === 1 ? '' : 's'}
                                     {adminsHere > 0
                                       ? ` · ${adminsHere} admin${adminsHere === 1 ? '' : 's'}`
                                       : ' · no admin yet'}
                                   </span>
+                                  {t.boundary && <span className="mt-1 block text-xs font-normal text-[var(--muted-foreground)] break-words">{t.boundary}</span>}
+                                  <span className={`mt-2 inline-flex rounded-md px-2 py-0.5 text-[10px] font-bold ${t.is_active ? 'bg-[var(--success-soft)] text-[var(--success-ink)]' : 'bg-soft text-[var(--muted-foreground)]'}`}>{t.is_active ? 'Active' : 'Inactive'}</span>
                                 </span>
                                 {/* A terminal nobody runs is the one case worth
                                     flagging on the row itself — the roster rail
                                     reports the count, but this is where the eye
                                     already is. */}
                                 {adminsHere === 0 ? (
-                                  <span className="flex-shrink-0 px-2 py-0.5 rounded-full bg-[var(--amber-soft)] text-[var(--amber-ink)] text-[11px] font-bold">
+                                  <span className="hidden @min-[42rem]:inline-flex flex-shrink-0 px-2 py-0.5 rounded-full bg-[var(--amber-soft)] text-[var(--amber-ink)] text-[11px] font-bold">
                                     Needs admin
                                   </span>
                                 ) : null}
@@ -3015,9 +3048,9 @@ async function applyAssignDriver(rider: StoredRider, terminal: Terminal) {
                                 onClick={() => openEdit(t)}
                                 aria-label={`Settings for ${t.name}`}
                                 title="Terminal settings"
-                                className="w-11 flex-shrink-0 flex items-center justify-center hover:bg-[var(--soft)] transition-colors"
+                                className="ml-auto @min-[36rem]:ml-2 min-h-11 flex-shrink-0 flex items-center justify-center gap-2 rounded-xl border border-line px-3 text-xs font-bold text-[var(--teal)] hover:bg-[var(--teal-soft)] transition-colors"
                               >
-                                <Settings className="w-4 h-4 text-[var(--ink)]" />
+                                <Settings className="w-4 h-4" aria-hidden="true" /> Settings
                               </button>
 
                               {/* Super Admin only, matching the rule the delete
@@ -3029,7 +3062,7 @@ async function applyAssignDriver(rider: StoredRider, terminal: Terminal) {
                                   onClick={() => confirmDeleteTerminal(t.id)}
                                   aria-label={`Delete ${t.name}`}
                                   title="Delete terminal"
-                                  className="w-11 flex-shrink-0 flex items-center justify-center hover:bg-[var(--error-soft)] transition-colors"
+                                  className="ml-2 w-11 min-h-11 rounded-xl flex-shrink-0 flex items-center justify-center hover:bg-[var(--error-soft)] transition-colors"
                                 >
                                   <Trash2 className="w-4 h-4 text-[var(--error)]" />
                                 </button>
@@ -3037,7 +3070,7 @@ async function applyAssignDriver(rider: StoredRider, terminal: Terminal) {
                             </div>
 
                             {isOpen && (
-                              <div id={`toda-roster-${t.id}`} className="px-4 pb-4 -mt-1">
+                              <div id={`toda-roster-${t.id}`} className="px-3 pb-4 sm:px-5">
                                 <DriverPicker
                                   terminalName={t.name}
                                   terminalId={t.id}
@@ -3058,16 +3091,16 @@ async function applyAssignDriver(rider: StoredRider, terminal: Terminal) {
                                       return (
                                         <li
                                           key={rider.id}
-                                          className="flex items-center gap-3 px-3 py-2.5 bg-surface"
+                                          className="flex flex-wrap items-center gap-2 px-3 py-3 bg-card"
                                         >
                                           <div className="w-8 h-8 flex-shrink-0 rounded-full bg-[var(--muted)] text-[var(--muted-foreground)] flex items-center justify-center text-[11px] font-bold">
                                             {driverInitials(rider)}
                                           </div>
-                                          <div className="min-w-0 flex-1">
-                                            <p className="text-sm font-semibold text-[var(--ink)] truncate">
+                                          <div className="min-w-0 flex-1 basis-[calc(100%-3rem)] @min-[42rem]:basis-0">
+                                            <p className="text-sm font-semibold text-[var(--ink)] break-words">
                                               {riderName(rider)}
                                             </p>
-                                            <p className="text-xs text-[var(--muted-foreground)] truncate">
+                                            <p className="text-xs text-[var(--muted-foreground)] break-all">
                                               {riderPlate(rider) || rider.email}
                                             </p>
                                           </div>
@@ -3086,14 +3119,14 @@ async function applyAssignDriver(rider: StoredRider, terminal: Terminal) {
                                             aria-label={`TODA admin for ${riderName(rider)} on ${t.name}`}
                                             disabled={savingFlag || !terminalAdminColumn}
                                             onClick={() => confirmDriverTerminalAdmin(rider, !isAdmin)}
-                                            className={`relative w-11 h-7 flex-shrink-0 rounded-full transition-colors disabled:opacity-40 disabled:cursor-not-allowed ${
+                                            className={`relative w-11 h-11 flex-shrink-0 rounded-full border-[8px] border-transparent bg-clip-padding transition-colors disabled:opacity-40 disabled:cursor-not-allowed ${
                                               isAdmin ? 'bg-[var(--teal)]' : 'bg-[var(--border)]'
                                             }`}
                                           >
                                             <span
                                               aria-hidden="true"
-                                              className={`absolute top-1 w-5 h-5 rounded-full bg-white shadow transition-[left] ${
-                                                isAdmin ? 'left-5' : 'left-1'
+                                              className={`absolute top-1 w-4 h-4 rounded-full bg-white shadow transition-[left] ${
+                                                isAdmin ? 'left-3' : 'left-0'
                                               }`}
                                             />
                                           </button>
@@ -3104,7 +3137,7 @@ async function applyAssignDriver(rider: StoredRider, terminal: Terminal) {
                                               className="flex-shrink-0 text-[var(--muted-foreground)] animate-spin"
                                             />
                                           ) : (
-                                            <span className="hidden sm:inline w-14 flex-shrink-0 text-right text-xs font-bold text-[var(--muted-foreground)]">
+                                            <span className="flex-shrink-0 text-xs font-bold text-[var(--muted-foreground)]">
                                               {isAdmin ? 'Admin' : 'Driver'}
                                             </span>
                                           )}
@@ -3113,7 +3146,7 @@ async function applyAssignDriver(rider: StoredRider, terminal: Terminal) {
                                             type="button"
                                             aria-label={`Remove ${riderName(rider)} from ${t.name}`}
                                             onClick={() => confirmUnassignDriver(rider, t)}
-                                            className="flex-shrink-0 w-9 h-9 flex items-center justify-center rounded-lg text-[var(--muted-foreground)] hover:bg-[var(--error-soft)] hover:text-[var(--error)] transition-colors"
+                                            className="ml-auto flex-shrink-0 w-11 h-11 flex items-center justify-center rounded-lg text-[var(--muted-foreground)] hover:bg-[var(--error-soft)] hover:text-[var(--error)] transition-colors"
                                           >
                                             <X size={15} />
                                           </button>
@@ -3137,16 +3170,15 @@ async function applyAssignDriver(rider: StoredRider, terminal: Terminal) {
                         No drivers registered yet
                       </p>
                     ) : null}
-                  </div>
+                  </section>
 
                   {/* --------------------------------------------------
                       Assignment health — the one number the directory
                       cannot show at a glance.
                       -------------------------------------------------- */}
-                  <div className="rounded-2xl bg-surface border border-line p-5">
-                    <p className="text-[11px] font-bold uppercase tracking-[0.18em] text-[var(--teal)]">
-                      Assignment health
-                    </p>
+                  <section aria-labelledby="terminal-coverage-title" className="min-w-0 rounded-3xl bg-card border border-line p-5 sm:p-6">
+                    <h2 id="terminal-coverage-title" className="text-base font-bold text-[var(--ink)]">Terminal coverage</h2>
+                    <p className="mt-1 text-xs text-[var(--muted-foreground)]">Terminals with at least one TODA admin</p>
 
                     {/* Coverage ring, drawn rather than charted: it is one
                         arc and one number, and a donut's library would be
@@ -3158,7 +3190,7 @@ async function applyAssignDriver(rider: StoredRider, terminal: Terminal) {
                           {/* Not drawn at all when nothing is assigned: a
                               zero-length dash under a round cap draws a dot, which
                               would read as a sliver of coverage that isn't there. */}
-                          {adminCoverage > 0 && (
+                          {terminalCoverage > 0 && (
                             <circle
                               cx="60"
                               cy="60"
@@ -3167,12 +3199,12 @@ async function applyAssignDriver(rider: StoredRider, terminal: Terminal) {
                               stroke="var(--teal)"
                               strokeWidth="10"
                               strokeLinecap="round"
-                              strokeDasharray={`${(adminCoverage / 100) * 326.7} 326.7`}
+                              strokeDasharray={`${(terminalCoverage / 100) * 326.7} 326.7`}
                             />
                           )}
                         </svg>
                         <div className="absolute inset-0 flex flex-col items-center justify-center">
-                          <span className="text-3xl font-extrabold text-[var(--ink)]">{adminCoverage}%</span>
+                          <span className="text-3xl font-extrabold text-[var(--ink)] tabular-nums">{loading ? '—' : `${terminalCoverage}%`}</span>
                           <span className="text-[10px] font-bold uppercase tracking-[0.14em] text-[var(--muted-foreground)]">
                             Coverage
                           </span>
@@ -3181,24 +3213,18 @@ async function applyAssignDriver(rider: StoredRider, terminal: Terminal) {
                     </div>
 
                     <p className="mt-4 text-center text-lg font-extrabold text-[var(--ink)]">
-                      {todaAdmins.length === 0
-                        ? 'No admin yet'
-                        : adminCoverage === 100
-                          ? 'Fully covered'
-                          : adminCoverage === 0
-                            ? 'Nobody assigned'
-                            : 'Almost there'}
+                      {loading ? 'Loading coverage…' : `${terminalsWithAdmins.length} of ${terminals.length} terminals staffed`}
                     </p>
                     <p className="mt-1 text-center text-sm text-[var(--muted-foreground)]">
-                      {todaAdmins.length === 0
-                        ? 'Name a driver as the admin of a terminal and they show up here.'
-                        : adminCoverage === 100
-                          ? 'Every TODA admin is scoped to a terminal, so every request reaches the right TODA.'
-                          : `${unassignedAdminCount} TODA admin${unassignedAdminCount === 1 ? '' : 's'} still ${unassignedAdminCount === 1 ? 'has' : 'have'} no terminal, so their requests have nowhere to go.`}
+                      {loading ? 'Refreshing terminal assignments.' : terminals.length === 0 ? 'Add your first terminal to start building the network.' : terminalsWithoutAdmins === 0 ? 'Every terminal has an admin assigned.' : `${terminalsWithoutAdmins} terminal${terminalsWithoutAdmins === 1 ? ' needs' : 's need'} an admin. Open a roster to designate one.`}
+                    </p>
+                    <button type="button" onClick={() => { setTerminalQuery(''); setDirectoryFilter('needs-admin'); }} className="mt-3 inline-flex w-full min-h-11 items-center justify-center gap-2 rounded-xl border border-line px-3 text-xs font-bold text-[var(--teal)] hover:bg-[var(--teal-soft)]"><Filter className="size-4" aria-hidden="true" /> View terminals needing an admin</button>
+                    <p className="mt-3 text-xs leading-relaxed text-[var(--muted-foreground)]">
+                      {assignedAdminCount} of {todaAdmins.length} designated admins have a terminal assignment.{unassignedAdminCount > 0 ? ` ${unassignedAdminCount} still unassigned.` : ''}
                     </p>
 
                     <div className="mt-5 pt-4 border-t border-line">
-                      {terminalsWithAdmins.length === 0 ? (
+                      {loading ? <p className="text-xs text-[var(--muted-foreground)]">Loading assignments…</p> : terminalsWithAdmins.length === 0 ? (
                         <p className="text-sm text-[var(--muted-foreground)] italic">
                           No terminals have an admin yet
                         </p>
@@ -3230,15 +3256,15 @@ async function applyAssignDriver(rider: StoredRider, terminal: Terminal) {
                         link.
                       */}
                     </div>
-                  </div>
+                  </section>
                 </div>
               ) : (
                 /* A Rider Admin's own scope. Same question as the directory
                    above it — who runs which terminal — answered for the one
                    terminal they can possibly be scoped to. */
-                <div className="grid gap-6 lg:grid-cols-3 items-start">
-                  <div className="lg:col-span-2 space-y-6">
-                    <div className={`rounded-2xl border-2 p-5 ${assignedTerminalId ? 'bg-[var(--info-soft)] border-[var(--info-soft)]' : 'bg-[var(--amber-soft)] border-[var(--amber-soft)]'}`}>
+                <div className="grid gap-5 @min-[56rem]:grid-cols-[minmax(0,1fr)_18rem] items-start">
+                  <div className="min-w-0 space-y-5">
+                    <div className={`rounded-3xl border p-5 sm:p-6 ${assignedTerminalId ? 'bg-[var(--info-soft)] border-[var(--info-soft)]' : 'bg-[var(--amber-soft)] border-[var(--amber-soft)]'}`}>
                       <p className={`font-bold ${assignedTerminalId ? 'text-[var(--info)]' : 'text-[var(--amber-ink)]'}`}>
                         {assignedTerminalId
                           ? `Assigned to ${assignedTerminalName || 'your terminal'}`
@@ -3285,11 +3311,11 @@ async function applyAssignDriver(rider: StoredRider, terminal: Terminal) {
                             return (
                               <div
                                 key={req.id}
-                                className="flex items-center justify-between gap-3 px-4 py-2.5 rounded-xl border-2 bg-[var(--amber-soft)] border-[var(--amber-soft)]"
+                                className="flex flex-col items-start gap-2 px-4 py-3 rounded-2xl border border-line bg-[var(--amber-soft)] @min-[44rem]:flex-row @min-[44rem]:justify-between"
                               >
                                 <div className="flex items-center gap-3 min-w-0">
                                   <Clock size={15} className="text-[var(--amber-ink)] flex-shrink-0" />
-                                  <p className="text-sm font-semibold text-[var(--ink)] truncate">
+                                  <p className="text-sm font-semibold text-[var(--ink)] break-words">
                                     {APPROVAL_REQUEST_LABELS[req.request_type]} — {summary}
                                   </p>
                                 </div>
@@ -3304,7 +3330,7 @@ async function applyAssignDriver(rider: StoredRider, terminal: Terminal) {
                     )}
                   </div>
 
-                  <div className="rounded-2xl bg-surface border border-line p-5">
+                  <div className="min-w-0 rounded-3xl bg-card border border-line p-5 sm:p-6">
                     <p className="text-[11px] font-bold uppercase tracking-[0.18em] text-[var(--teal)]">
                       Your drivers
                     </p>
@@ -3314,6 +3340,8 @@ async function applyAssignDriver(rider: StoredRider, terminal: Terminal) {
                     <p className="text-sm text-[var(--muted-foreground)]">
                       driver{assignedRiderCount === 1 ? '' : 's'} on your terminal
                     </p>
+                    <Link to="/admin/users" className="mt-4 flex min-h-11 items-center justify-between rounded-xl bg-[var(--teal-soft)] px-3 text-sm font-bold text-[var(--teal)]">Browse drivers <ChevronRight className="size-4" aria-hidden="true" /></Link>
+                    <Link to="/admin/requests" className="mt-2 flex min-h-11 items-center justify-between rounded-xl border border-line px-3 text-sm font-bold text-[var(--ink)]">Submitted requests <ChevronRight className="size-4" aria-hidden="true" /></Link>
                     {/* "Manage drivers" used to jump to the Terminals tab. The
                         roster is edited from the terminal's own row, which is
                         reachable from the directory above, so a link to nowhere
@@ -3388,7 +3416,7 @@ async function applyAssignDriver(rider: StoredRider, terminal: Terminal) {
                     }}
                     onFocus={() => { if (mapSearchQuery.trim()) setShowMapSearchDropdown(true); }}
                     placeholder="Search location..."
-                    className="flex-1 text-sm font-semibold text-[var(--ink)] placeholder:text-[var(--muted-foreground)] placeholder:font-normal outline-none bg-transparent"
+                    className="min-w-0 flex-1 text-sm font-semibold text-[var(--ink)] placeholder:text-[var(--muted-foreground)] placeholder:font-normal outline-none bg-transparent"
                   />
                   {isMapSearching ? (
                     <Loader2 className="w-4 h-4 text-[var(--muted-foreground)] animate-spin flex-shrink-0" />
@@ -3447,7 +3475,7 @@ async function applyAssignDriver(rider: StoredRider, terminal: Terminal) {
               the width; expanded, each section names itself. */}
           <div className="flex-1 flex min-h-0">
             <aside
-              className={`relative flex flex-col gap-1 p-2 bg-surface border-r border-[var(--border)] shrink-0 transition-[width] duration-200 ${sidebarCollapsed ? 'w-16' : routesListOpen ? 'w-72' : 'w-44'}`}
+              className={`relative flex flex-col gap-1 p-2 bg-surface border-r border-[var(--border)] shrink-0 transition-[width] duration-200 ${sidebarCollapsed ? 'w-16' : routesListOpen ? 'w-72 max-w-[70vw] sm:max-w-none' : 'w-44 max-w-[60vw] sm:max-w-none'}`}
             >
               {([
                 // Toda first: it is the only tab that answers "what does this
@@ -3478,9 +3506,10 @@ async function applyAssignDriver(rider: StoredRider, terminal: Terminal) {
                       onClick={() => setEditorSection(id)}
                       aria-current={active ? 'page' : undefined}
                       title={sidebarCollapsed ? label : undefined}
+                      aria-label={label}
                       className={`flex items-center gap-3 h-12 px-3 rounded-xl transition-colors ${
                         active
-                          ? 'bg-[var(--primary)] text-white'
+                          ? 'bg-[var(--primary)] text-[var(--primary-foreground)]'
                           : 'text-[var(--muted-foreground)] hover:bg-[var(--muted)] hover:text-[var(--ink)]'
                       }`}
                     >

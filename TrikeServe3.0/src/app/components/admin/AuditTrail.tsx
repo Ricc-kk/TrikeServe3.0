@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo } from "react";
 import ListPagination from "../ui/ListPagination";
 import {
-  Menu, ShieldCheck, Search, AlertTriangle, ClipboardList, ChevronRight, X,
+  ShieldCheck, Search, AlertTriangle, ClipboardList, ChevronRight, X, Users, Activity,
 } from "lucide-react";
 import { Card } from "../ui/card";
 import { Badge } from "../ui/badge";
@@ -10,32 +10,34 @@ import { useAuth } from "../../contexts/AuthContext";
 
 import { getAuditLogs, type AuditLog } from "../../../lib/supabase";
 import AdminShell from "./AdminShell";
+import AdminPageIntro, { AdminMetricCards } from "./AdminPageIntro";
 import { TableSkeleton } from "./AdminSkeleton";
 import EmptyState from "../ui/EmptyState";
 
 /** Display label + badge colour for each recorded action. */
 const ACTION_META: Record<string, { label: string; badge: string; category: string }> = {
   // Admin actions
-  approve_request: { label: "Approved request", badge: "bg-[var(--success)]", category: "Approvals" },
-  reject_request: { label: "Rejected request", badge: "bg-[var(--error)]", category: "Approvals" },
-  verify_user: { label: "Verified user", badge: "bg-[var(--success)]", category: "Users" },
-  reject_user: { label: "Rejected user", badge: "bg-[var(--error)]", category: "Users" },
-  create_terminal: { label: "Created terminal", badge: "bg-[var(--info)]", category: "Terminals" },
-  update_terminal: { label: "Updated terminal", badge: "bg-[var(--info)]", category: "Terminals" },
-  delete_terminal: { label: "Deleted terminal", badge: "bg-[var(--error)]", category: "Terminals" },
-  assign_rider_admin: { label: "Rider admin assignment", badge: "bg-[var(--violet)]", category: "Assignments" },
-  assign_toda_admin: { label: "TODA admin assignment", badge: "bg-[var(--violet)]", category: "Assignments" },
-  update_rate: { label: "Updated rates", badge: "bg-[var(--amber)]", category: "Rates" },
+  approve_request: { label: "Approved request", badge: "bg-[var(--success-soft)] text-[var(--success-ink)]", category: "Approvals" },
+  reject_request: { label: "Rejected request", badge: "bg-[var(--error-soft)] text-[var(--error)]", category: "Approvals" },
+  verify_user: { label: "Verified user", badge: "bg-[var(--success-soft)] text-[var(--success-ink)]", category: "Users" },
+  reject_user: { label: "Rejected user", badge: "bg-[var(--error-soft)] text-[var(--error)]", category: "Users" },
+  create_terminal: { label: "Created terminal", badge: "bg-[var(--info-soft)] text-[var(--info)]", category: "Terminals" },
+  update_terminal: { label: "Updated terminal", badge: "bg-[var(--info-soft)] text-[var(--info)]", category: "Terminals" },
+  delete_terminal: { label: "Deleted terminal", badge: "bg-[var(--error-soft)] text-[var(--error)]", category: "Terminals" },
+  assign_rider_admin: { label: "Rider admin assignment", badge: "bg-[var(--violet-soft)] text-[var(--violet)]", category: "Assignments" },
+  assign_toda_admin: { label: "TODA admin assignment", badge: "bg-[var(--violet-soft)] text-[var(--violet)]", category: "Assignments" },
+  update_rate: { label: "Updated rates", badge: "bg-[var(--amber-soft)] text-[var(--amber-ink)]", category: "Rates" },
+  update_terminal_rates: { label: "Updated terminal rates", badge: "bg-[var(--amber-soft)] text-[var(--amber-ink)]", category: "Rates" },
   // Customer actions
-  create_ride: { label: "Booked ride", badge: "bg-[var(--primary)]", category: "Rides" },
-  cancel_ride: { label: "Cancelled ride", badge: "bg-[var(--error)]", category: "Rides" },
-  place_order: { label: "Placed order", badge: "bg-[var(--primary)]", category: "Orders" },
-  report_ride: { label: "Reported a ride", badge: "bg-[var(--error)]", category: "Rides" },
+  create_ride: { label: "Booked ride", badge: "bg-[var(--primary-soft)] text-[var(--coral-dark)]", category: "Rides" },
+  cancel_ride: { label: "Cancelled ride", badge: "bg-[var(--error-soft)] text-[var(--error)]", category: "Rides" },
+  place_order: { label: "Placed order", badge: "bg-[var(--primary-soft)] text-[var(--coral-dark)]", category: "Orders" },
+  report_ride: { label: "Reported a ride", badge: "bg-[var(--error-soft)] text-[var(--error)]", category: "Rides" },
   // Driver actions
-  accept_ride: { label: "Accepted ride", badge: "bg-[var(--success)]", category: "Rides" },
-  complete_ride: { label: "Completed ride", badge: "bg-[var(--success)]", category: "Rides" },
+  accept_ride: { label: "Accepted ride", badge: "bg-[var(--success-soft)] text-[var(--success-ink)]", category: "Rides" },
+  complete_ride: { label: "Completed ride", badge: "bg-[var(--success-soft)] text-[var(--success-ink)]", category: "Rides" },
   // Business actions
-  update_order_status: { label: "Updated order", badge: "bg-[var(--info)]", category: "Orders" },
+  update_order_status: { label: "Updated order", badge: "bg-[var(--info-soft)] text-[var(--info)]", category: "Orders" },
 };
 
 const CATEGORY_FILTERS = [
@@ -44,24 +46,24 @@ const CATEGORY_FILTERS = [
 
 const ROLE_FILTERS: { key: string; label: string; badge: string }[] = [
   { key: "", label: "All roles", badge: "" },
-  { key: "admin", label: "Admin", badge: "bg-[var(--teal)]" },
-  { key: "rider", label: "Driver", badge: "bg-[var(--info)]" },
-  { key: "customer", label: "Customer", badge: "bg-[var(--success)]" },
-  { key: "business", label: "Business", badge: "bg-[var(--violet)]" },
+  { key: "admin", label: "Admin", badge: "bg-[var(--teal-soft)] text-[var(--teal)]" },
+  { key: "rider", label: "Driver", badge: "bg-[var(--info-soft)] text-[var(--info)]" },
+  { key: "customer", label: "Customer", badge: "bg-[var(--success-soft)] text-[var(--success-ink)]" },
+  { key: "business", label: "Business", badge: "bg-[var(--violet-soft)] text-[var(--violet)]" },
 ];
 
 const ROLE_META: Record<string, { label: string; badge: string }> = {
-  admin: { label: "Admin", badge: "bg-[var(--teal)]" },
-  rider: { label: "Driver", badge: "bg-[var(--info)]" },
-  customer: { label: "Customer", badge: "bg-[var(--success)]" },
-  business: { label: "Business", badge: "bg-[var(--violet)]" },
+  admin: { label: "Admin", badge: "bg-[var(--teal-soft)] text-[var(--teal)]" },
+  rider: { label: "Driver", badge: "bg-[var(--info-soft)] text-[var(--info)]" },
+  customer: { label: "Customer", badge: "bg-[var(--success-soft)] text-[var(--success-ink)]" },
+  business: { label: "Business", badge: "bg-[var(--violet-soft)] text-[var(--violet)]" },
 };
 
 function metaFor(action: string) {
   return (
     ACTION_META[action] || {
       label: action.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase()),
-      badge: "bg-[var(--muted-foreground)]",
+      badge: "bg-soft text-[var(--muted-foreground)]",
       category: "Other",
     }
   );
@@ -73,7 +75,7 @@ function roleFor(log: AuditLog): string {
 }
 
 function roleMeta(role: string) {
-  return ROLE_META[role] || { label: role, badge: "bg-[var(--muted-foreground)]" };
+  return ROLE_META[role] || { label: role, badge: "bg-soft text-[var(--muted-foreground)]" };
 }
 
 /**
@@ -236,7 +238,7 @@ export default function AuditTrail() {
       subtitle="Admin, customer, driver and business activity"
     >
 
-        <div className="space-y-6">
+        <div className="@container mx-auto w-full max-w-[100rem] space-y-6 sm:space-y-8">
           {!isSuperAdmin ? (
             <EmptyState
               icon={ShieldCheck}
@@ -246,6 +248,12 @@ export default function AuditTrail() {
             />
           ) : (
             <>
+              <AdminPageIntro eyebrow="Audit trail" title="Every action, accounted for." description="Trace platform activity, understand changes, and inspect the details behind each recorded event." note="Latest 300 records · Refreshes every 15 seconds" />
+              <AdminMetricCards loading={loading} items={[
+                { label: 'Loaded records', value: logs.length, detail: 'Latest activity, newest first', Icon: ClipboardList },
+                { label: 'Actor roles', value: new Set(logs.map(roleFor)).size, detail: 'Roles represented in these records', Icon: Users, tone: 'info' },
+                { label: 'Matching records', value: filtered.length, detail: 'With the current filters', Icon: Activity, tone: 'success' },
+              ]} />
               {loadError && (
                 <Card className="p-4 mb-6 border-2 border-[var(--amber-soft)] bg-[var(--amber-soft)]">
                   <div className="flex items-start gap-3">
@@ -255,14 +263,15 @@ export default function AuditTrail() {
                 </Card>
               )}
 
-              {/* Role filter */}
-              <div className="flex gap-2 overflow-x-auto mb-3">
+              <section aria-label="Filter audit records" className="space-y-4 rounded-3xl border border-line bg-card p-4 sm:p-5">
+              <h2 className="text-base font-bold text-[var(--ink)]">Find an activity</h2>
+              <div role="group" aria-label="Filter by actor role" className="flex flex-wrap gap-2">
                 {ROLE_FILTERS.map((r) => (
                   <button
                     key={r.key || "all"}
                     onClick={() => applyFilter(setRole)(r.key)}
                     aria-pressed={role === r.key}
-                    className={`min-h-11 px-3.5 py-1.5 rounded-full text-xs font-bold whitespace-nowrap transition-all ${
+                    className={`min-h-11 px-3.5 py-1.5 rounded-xl text-xs font-bold whitespace-nowrap transition-all ${
                       role === r.key
                         ? "bg-[var(--ink-solid)] text-white"
                         : "bg-[var(--surface)] border border-line text-[var(--muted-foreground)]"
@@ -274,16 +283,16 @@ export default function AuditTrail() {
               </div>
 
               {/* Category filter + search */}
-              <div className="flex flex-col sm:flex-row sm:items-center gap-3 mb-5">
-                <div className="flex gap-2 overflow-x-auto">
+              <div className="flex flex-col gap-4">
+                <div role="group" aria-label="Filter by activity category" className="flex flex-wrap gap-2">
                   {CATEGORY_FILTERS.map((f) => (
                     <button
                       key={f}
                       onClick={() => applyFilter(setCategory)(f)}
                       aria-pressed={category === f}
-                      className={`min-h-11 px-3.5 py-1.5 rounded-full text-xs font-bold whitespace-nowrap transition-all ${
+                      className={`min-h-11 px-3.5 py-1.5 rounded-xl text-xs font-bold whitespace-nowrap transition-all ${
                         category === f
-                          ? "bg-[var(--primary)] text-white"
+                          ? "bg-[var(--teal-soft)] text-[var(--teal)] border border-[var(--teal)]/30"
                           : "bg-[var(--surface)] border border-line text-[var(--muted-foreground)]"
                       }`}
                     >
@@ -291,7 +300,7 @@ export default function AuditTrail() {
                     </button>
                   ))}
                 </div>
-                <div className="flex items-center gap-2 px-3 py-2 min-h-11 bg-[var(--surface)] border border-line rounded-xl sm:ml-auto sm:w-64">
+                <div className="flex w-full min-w-0 items-center gap-2 px-3 py-2 min-h-11 bg-soft border border-line rounded-xl">
                   <Search className="w-4 h-4 text-[var(--muted-foreground)] flex-shrink-0" aria-hidden="true" />
                   <label htmlFor="admin-audit-search" className="sr-only">
                     Search the audit trail
@@ -307,7 +316,9 @@ export default function AuditTrail() {
                 </div>
               </div>
 
-              <p className="text-xs text-[var(--muted-foreground)] font-medium mb-3">
+              {hasFilter && <button type="button" onClick={() => { setSearch(''); setRole(''); setCategory('All'); setPage(1); }} className="min-h-11 rounded-xl px-3 text-xs font-bold text-[var(--teal)] hover:bg-[var(--teal-soft)]">Clear filters</button>}
+              </section>
+              <p role="status" className="text-xs text-[var(--muted-foreground)] font-medium mb-3">
                 {filtered.length} record{filtered.length !== 1 ? "s" : ""}
                 {pageCount > 1 && ` \u00b7 page ${page} of ${pageCount}`}
               </p>
@@ -323,11 +334,7 @@ export default function AuditTrail() {
                       ? "Try a different search term, category or role."
                       : "Admin changes plus customer, driver and business activity will appear here."
                   }
-                  filipino={
-                    hasFilter
-                      ? "Wala pang aktibidad na tumutugma sa mga filter na ito."
-                      : "Wala pang naitalang aktibidad."
-                  }
+
                   action={
                     hasFilter ? (
                       <button
@@ -337,7 +344,7 @@ export default function AuditTrail() {
                           setCategory("All");
                           setRole("");
                         }}
-                        className="min-h-11 px-5 rounded-xl bg-[var(--primary)] text-white font-semibold hover:opacity-90"
+                        className="min-h-11 px-5 rounded-xl bg-[var(--primary)] text-[var(--primary-foreground)] font-semibold hover:opacity-90"
                       >
                         Clear filters
                       </button>
@@ -345,10 +352,9 @@ export default function AuditTrail() {
                   }
                 />
               ) : (
-                <Card className="border border-line bg-surface overflow-hidden">
-                  {/* Mobile: the 6-column table needs ~800px, so below sm each
-                      record becomes a stacked card instead of a scrolling grid. */}
-                  <div className="sm:hidden divide-y divide-[var(--border)]">
+                <Card className="gap-0 rounded-3xl border border-line bg-card overflow-hidden">
+                  {/* Stack records until the content area can comfortably fit the table. */}
+                  <div className="divide-y divide-line @min-[60rem]:hidden">
                     {visible.map((log) => {
                       const meta = metaFor(log.action);
                       const rMeta = roleMeta(roleFor(log));
@@ -361,19 +367,19 @@ export default function AuditTrail() {
                           className="block w-full p-4 space-y-1.5 text-left transition-colors hover:bg-[var(--muted)] active:bg-[var(--muted)]"
                         >
                           <div className="flex items-start justify-between gap-2">
-                            <Badge className={`${meta.badge} text-white`}>{meta.label}</Badge>
+                            <Badge className={`${meta.badge}`}>{meta.label}</Badge>
                             <ChevronRight
                               className="size-4 shrink-0 text-[var(--muted-foreground)]"
                               aria-hidden="true"
                             />
                           </div>
-                          <p className="text-sm font-semibold text-[var(--ink)]">
+                          <p className="text-sm font-semibold text-[var(--ink)] break-all">
                             {log.actor_name || log.actor_email || "System"}
                             <span className="ml-1.5 text-xs font-normal text-[var(--muted-foreground)]">
                               {rMeta.label}
                             </span>
                           </p>
-                          <p className="text-sm text-[var(--ink)]">{log.summary || "—"}</p>
+                          <p className="text-sm text-[var(--ink)] break-words">{log.summary || "—"}</p>
                           <p className="text-xs text-[var(--muted-foreground)]">
                             {formatDay(log.created_at)}
                           </p>
@@ -382,7 +388,7 @@ export default function AuditTrail() {
                     })}
                   </div>
 
-                  <div className="hidden sm:block overflow-x-auto">
+                  <div className="hidden @min-[60rem]:block overflow-x-auto">
                     <table className="w-full">
                       <caption className="sr-only">
                         Platform activity log, newest first.
@@ -439,7 +445,7 @@ export default function AuditTrail() {
                                 <p className="text-sm text-[var(--muted-foreground)]">{formatDay(log.created_at)}</p>
                               </td>
                               <td className="px-4 py-4">
-                                <p className="text-sm font-semibold text-[var(--ink)]">
+                                <p className="text-sm font-semibold text-[var(--ink)] break-all">
                                   {log.actor_name || log.actor_email || "System"}
                                 </p>
                                 {/*
@@ -450,7 +456,7 @@ export default function AuditTrail() {
                                 <p className="text-xs text-[var(--muted-foreground)]">{rMeta.label}</p>
                               </td>
                               <td className="px-4 py-4">
-                                <Badge className={`${meta.badge} text-white whitespace-nowrap`}>
+                                <Badge className={`${meta.badge} whitespace-nowrap`}>
                                   {meta.label}
                                 </Badge>
                               </td>
@@ -489,20 +495,20 @@ export default function AuditTrail() {
                   onClick={() => setOpenLog(null)}
                 >
                   <Card
-                    className="w-full max-w-lg max-h-[85vh] overflow-y-auto bg-surface p-5 sm:p-6"
+                    role="dialog" aria-modal="true" aria-label="Audit record details" className="min-w-0 w-full max-w-lg max-h-[85dvh] gap-4 overflow-y-auto rounded-3xl bg-card p-5 sm:p-6"
                     onClick={(e) => e.stopPropagation()}
                   >
                     <div className="mb-4 flex items-start justify-between gap-3">
                       <div className="min-w-0">
                         <div className="flex flex-wrap items-center gap-2">
-                          <Badge className={`${metaFor(openLog.action).badge} text-white`}>
+                          <Badge className={`max-w-full whitespace-normal break-words ${metaFor(openLog.action).badge}`}>
                             {metaFor(openLog.action).label}
                           </Badge>
-                          <Badge className={`${roleMeta(roleFor(openLog)).badge} text-white`}>
+                          <Badge className={`${roleMeta(roleFor(openLog)).badge}`}>
                             {roleMeta(roleFor(openLog)).label}
                           </Badge>
                         </div>
-                        <p className="mt-2 text-lg font-bold text-[var(--ink)]">
+                        <p className="mt-2 break-words text-lg font-bold text-[var(--ink)]">
                           {openLog.summary || "—"}
                         </p>
                       </div>
@@ -510,7 +516,7 @@ export default function AuditTrail() {
                         type="button"
                         onClick={() => setOpenLog(null)}
                         aria-label="Close details"
-                        className="grid size-9 shrink-0 place-items-center rounded-full text-[var(--muted-foreground)] transition-colors hover:bg-[var(--muted)] active:scale-90"
+                        className="grid size-11 shrink-0 place-items-center rounded-full text-[var(--muted-foreground)] transition-colors hover:bg-[var(--muted)] active:scale-90"
                       >
                         <X className="size-5" aria-hidden="true" />
                       </button>
@@ -521,14 +527,14 @@ export default function AuditTrail() {
                         <dt className="text-xs font-bold uppercase tracking-wide text-[var(--muted-foreground)]">
                           Date
                         </dt>
-                        <dd className="mt-0.5 text-[var(--ink)]">{fullDate(openLog.created_at)}</dd>
+                        <dd className="mt-0.5 break-words text-[var(--ink)]">{fullDate(openLog.created_at)}</dd>
                       </div>
 
                       <div>
                         <dt className="text-xs font-bold uppercase tracking-wide text-[var(--muted-foreground)]">
                           Actor
                         </dt>
-                        <dd className="mt-0.5 text-[var(--ink)]">
+                        <dd className="mt-0.5 break-words text-[var(--ink)]">
                           {openLog.actor_name || openLog.actor_email || "System"}
                           {openLog.actor_name && openLog.actor_email && (
                             <span className="block break-all text-xs text-[var(--muted-foreground)]">
@@ -544,7 +550,7 @@ export default function AuditTrail() {
                         </dt>
                         {/* The raw key, not the friendly label: an audit is
                             checked against what the system recorded. */}
-                        <dd className="mt-0.5 font-mono text-xs text-[var(--ink)]">{openLog.action}</dd>
+                        <dd className="mt-0.5 break-all font-mono text-xs text-[var(--ink)]">{openLog.action}</dd>
                       </div>
 
                       {detailEntries(openLog.details).length > 0 && (
@@ -572,7 +578,7 @@ export default function AuditTrail() {
                     <Button
                       type="button"
                       onClick={() => setOpenLog(null)}
-                      className="mt-5 w-full bg-[var(--primary)] text-white"
+                      className="mt-5 min-h-11 w-full bg-[var(--primary)] text-[var(--primary-foreground)]"
                     >
                       Close
                     </Button>

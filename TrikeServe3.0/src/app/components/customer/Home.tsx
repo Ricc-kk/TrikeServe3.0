@@ -32,6 +32,7 @@ import BrowseAvailableLobbies from "./BrowseAvailableLobbies";
 import CustomerHubHeader from "./CustomerHubHeader";
 import RecommendedRestaurants from "./RecommendedRestaurants";
 import CustomerServiceHub from "./CustomerServiceHub";
+import CustomerCartPreview from "./CustomerCartPreview";
 
 // Get Google Maps API Key from environment variable
 const GOOGLE_MAPS_API_KEY = import.meta.env.VITE_GOOGLE_MAPS_API_KEY || "";
@@ -2787,10 +2788,10 @@ const getPrice = () => {
 
   /**
    * The page gets a mint wash that fades to the base colour over the first
-   * 380px rather than a flat fill. `--surface` is defined as
+   * 420px rather than a flat fill. `--surface` is defined as
    * `var(--background)`, so before this every card was the exact same colour as
    * the page behind it and the only thing separating them was a hairline. The
-   * wash is built from tokens rather than literals so it inverts with the
+   * wash fades into the canvas, using tokens rather than literals so it inverts with the
    * theme: `--teal-soft` is a light mint in light mode and a deep pine in dark
    * mode. The fade is an absolute distance rather than a percentage, so it
    * covers the hub card at any viewport height instead of stretching down the
@@ -2802,7 +2803,7 @@ const getPrice = () => {
    * fails on the very next tag.)
    */
   return (
-    <div className="relative flex min-h-screen flex-col bg-[linear-gradient(180deg,var(--teal-soft)_0%,var(--background)_380px)]">
+    <div className="relative flex min-h-screen flex-col bg-[linear-gradient(180deg,var(--teal-soft)_0%,var(--canvas)_420px)]">
       {/* Full Screen Map */}
       {showMap && (
       <div className="absolute inset-0">
@@ -3026,14 +3027,14 @@ const getPrice = () => {
             content any more, which is what lets the feed scroll underneath the
             sticky bar. */}
         {showBookingFlow && bookingStep === 'home' && (
-          <div className="relative z-[999] flex flex-1 flex-col pb-24">
+          <div className="relative z-[999] flex flex-1 flex-col pb-28">
             <CustomerHubHeader
               avatarUrl={user?.avatarUrl}
               unreadCount={unreadDeliveryNotifications}
               onOpenSearch={() => navigate('/customer/search')}
             />
 
-            <div className="mx-auto w-full max-w-3xl space-y-6 px-4 py-4 sm:px-5">
+            <main className="mx-auto w-full max-w-4xl space-y-5 px-4 py-5 sm:space-y-6 sm:px-6 sm:py-6">
               {/* The original landing choice: a ride or a meal, one tap each.
                   The filter / search / terminal feed is what the app bar
                   search field opens now, so it lives on /customer/search. */}
@@ -3041,9 +3042,10 @@ const getPrice = () => {
                 onBookRide={() => setBookingStep('ride')}
                 onOrderFood={() => navigate('/customer/food')}
               />
+              <CustomerCartPreview />
 
               <RecommendedRestaurants />
-            </div>
+            </main>
           </div>
         )}
 

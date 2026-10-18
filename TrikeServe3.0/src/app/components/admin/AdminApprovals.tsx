@@ -4,6 +4,7 @@ import { Card } from "../ui/card";
 import { Badge } from "../ui/badge";
 import { useAuth } from "../../contexts/AuthContext";
 import AdminShell from "./AdminShell";
+import AdminPageIntro, { AdminMetricCards } from "./AdminPageIntro";
 import { TableSkeleton } from "./AdminSkeleton";
 import {
   getApprovalRequests,
@@ -287,26 +288,14 @@ export default function AdminApprovals() {
       title="Approvals"
       subtitle="Review shop profile changes, Rider Admin terminal & driver requests"
     >
-        <div className="space-y-6">
+        <div className="@container mx-auto w-full max-w-[100rem] space-y-6 sm:space-y-8">
+          <AdminPageIntro eyebrow="Approvals" title="Review changes with confidence." description="Check proposed shop, terminal, and driver updates before they reach the live platform." note="Updates automatically every 10 seconds" />
           {/* Stats */}
-          <div className="grid grid-cols-3 gap-3 lg:gap-6 mb-6">
-            <Card className="p-4 lg:p-6 border border-line bg-surface">
-              <p className="text-xs lg:text-sm text-[var(--muted-foreground)] mb-1">Pending</p>
-              <h2 className="text-2xl lg:text-4xl font-bold text-[var(--amber)]">{pending.length}</h2>
-            </Card>
-            <Card className="p-4 lg:p-6 border border-line bg-surface">
-              <p className="text-xs lg:text-sm text-[var(--muted-foreground)] mb-1">Approved</p>
-              <h2 className="text-2xl lg:text-4xl font-bold text-[var(--success)]">
-                {history.filter(r => r.status === "approved").length}
-              </h2>
-            </Card>
-            <Card className="p-4 lg:p-6 border border-line bg-surface">
-              <p className="text-xs lg:text-sm text-[var(--muted-foreground)] mb-1">Rejected</p>
-              <h2 className="text-2xl lg:text-4xl font-bold text-[var(--error)]">
-                {history.filter(r => r.status === "rejected").length}
-              </h2>
-            </Card>
-          </div>
+          <AdminMetricCards loading={loading} items={[
+            { label: 'Pending review', value: pending.length, detail: 'Waiting for a decision', Icon: Clock, tone: 'amber' },
+            { label: 'Approved', value: history.filter(r => r.status === 'approved').length, detail: 'Changes applied', Icon: CheckCircle, tone: 'success' },
+            { label: 'Rejected', value: history.filter(r => r.status === 'rejected').length, detail: 'Changes not applied', Icon: XCircle, tone: 'info' },
+          ]} />
 
           {loadError && (
             <Card className="p-4 mb-6 border-2 border-[var(--amber-soft)] bg-[var(--amber-soft)]">
@@ -320,7 +309,7 @@ export default function AdminApprovals() {
           {/* Search + type filter. Hidden until there's something to filter, so an
               empty inbox isn't showing controls that do nothing. */}
           {requests.length > 0 && (
-            <Card className="p-4 border border-line bg-surface">
+            <Card className="gap-0 rounded-3xl p-4 sm:p-5 border border-line bg-card">
               <div className="flex flex-col sm:flex-row sm:items-center gap-3">
                 <div className="relative flex-1 min-w-0">
                   <Search
@@ -368,9 +357,9 @@ export default function AdminApprovals() {
                   type="button"
                   onClick={() => setTypeFilter("all")}
                   aria-pressed={typeFilter === "all"}
-                  className={`h-9 px-3 rounded-lg text-xs font-bold transition-colors ${
+                  className={`min-h-11 max-w-full whitespace-normal px-3 py-2 rounded-xl text-xs font-bold transition-colors ${
                     typeFilter === "all"
-                      ? "bg-[var(--primary)] text-white"
+                      ? "bg-[var(--teal-soft)] text-[var(--teal)]"
                       : "bg-[var(--muted)] text-[var(--muted-foreground)] hover:text-[var(--ink)]"
                   }`}
                 >
@@ -382,9 +371,9 @@ export default function AdminApprovals() {
                     type="button"
                     onClick={() => setTypeFilter(t.value)}
                     aria-pressed={typeFilter === t.value}
-                    className={`h-9 px-3 rounded-lg text-xs font-bold transition-colors ${
+                    className={`min-h-11 max-w-full whitespace-normal px-3 py-2 rounded-xl text-xs font-bold transition-colors ${
                       typeFilter === t.value
-                        ? "bg-[var(--primary)] text-white"
+                        ? "bg-[var(--teal-soft)] text-[var(--teal)]"
                         : "bg-[var(--muted)] text-[var(--muted-foreground)] hover:text-[var(--ink)]"
                     }`}
                   >
@@ -408,7 +397,7 @@ export default function AdminApprovals() {
               <TableSkeleton rows={5} cols={5} />
             </Card>
           ) : pending.length === 0 ? (
-            <Card className="p-12 border-2 border-dashed border-[var(--border)] text-center">
+            <Card className="gap-2 rounded-3xl bg-card p-6 sm:p-10 border border-line text-center">
               <CheckCircle className="w-16 h-16 text-[var(--success)] mx-auto mb-4" />
               <p className="text-[var(--muted-foreground)] text-sm mb-2">No pending requests</p>
               <p className="text-[var(--muted-foreground)] text-xs">Rider Admin changes will appear here for review</p>
@@ -417,7 +406,7 @@ export default function AdminApprovals() {
             /* Requests exist and are pending, the filter just hides them. Saying
                "No pending requests" here would be a lie that reads as an all-clear
                — the stat card above still says how many are waiting. */
-            <Card className="p-12 border-2 border-dashed border-[var(--border)] text-center">
+            <Card className="gap-2 rounded-3xl bg-card p-6 sm:p-10 border border-line text-center">
               <Search className="w-12 h-12 text-[var(--muted-foreground)] mx-auto mb-4" aria-hidden="true" />
               <p className="text-[var(--muted-foreground)] text-sm mb-2">
                 No pending requests match your filters
@@ -429,10 +418,10 @@ export default function AdminApprovals() {
           ) : (
             <div className="space-y-3 mb-8">
               {visiblePending.map(request => (
-                <Card key={request.id} className="p-4 lg:p-5 border border-line bg-surface">
+                <Card key={request.id} className="min-w-0 gap-0 rounded-3xl p-4 sm:p-5 border border-line bg-card">
                   {/* Narrow screens: the action buttons are flex-shrink-0, so a single row
                       leaves the request text only a few dozen px. Stack below sm. */}
-                  <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4">
+                  <div className="flex flex-col gap-4 @min-[60rem]:flex-row @min-[60rem]:items-start @min-[60rem]:justify-between">
                     <div className="flex items-start gap-3 min-w-0">
                       <div className="w-11 h-11 bg-[var(--muted)] rounded-xl flex items-center justify-center flex-shrink-0">
                         {typeIcon(request.request_type)}
@@ -442,11 +431,11 @@ export default function AdminApprovals() {
                           <h3 className="font-bold text-[var(--ink)]">
                             {APPROVAL_REQUEST_LABELS[request.request_type]}
                           </h3>
-                          <Badge className={typeBadgeColor(request.request_type)}>
+                          <Badge className={`max-w-full whitespace-normal break-words ${typeBadgeColor(request.request_type)}`}>
                             {request.request_type.toUpperCase().replace(/_/g, ' ')}
                           </Badge>
                         </div>
-                        <p className="text-xs text-[var(--muted-foreground)] mt-0.5">
+                        <p className="text-xs text-[var(--muted-foreground)] mt-0.5 break-words">
                           Requested by {request.requested_by_name || request.requested_by_email || 'Rider Admin'}
                           {" · "}{formatDate(request.requested_at)}
                         </p>
@@ -459,12 +448,12 @@ export default function AdminApprovals() {
                         </div>
                       </div>
                     </div>
-                    <div className="grid grid-cols-2 gap-2 w-full sm:w-auto sm:flex sm:items-center sm:flex-shrink-0">
+                    <div className="grid grid-cols-2 gap-2 w-full @min-[60rem]:w-auto @min-[60rem]:flex @min-[60rem]:items-center @min-[60rem]:shrink-0">
                       <button
                         onClick={() => handleApprove(request)}
                         disabled={busyId === request.id}
                         aria-label={`Approve ${APPROVAL_REQUEST_LABELS[request.request_type]}`}
-                        className="min-h-11 w-full sm:w-auto flex items-center justify-center gap-1.5 px-3 py-2 bg-[var(--success)] hover:bg-[var(--success)] disabled:opacity-50 text-white font-bold text-xs rounded-xl transition-all"
+                        className="min-h-11 w-full sm:w-auto flex items-center justify-center gap-1.5 px-3 py-2 bg-[var(--success-ink)] hover:opacity-90 disabled:opacity-50 text-[var(--background)] font-bold text-xs rounded-xl transition-all"
                       >
                         <CheckCircle className="w-4 h-4" aria-hidden="true" /> Approve
                       </button>
@@ -472,7 +461,7 @@ export default function AdminApprovals() {
                         onClick={() => { setRejectTarget(request); setRejectReason(""); }}
                         disabled={busyId === request.id}
                         aria-label={`Reject ${APPROVAL_REQUEST_LABELS[request.request_type]}`}
-                        className="min-h-11 w-full sm:w-auto flex items-center justify-center gap-1.5 px-3 py-2 bg-[var(--error)] hover:bg-[var(--error)] disabled:opacity-50 text-white font-bold text-xs rounded-xl transition-all"
+                        className="min-h-11 w-full sm:w-auto flex items-center justify-center gap-1.5 px-3 py-2 border border-line hover:bg-[var(--error-soft)] disabled:opacity-50 text-[var(--error)] font-bold text-xs rounded-xl transition-all"
                       >
                         <XCircle className="w-4 h-4" aria-hidden="true" /> Reject
                       </button>
@@ -492,7 +481,7 @@ export default function AdminApprovals() {
               <p className="text-[var(--muted-foreground)] text-sm">No reviewed requests yet</p>
             </Card>
           ) : visibleHistory.length === 0 ? (
-            <Card className="p-12 border-2 border-dashed border-[var(--border)] text-center">
+            <Card className="gap-2 rounded-3xl bg-card p-6 sm:p-10 border border-line text-center">
               <Search className="w-12 h-12 text-[var(--muted-foreground)] mx-auto mb-4" aria-hidden="true" />
               <p className="text-[var(--muted-foreground)] text-sm mb-2">
                 No reviewed requests match your filters
@@ -502,10 +491,10 @@ export default function AdminApprovals() {
               </button>
             </Card>
           ) : (
-            <Card className="border border-line bg-surface overflow-hidden">
+            <Card className="gap-0 rounded-3xl border border-line bg-card overflow-hidden">
               {/* Mobile: the 5-column table needs ~760px, so below sm each reviewed
                   request becomes a stacked card instead of a scrolling grid. */}
-              <div className="sm:hidden divide-y divide-[var(--border)]">
+              <div className="divide-y divide-line @min-[60rem]:hidden">
                 {visibleHistory.map(request => (
                   <div key={request.id} className="p-4 space-y-2">
                     <div className="flex items-start gap-2 min-w-0">
@@ -538,7 +527,7 @@ export default function AdminApprovals() {
                 ))}
               </div>
 
-              <div className="hidden sm:block overflow-x-auto">
+              <div className="hidden @min-[60rem]:block overflow-x-auto">
                 <table className="w-full">
                   <caption className="sr-only">Reviewed approval requests with their outcome, requester and reviewer</caption>
                   <thead className="bg-[var(--muted)] border-b-2 border-[var(--border)]">
@@ -597,7 +586,7 @@ export default function AdminApprovals() {
       {/* Reject reason modal */}
       {rejectTarget && (
         <div className="fixed inset-0 bg-black/50 z-[2000] flex items-center justify-center p-4">
-          <Card className="w-full max-w-md p-6 border border-line bg-surface">
+          <Card role="dialog" aria-modal="true" aria-label="Reject request" className="w-full max-w-md max-h-[85dvh] overflow-y-auto gap-0 rounded-3xl p-5 sm:p-6 border border-line bg-card">
             <div className="text-center mb-4">
               <div className="w-16 h-16 bg-[var(--error-soft)] rounded-full flex items-center justify-center mx-auto mb-4">
                 <XCircle className="w-8 h-8 text-[var(--error)]" />
@@ -607,10 +596,11 @@ export default function AdminApprovals() {
                 {APPROVAL_REQUEST_LABELS[rejectTarget.request_type]} — nothing will be applied.
               </p>
             </div>
-            <label className="text-xs font-semibold uppercase tracking-widest text-[var(--muted-foreground)] block mb-1">
+            <label htmlFor="rejection-reason" className="text-xs font-semibold uppercase tracking-widest text-[var(--muted-foreground)] block mb-1">
               Reason (optional)
             </label>
             <textarea
+              id="rejection-reason"
               value={rejectReason}
               onChange={(e) => setRejectReason(e.target.value)}
               rows={3}
@@ -644,6 +634,7 @@ export default function AdminApprovals() {
         message={modalConfig?.message || ''}
         variant={modalConfig?.variant || 'danger'}
         confirmLabel={modalConfig?.confirmLabel || 'Confirm'}
+        zIndexClassName="z-[2100]"
       />
 
       {toast && (

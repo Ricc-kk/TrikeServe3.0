@@ -6,6 +6,7 @@ import { supabaseHelpers } from "@/lib/supabase";
 import { fetchRestaurants } from "@/lib/restaurantQueries";
 import { cuisineLabels } from "@/lib/foodTaxonomy";
 import { useDeliveryAddress } from "../../contexts/useDeliveryAddress";
+import { ImageWithFallback } from "../figma/ImageWithFallback";
 import {
   formatDistance,
   haversineMetres,
@@ -146,13 +147,13 @@ export default function RecommendedRestaurants({ query = "" }: { query?: string 
 
   if (loading) {
     return (
-    <div role="status" aria-busy="true" className="grid grid-cols-2 gap-2.5 sm:gap-3">
+    <div role="status" aria-busy="true" className="grid grid-cols-2 gap-3 sm:gap-4 md:grid-cols-3">
       <span className="sr-only">Loading restaurants near you…</span>
       {/* Shaped like the card it stands in for — photo on top, two lines
           under — so the grid does not reflow when the real rows land. */}
       {Array.from({ length: 4 }).map((_, i) => (
-        <div key={i} className="overflow-hidden rounded-2xl border border-line bg-surface">
-          <div className="aspect-[4/3] w-full animate-pulse bg-[var(--muted)]" />
+        <div key={i} className="overflow-hidden rounded-2xl border border-line bg-card">
+          <div className="aspect-[4/3] w-full animate-pulse bg-[var(--muted)] sm:aspect-[16/10]" />
           <div className="space-y-2 p-2.5">
             <div className="h-3 w-3/4 animate-pulse rounded-full bg-[var(--muted)]" />
             <div className="h-3 w-1/2 animate-pulse rounded-full bg-[var(--muted)]" />
@@ -165,7 +166,7 @@ export default function RecommendedRestaurants({ query = "" }: { query?: string 
 
   if (!shown.length) {
     return (
-      <div className="rounded-2xl border border-dashed border-line bg-surface px-5 py-8 text-center">
+      <div className="rounded-3xl border border-dashed border-line bg-card px-5 py-8 text-center">
         <Store className="mx-auto size-7 text-[var(--muted-foreground)]" aria-hidden="true" />
         <p className="mt-3 font-bold text-[var(--ink)]">No restaurants yet</p>
         <p className="mt-1 text-sm text-[var(--muted-foreground)]">
@@ -176,9 +177,9 @@ export default function RecommendedRestaurants({ query = "" }: { query?: string 
   }
 
   return (
-    <section aria-label="Recommended restaurants near you">
-      <div className="mb-2 flex items-center justify-between gap-3">
-        <h2 className="min-w-0 flex-1 text-lg font-bold text-[var(--ink)]">
+    <section aria-label="Recommended restaurants near you" className="min-w-0">
+      <div className="mb-4 flex items-center justify-between gap-3">
+        <h2 className="min-w-0 flex-1 text-lg font-extrabold tracking-tight text-[var(--ink)] sm:text-xl">
           Recommended near you
           {/* On its own line: sitting beside the title it wrapped to two lines
               the moment "See all" became a pill, and this is the one heading
@@ -193,28 +194,20 @@ export default function RecommendedRestaurants({ query = "" }: { query?: string 
             dark mode where --primary turns into a light coral. */}
         <Link
           to="/customer/food"
-          className="min-h-11 shrink-0 rounded-full bg-[var(--primary)] px-4 py-2 text-sm font-bold text-[var(--primary-foreground)] shadow-sm transition-transform hover:scale-[1.03] active:scale-[0.98]"
+          className="inline-flex min-h-11 shrink-0 items-center justify-center rounded-xl bg-[var(--primary)] px-4 py-2 text-sm font-bold text-[var(--primary-foreground)] shadow-sm transition-colors hover:bg-[var(--coral-dark)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--primary)]"
         >
           See all
         </Link>
       </div>
 
       {nothingNear && (
-        <p className="mb-2 text-xs text-[var(--muted-foreground)]">
+        <p className="mb-4 rounded-xl border border-line bg-soft px-3 py-2 text-xs text-[var(--muted-foreground)]">
           No shops have pinned a location yet, so these are the best rated.
         </p>
       )}
 
-      {/* Two columns, photo first.
-
-          One column spent the home screen on six near-identical rows and left
-          the food the customer is actually shopping for reduced to a 56px
-          thumbnail. Two columns gives the photo the size it deserves and fits
-          the same six shops in a third of the vertical space.
-
-          `flex` on the <li> lets every card stretch to its row-mate's height,
-          so one long name never leaves a ragged bottom edge. */}
-      <ul className="grid grid-cols-2 gap-2.5 sm:gap-3">
+      {/* Photos lead, with readable names on a themed surface in both modes. */}
+      <ul className="grid grid-cols-2 gap-3 sm:gap-4 md:grid-cols-3">
         {shown.map((r) => {
           const distance =
             origin && hasCoords(r.coords)
@@ -225,58 +218,43 @@ export default function RecommendedRestaurants({ query = "" }: { query?: string 
             <li key={r.id} className="flex">
               <Link
                 to={`/customer/restaurant-detail?id=${encodeURIComponent(r.id)}&name=${encodeURIComponent(r.name)}`}
-                className="group flex w-full flex-col overflow-hidden rounded-2xl border border-line bg-surface shadow-sm transition-shadow hover:shadow-lg"
+                className="group flex w-full min-w-0 flex-col overflow-hidden rounded-2xl border border-line bg-card shadow-sm transition-colors hover:border-[var(--teal)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--teal)]"
               >
-                <span className="relative block aspect-[4/3] w-full overflow-hidden bg-[var(--muted)]">
-                  <img
+                <span className="relative block aspect-[4/3] w-full overflow-hidden bg-[var(--muted)] sm:aspect-[16/10]">
+                  <ImageWithFallback
                     src={r.image}
                     alt=""
                     className="size-full object-cover transition-transform duration-300 group-hover:scale-105"
                     loading="lazy"
                   />
 
-                  {/* The name rides the foot of the photo over a scrim. At this
-                      width there is no room for a heading above a thumbnail,
-                      and the scrim is what keeps white text legible over an
-                      arbitrary photo in either theme — the old row simply took
-                      its colours from the image it sat next to. */}
-                  <span className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/75 via-black/40 to-transparent px-2 pb-1.5 pt-8">
-                    <span className="block truncate text-sm font-bold text-white">
-                      {r.name}
-                    </span>
+                  <span className={`absolute left-2 top-2 rounded-full border border-line px-2 py-1 text-[10px] font-bold ${r.isOpen ? "bg-[var(--success-soft)] text-[var(--success-ink)]" : "bg-[var(--error-soft)] text-[var(--error)]"}`}>
+                    {r.isOpen ? "Open" : "Closed"}
                   </span>
-
-                  {/* --error is a light red in dark mode, so this badge takes
-                      --background rather than white and stays readable on
-                      both. */}
-                  {!r.isOpen && (
-                    <span className="absolute left-2 top-2 rounded-full bg-[var(--error)] px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-[var(--background)]">
-                      Closed
-                    </span>
-                  )}
                 </span>
 
-                <span className="flex flex-1 flex-col p-2.5">
-                  <span className="block truncate text-xs text-[var(--muted-foreground)]">
+                <div className="flex flex-1 flex-col p-3 sm:p-4">
+                  <h3 className="line-clamp-2 text-sm font-bold leading-snug text-[var(--ink)] sm:text-base">{r.name}</h3>
+                  <p className="mb-3 mt-1 truncate text-xs text-[var(--muted-foreground)]">
                     {cuisineLabels(r.cuisine).join(" · ") || r.address}
-                  </span>
+                  </p>
 
                   {/* `ml-auto` pins the distance to the right edge instead of
                       letting it trail the rating, which otherwise drifts a few
                       pixels between "4.8" and "New". */}
-                  <span className="mt-auto flex items-center gap-1 pt-2 text-xs">
+                  <span className="mt-auto flex items-center gap-1 border-t border-line pt-3 text-xs">
                     <Star
-                      className="size-3 flex-shrink-0 fill-[var(--amber)] text-[var(--amber)]"
+                      className="size-3.5 flex-shrink-0 fill-[var(--amber)] text-[var(--amber-ink)]"
                       aria-hidden="true"
                     />
                     <span className="font-bold text-[var(--ink)]">
                       {r.rating ? r.rating.toFixed(1) : "New"}
                     </span>
-                    <span className="ml-auto truncate text-[var(--muted-foreground)]">
+                    <span className="ml-auto truncate text-[var(--muted-foreground)]" title={distance ? "Distance from your delivery location" : "Distance unavailable"}>
                       {distance ?? "—"}
                     </span>
                   </span>
-                </span>
+                </div>
               </Link>
             </li>
           );

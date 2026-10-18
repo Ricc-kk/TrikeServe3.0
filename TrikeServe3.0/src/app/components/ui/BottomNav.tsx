@@ -231,7 +231,7 @@ export default function BottomNav({
   return (
     <nav
       aria-label="Main navigation"
-      className={`fixed bottom-0 left-0 right-0 z-[1500] border-t border-line bg-surface/95 backdrop-blur-xl ${className}`}
+      className={`fixed bottom-0 left-0 right-0 z-[1500] border-t border-line bg-surface ${className}`}
       style={{ paddingBottom: "max(0.5rem, env(safe-area-inset-bottom))" }}
     >
       <div
@@ -254,7 +254,7 @@ export default function BottomNav({
             >
               <Icon className="h-5 w-5 shrink-0 sm:h-6 sm:w-6" color={color} />
               <span
-                className={`w-full truncate text-[10px] leading-tight sm:text-xs ${
+                className={`w-full truncate text-[11px] leading-tight sm:text-xs ${
                   isActive ? "font-semibold" : ""
                 }`}
                 style={{ color }}
@@ -263,7 +263,7 @@ export default function BottomNav({
               </span>
 
               {count > 0 ? (
-                <span className="absolute right-[22%] top-0 grid min-w-5 place-items-center rounded-full border-2 border-surface bg-primary px-1 text-[10px] font-bold leading-none text-white">
+                <span className="absolute right-[22%] top-0 grid min-w-5 place-items-center rounded-full border-2 border-surface bg-primary px-1 text-[10px] font-bold leading-none text-[var(--primary-foreground)]">
                   <span className="py-1">
                     {count > 99 ? "99+" : count}
                   </span>

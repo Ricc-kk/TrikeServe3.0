@@ -2,11 +2,10 @@ import { useState, useEffect, useMemo, useRef, useId } from "react";
 import { createPortal } from "react-dom";
 import {
   Users, Store, Search, Trash2, CheckCircle,
-  XCircle, Menu, User as UserIcon, Shield, Filter, MoreVertical, ChevronDown,
-  Mail, Phone, MapPin, CalendarDays, Hash, Check
+  XCircle, User as UserIcon, Shield, Filter, ChevronDown,
+  Phone, MapPin, CalendarDays, Hash, Check, RefreshCw, Clock3, ArrowRight, X
 } from "lucide-react";
 import { TerminalIconGlyph } from "../ui/TerminalIcon";
-import { useNavigate } from "react-router";
 import { Card } from "../ui/card";
 import { Badge } from "../ui/badge";
 import { Input } from "../ui/input";
@@ -363,7 +362,7 @@ function FilterButton({
       onClick={onClick}
       aria-label={label}
       aria-haspopup="dialog"
-      className="w-full min-h-11 flex items-center justify-between gap-2 px-3 py-3 border border-line rounded-xl font-semibold bg-surface text-[var(--ink)] hover:bg-[var(--muted)] transition-colors"
+      className="w-full min-h-11 flex items-center justify-between gap-2 px-3 py-3 border border-line rounded-xl text-xs sm:text-sm font-semibold bg-card text-[var(--ink)] hover:bg-[var(--muted)] transition-colors"
     >
       <span className="truncate">{valueLabel}</span>
       <ChevronDown
@@ -428,7 +427,7 @@ function byDisplayName(a: StoredUser, b: StoredUser): number {
 function getRoleIcon(role: string) {
   switch (role) {
     case 'customer':
-      return <Users className="w-5 h-5 text-[var(--success)]" />;
+      return <Users className="w-5 h-5 text-[var(--success-ink)]" aria-hidden="true" />;
     case 'rider':
       return <TerminalIconGlyph className="w-5 h-5 text-[var(--info)]" />;
     case 'business':
@@ -441,11 +440,11 @@ function getRoleIcon(role: string) {
 function getRoleBadgeColor(role: string) {
   switch (role) {
     case 'customer':
-      return 'bg-[var(--success)]';
+      return 'border-transparent bg-[var(--success-soft)] text-[var(--success-ink)]';
     case 'rider':
-      return 'bg-[var(--info)]';
+      return 'border-transparent bg-[var(--info-soft)] text-[var(--info)]';
     case 'business':
-      return 'bg-[var(--violet)]';
+      return 'border-transparent bg-[var(--violet-soft)] text-[var(--violet)]';
     default:
       return 'bg-[var(--muted-foreground)]';
   }
@@ -523,6 +522,7 @@ function UserDetailModal({
   onVerify,
   onUnverify,
   onDelete,
+  onChangeRole,
 }: {
   user: StoredUser | null;
   active: boolean;
@@ -531,6 +531,7 @@ function UserDetailModal({
   onVerify: () => void;
   onUnverify: () => void;
   onDelete: () => void;
+  onChangeRole: () => void;
 }) {
   const closeRef = useRef<HTMLButtonElement>(null);
 
@@ -557,8 +558,8 @@ function UserDetailModal({
                 onClick={user.isVerified ? onUnverify : onVerify}
                 className={`min-h-11 px-4 rounded-lg transition-all flex items-center gap-1.5 font-semibold text-xs ${
                   user.isVerified
-                    ? 'bg-[var(--amber)] text-white'
-                    : 'bg-[var(--success)] text-white'
+                    ? 'bg-[var(--amber-soft)] text-[var(--amber-ink)]'
+                    : 'bg-[var(--success-ink)] text-[var(--background)]'
                 }`}
               >
                 {user.isVerified ? (
@@ -571,7 +572,7 @@ function UserDetailModal({
               <button
                 type="button"
                 onClick={onDelete}
-                className="min-h-11 px-4 rounded-lg bg-[var(--error)] text-white transition-all flex items-center gap-1.5 font-semibold text-xs"
+                className="min-h-11 px-4 rounded-lg border border-line text-[var(--error)] hover:bg-[var(--error-soft)] transition-colors flex items-center gap-1.5 font-semibold text-xs"
               >
                 <Trash2 className="w-4 h-4" aria-hidden="true" />
                 Delete
@@ -608,9 +609,9 @@ function UserDetailModal({
             {getRoleIcon(user.role)}
           </div>
           <div className="flex flex-wrap items-center gap-2">
-            <Badge className={getRoleBadgeColor(user.role)}>{user.role.toUpperCase()}</Badge>
+            {isSuperAdmin ? <button type="button" onClick={onChangeRole} aria-label={`Change role for ${displayName}`} aria-haspopup="dialog" className="inline-flex min-h-11 items-center gap-1 rounded-lg"><Badge className={getRoleBadgeColor(user.role)}>{user.role === 'rider' ? 'Driver' : user.role}</Badge><ChevronDown className="size-3 text-[var(--muted-foreground)]" aria-hidden="true" /></button> : <Badge className={getRoleBadgeColor(user.role)}>{user.role === 'rider' ? 'Driver' : user.role}</Badge>}
             {user.isVerified ? (
-              <Badge className="bg-[var(--success-soft)] text-[var(--success)]">Verified</Badge>
+              <Badge className="bg-[var(--success-soft)] text-[var(--success-ink)]">Verified</Badge>
             ) : (
               <Badge className="bg-[var(--amber-soft)] text-[var(--amber-ink)]">Pending</Badge>
             )}
@@ -662,7 +663,6 @@ function UserDetailModal({
 }
 
 export default function AdminUsers() {
-  const navigate = useNavigate();
   const { user } = useAuth();
   const [users, setUsers] = useState<StoredUser[]>([]);
   const [searchQuery, setSearchQuery] = useState("");
@@ -698,6 +698,8 @@ export default function AdminUsers() {
   }, []);
   const [toast, setToast] = useState<{ message: string; variant?: 'success' | 'error' | 'warning' } | null>(null);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
 
   useEffect(() => {
     loadUsers();
@@ -705,6 +707,7 @@ export default function AdminUsers() {
 
   const loadUsers = async () => {
     setLoading(true);
+    setLoadError(null);
     try {
       // The restaurant profile is joined rather than read off the user row.
       // `restaurants.business_user_id` -> `users.id` is the only link between
@@ -728,7 +731,7 @@ export default function AdminUsers() {
       }
 
       if (!supabaseUsers) {
-        setLoading(false);
+        setLoadError('Account data could not be loaded. Try refreshing the directory.');
         return;
       }
 
@@ -772,6 +775,7 @@ export default function AdminUsers() {
       }
 
       setUsers(filteredUsers.sort(byDisplayName));
+      setLastUpdated(new Date());
     } catch (error) {
       console.error('Error in loadUsers:', error);
       loadUsersFromLocalStorage();
@@ -781,24 +785,22 @@ export default function AdminUsers() {
   };
 
   const loadUsersFromLocalStorage = () => {
-    const usersJson = localStorage.getItem('trikeserve_users');
-    if (!usersJson) {
-      setLoading(false);
-      return;
-    }
-    {
+    setLoadError('Account data could not be loaded. Try refreshing the directory.');
+    try {
+      const usersJson = localStorage.getItem('trikeserve_users');
+      if (!usersJson) return;
       const allUsers: StoredUser[] = JSON.parse(usersJson);
-      const adminType = user?.adminType;
-
-      // Super Admin sees every user; the Rider Admin only gets riders (read-only).
+      if (!Array.isArray(allUsers)) return;
       let filteredUsers = allUsers.filter(u => u.role !== 'admin');
-      if (adminType === 'rider') {
+      if (user?.adminType === 'rider') {
         filteredUsers = filteredUsers.filter(u => u.role === 'rider');
       }
-
-      setUsers(filteredUsers);
+      setUsers(filteredUsers.sort(byDisplayName));
+      setLastUpdated(new Date());
+      setLoadError('The server is unavailable. Showing saved account data.');
+    } catch (error) {
+      console.error('Error reading saved accounts:', error);
     }
-    setLoading(false);
   };
 
   // Modal state
@@ -932,9 +934,9 @@ export default function AdminUsers() {
   // Filter users
   const filteredUsers = users.filter(u => {
     const matchesSearch =
-      u.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      u.email.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      u.phone.includes(searchQuery);
+      [displayNameOf(u), u.name, u.email, u.phone].some(value =>
+        (value || '').toLowerCase().includes(searchQuery.trim().toLowerCase())
+      );
 
     const matchesRole = filterRole === "all" || u.role === filterRole;
     const matchesStatus =
@@ -945,7 +947,7 @@ export default function AdminUsers() {
     // matched here instead of being faked into the options list.
     const matchesTerminal =
       filterTerminal === "all" ||
-      (filterTerminal === "unassigned" ? !u.terminalId : u.terminalId === filterTerminal);
+      (u.role === 'rider' && (filterTerminal === "unassigned" ? !u.terminalId : u.terminalId === filterTerminal));
 
     return matchesSearch && matchesRole && matchesStatus && matchesTerminal;
   });
@@ -1147,12 +1149,29 @@ export default function AdminUsers() {
 
   return (
     <AdminShell
-      title="User Management"
-      subtitle="Manage users, roles, and verifications"
+      title={isRiderReadOnly ? 'Drivers' : 'User Management'}
+      subtitle={isRiderReadOnly ? 'Driver directory · Mga driver at kanilang TODA' : 'Manage users, roles, and verifications'}
     >
 
         {/* Content */}
-        <div className="space-y-6">
+        <div className="@container mx-auto w-full max-w-[100rem] space-y-6 sm:space-y-8">
+          <section aria-labelledby="users-summary-title" className="relative isolate overflow-hidden rounded-3xl bg-[var(--ink-solid)] p-5 text-white sm:p-7">
+            <div aria-hidden="true" className="pointer-events-none absolute -right-16 -top-24 -z-10 size-80 rounded-full border-[3rem] border-white/5" />
+            <div className="flex flex-col gap-5 sm:flex-row sm:items-center sm:justify-between sm:gap-8">
+              <div className="min-w-0">
+                <p className="mb-2 text-[10px] font-bold uppercase tracking-[0.2em] text-[var(--mint)] sm:text-xs">{isRiderReadOnly ? 'TrikeServe · Driver directory' : 'TrikeServe · Community directory'}</p>
+                <h2 id="users-summary-title" className="text-2xl font-extrabold tracking-tight text-white sm:text-3xl">{isRiderReadOnly ? 'Know the people behind every ride.' : 'The people behind your platform.'}</h2>
+                <p className="mt-2 max-w-xl text-sm leading-relaxed text-white/75">{isRiderReadOnly ? 'Browse driver profiles, check verification status, and find their TODA. Account management stays with the Super Admin.' : 'Find accounts, review verification, and manage your community in one place.'}</p>
+              </div>
+              <div className="shrink-0 space-y-2 sm:text-right">
+                <button type="button" disabled={loading} onClick={() => void loadUsers()} aria-label="Refresh users" className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl border border-white/20 bg-white/5 px-4 text-sm font-bold transition-colors hover:bg-white/10 disabled:opacity-60">
+                  <RefreshCw className={`size-4 ${loading ? 'animate-spin' : ''}`} aria-hidden="true" /> {loading ? 'Refreshing…' : 'Refresh users'}
+                </button>
+                <p role="status" className="flex items-center gap-1.5 text-xs text-white/70 sm:justify-end"><Clock3 className="size-3.5 shrink-0" aria-hidden="true" />{loading ? 'Loading account data…' : loadError ? 'Update unavailable' : lastUpdated ? `Updated ${lastUpdated.toLocaleTimeString('en-PH', { hour: '2-digit', minute: '2-digit' })}` : 'Not yet updated'}</p>
+              </div>
+            </div>
+          </section>
+          {loadError && <div role="alert" className="rounded-2xl border border-[var(--amber)]/40 bg-[var(--amber-soft)] p-4 text-sm text-[var(--amber-ink)]">{loadError}</div>}
           {loading && (
             <>
               <StatSkeleton count={6} />
@@ -1174,41 +1193,36 @@ export default function AdminUsers() {
           {!loading && (
           <>
           {/* Stats Cards */}
-          <div className="grid grid-cols-2 lg:grid-cols-6 gap-3 lg:gap-4 mb-6">
-            <Card className="p-4 border border-line bg-surface">
-              <p className="text-xs text-[var(--muted-foreground)] mb-1">Total Users</p>
-              <p className="text-2xl font-bold text-[var(--ink)]">{stats.total}</p>
-            </Card>
-            <Card className="p-4 border border-line bg-surface">
-              <p className="text-xs text-[var(--muted-foreground)] mb-1">Customers</p>
-              <p className="text-2xl font-bold text-[var(--success)]">{stats.customers}</p>
-            </Card>
-            <Card className="p-4 border border-line bg-surface">
-              <p className="text-xs text-[var(--muted-foreground)] mb-1">Drivers</p>
-              <p className="text-2xl font-bold text-[var(--info)]">{stats.riders}</p>
-            </Card>
-            <Card className="p-4 border border-line bg-surface">
-              <p className="text-xs text-[var(--muted-foreground)] mb-1">Businesses</p>
-              <p className="text-2xl font-bold text-[var(--violet)]">{stats.businesses}</p>
-            </Card>
-            <Card className="p-4 border border-line bg-surface">
-              <p className="text-xs text-[var(--muted-foreground)] mb-1">Verified</p>
-              <p className="text-2xl font-bold text-[var(--success)]">{stats.verified}</p>
-            </Card>
-            <Card className="p-4 border border-line bg-surface">
-              <p className="text-xs text-[var(--muted-foreground)] mb-1">Pending</p>
-              <p className="text-2xl font-bold text-[var(--amber)]">{stats.pending}</p>
-            </Card>
-          </div>
+          <section aria-labelledby="users-accounts-title">
+            <div className="mb-4 flex flex-wrap items-baseline gap-x-3 gap-y-1"><h2 id="users-accounts-title" className="text-lg font-bold tracking-tight text-[var(--ink)] sm:text-xl">{isRiderReadOnly ? 'Drivers at a glance' : 'Community at a glance'}</h2><p className="text-xs text-[var(--muted-foreground)]">{isRiderReadOnly ? 'Network-wide driver accounts · Read-only' : 'All registered accounts · Administrators excluded'}</p></div>
+            <div className={`grid grid-cols-2 gap-3 sm:gap-4 @min-[36rem]:grid-cols-3 ${isRiderReadOnly ? '' : '@min-[66rem]:grid-cols-6'}`}>
+              {[
+                { label: 'Total users', value: stats.total, Icon: Users, tone: 'bg-[var(--teal-soft)] text-[var(--teal)]' },
+                { label: 'Customers', value: stats.customers, Icon: UserIcon, tone: 'bg-[var(--success-soft)] text-[var(--success-ink)]' },
+                { label: 'Drivers', value: stats.riders, Icon: TerminalIconGlyph, tone: 'bg-[var(--info-soft)] text-[var(--info)]' },
+                { label: 'Businesses', value: stats.businesses, Icon: Store, tone: 'bg-[var(--violet-soft)] text-[var(--violet)]' },
+                { label: 'Verified', value: stats.verified, Icon: Shield, tone: 'bg-[var(--success-soft)] text-[var(--success-ink)]' },
+                { label: 'Pending', value: stats.pending, Icon: Clock3, tone: 'bg-[var(--amber-soft)] text-[var(--amber-ink)]' },
+              ].filter(metric => !isRiderReadOnly || ['Drivers', 'Verified', 'Pending'].includes(metric.label)).map(({ label, value, Icon, tone }) => (
+                <Card key={label} className={`min-w-0 gap-0 rounded-2xl p-4 sm:p-5 ${label === 'Total users' ? 'border-[var(--teal)]/30 bg-[var(--teal-soft)]' : 'border-line bg-card'}`}>
+                  <span className={`mb-3 grid size-8 place-items-center rounded-lg ${tone}`}><Icon className="size-4" aria-hidden="true" /></span>
+                  <p className="break-all text-3xl font-extrabold leading-none tracking-tight text-[var(--ink)] tabular-nums">{lastUpdated ? value.toLocaleString() : '—'}</p>
+                  <h3 className="mt-2 text-xs font-semibold text-[var(--muted-foreground)]">{label}</h3>
+                </Card>
+              ))}
+            </div>
+          </section>
 
           {/* Search and Filters */}
-          <Card className="p-5 border border-line bg-surface mb-6">
-            {/* Four across, not three: adding the TODA filter to a three-column grid would
-            have put it on a row of its own, doubling the height of the bar for
-            one more control. */}
-            <div className="grid grid-cols-1 lg:grid-cols-4 gap-4">
+          <Card className="gap-4 rounded-3xl border-line bg-card p-4 sm:p-5">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <h2 className="flex items-center gap-2 text-base font-bold text-[var(--ink)]"><Filter className="size-4 text-[var(--teal)]" aria-hidden="true" /> {isRiderReadOnly ? 'Find a driver' : 'Find an account'}</h2>
+              {hasActiveFilter && <button type="button" onClick={clearFilters} className="inline-flex min-h-11 items-center gap-1.5 rounded-xl px-3 text-xs font-bold text-[var(--teal)] hover:bg-[var(--teal-soft)]"><X className="size-3.5" aria-hidden="true" /> Clear filters</button>}
+            </div>
+            {/* Give search its own row until there is room for all four controls. */}
+            <div className="grid grid-cols-1 gap-3 @min-[38rem]:grid-cols-3 @min-[66rem]:grid-cols-[minmax(0,2fr)_repeat(3,minmax(0,1fr))]">
               {/* Search */}
-              <div className="relative">
+              <div className="relative min-w-0 @min-[38rem]:col-span-3 @min-[66rem]:col-span-1">
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-[var(--muted-foreground)]" />
                 <label htmlFor="admin-user-search" className="sr-only">
                   Search users
@@ -1216,19 +1230,19 @@ export default function AdminUsers() {
                 <Input
                   id="admin-user-search"
                   type="search"
-                  placeholder="Search by name, email, or phone..."
+                  placeholder="Name, business, email, or phone…"
                   value={searchQuery}
                   onChange={(e) => onFilterChange(setSearchQuery, e.target.value)}
-                  className="pl-10 border border-line min-h-11"
+                  className="h-full pl-10 border border-line min-h-11 rounded-xl bg-soft text-sm"
                 />
               </div>
 
               {/* Role Filter */}
-              <FilterButton
+              {!isRiderReadOnly && <FilterButton
                 label="Filter by role"
                 valueLabel={labelOfOption(roleFilterOptions, filterRole, 'All Roles')}
                 onClick={() => setOpenFilter('role')}
-              />
+              />}
 
               {/* Status Filter */}
               <FilterButton
@@ -1247,7 +1261,11 @@ export default function AdminUsers() {
           </Card>
 
           {/* Users List */}
-          <Card className="border border-line bg-surface overflow-hidden">
+          <Card className="gap-0 rounded-3xl border-line bg-card overflow-hidden" aria-busy={loading}>
+            <div className="flex flex-wrap items-center justify-between gap-2 border-b border-line px-4 py-4 sm:px-5">
+              <div className="flex items-center gap-2"><h2 className="text-base font-bold text-[var(--ink)]">{isRiderReadOnly ? 'Driver directory' : 'Account directory'}</h2><span className="rounded-lg bg-soft px-2 py-0.5 text-xs font-bold text-[var(--muted-foreground)] tabular-nums">{filteredUsers.length}</span></div>
+              <p role="status" className="text-xs text-[var(--muted-foreground)]">{filteredUsers.length ? `${firstRowOnPage}–${lastRowOnPage} of ${filteredUsers.length} accounts` : 'No accounts to display'} · A–Z</p>
+            </div>
             {filteredUsers.length === 0 ? (
               <div className="p-4 sm:p-6">
                 <EmptyState
@@ -1258,13 +1276,13 @@ export default function AdminUsers() {
                       ? 'Try a different search term, role, status or TODA.'
                       : 'Registered customers, drivers and businesses will appear here.'
                   }
-                  filipino={hasActiveFilter ? 'Wala pang tumutugma sa mga filter na ito.' : 'Wala pang nakarehistong gumagamit.'}
+                  filipino={isRiderReadOnly ? (hasActiveFilter ? 'Wala pang tumutugma sa mga filter na ito.' : 'Wala pang nakarehistong gumagamit.') : undefined}
                   action={
                     hasActiveFilter ? (
                       <button
                         type="button"
                         onClick={clearFilters}
-                        className="min-h-11 px-5 rounded-xl bg-[var(--primary)] text-white font-semibold hover:opacity-90"
+                        className="min-h-11 px-5 rounded-xl bg-[var(--primary)] text-[var(--primary-foreground)] font-semibold hover:opacity-90"
                       >
                         Clear filters
                       </button>
@@ -1274,10 +1292,8 @@ export default function AdminUsers() {
               </div>
             ) : (
 <>
-              {/* Mobile: stacked cards. The table below needs three columns plus a
-                  44px tap target, which a phone has no room for, so below sm each
-                  user is one card that opens the same detail dialog. */}
-              <div className="sm:hidden space-y-3">
+              {/* Cards adapt to the content width, including tablets beside the sidebar. */}
+              <div className="grid gap-3 p-3 sm:p-4 @min-[36rem]:grid-cols-2 @min-[60rem]:hidden">
                 {pagedUsers.map((u) => (
                   <button
                     key={u.id}
@@ -1285,7 +1301,7 @@ export default function AdminUsers() {
                     onClick={() => openUserDetails(u.id)}
                     aria-label={`View details for ${displayNameOf(u)}`}
                     aria-haspopup="dialog"
-                    className="w-full text-left rounded-2xl border border-line bg-surface p-4 min-h-11"
+                    className="group min-w-0 w-full text-left rounded-2xl border border-line bg-card p-4 min-h-11 transition-colors hover:border-[var(--teal)]/40 hover:bg-soft"
                   >
                     <div className="flex items-center gap-3">
                       <div
@@ -1300,10 +1316,10 @@ export default function AdminUsers() {
                         {getRoleIcon(u.role)}
                       </div>
                       <div className="min-w-0 flex-1">
-                        <p className="font-bold text-[var(--ink)] truncate">
+                        <p className="text-sm font-bold text-[var(--ink)] break-words">
                           {displayNameOf(u)}
                         </p>
-                        <p className="text-xs text-[var(--muted-foreground)] truncate">
+                        <p className="text-xs font-normal text-[var(--muted-foreground)] break-all">
                           {u.email}
                         </p>
                       </div>
@@ -1311,10 +1327,10 @@ export default function AdminUsers() {
 
                     <div className="mt-3 flex flex-wrap items-center gap-2">
                       <Badge className={getRoleBadgeColor(u.role)}>
-                        {u.role.toUpperCase()}
+                        {u.role === 'rider' ? 'Driver' : u.role === 'business' ? 'Business' : 'Customer'}
                       </Badge>
                       {u.isVerified ? (
-                        <Badge className="bg-[var(--success-soft)] text-[var(--success)]">
+                        <Badge className="bg-[var(--success-soft)] text-[var(--success-ink)]">
                           Verified
                         </Badge>
                       ) : (
@@ -1323,6 +1339,7 @@ export default function AdminUsers() {
                         </Badge>
                       )}
                     </div>
+                    <div className="mt-3 flex items-center justify-between gap-2 border-t border-line pt-3 text-xs font-normal text-[var(--muted-foreground)]"><span>Joined {formatJoined(u.createdAt)}</span><ArrowRight className="size-4 shrink-0 text-[var(--teal)]" aria-hidden="true" /></div>
                   </button>
                 ))}
               </div>
@@ -1333,8 +1350,8 @@ export default function AdminUsers() {
                   and the restaurant profile all moved behind the row click, which
                   is what takes this from seven columns and a horizontal scrollbar
                   down to something a laptop can show at a glance. */}
-              <div className="hidden sm:block overflow-x-auto">
-                <table className="w-full">
+              <div className="hidden @min-[60rem]:block">
+                <table className="w-full table-fixed">
                   <caption className="sr-only">
                     Registered users. Select a row to see the full account details.
                   </caption>
@@ -1342,7 +1359,7 @@ export default function AdminUsers() {
                     <tr>
                       <th
                         scope="col"
-                        className="px-4 py-3 text-left text-xs font-bold text-[var(--muted-foreground)] tracking-wider"
+                        className="w-[40%] px-4 py-3 text-left text-xs font-bold text-[var(--muted-foreground)] tracking-wider"
                       >
                         User
                       </th>
@@ -1365,7 +1382,7 @@ export default function AdminUsers() {
                       {!isRiderReadOnly && (
                         <th
                           scope="col"
-                          className="px-4 py-3 text-right text-xs font-bold text-[var(--muted-foreground)] tracking-wider"
+                          className="w-[15rem] px-4 py-3 text-right text-xs font-bold text-[var(--muted-foreground)] tracking-wider"
                         >
                           Actions
                         </th>
@@ -1404,10 +1421,10 @@ export default function AdminUsers() {
                               {getRoleIcon(u.role)}
                             </div>
                             <div className="min-w-0">
-                              <p className="font-bold text-[var(--ink)] truncate">
+                              <p className="text-sm font-bold text-[var(--ink)] break-words">
                                 {displayNameOf(u)}
                               </p>
-                              <p className="text-xs text-[var(--muted-foreground)] truncate">
+                              <p className="text-xs font-normal text-[var(--muted-foreground)] break-all">
                                 {u.email}
                               </p>
                             </div>
@@ -1428,23 +1445,24 @@ export default function AdminUsers() {
                                   onClick={() => setRoleEditForUserId(u.id)}
                                   aria-label={`Change role for ${displayNameOf(u)}, currently ${u.role}`}
                                   aria-haspopup="dialog"
-                                  className="min-h-11 flex items-center rounded-lg group"
+                                  className="min-h-11 max-w-full flex items-center gap-1 rounded-lg group"
                                 >
                                   <span className="group-hover:opacity-80 transition-opacity">
                                     <Badge className={getRoleBadgeColor(u.role)}>
-                                      {u.role.toUpperCase()}
+                                      {u.role === 'rider' ? 'Driver' : u.role === 'business' ? 'Business' : 'Customer'}
                                     </Badge>
                                   </span>
+                                  <ChevronDown className="size-3 shrink-0 text-[var(--muted-foreground)]" aria-hidden="true" />
                                 </button>
                               ) : (
                                 <Badge className={getRoleBadgeColor(u.role)}>
-                                  {u.role.toUpperCase()}
+                                  {u.role === 'rider' ? 'Driver' : u.role === 'business' ? 'Business' : 'Customer'}
                                 </Badge>
                               )}
                             </td>
                             <td className="px-4 py-2">
                               {u.isVerified ? (
-                                <Badge className="bg-[var(--success-soft)] text-[var(--success)]">
+                                <Badge className="bg-[var(--success-soft)] text-[var(--success-ink)]">
                                   Verified
                                 </Badge>
                               ) : (
@@ -1476,8 +1494,8 @@ export default function AdminUsers() {
                                     className={`min-h-11 px-3 rounded-lg transition-all flex items-center gap-1.5 font-semibold text-xs ${
                                       canVerifyUser(u.role)
                                         ? u.isVerified
-                                          ? 'bg-[var(--amber)] hover:bg-[var(--amber)] text-white cursor-pointer'
-                                          : 'bg-[var(--success)] hover:bg-[var(--success)] text-white cursor-pointer'
+                                          ? 'border border-line text-[var(--amber-ink)] hover:bg-[var(--amber-soft)] cursor-pointer'
+                                          : 'bg-[var(--success-ink)] text-[var(--background)] hover:opacity-90 cursor-pointer'
                                         : 'bg-[var(--muted-foreground)] text-[var(--muted-foreground)] cursor-not-allowed opacity-50'
                                     }`}
                                   >
@@ -1503,7 +1521,7 @@ export default function AdminUsers() {
                                     }
                                     className={`min-h-11 px-3 rounded-lg transition-all flex items-center gap-1.5 font-semibold text-xs ${
                                       canDeleteUser(u.role)
-                                        ? 'bg-[var(--error)] hover:bg-[var(--error)] text-white cursor-pointer'
+                                        ? 'border border-line text-[var(--error)] hover:bg-[var(--error-soft)] cursor-pointer'
                                         : 'bg-[var(--muted-foreground)] text-[var(--muted-foreground)] cursor-not-allowed opacity-50'
                                     }`}
                                   >
@@ -1566,6 +1584,11 @@ export default function AdminUsers() {
         onVerify={() => detailUser && handleVerifyUser(detailUser.id)}
         onUnverify={() => detailUser && handleUnverifyUser(detailUser.id)}
         onDelete={() => detailUser && handleDeleteUser(detailUser.id)}
+        onChangeRole={() => {
+          if (!detailUser) return;
+          setDetailUserId(null);
+          setRoleEditForUserId(detailUser.id);
+        }}
       />
 
       {/* Filter modals. One dialog serving all three, so only one can be open at

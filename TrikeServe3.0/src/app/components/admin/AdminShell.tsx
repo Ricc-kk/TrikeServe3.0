@@ -98,7 +98,7 @@ export default function AdminShell({
     return () => mql.removeEventListener("change", onChange);
   }, []);
 
-  const isActive = (path: string) => location.pathname === path;
+  const isActive = (path: string) => location.pathname === path || (path === "/admin/dashboard" && location.pathname === "/admin");
 
   return (
     <div className="min-h-dvh bg-[var(--muted)] flex">
@@ -177,7 +177,7 @@ export default function AdminShell({
                 className={[
                   "w-full min-h-11 flex items-center gap-3 px-4 py-3 rounded-xl transition-colors",
                   active
-                    ? "bg-[var(--primary-soft)] text-[var(--primary)]"
+                    ? "bg-[var(--primary-soft)] text-[var(--coral-dark)]"
                     : "text-[var(--muted-foreground)] hover:bg-[var(--muted)] hover:text-[var(--ink)]",
                 ].join(" ")}
               >

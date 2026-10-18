@@ -64,7 +64,7 @@ export default function CustomerHubHeader({
 
   return (
     <header className="sticky top-0 z-[1000] border-b border-line bg-surface pt-safe">
-      <div className="mx-auto max-w-3xl px-4 py-2.5 sm:py-3">
+      <div className="mx-auto max-w-4xl px-4 py-3 sm:px-6 sm:py-3.5">
         {searching && locationLabel ? (
           <p className="mb-1.5 flex items-center gap-1.5 truncate px-1 text-xs text-[var(--muted-foreground)]">
             <MapPin className="size-3.5 flex-shrink-0" aria-hidden="true" />
@@ -78,7 +78,7 @@ export default function CustomerHubHeader({
               type="button"
               onClick={onCloseSearch}
               aria-label="Close search"
-              className="grid size-10 flex-shrink-0 place-items-center rounded-xl bg-[var(--muted)] transition-colors hover:bg-[var(--soft)] sm:size-11"
+              className="grid size-11 flex-shrink-0 place-items-center rounded-xl bg-[var(--muted)] transition-colors hover:bg-[var(--soft)]"
             >
               <X className="size-5 text-[var(--ink)]" aria-hidden="true" />
             </button>
@@ -92,9 +92,9 @@ export default function CustomerHubHeader({
               onSubmitSearch?.();
             }}
           >
-            <div className="flex min-h-11 items-center gap-2 rounded-xl border border-[#d6d3ca] bg-white px-3 sm:min-h-12">
+            <div className="flex min-h-11 items-center gap-2 rounded-xl border border-line bg-card px-3 transition-colors focus-within:border-[var(--teal)] focus-within:ring-2 focus-within:ring-[var(--teal)]/20 sm:min-h-12">
               <Search
-                className="size-5 flex-shrink-0 text-[#5c6b68]"
+                className="size-5 flex-shrink-0 text-[var(--muted-foreground)]"
                 aria-hidden="true"
               />
               <input
@@ -104,7 +104,7 @@ export default function CustomerHubHeader({
                 onChange={(e) => onQueryChange?.(e.target.value)}
                 placeholder={animatedWord}
                 aria-label="Search restaurants and book a tricycle"
-                className="min-w-0 flex-1 bg-transparent text-base text-[#122724] outline-none placeholder:text-[#5c6b68]"
+                className="min-h-11 min-w-0 flex-1 bg-transparent text-base text-[var(--ink)] outline-none placeholder:text-[var(--muted-foreground)] sm:min-h-12"
               />
             </div>
           </form>
@@ -121,7 +121,7 @@ export default function CustomerHubHeader({
             <Bell className="size-6 text-[var(--primary)]" aria-hidden="true" />
             {unreadCount > 0 && (
               <span className="absolute -right-1 -top-1 grid size-5 place-items-center rounded-full border-2 border-[var(--surface)] bg-[var(--primary)]">
-                <span className="text-[10px] font-bold leading-none text-white">
+                <span className="text-[10px] font-bold leading-none text-[var(--primary-foreground)]">
                   {unreadCount > 9 ? "9+" : unreadCount}
                 </span>
               </span>

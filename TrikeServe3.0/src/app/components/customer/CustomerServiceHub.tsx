@@ -34,29 +34,29 @@ export default function CustomerServiceHub({
   return (
     <section
       aria-label="Choose a service"
-      className="rounded-3xl border border-line bg-surface p-4 shadow-2xl sm:p-5"
+      className="flex flex-col rounded-3xl border border-line bg-card p-4 shadow-card sm:p-6"
     >
-      <h2 className="text-center text-lg font-bold text-[var(--ink)] sm:text-xl">
+      <h1 className="text-center text-xl font-extrabold tracking-tight text-[var(--ink)] sm:text-2xl">
         What do you need today?
-      </h2>
-      <p className="mb-4 mt-0.5 text-center text-xs text-[var(--muted-foreground)] sm:text-sm">
+      </h1>
+      <p className="mb-5 mt-1 text-center text-xs text-[var(--muted-foreground)] sm:text-sm">
         Ano ang kailangan mo ngayon?
       </p>
 
-      <div className="grid grid-cols-2 gap-3 sm:gap-4">
+      <div className="grid flex-1 grid-cols-2 gap-3 sm:gap-4">
         {/* Sakay / Ride */}
         <button
           type="button"
           onClick={onBookRide}
-          className="flex min-h-44 flex-col items-center justify-center gap-1.5 rounded-2xl border-2 border-[var(--coral-soft)] bg-[var(--primary-soft)] px-3 py-5 text-center transition-transform hover:scale-[1.02] active:scale-[0.98] sm:min-h-52"
+          className="flex min-h-44 flex-col items-center justify-center gap-2 rounded-2xl border-2 border-[var(--primary)]/20 bg-[var(--primary-soft)] px-3 py-5 text-center transition-colors hover:border-[var(--primary)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--primary)] active:scale-[0.98] sm:min-h-48"
         >
           <span className="grid size-14 place-items-center rounded-2xl bg-[var(--primary)] sm:size-16">
-            <TerminalIconGlyph className="size-8 text-white sm:size-9" aria-hidden="true" />
+            <TerminalIconGlyph className="size-8 text-[var(--primary-foreground)] sm:size-9" aria-hidden="true" />
           </span>
           <span className="text-base font-extrabold leading-tight text-[var(--ink)] sm:text-lg">
             Book a Ride
           </span>
-          <span className="text-xs font-bold text-[var(--primary)]">Sakay</span>
+          <span className="text-xs font-bold text-[var(--coral-dark)]">Sakay</span>
           <span className="text-xs leading-snug text-[var(--muted-foreground)]">
             Shared or private
           </span>
@@ -66,10 +66,10 @@ export default function CustomerServiceHub({
         <button
           type="button"
           onClick={onOrderFood}
-          className="relative flex min-h-44 flex-col items-center justify-center gap-1.5 rounded-2xl border-2 border-[var(--teal-soft)] bg-[var(--teal-soft)] px-3 py-5 text-center transition-transform hover:scale-[1.02] active:scale-[0.98] sm:min-h-52"
+          className="relative flex min-h-44 flex-col items-center justify-center gap-2 rounded-2xl border-2 border-[var(--teal)]/20 bg-[var(--teal-soft)] px-3 py-5 text-center transition-colors hover:border-[var(--teal)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--teal)] active:scale-[0.98] sm:min-h-48"
         >
           <span className="grid size-14 place-items-center rounded-2xl bg-[var(--teal)] sm:size-16">
-            <UtensilsCrossed className="size-8 text-white sm:size-9" aria-hidden="true" />
+            <UtensilsCrossed className="size-8 text-[var(--background)] sm:size-9" aria-hidden="true" />
           </span>
           <span className="text-base font-extrabold leading-tight text-[var(--ink)] sm:text-lg">
             Order Food
@@ -80,14 +80,14 @@ export default function CustomerServiceHub({
           </span>
 
           {cartCount > 0 && (
-            <span className="absolute -right-2 -top-2 rounded-full bg-[var(--teal)] px-2.5 py-1 text-[11px] font-bold text-white">
+            <span className="absolute -top-3 right-2 rounded-full bg-[var(--teal)] px-2.5 py-1 text-[11px] font-bold text-[var(--background)]">
               {cartCount} in cart
             </span>
           )}
         </button>
       </div>
 
-      <p className="mt-4 text-center text-xs text-[var(--muted-foreground)]">
+      <p className="mt-4 border-t border-line pt-4 text-center text-xs text-[var(--muted-foreground)]">
         Fixed local fares · Serving {serviceArea}
       </p>
       <p className="text-center text-xs text-[var(--muted-foreground)]">

@@ -226,7 +226,7 @@ function CartRestaurantCard({
 
   return (
     <li
-      className={`relative overflow-hidden rounded-3xl border-2 border-line bg-card shadow-card ${
+      className={`relative min-w-0 overflow-hidden rounded-3xl border-2 border-line bg-card shadow-card ${
         revealed ? "z-[110]" : ""
       }`}
     >
@@ -252,7 +252,7 @@ function CartRestaurantCard({
             ? `Remove ${restaurant.name} from your cart`
             : `Add more items from ${restaurant.name}`
         }
-        className={`absolute inset-0 flex touch-pan-y select-none items-center justify-center gap-2 text-white ${
+        className={`absolute inset-0 flex touch-pan-y select-none items-center justify-center gap-2 ${showingDelete ? "text-[var(--background)]" : "text-[var(--primary-foreground)]"} ${
           revealed ? "" : "pointer-events-none"
         }`}
         style={{ background: showingDelete ? "var(--error)" : "var(--primary)" }}
@@ -270,9 +270,9 @@ function CartRestaurantCard({
           transform: `translateX(${dx}px)`,
           transition: settling ? `transform ${SWIPE_SETTLE_MS}ms ease-out` : "none",
         }}
-        className="relative touch-pan-y select-none overflow-hidden rounded-[calc(1.5rem-2px)] bg-card"
+        className="relative flex h-full touch-pan-y select-none flex-col overflow-hidden rounded-[calc(1.5rem-2px)] bg-card"
       >
-        <div className="flex items-center gap-3 border-b border-b-line border-t-4 border-t-[var(--teal)] bg-[var(--teal-soft)] p-4">
+        <div className="flex shrink-0 items-center gap-3 border-b border-b-line border-t-4 border-t-[var(--teal)] bg-[var(--teal-soft)] p-4">
           {/* Restaurant identity leads on the left, the way the restaurant
               cards and search results already present it. */}
           <div className="size-12 flex-shrink-0 overflow-hidden rounded-xl border border-line bg-card shadow-sm">
@@ -311,7 +311,7 @@ function CartRestaurantCard({
 
         {/* Keep the item previews together, visually separate from the restaurant
             header and the subtotal/action area. */}
-        <div className="p-4">
+        <div className="flex-1 p-4">
           <p className="text-[11px] font-bold uppercase tracking-wider text-[var(--muted-foreground)]">
             Items in this cart
           </p>
@@ -354,7 +354,7 @@ function CartRestaurantCard({
           </div>
         </div>
 
-        <div className="border-t border-line bg-soft p-4">
+        <div className="shrink-0 border-t border-line bg-soft p-4">
           <div className="flex items-baseline justify-between gap-3">
             <span className="text-sm font-semibold text-[var(--muted-foreground)]">Subtotal</span>
             <span className="text-xl font-extrabold tabular-nums text-[var(--ink)]">
@@ -485,7 +485,7 @@ function CartOptionsSheet({
       <div
         onClick={(event) => event.stopPropagation()}
         style={{ height }}
-        className="absolute inset-x-0 bottom-0 flex flex-col rounded-t-3xl bg-[var(--surface)] shadow-[0_-8px_32px_rgba(0,0,0,0.28)]"
+        className="absolute inset-x-0 bottom-0 mx-auto flex max-h-[88dvh] w-full max-w-4xl flex-col rounded-t-3xl bg-[var(--surface)] shadow-[0_-8px_32px_rgba(0,0,0,0.28)]"
       >
         {/* `touch-none` here and nowhere else, so the drag moves the sheet
             rather than scrolling the page behind it. */}
@@ -494,7 +494,7 @@ function CartOptionsSheet({
           onPointerMove={onPointerMove}
           onPointerUp={onPointerUp}
           onPointerCancel={onPointerUp}
-          className="shrink-0 cursor-grab touch-none px-4 pb-1 pt-3 active:cursor-grabbing"
+          className="flex min-h-11 shrink-0 cursor-grab touch-none items-center px-4 py-3 active:cursor-grabbing"
         >
           <div
             className="mx-auto h-1.5 w-10 rounded-full bg-[var(--border)]"
@@ -506,12 +506,12 @@ function CartOptionsSheet({
           {/* No title line: the options are the whole sheet. The close button
               stays because it is the only affordance that works without
               reading anything. */}
-          <div className="flex shrink-0 justify-end pb-1">
+          <div className="flex shrink-0 justify-end">
             <button
               type="button"
               onClick={onClose}
               aria-label="Close options"
-              className="grid size-9 place-items-center rounded-full transition-transform active:scale-90"
+              className="grid size-11 place-items-center rounded-full transition-transform active:scale-90"
             >
               <X className="size-5 text-[var(--ink)]" />
             </button>
@@ -571,90 +571,92 @@ export default function Cart() {
 
   return (
     <div className="min-h-screen bg-[var(--canvas)] pb-32">
-      <div className="sticky top-0 z-50 border-b border-line bg-surface">
-        <div className="mx-auto flex w-full max-w-3xl items-center justify-between gap-3 px-4 py-4 sm:px-5">
+      <header className="sticky top-0 z-[1000] border-b border-line bg-surface">
+        <div className="mx-auto flex w-full max-w-4xl items-center justify-between gap-3 px-4 py-3 sm:px-6 sm:py-4">
           <div className="flex items-center gap-3">
             <button
               type="button"
               onClick={goBack}
               aria-label="Back"
-              className="transition-transform active:scale-90"
+              className="grid size-11 place-items-center rounded-xl bg-soft transition-transform active:scale-90"
             >
               <X className="size-6 text-[var(--ink)]" />
             </button>
             <h1 className="text-xl font-bold text-[var(--ink)]">My Cart</h1>
           </div>
           {cartRestaurants.length > 0 && (
-            <span className="flex-shrink-0 rounded-full bg-[var(--primary-soft)] px-3 py-1 text-sm font-bold text-[var(--primary)]">
+            <span className="flex-shrink-0 rounded-full bg-[var(--primary-soft)] px-3 py-1 text-sm font-bold text-[var(--coral-dark)]">
               {totalItems} {totalItems === 1 ? "item" : "items"}
             </span>
           )}
         </div>
-      </div>
+      </header>
 
-      {cartRestaurants.length > 0 ? (
-        <>
-          {/* Tap-away target for a parked card. Below the revealed card, which
-              carries z-[110] of its own. */}
-          {revealedId && (
-            <div
-              className="fixed inset-0 z-[100]"
-              onClick={() => setRevealedId(null)}
-              aria-hidden="true"
-            />
-          )}
-          <div className="mx-auto w-full max-w-3xl px-4 pt-5 sm:px-5">
-            <div className="mb-5 flex items-start gap-3">
-              <span className="grid size-10 flex-shrink-0 place-items-center rounded-xl bg-[var(--teal-soft)] text-[var(--teal)]">
-                <Store className="size-5" aria-hidden="true" />
-              </span>
-              <div>
-                <h2 className="text-sm font-bold text-[var(--ink)]">
-                  {cartRestaurants.length} restaurant {cartRestaurants.length === 1 ? "cart" : "carts"}
-                </h2>
-                <p className="mt-1 text-xs text-[var(--muted-foreground)]">
-                  Each restaurant has a separate cart and checkout.
-                </p>
+      <main className="mx-auto w-full max-w-4xl px-4 py-5 sm:px-6 sm:py-6">
+        {cartRestaurants.length > 0 ? (
+          <>
+            {/* Tap-away target for a parked card. Below the revealed card, which
+                carries z-[110] of its own. */}
+            {revealedId && (
+              <div
+                className="fixed inset-0 z-[100]"
+                onClick={() => setRevealedId(null)}
+                aria-hidden="true"
+              />
+            )}
+            <section aria-label="Your restaurant carts" className="min-w-0">
+              <div className="mb-5 flex items-start gap-3">
+                <span className="grid size-10 flex-shrink-0 place-items-center rounded-xl bg-[var(--teal-soft)] text-[var(--teal)]">
+                  <Store className="size-5" aria-hidden="true" />
+                </span>
+                <div>
+                  <h2 className="text-sm font-bold text-[var(--ink)]">
+                    {cartRestaurants.length} restaurant {cartRestaurants.length === 1 ? "cart" : "carts"}
+                  </h2>
+                  <p className="mt-1 text-xs text-[var(--muted-foreground)]">
+                    Each restaurant has a separate cart and checkout.
+                  </p>
+                </div>
               </div>
+              <ul aria-label="Restaurant carts" className="grid grid-cols-1 gap-6 pb-6">
+                {cartRestaurants.map((restaurant) => (
+                  <CartRestaurantCard
+                    key={restaurant.id}
+                    restaurant={restaurant}
+                    revealed={revealedId === restaurant.id}
+                    onReveal={(on) => setRevealedId(on ? restaurant.id : null)}
+                    onOpenOptions={() => setOptionsFor(restaurant)}
+                    onOpenCheckout={() => openCheckout(restaurant)}
+                    onAddMore={() => openRestaurant(restaurant)}
+                    onDelete={() => {
+                      setOptionsFor(null);
+                      setRevealedId(null);
+                      removeRestaurant(restaurant.id);
+                    }}
+                  />
+                ))}
+              </ul>
+            </section>
+          </>
+        ) : (
+          <div className="mx-auto flex max-w-2xl flex-col items-center justify-center rounded-3xl border border-line bg-card px-5 py-20 text-center shadow-card">
+            <div className="mb-4 grid size-24 place-items-center rounded-full bg-[var(--muted)]">
+              <ShoppingCart className="size-12 text-[var(--border)]" />
             </div>
-            <ul aria-label="Restaurant carts" className="space-y-6 pb-6">
-              {cartRestaurants.map((restaurant) => (
-                <CartRestaurantCard
-                  key={restaurant.id}
-                  restaurant={restaurant}
-                  revealed={revealedId === restaurant.id}
-                  onReveal={(on) => setRevealedId(on ? restaurant.id : null)}
-                  onOpenOptions={() => setOptionsFor(restaurant)}
-                  onOpenCheckout={() => openCheckout(restaurant)}
-                  onAddMore={() => openRestaurant(restaurant)}
-                  onDelete={() => {
-                    setOptionsFor(null);
-                    setRevealedId(null);
-                    removeRestaurant(restaurant.id);
-                  }}
-                />
-              ))}
-            </ul>
+            <h3 className="mb-2 text-xl font-bold text-[var(--ink)]">
+              Your cart is empty
+            </h3>
+            <p className="mb-6 text-[var(--muted-foreground)]">
+              Add items to get started
+            </p>
+            <Link to="/customer/food">
+              <Button className="bg-[var(--primary)] text-[var(--primary-foreground)] hover:bg-[var(--coral-dark)]">
+                Browse Food
+              </Button>
+            </Link>
           </div>
-        </>
-      ) : (
-        <div className="flex flex-col items-center justify-center py-20">
-          <div className="mb-4 grid size-24 place-items-center rounded-full bg-[var(--muted)]">
-            <ShoppingCart className="size-12 text-[var(--border)]" />
-          </div>
-          <h3 className="mb-2 text-xl font-bold text-[var(--ink)]">
-            Your cart is empty
-          </h3>
-          <p className="mb-6 text-[var(--muted-foreground)]">
-            Add items to get started
-          </p>
-          <Link to="/customer/food">
-            <Button className="bg-[var(--primary)] hover:bg-[var(--primary)]">
-              Browse Food
-            </Button>
-          </Link>
-        </div>
-      )}
+        )}
+      </main>
 
       <BottomNav active="cart" />
 
@@ -689,7 +691,7 @@ export default function Cart() {
                   removeRestaurant(pendingDelete.id);
                   setPendingDelete(null);
                 }}
-                className="w-full rounded-2xl bg-[var(--error)] py-4 font-bold text-white transition-transform active:scale-95"
+                className="w-full rounded-2xl bg-[var(--error)] py-4 font-bold text-[var(--background)] transition-transform active:scale-95"
               >
                 Remove
               </button>

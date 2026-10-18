@@ -1,11 +1,12 @@
 import { useCallback, useEffect, useRef, useState, type ElementType, type ReactNode } from "react";
-import { Car, ChevronDown, ChevronUp, Loader2, Save, Users, Truck, TriangleAlert } from "lucide-react";
+import { Car, ChevronDown, ChevronUp, Loader2, Save, Users, Truck, TriangleAlert, Search, MapPin, CheckCircle, Pencil } from "lucide-react";
 
 import { supabase } from "../../../utils/supabase";
 import { useAuth } from "../../contexts/AuthContext";
 import { DEFAULT_MAX_PASSENGERS } from "@/lib/pricing";
 import { logAudit } from "../../../lib/supabase";
 import AdminShell from "./AdminShell";
+import AdminPageIntro, { AdminMetricCards } from "./AdminPageIntro";
 import Toast from "../ui/Toast";
 import EmptyState from "../ui/EmptyState";
 
@@ -135,7 +136,7 @@ type FareGroupProps = {
 
 function FareGroup({ title, blurb, icon: Icon, children }: FareGroupProps) {
   return (
-    <div className="rounded-2xl border border-line bg-[var(--muted)]/40 p-4">
+    <div className="min-w-0 rounded-2xl border border-line bg-soft/40 p-4">
       <div className="mb-3 flex items-start gap-2.5">
         <Icon className="mt-0.5 size-5 shrink-0 text-[var(--primary)]" aria-hidden="true" />
         <div className="min-w-0">
@@ -143,7 +144,7 @@ function FareGroup({ title, blurb, icon: Icon, children }: FareGroupProps) {
           <p className="text-xs text-[var(--muted-foreground)]">{blurb}</p>
         </div>
       </div>
-      <div className="grid gap-4 sm:grid-cols-2">{children}</div>
+      <div className="grid gap-4 @min-[24rem]:grid-cols-2">{children}</div>
     </div>
   );
 }
@@ -187,7 +188,7 @@ function TerminalSummary({ draft }: { draft: Draft }) {
   const icon = (I: ElementType) => <I className="size-3.5" aria-hidden="true" />;
 
   return (
-    <dl className="grid gap-4 rounded-2xl border border-line bg-[var(--muted)]/40 p-4 sm:grid-cols-2 lg:grid-cols-4">
+    <dl className="grid gap-4 rounded-2xl border border-line bg-[var(--muted)]/40 p-4 @min-[28rem]:grid-cols-2 @min-[58rem]:grid-cols-4">
       {entry(
         "Share Ride",
         icon(Users),
@@ -230,6 +231,8 @@ export default function AdminFaresDelivery() {
   const [terminals, setTerminals] = useState<Terminal[]>([]);
   const [drafts, setDrafts] = useState<Record<string, Draft>>({});
   const [loading, setLoading] = useState(true);
+  const [query, setQuery] = useState('');
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [savingId, setSavingId] = useState<string | null>(null);
   /**
    * Which terminals are folded down to their summary.
@@ -241,7 +244,7 @@ export default function AdminFaresDelivery() {
    */
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
   const toggleCollapsed = (id: string) =>
-    setCollapsed((prev) => ({ ...prev, [id]: !prev[id] }));
+    setCollapsed((prev) => ({ ...prev, [id]: prev[id] === false }));
   const [toast, setToast] = useState<{ message: string; variant: "success" | "error" } | null>(null);
   /**
    * Which optional columns the database actually has.
@@ -258,6 +261,7 @@ export default function AdminFaresDelivery() {
 
   const load = useCallback(async () => {
     setLoading(true);
+    setLoadError(null);
     try {
       /*
        * Selecting a column that does not exist fails the *entire* query, not just
@@ -313,7 +317,7 @@ export default function AdminFaresDelivery() {
       setTerminals(rows);
       setDrafts(Object.fromEntries(rows.map((t) => [t.id, draftOf(t)])));
     } catch (err) {
-      setToast({ message: `Could not load terminals: ${(err as Error).message}`, variant: "error" });
+      setLoadError(`Could not load terminals: ${(err as Error).message || 'Please try again.'}`);
     } finally {
       setLoading(false);
     }
@@ -447,7 +451,7 @@ export default function AdminFaresDelivery() {
   };
 
   const field =
-    "w-full rounded-xl border border-line bg-[var(--surface)] px-3 py-2 text-sm font-semibold text-[var(--ink)] outline-none focus:border-[var(--primary)]";
+    "w-full min-h-11 rounded-xl border border-line bg-card px-3 py-2 text-sm font-semibold text-[var(--ink)] outline-none focus:border-[var(--primary)]";
   const label = "block text-xs font-bold text-[var(--ink)] mb-1";
 
   /*
@@ -470,6 +474,18 @@ export default function AdminFaresDelivery() {
 
   return (
     <AdminShell title="Fares & Delivery" subtitle="Share ride, private ride and delivery pricing per terminal">
+      <div className="@container mx-auto w-full max-w-[100rem] space-y-6 sm:space-y-8">
+      <AdminPageIntro eyebrow="Fares & delivery" title="Clear pricing. Every terminal." description="Compare terminal rates, set ride and delivery prices, and manage shared-ride capacity." note="Changes apply only when you save a terminal." />
+      <AdminMetricCards loading={loading} items={[
+        { label: 'Terminals', value: terminals.length, Icon: MapPin },
+        { label: 'Active', value: terminals.filter(t => t.is_active).length, Icon: CheckCircle, tone: 'success' },
+        { label: 'Unsaved drafts', value: terminals.filter(dirty).length, Icon: Pencil, tone: 'amber' },
+      ]} />
+      {loadError && <div role="alert" className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-line bg-[var(--amber-soft)] p-4 text-sm text-[var(--amber-ink)]"><p className="min-w-0 flex-1 break-words">{loadError}</p><button type="button" disabled={terminals.some(dirty)} onClick={() => void load()} className="min-h-11 rounded-xl border border-current px-3 text-xs font-bold disabled:opacity-50">Retry loading</button></div>}
+      <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-line bg-card p-4">
+        <div className="relative min-w-0 w-full sm:max-w-md"><Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-[var(--muted-foreground)]" aria-hidden="true" /><label htmlFor="fare-search" className="sr-only">Search terminal pricing</label><input id="fare-search" type="search" value={query} onChange={event => setQuery(event.target.value)} placeholder="Search terminal pricing…" className="min-h-11 w-full rounded-xl border border-line bg-soft pl-10 pr-3 text-sm" /></div>
+        <p role="status" className="text-xs text-[var(--muted-foreground)]">{terminals.filter(t => t.name.toLowerCase().includes(query.trim().toLowerCase())).length} of {terminals.length} terminals</p>
+      </div>
       {toast && (
         <Toast
           message={toast.message}
@@ -507,23 +523,25 @@ export default function AdminFaresDelivery() {
         />
       ) : (
         <div className="space-y-4">
-          {terminals.map((terminal) => {
+          {!terminals.some(t => t.name.toLowerCase().includes(query.trim().toLowerCase())) && <EmptyState title="No matching terminals" description="Try another terminal name." action={<button type="button" onClick={() => setQuery('')} className="min-h-11 rounded-xl border border-line px-4 text-sm font-bold">Clear search</button>} />}
+          {terminals.filter(t => t.name.toLowerCase().includes(query.trim().toLowerCase())).map((terminal) => {
             const draft = drafts[terminal.id] ?? draftOf(terminal);
             const saving = savingId === terminal.id;
             const changed = dirty(terminal);
-            const isCollapsed = collapsed[terminal.id] === true;
+            const isCollapsed = collapsed[terminal.id] !== false;
             return (
               <section
                 key={terminal.id}
-                className="rounded-2xl border border-line bg-[var(--surface)] p-4 sm:p-5"
+                className="@container relative min-w-0 rounded-3xl border border-line bg-card p-4 sm:p-5 transition-colors hover:border-[var(--teal)]/40"
               >
+                {isCollapsed && user?.adminType === 'business_customer' && <button type="button" onClick={() => toggleCollapsed(terminal.id)} aria-label={`Edit pricing for ${terminal.name}`} aria-expanded={false} className="absolute inset-0 z-10 rounded-3xl text-left focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--teal)]"><span className="sr-only">Open terminal pricing editor</span></button>}
                 <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
                   <div className="min-w-0">
-                    <h2 className="truncate text-lg font-bold text-[var(--ink)]">
+                    <h2 className="break-words text-lg font-bold text-[var(--ink)]">
                       {terminal.name}
                     </h2>
                     <p className="text-xs text-[var(--muted-foreground)]">
-                      {terminal.is_active ? "Active" : "Inactive"}
+                      {terminal.is_active ? "Active" : "Inactive"}{changed ? ' · Unsaved changes' : ' · Saved rates'}
                     </p>
                   </div>
                   {/*
@@ -536,7 +554,7 @@ export default function AdminFaresDelivery() {
                     the control next to it. One wrapper puts them in a single
                     cluster that shrink-wraps to the name.
                   */}
-                  <div className="flex shrink-0 items-center gap-2">
+                  <div className="relative z-20 flex shrink-0 items-center gap-2">
                     {/*
                       The "v" that folds a terminal down to its summary.
 
@@ -569,7 +587,7 @@ export default function AdminFaresDelivery() {
                       disabled={saving || !changed}
                       className={`inline-flex min-h-11 items-center gap-2 rounded-xl px-4 py-2 font-bold transition-all active:scale-[0.97] ${
                         changed
-                          ? "bg-[var(--success)] text-white hover:opacity-90"
+                          ? "bg-[var(--success-ink)] text-[var(--background)] hover:opacity-90"
                           : "bg-[var(--border)] text-[var(--muted-foreground)]"
                       }`}
                     >
@@ -586,7 +604,7 @@ export default function AdminFaresDelivery() {
                 {isCollapsed ? (
                   <TerminalSummary draft={draft} />
                 ) : (
-                  <div className="space-y-3">
+                  <div className="grid items-start gap-3 @min-[58rem]:grid-cols-3">
                   <FareGroup
                     title="Share Ride"
                     blurb="One seat, split with whoever else is going your way."
@@ -630,7 +648,7 @@ export default function AdminFaresDelivery() {
                       </p>
                     </div>
 
-                    <div className="sm:col-span-2">
+                    <div className="@min-[24rem]:col-span-2">
                       <label className={label} htmlFor={`pax-${terminal.id}`}>
                         <Users className="mr-1 inline size-3.5" aria-hidden="true" />
                         Seats on a shared ride
@@ -761,6 +779,7 @@ export default function AdminFaresDelivery() {
           })}
         </div>
       )}
+      </div>
     </AdminShell>
   );
 }

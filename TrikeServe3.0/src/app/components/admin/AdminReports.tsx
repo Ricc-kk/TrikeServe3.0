@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo } from "react";
 import {
-  Menu, ShieldCheck, Search, AlertTriangle, Flag,
+  ShieldCheck, Search, AlertTriangle, Flag, Clock3, CheckCircle, Archive,
 } from "lucide-react";
 import { Card } from "../ui/card";
 import { Badge } from "../ui/badge";
@@ -8,6 +8,7 @@ import { useAuth } from "../../contexts/AuthContext";
 
 import { supabaseHelpers } from "../../../lib/supabase";
 import AdminShell from "./AdminShell";
+import AdminPageIntro, { AdminMetricCards } from "./AdminPageIntro";
 import { TableSkeleton } from "./AdminSkeleton";
 import EmptyState from "../ui/EmptyState";
 
@@ -26,16 +27,16 @@ interface RideReport {
 }
 
 const STATUS_META: Record<string, { label: string; badge: string }> = {
-  pending: { label: "Pending", badge: "bg-[var(--amber)]" },
-  reviewing: { label: "Reviewing", badge: "bg-[var(--info)]" },
-  resolved: { label: "Resolved", badge: "bg-[var(--success)]" },
-  dismissed: { label: "Dismissed", badge: "bg-[var(--muted-foreground)]" },
+  pending: { label: "Pending", badge: "bg-[var(--amber-soft)] text-[var(--amber-ink)]" },
+  reviewing: { label: "Reviewing", badge: "bg-[var(--info-soft)] text-[var(--info)]" },
+  resolved: { label: "Resolved", badge: "bg-[var(--success-soft)] text-[var(--success-ink)]" },
+  dismissed: { label: "Dismissed", badge: "bg-soft text-[var(--muted-foreground)]" },
 };
 
 const STATUS_FILTERS = ["All", "pending", "reviewing", "resolved", "dismissed"] as const;
 
 function statusMeta(status: string) {
-  return STATUS_META[status] || { label: status, badge: "bg-[var(--muted-foreground)]" };
+  return STATUS_META[status] || { label: status, badge: "bg-soft text-[var(--muted-foreground)]" };
 }
 
 function formatDate(value?: string | null) {
@@ -112,7 +113,7 @@ export default function AdminReports() {
       subtitle="Reports submitted by customers about completed rides"
     >
 
-        <div className="space-y-6">
+        <div className="@container mx-auto w-full max-w-[100rem] space-y-6 sm:space-y-8">
           {!isSuperAdmin ? (
             <EmptyState
               icon={ShieldCheck}
@@ -122,6 +123,13 @@ export default function AdminReports() {
             />
           ) : (
             <>
+              <AdminPageIntro eyebrow="Ride reports" title="A safer ride starts with listening." description="Review customer concerns, investigate ride issues, and keep track of every outcome." note="Updates automatically every 15 seconds" />
+              <AdminMetricCards loading={loading} items={[
+                { label: 'Total reports', value: reports.length, Icon: Flag },
+                { label: 'Needs attention', value: reports.filter(r => r.status === 'pending' || r.status === 'reviewing').length, Icon: Clock3, tone: 'amber' },
+                { label: 'Resolved', value: reports.filter(r => r.status === 'resolved').length, Icon: CheckCircle, tone: 'success' },
+                { label: 'Dismissed', value: reports.filter(r => r.status === 'dismissed').length, Icon: Archive, tone: 'info' },
+              ]} />
               {loadError && (
                 <Card className="p-4 mb-6 border-2 border-[var(--amber-soft)] bg-[var(--amber-soft)]">
                   <div className="flex items-start gap-3">
@@ -134,16 +142,16 @@ export default function AdminReports() {
               )}
 
               {/* Filters + search */}
-              <div className="flex flex-col sm:flex-row sm:items-center gap-3 mb-5">
-                <div className="flex gap-2 overflow-x-auto">
+              <div className="flex flex-col gap-4 rounded-3xl border border-line bg-card p-4 sm:p-5">
+                <div role="group" aria-label="Filter reports by status" className="flex flex-wrap gap-2">
                   {STATUS_FILTERS.map((f) => (
                     <button
                       key={f}
                       onClick={() => setStatusFilter(f)}
                       aria-pressed={statusFilter === f}
-                      className={`min-h-11 px-3.5 py-1.5 rounded-full text-xs font-bold whitespace-nowrap capitalize transition-all ${
+                      className={`min-h-11 px-3.5 py-1.5 rounded-xl text-xs font-bold whitespace-nowrap capitalize transition-all ${
                         statusFilter === f
-                          ? "bg-[var(--primary)] text-white"
+                          ? "bg-[var(--teal-soft)] text-[var(--teal)] border border-[var(--teal)]/30"
                           : "bg-[var(--surface)] border border-line text-[var(--muted-foreground)]"
                       }`}
                     >
@@ -151,7 +159,7 @@ export default function AdminReports() {
                     </button>
                   ))}
                 </div>
-                <div className="flex items-center gap-2 px-3 py-2 min-h-11 bg-[var(--surface)] border border-line rounded-xl sm:ml-auto sm:w-64">
+                <div className="flex min-w-0 w-full items-center gap-2 px-3 py-2 min-h-11 bg-soft border border-line rounded-xl">
                   <Search className="w-4 h-4 text-[var(--muted-foreground)] flex-shrink-0" aria-hidden="true" />
                   <label htmlFor="admin-report-search" className="sr-only">
                     Search reports
@@ -182,7 +190,7 @@ export default function AdminReports() {
                       ? "Try a different search term or status."
                       : "Customer ride reports will appear here."
                   }
-                  filipino={hasFilter ? "Wala pang tumutugma sa mga filter na ito." : "Wala pang ulat ng rides."}
+
                   action={
                     hasFilter ? (
                       <button
@@ -191,7 +199,7 @@ export default function AdminReports() {
                           setSearch("");
                           setStatusFilter("All");
                         }}
-                        className="min-h-11 px-5 rounded-xl bg-[var(--primary)] text-white font-semibold hover:opacity-90"
+                        className="min-h-11 px-5 rounded-xl bg-[var(--primary)] text-[var(--primary-foreground)] font-semibold hover:opacity-90"
                       >
                         Clear filters
                       </button>
@@ -199,19 +207,19 @@ export default function AdminReports() {
                   }
                 />
               ) : (
-                <div className="space-y-3">
+                <div className="grid items-start gap-4 @min-[60rem]:grid-cols-2">
                   {filtered.map((report) => {
                     const meta = statusMeta(report.status);
                     return (
-                      <Card key={report.id} className="p-4 border border-line bg-surface">
+                      <Card key={report.id} className="min-w-0 gap-0 rounded-3xl p-4 sm:p-5 border border-line bg-card">
                         <div className="flex items-start justify-between gap-3 flex-wrap">
-                          <div className="min-w-0">
+                          <div className="min-w-0 w-full">
                             <div className="flex items-center gap-2 mb-1 flex-wrap">
-                              <Badge className={`${meta.badge} text-white`}>{meta.label}</Badge>
+                              <Badge className={meta.badge}>{meta.label}</Badge>
                               <span className="text-sm font-bold text-[var(--ink)]">{report.category}</span>
                             </div>
                             <p className="text-sm text-[var(--ink)] break-words">{report.description}</p>
-                            <div className="mt-2 space-y-0.5 text-xs text-[var(--muted-foreground)]">
+                            <div className="mt-3 space-y-1.5 break-words text-xs text-[var(--muted-foreground)]">
                               {report.ride_route && <p>🛣️ {report.ride_route}</p>}
                               <p>
                                 👤 Driver: <span className="font-semibold text-[var(--ink)]">{report.driver_name || "Driver"}</span>
@@ -224,13 +232,13 @@ export default function AdminReports() {
                             </div>
                           </div>
 
-                          <div className="flex gap-2 flex-shrink-0">
+                          <div className="grid w-full grid-cols-2 gap-2 border-t border-line pt-4">
                             {report.status !== "resolved" && (
                               <button
                                 disabled={busyId === report.id}
                                 onClick={() => setStatus(report.id, "resolved")}
                                 aria-label={`Resolve ${report.category} report from ${report.reporter_name || "a customer"}`}
-                                className="min-h-11 px-3 rounded-lg bg-[var(--success)] text-white text-xs font-bold active:scale-95 transition-transform disabled:opacity-50"
+                                className="min-h-11 px-3 rounded-lg bg-[var(--success-ink)] text-[var(--background)] text-xs font-bold active:scale-95 transition-transform disabled:opacity-50"
                               >
                                 Resolve
                               </button>

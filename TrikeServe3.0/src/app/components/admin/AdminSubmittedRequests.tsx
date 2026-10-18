@@ -5,6 +5,7 @@ import { Card } from "../ui/card";
 import { Badge } from "../ui/badge";
 import { useAuth } from "../../contexts/AuthContext";
 import AdminShell from "./AdminShell";
+import AdminPageIntro, { AdminMetricCards } from "./AdminPageIntro";
 import { TableSkeleton } from "./AdminSkeleton";
 import EmptyState from "../ui/EmptyState";
 import {
@@ -118,22 +119,13 @@ export default function AdminSubmittedRequests() {
       title="Submitted Requests"
       subtitle="Everything you have sent to the Super Admin, and what became of it"
     >
-      <div className="space-y-6">
-        <div className="grid grid-cols-3 gap-3 lg:gap-6">
-          <Card className="p-4 lg:p-6 border border-line bg-surface">
-            <p className="text-xs lg:text-sm text-[var(--muted-foreground)] mb-1">Pending</p>
-            <h2 className="text-2xl lg:text-4xl font-bold text-[var(--amber)]">{counts.pending}</h2>
-          </Card>
-          <Card className="p-4 lg:p-6 border border-line bg-surface">
-            <p className="text-xs lg:text-sm text-[var(--muted-foreground)] mb-1">Approved</p>
-            <h2 className="text-2xl lg:text-4xl font-bold text-[var(--success)]">{counts.approved}</h2>
-          </Card>
-          <Card className="p-4 lg:p-6 border border-line bg-surface">
-            <p className="text-xs lg:text-sm text-[var(--muted-foreground)] mb-1">Rejected</p>
-            <h2 className="text-2xl lg:text-4xl font-bold text-[var(--error)]">{counts.rejected}</h2>
-          </Card>
-        </div>
-
+      <div className="@container mx-auto w-full max-w-[100rem] space-y-6 sm:space-y-8">
+        <AdminPageIntro eyebrow="Submitted requests · Mga kahiling" title="Every change, tracked." description="Follow your terminal and driver changes from submission to the Super Admin’s decision. Nothing is applied while a request is pending." note="Your submissions only · Updates every 10 seconds" />
+        <AdminMetricCards loading={loading} items={[
+          { label: 'Pending', value: counts.pending, detail: 'Awaiting Super Admin review', Icon: Clock, tone: 'amber' },
+          { label: 'Approved', value: counts.approved, detail: 'Changes applied', Icon: CheckCircle, tone: 'success' },
+          { label: 'Rejected', value: counts.rejected, detail: 'Review the reason below', Icon: XCircle, tone: 'info' },
+        ]} />
         {loadError && (
           <Card className="p-4 border-2 border-[var(--amber-soft)] bg-[var(--amber-soft)]">
             <div className="flex items-start gap-3">
@@ -146,8 +138,9 @@ export default function AdminSubmittedRequests() {
         {/* Search + status filter. Hidden until there's something to filter, so an
             empty inbox isn't showing controls that do nothing. */}
         {requests.length > 0 && (
-          <Card className="p-4 border border-line bg-surface">
-            <div className="flex flex-col sm:flex-row sm:items-center gap-3">
+          <Card className="gap-0 rounded-3xl p-4 sm:p-5 border border-line bg-card">
+            <h2 className="mb-4 text-base font-bold text-[var(--ink)]">Find a request</h2>
+            <div className="flex flex-col gap-4">
               <div className="relative flex-1 min-w-0">
                 <Search
                   className="w-4 h-4 text-[var(--muted-foreground)] absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none"
@@ -173,7 +166,7 @@ export default function AdminSubmittedRequests() {
               </div>
 
               <div
-                className="flex gap-2"
+                className="flex flex-wrap gap-2"
                 role="group"
                 aria-label="Filter by status"
               >
@@ -182,9 +175,9 @@ export default function AdminSubmittedRequests() {
                     key={f.value}
                     onClick={() => setStatus(f.value)}
                     aria-pressed={status === f.value}
-                    className={`flex-1 sm:flex-none h-11 px-3 sm:px-4 rounded-xl text-sm font-bold transition-colors ${
+                    className={`min-h-11 px-3 sm:px-4 rounded-xl text-sm font-bold transition-colors ${
                       status === f.value
-                        ? "bg-[var(--primary)] text-white"
+                        ? "bg-[var(--teal-soft)] text-[var(--teal)]"
                         : "bg-[var(--muted)] text-[var(--muted-foreground)]"
                     }`}
                   >
@@ -218,7 +211,7 @@ export default function AdminSubmittedRequests() {
             filipino="Wala pang isinumiteng kahiling. Ang mga pagbabago mo sa terminal o driver ay ipapasa sa Super Admin at lalabas dito kasama ang resulta."
           />
         ) : visible.length === 0 ? (
-          <Card className="p-12 border-2 border-dashed border-[var(--border)] text-center">
+          <Card className="gap-2 rounded-3xl bg-card p-6 sm:p-10 border border-line text-center">
             <Search className="w-12 h-12 text-[var(--muted-foreground)] mx-auto mb-4" aria-hidden="true" />
             <p className="text-[var(--muted-foreground)] text-sm">No requests match your filters</p>
             <button
@@ -232,10 +225,10 @@ export default function AdminSubmittedRequests() {
             </button>
           </Card>
         ) : (
-          <ul className="space-y-3">
+          <ul className="grid items-start gap-4 @min-[60rem]:grid-cols-2">
             {visible.map(request => (
               <li key={request.id}>
-                <Card className="p-4 lg:p-5 border border-line bg-surface">
+                <Card className="min-w-0 gap-0 rounded-3xl p-4 sm:p-5 border border-line bg-card">
                   <div className="flex items-start gap-3 min-w-0">
                     <div className="w-11 h-11 bg-[var(--muted)] rounded-xl flex items-center justify-center flex-shrink-0">
                       {typeIcon(request.request_type)}
@@ -245,7 +238,7 @@ export default function AdminSubmittedRequests() {
                         <h3 className="font-bold text-[var(--ink)]">
                           {requestLabel(request)}
                         </h3>
-                        <Badge className={typeBadgeColor(request.request_type)}>
+                        <Badge className={`max-w-full whitespace-normal break-words ${typeBadgeColor(request.request_type)}`}>
                           {request.request_type.toUpperCase().replace(/_/g, " ")}
                         </Badge>
                         <span
@@ -272,7 +265,7 @@ export default function AdminSubmittedRequests() {
                       </div>
 
                       {request.status === "rejected" && request.rejection_reason && (
-                        <p className="mt-3 text-sm text-[var(--error)] bg-[var(--error-soft)] rounded-xl px-3 py-2">
+                        <p className="mt-3 break-words text-sm text-[var(--error)] bg-[var(--error-soft)] rounded-xl px-3 py-2">
                           <span className="font-bold">Reason: </span>
                           {request.rejection_reason}
                         </p>
