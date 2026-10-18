@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo } from "react";
 import {
-  ShieldCheck, Search, AlertTriangle, Flag, Clock3, CheckCircle, Archive,
+  ShieldCheck, Search, AlertTriangle, Flag, Clock3, CheckCircle, Archive, Filter, ChevronDown, X,
 } from "lucide-react";
 import { Card } from "../ui/card";
 import { Badge } from "../ui/badge";
@@ -34,6 +34,7 @@ const STATUS_META: Record<string, { label: string; badge: string }> = {
 };
 
 const STATUS_FILTERS = ["All", "pending", "reviewing", "resolved", "dismissed"] as const;
+type ReportStatusFilter = Exclude<(typeof STATUS_FILTERS)[number], "All">;
 
 function statusMeta(status: string) {
   return STATUS_META[status] || { label: status, badge: "bg-soft text-[var(--muted-foreground)]" };
@@ -58,7 +59,8 @@ export default function AdminReports() {
   const [reports, setReports] = useState<RideReport[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
-  const [statusFilter, setStatusFilter] = useState<(typeof STATUS_FILTERS)[number]>("All");
+  const [statusFilters, setStatusFilters] = useState<ReportStatusFilter[]>([]);
+  const [isFilterOpen, setIsFilterOpen] = useState(false);
   const [search, setSearch] = useState("");
   const [busyId, setBusyId] = useState<string | null>(null);
 
@@ -91,7 +93,7 @@ export default function AdminReports() {
   const filtered = useMemo(() => {
     const term = search.trim().toLowerCase();
     return reports.filter((r) => {
-      if (statusFilter !== "All" && r.status !== statusFilter) return false;
+      if (statusFilters.length > 0 && !statusFilters.includes(r.status as ReportStatusFilter)) return false;
       if (!term) return true;
       return (
         (r.reporter_name || "").toLowerCase().includes(term) ||
@@ -102,10 +104,16 @@ export default function AdminReports() {
         (r.ride_route || "").toLowerCase().includes(term)
       );
     });
-  }, [reports, statusFilter, search]);
+  }, [reports, statusFilters, search]);
 
   // Lets the empty state explain itself and offer a way back.
-  const hasFilter = search.trim() !== "" || statusFilter !== "All";
+  const hasFilter = search.trim() !== "" || statusFilters.length > 0;
+
+  const clearFilters = () => {
+    setSearch("");
+    setStatusFilters([]);
+    setIsFilterOpen(false);
+  };
 
   return (
     <AdminShell
@@ -123,7 +131,7 @@ export default function AdminReports() {
             />
           ) : (
             <>
-              <AdminPageIntro eyebrow="Ride reports" title="A safer ride starts with listening." description="Review customer concerns, investigate ride issues, and keep track of every outcome." note="Updates automatically every 15 seconds" />
+              <AdminPageIntro eyebrow="Ride reports" title="A safer ride starts with listening." description="Review customer concerns, investigate ride issues, and keep track of every outcome." />
               <AdminMetricCards loading={loading} items={[
                 { label: 'Total reports', value: reports.length, Icon: Flag },
                 { label: 'Needs attention', value: reports.filter(r => r.status === 'pending' || r.status === 'reviewing').length, Icon: Clock3, tone: 'amber' },
@@ -141,25 +149,10 @@ export default function AdminReports() {
                 </Card>
               )}
 
-              {/* Filters + search */}
-              <div className="flex flex-col gap-4 rounded-3xl border border-line bg-card p-4 sm:p-5">
-                <div role="group" aria-label="Filter reports by status" className="flex flex-wrap gap-2">
-                  {STATUS_FILTERS.map((f) => (
-                    <button
-                      key={f}
-                      onClick={() => setStatusFilter(f)}
-                      aria-pressed={statusFilter === f}
-                      className={`min-h-11 px-3.5 py-1.5 rounded-xl text-xs font-bold whitespace-nowrap capitalize transition-all ${
-                        statusFilter === f
-                          ? "bg-[var(--teal-soft)] text-[var(--teal)] border border-[var(--teal)]/30"
-                          : "bg-[var(--surface)] border border-line text-[var(--muted-foreground)]"
-                      }`}
-                    >
-                      {f === "All" ? "All" : statusMeta(f).label}
-                    </button>
-                  ))}
-                </div>
-                <div className="flex min-w-0 w-full items-center gap-2 px-3 py-2 min-h-11 bg-soft border border-line rounded-xl">
+              {/* Search, status filter and selected filters */}
+              <div className="flex flex-col gap-3 rounded-3xl border border-line bg-card p-4 sm:p-5">
+                <div className="flex min-w-0 items-center gap-2">
+                <div className="flex min-h-11 min-w-0 flex-1 items-center gap-2 rounded-xl border border-line bg-soft px-3 py-2">
                   <Search className="w-4 h-4 text-[var(--muted-foreground)] flex-shrink-0" aria-hidden="true" />
                   <label htmlFor="admin-report-search" className="sr-only">
                     Search reports
@@ -173,6 +166,67 @@ export default function AdminReports() {
                     className="flex-1 text-sm outline-none bg-transparent min-w-0"
                   />
                 </div>
+                <div className="relative shrink-0">
+                  <button
+                    type="button"
+                    aria-expanded={isFilterOpen}
+                    aria-label={`Filter reports${statusFilters.length ? `, ${statusFilters.length} selected` : ''}`}
+                    onClick={() => setIsFilterOpen(open => !open)}
+                    onKeyDown={event => { if (event.key === 'Escape') setIsFilterOpen(false); }}
+                    className={`flex min-h-11 items-center gap-2 rounded-xl border px-3 sm:px-4 text-sm font-bold transition-colors ${statusFilters.length ? 'border-[var(--teal)] bg-[var(--teal-soft)] text-[var(--teal)]' : 'border-line bg-[var(--muted)] text-[var(--ink)] hover:bg-[var(--border)]'}`}
+                  >
+                    <Filter className="size-4" aria-hidden="true" />
+                    <span>Filter</span>
+                    {statusFilters.length > 0 && <span className="grid size-5 place-items-center rounded-full bg-[var(--teal)] text-[10px] text-white">{statusFilters.length}</span>}
+                    <ChevronDown className={`size-4 transition-transform ${isFilterOpen ? 'rotate-180' : ''}`} aria-hidden="true" />
+                  </button>
+                  {isFilterOpen && (
+                    <div role="group" aria-label="Filter reports by status" className="absolute right-0 top-full z-30 mt-2 max-h-80 w-56 overflow-y-auto rounded-2xl border border-line bg-card p-2 shadow-xl">
+                      {STATUS_FILTERS.map(status => {
+                        const isSelected = status === 'All' ? statusFilters.length === 0 : statusFilters.includes(status);
+                        const label = status === 'All' ? 'All statuses' : statusMeta(status).label;
+                        const count = status === 'All' ? reports.length : reports.filter(report => report.status === status).length;
+                        return (
+                          <button
+                            key={status}
+                            type="button"
+                            aria-pressed={isSelected}
+                            onClick={() => {
+                              if (status === 'All') setStatusFilters([]);
+                              else setStatusFilters(current => current.includes(status)
+                                ? current.filter(selected => selected !== status)
+                                : [...current, status]);
+                            }}
+                            className={`min-h-11 w-full rounded-xl px-3 text-left text-sm font-semibold transition-colors ${isSelected ? 'bg-[var(--teal-soft)] text-[var(--teal)]' : 'text-[var(--ink)] hover:bg-[var(--muted)]'}`}
+                          >
+                            <span className="flex items-center justify-between gap-3">
+                              <span>{label} <span className="text-xs opacity-70">({count})</span></span>
+                              {isSelected && <CheckCircle aria-hidden="true" className="size-4 shrink-0" />}
+                            </span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+                </div>
+                {statusFilters.length > 0 && (
+                  <div aria-label="Selected report status filters" className="flex flex-wrap gap-2">
+                    {statusFilters.map(status => (
+                      <span key={status} className="inline-flex min-h-9 items-center gap-1.5 rounded-full border border-[var(--teal)]/30 bg-[var(--teal-soft)] py-1 pl-3 pr-1.5 text-xs font-semibold text-[var(--teal)]">
+                        {statusMeta(status).label}
+                        <button
+                          type="button"
+                          aria-label={`Remove ${statusMeta(status).label} filter`}
+                          onClick={() => setStatusFilters(current => current.filter(selected => selected !== status))}
+                          className="grid size-6 place-items-center rounded-full transition-colors hover:bg-[var(--teal)]/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--teal)]"
+                        >
+                          <X aria-hidden="true" className="size-3.5" />
+                        </button>
+                      </span>
+                    ))}
+                  </div>
+                )}
               </div>
 
               <p className="text-xs text-[var(--muted-foreground)] font-medium mb-3">
@@ -195,10 +249,7 @@ export default function AdminReports() {
                     hasFilter ? (
                       <button
                         type="button"
-                        onClick={() => {
-                          setSearch("");
-                          setStatusFilter("All");
-                        }}
+                        onClick={clearFilters}
                         className="min-h-11 px-5 rounded-xl bg-[var(--primary)] text-[var(--primary-foreground)] font-semibold hover:opacity-90"
                       >
                         Clear filters

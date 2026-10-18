@@ -1,6 +1,5 @@
 import { Store, Package, Clock, User, ChevronRight, LogOut, ArrowLeft, Menu, Shield, Bell, HelpCircle, CreditCard, Pencil, Mail, Phone, MapPin } from "lucide-react";
 import { Link, useNavigate } from "react-router";
-import { usePreviousPage } from "../../hooks/usePreviousPage";
 import { Card } from "../ui/card";
 import GoodbyeOverlay from "../ui/GoodbyeOverlay";
 import { Badge } from "../ui/badge";
@@ -13,9 +12,6 @@ import ThemeModeSwitcher from "../ui/ThemeModeSwitcher";
 
 export default function BusinessAccount() {
   const navigate = useNavigate();
-  // A bare navigate(-1) walks a cold deep link straight out of the app,
-  // because there is no history entry before it to return to.
-  const goBack = usePreviousPage("/business/dashboard");
   const { user, logout, switchUiRole, restoreOriginalRole } = useAuth();
   /*
    * The shop name, from the same place Overview and Shop read it.
@@ -65,7 +61,7 @@ export default function BusinessAccount() {
 
       {/* Main Content */}
       <div className="flex-1 lg:ml-64 w-full min-w-0">
-        {/* Header with Back Button */}
+        {/* Header */}
         <div className="border-b border-[var(--border)] bg-surface">
           <div className="mx-auto flex w-full max-w-[1400px] items-center gap-3 px-4 py-4 sm:px-6 lg:px-8 lg:py-5">
             {/* Hamburger Menu - Mobile Only */}
@@ -74,14 +70,6 @@ export default function BusinessAccount() {
               aria-label="Open navigation" className="lg:hidden grid size-11 shrink-0 place-items-center rounded-xl hover:bg-soft"
             >
               <Menu className="w-5 h-5 text-[var(--ink)]" />
-            </button>
-            
-            {/* Back Button - Shows on Mobile and Desktop */}
-            <button
-              onClick={goBack}
-              aria-label="Go back" className="grid size-11 shrink-0 place-items-center rounded-xl hover:bg-soft"
-            >
-              <ArrowLeft className="w-5 h-5 text-[var(--ink)]" />
             </button>
             
             <div className="min-w-0 flex-1 basis-20">
@@ -106,49 +94,49 @@ export default function BusinessAccount() {
           third of a desktop screen without saying much. The details belong with
           the shop they describe, so they sit under the name.
         */}
-        <section className="relative isolate overflow-hidden rounded-3xl bg-[var(--ink-solid)] px-5 py-6 text-white sm:px-7 sm:py-7">
-          <div aria-hidden="true" className="pointer-events-none absolute -right-24 -top-28 -z-10 size-80 rounded-full border-[3rem] border-white/5" />
+        <section className="relative isolate overflow-hidden rounded-3xl border border-line bg-[var(--card)] px-5 py-6 text-[var(--ink)] shadow-sm sm:px-7 sm:py-7">
+          <div aria-hidden="true" className="pointer-events-none absolute -right-24 -top-28 -z-10 size-80 rounded-full border-[3rem] border-[var(--primary)]/5" />
           <div className="flex flex-wrap items-center gap-4 sm:gap-5">
-            <div className="flex size-16 shrink-0 items-center justify-center overflow-hidden rounded-2xl border-2 border-white/30 bg-white/20 shadow-lg backdrop-blur-sm lg:size-20">
+            <div className="flex size-16 shrink-0 items-center justify-center overflow-hidden rounded-2xl border border-line bg-[var(--muted)] shadow-sm lg:size-20">
               {logoUrl ? (
                 <img src={logoUrl} alt="Store logo" className="size-full object-cover" />
               ) : (
-                <Store className="size-8 text-white lg:size-10" aria-hidden="true" />
+                <Store className="size-8 text-[var(--primary)] lg:size-10" aria-hidden="true" />
               )}
             </div>
             <div className="min-w-0 flex-1">
-              <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-[var(--mint)]">Shop account</p>
+              <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-[var(--primary)]">Shop account</p>
               <div className="mt-1 flex flex-wrap items-center gap-2">
                 <h2 className="break-words text-xl font-extrabold tracking-tight lg:text-2xl">{profile.shopName}</h2>
                 {user?.isVerified && (
                   <Badge className="bg-[var(--success)] text-white text-[10px] px-2 py-0.5">Verified</Badge>
                 )}
               </div>
-              <p className="mt-1 text-sm text-white/80">{user?.name}</p>
-              <p className="mt-0.5 text-xs text-white/60">Member since {new Date(user?.createdAt || Date.now()).toLocaleDateString('en-US', { month: 'long', year: 'numeric' })}</p>
+              <p className="mt-1 text-sm text-[var(--ink)]">{user?.name}</p>
+              <p className="mt-0.5 text-xs text-[var(--muted-foreground)]">Member since {new Date(user?.createdAt || Date.now()).toLocaleDateString('en-US', { month: 'long', year: 'numeric' })}</p>
             </div>
           </div>
 
-          <dl className="mt-5 grid gap-3 border-t border-white/15 pt-5 sm:grid-cols-2 xl:grid-cols-3">
-            <div className="flex min-w-0 items-start gap-3 rounded-2xl bg-white/10 px-3 py-3">
-              <Mail className="mt-0.5 size-4 shrink-0 text-[var(--mint)]" aria-hidden="true" />
+          <dl className="mt-5 grid gap-3 border-t border-line pt-5 sm:grid-cols-2 xl:grid-cols-3">
+            <div className="flex min-w-0 items-start gap-3 rounded-2xl border border-line bg-[var(--muted)] px-3 py-3">
+              <Mail className="mt-0.5 size-4 shrink-0 text-[var(--primary)]" aria-hidden="true" />
               <div className="min-w-0">
-                <dt className="text-[10px] font-bold uppercase tracking-[0.14em] text-white/60">Email</dt>
-                <dd className="mt-0.5 break-all text-sm font-semibold">{user?.email || 'Not set'}</dd>
+                <dt className="text-[10px] font-bold uppercase tracking-[0.14em] text-[var(--muted-foreground)]">Email</dt>
+                <dd className="mt-0.5 break-all text-sm font-semibold text-[var(--ink)]">{user?.email || 'Not set'}</dd>
               </div>
             </div>
-            <div className="flex min-w-0 items-start gap-3 rounded-2xl bg-white/10 px-3 py-3">
-              <Phone className="mt-0.5 size-4 shrink-0 text-[var(--mint)]" aria-hidden="true" />
+            <div className="flex min-w-0 items-start gap-3 rounded-2xl border border-line bg-[var(--muted)] px-3 py-3">
+              <Phone className="mt-0.5 size-4 shrink-0 text-[var(--primary)]" aria-hidden="true" />
               <div className="min-w-0">
-                <dt className="text-[10px] font-bold uppercase tracking-[0.14em] text-white/60">Mobile</dt>
-                <dd className="mt-0.5 break-words text-sm font-semibold">{user?.phone || 'Not set'}</dd>
+                <dt className="text-[10px] font-bold uppercase tracking-[0.14em] text-[var(--muted-foreground)]">Mobile</dt>
+                <dd className="mt-0.5 break-words text-sm font-semibold text-[var(--ink)]">{user?.phone || 'Not set'}</dd>
               </div>
             </div>
-            <div className="flex min-w-0 items-start gap-3 rounded-2xl bg-white/10 px-3 py-3 sm:col-span-2 xl:col-span-1">
-              <MapPin className="mt-0.5 size-4 shrink-0 text-[var(--mint)]" aria-hidden="true" />
+            <div className="flex min-w-0 items-start gap-3 rounded-2xl border border-line bg-[var(--muted)] px-3 py-3 sm:col-span-2 xl:col-span-1">
+              <MapPin className="mt-0.5 size-4 shrink-0 text-[var(--primary)]" aria-hidden="true" />
               <div className="min-w-0">
-                <dt className="text-[10px] font-bold uppercase tracking-[0.14em] text-white/60">Address</dt>
-                <dd className="mt-0.5 break-words text-sm font-semibold">{(user as any).businessAddress || 'Address not provided'}</dd>
+                <dt className="text-[10px] font-bold uppercase tracking-[0.14em] text-[var(--muted-foreground)]">Address</dt>
+                <dd className="mt-0.5 break-words text-sm font-semibold text-[var(--ink)]">{(user as any).businessAddress || 'Address not provided'}</dd>
               </div>
             </div>
           </dl>
@@ -257,10 +245,10 @@ export default function BusinessAccount() {
           Account actions, below the settings.
 
           The session summary that used to sit here is gone — the shop, owner and
-          contact details are already in the banner above. These two remain, side
-          by side on a desktop and stacked on a phone.
+          contact details are already in the banner above. Keep the app switch and
+          sign-out actions in a clear vertical order on every screen size.
         */}
-        <div className="mt-5 grid grid-cols-1 gap-3 sm:grid-cols-2">
+        <div className="mt-5 grid grid-cols-1 gap-3">
           {/* Use Customer App / Switch Back */}
           {localStorage.getItem('trikeserve_original_role') ? (
             <button
@@ -281,7 +269,7 @@ export default function BusinessAccount() {
           {/* Logout Button */}
           <button
             onClick={() => setShowLogoutConfirm(true)}
-            className="flex min-h-12 w-full items-center justify-center gap-2 rounded-2xl bg-[var(--primary-soft)] px-4 text-sm font-semibold text-[var(--primary)] transition-all active:scale-[0.98]"
+            className="flex min-h-12 w-full items-center justify-center gap-2 rounded-2xl border border-[var(--error)] bg-[var(--error)] px-4 text-sm font-bold text-white shadow-sm transition-all hover:brightness-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--error)] focus-visible:ring-offset-2 active:scale-[0.98] dark:text-[var(--ink-solid)]"
           >
             <LogOut className="size-4" aria-hidden="true" />
             Log out

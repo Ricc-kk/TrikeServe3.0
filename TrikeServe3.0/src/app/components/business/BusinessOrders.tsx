@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from "react";
-import { Store, Package, ShoppingBag, Clock, User, CheckCircle, XCircle, AlertCircle, Menu, Navigation, MessageCircle, Loader2 } from "lucide-react";
+import { Store, Package, ShoppingBag, Clock, User, CheckCircle, XCircle, AlertCircle, Menu, Navigation, MessageCircle, Loader2, Filter, ChevronDown, Search, X } from "lucide-react";
 import { Link, useNavigate, useLocation } from "react-router";
 import { Card } from "../ui/card";
 import { Badge } from "../ui/badge";
@@ -99,6 +99,8 @@ interface Order {
   cancelledBy?: string | null;
 }
 
+type ActiveOrderStatusFilter = 'pending' | 'payment-confirmed' | 'confirmed' | 'preparing' | 'ready' | 'on-the-way';
+
 
 export default function BusinessOrders() {
   const { user } = useAuth();
@@ -115,7 +117,9 @@ export default function BusinessOrders() {
   const [isConfirmingPayment, setIsConfirmingPayment] = useState(false);
   const [paymentError, setPaymentError] = useState<string | null>(null);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
-  const [selectedStatusFilter, setSelectedStatusFilter] = useState<'all' | 'pending' | 'confirmed' | 'preparing' | 'ready' | 'on-the-way'>('all');
+  const [selectedStatusFilters, setSelectedStatusFilters] = useState<ActiveOrderStatusFilter[]>([]);
+  const [isStatusFilterOpen, setIsStatusFilterOpen] = useState(false);
+  const [orderSearchQuery, setOrderSearchQuery] = useState('');
   const [orders, setOrders] = useState<Order[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [restaurantId, setRestaurantId] = useState<string | null>(null);
@@ -721,12 +725,17 @@ export default function BusinessOrders() {
   const byNewestFirst = (a: Order, b: Order) =>
     new Date(b.createdAt ?? 0).getTime() - new Date(a.createdAt ?? 0).getTime();
 
-  const filteredActiveOrders =
-    selectedStatusFilter === 'all'
-      ? [...activeOrders].sort(byNewestFirst)
-      : activeOrders.filter((o) => o.status === selectedStatusFilter).sort(byNewestFirst);
+  const normalizedOrderSearchQuery = orderSearchQuery.trim().toLocaleLowerCase();
+  const matchesOrderSearch = (order: Order) =>
+    !normalizedOrderSearchQuery ||
+    order.orderNumber?.toLocaleLowerCase().includes(normalizedOrderSearchQuery) ||
+    order.customerName?.toLocaleLowerCase().includes(normalizedOrderSearchQuery);
 
-  const sortedHistoryOrders = [...historyOrders].sort(byNewestFirst);
+  const filteredActiveOrders = activeOrders
+    .filter((order) => (selectedStatusFilters.length === 0 || selectedStatusFilters.includes(order.status as ActiveOrderStatusFilter)) && matchesOrderSearch(order))
+    .sort(byNewestFirst);
+
+  const filteredHistoryOrders = historyOrders.filter(matchesOrderSearch).sort(byNewestFirst);
 
   /*
    * Paging, ten at a time.
@@ -742,7 +751,7 @@ export default function BusinessOrders() {
    * wrong, only ever out of date.
    */
   const activePageCount = Math.max(1, Math.ceil(filteredActiveOrders.length / PAGE_SIZE));
-  const historyPageCount = Math.max(1, Math.ceil(historyOrders.length / PAGE_SIZE));
+  const historyPageCount = Math.max(1, Math.ceil(filteredHistoryOrders.length / PAGE_SIZE));
   const activePage = Math.min(rawActivePage, activePageCount);
   const historyPage = Math.min(rawHistoryPage, historyPageCount);
 
@@ -750,7 +759,7 @@ export default function BusinessOrders() {
     (activePage - 1) * PAGE_SIZE,
     activePage * PAGE_SIZE,
   );
-  const pagedHistoryOrders = sortedHistoryOrders.slice(
+  const pagedHistoryOrders = filteredHistoryOrders.slice(
     (historyPage - 1) * PAGE_SIZE,
     historyPage * PAGE_SIZE,
   );
@@ -763,7 +772,7 @@ export default function BusinessOrders() {
   useEffect(() => {
     setRawActivePage(1);
     setRawHistoryPage(1);
-  }, [selectedTab, selectedStatusFilter]);
+  }, [selectedTab, selectedStatusFilters, orderSearchQuery]);
 
   /**
    * Shop: the GCash transfer has arrived and been checked.
@@ -1352,6 +1361,16 @@ export default function BusinessOrders() {
   // flipped colour at the wrong moment.
   const isRiderEnRouteToShop = isRiderHeadingToRestaurant(driverStatus ?? selectedOrder?.driverStatus);
 
+  const statusFilterOptions: Array<{ value: 'all' | ActiveOrderStatusFilter; label: string }> = [
+    { value: 'all', label: `All (${activeOrders.length})` },
+    { value: 'pending', label: `Awaiting Payment (${activeOrders.filter(order => order.status === 'pending').length})` },
+    { value: 'payment-confirmed', label: `Paid (${activeOrders.filter(order => order.status === 'payment-confirmed').length})` },
+    { value: 'preparing', label: `Preparing (${activeOrders.filter(order => order.status === 'preparing').length})` },
+    { value: 'ready', label: `Ready (${activeOrders.filter(order => order.status === 'ready').length})` },
+    { value: 'confirmed', label: `Delivery (${activeOrders.filter(order => order.status === 'confirmed').length})` },
+    { value: 'on-the-way', label: `On The Way (${activeOrders.filter(order => order.status === 'on-the-way').length})` },
+  ];
+
   return (
     <div className="min-h-dvh bg-[var(--muted)] flex">
       {/* Sidebar Navigation */}
@@ -1388,10 +1407,10 @@ export default function BusinessOrders() {
         {/* The horizontal scroll belongs to the status row alone. While it was on
             this shared wrapper, swiping the chips dragged Active/History off-screen
             with them. */}
-        <div className="mx-4 sm:mx-6 rounded-3xl border border-line p-4 bg-card space-y-3">
+        <div className="relative mx-4 space-y-3 rounded-3xl border border-line bg-card p-4 sm:mx-6">
           <div className="flex gap-2">
             <button
-              onClick={() => setSelectedTab('active')}
+              onClick={() => { setSelectedTab('active'); setIsStatusFilterOpen(false); }}
               className={`flex-1 md:flex-1 py-2.5 px-3 md:px-4 rounded-xl font-semibold transition-all text-sm md:text-base whitespace-nowrap ${
                 selectedTab === 'active'
                   ? 'bg-[var(--teal-soft)] text-[var(--teal)]'
@@ -1401,7 +1420,7 @@ export default function BusinessOrders() {
               Active ({activeOrders.length})
             </button>
             <button
-              onClick={() => setSelectedTab('history')}
+              onClick={() => { setSelectedTab('history'); setIsStatusFilterOpen(false); }}
               className={`flex-1 md:flex-1 py-2.5 px-3 md:px-4 rounded-xl font-semibold transition-all text-sm md:text-base whitespace-nowrap ${
                 selectedTab === 'history'
                   ? 'bg-[var(--teal-soft)] text-[var(--teal)]'
@@ -1412,81 +1431,82 @@ export default function BusinessOrders() {
             </button>
           </div>
 
-           {/* Status Filter - Only for Active Tab */}
-           {selectedTab === 'active' && (
-             <div className="flex flex-wrap gap-2">
-               <button
-                 onClick={() => setSelectedStatusFilter('all')}
-                 className={`min-h-11 px-3 md:px-4 py-2 rounded-xl text-xs md:text-sm font-medium whitespace-nowrap transition-all flex-shrink-0 ${
-                   selectedStatusFilter === 'all'
-                     ? 'bg-[var(--teal-soft)] text-[var(--teal)]'
-                     : 'bg-[var(--muted)] text-[var(--muted-foreground)] hover:bg-[var(--border)]'
-                 }`}
-               >
-                 All ({activeOrders.length})
-               </button>
-               <button
-                 onClick={() => setSelectedStatusFilter('pending')}
-                 className={`min-h-11 px-3 md:px-4 py-2 rounded-xl text-xs md:text-sm font-medium whitespace-nowrap transition-all flex-shrink-0 ${
-                   selectedStatusFilter === 'pending'
-                     ? 'bg-[var(--teal-soft)] text-[var(--teal)]'
-                     : 'bg-[var(--muted)] text-[var(--muted-foreground)] hover:bg-[var(--border)]'
-                 }`}
-               >
-                 Awaiting Payment ({activeOrders.filter(o => o.status === 'pending').length})
-                </button>
-               <button
-                 onClick={() => setSelectedStatusFilter('payment-confirmed')}
-                 className={`min-h-11 px-3 md:px-4 py-2 rounded-xl text-xs md:text-sm font-medium whitespace-nowrap transition-all flex-shrink-0 ${
-                   selectedStatusFilter === 'payment-confirmed'
-                     ? 'bg-[var(--teal-soft)] text-[var(--teal)]'
-                     : 'bg-[var(--muted)] text-[var(--muted-foreground)] hover:bg-[var(--border)]'
-                 }`}
-                >
-                 Paid ({activeOrders.filter(o => o.status === 'payment-confirmed').length})
-               </button>
-               <button
-                 onClick={() => setSelectedStatusFilter('preparing')}
-                 className={`min-h-11 px-3 md:px-4 py-2 rounded-xl text-xs md:text-sm font-medium whitespace-nowrap transition-all flex-shrink-0 ${
-                   selectedStatusFilter === 'preparing'
-                     ? 'bg-[var(--teal-soft)] text-[var(--teal)]'
-                     : 'bg-[var(--muted)] text-[var(--muted-foreground)] hover:bg-[var(--border)]'
-                 }`}
-               >
-                 Preparing ({activeOrders.filter(o => o.status === 'preparing').length})
-               </button>
-               <button
-                 onClick={() => setSelectedStatusFilter('ready')}
-                 className={`min-h-11 px-3 md:px-4 py-2 rounded-xl text-xs md:text-sm font-medium whitespace-nowrap transition-all flex-shrink-0 ${
-                   selectedStatusFilter === 'ready'
-                     ? 'bg-[var(--teal-soft)] text-[var(--teal)]'
-                     : 'bg-[var(--muted)] text-[var(--muted-foreground)] hover:bg-[var(--border)]'
-                 }`}
-               >
-                 Ready ({activeOrders.filter(o => o.status === 'ready').length})
-               </button>
-               <button
-                 onClick={() => setSelectedStatusFilter('confirmed')}
-                 className={`min-h-11 px-3 md:px-4 py-2 rounded-xl text-xs md:text-sm font-medium whitespace-nowrap transition-all flex-shrink-0 ${
-                   selectedStatusFilter === 'confirmed'
-                     ? 'bg-[var(--teal-soft)] text-[var(--teal)]'
-                     : 'bg-[var(--muted)] text-[var(--muted-foreground)] hover:bg-[var(--border)]'
-                 }`}
-               >
-                 Delivery ({activeOrders.filter(o => o.status === 'confirmed').length})
-               </button>
-               <button
-                 onClick={() => setSelectedStatusFilter('on-the-way')}
-                 className={`min-h-11 px-3 md:px-4 py-2 rounded-xl text-xs md:text-sm font-medium whitespace-nowrap transition-all flex-shrink-0 ${
-                   selectedStatusFilter === 'on-the-way'
-                     ? 'bg-[var(--teal-soft)] text-[var(--teal)]'
-                     : 'bg-[var(--muted)] text-[var(--muted-foreground)] hover:bg-[var(--border)]'
-                 }`}
-               >
-                 On The Way ({activeOrders.filter(o => o.status === 'on-the-way').length})
-               </button>
-             </div>
-           )}
+          <div className="flex flex-col gap-3 sm:flex-row">
+            <label className="relative min-w-0 flex-1">
+              <Search aria-hidden="true" className="pointer-events-none absolute left-3.5 top-1/2 size-4 -translate-y-1/2 text-[var(--muted-foreground)]" />
+              <input
+                type="search"
+                value={orderSearchQuery}
+                onChange={event => setOrderSearchQuery(event.target.value)}
+                placeholder="Search by order number or customer"
+                aria-label="Search orders by order number or customer"
+                className="min-h-11 w-full rounded-xl border border-line bg-[var(--muted)] pl-10 pr-4 text-sm text-[var(--ink)] outline-none transition focus:border-[var(--teal)] focus:ring-2 focus:ring-[var(--teal)]/20 placeholder:text-[var(--muted-foreground)]"
+              />
+            </label>
+          {selectedTab === 'active' && (
+            <div className="relative flex justify-end sm:shrink-0">
+              <button
+                type="button"
+                aria-expanded={isStatusFilterOpen}
+                aria-label={`Filter active orders${selectedStatusFilters.length ? `, ${selectedStatusFilters.length} selected` : ''}`}
+                onClick={() => setIsStatusFilterOpen(open => !open)}
+                onKeyDown={event => { if (event.key === 'Escape') setIsStatusFilterOpen(false); }}
+                className={`flex min-h-11 items-center gap-2 rounded-xl border px-4 text-sm font-bold transition-colors ${selectedStatusFilters.length ? 'border-[var(--teal)] bg-[var(--teal-soft)] text-[var(--teal)]' : 'border-line bg-[var(--muted)] text-[var(--ink)] hover:bg-[var(--border)]'}`}
+              >
+                <Filter className="size-4" />
+                <span>Filter</span>
+                {selectedStatusFilters.length > 0 && <span className="grid size-5 place-items-center rounded-full bg-[var(--teal)] text-[10px] text-white">{selectedStatusFilters.length}</span>}
+                <ChevronDown className={`size-4 transition-transform ${isStatusFilterOpen ? 'rotate-180' : ''}`} />
+              </button>
+              {isStatusFilterOpen && (
+                <div role="group" aria-label="Filter active orders by status" className="absolute right-0 top-full z-30 mt-2 max-h-80 w-64 overflow-y-auto rounded-2xl border border-line bg-card p-2 shadow-xl">
+                  {statusFilterOptions.map(option => (
+                    <button
+                      key={option.value}
+                      type="button"
+                      aria-pressed={option.value === 'all' ? selectedStatusFilters.length === 0 : selectedStatusFilters.includes(option.value)}
+                      onClick={() => {
+                        if (option.value === 'all') {
+                          setSelectedStatusFilters([]);
+                        } else {
+                          setSelectedStatusFilters(current => current.includes(option.value as ActiveOrderStatusFilter)
+                            ? current.filter(status => status !== option.value)
+                            : [...current, option.value as ActiveOrderStatusFilter]);
+                        }
+                      }}
+                      className={`min-h-11 w-full rounded-xl px-3 text-left text-sm font-semibold transition-colors ${(option.value === 'all' ? selectedStatusFilters.length === 0 : selectedStatusFilters.includes(option.value)) ? 'bg-[var(--teal-soft)] text-[var(--teal)]' : 'text-[var(--ink)] hover:bg-[var(--muted)]'}`}
+                    >
+                      <span className="flex items-center justify-between gap-3">
+                        {option.label}
+                        {(option.value === 'all' ? selectedStatusFilters.length === 0 : selectedStatusFilters.includes(option.value)) && <CheckCircle aria-hidden="true" className="size-4 shrink-0" />}
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+          </div>
+          {selectedTab === 'active' && selectedStatusFilters.length > 0 && (
+            <div aria-label="Selected status filters" className="flex flex-wrap gap-2">
+              {selectedStatusFilters.map(status => {
+                const option = statusFilterOptions.find(item => item.value === status);
+                return (
+                  <span key={status} className="inline-flex min-h-9 items-center gap-1.5 rounded-full border border-[var(--teal)]/30 bg-[var(--teal-soft)] py-1 pl-3 pr-1.5 text-xs font-semibold text-[var(--teal)]">
+                    {option?.label.split(' (')[0] ?? status}
+                    <button
+                      type="button"
+                      aria-label={`Remove ${option?.label.split(' (')[0] ?? status} filter`}
+                      onClick={() => setSelectedStatusFilters(current => current.filter(item => item !== status))}
+                      className="grid size-6 place-items-center rounded-full transition-colors hover:bg-[var(--teal)]/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--teal)]"
+                    >
+                      <X aria-hidden="true" className="size-3.5" />
+                    </button>
+                  </span>
+                );
+              })}
+            </div>
+          )}
 
           {/* Book Ride Button - Only show when ready orders exist */}
         </div>
@@ -1564,11 +1584,11 @@ export default function BusinessOrders() {
             ) : (
               <div className="text-center py-12">
                 <Clock className="w-12 md:w-16 h-12 md:h-16 text-[var(--border)] mx-auto mb-3" />
-                <p className="text-sm md:text-base text-[var(--muted-foreground)]">No active orders</p>
+                <p className="text-sm md:text-base text-[var(--muted-foreground)]">{orderSearchQuery.trim() ? 'No active orders match your search' : 'No active orders'}</p>
               </div>
             )
           ) : (
-            historyOrders.length > 0 ? (
+            filteredHistoryOrders.length > 0 ? (
               <>
                 {pagedHistoryOrders.map((order) => (
                 <Card
@@ -1629,7 +1649,7 @@ export default function BusinessOrders() {
             ) : (
               <div className="text-center py-12">
                 <Package className="w-12 md:w-16 h-12 md:h-16 text-[var(--border)] mx-auto mb-3" />
-                <p className="text-sm md:text-base text-[var(--muted-foreground)]">No order history</p>
+                <p className="text-sm md:text-base text-[var(--muted-foreground)]">{orderSearchQuery.trim() ? 'No order history matches your search' : 'No order history'}</p>
               </div>
             )
           )}

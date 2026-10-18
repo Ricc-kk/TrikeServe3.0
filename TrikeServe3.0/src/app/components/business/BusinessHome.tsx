@@ -7,7 +7,6 @@ import { Button } from "../ui/button";
 import { ImageWithFallback } from "../figma/ImageWithFallback";
 import StoreLogo from "../figma/StoreLogo";
 import BusinessSidebar from "./BusinessSidebar";
-import BusinessPageIntro from "./BusinessPageIntro";
 import BusinessMapSelector from "./BusinessMapSelector";
 import { useAuth } from "../../contexts/AuthContext";
 import { supabase } from "../../../utils/supabase";
@@ -1218,7 +1217,6 @@ const clearHours = () => {
           </div>
         </div>
 
-        {!previewMode && <div className="mx-auto w-full max-w-[1400px] px-4 pt-5 sm:px-6 lg:px-8 lg:pt-6"><BusinessPageIntro section="Shop" title="Make a great first impression." description="Shape your storefront, review how customers see your shop, and manage your business details and hours." /></div>}
         {previewMode ? (
           // CUSTOMER PREVIEW MODE
           <div className="min-h-screen bg-[var(--muted)] pb-12">

@@ -348,6 +348,7 @@ export default function CustomerHome() {
   const { user } = useAuth();
   const navigate = useNavigate();
   const [selectedVehicle, setSelectedVehicle] = useState<'share' | 'special' | null>(null);
+  const [driverApprovalModalDismissed, setDriverApprovalModalDismissed] = useState(false);
   // Booking is a three-step flow on top of the full-screen map:
   // home (map + Book a Ride) â†’ ride type â†’ pickup / drop-off.
   const [bookingStep, setBookingStep] = useState<'home' | 'ride' | 'locations'>('home');
@@ -3003,22 +3004,48 @@ const getPrice = () => {
         </div>
       )}
 
-      {/* A business or driver awaiting superadmin approval is routed here as a
-          customer. Without this they land in the customer app with no idea why,
-          since nothing about the customer UI hints that a shop or tricycle is
-          registered against their email. */}
-      {showBookingFlow && bookingStep === 'home' && isAwaitingApproval(user?.role, user?.isVerified) && (
+      {/* Unapproved businesses remain on the customer app with an inline status note. */}
+      {showBookingFlow && bookingStep === 'home' && user?.role === 'business' && isAwaitingApproval(user.role, user.isVerified) && (
         <div className="relative z-[999] px-4 pt-3">
           <div className="rounded-2xl border-2 border-[var(--amber-soft)] bg-[var(--amber-soft)] p-4">
-            <p className="text-sm font-bold text-[var(--amber-ink)]">
-              {user?.role === 'business' ? 'Business' : 'Driver'} account pending approval
+            <p className="text-sm font-bold text-[var(--amber-ink)]">Business account pending approval</p>
+            <p className="mt-1 text-xs text-[var(--amber-ink)]">
+              You are using TrikeServe as a customer for now. A superadmin needs to verify your business account before you can open the business dashboard. Access will be enabled after approval; you do not need to register again.
             </p>
-            <p className="text-xs text-[var(--amber-ink)] mt-1">
-              You&apos;re using TrikeServe as a customer for now. A superadmin needs to
-              verify your account before you can open the{' '}
-              {user?.role === 'business' ? 'business' : 'driver'} dashboard. You&apos;ll get access as soon as
-              that&apos;s done â€” no need to register again.
+          </div>
+        </div>
+      )}
+
+      {showBookingFlow && bookingStep === 'home' && user?.role === 'rider' && isAwaitingApproval(user.role, user.isVerified) && !driverApprovalModalDismissed && (
+        <div className="fixed inset-0 z-[3000] flex items-center justify-center bg-black/55 p-4">
+          <div role="dialog" aria-modal="true" aria-labelledby="driver-approval-title" aria-describedby="driver-approval-description" className="relative w-full max-w-md rounded-3xl border border-line bg-card p-6 shadow-2xl sm:p-7">
+            <div className="mb-4 flex items-start justify-between">
+              <div className="flex min-w-0 items-center gap-3">
+                <div className="grid size-10 place-items-center rounded-xl bg-[var(--amber-soft)] text-[var(--amber-ink)]">
+                  <Clock className="size-5" aria-hidden="true" />
+                </div>
+                <h2 id="driver-approval-title" className="min-w-0 text-lg font-extrabold leading-snug text-[var(--ink)]">Driver account pending approval</h2>
+              </div>
+              <button
+                type="button"
+                onClick={() => setDriverApprovalModalDismissed(true)}
+                aria-label="Close approval notice"
+                className="grid size-10 place-items-center rounded-xl text-[var(--muted-foreground)] transition hover:bg-[var(--muted)] hover:text-[var(--ink)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--primary)]"
+              >
+                <X className="size-5" aria-hidden="true" />
+              </button>
+            </div>
+            <div aria-hidden="true" className="mb-4 border-t border-line" />
+            <p id="driver-approval-description" className="mt-2 text-sm leading-relaxed text-[var(--muted-foreground)]">
+              You are using TrikeServe as a customer for now. A superadmin needs to verify your account before you can open the driver dashboard. You will get access as soon as it is approved. You do not need to register again.
             </p>
+            <Button
+              type="button"
+              onClick={() => setDriverApprovalModalDismissed(true)}
+              className="mt-6 min-h-11 w-full bg-[var(--primary)] font-bold text-[var(--primary-foreground)] hover:opacity-90"
+            >
+              Continue as customer
+            </Button>
           </div>
         </div>
       )}

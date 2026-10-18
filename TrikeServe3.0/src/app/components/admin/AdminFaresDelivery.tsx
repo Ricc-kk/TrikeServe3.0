@@ -475,7 +475,7 @@ export default function AdminFaresDelivery() {
   return (
     <AdminShell title="Fares & Delivery" subtitle="Share ride, private ride and delivery pricing per terminal">
       <div className="@container mx-auto w-full max-w-[100rem] space-y-6 sm:space-y-8">
-      <AdminPageIntro eyebrow="Fares & delivery" title="Clear pricing. Every terminal." description="Compare terminal rates, set ride and delivery prices, and manage shared-ride capacity." note="Changes apply only when you save a terminal." />
+      <AdminPageIntro eyebrow="Fares & delivery" title="Clear pricing. Every terminal." description="Compare terminal rates, set ride and delivery prices, and manage shared-ride capacity." />
       <AdminMetricCards loading={loading} items={[
         { label: 'Terminals', value: terminals.length, Icon: MapPin },
         { label: 'Active', value: terminals.filter(t => t.is_active).length, Icon: CheckCircle, tone: 'success' },

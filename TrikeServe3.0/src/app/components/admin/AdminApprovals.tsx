@@ -289,7 +289,7 @@ export default function AdminApprovals() {
       subtitle="Review shop profile changes, Rider Admin terminal & driver requests"
     >
         <div className="@container mx-auto w-full max-w-[100rem] space-y-6 sm:space-y-8">
-          <AdminPageIntro eyebrow="Approvals" title="Review changes with confidence." description="Check proposed shop, terminal, and driver updates before they reach the live platform." note="Updates automatically every 10 seconds" />
+          <AdminPageIntro eyebrow="Approvals" title="Review changes with confidence." description="Check proposed shop, terminal, and driver updates before they reach the live platform." />
           {/* Stats */}
           <AdminMetricCards loading={loading} items={[
             { label: 'Pending review', value: pending.length, detail: 'Waiting for a decision', Icon: Clock, tone: 'amber' },

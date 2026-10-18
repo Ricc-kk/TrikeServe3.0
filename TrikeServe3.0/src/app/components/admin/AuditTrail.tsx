@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo } from "react";
 import ListPagination from "../ui/ListPagination";
 import {
-  ShieldCheck, Search, AlertTriangle, ClipboardList, ChevronRight, X, Users, Activity,
+  ShieldCheck, Search, AlertTriangle, ClipboardList, ChevronRight, X, Users, Activity, Filter, ChevronDown, Check,
 } from "lucide-react";
 import { Card } from "../ui/card";
 import { Badge } from "../ui/badge";
@@ -43,6 +43,7 @@ const ACTION_META: Record<string, { label: string; badge: string; category: stri
 const CATEGORY_FILTERS = [
   "All", "Approvals", "Users", "Terminals", "Rides", "Orders", "Rates", "Assignments",
 ] as const;
+type AuditCategory = Exclude<(typeof CATEGORY_FILTERS)[number], "All">;
 
 const ROLE_FILTERS: { key: string; label: string; badge: string }[] = [
   { key: "", label: "All roles", badge: "" },
@@ -147,9 +148,10 @@ export default function AuditTrail() {
   const [logs, setLogs] = useState<AuditLog[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
-  const [category, setCategory] = useState<(typeof CATEGORY_FILTERS)[number]>("All");
-  const [role, setRole] = useState("");
+  const [categories, setCategories] = useState<AuditCategory[]>([]);
+  const [roles, setRoles] = useState<string[]>([]);
   const [search, setSearch] = useState("");
+  const [isFilterOpen, setIsFilterOpen] = useState(false);
   const [page, setPage] = useState(1);
   /** The record opened for its full contents, or null. */
   const [openLog, setOpenLog] = useState<AuditLog | null>(null);
@@ -181,8 +183,8 @@ export default function AuditTrail() {
   const filtered = useMemo(() => {
     const term = search.trim().toLowerCase();
     return logs.filter((log) => {
-      if (category !== "All" && metaFor(log.action).category !== category) return false;
-      if (role && roleFor(log) !== role) return false;
+      if (categories.length > 0 && !categories.includes(metaFor(log.action).category as AuditCategory)) return false;
+      if (roles.length > 0 && !roles.includes(roleFor(log))) return false;
       if (!term) return true;
       return (
         (log.actor_name || "").toLowerCase().includes(term) ||
@@ -191,10 +193,10 @@ export default function AuditTrail() {
         (log.action || "").toLowerCase().includes(term)
       );
     });
-  }, [logs, category, role, search]);
+  }, [logs, categories, roles, search]);
 
   // Lets the empty state explain itself and offer a way back.
-  const hasFilter = search.trim() !== "" || category !== "All" || role !== "";
+  const hasFilter = search.trim() !== "" || categories.length > 0 || roles.length > 0;
 
   /**
    * Ten records to a page.
@@ -248,7 +250,7 @@ export default function AuditTrail() {
             />
           ) : (
             <>
-              <AdminPageIntro eyebrow="Audit trail" title="Every action, accounted for." description="Trace platform activity, understand changes, and inspect the details behind each recorded event." note="Latest 300 records · Refreshes every 15 seconds" />
+              <AdminPageIntro eyebrow="Audit trail" title="Every action, accounted for." description="Trace platform activity, understand changes, and inspect the details behind each recorded event." />
               <AdminMetricCards loading={loading} items={[
                 { label: 'Loaded records', value: logs.length, detail: 'Latest activity, newest first', Icon: ClipboardList },
                 { label: 'Actor roles', value: new Set(logs.map(roleFor)).size, detail: 'Roles represented in these records', Icon: Users, tone: 'info' },
@@ -265,42 +267,8 @@ export default function AuditTrail() {
 
               <section aria-label="Filter audit records" className="space-y-4 rounded-3xl border border-line bg-card p-4 sm:p-5">
               <h2 className="text-base font-bold text-[var(--ink)]">Find an activity</h2>
-              <div role="group" aria-label="Filter by actor role" className="flex flex-wrap gap-2">
-                {ROLE_FILTERS.map((r) => (
-                  <button
-                    key={r.key || "all"}
-                    onClick={() => applyFilter(setRole)(r.key)}
-                    aria-pressed={role === r.key}
-                    className={`min-h-11 px-3.5 py-1.5 rounded-xl text-xs font-bold whitespace-nowrap transition-all ${
-                      role === r.key
-                        ? "bg-[var(--ink-solid)] text-white"
-                        : "bg-[var(--surface)] border border-line text-[var(--muted-foreground)]"
-                    }`}
-                  >
-                    {r.label}
-                  </button>
-                ))}
-              </div>
-
-              {/* Category filter + search */}
-              <div className="flex flex-col gap-4">
-                <div role="group" aria-label="Filter by activity category" className="flex flex-wrap gap-2">
-                  {CATEGORY_FILTERS.map((f) => (
-                    <button
-                      key={f}
-                      onClick={() => applyFilter(setCategory)(f)}
-                      aria-pressed={category === f}
-                      className={`min-h-11 px-3.5 py-1.5 rounded-xl text-xs font-bold whitespace-nowrap transition-all ${
-                        category === f
-                          ? "bg-[var(--teal-soft)] text-[var(--teal)] border border-[var(--teal)]/30"
-                          : "bg-[var(--surface)] border border-line text-[var(--muted-foreground)]"
-                      }`}
-                    >
-                      {f}
-                    </button>
-                  ))}
-                </div>
-                <div className="flex w-full min-w-0 items-center gap-2 px-3 py-2 min-h-11 bg-soft border border-line rounded-xl">
+                <div className="flex min-w-0 items-center gap-2">
+                <div className="flex min-h-11 min-w-0 flex-1 items-center gap-2 rounded-xl border border-line bg-soft px-3 py-2">
                   <Search className="w-4 h-4 text-[var(--muted-foreground)] flex-shrink-0" aria-hidden="true" />
                   <label htmlFor="admin-audit-search" className="sr-only">
                     Search the audit trail
@@ -314,9 +282,106 @@ export default function AuditTrail() {
                     className="flex-1 text-sm outline-none bg-transparent min-w-0"
                   />
                 </div>
-              </div>
 
-              {hasFilter && <button type="button" onClick={() => { setSearch(''); setRole(''); setCategory('All'); setPage(1); }} className="min-h-11 rounded-xl px-3 text-xs font-bold text-[var(--teal)] hover:bg-[var(--teal-soft)]">Clear filters</button>}
+                <div className="relative shrink-0">
+                <button
+                    type="button"
+                    aria-expanded={isFilterOpen}
+                    aria-controls="audit-filter-options"
+                    aria-label={`Filter audit records${roles.length + categories.length ? `, ${roles.length + categories.length} selected` : ''}`}
+                    onClick={() => setIsFilterOpen(open => !open)}
+                    onKeyDown={event => { if (event.key === 'Escape') setIsFilterOpen(false); }}
+                    className={`flex min-h-11 items-center gap-2 rounded-xl border px-3.5 text-sm font-bold transition-colors ${(roles.length || categories.length) ? 'border-[var(--teal)] bg-[var(--teal-soft)] text-[var(--teal)]' : 'border-line bg-[var(--muted)] text-[var(--ink)] hover:bg-[var(--border)]'}`}
+                  >
+                    <Filter className="size-4" aria-hidden="true" />
+                    <span>Filter</span>
+                    {(roles.length > 0 || categories.length > 0) && <span className="grid size-5 place-items-center rounded-full bg-[var(--teal)] text-[10px] text-white">{roles.length + categories.length}</span>}
+                    <ChevronDown className={`size-4 transition-transform ${isFilterOpen ? 'rotate-180' : ''}`} aria-hidden="true" />
+                </button>
+                {isFilterOpen && (
+                  <div id="audit-filter-options" className="absolute right-0 top-full z-30 mt-2 w-[min(32rem,calc(100vw-2rem))] rounded-2xl border border-line bg-card p-3 shadow-xl sm:p-4">
+                    <div className="grid gap-4">
+                      <div className="space-y-2">
+                        <p className="text-xs font-bold uppercase tracking-wide text-[var(--muted-foreground)]">Actor role</p>
+                        <div role="group" aria-label="Filter by actor role" className="flex flex-col gap-1">
+                          {ROLE_FILTERS.map(r => (
+                            (() => {
+                              const selected = r.key ? roles.includes(r.key) : roles.length === 0;
+                              return <button
+                                key={r.key || 'all'}
+                                type="button"
+                                onClick={() => r.key
+                                  ? applyFilter(setRoles)(roles.includes(r.key) ? roles.filter(role => role !== r.key) : [...roles, r.key])
+                                  : applyFilter(setRoles)([])}
+                                aria-pressed={selected}
+                                className={`flex min-h-10 w-full items-center justify-between rounded-lg px-3 text-left text-sm font-semibold transition-colors ${selected ? 'bg-[var(--teal-soft)] text-[var(--teal)]' : 'text-[var(--ink)] hover:bg-[var(--surface)]'}`}
+                              >
+                                {r.label}
+                                {selected && <Check className="size-4 shrink-0" aria-hidden="true" />}
+                              </button>;
+                            })()
+                          ))}
+                        </div>
+                      </div>
+                      <div className="space-y-2">
+                        <p className="text-xs font-bold uppercase tracking-wide text-[var(--muted-foreground)]">Activity category</p>
+                        <div role="group" aria-label="Filter by activity category" className="flex flex-col gap-1">
+                          {CATEGORY_FILTERS.map(f => (
+                            (() => {
+                              const selected = f === 'All' ? categories.length === 0 : categories.includes(f);
+                              return <button
+                                key={f}
+                                type="button"
+                                onClick={() => f === 'All'
+                                  ? applyFilter(setCategories)([])
+                                  : applyFilter(setCategories)(categories.includes(f) ? categories.filter(category => category !== f) : [...categories, f])}
+                                aria-pressed={selected}
+                                className={`flex min-h-10 w-full items-center justify-between rounded-lg px-3 text-left text-sm font-semibold transition-colors ${selected ? 'bg-[var(--teal-soft)] text-[var(--teal)]' : 'text-[var(--ink)] hover:bg-[var(--surface)]'}`}
+                              >
+                                {f === 'All' ? 'All categories' : f}
+                                {selected && <Check className="size-4 shrink-0" aria-hidden="true" />}
+                              </button>;
+                            })()
+                          ))}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                )}
+                </div>
+                </div>
+                {(roles.length > 0 || categories.length > 0) && (
+                  <div aria-label="Active audit filters" className="flex flex-wrap gap-2">
+                    {roles.map(selectedRole => {
+                      const label = ROLE_FILTERS.find(option => option.key === selectedRole)?.label || selectedRole;
+                      return <span key={`role-${selectedRole}`} className="inline-flex min-h-9 items-center gap-1.5 rounded-full border border-[var(--teal)]/30 bg-[var(--teal-soft)] py-1 pl-3 pr-1.5 text-xs font-semibold text-[var(--teal)]">
+                        {label}
+                        <button
+                          type="button"
+                          aria-label={`Remove ${label} filter`}
+                          onClick={() => applyFilter(setRoles)(roles.filter(role => role !== selectedRole))}
+                          className="grid size-6 place-items-center rounded-full transition-colors hover:bg-[var(--teal)]/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--teal)]"
+                        >
+                          <X aria-hidden="true" className="size-3.5" />
+                        </button>
+                      </span>
+                    })}
+                    {categories.map(selectedCategory => (
+                      <span key={`category-${selectedCategory}`} className="inline-flex min-h-9 items-center gap-1.5 rounded-full border border-[var(--teal)]/30 bg-[var(--teal-soft)] py-1 pl-3 pr-1.5 text-xs font-semibold text-[var(--teal)]">
+                        {selectedCategory}
+                        <button
+                          type="button"
+                          aria-label={`Remove ${selectedCategory} filter`}
+                          onClick={() => applyFilter(setCategories)(categories.filter(category => category !== selectedCategory))}
+                          className="grid size-6 place-items-center rounded-full transition-colors hover:bg-[var(--teal)]/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--teal)]"
+                        >
+                          <X aria-hidden="true" className="size-3.5" />
+                        </button>
+                      </span>
+                    ))}
+                  </div>
+                )}
+              {hasFilter && <button type="button" onClick={() => { setSearch(''); setRoles([]); setCategories([]); setPage(1); }} className="min-h-11 rounded-xl px-3 text-xs font-bold text-[var(--teal)] hover:bg-[var(--teal-soft)]">Clear filters</button>}
               </section>
               <p role="status" className="text-xs text-[var(--muted-foreground)] font-medium mb-3">
                 {filtered.length} record{filtered.length !== 1 ? "s" : ""}
@@ -341,8 +406,8 @@ export default function AuditTrail() {
                         type="button"
                         onClick={() => {
                           setSearch("");
-                          setCategory("All");
-                          setRole("");
+                          setCategories([]);
+                          setRoles([]);
                         }}
                         className="min-h-11 px-5 rounded-xl bg-[var(--primary)] text-[var(--primary-foreground)] font-semibold hover:opacity-90"
                       >

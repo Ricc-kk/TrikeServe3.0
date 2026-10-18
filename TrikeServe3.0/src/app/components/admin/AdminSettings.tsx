@@ -75,9 +75,9 @@ export default function AdminSettings() {
             </div>
 
             <div className="border-t border-line bg-soft/40 p-5 sm:p-6">
-              <h3 className="flex items-center gap-2 text-sm font-bold text-[var(--ink)]"><LogOut className="size-4 text-[var(--error)]" aria-hidden="true" />Current session</h3>
-              <p className="mt-2 text-sm leading-relaxed text-[var(--muted-foreground)]">Finished for now? Sign out to end this admin session. You’ll be asked to confirm first.</p>
-              <button type="button" onClick={() => setShowLogoutConfirm(true)} className="mt-4 inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-xl border border-[var(--error)]/25 bg-[var(--error-soft)] px-4 py-3 text-sm font-bold text-[var(--error)] transition-colors hover:bg-[var(--error)] hover:text-white sm:w-auto"><LogOut className="size-4 shrink-0" aria-hidden="true" />Sign Out of Admin Panel</button>
+              <div className="flex justify-end">
+                <button type="button" onClick={() => setShowLogoutConfirm(true)} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl border border-[var(--error)]/25 bg-[var(--error-soft)] px-4 py-3 text-sm font-bold text-[var(--error)] transition-colors hover:bg-[var(--error)] hover:text-white"><LogOut className="size-4 shrink-0" aria-hidden="true" />Sign Out</button>
+              </div>
             </div>
           </section>
         </div>
