@@ -75,6 +75,9 @@ export default function Activity() {
   const [displayRides, setDisplayRides] = useState<RideDisplay[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<'rides' | 'deliveries'>('rides');
+  const [selectedActivityDetails, setSelectedActivityDetails] = useState<
+    { type: 'ride'; item: RideDisplay } | { type: 'order'; item: OrderDisplay } | null
+  >(null);
   // Report form state (rides only).
   const [reportRide, setReportRide] = useState<RideDisplay | null>(null);
   const [reportCategory, setReportCategory] = useState(REPORT_CATEGORIES[0]);
@@ -90,6 +93,7 @@ export default function Activity() {
   const [ratedRideIds, setRatedRideIds] = useState<string[]>([]);
 
   const openReport = (ride: RideDisplay) => {
+    setSelectedActivityDetails(null);
     setReportRide(ride);
     setReportCategory(REPORT_CATEGORIES[0]);
     setReportDescription('');
@@ -106,6 +110,7 @@ export default function Activity() {
   const openRate = (ride: RideDisplay) => {
     if (!ride.driverId) return;
     if (ratedRideIds.includes(ride.id)) return;
+    setSelectedActivityDetails(null);
     setRateRide(ride);
     setSelectedRating(0);
     setRatingSubmitted(false);
@@ -353,17 +358,6 @@ export default function Activity() {
   return (
     <div className="min-h-screen bg-canvas pb-[calc(6rem+env(safe-area-inset-bottom))] text-[var(--ink)]">
       <div className="mx-auto w-full max-w-4xl px-4 pt-5 sm:px-8 sm:pt-8">
-      {/* Header */}
-      <header className="mb-5 rounded-3xl bg-[var(--ink-solid)] p-5 text-white sm:p-8">
-        <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-[var(--mint)]">Your journey · Mga biyahe</p>
-        <h1 className="mt-2 text-3xl font-extrabold tracking-tight sm:text-4xl">Activity</h1>
-        <p className="mt-2 max-w-lg text-sm leading-relaxed text-white/75">Good rides, great meals. Find your past trips and deliveries, all in one place.</p>
-        <div className="mt-5 grid grid-cols-2 gap-3">
-          <div className="rounded-2xl border border-white/15 bg-white/10 p-3 sm:p-4"><Navigation className="mb-2 size-5 text-[var(--mint)]" /><p className="text-2xl font-extrabold tabular-nums">{isLoading ? '—' : displayRides.length}</p><p className="text-xs text-white/75">Completed rides</p></div>
-          <div className="rounded-2xl border border-white/15 bg-white/10 p-3 sm:p-4"><Package className="mb-2 size-5 text-[var(--mint)]" /><p className="text-2xl font-extrabold tabular-nums">{isLoading ? '—' : displayOrders.length}</p><p className="text-xs text-white/75">Food orders</p></div>
-        </div>
-      </header>
-
       {/* Tab Buttons */}
       <div className="mb-5">
         <div className="flex gap-2 rounded-2xl border border-line bg-surface p-1.5 sm:gap-3">
@@ -426,10 +420,9 @@ export default function Activity() {
                   return (
                   <Card
                     key={ride.id}
-                    className={`gap-0 rounded-2xl bg-surface p-4 sm:p-6 border border-line shadow-sm ${canRate ? 'cursor-pointer active:scale-[0.98] transition-transform' : ''}`}
-                    onClick={() => canRate && openRate(ride)}
+                    className="gap-0 rounded-2xl border border-line bg-surface p-4 shadow-sm sm:p-6"
                   >
-                    <div className="flex items-start gap-3">
+                    <button type="button" onClick={() => setSelectedActivityDetails({ type: 'ride', item: ride })} className="flex w-full items-start gap-3 text-left">
                       {/* Ride Icon */}
                       <div className={`w-12 h-12 rounded-lg flex items-center justify-center flex-shrink-0 ${ride.rideType === 'share' ? 'bg-[var(--info-soft)]' : 'bg-[var(--primary-soft)]'}`}>
                         {ride.rideType === 'share' ? (
@@ -441,9 +434,9 @@ export default function Activity() {
 
                       {/* Content */}
                       <div className="flex-1 min-w-0">
-                        <div className="flex flex-wrap items-start justify-between gap-x-3 gap-y-2">
-                          <div>
-                            <h3 className="font-semibold text-[var(--ink)] text-sm sm:text-base mb-1 line-clamp-2">
+                        <div className="flex flex-nowrap items-start justify-between gap-3">
+                          <div className="min-w-0 flex-1">
+                            <h3 className="mb-1 truncate whitespace-nowrap text-sm font-semibold text-[var(--ink)] sm:text-base">
                               {ride.pickupLocation} → {ride.dropoffLocation}
                             </h3>
                             <div className="flex items-center gap-2 mb-2">
@@ -453,60 +446,15 @@ export default function Activity() {
                               </span>
                             </div>
                           </div>
-                          <div className="text-right flex-shrink-0">
+                          <div className="shrink-0 whitespace-nowrap text-right">
                             <p className="text-lg font-bold text-[var(--ink)]">₱{ride.amount}</p>
                             <p className="text-xs text-[var(--success)] font-semibold">Completed</p>
                           </div>
                         </div>
-
-                        {/* Ride Details */}
-                        <div className="flex items-center gap-3 mb-2 text-xs text-[var(--muted-foreground)]">
-                          <span className="flex items-center gap-1">
-                            {ride.paymentMethod === 'GCASH' ? '💳' : '💵'} {ride.paymentMethod === 'GCASH' ? 'Prepaid' : 'Cash'}
-                          </span>
-                          {ride.passengerCount && ride.passengerCount > 1 && (
-                            <span className="flex items-center gap-1">
-                              👤 {ride.passengerCount} passengers
-                            </span>
-                          )}
-                        </div>
-
-                        {/* Location Details */}
-                        <div className="space-y-1 text-xs text-[var(--muted-foreground)] mb-2">
-                          <p className="flex items-start gap-2">
-                            <MapPin className="w-3 h-3 mt-0.5 flex-shrink-0 text-[var(--ink)]" />
-                            <span><span className="font-semibold text-[var(--ink)]">Pickup:</span> {ride.pickupAddress || ride.pickupLocation}</span>
-                          </p>
-                          <p className="flex items-start gap-2">
-                            <MapPin className="w-3 h-3 mt-0.5 flex-shrink-0 text-[var(--primary)]" />
-                            <span><span className="font-semibold text-[var(--ink)]">Drop-off:</span> {ride.dropoffAddress || ride.dropoffLocation}</span>
-                          </p>
-                        </div>
-
-                        {/* Driver Info + Report */}
-                        <div className="flex items-center justify-between gap-3">
-                          <p className="text-xs text-[var(--muted-foreground)] min-w-0">
-                            👤 Driver: <span className="font-semibold text-[var(--ink)]">{ride.driverName || 'Driver'}</span>
-                            {ride.driverRating && ride.driverRating !== 'Driver' && <span> • ⭐ {ride.driverRating}</span>}
-                          </p>
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              openReport(ride);
-                            }}
-                            className="flex min-h-11 items-center gap-1 px-3 py-2 rounded-xl border border-[var(--error)] text-[var(--error)] text-[11px] font-bold hover:bg-[var(--error-soft)] active:scale-95 transition-all flex-shrink-0"
-                          >
-                            <Flag className="w-3.5 h-3.5" />
-                            Report
-                          </button>
-                        </div>
-                        {alreadyRated ? (
-                          <p className="text-xs font-bold text-[var(--success)] mt-2">⭐ Thanks for rating this driver</p>
-                        ) : canRate ? (
-                          <p className="text-xs font-bold text-[var(--primary)] mt-2">⭐ Tap to rate this driver</p>
-                        ) : null}
+                        <span className="text-xs font-semibold text-[var(--primary)]">Tap to view details</span>
                       </div>
-                    </div>
+                    </button>
+
                   </Card>
                   );
                 })}
@@ -530,9 +478,10 @@ export default function Activity() {
           <div>
             {displayOrders.length > 0 ? (
               <div className="space-y-4">
-                {displayOrders.map((order) => (
-                  <Card key={order.id} className="gap-0 rounded-2xl bg-surface p-4 sm:p-6 border border-line shadow-sm cursor-pointer active:scale-[0.98] transition-transform">
-                    <div onClick={() => navigate(`/customer/order-detail/${order.id}`)} className="flex items-start gap-3">
+                {displayOrders.map((order) => {
+                  return (
+                  <Card key={order.id} className="gap-0 rounded-2xl border border-line bg-surface p-4 shadow-sm sm:p-6">
+                    <button type="button" onClick={() => setSelectedActivityDetails({ type: 'order', item: order })} className="flex w-full items-start gap-3 text-left">
                       {/* Restaurant Image */}
                       <div className="w-12 h-12 rounded-lg overflow-hidden flex-shrink-0">
                         <ImageWithFallback
@@ -561,13 +510,12 @@ export default function Activity() {
                             <p className="text-xs text-[var(--muted-foreground)]">#{order.orderNumber}</p>
                           </div>
                         </div>
-                        {order.status === 'delivered' && (
-                          <p className="text-xs font-bold text-[var(--primary)] mt-2">⭐ Tap to rate this restaurant</p>
-                        )}
+                        <span className="text-xs font-semibold text-[var(--primary)]">Tap to view details</span>
                       </div>
-                    </div>
+                    </button>
                   </Card>
-                ))}
+                  );
+                })}
               </div>
             ) : (
               <div className="rounded-3xl border border-line bg-surface px-5 py-12 text-center sm:py-16">
@@ -588,6 +536,94 @@ export default function Activity() {
       </div>
 
       </div>
+      {selectedActivityDetails && (
+        <div
+          className="fixed inset-0 z-[1900] flex items-end justify-center bg-black/60 p-0 sm:items-center sm:p-4"
+          role="presentation"
+          onMouseDown={event => {
+            if (event.target === event.currentTarget) setSelectedActivityDetails(null);
+          }}
+        >
+          <div role="dialog" aria-modal="true" aria-labelledby="activity-details-title" className="max-h-[90dvh] w-full overflow-y-auto rounded-t-3xl bg-surface shadow-xl sm:max-w-lg sm:rounded-2xl">
+            <div className="flex items-center justify-between border-b border-line p-5">
+              <h2 id="activity-details-title" className="text-lg font-bold text-[var(--ink)]">
+                {selectedActivityDetails.type === 'ride' ? 'Ride details' : 'Delivery details'}
+              </h2>
+              <button type="button" aria-label="Close activity details" onClick={() => setSelectedActivityDetails(null)} className="grid size-11 place-items-center rounded-full hover:bg-[var(--muted)]">
+                <X className="size-5 text-[var(--muted-foreground)]" />
+              </button>
+            </div>
+            <div className="space-y-4 p-5">
+              {selectedActivityDetails.type === 'ride' ? (() => {
+                const ride = selectedActivityDetails.item;
+                const alreadyRated = ratedRideIds.includes(ride.id);
+                return (
+                  <>
+                    <div className="rounded-2xl bg-[var(--muted)] p-4">
+                      <p className="break-words font-bold text-[var(--ink)]">{ride.pickupLocation} → {ride.dropoffLocation}</p>
+                      <p className="mt-1 text-sm text-[var(--muted-foreground)]">{ride.date}</p>
+                      <div className="mt-3 flex flex-wrap items-center gap-2">
+                        <span className="rounded-full bg-[var(--success-soft)] px-2.5 py-1 text-xs font-bold text-[var(--success)]">Completed</span>
+                        <span className="rounded-full bg-[var(--primary-soft)] px-2.5 py-1 text-xs font-bold text-[var(--primary)]">{ride.rideType === 'share' ? 'Share Ride' : 'Private Ride'}</span>
+                      </div>
+                    </div>
+                    <div className="grid grid-cols-2 gap-3 text-sm">
+                      <div className="rounded-xl border border-line p-3"><p className="text-xs text-[var(--muted-foreground)]">Fare</p><p className="mt-1 font-bold text-[var(--ink)]">₱{ride.amount}</p></div>
+                      <div className="rounded-xl border border-line p-3"><p className="text-xs text-[var(--muted-foreground)]">Payment</p><p className="mt-1 font-bold text-[var(--ink)]">{ride.paymentMethod === 'GCASH' ? 'GCash prepaid' : 'Cash'}</p></div>
+                      {ride.passengerCount && <div className="rounded-xl border border-line p-3"><p className="text-xs text-[var(--muted-foreground)]">Passengers</p><p className="mt-1 font-bold text-[var(--ink)]">{ride.passengerCount}</p></div>}
+                    </div>
+                    <div className="space-y-3 rounded-2xl border border-line p-4 text-sm">
+                      <p className="flex items-start gap-2"><MapPin className="mt-0.5 size-4 shrink-0 text-[var(--primary)]" /><span className="min-w-0"><span className="font-semibold text-[var(--ink)]">Pickup</span><br />{ride.pickupAddress || ride.pickupLocation}</span></p>
+                      <p className="flex items-start gap-2"><MapPin className="mt-0.5 size-4 shrink-0 text-[var(--error)]" /><span className="min-w-0"><span className="font-semibold text-[var(--ink)]">Drop-off</span><br />{ride.dropoffAddress || ride.dropoffLocation}</span></p>
+                    </div>
+                    <div className="rounded-2xl border border-line p-4 text-sm">
+                      <p className="text-xs text-[var(--muted-foreground)]">Driver</p>
+                      <p className="mt-1 font-bold text-[var(--ink)]">{ride.driverName || 'Driver'}{ride.driverRating && ride.driverRating !== 'Driver' ? ` · ★ ${ride.driverRating}` : ''}</p>
+                    </div>
+                    <div className="flex flex-wrap justify-end gap-2">
+                      {!alreadyRated && ride.driverId && <Button type="button" onClick={() => openRate(ride)} className="min-h-11 rounded-xl bg-[var(--primary)] px-4 font-bold text-white">Rate driver</Button>}
+                      {alreadyRated && <span className="self-center text-xs font-bold text-[var(--success)]">Thanks for rating this driver</span>}
+                      <Button type="button" variant="ghost" onClick={() => openReport(ride)} className="min-h-11 rounded-xl px-4 text-[var(--error)]">Report ride</Button>
+                    </div>
+                  </>
+                );
+              })() : (() => {
+                const order = selectedActivityDetails.item;
+                return (
+                  <>
+                    <div className="rounded-2xl bg-[var(--muted)] p-4">
+                      <p className="break-words font-bold text-[var(--ink)]">{order.restaurantName}</p>
+                      <p className="mt-1 text-sm text-[var(--muted-foreground)]">{order.date}</p>
+                      <div className="mt-3 flex flex-wrap items-center gap-2">
+                        <span className={`rounded-full px-2.5 py-1 text-xs font-bold ${getStatusColor(order.status)}`}>{getStatusText(order.status)}</span>
+                        <span className="text-xs text-[var(--muted-foreground)]">Order #{order.orderNumber}</span>
+                      </div>
+                    </div>
+                    <div className="rounded-2xl border border-line p-4">
+                      <p className="mb-3 text-sm font-bold text-[var(--ink)]">Items in this order</p>
+                      {order.items.length > 0 ? (
+                        <ul className="space-y-3">
+                          {order.items.map((item, index) => (
+                            <li key={`${order.id}-modal-item-${index}`} className="flex justify-between gap-3 text-sm">
+                              <span className="min-w-0 break-words text-[var(--ink)]">{item?.name || item?.product_name || item?.title || 'Item'}<span className="block text-xs text-[var(--muted-foreground)]">Qty: {item?.quantity || item?.qty || 1}</span></span>
+                              {item?.price != null && <span className="shrink-0 font-semibold text-[var(--ink)]">₱{(Number(item.price) * Number(item.quantity || item.qty || 1)).toFixed(2)}</span>}
+                            </li>
+                          ))}
+                        </ul>
+                      ) : <p className="text-sm text-[var(--muted-foreground)]">No item details available.</p>}
+                      <div className="mt-4 flex justify-between border-t border-line pt-3 text-sm font-bold text-[var(--ink)]"><span>Total</span><span>₱{order.total}</span></div>
+                    </div>
+                    <div className="flex justify-end">
+                      <Button type="button" onClick={() => { setSelectedActivityDetails(null); navigate(`/customer/order-detail/${order.id}`); }} className="min-h-11 rounded-xl bg-[var(--primary)] px-4 font-bold text-white">Open order details</Button>
+                    </div>
+                  </>
+                );
+              })()}
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Report Ride Modal */}
       {reportRide && (
         <div className="fixed inset-0 bg-black/60 z-[2000] flex items-end sm:items-center justify-center p-0 sm:p-4">
