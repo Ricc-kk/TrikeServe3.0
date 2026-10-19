@@ -4,16 +4,18 @@ import { haversineDistanceMeters, type LatLngPoint } from "./supabase";
  * Ride rates configured by an admin, stored as JSON under
  * `admin_settings.setting_key = 'rates'` (and mirrored to localStorage).
  *
- * Rides are priced as `baseFare + perKm × distance`. Delivery is flat and keeps
+ * Rides are priced as `baseFare + perKm × distance beyond baseFareIncludedKm`. Delivery keeps
  * its own base fee. `sharedRide`/`privateRide` are legacy fixed fares, retained
  * so lobbies and bookings made before per-km pricing still resolve a price.
  */
 export interface RideRates {
-  /** Flat amount added to every ride, before the per-km charge. */
+  /** Amount covering the initial included kilometres of a trip. */
   baseFare: number;
-  /** Charge per straight-line kilometre. */
+  /** Kilometres covered by the base fare before the per-km charge starts. */
+  baseFareIncludedKm: number;
+  /** Charge per straight-line kilometre after the included distance. */
   perKm: number;
-  /** Flat delivery fee — delivery is not distance-based. */
+  /** Platform fallback delivery base fee. Terminals may add a per-kilometre rate. */
   deliveryBaseFee: number;
   /** Legacy fixed shared fare, used only when a distance can't be computed. */
   sharedRide: number;
@@ -23,6 +25,7 @@ export interface RideRates {
 
 export const DEFAULT_RATES: RideRates = {
   baseFare: 20,
+  baseFareIncludedKm: 1,
   perKm: 10,
   deliveryBaseFee: 0,
   sharedRide: 15,
@@ -53,6 +56,7 @@ function num(value: any, fallback: number): number {
 export function normalizeRates(raw: any): RideRates {
   return {
     baseFare: num(raw?.baseFare, DEFAULT_RATES.baseFare),
+    baseFareIncludedKm: num(raw?.baseFareIncludedKm, DEFAULT_RATES.baseFareIncludedKm),
     perKm: num(raw?.perKm, DEFAULT_RATES.perKm),
     deliveryBaseFee: num(raw?.deliveryBaseFee, DEFAULT_RATES.deliveryBaseFee),
     sharedRide: num(raw?.sharedRide, DEFAULT_RATES.sharedRide),
@@ -71,9 +75,14 @@ export function normalizeRates(raw: any): RideRates {
  */
 export interface TerminalFare {
   base_fare?: number | null;
+  base_fare_included_km?: number | null;
   per_km?: number | null;
   private_ride_fee?: number | null;
+  private_ride_fee_included_km?: number | null;
   private_ride_fee_per_km?: number | null;
+  delivery_fee?: number | null;
+  delivery_fee_included_km?: number | null;
+  delivery_fee_per_km?: number | null;
 }
 
 /**
@@ -84,6 +93,7 @@ export function terminalRates(terminal?: TerminalFare | null): RideRates {
   return {
     ...DEFAULT_RATES,
     baseFare: num(terminal?.base_fare, DEFAULT_RATES.baseFare),
+    baseFareIncludedKm: num(terminal?.base_fare_included_km, DEFAULT_RATES.baseFareIncludedKm),
     perKm: num(terminal?.per_km, DEFAULT_RATES.perKm),
   };
 }
@@ -104,11 +114,27 @@ export function terminalRates(terminal?: TerminalFare | null): RideRates {
  */
 export function privateRideRates(
   terminal?: TerminalFare | null,
-  shared: Pick<RideRates, "baseFare" | "perKm"> = DEFAULT_RATES,
-): { baseFare: number; perKm: number } {
+  shared: Pick<RideRates, "baseFare" | "baseFareIncludedKm" | "perKm"> = DEFAULT_RATES,
+): { baseFare: number; baseFareIncludedKm: number; perKm: number } {
   return {
     baseFare: num(terminal?.private_ride_fee, num(terminal?.base_fare, shared.baseFare)),
+    baseFareIncludedKm: num(
+      terminal?.private_ride_fee_included_km,
+      num(terminal?.base_fare_included_km, shared.baseFareIncludedKm),
+    ),
     perKm: num(terminal?.private_ride_fee_per_km, num(terminal?.per_km, shared.perKm)),
+  };
+}
+
+/** Resolve a terminal delivery rate, falling back to the platform base fee. */
+export function deliveryRates(
+  terminal: TerminalFare | null | undefined,
+  platformDeliveryBase = DEFAULT_RATES.deliveryBaseFee,
+): { baseFare: number; baseFareIncludedKm: number; perKm: number } {
+  return {
+    baseFare: num(terminal?.delivery_fee, platformDeliveryBase),
+    baseFareIncludedKm: num(terminal?.delivery_fee_included_km, DEFAULT_RATES.baseFareIncludedKm),
+    perKm: num(terminal?.delivery_fee_per_km, 0),
   };
 }
 
@@ -127,7 +153,7 @@ export function straightLineKm(
 }
 
 /**
- * Ride fare = base fare + (rate per km × straight-line distance).
+ * Fare = base fare + the per-km rate for distance beyond the included kilometres.
  *
  * Rounded UP to a whole peso. Every peso-per-km step lands on a fraction
  * (₱10/km over 1.37 km is ₱23.70), and a tricycle fare quoted in centavos
@@ -139,15 +165,23 @@ export function straightLineKm(
  * back to the legacy fixed fare instead of charging only the base.
  */
 export function computeRideFare(
-  rates: Pick<RideRates, "baseFare" | "perKm">,
+  rates: Pick<RideRates, "baseFare" | "baseFareIncludedKm" | "perKm">,
   pickup?: LatLngPoint | null,
   dropoff?: LatLngPoint | null
 ): { total: number; distanceKm: number | null } {
   const distanceKm = straightLineKm(pickup, dropoff);
-  if (distanceKm == null) return { total: rates.baseFare, distanceKm: null };
-
-  const total = Math.ceil(rates.baseFare + rates.perKm * distanceKm);
+  const total = computeDistanceFare(rates, distanceKm);
   return { total, distanceKm };
+}
+
+/** Price any straight-line trip using the same included-distance rule. */
+export function computeDistanceFare(
+  rates: Pick<RideRates, "baseFare" | "baseFareIncludedKm" | "perKm">,
+  distanceKm: number | null,
+): number {
+  if (distanceKm == null || !Number.isFinite(distanceKm)) return rates.baseFare;
+  const billableKm = Math.max(0, distanceKm - Math.max(0, rates.baseFareIncludedKm));
+  return Math.ceil(rates.baseFare + rates.perKm * billableKm);
 }
 
 /** Currency formatting used by the fare breakdown labels. */

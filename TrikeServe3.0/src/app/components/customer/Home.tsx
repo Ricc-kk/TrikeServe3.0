@@ -617,9 +617,11 @@ export default function CustomerHome() {
    // it can't drift from the amount stored on the request when booking state is
    // recomputed or restored from storage.
    const [bookedFare, setBookedFare] = useState<number | null>(null);
-   // Per-km pricing set by the admin: fare = baseFare + perKm Ã— distance.
+   // Per-km pricing set by the admin after the distance included in the base fare.
    const [baseFare, setBaseFare] = useState(20);
+   const [baseFareIncludedKm, setBaseFareIncludedKm] = useState(1);
    const [perKm, setPerKm] = useState(10);
+   const [deliveryBaseFee, setDeliveryBaseFee] = useState(0);
    const [driverLocation, setDriverLocation] = useState<{ lat: number; lng: number } | null>(null);
    const [driverRoutePath, setDriverRoutePath] = useState<LatLng[]>([]);
    const [destinationRoutePath, setDestinationRoutePath] = useState<LatLng[]>([]);
@@ -663,7 +665,7 @@ export default function CustomerHome() {
      backendRouteStatus: 'idle',
    });
     const [mapsBlocked, setMapsBlocked] = useState<string | null>(null);
-   const [terminals, setTerminals] = useState<{ id: string; name: string; boundary: string; center_lat: number; center_lng: number; base_fare?: number | null; per_km?: number | null; delivery_fee?: number | null; delivery_fee_per_km?: number | null; max_passengers?: number | null; private_ride_fee?: number | null; private_ride_fee_per_km?: number | null; boundary_polygon?: any; boundary_area?: any; route_color?: string | null; border_color?: string | null; marker_color?: string | null }[]>([]);
+   const [terminals, setTerminals] = useState<{ id: string; name: string; boundary: string; center_lat: number; center_lng: number; base_fare?: number | null; base_fare_included_km?: number | null; per_km?: number | null; delivery_fee?: number | null; delivery_fee_included_km?: number | null; delivery_fee_per_km?: number | null; max_passengers?: number | null; private_ride_fee?: number | null; private_ride_fee_included_km?: number | null; private_ride_fee_per_km?: number | null; boundary_polygon?: any; boundary_area?: any; route_color?: string | null; border_color?: string | null; marker_color?: string | null }[]>([]);
    const [showTerminalPicker, setShowTerminalPicker] = useState(false);
    const [routePreviewTerminalId, setRoutePreviewTerminalId] = useState<string | null>(null);
    const [selectedTerminalId, setSelectedTerminalId] = useState<string | null>(null);
@@ -1346,7 +1348,9 @@ export default function CustomerHome() {
           setSharedRidePrice(settings.sharedRide);
           setPrivateRidePrice(settings.privateRide);
           setBaseFare(settings.baseFare);
+          setBaseFareIncludedKm(settings.baseFareIncludedKm);
           setPerKm(settings.perKm);
+          setDeliveryBaseFee(settings.deliveryBaseFee);
           console.log(`âœ… Loaded admin pricing - â‚±${settings.baseFare} base + â‚±${settings.perKm}/km`);
         }
       } catch (error) {
@@ -2636,18 +2640,35 @@ export default function CustomerHome() {
   const terminalFare = useMemo(() => terminalRates(selectedTerminal), [selectedTerminal]);
   const activeRates = {
     baseFare: selectedTerminal?.base_fare != null ? terminalFare.baseFare : baseFare,
+    baseFareIncludedKm: selectedTerminal?.base_fare_included_km != null
+      ? terminalFare.baseFareIncludedKm
+      : baseFareIncludedKm,
     perKm: selectedTerminal?.per_km != null ? terminalFare.perKm : perKm,
   };
 
-  // Fare is per kilometer: base + (rate Ã— straight-line km between pickup and drop-off).
+  const formatKm = (km: number) => Number(km.toFixed(2)).toString();
+  const fareDescription = (
+    rates: { baseFare: number; baseFareIncludedKm: number; perKm: number },
+    distanceKm: number,
+    terminalName?: string,
+  ) => {
+    const includedKm = Math.max(0, rates.baseFareIncludedKm);
+    const extraKm = Math.max(0, distanceKm - includedKm);
+    const distanceText = extraKm > 0
+      ? ` + \u20B1${rates.perKm}/km for ${formatKm(extraKm)} km after`
+      : '';
+    return `\u20B1${rates.baseFare} covers first ${formatKm(includedKm)} km${distanceText}${terminalName ? ` \u00B7 ${terminalName}` : ''}`;
+  };
+
+  // The base covers its configured initial distance; charge per-km only beyond it.
   const fareInfo = useMemo(
     () => computeRideFare(activeRates, pickupCoords, dropoffCoords),
-    [activeRates.baseFare, activeRates.perKm, pickupCoords, dropoffCoords]
+    [activeRates.baseFare, activeRates.baseFareIncludedKm, activeRates.perKm, pickupCoords, dropoffCoords]
   );
   // Falls back to the legacy fixed fare when the two points have no coordinates yet.
   const rideTotal = fareInfo.distanceKm != null ? fareInfo.total : privateRidePrice;
   const fareBreakdown = fareInfo.distanceKm != null
-    ? `\u20B1${activeRates.baseFare} base + \u20B1${activeRates.perKm}/km \u00D7 ${fareInfo.distanceKm.toFixed(1)} km${selectedTerminal ? ` \u00B7 ${selectedTerminal.name}` : ''}`
+    ? fareDescription(activeRates, fareInfo.distanceKm, selectedTerminal?.name)
     : `Fixed rate${selectedTerminal ? ` \u00B7 ${selectedTerminal.name}` : ''}`;
 
   /*
@@ -2663,15 +2684,15 @@ export default function CustomerHome() {
    */
   const privateActiveRates = useMemo(
     () => privateRideRates(selectedTerminal, activeRates),
-    [selectedTerminal, activeRates.baseFare, activeRates.perKm]
+    [selectedTerminal, activeRates.baseFare, activeRates.baseFareIncludedKm, activeRates.perKm]
   );
   const privateFareInfo = useMemo(
     () => computeRideFare(privateActiveRates, pickupCoords, dropoffCoords),
-    [privateActiveRates.baseFare, privateActiveRates.perKm, pickupCoords, dropoffCoords]
+    [privateActiveRates.baseFare, privateActiveRates.baseFareIncludedKm, privateActiveRates.perKm, pickupCoords, dropoffCoords]
   );
   const privateTotal = privateFareInfo.distanceKm != null ? privateFareInfo.total : privateRidePrice;
   const privateBreakdown = privateFareInfo.distanceKm != null
-    ? `\u20B1${privateActiveRates.baseFare} base + \u20B1${privateActiveRates.perKm}/km \u00D7 ${privateFareInfo.distanceKm.toFixed(1)} km${selectedTerminal ? ` \u00B7 ${selectedTerminal.name}` : ''}`
+    ? fareDescription(privateActiveRates, privateFareInfo.distanceKm, selectedTerminal?.name)
     : `Fixed rate${selectedTerminal ? ` \u00B7 ${selectedTerminal.name}` : ''}`;
 
   /*
@@ -3776,7 +3797,7 @@ const getPrice = () => {
                       </div>
                       <p className="text-xs text-[var(--muted-foreground)] mt-0.5">{terminal.boundary}</p>
                       <p className="text-xs font-semibold text-[var(--primary)] mt-0.5">
-                        Share: &#8369;{terminal.base_fare ?? activeRates.baseFare} base + &#8369;{terminal.per_km ?? activeRates.perKm}/km
+                        Share: &#8369;{terminal.base_fare ?? activeRates.baseFare} covers first {terminal.base_fare_included_km ?? activeRates.baseFareIncludedKm} km + &#8369;{terminal.per_km ?? activeRates.perKm}/km after
                       </p>
                       {/*
                         This terminal's private ride charge, when it has set one.
@@ -3786,9 +3807,9 @@ const getPrice = () => {
                         repeating the same two numbers under a second heading
                         would imply a choice where there is none.
                       */}
-                      {(terminal.private_ride_fee != null || terminal.private_ride_fee_per_km != null) && (
+                      {(terminal.private_ride_fee != null || terminal.private_ride_fee_included_km != null || terminal.private_ride_fee_per_km != null) && (
                         <p className="text-xs font-semibold text-[var(--primary)] mt-0.5">
-                          Private: &#8369;{privateRideRates(terminal).baseFare} base + &#8369;{privateRideRates(terminal).perKm}/km
+                          Private: &#8369;{privateRideRates(terminal, terminalRates(terminal)).baseFare} covers first {privateRideRates(terminal, terminalRates(terminal)).baseFareIncludedKm} km + &#8369;{privateRideRates(terminal, terminalRates(terminal)).perKm}/km after
                         </p>
                       )}
                       {/*
@@ -3799,11 +3820,11 @@ const getPrice = () => {
                         row reading "Delivery: platform rate" would imply a choice the
                         customer does not have.
                       */}
-                      {(terminal.delivery_fee != null || terminal.delivery_fee_per_km != null) && (
+                      {(terminal.delivery_fee != null || terminal.delivery_fee_included_km != null || terminal.delivery_fee_per_km != null) && (
                         <p className="text-xs font-semibold text-[var(--success)] mt-0.5">
-                          Delivery: &#8369;{terminal.delivery_fee ?? 0} base
+                          Delivery: &#8369;{terminal.delivery_fee ?? deliveryBaseFee} covers first {terminal.delivery_fee_included_km ?? 1} km
                           {terminal.delivery_fee_per_km != null && (
-                            <> + &#8369;{terminal.delivery_fee_per_km}/km</>
+                            <> + &#8369;{terminal.delivery_fee_per_km}/km after</>
                           )}
                         </p>
                       )}

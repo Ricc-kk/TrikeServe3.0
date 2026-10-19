@@ -6,6 +6,7 @@ import {
   autocompletePlacesNew,
   createPlacesSessionToken,
   fetchPlaceDetailsNew,
+  type PlacesAutocompleteSuggestion,
 } from "@/lib/placesApi";
 
 // Google Maps API key (used for Places search + reverse geocoding)
@@ -75,6 +76,7 @@ export default function BusinessMapSelector({ onClose, onSelectLocation, current
   );
   const [showPinInfo, setShowPinInfo] = useState(false);
   const [isGeocoding, setIsGeocoding] = useState(false);
+  const [isSelectingResult, setIsSelectingResult] = useState(false);
   const [locating, setLocating] = useState(false);
   // The device's own position, resolved to an address and shown as the first
   // row of the address list. On a phone this is nearly always the right
@@ -89,11 +91,14 @@ export default function BusinessMapSelector({ onClose, onSelectLocation, current
   const autoLocatedRef = useRef(false);
   const [showAddressList, setShowAddressList] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
-  const [searchResults, setSearchResults] = useState<any[]>([]);
+  const [searchResults, setSearchResults] = useState<PlacesAutocompleteSuggestion[]>([]);
   const [isSearching, setIsSearching] = useState(false);
   const [showSearchDropdown, setShowSearchDropdown] = useState(false);
+  const [searchSelectionError, setSearchSelectionError] = useState<string | null>(null);
   const mapRef = useRef<google.maps.Map | null>(null);
   const geocodeRequestIdRef = useRef(0);
+  const searchRequestIdRef = useRef(0);
+  const selectedSuggestionRef = useRef<string | null>(null);
   const [placesSessionToken, setPlacesSessionToken] = useState<string>(() => createPlacesSessionToken());
 
   // Pan the map when the center changes (pin placement or search selection)
@@ -143,6 +148,7 @@ export default function BusinessMapSelector({ onClose, onSelectLocation, current
       setShowAddressList(true);
       setShowPinInfo(true);
       setIsGeocoding(true);
+      setSearchSelectionError(null);
       const address = await reverseGeocode(lat, lng);
       // Ignore stale responses if the business tapped somewhere else meanwhile
       if (requestId !== geocodeRequestIdRef.current) return;
@@ -206,19 +212,25 @@ export default function BusinessMapSelector({ onClose, onSelectLocation, current
     setShowPinInfo(true);
     setShowAddressList(true);
     setShowSearchDropdown(false);
+    setSearchSelectionError(null);
   }, [deviceLocation]);
 
   // Debounced Places autocomplete search as the business types
   useEffect(() => {
-    if (!searchQuery.trim()) {
+    const requestId = ++searchRequestIdRef.current;
+    const query = searchQuery.trim();
+
+    if (!query || selectedSuggestionRef.current === searchQuery) {
       setSearchResults([]);
       setShowSearchDropdown(false);
+      setIsSearching(false);
       return;
     }
     if (!GOOGLE_MAPS_API_KEY) {
       // No key configured: let the business know search isn't available
       setSearchResults([]);
       setShowSearchDropdown(true);
+      setIsSearching(false);
       return;
     }
 
@@ -226,33 +238,49 @@ export default function BusinessMapSelector({ onClose, onSelectLocation, current
     const timer = setTimeout(async () => {
       try {
         const suggestions = await autocompletePlacesNew({
-          input: searchQuery.trim(),
+          input: query,
           apiKey: GOOGLE_MAPS_API_KEY,
           locationBias: mapCenter,
           restrictToCountry: "ph",
           sessionToken: placesSessionToken,
         });
+        if (requestId !== searchRequestIdRef.current || selectedSuggestionRef.current === searchQuery) return;
         setSearchResults(suggestions || []);
         setShowSearchDropdown(true);
       } catch (err) {
+        if (requestId !== searchRequestIdRef.current || selectedSuggestionRef.current === searchQuery) return;
         console.warn("[BusinessMapSelector] Autocomplete failed:", err);
         setSearchResults([]);
         setShowSearchDropdown(true);
       } finally {
-        setIsSearching(false);
+        if (requestId === searchRequestIdRef.current) setIsSearching(false);
       }
     }, 350);
 
-    return () => clearTimeout(timer);
+    return () => {
+      clearTimeout(timer);
+      if (requestId === searchRequestIdRef.current) searchRequestIdRef.current += 1;
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [searchQuery, mapCenter, GOOGLE_MAPS_API_KEY]);
 
   // When a search result is chosen, resolve its coordinates and drop the pin there
-  const handleSearchResultPick = async (suggestion: any) => {
+  const handleSearchResultPick = async (suggestion: PlacesAutocompleteSuggestion) => {
+    selectedSuggestionRef.current = suggestion.displayName;
+    searchRequestIdRef.current += 1;
+    setSearchResults([]);
     setSearchQuery(suggestion.displayName);
     setShowSearchDropdown(false);
+    setShowAddressList(false);
+    setSearchSelectionError(null);
+    setIsSelectingResult(true);
 
-    if (!GOOGLE_MAPS_API_KEY || !suggestion.place_id) return;
+    if (!GOOGLE_MAPS_API_KEY || !suggestion.place_id) {
+      setSearchSelectionError("This recommendation cannot be mapped. Choose another result or tap the map.");
+      setShowAddressList(true);
+      setIsSelectingResult(false);
+      return;
+    }
     try {
       const place = await fetchPlaceDetailsNew({
         placeId: suggestion.place_id,
@@ -270,10 +298,16 @@ export default function BusinessMapSelector({ onClose, onSelectLocation, current
         setMapCenter({ lat, lng });
         setShowPinInfo(true);
         setShowAddressList(true);
+      } else {
+        setSearchSelectionError("This place has no map pin. Choose another result or tap the map.");
+        setShowAddressList(true);
       }
     } catch (err) {
       console.warn("[BusinessMapSelector] Place details failed:", err);
+      setSearchSelectionError("Could not map this place. Choose another result or tap the map.");
+      setShowAddressList(true);
     } finally {
+      setIsSelectingResult(false);
       // Rotate the session token after a completed search selection
       setPlacesSessionToken(createPlacesSessionToken());
     }
@@ -372,9 +406,9 @@ export default function BusinessMapSelector({ onClose, onSelectLocation, current
             position={{ lat: pickedPin.lat, lng: pickedPin.lng }}
             onCloseClick={() => setShowPinInfo(false)}
           >
-            <div className="text-sm">
+            <div className="text-sm text-neutral-900">
               <p className="font-semibold">{pickedPin.name}</p>
-              <p className="text-[var(--muted-foreground)] text-xs">{pickedPin.full}</p>
+              <p className="text-neutral-600 text-xs">{pickedPin.full}</p>
             </div>
           </InfoWindow>
         )}
@@ -385,7 +419,7 @@ export default function BusinessMapSelector({ onClose, onSelectLocation, current
   return (
     <div className="fixed inset-0 bg-surface z-[4000]">
       {/* Header */}
-      <div className="absolute top-0 left-0 right-0 bg-white/95 backdrop-blur-sm z-[4002] px-4 py-3 border-b border-[var(--border)]">
+      <div className="absolute top-0 left-0 right-0 bg-surface/95 backdrop-blur-sm z-[4002] px-4 py-3 border-b border-[var(--border)]">
         <div className="flex items-center justify-between">
           <button onClick={onClose} className="active:scale-90 transition-transform">
             <ArrowLeft className="w-6 h-6 text-[var(--ink)]" />
@@ -398,6 +432,8 @@ export default function BusinessMapSelector({ onClose, onSelectLocation, current
                 type="text"
                 value={searchQuery}
                 onChange={(e) => {
+                  selectedSuggestionRef.current = null;
+                  setSearchSelectionError(null);
                   setSearchQuery(e.target.value);
                   if (e.target.value.length === 0) {
                     setShowAddressList(true);
@@ -408,7 +444,7 @@ export default function BusinessMapSelector({ onClose, onSelectLocation, current
                   }
                 }}
                 onFocus={() => {
-                  if (searchQuery.trim().length > 0) {
+                  if (searchQuery.trim().length > 0 && selectedSuggestionRef.current !== searchQuery) {
                     setShowSearchDropdown(true);
                     setShowAddressList(false);
                   }
@@ -416,12 +452,15 @@ export default function BusinessMapSelector({ onClose, onSelectLocation, current
                 placeholder="Search for a place or address..."
                 className="flex-1 text-sm font-semibold text-[var(--ink)] placeholder:text-[var(--muted-foreground)] placeholder:font-normal outline-none bg-transparent"
               />
-              {isSearching ? (
+              {isSearching || isSelectingResult ? (
                 <Loader2 className="w-4 h-4 text-[var(--muted-foreground)] animate-spin flex-shrink-0" />
               ) : (
                 searchQuery && (
                   <button
                     onClick={() => {
+                      selectedSuggestionRef.current = null;
+                      searchRequestIdRef.current += 1;
+                      setSearchSelectionError(null);
                       setSearchQuery("");
                       setSearchResults([]);
                       setShowSearchDropdown(false);
@@ -437,10 +476,12 @@ export default function BusinessMapSelector({ onClose, onSelectLocation, current
 
             {/* Search Results Dropdown */}
             {showSearchDropdown && (
-              <div className="absolute top-full left-0 right-0 mt-2 bg-surface border border-line rounded-2xl shadow-xl max-h-80 overflow-y-auto">
+              <div className="absolute top-full left-0 right-0 z-50 mt-2 bg-surface border border-line rounded-2xl shadow-xl max-h-80 overflow-y-auto">
                 {searchResults.length > 0 ? (
                   searchResults.map((result, index) => (
                     <button
+                      type="button"
+                      aria-label={`Select ${result.displayName}`}
                       key={result.place_id || index}
                       onClick={() => handleSearchResultPick(result)}
                       className="w-full p-4 border-b border-[var(--border)] last:border-b-0 hover:bg-[var(--muted)] active:bg-[var(--muted)] transition-colors text-left"
@@ -455,6 +496,9 @@ export default function BusinessMapSelector({ onClose, onSelectLocation, current
                             <p className="text-sm text-[var(--muted-foreground)] truncate">{result.secondaryText}</p>
                           )}
                         </div>
+                        <span className="shrink-0 rounded-full bg-[var(--primary-soft)] px-3 py-1 text-xs font-semibold text-[var(--primary)]">
+                          Use
+                        </span>
                       </div>
                     </button>
                   ))
@@ -478,7 +522,7 @@ export default function BusinessMapSelector({ onClose, onSelectLocation, current
         {/* Locating chip, while the first pin is being placed automatically */}
         {locating && (
           <div className="absolute top-20 left-0 right-0 flex justify-center z-[4003] pointer-events-none">
-            <div className="bg-white/95 backdrop-blur-sm border border-[var(--border)] shadow-lg rounded-full px-4 py-2 text-xs font-semibold text-[var(--ink)] flex items-center gap-2">
+            <div className="bg-surface/95 backdrop-blur-sm border border-[var(--border)] shadow-lg rounded-full px-4 py-2 text-xs font-semibold text-[var(--ink)] flex items-center gap-2">
               <Loader2 className="w-3.5 h-3.5 text-[var(--primary)] animate-spin" aria-hidden="true" />
               Finding your current location...
             </div>
@@ -488,7 +532,7 @@ export default function BusinessMapSelector({ onClose, onSelectLocation, current
         {/* Hint chip for tap-to-place */}
         {!pickedPin && !locating && (
           <div className="absolute top-20 left-0 right-0 flex justify-center z-[4003] pointer-events-none">
-            <div className="bg-white/95 backdrop-blur-sm border border-[var(--border)] shadow-lg rounded-full px-4 py-2 text-xs font-semibold text-[var(--ink)]">
+            <div className="bg-surface/95 backdrop-blur-sm border border-[var(--border)] shadow-lg rounded-full px-4 py-2 text-xs font-semibold text-[var(--ink)]">
               📍 Tap anywhere on the map to set your business pickup location
             </div>
           </div>
@@ -549,6 +593,12 @@ export default function BusinessMapSelector({ onClose, onSelectLocation, current
                 <p className="text-xs font-bold text-[var(--muted-foreground)] uppercase tracking-widest mb-1">Current Pickup Location</p>
                 <p className="font-semibold text-[var(--ink)] text-sm">{currentAddress}</p>
               </div>
+            )}
+
+            {searchSelectionError && (
+              <p role="alert" className="rounded-xl border border-[var(--error)]/30 bg-[var(--error-soft)] p-3 text-sm text-[var(--error)]">
+                {searchSelectionError}
+              </p>
             )}
 
             {/* Selected pin preview */}

@@ -268,7 +268,7 @@ export default function Login() {
       </div>
 
       {/* Right Side - Login Form */}
-      <div className="flex-1 lg:max-w-xl flex items-start justify-center p-6 pt-10 bg-surface">
+      <div className="min-w-0 flex-1 lg:max-w-xl flex items-start justify-center p-6 pt-10 bg-surface">
         <div className="w-full max-w-md">
           {/* Mobile Logo */}
           <div className="lg:hidden text-center mb-8">
@@ -383,18 +383,18 @@ export default function Login() {
               disabled={isLoading}
               className="w-full flex items-center justify-between px-4 py-3 border border-line rounded-xl hover:border-[var(--primary)] transition-all bg-[var(--muted)]"
             >
-              <span className="flex items-center gap-2 text-sm font-semibold text-[var(--ink)]">
+              <span className="flex min-w-0 items-center gap-2 text-left text-sm font-semibold text-[var(--ink)]">
                 <Users size={16} className="text-[var(--primary)]" />
                 Quick Access — Test Accounts ({accounts.length})
               </span>
               <ChevronDown
                 size={16}
-                className={`text-[var(--muted-foreground)] transition-transform ${showAccounts ? "rotate-180" : ""}`}
+                className={`shrink-0 text-[var(--muted-foreground)] transition-transform ${showAccounts ? "rotate-180" : ""}`}
               />
             </button>
 
             {showAccounts && (
-              <div className="mt-2 border border-line rounded-xl bg-surface max-h-72 overflow-y-auto divide-y divide-[var(--border)]">
+              <div className="mt-2 w-full min-w-0 border border-line rounded-xl bg-surface max-h-72 overflow-y-auto divide-y divide-[var(--border)]">
                 {accounts.length === 0 && (
                   <p className="p-4 text-sm text-[var(--muted-foreground)] italic">
                     No accounts found yet — create one via Sign Up.
@@ -405,9 +405,9 @@ export default function Login() {
                     key={acc.email}
                     type="button"
                     onClick={() => useAccount(acc)}
-                    className="w-full flex items-center justify-between gap-3 px-4 py-3 hover:bg-[var(--muted)] transition-all text-left"
+                    className="w-full min-w-0 flex flex-col items-stretch gap-2 px-4 py-3 hover:bg-[var(--muted)] transition-all text-left sm:flex-row sm:items-center sm:justify-between"
                   >
-                    <div className="flex items-center gap-3 min-w-0">
+                    <div className="flex min-w-0 items-center gap-3 sm:flex-1">
                       <div
                         className={`w-9 h-9 rounded-lg flex items-center justify-center text-xs font-bold flex-shrink-0 ${ROLE_BADGE[acc.role] || "bg-[var(--muted)] text-[var(--muted-foreground)]"}`}
                       >
@@ -418,14 +418,14 @@ export default function Login() {
                         <p className="text-xs text-[var(--muted-foreground)] truncate">{acc.email}</p>
                       </div>
                     </div>
-                    <div className="flex items-center gap-2 flex-shrink-0">
+                    <div className="flex min-w-0 flex-wrap items-center gap-2 sm:flex-shrink-0 sm:flex-nowrap">
                       <span
-                        className={`text-[10px] font-bold uppercase tracking-widest px-2 py-0.5 rounded-full ${ROLE_BADGE[acc.role] || "bg-[var(--muted)] text-[var(--muted-foreground)]"}`}
+                        className={`max-w-full truncate text-[10px] font-bold uppercase tracking-widest px-2 py-0.5 rounded-full ${ROLE_BADGE[acc.role] || "bg-[var(--muted)] text-[var(--muted-foreground)]"}`}
                       >
                         {roleLabel(acc)}
                       </span>
                       {acc.password && (
-                        <span className="text-[10px] text-[var(--muted-foreground)]">pw: {acc.password}</span>
+                        <span className="shrink-0 text-[10px] text-[var(--muted-foreground)]">pw: {acc.password}</span>
                       )}
                     </div>
                   </button>

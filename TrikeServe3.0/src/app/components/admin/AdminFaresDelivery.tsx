@@ -1,15 +1,16 @@
 import { useCallback, useEffect, useRef, useState, type ElementType, type ReactNode } from "react";
-import { Car, ChevronDown, ChevronUp, Loader2, Save, Users, Truck, TriangleAlert, Search, MapPin, CheckCircle, Pencil } from "lucide-react";
+import { Car, ChevronDown, Loader2, Save, Users, Truck, TriangleAlert, Search, MapPin, CheckCircle, Pencil } from "lucide-react";
 
 import { supabase } from "../../../utils/supabase";
 import { useAuth } from "../../contexts/AuthContext";
 import { useBlocker } from "react-router";
-import { DEFAULT_MAX_PASSENGERS, DEFAULT_RATES, normalizeRates, type RideRates } from "@/lib/pricing";
+import { DEFAULT_MAX_PASSENGERS, DEFAULT_RATES, formatPeso, normalizeRates, type RideRates } from "@/lib/pricing";
 import { logAudit } from "../../../lib/supabase";
 import AdminShell from "./AdminShell";
 import AdminPageIntro, { AdminMetricCards } from "./AdminPageIntro";
 import Toast from "../ui/Toast";
 import EmptyState from "../ui/EmptyState";
+import { TerminalIconGlyph } from "../ui/TerminalIcon";
 
 /**
  * Fares, delivery and capacity, per terminal.
@@ -45,11 +46,14 @@ type Terminal = {
   id: string;
   name: string;
   base_fare: number | null;
+  base_fare_included_km?: number | null;
   per_km: number | null;
   delivery_fee: number | null;
+  delivery_fee_included_km?: number | null;
   delivery_fee_per_km: number | null;
   max_passengers: number | null;
   private_ride_fee: number | null;
+  private_ride_fee_included_km?: number | null;
   private_ride_fee_per_km: number | null;
   is_active: boolean;
 };
@@ -57,26 +61,33 @@ type Terminal = {
 /** What is being edited for one terminal. */
 type Draft = {
   base_fare: string;
+  base_fare_included_km: string;
   per_km: string;
   /** Blank means "use the platform default", not zero. */
   delivery_fee: string;
-  /** Blank or 0 means the delivery fee is flat. */
+  delivery_fee_included_km: string;
+  /** Blank or 0 means no additional delivery charge after the included distance. */
   delivery_fee_per_km: string;
   /** Blank means the platform default of 4. */
   max_passengers: string;
   /** Blank means "same as the share ride price", not zero. */
   private_ride_fee: string;
+  /** Blank means "same as the share ride included distance". */
+  private_ride_fee_included_km: string;
   /** Blank means "same as the share ride per-km rate". */
   private_ride_fee_per_km: string;
 };
 
 const draftOf = (t: Terminal): Draft => ({
   base_fare: t.base_fare != null ? String(t.base_fare) : "",
+  base_fare_included_km: t.base_fare_included_km != null ? String(t.base_fare_included_km) : "1",
   per_km: t.per_km != null ? String(t.per_km) : "",
   delivery_fee: t.delivery_fee != null ? String(t.delivery_fee) : "",
+  delivery_fee_included_km: t.delivery_fee_included_km != null ? String(t.delivery_fee_included_km) : "1",
   delivery_fee_per_km: t.delivery_fee_per_km != null ? String(t.delivery_fee_per_km) : "",
   max_passengers: t.max_passengers != null ? String(t.max_passengers) : String(DEFAULT_MAX_PASSENGERS),
   private_ride_fee: t.private_ride_fee != null ? String(t.private_ride_fee) : "",
+  private_ride_fee_included_km: t.private_ride_fee_included_km != null ? String(t.private_ride_fee_included_km) : "",
   private_ride_fee_per_km: t.private_ride_fee_per_km != null ? String(t.private_ride_fee_per_km) : "",
 });
 
@@ -119,6 +130,11 @@ const readOptionalMoney = (raw: string): number | null => {
   return Number.isFinite(n) && n >= 0 ? n : null;
 };
 
+const formatFareCardRate = (baseFare: number, includedKm: number, perKm: number): string =>
+  perKm > 0
+    ? `${formatPeso(baseFare)} base · ${includedKm} km included · ${formatPeso(perKm)}/km after`
+    : `${formatPeso(baseFare)} flat`;
+
 /**
  * One category a customer can buy: a heading, what it costs, and its fields.
  *
@@ -150,83 +166,6 @@ function FareGroup({ title, blurb, icon: Icon, children }: FareGroupProps) {
   );
 }
 
-/**
- * One terminal's whole pricing, in a row, instead of three panels of fields.
- *
- * Built from the draft rather than the saved row so it always agrees with the
- * boxes directly above it: an admin who has typed a new private rate and
- * collapsed the panel to check the next terminal should still see what they are
- * about to save. Unsaved values are already signalled by the lit Save button.
- *
- * The point is to make the fallbacks legible. A terminal that has set nothing
- * private looks identical to one that deliberately set private = share, and the
- * summary says which it is, so "why is the private price the same?" has an
- * answer on screen.
- */
-function TerminalSummary({ draft, platformDeliveryDefault }: { draft: Draft; platformDeliveryDefault: number }) {
-  const shareBase = draft.base_fare.trim();
-  const sharePerKm = draft.per_km.trim();
-  const privateBase = draft.private_ride_fee.trim();
-  const privatePerKm = draft.private_ride_fee_per_km.trim();
-
-  // Blank on both means the private ride inherits the share rate outright.
-  const privateInherits = privateBase === "" && privatePerKm === "";
-
-  const deliveryBase = draft.delivery_fee.trim();
-  const deliveryPerKm = draft.delivery_fee_per_km.trim();
-
-  const entry = (title: string, icon: ReactNode, detail: ReactNode, note?: string) => (
-    <div className="min-w-0">
-      <dt className="flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wider text-[var(--muted-foreground)]">
-        {icon}
-        {title}
-      </dt>
-      <dd className="mt-0.5 font-semibold text-[var(--ink)]">{detail}</dd>
-      {note && <p className="text-[11px] text-[var(--muted-foreground)]">{note}</p>}
-    </div>
-  );
-
-  const icon = (I: ElementType) => <I className="size-3.5" aria-hidden="true" />;
-
-  return (
-    <dl className="grid gap-4 rounded-2xl border border-line bg-[var(--muted)]/40 p-4 @min-[28rem]:grid-cols-2 @min-[58rem]:grid-cols-4">
-      {entry(
-        "Share Ride",
-        icon(Users),
-        shareBase !== "" || sharePerKm !== ""
-          ? `₱${shareBase || 0} base + ₱${sharePerKm || 0}/km`
-          : "Platform rate",
-      )}
-
-      {entry(
-        "Private Ride",
-        icon(Car),
-        privateInherits
-          ? "Same as Share Ride"
-          : `₱${privateBase || shareBase || 0} base + ₱${privatePerKm || sharePerKm || 0}/km`,
-        privateInherits ? "Booked whole, charged the share rate" : undefined,
-      )}
-
-      {entry(
-        "Delivery",
-        icon(Truck),
-        deliveryBase !== ""
-          ? `₱${deliveryBase}${deliveryPerKm !== "" ? ` + ₱${deliveryPerKm}/km` : " flat"}`
-          : deliveryPerKm !== ""
-            ? `₱${platformDeliveryDefault} base + ₱${deliveryPerKm}/km`
-            : `₱${platformDeliveryDefault} · platform default`,
-      )}
-
-      {entry(
-        "Seats",
-        icon(Users),
-        `${draft.max_passengers.trim() || DEFAULT_MAX_PASSENGERS}`,
-        "On a shared ride",
-      )}
-    </dl>
-  );
-}
-
 export default function AdminFaresDelivery() {
   const { user } = useAuth();
   const [terminals, setTerminals] = useState<Terminal[]>([]);
@@ -237,7 +176,7 @@ export default function AdminFaresDelivery() {
   const [loadError, setLoadError] = useState<string | null>(null);
   const [isSavingAll, setIsSavingAll] = useState(false);
   /**
-   * Which terminals are folded down to their summary.
+   * Which terminal pricing editors are folded down to their name.
    *
    * Per terminal rather than one global toggle, because the reason to fold is
    * comparing: an admin checking three terminals against each other wants the
@@ -260,6 +199,8 @@ export default function AdminFaresDelivery() {
    */
   const extraColumnsExist = useRef(true);
   const privateFeeColumnExists = useRef(true);
+  const distanceColumnsExist = useRef(true);
+  const [distanceColumnsReady, setDistanceColumnsReady] = useState(true);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -315,6 +256,18 @@ export default function AdminFaresDelivery() {
       }
 
       if (rows === null) throw lastError;
+
+      // Keep the new included-distance settings in their own migration so an
+      // older database can still load and save the fare columns it already has.
+      const { data: distanceRows, error: distanceError } = await supabase
+        .from("terminals")
+        .select("id, base_fare_included_km, private_ride_fee_included_km, delivery_fee_included_km");
+      distanceColumnsExist.current = !distanceError;
+      setDistanceColumnsReady(!distanceError);
+      if (!distanceError && distanceRows) {
+        const distances = new Map(distanceRows.map((row: any) => [row.id, row]));
+        rows = rows.map((terminal) => ({ ...terminal, ...distances.get(terminal.id) }));
+      }
 
       setTerminals(rows);
       setDrafts(Object.fromEntries(rows.map((t) => [t.id, draftOf(t)])));
@@ -379,14 +332,17 @@ export default function AdminFaresDelivery() {
     // A shop cannot set a fare below zero, and an empty box means "leave it as
     // the platform default" rather than "charge nothing".
     const base_fare = readMoney(draft.base_fare, 20);
+    const base_fare_included_km = readMoney(draft.base_fare_included_km, 1);
     const per_km = readMoney(draft.per_km, 10);
     const delivery_fee = readOptionalMoney(draft.delivery_fee);
+    const delivery_fee_included_km = readMoney(draft.delivery_fee_included_km, 1);
     const delivery_fee_per_km = readOptionalMoney(draft.delivery_fee_per_km);
     const max_passengers = readPassengers(draft.max_passengers);
     // A private ride is priced in its own right. Blank means "whatever this
     // terminal charges for a shared ride", which is what the resolver falls back
     // to -- writing 0 instead would make private rides free.
     const private_ride_fee = readOptionalMoney(draft.private_ride_fee);
+    const private_ride_fee_included_km = readOptionalMoney(draft.private_ride_fee_included_km);
     const private_ride_fee_per_km = readOptionalMoney(draft.private_ride_fee_per_km);
 
     // Only send the optional columns once they are known to exist, so this
@@ -405,6 +361,11 @@ export default function AdminFaresDelivery() {
     if (privateFeeColumnExists.current) {
       patch.private_ride_fee = private_ride_fee;
       patch.private_ride_fee_per_km = private_ride_fee_per_km;
+    }
+    if (distanceColumnsExist.current) {
+      patch.base_fare_included_km = base_fare_included_km;
+      patch.private_ride_fee_included_km = private_ride_fee_included_km;
+      patch.delivery_fee_included_km = delivery_fee_included_km;
     }
 
     let saveError: string | null = null;
@@ -426,6 +387,11 @@ export default function AdminFaresDelivery() {
         return {
           ...t,
           base_fare,
+          ...(distanceColumnsExist.current ? {
+            base_fare_included_km,
+            private_ride_fee_included_km,
+            delivery_fee_included_km,
+          } : {}),
           per_km,
           ...(extraColumnsExist.current
             ? { delivery_fee, delivery_fee_per_km, max_passengers }
@@ -448,6 +414,11 @@ export default function AdminFaresDelivery() {
       [terminal.id]: draftOf({
         ...terminal,
         base_fare,
+        ...(distanceColumnsExist.current ? {
+          base_fare_included_km,
+          private_ride_fee_included_km,
+          delivery_fee_included_km,
+        } : {}),
         per_km,
         ...(extraColumnsExist.current
           ? { delivery_fee, delivery_fee_per_km, max_passengers }
@@ -466,8 +437,10 @@ export default function AdminFaresDelivery() {
       summary: `Updated fares for ${terminal.name}`,
       details: {
         base_fare,
+        base_fare_included_km,
         per_km,
         delivery_fee,
+        delivery_fee_included_km,
         delivery_fee_per_km,
         max_passengers,
         private_ride_fee,
@@ -487,11 +460,14 @@ export default function AdminFaresDelivery() {
     const current = draftOf(t);
     return (
       d.base_fare !== current.base_fare ||
+      d.base_fare_included_km !== current.base_fare_included_km ||
       d.per_km !== current.per_km ||
       d.delivery_fee !== current.delivery_fee ||
+      d.delivery_fee_included_km !== current.delivery_fee_included_km ||
       d.delivery_fee_per_km !== current.delivery_fee_per_km ||
       d.max_passengers !== current.max_passengers ||
       d.private_ride_fee !== current.private_ride_fee ||
+      d.private_ride_fee_included_km !== current.private_ride_fee_included_km ||
       d.private_ride_fee_per_km !== current.private_ride_fee_per_km
     );
   };
@@ -550,17 +526,21 @@ export default function AdminFaresDelivery() {
   const missingMigrations = [
     ...(extraColumnsExist.current ? [] : ["ADD_TERMINAL_DELIVERY_AND_CAPACITY.sql"]),
     ...(privateFeeColumnExists.current ? [] : ["ADD_TERMINAL_PRIVATE_RIDE_FEE.sql"]),
+    ...(distanceColumnsReady ? [] : ["ADD_TERMINAL_BASE_DISTANCE.sql"]),
   ];
   const missingSummary =
     missingMigrations.length === 1
       ? missingMigrations[0]
-      : `${missingMigrations[0]} and ${missingMigrations[1]}`;
-  const rateKeys: (keyof Pick<Draft, "base_fare" | "per_km" | "private_ride_fee" | "private_ride_fee_per_km" | "delivery_fee" | "delivery_fee_per_km">)[] = [
+      : `${missingMigrations.slice(0, -1).join(", ")} and ${missingMigrations[missingMigrations.length - 1]}`;
+  const rateKeys: (keyof Pick<Draft, "base_fare" | "base_fare_included_km" | "per_km" | "private_ride_fee" | "private_ride_fee_included_km" | "private_ride_fee_per_km" | "delivery_fee" | "delivery_fee_included_km" | "delivery_fee_per_km">)[] = [
     "base_fare",
+    "base_fare_included_km",
     "per_km",
     "private_ride_fee",
+    "private_ride_fee_included_km",
     "private_ride_fee_per_km",
     "delivery_fee",
+    "delivery_fee_included_km",
     "delivery_fee_per_km",
   ];
   const configuredRateCount = terminals.reduce((count, terminal) => {
@@ -712,53 +692,77 @@ export default function AdminFaresDelivery() {
             const draft = drafts[terminal.id] ?? draftOf(terminal);
             const changed = dirty(terminal);
             const isCollapsed = collapsed[terminal.id] !== false;
+            const shareBase = readMoney(draft.base_fare, DEFAULT_RATES.baseFare);
+            const shareIncludedKm = readMoney(draft.base_fare_included_km, DEFAULT_RATES.baseFareIncludedKm);
+            const sharePerKm = readMoney(draft.per_km, DEFAULT_RATES.perKm);
+            const privateBase = readOptionalMoney(draft.private_ride_fee) ?? shareBase;
+            const privateIncludedKm = readOptionalMoney(draft.private_ride_fee_included_km) ?? shareIncludedKm;
+            const privatePerKm = readOptionalMoney(draft.private_ride_fee_per_km) ?? sharePerKm;
+            const deliveryBase = readOptionalMoney(draft.delivery_fee) ?? platformRates.deliveryBaseFee;
+            const deliveryIncludedKm = readMoney(draft.delivery_fee_included_km, DEFAULT_RATES.baseFareIncludedKm);
+            const deliveryPerKm = readOptionalMoney(draft.delivery_fee_per_km) ?? 0;
+            const fareSummaries = [
+              { label: "Share Ride", fare: formatFareCardRate(shareBase, shareIncludedKm, sharePerKm) },
+              { label: "Private Ride", fare: formatFareCardRate(privateBase, privateIncludedKm, privatePerKm) },
+              { label: "Delivery", fare: formatFareCardRate(deliveryBase, deliveryIncludedKm, deliveryPerKm) },
+            ];
             return (
               <section
                 key={terminal.id}
-                className="@container relative min-w-0 rounded-3xl border border-line bg-card p-4 sm:p-5 transition-colors hover:border-[var(--teal)]/40"
+                onClick={(event) => {
+                  const target = event.target;
+                  if (target instanceof Element && target.closest("button, input, select, textarea, a, label, [role='button'], [contenteditable='true']")) return;
+                  toggleCollapsed(terminal.id);
+                }}
+                className={`@container relative min-w-0 cursor-pointer rounded-3xl border border-line bg-card p-4 sm:p-5 transition-colors hover:border-[var(--teal)]/40 ${isCollapsed ? "min-h-20" : ""}`}
               >
-                {isCollapsed && user?.adminType === 'business_customer' && <button type="button" onClick={() => toggleCollapsed(terminal.id)} aria-label={`Edit pricing for ${terminal.name}`} aria-expanded={false} className="absolute inset-0 z-10 rounded-3xl text-left focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--teal)]"><span className="sr-only">Open terminal pricing editor</span></button>}
-                <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
-                  <div className="min-w-0">
-                    <h2 className="break-words text-lg font-bold text-[var(--ink)]">
-                      {terminal.name}
-                    </h2>
-                    <p className="text-xs text-[var(--muted-foreground)]">
-                      {terminal.is_active ? "Active" : "Inactive"}{changed ? ' · Unsaved changes' : ' · Saved rates'}
-                    </p>
-                  </div>
-                  <div className="relative z-20 flex shrink-0 items-center gap-2">
-                    {/*
-                      The "v" that folds a terminal down to its summary.
-
-                      The chevron points at what tapping it will *do*, not at the
-                      current state: down collapses to the summary, up expands
-                      back to the fields. aria-expanded still carries the state to
-                      a screen reader, which the icon alone does not.
-                    */}
+                {isCollapsed ? (
+                  <>
                     <button
                       type="button"
                       onClick={() => toggleCollapsed(terminal.id)}
-                      aria-expanded={!isCollapsed}
-                      className="inline-flex size-11 items-center justify-center rounded-xl border border-line bg-[var(--surface)] text-[var(--ink-soft)] transition-colors hover:border-[var(--primary)] hover:text-[var(--primary)] active:scale-95"
+                      aria-label={`Edit pricing for ${terminal.name}`}
+                      aria-expanded={false}
+                      className="w-full rounded-xl text-left focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--teal)]"
                     >
-                      {isCollapsed ? (
-                        <ChevronUp className="size-5" aria-hidden="true" />
-                      ) : (
-                        <ChevronDown className="size-5" aria-hidden="true" />
-                      )}
-                      <span className="sr-only">
-                        {isCollapsed
-                          ? `Show pricing fields for ${terminal.name}`
-                          : `Summarise pricing for ${terminal.name}`}
-                      </span>
+                      <h2 className="flex min-w-0 items-center gap-2 text-lg font-bold text-[var(--ink)]">
+                        <TerminalIconGlyph className="size-5 shrink-0 text-[var(--primary)]" aria-hidden="true" />
+                        <span className="break-words">{terminal.name}</span>
+                      </h2>
                     </button>
-                  </div>
-                </div>
-
-                {isCollapsed ? (
-                  <TerminalSummary draft={draft} platformDeliveryDefault={platformRates.deliveryBaseFee} />
+                    <div className="mt-3 grid gap-2 border-t border-line pt-3 @min-[32rem]:grid-cols-3">
+                      {fareSummaries.map(({ label: fareLabel, fare }) => (
+                        <div key={fareLabel} className="min-w-0 rounded-xl bg-soft/60 px-3 py-2">
+                          <p className="text-[10px] font-bold uppercase tracking-wide text-[var(--muted-foreground)]">{fareLabel}</p>
+                          <p className="mt-1 break-words text-xs font-semibold text-[var(--ink)]">{fare}</p>
+                        </div>
+                      ))}
+                    </div>
+                  </>
                 ) : (
+                  <>
+                    <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
+                      <div className="min-w-0">
+                        <h2 className="flex min-w-0 items-center gap-2 text-lg font-bold text-[var(--ink)]">
+                          <TerminalIconGlyph className="size-5 shrink-0 text-[var(--primary)]" aria-hidden="true" />
+                          <span className="break-words">{terminal.name}</span>
+                        </h2>
+                        <p className="text-xs text-[var(--muted-foreground)]">
+                          {terminal.is_active ? "Active" : "Inactive"}{changed ? ' · Unsaved changes' : ' · Saved rates'}
+                        </p>
+                      </div>
+                      <div className="relative z-20 flex shrink-0 items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={() => toggleCollapsed(terminal.id)}
+                          aria-expanded={!isCollapsed}
+                          aria-label={`Collapse pricing editor for ${terminal.name}`}
+                          className="inline-flex size-11 items-center justify-center rounded-xl border border-line bg-[var(--surface)] text-[var(--ink-soft)] transition-colors hover:border-[var(--primary)] hover:text-[var(--primary)] active:scale-95"
+                        >
+                          <ChevronDown className="size-5" aria-hidden="true" />
+                        </button>
+                      </div>
+                    </div>
                   <div className="grid items-start gap-3 @min-[58rem]:grid-cols-3">
                   <FareGroup
                     title="Share Ride"
@@ -767,7 +771,7 @@ export default function AdminFaresDelivery() {
                   >
                     <div>
                       <label className={label} htmlFor={`base-${terminal.id}`}>
-                        Price (₱)
+                        Base fare (₱)
                       </label>
                       <input
                         id={`base-${terminal.id}`}
@@ -781,7 +785,27 @@ export default function AdminFaresDelivery() {
                         className={field}
                       />
                       <p className="mt-1 text-[11px] text-[var(--muted-foreground)]">
-                        Flat part. Charged once per trip, then split between passengers.
+                        Amount charged once for the included distance, then split between passengers.
+                      </p>
+                    </div>
+
+                    <div>
+                      <label className={label} htmlFor={`basekm-${terminal.id}`}>
+                        Base fare includes (km)
+                      </label>
+                      <input
+                        id={`basekm-${terminal.id}`}
+                        type="number"
+                        inputMode="decimal"
+                        min="0"
+                        step="0.1"
+                        value={draft.base_fare_included_km}
+                        disabled={!distanceColumnsReady || isSavingAll}
+                        onChange={(e) => setDraft(terminal.id, { base_fare_included_km: e.target.value })}
+                        className={field}
+                      />
+                      <p className="mt-1 text-[11px] text-[var(--muted-foreground)]">
+                        Per-km pricing starts after this distance. Defaults to 1 km.
                       </p>
                     </div>
 
@@ -801,7 +825,7 @@ export default function AdminFaresDelivery() {
                         className={field}
                       />
                       <p className="mt-1 text-[11px] text-[var(--muted-foreground)]">
-                        Charged on the distance, before the split.
+                        Charged only for distance beyond the base fare, before the split.
                       </p>
                     </div>
 
@@ -836,7 +860,7 @@ export default function AdminFaresDelivery() {
                   >
                     <div>
                       <label className={label} htmlFor={`private-${terminal.id}`}>
-                        Price (₱)
+                        Base fare (₱)
                       </label>
                       <input
                         id={`private-${terminal.id}`}
@@ -852,6 +876,27 @@ export default function AdminFaresDelivery() {
                       />
                       <p className="mt-1 text-[11px] text-[var(--muted-foreground)]">
                         Blank uses the Share Ride price above.
+                      </p>
+                    </div>
+
+                    <div>
+                      <label className={label} htmlFor={`privatebasekm-${terminal.id}`}>
+                        Base fare includes (km)
+                      </label>
+                      <input
+                        id={`privatebasekm-${terminal.id}`}
+                        type="number"
+                        inputMode="decimal"
+                        min="0"
+                        step="0.1"
+                        value={draft.private_ride_fee_included_km}
+                        placeholder="Same as share"
+                        disabled={!distanceColumnsReady || !privateFeeColumnExists.current || isSavingAll}
+                        onChange={(e) => setDraft(terminal.id, { private_ride_fee_included_km: e.target.value })}
+                        className={field}
+                      />
+                      <p className="mt-1 text-[11px] text-[var(--muted-foreground)]">
+                        Blank uses the Share Ride distance.
                       </p>
                     </div>
 
@@ -874,8 +919,7 @@ export default function AdminFaresDelivery() {
                         className={field}
                       />
                       <p className="mt-1 text-[11px] text-[var(--muted-foreground)]">
-                        Blank uses the Share Ride per km. Nobody splits this one — it is
-                        charged whole.
+                        Blank uses the Share Ride per-km price. Charged for distance beyond the base.
                       </p>
                     </div>
                   </FareGroup>
@@ -887,7 +931,7 @@ export default function AdminFaresDelivery() {
                   >
                     <div>
                       <label className={label} htmlFor={`del-${terminal.id}`}>
-                        Price (₱)
+                        Base fee (₱)
                       </label>
                       <input
                         id={`del-${terminal.id}`}
@@ -903,6 +947,26 @@ export default function AdminFaresDelivery() {
                       />
                       <p className="mt-1 text-[11px] text-[var(--muted-foreground)]">
                         Blank uses the platform default (₱{platformRates.deliveryBaseFee}).
+                      </p>
+                    </div>
+
+                    <div>
+                      <label className={label} htmlFor={`delbasekm-${terminal.id}`}>
+                        Base fee includes (km)
+                      </label>
+                      <input
+                        id={`delbasekm-${terminal.id}`}
+                        type="number"
+                        inputMode="decimal"
+                        min="0"
+                        step="0.1"
+                        value={draft.delivery_fee_included_km}
+                        disabled={!distanceColumnsReady || !extraColumnsExist.current || isSavingAll}
+                        onChange={(e) => setDraft(terminal.id, { delivery_fee_included_km: e.target.value })}
+                        className={field}
+                      />
+                      <p className="mt-1 text-[11px] text-[var(--muted-foreground)]">
+                        Per-km pricing starts after this distance. Defaults to 1 km.
                       </p>
                     </div>
 
@@ -925,11 +989,12 @@ export default function AdminFaresDelivery() {
                         className={field}
                       />
                       <p className="mt-1 text-[11px] text-[var(--muted-foreground)]">
-                        Blank charges a flat delivery fee.
+                        Charged only for distance beyond the included kilometres.
                       </p>
                     </div>
                   </FareGroup>
                   </div>
+                  </>
                 )}
               </section>
             );

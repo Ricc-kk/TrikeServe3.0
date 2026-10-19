@@ -76,7 +76,7 @@ const MAX_ROAD_WIDTH_M = 2000;
 
 // Named in save errors, because a missing column fails the whole upsert and would
 // otherwise look like the admin's edits simply weren't sticking.
-const MIGRATION_HINT = 'ADD_TERMINAL_ROAD_BOUNDARY.sql / ADD_TERMINAL_BORDER_AREA.sql / ADD_TERMINAL_MARKER_COLOR.sql / ADD_TERMINAL_SHAPE_COLORS.sql / ADD_TERMINAL_PRIVATE_RIDE_FEE.sql / ADD_TERMINAL_DELIVERY_AND_CAPACITY.sql';
+const MIGRATION_HINT = 'ADD_TERMINAL_ROAD_BOUNDARY.sql / ADD_TERMINAL_BORDER_AREA.sql / ADD_TERMINAL_MARKER_COLOR.sql / ADD_TERMINAL_SHAPE_COLORS.sql / ADD_TERMINAL_PRIVATE_RIDE_FEE.sql / ADD_TERMINAL_DELIVERY_AND_CAPACITY.sql / ADD_TERMINAL_BASE_DISTANCE.sql';
 
 // How often a Rider Admin re-reads their terminal scope, so a Super Admin's
 // unassignment takes effect on a screen that is already open.
@@ -133,6 +133,7 @@ interface Terminal {
   // This terminal's own ride fare, set by the terminal admin
   // (ADD_TERMINAL_FARES.sql). Falls back to the platform default when null.
   base_fare: number;
+  base_fare_included_km?: number | null;
   per_km: number;
   // Hex colour for this terminal's icon on the Map Editor map
   // (ADD_TERMINAL_MARKER_COLOR.sql). Per terminal, so neighbouring TODAs can be
@@ -148,8 +149,10 @@ interface Terminal {
   // at all. null means "not set on this terminal", which the resolver reads as
   // "charge the share ride rate" / "use the platform default" -- never as zero.
   private_ride_fee?: number | null;
+  private_ride_fee_included_km?: number | null;
   private_ride_fee_per_km?: number | null;
   delivery_fee?: number | null;
+  delivery_fee_included_km?: number | null;
   delivery_fee_per_km?: number | null;
 }
 
@@ -466,6 +469,7 @@ export default function AdminTerminals() {
     boundary_enabled: true,
     // This terminal's own ride fare, editable by the terminal admin.
     base_fare: 20,
+    base_fare_included_km: 1,
     per_km: 10,
     // This terminal's icon colour. Always a valid hex: the form holds what the
     // admin last chose, and only valid values are ever written.
@@ -478,8 +482,10 @@ export default function AdminTerminals() {
     // than 0: writing 0 would quietly start charging nothing for the whole vehicle
     // or the delivery.
     private_ride_fee: null as number | null,
+    private_ride_fee_included_km: null as number | null,
     private_ride_fee_per_km: null as number | null,
     delivery_fee: null as number | null,
+    delivery_fee_included_km: 1,
     delivery_fee_per_km: null as number | null,
   });
   const [showMapPicker, setShowMapPicker] = useState(false);
@@ -690,10 +696,13 @@ export default function AdminTerminals() {
     route_color: string;
     border_color: string;
     base_fare: number;
+    base_fare_included_km: number;
     per_km: number;
     private_ride_fee: number | null;
+    private_ride_fee_included_km: number | null;
     private_ride_fee_per_km: number | null;
     delivery_fee: number | null;
+    delivery_fee_included_km: number;
     delivery_fee_per_km: number | null;
   };
 
@@ -720,10 +729,13 @@ export default function AdminTerminals() {
       route_color: normalizeRouteColor(f.route_color),
       border_color: normalizeBorderColor(f.border_color),
       base_fare: f.base_fare,
+      base_fare_included_km: f.base_fare_included_km,
       per_km: f.per_km,
       private_ride_fee: f.private_ride_fee,
+      private_ride_fee_included_km: f.private_ride_fee_included_km,
       private_ride_fee_per_km: f.private_ride_fee_per_km,
       delivery_fee: f.delivery_fee,
+      delivery_fee_included_km: f.delivery_fee_included_km,
       delivery_fee_per_km: f.delivery_fee_per_km,
     };
   }
@@ -757,10 +769,13 @@ export default function AdminTerminals() {
       normalizeRouteColor(form.route_color) !== editorSnapshot.route_color ||
       normalizeBorderColor(form.border_color) !== editorSnapshot.border_color ||
       Number(form.base_fare) !== editorSnapshot.base_fare ||
+      Number(form.base_fare_included_km) !== editorSnapshot.base_fare_included_km ||
       Number(form.per_km) !== editorSnapshot.per_km ||
       form.private_ride_fee !== editorSnapshot.private_ride_fee ||
+      form.private_ride_fee_included_km !== editorSnapshot.private_ride_fee_included_km ||
       form.private_ride_fee_per_km !== editorSnapshot.private_ride_fee_per_km ||
       form.delivery_fee !== editorSnapshot.delivery_fee ||
+      Number(form.delivery_fee_included_km) !== editorSnapshot.delivery_fee_included_km ||
       form.delivery_fee_per_km !== editorSnapshot.delivery_fee_per_km);
 
   /** Closes the editor outright. Going through requestCloseMapPicker is the user-facing path. */
@@ -937,7 +952,7 @@ export default function AdminTerminals() {
    * them blind would turn a partially-migrated database into a terminal editor
    * that cannot save anything at all.
    */
-  const [fareColumns, setFareColumns] = useState({ delivery: true, privateRide: true });
+  const [fareColumns, setFareColumns] = useState({ delivery: true, privateRide: true, baseDistance: true });
 
   /**
    * Whether this database has `users.is_terminal_admin` yet
@@ -1027,6 +1042,7 @@ export default function AdminTerminals() {
         road_width_m: normalizeRoadWidth(t.road_width_m),
         boundary_enabled: t.boundary_enabled !== false,
         base_fare: t.base_fare ?? 20,
+        base_fare_included_km: t.base_fare_included_km ?? 1,
         per_km: t.per_km ?? 10,
         // Rows from before ADD_TERMINAL_MARKER_COLOR.sql have no value; resolving
         // here means every consumer below can treat it as a usable colour.
@@ -1037,8 +1053,10 @@ export default function AdminTerminals() {
         // simply absent, and `?? null` turns both "no column" and "NULL" into the
         // same empty box rather than showing a 0 the admin would have to undo.
         private_ride_fee: t.private_ride_fee ?? null,
+        private_ride_fee_included_km: t.private_ride_fee_included_km ?? null,
         private_ride_fee_per_km: t.private_ride_fee_per_km ?? null,
         delivery_fee: t.delivery_fee ?? null,
+        delivery_fee_included_km: t.delivery_fee_included_km ?? 1,
         delivery_fee_per_km: t.delivery_fee_per_km ?? null,
       }));
     } catch {
@@ -1152,10 +1170,16 @@ export default function AdminTerminals() {
     for (const attempt of attempts) {
       const { error } = await supabase.from('terminals').select(attempt.columns).limit(1);
       if (!error) {
-        setFareColumns({ delivery: attempt.delivery, privateRide: attempt.privateRide });
-        return;
+        setFareColumns(previous => ({ ...previous, delivery: attempt.delivery, privateRide: attempt.privateRide }));
+        break;
       }
     }
+
+    const { error: distanceError } = await supabase
+      .from('terminals')
+      .select('id, base_fare_included_km, private_ride_fee_included_km, delivery_fee_included_km')
+      .limit(1);
+    setFareColumns(previous => ({ ...previous, baseDistance: !distanceError }));
   }
 
   /**
@@ -1363,7 +1387,7 @@ export default function AdminTerminals() {
       boundary_polygon: [], boundary_area: [],
       routes: [], activeRouteId: null,
       road_width_m: DEFAULT_ROAD_WIDTH_M, boundary_enabled: true,
-      base_fare: 20, per_km: 10,
+      base_fare: 20, base_fare_included_km: 1, per_km: 10,
       marker_color: DEFAULT_TERMINAL_COLOR,
       route_color: DEFAULT_ROUTE_COLOR,
       border_color: DEFAULT_BORDER_COLOR,
@@ -1371,8 +1395,10 @@ export default function AdminTerminals() {
       // private ride and the platform default for delivery until an admin says
       // otherwise.
       private_ride_fee: null,
+      private_ride_fee_included_km: null,
       private_ride_fee_per_km: null,
       delivery_fee: null,
+      delivery_fee_included_km: 1,
       delivery_fee_per_km: null,
     });
   }
@@ -1396,6 +1422,7 @@ export default function AdminTerminals() {
       road_width_m: normalizeRoadWidth(t.road_width_m),
       boundary_enabled: t.boundary_enabled !== false,
       base_fare: t.base_fare ?? 20,
+      base_fare_included_km: t.base_fare_included_km ?? 1,
       per_km: t.per_km ?? 10,
       marker_color: normalizeTerminalColor(t.marker_color),
       route_color: normalizeRouteColor(t.route_color),
@@ -1403,8 +1430,10 @@ export default function AdminTerminals() {
       // A column that does not exist and a column that is NULL both come back as
       // nothing to show; either way the box stays empty, which means "fall back".
       private_ride_fee: t.private_ride_fee ?? null,
+      private_ride_fee_included_km: t.private_ride_fee_included_km ?? null,
       private_ride_fee_per_km: t.private_ride_fee_per_km ?? null,
       delivery_fee: t.delivery_fee ?? null,
+      delivery_fee_included_km: t.delivery_fee_included_km ?? 1,
       delivery_fee_per_km: t.delivery_fee_per_km ?? null,
     });
   }
@@ -1690,7 +1719,7 @@ export default function AdminTerminals() {
     if (editorSection === 'fares') {
       return {
         title: 'What customers can buy here',
-        detail: `Base fare ₱${form.base_fare} + ₱${form.per_km}/km · private ride and delivery override it`,
+        detail: `₱${form.base_fare} covers the first ${form.base_fare_included_km} km + ₱${form.per_km}/km after · private ride and delivery override it`,
         note: 'Leave a fare blank to fall back to the platform rate rather than charging nothing.',
       };
     }
@@ -1814,9 +1843,9 @@ export default function AdminTerminals() {
   type EditorField =
     | 'name' | 'location' | 'road' | 'area' | 'road_width_m'
     | 'marker_color' | 'route_color' | 'border_color'
-    | 'base_fare' | 'per_km'
-    | 'private_ride_fee' | 'private_ride_fee_per_km'
-    | 'delivery_fee' | 'delivery_fee_per_km';
+    | 'base_fare' | 'base_fare_included_km' | 'per_km'
+    | 'private_ride_fee' | 'private_ride_fee_included_km' | 'private_ride_fee_per_km'
+    | 'delivery_fee' | 'delivery_fee_included_km' | 'delivery_fee_per_km';
   type EditorErrors = Partial<Record<EditorField, string>>;
 
   /**
@@ -1876,6 +1905,9 @@ export default function AdminTerminals() {
     if (fare(form.base_fare) === null) {
       errors.base_fare = 'Base fare must be a number of 0 or more.';
     }
+    if (fare(form.base_fare_included_km) === null) {
+      errors.base_fare_included_km = 'Included distance must be a number of 0 or more.';
+    }
     if (fare(form.per_km) === null) {
       errors.per_km = 'Fare per km must be a number of 0 or more.';
     }
@@ -1892,11 +1924,17 @@ export default function AdminTerminals() {
     if (!optionalFare(form.private_ride_fee)) {
       errors.private_ride_fee = 'Private ride price must be a number of 0 or more, or left empty.';
     }
+    if (!optionalFare(form.private_ride_fee_included_km)) {
+      errors.private_ride_fee_included_km = 'Private ride included distance must be a number of 0 or more, or left empty.';
+    }
     if (!optionalFare(form.private_ride_fee_per_km)) {
       errors.private_ride_fee_per_km = 'Private ride price per km must be a number of 0 or more, or left empty.';
     }
     if (!optionalFare(form.delivery_fee)) {
       errors.delivery_fee = 'Delivery price must be a number of 0 or more, or left empty.';
+    }
+    if (fare(form.delivery_fee_included_km) === null) {
+      errors.delivery_fee_included_km = 'Delivery included distance must be a number of 0 or more.';
     }
     if (!optionalFare(form.delivery_fee_per_km)) {
       errors.delivery_fee_per_km = 'Delivery price per km must be a number of 0 or more, or left empty.';
@@ -1907,9 +1945,9 @@ export default function AdminTerminals() {
     const order: EditorField[] = [
       'name', 'location', 'road', 'area', 'road_width_m',
       'marker_color', 'route_color', 'border_color',
-      'base_fare', 'per_km',
-      'private_ride_fee', 'private_ride_fee_per_km',
-      'delivery_fee', 'delivery_fee_per_km',
+      'base_fare', 'base_fare_included_km', 'per_km',
+      'private_ride_fee', 'private_ride_fee_included_km', 'private_ride_fee_per_km',
+      'delivery_fee', 'delivery_fee_included_km', 'delivery_fee_per_km',
     ];
     const firstField = order.find(f => errors[f]) ?? null;
     return { errors, firstField };
@@ -2042,6 +2080,7 @@ export default function AdminTerminals() {
     const fareValue = (value: number, fallback: number) =>
       Number.isFinite(value) && value >= 0 ? value : fallback;
     const base_fare = fareValue(Number(form.base_fare), 20);
+    const base_fare_included_km = fareValue(Number(form.base_fare_included_km), 1);
     const per_km = fareValue(Number(form.per_km), 10);
 
     /*
@@ -2053,8 +2092,10 @@ export default function AdminTerminals() {
     const optionalFareValue = (value: number | null): number | null =>
       typeof value === 'number' && Number.isFinite(value) && value >= 0 ? value : null;
     const private_ride_fee = optionalFareValue(form.private_ride_fee);
+    const private_ride_fee_included_km = optionalFareValue(form.private_ride_fee_included_km);
     const private_ride_fee_per_km = optionalFareValue(form.private_ride_fee_per_km);
     const delivery_fee = optionalFareValue(form.delivery_fee);
+    const delivery_fee_included_km = fareValue(Number(form.delivery_fee_included_km), 1);
     const delivery_fee_per_km = optionalFareValue(form.delivery_fee_per_km);
 
     // Normalised on the way out too, so a value that somehow slipped past the
@@ -2064,7 +2105,7 @@ export default function AdminTerminals() {
     const borderColor = normalizeBorderColor(form.border_color);
 
     const target: Terminal = editTerminal
-      ? { ...editTerminal, name: form.name, boundary: form.boundary, center_lat: form.center_lat, center_lng: form.center_lng, is_active: form.is_active, boundary_polygon: boundaryPolygon, boundary_area: boundaryArea, routes: densifiedRoutes, road_width_m: roadWidthM, boundary_enabled: form.boundary_enabled, base_fare, per_km, marker_color: markerColor, route_color: routeColor, border_color: borderColor, private_ride_fee, private_ride_fee_per_km, delivery_fee, delivery_fee_per_km }
+      ? { ...editTerminal, name: form.name, boundary: form.boundary, center_lat: form.center_lat, center_lng: form.center_lng, is_active: form.is_active, boundary_polygon: boundaryPolygon, boundary_area: boundaryArea, routes: densifiedRoutes, road_width_m: roadWidthM, boundary_enabled: form.boundary_enabled, base_fare, base_fare_included_km, per_km, marker_color: markerColor, route_color: routeColor, border_color: borderColor, private_ride_fee, private_ride_fee_included_km, private_ride_fee_per_km, delivery_fee, delivery_fee_included_km, delivery_fee_per_km }
       : {
           id: `t_${Date.now()}`,
           name: form.name,
@@ -2083,13 +2124,16 @@ export default function AdminTerminals() {
           // route can legitimately start with enforcement off.
           boundary_enabled: form.boundary_enabled,
           base_fare,
+          base_fare_included_km,
           per_km,
           marker_color: markerColor,
           route_color: routeColor,
           border_color: borderColor,
           private_ride_fee,
+          private_ride_fee_included_km,
           private_ride_fee_per_km,
           delivery_fee,
+          delivery_fee_included_km,
           delivery_fee_per_km,
         };
 
@@ -2109,6 +2153,11 @@ export default function AdminTerminals() {
       if (fareColumns.delivery) {
         farePatch.delivery_fee = target.delivery_fee ?? null;
         farePatch.delivery_fee_per_km = target.delivery_fee_per_km ?? null;
+      }
+      if (fareColumns.baseDistance) {
+        farePatch.base_fare_included_km = target.base_fare_included_km ?? 1;
+        farePatch.private_ride_fee_included_km = target.private_ride_fee_included_km ?? null;
+        farePatch.delivery_fee_included_km = target.delivery_fee_included_km ?? 1;
       }
 
       const { error } = await supabase.from("terminals").upsert(
@@ -2174,8 +2223,10 @@ export default function AdminTerminals() {
           route_color: target.route_color,
           border_color: target.border_color,
           private_ride_fee: target.private_ride_fee,
+          private_ride_fee_included_km: target.private_ride_fee_included_km,
           private_ride_fee_per_km: target.private_ride_fee_per_km,
           delivery_fee: target.delivery_fee,
+          delivery_fee_included_km: target.delivery_fee_included_km,
           delivery_fee_per_km: target.delivery_fee_per_km,
           is_active: target.is_active,
         },
@@ -4316,6 +4367,40 @@ async function applyAssignDriver(rider: StoredRider, terminal: Terminal) {
                     </div>
                   );
 
+                  const distance = (
+                    key: 'base_fare_included_km' | 'delivery_fee_included_km',
+                    label: string,
+                    hint: string,
+                    disabled = false,
+                  ) => (
+                    <div>
+                      <label className="text-xs font-semibold uppercase tracking-widest text-[var(--muted-foreground)] block mb-1">
+                        {label}
+                      </label>
+                      <input
+                        type="number"
+                        min={0}
+                        step="0.1"
+                        inputMode="decimal"
+                        value={form[key]}
+                        disabled={disabled}
+                        aria-invalid={!!errors[key]}
+                        aria-label={label}
+                        onChange={e =>
+                          setForm(f => ({
+                            ...f,
+                            [key]: e.target.value === '' ? NaN : Number(e.target.value),
+                          }))
+                        }
+                        className={`w-full px-3 rounded-xl ${field} ${errors[key] ? invalid : ''} disabled:opacity-50`}
+                      />
+                      <p className="text-xs text-[var(--muted-foreground)] mt-1">{hint}</p>
+                      {errors[key] && (
+                        <p className="text-xs text-[var(--error)] mt-1">{errors[key]}</p>
+                      )}
+                    </div>
+                  );
+
                   /*
                    * The optional fares, which have an empty state as well as a
                    * number. Blank is null, not 0, all the way to the database — so
@@ -4366,6 +4451,42 @@ async function applyAssignDriver(rider: StoredRider, terminal: Terminal) {
                     </div>
                   );
 
+                  const optionalDistance = (
+                    key: 'private_ride_fee_included_km',
+                    label: string,
+                    hint: string,
+                    placeholder: string,
+                    disabled = false,
+                  ) => (
+                    <div>
+                      <label className="text-xs font-semibold uppercase tracking-widest text-[var(--muted-foreground)] block mb-1">
+                        {label}
+                      </label>
+                      <input
+                        type="number"
+                        min={0}
+                        step="0.1"
+                        inputMode="decimal"
+                        value={form[key] ?? ''}
+                        placeholder={placeholder}
+                        disabled={disabled}
+                        aria-invalid={!!errors[key]}
+                        aria-label={label}
+                        onChange={e =>
+                          setForm(f => ({
+                            ...f,
+                            [key]: e.target.value === '' ? null : Number(e.target.value),
+                          }))
+                        }
+                        className={`w-full px-3 rounded-xl ${field} ${errors[key] ? invalid : ''} disabled:opacity-50`}
+                      />
+                      <p className="text-xs text-[var(--muted-foreground)] mt-1">{hint}</p>
+                      {errors[key] && (
+                        <p className="text-xs text-[var(--error)] mt-1">{errors[key]}</p>
+                      )}
+                    </div>
+                  );
+
                   const fareGroup = (
                     title: string,
                     blurb: string,
@@ -4398,13 +4519,19 @@ async function applyAssignDriver(rider: StoredRider, terminal: Terminal) {
                           {money(
                             'base_fare',
                             'Base Fare',
-                            'Charged once when a ride starts, before distance.',
+                            'Charged once and covers the included distance.',
                             '20',
+                          )}
+                          {distance(
+                            'base_fare_included_km',
+                            'Base fare includes (km)',
+                            'Per-km pricing starts after this distance. Defaults to 1 km.',
+                            !fareColumns.baseDistance,
                           )}
                           {money(
                             'per_km',
                             'Fare per km',
-                            'Added on top of the base fare for each kilometre travelled.',
+                            'Charged only for distance beyond the base fare.',
                             '10',
                           )}
                         </>,
@@ -4422,15 +4549,22 @@ async function applyAssignDriver(rider: StoredRider, terminal: Terminal) {
                         <>
                           {optionalMoney(
                             'private_ride_fee',
-                            'Price',
+                            'Base fare',
                             'Leave empty to charge the share ride base fare.',
                             'Same as share',
                             !fareColumns.privateRide,
                           )}
+                          {optionalDistance(
+                            'private_ride_fee_included_km',
+                            'Base fare includes (km)',
+                            'Leave empty to use the Share Ride distance.',
+                            'Same as share',
+                            !fareColumns.baseDistance,
+                          )}
                           {optionalMoney(
                             'private_ride_fee_per_km',
                             'Price per km',
-                            'Leave empty to charge the share ride per-km rate.',
+                            'Leave empty to use the Share Ride rate after the included distance.',
                             'Same as share',
                             !fareColumns.privateRide,
                           )}
@@ -4444,26 +4578,33 @@ async function applyAssignDriver(rider: StoredRider, terminal: Terminal) {
                         <>
                           {optionalMoney(
                             'delivery_fee',
-                            'Price',
+                            'Base fee',
                             'Leave empty to use the platform default.',
                             'Platform default',
                             !fareColumns.delivery,
                           )}
+                          {distance(
+                            'delivery_fee_included_km',
+                            'Base fee includes (km)',
+                            'Per-km pricing starts after this distance. Defaults to 1 km.',
+                            !fareColumns.baseDistance || !fareColumns.delivery,
+                          )}
                           {optionalMoney(
                             'delivery_fee_per_km',
                             'Price per km',
-                            'Leave empty to charge a flat delivery fee.',
+                            'Charged only for distance beyond the base fee.',
                             'Flat fee',
                             !fareColumns.delivery,
                           )}
                         </>,
                       )}
 
-                      {(!fareColumns.privateRide || !fareColumns.delivery) && (
+                      {(!fareColumns.privateRide || !fareColumns.delivery || !fareColumns.baseDistance) && (
                         <p className="text-xs text-[var(--amber-ink)] bg-[var(--amber-soft)] rounded-xl p-3">
                           {[
                             !fareColumns.privateRide ? 'ADD_TERMINAL_PRIVATE_RIDE_FEE.sql' : null,
                             !fareColumns.delivery ? 'ADD_TERMINAL_DELIVERY_AND_CAPACITY.sql' : null,
+                            !fareColumns.baseDistance ? 'ADD_TERMINAL_BASE_DISTANCE.sql' : null,
                           ]
                             .filter(Boolean)
                             .join(' and ')}{' '}

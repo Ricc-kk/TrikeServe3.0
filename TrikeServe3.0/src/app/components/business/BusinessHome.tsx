@@ -1080,6 +1080,53 @@ const shownOpen = storeState.open;
  */
 const cuisineSummary = cuisineLabels(restaurantData.cuisine).join(", ");
 
+const storeInfoSummary: Array<{
+  label: string;
+  Icon: typeof Store;
+  value: string;
+  note?: string;
+  tone?: string;
+  wide?: boolean;
+}> = [
+  { label: "Name", Icon: Store, value: restaurantData.name },
+  { label: "Address", Icon: MapPin, value: restaurantData.address || "Not set", wide: true },
+  { label: "Email", Icon: Mail, value: user?.email || "Not set" },
+  { label: "Phone", Icon: Phone, value: user?.phone || "Not set" },
+  { label: "Delivery time", Icon: Clock, value: restaurantData.deliveryTime },
+  { label: "Delivery fee", Icon: Truck, value: `₱${adminDeliveryFee}`, tone: "text-[var(--primary)]" },
+  {
+    label: "What we serve",
+    Icon: UtensilsCrossed,
+    value: cuisineSummary || "Not set",
+    note: cuisineSummary ? undefined : "Customers filter shops by this",
+    tone: cuisineSummary ? undefined : "text-[var(--muted-foreground)]",
+  },
+  {
+    label: "Opening hours",
+    Icon: Clock,
+    value: describeSchedule({ open_time: hours.openTime, close_time: hours.closeTime, open_days: hours.days }),
+    note: hoursConfigured ? "Closes itself outside these hours" : undefined,
+  },
+  {
+    label: "Map pin",
+    Icon: MapPin,
+    value: restaurantData.latitude != null
+      ? `${restaurantData.latitude.toFixed(5)}, ${restaurantData.longitude?.toFixed(5)}`
+      : "Not pinned",
+    note: restaurantData.latitude != null ? undefined : 'Your shop sorts last in "near you" lists',
+    tone: restaurantData.latitude != null ? undefined : "text-[var(--error)]",
+  },
+  {
+    label: "GCash",
+    Icon: Wallet,
+    value: restaurantData.paymentInstructions.trim() ? "Instructions set" : "Not set",
+    note: restaurantData.paymentInstructions.trim()
+      ? "Shown at checkout"
+      : "Customers need payment instructions to complete orders",
+    tone: restaurantData.paymentInstructions.trim() ? "text-[var(--success-ink)]" : "text-[var(--error)]",
+  },
+];
+
 /** Back to "always open", i.e. the shop's manual switch decides again. */
 const clearHours = () => {
   setHours({ openTime: '08:00', closeTime: '22:00', days: [0, 1, 2, 3, 4, 5, 6] });
@@ -1290,7 +1337,6 @@ const clearHours = () => {
                         <BadgeCheck className="w-6 h-6 text-[var(--info)] fill-[var(--info)]" />
                       )}
                     </div>
-                    <p className="text-sm text-[var(--muted-foreground)] mb-2">{restaurantData.subtitle}</p>
                   </div>
                 </div>
 
@@ -1372,900 +1418,787 @@ const clearHours = () => {
             The phone/tablet stack stays the stack: status, quick actions, then
             the store editor.
 
-            From xl up the empty right-hand margin on a wide screen is used by a
+            From 2xl up the empty right-hand margin on a wide screen is used by a
             rail that answers the questions the stack leaves open — what the
             shop looks like right now, and what is still unfinished. The rail is
-            hidden below xl, so tablet and phone are unchanged.
+            hidden below 2xl, so tablet and laptop widths keep the full editor width.
           */}
-          <div className="grid grid-cols-1 gap-5 xl:grid-cols-[minmax(0,1fr)_minmax(0,20rem)] xl:items-start">
-          <div className="min-w-0 space-y-5">
-            {/* Store Status Toggle */}
-            <div className="rounded-3xl border border-line bg-card p-5 sm:p-6">
-              <div className="flex items-center justify-between gap-3">
-                <div className="min-w-0">
-                  <h3 className="font-bold text-[var(--ink)] mb-1">Store Status</h3>
-                  <p className="text-sm text-[var(--muted-foreground)]">
-                    {shownOpen ? (
-                      "✅ Accepting orders"
-                    ) : closedByHours ? (
-                      <span className="text-[var(--amber-ink)]">
-                        🔴 Closed by your opening hours
-                      </span>
-                    ) : (
-                      <span>🔴 Not accepting orders</span>
-                    )}
-                  </p>
-                </div>
-                <button
-                  onClick={() => toggleStoreStatus(!isStoreOpen)}
-                  aria-pressed={isStoreOpen}
-                  aria-label={
-                    shownOpen
-                      ? "Turn the shop off"
-                      : closedByHours
-                        ? "Turn the shop off for the rest of the day"
-                        : "Turn the shop on"
-                  }
-                  className={`w-16 h-9 rounded-full transition-all flex-shrink-0 ${
-                    shownOpen ? "bg-[var(--success)]" : "bg-[var(--border)]"
-                  }`}
-                >
-                  <div
-                    className={`w-7 h-7 bg-surface rounded-full shadow-md transition-transform ${
-                      shownOpen ? "translate-x-8" : "translate-x-1"
+          <div className="grid grid-cols-1 gap-5 2xl:grid-cols-[minmax(0,1fr)_minmax(0,20rem)] 2xl:items-start">
+            <div className="grid min-w-0 grid-cols-1 gap-4 sm:gap-5 md:grid-cols-2">
+              {/* Store Status Toggle */}
+              <div className="min-w-0 rounded-3xl border border-line bg-card p-5 sm:p-6">
+                <div className="flex items-center justify-between gap-3">
+                  <div className="min-w-0">
+                    <h3 className="font-bold text-[var(--ink)] mb-1">Store Status</h3>
+                    <p className="text-sm text-[var(--muted-foreground)]">
+                      {shownOpen ? (
+                        "✅ Accepting orders"
+                      ) : closedByHours ? (
+                        <span className="text-[var(--amber-ink)]">
+                          🔴 Closed by your opening hours
+                        </span>
+                      ) : (
+                        <span>🔴 Not accepting orders</span>
+                      )}
+                    </p>
+                  </div>
+                  <button
+                    onClick={() => toggleStoreStatus(!isStoreOpen)}
+                    aria-pressed={isStoreOpen}
+                    aria-label={
+                      shownOpen
+                        ? "Turn the shop off"
+                        : closedByHours
+                          ? "Turn the shop off for the rest of the day"
+                          : "Turn the shop on"
+                    }
+                    className={`w-16 h-9 rounded-full transition-all flex-shrink-0 ${
+                      shownOpen ? "bg-[var(--success)]" : "bg-[var(--border)]"
                     }`}
-                  />
-                </button>
-              </div>
+                  >
+                    <div
+                      className={`w-7 h-7 bg-surface rounded-full shadow-md transition-transform ${
+                        shownOpen ? "translate-x-8" : "translate-x-1"
+                      }`}
+                    />
+                  </button>
+                </div>
 
-              {/*
-                Every state gets a reason, because a switch reading "off" that
-                the owner cannot see the cause of is indistinguishable from a
-                bug — and because tapping the switch while the hours have it shut
-                produces no visible change. Saying so first is what stops that
-                looking broken.
-              */}
-              <p className="mt-2 text-xs text-[var(--muted-foreground)]">
-                {shownOpen ? (
-                  hoursConfigured ? (
-                    <>Within your trading hours.</>
+                {/*
+                  Every state gets a reason, because a switch reading "off" that
+                  the owner cannot see the cause of is indistinguishable from a
+                  bug — and because tapping the switch while the hours have it shut
+                  produces no visible change. Saying so first is what stops that
+                  looking broken.
+                */}
+                <p className="mt-2 text-xs text-[var(--muted-foreground)]">
+                  {shownOpen ? (
+                    hoursConfigured ? (
+                      <>Within your trading hours.</>
+                    ) : (
+                      <>
+                        No trading hours set, so this switch decides on its own.{" "}
+                        <button
+                          type="button"
+                          onClick={openInfoEditor}
+                          className="underline font-semibold text-[var(--primary)]"
+                        >
+                          Set opening hours
+                        </button>
+                      </>
+                    )
+                  ) : closedByHours ? (
+                    <>Customers see your shop closed until your hours start again.</>
                   ) : (
                     <>
-                      No trading hours set, so this switch decides on its own.{" "}
-                      <button
-                        type="button"
-                        onClick={openInfoEditor}
-                        className="underline font-semibold text-[var(--primary)]"
-                      >
-                        Set opening hours
-                      </button>
+                      You switched the shop off. Turning it back on here will not open it outside your
+                      trading hours.
                     </>
-                  )
-                ) : closedByHours ? (
-                  <>Customers see your shop closed until your hours start again.</>
-                ) : (
-                  <>
-                    You switched the shop off. Turning it back on here will not open it outside your
-                    trading hours.
-                  </>
-                )}
-              </p>
-
-              {/*
-                Still trading after hours.
-
-                Without this, a shop open at 11pm with hours that say it shuts at
-                10pm has exactly one way to take a late order: edit the schedule,
-                which silently rewrites what every customer sees from tomorrow on.
-                So this opens the shop for tonight only and leaves the hours
-                exactly as they are.
-              */}
-              {hoursConfigured && (closedByHours || forcedOpen) && (
-                <div className="mt-3 rounded-xl border border-line bg-[var(--muted)] p-3">
-                  <p className="text-sm font-semibold text-[var(--ink)]">
-                    {forcedOpen ? "Open late" : "Still trading?"}
-                  </p>
-                  <p className="mt-0.5 text-xs text-[var(--muted-foreground)]">
-                    {forcedOpen
-                      ? 'Customers can see you open. Your opening hours are unchanged — this ends at midnight.'
-                      : 'Open the shop for tonight without changing your opening hours. It closes again at midnight.'}
-                  </p>
-                  <Button
-                    onClick={toggleLateOpen}
-                    className="mt-2 min-h-11 w-full text-sm"
-                  >
-                    {forcedOpen ? (
-                      <>
-                        <Check className="w-4 h-4 mr-2" />
-                        End late opening
-                      </>
-                    ) : (
-                      <>
-                        <Clock className="w-4 h-4 mr-2" />
-                        Open now anyway
-                      </>
-                    )}
-                  </Button>
-                  {lateOpenError && (
-                    <p
-                      role="alert"
-                      className="mt-2 rounded-xl bg-[var(--error-soft)] px-3 py-2 text-xs text-[var(--error)]"
-                    >
-                      {lateOpenError}
-                    </p>
                   )}
-                </div>
-              )}
-            </div>
-
-            {/* Quick Actions */}
-            <div className="rounded-3xl border border-line bg-card p-5 sm:p-6">
-              <h3 className="mb-3 font-bold text-[var(--ink)]">Quick Actions</h3>
-              <div className="mb-4 grid grid-cols-2 gap-3">
-                <Link to="/business/menu">
-                  <Card className="p-5 text-center border border-line hover:border-[var(--primary)] transition-all active:scale-95 rounded-2xl bg-[var(--primary-soft)]">
-                    <Package className="w-10 h-10 text-[var(--primary)] mx-auto mb-2" />
-                    <p className="font-bold text-[var(--ink)] mb-1">Menu</p>
-                    <p className="text-xs text-[var(--muted-foreground)]">Add & edit items</p>
-                  </Card>
-                </Link>
-                <Link to="/business/orders">
-                  <Card className="p-5 text-center border border-line hover:border-[var(--info)] transition-all active:scale-95 rounded-2xl bg-[var(--info-soft)]">
-                    <Clock className="w-10 h-10 text-[var(--info)] mx-auto mb-2" />
-                    <p className="font-bold text-[var(--ink)] mb-1">Orders</p>
-                    <p className="text-xs text-[var(--muted-foreground)]">Manage orders</p>
-                  </Card>
-                </Link>
-              </div>
-            </div>
-
-            {/* Store Appearance Section */}
-            <div className="min-w-0 rounded-3xl border border-line bg-card p-5 sm:p-6">
-              <div className="mb-4">
-                <h3 className="font-bold text-[var(--ink)]">Store Appearance</h3>
-                <p className="mt-0.5 text-sm text-[var(--muted-foreground)]">
-                  What customers see, and the details behind it
                 </p>
+
+                {/*
+                  Still trading after hours.
+
+                  Without this, a shop open at 11pm with hours that say it shuts at
+                  10pm has exactly one way to take a late order: edit the schedule,
+                  which silently rewrites what every customer sees from tomorrow on.
+                  So this opens the shop for tonight only and leaves the hours
+                  exactly as they are.
+                */}
+                {hoursConfigured && (closedByHours || forcedOpen) && (
+                  <div className="mt-3 rounded-xl border border-line bg-[var(--muted)] p-3">
+                    <p className="text-sm font-semibold text-[var(--ink)]">
+                      {forcedOpen ? "Open late" : "Still trading?"}
+                    </p>
+                    <p className="mt-0.5 text-xs text-[var(--muted-foreground)]">
+                      {forcedOpen
+                        ? 'Customers can see you open. Your opening hours are unchanged — this ends at midnight.'
+                        : 'Open the shop for tonight without changing your opening hours. It closes again at midnight.'}
+                    </p>
+                    <Button
+                      onClick={toggleLateOpen}
+                      className="mt-2 min-h-11 w-full text-sm"
+                    >
+                      {forcedOpen ? (
+                        <>
+                          <Check className="w-4 h-4 mr-2" />
+                          End late opening
+                        </>
+                      ) : (
+                        <>
+                          <Clock className="w-4 h-4 mr-2" />
+                          Open now anyway
+                        </>
+                      )}
+                    </Button>
+                    {lateOpenError && (
+                      <p
+                        role="alert"
+                        className="mt-2 rounded-xl bg-[var(--error-soft)] px-3 py-2 text-xs text-[var(--error)]"
+                      >
+                        {lateOpenError}
+                      </p>
+                    )}
+                  </div>
+                )}
               </div>
 
-              <Button
-                onClick={() => {
-                  setPreviewMode(true);
-                  window.scrollTo({ top: 0, behavior: "smooth" });
-                }}
-                className="w-full min-h-12 mb-3 bg-[var(--primary)] hover:bg-[var(--primary)] text-white font-bold text-base flex items-center justify-center gap-2"
-              >
-                <Eye className="w-5 h-5" aria-hidden="true" />
-                Preview Store
-              </Button>
-
-              {/* Hero Banner Editor */}
-              <Card className="p-4 border border-line mb-3">
-                <div className="flex items-center justify-between mb-2">
-                  <p className="font-semibold text-[var(--ink)]">Hero Banner & Logo</p>
+              {/* Quick Actions */}
+              <div className="min-w-0 rounded-3xl border border-line bg-card p-5 sm:p-6">
+                <h3 className="mb-3 font-bold text-[var(--ink)]">Quick Actions</h3>
+                <div className="mb-4 grid grid-cols-2 gap-3">
+                  <Link to="/business/menu">
+                    <Card className="p-5 text-center border border-line hover:border-[var(--primary)] transition-all active:scale-95 rounded-2xl bg-[var(--primary-soft)]">
+                      <Package className="w-10 h-10 text-[var(--primary)] mx-auto mb-2" />
+                      <p className="font-bold text-[var(--ink)] mb-1">Menu</p>
+                      <p className="text-xs text-[var(--muted-foreground)]">Add & edit items</p>
+                    </Card>
+                  </Link>
+                  <Link to="/business/orders">
+                    <Card className="p-5 text-center border border-line hover:border-[var(--info)] transition-all active:scale-95 rounded-2xl bg-[var(--info-soft)]">
+                      <Clock className="w-10 h-10 text-[var(--info)] mx-auto mb-2" />
+                      <p className="font-bold text-[var(--ink)] mb-1">Orders</p>
+                      <p className="text-xs text-[var(--muted-foreground)]">Manage orders</p>
+                    </Card>
+                  </Link>
                 </div>
-                <div className="relative h-32 rounded-xl overflow-hidden mb-2">
-                  <ImageWithFallback
-                    src={restaurantData.heroImage}
-                    alt="Banner"
-                    className="w-full h-full object-cover"
-                  />
-                  <div className="absolute bottom-2 left-2">
-                    <div className="w-12 h-12 bg-surface rounded-xl flex items-center justify-center text-xl shadow-lg overflow-hidden">
-                      <StoreLogo logo={restaurantData.logo} emojiClass="text-xl" />
-                    </div>
-                  </div>
-                </div>
-                <Button
-                  onClick={() => setShowEditBanner(true)}
-                  variant="outline"
-                  className="w-full text-sm"
-                >
-                  <Camera className="w-4 h-4 mr-2" />
-                  Change Banner & Logo
-                </Button>
-              </Card>
+              </div>
 
-              {/* Store Info Editor */}
-              <Card className="p-4 border border-line">
-                <div className="flex items-center justify-between mb-3 gap-3">
-                  <p className="font-semibold text-[var(--ink)]">Store Information</p>
-                  {/* Says which mode the card is in, because the way out of
-                      editing is now Cancel at the bottom of the card rather than
-                      an obvious close control on a sheet over it. */}
-                  {showEditInfo && (
-                    <span className="text-[10px] font-bold uppercase tracking-wider text-[var(--primary)] bg-[var(--primary-soft)] px-2 py-0.5 rounded-full">
-                      Editing
-                    </span>
-                  )}
-                </div>
-
-                {showEditInfo && saveInfoError && (
-                  <div className="mb-3 rounded-xl border-2 border-[var(--error-soft)] bg-[var(--error-soft)] px-3 py-2">
-                    <p className="text-sm text-[var(--error)] break-words">{saveInfoError}</p>
-                  </div>
-                )}
-
-                {showEditInfo ? (
-                  /*
-                   * The fields, editable in place.
-                   *
-                   * Same rows the read-only view shows, in the same order and with
-                   * the same icons, so the card is recognisably the same thing --
-                   * the label simply sits above its box instead of beside the
-                   * value. Stacked rather than in a row because a 24-character
-                   * label plus a shop name does not fit across a phone.
-                   */
-                  <div className="space-y-3">
-                    <div>
-                      <label htmlFor="store-name" className={infoLabel}>
-                        <Store className="size-4 text-[var(--primary)]" aria-hidden="true" />
-                        Name *
-                      </label>
-                      <input
-                        id="store-name"
-                        type="text"
-                        value={restaurantData.name}
-                        onChange={(e) => setRestaurantData({ ...restaurantData, name: e.target.value })}
-                        className={infoField}
-                        placeholder="e.g., Mang Inasal"
-                      />
-                    </div>
-
-                    <div>
-                      <label htmlFor="store-subtitle" className={infoLabel}>
-                        <BadgeCheck className="size-4 text-[var(--primary)]" aria-hidden="true" />
-                        Subtitle / Branch
-                      </label>
-                      <input
-                        id="store-subtitle"
-                        type="text"
-                        value={restaurantData.subtitle}
-                        onChange={(e) => setRestaurantData({ ...restaurantData, subtitle: e.target.value })}
-                        className={infoField}
-                        placeholder="e.g., Gen T Deleon Center"
-                      />
-                      <p className="mt-1 text-xs text-[var(--muted-foreground)]">
-                        Branch location or tagline
-                      </p>
-                    </div>
-
-                    {/* Search or drop a pin rather than typing. A typed address
-                        has no coordinates, and without coordinates the shop
-                        cannot be measured against a customer, sorted into
-                        "near you", or routed to by a driver. */}
-                    <div>
-                      <span className={infoLabel}>
-                        <MapPin className="size-4 text-[var(--primary)]" aria-hidden="true" />
-                        Address *
-                      </span>
-                      <button
-                        type="button"
-                        onClick={() => setShowLocationPicker(true)}
-                        className="w-full flex items-start gap-3 text-left p-3 border border-line rounded-xl hover:border-[var(--primary)] transition-colors"
-                      >
-                        <MapPin className="w-5 h-5 text-[var(--primary)] flex-shrink-0 mt-0.5" aria-hidden="true" />
-                        <span className="flex-1 min-w-0">
-                          {restaurantData.address ? (
-                            <span className="block text-sm font-semibold text-[var(--ink)] break-words">
-                              {restaurantData.address}
-                            </span>
-                          ) : (
-                            <span className="block text-sm font-semibold text-[var(--ink)]">
-                              Pin your shop location
-                            </span>
-                          )}
-                          <span className="block text-xs text-[var(--muted-foreground)] mt-0.5">
-                            Search for it, or tap the map to drop a pin
-                          </span>
-                        </span>
-                        <span className="text-xs font-semibold text-[var(--primary)] flex-shrink-0">
-                          {restaurantData.address ? "Change" : "Set"}
-                        </span>
-                      </button>
-                      {/* Read-only pin status, sitting with the address it belongs
-                          to rather than in a list of its own. */}
-                      <p className="mt-1 text-xs text-[var(--muted-foreground)] flex items-start gap-1.5">
-                        <MapPin className="w-3.5 h-3.5 flex-shrink-0 mt-px" aria-hidden="true" />
-                        {restaurantData.latitude != null
-                          ? `Pinned at ${restaurantData.latitude.toFixed(5)}, ${restaurantData.longitude?.toFixed(5)}`
-                          : 'Not pinned yet — your shop will sort last in "near you" lists.'}
-                      </p>
-                    </div>
-
-                    <div className="grid gap-3 sm:grid-cols-2">
-                      <div>
-                        <label htmlFor="store-email" className={infoLabel}>
-                          <Mail className="size-4 text-[var(--primary)]" aria-hidden="true" />
-                          Email
-                        </label>
-                        <input id="store-email" type="text" value={user?.email ?? ""} readOnly
-                          className={`${infoField} bg-[var(--muted)] text-[var(--muted-foreground)]`} />
-                      </div>
-
-                      <div>
-                        <label htmlFor="store-phone" className={infoLabel}>
-                          <Phone className="size-4 text-[var(--primary)]" aria-hidden="true" />
-                          Phone
-                        </label>
-                        <input id="store-phone" type="text" value={user?.phone ?? ""} readOnly
-                          className={`${infoField} bg-[var(--muted)] text-[var(--muted-foreground)]`} />
-                      </div>
-                    </div>
-                    {/* Both come from the sign-in account. Saying so once beats
-                        two boxes that look broken because they will not focus. */}
-                    <p className="-mt-1 text-xs text-[var(--muted-foreground)]">
-                      Email and phone come from your account. Change them in Profile.
+              {/* Store Appearance Section */}
+              <div className="min-w-0 rounded-3xl border border-line bg-card p-4 md:col-span-2 sm:p-6 lg:p-7">
+                <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+                  <div>
+                    <h3 className="font-bold text-[var(--ink)]">Store Appearance</h3>
+                    <p className="mt-0.5 text-sm text-[var(--muted-foreground)]">
+                      What customers see, and the details behind it
                     </p>
-
-                    <div className="grid gap-3 sm:grid-cols-2">
-                      <div>
-                        <label htmlFor="store-delivery-time" className={infoLabel}>
-                          <Clock className="size-4 text-[var(--primary)]" aria-hidden="true" />
-                          Delivery Time
-                        </label>
-                        <input
-                          id="store-delivery-time"
-                          type="text"
-                          value={restaurantData.deliveryTime}
-                          onChange={(e) => setRestaurantData({ ...restaurantData, deliveryTime: e.target.value })}
-                          className={infoField}
-                          placeholder="15-25 min"
-                        />
-                      </div>
-
-                      <div>
-                        <label htmlFor="store-delivery-fee" className={infoLabel}>
-                          <Truck className="size-4 text-[var(--primary)]" aria-hidden="true" />
-                          Delivery Fee
-                        </label>
-                        <div className="relative">
-                          <span className="absolute left-3 top-1/2 -translate-y-1/2 text-[var(--muted-foreground)]">₱</span>
-                          <input
-                            id="store-delivery-fee"
-                            type="number"
-                            value={adminDeliveryFee}
-                            readOnly
-                            className={`${infoField} pl-7 bg-[var(--muted)] text-[var(--muted-foreground)]`}
-                          />
-                        </div>
-                        <p className="mt-1 text-xs text-[var(--muted-foreground)]">
-                          Set by the admin. Contact the admin to change it.
-                        </p>
-                      </div>
-                    </div>
-
-                    {/*
-                      There used to be a free-text "Hours" box here alongside the
-                      schedule below. It was not a second view of the same thing —
-                      it was a second thing, and a worse one: saveHours rewrites
-                      `operating_hours` from the schedule on every change so the
-                      two cannot contradict each other, which meant typing here
-                      was undone the next time the schedule was touched. Nothing
-                      read the typed value either. One source of truth now.
-                    */}
-
-                    {/* Cuisine is what the customer filters match on. It used to be
-                        inferred from menu items, which called any shop selling one
-                        chicken dish an "Ihawan" -- only the business knows what it
-                        is. Only in the editing card: the read-only view never
-                        listed it, and adding a row of chips to a summary changes
-                        what the summary is. */}
-                    <div className="border-t border-[var(--border)] pt-3">
-                      <span className={infoLabel}>
-                        <UtensilsCrossed className="size-4 text-[var(--primary)]" aria-hidden="true" />
-                        What we serve
-                      </span>
-                      <p className="text-xs text-[var(--muted-foreground)] mb-2">
-                        Pick everything that describes your shop. Customers filter by this.
-                      </p>
-                      <div className="flex flex-wrap gap-2">
-                        {CUISINES.map(({ id, label, blurb, Icon }) => {
-                          const selected = Array.isArray(restaurantData.cuisine)
-                            && restaurantData.cuisine.includes(id);
-                          return (
-                            <button
-                              key={id}
-                              type="button"
-                              aria-pressed={selected}
-                              title={blurb}
-                              onClick={() => toggleCuisine(id)}
-                              className={`flex min-h-11 items-center gap-1.5 rounded-xl border-2 px-3 text-sm font-semibold transition-colors ${
-                                selected
-                                  ? 'border-[var(--primary)] bg-[var(--primary-soft)] text-[var(--coral-dark)]'
-                                  : 'border-line text-[var(--muted-foreground)]'
-                              }`}
-                            >
-                              <Icon className="size-4" aria-hidden="true" />
-                              {label}
-                            </button>
-                          );
-                        })}
-                      </div>
-                    </div>
-
-                    {/*
-                      A change left over from the old approval queue. Saving
-                      above discards it, which matters: an admin applying that
-                      stale request later would overwrite these newer details
-                      with the older ones.
-                    */}
-                    {profile.hasPending && (
-                      <div className="rounded-xl border border-[var(--amber-soft)] bg-[var(--amber-soft)] px-3 py-2">
-                        <p className="text-xs text-[var(--amber-ink)] break-words">
-                          You have a change left over from the old approval queue. Save your
-                          details to discard it.
-                        </p>
-                      </div>
-                    )}
-
-                    {/*
-                     * Opening hours that actually close the shop.
-
-                     * This is the only place hours are set. It used to sit below a
-                     * free-text box saying the same thing, which could not say
-                     * which days and was quietly overwritten by this schedule
-                     * anyway. Pick the days and the window, and the storefront
-                     * stops showing the shop as open outside them. Each change
-                     * saves on its own, with no Save button and no admin
-                     * approval, because a shop that cannot tell a customer it is
-                     * closed is the whole problem.
-                     */}
-                    <div className="rounded-2xl border-2 border-line p-4">
-                      <div className="flex items-start justify-between gap-3 mb-1">
-                        <p className="text-sm font-bold text-[var(--ink)]">Opening hours</p>
-                        {isSavingHours ? (
-                          <Loader2 className="size-4 shrink-0 animate-spin text-[var(--primary)]" aria-hidden="true" />
-                        ) : hoursSaved ? (
-                          <span className="inline-flex items-center gap-1 text-xs font-semibold text-[var(--success-ink)]">
-                            <Check className="size-3.5" aria-hidden="true" />
-                            Saved
-                          </span>
-                        ) : null}
-                      </div>
-                      <p className="text-xs text-[var(--muted-foreground)] mb-3">
-                        Your shop closes itself outside these hours. Changes save straight
-                        away — no approval needed.
-                      </p>
-
-                      <p className="text-xs font-bold uppercase tracking-wider text-[var(--muted-foreground)] mb-1.5">
-                        Trading days
-                      </p>
-                      <div className="flex flex-wrap gap-1.5 mb-4">
-                        {/* Week order, Monday first — the order the days actually
-                            happen in. DAY_LABELS is indexed from Sunday, so the list
-                            is [1..6, 0] rather than 0..6. */}
-                        {[1, 2, 3, 4, 5, 6, 0].map((day) => {
-                          const on = hours.days.includes(day);
-                          return (
-                            <button
-                              key={day}
-                              type="button"
-                              onClick={() => toggleHoursDay(day)}
-                              aria-pressed={on}
-                              aria-label={DAY_NAMES[day]}
-                              title={DAY_NAMES[day]}
-                              className={`min-w-11 rounded-xl border-2 px-2 py-2 text-xs font-bold transition-colors ${
-                                on
-                                  ? 'border-[var(--primary)] bg-[var(--primary-soft)] text-[var(--primary)]'
-                                  : 'border-line text-[var(--muted-foreground)]'
-                              }`}
-                            >
-                              {DAY_LABELS[day]}
-                            </button>
-                          );
-                        })}
-                      </div>
-
-                      <div className="grid grid-cols-2 gap-3">
-                        <div>
-                          <label
-                            htmlFor="shop-open-time"
-                            className="text-xs font-bold uppercase tracking-wider text-[var(--muted-foreground)] mb-1.5 block"
-                          >
-                            Opens
-                          </label>
-                          <input
-                            id="shop-open-time"
-                            type="time"
-                            value={hours.openTime}
-                            onChange={(e) => updateHours({ openTime: e.target.value })}
-                            className="w-full p-3 border border-line rounded-xl outline-none focus:border-[var(--primary)]"
-                          />
-                        </div>
-                        <div>
-                          <label
-                            htmlFor="shop-close-time"
-                            className="text-xs font-bold uppercase tracking-wider text-[var(--muted-foreground)] mb-1.5 block"
-                          >
-                            Closes
-                          </label>
-                          <input
-                            id="shop-close-time"
-                            type="time"
-                            value={hours.closeTime}
-                            onChange={(e) => updateHours({ closeTime: e.target.value })}
-                            className="w-full p-3 border border-line rounded-xl outline-none focus:border-[var(--primary)]"
-                          />
-                        </div>
-                      </div>
-
-                      {/* The overnight case is worth saying out loud: a shop open
-                          6PM to 2AM is a real thing, and "the close time looks wrong"
-                          is the obvious misreading of the two inputs above. */}
-                      {hours.closeTime <= hours.openTime && (
-                        <p className="mt-2 flex items-start gap-1.5 text-xs text-[var(--info)]">
-                          <Clock className="mt-0.5 size-3.5 shrink-0" aria-hidden="true" />
-                          Closes after midnight — you are trading past {describeClock(hours.openTime).split(' ')[1]}.
-                        </p>
-                      )}
-
-                      <button
-                        type="button"
-                        onClick={clearHours}
-                        className="mt-3 text-xs font-semibold text-[var(--muted-foreground)] underline"
-                      >
-                        Always open (remove the schedule)
-                      </button>
-
-                      {hoursError && (
-                        <p
-                          role="alert"
-                          className="mt-2 rounded-xl bg-[var(--error-soft)] px-3 py-2 text-xs text-[var(--error)]"
-                        >
-                          {hoursError}
-                        </p>
-                      )}
-                    </div>
-
-                    {/*
-                      GCash instructions, with a Save of their own.
-
-                      Deliberately not part of the Save button below. That one stages
-                      the change for Super Admin review, which is right for the name
-                      and the address but wrong here: this is the shop's own payment
-                      details, and holding them behind an admin queue would block
-                      every order in the meantime -- customers reach checkout, read
-                      no number, and cannot pay.
-
-                      So it writes straight to the row and says so, both here and in
-                      the confirmation.
-                    */}
-                    <div className="rounded-2xl border-2 border-dashed border-line p-4">
-                      <label
-                        htmlFor="payment-instructions"
-                        className="text-sm font-bold text-[var(--ink)] mb-2 block"
-                      >
-                        GCash payment instructions
-                      </label>
-                      <textarea
-                        id="payment-instructions"
-                        value={restaurantData.paymentInstructions}
-                        onChange={(e) =>
-                          setRestaurantData({ ...restaurantData, paymentInstructions: e.target.value })
-                        }
-                        rows={4}
-                        className="w-full p-3 border border-line rounded-xl resize-y"
-                        placeholder={'GCash number: 0917 123 4567\nName: Juan Dela Cruz\nSend the exact amount and put your order number as the reference.'}
-                      />
-                      <p className="text-xs text-[var(--muted-foreground)] mt-1">
-                        Shown word for word at checkout, above the payment proof
-                        upload. Customers transfer the food amount by GCash and pay the
-                        delivery fee in cash to the rider.
-                      </p>
-
-                      <div className="mt-3 flex items-center gap-3">
-                        <Button
-                          onClick={savePaymentInstructions}
-                          disabled={isSavingPaymentInstructions}
-                          className="text-sm disabled:opacity-60"
-                        >
-                          {isSavingPaymentInstructions ? (
-                            <>
-                              <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                              Saving...
-                            </>
-                          ) : (
-                            <>
-                              <Check className="w-4 h-4 mr-2" />
-                              Save instructions
-                            </>
-                          )}
-                        </Button>
-                        {paymentInstructionsSaved && (
-                          <p className="text-xs font-semibold text-[var(--success-ink)]">
-                            Saved. Customers see this at checkout.
-                          </p>
-                        )}
-                      </div>
-
-                      {savePaymentInstructionsError && (
-                        <p
-                          role="alert"
-                          className="mt-2 rounded-xl bg-[var(--error-soft)] px-3 py-2 text-xs text-[var(--error)]"
-                        >
-                          {savePaymentInstructionsError}
-                        </p>
-                      )}
-                    </div>
                   </div>
-                ) : (
-                  <div className="space-y-2 text-sm">
-                    {/* Icon per row. These are the three a shop owner scans for —
-                        how customers reach it, where to reach it, and where it
-                        sits — and they were three identical grey words. */}
-                    <div className="flex min-w-0 flex-wrap items-start gap-3 py-3 border-b border-[var(--border)]">
-                      <Store className="w-4 h-4 text-[var(--primary)] flex-shrink-0 mt-0.5" aria-hidden="true" />
-                      <span className="text-[var(--muted-foreground)] w-24 flex-shrink-0">Name</span>
-                      <span className="font-semibold text-[var(--ink)] text-right min-w-0 break-words flex-1">{restaurantData.name}</span>
-                    </div>
-                    <div className="flex min-w-0 flex-wrap items-start gap-3 py-3 border-b border-[var(--border)]">
-                      <MapPin className="w-4 h-4 text-[var(--primary)] flex-shrink-0 mt-0.5" aria-hidden="true" />
-                      <span className="text-[var(--muted-foreground)] w-24 flex-shrink-0">Address</span>
-                      <span className="font-semibold text-[var(--ink)] text-right min-w-0 break-words flex-1">{restaurantData.address}</span>
-                    </div>
-                    <div className="flex min-w-0 flex-wrap items-start gap-3 py-3 border-b border-[var(--border)]">
-                      <Mail className="w-4 h-4 text-[var(--primary)] flex-shrink-0 mt-0.5" aria-hidden="true" />
-                      <span className="text-[var(--muted-foreground)] w-24 flex-shrink-0">Email</span>
-                      <span className="font-semibold text-[var(--ink)] text-right min-w-0 break-words flex-1 break-all">{user?.email}</span>
-                    </div>
-                    <div className="flex min-w-0 flex-wrap items-start gap-3 py-3 border-b border-[var(--border)]">
-                      <Phone className="w-4 h-4 text-[var(--primary)] flex-shrink-0 mt-0.5" aria-hidden="true" />
-                      <span className="text-[var(--muted-foreground)] w-24 flex-shrink-0">Phone</span>
-                      <span className="font-semibold text-[var(--ink)] text-right min-w-0 break-words flex-1">{user?.phone}</span>
-                    </div>
-                    <div className="flex min-w-0 flex-wrap items-start gap-3 py-3 border-b border-[var(--border)]">
-                      <BadgeCheck className="w-4 h-4 text-[var(--primary)] flex-shrink-0 mt-0.5" aria-hidden="true" />
-                      <span className="text-[var(--muted-foreground)] w-24 flex-shrink-0">Subtitle</span>
-                      <span className="font-semibold text-[var(--ink)] text-right min-w-0 break-words flex-1">{restaurantData.subtitle}</span>
-                    </div>
-                    <div className="flex min-w-0 flex-wrap items-start gap-3 py-3 border-b border-[var(--border)]">
-                      <Clock className="w-4 h-4 text-[var(--primary)] flex-shrink-0 mt-0.5" aria-hidden="true" />
-                      <span className="text-[var(--muted-foreground)] w-24 flex-shrink-0">Delivery Time</span>
-                      <span className="font-semibold text-[var(--ink)] text-right min-w-0 break-words flex-1">{restaurantData.deliveryTime}</span>
-                    </div>
-                    <div className="flex min-w-0 flex-wrap items-start gap-3 py-3 border-b border-[var(--border)]">
-                      <Truck className="w-4 h-4 text-[var(--primary)] flex-shrink-0 mt-0.5" aria-hidden="true" />
-                      <span className="text-[var(--muted-foreground)] w-24 flex-shrink-0">Delivery Fee</span>
-                      <span className="font-semibold text-[var(--primary)] text-right min-w-0 break-words flex-1">₱{adminDeliveryFee}</span>
-                    </div>
-                    {/*
-                      Everything below is also in the editor, and it used to
-                      appear only there — so the summary card could read as
-                      complete while four of the things a customer actually sees
-                      were empty or unset. A card that lists less than the form
-                      behind it cannot be used to check anything. The order
-                      follows the editor, so a row and its field sit in the same
-                      relative position on both sides.
-
-                      "Opening hours" is deliberately the only hours row: the
-                      free-text Hours box that used to sit above it duplicated the
-                      same value and was overwritten by the schedule anyway.
-                    */}
-                    <div className="flex min-w-0 flex-wrap items-start gap-3 py-3 border-b border-[var(--border)]">
-                      <UtensilsCrossed className="w-4 h-4 text-[var(--primary)] flex-shrink-0 mt-0.5" aria-hidden="true" />
-                      <span className="text-[var(--muted-foreground)] w-24 flex-shrink-0">What we serve</span>
-                      <span className="font-semibold text-right min-w-0 break-words flex-1">
-                        {cuisineSummary ? (
-                          <span className="text-[var(--ink)]">{cuisineSummary}</span>
-                        ) : (
-                          <>
-                            <span className="text-[var(--muted-foreground)]">Not set</span>
-                            <span className="block text-xs font-normal text-[var(--muted-foreground)] mt-0.5">
-                              Customers filter shops by this
-                            </span>
-                          </>
-                        )}
-                      </span>
-                    </div>
-
-                    <div className="flex min-w-0 flex-wrap items-start gap-3 py-3 border-b border-[var(--border)]">
-                      <Clock className="w-4 h-4 text-[var(--primary)] flex-shrink-0 mt-0.5" aria-hidden="true" />
-                      <span className="text-[var(--muted-foreground)] w-24 flex-shrink-0">Opening hours</span>
-                      <span className="text-right min-w-0 break-words flex-1">
-                        <span
-                          className={`font-semibold ${hoursConfigured ? "text-[var(--ink)]" : "text-[var(--muted-foreground)]"}`}
-                        >
-                          {describeSchedule({
-                            open_time: hours.openTime,
-                            close_time: hours.closeTime,
-                            open_days: hours.days,
-                          })}
-                        </span>
-                        {hoursConfigured && (
-                          <span className="block text-xs font-normal text-[var(--muted-foreground)] mt-0.5">
-                            Closes itself outside these hours
-                          </span>
-                        )}
-                      </span>
-                    </div>
-
-                    <div className="flex min-w-0 flex-wrap items-start gap-3 py-3 border-b border-[var(--border)]">
-                      <MapPin className="w-4 h-4 text-[var(--primary)] flex-shrink-0 mt-0.5" aria-hidden="true" />
-                      <span className="text-[var(--muted-foreground)] w-24 flex-shrink-0">Map pin</span>
-                      <span className="text-right min-w-0 break-words flex-1">
-                        {restaurantData.latitude != null ? (
-                          <span className="font-semibold text-[var(--ink)]">
-                            {restaurantData.latitude.toFixed(5)}, {restaurantData.longitude?.toFixed(5)}
-                          </span>
-                        ) : (
-                          <>
-                            <span className="font-semibold text-[var(--error)]">Not pinned</span>
-                            <span className="block text-xs font-normal text-[var(--muted-foreground)] mt-0.5">
-                              Your shop sorts last in "near you" lists
-                            </span>
-                          </>
-                        )}
-                      </span>
-                    </div>
-
-                    <div className="flex min-w-0 flex-wrap items-start gap-3 py-3">
-                      <Wallet className="w-4 h-4 text-[var(--primary)] flex-shrink-0 mt-0.5" aria-hidden="true" />
-                      <span className="text-[var(--muted-foreground)] w-24 flex-shrink-0">GCash</span>
-                      <span className="text-right min-w-0 break-words flex-1">
-                        {restaurantData.paymentInstructions.trim() ? (
-                          <>
-                            <span className="font-semibold text-[var(--success-ink)]">Instructions set</span>
-                            <span className="block text-xs font-normal text-[var(--muted-foreground)] mt-0.5">
-                              Shown word for word at checkout
-                            </span>
-                          </>
-                        ) : (
-                          <>
-                            <span className="font-semibold text-[var(--error)]">No instructions</span>
-                            <span className="block text-xs font-normal text-[var(--muted-foreground)] mt-0.5">
-                              Customers reach checkout with no way to pay
-                            </span>
-                          </>
-                        )}
-                      </span>
-                    </div>
-                  </div>
-                )}
-
-                {/* Save and Cancel live at the bottom of the card rather than in
-                    a header, because the fields they act on are the card's whole
-                    contents now. Save stages the change for Super Admin review, so
-                    it is not a plain "Saved" -- the confirmation below says who
-                    sees it and when. */}
-                {showEditInfo ? (
-                  <div className="flex gap-3 mt-4">
-                    <Button
-                      onClick={cancelInfoEdit}
-                      variant="outline"
-                      className="flex-1 min-h-11 text-sm"
-                    >
-                      <X className="w-4 h-4 mr-2" />
-                      Cancel
-                    </Button>
-                    <Button
-                      onClick={() => setShowConfirmSaveInfo(true)}
-                      className="flex-1 min-h-11 text-sm"
-                    >
-                      <Check className="w-4 h-4 mr-2" />
-                      Save changes
-                    </Button>
-                  </div>
-                ) : (
                   <Button
-                    onClick={openInfoEditor}
-                    variant="outline"
-                    className="w-full text-sm mt-3"
+                    onClick={() => {
+                      setPreviewMode(true);
+                      window.scrollTo({ top: 0, behavior: "smooth" });
+                    }}
+                    className="min-h-12 w-full bg-[var(--primary)] text-base font-bold text-white hover:bg-[var(--primary)] sm:w-auto sm:min-w-48"
                   >
-                    <Settings className="w-4 h-4 mr-2" />
-                    Edit Information
+                    <Eye className="mr-2 h-5 w-5" aria-hidden="true" />
+                    Preview Store
                   </Button>
-                )}
-              </Card>
+                </div>
+
+                {/* Hero Banner Editor */}
+                <Card className="mb-4 min-w-0 border border-line p-4 sm:p-5">
+                  <div className="flex items-center justify-between mb-2">
+                    <p className="font-semibold text-[var(--ink)]">Hero Banner & Logo</p>
+                  </div>
+                  <div className="relative h-32 rounded-xl overflow-hidden mb-2">
+                    <ImageWithFallback
+                      src={restaurantData.heroImage}
+                      alt="Banner"
+                      className="w-full h-full object-cover"
+                    />
+                    <div className="absolute bottom-2 left-2">
+                      <div className="w-12 h-12 bg-surface rounded-xl flex items-center justify-center text-xl shadow-lg overflow-hidden">
+                        <StoreLogo logo={restaurantData.logo} emojiClass="text-xl" />
+                      </div>
+                    </div>
+                  </div>
+                  <Button
+                    onClick={() => setShowEditBanner(true)}
+                    variant="outline"
+                    className="w-full text-sm"
+                  >
+                    <Camera className="w-4 h-4 mr-2" />
+                    Change Banner & Logo
+                  </Button>
+                </Card>
+
+                {/* Store Info Editor */}
+                <Card className="min-w-0 border border-line p-4 sm:p-5 lg:p-6">
+                  <div className="mb-5 flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <h4 className="font-semibold text-[var(--ink)]">Store Information</h4>
+                      <p className="mt-1 max-w-2xl text-sm text-[var(--muted-foreground)]">
+                        Manage your pickup point, delivery details, and customer-facing settings.
+                      </p>
+                    </div>
+                    {/* Says which mode the card is in, because the way out of
+                        editing is now Cancel at the bottom of the card rather than
+                        an obvious close control on a sheet over it. */}
+                    {showEditInfo && (
+                      <span className="text-[10px] font-bold uppercase tracking-wider text-[var(--primary)] bg-[var(--primary-soft)] px-2 py-0.5 rounded-full">
+                        Editing
+                      </span>
+                    )}
+                  </div>
+
+                  {showEditInfo && saveInfoError && (
+                    <div className="mb-3 rounded-xl border-2 border-[var(--error-soft)] bg-[var(--error-soft)] px-3 py-2">
+                      <p className="text-sm text-[var(--error)] break-words">{saveInfoError}</p>
+                    </div>
+                  )}
+
+                  {showEditInfo ? (
+                    /*
+                     * The fields, editable in place.
+                     *
+                     * Group related fields and let the grids open up as the card
+                     * gets wider, while keeping a single readable column on phones.
+                     */
+                    <div className="space-y-6 sm:space-y-7">
+                      <section className="space-y-4">
+                        <div className="flex items-center gap-2">
+                          <Store className="size-4 text-[var(--primary)]" aria-hidden="true" />
+                          <h4 className="text-sm font-bold text-[var(--ink)]">Store details</h4>
+                        </div>
+                        <div className="grid gap-4 md:grid-cols-2">
+                          <div>
+                            <label htmlFor="store-name" className={infoLabel}>
+                              <Store className="size-4 text-[var(--primary)]" aria-hidden="true" />
+                              Name *
+                            </label>
+                            <input
+                              id="store-name"
+                              type="text"
+                              value={restaurantData.name}
+                              onChange={(e) => setRestaurantData({ ...restaurantData, name: e.target.value })}
+                              className={infoField}
+                              placeholder="e.g., Mang Inasal"
+                            />
+                          </div>
+
+                          {/* Search or drop a pin rather than typing. A typed address
+                              has no coordinates, and without coordinates the shop
+                              cannot be measured against a customer, sorted into
+                              "near you", or routed to by a driver. */}
+                          <div className="md:col-span-2">
+                            <span className={infoLabel}>
+                              <MapPin className="size-4 text-[var(--primary)]" aria-hidden="true" />
+                              Address *
+                            </span>
+                            <button
+                              type="button"
+                              onClick={() => setShowLocationPicker(true)}
+                              className="w-full flex items-start gap-3 text-left p-3 border border-line rounded-xl hover:border-[var(--primary)] transition-colors"
+                            >
+                              <MapPin className="w-5 h-5 text-[var(--primary)] flex-shrink-0 mt-0.5" aria-hidden="true" />
+                              <span className="flex-1 min-w-0">
+                                {restaurantData.address ? (
+                                  <span className="block text-sm font-semibold text-[var(--ink)] break-words">
+                                    {restaurantData.address}
+                                  </span>
+                                ) : (
+                                  <span className="block text-sm font-semibold text-[var(--ink)]">
+                                    Pin your shop location
+                                  </span>
+                                )}
+                                <span className="block text-xs text-[var(--muted-foreground)] mt-0.5">
+                                  Search for it, or tap the map to drop a pin
+                                </span>
+                              </span>
+                              <span className="text-xs font-semibold text-[var(--primary)] flex-shrink-0">
+                                {restaurantData.address ? "Change" : "Set"}
+                              </span>
+                            </button>
+                            {/* Read-only pin status, sitting with the address it belongs
+                                to rather than in a list of its own. */}
+                            <p className="mt-1 text-xs text-[var(--muted-foreground)] flex items-start gap-1.5">
+                              <MapPin className="w-3.5 h-3.5 flex-shrink-0 mt-px" aria-hidden="true" />
+                              {restaurantData.latitude != null
+                                ? `Pinned at ${restaurantData.latitude.toFixed(5)}, ${restaurantData.longitude?.toFixed(5)}`
+                                : 'Not pinned yet — your shop will sort last in "near you" lists.'}
+                            </p>
+                          </div>
+                        </div>
+                      </section>
+
+                      <section className="rounded-2xl border border-line bg-[var(--muted)]/30 p-4 sm:p-5">
+                        <div className="mb-3">
+                          <h4 className="text-sm font-bold text-[var(--ink)]">Account contact</h4>
+                          <p className="mt-1 text-xs text-[var(--muted-foreground)]">
+                            These details come from your account profile.
+                          </p>
+                        </div>
+                        <div className="grid gap-3 sm:grid-cols-2">
+                          <div className="min-w-0 rounded-xl border border-line bg-surface p-3">
+                            <p className="text-xs font-bold uppercase tracking-wider text-[var(--muted-foreground)]">Email</p>
+                            <p className="mt-1 break-all text-sm font-semibold text-[var(--ink)]">{user?.email || "Not set"}</p>
+                          </div>
+                          <div className="min-w-0 rounded-xl border border-line bg-surface p-3">
+                            <p className="text-xs font-bold uppercase tracking-wider text-[var(--muted-foreground)]">Phone</p>
+                            <p className="mt-1 break-words text-sm font-semibold text-[var(--ink)]">{user?.phone || "Not set"}</p>
+                          </div>
+                        </div>
+                        <p className="mt-2 text-xs text-[var(--muted-foreground)]">
+                          Change these details in Profile.
+                        </p>
+                      </section>
+
+                      <section className="rounded-2xl border border-line p-4 sm:p-5">
+                        <div className="mb-3">
+                          <h4 className="text-sm font-bold text-[var(--ink)]">Delivery details</h4>
+                          <p className="mt-1 text-xs text-[var(--muted-foreground)]">
+                            Set the estimated time customers see at checkout.
+                          </p>
+                        </div>
+                        <div className="grid gap-4 sm:grid-cols-2">
+                          <div>
+                            <label htmlFor="store-delivery-time" className={infoLabel}>
+                              <Clock className="size-4 text-[var(--primary)]" aria-hidden="true" />
+                              Delivery Time
+                            </label>
+                            <input
+                              id="store-delivery-time"
+                              type="text"
+                              value={restaurantData.deliveryTime}
+                              onChange={(e) => setRestaurantData({ ...restaurantData, deliveryTime: e.target.value })}
+                              className={infoField}
+                              placeholder="15-25 min"
+                            />
+                          </div>
+
+                          <div>
+                            <label htmlFor="store-delivery-fee" className={infoLabel}>
+                              <Truck className="size-4 text-[var(--primary)]" aria-hidden="true" />
+                              Delivery Fee
+                            </label>
+                            <div className="relative">
+                              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-[var(--muted-foreground)]">₱</span>
+                              <input
+                                id="store-delivery-fee"
+                                type="number"
+                                value={adminDeliveryFee}
+                                readOnly
+                                className={`${infoField} pl-7 bg-[var(--muted)] text-[var(--muted-foreground)]`}
+                              />
+                            </div>
+                            <p className="mt-1 text-xs text-[var(--muted-foreground)]">
+                              Set by the admin. Contact the admin to change it.
+                            </p>
+                          </div>
+                        </div>
+                      </section>
+
+                      {/*
+                        There used to be a free-text "Hours" box here alongside the
+                        schedule below. It was not a second view of the same thing —
+                        it was a second thing, and a worse one: saveHours rewrites
+                        `operating_hours` from the schedule on every change so the
+                        two cannot contradict each other, which meant typing here
+                        was undone the next time the schedule was touched. Nothing
+                        read the typed value either. One source of truth now.
+                      */}
+
+                      {/* Cuisine is what the customer filters match on. It used to be
+                          inferred from menu items, which called any shop selling one
+                          chicken dish an "Ihawan" -- only the business knows what it
+                          is. Only in the editing card: the read-only view never
+                          listed it, and adding a row of chips to a summary changes
+                          what the summary is. */}
+                      <section className="rounded-2xl border border-line p-4 sm:p-5">
+                        <div className="mb-3">
+                          <h4 className="text-sm font-bold text-[var(--ink)]">What we serve</h4>
+                          <p className="mt-1 text-xs text-[var(--muted-foreground)]">
+                            Pick everything that describes your shop. Customers filter by this.
+                          </p>
+                        </div>
+                        <div className="flex flex-wrap gap-2">
+                          {CUISINES.map(({ id, label, blurb, Icon }) => {
+                            const selected = Array.isArray(restaurantData.cuisine)
+                              && restaurantData.cuisine.includes(id);
+                            return (
+                              <button
+                                key={id}
+                                type="button"
+                                aria-pressed={selected}
+                                title={blurb}
+                                onClick={() => toggleCuisine(id)}
+                                className={`flex min-h-11 items-center gap-1.5 rounded-xl border-2 px-3 text-sm font-semibold transition-colors ${
+                                  selected
+                                    ? 'border-[var(--primary)] bg-[var(--primary-soft)] text-[var(--coral-dark)]'
+                                    : 'border-line text-[var(--muted-foreground)]'
+                                }`}
+                              >
+                                <Icon className="size-4" aria-hidden="true" />
+                                {label}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </section>
+
+                      {/*
+                        A change left over from the old approval queue. Saving
+                        above discards it, which matters: an admin applying that
+                        stale request later would overwrite these newer details
+                        with the older ones.
+                      */}
+                      {profile.hasPending && (
+                        <div className="rounded-xl border border-[var(--amber-soft)] bg-[var(--amber-soft)] px-3 py-2">
+                          <p className="text-xs text-[var(--amber-ink)] break-words">
+                            You have a change left over from the old approval queue. Save your
+                            details to discard it.
+                          </p>
+                        </div>
+                      )}
+
+                      {/*
+                       * Opening hours that actually close the shop.
+
+                       * This is the only place hours are set. It used to sit below a
+                       * free-text box saying the same thing, which could not say
+                       * which days and was quietly overwritten by this schedule
+                       * anyway. Pick the days and the window, and the storefront
+                       * stops showing the shop as open outside them. Each change
+                       * saves on its own, with no Save button and no admin
+                       * approval, because a shop that cannot tell a customer it is
+                       * closed is the whole problem.
+                       */}
+                      <div className="grid grid-cols-1 gap-4 2xl:grid-cols-2">
+                        <section className="rounded-2xl border border-line p-4 sm:p-5">
+                          <div className="flex items-start justify-between gap-3 mb-1">
+                            <p className="text-sm font-bold text-[var(--ink)]">Opening hours</p>
+                            {isSavingHours ? (
+                              <Loader2 className="size-4 shrink-0 animate-spin text-[var(--primary)]" aria-hidden="true" />
+                            ) : hoursSaved ? (
+                              <span className="inline-flex items-center gap-1 text-xs font-semibold text-[var(--success-ink)]">
+                                <Check className="size-3.5" aria-hidden="true" />
+                                Saved
+                              </span>
+                            ) : null}
+                          </div>
+                          <p className="text-xs text-[var(--muted-foreground)] mb-3">
+                            Your shop closes itself outside these hours. Changes save straight
+                            away — no approval needed.
+                          </p>
+
+                          <p className="text-xs font-bold uppercase tracking-wider text-[var(--muted-foreground)] mb-1.5">
+                            Trading days
+                          </p>
+                          <div className="flex flex-wrap gap-1.5 mb-4">
+                            {/* Week order, Monday first — the order the days actually
+                                happen in. DAY_LABELS is indexed from Sunday, so the list
+                                is [1..6, 0] rather than 0..6. */}
+                            {[1, 2, 3, 4, 5, 6, 0].map((day) => {
+                              const on = hours.days.includes(day);
+                              return (
+                                <button
+                                  key={day}
+                                  type="button"
+                                  onClick={() => toggleHoursDay(day)}
+                                  aria-pressed={on}
+                                  aria-label={DAY_NAMES[day]}
+                                  title={DAY_NAMES[day]}
+                                  className={`min-w-11 rounded-xl border-2 px-2 py-2 text-xs font-bold transition-colors ${
+                                    on
+                                      ? 'border-[var(--primary)] bg-[var(--primary-soft)] text-[var(--primary)]'
+                                      : 'border-line text-[var(--muted-foreground)]'
+                                  }`}
+                                >
+                                  {DAY_LABELS[day]}
+                                </button>
+                              );
+                            })}
+                          </div>
+
+                          <div className="grid grid-cols-2 gap-3">
+                            <div>
+                              <label
+                                htmlFor="shop-open-time"
+                                className="text-xs font-bold uppercase tracking-wider text-[var(--muted-foreground)] mb-1.5 block"
+                              >
+                                Opens
+                              </label>
+                              <input
+                                id="shop-open-time"
+                                type="time"
+                                value={hours.openTime}
+                                onChange={(e) => updateHours({ openTime: e.target.value })}
+                                className="w-full p-3 border border-line rounded-xl outline-none focus:border-[var(--primary)]"
+                              />
+                            </div>
+                            <div>
+                              <label
+                                htmlFor="shop-close-time"
+                                className="text-xs font-bold uppercase tracking-wider text-[var(--muted-foreground)] mb-1.5 block"
+                              >
+                                Closes
+                              </label>
+                              <input
+                                id="shop-close-time"
+                                type="time"
+                                value={hours.closeTime}
+                                onChange={(e) => updateHours({ closeTime: e.target.value })}
+                                className="w-full p-3 border border-line rounded-xl outline-none focus:border-[var(--primary)]"
+                              />
+                            </div>
+                          </div>
+
+                          {/* The overnight case is worth saying out loud: a shop open
+                              6PM to 2AM is a real thing, and "the close time looks wrong"
+                              is the obvious misreading of the two inputs above. */}
+                          {hours.closeTime <= hours.openTime && (
+                            <p className="mt-2 flex items-start gap-1.5 text-xs text-[var(--info)]">
+                              <Clock className="mt-0.5 size-3.5 shrink-0" aria-hidden="true" />
+                              Closes after midnight — you are trading past {describeClock(hours.openTime).split(' ')[1]}.
+                            </p>
+                          )}
+
+                          <button
+                            type="button"
+                            onClick={clearHours}
+                            className="mt-3 text-xs font-semibold text-[var(--muted-foreground)] underline"
+                          >
+                            Always open (remove the schedule)
+                          </button>
+
+                          {hoursError && (
+                            <p
+                              role="alert"
+                              className="mt-2 rounded-xl bg-[var(--error-soft)] px-3 py-2 text-xs text-[var(--error)]"
+                            >
+                              {hoursError}
+                            </p>
+                          )}
+                        </section>
+
+                      {/*
+                        GCash instructions, with a Save of their own.
+
+                        Deliberately not part of the Save button below. That one stages
+                        the change for Super Admin review, which is right for the name
+                        and the address but wrong here: this is the shop's own payment
+                        details, and holding them behind an admin queue would block
+                        every order in the meantime -- customers reach checkout, read
+                        no number, and cannot pay.
+
+                        So it writes straight to the row and says so, both here and in
+                        the confirmation.
+                      */}
+                        <section className="rounded-2xl border border-line p-4 sm:p-5">
+                          <label
+                            htmlFor="payment-instructions"
+                            className="text-sm font-bold text-[var(--ink)] mb-2 block"
+                          >
+                            GCash payment instructions
+                          </label>
+                          <textarea
+                            id="payment-instructions"
+                            value={restaurantData.paymentInstructions}
+                            onChange={(e) =>
+                              setRestaurantData({ ...restaurantData, paymentInstructions: e.target.value })
+                            }
+                            rows={4}
+                            className="w-full p-3 border border-line rounded-xl resize-y"
+                            placeholder={'GCash number: 0917 123 4567\nName: Juan Dela Cruz\nSend the exact amount and put your order number as the reference.'}
+                          />
+                          <p className="text-xs text-[var(--muted-foreground)] mt-1">
+                            Shown word for word at checkout, above the payment proof
+                            upload. Customers transfer the food amount by GCash and pay the
+                            delivery fee in cash to the rider.
+                          </p>
+
+                          <div className="mt-3 flex flex-col gap-3 sm:flex-row sm:items-center">
+                            <Button
+                              onClick={savePaymentInstructions}
+                              disabled={isSavingPaymentInstructions}
+                              className="text-sm disabled:opacity-60"
+                            >
+                              {isSavingPaymentInstructions ? (
+                                <>
+                                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                                  Saving...
+                                </>
+                              ) : (
+                                <>
+                                  <Check className="w-4 h-4 mr-2" />
+                                  Save instructions
+                                </>
+                              )}
+                            </Button>
+                            {paymentInstructionsSaved && (
+                              <p className="text-xs font-semibold text-[var(--success-ink)]">
+                                Saved. Customers see this at checkout.
+                              </p>
+                            )}
+                          </div>
+
+                          {savePaymentInstructionsError && (
+                            <p
+                              role="alert"
+                              className="mt-2 rounded-xl bg-[var(--error-soft)] px-3 py-2 text-xs text-[var(--error)]"
+                            >
+                              {savePaymentInstructionsError}
+                            </p>
+                          )}
+                        </section>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="grid grid-cols-1 gap-3 text-sm sm:grid-cols-2 2xl:grid-cols-3">
+                      {storeInfoSummary.map(({ label, Icon, value, note, tone, wide }) => (
+                        <div
+                          key={label}
+                          className={`min-w-0 rounded-2xl border border-line bg-[var(--muted)]/30 p-3 sm:p-4 ${
+                            wide ? "sm:col-span-2 2xl:col-span-3" : ""
+                          }`}
+                        >
+                          <div className="flex items-center gap-2 text-xs font-semibold text-[var(--muted-foreground)]">
+                            <Icon className="size-4 shrink-0 text-[var(--primary)]" aria-hidden="true" />
+                            <span>{label}</span>
+                          </div>
+                          <p className={`mt-2 break-words font-semibold ${tone || "text-[var(--ink)]"} ${label === "Email" ? "break-all" : ""}`}>
+                            {value}
+                          </p>
+                          {note && <p className="mt-1 text-xs text-[var(--muted-foreground)]">{note}</p>}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
+                  {/* Save and Cancel live at the bottom of the card rather than in
+                      a header, because the fields they act on are the card's whole
+                      contents now. Save stages the change for Super Admin review, so
+                      it is not a plain "Saved" -- the confirmation below says who
+                      sees it and when. */}
+                  {showEditInfo ? (
+                    <div className="mt-6 grid grid-cols-1 gap-3 border-t border-line pt-4 sm:grid-cols-2">
+                      <Button
+                        onClick={cancelInfoEdit}
+                        variant="outline"
+                        className="w-full min-h-11 text-sm"
+                      >
+                        <X className="w-4 h-4 mr-2" />
+                        Cancel
+                      </Button>
+                      <Button
+                        onClick={() => setShowConfirmSaveInfo(true)}
+                        className="w-full min-h-11 text-sm"
+                      >
+                        <Check className="w-4 h-4 mr-2" />
+                        Save changes
+                      </Button>
+                    </div>
+                  ) : (
+                    <Button
+                      onClick={openInfoEditor}
+                      variant="outline"
+                      className="w-full text-sm mt-3"
+                    >
+                      <Settings className="w-4 h-4 mr-2" />
+                      Edit Information
+                    </Button>
+                  )}
+                </Card>
+              </div>
             </div>
-          </div>
 
           {/* Desktop rail: storefront snapshot and setup checklist. */}
-          <aside aria-label="Storefront and setup" className="hidden min-w-0 space-y-5 xl:sticky xl:top-28 xl:block">
-            <section className="overflow-hidden rounded-3xl border border-line bg-card">
-              <div className="border-b border-line px-5 py-4">
-                <h3 className="font-bold text-[var(--ink)]">Storefront</h3>
-                <p className="mt-1 text-sm text-[var(--muted-foreground)]">How your shop appears to customers right now.</p>
-              </div>
+            <aside aria-label="Storefront and setup" className="hidden min-w-0 space-y-5 2xl:sticky 2xl:top-28 2xl:block">
+              <section className="overflow-hidden rounded-3xl border border-line bg-card">
+                <div className="border-b border-line px-5 py-4">
+                  <h3 className="font-bold text-[var(--ink)]">Storefront</h3>
+                  <p className="mt-1 text-sm text-[var(--muted-foreground)]">How your shop appears to customers right now.</p>
+                </div>
 
-              <div className="relative h-32">
-                <ImageWithFallback
-                  src={restaurantData.heroImage}
-                  alt=""
-                  className="size-full object-cover"
-                />
-                <div aria-hidden="true" className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/25 to-transparent" />
-                <Badge className={`absolute right-3 top-3 ${shownOpen ? 'bg-[var(--success)]' : 'bg-[var(--muted-foreground)]'} text-white`}>
-                  {shownOpen ? 'Open now' : 'Closed'}
-                </Badge>
-                <div className="absolute inset-x-4 bottom-3 flex min-w-0 items-end gap-3">
-                  <span className="flex size-11 shrink-0 items-center justify-center overflow-hidden rounded-xl border border-white/40 bg-surface shadow-sm">
-                    <StoreLogo logo={restaurantData.logo} emojiClass="text-xl" />
-                  </span>
-                  <div className="min-w-0 pb-0.5">
-                    <p className="truncate text-sm font-bold text-white">{restaurantData.name || 'Your shop'}</p>
-                    <p className="truncate text-xs text-white/80">{restaurantData.subtitle || 'Add a subtitle in Store Information'}</p>
+                <div className="relative h-32">
+                  <ImageWithFallback
+                    src={restaurantData.heroImage}
+                    alt=""
+                    className="size-full object-cover"
+                  />
+                  <div aria-hidden="true" className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/25 to-transparent" />
+                  <Badge className={`absolute right-3 top-3 ${shownOpen ? 'bg-[var(--success)]' : 'bg-[var(--muted-foreground)]'} text-white`}>
+                    {shownOpen ? 'Open now' : 'Closed'}
+                  </Badge>
+                  <div className="absolute inset-x-4 bottom-3 flex min-w-0 items-end gap-3">
+                    <span className="flex size-11 shrink-0 items-center justify-center overflow-hidden rounded-xl border border-white/40 bg-surface shadow-sm">
+                      <StoreLogo logo={restaurantData.logo} emojiClass="text-xl" />
+                    </span>
+                    <div className="min-w-0 pb-0.5">
+                      <p className="truncate text-sm font-bold text-white">{restaurantData.name || 'Your shop'}</p>
+                      <p className="truncate text-xs text-white/80">{restaurantData.address || 'Add your shop address'}</p>
+                    </div>
                   </div>
                 </div>
-              </div>
 
-              <dl className="space-y-2 px-5 py-4 text-sm">
-                <div className="flex items-center justify-between gap-3">
-                  <dt className="text-[var(--muted-foreground)]">Rating</dt>
-                  <dd className="min-w-0 truncate text-right font-semibold text-[var(--ink)]">
-                    {restaurantData.rating > 0
-                      ? `${restaurantData.rating.toFixed(1)} · ${restaurantData.ratingCount} reviews`
-                      : 'No ratings yet'}
-                  </dd>
-                </div>
-                <div className="flex items-center justify-between gap-3">
-                  <dt className="shrink-0 text-[var(--muted-foreground)]">Delivery</dt>
-                  <dd className="min-w-0 truncate text-right font-semibold text-[var(--ink)]">
-                    {restaurantData.deliveryTime || 'Not set'} · ₱{adminDeliveryFee}
-                  </dd>
-                </div>
-                <div className="flex items-center justify-between gap-3">
-                  <dt className="shrink-0 text-[var(--muted-foreground)]">Hours</dt>
-                  <dd className="min-w-0 truncate text-right font-semibold text-[var(--ink)]">
-                    {hoursConfigured
-                      ? describeSchedule({ open_time: hours.openTime, close_time: hours.closeTime, open_days: hours.days })
-                      : 'Always open'}
-                  </dd>
-                </div>
-              </dl>
+                <dl className="space-y-2 px-5 py-4 text-sm">
+                  <div className="flex items-center justify-between gap-3">
+                    <dt className="text-[var(--muted-foreground)]">Rating</dt>
+                    <dd className="min-w-0 truncate text-right font-semibold text-[var(--ink)]">
+                      {restaurantData.rating > 0
+                        ? `${restaurantData.rating.toFixed(1)} · ${restaurantData.ratingCount} reviews`
+                        : 'No ratings yet'}
+                    </dd>
+                  </div>
+                  <div className="flex items-center justify-between gap-3">
+                    <dt className="shrink-0 text-[var(--muted-foreground)]">Delivery</dt>
+                    <dd className="min-w-0 truncate text-right font-semibold text-[var(--ink)]">
+                      {restaurantData.deliveryTime || 'Not set'} · ₱{adminDeliveryFee}
+                    </dd>
+                  </div>
+                  <div className="flex items-center justify-between gap-3">
+                    <dt className="shrink-0 text-[var(--muted-foreground)]">Hours</dt>
+                    <dd className="min-w-0 truncate text-right font-semibold text-[var(--ink)]">
+                      {hoursConfigured
+                        ? describeSchedule({ open_time: hours.openTime, close_time: hours.closeTime, open_days: hours.days })
+                        : 'Always open'}
+                    </dd>
+                  </div>
+                </dl>
 
-              <div className="px-5 pb-5">
-                <Button
-                  onClick={() => {
-                    setPreviewMode(true);
-                    window.scrollTo({ top: 0, behavior: 'smooth' });
-                  }}
-                  variant="outline"
-                  className="flex min-h-11 w-full items-center justify-center gap-2 text-sm"
-                >
-                  <Eye className="size-4" aria-hidden="true" />
-                  Preview as a customer
-                </Button>
-              </div>
-            </section>
+                <div className="px-5 pb-5">
+                  <Button
+                    onClick={() => {
+                      setPreviewMode(true);
+                      window.scrollTo({ top: 0, behavior: 'smooth' });
+                    }}
+                    variant="outline"
+                    className="flex min-h-11 w-full items-center justify-center gap-2 text-sm"
+                  >
+                    <Eye className="size-4" aria-hidden="true" />
+                    Preview as a customer
+                  </Button>
+                </div>
+              </section>
 
-            <section className="rounded-3xl border border-line bg-card p-5">
-              <div className="flex items-center justify-between gap-3">
-                <h3 className="font-bold text-[var(--ink)]">Finish your store</h3>
-                <span className="text-xs font-bold tabular-nums text-[var(--muted-foreground)]">
-                  {setupDone}/{setupSteps.length}
-                </span>
-              </div>
-              <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-[var(--muted)]" aria-hidden="true">
-                <div
-                  className="h-full rounded-full bg-[var(--success)] transition-all"
-                  style={{ width: `${Math.round((setupDone / setupSteps.length) * 100)}%` }}
-                />
-              </div>
-              <ul className="mt-4 space-y-1">
-                {setupSteps.map((step) => (
-                  <li key={step.label}>
-                    <button
-                      type="button"
-                      onClick={step.open}
-                      className="flex min-h-11 w-full items-center gap-3 rounded-xl px-2 text-left transition-colors hover:bg-[var(--muted)]"
-                    >
-                      <span
-                        aria-hidden="true"
-                        className={`grid size-5 shrink-0 place-items-center rounded-full border-2 ${step.done ? 'border-[var(--success)] bg-[var(--success)] text-white' : 'border-[var(--border)]'}`}
+              <section className="rounded-3xl border border-line bg-card p-5">
+                <div className="flex items-center justify-between gap-3">
+                  <h3 className="font-bold text-[var(--ink)]">Finish your store</h3>
+                  <span className="text-xs font-bold tabular-nums text-[var(--muted-foreground)]">
+                    {setupDone}/{setupSteps.length}
+                  </span>
+                </div>
+                <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-[var(--muted)]" aria-hidden="true">
+                  <div
+                    className="h-full rounded-full bg-[var(--success)] transition-all"
+                    style={{ width: `${Math.round((setupDone / setupSteps.length) * 100)}%` }}
+                  />
+                </div>
+                <ul className="mt-4 space-y-1">
+                  {setupSteps.map((step) => (
+                    <li key={step.label}>
+                      <button
+                        type="button"
+                        onClick={step.open}
+                        className="flex min-h-11 w-full items-center gap-3 rounded-xl px-2 text-left transition-colors hover:bg-[var(--muted)]"
                       >
-                        {step.done && <Check className="size-3" />}
-                      </span>
-                      <span className={`min-w-0 flex-1 text-sm ${step.done ? 'text-[var(--muted-foreground)]' : 'font-semibold text-[var(--ink)]'}`}>
-                        {step.label}
-                      </span>
-                      <ChevronRight className="size-4 shrink-0 text-[var(--border)]" aria-hidden="true" />
-                    </button>
-                  </li>
-                ))}
-              </ul>
-            </section>
-          </aside>
+                        <span
+                          aria-hidden="true"
+                          className={`grid size-5 shrink-0 place-items-center rounded-full border-2 ${step.done ? 'border-[var(--success)] bg-[var(--success)] text-white' : 'border-[var(--border)]'}`}
+                        >
+                          {step.done && <Check className="size-3" />}
+                        </span>
+                        <span className={`min-w-0 flex-1 text-sm ${step.done ? 'text-[var(--muted-foreground)]' : 'font-semibold text-[var(--ink)]'}`}>
+                          {step.label}
+                        </span>
+                        <ChevronRight className="size-4 shrink-0 text-[var(--border)]" aria-hidden="true" />
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              </section>
+            </aside>
           </div>
           </div>
         )}

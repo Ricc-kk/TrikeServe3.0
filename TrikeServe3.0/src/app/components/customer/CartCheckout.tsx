@@ -20,6 +20,7 @@ import { useAuth } from "../../contexts/AuthContext";
 import { usePreviousPage } from "../../hooks/usePreviousPage";
 import { supabase } from "../../../utils/supabase";
 import { supabaseHelpers, findDeliveryTerminalForOrder, logAudit } from "@/lib/supabase";
+import { computeDistanceFare, deliveryRates, straightLineKm } from "@/lib/pricing";
 import MapSelector from "./MapSelector";
 import ProofCapture from "../ui/ProofCapture";
 import { getDefaultAddress, setDefaultAddress } from "@/lib/defaultAddress";
@@ -54,7 +55,14 @@ export default function CartCheckout() {
     [cartRestaurants, routeState?.restaurantId],
   );
 
-  const [deliveryFee, setDeliveryFee] = useState(35);
+  const [platformDeliveryFee, setPlatformDeliveryFee] = useState(35);
+  const [deliveryQuote, setDeliveryQuote] = useState(() => ({
+    rates: deliveryRates(null, 35),
+    distanceKm: null as number | null,
+    terminalId: null as string | null,
+    terminalName: null as string | null,
+  }));
+  const [isDeliveryQuoteLoading, setIsDeliveryQuoteLoading] = useState(false);
   const [hasSelectedAddress, setHasSelectedAddress] = useState(false);
   const [fromDefaultAddress, setFromDefaultAddress] = useState(false);
 
@@ -147,10 +155,10 @@ export default function CartCheckout() {
     lng: 120.9668,
   });
 
-  // Load the delivery fee set by the admin (admin_settings > rates >
-  // deliveryBaseFee).
+  // Load the platform delivery base fee. A terminal can override this base and
+  // add a per-kilometre charge after its configured included distance.
   useEffect(() => {
-    supabaseHelpers.getAdminDeliveryFee().then(setDeliveryFee);
+    supabaseHelpers.getAdminDeliveryFee().then(setPlatformDeliveryFee);
   }, []);
 
   // Prefill from the "Deliver to" address chosen on the food page, so the address
@@ -193,6 +201,130 @@ export default function CartCheckout() {
       setFromDefaultAddress(true);
     }
   }, [user?.id, user?.email, delivery.address]);
+
+  // Quote delivery from the restaurant pin to the selected customer address.
+  // The terminal is chosen by the restaurant pickup and its route coverage, so
+  // the price and the terminal saved on the order describe the same trip.
+  useEffect(() => {
+    let cancelled = false;
+
+    const fallbackQuote = () => ({
+      rates: deliveryRates(null, platformDeliveryFee),
+      distanceKm: null,
+      terminalId: null,
+      terminalName: null,
+    });
+
+    const hasCoords = (lat: number, lng: number) =>
+      Number.isFinite(lat) && Number.isFinite(lng) && (lat !== 0 || lng !== 0);
+
+    const loadQuote = async () => {
+      if (!restaurant || !hasSelectedAddress || !hasCoords(selectedAddress.lat, selectedAddress.lng)) {
+        if (!cancelled) {
+          setDeliveryQuote(fallbackQuote());
+          setIsDeliveryQuoteLoading(false);
+        }
+        return;
+      }
+
+      setIsDeliveryQuoteLoading(true);
+      try {
+        let restaurantCoords: { lat: number; lng: number } | null = null;
+        let restaurantDbId = restaurant.supabaseRestaurantId;
+
+        if (!restaurantDbId && restaurant.businessUserId) {
+          const { data } = await supabase
+            .from("restaurants")
+            .select("id, latitude, longitude")
+            .eq("business_user_id", restaurant.businessUserId)
+            .maybeSingle();
+          if (data?.id) restaurantDbId = data.id;
+          const lat = Number(data?.latitude);
+          const lng = Number(data?.longitude);
+          if (hasCoords(lat, lng)) restaurantCoords = { lat, lng };
+        } else if (!restaurantDbId && !restaurant.id.includes("@")) {
+          restaurantDbId = restaurant.id;
+        }
+
+        if (!restaurantCoords && restaurantDbId) {
+          const { data } = await supabaseHelpers.getRestaurantProfile(restaurantDbId);
+          const lat = Number(data?.latitude);
+          const lng = Number(data?.longitude);
+          if (hasCoords(lat, lng)) restaurantCoords = { lat, lng };
+        }
+
+        const assignment = await findDeliveryTerminalForOrder({
+          dropoffLat: selectedAddress.lat,
+          dropoffLng: selectedAddress.lng,
+          pickupLat: restaurantCoords?.lat,
+          pickupLng: restaurantCoords?.lng,
+          routeToPickup: true,
+        });
+
+        let terminalPricing: any = null;
+        if (assignment.terminal?.id) {
+          const queries = [
+            "delivery_fee, delivery_fee_included_km, delivery_fee_per_km",
+            "delivery_fee, delivery_fee_per_km",
+            "delivery_fee",
+          ];
+          for (const columns of queries) {
+            const { data, error } = await supabase
+              .from("terminals")
+              .select(columns)
+              .eq("id", assignment.terminal.id)
+              .maybeSingle();
+            if (!error) {
+              terminalPricing = data;
+              break;
+            }
+          }
+        }
+
+        const rates = deliveryRates(terminalPricing, platformDeliveryFee);
+        const distanceKm = restaurantCoords
+          ? straightLineKm(restaurantCoords, { lat: selectedAddress.lat, lng: selectedAddress.lng })
+          : null;
+
+        if (!cancelled) {
+          setDeliveryQuote({
+            rates,
+            distanceKm,
+            terminalId: assignment.terminal?.id ?? null,
+            terminalName: assignment.terminal?.name ?? null,
+          });
+        }
+      } catch (error) {
+        console.warn("[Cart] Could not calculate terminal delivery fee:", error);
+        if (!cancelled) setDeliveryQuote(fallbackQuote());
+      } finally {
+        if (!cancelled) setIsDeliveryQuoteLoading(false);
+      }
+    };
+
+    void loadQuote();
+    return () => { cancelled = true; };
+  }, [
+    restaurant?.id,
+    restaurant?.name,
+    restaurant?.businessUserId,
+    restaurant?.supabaseRestaurantId,
+    hasSelectedAddress,
+    selectedAddress.lat,
+    selectedAddress.lng,
+    platformDeliveryFee,
+  ]);
+
+  const deliveryFee = computeDistanceFare(deliveryQuote.rates, deliveryQuote.distanceKm);
+  const deliveryExtraKm = deliveryQuote.distanceKm == null
+    ? 0
+    : Math.max(0, deliveryQuote.distanceKm - deliveryQuote.rates.baseFareIncludedKm);
+  const formatDeliveryKm = (km: number) => Number(km.toFixed(2)).toString();
+  const deliveryFeeDescription = deliveryQuote.distanceKm == null
+    ? deliveryQuote.terminalName
+      ? `Base delivery fee · ${deliveryQuote.terminalName}`
+      : "Platform delivery fee"
+    : `₱${deliveryQuote.rates.baseFare} covers first ${formatDeliveryKm(deliveryQuote.rates.baseFareIncludedKm)} km${deliveryExtraKm > 0 ? ` + ₱${deliveryQuote.rates.perKm}/km for ${formatDeliveryKm(deliveryExtraKm)} km after` : ""}${deliveryQuote.terminalName ? ` · ${deliveryQuote.terminalName}` : ""}`;
 
   const subtotal = restaurant
     ? restaurant.items.reduce((sum, item) => sum + item.price * item.quantity, 0)
@@ -295,17 +427,9 @@ export default function CartCheckout() {
       return;
     }
 
-    // Assign the delivery to the nearest active terminal. Ride-route coverage
-    // is not a requirement for a food order.
-    let resolvedTerminalId: string | null = null;
-    if (selectedAddress.lat && selectedAddress.lng) {
-      const terminalAssignment = await findDeliveryTerminalForOrder({
-        dropoffLat: selectedAddress.lat,
-        dropoffLng: selectedAddress.lng,
-        requireRoute: false,
-      });
-      resolvedTerminalId = terminalAssignment.terminal?.id || null;
-    }
+    // The quote already resolved the nearest route-serving terminal from the
+    // restaurant pickup and the configured delivery distance rate.
+    const resolvedTerminalId = deliveryQuote.terminalId;
     /*
      * Payment proof is optional for now.
      *
@@ -1061,14 +1185,14 @@ export default function CartCheckout() {
           </div>
         </div>
 
-        {/* Delivery Fee (set by the admin) */}
+        {/* Delivery fee using the terminal's included-distance pricing */}
         <div>
           <div className="mb-3 flex items-center gap-2">
             <Info className="size-5 text-[var(--amber)]" />
             <div>
               <h3 className="text-sm font-bold text-[var(--ink)]">Delivery fee</h3>
               <p className="text-xs text-[var(--muted-foreground)]">
-                Food delivery (base rate)
+                {isDeliveryQuoteLoading ? "Calculating delivery fee…" : deliveryFeeDescription}
               </p>
             </div>
           </div>
@@ -1202,10 +1326,10 @@ export default function CartCheckout() {
         <button
           type="button"
           onClick={handlePlaceOrder}
-          disabled={isUploadingProof}
+          disabled={isUploadingProof || isDeliveryQuoteLoading}
           className="w-full rounded-2xl bg-[var(--success)] py-4 font-bold text-white shadow-lg transition-all active:scale-95 disabled:opacity-60"
         >
-          {isUploadingProof ? 'Uploading proof…' : 'Place Order'}
+          {isUploadingProof ? 'Uploading proof…' : isDeliveryQuoteLoading ? 'Calculating delivery…' : 'Place Order'}
         </button>
       </div>
 
