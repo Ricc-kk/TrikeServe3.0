@@ -566,7 +566,7 @@ export default function RiderProfile() {
                 )}
               </div>
               <p className="text-xs text-[var(--muted-foreground)] mt-2">
-                <Link to="/rider/service-types" className="text-[var(--primary)] hover:underline font-semibold">
+                <Link to="/rider/service-types" state={{ returnTo: '/rider/profile' }} className="text-[var(--primary)] hover:underline font-semibold">
                   Manage Service Types
                 </Link>
               </p>

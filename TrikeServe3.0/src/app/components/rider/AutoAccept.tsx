@@ -178,14 +178,14 @@ export default function AutoAccept() {
             {eligibleServiceTypes.length === 0 && user?.serviceTypes && user.serviceTypes.length > 0 && (
               <p className="text-xs text-[var(--muted-foreground)] mt-2">
                 You only offer ride share, so no requests can be auto-accepted. Add Private Ride or Delivery in{' '}
-                <Link to="/rider/service-types" className="text-[var(--primary)] hover:underline font-semibold">
+                <Link to="/rider/service-types" state={{ returnTo: '/rider/auto-accept' }} className="text-[var(--primary)] hover:underline font-semibold">
                   Service Types
                 </Link>
                 .
               </p>
             )}
             <p className="text-xs text-[var(--muted-foreground)] mt-3">
-              <Link to="/rider/service-types" className="text-[var(--primary)] hover:underline font-semibold">
+              <Link to="/rider/service-types" state={{ returnTo: '/rider/auto-accept' }} className="text-[var(--primary)] hover:underline font-semibold">
                 Manage Service Types
               </Link>
             </p>

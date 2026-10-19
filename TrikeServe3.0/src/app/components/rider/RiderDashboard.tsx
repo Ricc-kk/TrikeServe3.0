@@ -3,7 +3,6 @@ import { GoogleMap, Marker, InfoWindow, DirectionsRenderer } from "@react-google
 import useMapLoader from "@/lib/mapLoader";
 import {
   Home as HomeIcon, 
-  Package, 
   Users, 
   Camera, 
   Navigation,
@@ -11,7 +10,6 @@ import {
   UserCircle,
   MoreHorizontal,
   Power,
-  Car,
   Settings,
   Bell,
   Star,
@@ -53,19 +51,11 @@ interface IncomingRequest {
   waitingPassengers?: number;
 }
 
-const SERVICE_OPTIONS: Record<'rides' | 'delivery', { key: string; name: string; description: string }[]> = {
-  rides: [
-    { key: 'shared', name: 'Ride Share', description: 'Shared rides with other passengers' },
-    { key: 'private', name: 'Private Ride', description: 'Exclusive rides, no sharing' },
-  ],
-  delivery: [
-    { key: 'delivery', name: 'Delivery', description: 'Food & package delivery' },
-  ],
-};
-
 export default function RiderDashboard() {
   const navigate = useNavigate();
   const { user, updateProfile } = useAuth();
+  const updateProfileRef = useRef(updateProfile);
+  updateProfileRef.current = updateProfile;
   const dashboardRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<google.maps.Map | null>(null);
   const [isMapFullscreen, setIsMapFullscreen] = useState(false);
@@ -75,24 +65,10 @@ export default function RiderDashboard() {
   const [mode, setMode] = useState<'shared' | 'delivery'>('shared');
   const [currentSeats, setCurrentSeats] = useState(user?.currentSeats || 0);
   const [activeTrip, setActiveTrip] = useState<IncomingRequest | null>(null);
-  const [showServiceTypes, setShowServiceTypes] = useState(false);
   // Explains the offline tap instead of leaving a dead button.
   const [showOfflineNotice, setShowOfflineNotice] = useState(false);
   const [showMore, setShowMore] = useState(false);
-  // Rides can include Ride Share and/or Private Ride; Delivery is exclusive with a single option
-  const normalizeServiceSelection = (existing: string[] = []): { category: 'rides' | 'delivery'; rides: string[] } => {
-    const valid = existing.filter((s) => ['private', 'shared', 'delivery'].includes(s));
-    const rides = valid.filter((s) => s === 'shared' || s === 'private');
-    return {
-      category: valid.includes('delivery') ? 'delivery' : 'rides',
-      rides: rides.length > 0 ? rides : ['shared'],
-    };
-  };
-  const initialServiceSelection = normalizeServiceSelection(user?.serviceTypes);
-  const [selectedServices, setSelectedServices] = useState<string[]>(initialServiceSelection.category === 'delivery' ? ['delivery'] : initialServiceSelection.rides);
-  const activeServiceCategory = selectedServices.includes('delivery') ? 'delivery' : 'rides';
-  const [serviceCategory, setServiceCategory] = useState<'rides' | 'delivery'>(initialServiceSelection.category);
-  const [ridesSelection, setRidesSelection] = useState<string[]>(initialServiceSelection.rides);
+  const activeServiceCategory = user?.serviceTypes?.includes('delivery') ? 'delivery' : 'rides';
   const [totalPendingRequests, setTotalPendingRequests] = useState(0);
   const [hasActiveRide, setHasActiveRide] = useState(false);
   const [activeRideData, setActiveRideData] = useState<any>(null);
@@ -199,16 +175,17 @@ export default function RiderDashboard() {
     }
   }, []);
 
-  // Persist online status and service types to auth context
+  // Persist online status and current seats. Service types are saved on their
+  // dedicated page so this dashboard cannot overwrite a newer selection with
+  // stale modal state.
   useEffect(() => {
-    if (user && updateProfile) {
-      updateProfile({
+    if (user) {
+      void updateProfileRef.current({
         isOnline,
-        serviceTypes: selectedServices,
         currentSeats
       });
     }
-  }, [isOnline, selectedServices, currentSeats, user, updateProfile]);
+  }, [isOnline, currentSeats, user?.id]);
 
   // Check for an active ride: the saved one first, then the database.
   useEffect(() => {
@@ -843,30 +820,6 @@ export default function RiderDashboard() {
    };
 
 
-    const openServiceTypes = () => {
-      const saved = normalizeServiceSelection(selectedServices);
-      setServiceCategory(saved.category);
-      setRidesSelection(saved.rides);
-      setShowServiceTypes(true);
-    };
-
-    const saveServiceTypes = () => {
-      setSelectedServices(serviceCategory === 'delivery' ? ['delivery'] : ridesSelection);
-      setShowServiceTypes(false);
-    };
-
-    const selectServiceCategory = (next: 'rides' | 'delivery') => {
-      setServiceCategory(next);
-    };
-
-    const toggleServiceType = (key: string) => {
-      if (serviceCategory !== 'rides') return;
-      const next = ridesSelection.includes(key)
-        ? (ridesSelection.length > 1 ? ridesSelection.filter((s) => s !== key) : ridesSelection)
-        : [...ridesSelection, key];
-      setRidesSelection(next);
-    };
-
   return (
     <div ref={dashboardRef} className="h-dvh min-h-[32rem] flex flex-col bg-[var(--muted)] relative overflow-hidden">
       {/* Full Screen Map */}
@@ -985,7 +938,7 @@ export default function RiderDashboard() {
         <div className="absolute right-3 top-[calc(env(safe-area-inset-top)+0.75rem)] z-[1000] flex gap-1 sm:right-6 sm:top-[calc(env(safe-area-inset-top)+1.5rem)] sm:gap-2">
           {!isMapFullscreen && !activeTrip && (
             <button
-              onClick={openServiceTypes}
+              onClick={() => navigate('/rider/service-types', { state: { returnTo: '/rider' } })}
               aria-label="Choose service types"
               className="w-10 h-10 sm:w-12 sm:h-12 bg-[var(--primary)] rounded-2xl shadow-xl flex items-center justify-center hover:shadow-2xl active:scale-95 transition-all border-2 border-white"
             >
@@ -1159,109 +1112,6 @@ export default function RiderDashboard() {
                   )}
                 </div>
               </div>
-
-
-              {showServiceTypes && (
-                <div className="fixed inset-0 bg-black/50 z-[2000] flex items-end justify-center sm:items-center sm:p-6 animate-in fade-in duration-200">
-                  <div role="dialog" aria-modal="true" aria-label="Service types" className="bg-card w-full sm:max-w-lg rounded-t-3xl sm:rounded-3xl max-h-[85dvh] overflow-y-auto">
-                    <div className="sticky top-0 bg-surface border-b border-[var(--border)] px-5 py-4 flex items-center justify-between">
-                      <h2 className="text-xl font-bold text-[var(--ink)]">Service Types</h2>
-                      <button onClick={() => setShowServiceTypes(false)}>
-                        <X className="w-6 h-6 text-[var(--muted-foreground)]" />
-                      </button>
-                    </div>
-                    <div className="p-5 space-y-4">
-                      <p className="text-sm text-[var(--muted-foreground)]">
-                        Choose a category, then select the service types you want to accept.
-                        {serviceCategory === 'rides' && ' You can select both Ride Share and Private Ride.'}
-                      </p>
-
-                      {/* Category */}
-                      <div className="grid grid-cols-2 gap-3">
-                        <div
-                          onClick={() => selectServiceCategory('rides')}
-                          className={`flex flex-col items-center gap-2 p-4 border-2 rounded-lg cursor-pointer transition-all ${
-                            serviceCategory === 'rides'
-                              ? 'border-[var(--primary)] bg-[var(--error-soft)]'
-                              : 'border-[var(--border)] hover:border-[var(--border)]'
-                          }`}
-                        >
-                          <div className={`w-12 h-12 rounded-full flex items-center justify-center ${
-                            serviceCategory === 'rides' ? 'bg-[var(--primary)] text-white' : 'bg-[var(--muted)] text-[var(--muted-foreground)]'
-                          }`}>
-                            <Users className="w-6 h-6" />
-                          </div>
-                          <div className="text-center">
-                            <p className="font-semibold text-[var(--ink)]">Rides</p>
-                            <p className="text-xs text-[var(--muted-foreground)]">Transport passengers</p>
-                          </div>
-                        </div>
-                        <div
-                          onClick={() => selectServiceCategory('delivery')}
-                          className={`flex flex-col items-center gap-2 p-4 border-2 rounded-lg cursor-pointer transition-all ${
-                            serviceCategory === 'delivery'
-                              ? 'border-[var(--primary)] bg-[var(--error-soft)]'
-                              : 'border-[var(--border)] hover:border-[var(--border)]'
-                          }`}
-                        >
-                          <div className={`w-12 h-12 rounded-full flex items-center justify-center ${
-                            serviceCategory === 'delivery' ? 'bg-[var(--primary)] text-white' : 'bg-[var(--muted)] text-[var(--muted-foreground)]'
-                          }`}>
-                            <Package className="w-6 h-6" />
-                          </div>
-                          <div className="text-center">
-                            <p className="font-semibold text-[var(--ink)]">Delivery</p>
-                            <p className="text-xs text-[var(--muted-foreground)]">Food & package delivery</p>
-                          </div>
-                        </div>
-                      </div>
-
-                      {/* Service type within category */}
-                      <div className="space-y-2">
-                        {SERVICE_OPTIONS[serviceCategory].map((option) => {
-                          const active = (serviceCategory === 'delivery' ? ['delivery'] : ridesSelection).includes(option.key);
-                          const isMulti = serviceCategory === 'rides';
-                          return (
-                            <div
-                              key={option.key}
-                              onClick={() => (isMulti ? toggleServiceType(option.key) : undefined)}
-                              className={`flex items-center justify-between p-4 border-2 rounded-lg cursor-pointer transition-all ${
-                                active
-                                  ? 'border-[var(--primary)] bg-[var(--error-soft)]'
-                                  : 'border-[var(--border)] hover:border-[var(--border)]'
-                              }`}
-                            >
-                              <div className="flex items-center gap-3">
-                                <div className={`w-10 h-10 rounded-full flex items-center justify-center ${
-                                  active ? 'bg-[var(--primary)] text-white' : 'bg-[var(--muted)] text-[var(--muted-foreground)]'
-                                }`}>
-                                  {option.key === 'delivery' ? <Package className="w-5 h-5" /> : option.key === 'private' ? <Car className="w-5 h-5" /> : <Users className="w-5 h-5" />}
-                                </div>
-                                <div>
-                                  <p className="font-semibold text-[var(--ink)]">{option.name}</p>
-                                  <p className="text-xs text-[var(--muted-foreground)]">{option.description}</p>
-                                </div>
-                              </div>
-                              <div className={`w-5 h-5 rounded border-2 flex items-center justify-center ${
-                                active ? 'bg-[var(--primary)] border-[var(--primary)]' : 'border-[var(--border)]'
-                              }`}>
-                                {active && <div className="w-2 h-2 bg-surface rounded-sm" />}
-                              </div>
-                            </div>
-                          );
-                        })}
-                      </div>
-
-                      <Button
-                        onClick={saveServiceTypes}
-                        className="w-full bg-[var(--primary)] hover:bg-[var(--primary)]"
-                      >
-                        Save Service Types
-                      </Button>
-                    </div>
-                  </div>
-                </div>
-              )}
 
 
               {/* More Options Section */}
