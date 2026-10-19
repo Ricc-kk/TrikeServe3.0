@@ -8,6 +8,7 @@ import FloatingChatHead from "../ui/FloatingChatHead";
 import { useRideResume } from "../../../lib/rideResume";
 import RideChatOverlay from "../rider/RideChatOverlay";
 import { Badge } from "../ui/badge";
+import { OrderStatusUpdates } from "../ui/OrderStatusUpdates";
 import LocationBanner, { type LocationProblem } from "../ui/LocationBanner";
 import ProofCapture from "../ui/ProofCapture";
 import { useAuth } from "../../contexts/AuthContext";
@@ -15,6 +16,7 @@ import { supabaseHelpers, logAudit } from "@/lib/supabase";
 import { readRiderActiveRide, writeRiderActiveRide, clearRiderActiveRide, fetchRiderActiveRide } from "../../../lib/riderActiveRide";
 import { supabase } from "../../../utils/supabase";
 import useMapLoader from "@/lib/mapLoader";
+import { createCustomerMarkerIcon, createRestaurantMarkerIcon } from "@/lib/mapIcons";
 import PassengerMessagingDB from "./PassengerMessagingDB";
 import tricycleIcon from "../../../assets/0b76d1aa56b8ad6e15dd4efc8a0100b0ca5762a1.png";
 
@@ -925,6 +927,13 @@ export default function ActiveRide() {
     Boolean(ride?.orderId || ride?.orderNumber) ||
     String(ride?.pickup || '').startsWith('DELIVERY');
 
+  const driverProgressStatus: Record<RideStatus, string> = {
+    'on-the-way': 'on-the-way',
+    arrived: 'arrived',
+    pickup: 'picked-up',
+    'drop-off': 'dropped-off',
+    payment: 'awaiting-payment',
+  };
   // Notify the customer and business whenever the driver updates a delivery's
   // status (accepted/on-the-way -> arrived -> picked up -> dropped off).
   const notifyDeliveryStatus = (ride: any, dbStatus: string, message?: string) => {
@@ -1330,10 +1339,20 @@ export default function ActiveRide() {
                 one is next. Showing only the active leg hid the destination from
                 the driver, so there was nothing on screen to steer toward. */}
             {rideData.pickupLat && (
-              <Marker position={{ lat: Number(rideData.pickupLat), lng: Number(rideData.pickupLng) }} icon={markerIcon(PICKUP_HEX)} title="Pickup" zIndex={isHeadingToPickup ? 90 : 70} />
+              <Marker
+                position={{ lat: Number(rideData.pickupLat), lng: Number(rideData.pickupLng) }}
+                icon={isDeliveryRide(rideData) ? createRestaurantMarkerIcon() : markerIcon(PICKUP_HEX)}
+                title={isDeliveryRide(rideData) ? "Restaurant pickup" : "Pickup"}
+                zIndex={isHeadingToPickup ? 90 : 70}
+              />
             )}
             {rideData.dropoffLat && (
-              <Marker position={{ lat: Number(rideData.dropoffLat), lng: Number(rideData.dropoffLng) }} icon={markerIcon(DROPOFF_HEX)} title="Drop-off" zIndex={!isHeadingToPickup ? 90 : 70} />
+              <Marker
+                position={{ lat: Number(rideData.dropoffLat), lng: Number(rideData.dropoffLng) }}
+                icon={isDeliveryRide(rideData) ? createCustomerMarkerIcon() : markerIcon(DROPOFF_HEX)}
+                title={isDeliveryRide(rideData) ? "Customer drop-off" : "Drop-off"}
+                zIndex={!isHeadingToPickup ? 90 : 70}
+              />
             )}
 
             {/* Road route for the current leg from Routes API. */}
@@ -1594,56 +1613,68 @@ export default function ActiveRide() {
             changes with the name and fare.
         */}
         {!isMinimized && (
-        <Card className="p-4 border-2 border-[var(--muted)] shadow-sm">
-          <div className="flex gap-4 mb-3">
-            {/* Round passenger photo, cropped by the wrapper. A shared ride has
-                several passengers and no single person to show, so it keeps the
-                group glyph. */}
-            <div className="size-14 flex-shrink-0 overflow-hidden rounded-full bg-[var(--primary-soft)] flex items-center justify-center">
-              {passengerAvatar ? (
-                <img
-                  src={passengerAvatar}
-                  alt={`${resolvedName || rideData.customerName || 'Passenger'}'s profile`}
-                  className="w-full h-full object-cover"
+          <>
+            <Card className="p-4 border-2 border-[var(--muted)] shadow-sm">
+              <div className="flex gap-4 mb-3">
+                {/* Round passenger photo, cropped by the wrapper. A shared ride has
+                    several passengers and no single person to show, so it keeps the
+                    group glyph. */}
+                <div className="size-14 flex-shrink-0 overflow-hidden rounded-full bg-[var(--primary-soft)] flex items-center justify-center">
+                  {passengerAvatar ? (
+                    <img
+                      src={passengerAvatar}
+                      alt={`${resolvedName || rideData.customerName || 'Passenger'}'s profile`}
+                      className="w-full h-full object-cover"
+                    />
+                  ) : rideData.customerPhoto === 'shared' ? (
+                    <Users className="w-6 h-6 text-[var(--primary)]" aria-hidden="true" />
+                  ) : (
+                    <User className="w-6 h-6 text-[var(--primary)]" aria-hidden="true" />
+                  )}
+                </div>
+                <div className="flex-1">
+                  <h2 className="font-bold text-lg">{resolvedName || rideData.customerName}</h2>
+                  {rideData.passengerDetails && rideData.passengerDetails.length > 1 && (
+                    <p className="text-xs text-[var(--muted-foreground)] mt-0.5">
+                      {rideData.passengerDetails.map((p: any) => p.name || 'Passenger').join(', ')}
+                    </p>
+                  )}
+                  <div className="flex gap-2 mt-1">
+                    <Badge className="bg-[var(--primary)]">₱{rideData.amount}</Badge>
+                    <Badge variant="outline" className="text-[var(--muted-foreground)]">{rideData.payment === 'COD' ? 'Cash' : 'Prepaid'}</Badge>
+                  </div>
+                </div>
+              </div>
+              <div className="space-y-3 mt-4">
+                <div className={`flex gap-3 p-2 rounded-lg ${isHeadingToPickup ? 'bg-[var(--success-soft)] border border-[var(--success-soft)]' : ''}`}>
+                  <div className={`w-2 h-2 rounded-full mt-1.5 ${isHeadingToPickup ? 'bg-[var(--success)]' : 'bg-[var(--muted-foreground)]'}`} />
+                  <div className="flex-1 text-sm">
+                    <p className="text-[var(--muted-foreground)] text-xs">Pickup</p>
+                    <p className="font-semibold">{rideData.pickup}</p>
+                  </div>
+                  {isHeadingToPickup && <span className="text-[10px] bg-[var(--success)] text-white px-2 py-0.5 rounded-full font-bold self-center">HERE</span>}
+                </div>
+                <div className={`flex gap-3 p-2 rounded-lg ${!isHeadingToPickup && ['pickup', 'drop-off'].includes(rideData.status) ? 'bg-[var(--error-soft)] border border-[var(--error-soft)]' : ''}`}>
+                  <div className={`w-2 h-2 rounded-full mt-1.5 ${!isHeadingToPickup && ['pickup', 'drop-off'].includes(rideData.status) ? 'bg-[var(--primary)]' : 'bg-[var(--muted-foreground)]'}`} />
+                  <div className="flex-1 text-sm">
+                    <p className="text-[var(--muted-foreground)] text-xs">Drop-off</p>
+                    <p className="font-semibold">{rideData.dropoff}</p>
+                  </div>
+                  {!isHeadingToPickup && ['pickup', 'drop-off'].includes(rideData.status) && <span className="text-[10px] bg-[var(--primary)] text-white px-2 py-0.5 rounded-full font-bold self-center">HERE</span>}
+                </div>
+              </div>
+            </Card>
+            {isDeliveryRide(rideData) && (
+              <Card className="p-4 border-2 border-[var(--muted)] shadow-sm">
+                <h3 className="text-center font-bold text-[var(--ink)] text-sm mb-3">Order Progress</h3>
+                <OrderStatusUpdates
+                  status="preparing"
+                  driverStatus={driverProgressStatus[rideData.status]}
+                  deliveryMode="delivery"
                 />
-              ) : rideData.customerPhoto === 'shared' ? (
-                <Users className="w-6 h-6 text-[var(--primary)]" aria-hidden="true" />
-              ) : (
-                <User className="w-6 h-6 text-[var(--primary)]" aria-hidden="true" />
-              )}
-            </div>
-            <div className="flex-1">
-              <h2 className="font-bold text-lg">{resolvedName || rideData.customerName}</h2>
-              {rideData.passengerDetails && rideData.passengerDetails.length > 1 && (
-                <p className="text-xs text-[var(--muted-foreground)] mt-0.5">
-                  {rideData.passengerDetails.map((p: any) => p.name || 'Passenger').join(', ')}
-                </p>
-              )}
-              <div className="flex gap-2 mt-1">
-                <Badge className="bg-[var(--primary)]">₱{rideData.amount}</Badge>
-                <Badge variant="outline" className="text-[var(--muted-foreground)]">{rideData.payment === 'COD' ? 'Cash' : 'Prepaid'}</Badge>
-              </div>
-            </div>
-          </div>
-          <div className="space-y-3 mt-4">
-            <div className={`flex gap-3 p-2 rounded-lg ${isHeadingToPickup ? 'bg-[var(--success-soft)] border border-[var(--success-soft)]' : ''}`}>
-              <div className={`w-2 h-2 rounded-full mt-1.5 ${isHeadingToPickup ? 'bg-[var(--success)]' : 'bg-[var(--muted-foreground)]'}`} />
-              <div className="flex-1 text-sm">
-                <p className="text-[var(--muted-foreground)] text-xs">Pickup</p>
-                <p className="font-semibold">{rideData.pickup}</p>
-              </div>
-              {isHeadingToPickup && <span className="text-[10px] bg-[var(--success)] text-white px-2 py-0.5 rounded-full font-bold self-center">HERE</span>}
-            </div>
-            <div className={`flex gap-3 p-2 rounded-lg ${!isHeadingToPickup && ['pickup', 'drop-off'].includes(rideData.status) ? 'bg-[var(--error-soft)] border border-[var(--error-soft)]' : ''}`}>
-              <div className={`w-2 h-2 rounded-full mt-1.5 ${!isHeadingToPickup && ['pickup', 'drop-off'].includes(rideData.status) ? 'bg-[var(--primary)]' : 'bg-[var(--muted-foreground)]'}`} />
-              <div className="flex-1 text-sm">
-                <p className="text-[var(--muted-foreground)] text-xs">Drop-off</p>
-                <p className="font-semibold">{rideData.dropoff}</p>
-              </div>
-              {!isHeadingToPickup && ['pickup', 'drop-off'].includes(rideData.status) && <span className="text-[10px] bg-[var(--primary)] text-white px-2 py-0.5 rounded-full font-bold self-center">HERE</span>}
-            </div>
-          </div>
-        </Card>
+              </Card>
+            )}
+          </>
         )}
 
         <div className="grid gap-2">

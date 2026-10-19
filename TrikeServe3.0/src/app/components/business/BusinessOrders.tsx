@@ -12,9 +12,10 @@ import BusinessPageIntro from "./BusinessPageIntro";
     import { useAuth } from "../../contexts/AuthContext";
 import ReasonPromptModal from "../ui/reason-prompt-modal";
 import { getOrderProgress, isRiderHeadingToRestaurant } from "@/lib/orderProgress";
-import { OrderProgressStepper } from "../ui/OrderProgress";
+import { OrderStatusUpdates } from "../ui/OrderStatusUpdates";
 import { GoogleMap, MarkerF, Polyline } from "@react-google-maps/api";
 import useMapLoader from "@/lib/mapLoader";
+import { createCustomerMarkerIcon, createRestaurantMarkerIcon } from "@/lib/mapIcons";
 import tricycleIcon from '../../../assets/0b76d1aa56b8ad6e15dd4efc8a0100b0ca5762a1.png'
 /**
  * "9:08PM" / "1:00AM" — 12-hour, no space before the meridiem.
@@ -58,7 +59,7 @@ interface Order {
   deliveryFee: number;
   /**
    * The customer's screenshot of their GCash transfer, and when it arrived. This
-   * is what the shop is checking when it taps Confirm Payment.
+   * is what the shop checks before tapping Accept Order.
    */
   paymentProofUrl?: string | null;
   paymentProofUploadedAt?: string | null;
@@ -107,14 +108,14 @@ export default function BusinessOrders() {
   const [selectedTab, setSelectedTab] = useState<'active' | 'history'>('active');
   const [selectedOrder, setSelectedOrder] = useState<Order | null>(null);
   /** The one dialog left in this flow: confirming the GCash payment. */
-  const [confirmAction, setConfirmAction] = useState<'payment' | null>(null);
+  const [confirmAction, setConfirmAction] = useState<'accept' | null>(null);
   // Decline collects a reason before the order is cancelled.
   const [showDeclinePrompt, setShowDeclinePrompt] = useState(false);
   // Confirming the GCash transfer. Its own flag and message because it is the
   // one action on this screen that can legitimately fail on a busy shop -- two
   // people, or a double tap -- and a silent no-op there looks like the button
   // is broken.
-  const [isConfirmingPayment, setIsConfirmingPayment] = useState(false);
+  const [isAcceptingOrder, setIsAcceptingOrder] = useState(false);
   const [paymentError, setPaymentError] = useState<string | null>(null);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [selectedStatusFilters, setSelectedStatusFilters] = useState<ActiveOrderStatusFilter[]>([]);
@@ -195,7 +196,7 @@ export default function BusinessOrders() {
 
   const [isUpdatingStatus, setIsUpdatingStatus] = useState(false); // Prevent refresh during update
   /*
-   * Posting the rider request after "Ready for Delivery".
+   * Posting the driver request after "Assign Driver".
    *
    * Separate from `isUpdatingStatus`, which only guards the polling loop and is
    * never shown. This one is what the button reads while it works, so the shop can
@@ -204,10 +205,10 @@ export default function BusinessOrders() {
   const [isPostingDelivery, setIsPostingDelivery] = useState(false);
   const { isLoaded: isMapsLoaded } = useMapLoader();
   const [driverLocation, setDriverLocation] = useState<{ lat: number; lng: number } | null>(null);
+  const [restaurantLocation, setRestaurantLocation] = useState<{ lat: number; lng: number } | null>(null);
   const [driverStatus, setDriverStatus] = useState<string | null>(null);
   const [routePath, setRoutePath] = useState<Array<{ lat: number; lng: number }>>([]);
   const [etaToCustomer, setEtaToCustomer] = useState<string | null>(null);
-  const [rideRequestInfo, setRideRequestInfo] = useState<any>(null);
   const trackingPollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   // Refs so the realtime subscription can call the latest loadOrders without
   // re-subscribing on every render.
@@ -252,7 +253,7 @@ export default function BusinessOrders() {
       if (trackingPollRef.current) clearInterval(trackingPollRef.current);
       setDriverLocation(null);
       setRoutePath([]);
-      setRideRequestInfo(null);
+      setRestaurantLocation(null);
       setDriverStatus(null);
       return;
     }
@@ -291,7 +292,7 @@ export default function BusinessOrders() {
         // have driver_lat/lng columns.
         const { data: freshRide } = await supabase
           .from('ride_requests')
-          .select('driver_lat, driver_lng, driver_status, driver_status_message')
+          .select('driver_lat, driver_lng, driver_status, driver_status_message, pickup_lat, pickup_lng')
           .eq('order_id', selectedOrder.id)
           .order('updated_at', { ascending: false })
           .limit(1)
@@ -301,6 +302,13 @@ export default function BusinessOrders() {
           setDriverLocation({ lat: freshRide.driver_lat, lng: freshRide.driver_lng });
         }
         if (freshRide?.driver_status) setDriverStatus(freshRide.driver_status);
+        const pickupLat = Number(freshRide?.pickup_lat);
+        const pickupLng = Number(freshRide?.pickup_lng);
+        setRestaurantLocation(
+          freshRide?.pickup_lat != null && freshRide?.pickup_lng != null && Number.isFinite(pickupLat) && Number.isFinite(pickupLng)
+            ? { lat: pickupLat, lng: pickupLng }
+            : null,
+        );
       } catch (err) {
         console.error('[BusinessOrders] Error polling driver location:', err);
       }
@@ -320,6 +328,13 @@ export default function BusinessOrders() {
         setDriverLocation({ lat: ride.driver_lat, lng: ride.driver_lng });
       }
       if (ride.driver_status) setDriverStatus(ride.driver_status);
+      const pickupLat = Number(ride.pickup_lat);
+      const pickupLng = Number(ride.pickup_lng);
+      setRestaurantLocation(
+        ride.pickup_lat != null && ride.pickup_lng != null && Number.isFinite(pickupLat) && Number.isFinite(pickupLng)
+          ? { lat: pickupLat, lng: pickupLng }
+          : null,
+      );
     });
     return unsubscribe;
   }, [selectedOrder?.id, selectedOrder?.status]);
@@ -563,7 +578,7 @@ export default function BusinessOrders() {
          * Every request for these orders, not only the filled ones.
          *
          * The `.not('accepted_driver_id', 'is', null)` filter this replaces meant
-         * an open request was invisible here, so between "Ready for Delivery" and a
+         * an open request was invisible here, so between assigning a driver and a
          * rider accepting, the order looked the same as one that already had a
          * rider and read as assigned. Reading the open rows too is what lets the
          * screen say "finding a rider" and only say "assigned" once it is true.
@@ -774,102 +789,59 @@ export default function BusinessOrders() {
     setRawHistoryPage(1);
   }, [selectedTab, selectedStatusFilters, orderSearchQuery]);
 
-  /**
-   * Shop: the GCash transfer has arrived and been checked.
-   *
-   * Moves the order to `payment-confirmed`, which is what releases the Accept
-   * action -- the order cannot be cooked until the money for it is accounted
-   * for. It then reloads rather than patching the local row, because the write
-   * is guarded on `status = 'pending'` and a row this screen still believes is
-   * pending is exactly the case where the guard rejected it.
-   */
-  /**
-   * Confirm the GCash transfer. Its own step, with its own confirmation.
-   *
-   * This is the one place in the order flow where a popup is right. Everywhere
-   * else -- Start Preparing, Ready for Pickup, Ready for Delivery -- the shop is
-   * telling us something it already decided to do, and asking it to agree twice
-   * only put a dialog between the shop and its own customer. Checking someone's
-   * transfer is different: it is a statement about money that has not arrived, and
-   * it is the only step whose wrong answer cannot be undone by cooking the food.
-   *
-   * Returns whether it worked, so the confirmation can stay open on a failure
-   * rather than closing over a rejected write.
-   */
-  const handleConfirmPayment = async (order: Order) => {
-    setIsConfirmingPayment(true);
+  /** Accept the order, verify payment if needed, and begin preparation. */
+  const handleAcceptOrder = async (order: Order) => {
+    setIsAcceptingOrder(true);
     setPaymentError(null);
 
-    const result = await supabaseHelpers.confirmOrderPayment(order.id, user?.email);
+    let paymentConfirmedAt = order.paymentConfirmedAt;
+    if (order.status === 'pending') {
+      const result = await supabaseHelpers.confirmOrderPayment(order.id, user?.email);
 
-    if (!result.success) {
-      setPaymentError(result.error || 'Could not confirm this payment.');
-      setIsConfirmingPayment(false);
+      if (!result.success) {
+        setPaymentError(result.error || 'Could not accept this order.');
+        setIsAcceptingOrder(false);
+        return false;
+      }
+
+      paymentConfirmedAt = new Date().toISOString();
+      logAudit({
+        action: 'confirm_payment',
+        actorRole: 'business',
+        entityType: 'order',
+        entityId: order.id,
+        summary: `Confirmed GCash payment for order ${order.orderNumber}`,
+        details: { order_number: order.orderNumber, total: order.total },
+        actorEmail: user?.email,
+        actorName: user?.name,
+      });
+    } else if (order.status !== 'payment-confirmed') {
+      setIsAcceptingOrder(false);
       return false;
     }
 
-    // Tell the customer their money landed. Nothing else does this: the delivery
-    // notifications only fire from the rider's screen, so without it the customer
-    // is left watching a tracker that has not moved.
-    try {
-      await supabaseHelpers.notifyBusinessOrderStatusChange({
-        orderId: order.id,
-        orderNumber: order.orderNumber,
-        restaurantName: order.restaurantName,
-        status: 'payment-confirmed',
-      });
-    } catch (notifyError) {
-      console.error('[BusinessOrders] Failed to notify customer of payment:', notifyError);
+    if (!paymentConfirmedAt) {
+      setPaymentError('Confirm the GCash payment before accepting this order.');
+      setIsAcceptingOrder(false);
+      return false;
     }
 
-    logAudit({
-      action: 'confirm_payment',
-      actorRole: 'business',
-      entityType: 'order',
-      entityId: order.id,
-      summary: `Confirmed GCash payment for order ${order.orderNumber}`,
-      details: { order_number: order.orderNumber, total: order.total },
-      actorEmail: user?.email,
-      actorName: user?.name,
-    });
+    const didStartPreparing = await updateOrderStatus(order.id, 'preparing');
+    if (!didStartPreparing) {
+      // A payment may have been confirmed successfully even if the following
+      // order-status update failed. Leave it ready to retry as an accepted order.
+      const acceptedOrder = { ...order, status: 'payment-confirmed' as const, paymentConfirmedAt };
+      setOrders((current) => current.map((item) => item.id === order.id ? acceptedOrder : item));
+      setSelectedOrder((current) => current?.id === order.id ? acceptedOrder : current);
+      setIsAcceptingOrder(false);
+      return false;
+    }
 
-    // Reload rather than patch the row: the write is guarded on `status = 'pending'`
-    // and a row this screen still believes is pending is exactly the case where the
-    // guard rejected it.
-    await loadOrders();
-    setIsConfirmingPayment(false);
-
-    setSelectedOrder((o) =>
-      o
-        ? {
-            ...o,
-            status: 'payment-confirmed' as Order['status'],
-            paymentConfirmedAt: o.paymentConfirmedAt ?? new Date().toISOString(),
-          }
-        : o,
-    );
+    const preparingOrder = { ...order, status: 'preparing' as const, paymentConfirmedAt };
+    setOrders((current) => current.map((item) => item.id === order.id ? preparingOrder : item));
+    setSelectedOrder((current) => current?.id === order.id ? preparingOrder : current);
+    setIsAcceptingOrder(false);
     return true;
-  };
-
-  /**
-   * Start preparing. No confirmation, and no payment check.
-   *
-   * The money was confirmed in its own step above, and re-deciding it here would
-   * mean the shop agrees twice to the same thing. It also refuses to run on an
-   * unpaid order: the button only exists for a paid one, so this is belt and
-   * braces rather than a second gate.
-   */
-  const handleStartPreparing = async (order: Order) => {
-    if (!order.paymentConfirmedAt) {
-      setPaymentError('Confirm the GCash payment before starting this order.');
-      return;
-    }
-
-    await updateOrderStatus(order.id, 'preparing');
-
-    setSelectedOrder((o) =>
-      o ? { ...o, status: 'preparing' as Order['status'] } : o,
-    );
   };
 
   /** Decline a pending order, recording the reason the business gave. */
@@ -919,7 +891,7 @@ export default function BusinessOrders() {
     }
   };
 
-  const updateOrderStatus = async (orderId: string, newStatus: Order['status']) => {
+  const updateOrderStatus = async (orderId: string, newStatus: Order['status']): Promise<boolean> => {
     console.log('[BusinessOrders] ========== STATUS UPDATE START ==========');
     console.log('[BusinessOrders] Order ID:', orderId);
     console.log('[BusinessOrders] New Status:', newStatus);
@@ -935,7 +907,7 @@ export default function BusinessOrders() {
         console.error('[BusinessOrders] ERROR: Order not found in list');
         setIsUpdatingStatus(false);
         alert('Order not found');
-        return;
+        return false;
       }
 
       console.log('[BusinessOrders] Order details:', {
@@ -996,8 +968,9 @@ export default function BusinessOrders() {
           alert(errorMsg);
 
           setOrders(orders);
+          setSelectedOrder((o) => (o && o.id === orderId ? { ...o, status: order.status } : o));
           setIsUpdatingStatus(false);
-          return;
+          return false;
         }
       }
 
@@ -1026,12 +999,16 @@ export default function BusinessOrders() {
 
       console.log('[BusinessOrders] ========== STATUS UPDATE COMPLETE ==========');
       setIsUpdatingStatus(false);
+      return true;
 
     } catch (error) {
       console.error('[BusinessOrders] ❌ EXCEPTION:', error);
       console.error('[BusinessOrders] Error String:', String(error));
       alert('Error: ' + String(error).substring(0, 150));
+      setOrders(orders);
+      setSelectedOrder((o) => (o && o.id === orderId ? { ...o, status: orders.find((item) => item.id === orderId)?.status ?? o.status } : o));
       setIsUpdatingStatus(false);
+      return false;
     }
   };
 
@@ -1181,44 +1158,23 @@ export default function BusinessOrders() {
     return true;
   };
 
-  /**
-   * "Ready for Delivery": post the ride request, then move the order on.
-   *
-   * The status used to change *after* everything the request needs, and one of
-   * those things is a Google Geocoding HTTP call for the restaurant's address. That
-   * left the order sitting on "Ready for Pickup" for a second or more with no
-   * change and no indication anything had happened — which is indistinguishable
-   * from the tap not registering, and is exactly how a button gets pressed three
-   * times and posts three delivery requests.
-   *
-   * So the order moves first, optimistically, and the request is posted behind it.
-   * The shop sees the order advance the instant they tap, and the posting runs on
-   * with a spinner while it finishes. If the request genuinely fails the status is
-   * put back, because an order marked "Ready for Delivery" with no rider request
-   * behind it will never be collected.
-   */
-  const handleReadyForDelivery = async (order: Order) => {
-    console.log('[BusinessOrders] Ready for Delivery clicked for order:', order.orderNumber);
+  /** Post the driver request while the order stays in preparation until pickup. */
 
-    if (isPostingDelivery) return;
+  const handleAssignDriver = async (order: Order) => {
+    if (isPostingDelivery || order.driverRequested || order.driverName) return;
     setIsPostingDelivery(true);
 
-    // Move the order now, not after the geocoder answers.
-    await updateOrderStatus(order.id, 'confirmed');
-    setSelectedOrder((o) => (o ? { ...o, status: 'confirmed' as Order['status'] } : o));
+    try {
+      const didCreateRequest = await createOpenDeliveryRequest(order);
+      if (!didCreateRequest) return;
 
-    const didCreateRequest = await createOpenDeliveryRequest(order);
-
-    if (!didCreateRequest) {
-      // Put it back so the shop can try again. The order is back on the button
-      // that posts the request, with the reason shown by the failure path.
-      await updateOrderStatus(order.id, 'ready');
-      setSelectedOrder((o) => (o ? { ...o, status: 'ready' as Order['status'] } : o));
+      setOrders((current) => current.map((item) => item.id === order.id ? { ...item, driverRequested: true } : item));
+      setSelectedOrder((current) =>
+        current?.id === order.id ? { ...current, driverRequested: true } : current,
+      );
+    } finally {
       setIsPostingDelivery(false);
-      return;
     }
-
-    setIsPostingDelivery(false);
   };
 
   /*
@@ -1300,12 +1256,14 @@ export default function BusinessOrders() {
    * watching for a rider sees "finding one" and then sees the name, in that order.
    */
   const isFindingRider = (order: Order | null) =>
-    !!order && order.status === 'confirmed' && !order.driverName;
+    !!order && order.deliveryMode === 'delivery' &&
+    (Boolean(order.driverRequested) || order.status === 'confirmed') &&
+    !order.driverName;
 
   const orderStatusLabel = (order: Order | null) => {
     if (!order) return '';
-    if (isFindingRider(order)) return 'Finding Rider';
-    if (order.status === 'confirmed' && order.driverName) return 'Rider Assigned';
+    if (isFindingRider(order)) return 'Finding Driver';
+    if (order.driverName) return 'Driver Assigned';
     return getStatusLabel(order.status);
   };
 
@@ -1345,6 +1303,7 @@ export default function BusinessOrders() {
         driverStatus: driverStatus ?? selectedOrder.driverStatus,
         driverMessage: selectedOrder.driverMessage,
         deliveryMode: selectedOrder.deliveryMode,
+        driverLabel: 'Driver',
       })
     : null;
 
@@ -1665,11 +1624,6 @@ export default function BusinessOrders() {
                     : orderStatusLabel(selectedOrder)}
                 </Badge>
 
-                {/* Status Progress Bar - same track as the customer's screen */}
-                <div className="mt-3 md:mt-4">
-                  <p className="text-xs font-semibold text-[var(--muted-foreground)] mb-2">ORDER PROGRESS</p>
-                  {progress && <OrderProgressStepper progress={progress} />}
-                </div>
               </div>
 
               <div className="p-3 md:p-5 space-y-3 md:space-y-4">
@@ -1682,6 +1636,15 @@ export default function BusinessOrders() {
                     <p className="text-sm text-[var(--error)]">{selectedOrder.cancelReason}</p>
                   </div>
                 )}
+
+                <Card className="p-4 border-2 border-[var(--muted)] shadow-sm">
+                  <h3 className="text-center font-bold text-[var(--ink)] text-sm md:text-base mb-3">Order Progress</h3>
+                  <OrderStatusUpdates
+                    status={selectedOrder.status}
+                    driverStatus={driverStatus ?? selectedOrder.driverStatus}
+                    deliveryMode={selectedOrder.deliveryMode}
+                  />
+                </Card>
 
                 {/* Customer Info */}
                 <div>
@@ -1755,7 +1718,7 @@ export default function BusinessOrders() {
                 </div>
 
                 {/*
-                 * The GCash screenshot, and the Confirm Payment action.
+                 * The GCash screenshot and the Accept Order action.
                  *
                  * Placed above the money breakdown on purpose: confirming is
                  * the shop's next action on a pending order, and it cannot be
@@ -1857,100 +1820,52 @@ export default function BusinessOrders() {
                   </div>
                 </div>
 
-                {/* Action Buttons - Complete Workflow */}
-                {/*
-                 * Payment is a step of its own, and the only one that asks before
-                 * it acts.
-                 *
-                 * Everything past it -- Start Preparing, Ready for Pickup, Ready for
-                 * Delivery -- is the shop reporting what it has already decided to
-                 * do: the food is cooking, it is packed, the rider is on the way.
-                 * None of those ask, so the order moves on the tap it was given.
-                 *
-                 * Confirmable without a screenshot. The customer can order without
-                 * attaching one, so gating this button on the proof left those orders
-                 * stuck in `pending` with no way out except cancelling a customer who
-                 * had already paid. The absence is surfaced in the confirmation
-                 * dialog instead -- the shop is told it is vouching from the amount
-                 * rather than from a receipt, which is a weaker claim and should feel
-                 * like one.
-                 *
-                 * Decline stays available on an unpaid order: a customer who never
-                 * transferred should not be able to hold a slot open.
-                 */}
-                {selectedOrder.status === 'pending' && (
+                {/* Accept starts preparation. Delivery orders can then request a driver. */}
+                {(selectedOrder.status === 'pending' || selectedOrder.status === 'payment-confirmed') && (
                   <div className="space-y-2">
                     <Button
-                      onClick={() => setConfirmAction('payment')}
-                      disabled={isConfirmingPayment}
-                      title="Confirms the GCash payment for this order"
+                      onClick={() => {
+                        if (selectedOrder.status === 'pending') setConfirmAction('accept');
+                        else void handleAcceptOrder(selectedOrder);
+                      }}
+                      disabled={isAcceptingOrder || isUpdatingStatus}
+                      title="Accept this order and start preparation"
                       className="w-full bg-[var(--success)] hover:bg-[var(--success)] py-4 md:py-6 font-bold text-sm md:text-base disabled:opacity-50"
                     >
-                      ✓ Confirm Payment
+                      Accept Order
                     </Button>
-                    <Button
-                      onClick={() => setShowDeclinePrompt(true)}
-                      variant="outline"
-                      className="w-full border-[var(--primary)] text-[var(--primary)] py-4 md:py-6 text-sm md:text-base"
-                    >
-                      ✗ Decline Order
-                    </Button>
-                  </div>
-                )}
-
-                {selectedOrder.status === 'payment-confirmed' && (
-                  <div className="space-y-2">
-                    <Button
-                      onClick={() => handleStartPreparing(selectedOrder)}
-                      className="w-full bg-[var(--success)] hover:bg-[var(--success)] py-4 md:py-6 font-bold text-sm md:text-base"
-                    >
-                      ✓ Start Preparing
-                    </Button>
-                  </div>
-                )}
-
-                {selectedOrder.status === 'preparing' && (
-                  <div className="space-y-2">
-                    <Button
-                      onClick={async () => {
-                        await updateOrderStatus(selectedOrder.id, 'ready');
-                        setSelectedOrder((o) =>
-                          o ? { ...o, status: 'ready' as Order['status'] } : o,
-                        );
-                      }}
-                      className="w-full bg-[var(--amber)] hover:bg-[var(--amber)] py-4 md:py-6 font-bold text-sm md:text-base"
-                    >
-                      → Ready for Pickup
-                    </Button>
-                  </div>
-                )}
-
-                {selectedOrder.status === 'ready' && (
-                  <div className="space-y-2">
-                    {selectedOrder.deliveryMode === 'delivery' && (
+                    {selectedOrder.status === 'pending' && (
                       <Button
-                        onClick={() => handleReadyForDelivery(selectedOrder)}
-                        disabled={isPostingDelivery}
-                        className="w-full bg-[var(--info)] hover:bg-[var(--info)] py-4 md:py-6 font-bold text-sm md:text-base"
+                        onClick={() => setShowDeclinePrompt(true)}
+                        variant="outline"
+                        className="w-full border-[var(--primary)] text-[var(--primary)] py-4 md:py-6 text-sm md:text-base"
                       >
-                        {/* Says what is happening while the rider request posts. The
-                            order has already moved on by this point, so without this
-                            the button would simply vanish and leave no trace that it
-                            had ever been pressed. */}
-                        {isPostingDelivery ? (
-                          <>
-                            <Loader2 className="size-4 animate-spin" aria-hidden="true" />
-                            Posting to riders…
-                          </>
-                        ) : (
-                          "→ Ready for Delivery"
-                        )}
+                        Decline Order
                       </Button>
                     )}
                   </div>
                 )}
 
-                {selectedOrder.status === 'confirmed' && (
+                {(selectedOrder.status === 'preparing' || selectedOrder.status === 'ready') &&
+                  selectedOrder.deliveryMode === 'delivery' &&
+                  !selectedOrder.driverRequested && !selectedOrder.driverName && (
+                    <Button
+                      onClick={() => void handleAssignDriver(selectedOrder)}
+                      disabled={isPostingDelivery || isUpdatingStatus}
+                      className="w-full bg-[var(--info)] hover:bg-[var(--info)] py-4 md:py-6 font-bold text-sm md:text-base disabled:opacity-50"
+                    >
+                      {isPostingDelivery ? (
+                        <>
+                          <Loader2 className="size-4 animate-spin" aria-hidden="true" />
+                          Assigning driver...
+                        </>
+                      ) : (
+                        'Assign Driver'
+                      )}
+                    </Button>
+                )}
+                {selectedOrder.deliveryMode === 'delivery' &&
+                  (selectedOrder.status === 'confirmed' || selectedOrder.driverRequested || selectedOrder.driverName) && (
                   <div className="space-y-2">
                     {/*
                      * The gap between "we asked" and "someone is coming".
@@ -1967,9 +1882,9 @@ export default function BusinessOrders() {
                       <div className="flex items-start gap-3 rounded-xl border border-[var(--amber)] bg-[var(--amber-soft)] p-3 md:p-4">
                         <Loader2 className="mt-0.5 size-5 shrink-0 animate-spin text-[var(--amber)]" aria-hidden="true" />
                         <div className="min-w-0">
-                          <p className="font-bold text-[var(--amber-ink)]">Finding a rider…</p>
+                          <p className="font-bold text-[var(--amber-ink)]">Finding a driver…</p>
                           <p className="mt-1 text-xs text-[var(--amber-ink)]">
-                            Sent to the riders nearby. This order updates by itself as
+                            Sent to nearby drivers. This order updates by itself as
                             soon as one accepts it.
                           </p>
                         </div>
@@ -1977,14 +1892,14 @@ export default function BusinessOrders() {
                     ) : selectedOrder.driverName ? (
                       <div className="rounded-xl border border-[var(--success)] bg-[var(--success-soft)] p-3 md:p-4">
                         <p className="text-[11px] font-bold uppercase tracking-widest text-[var(--success-ink)]">
-                          Rider assigned
+                          Driver assigned
                         </p>
                         <p className="mt-1 font-bold text-[var(--ink)]">{selectedOrder.driverName}</p>
                         {progress?.currentTitle && progress.currentStepIsRiderStep && (
                           <p className="mt-1 text-xs text-[var(--success-ink)]">{progress.currentTitle}</p>
                         )}
-                        {selectedOrder.driverMessage && (
-                          <p className="mt-1 text-xs text-[var(--success-ink)]">&ldquo;{selectedOrder.driverMessage}&rdquo;</p>
+                        {progress?.riderMessage && (
+                          <p className="mt-1 text-xs text-[var(--success-ink)]">&ldquo;{progress.riderMessage}&rdquo;</p>
                         )}
                       </div>
                     ) : null}
@@ -2009,6 +1924,9 @@ export default function BusinessOrders() {
                           zoom={15}
                           options={{ zoomControl: false, fullscreenControl: false, streetViewControl: false, mapTypeControl: false, gestureHandling: 'none' }}
                         >
+                          {restaurantLocation && (
+                            <MarkerF position={restaurantLocation} title="Restaurant" icon={createRestaurantMarkerIcon()} />
+                          )}
                           <MarkerF
                             position={driverLocation}
                             title="Driver"
@@ -2027,11 +1945,7 @@ export default function BusinessOrders() {
                             <MarkerF
                               position={{ lat: parseFloat(cm[1]), lng: parseFloat(cm[2]) }}
                               title="Customer"
-                              icon={{
-                                url: 'data:image/svg+xml;charset=UTF-8,' + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="var(--primary)" stroke="white" stroke-width="1"><path d="M12 2C8.13 2 5 5.13 5 9c0 4.95 6.1 11.53 6.36 11.81.36.39.92.39 1.28 0C13.9 20.53 20 13.95 20 9c0-3.87-3.13-7-8-7z"/><circle cx="12" cy="8.6" r="2.3" fill="#FFFFFF" stroke="none"/></svg>'),
-                                scaledSize: new (window as any).google.maps.Size(32, 32),
-                                anchor: new (window as any).google.maps.Point(16, 32),
-                              }}
+                              icon={createCustomerMarkerIcon(32)}
                             />
                             );
                           })()}
@@ -2087,7 +2001,7 @@ export default function BusinessOrders() {
                     */
                     <div className="bg-[var(--amber-soft)] border-l-4 border-[var(--amber)] p-2 md:p-3 rounded text-sm">
                       <p className="font-semibold text-[var(--amber-ink)]">
-                        Rider: {progress?.currentTitle ?? getStatusLabel(selectedOrder.status)}
+                        {progress?.currentTitle ?? getStatusLabel(selectedOrder.status)}
                       </p>
                       {progress?.riderMessage && (
                         <p className="text-xs text-[var(--amber-ink)] mt-1">"{progress.riderMessage}"</p>
@@ -2165,15 +2079,18 @@ export default function BusinessOrders() {
        * This one stays because it is the exception: a statement about money that
        * has not arrived.
        */}
-      {confirmAction === 'payment' && selectedOrder && (
+      {confirmAction === 'accept' && selectedOrder && (
         <div className="fixed inset-0 bg-black/60 z-[3000] flex items-center justify-center">
           <div className="bg-surface rounded-3xl p-6 mx-6 max-w-sm w-full text-center shadow-2xl animate-in fade-in zoom-in duration-300">
             <div className="w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4 bg-[var(--success-soft)]">
               <span className="text-3xl">✅</span>
             </div>
             <h2 className="text-xl font-extrabold text-[var(--ink)] mb-1">
-              Confirm this GCash payment?
+              Accept this order and start preparing?
             </h2>
+            <p className="text-xs text-[var(--muted-foreground)] mb-3">
+              This confirms the GCash payment and moves the order to Preparing.
+            </p>
             <p className="text-sm text-[var(--muted-foreground)] mb-1">Order #{selectedOrder.orderNumber}</p>
             <p className="text-sm text-[var(--muted-foreground)] mb-1">{selectedOrder.customerName}</p>
             <p className="text-lg font-bold text-[var(--primary)] mb-4">₱{selectedOrder.total.toFixed(2)}</p>
@@ -2183,7 +2100,7 @@ export default function BusinessOrders() {
             {!selectedOrder.paymentProofUrl && (
               <p className="mb-4 rounded-xl bg-[var(--amber-soft)] px-3 py-2 text-xs text-[var(--amber-ink)]">
                 No payment proof attached. Check the transfer with the customer
-                before you confirm.
+                before accepting.
               </p>
             )}
             <div className="flex gap-3">
@@ -2198,12 +2115,13 @@ export default function BusinessOrders() {
                 onClick={async () => {
                   // Closes only on success. A rejected write leaves the dialog up
                   // with the reason, rather than dismissing as though it landed.
-                  const ok = await handleConfirmPayment(selectedOrder);
+                  const ok = await handleAcceptOrder(selectedOrder);
                   if (ok) setConfirmAction(null);
                 }}
-                className="flex-1 font-bold bg-[var(--success)] hover:bg-[var(--success)]"
+                disabled={isAcceptingOrder || isUpdatingStatus}
+                className="flex-1 font-bold bg-[var(--success)] hover:bg-[var(--success)] disabled:opacity-50"
               >
-                Confirm
+                Accept Order
               </Button>
             </div>
           </div>

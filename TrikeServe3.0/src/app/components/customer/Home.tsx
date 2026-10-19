@@ -16,6 +16,7 @@ import RideChatOverlay from "../rider/RideChatOverlay";
 import { GoogleMap, MarkerF, InfoWindow, Polygon, Polyline } from "@react-google-maps/api";
 import useMapLoader from "@/lib/mapLoader";
 import { GOOGLE_MAPS_LIBRARIES } from "@/lib/googleMaps";
+import { createCustomerMarkerIcon as createDeliveryCustomerMarkerIcon, createRestaurantMarkerIcon } from "@/lib/mapIcons";
 import { autocompletePlacesNew, createPlacesSessionToken, fetchPlaceDetailsNew, searchPlacesText, type PlaceResult, type PlacesAutocompleteSuggestion } from "@/lib/placesApi";
 import tricycleIcon from '../../../assets/0b76d1aa56b8ad6e15dd4efc8a0100b0ca5762a1.png';
 import { useAuth } from "../../contexts/AuthContext";
@@ -460,6 +461,11 @@ export default function CustomerHome() {
     * been given a driver yet.
     */
    const { privateRide: activeRideRequest, lobby: activeRideLobby, checked: rideContextChecked } = useActiveRideContext(user?.id);
+   const isDeliveryRide = Boolean(
+     activeRideRequest?.order_id ||
+     String(activeRideRequest?.ride_type || activeRideRequest?.type || '').toLowerCase() === 'delivery' ||
+     String(pickup || '').startsWith('DELIVERY'),
+   );
    const [showPassengerCount, setShowPassengerCount] = useState(false);
    const [passengerCount, setPassengerCount] = useState(1);
    const [showLobbyList, setShowLobbyList] = useState(false);
@@ -2947,12 +2953,20 @@ const getPrice = () => {
                   embedded card map, so the destination route had no visible start
                   point. */}
               {rideStatus !== 'searching' && pickupCoords && (
-                <MarkerF position={pickupCoords} title="Pickup location" icon={createCustomerMarkerIcon()} />
+                <MarkerF
+                  position={pickupCoords}
+                  title={isDeliveryRide ? 'Restaurant pickup' : 'Pickup location'}
+                  icon={isDeliveryRide ? createRestaurantMarkerIcon() : createCustomerMarkerIcon()}
+                />
               )}
 
               {/* Drop-off marker only */}
               {dropoffCoords && (
-                <MarkerF position={dropoffCoords} title="Drop-off location" icon={createDropoffMarkerIcon()} />
+                <MarkerF
+                  position={dropoffCoords}
+                  title={isDeliveryRide ? 'Customer drop-off' : 'Drop-off location'}
+                  icon={isDeliveryRide ? createDeliveryCustomerMarkerIcon() : createDropoffMarkerIcon()}
+                />
               )}
 
               {/* Driver location marker (real-time tracking) */}

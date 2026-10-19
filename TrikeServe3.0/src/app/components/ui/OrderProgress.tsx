@@ -8,21 +8,22 @@ type ProgressProps = {
 /**
  * The horizontal order tracker.
  *
- * Both the customer and the business render this, so the track never changes
- * length or wording depending on who is looking at it. The columns are a fixed
+ * Customer, business and driver screens render this, so the track never changes
+ * length depending on who is looking at it. The columns are a fixed
  * width and the row scrolls sideways, because the track now carries the rider's
  * leg too and no longer fits a phone at once.
  *
- * Rider steps are ringed in the info colour so the hand-off from the kitchen to
- * the rider is visible, and the caption below spells out where the order is -
+ * Delivery steps are ringed in the info colour so the hand-off from the kitchen
+ * to the driver is visible, and the caption below spells out where the order is -
  * including whatever the rider app wrote as `driver_status_message`.
  */
 export function OrderProgressStepper({ progress, className }: ProgressProps) {
   const { steps, current } = progress;
+  const riderMessageIncludesRole = Boolean(progress.riderMessage && /\b(rider|driver)\b/i.test(progress.riderMessage));
 
   return (
     <div className={className}>
-      <div className="overflow-x-auto pb-2">
+      <div className="overflow-x-auto px-[22px] pb-2 sm:px-[28px] md:px-[32px]">
         <div className="flex min-w-max">
           {steps.map((step, idx) => {
             const done = idx <= current;
@@ -58,7 +59,7 @@ export function OrderProgressStepper({ progress, className }: ProgressProps) {
                   )}
                 </div>
                 <p
-                  className={`mt-1.5 pr-1 text-left text-[9px] sm:text-[10px] md:text-[11px] font-semibold leading-tight ${
+                  className={`mt-1.5 w-[72px] -translate-x-[22px] text-center text-[9px] sm:w-[84px] sm:-translate-x-[28px] sm:text-[10px] md:w-[96px] md:-translate-x-[32px] md:text-[11px] font-semibold leading-tight ${
                     isCurrent
                       ? "text-[var(--info)]"
                       : done
@@ -75,14 +76,14 @@ export function OrderProgressStepper({ progress, className }: ProgressProps) {
       </div>
 
       {/* Where the order is right now, in words rather than tick marks. */}
-      <div className="mt-1 border-t border-[var(--border)] pt-2">
+      <div className="mt-1 border-t border-[var(--border)] pt-2 text-center">
         <p className={`text-xs font-bold ${progress.isCancelled ? "text-[var(--error)]" : "text-[var(--ink)]"}`}>
           {progress.currentStepIsRiderStep ? "🛵 " : ""}
           {progress.currentTitle}
         </p>
         {progress.currentStepIsRiderStep && progress.riderMessage && (
           <p className="mt-0.5 text-[11px] text-[var(--muted-foreground)]">
-            Rider: {progress.riderMessage}
+            {!riderMessageIncludesRole && `${progress.driverLabel}: `}{progress.riderMessage}
           </p>
         )}
       </div>

@@ -1,4 +1,4 @@
-import { ArrowLeft, Package, Clock, MapPin, CreditCard, Star, Navigation, CheckCircle, AlertCircle, Phone, MessageCircle } from "lucide-react";
+import { ArrowLeft, Package, Clock, MapPin, CreditCard, Star, Navigation, CheckCircle, Phone, MessageCircle } from "lucide-react";
 import { useNavigate, useParams } from "react-router";
 import { Card } from "../ui/card";
 import { Button } from "../ui/button";
@@ -11,10 +11,11 @@ import { supabase } from "../../../lib/supabase";
 import ReasonPromptModal from "../ui/reason-prompt-modal";
 import { supabaseHelpers } from "@/lib/supabase";
 import { getOrderProgress } from "@/lib/orderProgress";
-import { OrderProgressStepper, OrderProgressTimeline } from "../ui/OrderProgress";
+import { OrderStatusUpdates } from "../ui/OrderStatusUpdates";
 import { useState, useEffect } from "react";
 import { GoogleMap, MarkerF, Polyline } from "@react-google-maps/api";
 import useMapLoader from "@/lib/mapLoader";
+import { createCustomerMarkerIcon, createRestaurantMarkerIcon } from "@/lib/mapIcons";
 import tricycleIcon from '../../../assets/0b76d1aa56b8ad6e15dd4efc8a0100b0ca5762a1.png'
 
 interface OrderData {
@@ -153,6 +154,7 @@ export default function OrderDetail() {
   const [error, setError] = useState<string | null>(null);
   const { isLoaded: isMapsLoaded } = useMapLoader();
   const [driverLocation, setDriverLocation] = useState<{ lat: number; lng: number } | null>(null);
+  const [restaurantLocation, setRestaurantLocation] = useState<{ lat: number; lng: number } | null>(null);
   const [routePath, setRoutePath] = useState<Array<{ lat: number; lng: number }>>([]);
   const [etaToCustomer, setEtaToCustomer] = useState<string | null>(null);
   // ─── Load order once ───────────────────────────────────────────────
@@ -161,6 +163,7 @@ export default function OrderDetail() {
 
     const fetchOrder = async () => {
       try {
+        setRestaurantLocation(null);
         const { data: dbOrder, error: dbError } = await supabase
           .from('orders').select('*').eq('id', orderId).single();
 
@@ -176,7 +179,7 @@ export default function OrderDetail() {
         try {
           const { data: rideReq } = await supabase
             .from('ride_requests')
-            .select('accepted_driver_id, driver_name, driver_lat, driver_lng, driver_status, driver_status_message')
+            .select('accepted_driver_id, driver_name, driver_lat, driver_lng, driver_status, driver_status_message, pickup_lat, pickup_lng')
             .eq('order_id', orderId)
             .not('accepted_driver_id', 'is', null)
             .order('updated_at', { ascending: false })
@@ -184,6 +187,11 @@ export default function OrderDetail() {
             .maybeSingle();
 
           if (rideReq) {
+            const pickupLat = Number(rideReq.pickup_lat);
+            const pickupLng = Number(rideReq.pickup_lng);
+            if (rideReq.pickup_lat != null && rideReq.pickup_lng != null && Number.isFinite(pickupLat) && Number.isFinite(pickupLng)) {
+              setRestaurantLocation({ lat: pickupLat, lng: pickupLng });
+            }
             if (rideReq.accepted_driver_id) data.driverId = rideReq.accepted_driver_id;
             if (rideReq.driver_name) data.driverName = rideReq.driver_name;
             // The rider's own progress is only on the ride request, and it is what
@@ -205,18 +213,17 @@ export default function OrderDetail() {
         // Resolve business id
         let resolvedBusinessId = dbOrder.business_id || null;
         let restaurantLogo = '';
-        if (!resolvedBusinessId && dbOrder.restaurant_email) {
+        if (dbOrder.restaurant_email) {
           try {
             const { data: restaurant } = await supabase
-              .from('restaurants').select('business_user_id, logo_image').eq('id', dbOrder.restaurant_email).maybeSingle();
-            if (restaurant?.business_user_id) resolvedBusinessId = restaurant.business_user_id;
+              .from('restaurants').select('business_user_id, logo_image, latitude, longitude').eq('id', dbOrder.restaurant_email).maybeSingle();
+            if (!resolvedBusinessId && restaurant?.business_user_id) resolvedBusinessId = restaurant.business_user_id;
             if (restaurant?.logo_image) restaurantLogo = restaurant.logo_image;
-          } catch {}
-        } else if (dbOrder.restaurant_email) {
-          try {
-            const { data: restaurant } = await supabase
-              .from('restaurants').select('logo_image').eq('id', dbOrder.restaurant_email).maybeSingle();
-            if (restaurant?.logo_image) restaurantLogo = restaurant.logo_image;
+            const restaurantLat = Number(restaurant?.latitude);
+            const restaurantLng = Number(restaurant?.longitude);
+            if (restaurant?.latitude != null && restaurant?.longitude != null && Number.isFinite(restaurantLat) && Number.isFinite(restaurantLng)) {
+              setRestaurantLocation(current => current ?? { lat: restaurantLat, lng: restaurantLng });
+            }
           } catch {}
         }
         if (resolvedBusinessId || restaurantLogo) setOrder(prev => prev ? { ...prev, businessId: resolvedBusinessId || prev.businessId, restaurantImage: restaurantLogo || prev.restaurantImage } : prev);
@@ -278,7 +285,7 @@ export default function OrderDetail() {
          */
         const { data: rideReq } = await supabase
           .from('ride_requests')
-          .select('driver_lat, driver_lng, driver_status, driver_status_message')
+          .select('driver_lat, driver_lng, driver_status, driver_status_message, pickup_lat, pickup_lng')
           .eq('order_id', orderId)
           .order('updated_at', { ascending: false })
           .limit(1)
@@ -289,6 +296,13 @@ export default function OrderDetail() {
         if (lat && lng) {
           setDriverLocation({ lat, lng });
         }
+        const pickupLat = Number(rideReq?.pickup_lat);
+        const pickupLng = Number(rideReq?.pickup_lng);
+        setRestaurantLocation(
+          rideReq?.pickup_lat != null && rideReq?.pickup_lng != null && Number.isFinite(pickupLat) && Number.isFinite(pickupLng)
+            ? { lat: pickupLat, lng: pickupLng }
+            : null,
+        );
 
         // Build new order data and always set it
         const newData = buildOrderData(data);
@@ -333,6 +347,13 @@ export default function OrderDetail() {
       if (ride.driver_lat && ride.driver_lng) {
         setDriverLocation({ lat: ride.driver_lat, lng: ride.driver_lng });
       }
+      const pickupLat = Number(ride.pickup_lat);
+      const pickupLng = Number(ride.pickup_lng);
+      setRestaurantLocation(
+        ride.pickup_lat != null && ride.pickup_lng != null && Number.isFinite(pickupLat) && Number.isFinite(pickupLng)
+          ? { lat: pickupLat, lng: pickupLng }
+          : null,
+      );
       // The rider's status arrives here first, so the track advances on the
       // moment they tap a button rather than on the next 3s poll.
       if (ride.driver_status) {
@@ -523,12 +544,6 @@ export default function OrderDetail() {
             : statusLabels[order.status]}
         </Badge>
 
-        {/* Horizontal stepper — shared with the business screen so both sides
-            read the same nine steps, rider's leg included. */}
-        <div className="mt-3 md:mt-4">
-          <p className="text-xs font-semibold text-[var(--muted-foreground)] mb-2">ORDER PROGRESS</p>
-          <OrderProgressStepper progress={progress} />
-        </div>
       </div>
 
       <div className="px-4 md:px-5 pt-4 space-y-4 md:space-y-5">
@@ -562,6 +577,9 @@ export default function OrderDetail() {
               zoom={15}
               options={{ zoomControl: false, fullscreenControl: false, streetViewControl: false, mapTypeControl: false, gestureHandling: 'none' }}
             >
+              {restaurantLocation && (
+                <MarkerF position={restaurantLocation} title={`${order.restaurantName} restaurant`} icon={createRestaurantMarkerIcon()} />
+              )}
               <MarkerF position={driverLocation} title="Driver" icon={(() => {
                 const g = (window as any)?.google;
                 if (!g?.maps?.Size || !g?.maps?.Point) return undefined;
@@ -572,11 +590,11 @@ export default function OrderDetail() {
                 const m = coords.match(/(\d+\.\d+)\s*,\s*(\d+\.\d+)/);
                 if (!m) return null;
                 return (
-                  <MarkerF position={{ lat: parseFloat(m[1]), lng: parseFloat(m[2]) }} title="Your location" icon={{
-                    url: 'data:image/svg+xml;charset=UTF-8,' + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="var(--primary)" stroke="white" stroke-width="1"><path d="M12 2C8.13 2 5 5.13 5 9c0 4.95 6.1 11.53 6.36 11.81.36.39.92.39 1.28 0C13.9 20.53 20 13.95 20 9c0-3.87-3.13-7-8-7z"/><circle cx="12" cy="8.6" r="2.3" fill="#FFFFFF" stroke="none"/></svg>'),
-                    scaledSize: new (window as any).google.maps.Size(32, 32),
-                    anchor: new (window as any).google.maps.Point(16, 32),
-                  }} />
+                  <MarkerF
+                    position={{ lat: parseFloat(m[1]), lng: parseFloat(m[2]) }}
+                    title="Customer drop-off"
+                    icon={createCustomerMarkerIcon(32)}
+                  />
                 );
               })()}
               {routePath.length > 0 && (
@@ -611,8 +629,12 @@ export default function OrderDetail() {
 
         {/* Status Timeline — the same track as the stepper above, spelled out */}
         <Card className="p-4 md:p-5 border border-line">
-          <h3 className="font-bold text-[var(--ink)] text-sm md:text-base mb-3">Status Updates</h3>
-          <OrderProgressTimeline progress={progress} />
+          <h3 className="text-center font-bold text-[var(--ink)] text-sm md:text-base mb-3">Order Progress</h3>
+          <OrderStatusUpdates
+            status={order.status}
+            driverStatus={order.driverStatus}
+            deliveryMode={order.deliveryMode}
+          />
         </Card>
 
         {/* Why the order was cancelled, so the customer sees the reason */}

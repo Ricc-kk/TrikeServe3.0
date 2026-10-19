@@ -1,12 +1,9 @@
 /**
  * The order progress track, in one place.
  *
- * Both sides of an order show a tracker, and each had its own copy: the
- * customer's had five steps and the business six, they disagreed about what
- * "Delivering" meant, and neither mentioned what the rider was actually doing.
- * A track that changes shape depending on who is looking at it cannot answer
- * "where is my order?", so the step list, the status mapping and the rendering
- * are shared instead.
+ * Customer, business and driver screens share this track so they agree about
+ * where an order is. The visible label can still use "Rider" or "Driver" for
+ * the delivery role, depending on who is looking at it.
  *
  * Two signals feed the track:
  *
@@ -15,13 +12,13 @@
  *   `ride_requests.driver_status` the rider side - heading to the shop, at the
  *                               shop, order in hand, at the door, done
  *
- * The rider's status is the finer of the two, so it drives the second half of
+ * The delivery status is the finer of the two, so it drives the second half of
  * the track while the order status only sets a floor. The two rows live in
  * different tables and are written by two devices, so they briefly disagree:
  * taking the furthest step forward and never back keeps the track monotonic, the
  * way a progress bar is expected to behave.
  *
- * Rider vocabulary note: the rider app writes `picked-up` / `dropped-off` /
+ * Status vocabulary note: the driver app writes `picked-up` / `dropped-off` /
  * `awaiting-payment` while its own UI says `pickup` / `drop-off` / `payment`,
  * and older rows use underscores. Everything is normalised here so callers can
  * pass whichever spelling they have.
@@ -29,12 +26,9 @@
 
 export type OrderStepKey =
   | 'received'
-  | 'payment-confirmed'
   | 'preparing'
   | 'ready'
   | 'rider-assigned'
-  | 'to-restaurant'
-  | 'at-restaurant'
   | 'picked-up'
   | 'arrived'
   | 'delivered'
@@ -77,6 +71,8 @@ export interface OrderProgress {
   isCancelled: boolean;
   /** Normalised `ride_requests.driver_status`, if there is one. */
   riderStatus: string | null;
+  /** What this screen calls the person delivering the order. */
+  driverLabel: 'Rider' | 'Driver';
   /** Whatever the rider app wrote in `driver_status_message`, shown verbatim. */
   riderMessage: string | null;
 }
@@ -84,29 +80,25 @@ export interface OrderProgress {
 /** Delivery orders: the restaurant hands the food to a rider. */
 const DELIVERY_STEPS: OrderProgressStep[] = [
   { key: 'received', label: 'Received', title: 'Order received', description: 'The restaurant has received your order and is checking your GCash payment.', isRiderStep: false },
-  { key: 'payment-confirmed', label: 'Paid', title: 'Payment confirmed', description: 'The shop has received your GCash payment and is getting your order ready.', isRiderStep: false },
   { key: 'preparing', label: 'Preparing', title: 'Preparing your order', description: 'The kitchen is preparing your order.', isRiderStep: false },
   { key: 'ready', label: 'Ready', title: 'Ready for pickup', description: 'Your order is packed and waiting to be collected.', isRiderStep: false },
-  { key: 'rider-assigned', label: 'Rider Assigned', title: 'Rider assigned', description: 'A rider has been assigned to deliver your order.', isRiderStep: true },
-  { key: 'to-restaurant', label: 'To Restaurant', title: 'Rider heading to the restaurant', description: 'Your rider is on the way to the restaurant.', isRiderStep: true },
-  { key: 'at-restaurant', label: 'At Restaurant', title: 'Rider at the restaurant', description: 'Your rider has arrived and is collecting your order.', isRiderStep: true },
+  { key: 'rider-assigned', label: 'Rider Assigned', title: 'Rider assigned to collect your order', description: 'A rider has been assigned to pick up your order from the restaurant.', isRiderStep: true },
   { key: 'picked-up', label: 'Picked Up', title: 'Order picked up', description: 'Your rider has the order and is on the way to you.', isRiderStep: true },
-  { key: 'arrived', label: 'Arrived', title: 'Rider at your address', description: 'Your rider has arrived and is waiting for payment.', isRiderStep: true },
+  { key: 'arrived', label: 'Rider Arrived', title: 'Rider Arrived', description: 'Your rider has arrived at your address and is waiting for payment.', isRiderStep: true },
   { key: 'delivered', label: 'Delivered', title: 'Order delivered', description: 'The order was delivered. Thanks for ordering!', isRiderStep: true },
 ];
 
 /**
- * Pickup orders have no rider, so they get the same shape minus the rider leg.
- * Showing "Rider heading to the restaurant" on an order the customer is going to
- * collect themselves would be a lie told by the tracker.
+ * Pickup orders have no delivery leg, so they use the restaurant steps followed
+ * by Collected.
  *
- * The payment step stays: the money still moves by GCash whoever collects it.
+ * Payment confirmation remains part of the order state, but is not a separate
+ * progress step.
  */
 const PICKUP_STEPS: OrderProgressStep[] = [
   DELIVERY_STEPS[0],
   DELIVERY_STEPS[1],
   DELIVERY_STEPS[2],
-  DELIVERY_STEPS[3],
   { key: 'collected', label: 'Collected', title: 'Order collected', description: 'The order was collected from the restaurant.', isRiderStep: false },
 ];
 
@@ -120,22 +112,21 @@ const DELIVERED_INDEX = DELIVERY_STEPS.length - 1;
 /**
  * How far the restaurant's own status gets the track, as a floor.
  *
- * `on-the-way` is written when the rider sets off towards the shop, but the
- * business screen also folds later rider phases into that one value, so it can
- * only be trusted as "the rider has left".
+ * `on-the-way` is written when the driver sets off towards the shop, but the
+ * business screen also folds later delivery phases into that one value. Since
+ * this step combines assignment, travel to the shop and arrival there, this
+ * status cannot safely advance the track to Picked Up.
  */
 const ORDER_STATUS_STEP: Record<string, number> = {
   pending: 0,
-  // The shop has verified the GCash transfer. Index 1 is the `payment-confirmed`
-  // step, which is why the entries below are offsets from the step list rather
-  // than the small integers they used to be -- inserting a step in the middle
-  // silently moved every one of them otherwise.
-  'payment-confirmed': 1,
-  preparing: 2,
-  ready: 3,
+  // Payment confirmation stays part of the order state, but shares the Received
+  // step in the shorter customer-facing track.
+  'payment-confirmed': 0,
+  preparing: 1,
+  ready: 2,
   // "Ready for delivery" - the shop published the order and a rider was requested.
   confirmed: RIDER_ASSIGNED_INDEX,
-  'on-the-way': RIDER_ASSIGNED_INDEX + 1,
+  'on-the-way': RIDER_ASSIGNED_INDEX,
   delivered: DELIVERED_INDEX,
 };
 
@@ -151,13 +142,15 @@ const RIDER_STATUS_STEP: Record<string, number> = {
   pending: RIDER_ASSIGNED_INDEX,
   assigned: RIDER_ASSIGNED_INDEX,
   accepted: RIDER_ASSIGNED_INDEX,
-  'on-the-way': RIDER_ASSIGNED_INDEX + 1,
-  arrived: RIDER_ASSIGNED_INDEX + 2,
+  'on-the-way': RIDER_ASSIGNED_INDEX,
+  // Assignment, travel to the restaurant, and arrival there are one combined
+  // step. The driver route still uses the raw status to switch destinations.
+  arrived: RIDER_ASSIGNED_INDEX,
   // The rider app's `in-progress` predates the split into picked-up/dropped-off.
-  'in-progress': RIDER_ASSIGNED_INDEX + 3,
-  'picked-up': RIDER_ASSIGNED_INDEX + 3,
-  'dropped-off': RIDER_ASSIGNED_INDEX + 4,
-  'awaiting-payment': RIDER_ASSIGNED_INDEX + 4,
+  'in-progress': RIDER_ASSIGNED_INDEX + 1,
+  'picked-up': RIDER_ASSIGNED_INDEX + 1,
+  'dropped-off': RIDER_ASSIGNED_INDEX + 2,
+  'awaiting-payment': RIDER_ASSIGNED_INDEX + 2,
   completed: DELIVERED_INDEX,
 };
 
@@ -191,10 +184,19 @@ export function getOrderProgress(input: {
   driverStatus?: string | null;
   driverMessage?: string | null;
   deliveryMode?: string | null;
+  driverLabel?: 'Rider' | 'Driver';
 }): OrderProgress {
   const status = normalize(input.status);
   const riderStatus = normalize(input.driverStatus) || null;
-  const riderMessage = input.driverMessage?.trim() || null;
+  const driverLabel = input.driverLabel ?? 'Rider';
+  const rawDriverMessage = input.driverMessage?.trim() || '';
+  const riderMessage = rawDriverMessage
+    ? rawDriverMessage.replace(/\b(rider|driver)\b/gi, (role) => {
+        if (role === role.toUpperCase()) return driverLabel.toUpperCase();
+        if (role[0] === role[0].toUpperCase()) return driverLabel;
+        return driverLabel.toLowerCase();
+      })
+    : null;
 
   if (status === 'cancelled') {
     return {
@@ -208,12 +210,23 @@ export function getOrderProgress(input: {
       hasRider: false,
       isCancelled: true,
       riderStatus,
+      driverLabel,
       riderMessage,
     };
   }
 
   const isPickup = normalize(input.deliveryMode) === 'pickup';
-  const steps = isPickup ? PICKUP_STEPS : DELIVERY_STEPS;
+  const steps = isPickup
+    ? PICKUP_STEPS
+    : DELIVERY_STEPS.map((step) => {
+        if (!step.isRiderStep || driverLabel === 'Rider') return step;
+        return {
+          ...step,
+          label: step.label.replace(/rider/gi, driverLabel),
+          title: step.title.replace(/rider/gi, driverLabel),
+          description: step.description.replace(/rider/gi, driverLabel.toLowerCase()),
+        };
+      });
   const lastIndex = steps.length - 1;
 
   // The order status is a floor; the rider's status can only push it forward.
@@ -234,10 +247,15 @@ export function getOrderProgress(input: {
     currentLabel: currentStep.label,
     currentTitle: currentStep.title,
     currentStepIsRiderStep: currentStep.isRiderStep && hasRider,
-    riderHasStarted: hasRider && current > RIDER_ASSIGNED_INDEX,
+    riderHasStarted: hasRider && (
+      current > RIDER_ASSIGNED_INDEX ||
+      status === 'on-the-way' ||
+      ['on-the-way', 'arrived', 'in-progress', 'picked-up', 'dropped-off', 'awaiting-payment', 'completed'].includes(riderStatus ?? '')
+    ),
     hasRider,
     isCancelled: false,
     riderStatus,
+    driverLabel,
     riderMessage,
   };
 }

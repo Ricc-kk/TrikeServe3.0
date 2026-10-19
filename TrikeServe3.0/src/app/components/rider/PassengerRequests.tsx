@@ -12,6 +12,7 @@ import { isPointInPolygon, isPointWithinTerminalRoute, normalizeBoundaryRoad, no
 import { supabase } from "../../../lib/supabase";
 import useMapLoader from "@/lib/mapLoader";
 import { searchPlacesText } from "@/lib/placesApi";
+import { createCustomerMarkerIcon, createRestaurantMarkerIcon } from "@/lib/mapIcons";
 import tricycleIcon from "../../../assets/0b76d1aa56b8ad6e15dd4efc8a0100b0ca5762a1.png";
 import ActiveRideButton from "./ActiveRideButton";
 import ReasonPromptModal from "../ui/reason-prompt-modal";
@@ -217,13 +218,6 @@ export default function PassengerRequests() {
       scaledSize: new google.maps.Size(44, 44),
       anchor: new google.maps.Point(22, 22),
     } as any;
-  };
-
-  const createCustomerMarkerIcon = () => {
-    const google = (window as any)?.google;
-    if (!google?.maps?.Size || !google?.maps?.Point) return undefined;
-    const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="var(--info)" stroke="white" stroke-width="1"><path d="M12 2C8.13 2 5 5.13 5 9c0 4.95 6.1 11.53 6.36 11.81.36.39.92.39 1.28 0C13.9 20.53 20 13.95 20 9c0-3.87-3.13-7-8-7z"/><circle cx="12" cy="8.6" r="2.3" fill="#FFFFFF" stroke="none"/><path d="M8.7 15.9c.55-2.05 2.15-3.3 3.3-3.3s2.75 1.25 3.3 3.3" fill="#FFFFFF" stroke="none"/></svg>`;
-    return { url: 'data:image/svg+xml;charset=UTF-8,' + encodeURIComponent(svg), scaledSize: new google.maps.Size(40, 40), anchor: new google.maps.Point(20, 40) } as any;
   };
 
   const createDropoffMarkerIcon = () => {
@@ -1136,9 +1130,9 @@ export default function PassengerRequests() {
                   onUnmount={() => { previewMapRef.current = null; }}
                 >
                   <Marker position={currentLocation} icon={createDriverMarkerIcon()} title="Your Location" />
-                  {resolvedPickupCoords && <Marker position={resolvedPickupCoords} icon={createCustomerMarkerIcon()} title={previewRequest.type === 'delivery' ? 'Store pickup' : 'Pickup'} />}
+                  {resolvedPickupCoords && <Marker position={resolvedPickupCoords} icon={previewRequest.type === 'delivery' ? createRestaurantMarkerIcon() : createCustomerMarkerIcon()} title={previewRequest.type === 'delivery' ? 'Restaurant pickup' : 'Pickup'} />}
                   {resolvedDropoffCoords && (
-                    <Marker position={resolvedDropoffCoords} icon={createDropoffMarkerIcon()} title={previewRequest.type === 'delivery' ? 'Customer' : 'Drop-off'} />
+                    <Marker position={resolvedDropoffCoords} icon={previewRequest.type === 'delivery' ? createCustomerMarkerIcon() : createDropoffMarkerIcon()} title={previewRequest.type === 'delivery' ? 'Customer' : 'Drop-off'} />
                   )}
                   {showPickupRoute && pickupRoutePath && (
                     <Polyline path={pickupRoutePath} options={{ strokeColor: "#16a34a", strokeWeight: 7, strokeOpacity: 0.95, zIndex: 10 }} />

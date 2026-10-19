@@ -2,6 +2,7 @@ import { useState, useEffect, useRef, useCallback } from "react";
 import { GoogleMap, MarkerF, InfoWindow } from "@react-google-maps/api";
 import { ArrowLeft, MapPin, Navigation, Search, X, Loader2 } from "lucide-react";
 import useMapLoader from "@/lib/mapLoader";
+import { createRestaurantMarkerIcon } from "@/lib/mapIcons";
 import {
   autocompletePlacesNew,
   createPlacesSessionToken,
@@ -33,23 +34,6 @@ interface BusinessMapSelectorProps {
    */
   centerOnCurrentLocation?: boolean;
 }
-
-// Red app-branded pin for the pickup location the business placed on the map
-const createSelectedPinIcon = () => {
-  const google = (window as any)?.google;
-  if (!google?.maps?.Size || !google?.maps?.Point) return undefined;
-
-  const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="var(--primary)" stroke="white" stroke-width="1">
-    <path d="M12 2C8.13 2 5 5.13 5 9c0 4.95 6.1 11.53 6.36 11.81.36.39.92.39 1.28 0C13.9 20.53 20 13.95 20 9c0-3.87-3.13-7-8-7z"/>
-    <circle cx="12" cy="9" r="2.4" fill="#FFFFFF" stroke="none"/>
-  </svg>`;
-
-  return {
-    url: "data:image/svg+xml;charset=UTF-8," + encodeURIComponent(svg),
-    scaledSize: new google.maps.Size(42, 42),
-    anchor: new google.maps.Point(21, 42),
-  } as any;
-};
 
 export default function BusinessMapSelector({ onClose, onSelectLocation, currentAddress, initialLat, initialLng, centerOnCurrentLocation = false }: BusinessMapSelectorProps) {
   const { isLoaded, loadError, blocked, apiKeyPresent } = useMapLoader();
@@ -395,7 +379,8 @@ export default function BusinessMapSelector({ onClose, onSelectLocation, current
         {pickedPin && (
           <MarkerF
             position={{ lat: pickedPin.lat, lng: pickedPin.lng }}
-            icon={createSelectedPinIcon()}
+            icon={createRestaurantMarkerIcon(42)}
+            title="Restaurant location"
             onClick={() => setShowPinInfo(true)}
           />
         )}
