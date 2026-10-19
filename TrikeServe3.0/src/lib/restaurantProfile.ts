@@ -190,8 +190,7 @@ export function useRestaurantProfile() {
       try {
         const normalizedEmail = user?.email?.trim().toLowerCase() || "";
         const setupPin = localStorage.getItem(`restaurantSetupPin_${normalizedEmail}`);
-        const legacyCache = localStorage.getItem(`restaurantData_${user?.email || ""}`);
-        const parsed = (setupPin && JSON.parse(setupPin)) || (legacyCache && JSON.parse(legacyCache));
+        const parsed = setupPin ? JSON.parse(setupPin) : null;
         if (typeof parsed?.latitude === "number" && typeof parsed?.longitude === "number") {
           seedPin = { latitude: parsed.latitude, longitude: parsed.longitude };
         }

@@ -243,6 +243,8 @@ export default function BusinessMenu() {
 
   const [menuItems, setMenuItems] = useState<MenuItem[]>([]);
   const [restaurantId, setRestaurantId] = useState<string | null>(null);
+  const [menuLoadError, setMenuLoadError] = useState<string | null>(null);
+  const [categoriesLoadError, setCategoriesLoadError] = useState<string | null>(null);
 
   // Create the shop row through the shared writer.
   //
@@ -258,6 +260,10 @@ export default function BusinessMenu() {
   ensureRestaurantRef.current = profile.ensureRestaurant;
 
   useEffect(() => {
+    setRestaurantId(null);
+    setMenuItems([]);
+    setSavedSnapshot("[]");
+    setMenuLoadError(null);
     if (!user?.id || user?.role !== 'business') return;
     let cancelled = false;
     (async () => {
@@ -270,28 +276,12 @@ export default function BusinessMenu() {
 
   // Load menu items from Supabase
   useEffect(() => {
+    let cancelled = false;
     const loadMenuItems = async () => {
-      if (!restaurantId) {
-        // Fallback to localStorage if no restaurant ID yet
-        console.log('[Menu Load] No restaurant ID, loading from localStorage');
-        if (user?.email) {
-          const storageKey = `menuItems_${user.email}`;
-          const savedItems = localStorage.getItem(storageKey);
-          if (savedItems) {
-            try {
-              const parsed = JSON.parse(savedItems);
-              console.log('[Menu Load] Loaded from localStorage:', parsed.length, 'items');
-              setMenuItems(parsed);
-              setSavedSnapshot(snapshotOf(parsed));
-            } catch (error) {
-              console.error('Error loading menu items from localStorage:', error);
-            }
-          }
-        }
-        return;
-      }
+      if (!restaurantId) return;
 
       try {
+        setMenuLoadError(null);
         console.log('[Menu Load] Loading from Supabase, restaurantId:', restaurantId);
         /*
          * The menu has an order the shop set by dragging, so it has to be asked for.
@@ -323,22 +313,13 @@ export default function BusinessMenu() {
         }
 
         const { data, error } = result;
+        if (cancelled) return;
 
         if (error) {
           console.error('[Menu Load] Data API error:', error);
-          console.log('[Menu Load] Falling back to localStorage');
-          // Fallback to localStorage
-          if (user?.email) {
-            const storageKey = `menuItems_${user.email}`;
-            const savedItems = localStorage.getItem(storageKey);
-            if (savedItems) {
-              const parsed = JSON.parse(savedItems);
-              console.log('[Menu Load] Loaded from localStorage (fallback):', parsed.length, 'items');
-              setMenuItems(parsed);
-              setSavedSnapshot(snapshotOf(parsed));
-            }
-          }
-        } else if (data) {
+          setMenuLoadError("Could not load the current menu. Check your connection and reload the page.");
+        } else {
+          if (!data) throw new Error('The menu request returned no data.');
           console.log('[Menu Load] Loaded from Supabase:', data.length, 'items');
 
           /*
@@ -376,9 +357,8 @@ export default function BusinessMenu() {
             // instead of every row sitting on the same number.
             sortOrder: Number.isFinite(item.sort_order) ? item.sort_order : at,
             /*
-             * JSONB arrives already parsed, but the localStorage fallback below
-             * re-reads a stringified snapshot, and PostgREST hands back a JSON string
-             * for json/jsonb when it is nested inside a row. Anything that is not an
+             * JSONB usually arrives already parsed, but PostgREST can hand back a
+             * JSON string when it is nested inside a row. Anything that is not an
              * array of groups is treated as "no options" rather than left to throw
              * on `.map` three edits later.
              */
@@ -390,12 +370,15 @@ export default function BusinessMenu() {
         }
       } catch (error) {
         console.error('[Menu Load] Critical error fetching menu items:', error);
-        console.log('[Menu Load] Falling back to localStorage');
+        if (!cancelled) {
+          setMenuLoadError("Could not load the current menu. Check your connection and reload the page.");
+        }
       }
     };
 
     loadMenuItems();
-  }, [restaurantId, user?.email]);
+    return () => { cancelled = true; };
+  }, [restaurantId]);
 
 
   const [editPriceError, setEditPriceError] = useState("");
@@ -928,10 +911,6 @@ const itemFingerprint = (item: MenuItem) =>
     if (isSaving) return false;
     setIsSaving(true);
     setSaveError(null);
-
-    if (user?.email) {
-      localStorage.setItem(`menuItems_${user.email}`, JSON.stringify(menuItems));
-    }
 
     if (!restaurantId) {
       setSaveError("No shop is linked to this account yet.");

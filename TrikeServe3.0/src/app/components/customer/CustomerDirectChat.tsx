@@ -29,21 +29,7 @@ export default function CustomerDirectChat() {
               emoji: routePeerInfo.peerAvatar || previous.emoji,
             }));
           }
-          // Try loading from localStorage restaurant data first
-          const keys = Object.keys(localStorage).filter((key) => key.startsWith("restaurantData_"));
-          for (const key of keys) {
-            try {
-              const data = JSON.parse(localStorage.getItem(key) || "{}");
-              if (data && (data.id === businessId || key.includes(businessId))) {
-                setPeerInfo((previous) => ({ name: data.name || previous.name || "Business", emoji: data.logo || data.logo_image || previous.emoji }));
-                return;
-              }
-            } catch {
-              // skip malformed entries
-            }
-          }
-
-          // Fallback to Supabase
+          // Resolve the current restaurant identity from the shared record.
           const { data: restaurant } = await supabase
             .from("restaurants")
             .select("name, logo_image")
