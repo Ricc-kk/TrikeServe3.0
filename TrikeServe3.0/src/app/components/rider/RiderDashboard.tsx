@@ -28,7 +28,7 @@ import BottomNav from "../ui/BottomNav";
 import { Input } from "../ui/input";
 import { useAuth } from "../../contexts/AuthContext";
 import { consumeWelcomeGreeting } from "../../../lib/welcomeGreeting";
-import { supabaseHelpers } from "@/lib/supabase";
+import { isPointWithinTerminalRoute, supabaseHelpers } from "@/lib/supabase";
 import { readRiderActiveRide, writeRiderActiveRide, clearRiderActiveRide, isRiderRideActive, fetchRiderActiveRide } from "../../../lib/riderActiveRide";
 import { useTerminalQueue } from "../../hooks/useTerminalQueue";
 import TerminalQueueCard from "./TerminalQueueCard";
@@ -112,7 +112,16 @@ export default function RiderDashboard() {
     // Terminal queue — FIFO per terminal. Only the first driver may accept
     // private and share rides.
     const terminalQueueApi = useTerminalQueue();
-    const { myEntry: queueEntry, leave: leaveQueue } = terminalQueueApi;
+    const {
+      terminalId: queueTerminalId,
+      terminalBoundary,
+      terminalRoadWidthM,
+      myEntry: queueEntry,
+      leave: leaveQueue,
+      isFirst: isFirstInQueue,
+      hasNoTerminal,
+      isResolvingTerminal,
+    } = terminalQueueApi;
 
     const handleToggleOnline = async () => {
       const next = !isOnline;
@@ -256,28 +265,72 @@ export default function RiderDashboard() {
             console.error('❌ Dashboard: Error loading waiting lobbies from database:', lobbyError);
           }
 
-          // Save ride requests for routing and prioritization
-          const rideRequestCount = rideRequests?.length || 0;
+          // Save all pending ride requests for routing and prioritization.
           setPendingRequestsList(rideRequests || []);
 
-          // Count total passengers in all waiting lobbies
-          let totalLobbyPassengers = 0;
-          if (waitingLobbies && waitingLobbies.length > 0) {
-            totalLobbyPassengers = waitingLobbies.reduce((total: number, lobby: any) => {
-              const passengers = Array.isArray(lobby.passengers_json) ? lobby.passengers_json : [];
-              return total + passengers.length;
-            }, 0);
-          }
+          const serviceTypes = user?.serviceTypes || [];
+          const canAcceptRequest = (request: any) => {
+            if (!user?.id || hasNoTerminal || isResolvingTerminal) return false;
+            if (supabaseHelpers.isDeclinedByDriver(request, user.id)) return false;
 
-          // Total = ride requests + passengers waiting in lobbies
-          const totalCount = rideRequestCount + totalLobbyPassengers;
+            const pickupLocation = String(request.pickup_location || '');
+            const rideType = String(request.ride_type || '').toLowerCase();
+            const taggedDelivery = pickupLocation.startsWith('DELIVERY|');
+            const type = rideType === 'delivery' || taggedDelivery
+              ? 'delivery'
+              : rideType === 'share' || rideType === 'shared'
+                ? 'shared'
+                : 'private';
+
+            if (!serviceTypes.includes(type)) return false;
+
+            if (type === 'delivery') {
+              if (!queueTerminalId) return false;
+              if (request.terminal_id === queueTerminalId) return true;
+              const pickupLat = Number(request.pickup_lat);
+              const pickupLng = Number(request.pickup_lng);
+              return Number.isFinite(pickupLat) && Number.isFinite(pickupLng) &&
+                isPointWithinTerminalRoute(pickupLat, pickupLng, {
+                  road: terminalBoundary,
+                  widthM: terminalRoadWidthM,
+                });
+            }
+
+            if (request.terminal_id && queueTerminalId && request.terminal_id !== queueTerminalId) return false;
+            if (queueTerminalId && !isFirstInQueue) return false;
+            return true;
+          };
+
+          // Match the request page: exclude declined requests, deduplicate orders,
+          // then count only the requests this rider can accept.
+          const seenOrderIds = new Set<string>();
+          let availableRideRequestCount = 0;
+          (rideRequests || []).forEach((request: any) => {
+            if (supabaseHelpers.isDeclinedByDriver(request, user?.id)) return;
+            if (request.order_id) {
+              if (seenOrderIds.has(request.order_id)) return;
+              seenOrderIds.add(request.order_id);
+            }
+            if (canAcceptRequest(request)) availableRideRequestCount += 1;
+          });
+
+          // Shared lobbies contribute their waiting passenger count only when the
+          // rider can accept that shared ride.
+          const availableLobbyPassengers = (waitingLobbies || []).reduce((total: number, lobby: any) => {
+            if (!canAcceptRequest({ ...lobby, ride_type: 'shared', pickup_location: lobby.pickup_location })) return total;
+            if (lobby.terminal_id && queueTerminalId && lobby.terminal_id !== queueTerminalId) return total;
+            const passengers = Array.isArray(lobby.passengers_json) ? lobby.passengers_json : [];
+            return total + passengers.length;
+          }, 0);
+
+          const totalCount = availableRideRequestCount + availableLobbyPassengers;
 
           setTotalPendingRequests(totalCount);
 
           if (totalCount > 0) {
             console.log('✅ Dashboard: Loaded passenger count:', {
-              rideRequests: rideRequestCount,
-              lobbyPassengers: totalLobbyPassengers,
+              availableRideRequests: availableRideRequestCount,
+              availableLobbyPassengers,
               total: totalCount
             });
           } else {
@@ -338,7 +391,16 @@ export default function RiderDashboard() {
         supabase.removeChannel(lobbiesSubscription);
         console.log('🔌 Dashboard: Cleaned up real-time subscriptions');
       };
-   }, []);
+   }, [
+     user?.id,
+     user?.serviceTypes?.join('|'),
+     queueTerminalId,
+     terminalBoundary,
+     terminalRoadWidthM,
+     isFirstInQueue,
+     hasNoTerminal,
+     isResolvingTerminal,
+   ]);
 
   // Helpers: Haversine distance in meters
   const haversineDistance = (a: { lat: number; lng: number }, b: { lat: number; lng: number }) => {
@@ -1078,7 +1140,7 @@ export default function RiderDashboard() {
               <div className="border-t border-line px-4 py-4 sm:px-5">
                 <div className="flex flex-col items-center text-center">
                   {/* Header */}
-                  <h3 className="font-extrabold text-base text-[var(--ink)] mb-4">Nearby passenger requests</h3>
+                  <h3 className="font-extrabold text-base text-[var(--ink)] mb-4">Passenger Requests</h3>
 
                   {/* Icon and Text Section */}
                   <div className={`flex items-center justify-center gap-3 mb-4 ${!isOnline ? 'opacity-50' : ''}`}>

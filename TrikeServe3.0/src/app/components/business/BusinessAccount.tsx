@@ -16,11 +16,8 @@ export default function BusinessAccount() {
   /*
    * The shop name, from the same place Overview and Shop read it.
    *
-   * This header used to read `user.businessName`, a copy kept on the user row
-   * that nothing guaranteed to agree with the shop's actual name -- so the same
-   * shop was "Boss A Silogan" in Shop and "Nemia's Kakanin" here. Settings is
-   * also where the name is edited, so having it display a different value from
-   * the one you just typed was the most confusing place for that to show up.
+   * The business name copied onto the user row can be stale after a rename, so
+   * Settings reads the current restaurant profile instead.
    */
   const profile = useRestaurantProfile();
   const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);

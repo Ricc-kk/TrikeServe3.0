@@ -127,6 +127,93 @@ function mapSupabaseUser(row: any): User {
   };
 }
 
+const RESTAURANT_SETUP_PIN_PREFIX = 'restaurantSetupPin_';
+const USER_CACHE_PREFIXES = ['restaurantData_', 'menuItems_'];
+
+/**
+ * These snapshots are display fallbacks, not the source of truth. Remove them
+ * after a successful login so old shop names and menus cannot outlive the
+ * corresponding Supabase rows. Keep only the sign-up map pin separately: it is
+ * needed if the business has not created its restaurants row yet.
+ */
+function clearUserScopedCaches(email: string, preserveRestaurantSetupPin = false) {
+  const normalizedEmail = email.trim().toLowerCase();
+  if (!normalizedEmail) return;
+
+  try {
+    const matchingKeys = Object.keys(localStorage).filter((key) =>
+      USER_CACHE_PREFIXES.some((prefix) =>
+        key.startsWith(prefix) && key.slice(prefix.length).toLowerCase() === normalizedEmail,
+      ),
+    );
+
+    if (preserveRestaurantSetupPin) {
+      for (const key of matchingKeys) {
+        if (!key.startsWith('restaurantData_')) continue;
+        try {
+          const cached = JSON.parse(localStorage.getItem(key) || 'null');
+          if (typeof cached?.latitude === 'number' && typeof cached?.longitude === 'number') {
+            localStorage.setItem(
+              `${RESTAURANT_SETUP_PIN_PREFIX}${normalizedEmail}`,
+              JSON.stringify({ latitude: cached.latitude, longitude: cached.longitude }),
+            );
+          }
+        } catch {
+          // A malformed display cache is discarded below.
+        }
+      }
+    }
+
+    matchingKeys.forEach((key) => localStorage.removeItem(key));
+    if (!preserveRestaurantSetupPin) {
+      localStorage.removeItem(`${RESTAURANT_SETUP_PIN_PREFIX}${normalizedEmail}`);
+    }
+  } catch (error) {
+    console.warn('[AuthContext] Could not clear cached business data:', error);
+  }
+}
+
+/** Keep the legacy storefront fallback aligned with a freshly loaded profile. */
+function syncCachedLegacyUserProfile(user: User) {
+  if (!user.email || user.role === 'admin') return;
+
+  try {
+    const raw = localStorage.getItem('trikeserve_users');
+    if (!raw) return;
+    const users = JSON.parse(raw);
+    if (!Array.isArray(users)) return;
+
+    let changed = false;
+    const updated = users.map((cached: any) => {
+      if (String(cached.email || '').toLowerCase() !== user.email.toLowerCase()) return cached;
+      changed = true;
+      const next = {
+        ...cached,
+        id: user.id,
+        email: user.email,
+        name: user.name,
+        phone: user.phone,
+        role: user.role,
+        isVerified: user.isVerified,
+        createdAt: user.createdAt,
+      } as Record<string, unknown>;
+
+      for (const field of [
+        'businessName', 'businessAddress', 'businessCuisine', 'address',
+        'todaPlate', 'licenseNumber', 'terminalId', 'terminalName',
+      ] as const) {
+        if (user[field] === undefined) delete next[field];
+        else next[field] = user[field];
+      }
+      return next;
+    });
+
+    if (changed) localStorage.setItem('trikeserve_users', JSON.stringify(updated));
+  } catch (error) {
+    console.warn('[AuthContext] Could not refresh cached account profile:', error);
+  }
+}
+
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -231,7 +318,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           const currentId = userIdRef.current;
           if (session?.user && currentId && session.user.id !== currentId) {
             console.warn('[AuthContext] Another tab signed in as a different account — following it');
-            void loadUserProfile(session.user.id);
+            void loadUserProfile(session.user.id, true);
           }
           return;
         }
@@ -294,7 +381,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     };
   }, []);
 
-  const loadUserProfile = async (authUserId: string) => {
+  const loadUserProfile = async (authUserId: string, clearCachesAfterLogin = false) => {
     try {
       console.log('[AuthContext] Loading profile for:', authUserId);
       const { data: profile, error } = await supabase
@@ -309,6 +396,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
       if (profile) {
         const mappedUser = mapSupabaseUser(profile);
+        if (clearCachesAfterLogin) {
+          syncCachedLegacyUserProfile(mappedUser);
+          clearUserScopedCaches(mappedUser.email, mappedUser.role === 'business');
+        }
         setUser(mappedUser);
         localStorage.setItem('trikeserve_current_user', JSON.stringify(mappedUser));
         console.log('[AuthContext] Profile loaded:', mappedUser.email, mappedUser.role);
@@ -409,6 +500,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (profile) {
         const mappedUser = mapSupabaseUser(profile);
 
+        syncCachedLegacyUserProfile(mappedUser);
+        clearUserScopedCaches(mappedUser.email, mappedUser.role === 'business');
         setUser(mappedUser);
         localStorage.setItem('trikeserve_current_user', JSON.stringify(mappedUser));
         console.log('[AuthContext] Legacy login successful (users table profile):', mappedUser.email);
@@ -434,6 +527,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         businessAddress: match.businessAddress,
         address: match.address,
       };
+      clearUserScopedCaches(mappedUser.email, mappedUser.role === 'business');
       setUser(mappedUser);
       localStorage.setItem('trikeserve_current_user', JSON.stringify(mappedUser));
       console.log('[AuthContext] Legacy login successful (localStorage profile):', mappedUser.email);
@@ -485,6 +579,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           password: adminUser.password_hash,
         } as User;
 
+        clearUserScopedCaches(userToSet.email, userToSet.role === 'business');
         setUser(userToSet);
         localStorage.setItem('trikeserve_current_user', JSON.stringify(userToSet));
         // Store admin credentials separately so Edge Functions can verify them
@@ -529,6 +624,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
         if (profile) {
           const mappedUser = mapSupabaseUser(profile);
+          syncCachedLegacyUserProfile(mappedUser);
+          clearUserScopedCaches(mappedUser.email, mappedUser.role === 'business');
           setUser(mappedUser);
           localStorage.setItem('trikeserve_current_user', JSON.stringify(mappedUser));
 
@@ -596,6 +693,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           }
 
           const mappedUser = mapSupabaseUser(newProfile);
+          syncCachedLegacyUserProfile(mappedUser);
+          clearUserScopedCaches(mappedUser.email, mappedUser.role === 'business');
           setUser(mappedUser);
           localStorage.setItem('trikeserve_current_user', JSON.stringify(mappedUser));
           return { success: true };
@@ -787,6 +886,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             cuisine: data.businessCuisine ?? [],
             operatingHours: "8:00 AM - 10:00 PM"
           }));
+          if (typeof data.businessLat === 'number' && typeof data.businessLng === 'number') {
+            localStorage.setItem(
+              `${RESTAURANT_SETUP_PIN_PREFIX}${data.email.trim().toLowerCase()}`,
+              JSON.stringify({ latitude: data.businessLat, longitude: data.businessLng }),
+            );
+          }
           localStorage.setItem(`menuItems_${data.email}`, JSON.stringify([]));
         }
 

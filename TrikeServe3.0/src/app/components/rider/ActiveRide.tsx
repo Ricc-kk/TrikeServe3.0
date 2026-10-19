@@ -1077,14 +1077,19 @@ export default function ActiveRide() {
         try {
           const orderData = await supabase
             .from('orders')
-            .select('business_id, restaurant_name, order_number')
+            .select('business_id, order_number')
             .eq('id', rideData.orderId)
             .single();
           if (orderData?.data?.business_id) {
+            const { data: restaurant } = await supabase
+              .from('restaurants')
+              .select('name')
+              .eq('business_user_id', orderData.data.business_id)
+              .maybeSingle();
             await supabaseHelpers.notifyBusinessDeliveryCompleted({
               orderId: rideData.orderId,
               orderNumber: orderData.data.order_number || rideData.orderNumber || '',
-              restaurantName: orderData.data.restaurant_name || '',
+              restaurantName: restaurant?.name?.trim() || '',
               businessUserId: orderData.data.business_id,
             });
             console.log('✅ Business notified: delivery completed');
@@ -1205,6 +1210,13 @@ export default function ActiveRide() {
       case 'pickup':
         return { label: 'Arrived at Drop-off', onClick: () => updateStatus('drop-off'), isComplete: false };
       case 'drop-off':
+        if (isDeliveryRide(rideData)) {
+          return {
+            label: 'Complete delivery',
+            onClick: () => setShowProofSheet(true),
+            isComplete: true,
+          };
+        }
         return { label: 'Confirm Drop-off', onClick: () => updateStatus('payment'), isComplete: false };
       case 'payment':
         /*

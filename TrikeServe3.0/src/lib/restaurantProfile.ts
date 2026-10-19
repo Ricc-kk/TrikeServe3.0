@@ -106,6 +106,9 @@ export function useRestaurantProfile() {
       }
 
       if (data) {
+        if (user?.email) {
+          localStorage.removeItem(`restaurantSetupPin_${user.email.trim().toLowerCase()}`);
+        }
         setRestaurant({
           ...(data as unknown as RestaurantRecord),
           cuisine: Array.isArray(data.cuisine) ? data.cuisine.filter(isCuisineId) : [],
@@ -161,6 +164,9 @@ export function useRestaurantProfile() {
         .maybeSingle();
 
       if (existing) {
+        if (user?.email) {
+          localStorage.removeItem(`restaurantSetupPin_${user.email.trim().toLowerCase()}`);
+        }
         setRestaurant(existing as unknown as RestaurantRecord);
         return existing as unknown as RestaurantRecord;
       }
@@ -182,8 +188,10 @@ export function useRestaurantProfile() {
       // chose while registering.
       let seedPin: { latitude: number; longitude: number } | null = null;
       try {
-        const raw = localStorage.getItem(`restaurantData_${user?.email || ""}`);
-        const parsed = raw ? JSON.parse(raw) : null;
+        const normalizedEmail = user?.email?.trim().toLowerCase() || "";
+        const setupPin = localStorage.getItem(`restaurantSetupPin_${normalizedEmail}`);
+        const legacyCache = localStorage.getItem(`restaurantData_${user?.email || ""}`);
+        const parsed = (setupPin && JSON.parse(setupPin)) || (legacyCache && JSON.parse(legacyCache));
         if (typeof parsed?.latitude === "number" && typeof parsed?.longitude === "number") {
           seedPin = { latitude: parsed.latitude, longitude: parsed.longitude };
         }
@@ -217,6 +225,9 @@ export function useRestaurantProfile() {
         ...seed,
         id: data.id,
       };
+      if (user?.email) {
+        localStorage.removeItem(`restaurantSetupPin_${user.email.trim().toLowerCase()}`);
+      }
       setRestaurant(created);
       return created;
     })();

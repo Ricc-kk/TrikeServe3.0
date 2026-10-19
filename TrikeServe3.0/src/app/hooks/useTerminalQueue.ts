@@ -397,6 +397,7 @@ export function useTerminalQueue() {
     terminalId,
     terminalName,
     terminalBoundary: terminalGeometry.boundary,
+    terminalRoadWidthM: terminalGeometry.roadWidthM,
     terminalRadiusKm: terminalGeometry.radiusKm,
     distanceMeters,
     isWithinBoundary,

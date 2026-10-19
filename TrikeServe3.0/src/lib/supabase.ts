@@ -2654,12 +2654,11 @@ export const supabaseHelpers = {
     if (orderId) {
       const { data: order } = await supabase
         .from('orders')
-        .select('business_id, customer_id, restaurant_name, order_number, restaurant_email')
+        .select('business_id, customer_id, order_number, restaurant_email')
         .eq('id', orderId)
         .single();
       if (order) {
         businessId = order.business_id || null;
-        restaurantName = order.restaurant_name || '';
         orderNumber = order.order_number || '';
         resolvedCustomerId = order.customer_id || resolvedCustomerId;
 
@@ -2669,12 +2668,22 @@ export const supabaseHelpers = {
         if (!businessId && order.restaurant_email) {
           const { data: restaurant } = await supabase
             .from('restaurants')
-            .select('business_user_id')
+            .select('business_user_id, name')
             .eq('id', order.restaurant_email)
             .maybeSingle();
           if (restaurant?.business_user_id) {
             businessId = restaurant.business_user_id;
           }
+          restaurantName = restaurant?.name?.trim() || '';
+        }
+
+        if (businessId) {
+          const { data: restaurant } = await supabase
+            .from('restaurants')
+            .select('name')
+            .eq('business_user_id', businessId)
+            .maybeSingle();
+          restaurantName = restaurant?.name?.trim() || '';
         }
       }
     }
@@ -2775,24 +2784,40 @@ export const supabaseHelpers = {
   async notifyBusinessOrderStatusChange(params: {
     orderId: string;
     orderNumber?: string;
-    restaurantName?: string;
     status: string;
   }) {
-    const { orderId, orderNumber, restaurantName, status } = params;
+    const { orderId, orderNumber, status } = params;
 
     // Resolve the customer from the order.
     let customerId: string | null = null;
-    let name = restaurantName || '';
+    let name = '';
     let number = orderNumber || '';
     const { data: order } = await supabase
       .from('orders')
-      .select('customer_id, restaurant_name, order_number')
+      .select('customer_id, business_id, restaurant_email, order_number')
       .eq('id', orderId)
       .maybeSingle();
     if (order) {
       customerId = order.customer_id || null;
-      name = order.restaurant_name || name;
       number = order.order_number || number;
+      let businessId = order.business_id || null;
+      if (!businessId && order.restaurant_email) {
+        const { data: restaurant } = await supabase
+          .from('restaurants')
+          .select('business_user_id, name')
+          .eq('id', order.restaurant_email)
+          .maybeSingle();
+        businessId = restaurant?.business_user_id || null;
+        name = restaurant?.name?.trim() || '';
+      }
+      if (businessId) {
+        const { data: restaurant } = await supabase
+          .from('restaurants')
+          .select('name')
+          .eq('business_user_id', businessId)
+          .maybeSingle();
+        name = restaurant?.name?.trim() || '';
+      }
     }
     if (!customerId) return { data: null, error: null };
 
@@ -3252,11 +3277,8 @@ export const supabaseHelpers = {
     /**
      * Shop names for the business owners taking part.
      *
-     * A conversation with a shop should be labelled by the shop, not by the
-     * person who owns it. "Nemia's Kakanin" tells a customer who they are
-     * talking to; "John Marc Balagot" does not, and they may be messaging three
-     * branches run by one person. A failure here leaves the owner's name in
-     * place, which is the old behaviour.
+     * A conversation with a shop should use the current name from its restaurant
+     * profile, rather than an owner name or an older name saved on the thread.
      */
     const shopNames: Record<string, string> = {};
     const businessIds = ids.filter((id) => profiles[id]?.role === 'business');

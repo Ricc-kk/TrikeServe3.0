@@ -85,7 +85,6 @@ interface Order {
    * like a filled one and the order announced a rider who did not exist yet.
    */
   driverRequested?: boolean;
-  restaurantName?: string;
   restaurantAddress?: string;
   /**
    * The rider's live phase, from the ride request that carries this order.
@@ -550,7 +549,6 @@ export default function BusinessOrders() {
           deliveryMode: dbOrder.delivery_mode || 'delivery',
           needsCutlery: dbOrder.needs_cutlery || false,
           customerId: dbOrder.customer_id || undefined,
-          restaurantName: dbOrder.restaurant_name || undefined,
           restaurantAddress: dbOrder.restaurant_address || undefined,
           cancelReason: dbOrder.cancel_reason || null,
           cancelledBy: dbOrder.cancelled_by || null,
@@ -980,7 +978,6 @@ export default function BusinessOrders() {
       supabaseHelpers.notifyBusinessOrderStatusChange({
         orderId: order.id,
         orderNumber: order.orderNumber,
-        restaurantName: order.restaurantName,
         status: newStatus,
       }).catch(err => console.error('[BusinessOrders] Failed to notify customer:', err));
 
@@ -1019,9 +1016,28 @@ export default function BusinessOrders() {
       return false;
     }
 
-    // Same reason as loadOrders: the pickup label belongs to the account that owns
-    // the order, and the context user is the one this screen was admitted for.
-    const pickupLabel = order.restaurantName || user?.businessName || 'Restaurant Pickup';
+    // Use the live restaurant profile for a new rider request. The order and user
+    // rows can retain an older shop name after the business renames itself.
+    let pickupLabel = 'Restaurant Pickup';
+    let pickupLat: number | null = null;
+    let pickupLng: number | null = null;
+    let pickupAddress = '';
+    try {
+      const { data: restaurant } = await supabase
+        .from('restaurants')
+        .select('name, address, latitude, longitude')
+        .eq('business_user_id', user?.id)
+        .maybeSingle();
+      if (restaurant?.name?.trim()) pickupLabel = restaurant.name.trim();
+      if (restaurant?.address?.trim()) pickupAddress = restaurant.address.trim();
+      const savedLat = Number(restaurant?.latitude);
+      const savedLng = Number(restaurant?.longitude);
+      if (restaurant?.latitude != null && restaurant?.longitude != null && Number.isFinite(savedLat) && Number.isFinite(savedLng)) {
+        pickupLat = savedLat;
+        pickupLng = savedLng;
+      }
+    } catch (e) {}
+
     const taggedPickup = `DELIVERY|ORDER_ID:${order.id}|ORDER_NO:${order.orderNumber}|${pickupLabel}`;
 
     console.log('[BusinessOrders] Creating OPEN delivery request for order:', {
@@ -1042,28 +1058,6 @@ export default function BusinessOrders() {
     const addressDisplayName = addressParts[0].trim();
     const addressForCoords = addressParts.length > 1 ? addressParts[1] : order.address;
     const dropoffCoords = parseCoords(addressForCoords);
-
-    // Use the business's saved map pin first so a café name cannot be mistaken
-    // for a similarly named place in another country.
-    let pickupLat = null;
-    let pickupLng = null;
-    let pickupAddress = pickupLabel;
-    try {
-      const { data: restaurant } = await supabase
-        .from('restaurants')
-        .select('address, latitude, longitude')
-        .eq('business_user_id', currentUser?.id)
-        .single();
-      if (restaurant?.address) {
-        pickupAddress = restaurant.address;
-      }
-      const savedLat = Number(restaurant?.latitude);
-      const savedLng = Number(restaurant?.longitude);
-      if (restaurant?.latitude != null && restaurant?.longitude != null && Number.isFinite(savedLat) && Number.isFinite(savedLng)) {
-        pickupLat = savedLat;
-        pickupLng = savedLng;
-      }
-    } catch (e) {}
 
     // If the business has not pinned its location, geocode only a real address,
     // never the storefront name.

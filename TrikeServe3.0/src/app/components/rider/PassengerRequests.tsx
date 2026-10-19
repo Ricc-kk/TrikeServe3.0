@@ -1,10 +1,11 @@
 import { useState, useEffect, useRef } from "react";
 import { useNavigate } from "react-router";
-import { ArrowLeft, Navigation, Package, Users, Car, Clock, Check, X, CheckCircle, MapPin, ChevronDown } from "lucide-react";
+import { ArrowLeft, Navigation, Store, Users, Car, Clock, Check, X, CheckCircle, MapPin, ChevronDown } from "lucide-react";
 import { GoogleMap, Marker, InfoWindow, Polyline, Polygon } from "@react-google-maps/api";
 import { Button } from "../ui/button";
 import { Card } from "../ui/card";
 import { Badge } from "../ui/badge";
+import { ImageWithFallback } from "../figma/ImageWithFallback";
 import { useAuth } from "../../contexts/AuthContext";
 import { isDeliveryServiceMode, isQueueGatedType, useTerminalQueue } from "../../hooks/useTerminalQueue";
 import TerminalQueueCard from "./TerminalQueueCard";
@@ -13,6 +14,7 @@ import { supabase } from "../../../lib/supabase";
 import useMapLoader from "@/lib/mapLoader";
 import { searchPlacesText } from "@/lib/placesApi";
 import { createCustomerMarkerIcon, createRestaurantMarkerIcon } from "@/lib/mapIcons";
+import { DEFAULT_TERMINAL_COLOR, normalizeTerminalColor, terminalMarkerIcon } from "../ui/TerminalIcon";
 import tricycleIcon from "../../../assets/0b76d1aa56b8ad6e15dd4efc8a0100b0ca5762a1.png";
 import ActiveRideButton from "./ActiveRideButton";
 import ReasonPromptModal from "../ui/reason-prompt-modal";
@@ -101,6 +103,7 @@ interface PassengerRequest {
   customerName: string;
   customerPhoto: string;
   restaurantName?: string;
+  restaurantImage?: string;
   restaurantAddress?: string;
   restaurantLat?: number;
   restaurantLng?: number;
@@ -238,6 +241,7 @@ export default function PassengerRequests() {
   // than telling the driver they're on a road that isn't being enforced.
   const [todaBoundaryEnabled, setTodaBoundaryEnabled] = useState<boolean>(true);
   const [todaCenter, setTodaCenter] = useState<{ lat: number; lng: number } | null>(null);
+  const [todaMarkerColor, setTodaMarkerColor] = useState(DEFAULT_TERMINAL_COLOR);
   const [todaName, setTodaName] = useState<string | null>(user?.terminalName || null);
   const [showTodaMap, setShowTodaMap] = useState(true);
 
@@ -279,7 +283,8 @@ export default function PassengerRequests() {
         setTodaBoundaryEnabled(data?.boundary_enabled !== false);
         const lat = Number(data?.center_lat);
         const lng = Number(data?.center_lng);
-        setTodaCenter(Number.isFinite(lat) && Number.isFinite(lng) ? { lat, lng } : null);
+        setTodaCenter(data?.center_lat != null && data?.center_lng != null && Number.isFinite(lat) && Number.isFinite(lng) ? { lat, lng } : null);
+        setTodaMarkerColor(normalizeTerminalColor(data?.marker_color));
         if (data?.name) setTodaName(data.name);
       })
       .catch(() => {});
@@ -330,7 +335,9 @@ export default function PassengerRequests() {
             if (profile.name) nameMap[profile.id] = profile.name;
           });
         }
-        const orderIds = [...new Set((rideRequests || []).map((req: any) => req.order_id).filter(Boolean))];
+        const orderIds = [...new Set((rideRequests || [])
+          .map((req: any) => req.order_id || parseDeliveryTag(req.pickup_location).orderId)
+          .filter(Boolean))];
         const orderMap: Record<string, any> = {};
         if (orderIds.length > 0) {
           const { data: orderProfiles } = await supabase
@@ -339,7 +346,7 @@ export default function PassengerRequests() {
             // checkout. restaurant_id is optional on older installs, so
             // selecting it here can fail the entire lookup and hide the
             // restaurant pin from the rider.
-            .select('id, business_id, restaurant_name, address')
+            .select('id, business_id, address')
             .in('id', orderIds);
           (orderProfiles || []).forEach((order: any) => { orderMap[order.id] = order; });
         }
@@ -348,7 +355,7 @@ export default function PassengerRequests() {
         if (businessIds.length > 0) {
           const { data: restaurantLocations } = await supabase
             .from('restaurants')
-            .select('business_user_id, address, latitude, longitude')
+            .select('business_user_id, name, address, latitude, longitude, logo_image')
             .in('business_user_id', businessIds);
           (restaurantLocations || []).forEach((restaurant: any) => { restaurantMap[restaurant.business_user_id] = restaurant; });
         }
@@ -362,32 +369,38 @@ export default function PassengerRequests() {
         );
 
         const mappedRequests = visibleRideRequests.map((req: any) => {
-          const orderAddress = orderMap[req.order_id]?.address as string | undefined;
+          const requestOrderId = req.order_id || parseDeliveryTag(req.pickup_location).orderId;
+          const order = orderMap[requestOrderId];
+          const restaurant = restaurantMap[order?.business_id];
+          const requestType = mapRideType(req.ride_type, req.pickup_location);
+          const orderAddress = order?.address as string | undefined;
           const requestDropoffAddress = req.dropoff_address || req.dropoff_location;
           const requestDropoffCoords = readAddressCoordinates(requestDropoffAddress);
           const orderDropoffCoords = readAddressCoordinates(orderAddress);
           return {
           id: req.id,
-          type: mapRideType(req.ride_type, req.pickup_location),
-          pickup: formatPickup(req.pickup_location),
+          type: requestType,
+          pickup: requestType === 'delivery' ? restaurant?.name || 'Restaurant' : formatPickup(req.pickup_location),
           dropoff: displayOrderAddress(req.dropoff_location) || displayOrderAddress(orderAddress) || 'Drop-off',
           payment: req.payment_method === 'GCASH' ? 'PREPAID' : 'COD',
           amount: Number(req.amount || 0),
           foodCost: Number(req.food_cost || 0),
           customerName: req.customer_name || nameMap[req.customer_id] || 'Customer',
-          restaurantName: orderMap[req.order_id]?.restaurant_name || formatPickup(req.pickup_location),
-          restaurantAddress: restaurantMap[orderMap[req.order_id]?.business_id]?.address
+          restaurantName: requestType === 'delivery' ? restaurant?.name || 'Restaurant' : undefined,
+          restaurantImage: restaurant?.logo_image || undefined,
+          restaurantAddress: restaurant?.address
             || (req.pickup_address && req.pickup_address.trim().toLowerCase() !== formatPickup(req.pickup_location).trim().toLowerCase()
               ? req.pickup_address
               : undefined),
-          restaurantLat: restaurantMap[orderMap[req.order_id]?.business_id]?.latitude ?? undefined,
-          restaurantLng: restaurantMap[orderMap[req.order_id]?.business_id]?.longitude ?? undefined,
+          restaurantLat: restaurant?.latitude ?? undefined,
+          restaurantLng: restaurant?.longitude ?? undefined,
           customerPhoto: '👤',
           distance: '2.5 km',
           estimatedTime: '7 mins',
           passengers: req.passenger_count || 1,
           customerId: req.customer_id,
           ...parseDeliveryTag(req.pickup_location),
+          orderId: requestOrderId,
           pickupAddress: req.pickup_address || undefined,
           dropoffAddress: displayOrderAddress(req.dropoff_address) || displayOrderAddress(orderAddress) || undefined,
           pickupLat: req.pickup_lat ?? undefined,
@@ -843,9 +856,34 @@ export default function PassengerRequests() {
     return (!best || dist < best.__distance) ? { ...r, __distance: dist, __eta: estimateETA(dist) } : best;
   }, null);
 
-  const sortedRequests = recommendedPickup
-    ? [recommendedPickup as PassengerRequest, ...filteredRequests.filter(r => r.id !== recommendedPickup.id)]
-    : filteredRequests;
+  const getRestaurantDistance = (request: PassengerRequest) => {
+    const latValue = request.restaurantLat ?? request.pickupLat;
+    const lngValue = request.restaurantLng ?? request.pickupLng;
+    if (latValue == null || lngValue == null) return Number.POSITIVE_INFINITY;
+    const lat = Number(latValue);
+    const lng = Number(lngValue);
+    if (!Number.isFinite(lat) || !Number.isFinite(lng)) return Number.POSITIVE_INFINITY;
+    return haversineDistance(currentLocation, { lat, lng });
+  };
+  const deliveryRequestsByDistance = filteredRequests
+    .filter(request => request.type === 'delivery')
+    .sort((a, b) => getRestaurantDistance(a) - getRestaurantDistance(b));
+  const nearestAvailableDelivery = deliveryRequestsByDistance.find(request =>
+    Number.isFinite(getRestaurantDistance(request)) &&
+    requestsMatchingServiceTypes.some(available => available.id === request.id)
+  );
+
+  const sortedRequests = selectedCategory === 'delivery'
+    ? deliveryRequestsByDistance
+    : nearestAvailableDelivery
+      ? [
+          nearestAvailableDelivery,
+          ...deliveryRequestsByDistance.filter(r => r.id !== nearestAvailableDelivery.id),
+          ...filteredRequests.filter(r => r.type !== 'delivery'),
+        ]
+      : recommendedPickup
+        ? [recommendedPickup as PassengerRequest, ...filteredRequests.filter(r => r.id !== recommendedPickup.id)]
+        : filteredRequests;
 
   return (
     <div className="min-h-screen bg-[var(--muted)] relative">
@@ -933,6 +971,14 @@ export default function PassengerRequests() {
                             }}
                           />
                         )}
+                        {todaCenter && (
+                          <Marker
+                            position={todaCenter}
+                            title={todaName || 'Assigned terminal'}
+                            icon={terminalMarkerIcon(todaMarkerColor, 58)}
+                            zIndex={5}
+                          />
+                        )}
                         <Marker position={currentLocation} icon={createDriverMarkerIcon()} title="Your Location" />
                       </GoogleMap>
                     ) : (
@@ -982,16 +1028,29 @@ export default function PassengerRequests() {
                     request.type === 'delivery' ? 'bg-[var(--info-soft)]' :
                     request.type === 'shared' ? 'bg-[var(--amber-soft)]' : 'bg-[var(--success-soft)]'
                   }`}>
-                    {request.customerPhoto === 'shared' ? (
+                    {request.type !== 'delivery' && request.customerPhoto === 'shared' ? (
                       <Users className="w-5 h-5 text-[var(--primary)]" />
                     ) : request.type === 'delivery' ? (
-                      <Package className="w-5 h-5 text-[var(--info)]" />
+                      request.restaurantImage ? (
+                        <ImageWithFallback
+                          src={request.restaurantImage}
+                          alt={`${request.restaurantName || 'Restaurant'} profile`}
+                          className="w-full h-full rounded-xl object-cover"
+                        />
+                      ) : (
+                        <Store className="w-5 h-5 text-[var(--info)]" />
+                      )
                     ) : (
                       <span className="text-lg">👤</span>
                     )}
                   </div>
                   <div className="min-w-0">
-                    <p className="font-bold text-[var(--ink)] text-sm truncate">{request.customerName}</p>
+                    <p className="font-bold text-[var(--ink)] text-sm truncate">
+                      {request.type === 'delivery' ? request.restaurantName || 'Restaurant' : request.customerName}
+                    </p>
+                    {request.type === 'delivery' && (
+                      <p className="text-[10px] text-[var(--muted-foreground)] truncate">Customer: {request.customerName}</p>
+                    )}
                     {request.type === 'shared' && request.passengerDetails && request.passengerDetails.length > 1 && (
                       <p className="text-[10px] text-[var(--muted-foreground)] truncate">
                         {request.passengerDetails.map((p: any) => p.name || 'Passenger').join(', ')}
@@ -1188,7 +1247,19 @@ export default function PassengerRequests() {
                   <div className="p-2 bg-[var(--success-soft)] rounded-lg">
                     <div className="flex items-center gap-2">
                       <div className="size-9 shrink-0 rounded-full border border-[var(--border)] bg-surface flex items-center justify-center">
-                        {previewRequest.type === 'delivery' ? <Package className="size-4 text-[var(--success)]" /> : <MapPin className="size-4 text-[var(--success)]" />}
+                        {previewRequest.type === 'delivery' ? (
+                          previewRequest.restaurantImage ? (
+                            <ImageWithFallback
+                              src={previewRequest.restaurantImage}
+                              alt={`${previewRequest.restaurantName || 'Restaurant'} profile`}
+                              className="size-full rounded-full object-cover"
+                            />
+                          ) : (
+                            <Store className="size-4 text-[var(--success)]" />
+                          )
+                        ) : (
+                          <MapPin className="size-4 text-[var(--success)]" />
+                        )}
                       </div>
                       <div className="min-w-0">
                         <p className="text-[10px] text-[var(--success)] font-bold">{previewRequest.type === 'delivery' ? 'Restaurant pickup' : 'Pickup'}</p>
