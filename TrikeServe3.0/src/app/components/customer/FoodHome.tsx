@@ -217,7 +217,7 @@ export default function FoodHome() {
       const { rows } = await fetchRestaurants();
 
       if (!rows || rows.length === 0) {
-        loadRestaurantsFromLocalStorage();
+        setRestaurants([]);
         return;
       }
 
@@ -259,51 +259,9 @@ export default function FoodHome() {
       setRestaurants(dedupeRestaurants(mapped));
     } catch (error) {
       console.error("[FoodHome] Error loading from Supabase:", error);
-      loadRestaurantsFromLocalStorage();
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  const loadRestaurantsFromLocalStorage = useCallback(() => {
-    try {
-      const usersData = localStorage.getItem("trikeserve_users");
-      if (!usersData) {
-        setRestaurants([]);
-        return;
-      }
-      const users = JSON.parse(usersData);
-      const businessUsers = users.filter((u: any) => u.role === "business");
-
-      const mapped: RawRestaurant[] = businessUsers.map((business: any) => {
-        const saved = localStorage.getItem(`restaurantData_${business.email}`);
-        const restaurantData = saved ? JSON.parse(saved) : {};
-        const menuRaw = localStorage.getItem(`menuItems_${business.email}`);
-        const menuItems: any[] = menuRaw ? JSON.parse(menuRaw) : [];
-
-        return {
-          id: business.email,
-          name: restaurantData.name || business.businessName || business.name || "Restaurant",
-          subtitle: "",
-          logo: restaurantData.logo || "🍽️",
-          image: restaurantData.heroImage || FALLBACK_IMAGE,
-          time: restaurantData.deliveryTime || "25-35 min",
-          rating: Number(restaurantData.rating) || 0,
-          ratingCount: Number(restaurantData.ratingCount) || 0,
-          verified: Boolean(business.isVerified),
-          address: restaurantData.address || business.businessAddress || "Gen T Deleon",
-          hasMenu: menuItems.length > 0,
-          isOpen: restaurantData.isOpen !== false,
-          cuisine: Array.isArray(restaurantData.cuisine) ? restaurantData.cuisine : [],
-          latitude: restaurantData.latitude ?? null,
-          longitude: restaurantData.longitude ?? null,
-        };
-      });
-
-      setRestaurants(dedupeRestaurants(mapped));
-    } catch (error) {
-      console.error("[FoodHome] Error loading from localStorage:", error);
       setRestaurants([]);
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const loadUnreadCount = useCallback(async () => {

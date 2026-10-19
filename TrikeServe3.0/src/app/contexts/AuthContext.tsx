@@ -173,6 +173,36 @@ function clearUserScopedCaches(email: string, preserveRestaurantSetupPin = false
   }
 }
 
+/** Remove old account snapshots at app startup, including other local accounts. */
+export function clearAllUserScopedCaches() {
+  try {
+    const matchingKeys = Object.keys(localStorage).filter((key) =>
+      USER_CACHE_PREFIXES.some((prefix) => key.startsWith(prefix)),
+    );
+
+    for (const key of matchingKeys) {
+      if (!key.startsWith('restaurantData_')) continue;
+      const email = key.slice('restaurantData_'.length).trim().toLowerCase();
+      if (!email) continue;
+      try {
+        const cached = JSON.parse(localStorage.getItem(key) || 'null');
+        if (typeof cached?.latitude === 'number' && typeof cached?.longitude === 'number') {
+          localStorage.setItem(
+            `${RESTAURANT_SETUP_PIN_PREFIX}${email}`,
+            JSON.stringify({ latitude: cached.latitude, longitude: cached.longitude }),
+          );
+        }
+      } catch {
+        // Malformed display cache is discarded below.
+      }
+    }
+
+    matchingKeys.forEach((key) => localStorage.removeItem(key));
+  } catch (error) {
+    console.warn('[AuthContext] Could not clear cached business data at startup:', error);
+  }
+}
+
 /** Keep the legacy storefront fallback aligned with a freshly loaded profile. */
 function syncCachedLegacyUserProfile(user: User) {
   if (!user.email || user.role === 'admin') return;
@@ -381,7 +411,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     };
   }, []);
 
-  const loadUserProfile = async (authUserId: string, clearCachesAfterLogin = false) => {
+  const loadUserProfile = async (authUserId: string, clearBusinessCaches = false) => {
     try {
       console.log('[AuthContext] Loading profile for:', authUserId);
       const { data: profile, error } = await supabase
@@ -396,7 +426,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
       if (profile) {
         const mappedUser = mapSupabaseUser(profile);
-        if (clearCachesAfterLogin) {
+        if (clearBusinessCaches) {
           syncCachedLegacyUserProfile(mappedUser);
           clearUserScopedCaches(mappedUser.email, mappedUser.role === 'business');
         }
@@ -408,7 +438,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         // Try localStorage fallback
         const storedUser = localStorage.getItem('trikeserve_current_user');
         if (storedUser) {
-          setUser(JSON.parse(storedUser));
+          const parsedUser = JSON.parse(storedUser);
+          setUser(parsedUser);
         }
       }
     } catch (err) {
@@ -419,7 +450,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       const raw = localStorage.getItem('trikeserve_current_user');
       if (raw) {
         try {
-          setUser(JSON.parse(raw));
+          const parsedUser = JSON.parse(raw);
+          setUser(parsedUser);
         } catch {
           localStorage.removeItem('trikeserve_current_user');
         }

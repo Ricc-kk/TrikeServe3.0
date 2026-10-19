@@ -456,36 +456,18 @@ export default function BusinessHome() {
     }));
   }, [profile.restaurant, shopSeeded]);
 
-  // First run only: before the shop row lands, seed from the registration answers
-  // so the form is not empty while it loads.
+  // Before the shop row lands, seed from the signed-in profile so the form is
+  // usable while the live restaurant record loads. Old browser snapshots are
+  // deliberately not read here; the database profile is the source of truth.
   useEffect(() => {
     if (user && !shopSeeded) {
-      const storageKey = `restaurantData_${user.email}`;
-      const savedData = localStorage.getItem(storageKey);
-
-      if (savedData) {
-        try {
-          setRestaurantData(JSON.parse(savedData));
-        } catch (error) {
-          console.error('Error loading restaurant data:', error);
-        }
-      } else {
-        setRestaurantData((prev) => ({
-          ...prev,
-          name: (user as any).businessName || user.name || "",
-          address: (user as any).businessAddress || "",
-        }));
-      }
+      setRestaurantData((prev) => ({
+        ...prev,
+        name: user.businessName || user.name || "",
+        address: user.businessAddress || "",
+      }));
     }
   }, [user, shopSeeded]);
-
-  // Save restaurant data to localStorage whenever it changes
-  useEffect(() => {
-    if (user?.email) {
-      const storageKey = `restaurantData_${user.email}`;
-      localStorage.setItem(storageKey, JSON.stringify(restaurantData));
-    }
-  }, [restaurantData, user?.email]);
 
   // Load the delivery fee set by the admin (view-only for the business)
   useEffect(() => {
