@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 import { useNavigate } from "react-router";
-import { ArrowLeft, Navigation, Store, Users, Car, Clock, Check, X, CheckCircle, MapPin, ChevronDown } from "lucide-react";
+import { ArrowLeft, Navigation, Store, Users, Car, Clock, Check, X, CheckCircle, MapPin, ChevronDown, Maximize2, Minimize2 } from "lucide-react";
 import { GoogleMap, Marker, InfoWindow, Polyline, Polygon } from "@react-google-maps/api";
 import { Button } from "../ui/button";
 import { Card } from "../ui/card";
@@ -143,6 +143,7 @@ export default function PassengerRequests() {
   const [dropoffRoutePath, setDropoffRoutePath] = useState<google.maps.LatLngLiteral[] | null>(null);
   const [showPickupRoute, setShowPickupRoute] = useState(true);
   const [showDropoffRoute, setShowDropoffRoute] = useState(true);
+  const [isPreviewMapFullscreen, setIsPreviewMapFullscreen] = useState(false);
   const [routeError, setRouteError] = useState<string | null>(null);
   const [resolvedPickupCoords, setResolvedPickupCoords] = useState<{ lat: number; lng: number } | null>(null);
   const [resolvedPickupAddress, setResolvedPickupAddress] = useState<string | null>(null);
@@ -509,6 +510,26 @@ export default function PassengerRequests() {
   }, [routePath]);
 
   useEffect(() => {
+    if (!isPreviewMapFullscreen) return;
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setIsPreviewMapFullscreen(false);
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isPreviewMapFullscreen]);
+
+  useEffect(() => {
+    const map = previewMapRef.current;
+    if (!map || !isMapsLoaded) return;
+    const frame = window.requestAnimationFrame(() => {
+      (window as any).google?.maps?.event?.trigger(map, 'resize');
+      if (routePath) fitMapToRoute(map, routePath);
+      else map.setCenter(previewMapCenter);
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [isPreviewMapFullscreen, isMapsLoaded, routePath, previewMapCenter]);
+
+  useEffect(() => {
     if (!previewRequest || !isMapsLoaded || !(window as any).google) return;
 
     let cancelled = false;
@@ -689,6 +710,7 @@ export default function PassengerRequests() {
   }, [previewRequest, isMapsLoaded, currentLocation]);
 
   const handleOpenPreview = (request: PassengerRequest) => {
+    setIsPreviewMapFullscreen(false);
     setRoutePath(null);
     setPickupRoutePath(null);
     setDropoffRoutePath(null);
@@ -1202,7 +1224,7 @@ export default function PassengerRequests() {
           role="dialog"
           aria-modal="true"
           aria-labelledby="rider-route-preview-title"
-          className="fixed inset-0 z-[1000] h-screen h-[100dvh] w-full overflow-hidden bg-[var(--background)]"
+          className={`fixed inset-0 ${isPreviewMapFullscreen ? 'z-[4000]' : 'z-[1000]'} h-screen h-[100dvh] w-full overflow-hidden bg-[var(--background)]`}
         >
           <div className="flex h-full w-full flex-col overflow-hidden bg-[var(--surface)] text-[var(--ink)]">
             <header className="flex shrink-0 items-center gap-3 border-b border-[var(--border)] px-4 py-2.5">
@@ -1222,7 +1244,7 @@ export default function PassengerRequests() {
               </div>
             </header>
             {isMapsLoaded ? (
-              <div className="relative h-[42dvh] min-h-[250px] w-full shrink-0 md:h-[48dvh]">
+              <div className={isPreviewMapFullscreen ? 'fixed inset-0 z-[4001] h-[100dvh] w-screen' : 'relative h-[42dvh] min-h-[250px] w-full shrink-0 md:h-[48dvh]'}>
                 <GoogleMap
                   mapContainerStyle={{ width: '100%', height: '100%' }}
                   center={previewMapCenter}
@@ -1280,6 +1302,15 @@ export default function PassengerRequests() {
                     Drop off
                   </button>
                 </div>
+                <button
+                  type="button"
+                  aria-label={isPreviewMapFullscreen ? 'Exit full-screen map' : 'View map full screen'}
+                  title={isPreviewMapFullscreen ? 'Exit full screen' : 'Full screen map'}
+                  onClick={() => setIsPreviewMapFullscreen((fullscreen) => !fullscreen)}
+                  className="absolute right-2 top-2 z-20 grid size-10 place-items-center rounded-lg border border-[var(--border)] bg-[var(--surface)] text-[var(--ink)] shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--primary)]"
+                >
+                  {isPreviewMapFullscreen ? <Minimize2 className="size-5" /> : <Maximize2 className="size-5" />}
+                </button>
                 {routeError && (
                   <div className="absolute bottom-2 left-2 right-2 rounded-lg border border-[var(--border)] bg-[var(--surface)] px-3 py-2 text-xs font-semibold text-[var(--error)] shadow">
                     {routeError}

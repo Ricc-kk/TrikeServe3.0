@@ -7,6 +7,8 @@ import { NotificationProvider, useNotification } from "../contexts/NotificationC
 import Toast from "./ui/Toast";
 import LocationPermissionPrompt from "./LocationPermissionPrompt";
 import BusinessScrollBehavior from "./business/BusinessScrollBehavior";
+import GlobalChatHead from "./chat/GlobalChatHead";
+import { ChatHeadVisibilityProvider } from "../contexts/ChatHeadVisibilityContext";
 
 function NotificationToasts() {
   const { notifications, removeNotification } = useNotification();
@@ -29,20 +31,23 @@ function NotificationToasts() {
 export default function Root() {
   return (
     <AuthProvider>
-      <FavoritesProvider>
-        <CartProvider>
-          <OrderProvider>
-            <NotificationProvider>
-              <NotificationToasts />
-              <LocationPermissionPrompt />
-              <BusinessScrollBehavior />
-              <div className="min-h-screen">
-                <Outlet />
-              </div>
-            </NotificationProvider>
-          </OrderProvider>
-        </CartProvider>
-      </FavoritesProvider>
+      <ChatHeadVisibilityProvider>
+        <FavoritesProvider>
+          <CartProvider>
+            <OrderProvider>
+              <NotificationProvider>
+                <NotificationToasts />
+                <LocationPermissionPrompt />
+                <BusinessScrollBehavior />
+                <div className="min-h-screen">
+                  <Outlet />
+                </div>
+                <GlobalChatHead />
+              </NotificationProvider>
+            </OrderProvider>
+          </CartProvider>
+        </FavoritesProvider>
+      </ChatHeadVisibilityProvider>
     </AuthProvider>
   );
 }

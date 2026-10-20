@@ -58,7 +58,12 @@ export default function PinOnMapPage() {
   // which is what a bare `navigate(-1)` used to do here.
   const goBack = usePreviousPage("/customer/delivery-address/new");
   const routeState = useLocation().state as
-    | { draft?: AddressDraft; editingId?: string }
+    | {
+        draft?: AddressDraft;
+        editingId?: string;
+        returnTo?: string;
+        returnState?: unknown;
+      }
     | null;
   const delivery = useDeliveryAddress();
 
@@ -277,8 +282,28 @@ export default function PinOnMapPage() {
     // one the customer opened.
     if (routeState?.editingId) {
       navigate("/customer/delivery-address", {
-        state: { draft: { ...draft, address }, editingId: routeState.editingId },
+        state: {
+          draft: { ...draft, address },
+          editingId: routeState.editingId,
+          returnTo: routeState.returnTo,
+          returnState: routeState.returnState,
+        },
       });
+      return;
+    }
+
+    // Checkout's dedicated address page opens this map as a quick way to change
+    // the live destination. Apply the pin and return to that checkout instead of
+    // starting the separate flow for saving a new named place.
+    if (routeState?.returnTo) {
+      delivery.selectAddress({
+        label: streetOf(address) || "Pinned location",
+        address,
+        latitude: draft.latitude,
+        longitude: draft.longitude,
+        source: "recent",
+      });
+      navigate(routeState.returnTo, { state: routeState.returnState });
       return;
     }
 

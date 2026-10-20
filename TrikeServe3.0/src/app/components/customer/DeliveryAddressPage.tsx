@@ -37,6 +37,9 @@ import { usePreviousPage } from "../../hooks/usePreviousPage";
 export default function DeliveryAddressPage() {
   const location = useLocation();
   const navigate = useNavigate();
+  const routeState = location.state as
+    | { returnTo?: string; returnState?: unknown }
+    | null;
   // Normally the food screen, but this list is also linked from the home
   // header's "Your location" line, so back follows the actual way in.
   const goBack = usePreviousPage("/customer/food");
@@ -68,9 +71,31 @@ export default function DeliveryAddressPage() {
   const recent = delivery.recent.filter((r) => matches(r.label, r.address));
   const saved = delivery.saved.filter((s) => matches(s.label, s.address));
 
+  const returnToCaller = () => {
+    if (routeState?.returnTo) {
+      navigate(routeState.returnTo, { state: routeState.returnState });
+      return;
+    }
+    navigate("/customer/food");
+  };
+
   const pick = (address: Parameters<typeof delivery.selectAddress>[0]) => {
     delivery.selectAddress(address);
-    navigate("/customer/food");
+    returnToCaller();
+  };
+
+  const pinOnMap = () => {
+    navigate("/customer/delivery-address/pin", {
+      state: {
+        draft: {
+          address: current?.address ?? "",
+          latitude: current?.latitude ?? null,
+          longitude: current?.longitude ?? null,
+        },
+        returnTo: routeState?.returnTo,
+        returnState: routeState?.returnState,
+      },
+    });
   };
 
   const startEdit = (id: string, label: string, address: string) => {
@@ -154,7 +179,7 @@ export default function DeliveryAddressPage() {
         </div>
       </header>
 
-      <main className="mx-auto max-w-3xl px-4 py-4 pb-12">
+      <main className="mx-auto max-w-3xl px-4 py-4 pb-28">
         <div className="relative">
           <Search
             className="pointer-events-none absolute left-3 top-1/2 size-5 -translate-y-1/2 text-[var(--muted-foreground)]"
@@ -427,6 +452,19 @@ export default function DeliveryAddressPage() {
           </ul>
         </section>
       </main>
+
+      <footer className="fixed inset-x-0 bottom-0 z-50 border-t border-line bg-[var(--surface)] px-4 pb-[calc(env(safe-area-inset-bottom)+0.75rem)] pt-3 shadow-[0_-8px_24px_rgba(0,0,0,0.08)]">
+        <div className="mx-auto flex max-w-3xl justify-center">
+          <button
+            type="button"
+            onClick={pinOnMap}
+            className="flex min-h-12 w-full max-w-sm items-center justify-center gap-2 rounded-2xl bg-[var(--primary)] px-5 text-base font-bold text-[var(--primary-foreground)] shadow-sm transition-opacity hover:opacity-90"
+          >
+            <MapPin className="size-5" aria-hidden="true" />
+            Pin on map
+          </button>
+        </div>
+      </footer>
     </div>
   );
 }

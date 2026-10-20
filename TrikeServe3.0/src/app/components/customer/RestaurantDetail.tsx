@@ -225,7 +225,6 @@ export default function RestaurantDetail() {
   const { showNotification } = useNotification();
 
   const [selectedCategory, setSelectedCategory] = useState("all");
-  const [selectedBudget, setSelectedBudget] = useState("all");
   const [isScrolled, setIsScrolled] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [showSearchModal, setShowSearchModal] = useState(false);
@@ -762,31 +761,17 @@ customizationGroups: parseChoiceGroups(item.customization_groups).filter(
       item.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
       item.description.toLowerCase().includes(searchQuery.toLowerCase());
     
-    // Budget filter logic
-    let matchesBudget = true;
-    if (selectedBudget !== "all") {
-      if (selectedBudget === "under100") {
-        matchesBudget = item.price < 100;
-      } else if (selectedBudget === "100-149") {
-        matchesBudget = item.price >= 100 && item.price < 150;
-      } else if (selectedBudget === "150-199") {
-        matchesBudget = item.price >= 150 && item.price < 200;
-      } else if (selectedBudget === "200-249") {
-        matchesBudget = item.price >= 200 && item.price < 250;
-      } else if (selectedBudget === "250-299") {
-        matchesBudget = item.price >= 250 && item.price < 300;
-      } else if (selectedBudget === "300+") {
-        matchesBudget = item.price >= 300;
-      }
-    }
-
     // Only show available items to customers
     const isAvailable = item.available === true;
 
-    return matchesCategory && matchesSearch && matchesBudget && isAvailable;
+    return matchesCategory && matchesSearch && isAvailable;
   }) || [];
 
   const selectedCategoryName = restaurantData?.categories.find(cat => cat.id === selectedCategory)?.name || "All Items";
+  const visibleCategories = restaurantData?.categories.filter(({ id, name }) => {
+    const normalizedName = name.trim().toLowerCase();
+    return id !== "all" && normalizedName !== "all items" && normalizedName !== "silog";
+  }) ?? [];
 
   // The shop's own headings, in the order it set them. Empty for a shop that
   // has not created any, which is every shop until ADD_MENU_SECTIONS.sql runs.
@@ -1063,7 +1048,7 @@ if (unfiledItems.length > 0) sectionGroups.push({ id: "__unfiled", name: "More",
         <div className="px-5 py-4 space-y-3">
           {/* Category Pills */}
           <div className="flex gap-2 overflow-x-auto pb-2 scrollbar-hide">
-            {restaurantData?.categories.map((category) => (
+            {visibleCategories.map((category) => (
               <button
                 key={category.id}
                 onClick={() => setSelectedCategory(category.id)}
@@ -1076,80 +1061,6 @@ if (unfiledItems.length > 0) sectionGroups.push({ id: "__unfiled", name: "More",
                 {category.name}
               </button>
             ))}
-          </div>
-
-          {/* Budget Filter Pills */}
-          <div className="flex gap-2 overflow-x-auto pb-2 scrollbar-hide">
-            <button
-              onClick={() => setSelectedBudget("all")}
-              className={`px-4 py-2 rounded-full text-sm font-semibold whitespace-nowrap transition-all flex-shrink-0 ${
-                selectedBudget === "all"
-                  ? "bg-[var(--primary)] text-white"
-                  : "bg-[var(--muted)] text-[var(--muted-foreground)] hover:bg-[var(--border)]"
-              }`}
-            >
-              All Budgets
-            </button>
-            <button
-              onClick={() => setSelectedBudget("under100")}
-              className={`px-4 py-2 rounded-full text-sm font-semibold whitespace-nowrap transition-all flex-shrink-0 ${
-                selectedBudget === "under100"
-                  ? "bg-[var(--primary)] text-white"
-                  : "bg-[var(--muted)] text-[var(--muted-foreground)] hover:bg-[var(--border)]"
-              }`}
-            >
-              Less than ₱100
-            </button>
-            <button
-              onClick={() => setSelectedBudget("100-149")}
-              className={`px-4 py-2 rounded-full text-sm font-semibold whitespace-nowrap transition-all flex-shrink-0 ${
-                selectedBudget === "100-149"
-                  ? "bg-[var(--primary)] text-white"
-                  : "bg-[var(--muted)] text-[var(--muted-foreground)] hover:bg-[var(--border)]"
-              }`}
-            >
-              ₱100
-            </button>
-            <button
-              onClick={() => setSelectedBudget("150-199")}
-              className={`px-4 py-2 rounded-full text-sm font-semibold whitespace-nowrap transition-all flex-shrink-0 ${
-                selectedBudget === "150-199"
-                  ? "bg-[var(--primary)] text-white"
-                  : "bg-[var(--muted)] text-[var(--muted-foreground)] hover:bg-[var(--border)]"
-              }`}
-            >
-              ₱150
-            </button>
-            <button
-              onClick={() => setSelectedBudget("200-249")}
-              className={`px-4 py-2 rounded-full text-sm font-semibold whitespace-nowrap transition-all flex-shrink-0 ${
-                selectedBudget === "200-249"
-                  ? "bg-[var(--primary)] text-white"
-                  : "bg-[var(--muted)] text-[var(--muted-foreground)] hover:bg-[var(--border)]"
-              }`}
-            >
-              ₱200
-            </button>
-            <button
-              onClick={() => setSelectedBudget("250-299")}
-              className={`px-4 py-2 rounded-full text-sm font-semibold whitespace-nowrap transition-all flex-shrink-0 ${
-                selectedBudget === "250-299"
-                  ? "bg-[var(--primary)] text-white"
-                  : "bg-[var(--muted)] text-[var(--muted-foreground)] hover:bg-[var(--border)]"
-              }`}
-            >
-              ₱250
-            </button>
-            <button
-              onClick={() => setSelectedBudget("300+")}
-              className={`px-4 py-2 rounded-full text-sm font-semibold whitespace-nowrap transition-all flex-shrink-0 ${
-                selectedBudget === "300+"
-                  ? "bg-[var(--primary)] text-white"
-                  : "bg-[var(--muted)] text-[var(--muted-foreground)] hover:bg-[var(--border)]"
-              }`}
-            >
-              ₱300
-            </button>
           </div>
 
           {/* Search Bar */}

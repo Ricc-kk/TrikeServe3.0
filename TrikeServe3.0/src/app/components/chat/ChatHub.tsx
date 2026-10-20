@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type FormEvent } from 'react';
+import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
 import { useNavigate, useParams, useLocation } from 'react-router';
 import { ArrowLeft, Camera, ChevronRight, Flag, ImagePlus, MessageCircle, MoreVertical, Send, Trash2, X } from 'lucide-react';
 import { Button } from '../ui/button';
@@ -7,6 +7,7 @@ import { Card } from '../ui/card';
 import { Badge } from '../ui/badge';
 import BottomNav from '../ui/BottomNav';
 import { useAuth } from '../../contexts/AuthContext';
+import { useChatHeadVisibility } from '../../contexts/ChatHeadVisibilityContext';
 import { supabaseHelpers } from '../../../lib/supabase';
 import { buildChatThreadKey, getPeerAvatar, getPeerName, getRoleLabel, ChatContextType, ChatRole } from '../../../lib/chat';
 
@@ -108,6 +109,7 @@ export default function ChatHub({
   const location = useLocation();
   const { conversationId } = useParams();
   const { user } = useAuth();
+  const { registerLocalHead } = useChatHeadVisibility();
 
   const [conversations, setConversations] = useState<ChatConversation[]>([]);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
@@ -125,6 +127,8 @@ export default function ChatHub({
   const [attachmentControlsOpen, setAttachmentControlsOpen] = useState(true);
   const [isChatHeadMode, setIsChatHeadMode] = useState(false);
   const [minimizedConversation, setMinimizedConversation] = useState<ChatConversation | null>(null);
+  const recentHeadsRowRef = useRef<HTMLDivElement | null>(null);
+  const [maxRecentHeadsOnRow, setMaxRecentHeadsOnRow] = useState(1);
   const [isUploadingImage, setIsUploadingImage] = useState(false);
   const [reportDialogOpen, setReportDialogOpen] = useState(false);
   const [reportConversation, setReportConversation] = useState<ChatConversation | null>(null);
@@ -160,6 +164,41 @@ export default function ChatHub({
 
   const isDirectMode = !!directPeerId;
   const activeConversationId = isDirectMode ? activeConversation?.id : conversationId;
+
+  const recentHeadConversations = useMemo(() => {
+    const rows = new Map<string, ChatConversation>();
+    conversations.forEach((conversation) => rows.set(conversation.id, conversation));
+    if (activeConversation) rows.set(activeConversation.id, activeConversation);
+    const activityOf = (conversation: ChatConversation) =>
+      new Date(conversation.last_message_at || conversation.updated_at).getTime() || 0;
+    const newestByPeer = new Map<string, ChatConversation>();
+    for (const conversation of [...rows.values()].sort((a, b) => activityOf(b) - activityOf(a))) {
+      const peerId = conversation.participant_a_id === user?.id
+        ? conversation.participant_b_id
+        : conversation.participant_a_id;
+      if (peerId && !newestByPeer.has(peerId)) newestByPeer.set(peerId, conversation);
+    }
+    return [...newestByPeer.values()].sort((a, b) => activityOf(b) - activityOf(a));
+  }, [activeConversation, conversations, user?.id]);
+
+  useEffect(() => {
+    if (!activeConversationId || isChatHeadMode) return;
+    return registerLocalHead();
+  }, [activeConversationId, isChatHeadMode, registerLocalHead]);
+
+  useEffect(() => {
+    if (!activeConversation || isChatHeadMode || !recentHeadsRowRef.current) return;
+    const row = recentHeadsRowRef.current;
+    const updateCapacity = () => {
+      // 44px avatar + 4px gap, with 16px total row padding.
+      const contentWidth = Math.max(0, row.clientWidth - 16);
+      setMaxRecentHeadsOnRow(Math.max(1, Math.floor((contentWidth + 4) / 48)));
+    };
+    updateCapacity();
+    const observer = new ResizeObserver(updateCapacity);
+    observer.observe(row);
+    return () => observer.disconnect();
+  }, [activeConversation, isChatHeadMode]);
 
   /**
    * The in-thread back arrow.
@@ -832,37 +871,48 @@ function getConversationPeer(conversation: ChatConversation) {
 
             Transparent, so it reads as "nothing here" rather than as a surface.
         */}
-        {(location.state as any)?.fromActiveRide && (
-          <div className="h-14 flex-shrink-0" aria-hidden="true" />
-        )}
-
-        {/*
-            The floating chat head, continued into the thread.
-
-            It normally lives on the ride screen, which navigating here unmounts --
-            so it disappeared the moment the chat opened, leaving the reserved
-            strip above empty and the head looking broken. Rendered here too, in
-            that strip's corner, so it survives the hand-off. Tapping it returns to
-            the ride, which is where it belongs.
-
-            `opened` is true: the chat is open, which is what parks the head in the
-            top right. The unread count is 0 here -- reading happens on this screen.
-        */}
-        {(location.state as any)?.fromActiveRide && (
-          <FloatingChatHead
-            storageKey={
-              basePath.includes('rider')
-                ? 'trikeserve_chat_head_pos_rider'
-                : 'trikeserve_chat_head_pos_customer'
-            }
-            peerAvatar={(location.state as any)?.peerAvatar ?? peer.avatar}
-            peerLabel={(location.state as any)?.peerLabel ?? peer.name}
-            unread={0}
-            pulseKey={0}
-            opened
-            onOpen={() => navigate(threadBack)}
-          />
-        )}
+        <div
+          ref={recentHeadsRowRef}
+          role="group"
+          aria-label="Recent conversations"
+          className="flex h-14 w-full shrink-0 items-center justify-end gap-1 overflow-hidden px-2"
+        >
+          {recentHeadConversations.slice(0, maxRecentHeadsOnRow).reverse().map((conversation) => {
+            const peer = getConversationPeer(conversation);
+            const isActive = conversation.id === activeConversation.id;
+            const unread = (conversation as any)._collapsedUnread ?? (
+              conversation.participant_a_id === user.id
+                ? conversation.unread_count_a || 0
+                : conversation.unread_count_b || 0
+            );
+            return (
+              <button
+                key={conversation.id}
+                type="button"
+                title={peer.name}
+                aria-label={`Open chat with ${peer.name}${unread > 0 ? `, ${unread} unread` : ''}`}
+                aria-current={isActive ? 'page' : undefined}
+                onClick={() => {
+                  if (isActive) {
+                    if ((location.state as any)?.fromActiveRide) navigate(threadBack);
+                    return;
+                  }
+                  void openConversation(conversation);
+                }}
+                className={`relative grid size-11 shrink-0 place-items-center overflow-visible rounded-full border-2 bg-[var(--surface)] shadow-sm transition-transform hover:scale-105 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--primary)] ${isActive ? 'border-[var(--primary)]' : 'border-[var(--border)]'}`}
+              >
+                <span className="size-full overflow-hidden rounded-full">
+                  <PeerAvatar value={peer.avatar} className="grid size-full place-items-center text-xl object-cover" />
+                </span>
+                {unread > 0 && (
+                  <span className="absolute -right-1 -top-1 grid min-w-[16px] place-items-center rounded-full bg-[var(--primary)] px-1 text-[10px] font-bold text-[var(--primary-foreground)] shadow">
+                    {unread > 99 ? '99+' : unread}
+                  </span>
+                )}
+              </button>
+            );
+          })}
+        </div>
         <div className="relative bg-[var(--primary)] text-white px-4 py-4 flex items-center gap-3 sticky top-0 z-10">
           <Button
             variant="ghost"

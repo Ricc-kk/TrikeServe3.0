@@ -21,7 +21,6 @@ import { usePreviousPage } from "../../hooks/usePreviousPage";
 import { supabase } from "../../../utils/supabase";
 import { supabaseHelpers, findDeliveryTerminalForOrder, logAudit } from "@/lib/supabase";
 import { computeDistanceFare, deliveryRates, straightLineKm } from "@/lib/pricing";
-import MapSelector from "./MapSelector";
 import ProofCapture from "../ui/ProofCapture";
 import { getDefaultAddress, setDefaultAddress } from "@/lib/defaultAddress";
 import { useDeliveryAddress } from "../../contexts/useDeliveryAddress";
@@ -89,13 +88,13 @@ export default function CartCheckout() {
   const [proofPreview, setProofPreview] = useState<string | null>(null);
   const [isUploadingProof, setIsUploadingProof] = useState(false);
   const [proofError, setProofError] = useState<string | null>(null);
+  const [proofValidationAttempt, setProofValidationAttempt] = useState(0);
 
   /** What this shop told customers to do before paying. */
   const [paymentInstructions, setPaymentInstructions] = useState<string | null>(null);
 
   const [needsCutlery, setNeedsCutlery] = useState(false);
   const [showOrderConfirmation, setShowOrderConfirmation] = useState(false);
-  const [showMapSelector, setShowMapSelector] = useState(false);
   const [showRemoveConfirm, setShowRemoveConfirm] = useState(false);
   const [pendingRemoveItem, setPendingRemoveItem] = useState<{
     restaurantId: string;
@@ -103,6 +102,7 @@ export default function CartCheckout() {
   } | null>(null);
   /** The address field, so a failed order can be scrolled back to where it was left. */
   const addressRef = useRef<HTMLDivElement | null>(null);
+  const proofRef = useRef<HTMLDivElement | null>(null);
 
   /*
    * Inline validation on the address, shown where the address is.
@@ -138,6 +138,12 @@ export default function CartCheckout() {
      */
     addressRef.current?.scrollIntoView({ block: 'center' });
   }, [addressError]);
+
+  // Bring missing payment proof into view after a failed Place Order attempt.
+  useEffect(() => {
+    if (!proofError || proofValidationAttempt === 0) return;
+    proofRef.current?.scrollIntoView({ block: 'center' });
+  }, [proofError, proofValidationAttempt]);
   const [placedOrderNumber, setPlacedOrderNumber] = useState<string | null>(null);
   const [placedOrderId, setPlacedOrderId] = useState<string | null>(null);
   /**
@@ -432,6 +438,7 @@ export default function CartCheckout() {
     const resolvedTerminalId = deliveryQuote.terminalId;
     if (!proofFile) {
       setProofError('Upload your GCash payment proof before placing the order.');
+      setProofValidationAttempt((attempt) => attempt + 1);
       return;
     }
     setProofError(null);
@@ -1042,7 +1049,12 @@ export default function CartCheckout() {
             type="button"
             onClick={() => {
               setAddressError(false);
-              setShowMapSelector(true);
+              navigate("/customer/delivery-address", {
+                state: {
+                  returnTo: "/customer/cart/checkout",
+                  returnState: routeState,
+                },
+              });
             }}
             aria-invalid={addressError}
             style={
@@ -1093,7 +1105,7 @@ export default function CartCheckout() {
               <AlertCircle className="mt-0.5 size-4 flex-shrink-0" />
               <span>
                 Add a delivery address to place this order. Tap the field above to
-                pick one on the map.
+                choose a saved address or pin a new one on the map.
               </span>
             </p>
           )}
@@ -1218,16 +1230,18 @@ export default function CartCheckout() {
             </p>
           )}
 
-          <ProofCapture
-            mode="upload"
-            label="GCash payment proof (required)"
-            hint="Upload a screenshot of the transfer receipt so the shop can verify your payment."
-            value={proofPreview}
-            busy={isUploadingProof}
-            error={proofError}
-            onSelect={handleProofSelected}
-            onClear={handleProofCleared}
-          />
+          <div ref={proofRef}>
+            <ProofCapture
+              mode="upload"
+              label="GCash payment proof (required)"
+              hint="Upload a screenshot of the transfer receipt so the shop can verify your payment."
+              value={proofPreview}
+              busy={isUploadingProof}
+              error={proofError}
+              onSelect={handleProofSelected}
+              onClear={handleProofCleared}
+            />
+          </div>
 
           {/* Say plainly that the rider collects cash, before it is a surprise. */}
           <p className="mt-3 flex items-start gap-2 rounded-xl bg-[var(--amber-soft)] px-3 py-2.5 text-xs text-[var(--amber-ink)]">
@@ -1388,32 +1402,6 @@ export default function CartCheckout() {
         </div>
       )}
 
-      {/* Map Selector */}
-      {showMapSelector && (
-        <MapSelector
-          onClose={() => setShowMapSelector(false)}
-          onSelectLocation={(location) => {
-            setSelectedAddress({
-              name: location.name,
-              full: location.full,
-              lat: location.lat,
-              lng: location.lng,
-            });
-            setHasSelectedAddress(true);
-            setFromDefaultAddress(false);
-            // The field it was complaining about is now right: clearing the mark
-            // here rather than only on the next failed order attempt means the
-            // error does not outlive the thing that caused it.
-            setAddressError(false);
-            setShowMapSelector(false);
-          }}
-          currentLocation={selectedAddress}
-          // Tells the map whether to pin the customer where they are on open. False
-          // for a first-time address, true when they are back to adjust one they
-          // already chose -- in which case their pin is left alone.
-          hasSavedAddress={hasSelectedAddress}
-        />
-      )}
     </div>
   );
 }

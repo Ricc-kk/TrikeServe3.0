@@ -2854,18 +2854,27 @@ export const supabaseHelpers = {
 
     // Store each delivery milestone in the same direct chat used by each pair.
     if (senderId) {
+      const customerChatMessages: Record<string, string> = {
+        'on-the-way': "I'm on my way to pick up your order.",
+        arrived: "I've arrived at the restaurant to pick up your order.",
+        'picked-up': "I've picked up your order and I'm heading to you!",
+        'dropped-off': "I've arrived at your delivery address.",
+        'awaiting-payment': "I'm almost there — please prepare your payment.",
+        completed: "I've completed your delivery. Enjoy your meal!",
+        cancelled: "I've cancelled this delivery.",
+      };
       const businessChatMessages: Record<string, string> = {
-        'on-the-way': 'The delivery driver is on the way to pick up this order.',
-        arrived: 'The delivery driver has arrived at your restaurant to pick up the order.',
-        'picked-up': 'The delivery driver has picked up the order and is heading to the customer.',
-        'dropped-off': "The delivery driver has arrived at the customer's delivery address.",
-        'awaiting-payment': "The delivery driver is at the customer's location completing the delivery.",
-        completed: 'The delivery driver has completed this order.',
-        cancelled: message || 'The delivery driver cancelled this order.',
+        'on-the-way': "I'm on my way to pick up this order.",
+        arrived: "I've arrived at your restaurant to pick up the order.",
+        'picked-up': "I've picked up the order and I'm heading to the customer.",
+        'dropped-off': "I've arrived at the customer's delivery address.",
+        'awaiting-payment': "I'm at the customer's location completing the delivery.",
+        completed: "I've completed this order.",
+        cancelled: "I've cancelled this delivery.",
       };
       const recipientMessages: Array<Promise<{ data: any; error: any }>> = [];
-      const customerMessage = statusLabels[status]?.message || message || 'Your delivery status has been updated.';
-      const businessMessage = businessChatMessages[status] || message || 'The delivery status has been updated.';
+      const customerMessage = customerChatMessages[status] || "I've updated the delivery status.";
+      const businessMessage = businessChatMessages[status] || "I've updated the delivery status.";
 
       if (resolvedCustomerId) {
         recipientMessages.push(this.sendOrderProgressChatMessage({
@@ -2998,6 +3007,16 @@ export const supabaseHelpers = {
       emoji: '🛍️',
     };
 
+    const chatMessages: Record<string, string> = {
+      'payment-confirmed': "We've received your GCash payment and we're preparing your order.",
+      'driver-requested': "We've prepared your food order and requested a driver.",
+      confirmed: "We've confirmed your order and we're preparing it.",
+      preparing: "We're preparing your order.",
+      ready: "Your order is ready, and we're waiting for a driver.",
+      delivered: "We've delivered your order. Enjoy your meal!",
+      cancelled: "We've cancelled your order.",
+    };
+
     if (businessId) {
       const { error: chatError } = await this.sendOrderProgressChatMessage({
         orderId,
@@ -3007,7 +3026,7 @@ export const supabaseHelpers = {
         senderRole: 'business',
         recipientId: customerId,
         recipientRole: 'customer',
-        message: label.message,
+        message: chatMessages[status] || "We've updated your order status.",
       });
       if (chatError) console.error('[supabase] Failed to send business order progress chat message:', chatError);
     }
