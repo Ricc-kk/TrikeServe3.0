@@ -170,19 +170,21 @@ export default function BusinessProfile() {
       <BusinessSidebar
         isMobileMenuOpen={isMobileMenuOpen}
         setIsMobileMenuOpen={setIsMobileMenuOpen}
+        mobileLayout
       />
 
       {/* Main Content */}
-      <div className="flex-1 lg:ml-64 w-full min-w-0">
+      <div className="w-full min-w-0 flex-1">
         {/* Header */}
-        <div className="bg-surface px-3 lg:px-4 py-3 lg:py-4 border-b border-[var(--border)]">
-          <div className="flex items-center gap-2 lg:gap-3">
-            {/* Hamburger Menu - Mobile Only */}
+        <div className="border-b border-[var(--border)] bg-surface px-3 py-3 sm:px-5">
+          <div className="flex items-center gap-2">
+            {/* Keep the profile drawer navigation consistent at every width. */}
             <button
               onClick={() => setIsMobileMenuOpen(true)}
-              className="lg:hidden flex-shrink-0"
+              aria-label="Open business navigation"
+              className="grid size-11 shrink-0 place-items-center rounded-xl hover:bg-[var(--muted)]"
             >
-              <Menu className="w-5 h-5 text-[var(--ink)]" />
+              <Menu className="size-5 text-[var(--ink)]" />
             </button>
 
             {/* Back Button */}
@@ -190,25 +192,25 @@ export default function BusinessProfile() {
               onClick={goBack}
               className="flex-shrink-0"
             >
-              <ArrowLeft className="w-5 h-5 lg:w-6 lg:h-6 text-[var(--ink)]" />
+              <ArrowLeft className="size-5 text-[var(--ink)]" />
             </button>
 
             <div className="flex-1 min-w-0">
-              <h1 className="text-lg lg:text-2xl xl:text-3xl font-extrabold text-[var(--ink)]">Edit Profile</h1>
+              <h1 className="text-lg font-extrabold text-[var(--ink)]">Edit Profile</h1>
             </div>
           </div>
-          <p className="text-xs lg:text-sm text-[var(--muted-foreground)] ml-7 lg:ml-11">Update your business and personal information</p>
+          <p className="ml-12 text-xs text-[var(--muted-foreground)]">Update your business and personal information</p>
         </div>
 
         {/* Profile Header Section */}
-        <div className="relative bg-[var(--primary)] px-4 lg:px-6 py-6 lg:py-8">
+        <div className="relative bg-[var(--primary)] px-4 py-6 sm:px-6">
           <div className="flex items-center gap-4">
             <div className="relative flex-shrink-0">
-              <div className="w-16 h-16 lg:w-20 lg:h-20 bg-white/20 backdrop-blur-sm rounded-2xl flex items-center justify-center border-2 border-white/30 shadow-lg overflow-hidden">
+              <div className="flex size-16 items-center justify-center overflow-hidden rounded-2xl border-2 border-white/30 bg-white/20 shadow-lg backdrop-blur-sm">
                 {avatarUrl ? (
                   <img src={avatarUrl} alt="Your profile photo" className="size-full object-cover" />
                 ) : (
-                  <User className="w-8 h-8 lg:w-10 lg:h-10 text-white" />
+                  <User className="size-8 text-white" />
                 )}
               </div>
               {/* Camera badge. Deliberately outside the staged-save flow below:
@@ -238,8 +240,8 @@ export default function BusinessProfile() {
               />
             </div>
             <div className="flex-1 min-w-0">
-              <h2 className="text-lg lg:text-xl font-bold text-white truncate">{formData.businessName || formData.name || "Business"}</h2>
-              <p className="text-white/80 text-xs lg:text-sm">{formData.email}</p>
+              <h2 className="truncate text-lg font-bold text-white">{formData.businessName || formData.name || "Business"}</h2>
+              <p className="text-xs text-white/80">{formData.email}</p>
               {photoError && (
                 <p className="mt-1 text-xs font-semibold text-white" role="alert">{photoError}</p>
               )}
@@ -247,7 +249,7 @@ export default function BusinessProfile() {
           </div>
         </div>
 
-        <div className="px-4 lg:px-6 py-5 space-y-5">
+        <div className="space-y-5 px-4 py-5 sm:px-6">
           {/* Only reachable for a change queued before saves applied directly. Saving
               above discards it automatically, and the button is here for a shop
               that would rather drop it without touching anything else. */}

@@ -14,9 +14,11 @@ import TrimmedLogo from "../ui/TrimmedLogo";
 interface BusinessSidebarProps {
   isMobileMenuOpen: boolean;
   setIsMobileMenuOpen: (open: boolean) => void;
+  /** Keep this page's drawer navigation in the mobile pattern at every width. */
+  mobileLayout?: boolean;
 }
 
-export default function BusinessSidebar({ isMobileMenuOpen, setIsMobileMenuOpen }: BusinessSidebarProps) {
+export default function BusinessSidebar({ isMobileMenuOpen, setIsMobileMenuOpen, mobileLayout = false }: BusinessSidebarProps) {
   const location = useLocation();
   const navigate = useNavigate();
   const { user } = useAuth();
@@ -101,7 +103,7 @@ export default function BusinessSidebar({ isMobileMenuOpen, setIsMobileMenuOpen 
       {/* Mobile Overlay */}
       {isMobileMenuOpen && (
         <div 
-          className="fixed inset-0 bg-black/50 z-[1000] lg:hidden"
+          className={`fixed inset-0 z-[1000] bg-black/50 ${mobileLayout ? '' : 'lg:hidden'}`}
           onClick={() => setIsMobileMenuOpen(false)}
         />
       )}
@@ -110,7 +112,7 @@ export default function BusinessSidebar({ isMobileMenuOpen, setIsMobileMenuOpen 
       <div className={`
         fixed top-0 left-0 h-dvh w-64 max-w-[90vw] bg-[var(--sidebar)] border-r-2 border-[var(--border)] z-[1001]
         transition-transform duration-300 ease-in-out
-        lg:translate-x-0
+        ${mobileLayout ? '' : 'lg:translate-x-0'}
         ${isMobileMenuOpen ? 'translate-x-0' : '-translate-x-full'}
       `}>
         <div className="flex flex-col h-full">
@@ -128,7 +130,7 @@ export default function BusinessSidebar({ isMobileMenuOpen, setIsMobileMenuOpen 
                 <div><span className="text-lg font-extrabold text-[var(--ink)]">TrikeServe</span><p className="text-xs text-[var(--muted-foreground)]">Business workspace</p></div>
               </div>
 
-              <button type="button" onClick={() => setIsMobileMenuOpen(false)} aria-label="Close navigation" className="grid size-11 shrink-0 place-items-center rounded-xl hover:bg-soft lg:hidden"><X className="size-5" /></button>
+              <button type="button" onClick={() => setIsMobileMenuOpen(false)} aria-label="Close navigation" className={`grid size-11 shrink-0 place-items-center rounded-xl hover:bg-soft ${mobileLayout ? '' : 'lg:hidden'}`}><X className="size-5" /></button>
             </div>
           </div>
 

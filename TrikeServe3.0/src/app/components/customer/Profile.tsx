@@ -108,7 +108,7 @@ export default function Profile() {
 
   return (
     <div className="min-h-screen bg-canvas text-[var(--ink)]">
-      <div className="mx-auto w-full max-w-4xl px-4 pb-8 sm:px-8">
+      <div className="w-full px-4 pb-8 sm:px-6 lg:px-8">
       {/* Header */}
       <header className="flex items-center gap-3 py-4 sm:py-6">
         <button 
@@ -122,7 +122,7 @@ export default function Profile() {
       </header>
 
       {/* Profile Photo Section */}
-      <section className="mb-5 flex flex-col items-center gap-4 rounded-3xl bg-[var(--ink-solid)] p-6 text-center text-white sm:flex-row sm:gap-6 sm:p-8 sm:text-left">
+      <section className="mb-5 flex flex-col items-center gap-4 rounded-3xl bg-[var(--ink-solid)] p-6 text-center text-white">
         <div className="relative shrink-0">
           <div className="w-24 h-24 rounded-full overflow-hidden bg-[var(--teal)]">
             {user?.avatarUrl ? (
@@ -157,10 +157,10 @@ export default function Profile() {
       </section>
 
       {/* Form Fields */}
-      <section className="rounded-3xl border border-line bg-surface p-5 shadow-sm sm:p-7">
+      <section className="rounded-3xl border border-line bg-surface p-5 shadow-sm">
       <h2 className="text-lg font-extrabold">Personal details</h2>
       <p className="mb-5 mt-1 text-sm text-[var(--muted-foreground)]">Your contact information and go-to delivery spot.</p>
-      <div className="grid gap-5 sm:grid-cols-2">
+      <div className="grid grid-cols-1 gap-5">
         {/* Name */}
         <div>
           <label htmlFor="customer-profile-name" className="mb-2 block text-sm font-semibold">Full name</label>
@@ -187,7 +187,7 @@ export default function Profile() {
         </div>
 
         {/* Email */}
-        <div className="sm:col-span-2">
+        <div>
           <label htmlFor="customer-profile-email" className="mb-2 block text-sm font-semibold">Email <span className="font-normal text-[var(--muted-foreground)]">· Read only</span></label>
           <input
             id="customer-profile-email"
@@ -202,7 +202,7 @@ export default function Profile() {
         </div>
 
         {/* Default Delivery Address */}
-        <div className="border-t border-line pt-5 sm:col-span-2">
+        <div className="border-t border-line pt-5">
           <h3 className="mb-3 text-sm font-bold">Delivery address</h3>
           <button
             onClick={() => setShowAddressMap(true)}

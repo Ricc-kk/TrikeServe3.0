@@ -247,7 +247,7 @@ export default function EditProfileScreen({
   return (
     <div className="min-h-screen bg-[var(--background)] pb-24">
       <header className="sticky top-0 z-[900] border-b border-line bg-[var(--surface)] px-3 py-3 sm:px-5">
-        <div className="mx-auto flex max-w-3xl items-center gap-2">
+        <div className="flex w-full items-center gap-2">
           {/*
              A button that pops, not a Link that pushes.
 
@@ -273,7 +273,7 @@ export default function EditProfileScreen({
         </div>
       </header>
 
-      <div className="mx-auto max-w-3xl space-y-5 px-4 py-5 sm:px-5">
+      <div className="w-full space-y-5 px-4 py-5 sm:px-6 lg:px-8">
         <section className="rounded-2xl border border-line bg-[var(--surface)] p-5">
           <h2 className="mb-4 text-sm font-bold tracking-wider text-[var(--muted-foreground)]">
             Profile photo

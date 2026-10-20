@@ -233,7 +233,7 @@ export default function RiderProfile() {
   return (
     <div className="min-h-dvh bg-[var(--muted)] pb-[env(safe-area-inset-bottom)]">
       {/* Header */}
-      <div className="mx-auto max-w-6xl rounded-b-[2rem] bg-[var(--ink-solid)] px-5 py-5 text-white sm:px-8 sm:py-7">
+      <div className="w-full rounded-b-[2rem] bg-[var(--ink-solid)] px-5 py-5 text-white">
         <div className="flex items-center justify-between mb-6">
           <button 
             onClick={() => navigate('/rider')}
@@ -331,7 +331,7 @@ export default function RiderProfile() {
       </div>
 
       {/* Profile Information */}
-      <main className="mx-auto grid max-w-6xl grid-cols-1 items-start gap-4 px-4 py-6 sm:grid-cols-2 sm:gap-5 sm:px-6">
+      <main className="grid w-full grid-cols-1 items-start gap-4 px-4 py-6 sm:px-6 lg:px-8">
         {/* Personal Information */}
         <Card className="min-w-0 gap-4 rounded-3xl border border-line bg-card p-5 sm:p-6">
           <h2 className="text-lg font-bold text-[var(--ink)] mb-4 flex items-center gap-2">
@@ -775,7 +775,7 @@ export default function RiderProfile() {
         </Button>
 
         {/* Bottom spacing for safe area */}
-        <div className="h-8 sm:col-span-2" />
+        <div className="h-8" />
       </main>
       <ActiveRideButton />
 
