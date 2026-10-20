@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { ArrowLeft, Search, ShoppingBag, Users, User as UserIcon, MapPin, Clock, Star } from "lucide-react";
+import { ArrowLeft, Search, ShoppingBag, UsersRound, CarTaxiFront, User as UserIcon, MapPin, Clock, Star } from "lucide-react";
 
 import { TerminalIconGlyph } from "../ui/TerminalIcon";
 import { Link } from "react-router";
@@ -135,11 +135,11 @@ export default function CustomerApp() {
                   <div className="flex items-start justify-between mb-3">
                     <div className="flex items-center gap-3">
                       <div className="w-12 h-12 bg-[var(--info-soft)] rounded-xl flex items-center justify-center">
-                        <Users className="w-6 h-6 text-[var(--info)]" />
+                        <UsersRound className="w-6 h-6 text-[var(--info)]" />
                       </div>
                       <div>
-                        <h4 className="font-bold text-[var(--ink)]">Shared (Sasabay)</h4>
-                        <p className="text-xs text-[var(--muted-foreground)]">Split the cost</p>
+                        <h4 className="font-bold text-[var(--ink)]">Share Ride (Sabay)</h4>
+                        <p className="text-xs text-[var(--muted-foreground)]">Share the fare with other passengers</p>
                       </div>
                     </div>
                     <div className="text-right">
@@ -158,11 +158,11 @@ export default function CustomerApp() {
                   <div className="flex items-start justify-between mb-3">
                     <div className="flex items-center gap-3">
                       <div className="w-12 h-12 bg-[var(--violet-soft)] rounded-xl flex items-center justify-center">
-                        <UserIcon className="w-6 h-6 text-[var(--violet)]" />
+                        <CarTaxiFront className="w-6 h-6 text-[var(--violet)]" />
                       </div>
                       <div>
-                        <h4 className="font-bold text-[var(--ink)]">Special</h4>
-                        <p className="text-xs text-[var(--muted-foreground)]">Special ride</p>
+                        <h4 className="font-bold text-[var(--ink)]">Private Ride (Pribado)</h4>
+                        <p className="text-xs text-[var(--muted-foreground)]">The whole tricycle is for your group</p>
                       </div>
                     </div>
                     <div className="text-right">

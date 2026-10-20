@@ -180,7 +180,7 @@ export default function ShareRideLobby({
   // rather than a generic "out of area": the customer not being at a terminal,
   // the drop-off not being on a route, and not being able to locate the drop-off
   // are three different things a customer can fix in three different ways.
-  const [gateFailure, setGateFailure] = useState<'unresolved' | 'border' | 'route' | null>(null);
+  const [gateFailure, setGateFailure] = useState<'unresolved' | 'border' | 'route' | 'lookup' | null>(null);
   const [fullLobbyInfo, setFullLobbyInfo] = useState<{ passengers: number; maxSeats: number } | null>(null);
   const [driverLocation, setDriverLocation] = useState<{ lat: number; lng: number } | null>(null);
   const [driverRoutePath, setDriverRoutePath] = useState<Array<{ lat: number; lng: number }>>([]);
@@ -833,6 +833,11 @@ export default function ShareRideLobby({
       }
 
       const border = await isPointWithinAnyTerminalBorder(pickupCoords.lat, pickupCoords.lng);
+      if (border.lookupFailed) {
+        setGateFailure('lookup');
+        setShowOutOfBoundaryPopup(true);
+        return null;
+      }
       if (!border.allowed) {
         console.log('🚫 Share ride pickup outside every terminal border:', pickupCoords);
         setGateFailure('border');
@@ -841,6 +846,11 @@ export default function ShareRideLobby({
       }
 
       const route = await isPointWithinAnyTerminalRoute(dropoffCoords.lat, dropoffCoords.lng);
+      if (route.lookupFailed) {
+        setGateFailure('lookup');
+        setShowOutOfBoundaryPopup(true);
+        return null;
+      }
       if (!route.allowed) {
         console.log('🚫 Share ride drop-off outside every terminal route:', dropoffCoords);
         setGateFailure('route');
@@ -1164,6 +1174,16 @@ if (loading) {
             Before we can check whether your <strong>drop-off point</strong> is on a terminal's
             route we need to find it on the map. Tap the drop-off on the map, or try a more
             complete address.
+          </>
+        ),
+      },
+      lookup: {
+        icon: '⚠️',
+        tone: 'warn',
+        title: "Couldn't verify terminal boundaries",
+        body: (
+          <>
+            Check your connection and try again. The shared ride can't be booked until its pickup and drop-off are verified.
           </>
         ),
       },

@@ -226,6 +226,10 @@ export default function BrowseAvailableLobbies({
       }
 
       const border = await isPointWithinAnyTerminalBorder(pickupCoords.lat, pickupCoords.lng);
+      if (border.lookupFailed) {
+        setError("We couldn't verify terminal boundaries. Check your connection and try again.");
+        return;
+      }
       if (!border.allowed) {
         console.log('🚫 Lobby join pickup outside every terminal border:', pickupCoords);
         setError("You're not at a terminal. Rides can only be booked from inside a terminal.");
@@ -233,6 +237,10 @@ export default function BrowseAvailableLobbies({
       }
 
       const route = await isPointWithinAnyTerminalRoute(coords.lat, coords.lng);
+      if (route.lookupFailed) {
+        setError("We couldn't verify terminal boundaries. Check your connection and try again.");
+        return;
+      }
       if (!route.allowed) {
         console.log('🚫 Lobby join drop-off outside every terminal route:', coords);
         setError("Your drop-off is not within the route of any terminal, so you can't join this ride.");

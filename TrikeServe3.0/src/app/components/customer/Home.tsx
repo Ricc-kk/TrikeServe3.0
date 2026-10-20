@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from "react";
-import { Search, MapPin, Users, User as UserIcon, ChevronDown, X, Clock, Utensils, Search as SearchIcon, User, Navigation, MessageCircle, Home as HomeIcon, ShoppingCart, ClipboardList, Star, ArrowLeft } from "lucide-react";
+import { Search, MapPin, Users, UsersRound, CarTaxiFront, ChevronDown, X, Clock, Utensils, Search as SearchIcon, User, Navigation, MessageCircle, Home as HomeIcon, ShoppingCart, ClipboardList, Star, ArrowLeft } from "lucide-react";
 import { Link, useLocation, useNavigate } from "react-router";
 import { Button } from "../ui/button";
 import { Card } from "../ui/card";
@@ -511,6 +511,7 @@ export default function CustomerHome() {
   // against any terminal. Distinct from "outside every terminal" and kept
   // separate so the message can say which one happened.
   const [unresolvedDropoffError, setUnresolvedDropoffError] = useState(false);
+  const [terminalBoundaryCheckUnavailable, setTerminalBoundaryCheckUnavailable] = useState(false);
    // Shown when the customer taps the map outside the selected terminal's area.
    const [pickerBoundaryWarning, setPickerBoundaryWarning] = useState<string | null>(null);
    const [showCancelConfirm, setShowCancelConfirm] = useState(false);
@@ -2275,8 +2276,13 @@ export default function CustomerHome() {
             selectedTerminalArea,
           ),
           checkedCount: selectedTerminalArea ? 1 : 0,
+          lookupFailed: false,
         }
       : await isPointWithinAnyTerminalBorder(pickup.lat, pickup.lng);
+    if (border.lookupFailed) {
+      setTerminalBoundaryCheckUnavailable(true);
+      return false;
+    }
     if (!border.allowed) {
       console.log('ðŸš« Pickup outside every terminal border:', pickup, {
         checkedCount: border.checkedCount,
@@ -2295,8 +2301,13 @@ export default function CustomerHome() {
             normalizeRoadWidth(selectedTerminalBoundary.widthM),
           ),
           checkedCount: selectedTerminalRoad ? 1 : 0,
+          lookupFailed: false,
         }
       : await isPointWithinAnyTerminalRoute(dropoff.lat, dropoff.lng);
+    if (route.lookupFailed) {
+      setTerminalBoundaryCheckUnavailable(true);
+      return false;
+    }
     if (!route.allowed) {
       console.log('ðŸš« Drop-off outside every terminal route:', dropoff, {
         checkedCount: route.checkedCount,
@@ -3285,7 +3296,7 @@ const getPrice = () => {
                   </h2>
                   <p className="truncate text-xs text-[var(--muted-foreground)]">
                     {bookingStep === 'ride'
-                      ? 'Shared (Sabay) o Private (Pribado)'
+                      ? 'Share Ride (Sabay) or Private Ride (Pribado)'
                       : 'Piliin ang sakayan at pupuntahan'}
                   </p>
                 </div>
@@ -3309,10 +3320,10 @@ const getPrice = () => {
                       // so answering it moves straight on to pickup and drop-off.
                       setBookingStep('locations');
                     }}
-                    label="Shared ride"
+                    label="Share Ride"
                     filipino="Sabay"
-                    description="May kasabay kang pasahero. Mas mura ang bayad."
-                    icon={Users}
+                    description="May kasabay na ibang pasahero; hati sa pamasahe."
+                    icon={UsersRound}
                   />
                   <ChoiceCard
                     selected={selectedVehicle === 'special'}
@@ -3321,10 +3332,10 @@ const getPrice = () => {
                       setPassengerCount(1);
                       setBookingStep('locations');
                     }}
-                    label="Private ride"
+                    label="Private Ride"
                     filipino="Pribado"
-                    description="Para sa iyo lang ang biyahe."
-                    icon={UserIcon}
+                    description="Buong tricycle para sa iyo at sa iyong mga kasama."
+                    icon={CarTaxiFront}
                   />
                 </div>
                 </div>
@@ -3713,6 +3724,26 @@ const getPrice = () => {
                 className="w-full bg-[var(--primary)] hover:bg-[var(--primary)] text-white py-3 font-bold"
               >
                 Choose on map
+              </Button>
+            </Card>
+          </div>
+        )}
+
+        {terminalBoundaryCheckUnavailable && (
+          <div className="fixed inset-0 bg-black/50 z-[2200] flex items-center justify-center p-4">
+            <Card className="bg-surface p-8 max-w-sm w-full text-center">
+              <div className="w-20 h-20 bg-[var(--amber-soft)] rounded-full flex items-center justify-center mx-auto mb-4">
+                <MapPin className="w-9 h-9 text-[var(--amber)]" aria-hidden="true" />
+              </div>
+              <h3 className="text-xl font-bold text-[var(--ink)] mb-2">Couldn't verify terminal boundaries</h3>
+              <p className="text-sm text-[var(--muted-foreground)] mb-6">
+                Check your connection and try booking again. The ride can't be booked until its pickup and drop-off are verified.
+              </p>
+              <Button
+                onClick={() => setTerminalBoundaryCheckUnavailable(false)}
+                className="w-full bg-[var(--primary)] hover:bg-[var(--primary)] text-white py-3 font-bold"
+              >
+                Understood
               </Button>
             </Card>
           </div>
@@ -4371,15 +4402,15 @@ const getPrice = () => {
                 <div className="flex items-center gap-3">
                   <span className="grid size-10 shrink-0 place-items-center rounded-xl bg-[var(--background)]">
                     {selectedVehicle === 'share'
-                      ? <Users className="size-6 text-[var(--primary)]" aria-hidden="true" />
-                      : <UserIcon className="size-6 text-[var(--primary)]" aria-hidden="true" />}
+                      ? <UsersRound className="size-6 text-[var(--primary)]" aria-hidden="true" />
+                      : <CarTaxiFront className="size-6 text-[var(--primary)]" aria-hidden="true" />}
                   </span>
                   <div>
                     <p className="font-bold text-[var(--ink)]">
                       {selectedVehicle === 'share' ? 'Share Ride' : 'Private Ride'}
                     </p>
                     <p className="text-sm text-[var(--muted-foreground)]">
-                      {selectedVehicle === 'share' ? 'Shared with others' : 'Private ride'}
+                      {selectedVehicle === 'share' ? 'Ride with other passengers' : 'Your group gets the whole tricycle'}
                     </p>
                   </div>
                 </div>

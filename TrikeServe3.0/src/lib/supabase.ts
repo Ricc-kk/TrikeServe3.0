@@ -742,7 +742,9 @@ function gateResult(
 
 function failedLookup(what: string, error: unknown): TerminalGateResult {
   console.warn(`[${what}] terminal lookup failed:`, error);
-  return { allowed: true, checkedCount: 0, matched: [], lookupFailed: true };
+  // Unknown is not a successful boundary check. Booking flows can show a
+  // connection error using `lookupFailed`, but the gate itself must fail closed.
+  return { allowed: false, checkedCount: 0, matched: [], lookupFailed: true };
 }
 
 /**

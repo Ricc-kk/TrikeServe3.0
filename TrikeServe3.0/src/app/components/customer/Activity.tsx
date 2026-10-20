@@ -1,4 +1,4 @@
-import { ArrowLeft, Home as HomeIcon, Calendar, MessageCircle, User, Users, Navigation, Search, ShoppingCart, ClipboardList, Package, MapPin, Flag, X, Check, Star } from "lucide-react";
+import { ArrowLeft, Home as HomeIcon, Calendar, MessageCircle, User, UsersRound, CarTaxiFront, Navigation, Search, ShoppingCart, ClipboardList, Package, MapPin, Flag, X, Check, Star } from "lucide-react";
 import { Link, useNavigate } from "react-router";
 import { Button } from "../ui/button";
 import { Card } from "../ui/card";
@@ -464,9 +464,9 @@ export default function Activity() {
                       {/* Ride Icon */}
                       <div className={`w-12 h-12 rounded-lg flex items-center justify-center flex-shrink-0 ${ride.rideType === 'share' ? 'bg-[var(--info-soft)]' : 'bg-[var(--primary-soft)]'}`}>
                         {ride.rideType === 'share' ? (
-                          <Users className="w-6 h-6 text-[var(--info)]" />
+                          <UsersRound className="w-6 h-6 text-[var(--info)]" />
                         ) : (
-                          <Navigation className="w-6 h-6 text-[var(--primary)]" />
+                          <CarTaxiFront className="w-6 h-6 text-[var(--primary)]" />
                         )}
                       </div>
 
