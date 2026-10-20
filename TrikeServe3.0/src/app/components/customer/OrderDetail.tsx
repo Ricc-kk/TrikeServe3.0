@@ -37,6 +37,7 @@ interface OrderData {
   deliveryFee: number;
   total: number;
   paymentMethod: string;
+  paymentConfirmedAt?: string | null;
   needsCutlery: boolean;
   createdAt: string;
   driverName?: string;
@@ -78,6 +79,7 @@ function buildOrderData(dbOrder: any): OrderData {
     deliveryFee: dbOrder.delivery_fee || 0,
     total: dbOrder.total || 0,
     paymentMethod: dbOrder.payment_method || 'cash',
+    paymentConfirmedAt: dbOrder.payment_confirmed_at ?? null,
     needsCutlery: dbOrder.needs_cutlery || false,
     createdAt: dbOrder.created_at,
     driverName: dbOrder.driver_name || undefined,
@@ -249,10 +251,16 @@ export default function OrderDetail() {
         table: 'orders',
         filter: `id=eq.${orderId}`,
       }, payload => {
-        const updated = payload.new as { status?: string; cancel_reason?: string | null; cancelled_by?: string | null };
+        const updated = payload.new as {
+          status?: string;
+          payment_confirmed_at?: string | null;
+          cancel_reason?: string | null;
+          cancelled_by?: string | null;
+        };
         setOrder(prev => prev ? {
           ...prev,
           status: updated.status || prev.status,
+          paymentConfirmedAt: updated.payment_confirmed_at ?? prev.paymentConfirmedAt,
           cancelReason: updated.cancel_reason ?? prev.cancelReason,
           cancelledBy: updated.cancelled_by ?? prev.cancelledBy,
         } : prev);
@@ -322,6 +330,7 @@ export default function OrderDetail() {
           if (
             prev &&
             prev.status === newData.status &&
+            prev.paymentConfirmedAt === newData.paymentConfirmedAt &&
             prev.driverName === newData.driverName &&
             prev.driverStatus === newData.driverStatus &&
             prev.driverMessage === newData.driverMessage
@@ -491,7 +500,10 @@ export default function OrderDetail() {
 
   // Tracking the map is only useful once a rider exists, and only on delivery.
   const isActiveDelivery =
-    order.deliveryMode === 'delivery' && progress.hasRider && progress.currentStepIsRiderStep;
+    order.deliveryMode === 'delivery' &&
+    !['delivered', 'completed'].includes(order.status.trim().toLowerCase()) &&
+    progress.hasRider &&
+    progress.currentStepIsRiderStep;
 
   const handleChatWithBusiness = () => {
     if (order.businessId) {
@@ -510,7 +522,7 @@ export default function OrderDetail() {
   return (
     <div className="min-h-screen bg-surface pb-6">
       {/* Header */}
-      <div className="sticky top-0 bg-surface border-b-2 border-[var(--border)] px-4 md:px-5 py-3 md:py-4 z-10">
+      <div className="sticky top-0 bg-surface border-b-2 border-[var(--border)] px-4 md:px-5 py-3 md:py-4 z-20">
         <div className="flex items-center justify-between mb-2">
           <div className="flex items-center gap-3">
             <button onClick={goBack} aria-label="Back" className="p-2 hover:bg-[var(--muted)] rounded-full transition-colors">
@@ -754,11 +766,11 @@ export default function OrderDetail() {
             </a>
           )}
 
-          <p className="mb-3 text-xs text-[var(--muted-foreground)]">
-            {order.paymentConfirmedAt
-              ? 'The shop has confirmed your GCash payment.'
-              : 'Waiting for the shop to confirm your GCash payment.'}
-          </p>
+          {order.status === 'pending' && !order.paymentConfirmedAt && (
+            <p className="mb-3 text-xs text-[var(--muted-foreground)]">
+              Waiting for the shop to confirm your GCash payment.
+            </p>
+          )}
 
           <div className="space-y-2 pt-3 border-t-2 border-[var(--muted)]">
             <div className="flex justify-between text-sm text-[var(--muted-foreground)]">

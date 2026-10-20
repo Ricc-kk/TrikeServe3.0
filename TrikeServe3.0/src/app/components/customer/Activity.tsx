@@ -519,7 +519,7 @@ export default function Activity() {
                 {displayOrders.map((order) => {
                   return (
                   <Card key={order.id} className="gap-0 rounded-2xl border border-line bg-surface p-4 shadow-sm sm:p-6">
-                    <button type="button" onClick={() => setSelectedActivityDetails({ type: 'order', item: order })} className="flex w-full items-start gap-3 text-left">
+                    <Link to={`/customer/order-detail/${order.id}`} className="flex w-full items-start gap-3 text-left">
                       {/* Restaurant Image */}
                       <div className="w-12 h-12 rounded-lg overflow-hidden flex-shrink-0">
                         <ImageWithFallback
@@ -550,7 +550,7 @@ export default function Activity() {
                         </div>
                         <span className="text-xs font-semibold text-[var(--primary)]">Tap to view details</span>
                       </div>
-                    </button>
+                    </Link>
                   </Card>
                   );
                 })}
