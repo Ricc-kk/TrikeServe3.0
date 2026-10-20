@@ -681,6 +681,11 @@ export default function AdminUsers() {
   const [terminals, setTerminals] = useState<{ id: string; name: string }[]>([]);
 
   useEffect(() => {
+    if (!user || user.adminType === 'rider') {
+      setTerminals([]);
+      return;
+    }
+
     let cancelled = false;
     void (async () => {
       try {
@@ -695,7 +700,7 @@ export default function AdminUsers() {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [user?.id, user?.adminType]);
   const [toast, setToast] = useState<{ message: string; variant?: 'success' | 'error' | 'warning' } | null>(null);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -708,7 +713,48 @@ export default function AdminUsers() {
   const loadUsers = async () => {
     setLoading(true);
     setLoadError(null);
+    const isRiderAdmin = user?.adminType === 'rider';
+    let riderAdminTerminalId: string | null = null;
+    let riderAdminScopeResolved = !isRiderAdmin;
     try {
+      if (!user) {
+        setUsers([]);
+        setLoadError('Sign in to view account data.');
+        return;
+      }
+
+      if (isRiderAdmin) {
+        if (user.isTerminalAdmin) {
+          const { data: assignment, error: assignmentError } = await supabase
+            .from('users')
+            .select('is_terminal_admin, terminal_id')
+            .eq('id', user.id)
+            .maybeSingle();
+
+          if (assignmentError) throw assignmentError;
+          riderAdminTerminalId = assignment?.is_terminal_admin
+            ? assignment.terminal_id ?? null
+            : null;
+        } else {
+          const { data: assignment, error: assignmentError } = await supabase
+            .from('admins')
+            .select('terminal_id')
+            .eq('email', user.email.toLowerCase())
+            .maybeSingle();
+
+          if (assignmentError) throw assignmentError;
+          riderAdminTerminalId = assignment?.terminal_id ?? null;
+        }
+
+        riderAdminScopeResolved = true;
+        if (!riderAdminTerminalId) {
+          setUsers([]);
+          setLoadError('This Driver Admin account is not assigned to a terminal. Ask the Super Admin to assign one.');
+          setLastUpdated(new Date());
+          return;
+        }
+      }
+
       // The restaurant profile is joined rather than read off the user row.
       // `restaurants.business_user_id` -> `users.id` is the only link between
       // them, and a shop row is not created at sign-up, so business users
@@ -719,14 +765,18 @@ export default function AdminUsers() {
       // and that order is not guaranteed to be the same twice -- so page 2 could
       // repeat a row already on page 1, or skip one entirely. Alphabetical also
       // happens to be the order someone scanning a directory wants.
-      const { data: supabaseUsers, error } = await supabase
+      let usersQuery = supabase
         .from('users')
         .select('*, restaurants(name, address, subtitle, rating, is_open, cuisine, delivery_time, logo_image)')
         .order('name', { ascending: true });
+      if (isRiderAdmin && riderAdminTerminalId) {
+        usersQuery = usersQuery.eq('role', 'rider').eq('terminal_id', riderAdminTerminalId);
+      }
+      const { data: supabaseUsers, error } = await usersQuery;
 
       if (error) {
         console.error('Error loading users from Supabase:', error);
-        loadUsersFromLocalStorage();
+        loadUsersFromLocalStorage(riderAdminTerminalId);
         return;
       }
 
@@ -768,23 +818,31 @@ export default function AdminUsers() {
       }));
 
       const adminType = user?.adminType;
-      // Super Admin sees every user; the Rider Admin only gets riders (read-only).
+      // The database query is scoped too, so records from other terminals are
+      // never fetched into a Driver Admin's browser in the first place.
       let filteredUsers = allUsers.filter(u => u.role !== 'admin');
       if (adminType === 'rider') {
-        filteredUsers = filteredUsers.filter(u => u.role === 'rider');
+        filteredUsers = filteredUsers.filter(
+          u => u.role === 'rider' && u.terminalId === riderAdminTerminalId,
+        );
       }
 
       setUsers(filteredUsers.sort(byDisplayName));
       setLastUpdated(new Date());
     } catch (error) {
       console.error('Error in loadUsers:', error);
-      loadUsersFromLocalStorage();
+      if (isRiderAdmin && !riderAdminScopeResolved) {
+        setUsers([]);
+        setLoadError('Could not verify your terminal assignment. Try refreshing the directory.');
+      } else {
+        loadUsersFromLocalStorage(riderAdminTerminalId);
+      }
     } finally {
       setLoading(false);
     }
   };
 
-  const loadUsersFromLocalStorage = () => {
+  const loadUsersFromLocalStorage = (riderAdminTerminalId: string | null = null) => {
     setLoadError('Account data could not be loaded. Try refreshing the directory.');
     try {
       const usersJson = localStorage.getItem('trikeserve_users');
@@ -793,7 +851,13 @@ export default function AdminUsers() {
       if (!Array.isArray(allUsers)) return;
       let filteredUsers = allUsers.filter(u => u.role !== 'admin');
       if (user?.adminType === 'rider') {
-        filteredUsers = filteredUsers.filter(u => u.role === 'rider');
+        filteredUsers = riderAdminTerminalId
+          ? filteredUsers.filter(u =>
+              u.role === 'rider' &&
+              ((u as StoredUser & { terminal_id?: string }).terminalId ||
+                (u as StoredUser & { terminal_id?: string }).terminal_id) === riderAdminTerminalId,
+            )
+          : [];
       }
       setUsers(filteredUsers.sort(byDisplayName));
       setLastUpdated(new Date());
@@ -938,7 +1002,10 @@ export default function AdminUsers() {
         (value || '').toLowerCase().includes(searchQuery.trim().toLowerCase())
       );
 
-    const matchesRole = filterRole === "all" || u.role === filterRole;
+    const matchesRole =
+      user?.adminType === 'rider' ||
+      filterRole === "all" ||
+      u.role === filterRole;
     const matchesStatus =
       filterStatus === "all" ||
       (filterStatus === "verified" && u.isVerified) ||
@@ -946,6 +1013,7 @@ export default function AdminUsers() {
     // `unassigned` is a terminal filter value rather than a terminal, so it is
     // matched here instead of being faked into the options list.
     const matchesTerminal =
+      user?.adminType === 'rider' ||
       filterTerminal === "all" ||
       (u.role === 'rider' && (filterTerminal === "unassigned" ? !u.terminalId : u.terminalId === filterTerminal));
 
@@ -955,9 +1023,9 @@ export default function AdminUsers() {
   // Lets the empty state say *why* it is empty and offer a way back.
   const hasActiveFilter =
     searchQuery.trim() !== "" ||
-    filterRole !== "all" ||
+    (user?.adminType !== 'rider' && filterRole !== "all") ||
     filterStatus !== "all" ||
-    filterTerminal !== "all";
+    (user?.adminType !== 'rider' && filterTerminal !== "all");
 
   const clearFilters = () => {
     setSearchQuery("");
@@ -1194,7 +1262,7 @@ export default function AdminUsers() {
           <>
           {/* Stats Cards */}
           <section aria-labelledby="users-accounts-title">
-            <div className="mb-4 flex flex-wrap items-baseline gap-x-3 gap-y-1"><h2 id="users-accounts-title" className="text-lg font-bold tracking-tight text-[var(--ink)] sm:text-xl">{isRiderReadOnly ? 'Drivers at a glance' : 'Community at a glance'}</h2><p className="text-xs text-[var(--muted-foreground)]">{isRiderReadOnly ? 'Network-wide driver accounts · Read-only' : 'All registered accounts · Administrators excluded'}</p></div>
+            <div className="mb-4 flex flex-wrap items-baseline gap-x-3 gap-y-1"><h2 id="users-accounts-title" className="text-lg font-bold tracking-tight text-[var(--ink)] sm:text-xl">{isRiderReadOnly ? 'Drivers at a glance' : 'Community at a glance'}</h2><p className="text-xs text-[var(--muted-foreground)]">{isRiderReadOnly ? 'Drivers assigned to your terminal · Read-only' : 'All registered accounts · Administrators excluded'}</p></div>
             <div className={`grid grid-cols-2 gap-3 sm:gap-4 @min-[36rem]:grid-cols-3 ${isRiderReadOnly ? '' : '@min-[66rem]:grid-cols-6'}`}>
               {[
                 { label: 'Total users', value: stats.total, Icon: Users, tone: 'bg-[var(--teal-soft)] text-[var(--teal)]' },
@@ -1251,12 +1319,12 @@ export default function AdminUsers() {
                 onClick={() => setOpenFilter('status')}
               />
 
-              {/* TODA Filter */}
-              <FilterButton
+              {/* A Driver Admin is already scoped to one terminal. */}
+              {!isRiderReadOnly && <FilterButton
                 label="Filter by TODA"
                 valueLabel={labelOfOption(terminalFilterOptions, filterTerminal, 'All TODAs')}
                 onClick={() => setOpenFilter('terminal')}
-              />
+              />}
             </div>
           </Card>
 
@@ -1594,7 +1662,7 @@ export default function AdminUsers() {
       {/* Filter modals. One dialog serving all three, so only one can be open at
           a time and the trap/escape handling is written once. */}
       <OptionPicker
-        open={openFilter === 'role'}
+        open={openFilter === 'role' && !isRiderReadOnly}
         title="Filter by Role"
         options={roleFilterOptions}
         value={filterRole}
@@ -1610,7 +1678,7 @@ export default function AdminUsers() {
         onClose={closePickers}
       />
       <OptionPicker
-        open={openFilter === 'terminal'}
+        open={openFilter === 'terminal' && !isRiderReadOnly}
         title="Filter by TODA"
         description={
           terminals.length === 0
