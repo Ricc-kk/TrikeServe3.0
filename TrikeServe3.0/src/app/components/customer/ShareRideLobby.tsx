@@ -1246,6 +1246,7 @@ if (loading) {
           Hidden while the overlay is open so two heads never stack. */}
       {lobby.driver_id && lobby.status === 'driver_found' && terminalStatus === null && !lobbyChatPopup && (
         <FloatingChatHead
+          headId={driverChatId.current || undefined}
           zIndexClass="z-[2100]"
           storageKey="trikeserve_chat_head_pos_customer"
           peerAvatar={driverProfileAvatar}

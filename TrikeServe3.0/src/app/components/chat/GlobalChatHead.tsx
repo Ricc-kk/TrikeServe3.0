@@ -4,11 +4,14 @@ import { useAuth } from '../../contexts/AuthContext';
 import { useChatHeadVisibility } from '../../contexts/ChatHeadVisibilityContext';
 import { supabaseHelpers } from '../../../lib/supabase';
 import FloatingChatHead from '../ui/FloatingChatHead';
+import RideChatOverlay from '../rider/RideChatOverlay';
 
 interface ChatConversation {
   id: string;
   participant_a_id: string;
   participant_b_id: string;
+  participant_a_role: string;
+  participant_b_role: string;
   participant_a_name: string | null;
   participant_b_name: string | null;
   participant_a_avatar: string | null;
@@ -28,10 +31,11 @@ function unreadCount(conversation: ChatConversation, userId: string) {
 
 export default function GlobalChatHead() {
   const { user, isLoading } = useAuth();
-  const { localHeadCount } = useChatHeadVisibility();
+  const { localHeadIds, openedConversationId, toggleChatOverlay, closeChatOverlay } = useChatHeadVisibility();
   const location = useLocation();
   const navigate = useNavigate();
   const [conversations, setConversations] = useState<ChatConversation[]>([]);
+  const [overlayConversation, setOverlayConversation] = useState<ChatConversation | null>(null);
   const [pulseKey, setPulseKey] = useState(0);
   const lastSignalRef = useRef('');
 
@@ -87,12 +91,44 @@ export default function GlobalChatHead() {
       lastSignalRef.current = '';
       return;
     }
-    const signal = `${conversation.id}:${conversation.last_message_at || ''}:${conversation.last_message_sender_id || ''}:${unreadCount(conversation, user.id)}`;
+    // Read-count changes should update the badge without re-opening a dismissed
+    // head. A new message changes its activity timestamp or sender.
+    const signal = `${conversation.id}:${conversation.last_message_at || ''}:${conversation.last_message_sender_id || ''}`;
     if (lastSignalRef.current && lastSignalRef.current !== signal) {
       setPulseKey((key) => key + 1);
     }
     lastSignalRef.current = signal;
   }, [conversation, user?.id]);
+
+  const hasOpenedConversationInList = Boolean(
+    openedConversationId && conversations.some((item) => item.id === openedConversationId),
+  );
+  useEffect(() => {
+    if (!user?.id) {
+      setOverlayConversation(null);
+      closeChatOverlay();
+      return;
+    }
+    if (!openedConversationId || hasOpenedConversationInList) {
+      setOverlayConversation(null);
+      return;
+    }
+    if (overlayConversation?.id === openedConversationId) return;
+
+    let active = true;
+    void supabaseHelpers.getChatConversationById(openedConversationId).then(({ data, error }) => {
+      if (!active) return;
+      if (error || !data) {
+        closeChatOverlay();
+        return;
+      }
+      setOverlayConversation(data as ChatConversation);
+    });
+
+    return () => {
+      active = false;
+    };
+  }, [openedConversationId, hasOpenedConversationInList, overlayConversation?.id, user?.id, closeChatOverlay]);
 
   if (
     isLoading ||
@@ -112,6 +148,10 @@ export default function GlobalChatHead() {
     conversation && location.pathname === `${messagesPath}/thread/${conversation.id}`,
   );
   const isOnMessagesPage = location.pathname === messagesPath || location.pathname.startsWith(`${messagesPath}/`);
+  const selectedOverlayConversation = openedConversationId
+    ? conversations.find((item) => item.id === openedConversationId) ||
+      (overlayConversation?.id === openedConversationId ? overlayConversation : null)
+    : null;
   const peerIsA = conversation ? conversation.participant_a_id !== user.id : false;
   const peerName = conversation
     ? peerIsA ? conversation.participant_a_name : conversation.participant_b_name
@@ -126,23 +166,56 @@ export default function GlobalChatHead() {
       peerAvatar: peerIsA ? item.participant_a_avatar : item.participant_b_avatar,
       peerLabel: (peerIsA ? item.participant_a_name : item.participant_b_name) || 'your conversation',
       unread: unreadCount(item, user.id),
-      onOpen: () => navigate(`${messagesPath}/thread/${item.id}`),
+      onOpen: () => toggleChatOverlay(item.id),
     };
   });
 
   return (
-    <FloatingChatHead
-      isGlobal
-      hidden={localHeadCount > 0 || (isOnMessagesPage && isCurrentThread)}
-      storageKey={`trikeserve_chat_head_pos_${user.role}`}
-      headId={conversation?.id || 'messages'}
-      peerAvatar={peerAvatar}
-      peerIsMessages={!conversation}
-      peerLabel={peerName || 'your latest conversation'}
-      unread={conversation ? unreadCount(conversation, user.id) : 0}
-      pulseKey={pulseKey}
-      stackItems={stackItems}
-      onOpen={() => navigate(conversation ? `${messagesPath}/thread/${conversation.id}` : messagesPath)}
-    />
+    <>
+      <FloatingChatHead
+        isGlobal
+        hidden={
+          Boolean(conversation && localHeadIds.includes(conversation.id)) ||
+          (isOnMessagesPage && isCurrentThread)
+        }
+        storageKey={`trikeserve_global_chat_head_pos_${user.role}`}
+        initialPlacement="top-right"
+        headId={conversation?.id || 'messages'}
+        peerAvatar={peerAvatar}
+        peerIsMessages={!conversation}
+        peerLabel={peerName || 'your latest conversation'}
+        unread={conversation ? unreadCount(conversation, user.id) : 0}
+        pulseKey={pulseKey}
+        stackItems={stackItems}
+        onOpen={() => conversation ? toggleChatOverlay(conversation.id) : navigate(messagesPath)}
+      />
+      {selectedOverlayConversation && (
+        (() => {
+          const conversation = selectedOverlayConversation;
+          const senderIsA = conversation.participant_a_id === user.id;
+          const peerId = senderIsA ? conversation.participant_b_id : conversation.participant_a_id;
+          const peerRole = senderIsA ? conversation.participant_b_role : conversation.participant_a_role;
+          const peerName = senderIsA ? conversation.participant_b_name : conversation.participant_a_name;
+          const peerAvatar = senderIsA ? conversation.participant_b_avatar : conversation.participant_a_avatar;
+
+          return (
+            <RideChatOverlay
+              open={openedConversationId === conversation.id}
+              conversationId={conversation.id}
+              peerId={peerId}
+              currentUserId={user.id}
+              peerName={peerName || 'Conversation'}
+              peerAvatar={peerAvatar}
+              peerRole={peerRole as 'customer' | 'business' | 'rider'}
+              senderRole={user.role as 'customer' | 'business' | 'rider'}
+              senderName={user.name || 'User'}
+              receiverRole={peerRole as 'customer' | 'business' | 'rider'}
+              onClose={closeChatOverlay}
+              zIndexClass="z-[2300]"
+            />
+          );
+        })()
+      )}
+    </>
   );
 }

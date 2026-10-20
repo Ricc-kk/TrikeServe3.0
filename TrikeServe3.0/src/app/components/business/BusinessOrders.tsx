@@ -13,6 +13,7 @@ import BusinessPageIntro from "./BusinessPageIntro";
     import { supabase } from "../../../lib/supabase";
     import { supabaseHelpers, findDeliveryTerminalForOrder, logAudit, geocodeAddress } from "@/lib/supabase";
     import { useAuth } from "../../contexts/AuthContext";
+import { useChatHeadVisibility } from "../../contexts/ChatHeadVisibilityContext";
 import ReasonPromptModal from "../ui/reason-prompt-modal";
 import { getOrderProgress, isRiderHeadingToRestaurant } from "@/lib/orderProgress";
 import { OrderStatusUpdates } from "../ui/OrderStatusUpdates";
@@ -109,6 +110,7 @@ type ActiveOrderStatusFilter = 'pending' | 'payment-confirmed' | 'confirmed' | '
 
 export default function BusinessOrders() {
   const { user } = useAuth();
+  const { toggleChatOverlay } = useChatHeadVisibility();
   const [selectedTab, setSelectedTab] = useState<'active' | 'history'>('active');
   const [selectedOrder, setSelectedOrder] = useState<Order | null>(null);
   const [incomingDriverChat, setIncomingDriverChat] = useState<{
@@ -2414,12 +2416,13 @@ export default function BusinessOrders() {
       {/* Status Change Confirmation Popup */}
       {incomingDriverChat && (
         <FloatingChatHead
+          headId={incomingDriverChat.conversationId}
           storageKey="trikeserve_chat_head_pos_business"
           peerAvatar={incomingDriverChat.peerAvatar}
           peerLabel={incomingDriverChat.peerName}
           unread={incomingDriverChat.unread}
           pulseKey={driverChatPulseKey}
-          onOpen={() => navigate(`/business/messages/thread/${incomingDriverChat.conversationId}`)}
+          onOpen={() => toggleChatOverlay(incomingDriverChat.conversationId)}
         />
       )}
       </div>

@@ -2709,6 +2709,7 @@ export const supabaseHelpers = {
     senderName?: string;
     status: string;
     message?: string;
+    deliveryProofUrl?: string;
   }) {
     const { pickupLocation, customerId, senderId, senderName, status, message } = params;
     const orderId = params.orderId || this.parseOrderIdFromDeliveryPickup(pickupLocation);
@@ -2886,6 +2887,7 @@ export const supabaseHelpers = {
           recipientId: resolvedCustomerId,
           recipientRole: 'customer',
           message: customerMessage,
+          imageUrl: status === 'completed' ? params.deliveryProofUrl : undefined,
         }));
       }
       if (businessId) {
@@ -2899,6 +2901,7 @@ export const supabaseHelpers = {
           recipientName: restaurantName || 'Restaurant',
           recipientRole: 'business',
           message: businessMessage,
+          imageUrl: status === 'completed' ? params.deliveryProofUrl : undefined,
         }));
       }
 
@@ -3725,6 +3728,7 @@ export const supabaseHelpers = {
     recipientName?: string;
     recipientRole: string;
     message: string;
+    imageUrl?: string;
   }) {
     if (!message.senderId || !message.recipientId || message.senderId === message.recipientId) {
       return { data: null, error: null };
@@ -3762,17 +3766,40 @@ export const supabaseHelpers = {
       .eq('message', content)
       .limit(1)
       .maybeSingle();
-    if (existingMessage) return { data: existingMessage, error: null };
+    const textResult = existingMessage
+      ? { data: existingMessage, error: null }
+      : await this.sendChatMessage({
+          conversationId: conversation.id,
+          senderId: message.senderId,
+          receiverId: message.recipientId,
+          senderName: message.senderName,
+          senderRole: message.senderRole,
+          receiverRole: message.recipientRole,
+          message: content,
+        });
+    if (textResult.error || !message.imageUrl) return textResult;
 
-    return this.sendChatMessage({
+    const imageContent = `chat-image:${message.imageUrl}`;
+    const { data: existingImageMessage } = await supabase
+      .from('chat_messages')
+      .select('id')
+      .eq('conversation_id', conversation.id)
+      .eq('sender_id', message.senderId)
+      .eq('message', imageContent)
+      .limit(1)
+      .maybeSingle();
+    if (existingImageMessage) return textResult;
+
+    const imageResult = await this.sendChatMessage({
       conversationId: conversation.id,
       senderId: message.senderId,
       receiverId: message.recipientId,
       senderName: message.senderName,
       senderRole: message.senderRole,
       receiverRole: message.recipientRole,
-      message: content,
+      message: imageContent,
     });
+    return imageResult.error ? imageResult : textResult;
   },
 
   async markChatConversationRead(conversationId: string, userId: string) {

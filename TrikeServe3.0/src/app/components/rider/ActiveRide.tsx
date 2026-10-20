@@ -1092,9 +1092,9 @@ export default function ActiveRide() {
   };
   // Notify the customer and business whenever the driver updates a delivery's
   // status (accepted/on-the-way -> arrived -> picked up -> dropped off).
-  const notifyDeliveryStatus = (ride: any, dbStatus: string, message?: string) => {
+  const notifyDeliveryStatus = (ride: any, dbStatus: string, message?: string, deliveryProofUrl?: string) => {
     if (!isDeliveryRide(ride)) return;
-    supabaseHelpers.notifyDeliveryStatusChange({
+    return supabaseHelpers.notifyDeliveryStatusChange({
       pickupLocation: ride.pickup,
       orderId: ride.orderId,
       orderNumber: ride.orderNumber,
@@ -1103,6 +1103,7 @@ export default function ActiveRide() {
       senderName: user?.name || 'Driver',
       status: dbStatus,
       message,
+      deliveryProofUrl,
     }).catch((err) => console.error('❌ Failed to send delivery notification:', err));
   };
 
@@ -1169,14 +1170,14 @@ export default function ActiveRide() {
    * Once the order is `delivered` there is no longer a Complete button to come
    * back through.
    */
-  const uploadDeliveryProof = async () => {
+  const uploadDeliveryProof = async (): Promise<string | null> => {
     if (!rideData?.orderId) {
       setProofError('Could not identify this delivery order. Please reopen the delivery and try again.');
-      return false;
+      return null;
     }
     if (!proofFile) {
       setProofError('Take a delivery photo before completing the delivery.');
-      return false;
+      return null;
     }
 
     setIsUploadingProof(true);
@@ -1191,21 +1192,27 @@ export default function ActiveRide() {
       if (error) {
         console.error('Delivery proof upload failed:', error);
         setProofError(error);
-        return false;
+        return null;
+      }
+
+      const proofUrl = proof?.publicUrl;
+      if (!proofUrl) {
+        setProofError('Could not get the uploaded delivery photo. Please try again.');
+        return null;
       }
 
       const attached = await supabaseHelpers.attachDeliveryProof(
         rideData.orderId,
-        proof?.publicUrl ?? '',
+        proofUrl,
       );
 
       if (!attached.success) {
         console.error('Could not attach delivery proof:', attached.error);
         setProofError(attached.error || 'Could not attach the delivery photo.');
-        return false;
+        return null;
       }
 
-      return true;
+      return proofUrl;
     } finally {
       setIsUploadingProof(false);
     }
@@ -1219,21 +1226,17 @@ export default function ActiveRide() {
       return;
     }
 
-    const uploaded = await uploadDeliveryProof();
-    if (!uploaded) return;
+    const proofUrl = await uploadDeliveryProof();
+    if (!proofUrl) return;
 
     setShowProofSheet(false);
-    await completeRide();
+    await completeRide(proofUrl);
   };
 
-  const completeRide = async () => {
+  const completeRide = async (deliveryProofUrl?: string) => {
     if (!rideData || isCompleting.current) return;
     isCompleting.current = true;
     try {
-
-    if (isDeliveryRide(rideData)) {
-      notifyDeliveryStatus(rideData, 'completed', 'Delivery completed!');
-    }
 
     if (rideData.orderId || rideData.orderNumber) {
       const { error: orderStatusError } = await supabaseHelpers.updateDeliveryOrderStatus(
@@ -1246,6 +1249,15 @@ export default function ActiveRide() {
         console.error('❌ Failed to mark delivery order as delivered:', orderStatusError);
       } else {
         console.log('✅ Delivery order marked as delivered');
+
+        // Publish the completion message and handover photo only after the
+        // order has been saved as delivered.
+        await notifyDeliveryStatus(
+          rideData,
+          'completed',
+          'Delivery completed!',
+          deliveryProofUrl,
+        );
 
         // Notify the business that delivery is completed
         try {
@@ -1550,7 +1562,7 @@ export default function ActiveRide() {
             isComplete: true,
           };
         }
-        return { label: 'Complete Ride', onClick: completeRide, isComplete: true };
+        return { label: 'Complete Ride', onClick: () => completeRide(), isComplete: true };
       default:
         return null;
     }
@@ -1852,6 +1864,7 @@ export default function ActiveRide() {
           would otherwise sit in the same top-right corner on top of each other. */}
       {chatStarted && rideData.status !== 'completed' && !chatPopupOpen && (
         <FloatingChatHead
+          headId={chatId || undefined}
           storageKey="trikeserve_chat_head_pos_rider"
           peerAvatar={passengerAvatar}
           peerIsGroup={rideData.customerPhoto === 'shared'}

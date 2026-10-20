@@ -46,7 +46,10 @@ export default function RideChatOverlay({
   peerId,
   currentUserId,
   peerIsGroup,
+  peerRole,
   senderRole,
+  senderName,
+  receiverRole,
   onClose,
   zIndexClass = "z-[1700]",
 }: {
@@ -83,8 +86,11 @@ export default function RideChatOverlay({
   currentUserId: string | null;
   /** A shared ride has several passengers and no single face to show. */
   peerIsGroup?: boolean;
-  /** 'rider' for the driver, 'customer' for the passenger. */
-  senderRole: 'rider' | 'customer';
+  peerRole?: 'rider' | 'customer' | 'business';
+  /** Signed-in sender role and optional display name. */
+  senderRole: 'rider' | 'customer' | 'business';
+  senderName?: string;
+  receiverRole?: 'rider' | 'customer' | 'business';
   onClose: () => void;
 }) {
   const [messages, setMessages] = useState<any[]>([]);
@@ -201,9 +207,9 @@ export default function RideChatOverlay({
         conversationId,
         senderId: mine,
         receiverId: peerId,
-        senderName: senderRole === 'rider' ? 'Driver' : 'Customer',
+        senderName: senderName || (senderRole === 'rider' ? 'Driver' : senderRole === 'business' ? 'Restaurant' : 'Customer'),
         senderRole,
-        receiverRole: senderRole === 'rider' ? 'customer' : 'rider',
+        receiverRole: receiverRole || (senderRole === 'rider' ? 'customer' : senderRole === 'business' ? 'customer' : 'rider'),
         message: body,
       });
       // The composer keeps the text on failure, so a retry costs nothing but a
@@ -355,7 +361,15 @@ export default function RideChatOverlay({
                 <span className="min-w-0 flex-1">
                   <span className="block font-bold truncate">{peerName}</span>
                   <span className="block text-xs text-[var(--muted-foreground)]">
-                    {senderRole === 'rider' ? 'Passenger on this ride' : 'Your driver'}
+                    {peerRole === 'business'
+                      ? 'Restaurant'
+                      : peerRole === 'rider'
+                        ? 'Driver'
+                        : peerRole === 'customer'
+                          ? 'Customer'
+                          : senderRole === 'rider'
+                            ? 'Passenger on this ride'
+                            : 'Your driver'}
                     {peerIsGroup ? ' · shared ride' : ''}
                   </span>
                 </span>

@@ -1,22 +1,40 @@
-import { createContext, useCallback, useContext, useState, type ReactNode } from 'react';
+import { createContext, useCallback, useContext, useRef, useState, type ReactNode } from 'react';
 
 interface ChatHeadVisibilityContextValue {
-  localHeadCount: number;
-  registerLocalHead: () => () => void;
+  localHeadIds: string[];
+  registerLocalHead: (conversationId?: string) => () => void;
+  openedConversationId: string | null;
+  toggleChatOverlay: (conversationId: string) => void;
+  closeChatOverlay: () => void;
 }
 
 const ChatHeadVisibilityContext = createContext<ChatHeadVisibilityContextValue | null>(null);
 
 export function ChatHeadVisibilityProvider({ children }: { children: ReactNode }) {
-  const [localHeadCount, setLocalHeadCount] = useState(0);
+  const [localHeads, setLocalHeads] = useState<Array<{ key: number; conversationId?: string }>>([]);
+  const [openedConversationId, setOpenedConversationId] = useState<string | null>(null);
+  const nextHeadKey = useRef(0);
 
-  const registerLocalHead = useCallback(() => {
-    setLocalHeadCount((count) => count + 1);
-    return () => setLocalHeadCount((count) => Math.max(0, count - 1));
+  const registerLocalHead = useCallback((conversationId?: string) => {
+    const key = ++nextHeadKey.current;
+    setLocalHeads((heads) => [...heads, { key, conversationId }]);
+    return () => setLocalHeads((heads) => heads.filter((head) => head.key !== key));
   }, []);
+  const toggleChatOverlay = useCallback((conversationId: string) => {
+    setOpenedConversationId((current) => current === conversationId ? null : conversationId);
+  }, []);
+  const closeChatOverlay = useCallback(() => setOpenedConversationId(null), []);
+
+  const localHeadIds = localHeads.flatMap((head) => head.conversationId ? [head.conversationId] : []);
 
   return (
-    <ChatHeadVisibilityContext.Provider value={{ localHeadCount, registerLocalHead }}>
+    <ChatHeadVisibilityContext.Provider value={{
+      localHeadIds,
+      registerLocalHead,
+      openedConversationId,
+      toggleChatOverlay,
+      closeChatOverlay,
+    }}>
       {children}
     </ChatHeadVisibilityContext.Provider>
   );

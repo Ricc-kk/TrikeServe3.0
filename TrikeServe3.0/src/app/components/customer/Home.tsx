@@ -3113,6 +3113,7 @@ const getPrice = () => {
           same corner. */}
       {rideStatus === 'driver-found' && activeRide && rideDriverId && !customerChatPopup && (
         <FloatingChatHead
+          headId={driverChatId.current || undefined}
           storageKey="trikeserve_chat_head_pos_customer"
           peerAvatar={rideDriverAvatar}
           peerLabel={activeRide.driver || 'Driver'}

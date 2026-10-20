@@ -55,6 +55,46 @@ function isImageUrl(value: string | null | undefined): value is string {
   return /^https?:\/\//i.test(v) || v.startsWith('data:image/');
 }
 
+function PeerAvatar({
+  src,
+  label,
+  group = false,
+  messages = false,
+}: {
+  src: string | null;
+  label: string;
+  group?: boolean;
+  messages?: boolean;
+}) {
+  const [failedSrc, setFailedSrc] = useState<string | null>(null);
+  const imageSrc = isImageUrl(src) && failedSrc !== src ? src : null;
+  const initial = Array.from(label.trim())[0]?.toLocaleUpperCase();
+
+  if (imageSrc) {
+    return (
+      <img
+        src={imageSrc}
+        alt=""
+        className="size-full object-cover"
+        draggable={false}
+        onError={() => setFailedSrc(imageSrc)}
+      />
+    );
+  }
+  if (group) return <Users className="size-6 text-[var(--primary)]" aria-hidden="true" />;
+  if (messages) return <MessageCircle className="size-6 text-[var(--primary)]" aria-hidden="true" />;
+  if (!initial) return <User className="size-6 text-[var(--primary)]" aria-hidden="true" />;
+
+  return (
+    <span
+      className="grid size-full place-items-center bg-[var(--primary)]/10 text-lg font-semibold text-[var(--primary)]"
+      aria-hidden="true"
+    >
+      {initial}
+    </span>
+  );
+}
+
 type Side = 'left' | 'right';
 
 export interface FloatingChatHeadStackItem {
@@ -85,6 +125,7 @@ export default function FloatingChatHead({
   onInitialResolve,
   isGlobal = false,
   hidden = false,
+  initialPlacement = 'center-right',
   zIndexClass = Z_INDEX,
 }: {
   /**
@@ -96,10 +137,12 @@ export default function FloatingChatHead({
    * dim backdrop and cannot be tapped.
    */
   zIndexClass?: string;
-  /** The app-wide instance is hidden whenever a screen supplies its own head. */
+  /** Whether this is the app-wide instance rather than a screen-specific head. */
   isGlobal?: boolean;
   /** Keep this head mounted while a screen-specific chat head is active. */
   hidden?: boolean;
+  /** Initial position for this head's independent saved position. */
+  initialPlacement?: 'center-right' | 'top-right';
   /** Distinct per side, e.g. `trikeserve_chat_head_pos_rider`. */
   storageKey: string;
   peerAvatar: string | null;
@@ -113,7 +156,7 @@ export default function FloatingChatHead({
   pulseKey: number;
   /** Stable conversation id, used to animate a newly promoted top head. */
   headId?: string;
-  /** Older conversations shown peeking behind the latest head. */
+  /** Older conversations revealed while the latest head is being dragged. */
   stackItems?: FloatingChatHeadStackItem[];
   /**
    * Whether chat has been opened on this ride.
@@ -162,7 +205,15 @@ export default function FloatingChatHead({
   const [isDragging, setIsDragging] = useState(false);
   const [isOverCloseTarget, setIsOverCloseTarget] = useState(false);
   const [dismissed, setDismissed] = useState(false);
+  const dismissalActivityKey = `${headId || ''}:${pulseKey}`;
+  const previousDismissalActivityKeyRef = useRef(dismissalActivityKey);
   const retryRef = useRef<number | null>(null);
+
+  useEffect(() => {
+    if (previousDismissalActivityKeyRef.current === dismissalActivityKey) return;
+    previousDismissalActivityKeyRef.current = dismissalActivityKey;
+    setDismissed(false);
+  }, [dismissalActivityKey]);
 
   const positionStackHeads = useCallback((nextSide: Side, animated: boolean) => {
     const offset = nextSide === 'right' ? -STACK_PEEK : STACK_PEEK;
@@ -178,8 +229,8 @@ export default function FloatingChatHead({
 
   useLayoutEffect(() => {
     if (isGlobal) return;
-    return registerLocalHead();
-  }, [isGlobal, registerLocalHead]);
+    return registerLocalHead(headId);
+  }, [headId, isGlobal, registerLocalHead]);
 
   const read = (): { x: number; y: number; side: Side } | null => {
     try {
@@ -236,7 +287,7 @@ export default function FloatingChatHead({
         // controls, the route line, and the ride sheet along the bottom.
         pos.current = {
           x: Math.round(window.innerWidth - rect.width - GAP),
-          y: Math.round(window.innerHeight * 0.42),
+          y: initialPlacement === 'top-right' ? GAP : Math.round(window.innerHeight * 0.42),
         };
         setSide('right');
       }
@@ -252,7 +303,7 @@ export default function FloatingChatHead({
       cancelAnimationFrame(raf);
       if (retryRef.current) cancelAnimationFrame(retryRef.current);
     };
-  }, [mountRetry, positionStackHeads]);
+  }, [initialPlacement, mountRetry, positionStackHeads]);
 
   useEffect(() => {
     if (placed.current) positionStackHeads(side, false);
@@ -275,18 +326,24 @@ export default function FloatingChatHead({
   }, [headId, side]);
 
   useEffect(() => {
-    if (!placed2 || hidden || !stackAnimationKey) return;
-    stackHeadRefs.current.slice(0, MAX_STACK_ITEMS).forEach((el, index) => {
+    const stackHeads = stackHeadRefs.current.slice(0, MAX_STACK_ITEMS);
+    if (!isDragging || hidden) {
+      stackHeads.forEach((el) => el?.getAnimations().forEach((animation) => animation.cancel()));
+      return;
+    }
+    if (!placed2 || !stackAnimationKey) return;
+    const revealSide = drag.current?.side ?? side;
+    stackHeads.forEach((el, index) => {
       if (!el?.animate) return;
       el.animate(
         [
-          { transform: `translateX(${side === 'right' ? '8px' : '-8px'}) scale(0.92)`, opacity: 0.55 },
+          { transform: `translateX(${revealSide === 'right' ? '8px' : '-8px'}) scale(0.92)`, opacity: 0.55 },
           { transform: 'translateX(0) scale(1)', opacity: 1 },
         ],
         { duration: 190, delay: index * 35, easing: 'ease-out' },
       );
     });
-  }, [hidden, placed2, side, stackAnimationKey]);
+  }, [hidden, isDragging, placed2, side, stackAnimationKey]);
 
   const onPointerDown = useCallback((e: React.PointerEvent<HTMLButtonElement>) => {
     const el = headRef.current;
@@ -431,6 +488,7 @@ export default function FloatingChatHead({
   }, [opened, positionStackHeads, storageKey]);
 
   if (dismissed) return null;
+  const stackSide = isDragging ? drag.current?.side ?? side : side;
 
   return (
     <>
@@ -440,10 +498,10 @@ export default function FloatingChatHead({
           ref={(el) => { stackHeadRefs.current[index] = el; }}
           type="button"
           style={{
-            left: pos.current.x + (side === 'right' ? -STACK_PEEK : STACK_PEEK) * (index + 1),
+            left: pos.current.x + (stackSide === 'right' ? -STACK_PEEK : STACK_PEEK) * (index + 1),
             top: pos.current.y,
-            opacity: placed2 && !hidden ? 1 : 0,
-            pointerEvents: hidden ? 'none' : 'auto',
+            opacity: placed2 && !hidden && isDragging ? 1 : 0,
+            pointerEvents: hidden || !isDragging ? 'none' : 'auto',
             zIndex: 1599 - index,
           }}
           onPointerDown={(event) => event.stopPropagation()}
@@ -452,18 +510,16 @@ export default function FloatingChatHead({
             item.onOpen();
           }}
           aria-label={`Chat with ${item.peerLabel}`}
-          aria-hidden={hidden || undefined}
-          tabIndex={hidden ? -1 : undefined}
+          aria-hidden={hidden || !isDragging || undefined}
+          tabIndex={hidden || !isDragging ? -1 : undefined}
           className="fixed grid size-14 place-items-center overflow-visible rounded-full border-2 border-[var(--border)] bg-[var(--surface)] shadow-xl touch-none select-none"
         >
           <span className="relative size-full overflow-hidden rounded-full">
-            {isImageUrl(item.peerAvatar) ? (
-              <img src={item.peerAvatar} alt="" className="size-full object-cover" draggable={false} />
-            ) : item.peerIsGroup ? (
-              <Users className="size-6 text-[var(--primary)]" aria-hidden="true" />
-            ) : (
-              <User className="size-6 text-[var(--primary)]" aria-hidden="true" />
-            )}
+            <PeerAvatar
+              src={item.peerAvatar}
+              label={item.peerLabel}
+              group={item.peerIsGroup}
+            />
           </span>
           {item.unread > 0 && (
             <span className="absolute -top-1 right-0 grid min-w-[16px] place-items-center rounded-full bg-[var(--primary)] px-1 text-[10px] font-bold text-[var(--primary-foreground)] shadow">
@@ -527,24 +583,17 @@ export default function FloatingChatHead({
       </span>
 
       {/*
-          `rounded-full` plus `overflow-hidden` on the inner wrapper is what crops
-          the photo; rounded corners alone leave a square image poking out.
-
-          The URL check matters. `peer.avatar` is only URL-shaped for accounts
-          that have set a photo -- for everyone else it holds a name-initial or an
-          emoji, and handing that to <img> renders a broken-image icon. Falling
-          back to the glyph in that case is what the check buys.
+          The wrapper crops profile photos to a circle. Missing, non-URL, or
+          failed photos fall back to the peer's initial so a profile without a
+          photo still has a clear chat head.
       */}
       <span className="relative size-full overflow-hidden rounded-full">
-        {isImageUrl(peerAvatar) ? (
-          <img src={peerAvatar} alt="" className="size-full object-cover" draggable={false} />
-        ) : peerIsGroup ? (
-          <Users className="size-6 text-[var(--primary)]" aria-hidden="true" />
-        ) : peerIsMessages ? (
-          <MessageCircle className="size-6 text-[var(--primary)]" aria-hidden="true" />
-        ) : (
-          <User className="size-6 text-[var(--primary)]" aria-hidden="true" />
-        )}
+        <PeerAvatar
+          src={peerAvatar}
+          label={peerLabel}
+          group={peerIsGroup}
+          messages={peerIsMessages}
+        />
       </span>
 
       {/* Unread count on the side facing into the screen, so it is never clipped

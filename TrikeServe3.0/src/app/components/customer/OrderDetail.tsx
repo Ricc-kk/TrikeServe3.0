@@ -6,6 +6,7 @@ import FloatingChatHead from "../ui/FloatingChatHead";
 import { Button } from "../ui/button";
 import { Badge } from "../ui/badge";
 import { useAuth } from "../../contexts/AuthContext";
+import { useChatHeadVisibility } from "../../contexts/ChatHeadVisibilityContext";
 import { usePreviousPage } from "../../hooks/usePreviousPage";
 import { cuisineLabels } from "@/lib/foodTaxonomy";
 import { ImageWithFallback } from "../figma/ImageWithFallback";
@@ -143,6 +144,7 @@ const statusLabels: Record<string, string> = {
 
 export default function OrderDetail() {
   const navigate = useNavigate();
+  const { toggleChatOverlay } = useChatHeadVisibility();
   /*
    * Back means "pop", not "go to Activity".
    *
@@ -1130,12 +1132,13 @@ export default function OrderDetail() {
       />
       {incomingOrderChat && (
         <FloatingChatHead
+          headId={incomingOrderChat.conversationId}
           storageKey="trikeserve_chat_head_pos_customer"
           peerAvatar={incomingOrderChat.peerAvatar}
           peerLabel={incomingOrderChat.peerName}
           unread={incomingOrderChat.unread}
           pulseKey={orderChatPulseKey}
-          onOpen={() => navigate(`/customer/messages/thread/${incomingOrderChat.conversationId}`)}
+          onOpen={() => toggleChatOverlay(incomingOrderChat.conversationId)}
         />
       )}
     </div>

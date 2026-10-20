@@ -109,7 +109,7 @@ export default function ChatHub({
   const location = useLocation();
   const { conversationId } = useParams();
   const { user } = useAuth();
-  const { registerLocalHead } = useChatHeadVisibility();
+  const { registerLocalHead, toggleChatOverlay } = useChatHeadVisibility();
 
   const [conversations, setConversations] = useState<ChatConversation[]>([]);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
@@ -130,6 +130,11 @@ export default function ChatHub({
   const recentHeadsRowRef = useRef<HTMLDivElement | null>(null);
   const [maxRecentHeadsOnRow, setMaxRecentHeadsOnRow] = useState(1);
   const [isUploadingImage, setIsUploadingImage] = useState(false);
+  const [pendingImage, setPendingImage] = useState<{
+    conversationId: string;
+    file: File;
+    previewUrl: string;
+  } | null>(null);
   const [reportDialogOpen, setReportDialogOpen] = useState(false);
   const [reportConversation, setReportConversation] = useState<ChatConversation | null>(null);
   const [reportDetails, setReportDetails] = useState('');
@@ -165,6 +170,19 @@ export default function ChatHub({
   const isDirectMode = !!directPeerId;
   const activeConversationId = isDirectMode ? activeConversation?.id : conversationId;
 
+  useEffect(() => {
+    setPendingImage((pending) =>
+      pending?.conversationId === activeConversationId ? pending : null,
+    );
+  }, [activeConversationId]);
+
+  useEffect(() => {
+    const previewUrl = pendingImage?.previewUrl;
+    return () => {
+      if (previewUrl) URL.revokeObjectURL(previewUrl);
+    };
+  }, [pendingImage?.previewUrl]);
+
   const recentHeadConversations = useMemo(() => {
     const rows = new Map<string, ChatConversation>();
     conversations.forEach((conversation) => rows.set(conversation.id, conversation));
@@ -183,7 +201,7 @@ export default function ChatHub({
 
   useEffect(() => {
     if (!activeConversationId || isChatHeadMode) return;
-    return registerLocalHead();
+    return registerLocalHead(activeConversationId);
   }, [activeConversationId, isChatHeadMode, registerLocalHead]);
 
   useEffect(() => {
@@ -532,7 +550,7 @@ function getConversationPeer(conversation: ChatConversation) {
     navigate(`${basePath}/thread/${conversation.id}`);
   };
 
-  /** Sends the composer text, or `override` when a quick reply chip calls it. */
+  /** Sends the composer text and staged image, or a quick-reply override. */
   const sendMessage = async (override?: string) => {
     /*
      * Only a string override is a message.
@@ -547,7 +565,13 @@ function getConversationPeer(conversation: ChatConversation) {
      * silently failing.
      */
     const text = (typeof override === 'string' ? override : messageText).trim();
-    if (!user?.id || !text || !activeConversation || sendInProgressRef.current) return;
+    if (!user?.id || !activeConversation || sendInProgressRef.current) return;
+    const imageDraft = typeof override === 'string'
+      ? null
+      : pendingImage?.conversationId === activeConversation.id
+        ? pendingImage
+        : null;
+    if (!text && !imageDraft) return;
 
     sendInProgressRef.current = true;
     setIsSendingMessage(true);
@@ -557,25 +581,76 @@ function getConversationPeer(conversation: ChatConversation) {
     const receiverRole = isParticipantA ? activeConversation.participant_b_role : activeConversation.participant_a_role;
 
     try {
-      const { error } = await supabaseHelpers.sendChatMessage({
-        conversationId: activeConversation.id,
-        senderId: user.id,
-        receiverId,
-        senderName: user.name,
-        senderRole: user.role,
-        receiverRole,
-        message: text,
-      });
-
-      if (error) {
-        console.error('[ChatHub] Send message failed:', error);
-        alert('Message failed to send. Please try again.');
-        return;
+      let imageMessage: string | null = null;
+      if (imageDraft) {
+        setIsUploadingImage(true);
+        const { data, error } = await supabaseHelpers.uploadChatAttachment(
+          activeConversation.id,
+          user.id,
+          imageDraft.file,
+        );
+        if (error || !data?.publicUrl) {
+          console.error('[ChatHub] Image upload failed:', error);
+          alert('Could not upload the image. Please try again.');
+          return;
+        }
+        imageMessage = `${CHAT_IMAGE_PREFIX}${data.publicUrl}`;
       }
 
-      setMessageText('');
+      if (text) {
+        const { error } = await supabaseHelpers.sendChatMessage({
+          conversationId: activeConversation.id,
+          senderId: user.id,
+          receiverId,
+          senderName: user.name,
+          senderRole: user.role,
+          receiverRole,
+          message: text,
+        });
+
+        if (error) {
+          console.error('[ChatHub] Send message failed:', error);
+          alert('Message failed to send. Please try again.');
+          return;
+        }
+
+        setMessageText('');
+        setAttachmentControlsOpen(true);
+        if (messageInputRef.current) messageInputRef.current.style.height = '48px';
+      }
+
+      if (imageMessage && imageDraft) {
+        const { error } = await supabaseHelpers.sendChatMessage({
+          conversationId: activeConversation.id,
+          senderId: user.id,
+          receiverId,
+          senderName: user.name,
+          senderRole: user.role,
+          receiverRole,
+          message: imageMessage,
+        });
+
+        if (error) {
+          console.error('[ChatHub] Image message failed:', error);
+          alert('Image failed to send. It is still attached so you can try again.');
+          setAttachmentControlsOpen(true);
+          if (text) {
+            await loadMessages(activeConversation.id);
+            await loadInbox();
+          }
+          return;
+        }
+
+        setPendingImage((pending) =>
+          pending?.previewUrl === imageDraft.previewUrl ? null : pending,
+        );
+        if (!text) {
+          setMessageText('');
+          if (messageInputRef.current) messageInputRef.current.style.height = '48px';
+        }
+      }
+
       setAttachmentControlsOpen(true);
-      if (messageInputRef.current) messageInputRef.current.style.height = '48px';
       await loadMessages(activeConversation.id);
       await loadInbox();
       // Keep the business conversation one tap away as a floating chat head
@@ -587,10 +662,11 @@ function getConversationPeer(conversation: ChatConversation) {
     } finally {
       sendInProgressRef.current = false;
       setIsSendingMessage(false);
+      setIsUploadingImage(false);
     }
   };
 
-  const handleImageSelected = async (file?: File) => {
+  const handleImageSelected = (file?: File) => {
     if (!file || !activeConversation || !user?.id) return;
     const allowedImageTypes = new Set([
       'image/jpeg', 'image/png', 'image/webp', 'image/gif', 'image/heic', 'image/heif',
@@ -604,21 +680,11 @@ function getConversationPeer(conversation: ChatConversation) {
       return;
     }
 
-    setIsUploadingImage(true);
-    const { data, error } = await supabaseHelpers.uploadChatAttachment(
-      activeConversation.id,
-      user.id,
+    setPendingImage({
+      conversationId: activeConversation.id,
       file,
-    );
-    if (error || !data?.publicUrl) {
-      console.error('[ChatHub] Image upload failed:', error);
-      alert('Could not upload the image. Please try again.');
-      setIsUploadingImage(false);
-      return;
-    }
-
-    await sendMessage(`${CHAT_IMAGE_PREFIX}${data.publicUrl}`);
-    setIsUploadingImage(false);
+      previewUrl: URL.createObjectURL(file),
+    });
   };
 
   const openChatHead = (conversation = activeConversation) => {
@@ -846,12 +912,13 @@ function getConversationPeer(conversation: ChatConversation) {
       return (
         <div className="relative flex-1 flex flex-col items-center justify-center gap-3 p-6 text-center">
           <FloatingChatHead
+            headId={activeConversation?.id}
             storageKey={`trikeserve_chat_head_pos_${user.role}`}
             peerAvatar={peer.avatar}
             peerLabel={peer.name}
             unread={0}
             pulseKey={0}
-            onOpen={() => setIsChatHeadMode(false)}
+            onOpen={() => activeConversation && toggleChatOverlay(activeConversation.id)}
           />
           <p className="text-sm text-[var(--muted-foreground)]">Chat minimized. Tap the chat head to reopen.</p>
         </div>
@@ -1115,6 +1182,34 @@ function getConversationPeer(conversation: ChatConversation) {
               ))}
             </div>
           )}
+          {pendingImage?.conversationId === activeConversation.id && (
+            <div className="mb-3 flex items-center gap-3 rounded-xl border border-[var(--border)] bg-[var(--muted)] p-2">
+              <img
+                src={pendingImage.previewUrl}
+                alt="Selected image preview"
+                className="size-14 shrink-0 rounded-lg object-cover"
+              />
+              <div className="min-w-0 flex-1">
+                <p className="text-sm font-semibold text-[var(--ink)]">
+                  {isUploadingImage ? 'Uploading image…' : isSendingMessage ? 'Sending image…' : 'Image ready to send'}
+                </p>
+                <p className="truncate text-xs text-[var(--muted-foreground)]">{pendingImage.file.name}</p>
+              </div>
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                aria-label="Remove selected image"
+                disabled={isSendingMessage}
+                onClick={() => setPendingImage((current) =>
+                  current?.previewUrl === pendingImage.previewUrl ? null : current,
+                )}
+                className="size-10 shrink-0 rounded-xl text-[var(--muted-foreground)] hover:bg-[var(--surface)]"
+              >
+                <X className="size-4" />
+              </Button>
+            </div>
+          )}
           <div className="flex items-end gap-2">
             <input
               ref={imageInputRef}
@@ -1191,7 +1286,13 @@ function getConversationPeer(conversation: ChatConversation) {
                 e.currentTarget.style.height = '48px';
                 e.currentTarget.style.height = `${Math.min(e.currentTarget.scrollHeight, 144)}px`;
               }}
-              placeholder={isUploadingImage ? 'Uploading image...' : 'Type your message...'}
+              placeholder={
+                isUploadingImage
+                  ? 'Uploading image...'
+                  : pendingImage?.conversationId === activeConversation.id
+                    ? 'Add a caption (optional)...'
+                    : 'Type your message...'
+              }
               rows={1}
               disabled={isSendingMessage}
               aria-label="Message" className="scrollbar-hide min-h-12 max-h-36 min-w-0 flex-1 overflow-y-auto px-4 py-3 border border-[var(--border)] rounded-xl focus:outline-none focus:ring-2 focus:ring-[var(--primary)] focus:border-transparent resize-none"
@@ -1204,7 +1305,16 @@ function getConversationPeer(conversation: ChatConversation) {
             />
             {/* Wrapped, not passed directly: `onClick={sendMessage}` handed the
                 click event in as the message text. See sendMessage. */}
-            <Button aria-label="Send message" onClick={() => sendMessage()} disabled={!messageText.trim() || isUploadingImage || isSendingMessage} className="min-h-12 shrink-0 rounded-xl bg-[var(--primary)] hover:bg-[var(--primary)] px-4">
+            <Button
+              aria-label="Send message"
+              onClick={() => sendMessage()}
+              disabled={
+                (!messageText.trim() && pendingImage?.conversationId !== activeConversation.id) ||
+                isUploadingImage ||
+                isSendingMessage
+              }
+              className="min-h-12 shrink-0 rounded-xl bg-[var(--primary)] hover:bg-[var(--primary)] px-4"
+            >
               <Send className="w-5 h-5" />
             </Button>
           </div>
@@ -1342,12 +1452,13 @@ function getConversationPeer(conversation: ChatConversation) {
         const peer = getConversationPeer(minimizedConversation);
         return (
           <FloatingChatHead
+            headId={minimizedConversation.id}
             storageKey={`trikeserve_chat_head_pos_${user.role}`}
             peerAvatar={peer.avatar}
             peerLabel={peer.name}
             unread={0}
             pulseKey={0}
-            onOpen={() => void openConversation(minimizedConversation)}
+            onOpen={() => toggleChatOverlay(minimizedConversation.id)}
           />
         );
       })()}
