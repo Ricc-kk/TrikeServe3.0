@@ -691,6 +691,7 @@ export default function AdminTerminals() {
     name: string;
     boundary: string;
     road_width_m: number;
+    boundary_enabled: boolean;
     is_active: boolean;
     marker_color: string;
     route_color: string;
@@ -724,6 +725,7 @@ export default function AdminTerminals() {
       name: f.name,
       boundary: f.boundary,
       road_width_m: f.road_width_m,
+      boundary_enabled: f.boundary_enabled,
       is_active: f.is_active,
       marker_color: normalizeTerminalColor(f.marker_color),
       route_color: normalizeRouteColor(f.route_color),
@@ -764,6 +766,7 @@ export default function AdminTerminals() {
       form.name !== editorSnapshot.name ||
       form.boundary !== editorSnapshot.boundary ||
       form.road_width_m !== editorSnapshot.road_width_m ||
+      form.boundary_enabled !== editorSnapshot.boundary_enabled ||
       form.is_active !== editorSnapshot.is_active ||
       normalizeTerminalColor(form.marker_color) !== editorSnapshot.marker_color ||
       normalizeRouteColor(form.route_color) !== editorSnapshot.route_color ||
@@ -2269,18 +2272,7 @@ export default function AdminTerminals() {
     setToast({ message: 'Terminal change submitted for Super Admin approval', variant: 'warning' });
   }
 
-  /**
-   * Write a terminal's boundary-enforcement flag straight to the row.
-   *
-   * Both the card's toggle and the editor's Enforce Boundary switch come through
-   * here. That is the whole point of splitting it out: enforcement is a live
-   * operational decision — "stop checking drop-offs against this road right now"
-   * — not a field on the terminal's settings, so it must never sit in the editor's
-   * unsaved-changes set waiting for someone to press Save Changes. Applying it
-   * on tap is what makes it safe to flip in the middle of plotting.
-   *
-   * Returns whether it stuck, so the caller can put its own optimistic state back.
-   */
+  /** Write a terminal card's immediate boundary toggle directly to the row. */
   async function persistBoundaryEnabled(terminalId: string, next: boolean): Promise<boolean> {
     const { error } = await supabase
       .from('terminals')
@@ -2342,37 +2334,9 @@ export default function AdminTerminals() {
     });
   }
 
-  /**
-   * The Enforce Boundary switch inside the editor.
-   *
-   * Deliberately does not touch the unsaved-changes snapshot: flipping it must
-   * not light up Save Changes, and must not be lost by walking away from the
-   * editor. For a terminal that already exists the write goes out immediately;
-   * for one being created there is no row to write to, so it stays a plain form
-   * value and is saved with the rest of the terminal.
-   */
-  async function setEditorBoundaryEnabled(next: boolean) {
+  /** Keep the editor switch pending until the user saves the terminal. */
+  function setEditorBoundaryEnabled(next: boolean) {
     setForm(f => ({ ...f, boundary_enabled: next }));
-
-    const id = editTerminal?.id;
-    if (!id) return;
-
-    const ok = await persistBoundaryEnabled(id, next);
-    if (!ok) {
-      // Put the switch back where it was; a toggle that silently didn't take is
-      // worse than one that visibly failed.
-      setForm(f => ({ ...f, boundary_enabled: !next }));
-      setToast({ message: 'Could not update the boundary', variant: 'error' });
-      return;
-    }
-
-    setTerminals(ts => ts.map(t => (t.id === id ? { ...t, boundary_enabled: next } : t)));
-    setToast({
-      message: next
-        ? 'Boundary check enabled — applied now'
-        : 'Boundary check disabled — the shape is kept, the check is not',
-      variant: next ? 'success' : 'warning',
-    });
   }
 
   function confirmDeleteTerminal(id: string) {
@@ -4201,12 +4165,10 @@ async function applyAssignDriver(rider: StoredRider, terminal: Terminal) {
                               form.boundary_enabled ? 'translate-x-5' : ''
                             }`} />
                           </button>
-                          {/* Says out loud what the switch does, because "Save
-                              Changes" sitting right below it invites the reading
-                              that this is one more setting to save. It is not: it
-                              goes to the row on tap. */}
+                          {/* Keep the save timing clear: this setting is part of
+                              the pending terminal edit, like the plotted shapes. */}
                           <p className="text-[11px] text-[var(--muted-foreground)] mt-1 sm:mt-0 sm:ml-1">
-                            Applied straight away — saving the terminal does not change it.
+                            Saved with the terminal when you click Save Changes.
                           </p>
                         </div>
                       )}
