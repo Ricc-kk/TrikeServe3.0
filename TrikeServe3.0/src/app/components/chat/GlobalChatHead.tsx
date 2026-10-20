@@ -53,11 +53,14 @@ export default function GlobalChatHead() {
   const navigate = useNavigate();
   const [conversations, setConversations] = useState<ChatConversation[]>([]);
   const [overlayConversation, setOverlayConversation] = useState<ChatConversation | null>(null);
+  const [selectedConversationId, setSelectedConversationId] = useState<string | null>(null);
   const [pulseKey, setPulseKey] = useState(0);
   const lastSignalRef = useRef('');
+  const conversationsOwnerRef = useRef<string | null>(null);
 
   useEffect(() => {
     if (!user?.id) {
+      conversationsOwnerRef.current = null;
       setConversations([]);
       lastSignalRef.current = '';
       return;
@@ -72,6 +75,7 @@ export default function GlobalChatHead() {
           console.error('[GlobalChatHead] Error loading conversations:', error);
           return;
         }
+        conversationsOwnerRef.current = user.id;
         setConversations((data || []) as ChatConversation[]);
       } catch (error) {
         if (active) console.error('[GlobalChatHead] Unexpected inbox error:', error);
@@ -90,7 +94,9 @@ export default function GlobalChatHead() {
   }, [user?.id]);
 
   const recentConversations = useMemo(() => {
-    if (!user?.id || conversations.length === 0) return [];
+    // Never interpret the previous account's inbox as new activity while the
+    // next account's session and conversations are being restored.
+    if (!user?.id || conversationsOwnerRef.current !== user.id || conversations.length === 0) return [];
 
     const activityOf = (item: ChatConversation) =>
       new Date(item.last_message_at || item.updated_at).getTime() || 0;
@@ -101,6 +107,15 @@ export default function GlobalChatHead() {
     }
     return [...newestByPeer.values()].sort((a, b) => activityOf(b) - activityOf(a));
   }, [conversations, user?.id]);
+
+  useEffect(() => {
+    if (openedConversationId) setSelectedConversationId(openedConversationId);
+  }, [openedConversationId]);
+
+  useEffect(() => {
+    setSelectedConversationId(null);
+    lastSignalRef.current = '';
+  }, [user?.id]);
 
   useEffect(() => {
     if (!user?.id) {
@@ -137,21 +152,25 @@ export default function GlobalChatHead() {
     });
   }, [recentConversations, setRecentChatHeads, user?.id]);
 
-  const conversation = recentConversations[0] || null;
+  const latestConversation = recentConversations[0] || null;
+  const conversation = recentConversations.find((item) => item.id === selectedConversationId)
+    || latestConversation;
 
   useEffect(() => {
-    if (!conversation || !user?.id) {
+    if (!latestConversation || !user?.id) {
       lastSignalRef.current = '';
       return;
     }
     // Read-count changes should update the badge without re-opening a dismissed
-    // head. A new message changes its activity timestamp or sender.
-    const signal = `${conversation.id}:${conversation.last_message_at || ''}:${conversation.last_message_sender_id || ''}`;
+    // head. A new message changes its activity timestamp or sender, and promotes
+    // that conversation to the one visible while the chat is closed.
+    const signal = `${latestConversation.id}:${latestConversation.last_message_at || ''}:${latestConversation.last_message_sender_id || ''}`;
     if (lastSignalRef.current && lastSignalRef.current !== signal) {
       setPulseKey((key) => key + 1);
+      setSelectedConversationId(latestConversation.id);
     }
     lastSignalRef.current = signal;
-  }, [conversation, user?.id]);
+  }, [latestConversation, user?.id]);
 
   const hasOpenedConversationInList = Boolean(
     openedConversationId && conversations.some((item) => item.id === openedConversationId),
@@ -215,7 +234,7 @@ export default function GlobalChatHead() {
   const peerAvatar = conversation
     ? peerIsA ? conversation.participant_a_avatar : conversation.participant_b_avatar
     : null;
-  const stackItems = recentConversations.slice(1).map((item) => {
+  const stackItems = recentConversations.filter((item) => item.id !== conversation?.id).map((item) => {
     const peerIsA = item.participant_a_id !== user.id;
     return {
       id: item.id,
@@ -232,6 +251,7 @@ export default function GlobalChatHead() {
   return (
     <>
       <FloatingChatHead
+        key={user.id}
         isGlobal
         hidden={
           Boolean(conversation && localHeadIds.includes(conversation.id)) ||
@@ -239,7 +259,9 @@ export default function GlobalChatHead() {
           (isOnMessagesPage && isCurrentThread)
         }
         storageKey={`trikeserve_global_chat_head_pos_${user.role}`}
+        dismissalStorageKey={`trikeserve_global_chat_head_dismissed_${user.id}`}
         initialPlacement="top-right"
+        layoutKey={location.pathname}
         headId={conversation?.id || 'messages'}
         peerAvatar={peerAvatar}
         peerIsMessages={!conversation}
@@ -247,7 +269,6 @@ export default function GlobalChatHead() {
         unread={conversation ? unreadCount(conversation, user.id) : 0}
         pulseKey={pulseKey}
         stackItems={stackItems}
-        showStackItems
         onOpen={() => conversation ? toggleChatOverlay(conversation.id) : navigate(messagesPath)}
       />
       {selectedOverlayConversation && (

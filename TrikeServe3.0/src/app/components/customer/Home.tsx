@@ -2220,15 +2220,24 @@ export default function CustomerHome() {
    *   2. The ROUTE â€” the drop-off has to sit on a terminal's road corridor.
    *      This is "where can a tricycle actually go".
    *
-   * Terminals overlap, so passing either gate means passing at least one
-   * terminal. A terminal with nothing plotted for that gate is ignored, which
-   * is what keeps this from blocking everyone before boundaries are configured.
+   * Shared rides may match any active terminal. Private rides must pass both
+   * gates against the terminal the customer selected. A terminal with nothing
+   * plotted for a gate is ignored until that boundary is configured.
    *
    * Food deliveries are deliberately NOT checked here. They are placed from the
    * restaurant's own screen and never reach this function; they are gated by the
    * route alone, in `findDeliveryTerminalForOrder`.
    */
   const checkRideGates = async (): Promise<boolean> => {
+    const privateTerminal = selectedVehicle === 'special'
+      ? selectedTerminalBoundary.terminal
+      : null;
+
+    if (selectedVehicle === 'special' && !privateTerminal) {
+      setShowTerminalPicker(true);
+      return false;
+    }
+
     // A booking only requires the location *text*. If it was typed rather than
     // dropped on the map, the coordinates come from a background geocode that
     // fails freely on a typo or an address Google has not indexed â€” and a null
@@ -2254,8 +2263,20 @@ export default function CustomerHome() {
       return false;
     }
 
+    const selectedTerminalArea = selectedTerminalBoundary.area;
+    const selectedTerminalRoad = selectedTerminalBoundary.road;
+
     // Gate 1: the customer must be at a terminal.
-    const border = await isPointWithinAnyTerminalBorder(pickup.lat, pickup.lng);
+    const border = privateTerminal
+      ? {
+          allowed: !selectedTerminalArea || isPointInPolygon(
+            pickup.lat,
+            pickup.lng,
+            selectedTerminalArea,
+          ),
+          checkedCount: selectedTerminalArea ? 1 : 0,
+        }
+      : await isPointWithinAnyTerminalBorder(pickup.lat, pickup.lng);
     if (!border.allowed) {
       console.log('ðŸš« Pickup outside every terminal border:', pickup, {
         checkedCount: border.checkedCount,
@@ -2265,7 +2286,17 @@ export default function CustomerHome() {
     }
 
     // Gate 2: the drop-off must be on a terminal's route.
-    const route = await isPointWithinAnyTerminalRoute(dropoff.lat, dropoff.lng);
+    const route = privateTerminal
+      ? {
+          allowed: !selectedTerminalRoad || isPointOnRoadCorridor(
+            dropoff.lat,
+            dropoff.lng,
+            selectedTerminalRoad,
+            normalizeRoadWidth(selectedTerminalBoundary.widthM),
+          ),
+          checkedCount: selectedTerminalRoad ? 1 : 0,
+        }
+      : await isPointWithinAnyTerminalRoute(dropoff.lat, dropoff.lng);
     if (!route.allowed) {
       console.log('ðŸš« Drop-off outside every terminal route:', dropoff, {
         checkedCount: route.checkedCount,
@@ -3614,11 +3645,13 @@ const getPrice = () => {
               <div className="w-20 h-20 bg-[var(--error-soft)] rounded-full flex items-center justify-center mx-auto mb-4">
                 <span className="text-4xl">{"\u{1F4CD}"}</span>
               </div>
-              <h3 className="text-xl font-bold text-[var(--error)] mb-2">You're not at a terminal</h3>
+              <h3 className="text-xl font-bold text-[var(--error)] mb-2">
+                {selectedVehicle === 'special' ? 'Pickup outside terminal boundary' : "You're not at a terminal"}
+              </h3>
               <p className="text-sm text-[var(--muted-foreground)] mb-6">
-                Rides can only be booked from inside a terminal. You're currently outside
-                every terminal's service area, so please move to one of our terminals and
-                try again.
+                {selectedVehicle === 'special'
+                  ? `The pickup point must be inside ${selectedTerminalBoundary.terminal?.name || 'the selected terminal'}'s service area.`
+                  : "Rides can only be booked from inside a terminal. You're currently outside every terminal's service area, so please move to one of our terminals and try again."}
               </p>
 
               <Button

@@ -62,6 +62,36 @@ function isOnCloseTarget(x: number, y: number, width: number, height: number) {
   );
 }
 
+/** Move a top-right chat head row below any page header it would cover. */
+function clearHeaderOverlap(left: number, right: number, top: number, height: number) {
+  if (typeof document === 'undefined') return top;
+
+  let safeTop = top;
+  const headers = Array.from(document.querySelectorAll<HTMLElement>('#root header'))
+    .map((header) => ({
+      rect: header.getBoundingClientRect(),
+      style: window.getComputedStyle(header),
+    }))
+    .filter(({ rect, style }) =>
+      style.display !== 'none' &&
+      style.visibility !== 'hidden' &&
+      style.opacity !== '0' &&
+      rect.width > 0 &&
+      rect.height > 0 &&
+      rect.left < right &&
+      rect.right > left,
+    )
+    .sort((a, b) => a.rect.top - b.rect.top);
+
+  for (const { rect } of headers) {
+    if (rect.top < safeTop + height && rect.bottom > safeTop) {
+      safeTop = Math.ceil(rect.bottom + GAP);
+    }
+  }
+
+  return Math.min(safeTop, Math.max(0, window.innerHeight - height - GAP));
+}
+
 function PeerAvatar({
   src,
   label,
@@ -121,6 +151,7 @@ const CHAT_HEAD_ROW_GAP = 8;
 
 export default function FloatingChatHead({
   storageKey,
+  dismissalStorageKey,
   peerAvatar,
   peerIsGroup,
   peerIsMessages = false,
@@ -136,6 +167,7 @@ export default function FloatingChatHead({
   isGlobal = false,
   hidden = false,
   initialPlacement = 'top-right',
+  layoutKey,
   zIndexClass = Z_INDEX,
 }: {
   /**
@@ -148,12 +180,16 @@ export default function FloatingChatHead({
   zIndexClass?: string;
   /** Whether this is the app-wide instance rather than a screen-specific head. */
   isGlobal?: boolean;
+  /** Recheck header clearance when the current route changes. */
+  layoutKey?: string;
   /** Keep this head mounted while a screen-specific chat head is active. */
   hidden?: boolean;
   /** Initial position for this head's independent saved position. */
   initialPlacement?: 'center-right' | 'top-right';
   /** Distinct per side, e.g. `trikeserve_chat_head_pos_rider`. */
   storageKey: string;
+  /** Persist dismissal across auth-driven unmounts, scoped to the signed-in account. */
+  dismissalStorageKey?: string;
   peerAvatar: string | null;
   /** A shared ride has several passengers and no single face to show. */
   peerIsGroup?: boolean;
@@ -216,8 +252,17 @@ export default function FloatingChatHead({
   const [mountRetry, setMountRetry] = useState(0);
   const [isDragging, setIsDragging] = useState(false);
   const [isOverCloseTarget, setIsOverCloseTarget] = useState(false);
-  const [dismissed, setDismissed] = useState(false);
-  const dismissalActivityKey = `${headId || ''}:${pulseKey}`;
+  const [dismissed, setDismissed] = useState(() => {
+    if (!dismissalStorageKey || typeof window === 'undefined') return false;
+    try {
+      return window.localStorage.getItem(dismissalStorageKey) === 'true';
+    } catch {
+      return false;
+    }
+  });
+  // A global head's conversation can change while auth restores its inbox. Only
+  // actual chat activity should bring a dismissed global head back.
+  const dismissalActivityKey = isGlobal ? String(pulseKey) : `${headId || ''}:${pulseKey}`;
   const previousDismissalActivityKeyRef = useRef(dismissalActivityKey);
   const parkAfterRestoreRef = useRef(false);
   const retryRef = useRef<number | null>(null);
@@ -270,17 +315,62 @@ export default function FloatingChatHead({
   const parkAtTopRight = useCallback(() => {
     const el = headRef.current;
     if (!el) return;
-    const width = el.getBoundingClientRect().width;
+    const rect = el.getBoundingClientRect();
+    const width = rect.width;
+    const step = showStackItems ? CHAT_HEAD_SIZE + CHAT_HEAD_ROW_GAP : STACK_PEEK;
+    const x = Math.max(GAP, Math.round(window.innerWidth - width - GAP));
+    const stackWidth = showStackItems ? step * visibleStackItems.length : 0;
+    const rowLeft = showStackItems ? Math.max(GAP, x - stackWidth) : x;
     pos.current = {
-      x: Math.max(GAP, Math.round(window.innerWidth - width - GAP)),
-      y: GAP,
+      x,
+      y: isGlobal
+        ? clearHeaderOverlap(rowLeft, x + width, GAP, rect.height)
+        : GAP,
     };
     setSide('right');
     el.style.left = `${pos.current.x}px`;
     el.style.top = `${pos.current.y}px`;
     positionStackHeads('right', false);
     save('right');
-  }, [positionStackHeads, save]);
+  }, [isGlobal, positionStackHeads, save, showStackItems, visibleStackItems.length]);
+
+  useLayoutEffect(() => {
+    if (!isGlobal || !placed2 || !placed.current || dismissed) return;
+
+    const moveBelowHeader = () => {
+      const el = headRef.current;
+      if (!el) return;
+      const rect = el.getBoundingClientRect();
+      const step = showStackItems ? CHAT_HEAD_SIZE + CHAT_HEAD_ROW_GAP : STACK_PEEK;
+      const stackWidth = showStackItems ? step * visibleStackItems.length : 0;
+      const rowLeft = side === 'right' ? pos.current.x - stackWidth : pos.current.x;
+      const rowRight = side === 'right'
+        ? pos.current.x + rect.width
+        : pos.current.x + rect.width + stackWidth;
+      const safeTop = clearHeaderOverlap(rowLeft, rowRight, pos.current.y, rect.height);
+      if (safeTop <= pos.current.y) return;
+
+      pos.current = { ...pos.current, y: safeTop };
+      el.style.top = `${safeTop}px`;
+      positionStackHeads(side, false);
+      save(side);
+    };
+
+    const frame = requestAnimationFrame(moveBelowHeader);
+    const observer = typeof ResizeObserver !== 'undefined'
+      ? new ResizeObserver(moveBelowHeader)
+      : null;
+    document.querySelectorAll('#root header').forEach((header) => observer?.observe(header));
+    window.addEventListener('scroll', moveBelowHeader, true);
+    window.addEventListener('resize', moveBelowHeader);
+
+    return () => {
+      cancelAnimationFrame(frame);
+      observer?.disconnect();
+      window.removeEventListener('scroll', moveBelowHeader, true);
+      window.removeEventListener('resize', moveBelowHeader);
+    };
+  }, [dismissed, isGlobal, layoutKey, placed2, positionStackHeads, save, showStackItems, side, visibleStackItems.length]);
 
   useEffect(() => {
     if (!showStackItems) return;
@@ -297,6 +387,13 @@ export default function FloatingChatHead({
     if (previousDismissalActivityKeyRef.current === dismissalActivityKey) return;
     previousDismissalActivityKeyRef.current = dismissalActivityKey;
     if (dismissed) {
+      if (dismissalStorageKey) {
+        try {
+          window.localStorage.removeItem(dismissalStorageKey);
+        } catch {
+          // Persistence is a convenience; the head works without it.
+        }
+      }
       // The dismissed render has no head element to move yet. Reposition in the
       // layout effect that runs after the restored button is mounted.
       parkAfterRestoreRef.current = true;
@@ -305,7 +402,7 @@ export default function FloatingChatHead({
     }
     // A head that is still mounted can be moved before the new activity paints.
     parkAtTopRight();
-  }, [dismissalActivityKey, dismissed, parkAtTopRight]);
+  }, [dismissalActivityKey, dismissed, dismissalStorageKey, parkAtTopRight]);
 
   useLayoutEffect(() => {
     if (dismissed || !parkAfterRestoreRef.current) return;
@@ -342,18 +439,25 @@ export default function FloatingChatHead({
       if (saved && !savedOnCloseTarget && !showStackItems) {
         // Re-clamped: the phone may have been rotated or resized since saving,
         // and a raw stored x could be off-screen entirely.
-        pos.current = {
-          x: Math.min(Math.max(GAP, saved.x), window.innerWidth - rect.width - GAP),
-          y: Math.min(Math.max(0, saved.y), window.innerHeight - rect.height),
-        };
+        const x = Math.min(Math.max(GAP, saved.x), window.innerWidth - rect.width - GAP);
+        const y = Math.min(Math.max(0, saved.y), window.innerHeight - rect.height);
+        const safeY = isGlobal
+          ? clearHeaderOverlap(x, x + rect.width, y, rect.height)
+          : y;
+        pos.current = { x, y: safeY };
+        if (safeY !== y) save(saved.side);
         setSide(saved.side);
       } else {
         // Global rows stay anchored at the top-right; standalone heads use the
         // configured placement when first shown or recovered from the close area.
-        pos.current = {
-          x: Math.max(GAP, Math.round(window.innerWidth - rect.width - GAP)),
-          y: initialPlacement === 'top-right' ? GAP : Math.round(window.innerHeight * 0.42),
-        };
+        const x = Math.max(GAP, Math.round(window.innerWidth - rect.width - GAP));
+        const step = showStackItems ? CHAT_HEAD_SIZE + CHAT_HEAD_ROW_GAP : STACK_PEEK;
+        const stackWidth = showStackItems ? step * visibleStackItems.length : 0;
+        const rowLeft = showStackItems ? Math.max(GAP, x - stackWidth) : x;
+        const y = isGlobal
+          ? clearHeaderOverlap(rowLeft, x + rect.width, GAP, rect.height)
+          : initialPlacement === 'top-right' ? GAP : Math.round(window.innerHeight * 0.42);
+        pos.current = { x, y };
         setSide('right');
         if (savedOnCloseTarget || showStackItems) save('right');
       }
@@ -369,7 +473,7 @@ export default function FloatingChatHead({
       cancelAnimationFrame(raf);
       if (retryRef.current) cancelAnimationFrame(retryRef.current);
     };
-  }, [initialPlacement, mountRetry, positionStackHeads, save, showStackItems]);
+  }, [initialPlacement, isGlobal, mountRetry, positionStackHeads, save, showStackItems, visibleStackItems.length]);
 
   useEffect(() => {
     if (placed.current) positionStackHeads(side, false);
@@ -487,6 +591,13 @@ export default function FloatingChatHead({
       setIsOverCloseTarget(false);
 
       if (shouldDismiss) {
+        if (dismissalStorageKey) {
+          try {
+            window.localStorage.setItem(dismissalStorageKey, 'true');
+          } catch {
+            // Persistence is a convenience; the head works without it.
+          }
+        }
         setDismissed(true);
         return;
       }
@@ -509,7 +620,7 @@ export default function FloatingChatHead({
     window.addEventListener('pointerup', onUp);
     window.addEventListener('pointercancel', onCancel);
     pointerCleanupRef.current = cleanup;
-  }, [positionStackHeads, save]);
+  }, [dismissalStorageKey, positionStackHeads, save]);
 
   /**
    * Park the head in the top-right corner once chat has been opened.
