@@ -160,6 +160,8 @@ CREATE TABLE IF NOT EXISTS orders (
   delivery_fee_cash DECIMAL(10, 2),
   payment_confirmed_at TIMESTAMPTZ,
   payment_confirmed_by TEXT,
+  -- The restaurant's photo of the packed order, shown to the rider before pickup.
+  restaurant_package_photo_url TEXT,
   -- The rider's photo at handover.
   delivery_proof_url TEXT,
   delivery_proof_uploaded_at TIMESTAMPTZ,

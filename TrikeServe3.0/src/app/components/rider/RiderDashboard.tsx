@@ -268,6 +268,58 @@ export default function RiderDashboard() {
           // Save all pending ride requests for routing and prioritization.
           setPendingRequestsList(rideRequests || []);
 
+          // Passenger Requests checks delivery coverage using the restaurant's
+          // saved pin, while a ride request's pickup coordinates can point at the
+          // customer or be empty. Resolve the same restaurant coordinates here
+          // so the dashboard count uses the same terminal coverage rule.
+          const getDeliveryOrderId = (request: any) => {
+            if (request.order_id) return String(request.order_id);
+            return String(request.pickup_location || '')
+              .split('|')
+              .find((part: string) => part.startsWith('ORDER_ID:'))
+              ?.slice('ORDER_ID:'.length);
+          };
+          const deliveryRequests = (rideRequests || []).filter((request: any) => {
+            const rideType = String(request.ride_type || '').toLowerCase();
+            return rideType === 'delivery' || String(request.pickup_location || '').startsWith('DELIVERY|');
+          });
+          const deliveryOrderIds = [...new Set(deliveryRequests.map(getDeliveryOrderId).filter(Boolean))] as string[];
+          const deliveryBusinessByOrderId = new Map<string, string>();
+          const restaurantCoordinatesByBusinessId = new Map<string, { lat: number; lng: number }>();
+
+          if (deliveryOrderIds.length > 0) {
+            const { data: orders, error: ordersError } = await supabase
+              .from('orders')
+              .select('id, business_id')
+              .in('id', deliveryOrderIds);
+            if (ordersError) {
+              console.warn('Dashboard: Could not load delivery order locations:', ordersError);
+            }
+
+            (orders || []).forEach((order: any) => {
+              if (order.business_id) deliveryBusinessByOrderId.set(order.id, order.business_id);
+            });
+
+            const businessIds = [...new Set([...deliveryBusinessByOrderId.values()])];
+            if (businessIds.length > 0) {
+              const { data: restaurants, error: restaurantsError } = await supabase
+                .from('restaurants')
+                .select('business_user_id, latitude, longitude')
+                .in('business_user_id', businessIds);
+              if (restaurantsError) {
+                console.warn('Dashboard: Could not load restaurant map pins:', restaurantsError);
+              }
+
+              (restaurants || []).forEach((restaurant: any) => {
+                const lat = Number(restaurant.latitude);
+                const lng = Number(restaurant.longitude);
+                if (restaurant.business_user_id && Number.isFinite(lat) && Number.isFinite(lng)) {
+                  restaurantCoordinatesByBusinessId.set(restaurant.business_user_id, { lat, lng });
+                }
+              });
+            }
+          }
+
           const serviceTypes = user?.serviceTypes || [];
           const canAcceptRequest = (request: any) => {
             if (!user?.id || hasNoTerminal || isResolvingTerminal) return false;
@@ -287,8 +339,14 @@ export default function RiderDashboard() {
             if (type === 'delivery') {
               if (!queueTerminalId) return false;
               if (request.terminal_id === queueTerminalId) return true;
-              const pickupLat = Number(request.pickup_lat);
-              const pickupLng = Number(request.pickup_lng);
+              const orderId = getDeliveryOrderId(request);
+              const businessId = orderId ? deliveryBusinessByOrderId.get(orderId) : undefined;
+              const restaurantCoordinates = businessId ? restaurantCoordinatesByBusinessId.get(businessId) : undefined;
+              const pickupLatValue = restaurantCoordinates?.lat ?? request.pickup_lat;
+              const pickupLngValue = restaurantCoordinates?.lng ?? request.pickup_lng;
+              if (pickupLatValue == null || pickupLngValue == null) return false;
+              const pickupLat = Number(pickupLatValue);
+              const pickupLng = Number(pickupLngValue);
               return Number.isFinite(pickupLat) && Number.isFinite(pickupLng) &&
                 isPointWithinTerminalRoute(pickupLat, pickupLng, {
                   road: terminalBoundary,

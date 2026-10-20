@@ -137,7 +137,9 @@ export default function Earnings() {
               type: type,
               date: dateISO,
               amount: Number(ride.amount) || 0,
-              payment: ((ride.payment_method || ride.payment) === 'COD' ? 'Cash' : 'Prepaid') as 'Cash' | 'Prepaid',
+              // Delivery earnings are the delivery fee, which the rider receives
+              // in cash even when the customer's food payment was prepaid by GCash.
+              payment: (isDelivery || (ride.payment_method || ride.payment) === 'COD' ? 'Cash' : 'Prepaid') as 'Cash' | 'Prepaid',
               customerName: ride.customer_name || ride.customerName || 'Customer',
               pickup: pickup || 'Pickup',
               dropoff: dropoff || 'Drop-off',

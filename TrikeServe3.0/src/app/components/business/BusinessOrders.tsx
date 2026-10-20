@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from "react";
-import { Store, Package, ShoppingBag, Clock, User, CheckCircle, XCircle, AlertCircle, Menu, Navigation, MessageCircle, Loader2, Filter, ChevronDown, Search, X } from "lucide-react";
+import { Store, Package, ShoppingBag, Clock, User, CheckCircle, XCircle, AlertCircle, Menu, Navigation, MessageCircle, Loader2, Filter, ChevronDown, Search, X, Camera } from "lucide-react";
 import { Link, useNavigate, useLocation } from "react-router";
 import { Card } from "../ui/card";
 import { Badge } from "../ui/badge";
@@ -68,6 +68,8 @@ interface Order {
   paymentConfirmedBy?: string | null;
   /** The rider's photo at handover. */
   deliveryProofUrl?: string | null;
+  /** The restaurant's photo of the packed order, shown to riders before pickup. */
+  restaurantPackagePhotoUrl?: string | null;
   estimatedTime?: string;
   date: string;
   createdAt: string;
@@ -202,6 +204,11 @@ export default function BusinessOrders() {
    * see the press was taken rather than pressing again.
    */
   const [isPostingDelivery, setIsPostingDelivery] = useState(false);
+  const [packagePhotoFile, setPackagePhotoFile] = useState<File | null>(null);
+  const [packagePhotoPreviewUrl, setPackagePhotoPreviewUrl] = useState<string | null>(null);
+  const [packagePhotoError, setPackagePhotoError] = useState<string | null>(null);
+  const [isUploadingPackagePhoto, setIsUploadingPackagePhoto] = useState(false);
+  const packagePhotoInputRef = useRef<HTMLInputElement>(null);
   const { isLoaded: isMapsLoaded } = useMapLoader();
   const [driverLocation, setDriverLocation] = useState<{ lat: number; lng: number } | null>(null);
   const [restaurantLocation, setRestaurantLocation] = useState<{ lat: number; lng: number } | null>(null);
@@ -213,6 +220,22 @@ export default function BusinessOrders() {
   // re-subscribing on every render.
   const loadOrdersRef = useRef<(() => Promise<void>) | null>(null);
   const isUpdatingStatusRef = useRef(false);
+
+  useEffect(() => {
+    if (!packagePhotoFile) {
+      setPackagePhotoPreviewUrl(null);
+      return;
+    }
+    const previewUrl = URL.createObjectURL(packagePhotoFile);
+    setPackagePhotoPreviewUrl(previewUrl);
+    return () => URL.revokeObjectURL(previewUrl);
+  }, [packagePhotoFile]);
+
+  useEffect(() => {
+    setPackagePhotoFile(null);
+    setPackagePhotoError(null);
+    if (packagePhotoInputRef.current) packagePhotoInputRef.current.value = '';
+  }, [selectedOrder?.id]);
 
   // Load orders from Supabase (secure - uses RLS policies)
   useEffect(() => {
@@ -539,6 +562,7 @@ export default function BusinessOrders() {
           paymentConfirmedAt: dbOrder.payment_confirmed_at ?? null,
           paymentConfirmedBy: dbOrder.payment_confirmed_by ?? null,
           deliveryProofUrl: dbOrder.delivery_proof_url ?? null,
+          restaurantPackagePhotoUrl: dbOrder.restaurant_package_photo_url ?? null,
           address: dbOrder.address || '',
           deliveryFee: dbOrder.delivery_fee || 0,
           estimatedTime: dbOrder.estimated_time || '30 mins',
@@ -1152,21 +1176,85 @@ export default function BusinessOrders() {
     return true;
   };
 
-  /** Post the driver request while the order stays in preparation until pickup. */
+  const handlePackagePhotoChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    event.currentTarget.value = '';
+    if (!file) return;
+    if (!file.type.startsWith('image/')) {
+      setPackagePhotoError('Choose an image of the packed order.');
+      return;
+    }
+    if (file.size > 10 * 1024 * 1024) {
+      setPackagePhotoError('The photo must be 10 MB or smaller.');
+      return;
+    }
+    setPackagePhotoFile(file);
+    setPackagePhotoError(null);
+  };
 
+  /** Save the restaurant photo before publishing the order to nearby drivers. */
   const handleAssignDriver = async (order: Order) => {
     if (isPostingDelivery || order.driverRequested || order.driverName) return;
+    if (!packagePhotoFile && !order.restaurantPackagePhotoUrl) {
+      setPackagePhotoError('Take a food photo before assigning a driver.');
+      return;
+    }
+
     setIsPostingDelivery(true);
+    let packagePhotoUrl = order.restaurantPackagePhotoUrl || null;
 
     try {
-      const didCreateRequest = await createOpenDeliveryRequest(order);
+      if (packagePhotoFile) {
+        setIsUploadingPackagePhoto(true);
+        const uploaded = await supabaseHelpers.uploadRestaurantPackagePhoto(order.id, packagePhotoFile);
+        if (uploaded.error || !uploaded.data?.publicUrl) {
+          setPackagePhotoError(uploaded.error || 'Could not upload the food photo. Please try again.');
+          return;
+        }
+
+        packagePhotoUrl = uploaded.data.publicUrl;
+        const { data: savedPhoto, error: savePhotoError } = await supabase
+          .from('orders')
+          .update({ restaurant_package_photo_url: packagePhotoUrl, updated_at: new Date().toISOString() })
+          .eq('id', order.id)
+          .select('id')
+          .maybeSingle();
+
+        if (savePhotoError || !savedPhoto) {
+          console.error('[BusinessOrders] Could not save restaurant package photo:', savePhotoError);
+          setPackagePhotoError('Could not save the photo to this order. Apply ADD_RESTAURANT_PACKAGE_PHOTO.sql, then try again.');
+          return;
+        }
+
+        setOrders((current) => current.map((item) => item.id === order.id
+          ? { ...item, restaurantPackagePhotoUrl: packagePhotoUrl }
+          : item));
+        setSelectedOrder((current) => current?.id === order.id
+          ? { ...current, restaurantPackagePhotoUrl: packagePhotoUrl }
+          : current);
+        setPackagePhotoFile(null);
+        setPackagePhotoError(null);
+      }
+
+      if (!packagePhotoUrl) {
+          setPackagePhotoError('Take a food photo before assigning a driver.');
+        return;
+      }
+
+      const didCreateRequest = await createOpenDeliveryRequest({ ...order, restaurantPackagePhotoUrl: packagePhotoUrl });
       if (!didCreateRequest) return;
 
-      setOrders((current) => current.map((item) => item.id === order.id ? { ...item, driverRequested: true } : item));
-      setSelectedOrder((current) =>
-        current?.id === order.id ? { ...current, driverRequested: true } : current,
-      );
+      setOrders((current) => current.map((item) => item.id === order.id
+        ? { ...item, restaurantPackagePhotoUrl: packagePhotoUrl, driverRequested: true }
+        : item));
+      setSelectedOrder((current) => current?.id === order.id
+        ? { ...current, restaurantPackagePhotoUrl: packagePhotoUrl, driverRequested: true }
+        : current);
+    } catch (error) {
+      console.error('[BusinessOrders] Could not prepare restaurant package photo:', error);
+      setPackagePhotoError('Could not save the food photo. Please try again.');
     } finally {
+      setIsUploadingPackagePhoto(false);
       setIsPostingDelivery(false);
     }
   };
@@ -1843,20 +1931,69 @@ export default function BusinessOrders() {
                 {(selectedOrder.status === 'preparing' || selectedOrder.status === 'ready') &&
                   selectedOrder.deliveryMode === 'delivery' &&
                   !selectedOrder.driverRequested && !selectedOrder.driverName && (
-                    <Button
-                      onClick={() => void handleAssignDriver(selectedOrder)}
-                      disabled={isPostingDelivery || isUpdatingStatus}
-                      className="w-full bg-[var(--info)] hover:bg-[var(--info)] py-4 md:py-6 font-bold text-sm md:text-base disabled:opacity-50"
-                    >
-                      {isPostingDelivery ? (
-                        <>
-                          <Loader2 className="size-4 animate-spin" aria-hidden="true" />
-                          Assigning driver...
-                        </>
-                      ) : (
-                        'Assign Driver'
-                      )}
-                    </Button>
+                    <div className="space-y-3">
+                      <div className="rounded-2xl border border-[var(--border)] bg-[var(--muted)] p-3 md:p-4">
+                        <div className="flex items-start justify-between gap-3">
+                          <div className="min-w-0">
+                            <p className="text-sm font-bold text-[var(--ink)]">Food Ordered <span className="text-[var(--error)]">Required</span></p>
+                            <p className="mt-1 text-xs text-[var(--muted-foreground)]">Take a clear photo of the packed order. Drivers will see it in the route preview.</p>
+                          </div>
+                          <Button
+                            type="button"
+                            variant="outline"
+                            onClick={() => packagePhotoInputRef.current?.click()}
+                            disabled={isPostingDelivery || isUpdatingStatus}
+                            className="min-h-10 shrink-0 border-[var(--border)] px-3 text-xs font-bold text-[var(--ink)]"
+                          >
+                            <Camera className="mr-1.5 size-4" aria-hidden="true" />
+                            {packagePhotoFile || selectedOrder.restaurantPackagePhotoUrl ? 'Retake photo' : 'Take photo'}
+                          </Button>
+                        </div>
+                        <input
+                          ref={packagePhotoInputRef}
+                          type="file"
+                          accept="image/*"
+                          capture="environment"
+                          onChange={handlePackagePhotoChange}
+                          className="sr-only"
+                          aria-label="Take a photo of the packed order"
+                        />
+                        {packagePhotoPreviewUrl || selectedOrder.restaurantPackagePhotoUrl ? (
+                          <img
+                            src={packagePhotoPreviewUrl || selectedOrder.restaurantPackagePhotoUrl || undefined}
+                            alt={`Packed order ${selectedOrder.orderNumber}`}
+                            className="mt-3 max-h-64 w-full rounded-xl border border-[var(--border)] object-contain"
+                          />
+                        ) : (
+                          <div className="mt-3 flex min-h-24 items-center justify-center gap-2 rounded-xl border border-dashed border-[var(--border)] bg-[var(--surface)] px-3 text-center text-xs text-[var(--muted-foreground)]">
+                            <Camera className="size-4 shrink-0" aria-hidden="true" />
+                            No food photo yet
+                          </div>
+                        )}
+                        {packagePhotoError && (
+                          <p role="alert" className="mt-2 text-xs font-semibold text-[var(--error)]">{packagePhotoError}</p>
+                        )}
+                      </div>
+                      <Button
+                        onClick={() => void handleAssignDriver(selectedOrder)}
+                        disabled={isPostingDelivery || isUpdatingStatus || (!packagePhotoFile && !selectedOrder.restaurantPackagePhotoUrl)}
+                        className="w-full bg-[var(--info)] hover:bg-[var(--info)] py-4 md:py-6 font-bold text-sm md:text-base disabled:opacity-50"
+                      >
+                        {isUploadingPackagePhoto ? (
+                          <>
+                            <Loader2 className="size-4 animate-spin" aria-hidden="true" />
+                            Saving food photo...
+                          </>
+                        ) : isPostingDelivery ? (
+                          <>
+                            <Loader2 className="size-4 animate-spin" aria-hidden="true" />
+                            Assigning driver...
+                          </>
+                        ) : (
+                          'Assign Driver'
+                        )}
+                      </Button>
+                    </div>
                 )}
                 {selectedOrder.deliveryMode === 'delivery' &&
                   (selectedOrder.status === 'confirmed' || selectedOrder.driverRequested || selectedOrder.driverName) && (

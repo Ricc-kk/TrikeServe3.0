@@ -3857,6 +3857,23 @@ export const supabaseHelpers = {
     return { data: publicUrlData, error: null };
   },
 
+  /** The restaurant's photo of the packed order, shown to riders before pickup. */
+  async uploadRestaurantPackagePhoto(orderId: string, file: File) {
+    const filePath = orderId + '/restaurant-package-' + Date.now() + '.' + safeFileExtension(file);
+
+    const { error } = await supabase.storage
+      .from('order_proofs')
+      .upload(filePath, file);
+
+    if (error) return { data: null, error: describeStorageError(error) };
+
+    const { data: publicUrlData } = supabase.storage
+      .from('order_proofs')
+      .getPublicUrl(filePath);
+
+    return { data: publicUrlData, error: null };
+  },
+
   /**
    * Shop: the transfer has been verified. Moves the order to `payment-confirmed`
    * and records who verified it and when.

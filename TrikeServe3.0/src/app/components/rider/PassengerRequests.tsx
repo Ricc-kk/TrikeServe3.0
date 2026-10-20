@@ -118,6 +118,7 @@ interface PassengerRequest {
   customerId?: string;
   orderId?: string;
   orderNumber?: string;
+  restaurantPackagePhotoUrl?: string;
   lobbyId?: string;
   passengerDetails?: Array<{
     id: string;
@@ -147,6 +148,7 @@ export default function PassengerRequests() {
   const [resolvedDropoffCoords, setResolvedDropoffCoords] = useState<{ lat: number; lng: number } | null>(null);
   const [previewMapCenter, setPreviewMapCenter] = useState<{ lat: number; lng: number }>({ lat: 14.5995, lng: 120.9842 });
   const previewMapRef = useRef<google.maps.Map | null>(null);
+  const packagePhotoColumnAvailableRef = useRef<boolean | null>(null);
   const { isLoaded: isMapsLoaded } = useMapLoader();
   const [showAccepted, setShowAccepted] = useState(false);
   const [showConfirmAccept, setShowConfirmAccept] = useState(false);
@@ -340,14 +342,35 @@ export default function PassengerRequests() {
           .filter(Boolean))];
         const orderMap: Record<string, any> = {};
         if (orderIds.length > 0) {
-          const { data: orderProfiles } = await supabase
-            .from('orders')
-            // business_id is present in the base schema and is written at
-            // checkout. restaurant_id is optional on older installs, so
-            // selecting it here can fail the entire lookup and hide the
-            // restaurant pin from the rider.
-            .select('id, business_id, address')
-            .in('id', orderIds);
+          let orderProfiles: any[] | null = null;
+          if (packagePhotoColumnAvailableRef.current !== false) {
+            const { data: profilesWithPhoto, error: profilePhotoError } = await supabase
+              .from('orders')
+              .select('id, business_id, address, restaurant_package_photo_url')
+              .in('id', orderIds);
+            if (profilePhotoError) {
+              // The package-photo column is added by ADD_RESTAURANT_PACKAGE_PHOTO.sql.
+              // Keep existing rider requests usable until that migration is applied.
+              if (profilePhotoError.message?.includes('restaurant_package_photo_url')) {
+                packagePhotoColumnAvailableRef.current = false;
+              }
+              const { data: legacyProfiles } = await supabase
+                .from('orders')
+                .select('id, business_id, address')
+                .in('id', orderIds);
+              orderProfiles = legacyProfiles;
+            } else {
+              packagePhotoColumnAvailableRef.current = true;
+              orderProfiles = profilesWithPhoto;
+            }
+          } else {
+            // Avoid retrying a known-missing column on every request refresh.
+            const { data: legacyProfiles } = await supabase
+              .from('orders')
+              .select('id, business_id, address')
+              .in('id', orderIds);
+            orderProfiles = legacyProfiles;
+          }
           (orderProfiles || []).forEach((order: any) => { orderMap[order.id] = order; });
         }
         const businessIds = [...new Set(Object.values(orderMap).map((order: any) => order.business_id).filter(Boolean))];
@@ -401,6 +424,7 @@ export default function PassengerRequests() {
           customerId: req.customer_id,
           ...parseDeliveryTag(req.pickup_location),
           orderId: requestOrderId,
+          restaurantPackagePhotoUrl: order?.restaurant_package_photo_url || undefined,
           pickupAddress: req.pickup_address || undefined,
           dropoffAddress: displayOrderAddress(req.dropoff_address) || displayOrderAddress(orderAddress) || undefined,
           pickupLat: req.pickup_lat ?? undefined,
@@ -1167,21 +1191,48 @@ export default function PassengerRequests() {
         </div>
       )}
 
-      {/* Preview Modal */}
+      {/* Full-page route preview */}
       {previewRequest && (
-        <div className="fixed inset-0 bg-black/50 z-[1000] flex items-end">
-          <div className="bg-surface w-full max-h-[90vh] rounded-t-3xl flex flex-col overflow-hidden">
-            <div className="bg-[var(--primary)] text-white px-4 py-3 flex items-center justify-between">
-              <h2 className="text-lg font-bold">Route Preview</h2>
-              <button onClick={() => setPreviewRequest(null)} className="p-1 hover:bg-white/20 rounded-lg"><X className="w-5 h-5" /></button>
-            </div>
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="rider-route-preview-title"
+          className="fixed inset-0 z-[1000] h-screen h-[100dvh] w-full overflow-hidden bg-[var(--background)]"
+        >
+          <div className="flex h-full w-full flex-col overflow-hidden bg-[var(--surface)] text-[var(--ink)]">
+            <header className="flex shrink-0 items-center gap-3 border-b border-[var(--border)] px-4 py-2.5">
+              <button
+                type="button"
+                aria-label="Back to passenger requests"
+                onClick={() => setPreviewRequest(null)}
+                className="grid size-10 shrink-0 place-items-center rounded-xl text-[var(--ink)] hover:bg-[var(--muted)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--primary)]"
+              >
+                <ArrowLeft className="size-5" />
+              </button>
+              <div className="min-w-0">
+                <h2 id="rider-route-preview-title" className="text-lg font-bold">Route Preview</h2>
+                <p className="truncate text-xs text-[var(--muted-foreground)]">
+                  {previewRequest.type === 'delivery' ? previewRequest.restaurantName || 'Restaurant delivery' : `${previewRequest.pickup} → ${previewRequest.dropoff}`}
+                </p>
+              </div>
+            </header>
             {isMapsLoaded ? (
-              <div className="w-full h-64 md:h-80 relative">
+              <div className="relative h-[42dvh] min-h-[250px] w-full shrink-0 md:h-[48dvh]">
                 <GoogleMap
                   mapContainerStyle={{ width: '100%', height: '100%' }}
                   center={previewMapCenter}
                   zoom={14}
-                  options={{ zoomControl: false, streetViewControl: false, mapTypeControl: false, gestureHandling: 'greedy' }}
+                  options={{
+                    disableDefaultUI: true,
+                    zoomControl: false,
+                    streetViewControl: false,
+                    mapTypeControl: false,
+                    fullscreenControl: false,
+                    rotateControl: false,
+                    tilt: 0,
+                    keyboardShortcuts: false,
+                    gestureHandling: 'greedy',
+                  }}
                   onLoad={(map) => {
                     previewMapRef.current = map;
                     if (routePath) fitMapToRoute(map, routePath);
@@ -1203,40 +1254,42 @@ export default function PassengerRequests() {
                 <div className="absolute top-2 left-2 z-10 flex gap-2">
                   <button
                     type="button"
+                    aria-label="Toggle pickup route"
                     aria-pressed={showPickupRoute}
                     disabled={!pickupRoutePath}
                     onClick={() => setShowPickupRoute(visible => !visible)}
-                    className={`flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-xs font-bold shadow-md transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${showPickupRoute ? 'border-white bg-white text-gray-900' : 'border-gray-300 bg-white/80 text-gray-600'}`}
+                    className={`flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-xs font-bold shadow-md transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${showPickupRoute ? 'border-[var(--primary)] bg-[var(--primary)] text-[var(--primary-foreground)]' : 'border-[var(--border)] bg-[var(--surface)] text-[var(--muted-foreground)]'}`}
                   >
                     <span className="size-2.5 rounded-full bg-[#16a34a]" />
                     Pickup
                   </button>
                   <button
                     type="button"
+                    aria-label="Toggle drop-off route"
                     aria-pressed={showDropoffRoute}
                     disabled={!dropoffRoutePath}
                     onClick={() => setShowDropoffRoute(visible => !visible)}
-                    className={`flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-xs font-bold shadow-md transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${showDropoffRoute ? 'border-white bg-white text-gray-900' : 'border-gray-300 bg-white/80 text-gray-600'}`}
+                    className={`flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-xs font-bold shadow-md transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${showDropoffRoute ? 'border-[var(--primary)] bg-[var(--primary)] text-[var(--primary-foreground)]' : 'border-[var(--border)] bg-[var(--surface)] text-[var(--muted-foreground)]'}`}
                   >
                     <span className="size-2.5 rounded-full bg-[#2563eb]" />
                     Drop off
                   </button>
                 </div>
                 {routeError && (
-                  <div className="absolute bottom-2 left-2 right-2 rounded-lg bg-white/95 px-3 py-2 text-xs font-semibold text-[var(--error)] shadow">
+                  <div className="absolute bottom-2 left-2 right-2 rounded-lg border border-[var(--border)] bg-[var(--surface)] px-3 py-2 text-xs font-semibold text-[var(--error)] shadow">
                     {routeError}
                   </div>
                 )}
                 {!routeError && routePath && (
-                  <div className="absolute bottom-2 left-2 rounded-lg bg-white/95 px-3 py-2 text-xs font-semibold text-[var(--ink)] shadow">
+                  <div className="absolute bottom-2 left-2 rounded-lg border border-[var(--border)] bg-[var(--surface)] px-3 py-2 text-xs font-semibold text-[var(--ink)] shadow">
                     Road route: Your location → {previewRequest.type === 'delivery' ? 'Store → Customer' : 'Pickup → Drop-off'}
                   </div>
                 )}
               </div>
             ) : (
-              <div className="h-64 flex items-center justify-center"><p className="text-[var(--muted-foreground)]">Loading map...</p></div>
+              <div className="grid h-[42dvh] min-h-[250px] shrink-0 place-items-center bg-[var(--muted)] text-[var(--muted-foreground)] md:h-[48dvh]">Loading map...</div>
             )}
-            <div className="p-4 space-y-3 overflow-y-auto">
+            <div className="min-h-0 flex-1 overflow-y-auto p-4">
               <div className="flex items-stretch gap-2">
                 <div className="flex flex-col items-center pt-1">
                   <div className="w-2.5 h-2.5 rounded-full bg-[var(--success)] shrink-0" />
@@ -1262,7 +1315,7 @@ export default function PassengerRequests() {
                         )}
                       </div>
                       <div className="min-w-0">
-                        <p className="text-[10px] text-[var(--success)] font-bold">{previewRequest.type === 'delivery' ? 'Restaurant pickup' : 'Pickup'}</p>
+                        <p className="text-[10px] font-bold text-[var(--success-ink)]">{previewRequest.type === 'delivery' ? 'Restaurant pickup' : 'Pickup'}</p>
                         <p className="text-sm font-semibold truncate">{previewRequest.type === 'delivery' ? resolvedPickupAddress || previewRequest.restaurantName || previewRequest.pickup : previewRequest.pickup}</p>
                       </div>
                     </div>
@@ -1273,33 +1326,61 @@ export default function PassengerRequests() {
                         <MapPin className="size-4 text-[var(--primary)]" />
                       </div>
                       <div className="min-w-0">
-                        <p className={`text-[10px] font-bold ${previewRequest.type === 'delivery' ? 'text-[var(--primary)]' : 'text-[var(--muted-foreground)]'}`}>
+                        <p className={`text-[10px] font-bold ${previewRequest.type === 'delivery' ? 'text-[var(--ink)]' : 'text-[var(--muted-foreground)]'}`}>
                           {previewRequest.type === 'delivery' ? `Customer · ${previewRequest.customerName}` : 'Drop-off'}
                         </p>
                         <p className="text-sm font-semibold">{previewRequest.dropoff}</p>
                       </div>
                     </div>
                   </div>
-                  {previewRequest.type === 'shared' && (previewRequest.passengerDetails?.length || 0) > 0 && (
-                    <div className="flex flex-wrap gap-2 pt-1">
-                      {previewRequest.passengerDetails?.map((passenger) => (
-                        <div key={passenger.id} className="flex items-center gap-1.5 rounded-full border border-[var(--border)] bg-surface px-2 py-1">
-                          <span className="max-w-28 truncate text-xs font-semibold text-[var(--ink)]">{passenger.name}</span>
-                        </div>
-                      ))}
-                    </div>
-                  )}
                 </div>
               </div>
-              <Button onClick={() => { setConfirmRequest(previewRequest); setShowConfirmAccept(true); }} className="w-full bg-[var(--primary)] hover:bg-[var(--primary)] py-6 font-bold">Accept & Navigate</Button>
-              <Button
-                onClick={() => { setDeclineTarget(previewRequest); setShowDeclinePrompt(true); }}
-                variant="outline"
-                className="w-full border-[var(--primary)] text-[var(--primary)]"
-              >
-                Decline Request
-              </Button>
-              <Button onClick={() => setPreviewRequest(null)} variant="outline" className="w-full border-[var(--border)] text-[var(--muted-foreground)]">Close</Button>
+              {previewRequest.type === 'delivery' && (
+                <section className="mt-4 rounded-xl border border-[var(--border)] bg-[var(--muted)] p-3">
+                  <h3 className="mb-3 text-sm font-bold text-[var(--ink)]">Food Ordered</h3>
+                  {previewRequest.restaurantPackagePhotoUrl ? (
+                    <a
+                      href={previewRequest.restaurantPackagePhotoUrl}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="block overflow-hidden rounded-lg border border-[var(--border)] bg-[var(--surface)]"
+                    >
+                      <img
+                        src={previewRequest.restaurantPackagePhotoUrl}
+                        alt={`Packed order from ${previewRequest.restaurantName || 'the restaurant'}`}
+                        className="max-h-80 w-full object-contain"
+                      />
+                      <p className="border-t border-[var(--border)] px-3 py-2 text-xs font-medium text-[var(--muted-foreground)]">Photo provided by the restaurant · tap to view full size</p>
+                    </a>
+                  ) : (
+                    <p className="text-sm text-[var(--muted-foreground)]">The restaurant has not added a food photo yet.</p>
+                  )}
+                </section>
+              )}
+              {previewRequest.type === 'shared' && (previewRequest.passengerDetails?.length || 0) > 0 && (
+                <section className="mt-4 rounded-xl border border-[var(--border)] bg-[var(--muted)] p-3">
+                  <h3 className="mb-2 text-sm font-bold text-[var(--ink)]">Passengers</h3>
+                  <div className="flex flex-wrap gap-2">
+                    {previewRequest.passengerDetails?.map((passenger) => (
+                      <span key={passenger.id} className="max-w-40 truncate rounded-full border border-[var(--border)] bg-[var(--surface)] px-3 py-1.5 text-xs font-semibold text-[var(--ink)]">
+                        {passenger.name}
+                      </span>
+                    ))}
+                  </div>
+                </section>
+              )}
+            </div>
+            <div className="shrink-0 border-t border-[var(--border)] bg-[var(--surface)] p-3 pb-[calc(env(safe-area-inset-bottom)+0.75rem)]">
+              <div className="mx-auto grid w-full max-w-3xl grid-cols-2 gap-2">
+                <Button
+                  onClick={() => { setDeclineTarget(previewRequest); setShowDeclinePrompt(true); }}
+                  variant="outline"
+                  className="min-h-12 w-full border-[var(--primary)] px-2 text-xs font-bold text-[var(--primary)] sm:text-sm"
+                >
+                  Decline Request
+                </Button>
+                <Button onClick={() => { setConfirmRequest(previewRequest); setShowConfirmAccept(true); }} className="min-h-12 w-full px-2 text-xs font-bold sm:text-sm">Accept & Navigate</Button>
+              </div>
             </div>
           </div>
         </div>
