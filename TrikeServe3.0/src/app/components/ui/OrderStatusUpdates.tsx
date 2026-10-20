@@ -38,22 +38,26 @@ export function OrderStatusUpdates({
     { label: isPickup ? "Collected" : "Delivered", Icon: PackageCheck },
   ];
 
-  let current = 0;
-  if (["delivered", "collected", "completed"].includes(status) || driverStatus === "completed") {
-    current = 3;
-  } else if (
-    !isPickup &&
-    ["picked-up", "in-progress", "dropped-off", "awaiting-payment"].includes(driverStatus)
-  ) {
-    current = 2;
-  } else if (!isPickup && status === "on-the-way" && !driverStatus) {
-    current = 2;
-  } else if (isPickup && ["ready", "confirmed", "on-the-way"].includes(status)) {
-    current = 2;
-  } else if (["preparing", "ready", "on-the-way"].includes(status)) {
-    // `confirmed` is used by the business flow when an order is published to
-    // drivers; it must not imply that kitchen preparation has started.
-    current = 1;
+  // An order still awaiting the business must not look accepted. The first
+  // milestone becomes active when the business confirms payment/accepts it.
+  let current = status && status !== "pending" ? 0 : -1;
+  if (status !== "pending") {
+    if (["delivered", "collected", "completed"].includes(status) || driverStatus === "completed") {
+      current = 3;
+    } else if (
+      !isPickup &&
+      ["picked-up", "in-progress", "dropped-off", "awaiting-payment"].includes(driverStatus)
+    ) {
+      current = 2;
+    } else if (!isPickup && status === "on-the-way" && !driverStatus) {
+      current = 2;
+    } else if (isPickup && ["ready", "confirmed", "on-the-way"].includes(status)) {
+      current = 2;
+    } else if (["preparing", "ready", "on-the-way"].includes(status)) {
+      // `confirmed` is used by the business flow when an order is published to
+      // drivers; it must not imply that kitchen preparation has started.
+      current = 1;
+    }
   }
 
   return (

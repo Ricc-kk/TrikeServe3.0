@@ -1,11 +1,12 @@
 import { useState, useEffect, useRef } from "react";
-import { Store, Package, ShoppingBag, Clock, User, CheckCircle, XCircle, AlertCircle, Menu, Navigation, MessageCircle, Loader2, Filter, ChevronDown, Search, X, Camera } from "lucide-react";
+import { Store, Package, ShoppingBag, Clock, User, CheckCircle, XCircle, AlertCircle, Navigation, MessageCircle, Loader2, Filter, ChevronDown, Search, X, Camera } from "lucide-react";
 import { Link, useNavigate, useLocation } from "react-router";
 import { Card } from "../ui/card";
 import { Badge } from "../ui/badge";
 import { Button } from "../ui/button";
 import ListPagination from "../ui/ListPagination";
 import BusinessSidebar from "./BusinessSidebar";
+import BusinessHamburgerButton from "./BusinessHamburgerButton";
 import BusinessPageIntro from "./BusinessPageIntro";
     import { supabase } from "../../../lib/supabase";
     import { supabaseHelpers, findDeliveryTerminalForOrder, logAudit, geocodeAddress } from "@/lib/supabase";
@@ -68,7 +69,7 @@ interface Order {
   paymentConfirmedBy?: string | null;
   /** The rider's photo at handover. */
   deliveryProofUrl?: string | null;
-  /** The restaurant's photo of the packed order, shown to riders before pickup. */
+  /** The restaurant's photo of the food order, shown to drivers before pickup. */
   restaurantPackagePhotoUrl?: string | null;
   estimatedTime?: string;
   date: string;
@@ -1181,7 +1182,7 @@ export default function BusinessOrders() {
     event.currentTarget.value = '';
     if (!file) return;
     if (!file.type.startsWith('image/')) {
-      setPackagePhotoError('Choose an image of the packed order.');
+      setPackagePhotoError('Choose an image of the food order.');
       return;
     }
     if (file.size > 10 * 1024 * 1024) {
@@ -1418,12 +1419,12 @@ export default function BusinessOrders() {
         <div className="px-3 md:px-5 py-4 border-b border-[var(--border)]">
           <div className="flex items-center gap-3">
             {/* Hamburger Menu - Mobile Only */}
-            <button
+            <BusinessHamburgerButton
               onClick={() => setIsMobileMenuOpen(true)}
-              aria-label="Open navigation" className="lg:hidden grid size-11 shrink-0 place-items-center hover:bg-[var(--muted)] rounded-xl transition-all"
-            >
-              <Menu className="w-6 h-6 text-[var(--ink)]" />
-            </button>
+              label="Open navigation"
+              className="lg:hidden grid size-11 shrink-0 place-items-center hover:bg-[var(--muted)] rounded-xl transition-all"
+              iconClassName="w-6 h-6 text-[var(--ink)]"
+            />
             <div>
               <h1 className="text-2xl md:text-3xl font-extrabold text-[var(--ink)] mb-1 md:mb-2">Orders</h1>
               <p className="text-xs md:text-sm text-[var(--muted-foreground)]">{activeOrders.length} active orders</p>
@@ -1691,8 +1692,8 @@ export default function BusinessOrders() {
         {/* Order Detail Modal */}
         {selectedOrder && (
           <div className="fixed inset-0 bg-black/50 z-[2000] flex items-end justify-center sm:items-center sm:p-5">
-            <div role="dialog" aria-modal="true" aria-label="Order details" className="bg-card w-full max-w-3xl h-full sm:h-auto sm:rounded-3xl sm:max-h-[90dvh] overflow-y-auto">
-              <div className="sticky top-0 bg-surface border-b border-[var(--border)] px-4 md:px-5 py-3 md:py-4">
+            <div role="dialog" aria-modal="true" aria-label="Order details" className="bg-card flex w-full max-w-3xl flex-col overflow-hidden h-full sm:h-auto sm:rounded-3xl sm:max-h-[90dvh]">
+              <div className="relative z-10 shrink-0 bg-surface border-b border-[var(--border)] px-4 md:px-5 py-3 md:py-4">
                 <div className="flex items-center justify-between mb-2">
                   <h2 className="text-lg md:text-xl font-bold text-[var(--ink)]">#{selectedOrder.orderNumber}</h2>
                   <button aria-label="Close order details" onClick={() => setSelectedOrder(null)} className="min-h-11 min-w-11 rounded-xl text-lg font-semibold text-[var(--info)]">
@@ -1708,7 +1709,12 @@ export default function BusinessOrders() {
 
               </div>
 
-              <div className="p-3 md:p-5 space-y-3 md:space-y-4">
+              <div
+                role="region"
+                aria-label="Order details content"
+                tabIndex={0}
+                className="scrollbar-hide min-h-0 flex-1 touch-pan-y cursor-grab overflow-y-auto p-3 md:p-5 space-y-3 md:space-y-4 active:cursor-grabbing focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[var(--info)]"
+              >
                 {/* Why the order was cancelled, so the reason is never buried */}
                 {selectedOrder.status === 'cancelled' && selectedOrder.cancelReason && (
                   <div className="p-3 rounded-xl border border-[var(--error)] bg-[var(--error-soft)]">
@@ -1936,7 +1942,7 @@ export default function BusinessOrders() {
                         <div className="flex items-start justify-between gap-3">
                           <div className="min-w-0">
                             <p className="text-sm font-bold text-[var(--ink)]">Food Ordered <span className="text-[var(--error)]">Required</span></p>
-                            <p className="mt-1 text-xs text-[var(--muted-foreground)]">Take a clear photo of the packed order. Drivers will see it in the route preview.</p>
+                            <p className="mt-1 text-xs text-[var(--muted-foreground)]">Take a clear photo of the food order. Drivers will see it in the route preview.</p>
                           </div>
                           <Button
                             type="button"
@@ -1956,12 +1962,12 @@ export default function BusinessOrders() {
                           capture="environment"
                           onChange={handlePackagePhotoChange}
                           className="sr-only"
-                          aria-label="Take a photo of the packed order"
+                          aria-label="Take a photo of the food order"
                         />
                         {packagePhotoPreviewUrl || selectedOrder.restaurantPackagePhotoUrl ? (
                           <img
                             src={packagePhotoPreviewUrl || selectedOrder.restaurantPackagePhotoUrl || undefined}
-                            alt={`Packed order ${selectedOrder.orderNumber}`}
+                            alt={`Food order ${selectedOrder.orderNumber}`}
                             className="mt-3 max-h-64 w-full rounded-xl border border-[var(--border)] object-contain"
                           />
                         ) : (

@@ -1,7 +1,7 @@
 import { useState } from "react";
-import { Menu } from "lucide-react";
 import ChatHub from "../chat/ChatHub";
 import BusinessSidebar from "./BusinessSidebar";
+import BusinessHamburgerButton from "./BusinessHamburgerButton";
 
 export default function BusinessMessages() {
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
@@ -9,7 +9,12 @@ export default function BusinessMessages() {
     <BusinessSidebar isMobileMenuOpen={isMobileMenuOpen} setIsMobileMenuOpen={setIsMobileMenuOpen} />
     <div className="min-w-0 w-full flex-1 lg:ml-64">
       <div className="flex items-center gap-3 border-b border-line bg-card px-4 py-3 sm:px-6">
-        <button type="button" aria-label="Open navigation" onClick={() => setIsMobileMenuOpen(true)} className="grid size-11 shrink-0 place-items-center rounded-xl hover:bg-soft lg:hidden"><Menu className="size-5" /></button>
+        <BusinessHamburgerButton
+          onClick={() => setIsMobileMenuOpen(true)}
+          label="Open navigation"
+          className="grid size-11 shrink-0 place-items-center rounded-xl hover:bg-soft lg:hidden"
+          iconClassName="size-5"
+        />
         <p className="text-sm font-bold text-[var(--ink)]">Business workspace <span className="font-normal text-[var(--muted-foreground)]">· Messages</span></p>
       </div>
       <ChatHub title="Messages" backPath="/business/dashboard" basePath="/business/messages" />

@@ -98,6 +98,8 @@ type AppHeaderProps = {
   avatarAlt?: string;
   /** When set, a hamburger control appears at the head of the header row. */
   onMenuClick?: () => void;
+  /** Unread business notifications to show on the hamburger control. */
+  menuNotificationCount?: number;
   className?: string;
 };
 
@@ -122,6 +124,7 @@ export default function AppHeader({
   avatarSrc,
   avatarAlt,
   onMenuClick,
+  menuNotificationCount = 0,
   className,
 }: AppHeaderProps) {
   const { user } = useAuth();
@@ -161,6 +164,10 @@ export default function AppHeader({
     notificationCount > 0
       ? `Notifications, ${notificationCount} unread`
       : "Notifications";
+  const menuNotificationLabel =
+    menuNotificationCount > 0
+      ? `Open menu, ${menuNotificationCount} unread notification${menuNotificationCount === 1 ? "" : "s"}`
+      : "Open menu";
 
   const notificationClasses =
     "relative grid size-12 shrink-0 place-items-center rounded-2xl bg-white/10 transition-colors hover:bg-white/20";
@@ -206,10 +213,15 @@ export default function AppHeader({
             <button
               type="button"
               onClick={onMenuClick}
-              aria-label="Open menu"
-              className="grid size-12 shrink-0 place-items-center rounded-2xl bg-white/10 transition-colors hover:bg-white/20"
+              aria-label={menuNotificationLabel}
+              className="relative grid size-12 shrink-0 place-items-center rounded-2xl bg-white/10 transition-colors hover:bg-white/20"
             >
               <Menu className="size-6" aria-hidden="true" />
+              {menuNotificationCount > 0 ? (
+                <span aria-hidden="true" className="absolute -right-1 -top-1 grid min-w-5 place-items-center rounded-full bg-error px-1 text-[10px] font-bold leading-none text-white">
+                  {menuNotificationCount > 9 ? "9+" : menuNotificationCount}
+                </span>
+              ) : null}
             </button>
           ) : null}
           {/*

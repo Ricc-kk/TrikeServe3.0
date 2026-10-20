@@ -1,0 +1,4 @@
+project_id = "trikeserve"
+
+[functions.clear-test-data]
+verify_jwt = false

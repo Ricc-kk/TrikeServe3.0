@@ -1010,7 +1010,14 @@ export default function ActiveRide() {
    * back through.
    */
   const uploadDeliveryProof = async () => {
-    if (!rideData?.orderId || !proofFile) return false;
+    if (!rideData?.orderId) {
+      setProofError('Could not identify this delivery order. Please reopen the delivery and try again.');
+      return false;
+    }
+    if (!proofFile) {
+      setProofError('Take a delivery photo before completing the delivery.');
+      return false;
+    }
 
     setIsUploadingProof(true);
     setProofError(null);
@@ -1044,9 +1051,16 @@ export default function ActiveRide() {
     }
   };
 
-  /** The handover photo is optional and must never block completing delivery. */
+  /** A delivery cannot be completed until its handover photo is attached. */
   const completeDeliveryWithProof = async () => {
-    if (proofFile) await uploadDeliveryProof();
+    if (isUploadingProof) return;
+    if (!proofFile) {
+      setProofError('Take a delivery photo before completing the delivery.');
+      return;
+    }
+
+    const uploaded = await uploadDeliveryProof();
+    if (!uploaded) return;
 
     setShowProofSheet(false);
     await completeRide();
@@ -1741,9 +1755,8 @@ export default function ActiveRide() {
         The customer is named rather than "the customer" -- if the photo comes out
         wrong they will want to know whose order to re-check.
 
-        Cancel is always available and never loses the ride: it only closes this
-        sheet. Forcing a photo would mean a rider with a broken camera cannot
-        deliver anything at all, which is worse than a delivery without a photo.
+        Cancel only closes this sheet. The delivery stays open until the required
+        handover photo has uploaded successfully.
       */}
       {showProofSheet && (
         <div
@@ -1760,9 +1773,9 @@ export default function ActiveRide() {
               <div>
                 <h2 className="text-lg font-bold text-[var(--ink)]">Handover photo</h2>
                 <p className="mt-1 text-sm text-[var(--muted-foreground)]">
-                  Take an optional photo of the food being handed over
+                  Take a photo of the food being handed over
                   {rideData?.customerName ? ` to ${rideData.customerName}` : ''}. It is
-                  kept on the order as proof of delivery. You can complete without a photo.
+                  kept on the order as proof of delivery. This photo is required to complete the delivery.
                 </p>
               </div>
               <button
@@ -1780,8 +1793,8 @@ export default function ActiveRide() {
 
             <ProofCapture
               mode="camera"
-              label="Delivery photo"
-              hint="The order, the customer, or both."
+              label="Delivery photo (required)"
+              hint="Take a clear photo of the order or handover."
               value={proofPreview}
               busy={isUploadingProof}
               error={proofError}

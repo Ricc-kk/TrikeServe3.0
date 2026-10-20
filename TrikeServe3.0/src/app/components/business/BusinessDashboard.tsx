@@ -647,6 +647,7 @@ const previousWindowWord = range === 'today' ? 'day' : range;
       header={
         <AppHeader
           onMenuClick={() => setIsMobileMenuOpen(true)}
+          menuNotificationCount={notifications.filter((n: any) => !n.read).length}
           notificationCount={notifications.filter((n: any) => !n.read).length}
           onNotificationsClick={() => setShowNotifications(true)}
           avatarSrc={restaurantLogo || undefined}

@@ -71,6 +71,7 @@ export default function AdminDashboard() {
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
   const [analyticsRefresh, setAnalyticsRefresh] = useState(0);
   const [toast, setToast] = useState<{ message: string; variant?: 'success' | 'error' | 'warning' } | null>(null);
+  const [clearingTestData, setClearingTestData] = useState(false);
 
   const notifications: any[] = [];
 
@@ -163,6 +164,79 @@ export default function AdminDashboard() {
       if (!loadUsersFromLocalStorage()) setLoadError('Account data could not be loaded. Try refreshing the overview.');
     } finally {
       setIsLoading(false);
+    }
+  };
+
+  const clearTestData = async (): Promise<boolean> => {
+    if (clearingTestData) return false;
+    setClearingTestData(true);
+
+    try {
+      const { data, error } = await supabase.functions.invoke<{
+        success: boolean;
+        deletedCounts: {
+          orders: number;
+          rideRequests: number;
+          sharedRides: number;
+          chatMessages: number;
+          chatConversations: number;
+          deliveryNotifications: number;
+          foodPackagePhotos: number;
+        };
+        errors: string[];
+      }>("clear-test-data", {
+        body: {
+          adminEmail: user?.email,
+          adminPassword: user?.password,
+        },
+      });
+
+      if (error) {
+        const status = (error.context as { status?: number } | undefined)?.status;
+        if (status === 404) {
+          throw new Error("The clear-test-data function is not deployed to Supabase yet. Deploy it, then try again.");
+        }
+        throw new Error(error.message || "Test data cleanup could not reach Supabase.");
+      }
+
+      if (!data?.deletedCounts) {
+        throw new Error("Test data cleanup returned an unexpected response.");
+      }
+
+      const expectedCounts = [
+        "orders",
+        "rideRequests",
+        "sharedRides",
+        "chatMessages",
+        "chatConversations",
+        "deliveryNotifications",
+        "foodPackagePhotos",
+      ] as const;
+      if (expectedCounts.some(key => typeof data.deletedCounts[key] !== "number")) {
+        throw new Error("Deploy the updated clear-test-data function before using this action.");
+      }
+
+      setAnalyticsRefresh(value => value + 1);
+      const counts = data.deletedCounts;
+      const summary = `Cleared ${counts.orders} food orders, ${counts.rideRequests} ride requests, ${counts.sharedRides} shared rides, ${counts.chatConversations} chat conversations, ${counts.chatMessages} chat messages, ${counts.deliveryNotifications} delivery notifications, and ${counts.foodPackagePhotos} food package photos.`;
+      const errors = data.errors ?? [];
+      if (!data.success || errors.length > 0) {
+        console.error("Some testing data could not be cleared:", errors);
+        setToast({ message: `${summary} Some items could not be removed: ${errors.slice(0, 2).join("; ")}`, variant: 'warning' });
+        return false;
+      }
+
+      setToast({ message: summary, variant: 'success' });
+      return true;
+    } catch (error) {
+      console.error("Could not clear testing data:", error);
+      setToast({
+        message: error instanceof Error ? error.message : 'Testing data could not be cleared. Please try again.',
+        variant: 'error',
+      });
+      return false;
+    } finally {
+      setClearingTestData(false);
     }
   };
 
@@ -417,6 +491,8 @@ export default function AdminDashboard() {
           refreshToken={analyticsRefresh}
           onApprove={handleApproveUser}
           onReject={handleRejectUser}
+          clearingTestData={clearingTestData}
+          onClearTestData={clearTestData}
         />
       ) : isRiderAdmin ? (
         <div className="@container mx-auto w-full max-w-[100rem] space-y-6 sm:space-y-8">

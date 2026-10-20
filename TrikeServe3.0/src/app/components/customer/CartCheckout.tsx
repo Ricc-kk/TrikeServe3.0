@@ -78,8 +78,8 @@ export default function CartCheckout() {
   const paymentMethod = 'gcash' as const;
 
   /*
-   * Payment proof: the screenshot of the GCash transfer the shop will check
-   * before it accepts the order.
+   * Required payment proof: the screenshot of the GCash transfer the shop will
+   * check before it accepts the order.
    *
    * Held as a File until the order exists, because the upload path is keyed by
    * order id and the id is only returned by the insert. Uploaded immediately
@@ -430,20 +430,12 @@ export default function CartCheckout() {
     // The quote already resolved the nearest route-serving terminal from the
     // restaurant pickup and the configured delivery distance rate.
     const resolvedTerminalId = deliveryQuote.terminalId;
-    /*
-     * Payment proof is optional for now.
-     *
-     * This used to block the order outright. That was the right default when the
-     * screenshot was the *only* thing telling a shop which orders had been paid,
-     * because an unverifiable order in the payment queue looks identical to a paid
-     * one. It also meant a customer who transferred from a phone that would not let
-     * them screenshot the receipt could not order at all, and blocking a sale over
-     * an attachment is a worse failure than a shop having to ask.
-     *
-     * The shop still gets told the difference: the order is placed without a proof
-     * and the shop's payment step stays available to them. Nothing about the order
-     * is lost, and an order can still have its proof added afterwards.
-     */
+    if (!proofFile) {
+      setProofError('Upload your GCash payment proof before placing the order.');
+      return;
+    }
+    setProofError(null);
+
     // Don't let a previous order's ids leak into this confirmation.
     setPlacedOrderNumber(null);
     setPlacedOrderId(null);
@@ -670,26 +662,10 @@ export default function CartCheckout() {
          * The upload path is keyed by order id, which only exists after the
          * insert -- so it could not be part of the insert itself.
          *
-         * The order is already saved at this point and stays saved. Failing the
-         * upload must not also fail the order: the customer would be left with a
-         * placed order they were told did not go through. So it is reported, the
-         * order carries on, and the shop sees the payment row with no screenshot
-         * and can ask for one.
-         *
-         * Only when a file was actually chosen. The proof is optional, so
-         * `proofFile` is null for every customer who skipped it -- which is most
-         * of them, and all of them on a phone that will not let them screenshot a
-         * receipt. Calling the upload anyway handed a null to a function typed for
-         * a File, which read `file.name` and threw a TypeError. That throw escaped
-         * this block to the catch at the end of the order, taking with it every
-         * line after it: `setPlacedOrderId`, the default-address save, the
-         * order-placed notification, the audit entry, the localStorage write that
-         * Activity reads, the `order_processing` row and the notification to the
-         * business. `setIsUploadingProof(false)` went with it, so the Place Order
-         * button stayed disabled reading "Uploading proof…" -- and the customer
-         * was told their order was placed, then "Track Order" dropped them on an
-         * Activity page that did not contain it. Nothing they did afterwards
-         * worked, because nothing after the throw had run.
+         * The customer must select a proof before submitting. The order id is
+         * needed for the storage path, so upload follows the insert; if storage
+         * is unavailable, keep the order and tell the customer where the receipt
+         * can be attached again.
          */
         if (savedOrder?.id && proofFile) {
           setIsUploadingProof(true);
@@ -760,47 +736,29 @@ export default function CartCheckout() {
         }
 
         /*
-         * Tell the customer their own order landed.
-         *
-         * Nothing wrote a notification on placement. `notifyDeliveryStatusChange`
-         * only fires from the driver's screen when a status changes, so the first
-         * row a customer ever saw was a status update about an order they had to
-         * already know about. Placing an order produced no notification at all.
-         *
-         * Written directly rather than through that helper because it recovers the
-         * order id by parsing it out of the pickup address text, which is not
-         * something to rely on when the id is already in hand.
-         *
-         * `order_id` is what makes the notification tappable — the notifications
-         * screen builds its destination from it — so it is the field that matters
-         * here, more than the wording.
-         *
-         * Fire and forget: the order is placed either way, and a failed
-         * notification must not turn a successful order into an error.
+         * Save one customer notification for this order. Passing the saved order
+         * id directly avoids trying to recover it from the delivery pickup text.
+         * The shared helper updates this row when the order status changes.
          */
-        void supabase
-          .from("delivery_notifications")
-          .insert([
-            {
-              recipient_id: user?.id ?? null,
-              order_id: savedOrder?.id ?? null,
-              order_number: order.orderNumber ?? null,
-              restaurant_name: order.restaurantName || null,
-              title: "🧾 Order placed",
-              message: order.restaurantName
-                ? `Your order at ${order.restaurantName} has been placed. We are checking your GCash payment.`
-                : "Your order has been placed. We are checking your GCash payment.",
-              type: "order",
-              read: false,
-              created_at: new Date().toISOString(),
-            },
-          ])
-          .then(({ error: notifError }) => {
+        if (user?.id && savedOrder?.id) {
+          void supabaseHelpers.upsertCustomerOrderNotification({
+            recipient_id: user.id,
+            order_id: savedOrder.id,
+            order_number: order.orderNumber ?? null,
+            restaurant_name: order.restaurantName || null,
+            title: "Order placed",
+            message: order.restaurantName
+              ? "Your order at " + order.restaurantName + " has been placed. We are checking your GCash payment."
+              : "Your order has been placed. We are checking your GCash payment.",
+            type: "order",
+            read: false,
+            created_at: new Date().toISOString(),
+          }).then(({ error: notifError }) => {
             if (notifError) {
               console.warn("[Cart] Order-placed notification failed:", notifError.message);
             }
           });
-
+        }
         logAudit({
           action: "place_order",
           actorRole: "customer",
@@ -892,7 +850,7 @@ export default function CartCheckout() {
   }
 
   return (
-    <div className="min-h-screen bg-surface pb-24">
+    <div className="min-h-screen bg-surface pb-48">
       <div className="sticky top-0 z-50 flex items-center gap-3 border-b border-[var(--border)] bg-surface px-5 py-4">
         <button
           type="button"
@@ -1208,8 +1166,8 @@ export default function CartCheckout() {
         <div className="pb-6">
           <h2 className="mb-3 text-lg font-bold text-[var(--ink)]">Payment</h2>
           <p className="mb-4 text-sm text-[var(--muted-foreground)]">
-            Pay the food by GCash now. The delivery fee is paid in cash to the
-            rider when they hand it over.
+            Send the food payment to the restaurant by GCash. Pay the delivery fee
+            separately in cash to your rider.
           </p>
 
           {/*
@@ -1220,21 +1178,19 @@ export default function CartCheckout() {
             this row has always looked like and a different treatment would read
             as "something else is available".
           */}
-          <div className="mb-4 flex w-full items-center justify-between rounded-xl border-2 border-[var(--success)] bg-[var(--success)]/5 p-4">
-            <div className="flex items-center gap-3">
-              <div className="grid size-10 place-items-center rounded-lg bg-[var(--success)]">
-                <span className="text-lg font-bold text-white">📱</span>
-              </div>
-              <div>
-                <span className="font-semibold text-[var(--ink)]">GCash</span>
-                <p className="text-xs text-[var(--muted-foreground)]">
-                  ₱{gcashAmount.toFixed(2)} for the food
-                </p>
-              </div>
-            </div>
-            <div className="grid size-6 place-items-center rounded-full bg-[var(--success)]">
-              <Check className="size-4 text-white" strokeWidth={3} />
-            </div>
+          <div className="mb-4 rounded-2xl border-2 border-[var(--success)] bg-[var(--success)]/10 p-4 sm:p-5">
+            <p className="text-xs font-extrabold uppercase tracking-wider text-[var(--success)]">
+              GCash to the restaurant
+            </p>
+            <p className="mt-1 text-sm font-semibold text-[var(--ink)]">
+              Transfer this amount only
+            </p>
+            <p className="mt-2 text-4xl font-black tabular-nums leading-none text-[var(--success)]">
+              ₱{gcashAmount.toFixed(2)}
+            </p>
+            <p className="mt-3 rounded-lg bg-surface/80 px-3 py-2 text-xs font-semibold text-[var(--ink)]">
+              Do not add the delivery fee. Pay that separately in cash to your rider.
+            </p>
           </div>
 
           {/*
@@ -1263,8 +1219,8 @@ export default function CartCheckout() {
 
           <ProofCapture
             mode="upload"
-            label="GCash payment proof (optional)"
-            hint="Screenshot of the transfer receipt. Attaching it lets the shop check your payment faster, but you can order without it."
+            label="GCash payment proof (required)"
+            hint="Upload a screenshot of the transfer receipt so the shop can verify your payment."
             value={proofPreview}
             busy={isUploadingProof}
             error={proofError}
@@ -1276,8 +1232,8 @@ export default function CartCheckout() {
           <p className="mt-3 flex items-start gap-2 rounded-xl bg-[var(--amber-soft)] px-3 py-2.5 text-xs text-[var(--amber-ink)]">
             <Info className="mt-0.5 size-3.5 shrink-0" aria-hidden="true" />
             <span>
-              Have ₱{cashOnDeliveryAmount.toFixed(2)} ready in cash for the
-              delivery fee. It is not part of your GCash transfer.
+              Pay ₱{cashOnDeliveryAmount.toFixed(2)} to the rider in cash. Do not
+              include it in the GCash amount above.
             </span>
           </p>
         </div>
@@ -1285,49 +1241,48 @@ export default function CartCheckout() {
         {/* Subtotal summary */}
         <div className="space-y-2 border-t border-[var(--border)] pt-4">
           <div className="flex items-center justify-between text-sm">
-            <span className="text-[var(--muted-foreground)]">Food subtotal</span>
+            <span className="text-[var(--muted-foreground)]">Food amount (GCash to restaurant)</span>
             <span className="font-semibold text-[var(--ink)]">
               ₱{subtotal.toFixed(2)}
             </span>
           </div>
           <div className="flex items-center justify-between text-sm">
-            <span className="text-[var(--muted-foreground)]">Delivery fee</span>
+            <span className="text-[var(--muted-foreground)]">Delivery fee (cash to rider)</span>
             <span className="font-semibold text-[var(--ink)]">
               ₱{deliveryFee.toFixed(2)}
             </span>
           </div>
-          {/* Both halves again, named by how they are paid. A single total is
-              still what the customer owes, but it is no longer a single
-              transfer, and the two numbers are worth stating separately here
-              where the transfer amount is being decided. */}
           <div className="flex items-center justify-between border-t border-dashed border-[var(--border)] pt-2 text-sm">
-            <span className="text-[var(--muted-foreground)]">Pay by GCash now</span>
-            <span className="font-bold text-[var(--success)]">
-              ₱{gcashAmount.toFixed(2)}
-            </span>
-          </div>
-          <div className="flex items-center justify-between text-sm">
-            <span className="text-[var(--muted-foreground)]">Cash to rider</span>
-            <span className="font-bold text-[var(--amber)]">
-              ₱{cashOnDeliveryAmount.toFixed(2)}
+            <span className="font-semibold text-[var(--ink)]">Order total (GCash + delivery cash)</span>
+            <span className="font-bold text-[var(--ink)]">
+              ₱{total.toFixed(2)}
             </span>
           </div>
         </div>
       </div>
 
-      {/* Fixed bottom: total and Place Order */}
-      <div className="fixed bottom-0 left-0 right-0 z-50 border-t-2 border-[var(--border)] bg-surface px-5 py-4">
-        <div className="mb-4 flex items-center justify-between">
-          <span className="text-lg font-bold text-[var(--ink)]">Total</span>
-          <span className="text-2xl font-bold text-[var(--ink)]">
-            ₱{total.toFixed(2)}
+      {/* Keep the GCash transfer amount prominent beside the sticky action. */}
+      <div className="fixed bottom-0 left-0 right-0 z-50 border-t-2 border-[var(--border)] bg-surface px-5 py-3 shadow-[0_-8px_24px_rgba(0,0,0,0.08)]">
+        <div className="mb-2 flex items-center justify-between gap-3 rounded-xl border border-[var(--success)]/40 bg-[var(--success)]/10 px-4 py-2.5">
+          <div className="min-w-0">
+            <p className="text-[11px] font-extrabold uppercase tracking-wide text-[var(--success)]">
+              Send to restaurant by GCash
+            </p>
+            <p className="text-xs text-[var(--muted-foreground)]">Transfer this amount only</p>
+          </div>
+          <span className="shrink-0 text-2xl font-black tabular-nums text-[var(--success)]">
+            ₱{gcashAmount.toFixed(2)}
           </span>
+        </div>
+        <div className="mb-3 flex items-center justify-between text-xs">
+          <span className="text-[var(--muted-foreground)]">Order total, including delivery cash</span>
+          <span className="font-semibold text-[var(--ink)]">₱{total.toFixed(2)}</span>
         </div>
         <button
           type="button"
           onClick={handlePlaceOrder}
           disabled={isUploadingProof || isDeliveryQuoteLoading}
-          className="w-full rounded-2xl bg-[var(--success)] py-4 font-bold text-white shadow-lg transition-all active:scale-95 disabled:opacity-60"
+          className="w-full rounded-2xl bg-[var(--success)] py-3.5 font-bold text-white shadow-lg transition-all active:scale-95 disabled:opacity-60"
         >
           {isUploadingProof ? 'Uploading proof…' : isDeliveryQuoteLoading ? 'Calculating delivery…' : 'Place Order'}
         </button>

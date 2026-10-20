@@ -6,7 +6,7 @@ import {
 import { Link, useLocation, useNavigate } from "react-router";
 import { Card } from "../ui/card";
 import { useAuth } from "../../contexts/AuthContext";
-import { supabase } from "../../../lib/supabase";
+import { supabase, supabaseHelpers } from "../../../lib/supabase";
 // JPEG bytes under a .jpg name — see the note in AdminShell.
 import TrikeServeLogo from "../../../assets/TRIKESERVE_logo.jpg";
 import TrimmedLogo from "../ui/TrimmedLogo";
@@ -23,6 +23,7 @@ export default function BusinessSidebar({ isMobileMenuOpen, setIsMobileMenuOpen,
   const navigate = useNavigate();
   const { user } = useAuth();
   const [pendingOrdersCount, setPendingOrdersCount] = useState(0);
+  const [unreadMessagesCount, setUnreadMessagesCount] = useState(0);
 
   // Load pending orders count from Supabase
   useEffect(() => {
@@ -31,6 +32,51 @@ export default function BusinessSidebar({ isMobileMenuOpen, setIsMobileMenuOpen,
     // Auto-refresh every 3 seconds
     const interval = setInterval(loadPendingOrdersCount, 3000);
     return () => clearInterval(interval);
+  }, [user?.id]);
+
+  // Keep a live unread badge beside Messages, like the existing order badge.
+  useEffect(() => {
+    const currentUserId = user?.id;
+    if (!currentUserId) {
+      setUnreadMessagesCount(0);
+      return;
+    }
+
+    let active = true;
+    const loadUnreadMessagesCount = async () => {
+      const { data, error } = await supabase
+        .from('chat_conversations')
+        .select('participant_a_id, participant_b_id, unread_count_a, unread_count_b')
+        .or(`participant_a_id.eq.${currentUserId},participant_b_id.eq.${currentUserId}`);
+
+      if (!active) return;
+      if (error) {
+        console.error('[BusinessSidebar] Error fetching unread messages:', error.message);
+        return;
+      }
+
+      const unread = (data ?? []).reduce((total, conversation) => {
+        const isParticipantA = conversation.participant_a_id === currentUserId;
+        const count = isParticipantA
+          ? conversation.unread_count_a
+          : conversation.unread_count_b;
+        return total + (Number(count) || 0);
+      }, 0);
+      setUnreadMessagesCount(unread);
+    };
+
+    void loadUnreadMessagesCount();
+    const unsubscribe = supabaseHelpers.subscribeToUserChatThreads(
+      currentUserId,
+      () => void loadUnreadMessagesCount(),
+    );
+    const interval = setInterval(() => void loadUnreadMessagesCount(), 5000);
+
+    return () => {
+      active = false;
+      clearInterval(interval);
+      unsubscribe();
+    };
   }, [user?.id]);
 
   useEffect(() => { setIsMobileMenuOpen(false); }, [location.pathname]);
@@ -149,6 +195,13 @@ export default function BusinessSidebar({ isMobileMenuOpen, setIsMobileMenuOpen,
                   {item.path === "/business/orders" && pendingOrdersCount > 0 && (
                     <div className="ml-auto w-6 h-6 bg-[var(--primary)] rounded-full flex items-center justify-center">
                       <span className="text-xs font-bold text-white">{pendingOrdersCount}</span>
+                    </div>
+                  )}
+                  {item.path === "/business/messages" && unreadMessagesCount > 0 && (
+                    <div className="ml-auto min-w-6 h-6 px-1 bg-[var(--error)] rounded-full flex items-center justify-center">
+                      <span className="text-xs font-bold text-white" aria-label={`${unreadMessagesCount} unread messages`}>
+                        {unreadMessagesCount > 99 ? '99+' : unreadMessagesCount}
+                      </span>
                     </div>
                   )}
               </Link>

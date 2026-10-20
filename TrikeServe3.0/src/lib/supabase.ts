@@ -2626,6 +2626,69 @@ export const supabaseHelpers = {
 
   // ---- Delivery notifications & business ratings ----
 
+  // Keep one customer notification row per order and refresh it as the order
+  // advances. Older duplicate rows are collapsed on the next status update.
+  async upsertCustomerOrderNotification(notification: {
+    recipient_id: string;
+    order_id?: string | null;
+    order_number?: string | null;
+    restaurant_name?: string | null;
+    title: string;
+    message: string;
+    type: string;
+    read: boolean;
+    created_at: string;
+  }) {
+    if (!notification.order_id) {
+      const { data, error } = await supabase
+        .from('delivery_notifications')
+        .insert([notification])
+        .select()
+        .single();
+      return { data, error };
+    }
+
+    const { data: existingRows, error: lookupError } = await supabase
+      .from('delivery_notifications')
+      .select('id')
+      .eq('recipient_id', notification.recipient_id)
+      .eq('order_id', notification.order_id)
+      .order('created_at', { ascending: false })
+      .limit(1000);
+
+    if (lookupError) return { data: null, error: lookupError };
+
+    if (existingRows?.length) {
+      const [current, ...duplicates] = existingRows;
+      const { data, error } = await supabase
+        .from('delivery_notifications')
+        .update(notification)
+        .eq('id', current.id)
+        .select()
+        .single();
+      if (error) return { data, error };
+
+      const duplicateIds = duplicates.map((row: any) => row.id);
+      if (duplicateIds.length) {
+        const { error: deleteError } = await supabase
+          .from('delivery_notifications')
+          .delete()
+          .eq('recipient_id', notification.recipient_id)
+          .eq('order_id', notification.order_id)
+          .in('id', duplicateIds);
+        if (deleteError) return { data, error: deleteError };
+      }
+      return { data, error: null };
+    }
+
+    const { data, error } = await supabase
+      .from('delivery_notifications')
+      .insert([notification])
+      .select()
+      .single();
+    return { data, error };
+  },
+
   // Parse the order id out of a delivery ride request's tagged pickup location:
   // `DELIVERY|ORDER_ID:<id>|ORDER_NO:<no>|<restaurant label>`
   parseOrderIdFromDeliveryPickup(pickupLocation?: string) {
@@ -2729,21 +2792,22 @@ export const supabaseHelpers = {
 
     const notifications: any[] = [];
     const stamp = new Date().toISOString();
+    let customerNotification: any = null;
 
     if (resolvedCustomerId) {
-      notifications.push({
+      customerNotification = {
         recipient_id: resolvedCustomerId,
         order_id: orderId || null,
         order_number: orderNumber || null,
         restaurant_name: restaurantName || null,
-        title: label.emoji + ' ' + label.title,
+        title: label.title,
         message: restaurantName
           ? `${label.message} (${restaurantName})`
           : label.message,
         type: 'delivery',
         read: false,
         created_at: stamp,
-      });
+      };
     }
 
     if (businessId) {
@@ -2769,14 +2833,23 @@ export const supabaseHelpers = {
       });
     }
 
-    if (notifications.length === 0) return { data: null, error: null };
+    let customerData: any = null;
+    if (customerNotification) {
+      const result = await this.upsertCustomerOrderNotification(customerNotification);
+      if (result.error) return result;
+      customerData = result.data;
+    }
+
+    if (notifications.length === 0) {
+      return { data: customerData ? [customerData] : null, error: null };
+    }
 
     const { data, error } = await supabase
       .from('delivery_notifications')
       .insert(notifications)
       .select();
 
-    return { data, error };
+    return { data: [...(customerData ? [customerData] : []), ...(data || [])], error };
   },
 
   // Notify the customer when the business updates an order's status
@@ -2859,22 +2932,17 @@ export const supabaseHelpers = {
       emoji: '🛍️',
     };
 
-    const { data, error } = await supabase
-      .from('delivery_notifications')
-      .insert([{
+    return this.upsertCustomerOrderNotification({
         recipient_id: customerId,
         order_id: orderId,
         order_number: number || null,
         restaurant_name: name || null,
-        title: `${label.emoji} ${label.title}`,
+        title: label.title,
         message: name ? `${label.message} (${name})` : label.message,
         type: 'order',
         read: false,
         created_at: new Date().toISOString(),
-      }])
-      .select();
-
-    return { data, error };
+      });
   },
 
   async notifyBusinessNewOrder(params: {
@@ -2948,6 +3016,15 @@ export const supabaseHelpers = {
       .eq('recipient_id', recipientId)
       .eq('read', false)
       .select();
+    return { data, error };
+  },
+
+  async clearDeliveryNotifications(recipientId: string) {
+    const { data, error } = await supabase
+      .from('delivery_notifications')
+      .delete()
+      .eq('recipient_id', recipientId)
+      .select('id');
     return { data, error };
   },
 
@@ -3112,29 +3189,83 @@ export const supabaseHelpers = {
     participantBAvatar?: string;
     subject?: string | null;
   }) {
-    const existing = await supabase
-      .from('chat_conversations')
-      .select('*')
-      .eq('thread_key', conversation.threadKey)
-      .maybeSingle();
+    const findExistingForPair = async () => {
+      const { data, error } = await supabase
+        .from('chat_conversations')
+        .select('*')
+        .or(`and(participant_a_id.eq.${conversation.participantAId},participant_b_id.eq.${conversation.participantBId}),and(participant_a_id.eq.${conversation.participantBId},participant_b_id.eq.${conversation.participantAId})`)
+        .order('updated_at', { ascending: false, nullsFirst: false })
+        .order('created_at', { ascending: false, nullsFirst: false });
 
-    if (existing.data) {
-      // Update participant names/avatars if provided and different from stored values
+      if (error) return { data: null, error };
+      const participantAId = conversation.participantAId.toLowerCase();
+      const participantBId = conversation.participantBId.toLowerCase();
+      const match = (data || []).find((candidate: any) => {
+        const candidateAId = String(candidate.participant_a_id || '').toLowerCase();
+        const candidateBId = String(candidate.participant_b_id || '').toLowerCase();
+        return (candidateAId === participantAId && candidateBId === participantBId) ||
+          (candidateAId === participantBId && candidateBId === participantAId);
+      });
+      return { data: match || null, error: null };
+    };
+
+    const updateExistingConversation = async (existing: any) => {
       const updates: Record<string, any> = {};
-      if (conversation.participantAName && existing.data.participant_a_name !== conversation.participantAName) {
-        updates.participant_a_name = conversation.participantAName;
+
+      const participants = [
+        {
+          id: conversation.participantAId,
+          role: conversation.participantARole,
+          name: conversation.participantAName,
+          avatar: conversation.participantAAvatar,
+        },
+        {
+          id: conversation.participantBId,
+          role: conversation.participantBRole,
+          name: conversation.participantBName,
+          avatar: conversation.participantBAvatar,
+        },
+      ];
+
+      for (const participant of participants) {
+        const side = String(existing.participant_a_id).toLowerCase() === participant.id.toLowerCase()
+          ? 'a'
+          : 'b';
+        const roleField = `participant_${side}_role`;
+        const nameField = `participant_${side}_name`;
+        const avatarField = `participant_${side}_avatar`;
+
+        if (participant.role && existing[roleField] !== participant.role) {
+          updates[roleField] = participant.role;
+        }
+        if (participant.name && existing[nameField] !== participant.name) {
+          updates[nameField] = participant.name;
+        }
+        if (participant.avatar && existing[avatarField] !== participant.avatar) {
+          updates[avatarField] = participant.avatar;
+        }
       }
-      if (conversation.participantBName && existing.data.participant_b_name !== conversation.participantBName) {
-        updates.participant_b_name = conversation.participantBName;
+
+      if (conversation.threadType && existing.thread_type !== conversation.threadType) {
+        updates.thread_type = conversation.threadType;
       }
-      if (conversation.participantAAvatar && existing.data.participant_a_avatar !== conversation.participantAAvatar) {
-        updates.participant_a_avatar = conversation.participantAAvatar;
+      if (conversation.contextType !== undefined) {
+        const contextType = conversation.contextType || null;
+        if (existing.context_type !== contextType) updates.context_type = contextType;
       }
-      if (conversation.participantBAvatar && existing.data.participant_b_avatar !== conversation.participantBAvatar) {
-        updates.participant_b_avatar = conversation.participantBAvatar;
+      if (conversation.contextId !== undefined || conversation.contextType !== undefined) {
+        const contextId = conversation.contextId || null;
+        if (existing.context_id !== contextId) updates.context_id = contextId;
       }
-      if (conversation.subject && existing.data.subject !== conversation.subject) {
-        updates.subject = conversation.subject;
+
+      const contextChanged =
+        ('context_type' in updates && updates.context_type !== existing.context_type) ||
+        ('context_id' in updates && updates.context_id !== existing.context_id);
+      const subject = conversation.subject === undefined
+        ? (contextChanged ? null : existing.subject)
+        : conversation.subject;
+      if (existing.subject !== subject) {
+        updates.subject = subject;
       }
 
       if (Object.keys(updates).length > 0) {
@@ -3142,14 +3273,18 @@ export const supabaseHelpers = {
         const { data: updated } = await supabase
           .from('chat_conversations')
           .update(updates)
-          .eq('id', existing.data.id)
+          .eq('id', existing.id)
           .select()
           .single();
-        return { data: updated || existing.data, error: null };
+        return { data: updated || existing, error: null };
       }
 
-      return { data: existing.data, error: existing.error };
-    }
+      return { data: existing, error: null };
+    };
+
+    const existing = await findExistingForPair();
+    if (existing.error) return existing;
+    if (existing.data) return updateExistingConversation(existing.data);
 
     const { data, error } = await supabase
       .from('chat_conversations')
@@ -3173,22 +3308,30 @@ export const supabaseHelpers = {
       .select()
       .single();
 
+    if (error) {
+      // Two participants may open a new chat at the same time. The pair-wide
+      // thread key makes their insert collide safely; resolve that race by
+      // loading and reusing the conversation that won.
+      const racedConversation = await findExistingForPair();
+      if (racedConversation.data) return updateExistingConversation(racedConversation.data);
+    }
+
     return { data, error };
   },
 
-  // Find an existing chat between two users (for a ride context if provided),
-  // otherwise create one. Used by the Message buttons on active ride driver
-  // cards so the customer lands in the same conversation the driver uses.
+  // Find or create the one persistent chat between two users. Ride context is
+  // saved as metadata and never creates a second conversation for the pair.
   async findOrCreateRideChat(params: {
     currentUserId: string;
     currentUserName?: string;
     currentUserRole?: string;
     peerId: string;
+    peerRole?: string;
     peerName?: string;
     peerAvatar?: string;
     contextId?: string;
   }) {
-    const { currentUserId, currentUserName, currentUserRole, peerId, peerName, peerAvatar, contextId } = params;
+    const { currentUserId, currentUserName, currentUserRole, peerId, peerRole, peerName, peerAvatar, contextId } = params;
 
     const threadKey = buildChatThreadKey({
       participantAId: currentUserId,
@@ -3196,25 +3339,6 @@ export const supabaseHelpers = {
       contextType: 'ride',
       contextId: contextId || null,
     });
-
-    // Reuse an existing conversation when possible (any context between the
-    // two users, preferring one tied to this ride).
-    const { data: existing, error: existingError } = await supabase
-      .from('chat_conversations')
-      .select('*')
-      .or(`participant_a_id.eq.${currentUserId},participant_b_id.eq.${currentUserId}`)
-      .or(`participant_a_id.eq.${peerId},participant_b_id.eq.${peerId}`)
-      .order('updated_at', { ascending: false });
-
-    if (!existingError && existing && existing.length > 0) {
-      const match = existing.find((c: any) =>
-        c.thread_key === threadKey ||
-        (c.context_id && contextId && c.context_id === contextId &&
-          ((c.participant_a_id === currentUserId && c.participant_b_id === peerId) ||
-           (c.participant_a_id === peerId && c.participant_b_id === currentUserId)))
-      );
-      if (match) return { data: match, error: null };
-    }
 
     return supabaseHelpers.ensureChatConversation({
       threadKey,
@@ -3224,7 +3348,7 @@ export const supabaseHelpers = {
       participantAId: currentUserId,
       participantBId: peerId,
       participantARole: currentUserRole || 'customer',
-      participantBRole: 'rider',
+      participantBRole: peerRole || (currentUserRole === 'rider' ? 'customer' : 'rider'),
       participantAName: currentUserName,
       participantBName: peerName,
       participantAAvatar: (currentUserName || '?')[0]?.toUpperCase() || '🙋',

@@ -1,10 +1,9 @@
-import { ArrowLeft, Bell, Home as HomeIcon, ShoppingCart, MessageCircle, ClipboardList, User, Package, Truck, CheckCircle, XCircle, AlertCircle, Gift, Star, Clock } from "lucide-react";
-import { Link, useNavigate } from "react-router";
+import { ArrowLeft, Bell, Trash2 } from "lucide-react";
+import { useNavigate } from "react-router";
 import { usePreviousPage } from "../../hooks/usePreviousPage";
 import { Card } from "../ui/card";
 import BottomNav from "../ui/BottomNav";
-import { useState, useEffect } from "react";
-import { useCart } from "../../contexts/CartContext";
+import { useState, useEffect, useRef } from "react";
 import { useAuth } from "../../contexts/AuthContext";
 import { supabaseHelpers } from "@/lib/supabase";
 
@@ -16,7 +15,6 @@ interface Notification {
   time: string;
   timestamp: number;
   unread: boolean;
-  icon: string;
   actionUrl?: string;
   orderId?: string;
 }
@@ -26,9 +24,12 @@ export default function Notifications() {
   // A bare navigate(-1) walks a cold deep link straight out of the app,
   // because there is no history entry before it to return to.
   const goBack = usePreviousPage("/customer");
-  const { getTotalItems } = useCart();
   const { user } = useAuth();
   const [notifications, setNotifications] = useState<Notification[]>([]);
+  const [isClearing, setIsClearing] = useState(false);
+  const [clearError, setClearError] = useState("");
+  const loadGenerationRef = useRef(0);
+  const isClearingRef = useRef(false);
   // Whether the first load has finished. Without it the screen rendered its
   // empty state immediately, and that empty state says "You're all caught up!"
   // -- which is a claim about the account, not about a request still in flight.
@@ -56,13 +57,14 @@ export default function Notifications() {
   // Re-runs when the signed-in user changes, so the list follows the account
   // instead of keeping the previous one's rows.
   useEffect(() => {
+    loadGenerationRef.current += 1;
     loadNotifications();
 
     // Poll for updates every 5 seconds
     const interval = setInterval(loadNotifications, 5000);
 
     return () => clearInterval(interval);
-  }, [userId]);
+  }, [userId, userEmail]);
 
   const loadNotifications = async () => {
     if (!userId || !userEmail) {
@@ -70,165 +72,162 @@ export default function Notifications() {
       setIsLoading(false);
       return;
     }
+    if (isClearingRef.current) return;
 
-    // Load saved notifications from localStorage
-    const savedNotifications = localStorage.getItem(`notifications_${userEmail}`);
-    let notificationsList: Notification[] = savedNotifications ? JSON.parse(savedNotifications) : [];
-
-    // Merge in database-driven delivery notifications (driver status updates)
-    // so they persist in the saved list instead of being re-added every poll.
-    {
-      const { data } = await supabaseHelpers.getDeliveryNotifications(userId);
-      const existingIds = new Set(notificationsList.map(n => n.id));
-      const dbNotifications: Notification[] = (data || []).map((n: any) => ({
-        id: `db-${n.id}`,
-        type: 'delivery',
-        title: n.title || 'Delivery update',
-        message: n.message || '',
-        time: formatTimeAgo(new Date(n.created_at).getTime()),
-        timestamp: new Date(n.created_at).getTime(),
-        unread: !n.read,
-        icon: '📦',
-        actionUrl: n.order_id ? `/customer/order-detail/${n.order_id}` : undefined,
-        orderId: n.order_id,
-      }));
-      const fresh = dbNotifications.filter(d => !existingIds.has(d.id));
-      if (fresh.length > 0) {
-        notificationsList = [...fresh, ...notificationsList];
-      } else {
-        // Keep saved read state in sync with the database (e.g. marked read
-        // from another tab), without re-adding or toggling anything.
-        const dbReadMap = new Map((data || []).map((n: any) => [`db-${n.id}`, !!n.read]));
-        notificationsList = notificationsList.map(n =>
-          dbReadMap.has(n.id) ? { ...n, unread: !dbReadMap.get(n.id) } : n
-        );
+    const loadGeneration = loadGenerationRef.current;
+    const clearedAt = Number(localStorage.getItem("notifications_cleared_" + userId) || 0);
+    const ordersData = localStorage.getItem("orders_" + userEmail);
+    const orders: any[] = ordersData ? JSON.parse(ordersData) : [];
+    const localOrderNumberById = new Map<string, string>();
+    orders.forEach((order) => {
+      if (order.id && order.orderNumber) {
+        localOrderNumberById.set(String(order.id), String(order.orderNumber));
       }
-      // Mark the database notifications as read (this page is the reader).
-      supabaseHelpers.markDeliveryNotificationsRead(userId);
-    }
+    });
+    const readLocalNotifications = (key: string): Notification[] => {
+      try {
+        const value = JSON.parse(localStorage.getItem(key) || "[]");
+        return Array.isArray(value) ? value : [];
+      } catch {
+        return [];
+      }
+    };
 
-    // Load orders
-    const ordersData = localStorage.getItem(`orders_${userEmail}`);
+    let notificationsList = [
+      ...readLocalNotifications("notifications_" + userEmail),
+      ...(userId !== userEmail ? readLocalNotifications("notifications_" + userId) : []),
+    ].filter((notification) =>
+      notification.id !== "welcome" && Number(notification.timestamp) > clearedAt
+    );
+
+    // Prefer the latest database status for each order, collapsing duplicate rows
+    // left by older versions into the same visible notification.
+    const { data } = await supabaseHelpers.getDeliveryNotifications(userId);
+    if (loadGeneration !== loadGenerationRef.current) return;
+
+    const latestDatabaseByOrder = new Map<string, Notification>();
+    const databaseOrderNumbers = new Set<string>();
+    const databaseWithoutOrder: Notification[] = [];
+    (data || []).forEach((row: any) => {
+      const timestamp = new Date(row.created_at).getTime();
+      if (!Number.isFinite(timestamp) || timestamp <= clearedAt) return;
+      if (row.order_id && row.order_number) databaseOrderNumbers.add(String(row.order_number));
+
+      const notification: Notification = {
+        id: row.order_id ? "order-" + row.order_id : "db-" + row.id,
+        type: row.type === "order" ? "order" : "delivery",
+        title: row.title || "Delivery update",
+        message: row.message || "",
+        time: formatTimeAgo(timestamp),
+        timestamp,
+        unread: !row.read,
+        actionUrl: row.order_id ? "/customer/order-detail/" + row.order_id : undefined,
+        orderId: row.order_id || undefined,
+      };
+
+      if (!notification.orderId) {
+        databaseWithoutOrder.push(notification);
+        return;
+      }
+      const current = latestDatabaseByOrder.get(notification.orderId);
+      if (!current || notification.timestamp > current.timestamp) {
+        latestDatabaseByOrder.set(notification.orderId, notification);
+      }
+    });
+
+    const databaseOrderIds = new Set(latestDatabaseByOrder.keys());
+    notificationsList = notificationsList.filter(
+      (notification) => {
+        if (!notification.orderId) return true;
+        const localOrderNumber = localOrderNumberById.get(notification.orderId);
+        return !databaseOrderIds.has(notification.orderId) &&
+          !(localOrderNumber && databaseOrderNumbers.has(localOrderNumber));
+      }
+    );
+    notificationsList.push(...databaseWithoutOrder, ...latestDatabaseByOrder.values());
+
+    // The database is authoritative for orders that have a server notification.
+    // Local order data fills gaps and updates one stable notification per order.
     if (ordersData) {
-      const orders = JSON.parse(ordersData);
-      
-      // Generate notifications for orders
       orders.forEach((order: any) => {
-        const orderTime = new Date(order.createdAt).getTime();
-        
-        // Check if notification already exists for this order
-        const existingNotification = notificationsList.find(n => 
-          n.orderId === order.id && n.type === 'order'
-        );
+        if (!order.id || databaseOrderIds.has(order.id) ||
+          (order.orderNumber && databaseOrderNumbers.has(String(order.orderNumber)))) return;
 
-        if (!existingNotification) {
-          // Create notification based on order status
-          let notification: Notification | null = null;
+        const createdAt = new Date(order.createdAt).getTime();
+        const updatedAt = new Date(order.updatedAt || order.statusUpdatedAt || order.createdAt).getTime();
+        const statusTime = Number.isFinite(updatedAt) ? updatedAt : createdAt;
+        if (!Number.isFinite(statusTime) || statusTime <= clearedAt) return;
 
-          if (order.status === 'delivered') {
-            notification = {
-              id: `order-${order.id}-delivered`,
-              orderId: order.id,
-              type: 'order',
-              title: 'Order Delivered!',
-              message: `Your order from ${order.restaurantName} has been delivered successfully. Enjoy your meal! 🍔`,
-              time: formatTimeAgo(orderTime),
-              timestamp: orderTime,
-              unread: true,
-              icon: '✅',
-              actionUrl: `/customer/order-detail/${order.id}`
-            };
-          } else if (order.status === 'on-the-way') {
-            notification = {
-              id: `order-${order.id}-on-the-way`,
-              orderId: order.id,
-              type: 'delivery',
-              title: 'Driver on the Way',
-              message: `Your driver is on the way with your order from ${order.restaurantName}. Order #${order.id.substring(0, 8)}`,
-              time: formatTimeAgo(orderTime),
-              timestamp: orderTime,
-              unread: true,
-              icon: '🛵',
-              actionUrl: `/customer/order-detail/${order.id}`
-            };
-          } else if (order.status === 'confirmed') {
-            notification = {
-              id: `order-${order.id}-ready-for-delivery`,
-              orderId: order.id,
-              type: 'delivery',
-              title: 'Order Ready for Delivery',
-              message: `Your order from ${order.restaurantName} is ready and waiting for a driver. Order #${order.id.substring(0, 8)}`,
-              time: formatTimeAgo(orderTime),
-              timestamp: orderTime,
-              unread: true,
-              icon: '📦',
-              actionUrl: `/customer/order-detail/${order.id}`
-            };
-          } else if (order.status === 'preparing') {
-            notification = {
-              id: `order-${order.id}-preparing`,
-              orderId: order.id,
-              type: 'order',
-              title: 'Order Confirmed',
-              message: `Your order from ${order.restaurantName} has been confirmed and is being prepared.`,
-              time: formatTimeAgo(orderTime),
-              timestamp: orderTime,
-              unread: true,
-              icon: '🍽️',
-              actionUrl: `/customer/order-detail/${order.id}`
-            };
-          } else if (order.status === 'pending') {
-            notification = {
-              id: `order-${order.id}-pending`,
-              orderId: order.id,
-              type: 'order',
-              title: 'Order Placed',
-              message: `Your order from ${order.restaurantName} has been placed successfully. Total: ₱${order.total.toFixed(2)}`,
-              time: formatTimeAgo(orderTime),
-              timestamp: orderTime,
-              unread: true,
-              icon: '🛒',
-              actionUrl: `/customer/order-detail/${order.id}`
-            };
-          }
-
-          if (notification) {
-            notificationsList.push(notification);
-          }
+        let title = "";
+        let message = "";
+        let type: Notification["type"] = "order";
+        if (order.status === "delivered") {
+          title = "Order Delivered";
+          message = "Your order from " + order.restaurantName + " has been delivered successfully. Enjoy your meal!";
+        } else if (order.status === "on-the-way") {
+          type = "delivery";
+          title = "Driver on the Way";
+          message = "Your driver is on the way with your order from " + order.restaurantName + ". Order #" + String(order.id).substring(0, 8);
+        } else if (order.status === "confirmed") {
+          type = "delivery";
+          title = "Order Ready for Delivery";
+          message = "Your order from " + order.restaurantName + " is ready and waiting for a driver. Order #" + String(order.id).substring(0, 8);
+        } else if (order.status === "preparing") {
+          title = "Order Confirmed";
+          message = "Your order from " + order.restaurantName + " has been confirmed and is being prepared.";
+        } else if (order.status === "pending") {
+          title = "Order Placed";
+          message = "Your order from " + order.restaurantName + " has been placed successfully. Total: \u20B1" + Number(order.total || 0).toFixed(2);
         }
+
+        if (!title) return;
+        const existingIndex = notificationsList.findIndex((notification) => notification.orderId === order.id);
+        const existing = existingIndex >= 0 ? notificationsList[existingIndex] : undefined;
+        const statusChanged = !existing || existing.title !== title || existing.message !== message;
+        const notification: Notification = {
+          id: "order-" + order.id,
+          orderId: order.id,
+          type,
+          title,
+          message,
+          time: formatTimeAgo(statusChanged ? Math.max(statusTime, Date.now()) : existing.timestamp),
+          timestamp: statusChanged ? Math.max(statusTime, Date.now()) : existing.timestamp,
+          unread: statusChanged ? true : existing.unread,
+          actionUrl: "/customer/order-detail/" + order.id,
+        };
+        if (existingIndex >= 0) notificationsList[existingIndex] = notification;
+        else notificationsList.push(notification);
       });
     }
 
-    // Add welcome notification if this is a new user (no notifications yet)
-    if (notificationsList.length === 0) {
-      const welcomeNotification: Notification = {
-        id: 'welcome',
-        type: 'system',
-        title: 'Welcome to TrikeServe!',
-        message: 'Thank you for joining TrikeServe. Start exploring restaurants and book rides in Gen T Deleon!',
-        time: 'Just now',
-        timestamp: Date.now(),
-        unread: false,
-        icon: '👋',
-      };
-      notificationsList.push(welcomeNotification);
-    }
+    // Deduplicate order records saved by older builds and drop legacy emoji icons.
+    const uniqueNotifications = new Map<string, Notification>();
+    notificationsList.forEach((notification) => {
+      const key = notification.orderId
+        ? "order:" + notification.orderId
+        : "notification:" + notification.id;
+      const existing = uniqueNotifications.get(key);
+      if (!existing || notification.timestamp >= existing.timestamp) {
+        uniqueNotifications.set(key, notification);
+      }
+    });
+    notificationsList = Array.from(uniqueNotifications.values())
+      .map((notification) => ({
+        ...notification,
+        title: cleanNotificationText(notification.title),
+        message: cleanNotificationText(notification.message),
+        time: formatTimeAgo(notification.timestamp),
+      }))
+      .sort((a, b) => b.timestamp - a.timestamp);
 
-    // Sort by timestamp (newest first)
-    notificationsList.sort((a, b) => b.timestamp - a.timestamp);
-
-    // Update time strings
-    notificationsList = notificationsList.map(n => ({
-      ...n,
-      time: formatTimeAgo(n.timestamp)
-    }));
-
-    // Save to localStorage and update the UI once.
-    localStorage.setItem(`notifications_${userEmail}`, JSON.stringify(notificationsList));
+    if (loadGeneration !== loadGenerationRef.current) return;
+    localStorage.setItem("notifications_" + userEmail, JSON.stringify(notificationsList));
     setNotifications(notificationsList);
     setIsLoading(false);
-  };
 
+    // This screen is the reader for database-backed delivery notifications.
+    supabaseHelpers.markDeliveryNotificationsRead(userId);
+  };
   const formatTimeAgo = (timestamp: number): string => {
     const now = Date.now();
     const diff = now - timestamp;
@@ -245,42 +244,53 @@ export default function Notifications() {
     return new Date(timestamp).toLocaleDateString();
   };
 
-  const getNotificationIcon = (type: string) => {
-    switch (type) {
-      case 'order':
-        return <Package className="w-5 h-5 text-[var(--primary)]" />;
-      case 'delivery':
-        return <Truck className="w-5 h-5 text-[var(--teal)]" />;
-      case 'ride':
-        return <Truck className="w-5 h-5 text-[var(--teal)]" />;
-      case 'system':
-        return <AlertCircle className="w-5 h-5 text-[var(--muted-foreground)]" />;
-      default:
-        return <Bell className="w-5 h-5 text-[var(--muted-foreground)]" />;
+  const cleanNotificationText = (value: string) => value
+    .replace(/\u00E2\u201A\u00B1/g, "\u20B1")
+    .replace(/(?:\u00F0\u0178|\u00E2\u0153|\u00E2\u009D|\u00E2\u2020|\u00EF\u00B8)[^\s]*/gu, "")
+    .replace(/[\p{Extended_Pictographic}\uFE0F\u200D]/gu, "")
+    .replace(/\s{2,}/g, " ")
+    .trim();
+
+  const clearNotifications = async () => {
+    if (!userId || !userEmail || isClearingRef.current) return;
+    loadGenerationRef.current += 1;
+    isClearingRef.current = true;
+    setIsClearing(true);
+    setClearError("");
+
+    const { error } = await supabaseHelpers.clearDeliveryNotifications(userId);
+    if (error) {
+      setClearError("Could not clear notifications. Please try again.");
+      isClearingRef.current = false;
+      setIsClearing(false);
+      return;
     }
+
+    const clearedAt = Date.now();
+    localStorage.setItem("notifications_cleared_" + userId, String(clearedAt));
+    localStorage.removeItem("notifications_" + userEmail);
+    localStorage.removeItem("notifications_" + userId);
+    setNotifications([]);
+    isClearingRef.current = false;
+    setIsClearing(false);
   };
 
-  const getNotificationBgColor = (type: string) => {
-    switch (type) {
-      case 'order':
-        return 'bg-[var(--error-soft)]';
-      case 'delivery':
-        return 'bg-[var(--success-soft)]';
-      case 'ride':
-        return 'bg-[var(--success-soft)]';
-      case 'system':
-        return 'bg-[var(--muted)]';
-      default:
-        return 'bg-[var(--muted)]';
+  const persistNotifications = (updatedNotifications: Notification[]) => {
+    setNotifications(updatedNotifications);
+    if (userEmail) {
+      localStorage.setItem("notifications_" + userEmail, JSON.stringify(updatedNotifications));
+    }
+    if (userId && userId !== userEmail) {
+      localStorage.setItem("notifications_" + userId, JSON.stringify(updatedNotifications));
     }
   };
 
   const markAllAsRead = () => {
-    setNotifications(notifications.map(n => ({ ...n, unread: false })));
+    persistNotifications(notifications.map(n => ({ ...n, unread: false })));
   };
 
   const markAsRead = (id: string) => {
-    setNotifications(notifications.map(n => 
+    persistNotifications(notifications.map(n =>
       n.id === id ? { ...n, unread: false } : n
     ));
   };
@@ -310,18 +320,36 @@ export default function Notifications() {
               )}
             </div>
           </div>
-          <button
-            onClick={markAllAsRead}
-            disabled={unreadCount === 0}
-            className={`px-4 py-2 rounded-full text-sm font-bold transition-all ${
-              unreadCount > 0
-                ? 'bg-white/20 backdrop-blur-sm text-white active:scale-95'
-                : 'bg-white/10 text-white/50 cursor-not-allowed'
-            }`}
-          >
-            Mark All Read
-          </button>
+          <div className="flex shrink-0 flex-col items-end gap-1.5">
+            <button
+              type="button"
+              onClick={markAllAsRead}
+              disabled={unreadCount === 0}
+              className={`rounded-full px-3 py-1.5 text-xs font-bold transition-all ${
+                unreadCount > 0
+                  ? 'bg-white/20 text-white active:scale-95'
+                  : 'bg-white/10 text-white/50 cursor-not-allowed'
+              }`}
+            >
+              Mark All Read
+            </button>
+            <button
+              type="button"
+              onClick={clearNotifications}
+              disabled={notifications.length === 0 || isClearing}
+              aria-label="Clear all notifications"
+              className={`flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-bold transition-all ${
+                notifications.length > 0 && !isClearing
+                  ? 'bg-white/20 text-white active:scale-95'
+                  : 'bg-white/10 text-white/50 cursor-not-allowed'
+              }`}
+            >
+              <Trash2 className="size-3.5" />
+              {isClearing ? 'Clearing...' : 'Clear All'}
+            </button>
+          </div>
         </div>
+        {clearError && <p role="alert" className="mt-2 text-right text-xs font-medium text-white">{clearError}</p>}
       </div>
 
       {/* Notifications List */}
@@ -367,11 +395,6 @@ export default function Notifications() {
               }`}
             >
               <div className="flex items-start gap-3">
-                {/* Icon */}
-                <div className={`flex size-14 shrink-0 items-center justify-center rounded-2xl ring-1 ring-black/5 dark:ring-white/10 ${getNotificationBgColor(notification.type)}`}>
-                  <span className="text-2xl">{notification.icon}</span>
-                </div>
-
                 {/* Content */}
                 <div className="flex-1 min-w-0">
                   <div className="mb-2 flex items-start justify-between gap-2">

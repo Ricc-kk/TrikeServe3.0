@@ -299,6 +299,19 @@ const DRIVER_STATUS_LABELS: { [key: string]: string } = {
   'completed': 'Completed',
 };
 
+const DELIVERY_DRIVER_STATUS_LABELS: { [key: string]: string } = {
+  'on-the-way': 'Heading to restaurant',
+  'arrived': 'At the restaurant',
+  'pickup': 'Heading to you',
+  'picked-up': 'Heading to you',
+  'drop-off': 'At your address',
+  'dropped-off': 'At your address',
+  'in-progress': 'Heading to you',
+  'payment': 'Awaiting payment',
+  'awaiting-payment': 'Awaiting payment',
+  'completed': 'Delivered',
+};
+
 const buildNavigationRouteOptions = (color: string, weight: number) => {
   const google = (window as any)?.google;
   const arrowPath = google?.maps?.SymbolPath?.FORWARD_CLOSED_ARROW;
@@ -3392,7 +3405,7 @@ const getPrice = () => {
                       {/* `aria-live="polite"` so a screen reader announces the change
                           when it happens, without interrupting whatever is being read.
                           The rings are decorative and hidden from the reader. */}
-                      {DRIVER_STATUS_LABELS[driverLiveStatus] && (
+                      {(isDeliveryRide ? DELIVERY_DRIVER_STATUS_LABELS : DRIVER_STATUS_LABELS)[driverLiveStatus] && (
                         /*
                           The status is a rounded pill with a wave sweeping across it,
                           rather than an icon beside the words. The wave is clipped by
@@ -3411,7 +3424,9 @@ const getPrice = () => {
                         >
                           <span aria-hidden="true" className="driver-status-wave pointer-events-none absolute inset-y-0 left-0 w-1/2" />
                           <span aria-hidden="true" className="driver-status-wave driver-status-wave--second pointer-events-none absolute inset-y-0 left-0 w-1/2" />
-                          <span className="relative truncate">{DRIVER_STATUS_LABELS[driverLiveStatus]}</span>
+                          <span className="relative truncate">
+                            {(isDeliveryRide ? DELIVERY_DRIVER_STATUS_LABELS : DRIVER_STATUS_LABELS)[driverLiveStatus]}
+                          </span>
                         </p>
                       )}
                     </div>
@@ -3431,16 +3446,17 @@ const getPrice = () => {
 
                 {/* Trip Info - compact */}
                 <div className="bg-[var(--muted)] rounded-xl p-3 mb-3 space-y-1.5">
-                  <div className="flex items-start gap-2">
-                    <div className="w-5 h-5 bg-[var(--ink-solid)] rounded-full flex items-center justify-center flex-shrink-0 mt-0.5">
-                      <div className="w-2 h-2 bg-surface rounded-full" />
+                  {!isDeliveryRide && (
+                    <div className="flex items-start gap-2">
+                      <div className="w-5 h-5 bg-[var(--ink-solid)] rounded-full flex items-center justify-center flex-shrink-0 mt-0.5">
+                        <div className="w-2 h-2 bg-surface rounded-full" />
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-[10px] text-[var(--muted-foreground)] font-semibold">Pickup</p>
+                        <p className="font-semibold text-xs text-[var(--ink)] truncate">{pickup}</p>
+                      </div>
                     </div>
-                    <div className="flex-1 min-w-0">
-                      <p className="text-[10px] text-[var(--muted-foreground)] font-semibold">Pickup</p>
-                      <p className="font-semibold text-xs text-[var(--ink)] truncate">{pickup}</p>
-                    </div>
-
-                  </div>
+                  )}
                   <div className="flex items-start gap-2">
                     <div className="w-5 h-5 bg-[var(--primary)] rounded-full flex items-center justify-center flex-shrink-0 mt-0.5">
                       <div className="w-2 h-2 bg-surface rounded-full" />

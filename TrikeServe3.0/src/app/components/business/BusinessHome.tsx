@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo, useRef } from "react";
-import { Store, Package, BarChart3, User, Plus, X, Image, Clock, Star, MapPin, BadgeCheck, Eye, EyeOff, Upload, ChevronRight, Settings, Camera, Check, Menu, Loader2, Mail, Phone, Truck, UtensilsCrossed, Wallet } from "lucide-react";
+import { Store, Package, BarChart3, User, Plus, X, Image, Clock, Star, MapPin, BadgeCheck, Eye, EyeOff, Upload, ChevronRight, Settings, Camera, Check, Loader2, Mail, Phone, Truck, UtensilsCrossed, Wallet } from "lucide-react";
 import { Link, useNavigate, useSearchParams } from "react-router";
 import { Card } from "../ui/card";
 import { Badge } from "../ui/badge";
@@ -7,6 +7,7 @@ import { Button } from "../ui/button";
 import { ImageWithFallback } from "../figma/ImageWithFallback";
 import StoreLogo from "../figma/StoreLogo";
 import BusinessSidebar from "./BusinessSidebar";
+import BusinessHamburgerButton from "./BusinessHamburgerButton";
 import BusinessMapSelector from "./BusinessMapSelector";
 import { useAuth } from "../../contexts/AuthContext";
 import { supabase } from "../../../utils/supabase";
@@ -1233,12 +1234,12 @@ const clearHours = () => {
         <div className="sticky top-0 z-50 border-b border-[var(--border)] bg-surface">
           <div className="mx-auto flex w-full max-w-[1400px] items-center gap-3 px-4 py-4 sm:px-6 lg:px-8">
             {/* Hamburger Menu - Mobile Only */}
-            <button
+            <BusinessHamburgerButton
               onClick={() => setIsMobileMenuOpen(true)}
-              aria-label="Open navigation" className="lg:hidden grid size-11 shrink-0 place-items-center hover:bg-[var(--muted)] rounded-xl transition-all"
-            >
-              <Menu className="w-6 h-6 text-[var(--ink)]" />
-            </button>
+              label="Open navigation"
+              className="lg:hidden grid size-11 shrink-0 place-items-center hover:bg-[var(--muted)] rounded-xl transition-all"
+              iconClassName="w-6 h-6 text-[var(--ink)]"
+            />
             <div>
               <h1 className="text-2xl font-extrabold tracking-tight text-[var(--ink)] sm:text-3xl">My Shop</h1>
               <p className="text-sm text-[var(--muted-foreground)]">Manage your store</p>

@@ -16,13 +16,17 @@ export interface ChatThreadKeyInput {
 }
 
 export function sortChatParticipants(aId: string, bId: string) {
-  return [aId, bId].sort();
+  return [aId.toLowerCase(), bId.toLowerCase()].sort();
 }
 
-export function buildChatThreadKey({ participantAId, participantBId, contextType = 'direct', contextId }: ChatThreadKeyInput) {
+/**
+ * There is one persistent direct conversation per pair of users. Ride/order
+ * context remains metadata on the conversation; it must not create another
+ * thread for the same two people.
+ */
+export function buildChatThreadKey({ participantAId, participantBId }: ChatThreadKeyInput) {
   const [first, second] = sortChatParticipants(participantAId, participantBId);
-  const suffix = contextId ? `:${contextId}` : '';
-  return `${contextType}:${first}:${second}${suffix}`;
+  return `direct:${first}:${second}`;
 }
 
 export function getPeerName(currentUserId: string, a: ChatUserRef | null, b: ChatUserRef | null) {

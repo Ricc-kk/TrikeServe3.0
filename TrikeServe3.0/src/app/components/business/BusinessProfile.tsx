@@ -1,11 +1,12 @@
 import {
-  ArrowLeft, Menu, Check, User, Mail, Phone, Store, MapPin, Save,
+  ArrowLeft, Check, User, Mail, Phone, Store, MapPin, Save,
   Loader2, Clock, X, AlertTriangle, Camera
 } from "lucide-react";
 import { useNavigate } from "react-router";
 import { usePreviousPage } from "../../hooks/usePreviousPage";
 import { useState, useRef } from "react";
 import BusinessSidebar from "./BusinessSidebar";
+import BusinessHamburgerButton from "./BusinessHamburgerButton";
 import BusinessMapSelector from "./BusinessMapSelector";
 import { useAuth } from "../../contexts/AuthContext";
 import { supabase } from "../../../utils/supabase";
@@ -179,13 +180,12 @@ export default function BusinessProfile() {
         <div className="border-b border-[var(--border)] bg-surface px-3 py-3 sm:px-5">
           <div className="flex items-center gap-2">
             {/* Keep the profile drawer navigation consistent at every width. */}
-            <button
+            <BusinessHamburgerButton
               onClick={() => setIsMobileMenuOpen(true)}
-              aria-label="Open business navigation"
+              label="Open business navigation"
               className="grid size-11 shrink-0 place-items-center rounded-xl hover:bg-[var(--muted)]"
-            >
-              <Menu className="size-5 text-[var(--ink)]" />
-            </button>
+              iconClassName="size-5 text-[var(--ink)]"
+            />
 
             {/* Back Button */}
             <button

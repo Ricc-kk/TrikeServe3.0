@@ -1,10 +1,11 @@
-import { Store, Package, Clock, User, ChevronRight, LogOut, ArrowLeft, Menu, Shield, Bell, HelpCircle, CreditCard, Pencil, Mail, Phone, MapPin } from "lucide-react";
+import { Store, Package, Clock, User, ChevronRight, LogOut, ArrowLeft, Shield, Bell, HelpCircle, CreditCard, Pencil, Mail, Phone, MapPin } from "lucide-react";
 import { Link, useNavigate } from "react-router";
 import { Card } from "../ui/card";
 import GoodbyeOverlay from "../ui/GoodbyeOverlay";
 import { Badge } from "../ui/badge";
 import { useState, useEffect } from "react";
 import BusinessSidebar from "./BusinessSidebar";
+import BusinessHamburgerButton from "./BusinessHamburgerButton";
 import { useAuth } from "../../contexts/AuthContext";
 import { useRestaurantProfile } from "@/lib/restaurantProfile";
 import { supabase } from "../../../lib/supabase";
@@ -62,12 +63,12 @@ export default function BusinessAccount() {
         <div className="border-b border-[var(--border)] bg-surface">
           <div className="mx-auto flex w-full max-w-[1400px] items-center gap-3 px-4 py-4 sm:px-6 lg:px-8 lg:py-5">
             {/* Hamburger Menu - Mobile Only */}
-            <button
+            <BusinessHamburgerButton
               onClick={() => setIsMobileMenuOpen(true)}
-              aria-label="Open navigation" className="lg:hidden grid size-11 shrink-0 place-items-center rounded-xl hover:bg-soft"
-            >
-              <Menu className="w-5 h-5 text-[var(--ink)]" />
-            </button>
+              label="Open navigation"
+              className="lg:hidden grid size-11 shrink-0 place-items-center rounded-xl hover:bg-soft"
+              iconClassName="w-5 h-5 text-[var(--ink)]"
+            />
             
             <div className="min-w-0 flex-1 basis-20">
               <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-[var(--muted-foreground)]">Business workspace</p>

@@ -6,6 +6,7 @@ import { FavoritesProvider } from "../contexts/FavoritesContext";
 import { NotificationProvider, useNotification } from "../contexts/NotificationContext";
 import Toast from "./ui/Toast";
 import LocationPermissionPrompt from "./LocationPermissionPrompt";
+import BusinessScrollBehavior from "./business/BusinessScrollBehavior";
 
 function NotificationToasts() {
   const { notifications, removeNotification } = useNotification();
@@ -34,6 +35,7 @@ export default function Root() {
             <NotificationProvider>
               <NotificationToasts />
               <LocationPermissionPrompt />
+              <BusinessScrollBehavior />
               <div className="min-h-screen">
                 <Outlet />
               </div>

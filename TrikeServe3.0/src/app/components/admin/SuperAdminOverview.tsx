@@ -1,8 +1,9 @@
 import { useState } from "react";
-import { ArrowDown, ArrowRight, CheckCircle, ClipboardCheck, Clock3, MapPin, ShieldCheck, Store, Users, XCircle, type LucideIcon } from "lucide-react";
+import { ArrowDown, ArrowRight, CheckCircle, ClipboardCheck, Clock3, MapPin, ShieldCheck, Store, Trash2, Users, XCircle, type LucideIcon } from "lucide-react";
 import { Link } from "react-router";
 
 import { Card } from "../ui/card";
+import ConfirmationModal from "../ui/confirmation-modal";
 import { TerminalIconGlyph } from "../ui/TerminalIcon";
 import AdminAnalytics from "./AdminAnalytics";
 
@@ -33,6 +34,8 @@ type SuperAdminOverviewProps = {
   refreshToken: number;
   onApprove: (id: string) => void;
   onReject: (id: string) => void;
+  clearingTestData: boolean;
+  onClearTestData: () => Promise<boolean>;
 };
 
 const METRICS: {
@@ -57,11 +60,18 @@ const SHORTCUTS = [
 /** Account actions retain the page's existing confirmation flow. */
 export default function SuperAdminOverview({
   stats, pending, loading, error, lastUpdated, refreshToken, onApprove, onReject,
+  clearingTestData, onClearTestData,
 }: SuperAdminOverviewProps) {
   const [showAllPending, setShowAllPending] = useState(false);
+  const [showClearTestDataConfirmation, setShowClearTestDataConfirmation] = useState(false);
   const hasData = lastUpdated !== null;
   const firstLoad = loading && !hasData;
   const shown = showAllPending ? pending : pending.slice(0, 3);
+
+  const confirmClearTestData = async () => {
+    const completed = await onClearTestData();
+    if (completed) setShowClearTestDataConfirmation(false);
+  };
 
   return (
     <div className="mx-auto w-full max-w-[100rem] space-y-6 sm:space-y-8">
@@ -204,6 +214,43 @@ export default function SuperAdminOverview({
           ))}
         </div>
       </section>
+
+      <section aria-labelledby="overview-test-data-title" className="rounded-3xl border border-[var(--amber)]/35 bg-[var(--amber-soft)] p-4 sm:p-5">
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex min-w-0 items-start gap-3">
+            <span className="grid size-10 shrink-0 place-items-center rounded-xl bg-card text-[var(--amber-ink)]">
+              <Trash2 className="size-5" aria-hidden="true" />
+            </span>
+            <div className="min-w-0">
+              <h2 id="overview-test-data-title" className="text-sm font-bold text-[var(--ink)]">Temporary testing tool</h2>
+              <p className="mt-1 max-w-3xl text-xs leading-relaxed text-[var(--muted-foreground)]">
+                Permanently delete all food orders; pending, completed, and cancelled ride requests; all shared ride lobby records; every chat conversation and message; and all delivery notifications. Matching food package photos are removed from storage too.
+              </p>
+            </div>
+          </div>
+          <button
+            type="button"
+            disabled={clearingTestData}
+            onClick={() => setShowClearTestDataConfirmation(true)}
+            className="inline-flex min-h-11 shrink-0 items-center justify-center gap-2 rounded-xl bg-[var(--error)] px-4 text-sm font-bold text-white transition-opacity hover:opacity-90 disabled:cursor-wait disabled:opacity-60"
+          >
+            <Trash2 className="size-4" aria-hidden="true" />
+            Clear test data
+          </button>
+        </div>
+      </section>
+
+      <ConfirmationModal
+        isOpen={showClearTestDataConfirmation}
+        onCancel={() => setShowClearTestDataConfirmation(false)}
+        onConfirm={() => { void confirmClearTestData(); }}
+        title="Clear testing data?"
+        message="This permanently deletes every food order, pending/completed/cancelled ride request, shared ride lobby record, chat conversation, chat message, and delivery notification. It also removes restaurant package photo files attached to those food orders from storage."
+        confirmLabel="Clear test data"
+        isConfirming={clearingTestData}
+        confirmingLabel="Clearing data..."
+        zIndexClassName="z-[2300]"
+      />
     </div>
   );
 }

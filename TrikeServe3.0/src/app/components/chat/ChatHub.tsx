@@ -201,12 +201,10 @@ export default function ChatHub({
       /**
        * One card per person, newest thread wins.
        *
-       * `thread_key` includes the context id, so the same two people get a fresh
-       * conversation per ride or per order. The list then showed the same driver
-       * three times over, one card per trip -- unread buried among near-duplicates
-       * and the inbox growing without bound. Collapse to the most recent thread
-       * per peer, summing unread across all of theirs so collapsing never hides a
-       * message.
+       * Older rows may still exist from when thread keys were scoped to a ride
+       * or order. Keep those histories collapsed into the newest thread per
+       * peer, and sum unread counts from the older rows so a legacy message is
+       * never hidden.
        */
       const unreadOf = (c: any) =>
         c.participant_a_id === user.id ? c.unread_count_a || 0 : c.unread_count_b || 0;
@@ -541,6 +539,9 @@ function getConversationPeer(conversation: ChatConversation) {
       if (messageInputRef.current) messageInputRef.current.style.height = '48px';
       await loadMessages(activeConversation.id);
       await loadInbox();
+      // Keep the business conversation one tap away as a floating chat head
+      // after sending, so the owner can return to the rest of the workspace.
+      if (businessLayout) openChatHead(activeConversation);
     } catch (error) {
       console.error('[ChatHub] Unexpected send failure:', error);
       alert('Message failed to send. Please try again.');

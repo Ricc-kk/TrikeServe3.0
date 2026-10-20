@@ -68,6 +68,32 @@ html, body {
   display: none;
 }
 
+/* The business workspace uses mouse dragging and touch panning instead. */
+html.business-scroll-mode,
+html.business-scroll-mode * {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+html.business-scroll-mode {
+  cursor: grab;
+}
+
+html.business-scroll-mode::-webkit-scrollbar,
+html.business-scroll-mode *::-webkit-scrollbar {
+  display: none !important;
+}
+
+html.business-scroll-mode [data-business-scroll-target] {
+  cursor: grab;
+}
+
+html.business-scroll-mode.business-scroll-dragging,
+html.business-scroll-mode.business-scroll-dragging * {
+  cursor: grabbing !important;
+  user-select: none !important;
+}
+
 /* Animation for slide down */
 @keyframes slideDown {
   from {

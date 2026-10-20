@@ -1,11 +1,12 @@
 import { useState, useEffect, useMemo, useRef } from "react";
-import { Store, Package, Clock, User, Plus, Edit2, Image as ImageIcon, X, Search, ChevronRight, Eye, EyeOff, Trash2, Check, BarChart3, Camera, Upload, TrendingUp, Star, Award, Menu, Settings, Save, AlertTriangle } from "lucide-react";
+import { Store, Package, Clock, User, Plus, Edit2, Image as ImageIcon, X, Search, ChevronRight, Eye, EyeOff, Trash2, Check, BarChart3, Camera, Upload, TrendingUp, Star, Award, Settings, Save, AlertTriangle } from "lucide-react";
 import { Link, useBlocker } from "react-router";
 import { Card } from "../ui/card";
 import { Badge } from "../ui/badge";
 import { Button } from "../ui/button";
 import { ImageWithFallback } from "../figma/ImageWithFallback";
 import BusinessSidebar from "./BusinessSidebar";
+import BusinessHamburgerButton from "./BusinessHamburgerButton";
 import BusinessPageIntro from "./BusinessPageIntro";
 import { useMediaQuery } from "../../hooks/useMediaQuery";
 import { useRestaurantProfile } from "@/lib/restaurantProfile";
@@ -1726,6 +1727,7 @@ const addSection = async () => {
 
     return (
       <div
+        data-business-no-scroll-drag="true"
         ref={(el) => {
           if (el) rowEls.current.set(key, el);
           else rowEls.current.delete(key);
@@ -2175,13 +2177,12 @@ const addSection = async () => {
           <div className="min-h-screen">
             <header className="bg-surface border-b border-[var(--border)] px-3 py-4 lg:px-5">
               <div className="flex items-center gap-3">
-                <button
+                <BusinessHamburgerButton
                   onClick={() => setIsMobileMenuOpen(true)}
+                  label="Open menu"
                   className="lg:hidden grid size-11 flex-shrink-0 place-items-center rounded-xl hover:bg-[var(--muted)]"
-                  aria-label="Open menu"
-                >
-                  <Menu className="w-5 h-5 text-[var(--ink)]" />
-                </button>
+                  iconClassName="w-5 h-5 text-[var(--ink)]"
+                />
                 <h1 className="text-lg lg:text-2xl font-extrabold tracking-tight text-[var(--ink)]">
                   Products
                 </h1>
