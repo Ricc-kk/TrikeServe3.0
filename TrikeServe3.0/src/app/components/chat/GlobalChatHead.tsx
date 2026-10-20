@@ -29,6 +29,17 @@ function unreadCount(conversation: ChatConversation, userId: string) {
     : conversation.unread_count_b || 0;
 }
 
+function peerDisplayName(name: string | null | undefined, role: string | null | undefined) {
+  const savedName = name?.trim();
+  if (savedName) return savedName;
+  switch (role) {
+    case 'business': return 'Restaurant';
+    case 'rider': return 'Driver';
+    case 'customer': return 'Customer';
+    default: return 'User';
+  }
+}
+
 export default function GlobalChatHead() {
   const { user, isLoading } = useAuth();
   const { localHeadIds, openedConversationId, toggleChatOverlay, closeChatOverlay } = useChatHeadVisibility();
@@ -154,7 +165,10 @@ export default function GlobalChatHead() {
     : null;
   const peerIsA = conversation ? conversation.participant_a_id !== user.id : false;
   const peerName = conversation
-    ? peerIsA ? conversation.participant_a_name : conversation.participant_b_name
+    ? peerDisplayName(
+        peerIsA ? conversation.participant_a_name : conversation.participant_b_name,
+        peerIsA ? conversation.participant_a_role : conversation.participant_b_role,
+      )
     : 'Messages';
   const peerAvatar = conversation
     ? peerIsA ? conversation.participant_a_avatar : conversation.participant_b_avatar
@@ -164,7 +178,10 @@ export default function GlobalChatHead() {
     return {
       id: item.id,
       peerAvatar: peerIsA ? item.participant_a_avatar : item.participant_b_avatar,
-      peerLabel: (peerIsA ? item.participant_a_name : item.participant_b_name) || 'your conversation',
+      peerLabel: peerDisplayName(
+        peerIsA ? item.participant_a_name : item.participant_b_name,
+        peerIsA ? item.participant_a_role : item.participant_b_role,
+      ),
       unread: unreadCount(item, user.id),
       onOpen: () => toggleChatOverlay(item.id),
     };
@@ -176,10 +193,11 @@ export default function GlobalChatHead() {
         isGlobal
         hidden={
           Boolean(conversation && localHeadIds.includes(conversation.id)) ||
+          Boolean(openedConversationId) ||
           (isOnMessagesPage && isCurrentThread)
         }
         storageKey={`trikeserve_global_chat_head_pos_${user.role}`}
-        initialPlacement="top-right"
+        initialPlacement="center-right"
         headId={conversation?.id || 'messages'}
         peerAvatar={peerAvatar}
         peerIsMessages={!conversation}
@@ -204,14 +222,14 @@ export default function GlobalChatHead() {
               conversationId={conversation.id}
               peerId={peerId}
               currentUserId={user.id}
-              peerName={peerName || 'Conversation'}
+              peerName={peerDisplayName(peerName, peerRole)}
               peerAvatar={peerAvatar}
               peerRole={peerRole as 'customer' | 'business' | 'rider'}
               senderRole={user.role as 'customer' | 'business' | 'rider'}
               senderName={user.name || 'User'}
               receiverRole={peerRole as 'customer' | 'business' | 'rider'}
               onClose={closeChatOverlay}
-              zIndexClass="z-[2300]"
+              zIndexClass="z-[10001]"
             />
           );
         })()

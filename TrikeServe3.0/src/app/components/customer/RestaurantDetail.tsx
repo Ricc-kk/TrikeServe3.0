@@ -335,7 +335,9 @@ export default function RestaurantDetail() {
         } else {
           // Fallback: Extract unique categories from menu items
           const categoriesSet = new Set(
-            (menuItems || []).map((item: any) => item.category)
+            (menuItems || [])
+              .map((item: any) => typeof item.category === "string" ? item.category.trim() : "")
+              .filter(Boolean)
           );
           categories = [
             { id: "all", name: "All Items" },
@@ -457,86 +459,83 @@ export default function RestaurantDetail() {
     loadRestaurantData();
   }, [restaurantId, restaurantName, adminDeliveryFee]);
 
-  // Real-time subscription to categories changes
+  // Real-time updates for the shop-defined categories/headings customers filter by.
   useEffect(() => {
     if (!restaurantId) return;
 
-    console.log('[RestaurantDetail] Setting up real-time categories subscription');
+    console.log('[RestaurantDetail] Setting up real-time shop category subscription');
 
-    // Subscribe to categories table changes
+    const reloadShopCategories = async () => {
+      try {
+        const [categoriesResult, sectionsResult] = await Promise.all([
+          supabase
+            .from('categories')
+            .select('*')
+            .eq('restaurant_id', restaurantId),
+          supabase
+            .from('menu_sections')
+            .select('id, name, sort_order')
+            .eq('restaurant_id', restaurantId)
+            .order('sort_order', { ascending: true }),
+        ]);
+
+        setRestaurantData((current) => {
+          if (!current) return current;
+
+          const categories = categoriesResult.data
+            ? [
+                { id: "all", name: "All Items" },
+                ...categoriesResult.data.map((category: any) => ({
+                  id: category.id,
+                  name: category.name,
+                })),
+              ]
+            : current.categories;
+          const menuSections = sectionsResult.data
+            ? sectionsResult.data.map((section: any) => ({
+                id: section.id,
+                name: section.name,
+                sortOrder: section.sort_order ?? 0,
+              }))
+            : current.menuSections;
+
+          return { ...current, categories, menuSections };
+        });
+        console.log('[RestaurantDetail] Shop categories updated in real time');
+      } catch (error) {
+        console.error('[RestaurantDetail] Error reloading shop categories:', error);
+      }
+    };
+
     const subscription = supabase
-      .channel(`categories-${restaurantId}`)
+      .channel(`shop-categories-${restaurantId}`)
       .on(
         'postgres_changes',
         {
-          event: '*', // Listen to INSERT, UPDATE, DELETE
+          event: '*',
           schema: 'public',
           table: 'categories',
-          filter: `restaurant_id=eq.${restaurantId}`
+          filter: `restaurant_id=eq.${restaurantId}`,
         },
-        (payload) => {
-          console.log('[RestaurantDetail] Categories changed:', payload);
-
-          // Reload categories when they change
-          const reloadCategories = async () => {
-            try {
-              const { data: categoriesData } = await supabase
-                .from('categories')
-                .select('*')
-                .eq('restaurant_id', restaurantId);
-
-              if (restaurantData && categoriesData) {
-                // Build new categories list
-                let categories = [{ id: "all", name: "All Items" }];
-
-                if (categoriesData.length > 0) {
-                  categories = [
-                    { id: "all", name: "All Items" },
-                    ...categoriesData.map((cat: any) => ({
-                      id: cat.id,
-                      name: cat.name
-                    }))
-                  ];
-                }
-
-                // Sections are loaded here too rather than blanked: a shop
-                // renaming a category would otherwise wipe the headings off
-                // every customer's open storefront for as long as the page
-                // stayed mounted.
-                const { data: sectionsData } = await supabase
-                  .from('menu_sections')
-                  .select('id, name, sort_order')
-                  .eq('restaurant_id', restaurantId)
-                  .order('sort_order', { ascending: true });
-
-                // Update restaurant data with new categories
-                setRestaurantData({
-                  ...restaurantData,
-                  categories,
-                  menuSections: (sectionsData || []).map((section: any) => ({
-                    id: section.id,
-                    name: section.name,
-                    sortOrder: section.sort_order ?? 0,
-                  })),
-                });
-
-                console.log('[RestaurantDetail] Categories updated in real-time');
-              }
-            } catch (error) {
-              console.error('[RestaurantDetail] Error reloading categories:', error);
-            }
-          };
-
-          reloadCategories();
-        }
+        () => void reloadShopCategories(),
+      )
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'menu_sections',
+          filter: `restaurant_id=eq.${restaurantId}`,
+        },
+        () => void reloadShopCategories(),
       )
       .subscribe();
 
-  return () => {
-      console.log('[RestaurantDetail] Cleaning up categories subscription');
+    return () => {
+      console.log('[RestaurantDetail] Cleaning up shop category subscription');
       supabase.removeChannel(subscription);
     };
-  }, [restaurantId, restaurantData]);
+  }, [restaurantId]);
 
   // Real-time subscription to menu items changes
   useEffect(() => {
@@ -755,8 +754,23 @@ customizationGroups: parseChoiceGroups(item.customization_groups).filter(
      );
    };
 
+  // Businesses create customer-facing menu categories in menu_sections. Keep
+  // the older categories table as a fallback for restaurants that have not
+  // moved their menu to sections yet.
+  const menuSections = restaurantData?.menuSections ?? [];
+  const filterCategories = menuSections.length > 0
+    ? menuSections
+    : restaurantData?.categories.filter(({ id, name }) => {
+        const normalizedName = String(name || "").trim().toLowerCase();
+        return String(id || "").toLowerCase() !== "all" && normalizedName !== "all items";
+      }) ?? [];
+
   const filteredItems = restaurantData?.menuItems.filter(item => {
-    const matchesCategory = selectedCategory === "all" || item.category === selectedCategory;
+    const matchesCategory = selectedCategory === "all" || (
+      menuSections.length > 0
+        ? item.sectionId === selectedCategory
+        : item.category === selectedCategory
+    );
     const matchesSearch = searchQuery === "" || 
       item.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
       item.description.toLowerCase().includes(searchQuery.toLowerCase());
@@ -767,15 +781,7 @@ customizationGroups: parseChoiceGroups(item.customization_groups).filter(
     return matchesCategory && matchesSearch && isAvailable;
   }) || [];
 
-  const selectedCategoryName = restaurantData?.categories.find(cat => cat.id === selectedCategory)?.name || "All Items";
-  const visibleCategories = restaurantData?.categories.filter(({ id, name }) => {
-    const normalizedName = name.trim().toLowerCase();
-    return id !== "all" && normalizedName !== "all items" && normalizedName !== "silog";
-  }) ?? [];
-
-  // The shop's own headings, in the order it set them. Empty for a shop that
-  // has not created any, which is every shop until ADD_MENU_SECTIONS.sql runs.
-  const menuSections = restaurantData?.menuSections ?? [];
+  const selectedCategoryName = filterCategories.find((category) => category.id === selectedCategory)?.name || "All Items";
 
   const sectionGroups = menuSections
     .map((section) => ({
@@ -1048,7 +1054,7 @@ if (unfiledItems.length > 0) sectionGroups.push({ id: "__unfiled", name: "More",
         <div className="px-5 py-4 space-y-3">
           {/* Category Pills */}
           <div className="flex gap-2 overflow-x-auto pb-2 scrollbar-hide">
-            {visibleCategories.map((category) => (
+            {filterCategories.map((category) => (
               <button
                 key={category.id}
                 onClick={() => setSelectedCategory(category.id)}

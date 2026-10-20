@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
 import { useNavigate, useParams, useLocation } from 'react-router';
-import { ArrowLeft, Camera, ChevronRight, Flag, ImagePlus, MessageCircle, MoreVertical, Send, Trash2, X } from 'lucide-react';
+import { ArrowLeft, ArrowLeftRight, ArrowRight, Camera, ChevronRight, Flag, ImagePlus, MessageCircle, MessagesSquare, MoreVertical, Send, Trash2, X } from 'lucide-react';
 import { Button } from '../ui/button';
 import FloatingChatHead from '../ui/FloatingChatHead';
 import { Card } from '../ui/card';
@@ -127,8 +127,10 @@ export default function ChatHub({
   const [attachmentControlsOpen, setAttachmentControlsOpen] = useState(true);
   const [isChatHeadMode, setIsChatHeadMode] = useState(false);
   const [minimizedConversation, setMinimizedConversation] = useState<ChatConversation | null>(null);
-  const recentHeadsRowRef = useRef<HTMLDivElement | null>(null);
-  const [maxRecentHeadsOnRow, setMaxRecentHeadsOnRow] = useState(1);
+  const [chatHeadOrder, setChatHeadOrder] = useState<string[]>([]);
+  const [isChatHeadReorderMode, setIsChatHeadReorderMode] = useState(false);
+  const draggedChatHeadIdRef = useRef<string | null>(null);
+  const suppressChatHeadClickRef = useRef(false);
   const [isUploadingImage, setIsUploadingImage] = useState(false);
   const [pendingImage, setPendingImage] = useState<{
     conversationId: string;
@@ -169,6 +171,21 @@ export default function ChatHub({
 
   const isDirectMode = !!directPeerId;
   const activeConversationId = isDirectMode ? activeConversation?.id : conversationId;
+  const chatHeadOrderStorageKey = user?.id ? `trikeserve_chat_head_order_${user.id}` : null;
+
+  useEffect(() => {
+    if (!chatHeadOrderStorageKey) {
+      setChatHeadOrder([]);
+      return;
+    }
+
+    try {
+      const saved = JSON.parse(localStorage.getItem(chatHeadOrderStorageKey) || '[]');
+      setChatHeadOrder(Array.isArray(saved) ? saved.filter((id): id is string => typeof id === 'string') : []);
+    } catch {
+      setChatHeadOrder([]);
+    }
+  }, [chatHeadOrderStorageKey]);
 
   useEffect(() => {
     setPendingImage((pending) =>
@@ -199,24 +216,58 @@ export default function ChatHub({
     return [...newestByPeer.values()].sort((a, b) => activityOf(b) - activityOf(a));
   }, [activeConversation, conversations, user?.id]);
 
+  const orderedRecentHeadConversations = useMemo(() => {
+    const conversationsById = new Map<string, ChatConversation>();
+    recentHeadConversations.forEach((conversation) => conversationsById.set(conversation.id, conversation));
+    const savedOrder = chatHeadOrder.flatMap((id) => {
+      const conversation = conversationsById.get(id);
+      return conversation ? [conversation] : [];
+    });
+    const savedIds = new Set(savedOrder.map((conversation) => conversation.id));
+    const newConversations = recentHeadConversations.filter((conversation) => !savedIds.has(conversation.id));
+
+    // An unpinned conversation appears to the right of older heads by recency.
+    // Once the user reorders the row, their saved order takes precedence.
+    return [...newConversations, ...savedOrder];
+  }, [chatHeadOrder, recentHeadConversations]);
+
+  const saveChatHeadOrder = (nextOrder: string[]) => {
+    setChatHeadOrder(nextOrder);
+    if (!chatHeadOrderStorageKey) return;
+    try {
+      localStorage.setItem(chatHeadOrderStorageKey, JSON.stringify(nextOrder));
+    } catch {
+      // Reordering still works for this visit if storage is unavailable.
+    }
+  };
+
+  const reorderChatHead = (draggedId: string, targetId: string, targetSide: 'left' | 'right' = 'left') => {
+    if (draggedId === targetId) return;
+    const nextOrder = orderedRecentHeadConversations.map((conversation) => conversation.id);
+    const from = nextOrder.indexOf(draggedId);
+    if (from < 0 || !nextOrder.includes(targetId)) return;
+    const [movedId] = nextOrder.splice(from, 1);
+    if (!movedId) return;
+    const targetIndex = nextOrder.indexOf(targetId);
+    // The row is visually reversed: an item to the target's left follows it
+    // in this array, while an item to its right comes before it.
+    nextOrder.splice(targetIndex + (targetSide === 'left' ? 1 : 0), 0, movedId);
+    saveChatHeadOrder(nextOrder);
+  };
+
+  const moveChatHeadByOne = (conversationId: string, direction: 'left' | 'right') => {
+    const nextOrder = orderedRecentHeadConversations.map((conversation) => conversation.id);
+    const index = nextOrder.indexOf(conversationId);
+    const targetIndex = index + (direction === 'left' ? 1 : -1);
+    if (index < 0 || targetIndex < 0 || targetIndex >= nextOrder.length) return;
+    [nextOrder[index], nextOrder[targetIndex]] = [nextOrder[targetIndex], nextOrder[index]];
+    saveChatHeadOrder(nextOrder);
+  };
+
   useEffect(() => {
     if (!activeConversationId || isChatHeadMode) return;
     return registerLocalHead(activeConversationId);
   }, [activeConversationId, isChatHeadMode, registerLocalHead]);
-
-  useEffect(() => {
-    if (!activeConversation || isChatHeadMode || !recentHeadsRowRef.current) return;
-    const row = recentHeadsRowRef.current;
-    const updateCapacity = () => {
-      // 44px avatar + 4px gap, with 16px total row padding.
-      const contentWidth = Math.max(0, row.clientWidth - 16);
-      setMaxRecentHeadsOnRow(Math.max(1, Math.floor((contentWidth + 4) / 48)));
-    };
-    updateCapacity();
-    const observer = new ResizeObserver(updateCapacity);
-    observer.observe(row);
-    return () => observer.disconnect();
-  }, [activeConversation, isChatHeadMode]);
 
   /**
    * The in-thread back arrow.
@@ -466,25 +517,35 @@ export default function ChatHub({
   /**
  * Renders a conversation avatar.
  *
- * The stored value is either a real image URL or an emoji placeholder, and
- * they used to be dropped into the same `{peer.avatar}` expression. A URL is
- * just a string, so anyone who had actually set a profile photo had their
- * address printed across the row instead of their face. Anything that looks
- * like a URL gets an <img>; anything else is treated as the emoji it is.
+ * Older conversation rows may store an emoji placeholder when someone has no
+ * profile photo. Show the person's initial in that case, and use the photo only
+ * when the stored value is a URL.
  */
 function PeerAvatar({
   value,
+  name,
   className,
 }: {
   value: string | null | undefined;
+  name: string;
   className?: string;
 }) {
   const src = value?.trim() || "";
-  const isImage = /^https?:\/\//i.test(src) || src.startsWith("data:image/");
-  if (!isImage) {
-    return <span className={className}>{src || "💬"}</span>;
+  const [failedSrc, setFailedSrc] = useState<string | null>(null);
+  const isImage = (/^https?:\/\//i.test(src) || src.startsWith("data:image/")) && failedSrc !== src;
+  if (isImage) {
+    return (
+      <img
+        src={src}
+        alt=""
+        className={`size-full object-cover ${className || ""}`}
+        onError={() => setFailedSrc(src)}
+      />
+    );
   }
-  return <img src={src} alt="" className={`size-full object-cover ${className || ""}`} />;
+
+  const initial = Array.from(name.trim())[0]?.toLocaleUpperCase() || "U";
+  return <span className={`${className || ""} font-semibold`}>{initial}</span>;
 }
 
 function getConversationPeer(conversation: ChatConversation) {
@@ -897,6 +958,7 @@ function getConversationPeer(conversation: ChatConversation) {
       ? { ...dbPeer, name: directPeerName, avatar: directPeerAvatar || dbPeer.avatar }
       : dbPeer;
     const peerTheme = getRoleTheme(peer.role);
+    const activeHeadIndex = orderedRecentHeadConversations.findIndex((conversation) => conversation.id === activeConversation.id);
 
     /**
      * Quick replies only make sense in a ride thread.
@@ -939,12 +1001,57 @@ function getConversationPeer(conversation: ChatConversation) {
             Transparent, so it reads as "nothing here" rather than as a surface.
         */}
         <div
-          ref={recentHeadsRowRef}
           role="group"
-          aria-label="Recent conversations"
-          className="flex h-14 w-full shrink-0 items-center justify-end gap-1 overflow-hidden px-2"
+          aria-label="Chat heads, newest on the right. Drag to reorder, or use Arrange chat heads to move the open chat."
+          className="flex h-14 w-full shrink-0 flex-row-reverse items-center justify-start gap-1 overflow-x-auto overflow-y-hidden px-2 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
         >
-          {recentHeadConversations.slice(0, maxRecentHeadsOnRow).reverse().map((conversation) => {
+          <div className="flex shrink-0 flex-row-reverse items-center gap-1">
+            <button
+              type="button"
+              title="All messages"
+              aria-label="Open all messages"
+              onClick={() => navigate(basePath)}
+              className="grid size-11 shrink-0 place-items-center rounded-full border border-[var(--border)] bg-[var(--surface)] text-[var(--primary)] shadow-sm transition-colors hover:bg-[var(--primary-soft)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--primary)]"
+            >
+              <MessagesSquare className="size-5" aria-hidden="true" />
+            </button>
+            <button
+              type="button"
+              title={isChatHeadReorderMode ? 'Done arranging chat heads' : 'Arrange chat heads'}
+              aria-label={isChatHeadReorderMode ? 'Done arranging chat heads' : 'Arrange chat heads'}
+              aria-pressed={isChatHeadReorderMode}
+              disabled={orderedRecentHeadConversations.length < 2}
+              onClick={() => setIsChatHeadReorderMode((isReordering) => !isReordering)}
+              className={`grid size-11 shrink-0 place-items-center rounded-full border shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--primary)] disabled:cursor-not-allowed disabled:opacity-40 ${isChatHeadReorderMode ? 'border-[var(--primary)] bg-[var(--primary-soft)] text-[var(--primary)]' : 'border-[var(--border)] bg-[var(--surface)] text-[var(--muted-foreground)] hover:bg-[var(--primary-soft)]'}`}
+            >
+              <ArrowLeftRight className="size-5" aria-hidden="true" />
+            </button>
+            {isChatHeadReorderMode && (
+              <>
+                <button
+                  type="button"
+                  title={`Move ${peer.name} left`}
+                  aria-label={`Move ${peer.name} left`}
+                  disabled={activeHeadIndex < 0 || activeHeadIndex >= orderedRecentHeadConversations.length - 1}
+                  onClick={() => moveChatHeadByOne(activeConversation.id, 'left')}
+                  className="grid size-11 shrink-0 place-items-center rounded-full border border-[var(--border)] bg-[var(--surface)] text-[var(--ink)] shadow-sm transition-colors hover:bg-[var(--primary-soft)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--primary)] disabled:cursor-not-allowed disabled:opacity-40"
+                >
+                  <ArrowLeft className="size-5" aria-hidden="true" />
+                </button>
+                <button
+                  type="button"
+                  title={`Move ${peer.name} right`}
+                  aria-label={`Move ${peer.name} right`}
+                  disabled={activeHeadIndex <= 0}
+                  onClick={() => moveChatHeadByOne(activeConversation.id, 'right')}
+                  className="grid size-11 shrink-0 place-items-center rounded-full border border-[var(--border)] bg-[var(--surface)] text-[var(--ink)] shadow-sm transition-colors hover:bg-[var(--primary-soft)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--primary)] disabled:cursor-not-allowed disabled:opacity-40"
+                >
+                  <ArrowRight className="size-5" aria-hidden="true" />
+                </button>
+              </>
+            )}
+          </div>
+          {orderedRecentHeadConversations.map((conversation) => {
             const peer = getConversationPeer(conversation);
             const isActive = conversation.id === activeConversation.id;
             const unread = (conversation as any)._collapsedUnread ?? (
@@ -956,20 +1063,57 @@ function getConversationPeer(conversation: ChatConversation) {
               <button
                 key={conversation.id}
                 type="button"
-                title={peer.name}
-                aria-label={`Open chat with ${peer.name}${unread > 0 ? `, ${unread} unread` : ''}`}
+                draggable
+                data-chat-head-id={conversation.id}
+                title={`${peer.name} · Drag to reorder`}
+                aria-label={`Open chat with ${peer.name}${unread > 0 ? `, ${unread} unread` : ''}. Drag to reorder, press Alt and an arrow key, or use Arrange chat heads and its move buttons.`}
+                aria-keyshortcuts="Alt+ArrowLeft Alt+ArrowRight"
                 aria-current={isActive ? 'page' : undefined}
+                onDragStart={(event) => {
+                  draggedChatHeadIdRef.current = conversation.id;
+                  suppressChatHeadClickRef.current = true;
+                  event.dataTransfer.effectAllowed = 'move';
+                  event.dataTransfer.setData('text/plain', conversation.id);
+                }}
+                onDragOver={(event) => {
+                  if (!draggedChatHeadIdRef.current) return;
+                  event.preventDefault();
+                  event.dataTransfer.dropEffect = 'move';
+                }}
+                onDrop={(event) => {
+                  event.preventDefault();
+                  const draggedId = event.dataTransfer.getData('text/plain') || draggedChatHeadIdRef.current;
+                  if (draggedId) {
+                    const bounds = event.currentTarget.getBoundingClientRect();
+                    const targetSide = event.clientX < bounds.left + bounds.width / 2 ? 'left' : 'right';
+                    reorderChatHead(draggedId, conversation.id, targetSide);
+                  }
+                  draggedChatHeadIdRef.current = null;
+                }}
+                onDragEnd={() => {
+                  draggedChatHeadIdRef.current = null;
+                  window.setTimeout(() => { suppressChatHeadClickRef.current = false; }, 0);
+                }}
+                onKeyDown={(event) => {
+                  if (!event.altKey || (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight')) return;
+                  event.preventDefault();
+                  moveChatHeadByOne(conversation.id, event.key === 'ArrowLeft' ? 'left' : 'right');
+                }}
                 onClick={() => {
+                  if (suppressChatHeadClickRef.current) {
+                    suppressChatHeadClickRef.current = false;
+                    return;
+                  }
                   if (isActive) {
                     if ((location.state as any)?.fromActiveRide) navigate(threadBack);
                     return;
                   }
                   void openConversation(conversation);
                 }}
-                className={`relative grid size-11 shrink-0 place-items-center overflow-visible rounded-full border-2 bg-[var(--surface)] shadow-sm transition-transform hover:scale-105 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--primary)] ${isActive ? 'border-[var(--primary)]' : 'border-[var(--border)]'}`}
+                className={`relative grid size-11 shrink-0 cursor-grab place-items-center overflow-visible rounded-full border-2 bg-[var(--surface)] shadow-sm transition-transform hover:scale-105 active:cursor-grabbing focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--primary)] ${isActive ? 'border-[var(--primary)]' : 'border-[var(--border)]'}`}
               >
                 <span className="size-full overflow-hidden rounded-full">
-                  <PeerAvatar value={peer.avatar} className="grid size-full place-items-center text-xl object-cover" />
+                  <PeerAvatar value={peer.avatar} name={peer.name} className="grid size-full place-items-center text-xl object-cover" />
                 </span>
                 {unread > 0 && (
                   <span className="absolute -right-1 -top-1 grid min-w-[16px] place-items-center rounded-full bg-[var(--primary)] px-1 text-[10px] font-bold text-[var(--primary-foreground)] shadow">
@@ -1002,7 +1146,7 @@ function getConversationPeer(conversation: ChatConversation) {
             className="flex flex-1 items-center gap-3 min-w-0 text-left hover:opacity-90 transition-opacity"
           >
             <div className={`w-11 h-11 overflow-hidden rounded-full border flex items-center justify-center text-2xl flex-shrink-0 ${peerTheme.avatarWrap}`}>
-              <PeerAvatar value={peer.avatar} />
+              <PeerAvatar value={peer.avatar} name={peer.name} />
             </div>
             <div className="flex-1 min-w-0">
               <h3 className="font-bold text-lg truncate leading-tight">{peer.name}</h3>
@@ -1103,7 +1247,7 @@ function getConversationPeer(conversation: ChatConversation) {
                       <div
                         className={`mt-1 size-8 flex-shrink-0 overflow-hidden rounded-full border ${peerTheme.avatarWrap}`}
                       >
-                        <PeerAvatar value={peer.avatar} />
+                        <PeerAvatar value={peer.avatar} name={peer.name} />
                       </div>
                     )}
 
@@ -1395,7 +1539,7 @@ function getConversationPeer(conversation: ChatConversation) {
                       >
                         {/* `overflow-hidden` keeps the photo clipped into its circle. */}
                         <div className={`relative w-12 h-12 overflow-hidden rounded-full border flex items-center justify-center text-2xl flex-shrink-0 shadow-sm ${peerTheme.avatarWrap}`}>
-                          <PeerAvatar value={peer.avatar} />
+                          <PeerAvatar value={peer.avatar} name={peer.name} />
                           {isUnread && (
                             <span className={`absolute -top-1 -right-1 w-3 h-3 rounded-full border-2 border-white ${peerTheme.unreadDot} animate-pulse`} />
                           )}

@@ -3111,9 +3111,10 @@ const getPrice = () => {
 
       {/* Hidden while the panel is open, so the two heads cannot stack in the
           same corner. */}
-      {rideStatus === 'driver-found' && activeRide && rideDriverId && !customerChatPopup && (
+      {rideStatus === 'driver-found' && activeRide && rideDriverId && (
         <FloatingChatHead
           headId={driverChatId.current || undefined}
+          hidden={customerChatPopup}
           storageKey="trikeserve_chat_head_pos_customer"
           peerAvatar={rideDriverAvatar}
           peerLabel={activeRide.driver || 'Driver'}

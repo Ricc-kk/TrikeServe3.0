@@ -1219,12 +1219,8 @@ if (loading) {
    * `terminalStatus` rather than `isTerminal`, because that const is declared
    * further down, after this branch.
    *
-   * Raised to z-[2100]: this screen's sheet and minimized icon are z-[2000],
-   * above the components' own defaults (1600/1700), so without the override the
-   * head would paint behind them and be untappable. Dialogs (terminal 2200,
-   * status popup 2300, rating 2400) still cover it, and the leave-confirm
-   * dialog ties it at 2100 while rendering later in the DOM, so paint order
-   * keeps that one on top.
+   * The floating head and chat panel use the shared app overlay layers, so the
+   * chat stays reachable above this lobby and its dialogs.
    */
   const chatLayer = (
     <>
@@ -1239,15 +1235,16 @@ if (loading) {
         peerName={lobby.driver_name || 'Driver'}
         senderRole="customer"
         onClose={() => setLobbyChatPopup(false)}
-        zIndexClass="z-[2100]"
+        zIndexClass="z-[10001]"
       />
 
       {/* Floating chat head -- the same component the driver's ride screen uses.
           Hidden while the overlay is open so two heads never stack. */}
-      {lobby.driver_id && lobby.status === 'driver_found' && terminalStatus === null && !lobbyChatPopup && (
+      {lobby.driver_id && lobby.status === 'driver_found' && terminalStatus === null && (
         <FloatingChatHead
           headId={driverChatId.current || undefined}
-          zIndexClass="z-[2100]"
+          zIndexClass="z-[10000]"
+          hidden={lobbyChatPopup}
           storageKey="trikeserve_chat_head_pos_customer"
           peerAvatar={driverProfileAvatar}
           peerLabel={lobby.driver_name || 'Driver'}

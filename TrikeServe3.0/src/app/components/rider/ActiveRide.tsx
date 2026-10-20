@@ -1862,9 +1862,10 @@ export default function ActiveRide() {
 
       {/* Hidden while the panel is open: the panel carries its own head, and both
           would otherwise sit in the same top-right corner on top of each other. */}
-      {chatStarted && rideData.status !== 'completed' && !chatPopupOpen && (
+      {chatStarted && rideData.status !== 'completed' && (
         <FloatingChatHead
           headId={chatId || undefined}
+          hidden={chatPopupOpen}
           storageKey="trikeserve_chat_head_pos_rider"
           peerAvatar={passengerAvatar}
           peerIsGroup={rideData.customerPhoto === 'shared'}

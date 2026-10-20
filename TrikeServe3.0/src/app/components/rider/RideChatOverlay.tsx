@@ -1,6 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Send, User, Users, X } from "lucide-react";
+import { createPortal } from "react-dom";
+import { Camera, ImagePlus, Send, User, Users, X } from "lucide-react";
 import { supabaseHelpers } from "@/lib/supabase";
+
+const CHAT_IMAGE_PREFIX = 'chat-image:';
 
 /**
  * The passenger/driver conversation as a popup over the live ride.
@@ -38,6 +41,54 @@ function dayLabel(date: Date): string {
   return date.toLocaleDateString([], { weekday: "short" });
 }
 
+function isImageAvatar(value: string | null | undefined): boolean {
+  const src = value?.trim() || '';
+  return /^https?:\/\//i.test(src) || src.startsWith('data:image/');
+}
+
+function PeerAvatar({
+  src,
+  name,
+  group = false,
+  className = 'size-full',
+  iconClassName = 'size-6',
+  initialClassName = 'text-lg',
+}: {
+  src: string | null;
+  name: string;
+  group?: boolean;
+  className?: string;
+  iconClassName?: string;
+  initialClassName?: string;
+}) {
+  const [failedSrc, setFailedSrc] = useState<string | null>(null);
+  const imageSrc = isImageAvatar(src) && failedSrc !== src ? src?.trim() : null;
+  const initial = Array.from(name.trim())[0]?.toLocaleUpperCase();
+
+  if (imageSrc) {
+    return (
+      <img
+        src={imageSrc}
+        alt=""
+        className={`${className} object-cover`}
+        draggable={false}
+        onError={() => setFailedSrc(src)}
+      />
+    );
+  }
+  if (group) return <Users className={`${iconClassName} text-[var(--primary)]`} aria-hidden="true" />;
+  if (!initial) return <User className={`${iconClassName} text-[var(--primary)]`} aria-hidden="true" />;
+
+  return (
+    <span
+      className={`${className} grid place-items-center font-semibold text-[var(--primary)] ${initialClassName}`}
+      aria-hidden="true"
+    >
+      {initial}
+    </span>
+  );
+}
+
 export default function RideChatOverlay({
   open,
   conversationId,
@@ -51,15 +102,13 @@ export default function RideChatOverlay({
   senderName,
   receiverRole,
   onClose,
-  zIndexClass = "z-[1700]",
+  zIndexClass = "z-[10001]",
 }: {
   /**
    * Stacking order override.
    *
-   * `z-[1700]` clears the ride card and the floating head on the ride screens,
-   * but the shared-ride lobby sheet is `z-[2000]` -- above it -- so opening the
-   * chat from that screen needs the whole overlay raised or the conversation
-   * would be painted behind the lobby's dim backdrop.
+   * Sits one layer above floating chat heads and above page dialogs, so opening
+   * chat from any route keeps the thread accessible over that page.
    */
   zIndexClass?: string;
   open: boolean;
@@ -95,6 +144,11 @@ export default function RideChatOverlay({
 }) {
   const [messages, setMessages] = useState<any[]>([]);
   const [text, setText] = useState('');
+  const [pendingImage, setPendingImage] = useState<{
+    file: File;
+    previewUrl: string;
+    uploadedUrl?: string;
+  } | null>(null);
   /**
    * Whether the sheet is animating out.
    *
@@ -107,13 +161,18 @@ export default function RideChatOverlay({
   /** Whether the in-place profile card under the header name is expanded. */
   const [profileOpen, setProfileOpen] = useState(false);
   const [sending, setSending] = useState(false);
+  const [uploadingImage, setUploadingImage] = useState(false);
   const [revealedId, setRevealedId] = useState<string | null>(null);
   const listRef = useRef<HTMLDivElement>(null);
+  const imageInputRef = useRef<HTMLInputElement>(null);
+  const cameraInputRef = useRef<HTMLInputElement>(null);
 
-  const isImage = (v: string | null | undefined) => {
-    const s = v?.trim() || '';
-    return /^https?:\/\//i.test(s) || s.startsWith('data:image/');
-  };
+  useEffect(() => {
+    const previewUrl = pendingImage?.previewUrl;
+    return () => {
+      if (previewUrl) URL.revokeObjectURL(previewUrl);
+    };
+  }, [pendingImage?.previewUrl]);
 
   const load = useCallback(async () => {
     if (!conversationId) return;
@@ -163,8 +222,9 @@ export default function RideChatOverlay({
   }, [open, requestClose]);
 
   const send = async (override?: string) => {
-    const body = (override ?? text).trim();
-    if (!body || !conversationId || sending) return;
+    const body = (typeof override === 'string' ? override : text).trim();
+    const imageDraft = typeof override === 'string' ? null : pendingImage;
+    if ((!body && !imageDraft) || !conversationId || sending) return;
 
     const mine = currentUserId;
     if (!mine) {
@@ -203,27 +263,89 @@ export default function RideChatOverlay({
 
     setSending(true);
     try {
-      const { error } = await supabaseHelpers.sendChatMessage({
-        conversationId,
-        senderId: mine,
-        receiverId: peerId,
-        senderName: senderName || (senderRole === 'rider' ? 'Driver' : senderRole === 'business' ? 'Restaurant' : 'Customer'),
-        senderRole,
-        receiverRole: receiverRole || (senderRole === 'rider' ? 'customer' : senderRole === 'business' ? 'customer' : 'rider'),
-        message: body,
-      });
-      // The composer keeps the text on failure, so a retry costs nothing but a
-      // tap. Failing silently looked identical to a dead send button.
-      if (error) {
-        console.error('[RideChatOverlay] Send message failed:', error);
-        alert('Message failed to send. Please try again.');
-        return;
+      if (body) {
+        const { error } = await supabaseHelpers.sendChatMessage({
+          conversationId,
+          senderId: mine,
+          receiverId: peerId,
+          senderName: senderName || (senderRole === 'rider' ? 'Driver' : senderRole === 'business' ? 'Restaurant' : 'Customer'),
+          senderRole,
+          receiverRole: receiverRole || (senderRole === 'rider' ? 'customer' : senderRole === 'business' ? 'customer' : 'rider'),
+          message: body,
+        });
+        // The composer keeps the text on failure, so a retry costs nothing but a
+        // tap. Failing silently looked identical to a dead send button.
+        if (error) {
+          console.error('[RideChatOverlay] Send message failed:', error);
+          alert('Message failed to send. Please try again.');
+          return;
+        }
+        setText('');
       }
-      setText('');
+
+      if (imageDraft) {
+        let uploadedUrl = imageDraft.uploadedUrl;
+        if (!uploadedUrl) {
+          setUploadingImage(true);
+          const { data, error } = await supabaseHelpers.uploadChatAttachment(
+            conversationId,
+            mine,
+            imageDraft.file,
+          );
+          if (error || !data?.publicUrl) {
+            console.error('[RideChatOverlay] Image upload failed:', error);
+            alert('Could not upload the image. Please try again.');
+            return;
+          }
+          uploadedUrl = data.publicUrl;
+          setPendingImage((current) =>
+            current?.previewUrl === imageDraft.previewUrl
+              ? { ...current, uploadedUrl }
+              : current,
+          );
+        }
+
+        const { error } = await supabaseHelpers.sendChatMessage({
+          conversationId,
+          senderId: mine,
+          receiverId: peerId,
+          senderName: senderName || (senderRole === 'rider' ? 'Driver' : senderRole === 'business' ? 'Restaurant' : 'Customer'),
+          senderRole,
+          receiverRole: receiverRole || (senderRole === 'rider' ? 'customer' : senderRole === 'business' ? 'customer' : 'rider'),
+          message: `${CHAT_IMAGE_PREFIX}${uploadedUrl}`,
+        });
+        if (error) {
+          console.error('[RideChatOverlay] Image message failed:', error);
+          alert('Image failed to send. It is still attached so you can try again.');
+          return;
+        }
+        setPendingImage((current) =>
+          current?.previewUrl === imageDraft.previewUrl ? null : current,
+        );
+      }
+
       load();
     } finally {
+      setUploadingImage(false);
       setSending(false);
     }
+  };
+
+  const handleImageSelected = (file?: File) => {
+    if (!file || !conversationId || sending) return;
+    const allowedImageTypes = new Set([
+      'image/jpeg', 'image/png', 'image/webp', 'image/gif', 'image/heic', 'image/heif',
+    ]);
+    if (!allowedImageTypes.has(file.type.toLowerCase())) {
+      alert('Choose a JPEG, PNG, WebP, GIF, or HEIC image.');
+      return;
+    }
+    if (file.size > 10 * 1024 * 1024) {
+      alert('Images must be 10 MB or smaller.');
+      return;
+    }
+
+    setPendingImage({ file, previewUrl: URL.createObjectURL(file) });
   };
 
   // Held open through the exit animation; `closing` only drives which keyframe
@@ -249,7 +371,7 @@ export default function RideChatOverlay({
    * The root is `pointer-events-none`, so the ride screen in that strip is not
    * merely painted, it is still live -- a tap beside the head reaches the map.
    */
-  return (
+  return createPortal(
     <div className={`pointer-events-none fixed inset-0 ${zIndexClass}`}>
       <div
         className={`ride-chat-sheet pointer-events-none absolute inset-0 flex flex-col ${
@@ -277,13 +399,7 @@ export default function RideChatOverlay({
           aria-label="Close chat"
           className="pointer-events-auto mb-2 mr-3 ml-auto mt-2 size-14 flex-shrink-0 overflow-hidden rounded-full border-[3px] border-white/30 bg-[var(--primary-soft)] grid place-items-center shadow-xl transition-transform active:scale-95"
         >
-          {isImage(peerAvatar) ? (
-            <img src={peerAvatar as string} alt="" className="size-full object-cover" />
-          ) : peerIsGroup ? (
-            <Users className="size-6 text-[var(--primary)]" aria-hidden="true" />
-          ) : (
-            <User className="size-6 text-[var(--primary)]" aria-hidden="true" />
-          )}
+          <PeerAvatar src={peerAvatar} name={peerName} group={peerIsGroup} iconClassName="size-6" />
         </button>
 
         {/*
@@ -331,13 +447,7 @@ export default function RideChatOverlay({
               className="flex min-w-0 flex-1 items-center gap-2 rounded-xl text-left transition-opacity active:opacity-70"
             >
               <span className="size-9 flex-shrink-0 overflow-hidden rounded-full bg-[var(--primary-soft)] grid place-items-center">
-                {isImage(peerAvatar) ? (
-                  <img src={peerAvatar as string} alt="" className="size-full object-cover" />
-                ) : peerIsGroup ? (
-                  <Users className="size-4 text-[var(--primary)]" aria-hidden="true" />
-                ) : (
-                  <User className="size-4 text-[var(--primary)]" aria-hidden="true" />
-                )}
+                <PeerAvatar src={peerAvatar} name={peerName} group={peerIsGroup} iconClassName="size-4" initialClassName="text-sm" />
               </span>
               <span className="min-w-0">
                 <span className="block font-bold truncate leading-tight">{peerName}</span>
@@ -350,13 +460,7 @@ export default function RideChatOverlay({
             {profileOpen && (
               <div className="absolute left-3 right-3 top-full z-20 mt-1 flex items-center gap-3 rounded-2xl bg-[var(--surface)] p-3 text-[var(--ink)] shadow-2xl ring-1 ring-[var(--border)]">
                 <span className="size-14 flex-shrink-0 overflow-hidden rounded-full bg-[var(--primary-soft)] grid place-items-center">
-                  {isImage(peerAvatar) ? (
-                    <img src={peerAvatar as string} alt="" className="size-full object-cover" />
-                  ) : peerIsGroup ? (
-                    <Users className="size-6 text-[var(--primary)]" aria-hidden="true" />
-                  ) : (
-                    <User className="size-6 text-[var(--primary)]" aria-hidden="true" />
-                  )}
+                  <PeerAvatar src={peerAvatar} name={peerName} group={peerIsGroup} iconClassName="size-6" initialClassName="text-xl" />
                 </span>
                 <span className="min-w-0 flex-1">
                   <span className="block font-bold truncate">{peerName}</span>
@@ -393,6 +497,10 @@ export default function RideChatOverlay({
         ) : (
           messages.map((m, i) => {
             const isMine = !!currentUserId && m.sender_id === currentUserId;
+            const messageText = typeof m.message === 'string' ? m.message : '';
+            const imageUrl = messageText.startsWith(CHAT_IMAGE_PREFIX)
+              ? messageText.slice(CHAT_IMAGE_PREFIX.length)
+              : null;
             const when = new Date(m.created_at);
             const prev = i > 0 ? new Date(messages[i - 1].created_at) : null;
             const newDay = !prev || prev.toDateString() !== when.toDateString();
@@ -424,13 +532,7 @@ export default function RideChatOverlay({
                   {!isMine && (
                     <span className="size-7 flex-shrink-0 overflow-hidden rounded-full bg-[var(--primary-soft)] grid place-items-center">
                       {showAvatar ? (
-                        isImage(peerAvatar) ? (
-                          <img src={peerAvatar as string} alt="" className="size-full object-cover" draggable={false} />
-                        ) : peerIsGroup ? (
-                          <Users className="size-3.5 text-[var(--primary)]" aria-hidden="true" />
-                        ) : (
-                          <User className="size-3.5 text-[var(--primary)]" aria-hidden="true" />
-                        )
+                        <PeerAvatar src={peerAvatar} name={peerName} group={peerIsGroup} iconClassName="size-3.5" initialClassName="text-xs" />
                       ) : null}
                     </span>
                   )}
@@ -438,13 +540,24 @@ export default function RideChatOverlay({
                     type="button"
                     onClick={() => setRevealedId((c) => (c === m.id ? null : m.id))}
                     aria-expanded={revealedId === m.id}
-                    className={`max-w-[80%] rounded-2xl px-4 py-2 text-left ${
+                    className={`max-w-[80%] overflow-hidden rounded-2xl text-left ${
+                      imageUrl ? 'p-1.5' : 'px-4 py-2'
+                    } ${
                       isMine
                         ? 'bg-[var(--primary)] text-white'
                         : 'bg-[var(--surface)] border border-[var(--border)] text-[var(--ink)]'
                     }`}
                   >
-                    <span className="block text-sm break-words">{m.message}</span>
+                    {imageUrl ? (
+                      <img
+                        src={imageUrl}
+                        alt="Image sent in chat"
+                        loading="lazy"
+                        className="max-h-64 max-w-full rounded-xl object-contain"
+                      />
+                    ) : (
+                      <span className="block text-sm break-words">{messageText}</span>
+                    )}
                   </button>
                 </div>
                 <div className={`mt-0.5 px-1 text-[10px] font-semibold text-[var(--muted-foreground)] ${isMine ? 'text-right' : ''}`}>
@@ -474,7 +587,78 @@ export default function RideChatOverlay({
             ))}
           </div>
         )}
+        {pendingImage && (
+          <div className="mb-3 flex items-center gap-3 rounded-xl border border-[var(--border)] bg-[var(--muted)] p-2">
+            <img
+              src={pendingImage.previewUrl}
+              alt="Selected image preview"
+              className="size-14 shrink-0 rounded-lg object-cover"
+            />
+            <div className="min-w-0 flex-1">
+              <p className="text-sm font-semibold text-[var(--ink)]">
+                {uploadingImage ? 'Uploading image…' : sending ? 'Sending image…' : 'Image ready to send'}
+              </p>
+              <p className="truncate text-xs text-[var(--muted-foreground)]">{pendingImage.file.name}</p>
+            </div>
+            <button
+              type="button"
+              aria-label="Remove selected image"
+              disabled={sending}
+              onClick={() => setPendingImage((current) =>
+                current?.previewUrl === pendingImage.previewUrl ? null : current,
+              )}
+              className="grid size-10 shrink-0 place-items-center rounded-xl text-[var(--muted-foreground)] hover:bg-[var(--surface)] disabled:opacity-50"
+            >
+              <X className="size-4" />
+            </button>
+          </div>
+        )}
+        <input
+          ref={imageInputRef}
+          type="file"
+          accept="image/jpeg,image/png,image/webp,image/gif,image/heic,image/heif"
+          className="hidden"
+          aria-label="Choose image to send"
+          onChange={(event) => {
+            const file = event.currentTarget.files?.[0];
+            event.currentTarget.value = '';
+            handleImageSelected(file);
+          }}
+        />
+        <input
+          ref={cameraInputRef}
+          type="file"
+          accept="image/jpeg,image/png,image/webp,image/gif,image/heic,image/heif"
+          capture="environment"
+          className="hidden"
+          aria-label="Take a photo to send"
+          onChange={(event) => {
+            const file = event.currentTarget.files?.[0];
+            event.currentTarget.value = '';
+            handleImageSelected(file);
+          }}
+        />
         <div className="flex gap-2">
+          <button
+            type="button"
+            onClick={() => imageInputRef.current?.click()}
+            disabled={sending}
+            aria-label="Upload image"
+            title="Upload image"
+            className="grid size-12 flex-shrink-0 place-items-center rounded-xl text-[var(--primary)] hover:bg-[var(--primary-soft)] disabled:opacity-50"
+          >
+            <ImagePlus className="size-5" />
+          </button>
+          <button
+            type="button"
+            onClick={() => cameraInputRef.current?.click()}
+            disabled={sending}
+            aria-label="Take photo"
+            title="Take photo"
+            className="grid size-12 flex-shrink-0 place-items-center rounded-xl text-[var(--primary)] hover:bg-[var(--primary-soft)] disabled:opacity-50"
+          >
+            <Camera className="size-5" />
+          </button>
           <input
             value={text}
             onChange={(e) => setText(e.target.value)}
@@ -484,15 +668,16 @@ export default function RideChatOverlay({
                 send();
               }
             }}
-            placeholder="Type a message..."
+            placeholder={uploadingImage ? 'Uploading image…' : pendingImage ? 'Add a caption (optional)…' : 'Type a message...'}
             aria-label="Type a message"
+            disabled={sending}
             className="flex-1 rounded-xl border border-[var(--border)] bg-[var(--surface)] px-3 py-3 text-base text-[var(--ink)] outline-none focus:border-[var(--primary)]"
           />
           <button
             type="button"
             onClick={() => send()}
-            disabled={!text.trim() || sending}
-            aria-label="Send message"
+            disabled={(!text.trim() && !pendingImage) || sending}
+            aria-label={pendingImage && !text.trim() ? 'Send image' : 'Send message'}
             className="grid size-12 flex-shrink-0 place-items-center rounded-xl bg-[var(--primary)] text-[var(--primary-foreground)] disabled:opacity-50"
           >
             <Send className="size-5" />
@@ -501,6 +686,7 @@ export default function RideChatOverlay({
       </div>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }

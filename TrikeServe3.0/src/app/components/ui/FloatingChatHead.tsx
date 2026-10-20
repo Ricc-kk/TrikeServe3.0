@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { MessageCircle, User, Users, X } from "lucide-react";
 import { useChatHeadVisibility } from "../../contexts/ChatHeadVisibilityContext";
 
@@ -18,23 +19,18 @@ import { useChatHeadVisibility } from "../../contexts/ChatHeadVisibilityContext"
 /**
  * Breathing room between the docked head and the screen edge.
  *
- * Also the clearance it keeps from the bottom tab bar, which is `z-[1500]`.
- * Docking it 8px off the edge would otherwise park it underneath the nav, where
- * it renders but cannot be tapped.
+ * It stays reachable without sitting directly on top of the device bezel.
  */
 const GAP = 8;
 
 /**
  * Stacking order.
  *
- * Had to clear three things it was colliding with: the customer's ride card and
- * the driver's sheet both sit at `z-[1100]`, which the head originally matched --
- * an exact tie, so paint order decided whether it was visible -- and the bottom
- * tab bar is `z-[1500]`, above it. Kept below the full-screen overlays
- * (`z-[3000]`+), so a modal still covers the head rather than the head floating
- * over a dialog.
+ * The app uses layers up through `z-[9999]` for page UI and toasts. The head is
+ * deliberately above them so it remains reachable across routes and overlays;
+ * an opened chat panel sits one layer above the head.
  */
-const Z_INDEX = 'z-[1600]';
+const Z_INDEX = 'z-[10000]';
 
 /** Beyond this the gesture counts as a drag rather than a tap. */
 const TAP_SLOP = 6;
@@ -131,10 +127,9 @@ export default function FloatingChatHead({
   /**
    * Stacking order override.
    *
-   * Defaults to `Z_INDEX`, which clears the ride card and the bottom tab bar.
-   * The shared-ride lobby sheet sits at `z-[2000]` -- above that default -- so a
-   * head rendered on that screen has to be raised or it paints behind the sheet's
-   * dim backdrop and cannot be tapped.
+   * Defaults to `Z_INDEX`, which keeps the head above app pages and overlays.
+   * Use an override only when the head needs a distinct position relative to a
+   * chat panel.
    */
   zIndexClass?: string;
   /** Whether this is the app-wide instance rather than a screen-specific head. */
@@ -174,7 +169,7 @@ export default function FloatingChatHead({
    */
   onInitialResolve?: () => void;
 }) {
-  const { registerLocalHead } = useChatHeadVisibility();
+  const { registerLocalHead, openedConversationId } = useChatHeadVisibility();
   const headRef = useRef<HTMLButtonElement | null>(null);
   const stackHeadRefs = useRef<Array<HTMLButtonElement | null>>([]);
   const previousHeadIdRef = useRef(headId || null);
@@ -489,8 +484,10 @@ export default function FloatingChatHead({
 
   if (dismissed) return null;
   const stackSide = isDragging ? drag.current?.side ?? side : side;
+  const isThisConversationOpen = Boolean(headId && openedConversationId === headId);
+  const isHidden = hidden || isThisConversationOpen;
 
-  return (
+  return createPortal(
     <>
       {stackItems.slice(0, MAX_STACK_ITEMS).map((item, index) => (
         <button
@@ -500,9 +497,9 @@ export default function FloatingChatHead({
           style={{
             left: pos.current.x + (stackSide === 'right' ? -STACK_PEEK : STACK_PEEK) * (index + 1),
             top: pos.current.y,
-            opacity: placed2 && !hidden && isDragging ? 1 : 0,
-            pointerEvents: hidden || !isDragging ? 'none' : 'auto',
-            zIndex: 1599 - index,
+            opacity: placed2 && !isHidden && isDragging ? 1 : 0,
+            pointerEvents: isHidden || !isDragging ? 'none' : 'auto',
+            zIndex: 9999 - index,
           }}
           onPointerDown={(event) => event.stopPropagation()}
           onClick={(event) => {
@@ -510,8 +507,8 @@ export default function FloatingChatHead({
             item.onOpen();
           }}
           aria-label={`Chat with ${item.peerLabel}`}
-          aria-hidden={hidden || !isDragging || undefined}
-          tabIndex={hidden || !isDragging ? -1 : undefined}
+          aria-hidden={isHidden || !isDragging || undefined}
+          tabIndex={isHidden || !isDragging ? -1 : undefined}
           className="fixed grid size-14 place-items-center overflow-visible rounded-full border-2 border-[var(--border)] bg-[var(--surface)] shadow-xl touch-none select-none"
         >
           <span className="relative size-full overflow-hidden rounded-full">
@@ -535,8 +532,8 @@ export default function FloatingChatHead({
         left: pos.current.x,
         top: pos.current.y,
         // Hidden until measured, but always in the tree so the ref exists.
-        opacity: placed2 && !hidden ? 1 : 0,
-        pointerEvents: hidden ? 'none' : 'auto',
+        opacity: placed2 && !isHidden ? 1 : 0,
+        pointerEvents: isHidden ? 'none' : 'auto',
       }}
       onPointerDown={onPointerDown}
       onClick={() => {
@@ -550,8 +547,8 @@ export default function FloatingChatHead({
         onOpen();
       }}
       aria-label={`Chat with ${peerLabel}. Drag to move.`}
-      aria-hidden={hidden || undefined}
-      tabIndex={hidden ? -1 : undefined}
+      aria-hidden={isHidden || undefined}
+      tabIndex={isHidden ? -1 : undefined}
       className={`fixed ${zIndexClass} grid size-14 place-items-center overflow-visible rounded-full bg-[var(--surface)] border-2 border-[var(--primary)] shadow-xl touch-none select-none`}
     >
       {/*
@@ -608,7 +605,7 @@ export default function FloatingChatHead({
         </span>
       )}
       </button>
-      {isDragging && !hidden && (
+      {isDragging && !isHidden && (
         <div
           aria-hidden="true"
           className={`fixed ${zIndexClass} pointer-events-none bottom-6 left-1/2 -translate-x-1/2 transition-transform duration-150 ${isOverCloseTarget ? 'scale-110' : 'scale-100'}`}
@@ -618,6 +615,7 @@ export default function FloatingChatHead({
           </span>
         </div>
       )}
-    </>
+    </>,
+    document.body,
   );
 }
