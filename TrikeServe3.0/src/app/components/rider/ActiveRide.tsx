@@ -321,6 +321,7 @@ export default function ActiveRide() {
           // here we only need to track the driver's progress on the lobby so customers
           // see the status popups.
           supabaseHelpers.updateLobbyDriverStatus(ride.lobbyId, 'on-the-way', 'Driver is on the way!');
+          void notifyRideProgress(ride, 'on-the-way');
         } else {
           // Record the acceptance FIRST: the database only lets a driver who is
           // still first in their terminal's queue be assigned, so the queue slot is
@@ -334,6 +335,7 @@ export default function ActiveRide() {
             .catch(() => {});
           supabaseHelpers.updateDriverRideStatus(ride.id, 'on-the-way', 'Driver is on the way!');
           notifyDeliveryStatus(ride, 'on-the-way', 'Driver is on the way!');
+          void notifyRideProgress(ride, 'on-the-way');
         }
       }
     } else {
@@ -1110,6 +1112,55 @@ export default function ActiveRide() {
     }).catch((err) => console.error('❌ Failed to send delivery notification:', err));
   };
 
+  const notifyRideProgress = async (ride: any, dbStatus: string, reason?: string) => {
+    if (isDeliveryRide(ride) || !user?.id) return;
+
+    const statusMessages: Record<string, string> = {
+      'on-the-way': "I'm on my way to pick you up.",
+      arrived: "I've arrived at your pickup location.",
+      'picked-up': "I've picked up the passengers and we're heading to the destination.",
+      'dropped-off': "I've arrived at your destination.",
+      'awaiting-payment': "I'm at your destination. Please prepare your fare.",
+      completed: "I've completed the ride. Thank you for riding with me.",
+    };
+    const message = dbStatus === 'cancelled'
+      ? `I've cancelled this ride.${reason ? ` Reason: ${reason}` : ''}`
+      : statusMessages[dbStatus];
+    if (!message) return;
+
+    const passengers = Array.isArray(ride.passengerDetails) ? ride.passengerDetails : [];
+    const passengerNames = new Map(
+      passengers
+        .filter((passenger: any) => passenger?.id)
+        .map((passenger: any) => [String(passenger.id), passenger.name || 'Customer']),
+    );
+    const passengerIds = passengers
+      .map((passenger: any) => String(passenger?.id || ''))
+      .filter((id: string) => id && !/_companion_\d+$/.test(id));
+    const sharedRide = Boolean(ride.lobbyId) || ride.type === 'shared';
+    const primaryPassengerId = String(ride.customerId || (!sharedRide ? passengerIds[0] : '') || '');
+    const recipientIds = [...new Set(
+      (sharedRide ? [...passengerIds, primaryPassengerId] : [primaryPassengerId])
+        .filter((id) => id && !/_companion_\d+$/.test(id)),
+    )];
+    const rideId = String(ride.lobbyId || ride.id || '');
+    if (!rideId || recipientIds.length === 0) return;
+
+    const results = await Promise.all(recipientIds.map((recipientId) =>
+      supabaseHelpers.sendRideProgressChatMessage({
+        rideId,
+        senderId: user.id,
+        senderName: user.name || 'Driver',
+        recipientId,
+        recipientName: passengerNames.get(recipientId) || ride.customerName || 'Customer',
+        message,
+      }),
+    ));
+    results.forEach(({ error }) => {
+      if (error) console.error('[ActiveRide] Could not send ride progress chat message:', error);
+    });
+  };
+
   const updateStatus = (newStatus: RideStatus) => {
     if (!rideData) return;
     const updated = { ...rideData, status: newStatus };
@@ -1127,10 +1178,12 @@ export default function ActiveRide() {
       // Lobby rides have no ride_requests row until completion, so track the
       // driver's progress on the lobby itself so customers see status popups.
       supabaseHelpers.updateLobbyDriverStatus(rideData.lobbyId, dbMap[newStatus], messageMap[newStatus]);
+      void notifyRideProgress(rideData, dbMap[newStatus]);
     } else {
       supabaseHelpers.updateDriverRideStatus(rideData.id, dbMap[newStatus], 'Status updated');
       // Deliveries: notify the customer and the business.
       notifyDeliveryStatus(rideData, dbMap[newStatus], messageMap[newStatus]);
+      void notifyRideProgress(rideData, dbMap[newStatus]);
 
       /*
        * Accepting no longer moves the order itself -- it only records the rider,
@@ -1317,6 +1370,10 @@ export default function ActiveRide() {
       await supabaseHelpers.updateDriverRideStatus(rideData.id, 'completed', 'Ride completed!');
     }
 
+    if (!isDeliveryRide(rideData)) {
+      await notifyRideProgress(rideData, 'completed');
+    }
+
     logAudit({
       action: 'complete_ride',
       actorRole: 'rider',
@@ -1450,6 +1507,10 @@ export default function ActiveRide() {
 
           notifyDeliveryStatus(rideData, 'cancelled', cancellationMessage);
         }
+      }
+
+      if (!isDelivery) {
+        await notifyRideProgress(rideData, 'cancelled', reason);
       }
 
       logAudit({

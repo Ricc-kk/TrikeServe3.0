@@ -3720,6 +3720,59 @@ export const supabaseHelpers = {
     return { data, error };
   },
 
+  /** Send a ride milestone through the existing direct chat for this rider and passenger. */
+  async sendRideProgressChatMessage(message: {
+    rideId: string;
+    senderId: string;
+    senderName: string;
+    recipientId: string;
+    recipientName?: string;
+    message: string;
+  }) {
+    if (!message.senderId || !message.recipientId || message.senderId === message.recipientId) {
+      return { data: null, error: null };
+    }
+
+    const { data: conversation, error: conversationError } = await this.findOrCreateRideChat({
+      currentUserId: message.senderId,
+      currentUserName: message.senderName,
+      currentUserRole: 'rider',
+      peerId: message.recipientId,
+      peerName: message.recipientName || 'Customer',
+      peerRole: 'customer',
+      contextId: message.rideId,
+    });
+
+    if (conversationError || !conversation) {
+      return { data: null, error: conversationError || new Error('Could not resolve ride chat conversation') };
+    }
+
+    // Suppress an immediate retry of the same milestone while still allowing
+    // the same rider and passenger to receive it on a later ride.
+    const retrySince = new Date(Date.now() - 30_000).toISOString();
+    const { data: recentMessage } = await supabase
+      .from('chat_messages')
+      .select('id')
+      .eq('conversation_id', conversation.id)
+      .eq('sender_id', message.senderId)
+      .eq('message', message.message)
+      .gte('created_at', retrySince)
+      .limit(1)
+      .maybeSingle();
+
+    if (recentMessage) return { data: recentMessage, error: null };
+
+    return this.sendChatMessage({
+      conversationId: conversation.id,
+      senderId: message.senderId,
+      receiverId: message.recipientId,
+      senderName: message.senderName,
+      senderRole: 'rider',
+      receiverRole: 'customer',
+      message: message.message,
+    });
+  },
+
   /** Send an order milestone through the one direct thread shared by a user pair. */
   async sendOrderProgressChatMessage(message: {
     orderId: string;

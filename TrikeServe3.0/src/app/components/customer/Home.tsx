@@ -684,17 +684,17 @@ export default function CustomerHome() {
    */
   const customerMapRef = useRef<any>(null);
   const pendingTerminalFocusRef = useRef<{ lat: number; lng: number } | null>(null);
+  const terminalRouteBoundsRef = useRef<LatLng[]>([]);
 
   /**
-   * Frame the whole trip: where the passenger is, the pickup, the driver, the
-   * drop-off. Two points is the minimum worth fitting to; with one there is no
-   * direction to show and zooming to a single pin is just noise.
+   * Frame the terminal road with the passenger, pickup, driver, and drop-off so
+   * the service path remains in view alongside the active trip.
    */
   const fitTripBounds = useCallback(() => {
     const map = customerMapRef.current;
     const maps = (window as any).google?.maps;
     if (!map || !maps?.LatLngBounds) return;
-    const points = [currentLocation, pickupCoords, dropoffCoords, driverLocation].filter(Boolean) as LatLng[];
+    const points = [currentLocation, pickupCoords, dropoffCoords, driverLocation, ...terminalRouteBoundsRef.current].filter(Boolean) as LatLng[];
     if (points.length < 2) return;
     const bounds = new maps.LatLngBounds();
     points.forEach((p) => bounds.extend(p));
@@ -724,16 +724,25 @@ export default function CustomerHome() {
     // where the customer is allowed to be dropped off.
     const selectedTerminalBoundary = useMemo(() => {
       const terminal = terminals.find(t => t.id === selectedTerminalId) || null;
-      // A terminal with its boundary check off still has its shapes drawn, but it
-      // must not restrict the customer's drop-off, so it is treated as unbounded.
-      const enforced = terminal && terminal.boundary_enabled !== false ? terminal : null;
+      // Keep the route available for display even when the boundary gate is off;
+      // only the validation fields are disabled in that case.
+      const road = terminal ? normalizeBoundaryRoad(terminal.boundary_polygon) : null;
+      const area = terminal ? normalizeBoundaryArea(terminal.boundary_area) : null;
+      const enforced = terminal && terminal.boundary_enabled !== false;
       return {
         terminal,
-        road: enforced ? normalizeBoundaryRoad(enforced.boundary_polygon) : null,
-        area: enforced ? normalizeBoundaryArea(enforced.boundary_area) : null,
-        widthM: enforced ? normalizeRoadWidth(enforced.road_width_m) : undefined,
+        road: enforced ? road : null,
+        displayRoad: road,
+        area: enforced ? area : null,
+        widthM: enforced && terminal ? normalizeRoadWidth(terminal.road_width_m) : undefined,
       };
     }, [terminals, selectedTerminalId]);
+
+  useEffect(() => {
+    const route = selectedTerminalBoundary.displayRoad || [];
+    terminalRouteBoundsRef.current = route;
+    if (route.length > 0) fitTripBounds();
+  }, [selectedTerminalBoundary.displayRoad, fitTripBounds]);
 
   /*
    * The picker map draws the selected terminal's shapes in that terminal's own
@@ -748,7 +757,13 @@ export default function CustomerHome() {
   const pickerTerminal = selectedTerminalBoundary.terminal;
   const pickerMarkerColor = normalizeTerminalColor(pickerTerminal?.marker_color);
   const pickerRouteColor = normalizeRouteColor(pickerTerminal?.route_color);
+  const selectedTerminalRouteColor = pickerRouteColor;
   const pickerBorderColor = normalizeBorderColor(pickerTerminal?.border_color);
+
+  useEffect(() => {
+    const activeTerminalId = activeRideLobby?.terminal_id || activeRideRequest?.terminal_id;
+    if (activeTerminalId) setSelectedTerminalId(activeTerminalId);
+  }, [activeRideLobby?.terminal_id, activeRideRequest?.terminal_id]);
    const mapRef = useRef<any>(null);
    const hasManualPickupSelectionRef = useRef(false);
    const unsubscribeRef = useRef<(() => void) | null>(null);
@@ -3108,6 +3123,21 @@ const getPrice = () => {
                 />
               )}
 
+              {/* The selected terminal's service road stays visible while a
+                  customer books or tracks a private/share ride. */}
+              {selectedTerminalBoundary.displayRoad && (
+                <Polyline
+                  path={selectedTerminalBoundary.displayRoad}
+                  options={{ strokeColor: selectedTerminalRouteColor, strokeWeight: 10, strokeOpacity: 0.22, clickable: false, geodesic: true }}
+                />
+              )}
+              {selectedTerminalBoundary.displayRoad && (
+                <Polyline
+                  path={selectedTerminalBoundary.displayRoad}
+                  options={{ strokeColor: selectedTerminalRouteColor, strokeWeight: 4, strokeOpacity: 0.95, clickable: false, geodesic: true }}
+                />
+              )}
+
               {/* Driver location marker (real-time tracking) */}
               {driverLocation && rideStatus === 'driver-found' && (
                 <MarkerF
@@ -3366,7 +3396,7 @@ const getPrice = () => {
                     label="Private Ride"
                     filipino="Pribado"
                     description="Buong tricycle para sa iyo at sa iyong mga kasama."
-                    icon={CarTaxiFront}
+                    icon={TerminalIconGlyph}
                   />
                 </div>
                 </div>
@@ -4223,9 +4253,9 @@ const getPrice = () => {
                 {/* The route: the corridor a drop-off has to sit in. Drawn twice,
                     a wide translucent casing under a crisp line, so it reads as a
                     road the tricycle drives rather than a single thin stroke. */}
-                {selectedTerminalBoundary.road && (
+                {selectedTerminalBoundary.displayRoad && (
                   <Polyline
-                    path={selectedTerminalBoundary.road}
+                    path={selectedTerminalBoundary.displayRoad}
                     options={{
                       strokeColor: pickerRouteColor,
                       strokeWeight: 9,
@@ -4235,9 +4265,9 @@ const getPrice = () => {
                     }}
                   />
                 )}
-                {selectedTerminalBoundary.road && (
+                {selectedTerminalBoundary.displayRoad && (
                   <Polyline
-                    path={selectedTerminalBoundary.road}
+                    path={selectedTerminalBoundary.displayRoad}
                     options={{
                       strokeColor: pickerRouteColor,
                       strokeWeight: 4,
@@ -4437,7 +4467,7 @@ const getPrice = () => {
                   <span className="grid size-10 shrink-0 place-items-center rounded-xl bg-[var(--background)]">
                     {selectedVehicle === 'share'
                       ? <UsersRound className="size-6 text-[var(--primary)]" aria-hidden="true" />
-                      : <CarTaxiFront className="size-6 text-[var(--primary)]" aria-hidden="true" />}
+                      : <TerminalIconGlyph className="size-6 text-[var(--primary)]" aria-hidden="true" />}
                   </span>
                   <div>
                     <p className="font-bold text-[var(--ink)]">

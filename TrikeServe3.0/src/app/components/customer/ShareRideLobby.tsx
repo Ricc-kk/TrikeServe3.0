@@ -4,13 +4,14 @@ import { Button } from "../ui/button";
 import { Card } from "../ui/card";
 import { Badge } from "../ui/badge";
 import { useAuth } from "../../contexts/AuthContext";
-import { supabase, supabaseHelpers, isSimilarRoute, isPointWithinAnyTerminalBorder, isPointWithinAnyTerminalRoute, haversineDistanceMeters } from "@/lib/supabase";
+import { supabase, supabaseHelpers, isSimilarRoute, isPointWithinAnyTerminalBorder, isPointWithinAnyTerminalRoute, haversineDistanceMeters, normalizeBoundaryRoad } from "@/lib/supabase";
 import { GoogleMap, MarkerF, Polyline } from "@react-google-maps/api";
 import useMapLoader from "@/lib/mapLoader";
 import { useElapsedTime } from "@/app/hooks/useElapsedTime";
 import tricycleIcon from '../../../assets/0b76d1aa56b8ad6e15dd4efc8a0100b0ca5762a1.png'
 import FloatingChatHead from "../ui/FloatingChatHead";
 import RideChatOverlay from "../rider/RideChatOverlay";
+import { normalizeRouteColor } from "../ui/TerminalIcon";
 
 const DRIVER_STATUS_ICONS: Record<string, typeof MapPin> = {
   cancelled: X,
@@ -81,6 +82,7 @@ function PassengerAvatar({
 
 interface ShareRideLobby {
   id: string;
+  terminal_id?: string | null;
   customer_id?: string;
   pickup_location: string;
   pickup_address: string;
@@ -209,6 +211,9 @@ export default function ShareRideLobby({
   const [driverRoutePath, setDriverRoutePath] = useState<Array<{ lat: number; lng: number }>>([]);
   const [etaToDestination, setEtaToDestination] = useState<string | null>(null);
   const [destinationRoutePath, setDestinationRoutePath] = useState<Array<{ lat: number; lng: number }>>([]);
+  const [terminalRoutePath, setTerminalRoutePath] = useState<Array<{ lat: number; lng: number }>>([]);
+  const [terminalRouteColor, setTerminalRouteColor] = useState(() => normalizeRouteColor(undefined));
+  const lobbyMapRef = useRef<any>(null);
   const driverLocationIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   /**
@@ -458,6 +463,56 @@ export default function ShareRideLobby({
   };
 
   const toTime = (value?: string) => new Date(value || 0).getTime();
+
+  useEffect(() => {
+    const terminalId = lobby?.terminal_id || selectedTerminalId;
+    if (!terminalId) {
+      setTerminalRoutePath([]);
+      setTerminalRouteColor(normalizeRouteColor(undefined));
+      return;
+    }
+
+    let active = true;
+    supabase
+      .from('terminals')
+      .select('*')
+      .eq('id', terminalId)
+      .maybeSingle()
+      .then(({ data, error }) => {
+        if (!active) return;
+        if (error || !data) {
+          setTerminalRoutePath([]);
+          return;
+        }
+        setTerminalRoutePath(normalizeBoundaryRoad(data.boundary_polygon) || []);
+        setTerminalRouteColor(normalizeRouteColor(data.route_color));
+      })
+      .catch(() => {
+        if (active) setTerminalRoutePath([]);
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [lobby?.terminal_id, selectedTerminalId]);
+
+  const fitLobbyRouteBounds = useCallback(() => {
+    const map = lobbyMapRef.current;
+    const maps = (window as any).google?.maps;
+    if (!map || !maps?.LatLngBounds || terminalRoutePath.length === 0) return;
+
+    const endpoints = [pickupCoords, dropoffCoords].filter(
+      (point): point is { lat: number; lng: number } => point !== null && point !== undefined,
+    );
+    const points = [...terminalRoutePath, ...endpoints];
+    const bounds = new maps.LatLngBounds();
+    points.forEach((point) => bounds.extend(point));
+    map.fitBounds(bounds, 24);
+  }, [terminalRoutePath, pickupCoords, dropoffCoords]);
+
+  useEffect(() => {
+    fitLobbyRouteBounds();
+  }, [fitLobbyRouteBounds]);
 
    // Initialize or join lobby on mount
    useEffect(() => {
@@ -1598,13 +1653,18 @@ if (loading) {
               </div>
             )}
 
-            {/* Live Tracking Map */}
-            {lobby.status === 'driver_found' && isMapsLoaded && driverLocation && (
+            {/* Terminal route and live tracking map */}
+            {isMapsLoaded && ((lobby.status === 'driver_found' && driverLocation) || terminalRoutePath.length > 0) && (
               <div className="rounded-xl overflow-hidden mb-3 border border-[var(--border)] shadow-sm">
                 <GoogleMap
                   mapContainerStyle={{ width: '100%', height: '240px' }}
-                  center={driverLocation}
+                  center={pickupCoords || terminalRoutePath[0] || driverLocation || { lat: 14.5995, lng: 120.9842 }}
                   zoom={15}
+                  onLoad={(map: any) => {
+                    lobbyMapRef.current = map;
+                    fitLobbyRouteBounds();
+                  }}
+                  onUnmount={() => { lobbyMapRef.current = null; }}
                   options={{
                     zoomControl: false,
                     fullscreenControl: false,
@@ -1614,19 +1674,21 @@ if (loading) {
                   }}
                 >
                   {/* Driver marker (tricycle icon) */}
-                  <MarkerF
-                    position={driverLocation}
-                    title="Driver Location"
-                    icon={(() => {
-                      const google = (window as any)?.google;
-                      if (!google?.maps?.Size || !google?.maps?.Point) return undefined;
-                      return {
-                        url: tricycleIcon,
-                        scaledSize: new google.maps.Size(44, 44),
-                        anchor: new google.maps.Point(22, 22),
-                      };
-                    })()}
-                  />
+                  {driverLocation && (
+                    <MarkerF
+                      position={driverLocation}
+                      title="Driver Location"
+                      icon={(() => {
+                        const google = (window as any)?.google;
+                        if (!google?.maps?.Size || !google?.maps?.Point) return undefined;
+                        return {
+                          url: tricycleIcon,
+                          scaledSize: new google.maps.Size(44, 44),
+                          anchor: new google.maps.Point(22, 22),
+                        };
+                      })()}
+                    />
+                  )}
                   {/* Pickup marker */}
                   {pickupCoords && (
                     <MarkerF
@@ -1653,6 +1715,19 @@ if (loading) {
                         scaledSize: new (window as any).google.maps.Size(32, 32),
                         anchor: new (window as any).google.maps.Point(16, 32),
                       }}
+                    />
+                  )}
+                  {/* Terminal route corridor, visible before and after driver assignment. */}
+                  {terminalRoutePath.length > 0 && (
+                    <Polyline
+                      path={terminalRoutePath}
+                      options={{ strokeColor: terminalRouteColor, strokeOpacity: 0.22, strokeWeight: 10, geodesic: true, clickable: false }}
+                    />
+                  )}
+                  {terminalRoutePath.length > 0 && (
+                    <Polyline
+                      path={terminalRoutePath}
+                      options={{ strokeColor: terminalRouteColor, strokeOpacity: 0.95, strokeWeight: 4, geodesic: true, clickable: false }}
                     />
                   )}
                   {/* Driver route line */}
@@ -1683,15 +1758,21 @@ if (loading) {
                 {/* Driver status indicator */}
                 <div className="px-3 py-2 bg-surface border-t border-[var(--border)] flex items-center justify-between">
                   <div className="flex items-center gap-2">
-                    <div className="w-2 h-2 bg-[var(--success)] rounded-full animate-pulse" />
+                    <div className={`w-2 h-2 rounded-full ${driverLocation ? 'bg-[var(--success)] animate-pulse' : 'bg-[var(--info)]'}`} />
                     <span className="text-xs font-semibold text-[var(--ink)]">
-                      {(lobby.driver_status === 'on-the-way' || lobby.driver_status === 'arrived') ? 'Heading to pickup' : 'On the way to destination'}
+                      {!driverLocation
+                        ? (lobby.driver_id ? 'Connecting to driver' : 'Waiting for a driver')
+                        : (lobby.driver_status === 'on-the-way' || lobby.driver_status === 'arrived')
+                          ? 'Heading to pickup'
+                          : 'On the way to destination'}
                     </span>
                   </div>
                   <div className="flex items-center gap-1">
                     <Navigation className="w-3 h-3 text-[var(--muted-foreground)]" />
                     <span className="text-[10px] text-[var(--muted-foreground)]">
-                      {driverLocation.lat.toFixed(4)}, {driverLocation.lng.toFixed(4)}
+                      {driverLocation
+                        ? `${driverLocation.lat.toFixed(4)}, ${driverLocation.lng.toFixed(4)}`
+                        : 'Terminal route'}
                     </span>
                   </div>
                 </div>
