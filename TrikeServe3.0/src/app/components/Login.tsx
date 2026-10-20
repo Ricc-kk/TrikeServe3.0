@@ -2,8 +2,10 @@ import { useState, useEffect } from "react";
 import { useNavigate, Link } from "react-router";
 import { ChevronDown, Eye, EyeOff, Users } from "lucide-react";
 import { armWelcomeGreeting } from "../../lib/welcomeGreeting";
+import TrikeServeLogo from "../../assets/TRIKESERVE_logo.jpg";
 import { Button } from "./ui/button";
 import { Input } from "./ui/input";
+import TrimmedLogo from "./ui/TrimmedLogo";
 import { useAuth } from "../contexts/AuthContext";
 import { supabase } from "../../utils/supabase";
 import tagalagImage from "../../assets/trikserve_loginpage.jpg";
@@ -270,12 +272,14 @@ export default function Login() {
       {/* Right Side - Login Form */}
       <div className="min-w-0 flex-1 lg:max-w-xl flex items-start justify-center p-6 pt-10 bg-surface">
         <div className="w-full max-w-md">
-          {/* Mobile Logo */}
-          <div className="lg:hidden text-center mb-8">
-            <h1 className="text-5xl font-extrabold mb-2" style={{ letterSpacing: '-0.02em', color: 'var(--primary)' }}>
-              TrikeServe
-            </h1>
-            <p className="text-sm text-[var(--muted-foreground)]">Community-Based Tricycle Platform</p>
+          <div className="mb-7 flex justify-center lg:justify-start">
+            <div className="h-24 w-36 overflow-hidden rounded-2xl bg-[#EBEBEB] ring-1 ring-black/5">
+              <TrimmedLogo
+                src={TrikeServeLogo}
+                alt="TrikeServe logo"
+                className="size-full object-contain p-1"
+              />
+            </div>
           </div>
 
           <div className="mb-6">
