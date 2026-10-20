@@ -2,7 +2,7 @@ import { useEffect, useRef } from "react";
 import { useNavigate } from "react-router";
 import { supabase } from "./supabase";
 import { useAuth } from "../app/contexts/AuthContext";
-import { ACTIVE_RIDE_STATUSES } from "./rideLock";
+import { ACTIVE_RIDE_STATUSES, isDeliveryRideRequest } from "./rideLock";
 
 /**
  * Remembers an in-progress ride and returns the customer or driver to it after the
@@ -122,14 +122,17 @@ export function useRideResume() {
       const column = remembered.role === "rider" ? "driver_id" : "customer_id";
       const { data, error } = await supabase
         .from("ride_requests")
-        .select("id, status")
+        .select(remembered.role === "customer" ? "id, status, order_id, ride_type, pickup_location" : "id, status")
         .eq("id", remembered.rideId)
         .eq(column, user.id)
         .in("status", [...ACTIVE_RIDE_STATUSES])
         .limit(1);
 
       if (!active) return;
-      const stillActive = !error && (data ?? []).length > 0;
+      const rememberedRequest = (data ?? [])[0];
+      const isCustomerDelivery =
+        remembered.role === "customer" && isDeliveryRideRequest(rememberedRequest);
+      const stillActive = !error && !!rememberedRequest && !isCustomerDelivery;
       ((window as any).__rideResumeDebug ??= []).push({
         rideId: remembered.rideId,
         column,

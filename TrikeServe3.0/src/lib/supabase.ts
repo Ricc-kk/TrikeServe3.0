@@ -2698,20 +2698,24 @@ export const supabaseHelpers = {
   },
 
   // Notify both the customer and the business about a delivery status change.
-  // Looks up the order from the ride request's tagged pickup location so we can
-  // address the right customer and business.
+  // Prefer the order id carried by the active ride; older request payloads can
+  // still fall back to the id embedded in the tagged pickup location.
   async notifyDeliveryStatusChange(params: {
     pickupLocation?: string;
+    orderId?: string;
+    orderNumber?: string;
     customerId?: string;
+    senderId?: string;
+    senderName?: string;
     status: string;
     message?: string;
   }) {
-    const { pickupLocation, customerId, status, message } = params;
-    const orderId = this.parseOrderIdFromDeliveryPickup(pickupLocation);
+    const { pickupLocation, customerId, senderId, senderName, status, message } = params;
+    const orderId = params.orderId || this.parseOrderIdFromDeliveryPickup(pickupLocation);
 
     let businessId: string | null = null;
     let restaurantName = '';
-    let orderNumber = '';
+    let orderNumber = params.orderNumber || '';
     let resolvedCustomerId: string | null = customerId || null;
 
     if (orderId) {
@@ -2722,7 +2726,7 @@ export const supabaseHelpers = {
         .single();
       if (order) {
         businessId = order.business_id || null;
-        orderNumber = order.order_number || '';
+        orderNumber = order.order_number || orderNumber;
         resolvedCustomerId = order.customer_id || resolvedCustomerId;
 
         // orders.restaurant_email actually holds the restaurant id; map it to
@@ -2782,6 +2786,11 @@ export const supabaseHelpers = {
         message: 'Your delivery has been completed. Enjoy your meal! 🍽️',
         emoji: '✅',
       },
+      'cancelled': {
+        title: 'Delivery cancelled',
+        message: message || 'The driver cancelled this delivery.',
+        emoji: '⚠️',
+      },
     };
 
     const label = statusLabels[status] || {
@@ -2818,6 +2827,7 @@ export const supabaseHelpers = {
         'dropped-off': { title: 'Arrived at customer', message: 'The delivery driver has arrived at the customer\'s delivery address.' },
         'awaiting-payment': { title: 'At customer\'s location', message: 'The delivery driver is at the customer\'s location completing the delivery.' },
         'completed': { title: 'Delivery completed', message: 'This order has been delivered successfully.' },
+        'cancelled': { title: 'Delivery cancelled', message: message || 'The driver cancelled this delivery.' },
       };
       const bizLabel = businessLabels[status] || { title: 'Delivery update', message: message || 'The delivery status has been updated.' };
       notifications.push({
@@ -2834,14 +2844,63 @@ export const supabaseHelpers = {
     }
 
     let customerData: any = null;
+    let customerError: any = null;
     if (customerNotification) {
       const result = await this.upsertCustomerOrderNotification(customerNotification);
-      if (result.error) return result;
       customerData = result.data;
+      customerError = result.error;
+      if (customerError) console.error('[supabase] Failed to update customer delivery notification:', customerError);
+    }
+
+    // Store each delivery milestone in the same direct chat used by each pair.
+    if (senderId) {
+      const businessChatMessages: Record<string, string> = {
+        'on-the-way': 'The delivery driver is on the way to pick up this order.',
+        arrived: 'The delivery driver has arrived at your restaurant to pick up the order.',
+        'picked-up': 'The delivery driver has picked up the order and is heading to the customer.',
+        'dropped-off': "The delivery driver has arrived at the customer's delivery address.",
+        'awaiting-payment': "The delivery driver is at the customer's location completing the delivery.",
+        completed: 'The delivery driver has completed this order.',
+        cancelled: message || 'The delivery driver cancelled this order.',
+      };
+      const recipientMessages: Array<Promise<{ data: any; error: any }>> = [];
+      const customerMessage = statusLabels[status]?.message || message || 'Your delivery status has been updated.';
+      const businessMessage = businessChatMessages[status] || message || 'The delivery status has been updated.';
+
+      if (resolvedCustomerId) {
+        recipientMessages.push(this.sendOrderProgressChatMessage({
+          orderId: orderId || '',
+          orderNumber: orderNumber || undefined,
+          senderId,
+          senderName: senderName || 'Driver',
+          senderRole: 'rider',
+          recipientId: resolvedCustomerId,
+          recipientRole: 'customer',
+          message: customerMessage,
+        }));
+      }
+      if (businessId) {
+        recipientMessages.push(this.sendOrderProgressChatMessage({
+          orderId: orderId || '',
+          orderNumber: orderNumber || undefined,
+          senderId,
+          senderName: senderName || 'Driver',
+          senderRole: 'rider',
+          recipientId: businessId,
+          recipientName: restaurantName || 'Restaurant',
+          recipientRole: 'business',
+          message: businessMessage,
+        }));
+      }
+
+      const chatResults = await Promise.all(recipientMessages);
+      chatResults.forEach(({ error: chatError }) => {
+        if (chatError) console.error('[supabase] Failed to send delivery progress chat message:', chatError);
+      });
     }
 
     if (notifications.length === 0) {
-      return { data: customerData ? [customerData] : null, error: null };
+      return { data: customerData ? [customerData] : null, error: customerError };
     }
 
     const { data, error } = await supabase
@@ -2849,7 +2908,8 @@ export const supabaseHelpers = {
       .insert(notifications)
       .select();
 
-    return { data: [...(customerData ? [customerData] : []), ...(data || [])], error };
+    if (error) console.error('[supabase] Failed to notify the business about delivery status:', error);
+    return { data: [...(customerData ? [customerData] : []), ...(data || [])], error: error || customerError };
   },
 
   // Notify the customer when the business updates an order's status
@@ -2863,6 +2923,7 @@ export const supabaseHelpers = {
 
     // Resolve the customer from the order.
     let customerId: string | null = null;
+    let businessId: string | null = null;
     let name = '';
     let number = orderNumber || '';
     const { data: order } = await supabase
@@ -2873,7 +2934,7 @@ export const supabaseHelpers = {
     if (order) {
       customerId = order.customer_id || null;
       number = order.order_number || number;
-      let businessId = order.business_id || null;
+      businessId = order.business_id || null;
       if (!businessId && order.restaurant_email) {
         const { data: restaurant } = await supabase
           .from('restaurants')
@@ -2899,6 +2960,11 @@ export const supabaseHelpers = {
         title: 'Payment received',
         message: 'The shop has received your GCash payment and is preparing your order.',
         emoji: '\uD83D\uDD18',
+      },
+      'driver-requested': {
+        title: 'Driver requested',
+        message: 'The restaurant has prepared your food order and requested a driver.',
+        emoji: '\uD83D\uDEB5',
       },
       'confirmed': {
         title: 'Order Confirmed',
@@ -2932,6 +2998,20 @@ export const supabaseHelpers = {
       emoji: '🛍️',
     };
 
+    if (businessId) {
+      const { error: chatError } = await this.sendOrderProgressChatMessage({
+        orderId,
+        orderNumber: number || undefined,
+        senderId: businessId,
+        senderName: name || 'Restaurant',
+        senderRole: 'business',
+        recipientId: customerId,
+        recipientRole: 'customer',
+        message: label.message,
+      });
+      if (chatError) console.error('[supabase] Failed to send business order progress chat message:', chatError);
+    }
+
     return this.upsertCustomerOrderNotification({
         recipient_id: customerId,
         order_id: orderId,
@@ -2950,10 +3030,11 @@ export const supabaseHelpers = {
     orderNumber: string;
     restaurantName: string;
     customerName: string;
+    customerId?: string;
     total: number;
     businessUserId: string;
   }) {
-    const { orderId, orderNumber, restaurantName, customerName, total, businessUserId } = params;
+    const { orderId, orderNumber, restaurantName, customerName, customerId, total, businessUserId } = params;
 
     const { data, error } = await supabase
       .from('delivery_notifications')
@@ -2969,6 +3050,21 @@ export const supabaseHelpers = {
         created_at: new Date().toISOString(),
       }])
       .select();
+
+    if (customerId) {
+      const { error: chatError } = await this.sendOrderProgressChatMessage({
+        orderId,
+        orderNumber,
+        senderId: customerId,
+        senderName: customerName || 'Customer',
+        senderRole: 'customer',
+        recipientId: businessUserId,
+        recipientName: restaurantName || 'Restaurant',
+        recipientRole: 'business',
+        message: 'I placed a new food order.',
+      });
+      if (chatError) console.error('[supabase] Failed to send new-order chat message:', chatError);
+    }
 
     return { data, error };
   },
@@ -3599,6 +3695,67 @@ export const supabaseHelpers = {
     return { data, error };
   },
 
+  /** Send an order milestone through the one direct thread shared by a user pair. */
+  async sendOrderProgressChatMessage(message: {
+    orderId: string;
+    orderNumber?: string;
+    senderId: string;
+    senderName: string;
+    senderRole: string;
+    recipientId: string;
+    recipientName?: string;
+    recipientRole: string;
+    message: string;
+  }) {
+    if (!message.senderId || !message.recipientId || message.senderId === message.recipientId) {
+      return { data: null, error: null };
+    }
+
+    const content = message.orderNumber
+      ? `Order #${message.orderNumber} · ${message.message}`
+      : message.message;
+    const { data: conversation, error: conversationError } = await this.ensureChatConversation({
+      threadKey: buildChatThreadKey({
+        participantAId: message.senderId,
+        participantBId: message.recipientId,
+      }),
+      participantAId: message.senderId,
+      participantBId: message.recipientId,
+      participantARole: message.senderRole,
+      participantBRole: message.recipientRole,
+      participantAName: message.senderName,
+      participantBName: message.recipientName,
+      participantAAvatar: message.senderName.trim().charAt(0).toUpperCase() || '?',
+      participantBAvatar: message.recipientName?.trim().charAt(0).toUpperCase() || undefined,
+    });
+
+    if (conversationError || !conversation) {
+      return { data: null, error: conversationError || new Error('Could not resolve chat conversation') };
+    }
+
+    // Status listeners can replay the current state after reconnecting. Keep one
+    // copy of each order milestone in a participant pair's shared thread.
+    const { data: existingMessage } = await supabase
+      .from('chat_messages')
+      .select('id')
+      .eq('conversation_id', conversation.id)
+      .eq('sender_id', message.senderId)
+      .eq('message', content)
+      .limit(1)
+      .maybeSingle();
+    if (existingMessage) return { data: existingMessage, error: null };
+
+    return this.sendChatMessage({
+      conversationId: conversation.id,
+      senderId: message.senderId,
+      receiverId: message.recipientId,
+      senderName: message.senderName,
+      senderRole: message.senderRole,
+      receiverRole: message.recipientRole,
+      message: content,
+    });
+  },
+
   async markChatConversationRead(conversationId: string, userId: string) {
     const timestamp = new Date().toISOString();
     const { data: conversation } = await supabase
@@ -3660,7 +3817,10 @@ export const supabaseHelpers = {
 
   subscribeToUserChatThreads(userId: string, callback: () => void) {
     const channel = supabase
-      .channel(`chat_threads_${userId}`)
+      // Multiple screens can watch the same user (for example the business
+      // sidebar and its incoming chat head). Realtime channel topics must be
+      // unique per subscription so one listener cannot collide with another.
+      .channel(`chat_threads_${userId}_${crypto.randomUUID()}`)
       .on(
         'postgres_changes',
         {

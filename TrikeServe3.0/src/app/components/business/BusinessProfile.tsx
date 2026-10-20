@@ -179,7 +179,7 @@ export default function BusinessProfile() {
         {/* Header */}
         <div className="border-b border-[var(--border)] bg-surface px-3 py-3 sm:px-5">
           <div className="flex items-center gap-2">
-            {/* Keep the profile drawer navigation consistent at every width. */}
+            {/* Keep drawer navigation available on mobile and tablet layouts. */}
             <BusinessHamburgerButton
               onClick={() => setIsMobileMenuOpen(true)}
               label="Open business navigation"

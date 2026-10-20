@@ -1,10 +1,13 @@
 import { ArrowLeft, Package, Clock, MapPin, CreditCard, Star, Navigation, CheckCircle, Phone, MessageCircle } from "lucide-react";
 import { useNavigate, useParams } from "react-router";
 import { Card } from "../ui/card";
+import FullSizeImagePreview from "../ui/FullSizeImagePreview";
+import FloatingChatHead from "../ui/FloatingChatHead";
 import { Button } from "../ui/button";
 import { Badge } from "../ui/badge";
 import { useAuth } from "../../contexts/AuthContext";
 import { usePreviousPage } from "../../hooks/usePreviousPage";
+import { cuisineLabels } from "@/lib/foodTaxonomy";
 import { ImageWithFallback } from "../figma/ImageWithFallback";
 import StoreLogo from "../figma/StoreLogo";
 import { supabase } from "../../../lib/supabase";
@@ -12,7 +15,7 @@ import ReasonPromptModal from "../ui/reason-prompt-modal";
 import { supabaseHelpers } from "@/lib/supabase";
 import { getOrderProgress } from "@/lib/orderProgress";
 import { OrderStatusUpdates } from "../ui/OrderStatusUpdates";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { GoogleMap, MarkerF, Polyline } from "@react-google-maps/api";
 import useMapLoader from "@/lib/mapLoader";
 import { createCustomerMarkerIcon, createRestaurantMarkerIcon } from "@/lib/mapIcons";
@@ -53,6 +56,17 @@ interface OrderData {
   /** Why the order was cancelled, and which side cancelled it. */
   cancelReason?: string | null;
   cancelledBy?: string | null;
+}
+
+interface OrderRestaurantProfile {
+  name: string | null;
+  subtitle: string | null;
+  address: string | null;
+  cuisine: unknown;
+  deliveryTime: string | null;
+  logoImage: string | null;
+  rating: number | null;
+  ratingCount: number;
 }
 
 function buildOrderData(dbOrder: any): OrderData {
@@ -146,6 +160,16 @@ export default function OrderDetail() {
   const { orderId } = useParams();
   const { user } = useAuth();
   const [order, setOrder] = useState<OrderData | null>(null);
+  const [restaurantProfile, setRestaurantProfile] = useState<OrderRestaurantProfile | null>(null);
+  const [incomingOrderChat, setIncomingOrderChat] = useState<{
+    conversationId: string;
+    peerId: string;
+    peerName: string;
+    peerAvatar: string | null;
+    unread: number;
+  } | null>(null);
+  const [orderChatPulseKey, setOrderChatPulseKey] = useState(0);
+  const previousOrderChatSignalRef = useRef<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [rating, setRating] = useState(0);
   const [ratingSubmitting, setRatingSubmitting] = useState(false);
@@ -166,6 +190,7 @@ export default function OrderDetail() {
     const fetchOrder = async () => {
       try {
         setRestaurantLocation(null);
+        setRestaurantProfile(null);
         const { data: dbOrder, error: dbError } = await supabase
           .from('orders').select('*').eq('id', orderId).single();
 
@@ -212,23 +237,73 @@ export default function OrderDetail() {
 
         setOrder(data);
 
-        // Resolve business id
+        // Load the current restaurant profile so this section reflects the
+        // shop's saved details instead of only the order's older name snapshot.
         let resolvedBusinessId = dbOrder.business_id || null;
-        let restaurantLogo = '';
-        if (dbOrder.restaurant_email) {
-          try {
-            const { data: restaurant } = await supabase
-              .from('restaurants').select('business_user_id, logo_image, latitude, longitude').eq('id', dbOrder.restaurant_email).maybeSingle();
-            if (!resolvedBusinessId && restaurant?.business_user_id) resolvedBusinessId = restaurant.business_user_id;
-            if (restaurant?.logo_image) restaurantLogo = restaurant.logo_image;
-            const restaurantLat = Number(restaurant?.latitude);
-            const restaurantLng = Number(restaurant?.longitude);
-            if (restaurant?.latitude != null && restaurant?.longitude != null && Number.isFinite(restaurantLat) && Number.isFinite(restaurantLng)) {
+        try {
+          const restaurantId = dbOrder.restaurant_email || dbOrder.restaurant_id || null;
+          let restaurantRecord: any = null;
+          const profileFields = 'id, business_user_id, name, subtitle, address, cuisine, delivery_time, logo_image, latitude, longitude';
+
+          if (restaurantId) {
+            const { data } = await supabase
+              .from('restaurants')
+              .select(profileFields)
+              .eq('id', restaurantId)
+              .maybeSingle();
+            restaurantRecord = data;
+          }
+
+          if (!restaurantRecord && resolvedBusinessId) {
+            const { data } = await supabase
+              .from('restaurants')
+              .select(profileFields)
+              .eq('business_user_id', resolvedBusinessId)
+              .maybeSingle();
+            restaurantRecord = data;
+          }
+
+          if (restaurantRecord) {
+            resolvedBusinessId = restaurantRecord.business_user_id || resolvedBusinessId;
+            let rating: number | null = null;
+            let ratingCount = 0;
+            if (resolvedBusinessId) {
+              const ratingResult = await supabaseHelpers.getBusinessRating(resolvedBusinessId);
+              rating = ratingResult.average;
+              ratingCount = ratingResult.count;
+            }
+
+            setRestaurantProfile({
+              name: restaurantRecord.name || null,
+              subtitle: restaurantRecord.subtitle || null,
+              address: restaurantRecord.address || null,
+              cuisine: restaurantRecord.cuisine,
+              deliveryTime: restaurantRecord.delivery_time || null,
+              logoImage: restaurantRecord.logo_image || null,
+              rating,
+              ratingCount,
+            });
+
+            const restaurantLat = Number(restaurantRecord.latitude);
+            const restaurantLng = Number(restaurantRecord.longitude);
+            if (restaurantRecord.latitude != null && restaurantRecord.longitude != null && Number.isFinite(restaurantLat) && Number.isFinite(restaurantLng)) {
               setRestaurantLocation(current => current ?? { lat: restaurantLat, lng: restaurantLng });
             }
-          } catch {}
+          }
+
+          if (resolvedBusinessId || restaurantRecord?.logo_image || restaurantRecord?.name) {
+            setOrder(prev => prev ? {
+              ...prev,
+              businessId: resolvedBusinessId || prev.businessId,
+              restaurantName: restaurantRecord?.name?.trim() || prev.restaurantName,
+              restaurantImage: restaurantRecord?.logo_image || prev.restaurantImage,
+            } : prev);
+          }
+        } catch (profileError) {
+          // Keep the order detail available from its saved snapshot if profile
+          // information or ratings cannot be reached.
+          console.warn('[OrderDetail] Could not load restaurant profile:', profileError);
         }
-        if (resolvedBusinessId || restaurantLogo) setOrder(prev => prev ? { ...prev, businessId: resolvedBusinessId || prev.businessId, restaurantImage: restaurantLogo || prev.restaurantImage } : prev);
       } catch (e) {
         console.error('[OrderDetail] Error:', e);
         setError('Failed to load order');
@@ -293,7 +368,7 @@ export default function OrderDetail() {
          */
         const { data: rideReq } = await supabase
           .from('ride_requests')
-          .select('driver_lat, driver_lng, driver_status, driver_status_message, pickup_lat, pickup_lng')
+          .select('accepted_driver_id, driver_name, driver_lat, driver_lng, driver_status, driver_status_message, pickup_lat, pickup_lng')
           .eq('order_id', orderId)
           .order('updated_at', { ascending: false })
           .limit(1)
@@ -314,6 +389,8 @@ export default function OrderDetail() {
 
         // Build new order data and always set it
         const newData = buildOrderData(data);
+        newData.driverId = rideReq?.accepted_driver_id || newData.driverId;
+        newData.driverName = rideReq?.driver_name || newData.driverName;
         newData.driverStatus = rideReq?.driver_status ?? null;
         newData.driverMessage = rideReq?.driver_status_message ?? null;
         setOrder(prev => {
@@ -368,6 +445,7 @@ export default function OrderDetail() {
       if (ride.driver_status) {
         setOrder(prev => (prev ? {
           ...prev,
+          driverId: prev.driverId || ride.accepted_driver_id || undefined,
           driverName: prev.driverName || ride.driver_name || undefined,
           driverStatus: ride.driver_status,
           driverMessage: ride.driver_status_message || prev.driverMessage || null,
@@ -380,6 +458,78 @@ export default function OrderDetail() {
   }, [orderId]);
 
   // ─── Compute route from driver to customer ─────────────────────────
+  // Surface unread messages from this order's restaurant or driver as a
+  // floating head; the customer opens the existing conversation only on tap.
+  useEffect(() => {
+    const customerId = user?.id;
+    const peerIds = new Set([order?.businessId, order?.driverId].filter((id): id is string => Boolean(id)));
+    if (!customerId || peerIds.size === 0) {
+      setIncomingOrderChat(null);
+      previousOrderChatSignalRef.current = null;
+      return;
+    }
+
+    let active = true;
+    const refreshIncomingOrderChat = async () => {
+      const { data, error } = await supabaseHelpers.getChatConversations(customerId);
+      if (!active || error) return;
+
+      const incoming = (data || [])
+        .map((conversation: any) => {
+          const isParticipantA = conversation.participant_a_id === customerId;
+          const peerId = isParticipantA ? conversation.participant_b_id : conversation.participant_a_id;
+          const unread = Number(isParticipantA ? conversation.unread_count_a : conversation.unread_count_b) || 0;
+          return {
+            conversation,
+            peerId,
+            peerName: isParticipantA ? conversation.participant_b_name : conversation.participant_a_name,
+            peerAvatar: isParticipantA ? conversation.participant_b_avatar : conversation.participant_a_avatar,
+            unread,
+          };
+        })
+        .filter(({ conversation, peerId, unread }) =>
+          peerIds.has(peerId) && unread > 0 && conversation.last_message_sender_id === peerId
+        )
+        .sort((a, b) =>
+          new Date(b.conversation.last_message_at || b.conversation.updated_at || 0).getTime() -
+          new Date(a.conversation.last_message_at || a.conversation.updated_at || 0).getTime()
+        );
+
+      const latest = incoming[0];
+      if (!latest) {
+        setIncomingOrderChat(null);
+        previousOrderChatSignalRef.current = null;
+        return;
+      }
+
+      const timestamp = latest.conversation.last_message_at || latest.conversation.updated_at || '';
+      const signal = `${latest.conversation.id}:${timestamp}:${latest.unread}`;
+      if (previousOrderChatSignalRef.current !== signal) {
+        setOrderChatPulseKey((key) => key + 1);
+        previousOrderChatSignalRef.current = signal;
+      }
+      setIncomingOrderChat({
+        conversationId: latest.conversation.id,
+        peerId: latest.peerId,
+        peerName: latest.peerName || 'Restaurant or driver',
+        peerAvatar: latest.peerAvatar || null,
+        unread: latest.unread,
+      });
+    };
+
+    void refreshIncomingOrderChat();
+    const unsubscribe = supabaseHelpers.subscribeToUserChatThreads(customerId, () => {
+      void refreshIncomingOrderChat();
+    });
+    const interval = window.setInterval(() => void refreshIncomingOrderChat(), 5000);
+
+    return () => {
+      active = false;
+      unsubscribe();
+      window.clearInterval(interval);
+    };
+  }, [user?.id, order?.businessId, order?.driverId]);
+
   useEffect(() => {
     if (!driverLocation || !isMapsLoaded || !(window as any).google || !order?.address) {
       setRoutePath([]);
@@ -453,6 +603,22 @@ export default function OrderDetail() {
       return;
     }
 
+    if (user?.id && order.businessId) {
+      void supabaseHelpers.sendOrderProgressChatMessage({
+        orderId: order.id,
+        orderNumber: order.orderNumber,
+        senderId: user.id,
+        senderName: user.name || 'Customer',
+        senderRole: 'customer',
+        recipientId: order.businessId,
+        recipientName: restaurantProfile?.name || order.restaurantName,
+        recipientRole: 'business',
+        message: `I cancelled this order. Reason: ${reason}`,
+      }).then(({ error: chatError }) => {
+        if (chatError) console.error('[OrderDetail] Could not message restaurant about cancellation:', chatError);
+      });
+    }
+
     setOrder(prev => (
       prev ? { ...prev, status: 'cancelled', cancelReason: reason, cancelledBy: 'customer' } : prev
     ));
@@ -496,6 +662,7 @@ export default function OrderDetail() {
     driverStatus: order.driverStatus,
     driverMessage: order.driverMessage,
     deliveryMode: order.deliveryMode,
+    driverLabel: 'Driver',
   });
 
   // Tracking the map is only useful once a rider exists, and only on delivery.
@@ -555,6 +722,16 @@ export default function OrderDetail() {
             ? progress.currentTitle
             : statusLabels[order.status]}
         </Badge>
+        {progress.currentStepIsRiderStep && progress.riderHasStarted && (
+          <div className="mt-3 rounded-xl border border-[var(--info)]/20 bg-[var(--info-soft)] px-3 py-2.5">
+            <p className="text-xs text-[var(--info)]">
+              {progress.riderMessage || progress.currentStep.description}
+            </p>
+            {order.driverName && (
+              <p className="mt-1 text-xs font-semibold text-[var(--info)]">Driver: {order.driverName}</p>
+            )}
+          </div>
+        )}
 
       </div>
 
@@ -655,26 +832,73 @@ export default function OrderDetail() {
             <h3 className="font-bold text-[var(--error)] text-sm md:text-base mb-1">
               {order.cancelledBy === 'business'
                 ? `${order.restaurantName} declined this order`
+                : order.cancelledBy === 'driver'
+                  ? 'The driver cancelled this delivery'
                 : 'Cancellation reason'}
             </h3>
             <p className="text-sm text-[var(--error)]">{order.cancelReason}</p>
           </Card>
         )}
 
-        {/* Restaurant Info */}
+        {/* Restaurant Profile */}
         <Card className="gap-0 p-4 md:p-5 border border-line">
           <h3 className="font-bold text-[var(--ink)] text-sm md:text-base mb-2">Restaurant</h3>
           <div className="flex items-center gap-3">
             <div className="w-12 h-12 md:w-14 md:h-14 rounded-xl overflow-hidden flex-shrink-0">
-              <StoreLogo logo={order.restaurantImage} emojiClass="text-3xl" />
+              <StoreLogo logo={restaurantProfile?.logoImage || order.restaurantImage} emojiClass="text-3xl" />
             </div>
-            <div>
-              <p className="font-semibold text-[var(--ink)] text-sm md:text-base">{order.restaurantName}</p>
+            <div className="min-w-0 flex-1">
+              <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                <p className="font-semibold text-[var(--ink)] text-sm md:text-base">
+                  {restaurantProfile?.name || order.restaurantName}
+                </p>
+                {restaurantProfile?.rating != null && (
+                  <span className="inline-flex items-center gap-1 text-xs font-semibold text-[var(--ink)]">
+                    <Star className="size-3.5 fill-[var(--amber)] text-[var(--amber)]" aria-hidden="true" />
+                    {restaurantProfile.rating.toFixed(1)}
+                    {restaurantProfile.ratingCount > 0 && (
+                      <span className="font-normal text-[var(--muted-foreground)]">
+                        ({restaurantProfile.ratingCount})
+                      </span>
+                    )}
+                  </span>
+                )}
+              </div>
+              {restaurantProfile?.subtitle && (
+                <p className="mt-0.5 text-xs text-[var(--muted-foreground)]">
+                  {restaurantProfile.subtitle}
+                </p>
+              )}
               <Badge className={`mt-1 text-[10px] md:text-xs ${order.deliveryMode === 'delivery' ? 'bg-[var(--info-soft)] text-[var(--info)]' : 'bg-[var(--amber-soft)] text-[var(--amber)]'}`}>
                 {order.deliveryMode === 'delivery' ? 'Delivery' : 'Pickup'}
               </Badge>
             </div>
           </div>
+          {cuisineLabels(restaurantProfile?.cuisine).length > 0 && (
+            <div className="mt-3 flex flex-wrap gap-1.5">
+              {cuisineLabels(restaurantProfile?.cuisine).map((cuisine) => (
+                <span key={cuisine} className="rounded-lg bg-[var(--teal-soft)] px-2 py-1 text-xs font-semibold text-[var(--teal)]">
+                  {cuisine}
+                </span>
+              ))}
+            </div>
+          )}
+          {(restaurantProfile?.address || restaurantProfile?.deliveryTime) && (
+            <div className="mt-3 space-y-2 border-t border-line pt-3">
+              {restaurantProfile.address && (
+                <div className="flex items-start gap-2 text-xs text-[var(--muted-foreground)]">
+                  <MapPin className="mt-0.5 size-3.5 shrink-0" aria-hidden="true" />
+                  <span>{restaurantProfile.address}</span>
+                </div>
+              )}
+              {restaurantProfile.deliveryTime && (
+                <div className="flex items-center gap-2 text-xs text-[var(--muted-foreground)]">
+                  <Clock className="size-3.5 shrink-0" aria-hidden="true" />
+                  <span>Delivery estimate: {restaurantProfile.deliveryTime}</span>
+                </div>
+              )}
+            </div>
+          )}
         </Card>
 
         {/* Delivery Address */}
@@ -749,21 +973,20 @@ export default function OrderDetail() {
               and not only in the shop's. Tappable, because the thumbnail is
               small and a GCash receipt is not legible at that size. */}
           {order.paymentProofUrl && (
-            <a
-              href={order.paymentProofUrl}
-              target="_blank"
-              rel="noreferrer"
+            <FullSizeImagePreview
+              src={order.paymentProofUrl}
+              alt={`GCash payment proof for order ${order.orderNumber}`}
               className="mb-3 block overflow-hidden rounded-xl border border-line"
             >
               <img
                 src={order.paymentProofUrl}
-                alt={`GCash payment proof for order ${order.orderNumber}`}
+                alt=""
                 className="max-h-48 w-full cursor-zoom-in object-cover"
               />
               <p className="bg-[var(--muted)] px-3 py-1.5 text-xs text-[var(--muted-foreground)]">
                 Your payment proof · tap to view full size
               </p>
-            </a>
+            </FullSizeImagePreview>
           )}
 
           {order.status === 'pending' && !order.paymentConfirmedAt && (
@@ -804,22 +1027,21 @@ export default function OrderDetail() {
             <h3 className="font-bold text-[var(--ink)] text-sm md:text-base mb-3">
               Proof of delivery
             </h3>
-            <a
-              href={order.deliveryProofUrl}
-              target="_blank"
-              rel="noreferrer"
+            <FullSizeImagePreview
+              src={order.deliveryProofUrl}
+              alt={`Photo of this order being handed over${order.driverName ? ` by ${order.driverName}` : ''}`}
               className="block overflow-hidden rounded-xl border border-line"
             >
               <img
                 src={order.deliveryProofUrl}
-                alt={`Photo of this order being handed over${order.driverName ? ` by ${order.driverName}` : ''}`}
+                alt=""
                 className="max-h-64 w-full cursor-zoom-in object-cover"
               />
               <p className="bg-[var(--muted)] px-3 py-1.5 text-xs text-[var(--muted-foreground)]">
                 {order.driverName ? `${order.driverName}'s handover photo` : 'Handover photo'}
                 {' · '}tap to view full size
               </p>
-            </a>
+            </FullSizeImagePreview>
           </Card>
         )}
 
@@ -906,6 +1128,16 @@ export default function OrderDetail() {
           await handleCancelOrder(reason);
         }}
       />
+      {incomingOrderChat && (
+        <FloatingChatHead
+          storageKey="trikeserve_chat_head_pos_customer"
+          peerAvatar={incomingOrderChat.peerAvatar}
+          peerLabel={incomingOrderChat.peerName}
+          unread={incomingOrderChat.unread}
+          pulseKey={orderChatPulseKey}
+          onOpen={() => navigate(`/customer/messages/thread/${incomingOrderChat.conversationId}`)}
+        />
+      )}
     </div>
   );
 }

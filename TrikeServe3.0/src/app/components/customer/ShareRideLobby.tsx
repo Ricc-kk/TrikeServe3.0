@@ -158,6 +158,7 @@ export default function ShareRideLobby({
   const [isMinimized, setIsMinimized] = useState(false);
   const [showLeaveConfirm, setShowLeaveConfirm] = useState(false);
   const [terminalStatus, setTerminalStatus] = useState<'completed' | 'cancelled' | null>(null);
+  const [terminalCancelMessage, setTerminalCancelMessage] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const hasHandledTerminalLobbyStatus = useRef(false);
@@ -295,13 +296,16 @@ export default function ShareRideLobby({
     };
   }, [user?.id, lobby?.driver_id]);
 
-  const handleTerminalLobbyStatus = (status?: string) => {
+  const handleTerminalLobbyStatus = (status?: string, statusMessage?: string) => {
     if (hasHandledTerminalLobbyStatus.current) return;
 
     if (status === 'completed' || status === 'cancelled') {
       hasHandledTerminalLobbyStatus.current = true;
       setIsMinimized(false);
       setTerminalStatus(status);
+      const driverCancelled = status === 'cancelled'
+        && statusMessage?.startsWith('The driver cancelled this shared ride.');
+      setTerminalCancelMessage(driverCancelled ? statusMessage || null : null);
 
       // Completed rides stay open so the customer can leave a rating or tap
       // Done; cancelled rides auto-close after a short delay.
@@ -314,7 +318,7 @@ export default function ShareRideLobby({
           if (typeof onClose === 'function') {
             onClose(status);
           }
-        }, 1600);
+        }, driverCancelled ? 5000 : 1600);
       }
     }
   };
@@ -459,7 +463,7 @@ export default function ShareRideLobby({
             if (typeof onLobbyLoaded === 'function') {
               onLobbyLoaded(existingLobby.id);
             }
-            handleTerminalLobbyStatus(existingLobby.status);
+            handleTerminalLobbyStatus(existingLobby.status, existingLobby.driver_status_message);
 
              // Use the driver's real average rating from driver_ratings.
              if (existingLobby.driver_id) {
@@ -521,7 +525,7 @@ export default function ShareRideLobby({
                       setShowFullCapacityPopup(true);
                     }
 
-                    handleTerminalLobbyStatus(freshLobby.status);
+                    handleTerminalLobbyStatus(freshLobby.status, freshLobby.driver_status_message);
 
                     // Show driver status popups (on-the-way, arrived, picked-up, etc.)
                     processDriverStatusUpdate(existingLobby.id, freshLobby.driver_status, freshLobby.driver_status_message);
@@ -597,7 +601,7 @@ export default function ShareRideLobby({
                   return prevLobby;
                 });
 
-                handleTerminalLobbyStatus(latestLobby.status);
+                handleTerminalLobbyStatus(latestLobby.status, latestLobby.driver_status_message);
 
                 // Show driver status popups from the sync fallback too
                 processDriverStatusUpdate(existingLobby!.id, latestLobby.driver_status, latestLobby.driver_status_message);
@@ -1703,7 +1707,7 @@ if (loading) {
             <p className="text-sm text-[var(--muted-foreground)] mb-6">
               {terminalStatus === 'completed'
                 ? 'Your driver has completed the ride. Thank you for using TrikeServe!'
-                : 'This ride has been cancelled. Returning you to the customer screen...'}
+                : terminalCancelMessage || 'This ride has been cancelled. Returning you to the customer screen...'}
             </p>
             {terminalStatus === 'completed' && lobby.driver_id && (
               <div className="grid grid-cols-2 gap-3">

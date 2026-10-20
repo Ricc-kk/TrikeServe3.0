@@ -4,6 +4,7 @@ import { ArrowLeft, Navigation, Store, Users, Car, Clock, Check, X, CheckCircle,
 import { GoogleMap, Marker, InfoWindow, Polyline, Polygon } from "@react-google-maps/api";
 import { Button } from "../ui/button";
 import { Card } from "../ui/card";
+import FullSizeImagePreview from "../ui/FullSizeImagePreview";
 import { Badge } from "../ui/badge";
 import { ImageWithFallback } from "../figma/ImageWithFallback";
 import { useAuth } from "../../contexts/AuthContext";
@@ -378,7 +379,7 @@ export default function PassengerRequests() {
         if (businessIds.length > 0) {
           const { data: restaurantLocations } = await supabase
             .from('restaurants')
-            .select('business_user_id, name, address, latitude, longitude, logo_image')
+            .select('business_user_id, name, subtitle, address, cuisine, delivery_time, latitude, longitude, logo_image')
             .in('business_user_id', businessIds);
           (restaurantLocations || []).forEach((restaurant: any) => { restaurantMap[restaurant.business_user_id] = restaurant; });
         }
@@ -411,10 +412,14 @@ export default function PassengerRequests() {
           customerName: req.customer_name || nameMap[req.customer_id] || 'Customer',
           restaurantName: requestType === 'delivery' ? restaurant?.name || 'Restaurant' : undefined,
           restaurantImage: restaurant?.logo_image || undefined,
+          businessUserId: restaurant?.business_user_id || order?.business_id || undefined,
           restaurantAddress: restaurant?.address
             || (req.pickup_address && req.pickup_address.trim().toLowerCase() !== formatPickup(req.pickup_location).trim().toLowerCase()
               ? req.pickup_address
               : undefined),
+          restaurantSubtitle: restaurant?.subtitle || undefined,
+          restaurantCuisine: restaurant?.cuisine || undefined,
+          restaurantDeliveryTime: restaurant?.delivery_time || undefined,
           restaurantLat: restaurant?.latitude ?? undefined,
           restaurantLng: restaurant?.longitude ?? undefined,
           customerPhoto: '👤',
@@ -1339,19 +1344,18 @@ export default function PassengerRequests() {
                 <section className="mt-4 rounded-xl border border-[var(--border)] bg-[var(--muted)] p-3">
                   <h3 className="mb-3 text-sm font-bold text-[var(--ink)]">Food Ordered</h3>
                   {previewRequest.restaurantPackagePhotoUrl ? (
-                    <a
-                      href={previewRequest.restaurantPackagePhotoUrl}
-                      target="_blank"
-                      rel="noreferrer"
+                    <FullSizeImagePreview
+                      src={previewRequest.restaurantPackagePhotoUrl}
+                      alt={`Food order from ${previewRequest.restaurantName || 'the restaurant'}`}
                       className="block overflow-hidden rounded-lg border border-[var(--border)] bg-[var(--surface)]"
                     >
                       <img
                         src={previewRequest.restaurantPackagePhotoUrl}
-                        alt={`Packed order from ${previewRequest.restaurantName || 'the restaurant'}`}
+                        alt=""
                         className="max-h-80 w-full object-contain"
                       />
                       <p className="border-t border-[var(--border)] px-3 py-2 text-xs font-medium text-[var(--muted-foreground)]">Photo provided by the restaurant · tap to view full size</p>
-                    </a>
+                    </FullSizeImagePreview>
                   ) : (
                     <p className="text-sm text-[var(--muted-foreground)]">The restaurant has not added a food photo yet.</p>
                   )}

@@ -7,6 +7,8 @@ import { Button } from "../ui/button";
 import ListPagination from "../ui/ListPagination";
 import BusinessSidebar from "./BusinessSidebar";
 import BusinessHamburgerButton from "./BusinessHamburgerButton";
+import FullSizeImagePreview from "../ui/FullSizeImagePreview";
+import FloatingChatHead from "../ui/FloatingChatHead";
 import BusinessPageIntro from "./BusinessPageIntro";
     import { supabase } from "../../../lib/supabase";
     import { supabaseHelpers, findDeliveryTerminalForOrder, logAudit, geocodeAddress } from "@/lib/supabase";
@@ -109,6 +111,15 @@ export default function BusinessOrders() {
   const { user } = useAuth();
   const [selectedTab, setSelectedTab] = useState<'active' | 'history'>('active');
   const [selectedOrder, setSelectedOrder] = useState<Order | null>(null);
+  const [incomingDriverChat, setIncomingDriverChat] = useState<{
+    conversationId: string;
+    peerId: string;
+    peerName: string;
+    peerAvatar: string | null;
+    unread: number;
+  } | null>(null);
+  const [driverChatPulseKey, setDriverChatPulseKey] = useState(0);
+  const previousDriverChatSignalRef = useRef<string | null>(null);
   /** The one dialog left in this flow: confirming the GCash payment. */
   const [confirmAction, setConfirmAction] = useState<'accept' | null>(null);
   // Decline collects a reason before the order is cancelled.
@@ -128,6 +139,75 @@ export default function BusinessOrders() {
   const [restaurantId, setRestaurantId] = useState<string | null>(null);
   const navigate = useNavigate();
   const location = useLocation();
+
+  // Show an incoming driver's message as a floating chat head without opening
+  // the thread. The unread conversation remains in the Messages inbox as usual.
+  useEffect(() => {
+    const businessUserId = user?.id;
+    if (!businessUserId) {
+      setIncomingDriverChat(null);
+      previousDriverChatSignalRef.current = null;
+      return;
+    }
+
+    let active = true;
+    const refreshIncomingDriverChat = async () => {
+      const { data, error } = await supabaseHelpers.getChatConversations(businessUserId);
+      if (!active || error) return;
+
+      const incoming = (data || [])
+        .map((conversation: any) => {
+          const isParticipantA = conversation.participant_a_id === businessUserId;
+          const peerId = isParticipantA ? conversation.participant_b_id : conversation.participant_a_id;
+          const peerRole = isParticipantA ? conversation.participant_b_role : conversation.participant_a_role;
+          const unread = Number(isParticipantA ? conversation.unread_count_a : conversation.unread_count_b) || 0;
+          const peerName = isParticipantA ? conversation.participant_b_name : conversation.participant_a_name;
+          const peerAvatar = isParticipantA ? conversation.participant_b_avatar : conversation.participant_a_avatar;
+          return { conversation, peerId, peerRole, peerName, peerAvatar, unread };
+        })
+        .filter(({ conversation, peerId, peerRole, unread }) =>
+          peerId && (peerRole === 'rider' || peerRole === 'driver' || peerRole === 'customer') && unread > 0 &&
+          conversation.last_message_sender_id === peerId
+        )
+        .sort((a, b) =>
+          new Date(b.conversation.last_message_at || b.conversation.updated_at || 0).getTime() -
+          new Date(a.conversation.last_message_at || a.conversation.updated_at || 0).getTime()
+        );
+
+      const latest = incoming[0];
+      if (!latest) {
+        setIncomingDriverChat(null);
+        previousDriverChatSignalRef.current = null;
+        return;
+      }
+
+      const timestamp = latest.conversation.last_message_at || latest.conversation.updated_at || '';
+      const signal = `${latest.conversation.id}:${timestamp}:${latest.unread}`;
+      if (previousDriverChatSignalRef.current !== signal) {
+        setDriverChatPulseKey((key) => key + 1);
+        previousDriverChatSignalRef.current = signal;
+      }
+      setIncomingDriverChat({
+        conversationId: latest.conversation.id,
+        peerId: latest.peerId,
+        peerName: latest.peerName || (latest.peerRole === 'customer' ? 'Customer' : 'Driver'),
+        peerAvatar: latest.peerAvatar || null,
+        unread: latest.unread,
+      });
+    };
+
+    void refreshIncomingDriverChat();
+    const unsubscribe = supabaseHelpers.subscribeToUserChatThreads(businessUserId, () => {
+      void refreshIncomingDriverChat();
+    });
+    const interval = window.setInterval(() => void refreshIncomingDriverChat(), 5000);
+
+    return () => {
+      active = false;
+      unsubscribe();
+      window.clearInterval(interval);
+    };
+  }, [user?.id]);
 
   /*
    * Open a specific order when one arrives in the router state.
@@ -165,10 +245,10 @@ export default function BusinessOrders() {
    * else. That made "Finding Rider" terminal: a rider accepting would fill in the
    * card behind the sheet while the sheet sat there claiming nobody was coming.
    *
-   * Only the rider fields are copied. Status is deliberately left alone, because
-   * `updateOrderStatus` sets it optimistically and this runs on a five-second
-   * cadence — re-syncing it would stamp out from under the button the shop is
-   * holding, and re-show a step they already completed.
+   * Rider details and the delivery proof are copied. Status is deliberately left
+   * alone, because `updateOrderStatus` sets it optimistically and this runs on a
+   * five-second cadence — re-syncing it would stamp out from under the button the
+   * shop is holding, and re-show a step they already completed.
    */
   useEffect(() => {
     if (!selectedOrder) return;
@@ -181,7 +261,8 @@ export default function BusinessOrders() {
         o.driverName === fresh.driverName &&
         o.driverRequested === fresh.driverRequested &&
         o.driverStatus === fresh.driverStatus &&
-        o.driverMessage === fresh.driverMessage
+        o.driverMessage === fresh.driverMessage &&
+        o.deliveryProofUrl === fresh.deliveryProofUrl
       ) {
         return o;
       }
@@ -192,6 +273,7 @@ export default function BusinessOrders() {
         driverRequested: fresh.driverRequested,
         driverStatus: fresh.driverStatus,
         driverMessage: fresh.driverMessage,
+        deliveryProofUrl: fresh.deliveryProofUrl,
       };
     });
   }, [orders, selectedOrder?.id]);
@@ -828,6 +910,11 @@ export default function BusinessOrders() {
       }
 
       paymentConfirmedAt = new Date().toISOString();
+      void supabaseHelpers.notifyBusinessOrderStatusChange({
+        orderId: order.id,
+        orderNumber: order.orderNumber,
+        status: 'payment-confirmed',
+      }).catch(err => console.error('[BusinessOrders] Failed to message payment confirmation:', err));
       logAudit({
         action: 'confirm_payment',
         actorRole: 'business',
@@ -909,6 +996,11 @@ export default function BusinessOrders() {
       }
 
       console.log('[BusinessOrders] Order declined with reason:', reason);
+      void supabaseHelpers.notifyBusinessOrderStatusChange({
+        orderId: order.id,
+        orderNumber: order.orderNumber,
+        status: 'cancelled',
+      }).catch(err => console.error('[BusinessOrders] Failed to message order cancellation:', err));
     } finally {
       setIsUpdatingStatus(false);
     }
@@ -1244,6 +1336,12 @@ export default function BusinessOrders() {
 
       const didCreateRequest = await createOpenDeliveryRequest({ ...order, restaurantPackagePhotoUrl: packagePhotoUrl });
       if (!didCreateRequest) return;
+
+      void supabaseHelpers.notifyBusinessOrderStatusChange({
+        orderId: order.id,
+        orderNumber: order.orderNumber,
+        status: 'driver-requested',
+      }).catch(err => console.error('[BusinessOrders] Failed to message driver request:', err));
 
       setOrders((current) => current.map((item) => item.id === order.id
         ? { ...item, restaurantPackagePhotoUrl: packagePhotoUrl, driverRequested: true }
@@ -1666,7 +1764,13 @@ export default function BusinessOrders() {
                   {order.status === 'cancelled' && order.cancelReason && (
                     <div className="mt-3 p-2.5 rounded-xl border border-[var(--error)] bg-[var(--error-soft)]">
                       <p className="text-[10px] font-bold uppercase tracking-widest text-[var(--error)] mb-0.5">
-                        {order.cancelledBy === 'customer' ? 'Cancelled by customer' : 'Declined'}
+                        {order.cancelledBy === 'customer'
+                          ? 'Cancelled by customer'
+                          : order.cancelledBy === 'driver'
+                            ? 'Cancelled by driver'
+                            : order.cancelledBy === 'business'
+                              ? 'Cancelled by you'
+                              : 'Declined'}
                       </p>
                       <p className="text-xs text-[var(--error)]">{order.cancelReason}</p>
                     </div>
@@ -1719,7 +1823,13 @@ export default function BusinessOrders() {
                 {selectedOrder.status === 'cancelled' && selectedOrder.cancelReason && (
                   <div className="p-3 rounded-xl border border-[var(--error)] bg-[var(--error-soft)]">
                     <p className="text-xs font-bold uppercase tracking-widest text-[var(--error)] mb-1">
-                      {selectedOrder.cancelledBy === 'customer' ? 'Cancelled by customer' : 'Order declined'}
+                      {selectedOrder.cancelledBy === 'customer'
+                        ? 'Cancelled by customer'
+                        : selectedOrder.cancelledBy === 'driver'
+                          ? 'Cancelled by driver'
+                          : selectedOrder.cancelledBy === 'business'
+                            ? 'Cancelled by you'
+                            : 'Order declined'}
                     </p>
                     <p className="text-sm text-[var(--error)]">{selectedOrder.cancelReason}</p>
                   </div>
@@ -1828,21 +1938,16 @@ export default function BusinessOrders() {
                   </p>
 
                   {selectedOrder.paymentProofUrl ? (
-                    <a
-                      href={selectedOrder.paymentProofUrl}
-                      target="_blank"
-                      rel="noreferrer"
+                    <FullSizeImagePreview
+                      src={selectedOrder.paymentProofUrl}
+                      alt={`GCash payment proof for order ${selectedOrder.orderNumber}`}
                       className="block overflow-hidden rounded-xl border border-line"
                     >
-                      <img
-                        src={selectedOrder.paymentProofUrl}
-                        alt={`GCash payment proof for order ${selectedOrder.orderNumber}`}
-                        className="max-h-64 w-full cursor-zoom-in object-cover"
-                      />
+                      <img src={selectedOrder.paymentProofUrl} alt="" className="max-h-64 w-full cursor-zoom-in object-cover" />
                       <p className="bg-[var(--muted)] px-3 py-2 text-xs text-[var(--muted-foreground)]">
                         Tap to view full size
                       </p>
-                    </a>
+                    </FullSizeImagePreview>
                   ) : (
                     <p className="rounded-xl bg-[var(--amber-soft)] px-3 py-2.5 text-xs text-[var(--amber-ink)]">
                       No payment proof was attached. Check with the customer before accepting.
@@ -2127,15 +2232,6 @@ export default function BusinessOrders() {
                       </div>
                     )}
 
-                    /*
-                      The rider's actual phase, not just "on the way".
-
-                      `orders.status` is `on-the-way` for the whole trip to the
-                      customer's address, so this used to claim the driver was
-                      delivering while they were still parked outside the shop
-                      waiting for the food. The rider writes a status for each leg
-                      and a message to go with it.
-                    */
                     <div className="bg-[var(--amber-soft)] border-l-4 border-[var(--amber)] p-2 md:p-3 rounded text-sm">
                       <p className="font-semibold text-[var(--amber-ink)]">
                         {progress?.currentTitle ?? getStatusLabel(selectedOrder.status)}
@@ -2144,7 +2240,11 @@ export default function BusinessOrders() {
                         <p className="text-xs text-[var(--amber-ink)] mt-1">"{progress.riderMessage}"</p>
                       )}
                       {!progress?.riderMessage && progress?.currentStep && (
-                        <p className="text-xs text-[var(--amber-ink)] mt-1">{progress.currentStep.description}</p>
+                        <p className="text-xs text-[var(--amber-ink)] mt-1">
+                          {progress.currentStep.key === 'picked-up'
+                            ? 'The driver has collected the order and is on the way to the customer.'
+                            : progress.currentStep.description}
+                        </p>
                       )}
                       {selectedOrder.driverName && (
                         <p className="text-xs text-[var(--amber-ink)] mt-1">Driver: {selectedOrder.driverName}</p>
@@ -2189,6 +2289,29 @@ export default function BusinessOrders() {
                   <div className="bg-[var(--success-soft)] border-l-4 border-[var(--success)] p-2 md:p-3 rounded text-sm">
                     <p className="font-semibold text-[var(--success)]">✓ Order Completed</p>
                     <p className="text-xs text-[var(--success)] mt-1">Order has been successfully delivered</p>
+                  </div>
+                )}
+
+                {selectedOrder.deliveryProofUrl && (
+                  <div className="rounded-2xl border-2 border-line p-4">
+                    <h3 className="font-bold text-[var(--ink)] mb-3 text-sm md:text-base">
+                      Proof of delivery
+                    </h3>
+                    <FullSizeImagePreview
+                      src={selectedOrder.deliveryProofUrl}
+                      alt={`Photo of order ${selectedOrder.orderNumber} being handed over${selectedOrder.driverName ? ` by ${selectedOrder.driverName}` : ''}`}
+                      className="block overflow-hidden rounded-xl border border-line"
+                    >
+                      <img
+                        src={selectedOrder.deliveryProofUrl}
+                        alt=""
+                        className="max-h-64 w-full cursor-zoom-in object-cover"
+                      />
+                      <p className="bg-[var(--muted)] px-3 py-2 text-xs text-[var(--muted-foreground)]">
+                        {selectedOrder.driverName ? `${selectedOrder.driverName}'s handover photo` : 'Handover photo'}
+                        {' · '}Tap to view full size
+                      </p>
+                    </FullSizeImagePreview>
                   </div>
                 )}
 
@@ -2289,6 +2412,16 @@ export default function BusinessOrders() {
       />
 
       {/* Status Change Confirmation Popup */}
+      {incomingDriverChat && (
+        <FloatingChatHead
+          storageKey="trikeserve_chat_head_pos_business"
+          peerAvatar={incomingDriverChat.peerAvatar}
+          peerLabel={incomingDriverChat.peerName}
+          unread={incomingDriverChat.unread}
+          pulseKey={driverChatPulseKey}
+          onOpen={() => navigate(`/business/messages/thread/${incomingDriverChat.conversationId}`)}
+        />
+      )}
       </div>
   );
 }

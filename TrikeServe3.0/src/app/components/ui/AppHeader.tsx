@@ -176,7 +176,7 @@ export default function AppHeader({
     <>
       <Bell className="size-6" aria-hidden="true" />
       {notificationCount > 0 ? (
-        <span className="absolute -right-1 -top-1 grid min-w-5 place-items-center rounded-full bg-error px-1 text-[10px] font-bold leading-none text-white">
+        <span className="absolute -right-1 -top-1 grid min-w-5 place-items-center rounded-full bg-primary px-1 text-[10px] font-bold leading-none text-[var(--primary-foreground)]">
           {notificationCount > 9 ? "9+" : notificationCount}
         </span>
       ) : null}
@@ -214,11 +214,11 @@ export default function AppHeader({
               type="button"
               onClick={onMenuClick}
               aria-label={menuNotificationLabel}
-              className="relative grid size-12 shrink-0 place-items-center rounded-2xl bg-white/10 transition-colors hover:bg-white/20"
+              className="relative grid size-12 shrink-0 place-items-center rounded-2xl bg-white/10 transition-colors hover:bg-white/20 lg:hidden"
             >
               <Menu className="size-6" aria-hidden="true" />
               {menuNotificationCount > 0 ? (
-                <span aria-hidden="true" className="absolute -right-1 -top-1 grid min-w-5 place-items-center rounded-full bg-error px-1 text-[10px] font-bold leading-none text-white">
+                <span aria-hidden="true" className="absolute -right-1 -top-1 grid min-w-5 place-items-center rounded-full bg-primary px-1 text-[10px] font-bold leading-none text-[var(--primary-foreground)]">
                   {menuNotificationCount > 9 ? "9+" : menuNotificationCount}
                 </span>
               ) : null}

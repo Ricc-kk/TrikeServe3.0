@@ -811,6 +811,7 @@ export default function CartCheckout() {
               orderNumber: order.orderNumber,
               restaurantName: order.restaurantName,
               customerName: order.customerName,
+              customerId: user?.id,
               total: order.total,
               businessUserId,
             });

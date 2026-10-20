@@ -6,8 +6,13 @@ import { Card } from "../ui/card";
 import { Badge } from "../ui/badge";
 import { Input } from "../ui/input";
 import BottomNav from "../ui/BottomNav";
-import { isActiveRideStatus, getActiveRideContext, useActiveRideContext } from "../../../lib/rideLock";
-import { useRideResume } from "../../../lib/rideResume";
+import {
+  isActiveRideStatus,
+  getActiveRideContext,
+  isDeliveryRideRequest,
+  useActiveRideContext,
+} from "../../../lib/rideLock";
+import { forgetActiveRide, useRideResume } from "../../../lib/rideResume";
 import ChoiceCard from "../ui/ChoiceCard";
 import SectionHeading from "../ui/SectionHeading";
 import LocationBanner, { type LocationProblem } from "../ui/LocationBanner";
@@ -1094,6 +1099,25 @@ export default function CustomerHome() {
     if (savedRideData) {
       try {
         const rideData = JSON.parse(savedRideData);
+        if (isDeliveryRideRequest({
+          order_id: rideData?.order_id || rideData?.orderId,
+          ride_type: rideData?.ride_type || rideData?.rideType || rideData?.vehicleType,
+          pickup_location: rideData?.pickup_location || rideData?.pickup,
+        })) {
+          // Older builds persisted order deliveries in the customer's ride slot.
+          // Keep order tracking on OrderDetail instead of restoring a food order
+          // as a passenger ride on /customer.
+          localStorage.removeItem('trikeserve_active_ride');
+          forgetActiveRide();
+          setRideStatus(null);
+          setCurrentRequestId(null);
+          setRideDriverId(null);
+          setDriverLiveStatus('');
+          setDriverUnread(0);
+          driverChatId.current = null;
+          setCustomerChatPopup(false);
+          resetCustomerRideVisuals();
+        } else {
         const restoredRequestId = typeof rideData?.requestId === 'string'
           ? rideData.requestId
           : typeof rideData?.id === 'string'
@@ -1152,6 +1176,21 @@ export default function CustomerHome() {
             .then(({ data: fresh }) => {
               if (!fresh) return;
 
+              if (isDeliveryRideRequest(fresh)) {
+                setRideStatus(null);
+                setActiveRide(null);
+                setCurrentRequestId(null);
+                localStorage.removeItem('trikeserve_active_ride');
+                forgetActiveRide();
+                setRideDriverId(null);
+                setDriverLiveStatus('');
+                setDriverUnread(0);
+                driverChatId.current = null;
+                setCustomerChatPopup(false);
+                resetCustomerRideVisuals();
+                return;
+              }
+
               // Restore the stored coordinates too. The pickup-to-destination
               // route line is computed from these, and they are often missing
               // from a cached booking, so without this the destination line had
@@ -1197,6 +1236,7 @@ export default function CustomerHome() {
               // Offline or the request is gone. The cached state still renders,
               // which is better than clearing a live booking.
             });
+        }
         }
       } catch (error) {
         console.error('Error loading ride data:', error);
@@ -1818,6 +1858,19 @@ export default function CustomerHome() {
            resetCustomerRideVisuals();
          }
        }
+
+      if (realtimeStatus === 'cancelled') {
+        if (driverStatusTimerRef.current) clearTimeout(driverStatusTimerRef.current);
+        setDriverStatusPopup({
+          status: 'cancelled',
+          message: updatedRide.driver_status_message || 'Your driver had to cancel this ride.',
+        });
+        setRideStatus(null);
+        setCurrentRequestId(null);
+        localStorage.removeItem('trikeserve_active_ride');
+        resetCustomerRideVisuals();
+        return;
+      }
 
       // Check for other driver status updates (for popup messages)
        if (realtimeStatus && realtimeStatus !== 'pending' && realtimeStatus !== 'completed' && realtimeStatus !== 'cancelled') {
@@ -4484,6 +4537,7 @@ const getPrice = () => {
                   />
                 ) : (
                   <>
+                    {driverStatusPopup.status === 'cancelled' && '!'}
                     {driverStatusPopup.status === 'on-the-way' && 'ðŸš—'}
                     {driverStatusPopup.status === 'arrived' && 'ðŸ“'}
                     {driverStatusPopup.status === 'pickup' && 'ðŸš€'}
@@ -4496,6 +4550,7 @@ const getPrice = () => {
 
               {/* Status Message */}
               <h3 className="text-2xl font-bold text-[var(--ink)] text-center mb-2">
+                {driverStatusPopup.status === 'cancelled' && 'Ride Cancelled'}
                 {driverStatusPopup.status === 'on-the-way' && 'Driver On The Way'}
                 {driverStatusPopup.status === 'arrived' && 'Driver Arrived'}
                 {driverStatusPopup.status === 'pickup' && 'Picked Up!'}
@@ -4511,6 +4566,7 @@ const getPrice = () => {
                 <div className="flex items-center justify-between">
                   <span className="text-sm text-[var(--muted-foreground)]">Status Update</span>
                   <span className="font-bold text-[var(--ink)]">
+                    {driverStatusPopup.status === 'cancelled' && 'Cancelled'}
                     {driverStatusPopup.status === 'on-the-way' && 'On the way'}
                     {driverStatusPopup.status === 'arrived' && 'Arrived'}
                     {driverStatusPopup.status === 'pickup' && 'Picked up'}

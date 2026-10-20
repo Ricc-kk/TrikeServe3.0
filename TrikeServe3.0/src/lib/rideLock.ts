@@ -52,7 +52,8 @@ export function isActiveRideStatus(status: string | null | undefined): boolean {
  */
 export async function hasActiveRide(customerId: string): Promise<boolean> {
   /*
-   * Only the customer's *most recent* request is consulted.
+   * The customer's most recent actual ride is consulted; delivery jobs are
+   * stored in `ride_requests` too, but an order delivery is not a passenger ride.
    *
    * Asking "does any row have an active status?" was wrong, and it blocked food
    * ordering permanently. A booking that is accepted and then superseded by a new
@@ -63,13 +64,16 @@ export async function hasActiveRide(customerId: string): Promise<boolean> {
    * were on a ride indefinitely, with no ride on screen and nothing to click to
    * clear it.
    *
-   * The newest request is the one that reflects reality: if it is finished, the
-   * ride is over, whatever earlier rows still claim.
+   * The newest actual ride request is the one that reflects reality: if it is
+   * finished, the ride is over, whatever earlier rows still claim.
    */
   const { data, error } = await supabase
     .from("ride_requests")
-    .select("id, status, accepted_driver_id")
+    .select("id, status, accepted_driver_id, order_id, ride_type, pickup_location")
     .eq("customer_id", customerId)
+    .is("order_id", null)
+    .neq("ride_type", "delivery")
+    .not("pickup_location", "like", "DELIVERY|%")
     .order("created_at", { ascending: false })
     .limit(1)
     .maybeSingle();
@@ -80,6 +84,14 @@ export async function hasActiveRide(customerId: string): Promise<boolean> {
   // with no explanation and no way to tell why.
   if (error) return false;
   return isLiveRideForCustomer(data);
+}
+
+/** A delivery job is an order being carried, not a customer passenger ride. */
+export function isDeliveryRideRequest(request: any): boolean {
+  if (!request) return false;
+  const type = String(request.ride_type || request.type || "").trim().toLowerCase();
+  const pickup = String(request.pickup_location || request.pickup || "");
+  return Boolean(request.order_id) || type === "delivery" || pickup.startsWith("DELIVERY|");
 }
 
 /**
@@ -97,7 +109,7 @@ export async function hasActiveRide(customerId: string): Promise<boolean> {
  * customer stayed locked out with nobody coming.
  */
 function isLiveRideForCustomer(ride: any): boolean {
-  if (!ride || !isActiveRideStatus(ride.status)) return false;
+  if (!ride || isDeliveryRideRequest(ride) || !isActiveRideStatus(ride.status)) return false;
   return !!ride.accepted_driver_id;
 }
 
@@ -139,9 +151,9 @@ export function useActiveRideLock(customerId: string | null | undefined) {
  * booking surfaces can be reached by deep link, the browser back button, or a
  * tab that was opened before the ride started.
  *
- * The private ride is the customer's *latest* request only, for the same reason
- * `hasActiveRide` is: a superseded booking never reaches a terminal status, and
- * counting those would lock the customer out indefinitely.
+ * The private ride is the customer's latest passenger-ride request, skipping
+ * order delivery jobs. A superseded booking never reaches a terminal status,
+ * and counting those would lock the customer out indefinitely.
  */
 export async function getActiveRideContext(customerId: string): Promise<{
   privateRide: any | null;
@@ -152,6 +164,9 @@ export async function getActiveRideContext(customerId: string): Promise<{
       .from("ride_requests")
       .select("*")
       .eq("customer_id", customerId)
+      .is("order_id", null)
+      .neq("ride_type", "delivery")
+      .not("pickup_location", "like", "DELIVERY|%")
       .order("created_at", { ascending: false })
       .limit(1)
       .maybeSingle(),
@@ -162,7 +177,7 @@ export async function getActiveRideContext(customerId: string): Promise<{
       .order("created_at", { ascending: false }),
   ]);
 
-  const privateRide = !rideError && ride && isLiveRideForCustomer(ride) ? ride : null;
+  const privateRide = !rideError && isLiveRideForCustomer(ride) ? ride : null;
 
   const lobby =
     (!lobbyError &&

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { MessageSquare, User, Users } from "lucide-react";
+import { User, Users, X } from "lucide-react";
 
 /**
  * The floating chat head shared by the customer's and driver's ride screens.
@@ -37,6 +37,9 @@ const Z_INDEX = 'z-[1600]';
 
 /** Beyond this the gesture counts as a drag rather than a tap. */
 const TAP_SLOP = 6;
+const CLOSE_TARGET_WIDTH = 112;
+const CLOSE_TARGET_HEIGHT = 56;
+const CLOSE_TARGET_BOTTOM = 24;
 
 /**
  * Whether a stored avatar value is actually a URL.
@@ -104,6 +107,7 @@ export default function FloatingChatHead({
   const placed = useRef(false);
   const moved = useRef(false);
   const drag = useRef<{ dx: number; dy: number; side?: Side } | null>(null);
+  const pointerCleanupRef = useRef<(() => void) | null>(null);
 
   /**
    * Which edge it is docked to.
@@ -123,6 +127,9 @@ export default function FloatingChatHead({
    */
   const [placed2, setPlaced2] = useState(false);
   const [mountRetry, setMountRetry] = useState(0);
+  const [isDragging, setIsDragging] = useState(false);
+  const [isOverCloseTarget, setIsOverCloseTarget] = useState(false);
+  const [dismissed, setDismissed] = useState(false);
   const retryRef = useRef<number | null>(null);
 
   const read = (): { x: number; y: number; side: Side } | null => {
@@ -137,17 +144,21 @@ export default function FloatingChatHead({
     }
   };
 
-  const save = () => {
+  const save = useCallback((savedSide: Side) => {
     try {
-      localStorage.setItem(storageKey, JSON.stringify({ ...pos.current, side }));
+      localStorage.setItem(storageKey, JSON.stringify({ ...pos.current, side: savedSide }));
     } catch {
       // Persistence is a convenience; the head works without it.
     }
-  };
+  }, [storageKey]);
 
   useEffect(() => {
     onInitialResolve?.();
   }, [onInitialResolve]);
+
+  useEffect(() => () => {
+    pointerCleanupRef.current?.();
+  }, []);
 
   useEffect(() => {
     const raf = requestAnimationFrame(() => {
@@ -196,37 +207,38 @@ export default function FloatingChatHead({
   const onPointerDown = useCallback((e: React.PointerEvent<HTMLButtonElement>) => {
     const el = headRef.current;
     if (!el) return;
+    const pointerId = e.pointerId;
+    const startX = e.clientX;
+    const startY = e.clientY;
+    pointerCleanupRef.current?.();
     moved.current = false;
+    setIsDragging(false);
+    setIsOverCloseTarget(false);
     const rect = el.getBoundingClientRect();
     // Remember where inside the button the finger landed, so the head does not
     // snap its corner to the touch point.
-    drag.current = { dx: e.clientX - rect.left, dy: e.clientY - rect.top };
-    el.setPointerCapture?.(e.pointerId);
+    drag.current = { dx: startX - rect.left, dy: startY - rect.top };
+    el.setPointerCapture?.(pointerId);
 
-    const onMove = (ev: PointerEvent) => {
-      if (!drag.current) return;
-      // A few pixels of wobble is a tap on a phone, not a drag.
-      if (
-        !moved.current &&
-        (Math.abs(ev.clientX - e.clientX) > TAP_SLOP || Math.abs(ev.clientY - e.clientY) > TAP_SLOP)
-      ) {
-        moved.current = true;
-      }
-      const w = rect.width;
-      const h = rect.height;
-      const x = Math.min(Math.max(0, ev.clientX - drag.current.dx), window.innerWidth - w);
-      const y = Math.min(Math.max(0, ev.clientY - drag.current.dy), window.innerHeight - h);
-      pos.current = { x: Math.round(x), y: Math.round(y) };
-      el.style.left = `${pos.current.x}px`;
-      el.style.top = `${pos.current.y}px`;
-      // Decided during the drag but applied on release, so it does not jump
-      // sides under the finger mid-gesture.
-      drag.current.side = pos.current.x + w / 2 < window.innerWidth / 2 ? 'left' : 'right';
+    const isOnCloseTarget = (x: number, y: number, w: number, h: number) => {
+      const centerX = x + w / 2;
+      const centerY = y + h / 2;
+      const left = (window.innerWidth - CLOSE_TARGET_WIDTH) / 2;
+      const top = window.innerHeight - CLOSE_TARGET_BOTTOM - CLOSE_TARGET_HEIGHT;
+      return (
+        centerX >= left && centerX <= left + CLOSE_TARGET_WIDTH &&
+        centerY >= top && centerY <= top + CLOSE_TARGET_HEIGHT
+      );
     };
 
-    const onUp = () => {
-      // Snap to the edge it was released nearest, so it never ends up covering
-      // whatever the driver or customer is looking at.
+    const cleanup = () => {
+      window.removeEventListener('pointermove', onMove);
+      window.removeEventListener('pointerup', onUp);
+      window.removeEventListener('pointercancel', onCancel);
+      if (pointerCleanupRef.current === cleanup) pointerCleanupRef.current = null;
+    };
+
+    const snapToEdge = () => {
       const w = rect.width;
       const h = rect.height;
       const next =
@@ -240,16 +252,66 @@ export default function FloatingChatHead({
       setSide(next);
       el.style.left = `${pos.current.x}px`;
       el.style.top = `${pos.current.y}px`;
-      save();
+      save(next);
+    };
 
+    const onMove = (ev: PointerEvent) => {
+      if (!drag.current || ev.pointerId !== pointerId) return;
+      // A few pixels of wobble is a tap on a phone, not a drag.
+      if (
+        !moved.current &&
+        (Math.abs(ev.clientX - startX) > TAP_SLOP || Math.abs(ev.clientY - startY) > TAP_SLOP)
+      ) {
+        moved.current = true;
+        setIsDragging(true);
+      }
+      const w = rect.width;
+      const h = rect.height;
+      const x = Math.min(Math.max(0, ev.clientX - drag.current.dx), window.innerWidth - w);
+      const y = Math.min(Math.max(0, ev.clientY - drag.current.dy), window.innerHeight - h);
+      pos.current = { x: Math.round(x), y: Math.round(y) };
+      el.style.left = `${pos.current.x}px`;
+      el.style.top = `${pos.current.y}px`;
+      // Decided during the drag but applied on release, so it does not jump
+      // sides under the finger mid-gesture.
+      drag.current.side = pos.current.x + w / 2 < window.innerWidth / 2 ? 'left' : 'right';
+      setIsOverCloseTarget(moved.current && isOnCloseTarget(pos.current.x, pos.current.y, w, h));
+    };
+
+    const onUp = (ev: PointerEvent) => {
+      if (!drag.current || ev.pointerId !== pointerId) return;
+      const w = rect.width;
+      const h = rect.height;
+      const shouldDismiss = moved.current && isOnCloseTarget(pos.current.x, pos.current.y, w, h);
       drag.current = null;
-      window.removeEventListener('pointermove', onMove);
-      window.removeEventListener('pointerup', onUp);
+      cleanup();
+      setIsDragging(false);
+      setIsOverCloseTarget(false);
+
+      if (shouldDismiss) {
+        setDismissed(true);
+        return;
+      }
+
+      // Snap to the edge it was released nearest, so it never ends up covering
+      // whatever the driver or customer is looking at.
+      snapToEdge();
+    };
+
+    const onCancel = (ev: PointerEvent) => {
+      if (!drag.current || ev.pointerId !== pointerId) return;
+      drag.current = null;
+      cleanup();
+      setIsDragging(false);
+      setIsOverCloseTarget(false);
+      snapToEdge();
     };
 
     window.addEventListener('pointermove', onMove);
     window.addEventListener('pointerup', onUp);
-  }, [storageKey]);
+    window.addEventListener('pointercancel', onCancel);
+    pointerCleanupRef.current = cleanup;
+  }, [save]);
 
   /**
    * Park the head in the top-right corner once chat has been opened.
@@ -281,8 +343,11 @@ export default function FloatingChatHead({
     return () => cancelAnimationFrame(raf);
   }, [opened, storageKey]);
 
+  if (dismissed) return null;
+
   return (
-    <button
+    <>
+      <button
       ref={headRef}
       type="button"
       style={{
@@ -356,13 +421,25 @@ export default function FloatingChatHead({
           by the edge the head is docked to. */}
       {unread > 0 && (
         <span
-          className={`absolute -top-1 grid min-w-[20px] place-items-center rounded-full bg-[var(--error)] px-1 text-[11px] font-bold text-white shadow ${
+          className={`absolute -top-1 grid min-w-[20px] place-items-center rounded-full bg-[var(--primary)] px-1 text-[11px] font-bold text-[var(--primary-foreground)] shadow ${
             side === 'right' ? '-left-2' : '-right-2'
           }`}
         >
           {unread > 99 ? '99+' : unread}
         </span>
       )}
-    </button>
+      </button>
+      {isDragging && (
+        <div
+          aria-hidden="true"
+          className={`fixed ${zIndexClass} pointer-events-none bottom-6 left-1/2 -translate-x-1/2 transition-transform duration-150 ${isOverCloseTarget ? 'scale-110' : 'scale-100'}`}
+        >
+          <span className={`flex h-14 w-28 items-center justify-center gap-2 rounded-full border-2 shadow-xl transition-colors ${isOverCloseTarget ? 'border-red-700 bg-red-700 text-white' : 'border-red-500 bg-red-600 text-white'}`}>
+            <X className="size-5" strokeWidth={2.5} />
+            <span className="text-sm font-bold">Close</span>
+          </span>
+        </div>
+      )}
+    </>
   );
 }

@@ -69,13 +69,13 @@ export default function BusinessHamburgerButton({
       type="button"
       onClick={onClick}
       aria-label={accessibleLabel}
-      className={`${className} relative`}
+      className={`${className} relative lg:hidden`}
     >
       <Menu className={iconClassName} aria-hidden="true" />
       {unreadCount > 0 && (
         <span
           aria-hidden="true"
-          className="absolute -right-1 -top-1 grid min-w-5 place-items-center rounded-full bg-error px-1 text-[10px] font-bold leading-none text-white"
+          className="absolute -right-1 -top-1 grid min-w-5 place-items-center rounded-full bg-primary px-1 text-[10px] font-bold leading-none text-[var(--primary-foreground)]"
         >
           {unreadCount > 9 ? "9+" : unreadCount}
         </span>

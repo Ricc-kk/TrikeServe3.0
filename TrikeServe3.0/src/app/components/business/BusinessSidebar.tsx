@@ -198,8 +198,8 @@ export default function BusinessSidebar({ isMobileMenuOpen, setIsMobileMenuOpen,
                     </div>
                   )}
                   {item.path === "/business/messages" && unreadMessagesCount > 0 && (
-                    <div className="ml-auto min-w-6 h-6 px-1 bg-[var(--error)] rounded-full flex items-center justify-center">
-                      <span className="text-xs font-bold text-white" aria-label={`${unreadMessagesCount} unread messages`}>
+                    <div className="ml-auto min-w-6 h-6 px-1 bg-[var(--primary)] rounded-full flex items-center justify-center">
+                      <span className="text-xs font-bold text-[var(--primary-foreground)]" aria-label={`${unreadMessagesCount} unread messages`}>
                         {unreadMessagesCount > 99 ? '99+' : unreadMessagesCount}
                       </span>
                     </div>

@@ -11,6 +11,8 @@ import { Badge } from "../ui/badge";
 import { OrderStatusUpdates } from "../ui/OrderStatusUpdates";
 import LocationBanner, { type LocationProblem } from "../ui/LocationBanner";
 import ProofCapture from "../ui/ProofCapture";
+import ReasonPromptModal from "../ui/reason-prompt-modal";
+import StoreLogo from "../figma/StoreLogo";
 import { useAuth } from "../../contexts/AuthContext";
 import { supabaseHelpers, logAudit } from "@/lib/supabase";
 import { readRiderActiveRide, writeRiderActiveRide, clearRiderActiveRide, fetchRiderActiveRide } from "../../../lib/riderActiveRide";
@@ -39,6 +41,13 @@ interface ActiveRideData {
   orderId?: string;
   orderNumber?: string;
   customerId?: string;
+  businessUserId?: string;
+  restaurantName?: string;
+  restaurantImage?: string;
+  restaurantAddress?: string;
+  restaurantSubtitle?: string;
+  restaurantCuisine?: string;
+  restaurantDeliveryTime?: string;
   pickupAddress?: string;
   dropoffAddress?: string;
   lobbyId?: string;
@@ -166,6 +175,7 @@ export default function ActiveRide() {
   const [mapHeading, setMapHeading] = useState<number | null>(null);
 
   const isCompleting = useRef(false);
+  const isCancelling = useRef(false);
   const lastReportedLocationRef = useRef<{ lat: number; lng: number } | null>(null);
   // Latest ride data, readable from mount-only callbacks; and whether at least
   // one GPS fix has been pushed to the database for the current ride.
@@ -211,6 +221,7 @@ export default function ActiveRide() {
   rideDataRef.current = rideData;
   driverLocationRef.current = driverLocation;
   const [showRideComplete, setShowRideComplete] = useState(false);
+  const [showCancelPrompt, setShowCancelPrompt] = useState(false);
 
   /*
    * The handover photo, for deliveries only.
@@ -227,6 +238,16 @@ export default function ActiveRide() {
   const [resolvedName, setResolvedName] = useState<string | null>(null);
   /** The passenger's profile photo, resolved by id from the users table. */
   const [passengerAvatar, setPassengerAvatar] = useState<string | null>(null);
+  /** The current restaurant profile for accepted delivery orders. */
+  const [restaurantProfile, setRestaurantProfile] = useState<{
+    businessUserId: string | null;
+    name: string;
+    subtitle: string | null;
+    address: string | null;
+    cuisine: string | null;
+    deliveryTime: string | null;
+    logoImage: string | null;
+  } | null>(null);
 
   /**
    * In-ride chat with the passenger.
@@ -281,7 +302,10 @@ export default function ActiveRide() {
   const mapRef = useRef<any>(null);
   // Set when the customer cancels out from under an accepted ride, so the rider
   // isn't left driving to a pickup that no longer exists.
-  const [customerCancellation, setCustomerCancellation] = useState<{ reason: string | null } | null>(null);
+  const [customerCancellation, setCustomerCancellation] = useState<{
+    reason: string | null;
+    cancelledBy: string | null;
+  } | null>(null);
   const { isLoaded: isMapsLoaded } = useMapLoader();
 
   useEffect(() => {
@@ -924,8 +948,140 @@ export default function ActiveRide() {
   }, [directions, routePath, rideData?.id, isHeadingToPickup]);
 
   const isDeliveryRide = (ride: any) =>
+    ride?.type === 'delivery' ||
     Boolean(ride?.orderId || ride?.orderNumber) ||
     String(ride?.pickup || '').startsWith('DELIVERY');
+
+  // Use the restaurant details carried by the accepted request immediately,
+  // then refresh them from the current profile so the driver sees up-to-date
+  // information when a ride is restored from storage or another device.
+  useEffect(() => {
+    const isDeliveryOrder = Boolean(rideData?.orderId || rideData?.orderNumber)
+      || String(rideData?.pickup || '').startsWith('DELIVERY');
+    if (!rideData || !isDeliveryOrder) {
+      setRestaurantProfile(null);
+      return;
+    }
+
+    let cancelled = false;
+    const fallbackName = rideData.restaurantName
+      || (String(rideData.pickup || '').startsWith('DELIVERY') ? '' : rideData.pickup)
+      || 'Restaurant';
+    setRestaurantProfile({
+      businessUserId: rideData.businessUserId || null,
+      name: fallbackName,
+      subtitle: rideData.restaurantSubtitle || null,
+      address: rideData.restaurantAddress || rideData.pickupAddress || null,
+      cuisine: rideData.restaurantCuisine || null,
+      deliveryTime: rideData.restaurantDeliveryTime || null,
+      logoImage: rideData.restaurantImage || null,
+    });
+
+    const loadRestaurantProfile = async () => {
+      let order: any = null;
+      if (rideData.orderId) {
+        const { data } = await supabase
+          .from('orders')
+          .select('business_id, restaurant_email')
+          .eq('id', rideData.orderId)
+          .maybeSingle();
+        order = data;
+      }
+
+      let restaurant: any = null;
+      if (order?.restaurant_email) {
+        const { data } = await supabase
+          .from('restaurants')
+          .select('business_user_id, name, subtitle, address, cuisine, delivery_time, logo_image')
+          .eq('id', order.restaurant_email)
+          .maybeSingle();
+        restaurant = data;
+      }
+
+      const businessUserId = order?.business_id || restaurant?.business_user_id || rideData.businessUserId || null;
+      if (!restaurant && businessUserId) {
+        const { data } = await supabase
+          .from('restaurants')
+          .select('business_user_id, name, subtitle, address, cuisine, delivery_time, logo_image')
+          .eq('business_user_id', businessUserId)
+          .maybeSingle();
+        restaurant = data;
+      }
+
+      if (cancelled) return;
+      setRestaurantProfile({
+        businessUserId: restaurant?.business_user_id || businessUserId,
+        name: restaurant?.name || fallbackName,
+        subtitle: restaurant?.subtitle || rideData.restaurantSubtitle || null,
+        address: restaurant?.address || rideData.restaurantAddress || rideData.pickupAddress || null,
+        cuisine: restaurant?.cuisine || rideData.restaurantCuisine || null,
+        deliveryTime: restaurant?.delivery_time || rideData.restaurantDeliveryTime || null,
+        logoImage: restaurant?.logo_image || rideData.restaurantImage || null,
+      });
+    };
+
+    loadRestaurantProfile().catch((error) => {
+      if (!cancelled) console.warn('[ActiveRide] Could not load restaurant profile:', error);
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    rideData?.id,
+    rideData?.type,
+    rideData?.orderId,
+    rideData?.restaurantName,
+    rideData?.restaurantImage,
+    rideData?.restaurantAddress,
+    rideData?.restaurantSubtitle,
+    rideData?.restaurantCuisine,
+    rideData?.restaurantDeliveryTime,
+    rideData?.businessUserId,
+    rideData?.pickupAddress,
+    rideData?.pickup,
+  ]);
+
+  // Reuse the rider/business conversation already shown in Messages. The chat
+  // helper resolves an existing conversation for the participant pair before
+  // it creates one, so another order with this restaurant stays in the same chat.
+  const openRestaurantChat = useCallback(async () => {
+    const businessUserId = restaurantProfile?.businessUserId || rideData?.businessUserId;
+    if (!businessUserId || !user?.id) return;
+
+    const { data, error } = await supabaseHelpers.findOrCreateRideChat({
+      currentUserId: user.id,
+      currentUserName: user.name,
+      currentUserRole: user.role || 'rider',
+      peerId: businessUserId,
+      peerRole: 'business',
+      peerName: restaurantProfile?.name || rideData?.restaurantName || 'Restaurant',
+      peerAvatar: restaurantProfile?.logoImage || rideData?.restaurantImage || undefined,
+      contextId: rideData?.id,
+    });
+    if (error || !data) return;
+
+    try {
+      await supabaseHelpers.markChatConversationRead(data.id, user.id);
+    } catch (error) {
+      console.warn('[ActiveRide] Could not mark restaurant conversation read:', error);
+    }
+    navigate(`/rider/messages/thread/${data.id}`, {
+      state: { rideBackTo: '/rider/active-ride' },
+    });
+  }, [
+    navigate,
+    restaurantProfile?.businessUserId,
+    restaurantProfile?.logoImage,
+    restaurantProfile?.name,
+    rideData?.businessUserId,
+    rideData?.id,
+    rideData?.restaurantImage,
+    rideData?.restaurantName,
+    user?.id,
+    user?.name,
+    user?.role,
+  ]);
 
   const driverProgressStatus: Record<RideStatus, string> = {
     'on-the-way': 'on-the-way',
@@ -940,7 +1096,11 @@ export default function ActiveRide() {
     if (!isDeliveryRide(ride)) return;
     supabaseHelpers.notifyDeliveryStatusChange({
       pickupLocation: ride.pickup,
+      orderId: ride.orderId,
+      orderNumber: ride.orderNumber,
       customerId: ride.customerId || ride.passengerDetails?.[0]?.id,
+      senderId: user?.id,
+      senderName: user?.name || 'Driver',
       status: dbStatus,
       message,
     }).catch((err) => console.error('❌ Failed to send delivery notification:', err));
@@ -1163,6 +1323,144 @@ export default function ActiveRide() {
     }
   };
 
+  const cancelActiveRide = async (reason: string) => {
+    if (!rideData || !user?.id || isCancelling.current || isCompleting.current) return;
+    isCancelling.current = true;
+
+    const cancelledAt = new Date().toISOString();
+    const isDelivery = isDeliveryRide(rideData);
+    const serviceLabel = isDelivery
+      ? 'delivery'
+      : rideData.lobbyId || rideData.type === 'shared'
+        ? 'shared ride'
+        : 'private ride';
+    const cancellationMessage = `The driver cancelled this ${serviceLabel}. Reason: ${reason}`;
+    let orderUpdateWarning: string | null = null;
+
+    try {
+      if (rideData.lobbyId) {
+        const { data, error } = await supabase
+          .from('shared_ride_lobbies')
+          .update({
+            status: 'cancelled',
+            driver_status: 'cancelled',
+            driver_status_message: cancellationMessage,
+            updated_at: cancelledAt,
+          })
+          .eq('id', rideData.lobbyId)
+          .eq('driver_id', user.id)
+          .in('status', ['driver_found', 'in_progress'])
+          .select('id')
+          .maybeSingle();
+
+        if (error) throw error;
+        if (!data) throw new Error('This shared ride is no longer active or assigned to you.');
+      } else {
+        const { data: currentRide, error: lookupError } = await supabase
+          .from('ride_requests')
+          .select('driver_id, accepted_driver_id, status, order_id, pickup_location')
+          .eq('id', rideData.id)
+          .maybeSingle();
+
+        if (lookupError) throw lookupError;
+        if (!currentRide) throw new Error('This ride request could not be found.');
+        if (currentRide.status === 'completed' || currentRide.status === 'cancelled') {
+          throw new Error('This ride is no longer active.');
+        }
+
+        const assignedDriverColumn = currentRide.driver_id === user.id
+          ? 'driver_id'
+          : currentRide.accepted_driver_id === user.id
+            ? 'accepted_driver_id'
+            : null;
+        if (!assignedDriverColumn) {
+          throw new Error('This ride is no longer assigned to you.');
+        }
+
+        const { data, error } = await supabase
+          .from('ride_requests')
+          .update({
+            status: 'cancelled',
+            driver_status: 'cancelled',
+            driver_status_message: cancellationMessage,
+            cancel_reason: reason,
+            cancelled_by: 'driver',
+            updated_at: cancelledAt,
+          })
+          .eq('id', rideData.id)
+          .eq(assignedDriverColumn, user.id)
+          .neq('status', 'completed')
+          .neq('status', 'cancelled')
+          .select('id')
+          .maybeSingle();
+
+        if (error) throw error;
+        if (!data) throw new Error('This ride is no longer active. Refresh the page and try again.');
+
+        if (isDelivery) {
+          const orderId = currentRide.order_id
+            || rideData.orderId
+            || supabaseHelpers.parseOrderIdFromDeliveryPickup(currentRide.pickup_location || rideData.pickup);
+          const orderUpdate = {
+            status: 'cancelled',
+            cancel_reason: reason,
+            cancelled_by: 'driver',
+            updated_at: cancelledAt,
+          };
+
+          const orderResult = orderId
+            ? await supabase
+              .from('orders')
+              .update(orderUpdate)
+              .eq('id', orderId)
+              .neq('status', 'delivered')
+              .select('id')
+              .maybeSingle()
+            : rideData.orderNumber
+              ? await supabase
+                .from('orders')
+                .update(orderUpdate)
+                .eq('order_number', rideData.orderNumber)
+                .neq('status', 'delivered')
+                .select('id')
+                .maybeSingle()
+              : null;
+
+          if (!orderResult) {
+            orderUpdateWarning = 'The delivery was cancelled, but its food order could not be identified.';
+          } else if (orderResult.error || !orderResult.data) {
+            console.error('[ActiveRide] Could not cancel the linked food order:', orderResult.error);
+            orderUpdateWarning = 'The delivery was cancelled, but the food order status could not be updated. Please contact the restaurant.';
+          }
+
+          notifyDeliveryStatus(rideData, 'cancelled', cancellationMessage);
+        }
+      }
+
+      logAudit({
+        action: 'cancel_ride',
+        actorRole: 'rider',
+        entityType: rideData.lobbyId ? 'lobby' : 'ride_request',
+        entityId: rideData.lobbyId || rideData.id,
+        summary: `Cancelled a ${serviceLabel}${reason ? `: ${reason}` : ''}`,
+        details: { reason, orderId: rideData.orderId || null },
+        actorEmail: user.email,
+        actorName: user.name,
+      });
+
+      setShowCancelPrompt(false);
+      clearRiderActiveRide();
+      syncRideResume(null);
+      if (orderUpdateWarning) window.alert(orderUpdateWarning);
+      navigate('/rider', { replace: true });
+    } catch (error: any) {
+      console.error('[ActiveRide] Failed to cancel active ride:', error);
+      window.alert(`Could not cancel this ${serviceLabel}: ${error?.message || 'Please try again.'}`);
+    } finally {
+      isCancelling.current = false;
+    }
+  };
+
   // Watch for the customer cancelling the accepted ride. Lobbies manage their own
   // lifecycle, so only private/delivery requests (which carry an id) are polled.
   useEffect(() => {
@@ -1174,8 +1472,11 @@ export default function ActiveRide() {
       const { data } = await supabaseHelpers.getRideRequest(requestId);
       if (cancelled || !data) return;
       if (data.status === 'cancelled') {
-        console.log('🚫 Customer cancelled the ride:', data.cancel_reason);
-        setCustomerCancellation({ reason: data.cancel_reason || null });
+        console.log('🚫 Ride cancelled:', data.cancelled_by, data.cancel_reason);
+        setCustomerCancellation({
+          reason: data.cancel_reason || null,
+          cancelledBy: data.cancelled_by || null,
+        });
       }
     };
 
@@ -1255,6 +1556,17 @@ export default function ActiveRide() {
     }
   })();
 
+  const cancelActionLabel = isDeliveryRide(rideData)
+    ? 'Cancel delivery'
+    : rideData.lobbyId || rideData.type === 'shared'
+      ? 'Cancel shared ride'
+      : 'Cancel ride';
+  const cancelPromptDescription = isDeliveryRide(rideData)
+    ? 'This will cancel the linked food order and notify the customer and restaurant.'
+    : rideData.lobbyId || rideData.type === 'shared'
+      ? 'This will end the shared ride for every passenger.'
+      : 'The passenger will be notified that this ride was cancelled.';
+
   // The customer cancelled — say so, and show the reason they gave.
   if (customerCancellation) {
     return (
@@ -1264,7 +1576,11 @@ export default function ActiveRide() {
             <span className="text-3xl">🚫</span>
           </div>
           <h3 className="text-xl font-bold text-[#121212] mb-2">Ride cancelled</h3>
-          <p className="text-sm text-[#64748B] mb-4">The customer cancelled this ride request.</p>
+          <p className="text-sm text-[#64748B] mb-4">
+            {customerCancellation.cancelledBy === 'driver' || customerCancellation.cancelledBy === 'rider'
+              ? 'The driver cancelled this ride.'
+              : 'The customer cancelled this ride request.'}
+          </p>
           {customerCancellation.reason && (
             <div className="p-3 rounded-xl border border-[var(--error)] bg-[var(--error-soft)] text-left mb-4">
               <p className="text-xs font-bold uppercase tracking-widest text-[var(--error)] mb-1">Reason</p>
@@ -1641,7 +1957,7 @@ export default function ActiveRide() {
         {!isMinimized && (
           <>
             <Card className="p-4 border-2 border-[var(--muted)] shadow-sm">
-              <div className="flex gap-4 mb-3">
+              <div className="flex items-start gap-4 mb-3">
                 {/* Round passenger photo, cropped by the wrapper. A shared ride has
                     several passengers and no single person to show, so it keeps the
                     group glyph. */}
@@ -1658,7 +1974,7 @@ export default function ActiveRide() {
                     <User className="w-6 h-6 text-[var(--primary)]" aria-hidden="true" />
                   )}
                 </div>
-                <div className="flex-1">
+                <div className="min-w-0 flex-1">
                   <h2 className="font-bold text-lg">{resolvedName || rideData.customerName}</h2>
                   {rideData.passengerDetails && rideData.passengerDetails.length > 1 && (
                     <p className="text-xs text-[var(--muted-foreground)] mt-0.5">
@@ -1670,6 +1986,15 @@ export default function ActiveRide() {
                     <Badge variant="outline" className="text-[var(--muted-foreground)]">{rideData.payment === 'COD' ? 'Cash' : 'Prepaid'}</Badge>
                   </div>
                 </div>
+                <Button
+                  type="button"
+                  onClick={openPassengerChat}
+                  aria-label="Message customer"
+                  title="Message customer"
+                  className="size-11 flex-shrink-0 rounded-full bg-[var(--surface)] border-2 border-[var(--primary)] flex items-center justify-center"
+                >
+                  <MessageSquare className="w-4 h-4 text-[var(--primary)]" aria-hidden="true" />
+                </Button>
               </div>
               <div className="space-y-3 mt-4">
                 <div className={`flex gap-3 p-2 rounded-lg ${isHeadingToPickup ? 'bg-[var(--success-soft)] border border-[var(--success-soft)]' : ''}`}>
@@ -1692,6 +2017,45 @@ export default function ActiveRide() {
             </Card>
             {isDeliveryRide(rideData) && (
               <Card className="p-4 border-2 border-[var(--muted)] shadow-sm">
+                <div className="flex items-start gap-3">
+                  <div className="size-14 flex-shrink-0 overflow-hidden rounded-full bg-[var(--primary-soft)] flex items-center justify-center">
+                    <StoreLogo logo={restaurantProfile?.logoImage || undefined} />
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <p className="text-xs font-semibold uppercase tracking-wide text-[var(--muted-foreground)]">Restaurant</p>
+                    <h2 className="truncate font-bold text-lg text-[var(--ink)]">
+                      {restaurantProfile?.name || rideData.restaurantName || rideData.pickup || 'Restaurant'}
+                    </h2>
+                    {restaurantProfile?.subtitle && (
+                      <p className="mt-0.5 text-sm text-[var(--muted-foreground)]">{restaurantProfile.subtitle}</p>
+                    )}
+                    {(restaurantProfile?.cuisine || restaurantProfile?.deliveryTime) && (
+                      <p className="mt-1 text-xs text-[var(--muted-foreground)]">
+                        {[restaurantProfile.cuisine, restaurantProfile.deliveryTime].filter(Boolean).join(' · ')}
+                      </p>
+                    )}
+                  </div>
+                  <Button
+                    type="button"
+                    onClick={openRestaurantChat}
+                    disabled={!restaurantProfile?.businessUserId}
+                    aria-label="Message restaurant"
+                    title="Message restaurant"
+                    className="size-11 flex-shrink-0 rounded-full bg-[var(--surface)] border-2 border-[var(--primary)] flex items-center justify-center disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    <MessageSquare className="w-4 h-4 text-[var(--primary)]" aria-hidden="true" />
+                  </Button>
+                </div>
+                {restaurantProfile?.address && (
+                  <div className="mt-3 flex items-start gap-2 border-t border-[var(--border)] pt-3 text-sm text-[var(--muted-foreground)]">
+                    <MapPin className="mt-0.5 size-4 flex-shrink-0" aria-hidden="true" />
+                    <span>{restaurantProfile.address}</span>
+                  </div>
+                )}
+              </Card>
+            )}
+            {isDeliveryRide(rideData) && (
+              <Card className="p-4 border-2 border-[var(--muted)] shadow-sm">
                 <h3 className="text-center font-bold text-[var(--ink)] text-sm mb-3">Order Progress</h3>
                 <OrderStatusUpdates
                   status="preparing"
@@ -1702,18 +2066,6 @@ export default function ActiveRide() {
             )}
           </>
         )}
-
-        <div className="grid gap-2">
-          {!isMinimized && (
-            <Button
-              onClick={openPassengerChat}
-              className="bg-[var(--surface)] text-[var(--ink)] border-2 border-[var(--primary)] py-4 font-bold flex items-center justify-center gap-2"
-            >
-              <MessageSquare className="w-4 h-4" aria-hidden="true" />
-              Message passenger
-            </Button>
-          )}
-        </div>
 
         {/*
             Phase action, last in the sheet -- beneath the profile and the
@@ -1742,6 +2094,15 @@ export default function ActiveRide() {
             {activeAction.label}
           </Button>
         )}
+        <Button
+          type="button"
+          variant="outline"
+          onClick={() => setShowCancelPrompt(true)}
+          aria-label={cancelActionLabel}
+          className="-mx-1 mt-2 w-[calc(100%+0.5rem)] border-[var(--error)] py-3 font-bold text-[var(--error)] hover:bg-[var(--error-soft)]"
+        >
+          {cancelActionLabel}
+        </Button>
 
       </div>
 
@@ -1828,6 +2189,16 @@ export default function ActiveRide() {
           </Card>
         </div>
       )}
+
+      <ReasonPromptModal
+        isOpen={showCancelPrompt}
+        title={`${cancelActionLabel[0].toUpperCase()}${cancelActionLabel.slice(1)}?`}
+        description={cancelPromptDescription}
+        confirmLabel={cancelActionLabel}
+        placeholder="Tell us why you need to cancel..."
+        onSubmit={cancelActiveRide}
+        onCancel={() => setShowCancelPrompt(false)}
+      />
     </div>
   );
 }
