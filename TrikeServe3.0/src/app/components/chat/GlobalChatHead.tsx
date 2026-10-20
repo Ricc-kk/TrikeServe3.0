@@ -51,6 +51,7 @@ export default function GlobalChatHead() {
   } = useChatHeadVisibility();
   const location = useLocation();
   const navigate = useNavigate();
+  const previousRouteRef = useRef({ userId: user?.id ?? null, pathname: location.pathname });
   const [conversations, setConversations] = useState<ChatConversation[]>([]);
   const [overlayConversation, setOverlayConversation] = useState<ChatConversation | null>(null);
   const [selectedConversationId, setSelectedConversationId] = useState<string | null>(null);
@@ -140,7 +141,18 @@ export default function GlobalChatHead() {
   }, [user?.id]);
 
   useEffect(() => {
-    if (!user?.id || (!openedConversationId && !/\/messages\/(?:thread|business|driver)\//.test(location.pathname))) {
+    const previousRoute = previousRouteRef.current;
+    const enteredThreadWhileSignedIn = Boolean(
+      user?.id &&
+      previousRoute.userId === user.id &&
+      previousRoute.pathname !== location.pathname &&
+      /\/messages\/(?:thread|business|driver)\//.test(location.pathname),
+    );
+    previousRouteRef.current = { userId: user?.id ?? null, pathname: location.pathname };
+
+    // A thread URL restored during sign-in is not a manual open. Only a route
+    // change made during the same signed-in session clears the dismissed state.
+    if (!user?.id || (!openedConversationId && !enteredThreadWhileSignedIn)) {
       return;
     }
 

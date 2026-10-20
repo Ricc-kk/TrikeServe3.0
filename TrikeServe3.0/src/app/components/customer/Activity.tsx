@@ -1,4 +1,4 @@
-import { ArrowLeft, Home as HomeIcon, Calendar, MessageCircle, User, UsersRound, CarTaxiFront, Navigation, Search, ShoppingCart, ClipboardList, Package, MapPin, Flag, X, Check, Star } from "lucide-react";
+import { ArrowLeft, Home as HomeIcon, Calendar, MessageCircle, User, UsersRound, Navigation, Search, ShoppingCart, ClipboardList, Package, MapPin, Flag, X, Check, Star } from "lucide-react";
 import { Link, useNavigate } from "react-router";
 import { Button } from "../ui/button";
 import { Card } from "../ui/card";
@@ -6,6 +6,7 @@ import BottomNav from "../ui/BottomNav";
 import { useAuth } from "../../contexts/AuthContext";
 import { ImageWithFallback } from "../figma/ImageWithFallback";
 import { supabase, supabaseHelpers, logAudit } from "../../../lib/supabase";
+import { TerminalIconGlyph } from "../ui/TerminalIcon";
 import { useState, useEffect, useRef } from "react";
 
 const REPORT_CATEGORIES = [
@@ -466,7 +467,7 @@ export default function Activity() {
                         {ride.rideType === 'share' ? (
                           <UsersRound className="w-6 h-6 text-[var(--info)]" />
                         ) : (
-                          <CarTaxiFront className="w-6 h-6 text-[var(--primary)]" />
+                          <TerminalIconGlyph className="w-6 h-6 text-[var(--primary)]" />
                         )}
                       </div>
 

@@ -276,7 +276,9 @@ export default function FloatingChatHead({
     ? `conversation:${openedConversationId}`
     : openedThreadRoute ? `route:${layoutKey}` : '';
   const dismissalActivityKey = `${pulseKey}:${manualOpenSignal}`;
-  const previousDismissalActivityKeyRef = useRef(`${pulseKey}:`);
+  // Establish the current route as the baseline on mount. If auth restores a
+  // thread URL, it must not look like a manual open and clear a saved dismissal.
+  const previousDismissalActivityKeyRef = useRef(dismissalActivityKey);
   const parkAfterRestoreRef = useRef(false);
   const retryRef = useRef<number | null>(null);
 

@@ -98,7 +98,10 @@ export default function AdminShell({
     return () => mql.removeEventListener("change", onChange);
   }, []);
 
-  const isActive = (path: string) => location.pathname === path || (path === "/admin/dashboard" && location.pathname === "/admin");
+  const isActive = (path: string) =>
+    location.pathname === path ||
+    location.pathname.startsWith(`${path}/`) ||
+    (path === "/admin/dashboard" && location.pathname === "/admin");
 
   return (
     <div className="min-h-dvh bg-[var(--muted)] flex">

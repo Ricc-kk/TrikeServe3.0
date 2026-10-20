@@ -552,6 +552,14 @@ export const router = createBrowserRouter([
         )
       },
       {
+        path: "admin/delivery/:terminalId",
+        element: (
+          <ProtectedRoute allowedRoles={['admin']}>
+            <AdminFaresDelivery />
+          </ProtectedRoute>
+        )
+      },
+      {
         path: "admin/approvals",
         element: (
           <ProtectedRoute allowedRoles={['admin']}>

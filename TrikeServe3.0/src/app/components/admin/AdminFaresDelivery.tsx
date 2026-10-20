@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useRef, useState, type ElementType, type ReactNode } from "react";
-import { Car, ChevronDown, Loader2, Save, Users, Truck, TriangleAlert, Search, MapPin, CheckCircle, Pencil } from "lucide-react";
+import { ArrowLeft, Car, ChevronRight, Loader2, Save, Users, Truck, TriangleAlert, Search, MapPin, CheckCircle, Pencil } from "lucide-react";
 
 import { supabase } from "../../../utils/supabase";
 import { useAuth } from "../../contexts/AuthContext";
-import { useBlocker } from "react-router";
+import { Link, useBlocker, useNavigate, useParams } from "react-router";
 import { DEFAULT_MAX_PASSENGERS, DEFAULT_RATES, formatPeso, normalizeRates, type RideRates } from "@/lib/pricing";
 import { logAudit } from "../../../lib/supabase";
 import AdminShell from "./AdminShell";
@@ -168,6 +168,8 @@ function FareGroup({ title, blurb, icon: Icon, children }: FareGroupProps) {
 
 export default function AdminFaresDelivery() {
   const { user } = useAuth();
+  const navigate = useNavigate();
+  const { terminalId } = useParams<{ terminalId?: string }>();
   const [terminals, setTerminals] = useState<Terminal[]>([]);
   const [drafts, setDrafts] = useState<Record<string, Draft>>({});
   const [platformRates, setPlatformRates] = useState<RideRates>(DEFAULT_RATES);
@@ -175,17 +177,6 @@ export default function AdminFaresDelivery() {
   const [query, setQuery] = useState('');
   const [loadError, setLoadError] = useState<string | null>(null);
   const [isSavingAll, setIsSavingAll] = useState(false);
-  /**
-   * Which terminal pricing editors are folded down to their name.
-   *
-   * Per terminal rather than one global toggle, because the reason to fold is
-   * comparing: an admin checking three terminals against each other wants the
-   * summaries side by side, and a single global switch would mean folding and
-   * unfolding the same panels over and over.
-   */
-  const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
-  const toggleCollapsed = (id: string) =>
-    setCollapsed((prev) => ({ ...prev, [id]: prev[id] === false }));
   const [toast, setToast] = useState<{ message: string; variant: "success" | "error" } | null>(null);
   /**
    * Which optional columns the database actually has.
@@ -551,11 +542,16 @@ export default function AdminFaresDelivery() {
   const rateCompleteness = totalRateCount > 0
     ? Math.round((configuredRateCount / totalRateCount) * 100)
     : 0;
+  const isTerminalDetail = Boolean(terminalId);
+  const selectedTerminal = terminals.find((terminal) => terminal.id === terminalId) || null;
+  const visibleTerminals = isTerminalDetail
+    ? terminals.filter((terminal) => terminal.id === terminalId)
+    : terminals.filter((terminal) => terminal.name.toLowerCase().includes(query.trim().toLowerCase()));
 
   return (
     <AdminShell
       title="Fares & Delivery"
-      subtitle="Share ride, private ride and delivery pricing per terminal"
+      subtitle={selectedTerminal ? `Pricing for ${selectedTerminal.name}` : "Share ride, private ride and delivery pricing per terminal"}
       actions={hasUnsavedChanges ? (
         <button
           type="button"
@@ -569,7 +565,24 @@ export default function AdminFaresDelivery() {
       ) : undefined}
     >
       <div className="@container mx-auto w-full max-w-[100rem] space-y-6 sm:space-y-8">
-      <AdminPageIntro eyebrow="Fares & delivery" title="Clear pricing. Every terminal." description="Compare terminal rates, set ride and delivery prices, and manage shared-ride capacity." />
+      {isTerminalDetail && (
+        <button
+          type="button"
+          onClick={() => navigate('/admin/delivery')}
+          className="inline-flex min-h-11 items-center gap-2 rounded-xl border border-line bg-card px-4 py-2 text-sm font-bold text-[var(--ink)] transition-colors hover:bg-soft"
+        >
+          <ArrowLeft className="size-4" aria-hidden="true" />
+          All terminals
+        </button>
+      )}
+      <AdminPageIntro
+        eyebrow={isTerminalDetail ? "Terminal rates" : "Fares & delivery"}
+        title={isTerminalDetail ? "Edit terminal pricing" : "Clear pricing. Every terminal."}
+        description={isTerminalDetail
+          ? selectedTerminal ? `Set share ride, private ride and delivery fares for ${selectedTerminal.name}.` : "Loading this terminal's rates."
+          : "Compare terminal rates, set ride and delivery prices, and manage shared-ride capacity."}
+      />
+      {!isTerminalDetail && <>
       <AdminMetricCards loading={loading} items={[
         { label: 'Terminals', value: terminals.length, Icon: MapPin },
         { label: 'Active', value: terminals.filter(t => t.is_active).length, Icon: CheckCircle, tone: 'success' },
@@ -615,11 +628,12 @@ export default function AdminFaresDelivery() {
           </p>
         </div>
       </section>
+      </>}
       {loadError && <div role="alert" className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-line bg-[var(--amber-soft)] p-4 text-sm text-[var(--amber-ink)]"><p className="min-w-0 flex-1 break-words">{loadError}</p><button type="button" disabled={terminals.some(dirty)} onClick={() => void load()} className="min-h-11 rounded-xl border border-current px-3 text-xs font-bold disabled:opacity-50">Retry loading</button></div>}
-      <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-line bg-card p-4">
+      {!isTerminalDetail && <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-line bg-card p-4">
         <div className="relative min-w-0 w-full sm:max-w-md"><Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-[var(--muted-foreground)]" aria-hidden="true" /><label htmlFor="fare-search" className="sr-only">Search terminal pricing</label><input id="fare-search" type="search" value={query} onChange={event => setQuery(event.target.value)} placeholder="Search terminal pricing…" className="min-h-11 w-full rounded-xl border border-line bg-soft pl-10 pr-3 text-sm" /></div>
         <p role="status" className="text-xs text-[var(--muted-foreground)]">{terminals.filter(t => t.name.toLowerCase().includes(query.trim().toLowerCase())).length} of {terminals.length} terminals</p>
-      </div>
+      </div>}
       {toast && (
         <Toast
           message={toast.message}
@@ -682,16 +696,28 @@ export default function AdminFaresDelivery() {
         </div>
       ) : terminals.length === 0 ? (
         <EmptyState
-          title="No terminals yet"
-          description="Add a terminal first, then set its fares here."
+          title={isTerminalDetail ? "Terminal not found" : "No terminals yet"}
+          description={isTerminalDetail ? "This terminal may have been removed." : "Add a terminal first, then set its fares here."}
+          action={isTerminalDetail ? (
+            <button type="button" onClick={() => navigate('/admin/delivery')} className="min-h-11 rounded-xl border border-line px-4 text-sm font-bold">Back to terminals</button>
+          ) : undefined}
+        />
+      ) : visibleTerminals.length === 0 ? (
+        <EmptyState
+          title={isTerminalDetail ? "Terminal not found" : "No matching terminals"}
+          description={isTerminalDetail ? "This terminal may have been removed." : "Try another terminal name."}
+          action={isTerminalDetail ? (
+            <button type="button" onClick={() => navigate('/admin/delivery')} className="min-h-11 rounded-xl border border-line px-4 text-sm font-bold">Back to terminals</button>
+          ) : (
+            <button type="button" onClick={() => setQuery('')} className="min-h-11 rounded-xl border border-line px-4 text-sm font-bold">Clear search</button>
+          )}
         />
       ) : (
         <div className="space-y-4">
-          {!terminals.some(t => t.name.toLowerCase().includes(query.trim().toLowerCase())) && <EmptyState title="No matching terminals" description="Try another terminal name." action={<button type="button" onClick={() => setQuery('')} className="min-h-11 rounded-xl border border-line px-4 text-sm font-bold">Clear search</button>} />}
-          {terminals.filter(t => t.name.toLowerCase().includes(query.trim().toLowerCase())).map((terminal) => {
+          {visibleTerminals.map((terminal) => {
             const draft = drafts[terminal.id] ?? draftOf(terminal);
             const changed = dirty(terminal);
-            const isCollapsed = collapsed[terminal.id] !== false;
+            const isCollapsed = !isTerminalDetail;
             const shareBase = readMoney(draft.base_fare, DEFAULT_RATES.baseFare);
             const shareIncludedKm = readMoney(draft.base_fare_included_km, DEFAULT_RATES.baseFareIncludedKm);
             const sharePerKm = readMoney(draft.per_km, DEFAULT_RATES.perKm);
@@ -709,22 +735,14 @@ export default function AdminFaresDelivery() {
             return (
               <section
                 key={terminal.id}
-                onClick={(event) => {
-                  const target = event.target;
-                  if (target instanceof Element && target.closest("button, input, select, textarea, a, label, [role='button'], [contenteditable='true']")) return;
-                  toggleCollapsed(terminal.id);
-                }}
-                className={`@container relative min-w-0 cursor-pointer rounded-3xl border border-line bg-card p-4 sm:p-5 transition-colors hover:border-[var(--teal)]/40 ${isCollapsed ? "min-h-20" : ""}`}
+                className={`@container relative min-w-0 rounded-3xl border border-line bg-card p-4 sm:p-5 ${isCollapsed ? "min-h-20 cursor-pointer transition-colors hover:border-[var(--teal)]/40" : ""}`}
               >
                 {isCollapsed ? (
-                  <>
-                    <button
-                      type="button"
-                      onClick={() => toggleCollapsed(terminal.id)}
-                      aria-label={`Edit pricing for ${terminal.name}`}
-                      aria-expanded={false}
-                      className="w-full rounded-xl text-left focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--teal)]"
-                    >
+                  <Link
+                    to={`/admin/delivery/${terminal.id}`}
+                    aria-label={`Open pricing for ${terminal.name}`}
+                    className="block rounded-xl text-left focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--teal)]"
+                  >
                       <h2 className="flex min-w-0 items-center gap-2 text-lg font-bold text-[var(--ink)]">
                         <TerminalIconGlyph className="size-5 shrink-0 text-[var(--primary)]" aria-hidden="true" />
                         <span className="break-words">{terminal.name}</span>
@@ -738,7 +756,11 @@ export default function AdminFaresDelivery() {
                         </div>
                       ))}
                     </div>
-                  </>
+                    <div className="mt-3 flex items-center justify-end gap-1 text-sm font-bold text-[var(--primary)]">
+                      Manage rates
+                      <ChevronRight className="size-4" aria-hidden="true" />
+                    </div>
+                  </Link>
                 ) : (
                   <>
                     <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
@@ -750,17 +772,6 @@ export default function AdminFaresDelivery() {
                         <p className="text-xs text-[var(--muted-foreground)]">
                           {terminal.is_active ? "Active" : "Inactive"}{changed ? ' · Unsaved changes' : ' · Saved rates'}
                         </p>
-                      </div>
-                      <div className="relative z-20 flex shrink-0 items-center gap-2">
-                        <button
-                          type="button"
-                          onClick={() => toggleCollapsed(terminal.id)}
-                          aria-expanded={!isCollapsed}
-                          aria-label={`Collapse pricing editor for ${terminal.name}`}
-                          className="inline-flex size-11 items-center justify-center rounded-xl border border-line bg-[var(--surface)] text-[var(--ink-soft)] transition-colors hover:border-[var(--primary)] hover:text-[var(--primary)] active:scale-95"
-                        >
-                          <ChevronDown className="size-5" aria-hidden="true" />
-                        </button>
                       </div>
                     </div>
                   <div className="grid items-start gap-3 @min-[58rem]:grid-cols-3">

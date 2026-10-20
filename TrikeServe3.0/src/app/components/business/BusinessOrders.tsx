@@ -8,6 +8,7 @@ import ListPagination from "../ui/ListPagination";
 import BusinessSidebar from "./BusinessSidebar";
 import BusinessHamburgerButton from "./BusinessHamburgerButton";
 import FullSizeImagePreview from "../ui/FullSizeImagePreview";
+import { ImageWithFallback } from "../figma/ImageWithFallback";
 import FloatingChatHead from "../ui/FloatingChatHead";
 import BusinessPageIntro from "./BusinessPageIntro";
     import { supabase } from "../../../lib/supabase";
@@ -44,6 +45,8 @@ function formatOrderTime(value: string): string {
 interface Order {
   id: string;
   orderNumber: string;
+  restaurantName: string;
+  restaurantImage: string;
   customerName: string;
   customerEmail: string;
   customerPhone?: string;
@@ -654,6 +657,8 @@ export default function BusinessOrders() {
         return {
           id: dbOrder.id,
           orderNumber: dbOrder.order_number || 'Unknown',
+          restaurantName: dbOrder.restaurant_name || 'Restaurant',
+          restaurantImage: dbOrder.restaurant_image || '',
           customerName: dbOrder.customer_name || 'Customer',
           customerEmail: dbOrder.customer_email || '',
           customerPhone: dbOrder.customer_phone || '',
@@ -1749,37 +1754,44 @@ export default function BusinessOrders() {
                   key={order.id}
                   onClick={() => setSelectedOrder(order)}
                   role="button" tabIndex={0} aria-label={`View order ${order.orderNumber}`} onKeyDown={event => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); setSelectedOrder(order); } }}
-                  className="min-w-0 gap-3 rounded-3xl bg-card p-4 sm:p-5 border border-line active:scale-[0.98] transition-transform cursor-pointer"
+                  className="col-span-full min-w-0 gap-0 rounded-2xl border border-line bg-surface p-4 shadow-sm transition-transform active:scale-[0.98] cursor-pointer sm:p-6"
                 >
-                  <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 md:gap-3 mb-3">
-                    <div className="min-w-0">
-                      {/* No margin under the order number. The customer name
-                          belongs to it, not to the items further down, and a gap
-                          there split one thing into two lines that read as
-                          separate rows. */}
-                      <div className="flex items-center gap-2 flex-wrap">
-                        <h3 className="font-bold text-[var(--ink)] text-sm md:text-base">#{order.orderNumber}</h3>
-                        <Badge className={`${orderStatusColor(order)} text-white text-xs`}>
-                          {orderStatusLabel(order)}
-                        </Badge>
-                      </div>
-                      <p className="text-xs md:text-sm text-[var(--muted-foreground)] truncate">{order.customerName}</p>
+                  <div className="flex w-full items-start gap-3 text-left">
+                    <div className="size-12 shrink-0 overflow-hidden rounded-lg bg-[var(--muted)]">
+                      {order.restaurantImage ? (
+                        <ImageWithFallback
+                          src={order.restaurantImage}
+                          alt={order.restaurantName}
+                          className="size-full object-cover"
+                        />
+                      ) : (
+                        <div className="grid size-full place-items-center" aria-hidden="true">
+                          <Store className="size-6 text-[var(--muted-foreground)]" />
+                        </div>
+                      )}
                     </div>
-                    <div className="text-right flex-shrink-0">
-                      <p className="text-base md:text-lg font-bold text-[var(--ink)]">₱{order.total}</p>
-                      <p className="text-xs text-[var(--muted-foreground)]">{order.date}</p>
-                    </div>
-                  </div>
 
-                  <div className="space-y-1 text-xs md:text-sm">
-                    {order.items.slice(0, 2).map((item, idx) => (
-                      <p key={idx} className="text-xs md:text-sm text-[var(--muted-foreground)] truncate">
-                        {item.quantity}x {item.name}
-                      </p>
-                    ))}
-                    {order.items.length > 2 && (
-                      <p className="text-xs text-[var(--muted-foreground)]">+{order.items.length - 2} more items</p>
-                    )}
+                    <div className="min-w-0 flex-1">
+                      <div className="flex flex-wrap items-start justify-between gap-x-3 gap-y-2">
+                        <div className="min-w-0 flex-1">
+                          <h3 className="mb-1 line-clamp-1 text-sm font-semibold text-[var(--ink)] sm:text-base">
+                            {order.customerName}
+                          </h3>
+                          <p className="mb-2 text-xs text-[var(--muted-foreground)]">{order.date}</p>
+                          <div className="flex flex-wrap items-center gap-2">
+                            <span className={`inline-flex rounded-full px-2 py-0.5 text-xs font-bold ${order.status === 'delivered' ? 'bg-[var(--success-soft)] text-[var(--success)]' : 'bg-[var(--error-soft)] text-[var(--error)]'}`}>
+                              {getStatusLabel(order.status)}
+                            </span>
+                            <span className="text-xs text-[var(--muted-foreground)]">· {order.items.length} {order.items.length === 1 ? 'item' : 'items'}</span>
+                          </div>
+                        </div>
+                        <div className="shrink-0 text-right">
+                          <p className="text-lg font-bold text-[var(--ink)]">₱{order.total}</p>
+                          <p className="text-xs text-[var(--muted-foreground)]">#{order.orderNumber}</p>
+                        </div>
+                      </div>
+                      <span className="text-xs font-semibold text-[var(--primary)]">Tap to view details</span>
+                    </div>
                   </div>
 
                   {/* Cancellation reason, readable straight from the history list */}
