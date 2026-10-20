@@ -616,7 +616,15 @@ export default function Activity() {
                     </div>
                     <div className="rounded-2xl border border-line p-4 text-sm">
                       <p className="text-xs text-[var(--muted-foreground)]">Driver</p>
-                      <p className="mt-1 font-bold text-[var(--ink)]">{ride.driverName || 'Driver'}{ride.driverRating && ride.driverRating !== 'Driver' ? ` · ★ ${ride.driverRating}` : ''}</p>
+                      <p className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 font-bold text-[var(--ink)]">
+                        <span>{ride.driverName || 'Driver'}</span>
+                        {ride.driverRating && ride.driverRating !== 'Driver' && (
+                          <span className="inline-flex items-center gap-1 text-sm font-semibold">
+                            <Star className="size-3.5 fill-[var(--amber)] text-[var(--amber)]" aria-hidden="true" />
+                            {ride.driverRating}
+                          </span>
+                        )}
+                      </p>
                     </div>
                     <div className="flex flex-wrap justify-end gap-2">
                       {!alreadyRated && ride.driverId && <Button type="button" onClick={() => openRate(ride)} className="min-h-11 rounded-xl bg-[var(--primary)] px-4 font-bold text-white">Rate driver</Button>}
@@ -750,8 +758,8 @@ export default function Activity() {
 
             {ratingSubmitted ? (
               <div className="p-6 text-center">
-                <div className="w-14 h-14 bg-[var(--success-soft)] rounded-full flex items-center justify-center mx-auto mb-3 text-2xl">
-                  🙏
+                <div className="w-14 h-14 bg-[var(--success-soft)] rounded-full flex items-center justify-center mx-auto mb-3">
+                  <Check className="size-7 text-[var(--success)]" aria-hidden="true" />
                 </div>
                 <h4 className="text-base font-bold text-[var(--ink)]">Thank you!</h4>
                 <p className="text-sm text-[var(--muted-foreground)] mt-1">

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { MessageCircle, User, Users, X } from "lucide-react";
+import { useAuth } from "../../contexts/AuthContext";
 import { useChatHeadVisibility } from "../../contexts/ChatHeadVisibilityContext";
 
 /**
@@ -221,7 +222,14 @@ export default function FloatingChatHead({
    */
   onInitialResolve?: () => void;
 }) {
+  const { user } = useAuth();
   const { registerLocalHead, openedConversationId } = useChatHeadVisibility();
+  const resolvedDismissalStorageKey = dismissalStorageKey ?? (
+    user?.id
+      ? `trikeserve_global_chat_head_dismissed_${user.id}`
+      : undefined
+  );
+  const groupRef = useRef<HTMLDivElement | null>(null);
   const headRef = useRef<HTMLButtonElement | null>(null);
   const stackHeadRefs = useRef<Array<HTMLButtonElement | null>>([]);
   const previousHeadIdRef = useRef(headId || null);
@@ -253,17 +261,22 @@ export default function FloatingChatHead({
   const [isDragging, setIsDragging] = useState(false);
   const [isOverCloseTarget, setIsOverCloseTarget] = useState(false);
   const [dismissed, setDismissed] = useState(() => {
-    if (!dismissalStorageKey || typeof window === 'undefined') return false;
+    if (!resolvedDismissalStorageKey || typeof window === 'undefined') return false;
     try {
-      return window.localStorage.getItem(dismissalStorageKey) === 'true';
+      return window.localStorage.getItem(resolvedDismissalStorageKey) === 'true';
     } catch {
       return false;
     }
   });
-  // A global head's conversation can change while auth restores its inbox. Only
-  // actual chat activity should bring a dismissed global head back.
-  const dismissalActivityKey = isGlobal ? String(pulseKey) : `${headId || ''}:${pulseKey}`;
-  const previousDismissalActivityKeyRef = useRef(dismissalActivityKey);
+  const previousDismissalStorageKeyRef = useRef(resolvedDismissalStorageKey);
+  // Only a new message or a user-opened chat should restore a dismissed head.
+  // Conversation metadata changes and routine page rerenders do not.
+  const openedThreadRoute = isGlobal && /\/messages\/(?:thread|business|driver)\//.test(layoutKey || '');
+  const manualOpenSignal = openedConversationId && (isGlobal || openedConversationId === headId)
+    ? `conversation:${openedConversationId}`
+    : openedThreadRoute ? `route:${layoutKey}` : '';
+  const dismissalActivityKey = `${pulseKey}:${manualOpenSignal}`;
+  const previousDismissalActivityKeyRef = useRef(`${pulseKey}:`);
   const parkAfterRestoreRef = useRef(false);
   const retryRef = useRef<number | null>(null);
 
@@ -282,8 +295,10 @@ export default function FloatingChatHead({
       el.style.transition = animated
         ? `left ${STACK_DRAG_DELAY}ms ease-out, top ${STACK_DRAG_DELAY}ms ease-out`
         : 'none';
-      el.style.left = `${pos.current.x + direction * offset * (index + 1)}px`;
-      el.style.top = `${pos.current.y}px`;
+      // Stack heads share the main head's positioned wrapper. Their offset is
+      // relative to that wrapper so dragging the stack cannot leave them behind.
+      el.style.left = `${direction * offset * (index + 1)}px`;
+      el.style.top = '0px';
     });
   }, [showStackItems, visibleStackItems.length]);
 
@@ -314,7 +329,8 @@ export default function FloatingChatHead({
 
   const parkAtTopRight = useCallback(() => {
     const el = headRef.current;
-    if (!el) return;
+    const group = groupRef.current;
+    if (!el || !group) return;
     const rect = el.getBoundingClientRect();
     const width = rect.width;
     const step = showStackItems ? CHAT_HEAD_SIZE + CHAT_HEAD_ROW_GAP : STACK_PEEK;
@@ -328,8 +344,8 @@ export default function FloatingChatHead({
         : GAP,
     };
     setSide('right');
-    el.style.left = `${pos.current.x}px`;
-    el.style.top = `${pos.current.y}px`;
+    group.style.left = `${pos.current.x}px`;
+    group.style.top = `${pos.current.y}px`;
     positionStackHeads('right', false);
     save('right');
   }, [isGlobal, positionStackHeads, save, showStackItems, visibleStackItems.length]);
@@ -339,7 +355,8 @@ export default function FloatingChatHead({
 
     const moveBelowHeader = () => {
       const el = headRef.current;
-      if (!el) return;
+      const group = groupRef.current;
+      if (!el || !group) return;
       const rect = el.getBoundingClientRect();
       const step = showStackItems ? CHAT_HEAD_SIZE + CHAT_HEAD_ROW_GAP : STACK_PEEK;
       const stackWidth = showStackItems ? step * visibleStackItems.length : 0;
@@ -351,7 +368,7 @@ export default function FloatingChatHead({
       if (safeTop <= pos.current.y) return;
 
       pos.current = { ...pos.current, y: safeTop };
-      el.style.top = `${safeTop}px`;
+      group.style.top = `${safeTop}px`;
       positionStackHeads(side, false);
       save(side);
     };
@@ -384,12 +401,46 @@ export default function FloatingChatHead({
   }, [parkAtTopRight, showStackItems]);
 
   useLayoutEffect(() => {
+    if (previousDismissalStorageKeyRef.current === resolvedDismissalStorageKey) return;
+    const previousKey = previousDismissalStorageKeyRef.current;
+    previousDismissalStorageKeyRef.current = resolvedDismissalStorageKey;
+
+    if (!resolvedDismissalStorageKey && previousKey) {
+      // Signing out is not a request to restore an open head on the next
+      // session. Keep it dismissed for this account until new chat activity or
+      // an explicit manual open clears it.
+      try {
+        window.localStorage.setItem(previousKey, 'true');
+      } catch {
+        // Persistence is a convenience; the head works without it.
+      }
+      setDismissed(true);
+      return;
+    }
+
+    // Local heads can stay mounted while auth or the active conversation
+    // changes. Load that identity's dismissal before the browser paints, and
+    // treat the identity change itself as neither a new message nor a manual
+    // open.
+    previousDismissalActivityKeyRef.current = dismissalActivityKey;
+    let nextDismissed = false;
+    if (resolvedDismissalStorageKey) {
+      try {
+        nextDismissed = window.localStorage.getItem(resolvedDismissalStorageKey) === 'true';
+      } catch {
+        // Persistence is a convenience; the head works without it.
+      }
+    }
+    setDismissed(nextDismissed);
+  }, [dismissalActivityKey, resolvedDismissalStorageKey]);
+
+  useLayoutEffect(() => {
     if (previousDismissalActivityKeyRef.current === dismissalActivityKey) return;
     previousDismissalActivityKeyRef.current = dismissalActivityKey;
     if (dismissed) {
-      if (dismissalStorageKey) {
+      if (resolvedDismissalStorageKey) {
         try {
-          window.localStorage.removeItem(dismissalStorageKey);
+          window.localStorage.removeItem(resolvedDismissalStorageKey);
         } catch {
           // Persistence is a convenience; the head works without it.
         }
@@ -402,7 +453,7 @@ export default function FloatingChatHead({
     }
     // A head that is still mounted can be moved before the new activity paints.
     parkAtTopRight();
-  }, [dismissalActivityKey, dismissed, dismissalStorageKey, parkAtTopRight]);
+  }, [dismissalActivityKey, dismissed, parkAtTopRight, resolvedDismissalStorageKey]);
 
   useLayoutEffect(() => {
     if (dismissed || !parkAfterRestoreRef.current) return;
@@ -422,6 +473,7 @@ export default function FloatingChatHead({
   }, []);
 
   useEffect(() => {
+    if (dismissed || !user?.id) return;
     const raf = requestAnimationFrame(() => {
       const el = headRef.current;
       // A missing ref means the button is not in the tree yet; retrying on the
@@ -463,9 +515,13 @@ export default function FloatingChatHead({
       }
 
       placed.current = true;
-      // Applied directly; state would re-render the map on every move.
-      el.style.left = `${pos.current.x}px`;
-      el.style.top = `${pos.current.y}px`;
+      // The wrapper moves the main head and its stack as one unit. Applied
+      // directly; state would re-render the map on every move.
+      const group = groupRef.current;
+      if (group) {
+        group.style.left = `${pos.current.x}px`;
+        group.style.top = `${pos.current.y}px`;
+      }
       positionStackHeads(showStackItems ? 'right' : saved?.side ?? 'right', false);
       setPlaced2(true);
     });
@@ -473,7 +529,7 @@ export default function FloatingChatHead({
       cancelAnimationFrame(raf);
       if (retryRef.current) cancelAnimationFrame(retryRef.current);
     };
-  }, [initialPlacement, isGlobal, mountRetry, positionStackHeads, save, showStackItems, visibleStackItems.length]);
+  }, [dismissed, initialPlacement, isGlobal, mountRetry, positionStackHeads, save, showStackItems, user?.id, visibleStackItems.length]);
 
   useEffect(() => {
     if (placed.current) positionStackHeads(side, false);
@@ -550,8 +606,11 @@ export default function FloatingChatHead({
         y: Math.min(Math.max(0, pos.current.y), window.innerHeight - h),
       };
       setSide(next);
-      el.style.left = `${pos.current.x}px`;
-      el.style.top = `${pos.current.y}px`;
+      const group = groupRef.current;
+      if (group) {
+        group.style.left = `${pos.current.x}px`;
+        group.style.top = `${pos.current.y}px`;
+      }
       positionStackHeads(next, false);
       save(next);
     };
@@ -571,8 +630,11 @@ export default function FloatingChatHead({
       const x = Math.min(Math.max(0, ev.clientX - drag.current.dx), window.innerWidth - w);
       const y = Math.min(Math.max(0, ev.clientY - drag.current.dy), window.innerHeight - h);
       pos.current = { x: Math.round(x), y: Math.round(y) };
-      el.style.left = `${pos.current.x}px`;
-      el.style.top = `${pos.current.y}px`;
+      const group = groupRef.current;
+      if (group) {
+        group.style.left = `${pos.current.x}px`;
+        group.style.top = `${pos.current.y}px`;
+      }
       // Decided during the drag but applied on release, so it does not jump
       // sides under the finger mid-gesture.
       drag.current.side = pos.current.x + w / 2 < window.innerWidth / 2 ? 'left' : 'right';
@@ -591,9 +653,9 @@ export default function FloatingChatHead({
       setIsOverCloseTarget(false);
 
       if (shouldDismiss) {
-        if (dismissalStorageKey) {
+        if (resolvedDismissalStorageKey) {
           try {
-            window.localStorage.setItem(dismissalStorageKey, 'true');
+            window.localStorage.setItem(resolvedDismissalStorageKey, 'true');
           } catch {
             // Persistence is a convenience; the head works without it.
           }
@@ -620,7 +682,7 @@ export default function FloatingChatHead({
     window.addEventListener('pointerup', onUp);
     window.addEventListener('pointercancel', onCancel);
     pointerCleanupRef.current = cleanup;
-  }, [dismissalStorageKey, positionStackHeads, save]);
+  }, [positionStackHeads, resolvedDismissalStorageKey, save]);
 
   /**
    * Park the head in the top-right corner once chat has been opened.
@@ -637,12 +699,13 @@ export default function FloatingChatHead({
     if (!opened) return;
     const raf = requestAnimationFrame(() => {
       const el = headRef.current;
-      if (!el) return;
+      const group = groupRef.current;
+      if (!el || !group) return;
       const w = el.getBoundingClientRect().width;
       pos.current = { x: Math.max(GAP, Math.round(window.innerWidth - w - GAP)), y: GAP };
       setSide('right');
-      el.style.left = `${pos.current.x}px`;
-      el.style.top = `${pos.current.y}px`;
+      group.style.left = `${pos.current.x}px`;
+      group.style.top = `${pos.current.y}px`;
       positionStackHeads('right', false);
       try {
         localStorage.setItem(storageKey, JSON.stringify({ ...pos.current, side: 'right' }));
@@ -653,25 +716,34 @@ export default function FloatingChatHead({
     return () => cancelAnimationFrame(raf);
   }, [opened, positionStackHeads, storageKey]);
 
-  if (dismissed) return null;
+  if (dismissed || !user?.id) return null;
   const stackSide = isDragging ? drag.current?.side ?? side : side;
   const isThisConversationOpen = Boolean(headId && openedConversationId === headId);
   const isHidden = hidden || isThisConversationOpen;
 
   return createPortal(
-    <>
+    <div
+      ref={groupRef}
+      style={{
+        left: pos.current.x,
+        top: pos.current.y,
+        opacity: placed2 && !isHidden ? 1 : 0,
+        pointerEvents: isHidden ? 'none' : 'auto',
+      }}
+      className={`fixed ${zIndexClass} size-14`}
+    >
       {visibleStackItems.map((item, index) => (
         <button
           key={item.id}
           ref={(el) => { stackHeadRefs.current[index] = el; }}
           type="button"
           style={{
-            left: pos.current.x + (stackSide === 'right' ? -1 : 1) *
+            left: (stackSide === 'right' ? -1 : 1) *
               (showStackItems ? CHAT_HEAD_SIZE + CHAT_HEAD_ROW_GAP : STACK_PEEK) * (index + 1),
-            top: pos.current.y,
-            opacity: placed2 && !isHidden && (showStackItems || isDragging) ? 1 : 0,
+            top: 0,
+            opacity: showStackItems || isDragging ? 1 : 0,
             pointerEvents: isHidden || (!showStackItems && !isDragging) ? 'none' : 'auto',
-            zIndex: 9999 - index,
+            zIndex: visibleStackItems.length - index,
           }}
           onPointerDown={(event) => event.stopPropagation()}
           onClick={(event) => {
@@ -681,7 +753,7 @@ export default function FloatingChatHead({
           aria-label={`Chat with ${item.peerLabel}`}
           aria-hidden={isHidden || (!showStackItems && !isDragging) || undefined}
           tabIndex={isHidden || (!showStackItems && !isDragging) ? -1 : undefined}
-          className="fixed grid size-14 place-items-center overflow-visible rounded-full border-2 border-[var(--border)] bg-[var(--surface)] shadow-xl touch-none select-none"
+          className="absolute grid size-14 place-items-center overflow-visible rounded-full border-2 border-[var(--border)] bg-[var(--surface)] shadow-xl touch-none select-none"
         >
           <span className="relative size-full overflow-hidden rounded-full">
             <PeerAvatar
@@ -701,11 +773,9 @@ export default function FloatingChatHead({
       ref={headRef}
       type="button"
       style={{
-        left: pos.current.x,
-        top: pos.current.y,
-        // Hidden until measured, but always in the tree so the ref exists.
-        opacity: placed2 && !isHidden ? 1 : 0,
-        pointerEvents: isHidden ? 'none' : 'auto',
+        left: 0,
+        top: 0,
+        zIndex: visibleStackItems.length + 1,
       }}
       onPointerDown={onPointerDown}
       onClick={() => {
@@ -721,7 +791,7 @@ export default function FloatingChatHead({
       aria-label={`Chat with ${peerLabel}. Drag to move.`}
       aria-hidden={isHidden || undefined}
       tabIndex={isHidden ? -1 : undefined}
-      className={`fixed ${zIndexClass} grid size-14 place-items-center overflow-visible rounded-full bg-[var(--surface)] border-2 border-[var(--primary)] shadow-xl touch-none select-none`}
+      className="absolute grid size-14 place-items-center overflow-visible rounded-full bg-[var(--surface)] border-2 border-[var(--primary)] shadow-xl touch-none select-none"
     >
       {/*
           Ripple.
@@ -787,7 +857,7 @@ export default function FloatingChatHead({
           </span>
         </div>
       )}
-    </>,
+    </div>,
     document.body,
   );
 }

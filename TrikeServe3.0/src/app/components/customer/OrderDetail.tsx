@@ -16,7 +16,7 @@ import ReasonPromptModal from "../ui/reason-prompt-modal";
 import { supabaseHelpers } from "@/lib/supabase";
 import { getOrderProgress } from "@/lib/orderProgress";
 import { OrderStatusUpdates } from "../ui/OrderStatusUpdates";
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useMemo } from "react";
 import { GoogleMap, MarkerF, Polyline } from "@react-google-maps/api";
 import useMapLoader from "@/lib/mapLoader";
 import { createCustomerMarkerIcon, createRestaurantMarkerIcon } from "@/lib/mapIcons";
@@ -144,7 +144,7 @@ const statusLabels: Record<string, string> = {
 
 export default function OrderDetail() {
   const navigate = useNavigate();
-  const { toggleChatOverlay } = useChatHeadVisibility();
+  const { toggleChatOverlay, recentChatHeads } = useChatHeadVisibility();
   /*
    * Back means "pop", not "go to Activity".
    *
@@ -171,7 +171,23 @@ export default function OrderDetail() {
     unread: number;
   } | null>(null);
   const [orderChatPulseKey, setOrderChatPulseKey] = useState(0);
-  const previousOrderChatSignalRef = useRef<string | null>(null);
+  const orderChatStackItems = useMemo(
+    () => recentChatHeads
+      .filter((chatHead) => chatHead.conversationId !== incomingOrderChat?.conversationId)
+      .map((chatHead) => ({
+        id: chatHead.conversationId,
+        peerAvatar: chatHead.peerAvatar,
+        peerLabel: chatHead.peerName,
+        peerIsGroup: chatHead.peerIsGroup,
+        unread: chatHead.unread,
+        onOpen: () => toggleChatOverlay(chatHead.conversationId),
+      })),
+    [incomingOrderChat?.conversationId, recentChatHeads, toggleChatOverlay],
+  );
+  const previousOrderChatSignalsRef = useRef<{
+    scopeKey: string;
+    signals: Map<string, string>;
+  } | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [rating, setRating] = useState(0);
   const [ratingSubmitting, setRatingSubmitting] = useState(false);
@@ -467,7 +483,7 @@ export default function OrderDetail() {
     const peerIds = new Set([order?.businessId, order?.driverId].filter((id): id is string => Boolean(id)));
     if (!customerId || peerIds.size === 0) {
       setIncomingOrderChat(null);
-      previousOrderChatSignalRef.current = null;
+      if (!customerId) previousOrderChatSignalsRef.current = null;
       return;
     }
 
@@ -476,7 +492,7 @@ export default function OrderDetail() {
       const { data, error } = await supabaseHelpers.getChatConversations(customerId);
       if (!active || error) return;
 
-      const incoming = (data || [])
+      const conversations = (data || [])
         .map((conversation: any) => {
           const isParticipantA = conversation.participant_a_id === customerId;
           const peerId = isParticipantA ? conversation.participant_b_id : conversation.participant_a_id;
@@ -489,8 +505,32 @@ export default function OrderDetail() {
             unread,
           };
         })
+        .filter(({ peerId }) => peerIds.has(peerId));
+
+      const scopeKey = `${customerId}:${[...peerIds].sort().join(',')}`;
+      const previousSignals = previousOrderChatSignalsRef.current?.scopeKey === scopeKey
+        ? previousOrderChatSignalsRef.current.signals
+        : null;
+      const nextSignals = new Map<string, string>();
+      let receivedNewMessage = false;
+      conversations.forEach(({ conversation }) => {
+        const signal = `${conversation.last_message_at || ''}:${conversation.last_message_sender_id || ''}`;
+        const previousSignal = previousSignals?.get(conversation.id);
+        if (
+          previousSignals &&
+          conversation.last_message_at &&
+          (previousSignal === undefined || previousSignal !== signal)
+        ) {
+          receivedNewMessage = true;
+        }
+        nextSignals.set(conversation.id, signal);
+      });
+      previousOrderChatSignalsRef.current = { scopeKey, signals: nextSignals };
+      if (receivedNewMessage) setOrderChatPulseKey((key) => key + 1);
+
+      const incoming = conversations
         .filter(({ conversation, peerId, unread }) =>
-          peerIds.has(peerId) && unread > 0 && conversation.last_message_sender_id === peerId
+          unread > 0 && conversation.last_message_sender_id === peerId
         )
         .sort((a, b) =>
           new Date(b.conversation.last_message_at || b.conversation.updated_at || 0).getTime() -
@@ -500,15 +540,7 @@ export default function OrderDetail() {
       const latest = incoming[0];
       if (!latest) {
         setIncomingOrderChat(null);
-        previousOrderChatSignalRef.current = null;
         return;
-      }
-
-      const timestamp = latest.conversation.last_message_at || latest.conversation.updated_at || '';
-      const signal = `${latest.conversation.id}:${timestamp}:${latest.unread}`;
-      if (previousOrderChatSignalRef.current !== signal) {
-        setOrderChatPulseKey((key) => key + 1);
-        previousOrderChatSignalRef.current = signal;
       }
       setIncomingOrderChat({
         conversationId: latest.conversation.id,
@@ -1138,6 +1170,7 @@ export default function OrderDetail() {
           peerLabel={incomingOrderChat.peerName}
           unread={incomingOrderChat.unread}
           pulseKey={orderChatPulseKey}
+          stackItems={orderChatStackItems}
           onOpen={() => toggleChatOverlay(incomingOrderChat.conversationId)}
         />
       )}

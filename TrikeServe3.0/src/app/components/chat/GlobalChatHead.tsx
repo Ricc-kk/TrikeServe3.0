@@ -57,6 +57,28 @@ export default function GlobalChatHead() {
   const [pulseKey, setPulseKey] = useState(0);
   const lastSignalRef = useRef('');
   const conversationsOwnerRef = useRef<string | null>(null);
+  const previousAuthRef = useRef<{ id: string; role: string } | null>(
+    user?.id ? { id: user.id, role: user.role } : null,
+  );
+
+  useEffect(() => {
+    const previous = previousAuthRef.current;
+    const current = user?.id ? { id: user.id, role: user.role } : null;
+    if (previous && (!current || current.id !== previous.id)) {
+      // A session ending is not new message activity. Persist the closed state
+      // so authentication changes do not bring the heads back by themselves.
+      try {
+        window.localStorage.setItem(`trikeserve_global_chat_head_dismissed_${previous.id}`, 'true');
+        window.localStorage.setItem(
+          `trikeserve_chat_head_dismissed_${previous.id}_trikeserve_chat_head_pos_${previous.role}`,
+          'true',
+        );
+      } catch {
+        // Persistence is a convenience; the current session can continue.
+      }
+    }
+    previousAuthRef.current = current;
+  }, [user?.id, user?.role]);
 
   useEffect(() => {
     if (!user?.id) {
@@ -118,6 +140,23 @@ export default function GlobalChatHead() {
   }, [user?.id]);
 
   useEffect(() => {
+    if (!user?.id || (!openedConversationId && !/\/messages\/(?:thread|business|driver)\//.test(location.pathname))) {
+      return;
+    }
+
+    // Manually opening a thread also restores the screen-specific head used by
+    // ride and order pages when the user returns there.
+    try {
+      window.localStorage.removeItem(`trikeserve_global_chat_head_dismissed_${user.id}`);
+      window.localStorage.removeItem(
+        `trikeserve_chat_head_dismissed_${user.id}_trikeserve_chat_head_pos_${user.role}`,
+      );
+    } catch {
+      // Dismissal persistence is a convenience; manual open still works here.
+    }
+  }, [location.pathname, openedConversationId, user?.id, user?.role]);
+
+  useEffect(() => {
     if (!user?.id) {
       setRecentChatHeads([]);
       return;
@@ -168,6 +207,13 @@ export default function GlobalChatHead() {
     if (lastSignalRef.current && lastSignalRef.current !== signal) {
       setPulseKey((key) => key + 1);
       setSelectedConversationId(latestConversation.id);
+      try {
+        window.localStorage.removeItem(
+          `trikeserve_chat_head_dismissed_${user.id}_trikeserve_chat_head_pos_${user.role}`,
+        );
+      } catch {
+        // The activity still updates in memory if persistence is unavailable.
+      }
     }
     lastSignalRef.current = signal;
   }, [latestConversation, user?.id]);
@@ -247,6 +293,9 @@ export default function GlobalChatHead() {
       onOpen: () => toggleChatOverlay(item.id),
     };
   });
+  const orderDetailHasLocalHead = user.role === 'customer' &&
+    location.pathname.startsWith('/customer/order-detail/') &&
+    localHeadIds.length > 0;
 
   return (
     <>
@@ -254,6 +303,7 @@ export default function GlobalChatHead() {
         key={user.id}
         isGlobal
         hidden={
+          orderDetailHasLocalHead ||
           Boolean(conversation && localHeadIds.includes(conversation.id)) ||
           Boolean(openedConversationId) ||
           (isOnMessagesPage && isCurrentThread)

@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from "react";
-import { Search, MapPin, Users, UsersRound, CarTaxiFront, ChevronDown, X, Clock, Utensils, Search as SearchIcon, User, Navigation, MessageCircle, Home as HomeIcon, ShoppingCart, ClipboardList, Star, ArrowLeft } from "lucide-react";
+import { Search, MapPin, Users, UsersRound, CarTaxiFront, ChevronDown, X, Clock, Utensils, User, Navigation, MessageCircle, Home as HomeIcon, ShoppingCart, ClipboardList, Star, ArrowLeft, Flag, CreditCard, Check } from "lucide-react";
 import { Link, useLocation, useNavigate } from "react-router";
 import { Button } from "../ui/button";
 import { Card } from "../ui/card";
@@ -317,6 +317,29 @@ const DELIVERY_DRIVER_STATUS_LABELS: { [key: string]: string } = {
   'completed': 'Delivered',
 };
 
+const DRIVER_STATUS_ICONS: Record<string, typeof MapPin> = {
+  cancelled: X,
+  'on-the-way': CarTaxiFront,
+  arrived: MapPin,
+  pickup: Navigation,
+  'drop-off': Flag,
+  payment: CreditCard,
+  completed: Check,
+};
+
+const getDriverInitials = (name?: string | null) =>
+  (name || 'Driver')
+    .trim()
+    .split(/\s+/)
+    .slice(0, 2)
+    .map((part) => part.charAt(0).toUpperCase())
+    .join('') || 'D';
+
+const DriverStatusIcon = ({ status, className }: { status: string; className: string }) => {
+  const Icon = DRIVER_STATUS_ICONS[status] || MapPin;
+  return <Icon className={className} aria-hidden="true" />;
+};
+
 const buildNavigationRouteOptions = (color: string, weight: number) => {
   const google = (window as any)?.google;
   const arrowPath = google?.maps?.SymbolPath?.FORWARD_CLOSED_ARROW;
@@ -537,7 +560,7 @@ export default function CustomerHome() {
     * been read. Same shared component, so the two cannot drift apart.
     */
    const [driverUnread, setDriverUnread] = useState(0);
-   const lastDriverCount = useRef(0);
+   const lastDriverMessage = useRef<{ conversationId: string; messageId: string | null } | null>(null);
    const [chatPulseKey, setChatPulseKey] = useState(0);
    /**
     * Whether chat has been opened on this ride.
@@ -690,7 +713,7 @@ export default function CustomerHome() {
      backendRouteStatus: 'idle',
    });
     const [mapsBlocked, setMapsBlocked] = useState<string | null>(null);
-   const [terminals, setTerminals] = useState<{ id: string; name: string; boundary: string; center_lat: number; center_lng: number; base_fare?: number | null; base_fare_included_km?: number | null; per_km?: number | null; delivery_fee?: number | null; delivery_fee_included_km?: number | null; delivery_fee_per_km?: number | null; max_passengers?: number | null; private_ride_fee?: number | null; private_ride_fee_included_km?: number | null; private_ride_fee_per_km?: number | null; boundary_polygon?: any; boundary_area?: any; route_color?: string | null; border_color?: string | null; marker_color?: string | null }[]>([]);
+   const [terminals, setTerminals] = useState<{ id: string; name: string; boundary: string; center_lat: number; center_lng: number; base_fare?: number | null; base_fare_included_km?: number | null; per_km?: number | null; delivery_fee?: number | null; delivery_fee_included_km?: number | null; delivery_fee_per_km?: number | null; max_passengers?: number | null; private_ride_fee?: number | null; private_ride_fee_included_km?: number | null; private_ride_fee_per_km?: number | null; boundary_polygon?: any; boundary_area?: any; road_width_m?: number | null; boundary_enabled?: boolean; route_color?: string | null; border_color?: string | null; marker_color?: string | null }[]>([]);
    const [showTerminalPicker, setShowTerminalPicker] = useState(false);
    const [routePreviewTerminalId, setRoutePreviewTerminalId] = useState<string | null>(null);
    const [selectedTerminalId, setSelectedTerminalId] = useState<string | null>(null);
@@ -1457,12 +1480,12 @@ export default function CustomerHome() {
 
         if (normalizedStatus && normalizedStatus !== 'pending' && normalizedStatus !== 'cancelled') {
         const statusDisplayMap: { [key: string]: string } = {
-          'on-the-way': 'Your driver is on the way to pick you up! ðŸš—',
-          'arrived': 'Your driver has arrived! ðŸ“',
+          'on-the-way': 'Your driver is on the way to pick you up.',
+          'arrived': 'Your driver has arrived.',
             'pickup': 'You have been picked up! On the way to your destination.',
             'picked-up': 'You have been picked up! On the way to your destination.',
-            'drop-off': 'You have arrived at your destination! ðŸ',
-            'dropped-off': 'You have arrived at your destination! ðŸ',
+            'drop-off': 'You have arrived at your destination.',
+            'dropped-off': 'You have arrived at your destination.',
           'in-progress': 'Your ride is in progress!',
           'payment': message || 'Please complete the payment.',
             'awaiting-payment': message || 'Please complete the payment.',
@@ -1876,12 +1899,12 @@ export default function CustomerHome() {
       // Check for other driver status updates (for popup messages)
        if (realtimeStatus && realtimeStatus !== 'pending' && realtimeStatus !== 'completed' && realtimeStatus !== 'cancelled') {
         const statusDisplayMap: { [key: string]: string } = {
-          'on-the-way': 'Your driver is on the way to pick you up! ðŸš—',
-          'arrived': 'Your driver has arrived! ðŸ“',
+          'on-the-way': 'Your driver is on the way to pick you up.',
+          'arrived': 'Your driver has arrived.',
           'pickup': 'You have been picked up! On the way to your destination.',
           'picked-up': 'You have been picked up! On the way to your destination.',
-          'drop-off': 'You have arrived at your destination! ðŸ',
-          'dropped-off': 'You have arrived at your destination! ðŸ',
+          'drop-off': 'You have arrived at your destination.',
+          'dropped-off': 'You have arrived at your destination.',
           'in-progress': 'Your ride is in progress!',
           'payment': updatedRide.driver_status_message || 'Please complete the payment.',
           'awaiting-payment': updatedRide.driver_status_message || 'Please complete the payment.',
@@ -2335,10 +2358,9 @@ export default function CustomerHome() {
   /**
    * Watch the driver's messages so the floating head's badge is honest.
    *
-   * Only the count is kept -- reading happens in the Messages tab, and holding a
-   * second copy of the messages here would be a staler duplicate of what that
-   * tab already renders. The ripple fires only when the count actually rises, so
-   * a thread with existing unread history does not pulse forever on mount.
+   * Reading happens in the Messages tab, and holding a second copy of the
+   * messages here would be a staler duplicate. The latest message id is tracked
+   * only to distinguish new chat activity from badge refreshes.
    */
   useEffect(() => {
     if (!rideDriverId || !user?.id) return;
@@ -2363,13 +2385,22 @@ export default function CustomerHome() {
 
       const { data: msgs } = await supabaseHelpers.getChatMessages(cid);
       if (cancelled) return;
-      const fromDriver = ((msgs || []) as any[]).filter(
+      const chatMessages = (msgs || []) as any[];
+      const latestMessage = chatMessages[chatMessages.length - 1];
+      const previousMessage = lastDriverMessage.current;
+      if (
+        previousMessage?.conversationId === cid &&
+        latestMessage?.id &&
+        latestMessage.id !== previousMessage.messageId
+      ) {
+        setChatPulseKey((k) => k + 1);
+      }
+      lastDriverMessage.current = { conversationId: cid, messageId: latestMessage?.id || null };
+
+      const fromDriver = chatMessages.filter(
         (m: any) => m.sender_id !== user.id && m.read === false
       );
       const count = fromDriver.length;
-
-      if (count > lastDriverCount.current) setChatPulseKey((k) => k + 1);
-      lastDriverCount.current = count;
       setDriverUnread(count);
     };
 
@@ -3486,9 +3517,12 @@ const getPrice = () => {
                         src={rideDriverAvatar}
                         alt={`${activeRide.driver}'s profile`}
                         className="w-full h-full object-cover"
+                        onError={() => setRideDriverAvatar(null)}
                       />
                     ) : (
-                      <span className="text-2xl" aria-hidden="true">ðŸ‘¨â€âœˆï¸</span>
+                      <span className="text-lg font-bold text-[var(--primary)]" role="img" aria-label={`${activeRide.driver}'s initials`}>
+                        {getDriverInitials(activeRide.driver)}
+                      </span>
                     )}
                   </div>
                   <div className="flex-1 min-w-0">
@@ -3534,7 +3568,7 @@ const getPrice = () => {
                   </div>
                   <div className="text-right flex-shrink-0">
                     <div className="flex items-center gap-1 text-[var(--amber)]">
-                      <span className="text-sm">â­</span>
+                      <Star className="size-4 fill-current" aria-hidden="true" />
                       <span className="font-bold text-sm text-[var(--ink)]">{activeRide.rating}</span>
                     </div>
                     <p className="text-xs text-[var(--muted-foreground)]">ETA: {activeRide.eta}</p>
@@ -3756,7 +3790,7 @@ const getPrice = () => {
             <div className="bg-surface w-full rounded-t-3xl p-6 animate-in slide-in-from-bottom duration-300">
               <div className="max-w-sm mx-auto text-center">
                 <div className="w-16 h-16 bg-[var(--info-soft)] rounded-full flex items-center justify-center mx-auto mb-4">
-                  <span className="text-3xl">ðŸŽ‰</span>
+                  <Check className="size-8 text-[var(--info)]" aria-hidden="true" />
                 </div>
                 <h3 className="text-2xl font-bold text-[var(--ink)] mb-2">
                   {completionPopupType === 'delivery' ? 'Delivery Completed!' : 'Ride Completed!'}
@@ -3814,7 +3848,7 @@ const getPrice = () => {
               {ratingSubmitted ? (
                 <>
                   <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-[var(--success-soft)] flex items-center justify-center text-3xl">
-                    ðŸ™
+                    <Check className="size-8 text-[var(--success)]" aria-hidden="true" />
                   </div>
                   <h3 className="text-xl font-bold text-[var(--ink)] mb-2">Thank you!</h3>
                   <p className="text-sm text-[var(--muted-foreground)] mb-6">Your rating has been submitted.</p>
@@ -4464,7 +4498,7 @@ const getPrice = () => {
             </button>
 
             <div className="w-20 h-20 bg-[var(--primary-soft)] rounded-full flex items-center justify-center mx-auto mb-4 animate-pulse">
-              <span className="text-4xl">ðŸ”</span>
+              <Search className="size-10 text-[var(--primary)]" aria-hidden="true" />
             </div>
             <h3 className="text-xl font-bold text-[var(--ink)] mb-2">Finding a Driver...</h3>
             <p className="text-[var(--muted-foreground)] mb-1">Please wait while we find you a nearby driver</p>
@@ -4491,7 +4525,7 @@ const getPrice = () => {
           className="fixed bottom-24 right-4 z-[2000] w-16 h-16 bg-[var(--primary)] rounded-full shadow-2xl flex items-center justify-center hover:bg-[var(--primary)] transition-all hover:scale-110"
         >
           <div className="relative">
-            <span className="text-3xl animate-pulse">ðŸ”</span>
+            <Search className="size-8 text-white animate-pulse" aria-hidden="true" />
             <div className="absolute -top-1 -right-1 w-3 h-3 bg-[var(--success)] rounded-full animate-ping"></div>
             <div className="absolute -top-1 -right-1 w-3 h-3 bg-[var(--success)] rounded-full"></div>
           </div>
@@ -4589,29 +4623,9 @@ const getPrice = () => {
         >
           <div className="bg-surface w-full rounded-t-3xl p-6 animate-in slide-in-from-bottom duration-300">
             <div className="max-w-sm mx-auto">
-              {/* Status Icon â€” while a driver is assigned this is their actual
-                  profile photo, not a car. "On the way" reads as *their*
-                  progress, so the person is the more useful thing to show; the
-                  later milestones (arrived, picked up, payment) stay symbolic
-                  because they are about the trip rather than the driver. */}
-              <div className="w-16 h-16 overflow-hidden bg-[var(--primary)] rounded-full flex items-center justify-center mx-auto mb-4 text-3xl">
-                {rideDriverAvatar && driverStatusPopup.status !== 'payment' && driverStatusPopup.status !== 'completed' ? (
-                  <img
-                    src={rideDriverAvatar}
-                    alt={`${activeRide?.driver || 'Driver'}'s profile`}
-                    className="w-full h-full object-cover"
-                  />
-                ) : (
-                  <>
-                    {driverStatusPopup.status === 'cancelled' && '!'}
-                    {driverStatusPopup.status === 'on-the-way' && 'ðŸš—'}
-                    {driverStatusPopup.status === 'arrived' && 'ðŸ“'}
-                    {driverStatusPopup.status === 'pickup' && 'ðŸš€'}
-                    {driverStatusPopup.status === 'drop-off' && 'ðŸ'}
-                    {driverStatusPopup.status === 'payment' && 'ðŸ’°'}
-                    {driverStatusPopup.status === 'completed' && 'ðŸŽ‰'}
-                  </>
-                )}
+              {/* Vector status icons stay readable on devices without emoji fonts. */}
+              <div className="w-16 h-16 bg-[var(--primary)] rounded-full flex items-center justify-center mx-auto mb-4">
+                <DriverStatusIcon status={driverStatusPopup.status} className="size-8 text-white" />
               </div>
 
               {/* Status Message */}
@@ -4651,7 +4665,7 @@ const getPrice = () => {
                 onClick={() => setDriverStatusPopup(null)}
                 className="w-full bg-[var(--primary)] hover:bg-[var(--primary)] text-white py-3 text-lg font-bold"
               >
-                OK ðŸ‘
+                OK
               </Button>
             </div>
            </div>

@@ -19,7 +19,7 @@ import { useOrders } from "../../contexts/OrderContext";
 import { useAuth } from "../../contexts/AuthContext";
 import { usePreviousPage } from "../../hooks/usePreviousPage";
 import { supabase } from "../../../utils/supabase";
-import { supabaseHelpers, findDeliveryTerminalForOrder, logAudit } from "@/lib/supabase";
+import { supabaseHelpers, findDeliveryTerminalForOrder, isPointWithinAnyTerminalRoute, geocodeAddress, logAudit } from "@/lib/supabase";
 import { computeDistanceFare, deliveryRates, straightLineKm } from "@/lib/pricing";
 import ProofCapture from "../ui/ProofCapture";
 import { getDefaultAddress, setDefaultAddress } from "@/lib/defaultAddress";
@@ -112,6 +112,7 @@ export default function CartCheckout() {
    * fixed in the same glance.
    */
   const [addressError, setAddressError] = useState(false);
+  const [deliveryBoundaryError, setDeliveryBoundaryError] = useState<string | null>(null);
 
   /*
    * Bring the field back into view when it becomes the thing that is wrong.
@@ -160,6 +161,11 @@ export default function CartCheckout() {
     lat: 14.7244,
     lng: 120.9668,
   });
+
+  useEffect(() => {
+    if (!deliveryBoundaryError) return;
+    addressRef.current?.scrollIntoView({ block: 'center' });
+  }, [deliveryBoundaryError]);
 
   // Load the platform delivery base fee. A terminal can override this base and
   // add a per-kilometre charge after its configured included distance.
@@ -430,6 +436,38 @@ export default function CartCheckout() {
        * view. The map is still one tap away, right there, for whoever wants it.
        */
       setAddressError(true);
+      return;
+    }
+
+    // Food delivery addresses are customer drop-offs too. Verify them against
+    // every enabled terminal route immediately before creating the order; the
+    // quote is for pricing and may be stale by the time the customer submits.
+    try {
+      let deliveryPoint = Number.isFinite(selectedAddress.lat) && Number.isFinite(selectedAddress.lng) &&
+        (selectedAddress.lat !== 0 || selectedAddress.lng !== 0)
+        ? { lat: selectedAddress.lat, lng: selectedAddress.lng }
+        : null;
+      if (!deliveryPoint && selectedAddress.full.trim()) {
+        deliveryPoint = await geocodeAddress(selectedAddress.full);
+      }
+      if (!deliveryPoint) {
+        setDeliveryBoundaryError("We couldn't locate this delivery address on the map. Choose it again and place its pin.");
+        return;
+      }
+
+      const deliveryRoute = await isPointWithinAnyTerminalRoute(deliveryPoint.lat, deliveryPoint.lng);
+      if (deliveryRoute.lookupFailed) {
+        setDeliveryBoundaryError("Couldn't verify delivery coverage. Check your connection and try again.");
+        return;
+      }
+      if (!deliveryRoute.allowed) {
+        setDeliveryBoundaryError('This address is outside every enabled terminal delivery route. Choose an address within a covered route.');
+        return;
+      }
+      setDeliveryBoundaryError(null);
+    } catch (error) {
+      console.warn('[Cart] Could not verify delivery coverage:', error);
+      setDeliveryBoundaryError("Couldn't verify delivery coverage. Check your connection and try again.");
       return;
     }
 
@@ -1049,6 +1087,7 @@ export default function CartCheckout() {
             type="button"
             onClick={() => {
               setAddressError(false);
+              setDeliveryBoundaryError(null);
               navigate("/customer/delivery-address", {
                 state: {
                   returnTo: "/customer/cart/checkout",
@@ -1056,25 +1095,25 @@ export default function CartCheckout() {
                 },
               });
             }}
-            aria-invalid={addressError}
+            aria-invalid={addressError || Boolean(deliveryBoundaryError)}
             style={
-              addressError
+              addressError || deliveryBoundaryError
                 ? { borderColor: "var(--error)", boxShadow: "0 0 0 2px var(--error-soft)" }
                 : undefined
             }
             className={`mb-2 flex w-full items-center gap-3 rounded-xl border bg-surface p-4 text-left transition-colors ${
-              addressError ? "border-[var(--error)]" : "border-[var(--border)]"
+              addressError || deliveryBoundaryError ? "border-[var(--error)]" : "border-[var(--border)]"
             }`}
           >
             <MapPin
               className={`size-5 flex-shrink-0 ${
-                addressError ? "text-[var(--error)]" : "text-[var(--primary)]"
+                addressError || deliveryBoundaryError ? "text-[var(--error)]" : "text-[var(--primary)]"
               }`}
             />
             <div className="flex-1 text-left">
               <p
                 className={`mb-0.5 font-semibold ${
-                  addressError
+                  addressError || deliveryBoundaryError
                     ? "text-[var(--error)]"
                     : hasSelectedAddress
                       ? "text-[var(--ink)]"
@@ -1107,6 +1146,17 @@ export default function CartCheckout() {
                 Add a delivery address to place this order. Tap the field above to
                 choose a saved address or pin a new one on the map.
               </span>
+            </p>
+          )}
+
+          {deliveryBoundaryError && (
+            <p
+              role="alert"
+              style={{ color: "var(--error)" }}
+              className="mb-2 flex items-start gap-1.5 text-sm font-semibold"
+            >
+              <AlertCircle className="mt-0.5 size-4 flex-shrink-0" />
+              <span>{deliveryBoundaryError}</span>
             </p>
           )}
 

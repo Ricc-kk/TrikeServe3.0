@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from "react";
-import { MapPin, Users, Clock, X, ChevronDown, MessageCircle, User, Minimize2, Star, Navigation } from "lucide-react";
+import { MapPin, Users, Clock, X, ChevronDown, MessageCircle, User, Minimize2, Star, Navigation, CarTaxiFront, Flag, CreditCard, Check } from "lucide-react";
 import { Button } from "../ui/button";
 import { Card } from "../ui/card";
 import { Badge } from "../ui/badge";
@@ -11,6 +11,29 @@ import { useElapsedTime } from "@/app/hooks/useElapsedTime";
 import tricycleIcon from '../../../assets/0b76d1aa56b8ad6e15dd4efc8a0100b0ca5762a1.png'
 import FloatingChatHead from "../ui/FloatingChatHead";
 import RideChatOverlay from "../rider/RideChatOverlay";
+
+const DRIVER_STATUS_ICONS: Record<string, typeof MapPin> = {
+  cancelled: X,
+  'on-the-way': CarTaxiFront,
+  arrived: MapPin,
+  pickup: Navigation,
+  'drop-off': Flag,
+  payment: CreditCard,
+  completed: Check,
+};
+
+const getDriverInitials = (name?: string | null) =>
+  (name || 'Driver')
+    .trim()
+    .split(/\s+/)
+    .slice(0, 2)
+    .map((part) => part.charAt(0).toUpperCase())
+    .join('') || 'D';
+
+const DriverStatusIcon = ({ status, className }: { status: string; className: string }) => {
+  const Icon = DRIVER_STATUS_ICONS[status] || MapPin;
+  return <Icon className={className} aria-hidden="true" />;
+};
 
 interface LobbyPassenger {
   id: string;
@@ -125,8 +148,8 @@ export default function ShareRideLobby({
   const [lobbyChatPopup, setLobbyChatPopup] = useState(false);
   /** Messages from the driver the customer has not looked at yet. */
   const [driverUnread, setDriverUnread] = useState(0);
-  /** Counts from the last poll, so a rise can be told apart from steady state. */
-  const lastDriverCount = useRef(0);
+  /** Latest message seen per driver thread, excluding badge-only updates. */
+  const lastDriverMessage = useRef<{ conversationId: string; messageId: string | null } | null>(null);
   /** Bumped to replay the ripple; a finished CSS animation needs a remount. */
   const [chatPulseKey, setChatPulseKey] = useState(0);
   /**
@@ -253,8 +276,8 @@ export default function ShareRideLobby({
    *
    * Finds the thread rather than creating one -- a customer who has not
    * messaged yet should get no badge, not an empty conversation invented for
-   * them -- and keeps only the count, because the overlay is the source of
-   * truth for the messages themselves.
+   * them. The overlay remains the source of truth for message contents; the
+   * latest id only detects new activity between polls.
    */
   useEffect(() => {
     if (!user?.id || !lobby?.driver_id) return;
@@ -278,13 +301,21 @@ export default function ShareRideLobby({
 
       const { data: msgs } = await supabaseHelpers.getChatMessages(cid);
       if (cancelled) return;
-      const count = ((msgs || []) as any[]).filter(
+      const chatMessages = (msgs || []) as any[];
+      const latestMessage = chatMessages[chatMessages.length - 1];
+      const previousMessage = lastDriverMessage.current;
+      if (
+        previousMessage?.conversationId === cid &&
+        latestMessage?.id &&
+        latestMessage.id !== previousMessage.messageId
+      ) {
+        setChatPulseKey((k) => k + 1);
+      }
+      lastDriverMessage.current = { conversationId: cid, messageId: latestMessage?.id || null };
+
+      const count = chatMessages.filter(
         (m: any) => m.sender_id !== user.id && m.read === false
       ).length;
-
-      // Ripple only when the count actually grows, never on the first poll.
-      if (count > lastDriverCount.current) setChatPulseKey((k) => k + 1);
-      lastDriverCount.current = count;
       setDriverUnread(count);
     };
 
@@ -372,12 +403,12 @@ export default function ShareRideLobby({
 
     if (normalizedStatus && normalizedStatus !== 'pending' && normalizedStatus !== lastShownStatus) {
       const statusDisplayMap: { [key: string]: string } = {
-        'on-the-way': 'Your driver is on the way to pick you up! 🚗',
-        'arrived': 'Your driver has arrived! 📍',
+        'on-the-way': 'Your driver is on the way to pick you up.',
+        'arrived': 'Your driver has arrived.',
         'pickup': 'You have been picked up! On the way to your destination.',
         'picked-up': 'You have been picked up! On the way to your destination.',
-        'drop-off': 'You have arrived at your destination! 🏁',
-        'dropped-off': 'You have arrived at your destination! 🏁',
+        'drop-off': 'You have arrived at your destination.',
+        'dropped-off': 'You have arrived at your destination.',
         'in-progress': 'Your ride is in progress!',
         'payment': message || 'Please complete the payment.',
         'awaiting-payment': message || 'Please complete the payment.',
@@ -1401,7 +1432,7 @@ if (loading) {
                 </div>
                 {etaToDestination && (
                   <div className="flex-shrink-0 bg-[var(--error-soft)] text-[var(--error)] px-2 py-1 rounded-lg">
-                    <p className="text-[10px] font-bold">🏁 {etaToDestination}</p>
+                    <p className="flex items-center gap-1 text-[10px] font-bold"><Flag className="size-3" aria-hidden="true" />{etaToDestination}</p>
                   </div>
                 )}
               </div>
@@ -1530,10 +1561,11 @@ if (loading) {
                         src={driverProfileAvatar}
                         alt={`${lobby.driver_name || 'Driver'}'s profile`}
                         className="size-full object-cover"
+                        onError={() => setDriverProfileAvatar(null)}
                       />
                     ) : (
-                      <span className="text-lg font-bold text-white">
-                        {(lobby.driver_name || 'D').trim().charAt(0).toUpperCase()}
+                      <span className="text-sm font-bold text-white" role="img" aria-label={`${lobby.driver_name || 'Driver'}'s initials`}>
+                        {getDriverInitials(lobby.driver_name)}
                       </span>
                     )}
                   </div>
@@ -1544,7 +1576,7 @@ if (loading) {
                       <span className="text-xs text-[var(--muted-foreground)]">{lobby.driver_plate}</span>
                       {(computedDriverRating || lobby.driver_rating) && (
                         <span className="flex items-center gap-0.5">
-                          <span className="text-[var(--amber)] text-xs">⭐</span>
+                          <Star className="size-3 fill-[var(--amber)] text-[var(--amber)]" aria-hidden="true" />
                           <span className="text-xs font-semibold text-[var(--ink)]">{computedDriverRating || lobby.driver_rating}</span>
                         </span>
                       )}
@@ -1716,8 +1748,10 @@ if (loading) {
       {isTerminal && (
         <div className="fixed inset-0 bg-black/60 z-[2200] flex items-center justify-center p-4">
           <Card className="bg-surface p-6 max-w-sm w-full text-center shadow-2xl border-2 border-[var(--success-soft)]">
-            <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-[var(--success-soft)] flex items-center justify-center text-3xl">
-              {terminalStatus === 'completed' ? '🎉' : '🛑'}
+            <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-[var(--success-soft)] flex items-center justify-center">
+              {terminalStatus === 'completed'
+                ? <Check className="size-8 text-[var(--success)]" aria-hidden="true" />
+                : <X className="size-8 text-[var(--error)]" aria-hidden="true" />}
             </div>
             <h3 className="text-xl font-bold text-[var(--ink)] mb-2">
               {terminalStatus === 'completed' ? 'Ride Completed' : 'Ride Cancelled'}
@@ -1731,9 +1765,10 @@ if (loading) {
               <div className="grid grid-cols-2 gap-3">
                 <Button
                   onClick={openRatingModal}
-                  className="w-full bg-surface border-2 border-[var(--primary)] text-[var(--primary)] py-3 font-bold"
+                  className="flex w-full items-center justify-center gap-2 bg-surface border-2 border-[var(--primary)] text-[var(--primary)] py-3 font-bold"
                 >
-                  ⭐ Leave a Rating
+                  <Star className="size-4 fill-current" aria-hidden="true" />
+                  Leave a Rating
                 </Button>
                 <Button
                   onClick={() => {
@@ -1755,8 +1790,8 @@ if (loading) {
           <Card className="bg-surface p-6 max-w-sm w-full text-center">
             {ratingSubmitted ? (
               <>
-                <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-[var(--success-soft)] flex items-center justify-center text-3xl">
-                  🙏
+                <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-[var(--success-soft)] flex items-center justify-center">
+                  <Check className="size-8 text-[var(--success)]" aria-hidden="true" />
                 </div>
                 <h3 className="text-xl font-bold text-[var(--ink)] mb-2">Thank you!</h3>
                 <p className="text-sm text-[var(--muted-foreground)] mb-6">Your rating has been submitted.</p>
@@ -1816,13 +1851,8 @@ if (loading) {
           <div className="bg-surface w-full rounded-t-3xl p-6 animate-in slide-in-from-bottom duration-300">
             <div className="max-w-sm mx-auto">
               {/* Status Icon */}
-              <div className="w-16 h-16 bg-[var(--primary)] rounded-full flex items-center justify-center mx-auto mb-4 text-3xl">
-                {driverStatusPopup.status === 'on-the-way' && '🚗'}
-                {driverStatusPopup.status === 'arrived' && '📍'}
-                {driverStatusPopup.status === 'pickup' && '🚀'}
-                {driverStatusPopup.status === 'drop-off' && '🏁'}
-                {driverStatusPopup.status === 'payment' && '💰'}
-                {driverStatusPopup.status === 'completed' && '🎉'}
+              <div className="w-16 h-16 bg-[var(--primary)] rounded-full flex items-center justify-center mx-auto mb-4">
+                <DriverStatusIcon status={driverStatusPopup.status} className="size-8 text-white" />
               </div>
 
               {/* Status Message */}
@@ -1860,7 +1890,7 @@ if (loading) {
                 onClick={() => setDriverStatusPopup(null)}
                 className="w-full bg-[var(--primary)] hover:bg-[var(--primary)] text-white py-3 text-lg font-bold"
               >
-                OK 👍
+                OK
               </Button>
             </div>
           </div>

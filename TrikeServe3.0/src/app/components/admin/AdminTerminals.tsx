@@ -4147,8 +4147,8 @@ async function applyAssignDriver(rider: StoredRider, terminal: Terminal) {
                             <p className="text-sm font-semibold text-[var(--ink)]">Enforce Boundary</p>
                             <p className="text-xs text-[var(--muted-foreground)]">
                               {form.boundary_enabled
-                                ? 'Drop-offs, food orders and driver queues are checked against the route and border'
-                                : 'Kept as drawn, but not checked against'}
+                                ? 'Customer ride pickups use the border; ride drop-offs and food delivery addresses use the route. Driver queues use the border.'
+                                : 'Shapes stay saved, but these checks are off for customers and drivers.'}
                             </p>
                           </div>
                           <button

@@ -170,6 +170,8 @@ export default function ChatHub({
   const atBottomRef = useRef(true);
   const lastThreadRef = useRef<string | null>(null);
   const lastMessageKeyRef = useRef<string>('');
+  const lastHeadActivityRef = useRef<{ conversationId: string; messageId: string | null } | null>(null);
+  const [chatHeadPulseKey, setChatHeadPulseKey] = useState(0);
 
   const isDirectMode = !!directPeerId;
   const activeConversationId = isDirectMode ? activeConversation?.id : conversationId;
@@ -409,7 +411,21 @@ export default function ChatHub({
         setMessages([]);
         return;
       }
-      setMessages((data || []) as ChatMessage[]);
+      const nextMessages = (data || []) as ChatMessage[];
+      const latestMessageId = nextMessages[nextMessages.length - 1]?.id || null;
+      const previousActivity = lastHeadActivityRef.current;
+      if (
+        previousActivity?.conversationId === targetConversationId &&
+        latestMessageId &&
+        latestMessageId !== previousActivity.messageId
+      ) {
+        setChatHeadPulseKey((key) => key + 1);
+      }
+      lastHeadActivityRef.current = {
+        conversationId: targetConversationId,
+        messageId: latestMessageId,
+      };
+      setMessages(nextMessages);
       if (user?.id) {
         await supabaseHelpers.markChatConversationRead(targetConversationId, user.id);
       }
@@ -1007,7 +1023,7 @@ function getConversationPeer(conversation: ChatConversation) {
             peerAvatar={peer.avatar}
             peerLabel={peer.name}
             unread={0}
-            pulseKey={0}
+            pulseKey={chatHeadPulseKey}
             onOpen={() => activeConversation && toggleChatOverlay(activeConversation.id)}
           />
           <p className="text-sm text-[var(--muted-foreground)]">Chat minimized. Tap the chat head to reopen.</p>
@@ -1631,7 +1647,7 @@ function getConversationPeer(conversation: ChatConversation) {
             peerAvatar={peer.avatar}
             peerLabel={peer.name}
             unread={0}
-            pulseKey={0}
+            pulseKey={chatHeadPulseKey}
             onOpen={() => toggleChatOverlay(minimizedConversation.id)}
           />
         );

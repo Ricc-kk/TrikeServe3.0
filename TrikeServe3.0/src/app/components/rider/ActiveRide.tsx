@@ -262,8 +262,8 @@ export default function ActiveRide() {
   const [chatPopupOpen, setChatPopupOpen] = useState(false);
   /** Messages from the passenger the driver has not looked at yet. */
   const [unreadFromPassenger, setUnreadFromPassenger] = useState(0);
-  /** Counts from the last poll, so a rise can be told apart from steady state. */
-  const lastSeenCount = useRef(0);
+  /** Latest message seen in this ride thread, excluding badge-only updates. */
+  const lastSeenMessage = useRef<{ conversationId: string; messageId: string | null } | null>(null);
   /**
    * Bumped to replay the ripple.
    *
@@ -467,9 +467,8 @@ export default function ActiveRide() {
   /**
    * Poll the passenger thread so the floating head's unread badge stays honest.
    *
-   * Only the count matters now that reading happens in the Messages tab, so this
-   * deliberately does not keep a local copy of the messages -- that would be a
-   * second, staler version of what the tab already shows.
+   * The unread count drives the badge. The latest message id is tracked only to
+   * distinguish actual chat activity from read-state changes.
    */
   useEffect(() => {
     if (!chatId || !user?.id) return;
@@ -478,18 +477,22 @@ export default function ActiveRide() {
     const check = async () => {
       const { data } = await supabaseHelpers.getChatMessages(chatId);
       if (cancelled) return;
-      const fromThem = ((data || []) as any[]).filter(
+      const chatMessages = (data || []) as any[];
+      const latestMessage = chatMessages[chatMessages.length - 1];
+      const previousMessage = lastSeenMessage.current;
+      if (
+        previousMessage?.conversationId === chatId &&
+        latestMessage?.id &&
+        latestMessage.id !== previousMessage.messageId
+      ) {
+        setPulseKey((k) => k + 1);
+      }
+      lastSeenMessage.current = { conversationId: chatId, messageId: latestMessage?.id || null };
+
+      const fromThem = chatMessages.filter(
         (m) => m.sender_id !== user.id && m.read === false
       );
       const count = fromThem.length;
-
-      // Ripple only when the count actually grows, not on the first poll and not
-      // every five seconds. Without the previous-count check the head pulsed
-      // forever on any thread that had unread history.
-      if (count > lastSeenCount.current) {
-        setPulseKey((k) => k + 1);
-      }
-      lastSeenCount.current = count;
       setUnreadFromPassenger(count);
     };
 

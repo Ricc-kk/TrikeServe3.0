@@ -121,7 +121,10 @@ export default function BusinessOrders() {
     unread: number;
   } | null>(null);
   const [driverChatPulseKey, setDriverChatPulseKey] = useState(0);
-  const previousDriverChatSignalRef = useRef<string | null>(null);
+  const previousDriverChatSignalsRef = useRef<{
+    scopeKey: string;
+    signals: Map<string, string>;
+  } | null>(null);
   /** The one dialog left in this flow: confirming the GCash payment. */
   const [confirmAction, setConfirmAction] = useState<'accept' | null>(null);
   // Decline collects a reason before the order is cancelled.
@@ -148,7 +151,7 @@ export default function BusinessOrders() {
     const businessUserId = user?.id;
     if (!businessUserId) {
       setIncomingDriverChat(null);
-      previousDriverChatSignalRef.current = null;
+      previousDriverChatSignalsRef.current = null;
       return;
     }
 
@@ -157,7 +160,7 @@ export default function BusinessOrders() {
       const { data, error } = await supabaseHelpers.getChatConversations(businessUserId);
       if (!active || error) return;
 
-      const incoming = (data || [])
+      const conversations = (data || [])
         .map((conversation: any) => {
           const isParticipantA = conversation.participant_a_id === businessUserId;
           const peerId = isParticipantA ? conversation.participant_b_id : conversation.participant_a_id;
@@ -167,9 +170,34 @@ export default function BusinessOrders() {
           const peerAvatar = isParticipantA ? conversation.participant_b_avatar : conversation.participant_a_avatar;
           return { conversation, peerId, peerRole, peerName, peerAvatar, unread };
         })
-        .filter(({ conversation, peerId, peerRole, unread }) =>
-          peerId && (peerRole === 'rider' || peerRole === 'driver' || peerRole === 'customer') && unread > 0 &&
-          conversation.last_message_sender_id === peerId
+        .filter(({ peerId, peerRole }) =>
+          peerId && (peerRole === 'rider' || peerRole === 'driver' || peerRole === 'customer')
+        );
+
+      const scopeKey = `${businessUserId}:business-orders`;
+      const previousSignals = previousDriverChatSignalsRef.current?.scopeKey === scopeKey
+        ? previousDriverChatSignalsRef.current.signals
+        : null;
+      const nextSignals = new Map<string, string>();
+      let receivedNewMessage = false;
+      conversations.forEach(({ conversation }) => {
+        const signal = `${conversation.last_message_at || ''}:${conversation.last_message_sender_id || ''}`;
+        const previousSignal = previousSignals?.get(conversation.id);
+        if (
+          previousSignals &&
+          conversation.last_message_at &&
+          (previousSignal === undefined || previousSignal !== signal)
+        ) {
+          receivedNewMessage = true;
+        }
+        nextSignals.set(conversation.id, signal);
+      });
+      previousDriverChatSignalsRef.current = { scopeKey, signals: nextSignals };
+      if (receivedNewMessage) setDriverChatPulseKey((key) => key + 1);
+
+      const incoming = conversations
+        .filter(({ conversation, peerId, unread }) =>
+          unread > 0 && conversation.last_message_sender_id === peerId
         )
         .sort((a, b) =>
           new Date(b.conversation.last_message_at || b.conversation.updated_at || 0).getTime() -
@@ -179,15 +207,7 @@ export default function BusinessOrders() {
       const latest = incoming[0];
       if (!latest) {
         setIncomingDriverChat(null);
-        previousDriverChatSignalRef.current = null;
         return;
-      }
-
-      const timestamp = latest.conversation.last_message_at || latest.conversation.updated_at || '';
-      const signal = `${latest.conversation.id}:${timestamp}:${latest.unread}`;
-      if (previousDriverChatSignalRef.current !== signal) {
-        setDriverChatPulseKey((key) => key + 1);
-        previousDriverChatSignalRef.current = signal;
       }
       setIncomingDriverChat({
         conversationId: latest.conversation.id,
