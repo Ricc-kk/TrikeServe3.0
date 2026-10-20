@@ -1,5 +1,6 @@
 import { createContext, useContext, useState, useEffect, useRef, ReactNode } from 'react';
 import { supabase } from '../../utils/supabase';
+import { setDevModeEnabled } from '../../lib/devMode';
 
 export type UserRole = 'customer' | 'rider' | 'business' | 'admin';
 
@@ -742,6 +743,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const logout = async () => {
     signOutRequestedRef.current = true;
+    setDevModeEnabled(false);
     await supabase.auth.signOut();
     setUser(null);
     localStorage.removeItem('trikeserve_current_user');

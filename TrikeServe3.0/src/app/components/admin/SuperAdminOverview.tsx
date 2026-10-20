@@ -6,6 +6,7 @@ import { Card } from "../ui/card";
 import ConfirmationModal from "../ui/confirmation-modal";
 import { TerminalIconGlyph } from "../ui/TerminalIcon";
 import AdminAnalytics from "./AdminAnalytics";
+import { isDevModeEnabled, setDevModeEnabled } from "../../../lib/devMode";
 
 type ReviewAccount = {
   id: string;
@@ -64,6 +65,7 @@ export default function SuperAdminOverview({
 }: SuperAdminOverviewProps) {
   const [showAllPending, setShowAllPending] = useState(false);
   const [showClearTestDataConfirmation, setShowClearTestDataConfirmation] = useState(false);
+  const [isDevMode, setIsDevMode] = useState(isDevModeEnabled);
   const hasData = lastUpdated !== null;
   const firstLoad = loading && !hasData;
   const shown = showAllPending ? pending : pending.slice(0, 3);
@@ -71,6 +73,11 @@ export default function SuperAdminOverview({
   const confirmClearTestData = async () => {
     const completed = await onClearTestData();
     if (completed) setShowClearTestDataConfirmation(false);
+  };
+
+  const exitDevMode = () => {
+    setDevModeEnabled(false);
+    setIsDevMode(false);
   };
 
   return (
@@ -215,30 +222,42 @@ export default function SuperAdminOverview({
         </div>
       </section>
 
-      <section aria-labelledby="overview-test-data-title" className="rounded-3xl border border-[var(--amber)]/35 bg-[var(--amber-soft)] p-4 sm:p-5">
-        <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-          <div className="flex min-w-0 items-start gap-3">
-            <span className="grid size-10 shrink-0 place-items-center rounded-xl bg-card text-[var(--amber-ink)]">
-              <Trash2 className="size-5" aria-hidden="true" />
-            </span>
-            <div className="min-w-0">
-              <h2 id="overview-test-data-title" className="text-sm font-bold text-[var(--ink)]">Temporary testing tool</h2>
-              <p className="mt-1 max-w-3xl text-xs leading-relaxed text-[var(--muted-foreground)]">
-                Permanently delete all food orders; pending, completed, and cancelled ride requests; all shared ride lobby records; every chat conversation and message; and all delivery notifications. Matching food package photos are removed from storage too.
-              </p>
+      {isDevMode && (
+        <section aria-labelledby="overview-test-data-title" className="rounded-3xl border border-[var(--amber)]/35 bg-[var(--amber-soft)] p-4 sm:p-5">
+          <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+            <div className="flex min-w-0 items-start gap-3">
+              <span className="grid size-10 shrink-0 place-items-center rounded-xl bg-card text-[var(--amber-ink)]">
+                <Trash2 className="size-5" aria-hidden="true" />
+              </span>
+              <div className="min-w-0">
+                <p className="mb-1 text-[10px] font-bold uppercase tracking-[0.16em] text-[var(--amber-ink)]">Dev mode</p>
+                <h2 id="overview-test-data-title" className="text-sm font-bold text-[var(--ink)]">Temporary testing tool</h2>
+                <p className="mt-1 max-w-3xl text-xs leading-relaxed text-[var(--muted-foreground)]">
+                  Permanently delete all food orders; pending, completed, and cancelled ride requests; all shared ride lobby records; every chat conversation and message; and all delivery notifications. Matching food package photos are removed from storage too.
+                </p>
+              </div>
+            </div>
+            <div className="flex shrink-0 flex-col gap-2 sm:flex-row">
+              <button
+                type="button"
+                onClick={exitDevMode}
+                className="inline-flex min-h-11 items-center justify-center rounded-xl border border-[var(--amber)]/40 bg-card px-4 text-sm font-bold text-[var(--amber-ink)] transition-colors hover:bg-[var(--amber-soft)]"
+              >
+                Turn off Dev Mode
+              </button>
+              <button
+                type="button"
+                disabled={clearingTestData}
+                onClick={() => setShowClearTestDataConfirmation(true)}
+                className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-[var(--error)] px-4 text-sm font-bold text-white transition-opacity hover:opacity-90 disabled:cursor-wait disabled:opacity-60"
+              >
+                <Trash2 className="size-4" aria-hidden="true" />
+                Clear test data
+              </button>
             </div>
           </div>
-          <button
-            type="button"
-            disabled={clearingTestData}
-            onClick={() => setShowClearTestDataConfirmation(true)}
-            className="inline-flex min-h-11 shrink-0 items-center justify-center gap-2 rounded-xl bg-[var(--error)] px-4 text-sm font-bold text-white transition-opacity hover:opacity-90 disabled:cursor-wait disabled:opacity-60"
-          >
-            <Trash2 className="size-4" aria-hidden="true" />
-            Clear test data
-          </button>
-        </div>
-      </section>
+        </section>
+      )}
 
       <ConfirmationModal
         isOpen={showClearTestDataConfirmation}

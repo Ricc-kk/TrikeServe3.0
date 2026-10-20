@@ -1,7 +1,8 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { useNavigate, Link } from "react-router";
 import { ChevronDown, Eye, EyeOff, Users } from "lucide-react";
 import { armWelcomeGreeting } from "../../lib/welcomeGreeting";
+import { isDevModeEnabled, setDevModeEnabled } from "../../lib/devMode";
 import TrikeServeLogo from "../../assets/TRIKESERVE_logo.jpg";
 import { Button } from "./ui/button";
 import { Input } from "./ui/input";
@@ -39,6 +40,7 @@ interface TestAccount {
  * the password being absent, so this only reaches accounts with nothing stored.
  */
 const QUICK_ACCESS_PASSWORD = "Admin12345";
+const DEV_MODE_HOLD_MS = 5000;
 
 /** Roles Quick Access supplies QUICK_ACCESS_PASSWORD for. */
 const QUICK_ACCESS_ROLES = new Set(["customer", "rider", "business", "admin"]);
@@ -76,19 +78,50 @@ export default function Login() {
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState("");
   const [isLoading, setIsLoading] = useState(false);
+  const [isDevMode, setIsDevMode] = useState(isDevModeEnabled);
+  const [isHoldingLogo, setIsHoldingLogo] = useState(false);
   const [showAccounts, setShowAccounts] = useState(false);
   const [accounts, setAccounts] = useState<TestAccount[]>([]);
   const [resendStatus, setResendStatus] = useState<"idle" | "sending" | "sent" | "error">("idle");
   const [resendMessage, setResendMessage] = useState("");
+  const devModeHoldTimer = useRef<number | null>(null);
+
+  const startDevModeHold = () => {
+    if (devModeHoldTimer.current !== null) return;
+
+    setIsHoldingLogo(true);
+    devModeHoldTimer.current = window.setTimeout(() => {
+      const nextMode = !isDevMode;
+      setDevModeEnabled(nextMode);
+      setIsDevMode(nextMode);
+      setShowAccounts(false);
+      setIsHoldingLogo(false);
+      devModeHoldTimer.current = null;
+    }, DEV_MODE_HOLD_MS);
+  };
+
+  const cancelDevModeHold = () => {
+    if (devModeHoldTimer.current !== null) {
+      window.clearTimeout(devModeHoldTimer.current);
+      devModeHoldTimer.current = null;
+    }
+    setIsHoldingLogo(false);
+  };
+
+  const exitDevMode = () => {
+    setDevModeEnabled(false);
+    setIsDevMode(false);
+    setShowAccounts(false);
+  };
 
 
-  // Load all created accounts (localStorage users + Supabase admins/users)
-  // so testers can fill the login form with one click.
-  useEffect(() => {
-    loadAccounts();
+  useEffect(() => () => {
+    if (devModeHoldTimer.current !== null) {
+      window.clearTimeout(devModeHoldTimer.current);
+    }
   }, []);
 
-  const loadAccounts = async () => {
+  const loadAccounts = useCallback(async () => {
     const list: TestAccount[] = [];
     const seen = new Set<string>();
 
@@ -166,7 +199,17 @@ export default function Login() {
     });
 
     setAccounts(list);
-  };
+  }, []);
+
+  useEffect(() => {
+    if (!isDevMode) {
+      setShowAccounts(false);
+      return;
+    }
+
+    // Load account shortcuts only while Dev Mode is enabled.
+    void loadAccounts();
+  }, [isDevMode, loadAccounts]);
 
   const useAccount = (acc: TestAccount) => {
     setEmail(acc.email);
@@ -273,14 +316,119 @@ export default function Login() {
       <div className="min-w-0 flex-1 lg:max-w-xl flex items-start justify-center p-6 pt-10 bg-surface">
         <div className="w-full max-w-md">
           <div className="mb-7 flex justify-center lg:justify-start">
-            <div className="h-24 w-36 overflow-hidden rounded-2xl bg-[#EBEBEB] ring-1 ring-black/5">
+            <button
+              type="button"
+              aria-label="Hold the TrikeServe logo for 5 seconds to toggle developer mode"
+              aria-pressed={isDevMode}
+              title="Hold for 5 seconds to toggle developer mode"
+              onPointerDown={startDevModeHold}
+              onPointerUp={cancelDevModeHold}
+              onPointerLeave={cancelDevModeHold}
+              onPointerCancel={cancelDevModeHold}
+              onKeyDown={(event) => {
+                if (event.key === "Enter" || event.key === " ") {
+                  event.preventDefault();
+                  startDevModeHold();
+                }
+              }}
+              onKeyUp={(event) => {
+                if (event.key === "Enter" || event.key === " ") {
+                  event.preventDefault();
+                  cancelDevModeHold();
+                }
+              }}
+              onContextMenu={(event) => event.preventDefault()}
+              className="relative h-24 w-36 touch-none select-none overflow-hidden rounded-2xl bg-[#EBEBEB] text-left ring-1 ring-black/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--primary)] focus-visible:ring-offset-2"
+            >
               <TrimmedLogo
                 src={TrikeServeLogo}
                 alt="TrikeServe logo"
                 className="size-full object-contain p-1"
               />
-            </div>
+              <span className="absolute inset-x-0 bottom-0 h-1.5 bg-[var(--primary-soft)]" aria-hidden="true">
+                <span
+                  className="block h-full bg-[var(--primary)]"
+                  style={{
+                    width: isHoldingLogo ? "100%" : "0%",
+                    transition: isHoldingLogo ? `width ${DEV_MODE_HOLD_MS}ms linear` : "width 120ms ease-out",
+                  }}
+                />
+              </span>
+            </button>
           </div>
+
+          {isDevMode && (
+            <section aria-label="Developer mode tools" className="mb-6 space-y-3">
+              <div role="status" className="flex items-center justify-between gap-3 rounded-xl border border-[var(--primary)]/30 bg-[var(--primary-soft)] px-4 py-3">
+                <span className="text-sm font-semibold text-[var(--primary)]">Developer mode enabled</span>
+                <button
+                  type="button"
+                  onClick={exitDevMode}
+                  className="shrink-0 text-sm font-semibold text-[var(--primary)] underline underline-offset-2"
+                >
+                  Turn off
+                </button>
+              </div>
+
+              <div>
+                <button
+                  type="button"
+                  onClick={() => setShowAccounts(!showAccounts)}
+                  aria-expanded={showAccounts}
+                  aria-controls="dev-mode-test-accounts"
+                  disabled={isLoading}
+                  className="w-full flex items-center justify-between px-4 py-3 border border-line rounded-xl hover:border-[var(--primary)] transition-all bg-[var(--muted)]"
+                >
+                  <span className="flex min-w-0 items-center gap-2 text-left text-sm font-semibold text-[var(--ink)]">
+                    <Users size={16} className="text-[var(--primary)]" />
+                    Quick Access — Test Accounts ({accounts.length})
+                  </span>
+                  <ChevronDown
+                    size={16}
+                    className={`shrink-0 text-[var(--muted-foreground)] transition-transform ${showAccounts ? "rotate-180" : ""}`}
+                  />
+                </button>
+
+                <div id="dev-mode-test-accounts" hidden={!showAccounts} className="mt-2 w-full min-w-0 border border-line rounded-xl bg-surface max-h-72 overflow-y-auto divide-y divide-[var(--border)]">
+                    {accounts.length === 0 && (
+                      <p className="p-4 text-sm text-[var(--muted-foreground)] italic">
+                        No accounts found yet — create one via Sign Up.
+                      </p>
+                    )}
+                    {accounts.map((acc) => (
+                      <button
+                        key={acc.email}
+                        type="button"
+                        onClick={() => useAccount(acc)}
+                        className="w-full min-w-0 flex flex-col items-stretch gap-2 px-4 py-3 hover:bg-[var(--muted)] transition-all text-left sm:flex-row sm:items-center sm:justify-between"
+                      >
+                        <div className="flex min-w-0 items-center gap-3 sm:flex-1">
+                          <div
+                            className={`w-9 h-9 rounded-lg flex items-center justify-center text-xs font-bold flex-shrink-0 ${ROLE_BADGE[acc.role] || "bg-[var(--muted)] text-[var(--muted-foreground)]"}`}
+                          >
+                            {(acc.name || "?")[0]?.toUpperCase()}
+                          </div>
+                          <div className="min-w-0">
+                            <p className="text-sm font-semibold text-[var(--ink)] truncate">{acc.name}</p>
+                            <p className="text-xs text-[var(--muted-foreground)] truncate">{acc.email}</p>
+                          </div>
+                        </div>
+                        <div className="flex min-w-0 flex-wrap items-center gap-2 sm:flex-shrink-0 sm:flex-nowrap">
+                          <span
+                            className={`max-w-full truncate text-[10px] font-bold uppercase tracking-widest px-2 py-0.5 rounded-full ${ROLE_BADGE[acc.role] || "bg-[var(--muted)] text-[var(--muted-foreground)]"}`}
+                          >
+                            {roleLabel(acc)}
+                          </span>
+                          {acc.password && (
+                            <span className="shrink-0 text-[10px] text-[var(--muted-foreground)]">pw: {acc.password}</span>
+                          )}
+                        </div>
+                      </button>
+                    ))}
+                </div>
+              </div>
+            </section>
+          )}
 
           <div className="mb-6">
             <h2 className="text-3xl font-bold text-[var(--ink)] mb-2">Welcome Back</h2>
@@ -378,65 +526,6 @@ export default function Login() {
               )}
             </Button>
           </form>
-
-          {/* Quick Access - Test Accounts */}
-          <div className="mt-6">
-            <button
-              type="button"
-              onClick={() => setShowAccounts(!showAccounts)}
-              disabled={isLoading}
-              className="w-full flex items-center justify-between px-4 py-3 border border-line rounded-xl hover:border-[var(--primary)] transition-all bg-[var(--muted)]"
-            >
-              <span className="flex min-w-0 items-center gap-2 text-left text-sm font-semibold text-[var(--ink)]">
-                <Users size={16} className="text-[var(--primary)]" />
-                Quick Access — Test Accounts ({accounts.length})
-              </span>
-              <ChevronDown
-                size={16}
-                className={`shrink-0 text-[var(--muted-foreground)] transition-transform ${showAccounts ? "rotate-180" : ""}`}
-              />
-            </button>
-
-            {showAccounts && (
-              <div className="mt-2 w-full min-w-0 border border-line rounded-xl bg-surface max-h-72 overflow-y-auto divide-y divide-[var(--border)]">
-                {accounts.length === 0 && (
-                  <p className="p-4 text-sm text-[var(--muted-foreground)] italic">
-                    No accounts found yet — create one via Sign Up.
-                  </p>
-                )}
-                {accounts.map((acc) => (
-                  <button
-                    key={acc.email}
-                    type="button"
-                    onClick={() => useAccount(acc)}
-                    className="w-full min-w-0 flex flex-col items-stretch gap-2 px-4 py-3 hover:bg-[var(--muted)] transition-all text-left sm:flex-row sm:items-center sm:justify-between"
-                  >
-                    <div className="flex min-w-0 items-center gap-3 sm:flex-1">
-                      <div
-                        className={`w-9 h-9 rounded-lg flex items-center justify-center text-xs font-bold flex-shrink-0 ${ROLE_BADGE[acc.role] || "bg-[var(--muted)] text-[var(--muted-foreground)]"}`}
-                      >
-                        {(acc.name || "?")[0]?.toUpperCase()}
-                      </div>
-                      <div className="min-w-0">
-                        <p className="text-sm font-semibold text-[var(--ink)] truncate">{acc.name}</p>
-                        <p className="text-xs text-[var(--muted-foreground)] truncate">{acc.email}</p>
-                      </div>
-                    </div>
-                    <div className="flex min-w-0 flex-wrap items-center gap-2 sm:flex-shrink-0 sm:flex-nowrap">
-                      <span
-                        className={`max-w-full truncate text-[10px] font-bold uppercase tracking-widest px-2 py-0.5 rounded-full ${ROLE_BADGE[acc.role] || "bg-[var(--muted)] text-[var(--muted-foreground)]"}`}
-                      >
-                        {roleLabel(acc)}
-                      </span>
-                      {acc.password && (
-                        <span className="shrink-0 text-[10px] text-[var(--muted-foreground)]">pw: {acc.password}</span>
-                      )}
-                    </div>
-                  </button>
-                ))}
-              </div>
-            )}
-          </div>
 
           <div className="mt-6 pt-6 border-t-2 border-[var(--border)]">
             <p className="text-sm text-[var(--muted-foreground)] text-center mb-3">
