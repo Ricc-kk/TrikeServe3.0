@@ -51,6 +51,17 @@ function isImageUrl(value: string | null | undefined): value is string {
   return /^https?:\/\//i.test(v) || v.startsWith('data:image/');
 }
 
+function isOnCloseTarget(x: number, y: number, width: number, height: number) {
+  const centerX = x + width / 2;
+  const centerY = y + height / 2;
+  const left = (window.innerWidth - CLOSE_TARGET_WIDTH) / 2;
+  const top = window.innerHeight - CLOSE_TARGET_BOTTOM - CLOSE_TARGET_HEIGHT;
+  return (
+    centerX >= left && centerX <= left + CLOSE_TARGET_WIDTH &&
+    centerY >= top && centerY <= top + CLOSE_TARGET_HEIGHT
+  );
+}
+
 function PeerAvatar({
   src,
   label,
@@ -105,6 +116,8 @@ export interface FloatingChatHeadStackItem {
 const STACK_PEEK = 14;
 const STACK_DRAG_DELAY = 115;
 const MAX_STACK_ITEMS = 3;
+const CHAT_HEAD_SIZE = 56;
+const CHAT_HEAD_ROW_GAP = 8;
 
 export default function FloatingChatHead({
   storageKey,
@@ -116,12 +129,13 @@ export default function FloatingChatHead({
   pulseKey,
   headId,
   stackItems = [],
+  showStackItems = false,
   opened,
   onOpen,
   onInitialResolve,
   isGlobal = false,
   hidden = false,
-  initialPlacement = 'center-right',
+  initialPlacement = 'top-right',
   zIndexClass = Z_INDEX,
 }: {
   /**
@@ -151,8 +165,10 @@ export default function FloatingChatHead({
   pulseKey: number;
   /** Stable conversation id, used to animate a newly promoted top head. */
   headId?: string;
-  /** Older conversations revealed while the latest head is being dragged. */
+  /** Recent conversations shown beside the latest head or revealed on drag. */
   stackItems?: FloatingChatHeadStackItem[];
+  /** Show the stack as a single row instead of revealing it only while dragging. */
+  showStackItems?: boolean;
   /**
    * Whether chat has been opened on this ride.
    *
@@ -196,31 +212,35 @@ export default function FloatingChatHead({
    * placed.
    */
   const [placed2, setPlaced2] = useState(false);
+  const [viewportWidth, setViewportWidth] = useState(0);
   const [mountRetry, setMountRetry] = useState(0);
   const [isDragging, setIsDragging] = useState(false);
   const [isOverCloseTarget, setIsOverCloseTarget] = useState(false);
   const [dismissed, setDismissed] = useState(false);
   const dismissalActivityKey = `${headId || ''}:${pulseKey}`;
   const previousDismissalActivityKeyRef = useRef(dismissalActivityKey);
+  const parkAfterRestoreRef = useRef(false);
   const retryRef = useRef<number | null>(null);
 
-  useEffect(() => {
-    if (previousDismissalActivityKeyRef.current === dismissalActivityKey) return;
-    previousDismissalActivityKeyRef.current = dismissalActivityKey;
-    setDismissed(false);
-  }, [dismissalActivityKey]);
+  const maxRowHeadCount = viewportWidth > 0
+    ? Math.max(1, Math.floor((viewportWidth - GAP * 2 + CHAT_HEAD_ROW_GAP) / (CHAT_HEAD_SIZE + CHAT_HEAD_ROW_GAP)))
+    : 1;
+  const visibleStackItems = showStackItems
+    ? stackItems.slice(0, maxRowHeadCount - 1)
+    : stackItems.slice(0, MAX_STACK_ITEMS);
 
   const positionStackHeads = useCallback((nextSide: Side, animated: boolean) => {
-    const offset = nextSide === 'right' ? -STACK_PEEK : STACK_PEEK;
-    stackHeadRefs.current.slice(0, MAX_STACK_ITEMS).forEach((el, index) => {
+    const direction = nextSide === 'right' ? -1 : 1;
+    const offset = showStackItems ? CHAT_HEAD_SIZE + CHAT_HEAD_ROW_GAP : STACK_PEEK;
+    stackHeadRefs.current.slice(0, visibleStackItems.length).forEach((el, index) => {
       if (!el) return;
       el.style.transition = animated
         ? `left ${STACK_DRAG_DELAY}ms ease-out, top ${STACK_DRAG_DELAY}ms ease-out`
         : 'none';
-      el.style.left = `${pos.current.x + offset * (index + 1)}px`;
+      el.style.left = `${pos.current.x + direction * offset * (index + 1)}px`;
       el.style.top = `${pos.current.y}px`;
     });
-  }, []);
+  }, [showStackItems, visibleStackItems.length]);
 
   useLayoutEffect(() => {
     if (isGlobal) return;
@@ -247,6 +267,55 @@ export default function FloatingChatHead({
     }
   }, [storageKey]);
 
+  const parkAtTopRight = useCallback(() => {
+    const el = headRef.current;
+    if (!el) return;
+    const width = el.getBoundingClientRect().width;
+    pos.current = {
+      x: Math.max(GAP, Math.round(window.innerWidth - width - GAP)),
+      y: GAP,
+    };
+    setSide('right');
+    el.style.left = `${pos.current.x}px`;
+    el.style.top = `${pos.current.y}px`;
+    positionStackHeads('right', false);
+    save('right');
+  }, [positionStackHeads, save]);
+
+  useEffect(() => {
+    if (!showStackItems) return;
+    const updateViewportWidth = () => {
+      setViewportWidth(window.innerWidth);
+      if (placed.current) parkAtTopRight();
+    };
+    updateViewportWidth();
+    window.addEventListener('resize', updateViewportWidth);
+    return () => window.removeEventListener('resize', updateViewportWidth);
+  }, [parkAtTopRight, showStackItems]);
+
+  useLayoutEffect(() => {
+    if (previousDismissalActivityKeyRef.current === dismissalActivityKey) return;
+    previousDismissalActivityKeyRef.current = dismissalActivityKey;
+    if (dismissed) {
+      // The dismissed render has no head element to move yet. Reposition in the
+      // layout effect that runs after the restored button is mounted.
+      parkAfterRestoreRef.current = true;
+      setDismissed(false);
+      return;
+    }
+    // A head that is still mounted can be moved before the new activity paints.
+    parkAtTopRight();
+  }, [dismissalActivityKey, dismissed, parkAtTopRight]);
+
+  useLayoutEffect(() => {
+    if (dismissed || !parkAfterRestoreRef.current) return;
+    parkAfterRestoreRef.current = false;
+    // A dismissed head stays at the drop point in memory. Reopening it there
+    // puts it directly on top of the bottom close target, so restore it to the
+    // top right once the button exists again.
+    parkAtTopRight();
+  }, [dismissed, parkAtTopRight]);
+
   useEffect(() => {
     onInitialResolve?.();
   }, [onInitialResolve]);
@@ -269,7 +338,8 @@ export default function FloatingChatHead({
       const rect = el.getBoundingClientRect();
 
       const saved = read();
-      if (saved) {
+      const savedOnCloseTarget = saved && isOnCloseTarget(saved.x, saved.y, rect.width, rect.height);
+      if (saved && !savedOnCloseTarget && !showStackItems) {
         // Re-clamped: the phone may have been rotated or resized since saving,
         // and a raw stored x could be off-screen entirely.
         pos.current = {
@@ -278,33 +348,34 @@ export default function FloatingChatHead({
         };
         setSide(saved.side);
       } else {
-        // First appearance: right edge at mid height -- clear of the map's zoom
-        // controls, the route line, and the ride sheet along the bottom.
+        // Global rows stay anchored at the top-right; standalone heads use the
+        // configured placement when first shown or recovered from the close area.
         pos.current = {
-          x: Math.round(window.innerWidth - rect.width - GAP),
+          x: Math.max(GAP, Math.round(window.innerWidth - rect.width - GAP)),
           y: initialPlacement === 'top-right' ? GAP : Math.round(window.innerHeight * 0.42),
         };
         setSide('right');
+        if (savedOnCloseTarget || showStackItems) save('right');
       }
 
       placed.current = true;
       // Applied directly; state would re-render the map on every move.
       el.style.left = `${pos.current.x}px`;
       el.style.top = `${pos.current.y}px`;
-      positionStackHeads(saved?.side ?? 'right', false);
+      positionStackHeads(showStackItems ? 'right' : saved?.side ?? 'right', false);
       setPlaced2(true);
     });
     return () => {
       cancelAnimationFrame(raf);
       if (retryRef.current) cancelAnimationFrame(retryRef.current);
     };
-  }, [initialPlacement, mountRetry, positionStackHeads]);
+  }, [initialPlacement, mountRetry, positionStackHeads, save, showStackItems]);
 
   useEffect(() => {
     if (placed.current) positionStackHeads(side, false);
-  }, [side, stackItems.length, positionStackHeads]);
+  }, [side, visibleStackItems.length, positionStackHeads]);
 
-  const stackAnimationKey = stackItems.slice(0, MAX_STACK_ITEMS).map((item) => item.id).join('|');
+  const stackAnimationKey = visibleStackItems.map((item) => item.id).join('|');
   useEffect(() => {
     if (!headId) return;
     const previousHeadId = previousHeadIdRef.current;
@@ -321,7 +392,7 @@ export default function FloatingChatHead({
   }, [headId, side]);
 
   useEffect(() => {
-    const stackHeads = stackHeadRefs.current.slice(0, MAX_STACK_ITEMS);
+    const stackHeads = stackHeadRefs.current.slice(0, visibleStackItems.length);
     if (!isDragging || hidden) {
       stackHeads.forEach((el) => el?.getAnimations().forEach((animation) => animation.cancel()));
       return;
@@ -338,7 +409,7 @@ export default function FloatingChatHead({
         { duration: 190, delay: index * 35, easing: 'ease-out' },
       );
     });
-  }, [hidden, isDragging, placed2, side, stackAnimationKey]);
+  }, [hidden, isDragging, placed2, side, stackAnimationKey, visibleStackItems.length]);
 
   const onPointerDown = useCallback((e: React.PointerEvent<HTMLButtonElement>) => {
     const el = headRef.current;
@@ -355,17 +426,6 @@ export default function FloatingChatHead({
     // snap its corner to the touch point.
     drag.current = { dx: startX - rect.left, dy: startY - rect.top };
     el.setPointerCapture?.(pointerId);
-
-    const isOnCloseTarget = (x: number, y: number, w: number, h: number) => {
-      const centerX = x + w / 2;
-      const centerY = y + h / 2;
-      const left = (window.innerWidth - CLOSE_TARGET_WIDTH) / 2;
-      const top = window.innerHeight - CLOSE_TARGET_BOTTOM - CLOSE_TARGET_HEIGHT;
-      return (
-        centerX >= left && centerX <= left + CLOSE_TARGET_WIDTH &&
-        centerY >= top && centerY <= top + CLOSE_TARGET_HEIGHT
-      );
-    };
 
     const cleanup = () => {
       window.removeEventListener('pointermove', onMove);
@@ -468,7 +528,7 @@ export default function FloatingChatHead({
       const el = headRef.current;
       if (!el) return;
       const w = el.getBoundingClientRect().width;
-      pos.current = { x: Math.round(window.innerWidth - w - GAP), y: GAP };
+      pos.current = { x: Math.max(GAP, Math.round(window.innerWidth - w - GAP)), y: GAP };
       setSide('right');
       el.style.left = `${pos.current.x}px`;
       el.style.top = `${pos.current.y}px`;
@@ -489,16 +549,17 @@ export default function FloatingChatHead({
 
   return createPortal(
     <>
-      {stackItems.slice(0, MAX_STACK_ITEMS).map((item, index) => (
+      {visibleStackItems.map((item, index) => (
         <button
           key={item.id}
           ref={(el) => { stackHeadRefs.current[index] = el; }}
           type="button"
           style={{
-            left: pos.current.x + (stackSide === 'right' ? -STACK_PEEK : STACK_PEEK) * (index + 1),
+            left: pos.current.x + (stackSide === 'right' ? -1 : 1) *
+              (showStackItems ? CHAT_HEAD_SIZE + CHAT_HEAD_ROW_GAP : STACK_PEEK) * (index + 1),
             top: pos.current.y,
-            opacity: placed2 && !isHidden && isDragging ? 1 : 0,
-            pointerEvents: isHidden || !isDragging ? 'none' : 'auto',
+            opacity: placed2 && !isHidden && (showStackItems || isDragging) ? 1 : 0,
+            pointerEvents: isHidden || (!showStackItems && !isDragging) ? 'none' : 'auto',
             zIndex: 9999 - index,
           }}
           onPointerDown={(event) => event.stopPropagation()}
@@ -507,8 +568,8 @@ export default function FloatingChatHead({
             item.onOpen();
           }}
           aria-label={`Chat with ${item.peerLabel}`}
-          aria-hidden={isHidden || !isDragging || undefined}
-          tabIndex={isHidden || !isDragging ? -1 : undefined}
+          aria-hidden={isHidden || (!showStackItems && !isDragging) || undefined}
+          tabIndex={isHidden || (!showStackItems && !isDragging) ? -1 : undefined}
           className="fixed grid size-14 place-items-center overflow-visible rounded-full border-2 border-[var(--border)] bg-[var(--surface)] shadow-xl touch-none select-none"
         >
           <span className="relative size-full overflow-hidden rounded-full">

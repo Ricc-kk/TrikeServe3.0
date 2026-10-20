@@ -1,7 +1,8 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { Camera, ImagePlus, Send, User, Users, X } from "lucide-react";
 import { supabaseHelpers } from "@/lib/supabase";
+import { useChatHeadVisibility } from "../../contexts/ChatHeadVisibilityContext";
 
 const CHAT_IMAGE_PREFIX = 'chat-image:';
 
@@ -142,6 +143,7 @@ export default function RideChatOverlay({
   receiverRole?: 'rider' | 'customer' | 'business';
   onClose: () => void;
 }) {
+  const { openedConversationId, recentChatHeads, toggleChatOverlay } = useChatHeadVisibility();
   const [messages, setMessages] = useState<any[]>([]);
   const [text, setText] = useState('');
   const [pendingImage, setPendingImage] = useState<{
@@ -163,9 +165,53 @@ export default function RideChatOverlay({
   const [sending, setSending] = useState(false);
   const [uploadingImage, setUploadingImage] = useState(false);
   const [revealedId, setRevealedId] = useState<string | null>(null);
+  const [viewportWidth, setViewportWidth] = useState(0);
   const listRef = useRef<HTMLDivElement>(null);
   const imageInputRef = useRef<HTMLInputElement>(null);
   const cameraInputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    const updateViewportWidth = () => setViewportWidth(window.innerWidth);
+    updateViewportWidth();
+    window.addEventListener('resize', updateViewportWidth);
+    return () => window.removeEventListener('resize', updateViewportWidth);
+  }, []);
+
+  const visibleRecentChatHeads = useMemo(() => {
+    const existing = conversationId
+      ? recentChatHeads.find((item) => item.conversationId === conversationId)
+      : null;
+    const current = conversationId
+      ? {
+          conversationId,
+          peerId: existing?.peerId || peerId || conversationId,
+          peerName: existing?.peerName || peerName,
+          peerAvatar: existing?.peerAvatar || peerAvatar,
+          peerIsGroup: existing?.peerIsGroup || peerIsGroup,
+          unread: existing?.unread || 0,
+          lastActivityAt: existing?.lastActivityAt || new Date().toISOString(),
+        }
+      : null;
+    const heads = current
+      ? [...recentChatHeads.filter((item) => item.peerId !== current.peerId), current]
+      : recentChatHeads;
+    const sortedHeads = [...heads].sort((a, b) =>
+      new Date(b.lastActivityAt || 0).getTime() - new Date(a.lastActivityAt || 0).getTime(),
+    );
+    const maxHeads = viewportWidth > 0
+      ? Math.max(1, Math.floor((viewportWidth - 16) / 64))
+      : 1;
+    if (!current) return sortedHeads.slice(0, maxHeads);
+
+    // Keep the open chat's head available as the close control. Fill the rest
+    // with the newest distinct peers, then keep the whole row in recency order.
+    const newestOthers = sortedHeads
+      .filter((item) => item.conversationId !== current.conversationId)
+      .slice(0, maxHeads - 1);
+    return [...newestOthers, current].sort((a, b) =>
+      new Date(b.lastActivityAt || 0).getTime() - new Date(a.lastActivityAt || 0).getTime(),
+    );
+  }, [conversationId, peerAvatar, peerId, peerIsGroup, peerName, recentChatHeads, viewportWidth]);
 
   useEffect(() => {
     const previewUrl = pendingImage?.previewUrl;
@@ -211,6 +257,29 @@ export default function RideChatOverlay({
       setClosing(false);
     }, 200);
   }, [closing, onClose]);
+
+  const selectRecentChatHead = useCallback((selectedConversationId: string) => {
+    if (selectedConversationId === conversationId) {
+      requestClose();
+      return;
+    }
+
+    // Global overlays are controlled by the selected conversation id, so switch
+    // directly. Ride overlays are local to the ride screen; close that sheet
+    // before opening the selected existing conversation in the global overlay.
+    if (conversationId && openedConversationId === conversationId) {
+      toggleChatOverlay(selectedConversationId);
+      return;
+    }
+    if (closing) return;
+
+    setClosing(true);
+    setTimeout(() => {
+      onClose();
+      setClosing(false);
+      toggleChatOverlay(selectedConversationId);
+    }, 200);
+  }, [closing, conversationId, onClose, openedConversationId, requestClose, toggleChatOverlay]);
 
   useEffect(() => {
     if (!open) return;
@@ -361,18 +430,21 @@ export default function RideChatOverlay({
    * crosses or clips the head. Overlapping it looked deliberate until the panel
    * scrolled, and then the head was half-buried under the chat.
 
-   * That strip is deliberately transparent, so the active ride page shows through it.
-   * It has been filled twice -- once with `--surface`, once with `--muted` to match
-   * the message list -- and both were wrong. A flat fill of any colour reads as a
-   * band stuck across the top of the chat. What belongs there is the ride the
-   * driver is in the middle of: the map and the ride card, not a slab of colour.
-   * The panel below is opaque, so the conversation itself is unaffected.
+   * The strip above the chat stays see-through so the active ride remains visible.
+   * A subtle dark film sits below the opened head to give it contrast, while the
+   * opaque chat panel below keeps its normal colour and readability.
    *
    * The root is `pointer-events-none`, so the ride screen in that strip is not
    * merely painted, it is still live -- a tap beside the head reaches the map.
    */
   return createPortal(
     <div className={`pointer-events-none fixed inset-0 ${zIndexClass}`}>
+      <div
+        aria-hidden="true"
+        className={`pointer-events-none absolute inset-0 bg-black/40 transition-opacity duration-200 ease-out ${
+          closing ? 'opacity-0' : 'opacity-100'
+        }`}
+      />
       <div
         className={`ride-chat-sheet pointer-events-none absolute inset-0 flex flex-col ${
           closing ? 'ride-chat-sheet--closing' : ''
@@ -381,26 +453,46 @@ export default function RideChatOverlay({
         aria-label={`Chat with ${peerName}`}
       >
         {/*
-            The chat head, outside the chatbox entirely.
+            The recent chat heads, outside the chatbox entirely.
 
             It is a sibling of the panel, above it with a real gap, not overlapping
             its border and not nested inside its header. Sitting on the box meant it
             read as part of the panel and got clipped whenever the panel was
             smaller than the head claimed. As a sibling it stays the same floating
-            control the ride screen shows, and the panel below is free to be any
-            size without having to reserve room for it.
+            controls the ride screen shows, and the panel below is free to be any
+            size without having to reserve room for them.
 
-            `ml-auto` right-aligns it over the panel rather than centring it, which
-            would leave it hanging in the middle of nothing.
+            Newest heads start at the right edge and older chats continue toward
+            the left. The row clips the oldest heads when the screen is too narrow.
         */}
-        <button
-          type="button"
-          onClick={requestClose}
-          aria-label="Close chat"
-          className="pointer-events-auto mb-2 mr-3 ml-auto mt-2 size-14 flex-shrink-0 overflow-hidden rounded-full border-[3px] border-white/30 bg-[var(--primary-soft)] grid place-items-center shadow-xl transition-transform active:scale-95"
+        <div
+          role="group"
+          aria-label="Recent chats, newest on the right"
+          className="pointer-events-none mb-2 mt-2 flex h-14 w-full flex-shrink-0 flex-row-reverse items-center justify-start gap-2 overflow-hidden px-3"
         >
-          <PeerAvatar src={peerAvatar} name={peerName} group={peerIsGroup} iconClassName="size-6" />
-        </button>
+          {visibleRecentChatHeads.map((item) => {
+            const isOpen = item.conversationId === conversationId;
+            return (
+              <button
+                key={item.conversationId}
+                type="button"
+                onClick={() => selectRecentChatHead(item.conversationId)}
+                aria-label={isOpen ? `Close chat with ${item.peerName}` : `Open chat with ${item.peerName}`}
+                aria-current={isOpen ? 'true' : undefined}
+                className={`pointer-events-auto relative grid size-14 flex-shrink-0 place-items-center overflow-visible rounded-full border-[3px] bg-[var(--primary-soft)] shadow-xl transition-transform active:scale-95 ${isOpen ? 'border-white/70' : 'border-white/30'}`}
+              >
+                <span className="size-full overflow-hidden rounded-full">
+                  <PeerAvatar src={item.peerAvatar} name={item.peerName} group={item.peerIsGroup} iconClassName="size-6" />
+                </span>
+                {item.unread > 0 && (
+                  <span className="absolute -right-1 -top-1 grid min-w-[16px] place-items-center rounded-full bg-[var(--primary)] px-1 text-[10px] font-bold text-[var(--primary-foreground)] shadow">
+                    {item.unread > 99 ? '99+' : item.unread}
+                  </span>
+                )}
+              </button>
+            );
+          })}
+        </div>
 
         {/*
             The panel. `flex-1 min-h-0` rather than a set height: it takes exactly

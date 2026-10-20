@@ -42,7 +42,13 @@ function peerDisplayName(name: string | null | undefined, role: string | null | 
 
 export default function GlobalChatHead() {
   const { user, isLoading } = useAuth();
-  const { localHeadIds, openedConversationId, toggleChatOverlay, closeChatOverlay } = useChatHeadVisibility();
+  const {
+    localHeadIds,
+    openedConversationId,
+    toggleChatOverlay,
+    closeChatOverlay,
+    setRecentChatHeads,
+  } = useChatHeadVisibility();
   const location = useLocation();
   const navigate = useNavigate();
   const [conversations, setConversations] = useState<ChatConversation[]>([]);
@@ -95,6 +101,42 @@ export default function GlobalChatHead() {
     }
     return [...newestByPeer.values()].sort((a, b) => activityOf(b) - activityOf(a));
   }, [conversations, user?.id]);
+
+  useEffect(() => {
+    if (!user?.id) {
+      setRecentChatHeads([]);
+      return;
+    }
+
+    const nextHeads = recentConversations.map((item) => {
+      const peerIsA = item.participant_a_id !== user.id;
+      const peerId = peerIsA ? item.participant_a_id : item.participant_b_id;
+      return {
+        conversationId: item.id,
+        peerId,
+        peerName: peerDisplayName(
+          peerIsA ? item.participant_a_name : item.participant_b_name,
+          peerIsA ? item.participant_a_role : item.participant_b_role,
+        ),
+        peerAvatar: peerIsA ? item.participant_a_avatar : item.participant_b_avatar,
+        unread: unreadCount(item, user.id),
+        lastActivityAt: item.last_message_at || item.updated_at,
+      };
+    });
+    setRecentChatHeads((current) => {
+      const unchanged = current.length === nextHeads.length && current.every((item, index) => {
+        const next = nextHeads[index];
+        return item.conversationId === next.conversationId &&
+          item.peerId === next.peerId &&
+          item.peerName === next.peerName &&
+          item.peerAvatar === next.peerAvatar &&
+          item.unread === next.unread &&
+          item.lastActivityAt === next.lastActivityAt;
+      });
+      return unchanged ? current : nextHeads;
+    });
+  }, [recentConversations, setRecentChatHeads, user?.id]);
+
   const conversation = recentConversations[0] || null;
 
   useEffect(() => {
@@ -173,7 +215,7 @@ export default function GlobalChatHead() {
   const peerAvatar = conversation
     ? peerIsA ? conversation.participant_a_avatar : conversation.participant_b_avatar
     : null;
-  const stackItems = recentConversations.slice(1, 4).map((item) => {
+  const stackItems = recentConversations.slice(1).map((item) => {
     const peerIsA = item.participant_a_id !== user.id;
     return {
       id: item.id,
@@ -197,7 +239,7 @@ export default function GlobalChatHead() {
           (isOnMessagesPage && isCurrentThread)
         }
         storageKey={`trikeserve_global_chat_head_pos_${user.role}`}
-        initialPlacement="center-right"
+        initialPlacement="top-right"
         headId={conversation?.id || 'messages'}
         peerAvatar={peerAvatar}
         peerIsMessages={!conversation}
@@ -205,6 +247,7 @@ export default function GlobalChatHead() {
         unread={conversation ? unreadCount(conversation, user.id) : 0}
         pulseKey={pulseKey}
         stackItems={stackItems}
+        showStackItems
         onOpen={() => conversation ? toggleChatOverlay(conversation.id) : navigate(messagesPath)}
       />
       {selectedOverlayConversation && (
@@ -218,6 +261,7 @@ export default function GlobalChatHead() {
 
           return (
             <RideChatOverlay
+              key={conversation.id}
               open={openedConversationId === conversation.id}
               conversationId={conversation.id}
               peerId={peerId}

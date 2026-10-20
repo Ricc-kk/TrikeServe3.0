@@ -1250,8 +1250,8 @@ export default function ActiveRide() {
       } else {
         console.log('✅ Delivery order marked as delivered');
 
-        // Publish the completion message and handover photo only after the
-        // order has been saved as delivered.
+        // Publish the completion update after the order is saved as delivered.
+        // The helper sends the handover photo only to the business chat.
         await notifyDeliveryStatus(
           rideData,
           'completed',
@@ -1638,16 +1638,24 @@ export default function ActiveRide() {
           the back arrow does not need to survive: the chat head closes the panel,
           and the ride screen is still there underneath it. */}
       {!chatPopupOpen && (
-      <div className="bg-[var(--primary)] text-white p-4 shadow-md">
-        <div className="flex items-center justify-between mb-4">
-          <Button variant="ghost" size="icon" onClick={() => navigate('/rider')} className="text-white hover:bg-white/20"><ArrowLeft className="w-5 h-5" /></Button>
-          <h1 className="text-lg font-bold">Active Ride</h1>
+      <header className="bg-[var(--primary)] px-3 pt-[calc(env(safe-area-inset-top)+0.5rem)] pb-2 text-white shadow-md">
+        <div className="grid h-10 grid-cols-[2.25rem_minmax(0,1fr)_2.25rem] items-center">
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={() => navigate('/rider')}
+            aria-label="Back to rider dashboard"
+            className="rounded-full text-white hover:bg-white/20"
+          >
+            <ArrowLeft className="h-5 w-5" />
+          </Button>
+          <h1 className="text-center text-base font-bold leading-5">Active Ride</h1>
           {/* The map and the detail sheet are resized by dragging the sheet's
               handle, so this toggle was a redundant second way to do the same
               thing. Removed rather than kept as a duplicate control. */}
-          <span className="w-10" aria-hidden="true" />
+          <span className="size-9" aria-hidden="true" />
         </div>
-      </div>
+      </header>
       )}
 
       <div className={`relative w-full transition-all duration-300 ${isMinimized ? 'h-[80vh]' : 'h-80'}`}>

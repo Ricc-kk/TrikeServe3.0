@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo, useRef } from "react";
-import { ArrowLeft, Heart, Users, Calendar, Share2, Clock, Star, MapPin, Route, ChevronDown, ChevronRight, Home as HomeIcon, ShoppingCart, MessageCircle, ClipboardList, User, Search, BadgeCheck, X, Check, Trash2 } from "lucide-react";
+import { ArrowLeft, Heart, Users, Calendar, Share2, Clock, Star, MapPin, Route, ChevronDown, ChevronRight, Home as HomeIcon, ShoppingCart, MessageCircle, ClipboardList, User, Search, BadgeCheck, X, Check, Trash2, ListFilter } from "lucide-react";
 import { Link, useNavigate, useSearchParams } from "react-router";
 import { usePreviousPage } from "../../hooks/usePreviousPage";
 import { Card } from "../ui/card";
@@ -225,6 +225,7 @@ export default function RestaurantDetail() {
   const { showNotification } = useNotification();
 
   const [selectedCategory, setSelectedCategory] = useState("all");
+  const [showCategoryModal, setShowCategoryModal] = useState(false);
   const [isScrolled, setIsScrolled] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [showSearchModal, setShowSearchModal] = useState(false);
@@ -1052,24 +1053,7 @@ if (unfiledItems.length > 0) sectionGroups.push({ id: "__unfiled", name: "More",
       {/* Sticky Category Header with Visible Pills */}
       <div className={`sticky top-0 z-40 bg-surface transition-all mt-4 ${isScrolled ? 'shadow-lg' : ''}`}>
         <div className="px-5 py-4 space-y-3">
-          {/* Category Pills */}
-          <div className="flex gap-2 overflow-x-auto pb-2 scrollbar-hide">
-            {filterCategories.map((category) => (
-              <button
-                key={category.id}
-                onClick={() => setSelectedCategory(category.id)}
-                className={`px-4 py-2 rounded-full text-sm font-semibold whitespace-nowrap transition-all flex-shrink-0 ${
-                  selectedCategory === category.id
-                    ? "bg-[var(--primary)] text-white"
-                    : "bg-[var(--muted)] text-[var(--muted-foreground)] hover:bg-[var(--border)]"
-                }`}
-              >
-                {category.name}
-              </button>
-            ))}
-          </div>
-
-          {/* Search Bar */}
+          {/* Search stays above the shop's category filters. */}
           <div className="flex items-center gap-2">
             <div className="relative flex-1">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-[var(--muted-foreground)]" />
@@ -1082,6 +1066,39 @@ if (unfiledItems.length > 0) sectionGroups.push({ id: "__unfiled", name: "More",
                 className="w-full pl-10 pr-4 py-2.5 border border-line rounded-2xl text-sm bg-[var(--muted)]"
               />
             </div>
+          </div>
+
+          {/* One horizontally scrolling row keeps every category on the same line. */}
+          <div className="flex min-w-0 items-center gap-2">
+            <div role="group" aria-label="Shop categories" className="flex min-w-0 flex-1 gap-2 overflow-x-auto pb-1 scrollbar-hide">
+              {filterCategories.map((category) => (
+                <button
+                  key={category.id}
+                  type="button"
+                  aria-pressed={selectedCategory === category.id}
+                  onClick={() => setSelectedCategory((current) => current === category.id ? "all" : category.id)}
+                  className={`px-4 py-2 rounded-full text-sm font-semibold whitespace-nowrap transition-all flex-shrink-0 ${
+                    selectedCategory === category.id
+                      ? "bg-[var(--primary)] text-white"
+                      : "bg-[var(--muted)] text-[var(--muted-foreground)] hover:bg-[var(--border)]"
+                  }`}
+                >
+                  {category.name}
+                </button>
+              ))}
+            </div>
+            <button
+              type="button"
+              onClick={() => setShowCategoryModal(true)}
+              aria-label={`View all categories${selectedCategory !== "all" ? `, selected ${selectedCategoryName}` : ""}`}
+              className={`flex flex-shrink-0 items-center gap-1.5 rounded-full border bg-surface px-3 py-2 text-sm font-semibold shadow-sm hover:bg-[var(--muted)] ${
+                selectedCategory !== "all" ? "border-[var(--primary)] text-[var(--primary)]" : "border-line text-[var(--ink)]"
+              }`}
+            >
+              <ListFilter className="h-4 w-4" aria-hidden="true" />
+              <span>Filter</span>
+              {selectedCategory !== "all" && <span className="h-1.5 w-1.5 rounded-full bg-[var(--primary)]" aria-hidden="true" />}
+            </button>
           </div>
         </div>
       </div>
@@ -1183,6 +1200,61 @@ if (unfiledItems.length > 0) sectionGroups.push({ id: "__unfiled", name: "More",
               >
                 Search
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Full category picker */}
+      {showCategoryModal && (
+        <div
+          className="fixed inset-0 z-[2000] flex items-end bg-black/50 sm:items-center sm:justify-center sm:p-5"
+          onClick={() => setShowCategoryModal(false)}
+        >
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="category-filter-title"
+            className="flex max-h-[80vh] w-full flex-col overflow-hidden rounded-t-3xl bg-surface sm:max-w-md sm:rounded-3xl"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="flex items-center justify-between border-b border-[var(--border)] px-5 py-4">
+              <div>
+                <h2 id="category-filter-title" className="text-lg font-bold text-[var(--ink)]">Filter by category</h2>
+                <p className="mt-0.5 text-sm text-[var(--muted-foreground)]">Tap the selected category again to clear the filter.</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowCategoryModal(false)}
+                aria-label="Close categories"
+                className="flex h-10 w-10 items-center justify-center rounded-full hover:bg-[var(--muted)]"
+              >
+                <X className="h-5 w-5 text-[var(--muted-foreground)]" />
+              </button>
+            </div>
+            <div className="overflow-y-auto p-3">
+              {filterCategories.length === 0 ? (
+                <p className="px-4 py-8 text-center text-sm text-[var(--muted-foreground)]">No categories available.</p>
+              ) : filterCategories.map((category) => {
+                  const isSelected = selectedCategory === category.id;
+                  return (
+                    <button
+                      key={category.id}
+                      type="button"
+                      aria-pressed={isSelected}
+                      onClick={() => {
+                        setSelectedCategory((current) => current === category.id ? "all" : category.id);
+                        setShowCategoryModal(false);
+                      }}
+                      className={`mb-1 flex w-full items-center justify-between rounded-2xl px-4 py-3 text-left text-sm font-semibold ${
+                        isSelected ? "bg-[var(--primary)] text-white" : "text-[var(--ink)] hover:bg-[var(--muted)]"
+                      }`}
+                    >
+                      <span>{category.name}</span>
+                      {isSelected && <Check className="h-4 w-4" aria-hidden="true" />}
+                    </button>
+                  );
+                })}
             </div>
           </div>
         </div>

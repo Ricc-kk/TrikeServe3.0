@@ -2878,6 +2878,8 @@ export const supabaseHelpers = {
       const businessMessage = businessChatMessages[status] || "I've updated the delivery status.";
 
       if (resolvedCustomerId) {
+        // The customer gets the completion text; the delivery proof stays in
+        // the order record and is sent only to the business chat below.
         recipientMessages.push(this.sendOrderProgressChatMessage({
           orderId: orderId || '',
           orderNumber: orderNumber || undefined,
@@ -2887,7 +2889,6 @@ export const supabaseHelpers = {
           recipientId: resolvedCustomerId,
           recipientRole: 'customer',
           message: customerMessage,
-          imageUrl: status === 'completed' ? params.deliveryProofUrl : undefined,
         }));
       }
       if (businessId) {

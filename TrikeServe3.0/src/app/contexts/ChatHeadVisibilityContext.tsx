@@ -1,4 +1,14 @@
-import { createContext, useCallback, useContext, useRef, useState, type ReactNode } from 'react';
+import { createContext, useCallback, useContext, useRef, useState, type Dispatch, type ReactNode, type SetStateAction } from 'react';
+
+export interface RecentChatHead {
+  conversationId: string;
+  peerId: string;
+  peerName: string;
+  peerAvatar: string | null;
+  peerIsGroup?: boolean;
+  unread: number;
+  lastActivityAt: string | null;
+}
 
 interface ChatHeadVisibilityContextValue {
   localHeadIds: string[];
@@ -6,6 +16,8 @@ interface ChatHeadVisibilityContextValue {
   openedConversationId: string | null;
   toggleChatOverlay: (conversationId: string) => void;
   closeChatOverlay: () => void;
+  recentChatHeads: RecentChatHead[];
+  setRecentChatHeads: Dispatch<SetStateAction<RecentChatHead[]>>;
 }
 
 const ChatHeadVisibilityContext = createContext<ChatHeadVisibilityContextValue | null>(null);
@@ -13,6 +25,7 @@ const ChatHeadVisibilityContext = createContext<ChatHeadVisibilityContextValue |
 export function ChatHeadVisibilityProvider({ children }: { children: ReactNode }) {
   const [localHeads, setLocalHeads] = useState<Array<{ key: number; conversationId?: string }>>([]);
   const [openedConversationId, setOpenedConversationId] = useState<string | null>(null);
+  const [recentChatHeads, setRecentChatHeads] = useState<RecentChatHead[]>([]);
   const nextHeadKey = useRef(0);
 
   const registerLocalHead = useCallback((conversationId?: string) => {
@@ -34,6 +47,8 @@ export function ChatHeadVisibilityProvider({ children }: { children: ReactNode }
       openedConversationId,
       toggleChatOverlay,
       closeChatOverlay,
+      recentChatHeads,
+      setRecentChatHeads,
     }}>
       {children}
     </ChatHeadVisibilityContext.Provider>

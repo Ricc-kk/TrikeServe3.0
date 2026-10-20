@@ -129,6 +129,8 @@ export default function ChatHub({
   const [minimizedConversation, setMinimizedConversation] = useState<ChatConversation | null>(null);
   const [chatHeadOrder, setChatHeadOrder] = useState<string[]>([]);
   const [isChatHeadReorderMode, setIsChatHeadReorderMode] = useState(false);
+  const chatHeadListRef = useRef<HTMLDivElement | null>(null);
+  const [chatHeadListWidth, setChatHeadListWidth] = useState(0);
   const draggedChatHeadIdRef = useRef<string | null>(null);
   const suppressChatHeadClickRef = useRef(false);
   const [isUploadingImage, setIsUploadingImage] = useState(false);
@@ -230,6 +232,32 @@ export default function ChatHub({
     // Once the user reorders the row, their saved order takes precedence.
     return [...newConversations, ...savedOrder];
   }, [chatHeadOrder, recentHeadConversations]);
+
+  useEffect(() => {
+    const list = chatHeadListRef.current;
+    if (!list) {
+      setChatHeadListWidth(0);
+      return;
+    }
+
+    const measure = () => setChatHeadListWidth(list.clientWidth);
+    measure();
+    if (typeof ResizeObserver !== 'undefined') {
+      const observer = new ResizeObserver(measure);
+      observer.observe(list);
+      return () => observer.disconnect();
+    }
+
+    window.addEventListener('resize', measure);
+    return () => window.removeEventListener('resize', measure);
+  }, [activeConversationId, isChatHeadReorderMode]);
+
+  // Keep the open thread's recent-head row to one line. Newer chats are first
+  // (on the right); the oldest entries beyond the available width are omitted.
+  const maxVisibleRecentHeadCount = chatHeadListWidth > 0
+    ? Math.max(1, Math.floor((chatHeadListWidth + 4) / 48))
+    : orderedRecentHeadConversations.length;
+  const visibleRecentHeadConversations = orderedRecentHeadConversations.slice(0, maxVisibleRecentHeadCount);
 
   const saveChatHeadOrder = (nextOrder: string[]) => {
     setChatHeadOrder(nextOrder);
@@ -1003,7 +1031,7 @@ function getConversationPeer(conversation: ChatConversation) {
         <div
           role="group"
           aria-label="Chat heads, newest on the right. Drag to reorder, or use Arrange chat heads to move the open chat."
-          className="flex h-14 w-full shrink-0 flex-row-reverse items-center justify-start gap-1 overflow-x-auto overflow-y-hidden px-2 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+          className="flex h-14 w-full shrink-0 flex-row-reverse items-center justify-start gap-1 overflow-hidden px-2"
         >
           <div className="flex shrink-0 flex-row-reverse items-center gap-1">
             <button
@@ -1051,7 +1079,8 @@ function getConversationPeer(conversation: ChatConversation) {
               </>
             )}
           </div>
-          {orderedRecentHeadConversations.map((conversation) => {
+          <div ref={chatHeadListRef} className="flex min-w-0 flex-1 flex-row-reverse items-center gap-1 overflow-hidden">
+          {visibleRecentHeadConversations.map((conversation) => {
             const peer = getConversationPeer(conversation);
             const isActive = conversation.id === activeConversation.id;
             const unread = (conversation as any)._collapsedUnread ?? (
@@ -1123,6 +1152,7 @@ function getConversationPeer(conversation: ChatConversation) {
               </button>
             );
           })}
+          </div>
         </div>
         <div className="relative bg-[var(--primary)] text-white px-4 py-4 flex items-center gap-3 sticky top-0 z-10">
           <Button
