@@ -6,6 +6,8 @@ import { useCart } from "../../contexts/CartContext";
 type CustomerServiceHubProps = {
   /** Enters the existing booking flow at its first step. */
   onBookRide: () => void;
+  /** A customer can still browse Home during a ride, but cannot book another. */
+  rideDisabled?: boolean;
   /** Opens the existing food experience. */
   onOrderFood: () => void;
   /** Service area named in the trust line. */
@@ -25,6 +27,7 @@ type CustomerServiceHubProps = {
  */
 export default function CustomerServiceHub({
   onBookRide,
+  rideDisabled = false,
   onOrderFood,
   serviceArea = "Gen. T. de Leon",
 }: CustomerServiceHubProps) {
@@ -48,17 +51,20 @@ export default function CustomerServiceHub({
         <button
           type="button"
           onClick={onBookRide}
-          className="flex min-h-44 flex-col items-center justify-center gap-2 rounded-2xl border-2 border-[var(--primary)]/20 bg-[var(--primary-soft)] px-3 py-5 text-center transition-colors hover:border-[var(--primary)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--primary)] active:scale-[0.98] sm:min-h-48"
+          disabled={rideDisabled}
+          className={`flex min-h-44 flex-col items-center justify-center gap-2 rounded-2xl border-2 border-[var(--primary)]/20 bg-[var(--primary-soft)] px-3 py-5 text-center focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--primary)] sm:min-h-48 ${
+            rideDisabled ? "cursor-not-allowed opacity-60" : "transition-colors hover:border-[var(--primary)] active:scale-[0.98]"
+          }`}
         >
           <span className="grid size-14 place-items-center rounded-2xl bg-[var(--primary)] sm:size-16">
             <TerminalIconGlyph className="size-8 text-[var(--primary-foreground)] sm:size-9" aria-hidden="true" />
           </span>
           <span className="text-base font-extrabold leading-tight text-[var(--ink)] sm:text-lg">
-            Book a Ride
+            {rideDisabled ? 'Ride in progress' : 'Book a Ride'}
           </span>
           <span className="text-xs font-bold text-[var(--coral-dark)]">Sakay</span>
           <span className="text-xs leading-snug text-[var(--muted-foreground)]">
-            Shared or private
+            {rideDisabled ? 'Finish your current ride first' : 'Shared or private'}
           </span>
         </button>
 

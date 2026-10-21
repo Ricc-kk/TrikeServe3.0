@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
 import { useNavigate, useParams, useLocation } from 'react-router';
-import { ArrowLeft, ArrowLeftRight, ArrowRight, Camera, ChevronRight, Flag, ImagePlus, MessageCircle, MessagesSquare, MoreVertical, Send, Trash2, X } from 'lucide-react';
+import { ArrowLeft, Camera, ChevronRight, Flag, ImagePlus, MessageCircle, MessagesSquare, MoreVertical, Send, Trash2, X } from 'lucide-react';
 import { Button } from '../ui/button';
 import FloatingChatHead from '../ui/FloatingChatHead';
 import { Card } from '../ui/card';
@@ -109,7 +109,7 @@ export default function ChatHub({
   const location = useLocation();
   const { conversationId } = useParams();
   const { user } = useAuth();
-  const { registerLocalHead, toggleChatOverlay } = useChatHeadVisibility();
+  const { registerLocalHead, toggleChatOverlay, requestChatHeadOpen } = useChatHeadVisibility();
 
   const [conversations, setConversations] = useState<ChatConversation[]>([]);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
@@ -126,9 +126,7 @@ export default function ChatHub({
   const [openMenuConversationId, setOpenMenuConversationId] = useState<string | null>(null);
   const [attachmentControlsOpen, setAttachmentControlsOpen] = useState(true);
   const [isChatHeadMode, setIsChatHeadMode] = useState(false);
-  const [minimizedConversation, setMinimizedConversation] = useState<ChatConversation | null>(null);
   const [chatHeadOrder, setChatHeadOrder] = useState<string[]>([]);
-  const [isChatHeadReorderMode, setIsChatHeadReorderMode] = useState(false);
   const chatHeadListRef = useRef<HTMLDivElement | null>(null);
   const [chatHeadListWidth, setChatHeadListWidth] = useState(0);
   const draggedChatHeadIdRef = useRef<string | null>(null);
@@ -252,7 +250,7 @@ export default function ChatHub({
 
     window.addEventListener('resize', measure);
     return () => window.removeEventListener('resize', measure);
-  }, [activeConversationId, isChatHeadReorderMode]);
+  }, [activeConversationId]);
 
   // Keep the open thread's recent-head row to one line. Newer chats are first
   // (on the right); the oldest entries beyond the available width are omitted.
@@ -282,15 +280,6 @@ export default function ChatHub({
     // The row is visually reversed: an item to the target's left follows it
     // in this array, while an item to its right comes before it.
     nextOrder.splice(targetIndex + (targetSide === 'left' ? 1 : 0), 0, movedId);
-    saveChatHeadOrder(nextOrder);
-  };
-
-  const moveChatHeadByOne = (conversationId: string, direction: 'left' | 'right') => {
-    const nextOrder = orderedRecentHeadConversations.map((conversation) => conversation.id);
-    const index = nextOrder.indexOf(conversationId);
-    const targetIndex = index + (direction === 'left' ? 1 : -1);
-    if (index < 0 || targetIndex < 0 || targetIndex >= nextOrder.length) return;
-    [nextOrder[index], nextOrder[targetIndex]] = [nextOrder[targetIndex], nextOrder[index]];
     saveChatHeadOrder(nextOrder);
   };
 
@@ -793,13 +782,13 @@ function getConversationPeer(conversation: ChatConversation) {
   };
 
   const openChatHead = (conversation = activeConversation) => {
-    if (!conversation) return;
+    if (!conversation || !user?.id) return;
     setOpenMenuConversationId(null);
+    requestChatHeadOpen(user.id, conversation.id);
     if (isDirectMode && activeConversation?.id === conversation.id) {
       setIsChatHeadMode(true);
       return;
     }
-    setMinimizedConversation(conversation);
     if (activeConversationId === conversation.id) navigate(basePath);
   };
 
@@ -1002,8 +991,6 @@ function getConversationPeer(conversation: ChatConversation) {
       ? { ...dbPeer, name: directPeerName, avatar: directPeerAvatar || dbPeer.avatar }
       : dbPeer;
     const peerTheme = getRoleTheme(peer.role);
-    const activeHeadIndex = orderedRecentHeadConversations.findIndex((conversation) => conversation.id === activeConversation.id);
-
     /**
      * Quick replies only make sense in a ride thread.
      *
@@ -1046,55 +1033,9 @@ function getConversationPeer(conversation: ChatConversation) {
         */}
         <div
           role="group"
-          aria-label="Chat heads, newest on the right. Drag to reorder, or use Arrange chat heads to move the open chat."
+          aria-label="Chat heads. Drag to reorder."
           className="flex h-14 w-full shrink-0 flex-row-reverse items-center justify-start gap-1 overflow-hidden px-2"
         >
-          <div className="flex shrink-0 flex-row-reverse items-center gap-1">
-            <button
-              type="button"
-              title="All messages"
-              aria-label="Open all messages"
-              onClick={() => navigate(basePath)}
-              className="grid size-11 shrink-0 place-items-center rounded-full border border-[var(--border)] bg-[var(--surface)] text-[var(--primary)] shadow-sm transition-colors hover:bg-[var(--primary-soft)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--primary)]"
-            >
-              <MessagesSquare className="size-5" aria-hidden="true" />
-            </button>
-            <button
-              type="button"
-              title={isChatHeadReorderMode ? 'Done arranging chat heads' : 'Arrange chat heads'}
-              aria-label={isChatHeadReorderMode ? 'Done arranging chat heads' : 'Arrange chat heads'}
-              aria-pressed={isChatHeadReorderMode}
-              disabled={orderedRecentHeadConversations.length < 2}
-              onClick={() => setIsChatHeadReorderMode((isReordering) => !isReordering)}
-              className={`grid size-11 shrink-0 place-items-center rounded-full border shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--primary)] disabled:cursor-not-allowed disabled:opacity-40 ${isChatHeadReorderMode ? 'border-[var(--primary)] bg-[var(--primary-soft)] text-[var(--primary)]' : 'border-[var(--border)] bg-[var(--surface)] text-[var(--muted-foreground)] hover:bg-[var(--primary-soft)]'}`}
-            >
-              <ArrowLeftRight className="size-5" aria-hidden="true" />
-            </button>
-            {isChatHeadReorderMode && (
-              <>
-                <button
-                  type="button"
-                  title={`Move ${peer.name} left`}
-                  aria-label={`Move ${peer.name} left`}
-                  disabled={activeHeadIndex < 0 || activeHeadIndex >= orderedRecentHeadConversations.length - 1}
-                  onClick={() => moveChatHeadByOne(activeConversation.id, 'left')}
-                  className="grid size-11 shrink-0 place-items-center rounded-full border border-[var(--border)] bg-[var(--surface)] text-[var(--ink)] shadow-sm transition-colors hover:bg-[var(--primary-soft)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--primary)] disabled:cursor-not-allowed disabled:opacity-40"
-                >
-                  <ArrowLeft className="size-5" aria-hidden="true" />
-                </button>
-                <button
-                  type="button"
-                  title={`Move ${peer.name} right`}
-                  aria-label={`Move ${peer.name} right`}
-                  disabled={activeHeadIndex <= 0}
-                  onClick={() => moveChatHeadByOne(activeConversation.id, 'right')}
-                  className="grid size-11 shrink-0 place-items-center rounded-full border border-[var(--border)] bg-[var(--surface)] text-[var(--ink)] shadow-sm transition-colors hover:bg-[var(--primary-soft)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--primary)] disabled:cursor-not-allowed disabled:opacity-40"
-                >
-                  <ArrowRight className="size-5" aria-hidden="true" />
-                </button>
-              </>
-            )}
-          </div>
           <div ref={chatHeadListRef} className="flex min-w-0 flex-1 flex-row-reverse items-center gap-1 overflow-hidden">
           {visibleRecentHeadConversations.map((conversation) => {
             const peer = getConversationPeer(conversation);
@@ -1111,8 +1052,7 @@ function getConversationPeer(conversation: ChatConversation) {
                 draggable
                 data-chat-head-id={conversation.id}
                 title={`${peer.name} · Drag to reorder`}
-                aria-label={`Open chat with ${peer.name}${unread > 0 ? `, ${unread} unread` : ''}. Drag to reorder, press Alt and an arrow key, or use Arrange chat heads and its move buttons.`}
-                aria-keyshortcuts="Alt+ArrowLeft Alt+ArrowRight"
+                aria-label={`Open chat with ${peer.name}${unread > 0 ? `, ${unread} unread` : ''}. Drag to reorder.`}
                 aria-current={isActive ? 'page' : undefined}
                 onDragStart={(event) => {
                   draggedChatHeadIdRef.current = conversation.id;
@@ -1139,11 +1079,6 @@ function getConversationPeer(conversation: ChatConversation) {
                   draggedChatHeadIdRef.current = null;
                   window.setTimeout(() => { suppressChatHeadClickRef.current = false; }, 0);
                 }}
-                onKeyDown={(event) => {
-                  if (!event.altKey || (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight')) return;
-                  event.preventDefault();
-                  moveChatHeadByOne(conversation.id, event.key === 'ArrowLeft' ? 'left' : 'right');
-                }}
                 onClick={() => {
                   if (suppressChatHeadClickRef.current) {
                     suppressChatHeadClickRef.current = false;
@@ -1169,6 +1104,15 @@ function getConversationPeer(conversation: ChatConversation) {
             );
           })}
           </div>
+          <button
+            type="button"
+            title="All messages"
+            aria-label="Open all messages"
+            onClick={() => navigate(basePath)}
+            className="grid size-11 shrink-0 place-items-center rounded-full border border-[var(--border)] bg-[var(--surface)] text-[var(--primary)] shadow-sm transition-colors hover:bg-[var(--primary-soft)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--primary)]"
+          >
+            <MessagesSquare className="size-5" aria-hidden="true" />
+          </button>
         </div>
         <div className="relative bg-[var(--primary)] text-white px-4 py-4 flex items-center gap-3 sticky top-0 z-10">
           <Button
@@ -1638,20 +1582,6 @@ function getConversationPeer(conversation: ChatConversation) {
       ) : renderThread()}
       {renderReportDialog()}
       {renderDeleteConversationDialog()}
-      {minimizedConversation && !activeConversationId && (() => {
-        const peer = getConversationPeer(minimizedConversation);
-        return (
-          <FloatingChatHead
-            headId={minimizedConversation.id}
-            storageKey={`trikeserve_chat_head_pos_${user.role}`}
-            peerAvatar={peer.avatar}
-            peerLabel={peer.name}
-            unread={0}
-            pulseKey={chatHeadPulseKey}
-            onOpen={() => toggleChatOverlay(minimizedConversation.id)}
-          />
-        );
-      })()}
       {customerLayout && !activeConversationId && <BottomNav active="messages" />}
     </div>
   );

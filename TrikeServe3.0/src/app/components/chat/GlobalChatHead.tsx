@@ -48,15 +48,19 @@ export default function GlobalChatHead() {
     toggleChatOverlay,
     closeChatOverlay,
     setRecentChatHeads,
+    chatHeadOpenRequest,
   } = useChatHeadVisibility();
   const location = useLocation();
   const navigate = useNavigate();
   const previousRouteRef = useRef({ userId: user?.id ?? null, pathname: location.pathname });
   const [conversations, setConversations] = useState<ChatConversation[]>([]);
   const [overlayConversation, setOverlayConversation] = useState<ChatConversation | null>(null);
+  const [requestedConversation, setRequestedConversation] = useState<ChatConversation | null>(null);
   const [selectedConversationId, setSelectedConversationId] = useState<string | null>(null);
   const [pulseKey, setPulseKey] = useState(0);
-  const lastSignalRef = useRef('');
+  const [isHeadActivated, setIsHeadActivated] = useState(false);
+  const messageSignalsByUserRef = useRef(new Map<string, Map<string, string>>());
+  const consumedOpenRequestRef = useRef<number | null>(null);
   const conversationsOwnerRef = useRef<string | null>(null);
   const previousAuthRef = useRef<{ id: string; role: string } | null>(
     user?.id ? { id: user.id, role: user.role } : null,
@@ -85,7 +89,6 @@ export default function GlobalChatHead() {
     if (!user?.id) {
       conversationsOwnerRef.current = null;
       setConversations([]);
-      lastSignalRef.current = '';
       return;
     }
 
@@ -98,8 +101,39 @@ export default function GlobalChatHead() {
           console.error('[GlobalChatHead] Error loading conversations:', error);
           return;
         }
+        const rows = (data || []) as ChatConversation[];
+        const previousSignals = messageSignalsByUserRef.current.get(user.id);
+        const nextSignals = new Map(rows.map((item) => [
+          item.id,
+          `${item.last_message_at || ''}:${item.last_message_sender_id || ''}`,
+        ]));
+        const activityOf = (item: ChatConversation) =>
+          new Date(item.last_message_at || item.updated_at).getTime() || 0;
+        const changedMessages = previousSignals
+          ? rows.filter((item) =>
+              Boolean(item.last_message_at || item.last_message_sender_id) &&
+              previousSignals.get(item.id) !== `${item.last_message_at || ''}:${item.last_message_sender_id || ''}`
+            )
+          : [];
+        messageSignalsByUserRef.current.set(user.id, nextSignals);
+
+        if (changedMessages.length > 0) {
+          const newestMessage = [...changedMessages].sort((a, b) => activityOf(b) - activityOf(a))[0];
+          setIsHeadActivated(true);
+          setSelectedConversationId(newestMessage.id);
+          setPulseKey((key) => key + 1);
+          try {
+            window.localStorage.removeItem(`trikeserve_global_chat_head_dismissed_${user.id}`);
+            window.localStorage.removeItem(
+              `trikeserve_chat_head_dismissed_${user.id}_trikeserve_chat_head_pos_${user.role}`,
+            );
+          } catch {
+            // The activity still updates in memory if persistence is unavailable.
+          }
+        }
+
         conversationsOwnerRef.current = user.id;
-        setConversations((data || []) as ChatConversation[]);
+        setConversations(rows);
       } catch (error) {
         if (active) console.error('[GlobalChatHead] Unexpected inbox error:', error);
       }
@@ -137,7 +171,8 @@ export default function GlobalChatHead() {
 
   useEffect(() => {
     setSelectedConversationId(null);
-    lastSignalRef.current = '';
+    setRequestedConversation(null);
+    setIsHeadActivated(false);
   }, [user?.id]);
 
   useEffect(() => {
@@ -156,6 +191,13 @@ export default function GlobalChatHead() {
       return;
     }
 
+    setIsHeadActivated(true);
+    if (openedConversationId) setSelectedConversationId(openedConversationId);
+    else if (enteredThreadWhileSignedIn) {
+      const threadId = location.pathname.match(/\/messages\/thread\/([^/]+)/)?.[1];
+      if (threadId) setSelectedConversationId(decodeURIComponent(threadId));
+    }
+
     // Manually opening a thread also restores the screen-specific head used by
     // ride and order pages when the user returns there.
     try {
@@ -167,6 +209,50 @@ export default function GlobalChatHead() {
       // Dismissal persistence is a convenience; manual open still works here.
     }
   }, [location.pathname, openedConversationId, user?.id, user?.role]);
+
+  useEffect(() => {
+    const request = chatHeadOpenRequest;
+    if (
+      !user?.id ||
+      !request ||
+      request.userId !== user.id ||
+      consumedOpenRequestRef.current === request.requestId
+    ) {
+      return;
+    }
+
+    consumedOpenRequestRef.current = request.requestId;
+    setIsHeadActivated(true);
+    setSelectedConversationId(request.conversationId);
+    setPulseKey((key) => key + 1);
+    try {
+      window.localStorage.removeItem(`trikeserve_global_chat_head_dismissed_${user.id}`);
+      window.localStorage.removeItem(
+        `trikeserve_chat_head_dismissed_${user.id}_trikeserve_chat_head_pos_${user.role}`,
+      );
+    } catch {
+      // Manual open still activates the head for this session.
+    }
+  }, [chatHeadOpenRequest, user?.id, user?.role]);
+
+  useEffect(() => {
+    const request = chatHeadOpenRequest;
+    if (!user?.id || !request || request.userId !== user.id) return;
+    const existing = conversations.find((item) => item.id === request.conversationId);
+    if (existing) {
+      setRequestedConversation(existing);
+      return;
+    }
+    if (requestedConversation?.id === request.conversationId) return;
+
+    let active = true;
+    void supabaseHelpers.getChatConversationById(request.conversationId).then(({ data, error }) => {
+      if (active && !error && data) setRequestedConversation(data as ChatConversation);
+    });
+    return () => {
+      active = false;
+    };
+  }, [chatHeadOpenRequest, conversations, requestedConversation?.id, user?.id]);
 
   useEffect(() => {
     if (!user?.id) {
@@ -205,30 +291,9 @@ export default function GlobalChatHead() {
 
   const latestConversation = recentConversations[0] || null;
   const conversation = recentConversations.find((item) => item.id === selectedConversationId)
+    || conversations.find((item) => item.id === selectedConversationId)
+    || (requestedConversation?.id === selectedConversationId ? requestedConversation : null)
     || latestConversation;
-
-  useEffect(() => {
-    if (!latestConversation || !user?.id) {
-      lastSignalRef.current = '';
-      return;
-    }
-    // Read-count changes should update the badge without re-opening a dismissed
-    // head. A new message changes its activity timestamp or sender, and promotes
-    // that conversation to the one visible while the chat is closed.
-    const signal = `${latestConversation.id}:${latestConversation.last_message_at || ''}:${latestConversation.last_message_sender_id || ''}`;
-    if (lastSignalRef.current && lastSignalRef.current !== signal) {
-      setPulseKey((key) => key + 1);
-      setSelectedConversationId(latestConversation.id);
-      try {
-        window.localStorage.removeItem(
-          `trikeserve_chat_head_dismissed_${user.id}_trikeserve_chat_head_pos_${user.role}`,
-        );
-      } catch {
-        // The activity still updates in memory if persistence is unavailable.
-      }
-    }
-    lastSignalRef.current = signal;
-  }, [latestConversation, user?.id]);
 
   const hasOpenedConversationInList = Boolean(
     openedConversationId && conversations.some((item) => item.id === openedConversationId),
@@ -274,10 +339,8 @@ export default function GlobalChatHead() {
   }
 
   const messagesPath = user.role === 'rider' ? '/rider/messages' : `/${user.role}/messages`;
-  const isCurrentThread = Boolean(
-    conversation && location.pathname === `${messagesPath}/thread/${conversation.id}`,
-  );
   const isOnMessagesPage = location.pathname === messagesPath || location.pathname.startsWith(`${messagesPath}/`);
+  const isOnMessageThread = isOnMessagesPage && /\/messages\/(?:thread|business|driver)\//.test(location.pathname);
   const selectedOverlayConversation = openedConversationId
     ? conversations.find((item) => item.id === openedConversationId) ||
       (overlayConversation?.id === openedConversationId ? overlayConversation : null)
@@ -315,10 +378,11 @@ export default function GlobalChatHead() {
         key={user.id}
         isGlobal
         hidden={
+          !isHeadActivated ||
           orderDetailHasLocalHead ||
           Boolean(conversation && localHeadIds.includes(conversation.id)) ||
           Boolean(openedConversationId) ||
-          (isOnMessagesPage && isCurrentThread)
+          isOnMessageThread
         }
         storageKey={`trikeserve_global_chat_head_pos_${user.role}`}
         dismissalStorageKey={`trikeserve_global_chat_head_dismissed_${user.id}`}

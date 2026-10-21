@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { ArrowDown, ArrowRight, CheckCircle, ClipboardCheck, Clock3, MapPin, ShieldCheck, Store, Trash2, Users, XCircle, type LucideIcon } from "lucide-react";
 import { Link } from "react-router";
 
@@ -7,6 +7,7 @@ import ConfirmationModal from "../ui/confirmation-modal";
 import { TerminalIconGlyph } from "../ui/TerminalIcon";
 import AdminAnalytics from "./AdminAnalytics";
 import { isDevModeEnabled, setDevModeEnabled } from "../../../lib/devMode";
+import { supabase } from "../../../utils/supabase";
 
 type ReviewAccount = {
   id: string;
@@ -24,6 +25,13 @@ type OverviewStats = {
   totalRiders: number;
   totalBusinesses: number;
   pendingCount: number;
+};
+
+type OnlineAccount = {
+  id: string;
+  name: string;
+  email: string;
+  role: "customer" | "rider" | "business";
 };
 
 type SuperAdminOverviewProps = {
@@ -65,10 +73,74 @@ export default function SuperAdminOverview({
 }: SuperAdminOverviewProps) {
   const [showAllPending, setShowAllPending] = useState(false);
   const [showClearTestDataConfirmation, setShowClearTestDataConfirmation] = useState(false);
+  const [onlineAccounts, setOnlineAccounts] = useState<OnlineAccount[]>([]);
+  const [presenceStatus, setPresenceStatus] = useState<"connecting" | "live" | "error">("connecting");
   const [isDevMode, setIsDevMode] = useState(isDevModeEnabled);
   const hasData = lastUpdated !== null;
   const firstLoad = loading && !hasData;
   const shown = showAllPending ? pending : pending.slice(0, 3);
+
+  useEffect(() => {
+    let active = true;
+    let latestRequest = 0;
+    const channel = supabase.channel("platform-online-users");
+
+    const refreshOnlineAccounts = async () => {
+      const request = ++latestRequest;
+      const onlineIds = Object.keys(channel.presenceState());
+
+      if (onlineIds.length === 0) {
+        if (active && request === latestRequest) {
+          setOnlineAccounts([]);
+          setPresenceStatus("live");
+        }
+        return;
+      }
+
+      const { data, error } = await supabase
+        .from("users")
+        .select("id,name,email,role,business_name")
+        .in("id", onlineIds);
+
+      if (!active || request !== latestRequest) return;
+      if (error) {
+        setPresenceStatus("error");
+        return;
+      }
+
+      const accounts: OnlineAccount[] = (data || [])
+        .filter((account: any) => ["customer", "rider", "business"].includes(account.role))
+        .map((account: any) => ({
+          id: account.id,
+          name: account.role === "business"
+            ? (account.business_name || account.name || "Business")
+            : (account.name || "User"),
+          email: account.email || "",
+          role: account.role,
+        }))
+        .sort((a, b) => a.name.localeCompare(b.name));
+
+      setOnlineAccounts(accounts);
+      setPresenceStatus("live");
+    };
+
+    channel
+      .on("presence", { event: "sync" }, () => { void refreshOnlineAccounts(); })
+      .subscribe((status) => {
+        if (!active) return;
+        if (status === "SUBSCRIBED") {
+          setPresenceStatus("live");
+          void refreshOnlineAccounts();
+        } else if (status === "CHANNEL_ERROR" || status === "TIMED_OUT") {
+          setPresenceStatus("error");
+        }
+      });
+
+    return () => {
+      active = false;
+      void supabase.removeChannel(channel);
+    };
+  }, [refreshToken]);
 
   const confirmClearTestData = async () => {
     const completed = await onClearTestData();
@@ -132,6 +204,50 @@ export default function SuperAdminOverview({
             );
           })}
         </div>
+      </section>
+
+      <section aria-labelledby="overview-online-users-title" aria-busy={presenceStatus === "connecting"}>
+        <Card className="gap-0 overflow-hidden rounded-3xl border-line bg-card">
+          <div className="flex flex-wrap items-center gap-3 border-b border-line p-4 sm:p-5">
+            <span className="relative grid size-10 shrink-0 place-items-center rounded-xl bg-[var(--success-soft)] text-[var(--success-ink)]">
+              <Users className="size-5" aria-hidden="true" />
+              <span className={`absolute bottom-1 right-1 size-2.5 rounded-full border-2 border-card ${presenceStatus === "live" ? "bg-[var(--success-ink)]" : "bg-[var(--amber-ink)]"}`} aria-hidden="true" />
+            </span>
+            <div className="min-w-0 flex-1">
+              <h2 id="overview-online-users-title" className="text-base font-bold text-[var(--ink)]">Online users</h2>
+              <p className="mt-0.5 text-xs leading-relaxed text-[var(--muted-foreground)]">Customers, drivers, and businesses currently connected</p>
+            </div>
+            <span className="rounded-lg bg-[var(--success-soft)] px-2.5 py-1 text-sm font-extrabold text-[var(--success-ink)] tabular-nums" aria-label={presenceStatus === "live" ? `${onlineAccounts.length} online users` : presenceStatus === "connecting" ? "Loading online users" : "Online user count unavailable"}>
+              {presenceStatus === "live" ? onlineAccounts.length.toLocaleString() : "—"}
+            </span>
+          </div>
+
+          {presenceStatus === "connecting" ? (
+            <p role="status" className="px-5 py-8 text-center text-sm text-[var(--muted-foreground)]">Connecting to live user presence…</p>
+          ) : presenceStatus === "error" ? (
+            <p role="alert" className="px-5 py-8 text-center text-sm text-[var(--muted-foreground)]">Live user presence is temporarily unavailable. Refresh the overview to try again.</p>
+          ) : onlineAccounts.length === 0 ? (
+            <p className="px-5 py-8 text-center text-sm text-[var(--muted-foreground)]">No customers, drivers, or businesses are online right now.</p>
+          ) : (
+            <ul aria-label="Users currently online" className="grid max-h-96 gap-2 overflow-y-auto p-4 sm:grid-cols-2 sm:p-5">
+              {onlineAccounts.map(account => (
+                <li key={account.id} className="flex min-w-0 items-center gap-3 rounded-2xl border border-line bg-card px-3 py-3">
+                  <span className="grid size-10 shrink-0 place-items-center rounded-full bg-soft text-sm font-bold uppercase text-[var(--ink)]" aria-hidden="true">
+                    {account.name.trim().charAt(0) || "U"}
+                  </span>
+                  <span className="min-w-0 flex-1">
+                    <span className="block truncate text-sm font-bold text-[var(--ink)]">{account.name}</span>
+                    {account.email && <span className="block truncate text-xs text-[var(--muted-foreground)]">{account.email}</span>}
+                  </span>
+                  <span className="shrink-0 rounded-md bg-[var(--success-soft)] px-2 py-1 text-[10px] font-bold text-[var(--success-ink)]">
+                    {account.role === "rider" ? "Driver" : account.role === "business" ? "Business" : "Customer"}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          )}
+          <p className="border-t border-line px-4 py-3 text-xs text-[var(--muted-foreground)] sm:px-5">Updates live while users have TrikeServe open.</p>
+        </Card>
       </section>
 
       {/* Keep the review queue first on smaller screens; only create a side rail

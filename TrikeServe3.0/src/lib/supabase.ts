@@ -2289,6 +2289,37 @@ export const supabaseHelpers = {
       passengers = [];
     }
 
+    // Older rows stored the whole lobby fare in price_per_seat. Preserve that
+    // total across the existing passengers before adding a newly priced seat.
+    const missingFareCount = passengers.filter((p: any) => {
+      if (p?.fare == null || p.fare === '') return true;
+      const fare = Number(p.fare);
+      return !Number.isFinite(fare) || fare < 0;
+    }).length;
+    const hasAnyPassengerFare = passengers.some((p: any) => {
+      if (p?.fare == null || p.fare === '') return false;
+      const fare = Number(p.fare);
+      return Number.isFinite(fare) && fare >= 0;
+    });
+    const legacyTripTotal = Number(lobby.price_per_seat || 0);
+    const validLegacyTripTotal = Number.isFinite(legacyTripTotal) && legacyTripTotal >= 0 ? legacyTripTotal : 0;
+    const totalCents = Math.round(validLegacyTripTotal * 100);
+    const baseLegacyFareCents = missingFareCount > 0 ? Math.floor(totalCents / missingFareCount) : 0;
+    let remainingLegacyFareCents = missingFareCount > 0
+      ? totalCents - baseLegacyFareCents * missingFareCount
+      : 0;
+    passengers = passengers.map((p: any) => {
+      if (p?.fare != null && p.fare !== '') {
+        const fare = Number(p.fare);
+        if (Number.isFinite(fare) && fare >= 0) return { ...p, fare };
+      }
+      if (hasAnyPassengerFare) return { ...p, fare: validLegacyTripTotal };
+
+      const fareCents = baseLegacyFareCents + (remainingLegacyFareCents > 0 ? 1 : 0);
+      remainingLegacyFareCents = Math.max(0, remainingLegacyFareCents - 1);
+      return { ...p, fare: fareCents / 100 };
+    });
+
     // Check if passenger already in lobby
     if (passengers.some((p: any) => p.id === passenger.id)) {
       return { data: lobby, error: null };
@@ -2367,11 +2398,12 @@ export const supabaseHelpers = {
 
        const timestamp = new Date().toISOString();
 
-        const isHostCancelling = lobby.customer_id === passengerId;
+        const isHostLeaving = lobby.customer_id === passengerId;
 
-        // If the host cancels, or if no passengers are left, mark the lobby as cancelled.
-        if (isHostCancelling || updatedPassengers.length === 0) {
-          console.log(isHostCancelling ? '🛑 Host is cancelling the lobby' : '🗑️ Lobby is now empty, marking as cancelled');
+        // Only an empty lobby ends. When its host leaves, the earliest remaining
+        // main passenger takes over; companion seats cannot become the host.
+        if (updatedPassengers.length === 0) {
+          console.log('🗑️ Lobby is now empty, marking as cancelled');
          const { data, error } = await supabase
            .from('shared_ride_lobbies')
            .update({
@@ -2392,14 +2424,41 @@ export const supabaseHelpers = {
          return { data, error };
        }
 
-       // Update lobby with remaining passengers
-       console.log('📝 Updating lobby with remaining passengers');
+       // Transfer ownership to the next main passenger in join order. This is
+       // the first remaining non-companion in passengers_json (Rob -> Lou in
+       // the example where Nixon joined after Lou).
+       const nextHost = isHostLeaving
+         ? updatedPassengers.find((passenger: any) => !String(passenger.id || '').includes('_companion_')) || updatedPassengers[0]
+         : null;
+       const updates: Record<string, any> = {
+         passengers_json: updatedPassengers,
+         updated_at: timestamp,
+       };
+
+       if (nextHost) {
+         updates.customer_id = nextHost.id;
+         const nextHostDropoff = nextHost.dropoff || nextHost.dropoffAddress;
+         if (nextHostDropoff) updates.dropoff_location = nextHost.dropoff || nextHost.dropoffAddress;
+         if (nextHost.dropoffAddress || nextHost.dropoff) {
+           updates.dropoff_address = nextHost.dropoffAddress || nextHost.dropoff;
+         }
+         const nextHostLat = Number(nextHost.dropoffLat);
+         const nextHostLng = Number(nextHost.dropoffLng);
+         if (
+           nextHost.dropoffLat != null &&
+           nextHost.dropoffLng != null &&
+           Number.isFinite(nextHostLat) &&
+           Number.isFinite(nextHostLng)
+         ) {
+           updates.dropoff_lat = nextHostLat;
+           updates.dropoff_lng = nextHostLng;
+         }
+       }
+
+       console.log(isHostLeaving ? '📝 Updating lobby and promoting the next host' : '📝 Updating lobby with remaining passengers');
        const { data, error } = await supabase
          .from('shared_ride_lobbies')
-         .update({
-           passengers_json: updatedPassengers,
-           updated_at: timestamp
-         })
+         .update(updates)
          .eq('id', lobbyId)
          .select()
          .single();

@@ -45,6 +45,9 @@ export const DEFAULT_RATES: RideRates = {
  */
 export const DEFAULT_MAX_PASSENGERS = 4;
 
+/** Share rides split only the base fare across four passenger shares. */
+export const SHARED_RIDE_BASE_FARE_SHARES = 4;
+
 /** Numeric coercion that treats null/blank/missing as "use the fallback". */
 function num(value: any, fallback: number): number {
   if (value == null || value === '') return fallback;
@@ -182,6 +185,68 @@ export function computeDistanceFare(
   if (distanceKm == null || !Number.isFinite(distanceKm)) return rates.baseFare;
   const billableKm = Math.max(0, distanceKm - Math.max(0, rates.baseFareIncludedKm));
   return Math.ceil(rates.baseFare + rates.perKm * billableKm);
+}
+
+/**
+ * A shared passenger pays one quarter of the base fare plus the full per-km
+ * charge for distance beyond the included kilometres. The final passenger fare
+ * rounds up to a whole peso, matching the other ride fare quotes.
+ */
+export function computeSharedRideFarePerPassenger(
+  rates: Pick<RideRates, "baseFare" | "baseFareIncludedKm" | "perKm">,
+  distanceKm: number | null,
+): number {
+  const baseShare = rates.baseFare / SHARED_RIDE_BASE_FARE_SHARES;
+  if (distanceKm == null || !Number.isFinite(distanceKm)) return Math.ceil(baseShare);
+
+  const billableKm = Math.max(0, distanceKm - Math.max(0, rates.baseFareIncludedKm));
+  return Math.ceil(baseShare + rates.perKm * billableKm);
+}
+
+/**
+ * Fill missing passenger fares from an older lobby row. Historically that row's
+ * `price_per_seat` value was the whole lobby fare, so divide it across passengers
+ * that do not yet have their own stored fare.
+ */
+export function backfillLegacySharedRidePassengerFares<T extends { fare?: unknown }>(
+  passengers: ReadonlyArray<T>,
+  legacyTripTotal = 0,
+): Array<T & { fare: number }> {
+  const hasFare = (passenger: T) => {
+    if (passenger?.fare == null || passenger.fare === "") return false;
+    const fare = Number(passenger.fare);
+    return Number.isFinite(fare) && fare >= 0;
+  };
+  const hasAnyFare = passengers.some(hasFare);
+  const missingCount = passengers.filter(passenger => !hasFare(passenger)).length;
+  const total = Number(legacyTripTotal);
+  const validTotal = Number.isFinite(total) && total >= 0 ? total : 0;
+  const totalCents = Math.round(validTotal * 100);
+  const baseShareCents = missingCount > 0 ? Math.floor(totalCents / missingCount) : 0;
+  let remainingShareCents = missingCount > 0 ? totalCents - baseShareCents * missingCount : 0;
+
+  return passengers.map(passenger => {
+    if (hasFare(passenger)) return { ...passenger, fare: Number(passenger.fare) };
+
+    // If this row already has individual fares, the old column is a per-seat
+    // fallback. Otherwise it is the legacy trip total; split its cents evenly.
+    let fare = validTotal;
+    if (!hasAnyFare) {
+      const shareCents = baseShareCents + (remainingShareCents > 0 ? 1 : 0);
+      remainingShareCents = Math.max(0, remainingShareCents - 1);
+      fare = shareCents / 100;
+    }
+    return { ...passenger, fare };
+  });
+}
+
+/** Sum stored passenger fares, filling legacy passengers from their trip total. */
+export function sumSharedRidePassengerFares(
+  passengers: ReadonlyArray<{ fare?: unknown }>,
+  legacyTripTotal = 0,
+): number {
+  return backfillLegacySharedRidePassengerFares(passengers, legacyTripTotal)
+    .reduce((total, passenger) => total + passenger.fare, 0);
 }
 
 /** Currency formatting used by the fare breakdown labels. */

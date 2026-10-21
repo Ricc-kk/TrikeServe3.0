@@ -79,7 +79,6 @@ export default function Login() {
   const [error, setError] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [isDevMode, setIsDevMode] = useState(isDevModeEnabled);
-  const [isHoldingLogo, setIsHoldingLogo] = useState(false);
   const [showAccounts, setShowAccounts] = useState(false);
   const [accounts, setAccounts] = useState<TestAccount[]>([]);
   const [resendStatus, setResendStatus] = useState<"idle" | "sending" | "sent" | "error">("idle");
@@ -89,13 +88,11 @@ export default function Login() {
   const startDevModeHold = () => {
     if (devModeHoldTimer.current !== null) return;
 
-    setIsHoldingLogo(true);
     devModeHoldTimer.current = window.setTimeout(() => {
       const nextMode = !isDevMode;
       setDevModeEnabled(nextMode);
       setIsDevMode(nextMode);
       setShowAccounts(false);
-      setIsHoldingLogo(false);
       devModeHoldTimer.current = null;
     }, DEV_MODE_HOLD_MS);
   };
@@ -105,7 +102,6 @@ export default function Login() {
       window.clearTimeout(devModeHoldTimer.current);
       devModeHoldTimer.current = null;
     }
-    setIsHoldingLogo(false);
   };
 
   const exitDevMode = () => {
@@ -345,15 +341,6 @@ export default function Login() {
                 alt="TrikeServe logo"
                 className="size-full object-contain p-1"
               />
-              <span className="absolute inset-x-0 bottom-0 h-1.5 bg-[var(--primary-soft)]" aria-hidden="true">
-                <span
-                  className="block h-full bg-[var(--primary)]"
-                  style={{
-                    width: isHoldingLogo ? "100%" : "0%",
-                    transition: isHoldingLogo ? `width ${DEV_MODE_HOLD_MS}ms linear` : "width 120ms ease-out",
-                  }}
-                />
-              </span>
             </button>
           </div>
 

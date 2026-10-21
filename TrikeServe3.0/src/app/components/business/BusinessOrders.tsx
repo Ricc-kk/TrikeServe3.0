@@ -128,6 +128,8 @@ export default function BusinessOrders() {
     scopeKey: string;
     signals: Map<string, string>;
   } | null>(null);
+  const activatedDriverChatScopeRef = useRef<string | null>(null);
+  const activatedDriverConversationIdsRef = useRef(new Set<string>());
   /** The one dialog left in this flow: confirming the GCash payment. */
   const [confirmAction, setConfirmAction] = useState<'accept' | null>(null);
   // Decline collects a reason before the order is cancelled.
@@ -155,6 +157,8 @@ export default function BusinessOrders() {
     if (!businessUserId) {
       setIncomingDriverChat(null);
       previousDriverChatSignalsRef.current = null;
+      activatedDriverChatScopeRef.current = null;
+      activatedDriverConversationIdsRef.current.clear();
       return;
     }
 
@@ -178,11 +182,15 @@ export default function BusinessOrders() {
         );
 
       const scopeKey = `${businessUserId}:business-orders`;
+      if (activatedDriverChatScopeRef.current !== scopeKey) {
+        activatedDriverChatScopeRef.current = scopeKey;
+        activatedDriverConversationIdsRef.current.clear();
+      }
       const previousSignals = previousDriverChatSignalsRef.current?.scopeKey === scopeKey
         ? previousDriverChatSignalsRef.current.signals
         : null;
       const nextSignals = new Map<string, string>();
-      let receivedNewMessage = false;
+      const changedConversationIds: string[] = [];
       conversations.forEach(({ conversation }) => {
         const signal = `${conversation.last_message_at || ''}:${conversation.last_message_sender_id || ''}`;
         const previousSignal = previousSignals?.get(conversation.id);
@@ -191,15 +199,19 @@ export default function BusinessOrders() {
           conversation.last_message_at &&
           (previousSignal === undefined || previousSignal !== signal)
         ) {
-          receivedNewMessage = true;
+          changedConversationIds.push(conversation.id);
         }
         nextSignals.set(conversation.id, signal);
       });
       previousDriverChatSignalsRef.current = { scopeKey, signals: nextSignals };
-      if (receivedNewMessage) setDriverChatPulseKey((key) => key + 1);
+      if (changedConversationIds.length > 0) {
+        changedConversationIds.forEach((id) => activatedDriverConversationIdsRef.current.add(id));
+        setDriverChatPulseKey((key) => key + 1);
+      }
 
       const incoming = conversations
         .filter(({ conversation, peerId, unread }) =>
+          activatedDriverConversationIdsRef.current.has(conversation.id) &&
           unread > 0 && conversation.last_message_sender_id === peerId
         )
         .sort((a, b) =>

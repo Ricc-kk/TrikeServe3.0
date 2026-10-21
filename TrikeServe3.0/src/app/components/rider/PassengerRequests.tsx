@@ -19,6 +19,7 @@ import { DEFAULT_TERMINAL_COLOR, normalizeTerminalColor, terminalMarkerIcon } fr
 import tricycleIcon from "../../../assets/0b76d1aa56b8ad6e15dd4efc8a0100b0ca5762a1.png";
 import ActiveRideButton from "./ActiveRideButton";
 import ReasonPromptModal from "../ui/reason-prompt-modal";
+import { backfillLegacySharedRidePassengerFares, sumSharedRidePassengerFares } from "@/lib/pricing";
 
 function decodeRoutePolyline(encoded: string): google.maps.LatLngLiteral[] {
   const points: google.maps.LatLngLiteral[] = [];
@@ -126,6 +127,7 @@ interface PassengerRequest {
     name: string;
     emoji: string;
     joinedAt: string;
+    fare?: number;
   }>;
   maxPassengers?: number;
   terminalId?: string | null;
@@ -441,7 +443,11 @@ export default function PassengerRequests() {
           };
         });
         const mappedLobbies = visibleLobbies.map((lobby: any) => {
-          const passengers = Array.isArray(lobby.passengers_json) ? lobby.passengers_json : [];
+          const storedPassengers = Array.isArray(lobby.passengers_json) ? lobby.passengers_json : [];
+          const passengers = backfillLegacySharedRidePassengerFares(
+            storedPassengers,
+            Number(lobby.price_per_seat || 0),
+          );
           return {
             id: `lobby_${lobby.id}`,
             type: 'shared',
@@ -454,7 +460,7 @@ export default function PassengerRequests() {
             dropoffLat: lobby.dropoff_lat || undefined,
             dropoffLng: lobby.dropoff_lng || undefined,
             payment: lobby.payment_method === 'COD' ? 'COD' : 'PREPAID',
-            amount: Number(lobby.price_per_seat || 15),
+            amount: sumSharedRidePassengerFares(passengers),
             passengers: passengers.length,
             maxPassengers: Number(lobby.max_seats || 3),
             customerName: passengers.length > 1 ? passengers.map((p: any) => p.name || nameMap[p.id] || 'Passenger').join(', ') : (passengers[0]?.name || nameMap[passengers[0]?.id] || 'Customer'),
@@ -1395,11 +1401,14 @@ export default function PassengerRequests() {
               {previewRequest.type === 'shared' && (previewRequest.passengerDetails?.length || 0) > 0 && (
                 <section className="mt-4 rounded-xl border border-[var(--border)] bg-[var(--muted)] p-3">
                   <h3 className="mb-2 text-sm font-bold text-[var(--ink)]">Passengers</h3>
-                  <div className="flex flex-wrap gap-2">
+                  <div className="space-y-2">
                     {previewRequest.passengerDetails?.map((passenger) => (
-                      <span key={passenger.id} className="max-w-40 truncate rounded-full border border-[var(--border)] bg-[var(--surface)] px-3 py-1.5 text-xs font-semibold text-[var(--ink)]">
-                        {passenger.name}
-                      </span>
+                      <div key={passenger.id} className="flex items-center justify-between gap-3 rounded-lg border border-[var(--border)] bg-[var(--surface)] px-3 py-2 text-xs">
+                        <span className="truncate font-semibold text-[var(--ink)]">{passenger.name}</span>
+                        <span className="shrink-0 font-bold text-[var(--primary)]">
+                          {passenger.fare == null ? "Fare unavailable" : `₱${Number(passenger.fare).toFixed(2)}`}
+                        </span>
+                      </div>
                     ))}
                   </div>
                 </section>

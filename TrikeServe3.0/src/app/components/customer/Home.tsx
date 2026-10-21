@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from "react";
-import { Search, MapPin, Users, UsersRound, CarTaxiFront, ChevronDown, X, Clock, Utensils, User, Navigation, MessageCircle, Home as HomeIcon, ShoppingCart, ClipboardList, Star, ArrowLeft, Flag, CreditCard, Check } from "lucide-react";
+import { Search, MapPin, Users, UsersRound, CarTaxiFront, ChevronDown, X, Clock, Utensils, User, Navigation, MessageCircle, Home as HomeIcon, ShoppingCart, ClipboardList, Star, ArrowLeft, Flag, CreditCard, Check, Route as RouteIcon, Eye, EyeOff } from "lucide-react";
 import { Link, useLocation, useNavigate } from "react-router";
 import { Button } from "../ui/button";
 import { Card } from "../ui/card";
@@ -25,9 +25,9 @@ import { createCustomerMarkerIcon as createDeliveryCustomerMarkerIcon, createRes
 import { autocompletePlacesNew, createPlacesSessionToken, fetchPlaceDetailsNew, searchPlacesText, type PlaceResult, type PlacesAutocompleteSuggestion } from "@/lib/placesApi";
 import tricycleIcon from '../../../assets/0b76d1aa56b8ad6e15dd4efc8a0100b0ca5762a1.png';
 import { useAuth } from "../../contexts/AuthContext";
-import { supabaseHelpers, isPointWithinAnyTerminalBorder, isPointWithinAnyTerminalRoute, isPointInPolygon, isPointOnRoadCorridor, normalizeBoundaryRoad, normalizeBoundaryArea, normalizeRoadWidth, geocodeAddress, logAudit, type LatLngPoint } from "@/lib/supabase";
+import { supabaseHelpers, isPointWithinAnyTerminalBorder, isPointInPolygon, isPointOnRoadCorridor, normalizeBoundaryRoad, normalizeBoundaryArea, normalizeRoadWidth, geocodeAddress, logAudit, haversineDistanceMeters, type LatLngPoint } from "@/lib/supabase";
 import { TerminalIconGlyph, terminalMarkerIcon, normalizeTerminalColor, normalizeRouteColor, normalizeBorderColor } from "../ui/TerminalIcon";
-import { computeRideFare, normalizeRates, terminalRates, privateRideRates, DEFAULT_MAX_PASSENGERS } from "@/lib/pricing";
+import { computeRideFare, computeSharedRideFarePerPassenger, normalizeRates, terminalRates, privateRideRates, DEFAULT_MAX_PASSENGERS, SHARED_RIDE_BASE_FARE_SHARES } from "@/lib/pricing";
 import { useElapsedTime } from "@/app/hooks/useElapsedTime";
 import ReasonPromptModal from "../ui/reason-prompt-modal";
 import { supabase } from "../../../utils/supabase";
@@ -390,7 +390,9 @@ export default function CustomerHome() {
   const { user } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
-  const searchSelectedTerminalId = (location.state as { selectedPickupTerminalId?: string } | null)?.selectedPickupTerminalId;
+  const navigationState = location.state as { selectedPickupTerminalId?: string; customerHomeTab?: boolean } | null;
+  const searchSelectedTerminalId = navigationState?.selectedPickupTerminalId;
+  const cameFromCustomerHomeTab = navigationState?.customerHomeTab === true;
   const [selectedVehicle, setSelectedVehicle] = useState<'share' | 'special' | null>(null);
   const [driverApprovalModalDismissed, setDriverApprovalModalDismissed] = useState(false);
   // Booking is a three-step flow on top of the full-screen map:
@@ -537,6 +539,7 @@ export default function CustomerHome() {
   const [terminalBoundaryCheckUnavailable, setTerminalBoundaryCheckUnavailable] = useState(false);
    // Shown when the customer taps the map outside the selected terminal's area.
    const [pickerBoundaryWarning, setPickerBoundaryWarning] = useState<string | null>(null);
+   const [terminalPickerWarning, setTerminalPickerWarning] = useState<string | null>(null);
    const [showCancelConfirm, setShowCancelConfirm] = useState(false);
    const [rideCompletedPopup, setRideCompletedPopup] = useState(false);
    const [completionPopupType, setCompletionPopupType] = useState<'ride' | 'delivery'>('ride');
@@ -562,6 +565,8 @@ export default function CustomerHome() {
    const [driverUnread, setDriverUnread] = useState(0);
    const lastDriverMessage = useRef<{ conversationId: string; messageId: string | null } | null>(null);
    const [chatPulseKey, setChatPulseKey] = useState(0);
+   const [chatHeadActivated, setChatHeadActivated] = useState(false);
+   const chatHeadScopeRef = useRef<string | null>(null);
    /**
     * Whether chat has been opened on this ride.
     *
@@ -596,6 +601,7 @@ export default function CustomerHome() {
      // Read here, not left to the Messages tab: the badge would otherwise keep
      // counting the very message the passenger is on their way to read.
      await supabaseHelpers.markChatConversationRead(data.id, user.id);
+     setChatHeadActivated(true);
      setChatOpened(true);
      try {
        localStorage.setItem('trikeserve_chat_opened_customer', '1');
@@ -608,6 +614,16 @@ export default function CustomerHome() {
       // header for the head to sit in.
       setCustomerChatPopup(true);
     }, [user?.id, rideDriverId, activeRide?.driver, currentRequestId, navigate, rideDriverAvatar]);
+
+   useEffect(() => {
+     const scope = currentRequestId && rideDriverId && user?.id
+       ? `${user.id}:${currentRequestId}:${rideDriverId}`
+       : null;
+     if (chatHeadScopeRef.current === scope) return;
+     chatHeadScopeRef.current = scope;
+     lastDriverMessage.current = null;
+     setChatHeadActivated(false);
+   }, [currentRequestId, rideDriverId, user?.id]);
 
    /**
     * Load the driver's photo whenever the assigned driver changes.
@@ -659,7 +675,6 @@ export default function CustomerHome() {
    const [deliveryBusiness, setDeliveryBusiness] = useState<{ businessId: string; restaurantName: string; orderId?: string } | null>(null);
    const [unreadDeliveryNotifications, setUnreadDeliveryNotifications] = useState(0);
    const [privateRidePrice, setPrivateRidePrice] = useState(50); // Legacy fixed private fare (fallback when distance is unknown)
-   const [sharedRidePrice, setSharedRidePrice] = useState(15); // Legacy fixed share fare (fallback when distance is unknown)
    // The fare captured when the ride was booked â€” the terminal fare at that
    // moment. The active-ride card shows this instead of re-deriving the fare, so
    // it can't drift from the amount stored on the request when booking state is
@@ -716,12 +731,15 @@ export default function CustomerHome() {
    const [terminals, setTerminals] = useState<{ id: string; name: string; boundary: string; center_lat: number; center_lng: number; base_fare?: number | null; base_fare_included_km?: number | null; per_km?: number | null; delivery_fee?: number | null; delivery_fee_included_km?: number | null; delivery_fee_per_km?: number | null; max_passengers?: number | null; private_ride_fee?: number | null; private_ride_fee_included_km?: number | null; private_ride_fee_per_km?: number | null; boundary_polygon?: any; boundary_area?: any; road_width_m?: number | null; boundary_enabled?: boolean; route_color?: string | null; border_color?: string | null; marker_color?: string | null }[]>([]);
    const [showTerminalPicker, setShowTerminalPicker] = useState(false);
    const [routePreviewTerminalId, setRoutePreviewTerminalId] = useState<string | null>(null);
+   const [routePreviewVisibleTerminalIds, setRoutePreviewVisibleTerminalIds] = useState<string[]>([]);
+   const [showRoutePreviewList, setShowRoutePreviewList] = useState(false);
+   const routePreviewMapRef = useRef<any>(null);
    const [selectedTerminalId, setSelectedTerminalId] = useState<string | null>(null);
   // Hub state: what they want (all / a ride / a meal) and whether they have
   // opened the header's search field.
-    // The chosen pickup terminal and its plotted service road. Drives the search
-    // filter, the picker's map view, and the pin guard, so all three agree on
-    // where the customer is allowed to be dropped off.
+    // The chosen pickup terminal and its plotted service road. Drop-off search,
+    // map pins, and the booking gate all use this same route. The pickup area is
+    // still subject to the terminal's boundary-enabled setting.
     const selectedTerminalBoundary = useMemo(() => {
       const terminal = terminals.find(t => t.id === selectedTerminalId) || null;
       // Keep the route available for display even when the boundary gate is off;
@@ -731,12 +749,26 @@ export default function CustomerHome() {
       const enforced = terminal && terminal.boundary_enabled !== false;
       return {
         terminal,
-        road: enforced ? road : null,
         displayRoad: road,
         area: enforced ? area : null,
         widthM: enforced && terminal ? normalizeRoadWidth(terminal.road_width_m) : undefined,
+        routeWidthM: terminal ? normalizeRoadWidth(terminal.road_width_m) : undefined,
       };
     }, [terminals, selectedTerminalId]);
+    const selectedRouteDropoffGuide = selectedTerminalBoundary.terminal && selectedTerminalBoundary.displayRoad
+      ? `Drop-offs must be within ${Math.round(normalizeRoadWidth(selectedTerminalBoundary.routeWidthM) / 2)} m of the highlighted ${selectedTerminalBoundary.terminal.name} route.`
+      : 'Select a pickup route first. Drop-offs are restricted to that route.';
+    const missingSelectedRouteMessage = selectedTerminalBoundary.terminal
+      ? `${selectedTerminalBoundary.terminal.name} has no mapped route yet. Drop-off selection is unavailable until its route is set.`
+      : 'Select a pickup route first. Drop-offs are restricted to the selected route.';
+    const isPointOnSelectedRoute = useCallback((point: LatLngPoint) => {
+      const { terminal, displayRoad, routeWidthM } = selectedTerminalBoundary;
+      return Boolean(
+        terminal &&
+        displayRoad?.length &&
+        isPointOnRoadCorridor(point.lat, point.lng, displayRoad, normalizeRoadWidth(routeWidthM)),
+      );
+    }, [selectedTerminalBoundary]);
 
   useEffect(() => {
     const route = selectedTerminalBoundary.displayRoad || [];
@@ -946,6 +978,7 @@ export default function CustomerHome() {
   // Fetch autocomplete predictions (Places API) and set predictions state
   const fetchPredictions = async (input: string) => {
     setSearchQuery(input);
+    setPickerBoundaryWarning(null);
     if (!input || !input.trim()) {
       setPredictions([]);
       return;
@@ -964,9 +997,15 @@ export default function CustomerHome() {
       // The selected terminal decides what the search may offer, and which gate
       // applies depends on what is being searched for: a drop-off must stay on
       // the route, a pickup must stay inside the border.
-      const { terminal, road, area, widthM } = selectedTerminalBoundary;
+      const { terminal, area, widthM, displayRoad, routeWidthM } = selectedTerminalBoundary;
       const searchingForPickup = activeLocationInput === 'pickup';
-      const gateShape = searchingForPickup ? area : road;
+      if (!searchingForPickup && (!terminal || !displayRoad?.length)) {
+        setPredictions([]);
+        setPickerBoundaryWarning(missingSelectedRouteMessage);
+        return;
+      }
+      const gateShape = searchingForPickup ? area : displayRoad;
+      const gateWidth = searchingForPickup ? widthM : routeWidthM;
 
       if (gateShape && terminal) {
         // Autocomplete suggestions carry no coordinates, so they cannot be
@@ -979,11 +1018,14 @@ export default function CustomerHome() {
           biasRadiusMeters: polygonBiasRadius(gateShape as { lat: number; lng: number }[]),
         });
 
+        const matchingHits = hits.filter(hit => {
+          if (typeof hit.lat !== 'number' || typeof hit.lng !== 'number') return false;
+          return searchingForPickup
+              ? isPointInPolygon(hit.lat, hit.lng, gateShape as LatLngPoint[])
+              : isPointOnRoadCorridor(hit.lat, hit.lng, gateShape as LatLngPoint[], normalizeRoadWidth(gateWidth));
+        });
         setPredictions(
-          hits
-            .filter(hit => searchingForPickup
-              ? isPointInPolygon(hit.lat!, hit.lng!, gateShape as LatLngPoint[])
-              : isPointOnRoadCorridor(hit.lat!, hit.lng!, gateShape as LatLngPoint[], normalizeRoadWidth(widthM)))
+          matchingHits
             .map(hit => ({
               place_id: hit.place_id || '',
               displayName: hit.display_name || hit.name || hit.formatted_address || 'Drop-off point',
@@ -991,6 +1033,9 @@ export default function CustomerHome() {
               fullText: hit.formatted_address,
             }))
         );
+        if (!searchingForPickup && matchingHits.length === 0) {
+          setPickerBoundaryWarning(`No matching places were found on ${terminal.name}'s selected route. Try another search or tap the highlighted road.`);
+        }
         return;
       }
 
@@ -1033,6 +1078,15 @@ export default function CustomerHome() {
 
       // If we're in location picker mode, show the preview on the map
       if (showLocationPicker && activeLocationInput) {
+        if (activeLocationInput === 'dropoff' && (!coords || !isPointOnSelectedRoute(coords))) {
+          setPickerBoundaryWarning(
+            coords
+              ? `Choose a drop-off within ${Math.round(normalizeRoadWidth(selectedTerminalBoundary.routeWidthM) / 2)} m of the highlighted ${selectedTerminalBoundary.terminal?.name || 'selected'} route.`
+              : 'We could not locate that place. Choose a result on the highlighted route or tap the route on the map.'
+          );
+          setPredictions([]);
+          return;
+        }
         if (coords) {
           setLocationPreview({
             lat: coords.lat,
@@ -1324,7 +1378,9 @@ export default function CustomerHome() {
       }
     };
 
-    checkActiveLobby();
+    // The Home tab is an explicit request to see the home screen. Keep the
+    // active lobby resumable, but don't put its full-screen panel back over Home.
+    if (!cameFromCustomerHomeTab) checkActiveLobby();
 
     // Restore an active share ride lobby (the current mechanism) so that
     // returning to the rides page reopens the lobby during an active ride,
@@ -1342,30 +1398,34 @@ export default function CustomerHome() {
         }
         // Ride still active - reopen the lobby automatically.
         setActiveShareLobbyId(storedLobbyId);
-        setShowShareLobby(true);
+        if (!cameFromCustomerHomeTab) setShowShareLobby(true);
       });
     }
-  }, [user]);
+  }, [user, cameFromCustomerHomeTab]);
 
   /*
-   * Return the customer to the shared ride they are already in.
-   *
-   * A lobby that is still going is reopened whenever it is found in the
-   * database, so closing the sheet, reloading, or opening the app on another
-   * device drops them back onto their ride rather than onto the booking screen.
-   * Leaving or cancelling the lobby moves it to a terminal status, so it stops
-   * being found and this stops firing.
+   * Restore a shared ride when the customer returns to the ride screen.
+   * Choosing the Home tab is the one intentional exception: keep the ride
+   * available from its return card without covering the home hub with the lobby.
    */
   useEffect(() => {
     if (!activeRideLobby?.id) return;
     setActiveShareLobbyId(activeRideLobby.id);
-    setShowShareLobby(true);
     try {
       localStorage.setItem('trikeserve_active_share_lobby', activeRideLobby.id);
     } catch {
-      // Storage unavailable; the lobby still opens for this mount.
+      // Storage unavailable; the active lobby remains available in memory.
     }
-  }, [activeRideLobby?.id]);
+    if (!cameFromCustomerHomeTab) setShowShareLobby(true);
+  }, [activeRideLobby?.id, cameFromCustomerHomeTab]);
+
+  // The Home tab must be able to uncover the home hub even when this same
+  // screen is currently showing the full-screen shared-ride lobby.
+  useEffect(() => {
+    if (!cameFromCustomerHomeTab) return;
+    setShowShareLobby(false);
+    setBookingStep('home');
+  }, [cameFromCustomerHomeTab, location.key]);
 
   /*
    * Rebuild the active private ride card when this tab holds no copy of it.
@@ -1443,7 +1503,6 @@ export default function CustomerHome() {
 
         if (data?.setting_value) {
           const settings = normalizeRates(JSON.parse(data.setting_value));
-          setSharedRidePrice(settings.sharedRide);
           setPrivateRidePrice(settings.privateRide);
           setBaseFare(settings.baseFare);
           setBaseFareIncludedKm(settings.baseFareIncludedKm);
@@ -2175,20 +2234,26 @@ export default function CustomerHome() {
     //
     // Which gate depends on what is being placed: the customer has to stand in
     // the border to book, but the drop-off only has to be on the route.
-    const { road, area, widthM, terminal } = selectedTerminalBoundary;
+    const { area, widthM, routeWidthM, displayRoad, terminal } = selectedTerminalBoundary;
     const pickingPickup = activeLocationInput === 'pickup';
+    if (!pickingPickup && (!terminal || !displayRoad?.length)) {
+      setPickerBoundaryWarning(missingSelectedRouteMessage);
+      return;
+    }
 
-    if (pickingPickup ? area : road) {
+    const gateShape = pickingPickup ? area : displayRoad;
+    const gateWidth = pickingPickup ? widthM : routeWidthM;
+    if (gateShape) {
       const inside = pickingPickup
-        ? isPointInPolygon(lat, lng, area as any)
-        : isPointOnRoadCorridor(lat, lng, road as any, normalizeRoadWidth(widthM));
+        ? isPointInPolygon(lat, lng, gateShape)
+        : isPointOnRoadCorridor(lat, lng, gateShape, normalizeRoadWidth(gateWidth));
 
       if (!inside) {
-        const half = Math.round(normalizeRoadWidth(widthM) / 2);
+        const half = Math.round(normalizeRoadWidth(gateWidth) / 2);
         setPickerBoundaryWarning(
           pickingPickup
             ? `That spot is outside ${terminal?.name || 'this terminal'}. Tap inside the shaded area.`
-            : `That spot is not on ${terminal?.name || 'this terminal'}'s route. Tap within ${half} m of the road.`
+            : `That spot is not on ${terminal?.name || 'this terminal'}'s selected route. Tap within ${half} m of the highlighted road.`
         );
         return;
       }
@@ -2227,6 +2292,14 @@ export default function CustomerHome() {
     if (!locationPreview || !activeLocationInput) return;
 
     const coords = { lat: locationPreview.lat, lng: locationPreview.lng };
+    if (activeLocationInput === 'dropoff' && !isPointOnSelectedRoute(coords)) {
+      setPickerBoundaryWarning(
+        selectedTerminalBoundary.displayRoad
+          ? `Choose a drop-off within ${Math.round(normalizeRoadWidth(selectedTerminalBoundary.routeWidthM) / 2)} m of the highlighted ${selectedTerminalBoundary.terminal?.name || 'selected'} route.`
+          : missingSelectedRouteMessage
+      );
+      return;
+    }
 
     if (activeLocationInput === 'pickup') {
       setPickup(locationPreview.name);
@@ -2259,15 +2332,22 @@ export default function CustomerHome() {
    *   2. The ROUTE â€” the drop-off has to sit on a terminal's road corridor.
    *      This is "where can a tricycle actually go".
    *
-   * Shared rides may match any active terminal. Private rides must pass both
-   * gates against the terminal the customer selected. A terminal with nothing
-   * plotted for a gate is ignored until that boundary is configured.
+   * Every ride must use the route selected by the customer. Private rides also
+   * check the selected terminal's pickup area; shared rides keep their existing
+   * any-terminal pickup-area check.
    *
    * Food deliveries are deliberately NOT checked here. They are placed from the
    * restaurant's own screen and never reach this function; they are gated by the
    * route alone, in `findDeliveryTerminalForOrder`.
    */
   const checkRideGates = async (): Promise<boolean> => {
+    const selectedTerminalRoad = selectedTerminalBoundary.displayRoad;
+    if (!selectedTerminalBoundary.terminal || !selectedTerminalRoad?.length) {
+      setTerminalPickerWarning(missingSelectedRouteMessage);
+      setShowTerminalPicker(true);
+      return false;
+    }
+
     const privateTerminal = selectedVehicle === 'special'
       ? selectedTerminalBoundary.terminal
       : null;
@@ -2303,7 +2383,6 @@ export default function CustomerHome() {
     }
 
     const selectedTerminalArea = selectedTerminalBoundary.area;
-    const selectedTerminalRoad = selectedTerminalBoundary.road;
 
     // Gate 1: the customer must be at a terminal.
     const border = privateTerminal
@@ -2329,23 +2408,12 @@ export default function CustomerHome() {
       return false;
     }
 
-    // Gate 2: the drop-off must be on a terminal's route.
-    const route = privateTerminal
-      ? {
-          allowed: !selectedTerminalRoad || isPointOnRoadCorridor(
-            dropoff.lat,
-            dropoff.lng,
-            selectedTerminalRoad,
-            normalizeRoadWidth(selectedTerminalBoundary.widthM),
-          ),
-          checkedCount: selectedTerminalRoad ? 1 : 0,
-          lookupFailed: false,
-        }
-      : await isPointWithinAnyTerminalRoute(dropoff.lat, dropoff.lng);
-    if (route.lookupFailed) {
-      setTerminalBoundaryCheckUnavailable(true);
-      return false;
-    }
+    // Gate 2: the drop-off must stay on the route the customer selected.
+    const route = {
+      allowed: isPointOnSelectedRoute(dropoff),
+      checkedCount: 1,
+      lookupFailed: false,
+    };
     if (!route.allowed) {
       console.log('ðŸš« Drop-off outside every terminal route:', dropoff, {
         checkedCount: route.checkedCount,
@@ -2369,6 +2437,7 @@ export default function CustomerHome() {
   // The booking UI lives on top of the map and stays out of the way while a
   // ride is active, already being searched for, or already running elsewhere.
   const showBookingFlow = !activeRide && rideStatus !== 'searching' && !rideBlocked;
+  const showCustomerHomeHub = bookingStep === 'home' && (showBookingFlow || cameFromCustomerHomeTab);
 
   /**
    * Watch the driver's messages so the floating head's badge is honest.
@@ -2409,6 +2478,7 @@ export default function CustomerHome() {
         latestMessage.id !== previousMessage.messageId
       ) {
         setChatPulseKey((k) => k + 1);
+        setChatHeadActivated(true);
       }
       lastDriverMessage.current = { conversationId: cid, messageId: latestMessage?.id || null };
 
@@ -2788,15 +2858,132 @@ export default function CustomerHome() {
     () => terminals.find(t => t.id === selectedTerminalId) || null,
     [terminals, selectedTerminalId]
   );
+  const nearestTerminal = useMemo(() => {
+    const candidates = terminals.filter(terminal =>
+      Number.isFinite(terminal.center_lat) && Number.isFinite(terminal.center_lng)
+    );
+    if (candidates.length === 0) return null;
+
+    return candidates.reduce((nearest, terminal) => {
+      const terminalDistance = haversineDistanceMeters(currentLocation, {
+        lat: terminal.center_lat,
+        lng: terminal.center_lng,
+      });
+      const nearestDistance = haversineDistanceMeters(currentLocation, {
+        lat: nearest.center_lat,
+        lng: nearest.center_lng,
+      });
+      return terminalDistance < nearestDistance ? terminal : nearest;
+    });
+  }, [terminals, currentLocation]);
+  const terminalPickerOptions = nearestTerminal ? [nearestTerminal] : [];
+  const selectTerminalRoute = useCallback((terminalId: string) => {
+    const terminal = terminals.find(item => item.id === terminalId);
+    if (!terminal) return;
+    if (nearestTerminal && terminal.id !== nearestTerminal.id) {
+      setTerminalPickerWarning('Only the nearest terminal route can be selected from this screen.');
+      return;
+    }
+
+    const road = normalizeBoundaryRoad(terminal.boundary_polygon);
+    if (!road?.length) {
+      setTerminalPickerWarning(`${terminal.name} has no mapped route yet. Drop-off selection is unavailable until its route is set.`);
+      return;
+    }
+
+    const routeChanged = selectedTerminalId !== terminal.id;
+    const coords = { lat: terminal.center_lat, lng: terminal.center_lng };
+    const existingDropoffOutsideRoute = Boolean(
+      dropoffCoords && !isPointOnRoadCorridor(
+        dropoffCoords.lat,
+        dropoffCoords.lng,
+        road,
+        normalizeRoadWidth(terminal.road_width_m),
+      )
+    );
+    if (routeChanged || existingDropoffOutsideRoute) {
+      setDropoff('');
+      setDropoffAddress('');
+      setDropoffCoords(null);
+      setDropoffMarker(null);
+      setDestinationRoutePath([]);
+      setRoutePath([]);
+      setLocationPreview(null);
+      setEtaToDestination(null);
+    }
+
+    setPickup(terminal.name);
+    setPickupAddress(terminal.boundary);
+    setPickupCoords(coords);
+    setPickupMarker(coords);
+    setSelectedTerminalId(terminal.id);
+    setMapCenter(coords);
+    setTerminalPickerWarning(null);
+    setPickerBoundaryWarning(null);
+    setShowTerminalPicker(false);
+    setRoutePreviewTerminalId(null);
+    setShowRoutePreviewList(false);
+    hasManualPickupSelectionRef.current = true;
+    customerMapRef.current?.panTo(coords);
+  }, [terminals, nearestTerminal, selectedTerminalId, dropoffCoords]);
   const routePreviewTerminal = useMemo(
     () => terminals.find(t => t.id === routePreviewTerminalId) || null,
     [terminals, routePreviewTerminalId]
   );
-  const routePreviewRoad = normalizeBoundaryRoad(routePreviewTerminal?.boundary_polygon);
   const routePreviewArea = normalizeBoundaryArea(routePreviewTerminal?.boundary_area);
-  const routePreviewRouteColor = normalizeRouteColor(routePreviewTerminal?.route_color);
   const routePreviewBorderColor = normalizeBorderColor(routePreviewTerminal?.border_color);
   const routePreviewMarkerColor = normalizeTerminalColor(routePreviewTerminal?.marker_color);
+  const openRoutePreview = useCallback((terminalId: string) => {
+    setRoutePreviewTerminalId(terminalId);
+    setRoutePreviewVisibleTerminalIds(terminals.map(terminal => terminal.id));
+    setShowRoutePreviewList(false);
+  }, [terminals]);
+  const focusRoutePreview = useCallback((terminalId: string, mapOverride?: any) => {
+    const map = mapOverride || routePreviewMapRef.current;
+    const maps = (window as any).google?.maps;
+    const terminal = terminals.find(item => item.id === terminalId);
+    if (!map || !terminal) return;
+
+    const route = normalizeBoundaryRoad(terminal.boundary_polygon) || [];
+    const area = normalizeBoundaryArea(terminal.boundary_area) || [];
+    const points = route.length > 0 ? route : area;
+    if (!maps?.LatLngBounds || points.length < 2) {
+      map.panTo({ lat: terminal.center_lat, lng: terminal.center_lng });
+      map.setZoom(15);
+      return;
+    }
+
+    const bounds = new maps.LatLngBounds();
+    points.forEach(point => bounds.extend(point));
+    map.fitBounds(bounds, 48);
+  }, [terminals]);
+  const focusAllRoutePreview = useCallback(() => {
+    const map = routePreviewMapRef.current;
+    const maps = (window as any).google?.maps;
+    if (!map || !maps?.LatLngBounds) return;
+
+    const points = terminals.flatMap(terminal => {
+      const route = normalizeBoundaryRoad(terminal.boundary_polygon) || [];
+      return route.length > 0 ? route : [{ lat: terminal.center_lat, lng: terminal.center_lng }];
+    });
+    if (points.length === 0) return;
+    if (points.length === 1) {
+      map.panTo(points[0]);
+      map.setZoom(15);
+      return;
+    }
+
+    const bounds = new maps.LatLngBounds();
+    points.forEach(point => bounds.extend(point));
+    map.fitBounds(bounds, 48);
+  }, [terminals]);
+  const selectRoutePreview = useCallback((terminalId: string) => {
+    setRoutePreviewTerminalId(terminalId);
+    setRoutePreviewVisibleTerminalIds(current => current.includes(terminalId) ? current : [...current, terminalId]);
+  }, []);
+  useEffect(() => {
+    if (routePreviewTerminalId) focusRoutePreview(routePreviewTerminalId);
+  }, [focusRoutePreview, routePreviewTerminalId]);
   const terminalFare = useMemo(() => terminalRates(selectedTerminal), [selectedTerminal]);
   const activeRates = {
     baseFare: selectedTerminal?.base_fare != null ? terminalFare.baseFare : baseFare,
@@ -2825,12 +3012,6 @@ export default function CustomerHome() {
     () => computeRideFare(activeRates, pickupCoords, dropoffCoords),
     [activeRates.baseFare, activeRates.baseFareIncludedKm, activeRates.perKm, pickupCoords, dropoffCoords]
   );
-  // Falls back to the legacy fixed fare when the two points have no coordinates yet.
-  const rideTotal = fareInfo.distanceKm != null ? fareInfo.total : privateRidePrice;
-  const fareBreakdown = fareInfo.distanceKm != null
-    ? fareDescription(activeRates, fareInfo.distanceKm, selectedTerminal?.name)
-    : `Fixed rate${selectedTerminal ? ` \u00B7 ${selectedTerminal.name}` : ''}`;
-
   /*
    * A private ride books the whole vehicle, so the terminal can price it on its
    * own terms rather than as a share of the seat fare. Both halves fall back to
@@ -2855,29 +3036,23 @@ export default function CustomerHome() {
     ? fareDescription(privateActiveRates, privateFareInfo.distanceKm, selectedTerminal?.name)
     : `Fixed rate${selectedTerminal ? ` \u00B7 ${selectedTerminal.name}` : ''}`;
 
-  /*
- * What one seat costs on a shared ride: the trip fare divided between the seats in
- * the vehicle, rounded UP to a whole peso.
- *
- * Rounded up rather than to the nearest peso for the same reason `computeRideFare`
- * rounds the trip fare up: this is a cash fare for a short tricycle hop, and a
- * figure with centavos on it reads as a miscalculation to the rider. Rounding up
- * also never leaves the driver short of the quoted amount.
- *
- * Worth being explicit about the consequence: rounding each seat up means the seats
- * together pay slightly more than the trip fare they are splitting. A â‚±34 trip
- * shared three ways is â‚±12 a seat, â‚±36 collected. That is the trade for carrying
- * the extra passengers, but it is a deliberate choice, not an accident of the
- * division -- hence computing it in one place rather than letting the two screens
- * that show a fare each derive it separately.
- */
-const shareFarePerSeat = useMemo(() => {
-  if (passengerCount <= 0) return sharedRidePrice;
-  return Math.ceil(rideTotal / passengerCount);
-}, [rideTotal, passengerCount, sharedRidePrice]);
+  /* Shared passengers split the base fare into four shares and each pay the full
+   per-kilometer charge for billable distance beyond the included kilometers. */
+const shareFarePerSeat = useMemo(
+  () => computeSharedRideFarePerPassenger(activeRates, fareInfo.distanceKm),
+  [activeRates.baseFare, activeRates.baseFareIncludedKm, activeRates.perKm, fareInfo.distanceKm]
+);
+const shareFareForParty = shareFarePerSeat * Math.max(1, passengerCount);
+const shareExtraKm = fareInfo.distanceKm == null
+  ? null
+  : Math.max(0, fareInfo.distanceKm - Math.max(0, activeRates.baseFareIncludedKm));
+const shareFareBreakdown = [
+  `\u20B1${activeRates.baseFare} base \u00F7 ${SHARED_RIDE_BASE_FARE_SHARES} = \u20B1${(activeRates.baseFare / SHARED_RIDE_BASE_FARE_SHARES).toFixed(2)} per passenger`,
+  `\u20B1${activeRates.perKm}/km per passenger after ${formatKm(Math.max(0, activeRates.baseFareIncludedKm))} km${shareExtraKm == null ? "" : ` (${formatKm(shareExtraKm)} extra km)`}`,
+].join(" \u00B7 ");
 
 const getPrice = () => {
-  if (selectedVehicle === 'share') return shareFarePerSeat;
+  if (selectedVehicle === 'share') return shareFareForParty;
   // A private ride is not shared, so there is nothing to divide: `privateTotal` is
   // the trip fare itself, already rounded up to a whole peso by `computeRideFare`.
   if (selectedVehicle === 'special') return privateTotal;
@@ -2994,11 +3169,10 @@ const getPrice = () => {
     loc.address.toLowerCase().includes(searchQuery.toLowerCase())
   );
 
-  // The map is the substrate for pickup/drop pins, terminal boundary checks and
-  // the route, so it is left exactly as it was -- it just no longer mounts on
-  // the home step. That step is a scrolling feed now; the map appears the
-  // moment a ride is actually being booked or is already under way.
-  const showMap = !showBookingFlow || bookingStep !== 'home';
+  // Home stays a scrolling service feed while the customer is riding. The map
+  // remains for booking steps and ride tracking, but is hidden when Home is
+  // explicitly selected.
+  const showMap = !showCustomerHomeHub;
 
   /**
    * What the header shows above the search field once search is opened.
@@ -3214,7 +3388,7 @@ const getPrice = () => {
 
       {/* Hidden while the panel is open, so the two heads cannot stack in the
           same corner. */}
-      {rideStatus === 'driver-found' && activeRide && rideDriverId && (
+      {chatHeadActivated && rideStatus === 'driver-found' && activeRide && rideDriverId && (
         <FloatingChatHead
           headId={driverChatId.current || undefined}
           hidden={customerChatPopup}
@@ -3309,7 +3483,7 @@ const getPrice = () => {
             need today?", then the recommended feed. None of them float over the
             content any more, which is what lets the feed scroll underneath the
             sticky bar. */}
-        {showBookingFlow && bookingStep === 'home' && (
+        {showCustomerHomeHub && (
           <div className="relative z-[999] flex flex-1 flex-col pb-28">
             <CustomerHubHeader
               avatarUrl={user?.avatarUrl}
@@ -3324,6 +3498,7 @@ const getPrice = () => {
               <CustomerServiceHub
                 onBookRide={() => setBookingStep('ride')}
                 onOrderFood={() => navigate('/customer/food')}
+                rideDisabled={!showBookingFlow}
               />
               <CustomerCartPreview />
 
@@ -3424,10 +3599,10 @@ const getPrice = () => {
                       </div>
                       <div className="flex-1 min-w-0">
                         <p className="font-bold text-sm text-[var(--ink)] mb-0.5">
-                          {selectedTerminalId ? (terminals.find(t => t.id === selectedTerminalId)?.name || pickup || 'Pickup Location') : 'Select Terminal'}
+                          {selectedTerminalId ? (terminals.find(t => t.id === selectedTerminalId)?.name || pickup || 'Pickup Location') : 'Select pickup route'}
                         </p>
                         <p className="text-xs text-[var(--muted-foreground)] truncate">
-                          {selectedTerminalId ? (terminals.find(t => t.id === selectedTerminalId)?.boundary || pickupAddress || 'Terminal location') : 'Choose a terminal as your pickup point'}
+                          {selectedTerminalId ? (terminals.find(t => t.id === selectedTerminalId)?.boundary || pickupAddress || 'Terminal location') : 'Choose a route to limit drop-off choices'}
                         </p>
                       </div>
                       <button className="mt-0.5 flex-shrink-0">
@@ -3447,6 +3622,12 @@ const getPrice = () => {
                   <Card 
                     className="p-3 border border-line shadow-sm cursor-pointer hover:border-[var(--primary)] transition-colors"
                     onClick={() => {
+                      if (!selectedTerminalBoundary.terminal || !selectedTerminalBoundary.displayRoad?.length) {
+                        setTerminalPickerWarning(missingSelectedRouteMessage);
+                        setShowTerminalPicker(true);
+                        return;
+                      }
+                      setTerminalPickerWarning(null);
                       setActiveLocationInput('dropoff');
                       setPickerBoundaryWarning(null);
                       setLocationPreview(
@@ -3469,6 +3650,7 @@ const getPrice = () => {
                       <div className="flex-1 min-w-0">
                         <p className="font-bold text-sm text-[var(--ink)] mb-0.5">{dropoff || 'Tap to set destination'}</p>
                         <p className="text-xs text-[var(--muted-foreground)] truncate">{dropoffAddress || (dropoffCoords ? `${dropoffCoords.lat.toFixed(5)}, ${dropoffCoords.lng.toFixed(5)}` : 'Select drop-off location')}</p>
+                        <p className="mt-1 text-xs font-medium text-[var(--info)]">{selectedRouteDropoffGuide}</p>
                       </div>
                       <button className="mt-0.5 flex-shrink-0">
                         <ChevronDown className="w-4 h-4 text-[var(--muted-foreground)]" />
@@ -3749,10 +3931,10 @@ const getPrice = () => {
               <div className="w-20 h-20 bg-[var(--error-soft)] rounded-full flex items-center justify-center mx-auto mb-4">
                 <span className="text-4xl">{"\u{1F6E3}\uFE0F"}</span>
               </div>
-              <h3 className="text-xl font-bold text-[var(--error)] mb-2">Drop-off not on our route</h3>
+              <h3 className="text-xl font-bold text-[var(--error)] mb-2">Drop-off outside selected route</h3>
               <p className="text-sm text-[var(--muted-foreground)] mb-6">
-                Your designated <strong>drop-off location</strong> is not within the route of
-                the selected terminal. Please choose a drop-off point on one of our routes.
+                Your designated <strong>drop-off location</strong> is outside the selected route.
+                Choose a point within the highlighted road corridor for that route.
               </p>
 
               <Button
@@ -3779,12 +3961,20 @@ const getPrice = () => {
               <h3 className="text-xl font-bold text-[var(--ink)] mb-2">We couldn't locate that drop-off</h3>
               <p className="text-sm text-[var(--muted-foreground)] mb-6">
                 Before we can check whether your <strong>drop-off point</strong> is
-                inside a terminal's service area we need to find it on the map.
-                Tap the drop-off on the map, or try a more complete address.
+                on the selected route we need to find it on the map.
+                Tap the highlighted route, or try a more complete address.
               </p>
 
               <Button
-                onClick={() => setUnresolvedDropoffError(false)}
+                onClick={() => {
+                  setUnresolvedDropoffError(false);
+                  setActiveLocationInput('dropoff');
+                  setPickerBoundaryWarning(null);
+                  setLocationPreview(null);
+                  setPredictions([]);
+                  setSearchQuery('');
+                  setShowLocationPicker(true);
+                }}
                 className="w-full bg-[var(--primary)] hover:bg-[var(--primary)] text-white py-3 font-bold"
               >
                 Choose on map
@@ -3945,8 +4135,8 @@ const getPrice = () => {
           <div className="bg-surface border-b-2 border-[var(--border)] px-4 py-4 sticky top-0 z-10">
             <div className="flex items-center justify-between">
               <div>
-                <h2 className="text-lg font-bold text-[var(--ink)]">Select Pickup Terminal</h2>
-                <p className="text-xs text-[var(--muted-foreground)]">Choose a terminal as your pickup point</p>
+                <h2 className="text-lg font-bold text-[var(--ink)]">Select Pickup Route</h2>
+                <p className="text-xs text-[var(--muted-foreground)]">Choose the nearest terminal route. Drop-offs must stay on it.</p>
               </div>
               <button
                 onClick={() => setShowTerminalPicker(false)}
@@ -3957,24 +4147,30 @@ const getPrice = () => {
             </div>
           </div>
           <div className="flex-1 overflow-y-auto p-4 space-y-3">
+            {terminalPickerWarning && (
+              <div role="alert" className="rounded-xl border border-[var(--error)] bg-[var(--error-soft)] px-3 py-2 text-sm font-semibold text-[var(--error)]">
+                {terminalPickerWarning}
+              </div>
+            )}
             {terminals.length === 0 ? (
               <div className="text-center py-12">
                 <MapPin className="w-12 h-12 text-[var(--border)] mx-auto mb-3" />
                 <p className="text-sm font-semibold text-[var(--muted-foreground)]">No terminals available</p>
                 <p className="text-xs text-[var(--muted-foreground)] mt-1">Please try again later</p>
               </div>
+            ) : terminalPickerOptions.length === 0 ? (
+              <div className="text-center py-12">
+                <MapPin className="w-12 h-12 text-[var(--border)] mx-auto mb-3" />
+                <p className="text-sm font-semibold text-[var(--muted-foreground)]">Terminal location unavailable</p>
+                <p className="text-xs text-[var(--muted-foreground)] mt-1">Please try again later</p>
+              </div>
             ) : (
-              terminals.map((terminal) => (
+              terminalPickerOptions.map((terminal) => (
                 <div
                   key={terminal.id}
                   onClick={() => {
-                    setPickup(terminal.name);
-                    setPickupAddress(terminal.boundary);
-                    setPickupCoords({ lat: terminal.center_lat, lng: terminal.center_lng });
-                    setPickupMarker({ lat: terminal.center_lat, lng: terminal.center_lng });
-                    setSelectedTerminalId(terminal.id);
-                    setShowTerminalPicker(false);
-                    hasManualPickupSelectionRef.current = true;
+                    setTerminalPickerWarning(null);
+                    openRoutePreview(terminal.id);
                   }}
                   className={`p-4 rounded-xl border-2 cursor-pointer transition-all active:scale-[0.98] ${
                     selectedTerminalId === terminal.id
@@ -4007,8 +4203,12 @@ const getPrice = () => {
                             SELECTED
                           </span>
                         )}
+                        <span className="text-[10px] font-bold text-[var(--success)] bg-[var(--success-soft)] px-2 py-0.5 rounded-full">
+                          NEAREST
+                        </span>
                       </div>
                       <p className="text-xs text-[var(--muted-foreground)] mt-0.5">{terminal.boundary}</p>
+                      <p className="text-xs text-[var(--info)] mt-1">Tap this card to preview the route. Drop-offs are limited to the highlighted road.</p>
                       <p className="text-xs font-semibold text-[var(--primary)] mt-0.5">
                         Share: &#8369;{terminal.base_fare ?? activeRates.baseFare} covers first {terminal.base_fare_included_km ?? activeRates.baseFareIncludedKm} km + &#8369;{terminal.per_km ?? activeRates.perKm}/km after
                       </p>
@@ -4050,11 +4250,11 @@ const getPrice = () => {
                         type="button"
                         onClick={(event) => {
                           event.stopPropagation();
-                          setRoutePreviewTerminalId(terminal.id);
+                          selectTerminalRoute(terminal.id);
                         }}
                         className="mt-3 inline-flex min-h-10 items-center justify-center rounded-xl border border-[var(--primary)] px-3 py-2 text-sm font-semibold text-[var(--primary)] transition-colors hover:bg-[var(--primary-soft)]"
                       >
-                        View route
+                        Select route
                       </button>
                     </div>
                   </div>
@@ -4074,7 +4274,11 @@ const getPrice = () => {
             </div>
             <button
               type="button"
-              onClick={() => setRoutePreviewTerminalId(null)}
+              onClick={() => {
+                setRoutePreviewTerminalId(null);
+                setShowRoutePreviewList(false);
+                routePreviewMapRef.current = null;
+              }}
               aria-label="Close terminal route"
               className="grid size-10 shrink-0 place-items-center rounded-full bg-[var(--muted)] text-[var(--muted-foreground)]"
             >
@@ -4088,13 +4292,10 @@ const getPrice = () => {
                 center={{ lat: routePreviewTerminal.center_lat, lng: routePreviewTerminal.center_lng }}
                 zoom={14}
                 onLoad={(map: any) => {
-                  const maps = (window as any).google?.maps;
-                  const points = [...(routePreviewRoad || []), ...(routePreviewArea || [])];
-                  if (!maps?.LatLngBounds || points.length === 0) return;
-                  const bounds = new maps.LatLngBounds();
-                  points.forEach(point => bounds.extend(point));
-                  map.fitBounds(bounds, 48);
+                  routePreviewMapRef.current = map;
+                  focusRoutePreview(routePreviewTerminal.id, map);
                 }}
+                onUnmount={() => { routePreviewMapRef.current = null; }}
                 options={{ gestureHandling: 'greedy', zoomControl: true, fullscreenControl: false, streetViewControl: false, mapTypeControl: false }}
               >
                 <MarkerF
@@ -4102,42 +4303,143 @@ const getPrice = () => {
                   title={routePreviewTerminal.name}
                   icon={terminalMarkerIcon(routePreviewMarkerColor)}
                 />
-                {routePreviewArea && (
+                {routePreviewArea && routePreviewVisibleTerminalIds.includes(routePreviewTerminal.id) && (
                   <Polygon
                     path={routePreviewArea}
                     options={{ strokeColor: routePreviewBorderColor, strokeWeight: 2, fillColor: routePreviewBorderColor, fillOpacity: 0.12, clickable: false }}
                   />
                 )}
-                {routePreviewRoad && (
-                  <Polyline
-                    path={routePreviewRoad}
-                    options={{ strokeColor: routePreviewRouteColor, strokeWeight: 6, strokeOpacity: 0.9, clickable: false, geodesic: true }}
-                  />
-                )}
+                {terminals.map(terminal => {
+                  if (!routePreviewVisibleTerminalIds.includes(terminal.id)) return null;
+                  const road = normalizeBoundaryRoad(terminal.boundary_polygon);
+                  if (!road?.length) return null;
+                  return (
+                    <Polyline
+                      key={terminal.id}
+                      path={road}
+                      options={{
+                        strokeColor: normalizeRouteColor(terminal.route_color),
+                        strokeWeight: terminal.id === routePreviewTerminal.id ? 7 : 5,
+                        strokeOpacity: terminal.id === routePreviewTerminal.id ? 0.95 : 0.78,
+                        clickable: false,
+                        geodesic: true,
+                      }}
+                    />
+                  );
+                })}
               </GoogleMap>
             ) : (
               <div className="grid h-full place-items-center bg-[var(--muted)] px-6 text-center text-sm text-[var(--muted-foreground)]">
                 Loading terminal route map...
               </div>
             )}
+            {isMapsLoaded && (
+              <div className="absolute left-3 top-3 z-10 w-[min(22rem,calc(100vw_-_1.5rem))]">
+                <button
+                  type="button"
+                  aria-expanded={showRoutePreviewList}
+                  onClick={() => setShowRoutePreviewList(open => !open)}
+                  className="inline-flex min-h-11 items-center gap-2 rounded-xl border border-line bg-[var(--surface)] px-4 text-sm font-semibold text-[var(--ink)] shadow-lg"
+                >
+                  <RouteIcon className="size-4 text-[var(--primary)]" />
+                  Routes
+                  <span className="rounded-full bg-[var(--primary-soft)] px-2 py-0.5 text-xs text-[var(--primary)]">
+                    {routePreviewVisibleTerminalIds.length}/{terminals.length}
+                  </span>
+                  <ChevronDown className={`size-4 transition-transform ${showRoutePreviewList ? 'rotate-180' : ''}`} />
+                </button>
+                {showRoutePreviewList && (
+                  <div className="mt-2 max-h-[min(65vh,32rem)] overflow-hidden rounded-2xl border border-line bg-[var(--surface)] shadow-xl">
+                    <div className="flex items-center justify-between gap-2 border-b border-line px-3 py-3">
+                      <div>
+                        <p className="text-sm font-bold text-[var(--ink)]">Terminal routes</p>
+                        <p className="text-xs text-[var(--muted-foreground)]">View a route or hide it from the map.</p>
+                      </div>
+                      <div className="flex shrink-0 gap-1">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setRoutePreviewVisibleTerminalIds(terminals.map(terminal => terminal.id));
+                            focusAllRoutePreview();
+                          }}
+                          className="rounded-lg px-2 py-1.5 text-xs font-semibold text-[var(--primary)] hover:bg-[var(--primary-soft)]"
+                        >
+                          Show all
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setRoutePreviewVisibleTerminalIds([])}
+                          className="rounded-lg px-2 py-1.5 text-xs font-semibold text-[var(--muted-foreground)] hover:bg-[var(--muted)]"
+                        >
+                          Hide all
+                        </button>
+                      </div>
+                    </div>
+                    <div className="max-h-[calc(min(65vh,32rem)_-_4.5rem)] overflow-y-auto p-2">
+                      {terminals.map(terminal => {
+                        const visible = routePreviewVisibleTerminalIds.includes(terminal.id);
+                        const active = routePreviewTerminal.id === terminal.id;
+                        const routeColor = normalizeRouteColor(terminal.route_color);
+                        return (
+                          <div key={terminal.id} className={`flex items-center gap-2 rounded-xl p-2 ${active ? 'bg-[var(--primary-soft)]' : ''}`}>
+                            <button
+                              type="button"
+                              onClick={() => selectRoutePreview(terminal.id)}
+                              aria-current={active ? 'true' : undefined}
+                              className="flex min-w-0 flex-1 items-center gap-2 rounded-lg px-1 py-1 text-left"
+                            >
+                              <span className="size-3 shrink-0 rounded-full border border-black/10" style={{ backgroundColor: routeColor }} />
+                              <span className="min-w-0 flex-1">
+                                <span className="block truncate text-sm font-semibold text-[var(--ink)]">{terminal.name}</span>
+                                <span className="block text-xs text-[var(--muted-foreground)]">{active ? 'Selected route' : 'View route'}</span>
+                              </span>
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setRoutePreviewVisibleTerminalIds(current => (
+                                current.includes(terminal.id)
+                                  ? current.filter(id => id !== terminal.id)
+                                  : [...current, terminal.id]
+                              ))}
+                              aria-label={`${visible ? 'Hide' : 'Show'} ${terminal.name} route`}
+                              aria-pressed={visible}
+                              className="grid size-10 shrink-0 place-items-center rounded-lg text-[var(--muted-foreground)] hover:bg-[var(--muted)]"
+                            >
+                              {visible ? <Eye className="size-4" /> : <EyeOff className="size-4" />}
+                            </button>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
           </div>
           <div className="border-t border-line bg-[var(--surface)] p-4 pb-safe">
+            {nearestTerminal && routePreviewTerminal.id !== nearestTerminal.id && (
+              <p role="status" className="mb-3 rounded-xl border border-[var(--info-soft)] bg-[var(--info-soft)] px-3 py-2 text-sm text-[var(--info)]">
+                This route is for viewing. Only the nearest terminal route can be selected.
+              </p>
+            )}
+            {nearestTerminal && routePreviewTerminal.id === nearestTerminal.id && !normalizeBoundaryRoad(nearestTerminal.boundary_polygon) && (
+              <p role="alert" className="mb-3 rounded-xl border border-[var(--error)] bg-[var(--error-soft)] px-3 py-2 text-sm font-semibold text-[var(--error)]">
+                {nearestTerminal.name} has no mapped route yet. Drop-off selection is unavailable until its route is set.
+              </p>
+            )}
             <Button
               type="button"
+              disabled={
+                !nearestTerminal ||
+                routePreviewTerminal.id !== nearestTerminal.id ||
+                !normalizeBoundaryRoad(nearestTerminal.boundary_polygon)
+              }
               className="min-h-12 w-full bg-[var(--primary)] font-bold text-[var(--primary-foreground)]"
               onClick={() => {
-                const terminal = routePreviewTerminal;
-                setPickup(terminal.name);
-                setPickupAddress(terminal.boundary);
-                setPickupCoords({ lat: terminal.center_lat, lng: terminal.center_lng });
-                setPickupMarker({ lat: terminal.center_lat, lng: terminal.center_lng });
-                setSelectedTerminalId(terminal.id);
-                setShowTerminalPicker(false);
-                setRoutePreviewTerminalId(null);
-                hasManualPickupSelectionRef.current = true;
+                selectTerminalRoute(routePreviewTerminal.id);
               }}
             >
-              Select this terminal
+              Select route
             </Button>
           </div>
         </div>
@@ -4165,6 +4467,12 @@ const getPrice = () => {
               </div>
 
                <div className="mt-3">
+                 {activeLocationInput === 'dropoff' && (
+                   <div className="mb-2 rounded-xl border border-[var(--info-soft)] bg-[var(--info-soft)] px-3 py-2 text-xs text-[var(--info)]">
+                     <p className="font-bold">Drop-off must follow the selected route</p>
+                     <p className="mt-0.5">{selectedRouteDropoffGuide} Search results and map pins outside the route are blocked.</p>
+                   </div>
+                 )}
                  {pickerBoundaryWarning && (
                    <div
                      role="alert"
@@ -4177,7 +4485,7 @@ const getPrice = () => {
                  <Input
                    value={searchQuery}
                    onChange={(e) => { fetchPredictions((e.target as HTMLInputElement).value); }}
-                   placeholder="Search restaurants, parks, hotels, terminals..."
+                   placeholder={activeLocationInput === 'dropoff' ? 'Search for a place along the selected route...' : 'Search restaurants, parks, hotels, terminals...'}
                    aria-label="Search for a place"
                    className="text-[var(--ink)] placeholder:text-[var(--muted-foreground)]"
                  />
@@ -4287,7 +4595,13 @@ const getPrice = () => {
             )}
 
             <div className="absolute top-2 left-1/2 -translate-x-1/2 bg-black/70 text-white text-xs px-3 py-1.5 rounded-full">
-              Tap map to pin {activeLocationInput === 'pickup' ? 'pickup' : 'drop-off'}
+              {activeLocationInput === 'dropoff'
+                ? selectedTerminalBoundary.displayRoad
+                  ? `Tap within ${Math.round(normalizeRoadWidth(selectedTerminalBoundary.routeWidthM) / 2)} m of the highlighted route`
+                  : 'Select a route before choosing a drop-off'
+                : selectedTerminalBoundary.area
+                  ? 'Tap inside the shaded terminal area to set pickup'
+                  : 'Tap map to pin pickup'}
             </div>
 
             {locationPreview && (
@@ -4366,17 +4680,15 @@ const getPrice = () => {
             <div className="bg-[var(--amber-soft)] border-2 border-[var(--amber-soft)] rounded-xl p-4 mb-6">
               <div className="flex items-center justify-between">
                 <div>
-                  <p className="text-xs text-[var(--amber-ink)] uppercase tracking-widest font-semibold">Your Total Fare</p>
+                  <p className="text-xs text-[var(--amber-ink)] uppercase tracking-widest font-semibold">Your Total for {passengerCount} {passengerCount === 1 ? 'seat' : 'seats'}</p>
                   {selectedVehicle === 'share' ? (
                     <>
                       <p className="text-sm text-[var(--amber-ink)] mt-0.5">
-                        {"\u20B1"}{rideTotal} trip {"\u00F7"} {passengerCount} {passengerCount === 1 ? 'passenger' : 'passengers'}
+                        ₱{shareFarePerSeat} per passenger × {passengerCount}
                       </p>
-                      {/* The same rounded-up figure `getPrice` charges. This used to divide and print
-                             the raw total, so the seat picker offered â‚±11.33 and
-                             the next screen charged â‚±12. */}
-                         <p className="text-3xl font-bold text-[var(--amber)]">{"\u20B1"}{shareFarePerSeat}</p>
-                      <p className="text-[10px] text-[var(--amber-ink)] mt-0.5">{fareBreakdown}</p>
+                      {/* Show the total cost for all seats while keeping the per-person rate above. */}
+                      <p className="text-3xl font-bold text-[var(--amber)]">₱{shareFareForParty}</p>
+                      <p className="text-[10px] text-[var(--amber-ink)] mt-0.5">{shareFareBreakdown}</p>
                     </>
                   ) : (
                     <>
@@ -4474,7 +4786,7 @@ const getPrice = () => {
                       {selectedVehicle === 'share' ? 'Share Ride' : 'Private Ride'}
                     </p>
                     <p className="text-sm text-[var(--muted-foreground)]">
-                      {selectedVehicle === 'share' ? 'Ride with other passengers' : 'Your group gets the whole tricycle'}
+                      {selectedVehicle === 'share' ? `₱${shareFarePerSeat} per passenger · ride with others` : 'Your group gets the whole tricycle'}
                     </p>
                   </div>
                 </div>
@@ -4579,7 +4891,7 @@ const getPrice = () => {
           pickupCoords={pickupCoords}
           dropoffCoords={dropoffCoords}
           passengerCount={passengerCount}
-          pricePerSeat={rideTotal}
+          pricePerSeat={shareFarePerSeat}
           paymentMethod={paymentMethod}
           selectedTerminalId={selectedTerminalId}
           onLobbyLoaded={(lobbyId) => {
@@ -4631,6 +4943,7 @@ const getPrice = () => {
           dropoff={dropoff}
           dropoffAddress={dropoffAddress}
           dropoffCoords={dropoffCoords}
+          rates={activeRates}
           onLobbyJoined={(lobbyId) => {
             setActiveShareLobbyId(lobbyId);
             setShowLobbyList(false);

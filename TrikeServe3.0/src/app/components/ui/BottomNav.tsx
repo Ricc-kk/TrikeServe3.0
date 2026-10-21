@@ -249,6 +249,7 @@ export default function BottomNav({
             <Link
               key={item.key}
               to={item.to}
+              state={variant === "customer" && item.key === "home" ? { customerHomeTab: true } : undefined}
               aria-current={isActive ? "page" : undefined}
               className="relative flex min-h-14 min-w-0 flex-col items-center justify-center gap-0.5 rounded-xl py-1.5 text-center transition-colors hover:bg-soft"
             >

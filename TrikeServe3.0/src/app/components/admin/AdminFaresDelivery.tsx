@@ -747,7 +747,6 @@ export default function AdminFaresDelivery() {
                         <TerminalIconGlyph className="size-5 shrink-0 text-[var(--primary)]" aria-hidden="true" />
                         <span className="break-words">{terminal.name}</span>
                       </h2>
-                    </button>
                     <div className="mt-3 grid gap-2 border-t border-line pt-3 @min-[32rem]:grid-cols-3">
                       {fareSummaries.map(({ label: fareLabel, fare }) => (
                         <div key={fareLabel} className="min-w-0 rounded-xl bg-soft/60 px-3 py-2">

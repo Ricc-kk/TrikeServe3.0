@@ -12,6 +12,7 @@ import tricycleIcon from '../../../assets/0b76d1aa56b8ad6e15dd4efc8a0100b0ca5762
 import FloatingChatHead from "../ui/FloatingChatHead";
 import RideChatOverlay from "../rider/RideChatOverlay";
 import { normalizeRouteColor } from "../ui/TerminalIcon";
+import { backfillLegacySharedRidePassengerFares, sumSharedRidePassengerFares } from "@/lib/pricing";
 
 const DRIVER_STATUS_ICONS: Record<string, typeof MapPin> = {
   cancelled: X,
@@ -51,6 +52,8 @@ interface LobbyPassenger {
   dropoffAddress?: string;
   dropoffLat?: number | null;
   dropoffLng?: number | null;
+  /** This passenger's fare: one quarter of the base plus their distance charge. */
+  fare?: number;
 }
 
 /**
@@ -154,6 +157,8 @@ export default function ShareRideLobby({
   const lastDriverMessage = useRef<{ conversationId: string; messageId: string | null } | null>(null);
   /** Bumped to replay the ripple; a finished CSS animation needs a remount. */
   const [chatPulseKey, setChatPulseKey] = useState(0);
+  const [chatHeadActivated, setChatHeadActivated] = useState(false);
+  const chatHeadScopeRef = useRef<string | null>(null);
   /**
    * Whether chat has been opened on this ride.
    *
@@ -216,6 +221,16 @@ export default function ShareRideLobby({
   const lobbyMapRef = useRef<any>(null);
   const driverLocationIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
+  useEffect(() => {
+    const scope = lobby?.id && lobby.driver_id && user?.id
+      ? `${user.id}:${lobby.id}:${lobby.driver_id}`
+      : null;
+    if (chatHeadScopeRef.current === scope) return;
+    chatHeadScopeRef.current = scope;
+    lastDriverMessage.current = null;
+    setChatHeadActivated(false);
+  }, [lobby?.id, lobby?.driver_id, user?.id]);
+
   /**
    * The driver thread for this lobby, found or created in one place.
    *
@@ -264,6 +279,7 @@ export default function ShareRideLobby({
       // the very message the customer is looking at.
       await supabaseHelpers.markChatConversationRead(data.id, user.id);
       setDriverUnread(0);
+      setChatHeadActivated(true);
       setChatOpened(true);
       try {
         localStorage.setItem('trikeserve_chat_opened_customer', '1');
@@ -315,6 +331,7 @@ export default function ShareRideLobby({
         latestMessage.id !== previousMessage.messageId
       ) {
         setChatPulseKey((k) => k + 1);
+        setChatHeadActivated(true);
       }
       lastDriverMessage.current = { conversationId: cid, messageId: latestMessage?.id || null };
 
@@ -980,9 +997,13 @@ export default function ShareRideLobby({
       );
 
       if (!matchError && matchingLobby) {
-        const passengers = Array.isArray(matchingLobby.passengers_json)
+        const storedPassengers = Array.isArray(matchingLobby.passengers_json)
           ? matchingLobby.passengers_json
           : [];
+        const passengers = backfillLegacySharedRidePassengerFares(
+          storedPassengers,
+          Number(matchingLobby.price_per_seat || 0),
+        );
 
         // Check if we have space
         if (passengers.length + passengerCount <= matchingLobby.max_seats) {
@@ -1000,7 +1021,8 @@ export default function ShareRideLobby({
             dropoff,
             dropoffAddress,
             dropoffLat: dropoffCoords?.lat ?? null,
-            dropoffLng: dropoffCoords?.lng ?? null
+            dropoffLng: dropoffCoords?.lng ?? null,
+            fare: pricePerSeat,
           };
 
           const newPassengers = [...passengers, mainPassenger];
@@ -1017,7 +1039,8 @@ export default function ShareRideLobby({
               dropoff,
               dropoffAddress,
               dropoffLat: dropoffCoords?.lat ?? null,
-              dropoffLng: dropoffCoords?.lng ?? null
+              dropoffLng: dropoffCoords?.lng ?? null,
+              fare: pricePerSeat,
             });
           }
 
@@ -1056,7 +1079,8 @@ export default function ShareRideLobby({
         dropoff,
         dropoffAddress,
         dropoffLat: dropoffCoords?.lat ?? null,
-        dropoffLng: dropoffCoords?.lng ?? null
+        dropoffLng: dropoffCoords?.lng ?? null,
+        fare: pricePerSeat,
       };
 
       const passengers: LobbyPassenger[] = [mainPassenger];
@@ -1073,7 +1097,8 @@ export default function ShareRideLobby({
           dropoff,
           dropoffAddress,
           dropoffLat: dropoffCoords?.lat ?? null,
-          dropoffLng: dropoffCoords?.lng ?? null
+          dropoffLng: dropoffCoords?.lng ?? null,
+          fare: pricePerSeat,
         });
       }
 
@@ -1124,7 +1149,7 @@ export default function ShareRideLobby({
      try {
        console.log('🚪 Attempting to leave lobby...');
 
-       const { error: leaveError } = await supabaseHelpers.leaveShareRideLobby(
+       const { data: updatedLobby, error: leaveError } = await supabaseHelpers.leaveShareRideLobby(
          lobby.id,
          user.id
        );
@@ -1142,11 +1167,17 @@ export default function ShareRideLobby({
        }
 
        console.log('✅ Successfully left lobby');
+       try {
+         localStorage.removeItem('trikeserve_active_share_lobby');
+       } catch {
+         // The database membership is already removed; storage is only a resume hint.
+       }
+       setShowLeaveConfirm(false);
        // Small delay to ensure database update completes
        await new Promise(resolve => setTimeout(resolve, 500));
        // FIX: Add defensive check
        if (typeof onClose === 'function') {
-         onClose(lobby.status);
+         onClose(updatedLobby?.status || lobby.status);
        } else {
          console.error('❌ onClose prop is not a function or is missing');
          // Optional: fallback navigation if you have a router available
@@ -1346,7 +1377,7 @@ if (loading) {
 
       {/* Floating chat head -- the same component the driver's ride screen uses.
           Hidden while the overlay is open so two heads never stack. */}
-      {lobby.driver_id && lobby.status === 'driver_found' && terminalStatus === null && (
+      {chatHeadActivated && lobby.driver_id && lobby.status === 'driver_found' && terminalStatus === null && (
         <FloatingChatHead
           headId={driverChatId.current || undefined}
           zIndexClass="z-[10000]"
@@ -1391,13 +1422,19 @@ if (loading) {
   const passengers = lobby.passengers_json || [];
   const isTerminal = terminalStatus !== null;
 
-  // The lobby stores the trip total it was created with (computed from the
-  // creator's terminal fare). Prefer that over the prop so everyone in the
-  // lobby — including a passenger who joined an existing lobby or reopened it
-  // later — sees the same, correct fare instead of their own re-estimate.
-  const lobbyTripTotal =
-    lobby && Number(lobby.price_per_seat) > 0 ? Number(lobby.price_per_seat) : pricePerSeat;
-  const perSeatFare = lobbyTripTotal / Math.max(1, passengers.length);
+  // Old lobbies stored one total on the row; newer passengers carry their own
+  // fare because each can have a different drop-off distance.
+  const passengersWithFares = backfillLegacySharedRidePassengerFares(
+    passengers,
+    Number(lobby?.price_per_seat || pricePerSeat * passengers.length),
+  );
+  const yourPassengers = user
+    ? passengersWithFares.filter(passenger => passenger.id === user.id || passenger.id.startsWith(`${user.id}_companion_`))
+    : [];
+  const yourSeatCount = yourPassengers.length;
+  const yourSeatTotal = sumSharedRidePassengerFares(yourPassengers);
+  const yourFarePerSeat = yourSeatCount > 0 ? yourSeatTotal / yourSeatCount : pricePerSeat;
+  const currentLobbyTotal = sumSharedRidePassengerFares(passengersWithFares);
 
   /*
    * Drop-off order: the destination closest to the pickup is reached first.
@@ -1506,7 +1543,7 @@ if (loading) {
 
               {/* Passenger Cards */}
               <div className="space-y-2">
-                {passengers.map((passenger, index) => {
+                {passengers.map((passenger) => {
                   const isCurrentUserOrCompanion =
                     passenger.id === user?.id || 
                     passenger.id.startsWith(`${user?.id}_companion_`);
@@ -1546,7 +1583,7 @@ if (loading) {
                             Joined {new Date(passenger.joinedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                           </p>
                         </div>
-                        {index === 0 && (
+                        {passenger.id === lobby.customer_id && (
                           <Badge className="bg-[var(--violet)] text-white text-[10px]">
                             HOST
                           </Badge>
@@ -1801,17 +1838,18 @@ if (loading) {
           <div className="p-4 border-t border-[var(--border)] bg-surface">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-[10px] text-[var(--muted-foreground)] font-bold tracking-wider">Your Fare</p>
-                <p className="text-2xl font-bold text-[var(--primary)]">₱{perSeatFare.toFixed(2)}</p>
-                {passengers.length > 1 && (
+                <p className="text-[10px] text-[var(--muted-foreground)] font-bold tracking-wider">Fare per passenger</p>
+                <p className="text-2xl font-bold text-[var(--primary)]">₱{yourFarePerSeat.toFixed(2)}</p>
+                {yourSeatCount > 1 && (
                   <p className="text-[10px] text-[var(--muted-foreground)]">
-                    ₱{lobbyTripTotal} ÷ {passengers.length} passengers
+                    Your {yourSeatCount} seats: ₱{yourSeatTotal.toFixed(2)}
                   </p>
                 )}
               </div>
               <div className="text-right">
-                <p className="text-[10px] text-[var(--muted-foreground)] font-bold tracking-wider">Trip Total</p>
-                <p className="text-lg font-bold text-[var(--ink)]">₱{lobbyTripTotal}</p>
+                <p className="text-[10px] text-[var(--muted-foreground)] font-bold tracking-wider">Current group total</p>
+                <p className="text-lg font-bold text-[var(--ink)]">₱{currentLobbyTotal.toFixed(2)}</p>
+                <p className="text-[10px] text-[var(--muted-foreground)]">{passengers.length} passengers with individual fares</p>
               </div>
             </div>
 
@@ -2008,9 +2046,12 @@ if (loading) {
       {showLeaveConfirm && (
         <div className="fixed inset-0 bg-black/70 z-[2100] flex items-center justify-center p-4">
           <Card className="bg-surface p-6 max-w-sm w-full">
-            <h3 className="text-lg font-bold text-[var(--ink)] mb-2">Cancel Ride?</h3>
+            <h3 className="text-lg font-bold text-[var(--ink)] mb-2">Leave Lobby?</h3>
             <p className="text-sm text-[var(--muted-foreground)] mb-6">
-              Are you sure you want to cancel this ride? You'll need to find a new ride.
+              You and your companion seats will leave this lobby. Other passengers can continue their ride.
+              {lobby.customer_id === user?.id
+                ? ' The next passenger in join order becomes host. If nobody remains, the lobby closes.'
+                : ''}
             </p>
             <div className="flex gap-3">
               <Button
@@ -2018,13 +2059,13 @@ if (loading) {
                 onClick={() => setShowLeaveConfirm(false)}
                 className="flex-1"
               >
-                CANCEL
+                Stay
               </Button>
               <Button
                 onClick={handleLeaveLobby}
                 className="flex-1 bg-[var(--error)] hover:bg-[var(--error)] text-white"
               >
-                CANCEL RIDE
+                Leave Lobby
               </Button>
             </div>
           </Card>

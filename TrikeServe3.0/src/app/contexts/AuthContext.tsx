@@ -257,6 +257,28 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     userIdRef.current = user?.id ?? null;
   }, [user]);
 
+  // Track active app sessions separately from `users.is_online`, which means a
+  // driver is available for rides. Realtime presence drops automatically when
+  // a tab, app, or network session closes, so the Super Admin sees who's using
+  // the app rather than who is only marked available for dispatch.
+  useEffect(() => {
+    if (!user?.id || user.role === 'admin') return;
+
+    const channel = supabase.channel('platform-online-users', {
+      config: { presence: { key: user.id } },
+    });
+
+    channel.subscribe((status) => {
+      if (status === 'SUBSCRIBED') {
+        void channel.track({ role: user.role });
+      }
+    });
+
+    return () => {
+      void supabase.removeChannel(channel);
+    };
+  }, [user?.id, user?.role]);
+
   // Listen for Supabase auth state changes
   useEffect(() => {
     let mounted = true;

@@ -1,5 +1,6 @@
 import { supabase } from "./supabase";
 import { ACTIVE_RIDE_STATUSES, isActiveRideStatus } from "./rideLock";
+import { backfillLegacySharedRidePassengerFares, sumSharedRidePassengerFares } from "./pricing";
 
 /**
  * The rider's pointer to the ride they are on.
@@ -129,7 +130,11 @@ function mapDriverStatusToRideStatus(value: unknown) {
 }
 
 function mapLobbyToRiderRide(lobby: any) {
-  const passengers = Array.isArray(lobby.passengers_json) ? lobby.passengers_json : [];
+  const storedPassengers = Array.isArray(lobby.passengers_json) ? lobby.passengers_json : [];
+  const passengers = backfillLegacySharedRidePassengerFares(
+    storedPassengers,
+    Number(lobby.price_per_seat || 0),
+  );
   const names = passengers.map((p: any) => p?.name).filter(Boolean);
   return {
     id: lobby.id,
@@ -146,7 +151,9 @@ function mapLobbyToRiderRide(lobby: any) {
     dropoffLat: lobby.dropoff_lat ?? undefined,
     dropoffLng: lobby.dropoff_lng ?? undefined,
     payment: lobby.payment_method === "COD" ? "COD" : "PREPAID",
-    amount: Number(lobby.price_per_seat || 0),
+    // Each passenger can have a different distance charge. Older lobby rows
+    // fall back to their original shared `price_per_seat` value.
+    amount: sumSharedRidePassengerFares(passengers),
     passengers: passengers.length,
     maxPassengers: Number(lobby.max_seats || 3),
     customerId: lobby.customer_id,

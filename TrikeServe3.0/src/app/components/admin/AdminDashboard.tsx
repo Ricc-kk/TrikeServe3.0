@@ -14,6 +14,7 @@ import { adminDeleteUser, adminVerifyUser, logAudit } from "../../../lib/supabas
 import ConfirmationModal from "../ui/confirmation-modal";
 import Toast from "../ui/Toast";
 import SuperAdminOverview from "./SuperAdminOverview";
+import OnlineDriversForTerminal from "./OnlineDriversForTerminal";
 import { Link } from "react-router";
 import AdminPageIntro, { AdminMetricCards } from "./AdminPageIntro";
 import { ArrowUpRight, Clock, MapPin, Send } from "lucide-react";
@@ -503,6 +504,11 @@ export default function AdminDashboard() {
             { label: 'Verified drivers', value: activeUsers.filter(account => account.type === 'rider').length, detail: 'Verified by the Super Admin', Icon: CheckCircle, tone: 'success' },
             { label: 'Awaiting verification', value: pendingVerifications.length, detail: 'Account reviews · not change requests', Icon: Clock, tone: 'amber' },
           ]} />
+          <OnlineDriversForTerminal
+            terminalId={user?.terminalId ?? null}
+            terminalName={user?.terminalName}
+            refreshToken={analyticsRefresh}
+          />
           <section aria-labelledby="driver-workspace-title">
             <h2 id="driver-workspace-title" className="mb-4 text-lg font-bold text-[var(--ink)]">Your workspace <span className="text-xs font-normal text-[var(--muted-foreground)]">· Pamamahala</span></h2>
             <div className="grid gap-3 @min-[40rem]:grid-cols-3">

@@ -1,11 +1,20 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { MapPin, Users, Clock, X, ChevronRight } from "lucide-react";
 import { Button } from "../ui/button";
 import { Card } from "../ui/card";
 import { Badge } from "../ui/badge";
 import { useAuth } from "../../contexts/AuthContext";
-import { supabaseHelpers, isSamePickup, isPointWithinAnyTerminalBorder, isPointWithinAnyTerminalRoute, geocodeAddress } from "@/lib/supabase";
+import {
+  supabaseHelpers,
+  isSamePickup,
+  isPointWithinAnyTerminalBorder,
+  isPointWithinAnyTerminalRoute,
+  isPointWithinTerminalRoute,
+  normalizeBoundaryRoad,
+  geocodeAddress,
+} from "@/lib/supabase";
 import { supabase } from "@/lib/supabase";
+import { computeSharedRideFarePerPassenger, straightLineKm, type RideRates } from "@/lib/pricing";
 
 interface AvailableLobby {
   id: string;
@@ -20,9 +29,11 @@ interface AvailableLobby {
     avatar?: string;
     dropoff?: string;
     dropoffAddress?: string;
+    fare?: number;
   }>;
   max_seats: number;
   price_per_seat: number;
+  terminal_id?: string | null;
   status: 'waiting' | 'driver_found' | 'in_progress' | 'completed' | 'cancelled';
   created_at: string;
 }
@@ -43,6 +54,7 @@ interface BrowseAvailableLobbiesProps {
   dropoff: string;
   dropoffAddress: string;
   dropoffCoords?: { lat: number; lng: number } | null;
+  rates: Pick<RideRates, "baseFare" | "baseFareIncludedKm" | "perKm">;
   onLobbyJoined: (lobbyId: string) => void;
   onClose: () => void;
 }
@@ -68,6 +80,7 @@ export default function BrowseAvailableLobbies({
   dropoff,
   dropoffAddress,
   dropoffCoords,
+  rates,
   onLobbyJoined,
   onClose
 }: BrowseAvailableLobbiesProps) {
@@ -77,25 +90,16 @@ export default function BrowseAvailableLobbies({
   const [error, setError] = useState<string | null>(null);
   const [selectedLobby, setSelectedLobby] = useState<string | null>(null);
   const [joiningLobby, setJoiningLobby] = useState(false);
+  const joiningDistanceKm = straightLineKm(pickupCoords, dropoffCoords);
+  const joiningFare = computeSharedRideFarePerPassenger(rates, joiningDistanceKm);
+  const joiningFareHasDistance = joiningDistanceKm != null;
 
-  /*
-   * Lobbies are listed by terminal, not by full route.
-   *
-   * What a customer is actually asking here is "who else is waiting at my
-   * terminal?" -- the people they could share a vehicle with. Requiring the
-   * drop-off to match as well hid almost everything: two people leaving the
-   * same terminal almost never pick the exact same destination string, and when
-   * they did the list still said there was nobody there. Matching on the pickup
-   * alone shows every lobby leaving that terminal, each with its own drop-off
-   * shown on the card, so the choice is still an informed one.
-   *
-   * The name AND the address are both passed, because a pickup chosen from the
-   * terminal picker has two different values -- the terminal's name ("SANPA
-   * TODA Terminal") and its boundary ("Main Road, Valenzuela City") -- and
-   * lobbies record the name. Matching on the boundary alone found nothing in
-   * common and filtered out every lobby on screen.
-   */
-  const routeMatches = (lobby: any) => isSamePickup(lobby, pickup, pickupAddress, terminalId);
+  // When a terminal route is selected, its ID is the authoritative match.
+  // Pickup names and addresses can be shared by different terminals, so only
+  // use fuzzy pickup matching for older flows that have no selected terminal.
+  const routeMatches = useCallback((lobby: AvailableLobby) => terminalId
+    ? lobby.terminal_id === terminalId
+    : isSamePickup(lobby, pickup, pickupAddress), [terminalId, pickup, pickupAddress]);
 
   // Fetch available lobbies on mount
   useEffect(() => {
@@ -182,7 +186,7 @@ export default function BrowseAvailableLobbies({
       supabase.removeChannel(channel);
       clearInterval(pollInterval);
     };
-  }, [pickup, pickupAddress, terminalId, user?.id]);
+  }, [routeMatches, user?.id]);
 
   const handleJoinLobby = async (lobbyId: string) => {
     if (!user) {
@@ -201,7 +205,12 @@ export default function BrowseAvailableLobbies({
         return;
       }
 
-      const joinedDropoffAddress = dropoffAddress || lobby.dropoff_address;
+      const joinedDropoffAddress = dropoffAddress || dropoff;
+
+      if (!routeMatches(lobby)) {
+        setError(`This lobby is not on the selected ${pickup || 'terminal'} route. Refresh the list and choose a matching lobby.`);
+        return;
+      }
 
       /*
        * Joining is a booking like any other, so it has to clear the same two
@@ -236,14 +245,32 @@ export default function BrowseAvailableLobbies({
         return;
       }
 
-      const route = await isPointWithinAnyTerminalRoute(coords.lat, coords.lng);
-      if (route.lookupFailed) {
-        setError("We couldn't verify terminal boundaries. Check your connection and try again.");
-        return;
+      let routeAllowed = false;
+      let routeName = pickup || 'selected terminal';
+      if (terminalId) {
+        const { data: terminal, error: terminalError } = await supabaseHelpers.getTerminalGeofence(terminalId);
+        if (terminalError || !terminal) {
+          setError("We couldn't verify the selected terminal route. Check your connection and try again.");
+          return;
+        }
+
+        routeName = terminal.name || routeName;
+        routeAllowed = isPointWithinTerminalRoute(coords.lat, coords.lng, {
+          road: normalizeBoundaryRoad(terminal.boundary_polygon),
+          widthM: terminal.road_width_m,
+        });
+      } else {
+        const route = await isPointWithinAnyTerminalRoute(coords.lat, coords.lng);
+        if (route.lookupFailed) {
+          setError("We couldn't verify terminal boundaries. Check your connection and try again.");
+          return;
+        }
+        routeAllowed = route.allowed;
       }
-      if (!route.allowed) {
-        console.log('🚫 Lobby join drop-off outside every terminal route:', coords);
-        setError("Your drop-off is not within the route of any terminal, so you can't join this ride.");
+
+      if (!routeAllowed) {
+        console.log('🚫 Lobby join drop-off is outside the selected terminal route:', coords, terminalId);
+        setError(`Your drop-off must be within the ${routeName} route to join this lobby.`);
         return;
       }
 
@@ -261,7 +288,8 @@ export default function BrowseAvailableLobbies({
         dropoff: dropoff || lobby.dropoff_location,
         dropoffAddress: joinedDropoffAddress,
         dropoffLat: coords.lat,
-        dropoffLng: coords.lng
+        dropoffLng: coords.lng,
+        fare: computeSharedRideFarePerPassenger(rates, straightLineKm(pickupCoords, coords)),
       };
 
       // Join the lobby
@@ -333,10 +361,8 @@ export default function BrowseAvailableLobbies({
               <Users className="w-5 h-5 text-[var(--primary)]" />
             </div>
             <h2 className="text-xl font-bold text-[var(--ink)]">Available Lobbies</h2>
-              {/* Says where the list came from, because these are every lobby at
-                  this terminal -- not just the ones going where you are going. */}
               <p className="text-xs text-[var(--muted-foreground)] mt-0.5">
-                Everyone waiting at {pickup || 'your terminal'}
+                Lobbies on the {pickup || 'selected terminal'} route
               </p>
             </div>
           <button
@@ -356,8 +382,8 @@ export default function BrowseAvailableLobbies({
               </div>
               <p className="text-lg font-semibold text-[var(--ink)] mb-1">No lobbies available</p>
               <p className="text-sm text-[var(--muted-foreground)]">
-                Nobody else is waiting at this terminal right now. Be the first to
-                start a lobby.
+                Nobody else is waiting on this terminal route right now. Be the
+                first to start a lobby.
               </p>
             </div>
           ) : (
@@ -421,8 +447,10 @@ export default function BrowseAvailableLobbies({
                       <div className="flex items-center justify-between">
                         <div>
                           <p className="text-xs text-[var(--muted-foreground)]">Your fare</p>
-                          <p className="text-lg font-bold text-[var(--primary)]">₱{(lobby.price_per_seat / (passengers.length + 1)).toFixed(2)}</p>
-                          <p className="text-[10px] text-[var(--muted-foreground)]">₱{lobby.price_per_seat} trip ÷ {passengers.length + 1} passengers</p>
+                          <p className="text-lg font-bold text-[var(--primary)]">₱{joiningFare.toFixed(2)}</p>
+                          <p className="text-[10px] text-[var(--muted-foreground)]">
+                            {joiningFareHasDistance ? "Base fare share + your distance" : "Base fare share; distance charge added when located"}
+                          </p>
                         </div>
                         <div className="text-right">
                           <p className="text-xs text-[var(--muted-foreground)]">{getTimeWaiting(lobby.created_at)}</p>

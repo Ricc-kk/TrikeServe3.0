@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { useNavigate, useLocation } from "react-router";
 import { ArrowLeft, Navigation, MapPin, CheckCircle, Users, User, X, MessageSquare } from "lucide-react";
 import { GoogleMap, Marker, InfoWindow, DirectionsRenderer, Polyline } from "@react-google-maps/api";
@@ -89,6 +89,83 @@ const MIN_HEADING_SPEED_MPS = 1.5;
 // would make it spin on the spot.
 const MIN_HEADING_BASELINE_METERS = 10;
 
+const SHARED_DROPOFF_COLORS = [
+  '#2563EB', // blue
+  '#7C3AED', // violet
+  '#DB2777', // pink
+  '#EA580C', // orange
+  '#0891B2', // cyan
+  '#A16207', // amber
+];
+
+type RideCoordinate = { lat: number; lng: number };
+
+interface SharedDropoffStop {
+  id: string;
+  name: string;
+  color: string;
+  position: RideCoordinate;
+}
+
+interface SharedDropoffRoute extends SharedDropoffStop {
+  path: RideCoordinate[];
+}
+
+function coordinateFromValues(latValue: unknown, lngValue: unknown): RideCoordinate | null {
+  if (latValue == null || lngValue == null || latValue === '' || lngValue === '') return null;
+  const lat = Number(latValue);
+  const lng = Number(lngValue);
+  if (!Number.isFinite(lat) || !Number.isFinite(lng) || lat < -90 || lat > 90 || lng < -180 || lng > 180) {
+    return null;
+  }
+  return { lat, lng };
+}
+
+function getSharedDropoffStops(ride: ActiveRideData | null): SharedDropoffStop[] {
+  if (!ride || (ride.type !== 'shared' && !ride.lobbyId)) return [];
+
+  const passengers = Array.isArray(ride.passengerDetails) ? ride.passengerDetails : [];
+  const primaryDropoff = coordinateFromValues(ride.dropoffLat, ride.dropoffLng);
+  const pickup = coordinateFromValues(ride.pickupLat, ride.pickupLng);
+  const passengerStops = passengers.flatMap((passenger: any, index: number) => {
+    const passengerId = passenger?.id == null ? '' : String(passenger.id);
+    const isPrimaryPassenger = passengerId && ride.customerId
+      ? passengerId === String(ride.customerId)
+      : passengers.length === 1 || (!passengerId && index === 0);
+    const position = coordinateFromValues(
+      passenger?.dropoffLat ?? passenger?.dropoff_lat,
+      passenger?.dropoffLng ?? passenger?.dropoff_lng,
+    ) || (isPrimaryPassenger ? primaryDropoff : null);
+    if (!position) return [];
+
+    return [{
+      id: passengerId || `passenger-${index}`,
+      name: String(passenger?.name || `Passenger ${index + 1}`).trim(),
+      color: SHARED_DROPOFF_COLORS[index % SHARED_DROPOFF_COLORS.length],
+      position,
+      index,
+    }];
+  });
+
+  // Older active ride records may not include passengerDetails. The lobby row's
+  // own destination still lets that single passenger's stop render.
+  if (passengerStops.length === 0 && passengers.length === 0 && primaryDropoff) {
+    return [{
+      id: String(ride.customerId || ride.id),
+      name: ride.customerName || 'Passenger',
+      color: SHARED_DROPOFF_COLORS[0],
+      position: primaryDropoff,
+    }];
+  }
+
+  return passengerStops
+    .sort((a, b) => {
+      if (!pickup) return a.index - b.index;
+      return distanceInMeters(pickup, a.position) - distanceInMeters(pickup, b.position) || a.index - b.index;
+    })
+    .map(stop => ({ id: stop.id, name: stop.name, color: stop.color, position: stop.position }));
+}
+
 function decodeRoutePolyline(encoded: string): google.maps.LatLngLiteral[] {
   const points: google.maps.LatLngLiteral[] = [];
   let index = 0;
@@ -167,6 +244,7 @@ export default function ActiveRide() {
   const [locationProblem, setLocationProblem] = useState<LocationProblem | null>(null);
   const [directions, setDirections] = useState<google.maps.DirectionsResult | null>(null);
   const [routePath, setRoutePath] = useState<google.maps.LatLngLiteral[] | null>(null);
+  const [sharedDropoffRoutes, setSharedDropoffRoutes] = useState<SharedDropoffRoute[]>([]);
   const [mapCenter, setMapCenter] = useState<{ lat: number; lng: number }>({ lat: 14.6037, lng: 120.9793 });
   // Whether the camera is locked to the driver. Defaults on so the opening view is
   // the driver, and turns off by itself the first time they pan or zoom.
@@ -791,6 +869,83 @@ export default function ActiveRide() {
 
   // Determine if we're heading to pickup or dropoff
   const isHeadingToPickup = rideData?.status === 'on-the-way' || rideData?.status === 'arrived';
+  const isSharedRide = Boolean(rideData && (rideData.type === 'shared' || rideData.lobbyId));
+  const sharedDropoffStops = useMemo(() => getSharedDropoffStops(rideData), [
+    rideData?.id,
+    rideData?.type,
+    rideData?.lobbyId,
+    rideData?.customerId,
+    rideData?.customerName,
+    rideData?.pickupLat,
+    rideData?.pickupLng,
+    rideData?.dropoffLat,
+    rideData?.dropoffLng,
+    rideData?.passengerDetails,
+  ]);
+
+  // A shared ride has one colored road segment for each passenger stop. Route the
+  // ordered itinerary from the common pickup, so every segment can keep the
+  // color of the passenger who gets off at its end.
+  useEffect(() => {
+    if (!isSharedRide || !rideData || !isMapsLoaded || !(window as any).google) {
+      setSharedDropoffRoutes([]);
+      return;
+    }
+
+    const pickup = coordinateFromValues(rideData.pickupLat, rideData.pickupLng);
+    if (!pickup || sharedDropoffStops.length === 0) {
+      setSharedDropoffRoutes([]);
+      return;
+    }
+
+    const fallbackRoutes: SharedDropoffRoute[] = [];
+    let previousStop = pickup;
+    for (const stop of sharedDropoffStops) {
+      fallbackRoutes.push({ ...stop, path: [previousStop, stop.position] });
+      previousStop = stop.position;
+    }
+    setSharedDropoffRoutes(fallbackRoutes);
+
+    let cancelled = false;
+    const lastStop = sharedDropoffStops[sharedDropoffStops.length - 1];
+    const waypoints = sharedDropoffStops.slice(0, -1).map(stop => ({
+      location: stop.position,
+      stopover: true,
+    }));
+    const service = new (window as any).google.maps.DirectionsService();
+    service.route({
+      origin: pickup,
+      destination: lastStop.position,
+      waypoints,
+      optimizeWaypoints: false,
+      travelMode: (window as any).google.maps.TravelMode.DRIVING,
+    }, (result: any, status: string) => {
+      if (cancelled || status !== (window as any).google.maps.DirectionsStatus.OK) return;
+
+      const legs = result?.routes?.[0]?.legs;
+      if (!Array.isArray(legs) || legs.length !== sharedDropoffStops.length) return;
+
+      const routedSegments = sharedDropoffStops.map((stop, index) => {
+        const legPath = (legs[index]?.steps || []).flatMap((step: any) =>
+          (step.path || []).map((point: any) => ({ lat: point.lat(), lng: point.lng() })),
+        );
+        return {
+          ...stop,
+          path: legPath.length > 1 ? legPath : fallbackRoutes[index].path,
+        };
+      });
+      setSharedDropoffRoutes(routedSegments);
+    });
+
+    return () => { cancelled = true; };
+  }, [
+    isSharedRide,
+    rideData?.id,
+    rideData?.pickupLat,
+    rideData?.pickupLng,
+    sharedDropoffStops,
+    isMapsLoaded,
+  ]);
 
   // For delivery rides: geocode the restaurant pickup address if lat/lng are missing
   useEffect(() => {
@@ -818,6 +973,18 @@ export default function ActiveRide() {
 
   useEffect(() => {
     if (!rideData || !isMapsLoaded || !(window as any).google) return;
+
+    if (isSharedRide && !isHeadingToPickup) {
+      // The colored multi-stop route below replaces the single-destination route
+      // once the shared ride has left its pickup.
+      const sharedPhaseKey = `${rideData.id}:shared-dropoffs`;
+      if (routePhaseRef.current !== sharedPhaseKey) {
+        routePhaseRef.current = sharedPhaseKey;
+        setDirections(null);
+        setRoutePath(null);
+      }
+      return;
+    }
 
     const phase = isHeadingToPickup ? 'restaurant' : 'customer';
     const phaseKey = `${rideData.id}:${phase}`;
@@ -926,7 +1093,7 @@ export default function ActiveRide() {
       cancelled = true;
       window.clearTimeout(routeTimer);
     };
-  }, [rideData?.id, rideData?.status, rideData?.pickupLat, rideData?.pickupLng, rideData?.dropoffLat, rideData?.dropoffLng, isMapsLoaded, isHeadingToPickup]);
+  }, [rideData?.id, rideData?.status, rideData?.pickupLat, rideData?.pickupLng, rideData?.dropoffLat, rideData?.dropoffLng, isMapsLoaded, isHeadingToPickup, isSharedRide]);
 
   // Match the accept-preview map: zoom to the road route once for each leg so
   // the route is in view when the rider enters the restaurant or customer phase.
@@ -938,9 +1105,11 @@ export default function ActiveRide() {
     const phaseKey = `${rideData.id}:${isHeadingToPickup ? 'restaurant' : 'customer'}`;
     if (fittedRoutePhaseRef.current === phaseKey) return;
 
-    const routePoints = routePath
-      || directions?.routes?.[0]?.overview_path?.map(point => ({ lat: point.lat(), lng: point.lng() }))
-      || [];
+    const routePoints = isSharedRide && !isHeadingToPickup
+      ? sharedDropoffRoutes.flatMap(route => route.path)
+      : routePath
+        || directions?.routes?.[0]?.overview_path?.map(point => ({ lat: point.lat(), lng: point.lng() }))
+        || sharedDropoffRoutes.flatMap(route => route.path);
     if (routePoints.length < 2) return;
 
     const bounds = new (window as any).google.maps.LatLngBounds();
@@ -950,7 +1119,7 @@ export default function ActiveRide() {
     map.fitBounds(bounds, 48);
     window.clearTimeout(mapMoveTimeoutRef.current);
     mapMoveTimeoutRef.current = window.setTimeout(() => { mapMoveRef.current = false; }, 1000);
-  }, [directions, routePath, rideData?.id, isHeadingToPickup]);
+  }, [directions, routePath, sharedDropoffRoutes, rideData?.id, isHeadingToPickup, isSharedRide]);
 
   const isDeliveryRide = (ride: any) =>
     ride?.type === 'delivery' ||
@@ -1772,17 +1941,41 @@ export default function ActiveRide() {
                 zIndex={isHeadingToPickup ? 90 : 70}
               />
             )}
-            {rideData.dropoffLat && (
-              <Marker
-                position={{ lat: Number(rideData.dropoffLat), lng: Number(rideData.dropoffLng) }}
-                icon={isDeliveryRide(rideData) ? createCustomerMarkerIcon() : markerIcon(DROPOFF_HEX)}
-                title={isDeliveryRide(rideData) ? "Customer drop-off" : "Drop-off"}
-                zIndex={!isHeadingToPickup ? 90 : 70}
+            {isSharedRide
+              ? sharedDropoffStops.map((stop, index) => (
+                <Marker
+                  key={stop.id}
+                  position={stop.position}
+                  icon={markerIcon(stop.color)}
+                  title={`${stop.name} drop-off`}
+                  zIndex={!isHeadingToPickup ? 90 + index : 70 + index}
+                />
+              ))
+              : rideData.dropoffLat != null && rideData.dropoffLng != null && (
+                <Marker
+                  position={{ lat: Number(rideData.dropoffLat), lng: Number(rideData.dropoffLng) }}
+                  icon={isDeliveryRide(rideData) ? createCustomerMarkerIcon() : markerIcon(DROPOFF_HEX)}
+                  title={isDeliveryRide(rideData) ? "Customer drop-off" : "Drop-off"}
+                  zIndex={!isHeadingToPickup ? 90 : 70}
+                />
+              )}
+
+            {/* Each colored segment ends at the matching passenger's drop-off. */}
+            {sharedDropoffRoutes.map(route => (
+              <Polyline
+                key={`dropoff-route-${route.id}`}
+                path={route.path}
+                options={{
+                  strokeColor: route.color,
+                  strokeWeight: 6,
+                  strokeOpacity: 0.92,
+                  zIndex: 20,
+                }}
               />
-            )}
+            ))}
 
             {/* Road route for the current leg from Routes API. */}
-            {routePath && (
+            {routePath && (!isSharedRide || isHeadingToPickup) && (
               <Polyline
                 path={routePath}
                 options={{
@@ -1795,7 +1988,7 @@ export default function ActiveRide() {
             )}
 
             {/* Legacy Directions service fallback route line. */}
-            {directions && (
+            {directions && (!isSharedRide || isHeadingToPickup) && (
               <DirectionsRenderer
                 directions={directions}
                 options={{
@@ -1819,7 +2012,7 @@ export default function ActiveRide() {
             {/* Straight-line fallback. If both road-routing APIs fail while the
                 destination coordinates are known, keep a visible line toward
                 the active destination until a road route can be loaded. */}
-            {!directions && !routePath && driverLocation && (() => {
+            {!directions && !routePath && driverLocation && (!isSharedRide || isHeadingToPickup) && (() => {
               const dest = isHeadingToPickup
                 ? (rideData.pickupLat != null && rideData.pickupLng != null
                     ? { lat: Number(rideData.pickupLat), lng: Number(rideData.pickupLng) }
@@ -1875,10 +2068,19 @@ export default function ActiveRide() {
               <span className="size-2.5 rounded-full" style={{ background: PICKUP_HEX }} aria-hidden="true" />
               Pickup · {rideData.pickup}
             </span>
-            <span className="inline-flex w-fit items-center gap-1.5 rounded-full bg-surface px-2.5 py-1 text-[11px] font-bold shadow-md">
-              <span className="size-2.5 rounded-full" style={{ background: DROPOFF_HEX }} aria-hidden="true" />
-              Drop-off · {rideData.dropoff}
-            </span>
+            {isSharedRide && sharedDropoffStops.length > 0
+              ? sharedDropoffStops.map(stop => (
+                <span key={`dropoff-label-${stop.id}`} className="inline-flex w-fit items-center gap-1.5 rounded-full bg-surface px-2.5 py-1 text-[11px] font-bold shadow-md">
+                  <span className="size-2.5 rounded-full" style={{ background: stop.color }} aria-hidden="true" />
+                  {stop.name} · Drop-off
+                </span>
+              ))
+              : (
+                <span className="inline-flex w-fit items-center gap-1.5 rounded-full bg-surface px-2.5 py-1 text-[11px] font-bold shadow-md">
+                  <span className="size-2.5 rounded-full" style={{ background: DROPOFF_HEX }} aria-hidden="true" />
+                  Drop-off · {rideData.dropoff}
+                </span>
+              )}
           </div>
         )}
         {/* Re-centre on the driver.
@@ -2063,9 +2265,20 @@ export default function ActiveRide() {
                 <div className="min-w-0 flex-1">
                   <h2 className="font-bold text-lg">{resolvedName || rideData.customerName}</h2>
                   {rideData.passengerDetails && rideData.passengerDetails.length > 1 && (
-                    <p className="text-xs text-[var(--muted-foreground)] mt-0.5">
-                      {rideData.passengerDetails.map((p: any) => p.name || 'Passenger').join(', ')}
-                    </p>
+                    <div className="mt-1 space-y-0.5 text-xs text-[var(--muted-foreground)]">
+                      {rideData.passengerDetails.map((p: any, index: number) => {
+                        const stop = sharedDropoffStops.find(item => item.id === String(p.id ?? `passenger-${index}`));
+                        return (
+                          <p key={p.id || `passenger-${index}`} className="flex justify-between gap-3">
+                            <span className="flex min-w-0 items-center gap-1.5 truncate">
+                              {stop && <span className="size-2 shrink-0 rounded-full" style={{ background: stop.color }} aria-hidden="true" />}
+                              <span className="truncate">{p.name || 'Passenger'}</span>
+                            </span>
+                            {p.fare != null && <span className="shrink-0 font-semibold">₱{Number(p.fare).toFixed(2)}</span>}
+                          </p>
+                        );
+                      })}
+                    </div>
                   )}
                   <div className="flex gap-2 mt-1">
                     <Badge className="bg-[var(--primary)]">₱{rideData.amount}</Badge>

@@ -10,6 +10,12 @@ export interface RecentChatHead {
   lastActivityAt: string | null;
 }
 
+export interface ChatHeadOpenRequest {
+  userId: string;
+  conversationId: string;
+  requestId: number;
+}
+
 interface ChatHeadVisibilityContextValue {
   localHeadIds: string[];
   registerLocalHead: (conversationId?: string) => () => void;
@@ -18,6 +24,8 @@ interface ChatHeadVisibilityContextValue {
   closeChatOverlay: () => void;
   recentChatHeads: RecentChatHead[];
   setRecentChatHeads: Dispatch<SetStateAction<RecentChatHead[]>>;
+  chatHeadOpenRequest: ChatHeadOpenRequest | null;
+  requestChatHeadOpen: (userId: string, conversationId: string) => void;
 }
 
 const ChatHeadVisibilityContext = createContext<ChatHeadVisibilityContextValue | null>(null);
@@ -27,6 +35,8 @@ export function ChatHeadVisibilityProvider({ children }: { children: ReactNode }
   const [openedConversationId, setOpenedConversationId] = useState<string | null>(null);
   const [recentChatHeads, setRecentChatHeads] = useState<RecentChatHead[]>([]);
   const nextHeadKey = useRef(0);
+  const nextOpenRequestId = useRef(0);
+  const [chatHeadOpenRequest, setChatHeadOpenRequest] = useState<ChatHeadOpenRequest | null>(null);
 
   const registerLocalHead = useCallback((conversationId?: string) => {
     const key = ++nextHeadKey.current;
@@ -37,6 +47,9 @@ export function ChatHeadVisibilityProvider({ children }: { children: ReactNode }
     setOpenedConversationId((current) => current === conversationId ? null : conversationId);
   }, []);
   const closeChatOverlay = useCallback(() => setOpenedConversationId(null), []);
+  const requestChatHeadOpen = useCallback((userId: string, conversationId: string) => {
+    setChatHeadOpenRequest({ userId, conversationId, requestId: ++nextOpenRequestId.current });
+  }, []);
 
   const localHeadIds = localHeads.flatMap((head) => head.conversationId ? [head.conversationId] : []);
 
@@ -49,6 +62,8 @@ export function ChatHeadVisibilityProvider({ children }: { children: ReactNode }
       closeChatOverlay,
       recentChatHeads,
       setRecentChatHeads,
+      chatHeadOpenRequest,
+      requestChatHeadOpen,
     }}>
       {children}
     </ChatHeadVisibilityContext.Provider>

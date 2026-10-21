@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { Camera, ImagePlus, Send, User, Users, X } from "lucide-react";
+import { useNavigate } from "react-router";
+import { Camera, ImagePlus, MessagesSquare, Send, User, Users, X } from "lucide-react";
 import { supabaseHelpers } from "@/lib/supabase";
 import { useChatHeadVisibility } from "../../contexts/ChatHeadVisibilityContext";
 
@@ -144,6 +145,7 @@ export default function RideChatOverlay({
   onClose: () => void;
 }) {
   const { openedConversationId, recentChatHeads, toggleChatOverlay } = useChatHeadVisibility();
+  const navigate = useNavigate();
   const [messages, setMessages] = useState<any[]>([]);
   const [text, setText] = useState('');
   const [pendingImage, setPendingImage] = useState<{
@@ -199,8 +201,9 @@ export default function RideChatOverlay({
       new Date(b.lastActivityAt || 0).getTime() - new Date(a.lastActivityAt || 0).getTime(),
     );
     const maxHeads = viewportWidth > 0
-      ? Math.max(1, Math.floor((viewportWidth - 16) / 64))
+      ? Math.max(0, Math.floor((viewportWidth - 24 - 44 - 8) / 64))
       : 1;
+    if (maxHeads === 0) return [];
     if (!current) return sortedHeads.slice(0, maxHeads);
 
     // Keep the open chat's head available as the close control. Fill the rest
@@ -492,6 +495,18 @@ export default function RideChatOverlay({
               </button>
             );
           })}
+          <button
+            type="button"
+            onClick={() => {
+              onClose();
+              navigate(senderRole === 'rider' ? '/rider/messages' : `/${senderRole}/messages`);
+            }}
+            aria-label="Open all messages"
+            title="All messages"
+            className="pointer-events-auto grid size-11 flex-shrink-0 place-items-center rounded-full border border-white/40 bg-[var(--surface)] text-[var(--primary)] shadow-xl transition-transform active:scale-95"
+          >
+            <MessagesSquare className="size-5" aria-hidden="true" />
+          </button>
         </div>
 
         {/*

@@ -188,6 +188,8 @@ export default function OrderDetail() {
     scopeKey: string;
     signals: Map<string, string>;
   } | null>(null);
+  const activatedOrderChatScopeRef = useRef<string | null>(null);
+  const activatedOrderConversationIdsRef = useRef(new Set<string>());
   const [isLoading, setIsLoading] = useState(true);
   const [rating, setRating] = useState(0);
   const [ratingSubmitting, setRatingSubmitting] = useState(false);
@@ -483,7 +485,11 @@ export default function OrderDetail() {
     const peerIds = new Set([order?.businessId, order?.driverId].filter((id): id is string => Boolean(id)));
     if (!customerId || peerIds.size === 0) {
       setIncomingOrderChat(null);
-      if (!customerId) previousOrderChatSignalsRef.current = null;
+      if (!customerId) {
+        previousOrderChatSignalsRef.current = null;
+        activatedOrderChatScopeRef.current = null;
+        activatedOrderConversationIdsRef.current.clear();
+      }
       return;
     }
 
@@ -508,11 +514,15 @@ export default function OrderDetail() {
         .filter(({ peerId }) => peerIds.has(peerId));
 
       const scopeKey = `${customerId}:${[...peerIds].sort().join(',')}`;
+      if (activatedOrderChatScopeRef.current !== scopeKey) {
+        activatedOrderChatScopeRef.current = scopeKey;
+        activatedOrderConversationIdsRef.current.clear();
+      }
       const previousSignals = previousOrderChatSignalsRef.current?.scopeKey === scopeKey
         ? previousOrderChatSignalsRef.current.signals
         : null;
       const nextSignals = new Map<string, string>();
-      let receivedNewMessage = false;
+      const changedConversationIds: string[] = [];
       conversations.forEach(({ conversation }) => {
         const signal = `${conversation.last_message_at || ''}:${conversation.last_message_sender_id || ''}`;
         const previousSignal = previousSignals?.get(conversation.id);
@@ -521,15 +531,19 @@ export default function OrderDetail() {
           conversation.last_message_at &&
           (previousSignal === undefined || previousSignal !== signal)
         ) {
-          receivedNewMessage = true;
+          changedConversationIds.push(conversation.id);
         }
         nextSignals.set(conversation.id, signal);
       });
       previousOrderChatSignalsRef.current = { scopeKey, signals: nextSignals };
-      if (receivedNewMessage) setOrderChatPulseKey((key) => key + 1);
+      if (changedConversationIds.length > 0) {
+        changedConversationIds.forEach((id) => activatedOrderConversationIdsRef.current.add(id));
+        setOrderChatPulseKey((key) => key + 1);
+      }
 
       const incoming = conversations
         .filter(({ conversation, peerId, unread }) =>
+          activatedOrderConversationIdsRef.current.has(conversation.id) &&
           unread > 0 && conversation.last_message_sender_id === peerId
         )
         .sort((a, b) =>
