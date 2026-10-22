@@ -15,6 +15,7 @@ import {
 } from "@/lib/supabase";
 import { supabase } from "@/lib/supabase";
 import { computeSharedRideFarePerPassenger, straightLineKm, type RideRates } from "@/lib/pricing";
+import { useDevModeOverride } from "../../hooks/useDevModeSettings";
 
 interface AvailableLobby {
   id: string;
@@ -85,6 +86,8 @@ export default function BrowseAvailableLobbies({
   onClose
 }: BrowseAvailableLobbiesProps) {
   const { user } = useAuth();
+  const [enforceBoundary] = useDevModeOverride("enforceBoundary");
+  const [sameRouteLobbyFilter] = useDevModeOverride("sameRouteLobbyFilter");
   const [lobbies, setLobbies] = useState<AvailableLobby[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -97,9 +100,12 @@ export default function BrowseAvailableLobbies({
   // When a terminal route is selected, its ID is the authoritative match.
   // Pickup names and addresses can be shared by different terminals, so only
   // use fuzzy pickup matching for older flows that have no selected terminal.
-  const routeMatches = useCallback((lobby: AvailableLobby) => terminalId
-    ? lobby.terminal_id === terminalId
-    : isSamePickup(lobby, pickup, pickupAddress), [terminalId, pickup, pickupAddress]);
+  const routeMatches = useCallback((lobby: AvailableLobby) => {
+    if (!sameRouteLobbyFilter) return true;
+    return terminalId
+      ? lobby.terminal_id === terminalId
+      : isSamePickup(lobby, pickup, pickupAddress);
+  }, [sameRouteLobbyFilter, terminalId, pickup, pickupAddress]);
 
   // Fetch available lobbies on mount
   useEffect(() => {
@@ -234,44 +240,46 @@ export default function BrowseAvailableLobbies({
         return;
       }
 
-      const border = await isPointWithinAnyTerminalBorder(pickupCoords.lat, pickupCoords.lng);
-      if (border.lookupFailed) {
-        setError("We couldn't verify terminal boundaries. Check your connection and try again.");
-        return;
-      }
-      if (!border.allowed) {
-        console.log('🚫 Lobby join pickup outside every terminal border:', pickupCoords);
-        setError("You're not at a terminal. Rides can only be booked from inside a terminal.");
-        return;
-      }
-
-      let routeAllowed = false;
-      let routeName = pickup || 'selected terminal';
-      if (terminalId) {
-        const { data: terminal, error: terminalError } = await supabaseHelpers.getTerminalGeofence(terminalId);
-        if (terminalError || !terminal) {
-          setError("We couldn't verify the selected terminal route. Check your connection and try again.");
-          return;
-        }
-
-        routeName = terminal.name || routeName;
-        routeAllowed = isPointWithinTerminalRoute(coords.lat, coords.lng, {
-          road: normalizeBoundaryRoad(terminal.boundary_polygon),
-          widthM: terminal.road_width_m,
-        });
-      } else {
-        const route = await isPointWithinAnyTerminalRoute(coords.lat, coords.lng);
-        if (route.lookupFailed) {
+      if (enforceBoundary) {
+        const border = await isPointWithinAnyTerminalBorder(pickupCoords.lat, pickupCoords.lng);
+        if (border.lookupFailed) {
           setError("We couldn't verify terminal boundaries. Check your connection and try again.");
           return;
         }
-        routeAllowed = route.allowed;
-      }
+        if (!border.allowed) {
+          console.log('🚫 Lobby join pickup outside every terminal border:', pickupCoords);
+          setError("You're not at a terminal. Rides can only be booked from inside a terminal.");
+          return;
+        }
 
-      if (!routeAllowed) {
-        console.log('🚫 Lobby join drop-off is outside the selected terminal route:', coords, terminalId);
-        setError(`Your drop-off must be within the ${routeName} route to join this lobby.`);
-        return;
+        let routeAllowed = false;
+        let routeName = pickup || 'selected terminal';
+        if (terminalId) {
+          const { data: terminal, error: terminalError } = await supabaseHelpers.getTerminalGeofence(terminalId);
+          if (terminalError || !terminal) {
+            setError("We couldn't verify the selected terminal route. Check your connection and try again.");
+            return;
+          }
+
+          routeName = terminal.name || routeName;
+          routeAllowed = isPointWithinTerminalRoute(coords.lat, coords.lng, {
+            road: normalizeBoundaryRoad(terminal.boundary_polygon),
+            widthM: terminal.road_width_m,
+          });
+        } else {
+          const route = await isPointWithinAnyTerminalRoute(coords.lat, coords.lng);
+          if (route.lookupFailed) {
+            setError("We couldn't verify terminal boundaries. Check your connection and try again.");
+            return;
+          }
+          routeAllowed = route.allowed;
+        }
+
+        if (!routeAllowed) {
+          console.log('🚫 Lobby join drop-off is outside the selected terminal route:', coords, terminalId);
+          setError(`Your drop-off must be within the ${routeName} route to join this lobby.`);
+          return;
+        }
       }
 
       // Create passenger object. The joiner's own profile and destination ride
@@ -449,7 +457,7 @@ export default function BrowseAvailableLobbies({
                           <p className="text-xs text-[var(--muted-foreground)]">Your fare</p>
                           <p className="text-lg font-bold text-[var(--primary)]">₱{joiningFare.toFixed(2)}</p>
                           <p className="text-[10px] text-[var(--muted-foreground)]">
-                            {joiningFareHasDistance ? "Base fare share + your distance" : "Base fare share; distance charge added when located"}
+                            {joiningFareHasDistance ? "Base fare + your distance" : "Base fare; distance charge added when located"}
                           </p>
                         </div>
                         <div className="text-right">

@@ -9,6 +9,7 @@ import LocationPermissionPrompt from "./LocationPermissionPrompt";
 import BusinessScrollBehavior from "./business/BusinessScrollBehavior";
 import GlobalChatHead from "./chat/GlobalChatHead";
 import { ChatHeadVisibilityProvider } from "../contexts/ChatHeadVisibilityContext";
+import DevModeSettings from "./ui/DevModeSettings";
 
 function NotificationToasts() {
   const { notifications, removeNotification } = useNotification();
@@ -42,6 +43,7 @@ export default function Root() {
                 <div className="min-h-screen">
                   <Outlet />
                 </div>
+                <DevModeSettings />
                 <GlobalChatHead />
               </NotificationProvider>
             </OrderProvider>

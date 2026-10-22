@@ -13,6 +13,7 @@ import FloatingChatHead from "../ui/FloatingChatHead";
 import RideChatOverlay from "../rider/RideChatOverlay";
 import { normalizeRouteColor } from "../ui/TerminalIcon";
 import { backfillLegacySharedRidePassengerFares, sumSharedRidePassengerFares } from "@/lib/pricing";
+import { useDevModeOverride } from "../../hooks/useDevModeSettings";
 
 const DRIVER_STATUS_ICONS: Record<string, typeof MapPin> = {
   cancelled: X,
@@ -52,7 +53,7 @@ interface LobbyPassenger {
   dropoffAddress?: string;
   dropoffLat?: number | null;
   dropoffLng?: number | null;
-  /** This passenger's fare: one quarter of the base plus their distance charge. */
+  /** This passenger's fare: the full base fare plus their distance charge. */
   fare?: number;
 }
 
@@ -139,6 +140,7 @@ export default function ShareRideLobby({
   onClose
 }: ShareRideLobbyProps) {
   const { user } = useAuth();
+  const [enforceBoundary] = useDevModeOverride("enforceBoundary");
   const [openingChat, setOpeningChat] = useState(false);
   /**
    * Floating chat head state, mirroring the driver's ride screen.
@@ -935,30 +937,32 @@ export default function ShareRideLobby({
         return null;
       }
 
-      const border = await isPointWithinAnyTerminalBorder(pickupCoords.lat, pickupCoords.lng);
-      if (border.lookupFailed) {
-        setGateFailure('lookup');
-        setShowOutOfBoundaryPopup(true);
-        return null;
-      }
-      if (!border.allowed) {
-        console.log('🚫 Share ride pickup outside every terminal border:', pickupCoords);
-        setGateFailure('border');
-        setShowOutOfBoundaryPopup(true);
-        return null;
-      }
+      if (enforceBoundary) {
+        const border = await isPointWithinAnyTerminalBorder(pickupCoords.lat, pickupCoords.lng);
+        if (border.lookupFailed) {
+          setGateFailure('lookup');
+          setShowOutOfBoundaryPopup(true);
+          return null;
+        }
+        if (!border.allowed) {
+          console.log('🚫 Share ride pickup outside every terminal border:', pickupCoords);
+          setGateFailure('border');
+          setShowOutOfBoundaryPopup(true);
+          return null;
+        }
 
-      const route = await isPointWithinAnyTerminalRoute(dropoffCoords.lat, dropoffCoords.lng);
-      if (route.lookupFailed) {
-        setGateFailure('lookup');
-        setShowOutOfBoundaryPopup(true);
-        return null;
-      }
-      if (!route.allowed) {
-        console.log('🚫 Share ride drop-off outside every terminal route:', dropoffCoords);
-        setGateFailure('route');
-        setShowOutOfBoundaryPopup(true);
-        return null;
+        const route = await isPointWithinAnyTerminalRoute(dropoffCoords.lat, dropoffCoords.lng);
+        if (route.lookupFailed) {
+          setGateFailure('lookup');
+          setShowOutOfBoundaryPopup(true);
+          return null;
+        }
+        if (!route.allowed) {
+          console.log('🚫 Share ride drop-off outside every terminal route:', dropoffCoords);
+          setGateFailure('route');
+          setShowOutOfBoundaryPopup(true);
+          return null;
+        }
       }
 
       // First, check if user is already in a waiting lobby

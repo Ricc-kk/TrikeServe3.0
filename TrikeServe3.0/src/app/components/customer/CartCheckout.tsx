@@ -24,6 +24,7 @@ import { computeDistanceFare, deliveryRates, straightLineKm } from "@/lib/pricin
 import ProofCapture from "../ui/ProofCapture";
 import { getDefaultAddress, setDefaultAddress } from "@/lib/defaultAddress";
 import { useDeliveryAddress } from "../../contexts/useDeliveryAddress";
+import { useDevModeOverride } from "../../hooks/useDevModeSettings";
 
 /**
  * Checkout for one restaurant.
@@ -44,6 +45,8 @@ export default function CartCheckout() {
     useCart();
   const { addOrder } = useOrders();
   const { user } = useAuth();
+  const [enforceBoundary] = useDevModeOverride("enforceBoundary");
+  const [imageProofRequired] = useDevModeOverride("imageProofRequired");
 
   // Back to the cart list this was opened from.
   const goBack = usePreviousPage("/customer/cart");
@@ -166,6 +169,14 @@ export default function CartCheckout() {
     if (!deliveryBoundaryError) return;
     addressRef.current?.scrollIntoView({ block: 'center' });
   }, [deliveryBoundaryError]);
+
+  useEffect(() => {
+    if (!imageProofRequired) setProofError(null);
+  }, [imageProofRequired]);
+
+  useEffect(() => {
+    if (!enforceBoundary) setDeliveryBoundaryError(null);
+  }, [enforceBoundary]);
 
   // Load the platform delivery base fee. A terminal can override this base and
   // add a per-kilometre charge after its configured included distance.
@@ -442,39 +453,43 @@ export default function CartCheckout() {
     // Food delivery addresses are customer drop-offs too. Verify them against
     // every enabled terminal route immediately before creating the order; the
     // quote is for pricing and may be stale by the time the customer submits.
-    try {
-      let deliveryPoint = Number.isFinite(selectedAddress.lat) && Number.isFinite(selectedAddress.lng) &&
-        (selectedAddress.lat !== 0 || selectedAddress.lng !== 0)
-        ? { lat: selectedAddress.lat, lng: selectedAddress.lng }
-        : null;
-      if (!deliveryPoint && selectedAddress.full.trim()) {
-        deliveryPoint = await geocodeAddress(selectedAddress.full);
-      }
-      if (!deliveryPoint) {
-        setDeliveryBoundaryError("We couldn't locate this delivery address on the map. Choose it again and place its pin.");
-        return;
-      }
+    if (enforceBoundary) {
+      try {
+        let deliveryPoint = Number.isFinite(selectedAddress.lat) && Number.isFinite(selectedAddress.lng) &&
+          (selectedAddress.lat !== 0 || selectedAddress.lng !== 0)
+          ? { lat: selectedAddress.lat, lng: selectedAddress.lng }
+          : null;
+        if (!deliveryPoint && selectedAddress.full.trim()) {
+          deliveryPoint = await geocodeAddress(selectedAddress.full);
+        }
+        if (!deliveryPoint) {
+          setDeliveryBoundaryError("We couldn't locate this delivery address on the map. Choose it again and place its pin.");
+          return;
+        }
 
-      const deliveryRoute = await isPointWithinAnyTerminalRoute(deliveryPoint.lat, deliveryPoint.lng);
-      if (deliveryRoute.lookupFailed) {
+        const deliveryRoute = await isPointWithinAnyTerminalRoute(deliveryPoint.lat, deliveryPoint.lng);
+        if (deliveryRoute.lookupFailed) {
+          setDeliveryBoundaryError("Couldn't verify delivery coverage. Check your connection and try again.");
+          return;
+        }
+        if (!deliveryRoute.allowed) {
+          setDeliveryBoundaryError('This address is outside every enabled terminal delivery route. Choose an address within a covered route.');
+          return;
+        }
+        setDeliveryBoundaryError(null);
+      } catch (error) {
+        console.warn('[Cart] Could not verify delivery coverage:', error);
         setDeliveryBoundaryError("Couldn't verify delivery coverage. Check your connection and try again.");
         return;
       }
-      if (!deliveryRoute.allowed) {
-        setDeliveryBoundaryError('This address is outside every enabled terminal delivery route. Choose an address within a covered route.');
-        return;
-      }
+    } else {
       setDeliveryBoundaryError(null);
-    } catch (error) {
-      console.warn('[Cart] Could not verify delivery coverage:', error);
-      setDeliveryBoundaryError("Couldn't verify delivery coverage. Check your connection and try again.");
-      return;
     }
 
     // The quote already resolved the nearest route-serving terminal from the
     // restaurant pickup and the configured delivery distance rate.
     const resolvedTerminalId = deliveryQuote.terminalId;
-    if (!proofFile) {
+    if (imageProofRequired && !proofFile) {
       setProofError('Upload your GCash payment proof before placing the order.');
       setProofValidationAttempt((attempt) => attempt + 1);
       return;
@@ -1283,8 +1298,10 @@ export default function CartCheckout() {
           <div ref={proofRef}>
             <ProofCapture
               mode="upload"
-              label="GCash payment proof (required)"
-              hint="Upload a screenshot of the transfer receipt so the shop can verify your payment."
+              label={`GCash payment proof (${imageProofRequired ? "required" : "optional"})`}
+              hint={imageProofRequired
+                ? "Upload a screenshot of the transfer receipt so the shop can verify your payment."
+                : "Upload a screenshot of the transfer receipt if available."}
               value={proofPreview}
               busy={isUploadingProof}
               error={proofError}

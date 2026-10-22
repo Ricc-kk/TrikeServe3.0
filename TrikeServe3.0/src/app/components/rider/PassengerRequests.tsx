@@ -15,7 +15,15 @@ import { supabase } from "../../../lib/supabase";
 import useMapLoader from "@/lib/mapLoader";
 import { searchPlacesText } from "@/lib/placesApi";
 import { createCustomerMarkerIcon, createRestaurantMarkerIcon } from "@/lib/mapIcons";
-import { DEFAULT_TERMINAL_COLOR, normalizeTerminalColor, terminalMarkerIcon } from "../ui/TerminalIcon";
+import {
+  DEFAULT_BORDER_COLOR,
+  DEFAULT_ROUTE_COLOR,
+  DEFAULT_TERMINAL_COLOR,
+  normalizeBorderColor,
+  normalizeRouteColor,
+  normalizeTerminalColor,
+  terminalMarkerIcon,
+} from "../ui/TerminalIcon";
 import tricycleIcon from "../../../assets/0b76d1aa56b8ad6e15dd4efc8a0100b0ca5762a1.png";
 import ActiveRideButton from "./ActiveRideButton";
 import ReasonPromptModal from "../ui/reason-prompt-modal";
@@ -248,6 +256,8 @@ export default function PassengerRequests() {
   const [todaBoundaryEnabled, setTodaBoundaryEnabled] = useState<boolean>(true);
   const [todaCenter, setTodaCenter] = useState<{ lat: number; lng: number } | null>(null);
   const [todaMarkerColor, setTodaMarkerColor] = useState(DEFAULT_TERMINAL_COLOR);
+  const [todaRouteColor, setTodaRouteColor] = useState(DEFAULT_ROUTE_COLOR);
+  const [todaBorderColor, setTodaBorderColor] = useState(DEFAULT_BORDER_COLOR);
   const [todaName, setTodaName] = useState<string | null>(user?.terminalName || null);
   const [showTodaMap, setShowTodaMap] = useState(true);
 
@@ -291,6 +301,8 @@ export default function PassengerRequests() {
         const lng = Number(data?.center_lng);
         setTodaCenter(data?.center_lat != null && data?.center_lng != null && Number.isFinite(lat) && Number.isFinite(lng) ? { lat, lng } : null);
         setTodaMarkerColor(normalizeTerminalColor(data?.marker_color));
+        setTodaRouteColor(normalizeRouteColor(data?.route_color));
+        setTodaBorderColor(normalizeBorderColor(data?.border_color));
         if (data?.name) setTodaName(data.name);
       })
       .catch(() => {});
@@ -1007,9 +1019,9 @@ export default function PassengerRequests() {
                           <Polygon
                             path={todaArea}
                             options={{
-                              fillColor: "#bc4b1f",
+                              fillColor: todaBorderColor,
                               fillOpacity: 0.12,
-                              strokeColor: "#bc4b1f",
+                              strokeColor: todaBorderColor,
                               strokeWeight: 2,
                               strokeOpacity: 0.6,
                               clickable: false,
@@ -1020,7 +1032,7 @@ export default function PassengerRequests() {
                           <Polyline
                             path={todaBoundary}
                             options={{
-                              strokeColor: "#bc4b1f",
+                              strokeColor: todaRouteColor,
                               strokeWeight: 5,
                               strokeOpacity: 0.9,
                               clickable: false,

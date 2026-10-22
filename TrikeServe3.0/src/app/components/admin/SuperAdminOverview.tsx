@@ -6,7 +6,7 @@ import { Card } from "../ui/card";
 import ConfirmationModal from "../ui/confirmation-modal";
 import { TerminalIconGlyph } from "../ui/TerminalIcon";
 import AdminAnalytics from "./AdminAnalytics";
-import { isDevModeEnabled, setDevModeEnabled } from "../../../lib/devMode";
+import { useDevModeFeature, useDevModeStatus } from "../../hooks/useDevModeSettings";
 import { supabase } from "../../../utils/supabase";
 
 type ReviewAccount = {
@@ -75,7 +75,8 @@ export default function SuperAdminOverview({
   const [showClearTestDataConfirmation, setShowClearTestDataConfirmation] = useState(false);
   const [onlineAccounts, setOnlineAccounts] = useState<OnlineAccount[]>([]);
   const [presenceStatus, setPresenceStatus] = useState<"connecting" | "live" | "error">("connecting");
-  const [isDevMode, setIsDevMode] = useState(isDevModeEnabled);
+  const [isDevMode, setIsDevMode] = useDevModeStatus();
+  const [testDataToolsEnabled] = useDevModeFeature("testDataTools");
   const hasData = lastUpdated !== null;
   const firstLoad = loading && !hasData;
   const shown = showAllPending ? pending : pending.slice(0, 3);
@@ -148,7 +149,6 @@ export default function SuperAdminOverview({
   };
 
   const exitDevMode = () => {
-    setDevModeEnabled(false);
     setIsDevMode(false);
   };
 
@@ -338,7 +338,7 @@ export default function SuperAdminOverview({
         </div>
       </section>
 
-      {isDevMode && (
+      {isDevMode && testDataToolsEnabled && (
         <section aria-labelledby="overview-test-data-title" className="rounded-3xl border border-[var(--amber)]/35 bg-[var(--amber-soft)] p-4 sm:p-5">
           <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
             <div className="flex min-w-0 items-start gap-3">

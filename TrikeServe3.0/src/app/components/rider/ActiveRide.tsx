@@ -21,6 +21,7 @@ import useMapLoader from "@/lib/mapLoader";
 import { createCustomerMarkerIcon, createRestaurantMarkerIcon } from "@/lib/mapIcons";
 import PassengerMessagingDB from "./PassengerMessagingDB";
 import tricycleIcon from "../../../assets/0b76d1aa56b8ad6e15dd4efc8a0100b0ca5762a1.png";
+import { useDevModeOverride } from "../../hooks/useDevModeSettings";
 
 type RideStatus = 'on-the-way' | 'arrived' | 'pickup' | 'drop-off' | 'payment';
 
@@ -225,6 +226,7 @@ export default function ActiveRide() {
   const navigate = useNavigate();
   const location = useLocation();
   const { user } = useAuth();
+  const [imageProofRequired] = useDevModeOverride("imageProofRequired");
 
   /*
    * Keeps a pointer to the ride in progress and returns the driver to it after the
@@ -313,6 +315,12 @@ export default function ActiveRide() {
   const [proofPreview, setProofPreview] = useState<string | null>(null);
   const [isUploadingProof, setIsUploadingProof] = useState(false);
   const [proofError, setProofError] = useState<string | null>(null);
+  useEffect(() => {
+    if (!imageProofRequired) {
+      setShowProofSheet(false);
+      setProofError(null);
+    }
+  }, [imageProofRequired]);
   const [resolvedName, setResolvedName] = useState<string | null>(null);
   /** The passenger's profile photo, resolved by id from the users table. */
   const [passengerAvatar, setPassengerAvatar] = useState<string | null>(null);
@@ -1446,6 +1454,11 @@ export default function ActiveRide() {
   /** A delivery cannot be completed until its handover photo is attached. */
   const completeDeliveryWithProof = async () => {
     if (isUploadingProof) return;
+    if (!imageProofRequired) {
+      setShowProofSheet(false);
+      await completeRide();
+      return;
+    }
     if (!proofFile) {
       setProofError('Take a delivery photo before completing the delivery.');
       return;
@@ -1761,6 +1774,11 @@ export default function ActiveRide() {
    * are the same control at two sizes, and two hand-written lists meant a phase
    * could gain a button in one and not the other.
    */
+  const startDeliveryCompletion = () => {
+    if (imageProofRequired) setShowProofSheet(true);
+    else void completeRide();
+  };
+
   const activeAction = (() => {
     switch (rideData.status) {
       case 'on-the-way':
@@ -1773,7 +1791,7 @@ export default function ActiveRide() {
         if (isDeliveryRide(rideData)) {
           return {
             label: 'Complete delivery',
-            onClick: () => setShowProofSheet(true),
+            onClick: startDeliveryCompletion,
             isComplete: true,
           };
         }
@@ -1791,7 +1809,7 @@ export default function ActiveRide() {
         if (isDeliveryRide(rideData)) {
           return {
             label: 'Complete delivery',
-            onClick: () => setShowProofSheet(true),
+            onClick: startDeliveryCompletion,
             isComplete: true,
           };
         }
@@ -2418,7 +2436,7 @@ export default function ActiveRide() {
         Cancel only closes this sheet. The delivery stays open until the required
         handover photo has uploaded successfully.
       */}
-      {showProofSheet && (
+      {showProofSheet && imageProofRequired && (
         <div
           className="fixed inset-0 z-[4000] flex items-end justify-center bg-black/60 p-4"
           onClick={() => {

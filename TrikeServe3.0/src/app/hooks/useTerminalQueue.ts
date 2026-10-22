@@ -11,6 +11,7 @@ import {
   type LatLngPoint,
 } from "@/lib/supabase";
 import { useAuth } from "../contexts/AuthContext";
+import { useDevModeOverride } from "./useDevModeSettings";
 
 export interface TerminalGeometry {
   /**
@@ -84,6 +85,7 @@ export function isDeliveryServiceMode(serviceTypes?: string[] | null): boolean {
  */
 export function useTerminalQueue() {
   const { user } = useAuth();
+  const [enforceBoundary] = useDevModeOverride("enforceBoundary");
   const [terminalId, setTerminalId] = useState<string | null>(user?.terminalId || null);
   const [terminalName, setTerminalName] = useState<string | null>(user?.terminalName || null);
   const [queue, setQueue] = useState<TerminalQueueEntry[]>([]);
@@ -353,7 +355,7 @@ export function useTerminalQueue() {
      * admin switched the check off -- that means "cannot tell", not "outside",
      * so it must not block. Only an explicit false refuses.
      */
-    if (isWithinBoundary === false) {
+    if (enforceBoundary && isWithinBoundary === false) {
       return {
         error: new Error(
           "You are outside your terminal's area. Move inside the terminal to join the queue."
@@ -372,7 +374,7 @@ export function useTerminalQueue() {
     setIsMutating(false);
 
     return { error: joinError };
-  }, [driverId, terminalId, isResolvingTerminal, isWithinBoundary, user?.name, user?.todaPlate, refresh]);
+  }, [driverId, terminalId, isResolvingTerminal, isWithinBoundary, enforceBoundary, user?.name, user?.todaPlate, refresh]);
 
   const leave = useCallback(async () => {
     if (!driverId || !terminalId) return { error: null };

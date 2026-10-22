@@ -45,9 +45,6 @@ export const DEFAULT_RATES: RideRates = {
  */
 export const DEFAULT_MAX_PASSENGERS = 4;
 
-/** Share rides split only the base fare across four passenger shares. */
-export const SHARED_RIDE_BASE_FARE_SHARES = 4;
-
 /** Numeric coercion that treats null/blank/missing as "use the fallback". */
 function num(value: any, fallback: number): number {
   if (value == null || value === '') return fallback;
@@ -188,19 +185,15 @@ export function computeDistanceFare(
 }
 
 /**
- * A shared passenger pays one quarter of the base fare plus the full per-km
- * charge for distance beyond the included kilometres. The final passenger fare
- * rounds up to a whole peso, matching the other ride fare quotes.
+ * Each shared passenger pays the full base fare plus the full per-km charge for
+ * distance beyond the included kilometres. The passenger fare rounds up to a
+ * whole peso, matching the other ride fare quotes.
  */
 export function computeSharedRideFarePerPassenger(
   rates: Pick<RideRates, "baseFare" | "baseFareIncludedKm" | "perKm">,
   distanceKm: number | null,
 ): number {
-  const baseShare = rates.baseFare / SHARED_RIDE_BASE_FARE_SHARES;
-  if (distanceKm == null || !Number.isFinite(distanceKm)) return Math.ceil(baseShare);
-
-  const billableKm = Math.max(0, distanceKm - Math.max(0, rates.baseFareIncludedKm));
-  return Math.ceil(baseShare + rates.perKm * billableKm);
+  return computeDistanceFare(rates, distanceKm);
 }
 
 /**

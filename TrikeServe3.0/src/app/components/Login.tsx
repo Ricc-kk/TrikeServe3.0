@@ -2,7 +2,7 @@ import { useState, useEffect, useRef, useCallback } from "react";
 import { useNavigate, Link } from "react-router";
 import { ChevronDown, Eye, EyeOff, Users } from "lucide-react";
 import { armWelcomeGreeting } from "../../lib/welcomeGreeting";
-import { isDevModeEnabled, setDevModeEnabled } from "../../lib/devMode";
+import { useDevModeFeature, useDevModeStatus } from "../hooks/useDevModeSettings";
 import TrikeServeLogo from "../../assets/TRIKESERVE_logo.jpg";
 import { Button } from "./ui/button";
 import { Input } from "./ui/input";
@@ -78,7 +78,8 @@ export default function Login() {
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState("");
   const [isLoading, setIsLoading] = useState(false);
-  const [isDevMode, setIsDevMode] = useState(isDevModeEnabled);
+  const [isDevMode, setIsDevMode] = useDevModeStatus();
+  const [quickAccessEnabled] = useDevModeFeature("quickAccess");
   const [showAccounts, setShowAccounts] = useState(false);
   const [accounts, setAccounts] = useState<TestAccount[]>([]);
   const [resendStatus, setResendStatus] = useState<"idle" | "sending" | "sent" | "error">("idle");
@@ -90,7 +91,6 @@ export default function Login() {
 
     devModeHoldTimer.current = window.setTimeout(() => {
       const nextMode = !isDevMode;
-      setDevModeEnabled(nextMode);
       setIsDevMode(nextMode);
       setShowAccounts(false);
       devModeHoldTimer.current = null;
@@ -105,7 +105,6 @@ export default function Login() {
   };
 
   const exitDevMode = () => {
-    setDevModeEnabled(false);
     setIsDevMode(false);
     setShowAccounts(false);
   };
@@ -198,14 +197,14 @@ export default function Login() {
   }, []);
 
   useEffect(() => {
-    if (!isDevMode) {
+    if (!isDevMode || !quickAccessEnabled) {
       setShowAccounts(false);
       return;
     }
 
     // Load account shortcuts only while Dev Mode is enabled.
     void loadAccounts();
-  }, [isDevMode, loadAccounts]);
+  }, [isDevMode, quickAccessEnabled, loadAccounts]);
 
   const useAccount = (acc: TestAccount) => {
     setEmail(acc.email);
@@ -344,7 +343,7 @@ export default function Login() {
             </button>
           </div>
 
-          {isDevMode && (
+          {isDevMode && quickAccessEnabled && (
             <section aria-label="Developer mode tools" className="mb-6 space-y-3">
               <div role="status" className="flex items-center justify-between gap-3 rounded-xl border border-[var(--primary)]/30 bg-[var(--primary-soft)] px-4 py-3">
                 <span className="text-sm font-semibold text-[var(--primary)]">Developer mode enabled</span>

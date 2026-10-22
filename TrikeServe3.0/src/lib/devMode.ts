@@ -1,4 +1,52 @@
 const DEV_MODE_KEY = "trikeserve_dev_mode";
+const DEV_MODE_CHANGE_EVENT = "trikeserve:dev-mode-change";
+
+export type DevModeFeature = "quickAccess" | "testDataTools" | "enforceBoundary" | "imageProofRequired" | "nearestTerminalOnly" | "sameRouteLobbyFilter";
+
+const FEATURE_KEYS: Record<DevModeFeature, string> = {
+  quickAccess: "trikeserve_dev_quick_access",
+  testDataTools: "trikeserve_dev_test_data_tools",
+  enforceBoundary: "trikeserve_dev_enforce_boundary",
+  imageProofRequired: "trikeserve_dev_image_proof_required",
+  nearestTerminalOnly: "trikeserve_dev_nearest_terminal_only",
+  sameRouteLobbyFilter: "trikeserve_dev_same_route_lobby_filter",
+};
+
+function notifyDevModeChange(): void {
+  if (typeof window === "undefined") return;
+  window.dispatchEvent(new Event(DEV_MODE_CHANGE_EVENT));
+}
+
+export function subscribeToDevModeChanges(onChange: () => void): () => void {
+  if (typeof window === "undefined") return () => {};
+
+  window.addEventListener(DEV_MODE_CHANGE_EVENT, onChange);
+  window.addEventListener("storage", onChange);
+  return () => {
+    window.removeEventListener(DEV_MODE_CHANGE_EVENT, onChange);
+    window.removeEventListener("storage", onChange);
+  };
+}
+
+export function isDevModeFeatureEnabled(feature: DevModeFeature): boolean {
+  if (typeof window === "undefined") return true;
+  try {
+    const value = window.localStorage.getItem(FEATURE_KEYS[feature]);
+    return value === null ? true : value === "true";
+  } catch {
+    return true;
+  }
+}
+
+export function setDevModeFeatureEnabled(feature: DevModeFeature, enabled: boolean): void {
+  if (typeof window === "undefined") return;
+  try {
+    window.localStorage.setItem(FEATURE_KEYS[feature], String(enabled));
+  } catch {
+    // The setting still applies in this tab when storage is unavailable.
+  }
+  notifyDevModeChange();
+}
 
 export function isDevModeEnabled(): boolean {
   if (typeof window === "undefined") return false;
@@ -36,4 +84,6 @@ export function setDevModeEnabled(enabled: boolean): void {
   } catch {
     // Storage may be unavailable in restricted browser contexts.
   }
+
+  notifyDevModeChange();
 }
