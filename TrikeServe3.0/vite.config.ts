@@ -3,7 +3,10 @@ import tailwindcss from '@tailwindcss/vite'
 import react from '@vitejs/plugin-react'
 
 export default defineConfig({
-  base: './',
+  // BrowserRouter serves deep links such as /rider/active-ride. Root-based
+  // asset URLs keep the production entry bundle reachable after a page refresh
+  // on those paths. Android builds override this to './' for Capacitor's WebView.
+  base: '/',
   plugins: [
     // The React and Tailwind plugins are both required for Make, even if
     // Tailwind is not being actively used – do not remove them
