@@ -28,6 +28,7 @@ import tricycleIcon from "../../../assets/0b76d1aa56b8ad6e15dd4efc8a0100b0ca5762
 import ActiveRideButton from "./ActiveRideButton";
 import ReasonPromptModal from "../ui/reason-prompt-modal";
 import { backfillLegacySharedRidePassengerFares, sumSharedRidePassengerFares } from "@/lib/pricing";
+import { legacyRouteFromBoundary, normalizeTerminalRoutes, type TerminalRoute } from "@/lib/terminalRoutes";
 
 function decodeRoutePolyline(encoded: string): google.maps.LatLngLiteral[] {
   const points: google.maps.LatLngLiteral[] = [];
@@ -165,6 +166,7 @@ export default function PassengerRequests() {
   const [showPickupRoute, setShowPickupRoute] = useState(true);
   const [showDropoffRoute, setShowDropoffRoute] = useState(true);
   const [isPreviewMapFullscreen, setIsPreviewMapFullscreen] = useState(false);
+  const [isTodaMapFullscreen, setIsTodaMapFullscreen] = useState(false);
   const [routeError, setRouteError] = useState<string | null>(null);
   const [resolvedPickupCoords, setResolvedPickupCoords] = useState<{ lat: number; lng: number } | null>(null);
   const [resolvedPickupAddress, setResolvedPickupAddress] = useState<string | null>(null);
@@ -172,6 +174,7 @@ export default function PassengerRequests() {
   const [resolvedPassengerDropoffs, setResolvedPassengerDropoffs] = useState<PassengerDropoffStop[]>([]);
   const [previewMapCenter, setPreviewMapCenter] = useState<{ lat: number; lng: number }>({ lat: 14.5995, lng: 120.9842 });
   const previewMapRef = useRef<google.maps.Map | null>(null);
+  const todaMapRef = useRef<google.maps.Map | null>(null);
   const packagePhotoColumnAvailableRef = useRef<boolean | null>(null);
   const { isLoaded: isMapsLoaded } = useMapLoader();
   const [showAccepted, setShowAccepted] = useState(false);
@@ -264,6 +267,7 @@ export default function PassengerRequests() {
   // The assigned TODA's plotted boundary, shown as a map so the driver can see
   // the area their terminal covers.
   const [todaBoundary, setTodaBoundary] = useState<LatLngPoint[] | null>(null);
+  const [todaRoutes, setTodaRoutes] = useState<TerminalRoute[]>([]);
   const [todaArea, setTodaArea] = useState<LatLngPoint[] | null>(null);
   const [todaRoadWidth, setTodaRoadWidth] = useState<number>(DEFAULT_ROAD_WIDTH_M);
   // A disabled boundary is still drawn, but the on/off badge stays hidden rather
@@ -297,9 +301,12 @@ export default function PassengerRequests() {
 
   // Load the assigned terminal's boundary area whenever the assignment changes.
   useEffect(() => {
+    setIsTodaMapFullscreen(false);
+    setTodaBoundary(null);
+    setTodaRoutes([]);
+    setTodaArea(null);
+    setTodaCenter(null);
     if (!driverTerminalId) {
-      setTodaBoundary(null);
-      setTodaCenter(null);
       return;
     }
     let cancelled = false;
@@ -308,7 +315,13 @@ export default function PassengerRequests() {
       .getTerminalGeofence(driverTerminalId)
       .then(({ data }) => {
         if (cancelled) return;
-        setTodaBoundary(normalizeBoundaryRoad(data?.boundary_polygon));
+        const routes = normalizeTerminalRoutes(data?.routes);
+        const displayRoutes = routes.length > 0
+          ? routes
+          : legacyRouteFromBoundary(data?.boundary_polygon, data?.road_width_m);
+        const legacyBoundary = normalizeBoundaryRoad(data?.boundary_polygon);
+        setTodaRoutes(displayRoutes.filter(route => route.points.length >= 2));
+        setTodaBoundary(legacyBoundary || displayRoutes.find(route => route.points.length >= 2)?.points || null);
         setTodaArea(normalizeBoundaryArea(data?.boundary_area));
         setTodaRoadWidth(normalizeRoadWidth(data?.road_width_m));
         setTodaBoundaryEnabled(data?.boundary_enabled !== false);
@@ -561,6 +574,27 @@ export default function PassengerRequests() {
     });
     return () => window.cancelAnimationFrame(frame);
   }, [isPreviewMapFullscreen, isMapsLoaded, routePath, previewMapCenter]);
+
+  useEffect(() => {
+    if (!isTodaMapFullscreen) return;
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setIsTodaMapFullscreen(false);
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isTodaMapFullscreen]);
+
+  useEffect(() => {
+    const map = todaMapRef.current;
+    if (!map || !isMapsLoaded) return;
+    const frame = window.requestAnimationFrame(() => {
+      (window as any).google?.maps?.event?.trigger(map, 'resize');
+      const points = [...todaRoutes.flatMap(route => route.points), ...(todaArea || [])];
+      if (points.length > 1) fitMapToRoute(map, points);
+      else map.setCenter(todaMapCenter);
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [isTodaMapFullscreen, isMapsLoaded, todaRoutes, todaArea, todaCenter, todaBoundary]);
 
   useEffect(() => {
     if (!previewRequest || !isMapsLoaded || !(window as any).google) return;
@@ -1143,9 +1177,16 @@ export default function PassengerRequests() {
 
         {/* TODA boundary map — the coverage area the driver's assigned terminal serves */}
         {driverTerminalId && (
-          <Card className="border border-line overflow-hidden">
+          <Card className={`border border-line overflow-hidden ${isTodaMapFullscreen ? 'fixed inset-0 z-[3000] h-[100dvh] w-screen rounded-none gap-0 bg-[var(--surface)]' : ''}`}>
             <button
-              onClick={() => setShowTodaMap((v) => !v)}
+              type="button"
+              onClick={() => {
+                if (isTodaMapFullscreen) {
+                  setIsTodaMapFullscreen(false);
+                  return;
+                }
+                setShowTodaMap((v) => !v);
+              }}
               className="w-full flex items-center justify-between px-4 py-3"
             >
               <div className="flex items-center gap-2.5 min-w-0">
@@ -1156,8 +1197,8 @@ export default function PassengerRequests() {
                   <p className="text-sm font-extrabold text-[var(--ink)] truncate">Your TODA Boundary</p>
                   <p className="text-[11px] text-[var(--muted-foreground)] truncate">
                     {todaName || "Assigned terminal"}
-                    {todaBoundary || todaArea
-                      ? ` • ${todaArea && todaBoundary ? 'road + area' : todaArea ? 'area' : 'road'} plotted`
+                    {todaRoutes.length > 0 || todaArea
+                      ? ` • ${todaRoutes.length > 0 ? `${todaRoutes.length} route${todaRoutes.length === 1 ? '' : 's'}${todaArea ? ' + area' : ''}` : 'area'} plotted`
                       : ' • no boundary set yet'}
                   </p>
                 </div>
@@ -1168,15 +1209,21 @@ export default function PassengerRequests() {
             </button>
 
             {showTodaMap && (
-              <div className="border-t border-[var(--border)]">
-                {todaBoundary || todaArea ? (
-                  <div className="relative w-full h-56 md:h-64">
+              <div className={`border-t border-[var(--border)] ${isTodaMapFullscreen ? 'flex-1 min-h-0' : ''}`}>
+                {todaRoutes.length > 0 || todaArea ? (
+                  <div className={`relative w-full h-56 md:h-64 ${isTodaMapFullscreen ? 'h-full min-h-0' : ''}`}>
                     {isMapsLoaded ? (
                       <GoogleMap
                         mapContainerStyle={{ width: "100%", height: "100%" }}
                         center={todaMapCenter}
                         zoom={14}
                         options={{ zoomControl: true, streetViewControl: false, mapTypeControl: false, fullscreenControl: false, gestureHandling: 'greedy' }}
+                        onLoad={(map) => {
+                          todaMapRef.current = map;
+                          const points = [...todaRoutes.flatMap(route => route.points), ...(todaArea || [])];
+                          if (points.length > 1) fitMapToRoute(map, points);
+                        }}
+                        onUnmount={() => { todaMapRef.current = null; }}
                       >
                         {todaArea && (
                           <Polygon
@@ -1191,18 +1238,19 @@ export default function PassengerRequests() {
                             }}
                           />
                         )}
-                        {todaBoundary && (
+                        {todaRoutes.map(route => (
                           <Polyline
-                            path={todaBoundary}
+                            key={route.id}
+                            path={route.points}
                             options={{
                               strokeColor: todaRouteColor,
                               strokeWeight: 5,
-                              strokeOpacity: 0.9,
+                              strokeOpacity: route.enabled ? 0.9 : 0.38,
                               clickable: false,
                               geodesic: true,
                             }}
                           />
-                        )}
+                        ))}
                         {todaCenter && (
                           <Marker
                             position={todaCenter}
@@ -1218,6 +1266,15 @@ export default function PassengerRequests() {
                         <p className="text-xs text-[var(--muted-foreground)]">Loading map...</p>
                       </div>
                     )}
+                    <button
+                      type="button"
+                      aria-label={isTodaMapFullscreen ? 'Exit full-screen TODA map' : 'View TODA map full screen'}
+                      title={isTodaMapFullscreen ? 'Exit full screen' : 'Full screen map'}
+                      onClick={() => setIsTodaMapFullscreen(fullscreen => !fullscreen)}
+                      className="absolute right-2 top-2 z-20 grid size-10 place-items-center rounded-lg border border-[var(--border)] bg-[var(--surface)] text-[var(--ink)] shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--primary)]"
+                    >
+                      {isTodaMapFullscreen ? <Minimize2 className="size-5" /> : <Maximize2 className="size-5" />}
+                    </button>
                     {insideToda != null && (
                       <span
                         className={`absolute top-2 left-2 px-2.5 py-1 rounded-full text-[10px] font-extrabold shadow ${
