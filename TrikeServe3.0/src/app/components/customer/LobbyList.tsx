@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { MapPin, Users, X, Clock, ArrowRight } from "lucide-react";
+import { MapPin, Users, X, Clock, ArrowRight, User } from "lucide-react";
 import { Button } from "../ui/button";
 import { Card } from "../ui/card";
 import { Badge } from "../ui/badge";
@@ -197,7 +197,7 @@ export default function LobbyList({
                           key={passenger.id}
                           className="w-8 h-8 rounded-full bg-[var(--primary)] flex items-center justify-center text-sm border-2 border-white"
                         >
-                          {passenger.emoji}
+                          <User className="h-4 w-4 text-white" aria-hidden="true" />
                         </div>
                       ))}
                       {/* Empty seats */}

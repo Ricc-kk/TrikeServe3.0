@@ -111,13 +111,20 @@ function createDropoffStopIcon(color: string): google.maps.Symbol | undefined {
 function PassengerAvatar({
   passenger,
   resolvedAvatar,
+  showProfile,
   className,
 }: {
   passenger: LobbyPassenger;
   /** The passenger's live photo from `users.avatar_url`, when known. */
   resolvedAvatar?: string | null;
+  /** Only the signed-in customer's account may display a profile photo. */
+  showProfile: boolean;
   className?: string;
 }) {
+  if (!showProfile) {
+    return <User className={className || 'h-7 w-7 text-white'} aria-hidden="true" />;
+  }
+
   // The live profile photo wins: it is the only source that also covers a
   // passenger who joined before the lobby row stored an avatar.
   const value = (resolvedAvatar || passenger.avatar || passenger.emoji || '👤').trim();
@@ -229,13 +236,9 @@ export default function ShareRideLobby({
     }
   });
   /*
-   * Profile photos resolved from the users table.
-   *
-   * The lobby row itself carries only a name and an emoji, so a passenger who
-   * joined before avatars were captured -- or who set a photo afterwards -- kept
-   * showing a glyph. Reading `users.avatar_url` by id shows the real photo for
-   * existing passengers too, and refreshes it when it changes. The driver's is
-   * resolved the same way, because the accept payload has no photo column.
+   * Resolve the signed-in customer's profile photo for their own passenger row.
+   * Other passengers use a generic silhouette. The driver's photo is resolved
+   * separately because the accept payload has no photo column.
    */
   const [passengerAvatars, setPassengerAvatars] = useState<Record<string, string>>({});
   const [driverProfileAvatar, setDriverProfileAvatar] = useState<string | null>(null);
@@ -979,23 +982,10 @@ export default function ShareRideLobby({
     return () => { active = false; };
   }, [pickupCoords, dropoffCoords, lobby?.passengers_json, isMapsLoaded]);
 
-  /*
-   * Resolve the profile photo of everyone in the lobby.
-   *
-   * Keyed on the sorted ids rather than the passenger array: the array is
-   * rebuilt on every poll, so depending on it would re-query the users table
-   * every couple of seconds for the same people. Companions are excluded -- they
-   * are extra seats, not accounts with a profile.
-   */
-  const passengerIdsKey = Array.from(
-    new Set(
-      (lobby?.passengers_json || [])
-        .map((p) => p.id)
-        .filter((id): id is string => !!id && !id.includes('_companion_'))
-    )
-  )
-    .sort()
-    .join(',');
+  // Only load the signed-in customer's own profile photo for this lobby.
+  const passengerIdsKey = user?.id && (lobby?.passengers_json || []).some(passenger => passenger.id === user.id)
+    ? user.id
+    : '';
 
   useEffect(() => {
     const ids = passengerIdsKey.split(',').filter(Boolean);
@@ -1801,6 +1791,7 @@ if (loading) {
                           <PassengerAvatar
                             passenger={passenger}
                             resolvedAvatar={passengerAvatars[passenger.id]}
+                            showProfile={isCurrentUserOrCompanion}
                           />
                         </div>
                         <div className="flex-1 min-w-0">

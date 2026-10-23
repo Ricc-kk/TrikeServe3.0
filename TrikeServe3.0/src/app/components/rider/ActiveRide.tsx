@@ -154,7 +154,7 @@ function getSharedDropoffStops(ride: ActiveRideData | null): SharedDropoffStop[]
   const passengerStops = passengers.flatMap((passenger: any, index: number) => {
     const passengerId = passenger?.id == null ? '' : String(passenger.id);
     const isPrimaryPassenger = passengerId && ride.customerId
-      ? passengerId === String(ride.customerId)
+      ? passengerAccountId(passengerId) === String(ride.customerId)
       : passengers.length === 1 || (!passengerId && index === 0);
     const position = coordinateFromValues(
       passenger?.dropoffLat ?? passenger?.dropoff_lat,
@@ -164,7 +164,7 @@ function getSharedDropoffStops(ride: ActiveRideData | null): SharedDropoffStop[]
 
     return [{
       id: passengerId || `passenger-${index}`,
-      name: String(passenger?.name || `Passenger ${index + 1}`).trim(),
+      name: getSharedPassengerName(passenger, index, passengers),
       color: SHARED_DROPOFF_COLORS[index % SHARED_DROPOFF_COLORS.length],
       position,
       index,
@@ -188,6 +188,36 @@ function getSharedDropoffStops(ride: ActiveRideData | null): SharedDropoffStop[]
       return distanceInMeters(pickup, a.position) - distanceInMeters(pickup, b.position) || a.index - b.index;
     })
     .map(stop => ({ id: stop.id, name: stop.name, color: stop.color, position: stop.position }));
+}
+
+function getSharedPassengerName(passenger: any, index: number, passengers: any[]): string {
+  const passengerId = String(passenger?.id ?? '');
+  const ownerId = passengerAccountId(passengerId);
+  const companionOwner = passengerId.includes('_companion_')
+    ? passengers.find(candidate => String(candidate?.id || '') === ownerId)
+    : null;
+  return companionOwner?.name
+    ? `${passenger?.name || 'Companion'} of ${companionOwner.name}`
+    : String(passenger?.name || `Passenger ${index + 1}`).trim();
+}
+
+function getSharedPassengerDropoff(passenger: any, index: number, ride: ActiveRideData): string {
+  const passengers = Array.isArray(ride.passengerDetails) ? ride.passengerDetails : [];
+  const passengerId = String(passenger?.id ?? '');
+  const ownerId = passengerAccountId(passengerId);
+  const companionOwner = passengerId.includes('_companion_')
+    ? passengers.find(candidate => String(candidate?.id || '') === ownerId)
+    : null;
+  const passengerDropoff = passenger?.dropoff || passenger?.dropoffAddress || passenger?.dropoff_location || passenger?.dropoff_address;
+  const companionDropoff = companionOwner?.dropoff || companionOwner?.dropoffAddress || companionOwner?.dropoff_location || companionOwner?.dropoff_address;
+  if (passengerDropoff || companionDropoff) return String(passengerDropoff || companionDropoff).trim();
+
+  const isPrimaryPassenger = ride.customerId
+    ? ownerId === String(ride.customerId)
+    : index === 0;
+  return isPrimaryPassenger
+    ? String(ride.dropoffAddress || ride.dropoff || 'Drop-off unavailable').trim()
+    : 'Drop-off unavailable';
 }
 
 function decodeRoutePolyline(encoded: string): google.maps.LatLngLiteral[] {
@@ -326,6 +356,7 @@ export default function ActiveRide() {
   const [showRideComplete, setShowRideComplete] = useState(false);
   const [showCancelPrompt, setShowCancelPrompt] = useState(false);
   const [showReportModal, setShowReportModal] = useState(false);
+  const [reportPassenger, setReportPassenger] = useState<{ id: string; name: string } | null>(null);
   const [reportCategory, setReportCategory] = useState(RIDER_REPORT_CATEGORIES[0]);
   const [reportDescription, setReportDescription] = useState('');
   const [reportSubmitError, setReportSubmitError] = useState<string | null>(null);
@@ -1774,7 +1805,8 @@ export default function ActiveRide() {
     }
   };
 
-  const openRideReport = () => {
+  const openRideReport = (passenger?: { id: string; name: string }) => {
+    setReportPassenger(passenger || null);
     setReportCategory(reportCategories[0]);
     setReportDescription('');
     setReportSubmitError(null);
@@ -1794,13 +1826,16 @@ export default function ActiveRide() {
     setReportSubmitError(null);
     try {
       const category = `Rider report: ${reportCategory}`;
+      const reportDetails = reportPassenger
+        ? `${description}\n\nPassenger: ${reportPassenger.name} (ID: ${reportPassenger.id})`
+        : description;
       const { error } = await supabaseHelpers.createRideReport({
         rideId: rideData.id || rideData.lobbyId,
         reporterId: user.id,
         reporterName: user.name || 'Rider',
         reporterEmail: user.email,
         category,
-        description,
+        description: reportDetails,
         rideRoute: `${rideData.pickup || 'Unknown pickup'} → ${rideData.dropoff || 'Unknown drop-off'}`,
       });
       if (error) throw error;
@@ -1810,8 +1845,14 @@ export default function ActiveRide() {
         actorRole: 'rider',
         entityType: rideData.lobbyId ? 'lobby' : 'ride_request',
         entityId: rideData.lobbyId || rideData.id,
-        summary: `Reported a ride issue: ${reportCategory}`,
-        details: { category: reportCategory },
+        summary: reportPassenger
+          ? `Reported a ride issue with ${reportPassenger.name}: ${reportCategory}`
+          : `Reported a ride issue: ${reportCategory}`,
+        details: {
+          category: reportCategory,
+          passengerId: reportPassenger?.id || null,
+          passengerName: reportPassenger?.name || null,
+        },
         actorEmail: user.email,
         actorName: user.name,
       });
@@ -2071,6 +2112,7 @@ export default function ActiveRide() {
                   position={stop.position}
                   icon={markerIcon(stop.color)}
                   title={`${stop.name} drop-off`}
+                  label={{ text: String(index + 1), color: '#FFFFFF', fontSize: '11px', fontWeight: '700' }}
                   zIndex={!isHeadingToPickup ? 90 + index : 70 + index}
                 />
               ))
@@ -2399,10 +2441,11 @@ export default function ActiveRide() {
           <>
             <Card className="p-4 border-2 border-[var(--muted)] shadow-sm">
               <div className="flex items-start gap-4 mb-3">
-                {/* The profile row shows the primary passenger; the roster below
-                    displays every shared passenger profile. */}
+                {/* Shared rides use individual passenger cards below. */}
                 <div className="size-14 flex-shrink-0 overflow-hidden rounded-full bg-[var(--primary-soft)] flex items-center justify-center">
-                  {passengerAvatar ? (
+                  {isSharedRide ? (
+                    <Users className="w-6 h-6 text-[var(--primary)]" aria-hidden="true" />
+                  ) : passengerAvatar ? (
                     <img
                       src={passengerAvatar}
                       alt={`${resolvedName || rideData.customerName || 'Passenger'}'s profile`}
@@ -2417,34 +2460,51 @@ export default function ActiveRide() {
                 <div className="min-w-0 flex-1">
                   <h2 className="font-bold text-lg">{isSharedRide ? 'Passengers' : resolvedName || rideData.customerName}</h2>
                   {isSharedRide && rideData.passengerDetails && rideData.passengerDetails.length > 0 && (
-                    <div className="mt-1 space-y-0.5 text-xs text-[var(--muted-foreground)]">
+                    <div className="mt-3 space-y-2">
                       {rideData.passengerDetails.map((p: any, index: number) => {
                         const passengerId = String(p.id ?? `passenger-${index}`);
                         const ownerId = passengerAccountId(passengerId);
-                        const companionOwner = passengerId.includes('_companion_')
-                          ? rideData.passengerDetails?.find((candidate: any) => String(candidate?.id || '') === ownerId)
-                          : null;
-                        const passengerName = companionOwner?.name
-                          ? `${p.name || 'Companion'} of ${companionOwner.name}`
-                          : p.name || 'Passenger';
+                        const passengerName = getSharedPassengerName(p, index, rideData.passengerDetails || []);
                         const profileUrl = passengerAvatars[ownerId]
                           || (typeof p.avatar === 'string' && (/^https?:\/\//i.test(p.avatar) || p.avatar.startsWith('data:image/')) ? p.avatar : null);
                         const stop = sharedDropoffStops.find(item => item.id === passengerId);
                         return (
-                          <div key={passengerId} className="flex items-center justify-between gap-3 rounded-lg px-1 py-1">
-                            <span className="flex min-w-0 items-center gap-2">
-                              <span className="grid size-9 shrink-0 place-items-center overflow-hidden rounded-full border border-[var(--border)] bg-[var(--primary-soft)] text-base">
-                                {profileUrl ? (
-                                  <img src={profileUrl} alt={`${passengerName}'s profile`} className="size-full object-cover" />
-                                ) : (
-                                  p.emoji || <User className="size-4 text-[var(--primary)]" aria-hidden="true" />
-                                )}
+                          <Card key={passengerId} className="border border-[var(--border)] bg-[var(--surface)] p-3 shadow-sm">
+                            <div className="flex items-center justify-between gap-3">
+                              <span className="flex min-w-0 items-center gap-2">
+                                <span className="grid size-10 shrink-0 place-items-center overflow-hidden rounded-full border border-[var(--border)] bg-[var(--primary-soft)] text-base">
+                                  {profileUrl ? (
+                                    <img src={profileUrl} alt={`${passengerName}'s profile`} className="size-full object-cover" />
+                                  ) : (
+                                    p.emoji || <User className="size-4 text-[var(--primary)]" aria-hidden="true" />
+                                  )}
+                                </span>
+                                {stop && <span className="size-2 shrink-0 rounded-full" style={{ background: stop.color }} aria-hidden="true" />}
+                                <span className="min-w-0 flex-1">
+                                  <span className="block truncate text-sm font-semibold text-[var(--ink)]">{passengerName}</span>
+                                  <span className="mt-0.5 block truncate text-xs text-[var(--muted-foreground)]">
+                                    Drop-off: {getSharedPassengerDropoff(p, index, rideData)}
+                                  </span>
+                                </span>
                               </span>
-                              {stop && <span className="size-2 shrink-0 rounded-full" style={{ background: stop.color }} aria-hidden="true" />}
-                              <span className="min-w-0 truncate">{passengerName}</span>
-                            </span>
-                            {p.fare != null && <span className="shrink-0 font-semibold">₱{Number(p.fare).toFixed(2)}</span>}
-                          </div>
+                              {p.fare != null && (
+                                <span className="shrink-0 text-right">
+                                  <span className="block text-[10px] text-[var(--muted-foreground)]">Fare</span>
+                                  <span className="text-sm font-bold text-[var(--ink)]">₱{Number(p.fare).toFixed(2)}</span>
+                                </span>
+                              )}
+                            </div>
+                            <Button
+                              type="button"
+                              variant="outline"
+                              onClick={() => openRideReport({ id: passengerId, name: passengerName })}
+                              aria-label={`Report an issue with ${passengerName}`}
+                              className="mt-3 w-full justify-start border-[var(--border)] py-2 text-sm font-semibold text-[var(--muted-foreground)]"
+                            >
+                              <Flag className="size-4" aria-hidden="true" />
+                              Report an issue
+                            </Button>
+                          </Card>
                         );
                       })}
                     </div>
@@ -2473,14 +2533,35 @@ export default function ActiveRide() {
                   </div>
                   {isHeadingToPickup && <span className="text-[10px] bg-[var(--success)] text-white px-2 py-0.5 rounded-full font-bold self-center">HERE</span>}
                 </div>
-                <div className={`flex gap-3 p-2 rounded-lg ${!isHeadingToPickup && ['pickup', 'drop-off'].includes(rideData.status) ? 'bg-[var(--error-soft)] border border-[var(--error-soft)]' : ''}`}>
-                  <div className={`w-2 h-2 rounded-full mt-1.5 ${!isHeadingToPickup && ['pickup', 'drop-off'].includes(rideData.status) ? 'bg-[var(--primary)]' : 'bg-[var(--muted-foreground)]'}`} />
-                  <div className="flex-1 text-sm">
-                    <p className="text-[var(--muted-foreground)] text-xs">Drop-off</p>
-                    <p className="font-semibold">{rideData.dropoff}</p>
+                {isSharedRide && rideData.passengerDetails?.length ? (
+                  rideData.passengerDetails.map((passenger: any, index: number) => {
+                    const passengerId = String(passenger?.id ?? `passenger-${index}`);
+                    const passengerName = getSharedPassengerName(passenger, index, rideData.passengerDetails || []);
+                    const stop = sharedDropoffStops.find(item => item.id === passengerId);
+                    return (
+                      <div key={`dropoff-${passengerId}`} className="flex gap-3 rounded-lg border border-[var(--border)] p-2">
+                        <span
+                          className="mt-1.5 size-2 shrink-0 rounded-full"
+                          style={{ background: stop?.color || SHARED_DROPOFF_COLORS[index % SHARED_DROPOFF_COLORS.length] }}
+                          aria-hidden="true"
+                        />
+                        <div className="min-w-0 flex-1 text-sm">
+                          <p className="text-xs text-[var(--muted-foreground)]">Drop-off for {passengerName}</p>
+                          <p className="truncate font-semibold">{getSharedPassengerDropoff(passenger, index, rideData)}</p>
+                        </div>
+                      </div>
+                    );
+                  })
+                ) : (
+                  <div className={`flex gap-3 p-2 rounded-lg ${!isHeadingToPickup && ['pickup', 'drop-off'].includes(rideData.status) ? 'bg-[var(--error-soft)] border border-[var(--error-soft)]' : ''}`}>
+                    <div className={`w-2 h-2 rounded-full mt-1.5 ${!isHeadingToPickup && ['pickup', 'drop-off'].includes(rideData.status) ? 'bg-[var(--primary)]' : 'bg-[var(--muted-foreground)]'}`} />
+                    <div className="flex-1 text-sm">
+                      <p className="text-[var(--muted-foreground)] text-xs">Drop-off</p>
+                      <p className="font-semibold">{rideData.dropoff}</p>
+                    </div>
+                    {!isHeadingToPickup && ['pickup', 'drop-off'].includes(rideData.status) && <span className="text-[10px] bg-[var(--primary)] text-white px-2 py-0.5 rounded-full font-bold self-center">HERE</span>}
                   </div>
-                  {!isHeadingToPickup && ['pickup', 'drop-off'].includes(rideData.status) && <span className="text-[10px] bg-[var(--primary)] text-white px-2 py-0.5 rounded-full font-bold self-center">HERE</span>}
-                </div>
+                )}
               </div>
             </Card>
             {isDeliveryRide(rideData) && (
@@ -2562,15 +2643,17 @@ export default function ActiveRide() {
             {activeAction.label}
           </Button>
         )}
-        <Button
-          type="button"
-          variant="outline"
-          onClick={openRideReport}
-          className="-mx-1 mt-2 w-[calc(100%+0.5rem)] border-[var(--border)] py-3 font-semibold text-[var(--muted-foreground)]"
-        >
-          <Flag className="size-4" aria-hidden="true" />
-          Report an issue
-        </Button>
+        {(!isSharedRide || !rideData.passengerDetails?.length) && (
+          <Button
+            type="button"
+            variant="outline"
+            onClick={() => openRideReport()}
+            className="-mx-1 mt-2 w-[calc(100%+0.5rem)] border-[var(--border)] py-3 font-semibold text-[var(--muted-foreground)]"
+          >
+            <Flag className="size-4" aria-hidden="true" />
+            Report an issue
+          </Button>
+        )}
         <Button
           type="button"
           variant="outline"
@@ -2598,12 +2681,18 @@ export default function ActiveRide() {
             <div className="flex items-start justify-between gap-3">
               <div>
                 <h2 id="active-ride-report-title" className="text-lg font-bold text-[var(--ink)]">
-                  {reportSubmitted ? 'Report sent' : 'Report a ride issue'}
+                  {reportSubmitted
+                    ? 'Report sent'
+                    : reportPassenger
+                      ? `Report an issue with ${reportPassenger.name}`
+                      : 'Report a ride issue'}
                 </h2>
                 <p className="mt-1 text-sm text-[var(--muted-foreground)]">
                   {reportSubmitted
                     ? 'Support has received your report.'
-                    : 'Send the details to support for review.'}
+                    : reportPassenger
+                      ? `Support will receive your report with ${reportPassenger.name}'s passenger and ride details.`
+                      : 'Send the details to support for review.'}
                 </p>
               </div>
               <button

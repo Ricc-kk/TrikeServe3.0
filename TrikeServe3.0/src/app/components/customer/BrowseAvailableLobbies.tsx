@@ -444,7 +444,7 @@ export default function BrowseAvailableLobbies({
                               key={passenger.id}
                               className="w-7 h-7 overflow-hidden rounded-full bg-[var(--primary)] flex items-center justify-center text-xs border-2 border-white"
                             >
-                              <PassengerAvatar value={passenger.avatar || passenger.emoji} />
+                              <PassengerAvatar value="👤" />
                             </div>
                           ))}
                           {passengers.length > 3 && (
