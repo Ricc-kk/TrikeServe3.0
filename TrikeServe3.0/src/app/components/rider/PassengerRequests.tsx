@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 import { useNavigate } from "react-router";
-import { ArrowLeft, Navigation, Store, Users, Car, Clock, Check, X, CheckCircle, MapPin, ChevronDown, Maximize2, Minimize2, Eye, EyeOff } from "lucide-react";
+import { ArrowLeft, Navigation, Store, Users, Car, Clock, Check, X, CheckCircle, MapPin, ChevronDown, Maximize2, Minimize2, Route as RouteIcon, Eye, EyeOff } from "lucide-react";
 import { GoogleMap, Marker, InfoWindow, Polyline, Polygon } from "@react-google-maps/api";
 import { Button } from "../ui/button";
 import { Card } from "../ui/card";
@@ -279,7 +279,9 @@ export default function PassengerRequests() {
   const [todaBorderColor, setTodaBorderColor] = useState(DEFAULT_BORDER_COLOR);
   const [todaName, setTodaName] = useState<string | null>(user?.terminalName || null);
   const [showTodaMap, setShowTodaMap] = useState(true);
-  const [showTodaRoutes, setShowTodaRoutes] = useState(true);
+  const [visibleTodaRouteIds, setVisibleTodaRouteIds] = useState<string[]>([]);
+  const [focusedTodaRouteId, setFocusedTodaRouteId] = useState<string | null>(null);
+  const [showTodaRouteList, setShowTodaRouteList] = useState(false);
 
   // Always fetch fresh terminal assignment from DB on mount
   useEffect(() => {
@@ -305,6 +307,9 @@ export default function PassengerRequests() {
     setIsTodaMapFullscreen(false);
     setTodaBoundary(null);
     setTodaRoutes([]);
+    setVisibleTodaRouteIds([]);
+    setFocusedTodaRouteId(null);
+    setShowTodaRouteList(false);
     setTodaArea(null);
     setTodaCenter(null);
     if (!driverTerminalId) {
@@ -321,7 +326,10 @@ export default function PassengerRequests() {
           ? routes
           : legacyRouteFromBoundary(data?.boundary_polygon, data?.road_width_m);
         const legacyBoundary = normalizeBoundaryRoad(data?.boundary_polygon);
-        setTodaRoutes(displayRoutes.filter(route => route.points.length >= 2));
+        const routesWithGeometry = displayRoutes.filter(route => route.points.length >= 2);
+        setTodaRoutes(routesWithGeometry);
+        setVisibleTodaRouteIds(routesWithGeometry.map(route => route.id));
+        setFocusedTodaRouteId(routesWithGeometry.find(route => route.enabled)?.id ?? routesWithGeometry[0]?.id ?? null);
         setTodaBoundary(legacyBoundary || displayRoutes.find(route => route.points.length >= 2)?.points || null);
         setTodaArea(normalizeBoundaryArea(data?.boundary_area));
         setTodaRoadWidth(normalizeRoadWidth(data?.road_width_m));
@@ -590,12 +598,15 @@ export default function PassengerRequests() {
     if (!map || !isMapsLoaded) return;
     const frame = window.requestAnimationFrame(() => {
       (window as any).google?.maps?.event?.trigger(map, 'resize');
-      const points = [...(showTodaRoutes ? todaRoutes.flatMap(route => route.points) : []), ...(todaArea || [])];
+      const points = [
+        ...todaRoutes.filter(route => visibleTodaRouteIds.includes(route.id)).flatMap(route => route.points),
+        ...(todaArea || []),
+      ];
       if (points.length > 1) fitMapToRoute(map, points);
       else map.setCenter(todaMapCenter);
     });
     return () => window.cancelAnimationFrame(frame);
-  }, [isTodaMapFullscreen, isMapsLoaded, showTodaRoutes, todaRoutes, todaArea, todaCenter, todaBoundary]);
+  }, [isTodaMapFullscreen, isMapsLoaded, visibleTodaRouteIds, todaRoutes, todaArea, todaCenter, todaBoundary]);
 
   useEffect(() => {
     if (!previewRequest || !isMapsLoaded || !(window as any).google) return;
@@ -1221,7 +1232,10 @@ export default function PassengerRequests() {
                         options={{ zoomControl: true, streetViewControl: false, mapTypeControl: false, fullscreenControl: false, gestureHandling: 'greedy' }}
                         onLoad={(map) => {
                           todaMapRef.current = map;
-                          const points = [...(showTodaRoutes ? todaRoutes.flatMap(route => route.points) : []), ...(todaArea || [])];
+                          const points = [
+                            ...todaRoutes.filter(route => visibleTodaRouteIds.includes(route.id)).flatMap(route => route.points),
+                            ...(todaArea || []),
+                          ];
                           if (points.length > 1) fitMapToRoute(map, points);
                         }}
                         onUnmount={() => { todaMapRef.current = null; }}
@@ -1239,19 +1253,23 @@ export default function PassengerRequests() {
                             }}
                           />
                         )}
-                        {showTodaRoutes && todaRoutes.map(route => (
-                          <Polyline
-                            key={route.id}
-                            path={route.points}
-                            options={{
-                              strokeColor: todaRouteColor,
-                              strokeWeight: 5,
-                              strokeOpacity: route.enabled ? 0.9 : 0.38,
-                              clickable: false,
-                              geodesic: true,
-                            }}
-                          />
-                        ))}
+                        {todaRoutes.map(route => {
+                          if (!visibleTodaRouteIds.includes(route.id)) return null;
+                          const isFocused = route.id === focusedTodaRouteId;
+                          return (
+                            <Polyline
+                              key={route.id}
+                              path={route.points}
+                              options={{
+                                strokeColor: todaRouteColor,
+                                strokeWeight: isFocused ? 7 : 5,
+                                strokeOpacity: isFocused ? 0.95 : route.enabled ? 0.78 : 0.38,
+                                clickable: false,
+                                geodesic: true,
+                              }}
+                            />
+                          );
+                        })}
                         {todaCenter && (
                           <Marker
                             position={todaCenter}
@@ -1268,17 +1286,20 @@ export default function PassengerRequests() {
                       </div>
                     )}
                     <div className="absolute right-2 top-2 z-20 flex items-center gap-2">
-                      {todaRoutes.length > 0 && (
+                      {isMapsLoaded && todaRoutes.length > 0 && (
                         <button
                           type="button"
-                          aria-label={showTodaRoutes ? 'Hide terminal routes' : 'Show terminal routes'}
-                          aria-pressed={showTodaRoutes}
-                          title={showTodaRoutes ? 'Hide routes' : 'Show routes'}
-                          onClick={() => setShowTodaRoutes(visible => !visible)}
-                          className={`inline-flex h-10 items-center gap-2 rounded-lg border px-3 text-xs font-bold shadow-md transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--primary)] ${showTodaRoutes ? 'border-[var(--primary)] bg-[var(--primary)] text-[var(--primary-foreground)]' : 'border-[var(--border)] bg-[var(--surface)] text-[var(--ink)]'}`}
+                          aria-expanded={showTodaRouteList}
+                          aria-controls="rider-toda-route-list"
+                          onClick={() => setShowTodaRouteList(open => !open)}
+                          className="inline-flex min-h-10 items-center gap-2 rounded-xl border border-line bg-[var(--surface)] px-3 text-sm font-semibold text-[var(--ink)] shadow-sm"
                         >
-                          {showTodaRoutes ? <Eye className="size-4" /> : <EyeOff className="size-4" />}
+                          <RouteIcon className="size-4 text-[var(--primary)]" />
                           Routes
+                          <span className="rounded-full bg-[var(--primary-soft)] px-2 py-0.5 text-xs text-[var(--primary)]">
+                            {visibleTodaRouteIds.filter(id => todaRoutes.some(route => route.id === id)).length}/{todaRoutes.length}
+                          </span>
+                          <ChevronDown className={`size-4 transition-transform ${showTodaRouteList ? 'rotate-180' : ''}`} />
                         </button>
                       )}
                       <button
@@ -1291,6 +1312,75 @@ export default function PassengerRequests() {
                         {isTodaMapFullscreen ? <Minimize2 className="size-5" /> : <Maximize2 className="size-5" />}
                       </button>
                     </div>
+                    {isMapsLoaded && showTodaRouteList && todaRoutes.length > 0 && (
+                      <div id="rider-toda-route-list" className="absolute right-2 top-14 z-30 w-[min(22rem,calc(100vw_-_1.5rem))]">
+                        <div className="max-h-[min(65vh,32rem)] overflow-hidden rounded-2xl border border-line bg-[var(--surface)] shadow-xl">
+                          <div className="flex items-center justify-between gap-2 border-b border-line px-3 py-3">
+                            <div>
+                              <p className="text-sm font-bold text-[var(--ink)]">{todaName || 'Terminal'} routes</p>
+                              <p className="text-xs text-[var(--muted-foreground)]">View a route or hide it from the map.</p>
+                            </div>
+                            <div className="flex shrink-0 gap-1">
+                              <button
+                                type="button"
+                                onClick={() => setVisibleTodaRouteIds(todaRoutes.map(route => route.id))}
+                                className="rounded-lg px-2 py-1.5 text-xs font-semibold text-[var(--primary)] hover:bg-[var(--primary-soft)]"
+                              >
+                                Show all
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => setVisibleTodaRouteIds([])}
+                                className="rounded-lg px-2 py-1.5 text-xs font-semibold text-[var(--muted-foreground)] hover:bg-[var(--muted)]"
+                              >
+                                Hide all
+                              </button>
+                            </div>
+                          </div>
+                          <div className="max-h-[calc(min(65vh,32rem)_-_4.5rem)] overflow-y-auto p-2">
+                            {todaRoutes.map(route => {
+                              const visible = visibleTodaRouteIds.includes(route.id);
+                              const active = focusedTodaRouteId === route.id;
+                              return (
+                                <div key={route.id} className={`flex items-center gap-2 rounded-xl p-2 ${active ? 'bg-[var(--primary-soft)]' : ''}`}>
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      setFocusedTodaRouteId(route.id);
+                                      setVisibleTodaRouteIds([route.id]);
+                                    }}
+                                    aria-current={active ? 'true' : undefined}
+                                    className="flex min-w-0 flex-1 items-center gap-2 rounded-lg px-1 py-1 text-left"
+                                  >
+                                    <span className="size-3 shrink-0 rounded-full border border-black/10" style={{ backgroundColor: todaRouteColor }} />
+                                    <span className="min-w-0 flex-1">
+                                      <span className="block truncate text-sm font-semibold text-[var(--ink)]">{route.name}</span>
+                                      <span className="block truncate text-xs text-[var(--muted-foreground)]">{route.enabled ? 'Enabled' : 'Disabled'}{active ? ' · Viewing' : ''}</span>
+                                    </span>
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      setVisibleTodaRouteIds(current => (
+                                        current.includes(route.id)
+                                          ? current.filter(id => id !== route.id)
+                                          : [...current, route.id]
+                                      ));
+                                      if (visible && active) setFocusedTodaRouteId(null);
+                                    }}
+                                    aria-label={`${visible ? 'Hide' : 'Show'} ${route.name}`}
+                                    aria-pressed={visible}
+                                    className="grid size-10 shrink-0 place-items-center rounded-lg text-[var(--muted-foreground)] hover:bg-[var(--muted)]"
+                                  >
+                                    {visible ? <Eye className="size-4" /> : <EyeOff className="size-4" />}
+                                  </button>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      </div>
+                    )}
                     {insideToda != null && (
                       <span
                         className={`absolute top-2 left-2 px-2.5 py-1 rounded-full text-[10px] font-extrabold shadow ${
