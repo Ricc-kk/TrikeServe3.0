@@ -557,6 +557,7 @@ export default function CustomerHome() {
    const [passengerCount, setPassengerCount] = useState(1);
    const [showLobbyList, setShowLobbyList] = useState(false);
    const [activeShareLobbyId, setActiveShareLobbyId] = useState<string | null>(null);
+   const [activeShareLobbyPromptId, setActiveShareLobbyPromptId] = useState<string | null>(null);
    const [unreadMessagesCount, setUnreadMessagesCount] = useState(0);
    const [driverAcceptedPopup, setDriverAcceptedPopup] = useState<any>(null);
    const [driverStatusPopup, setDriverStatusPopup] = useState<{ status: string; message: string } | null>(null);
@@ -1283,6 +1284,7 @@ export default function CustomerHome() {
     setRideStateOwnerId(nextOwnerId);
     setShowShareLobby(false);
     setActiveShareLobbyId(null);
+    setActiveShareLobbyPromptId(null);
     setShowLobbyList(false);
     setShowSharedRides(false);
     setShowBookingConfirm(false);
@@ -2696,15 +2698,7 @@ export default function CustomerHome() {
       try {
         const { privateRide, lobby } = await getActiveRideContext(user.id);
         if (lobby) {
-          setActiveShareLobbyId(lobby.id);
-          setShowShareLobby(true);
-          try {
-            if (activeShareLobbyStorageKey) {
-              localStorage.setItem(activeShareLobbyStorageKey, lobby.id);
-            }
-          } catch {
-            // Storage unavailable; the lobby still opens for this mount.
-          }
+          setActiveShareLobbyPromptId(lobby.id);
           return;
         }
         if (privateRide) {
@@ -2746,9 +2740,7 @@ export default function CustomerHome() {
           });
 
           if (existingLobby) {
-            alert('You are already in an active lobby. Please leave your current lobby before joining another.');
-            setActiveShareLobbyId(existingLobby.id);
-            setShowShareLobby(true);
+            setActiveShareLobbyPromptId(existingLobby.id);
             return;
           }
         }
@@ -4920,6 +4912,57 @@ const getPrice = () => {
        )}
 
       {/* Passenger Count Modal (for Share Rides) */}
+      {activeShareLobbyPromptId && (
+        <div
+          className="fixed inset-0 z-[3100] flex items-center justify-center bg-black/55 p-4"
+          role="alertdialog"
+          aria-modal="true"
+          aria-labelledby="active-share-lobby-title"
+          aria-describedby="active-share-lobby-description"
+        >
+          <Card className="w-full max-w-sm bg-surface p-6 text-center shadow-2xl">
+            <div className="mx-auto mb-4 grid size-14 place-items-center rounded-full bg-[var(--primary-soft)] text-[var(--primary)]">
+              <UsersRound className="size-7" aria-hidden="true" />
+            </div>
+            <h2 id="active-share-lobby-title" className="mb-2 text-lg font-bold text-[var(--ink)]">
+              You&apos;re already in a Share Ride lobby
+            </h2>
+            <p id="active-share-lobby-description" className="mb-5 text-sm text-[var(--muted-foreground)]">
+              Open your current lobby to continue waiting. You can only be in one active lobby at a time.
+            </p>
+            <div className="grid gap-2">
+              <Button
+                type="button"
+                className="w-full bg-[var(--primary)] text-white"
+                onClick={() => {
+                  const lobbyId = activeShareLobbyPromptId;
+                  setActiveShareLobbyPromptId(null);
+                  setActiveShareLobbyId(lobbyId);
+                  setShowShareLobby(true);
+                  try {
+                    if (activeShareLobbyStorageKey) {
+                      localStorage.setItem(activeShareLobbyStorageKey, lobbyId);
+                    }
+                  } catch {
+                    // Storage is only a resume hint; the lobby can still open.
+                  }
+                }}
+              >
+                Open current lobby
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                className="w-full"
+                onClick={() => setActiveShareLobbyPromptId(null)}
+              >
+                Not now
+              </Button>
+            </div>
+          </Card>
+        </div>
+      )}
+
       {showPassengerCount && (
         <div className="fixed inset-0 bg-black/50 z-[2000] flex items-end">
           <div className="bg-surface w-full rounded-t-3xl p-6">
