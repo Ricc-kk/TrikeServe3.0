@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 import { useNavigate } from "react-router";
-import { ArrowLeft, Navigation, Store, Users, Car, Clock, Check, X, CheckCircle, MapPin, ChevronDown, Maximize2, Minimize2 } from "lucide-react";
+import { ArrowLeft, Navigation, Store, Users, Car, Clock, Check, X, CheckCircle, MapPin, ChevronDown, Maximize2, Minimize2, Eye, EyeOff } from "lucide-react";
 import { GoogleMap, Marker, InfoWindow, Polyline, Polygon } from "@react-google-maps/api";
 import { Button } from "../ui/button";
 import { Card } from "../ui/card";
@@ -279,6 +279,7 @@ export default function PassengerRequests() {
   const [todaBorderColor, setTodaBorderColor] = useState(DEFAULT_BORDER_COLOR);
   const [todaName, setTodaName] = useState<string | null>(user?.terminalName || null);
   const [showTodaMap, setShowTodaMap] = useState(true);
+  const [showTodaRoutes, setShowTodaRoutes] = useState(true);
 
   // Always fetch fresh terminal assignment from DB on mount
   useEffect(() => {
@@ -589,12 +590,12 @@ export default function PassengerRequests() {
     if (!map || !isMapsLoaded) return;
     const frame = window.requestAnimationFrame(() => {
       (window as any).google?.maps?.event?.trigger(map, 'resize');
-      const points = [...todaRoutes.flatMap(route => route.points), ...(todaArea || [])];
+      const points = [...(showTodaRoutes ? todaRoutes.flatMap(route => route.points) : []), ...(todaArea || [])];
       if (points.length > 1) fitMapToRoute(map, points);
       else map.setCenter(todaMapCenter);
     });
     return () => window.cancelAnimationFrame(frame);
-  }, [isTodaMapFullscreen, isMapsLoaded, todaRoutes, todaArea, todaCenter, todaBoundary]);
+  }, [isTodaMapFullscreen, isMapsLoaded, showTodaRoutes, todaRoutes, todaArea, todaCenter, todaBoundary]);
 
   useEffect(() => {
     if (!previewRequest || !isMapsLoaded || !(window as any).google) return;
@@ -1220,7 +1221,7 @@ export default function PassengerRequests() {
                         options={{ zoomControl: true, streetViewControl: false, mapTypeControl: false, fullscreenControl: false, gestureHandling: 'greedy' }}
                         onLoad={(map) => {
                           todaMapRef.current = map;
-                          const points = [...todaRoutes.flatMap(route => route.points), ...(todaArea || [])];
+                          const points = [...(showTodaRoutes ? todaRoutes.flatMap(route => route.points) : []), ...(todaArea || [])];
                           if (points.length > 1) fitMapToRoute(map, points);
                         }}
                         onUnmount={() => { todaMapRef.current = null; }}
@@ -1238,7 +1239,7 @@ export default function PassengerRequests() {
                             }}
                           />
                         )}
-                        {todaRoutes.map(route => (
+                        {showTodaRoutes && todaRoutes.map(route => (
                           <Polyline
                             key={route.id}
                             path={route.points}
@@ -1266,15 +1267,30 @@ export default function PassengerRequests() {
                         <p className="text-xs text-[var(--muted-foreground)]">Loading map...</p>
                       </div>
                     )}
-                    <button
-                      type="button"
-                      aria-label={isTodaMapFullscreen ? 'Exit full-screen TODA map' : 'View TODA map full screen'}
-                      title={isTodaMapFullscreen ? 'Exit full screen' : 'Full screen map'}
-                      onClick={() => setIsTodaMapFullscreen(fullscreen => !fullscreen)}
-                      className="absolute right-2 top-2 z-20 grid size-10 place-items-center rounded-lg border border-[var(--border)] bg-[var(--surface)] text-[var(--ink)] shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--primary)]"
-                    >
-                      {isTodaMapFullscreen ? <Minimize2 className="size-5" /> : <Maximize2 className="size-5" />}
-                    </button>
+                    <div className="absolute right-2 top-2 z-20 flex items-center gap-2">
+                      {todaRoutes.length > 0 && (
+                        <button
+                          type="button"
+                          aria-label={showTodaRoutes ? 'Hide terminal routes' : 'Show terminal routes'}
+                          aria-pressed={showTodaRoutes}
+                          title={showTodaRoutes ? 'Hide routes' : 'Show routes'}
+                          onClick={() => setShowTodaRoutes(visible => !visible)}
+                          className={`inline-flex h-10 items-center gap-2 rounded-lg border px-3 text-xs font-bold shadow-md transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--primary)] ${showTodaRoutes ? 'border-[var(--primary)] bg-[var(--primary)] text-[var(--primary-foreground)]' : 'border-[var(--border)] bg-[var(--surface)] text-[var(--ink)]'}`}
+                        >
+                          {showTodaRoutes ? <Eye className="size-4" /> : <EyeOff className="size-4" />}
+                          Routes
+                        </button>
+                      )}
+                      <button
+                        type="button"
+                        aria-label={isTodaMapFullscreen ? 'Exit full-screen TODA map' : 'View TODA map full screen'}
+                        title={isTodaMapFullscreen ? 'Exit full screen' : 'Full screen map'}
+                        onClick={() => setIsTodaMapFullscreen(fullscreen => !fullscreen)}
+                        className="grid size-10 place-items-center rounded-lg border border-[var(--border)] bg-[var(--surface)] text-[var(--ink)] shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--primary)]"
+                      >
+                        {isTodaMapFullscreen ? <Minimize2 className="size-5" /> : <Maximize2 className="size-5" />}
+                      </button>
+                    </div>
                     {insideToda != null && (
                       <span
                         className={`absolute top-2 left-2 px-2.5 py-1 rounded-full text-[10px] font-extrabold shadow ${
