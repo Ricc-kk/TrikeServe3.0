@@ -587,7 +587,10 @@ export default function PassengerRequests() {
   useEffect(() => {
     if (!isTodaMapFullscreen) return;
     const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') setIsTodaMapFullscreen(false);
+      if (event.key === 'Escape') {
+        setIsTodaMapFullscreen(false);
+        setShowTodaRouteList(false);
+      }
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
@@ -1195,6 +1198,7 @@ export default function PassengerRequests() {
               onClick={() => {
                 if (isTodaMapFullscreen) {
                   setIsTodaMapFullscreen(false);
+                  setShowTodaRouteList(false);
                   return;
                 }
                 setShowTodaMap((v) => !v);
@@ -1286,7 +1290,7 @@ export default function PassengerRequests() {
                       </div>
                     )}
                     <div className="absolute right-2 top-2 z-20 flex items-center gap-2">
-                      {isMapsLoaded && todaRoutes.length > 0 && (
+                      {isTodaMapFullscreen && isMapsLoaded && todaRoutes.length > 0 && (
                         <button
                           type="button"
                           aria-expanded={showTodaRouteList}
@@ -1306,13 +1310,16 @@ export default function PassengerRequests() {
                         type="button"
                         aria-label={isTodaMapFullscreen ? 'Exit full-screen TODA map' : 'View TODA map full screen'}
                         title={isTodaMapFullscreen ? 'Exit full screen' : 'Full screen map'}
-                        onClick={() => setIsTodaMapFullscreen(fullscreen => !fullscreen)}
+                        onClick={() => {
+                          setShowTodaRouteList(false);
+                          setIsTodaMapFullscreen(fullscreen => !fullscreen);
+                        }}
                         className="grid size-10 place-items-center rounded-lg border border-[var(--border)] bg-[var(--surface)] text-[var(--ink)] shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--primary)]"
                       >
                         {isTodaMapFullscreen ? <Minimize2 className="size-5" /> : <Maximize2 className="size-5" />}
                       </button>
                     </div>
-                    {isMapsLoaded && showTodaRouteList && todaRoutes.length > 0 && (
+                    {isTodaMapFullscreen && isMapsLoaded && showTodaRouteList && todaRoutes.length > 0 && (
                       <div id="rider-toda-route-list" className="absolute right-2 top-14 z-30 w-[min(22rem,calc(100vw_-_1.5rem))]">
                         <div className="max-h-[min(65vh,32rem)] overflow-hidden rounded-2xl border border-line bg-[var(--surface)] shadow-xl">
                           <div className="flex items-center justify-between gap-2 border-b border-line px-3 py-3">

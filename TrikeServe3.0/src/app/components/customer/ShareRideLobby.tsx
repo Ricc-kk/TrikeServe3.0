@@ -48,14 +48,55 @@ interface LobbyPassenger {
   joinedAt: string;
   pickup: string;  // Individual pickup location
   pickupAddress: string;  // Individual pickup address
-  // Each passenger's destination is stored for individual fares and driver
-  // routing; customer views keep other passengers' locations private.
+  // Each passenger's destination is stored for individual fares, shared stop
+  // ordering, map markers, and driver routing.
   dropoff?: string;
   dropoffAddress?: string;
   dropoffLat?: number | null;
   dropoffLng?: number | null;
   /** This passenger's fare: the full base fare plus their distance charge. */
   fare?: number;
+}
+
+type OrderedLobbyDropoff = {
+  passenger: LobbyPassenger;
+  index: number;
+  distance: number | null;
+};
+
+function orderLobbyDropoffs(
+  passengers: LobbyPassenger[],
+  pickupCoords?: { lat: number; lng: number } | null,
+): OrderedLobbyDropoff[] {
+  return passengers
+    .map((passenger, index) => {
+      const lat = passenger.dropoffLat == null ? Number.NaN : Number(passenger.dropoffLat);
+      const lng = passenger.dropoffLng == null ? Number.NaN : Number(passenger.dropoffLng);
+      const distance =
+        pickupCoords && Number.isFinite(lat) && Number.isFinite(lng)
+          ? haversineDistanceMeters(pickupCoords, { lat, lng })
+          : null;
+      return { passenger, index, distance };
+    })
+    .sort((a, b) => {
+      if (a.distance == null && b.distance == null) return a.index - b.index;
+      if (a.distance == null) return 1;
+      if (b.distance == null) return -1;
+      return a.distance - b.distance;
+    });
+}
+
+function createDropoffStopIcon(color: string): google.maps.Symbol | undefined {
+  const maps = (window as any)?.google?.maps;
+  if (!maps?.SymbolPath) return undefined;
+  return {
+    path: maps.SymbolPath.CIRCLE,
+    fillColor: color,
+    fillOpacity: 1,
+    strokeColor: '#FFFFFF',
+    strokeWeight: 2,
+    scale: 12,
+  } as google.maps.Symbol;
 }
 
 /**
@@ -549,16 +590,23 @@ export default function ShareRideLobby({
   const fitLobbyRouteBounds = useCallback(() => {
     const map = lobbyMapRef.current;
     const maps = (window as any).google?.maps;
-    if (!map || !maps?.LatLngBounds || terminalRoutePath.length === 0) return;
+    if (!map || !maps?.LatLngBounds) return;
 
-    const endpoints = [pickupCoords, dropoffCoords].filter(
+    const passengerDropoffs = (lobby?.passengers_json || []).flatMap(passenger => {
+      if (passenger.dropoffLat == null || passenger.dropoffLng == null) return [];
+      const lat = Number(passenger.dropoffLat);
+      const lng = Number(passenger.dropoffLng);
+      return Number.isFinite(lat) && Number.isFinite(lng) ? [{ lat, lng }] : [];
+    });
+    const endpoints = [pickupCoords, dropoffCoords, ...passengerDropoffs].filter(
       (point): point is { lat: number; lng: number } => point !== null && point !== undefined,
     );
     const points = [...terminalRoutePath, ...endpoints];
+    if (points.length === 0) return;
     const bounds = new maps.LatLngBounds();
     points.forEach((point) => bounds.extend(point));
     map.fitBounds(bounds, 24);
-  }, [terminalRoutePath, pickupCoords, dropoffCoords]);
+  }, [terminalRoutePath, pickupCoords, dropoffCoords, lobby?.passengers_json]);
 
   useEffect(() => {
     fitLobbyRouteBounds();
@@ -727,13 +775,14 @@ export default function ShareRideLobby({
                   if (!prevLobby) return prevLobby;
                   const prevCount = (prevLobby.passengers_json || []).length;
                   const latestCount = latestPassengers.length;
+                  const passengerDataChanged = JSON.stringify(prevLobby.passengers_json || []) !== JSON.stringify(latestPassengers);
 
                   // Log every sync for debugging
                   console.log(`⏳ SYNC CHECK: prev=${prevCount} passengers, latest=${latestCount} passengers, status=${latestLobby.status}`);
 
-                  // Always update if passenger count changed
-                  if (prevCount !== latestCount) {
-                    console.log(`🔄 PASSENGER COUNT CHANGED from ${prevCount} to ${latestCount} - UPDATING!`);
+                  // Update whenever any passenger's profile, destination, or fare changes.
+                  if (prevCount !== latestCount || passengerDataChanged) {
+                    console.log(`🔄 PASSENGER DATA CHANGED from ${prevCount} to ${latestCount} passengers - UPDATING!`);
                     return {
                       ...prevLobby,
                       ...latestLobby,
@@ -881,20 +930,54 @@ export default function ShareRideLobby({
     });
   }, [driverLocation, isMapsLoaded, lobby?.driver_status, pickupCoords, dropoffCoords]);
 
-  // Compute pickup-to-dropoff route (destination route)
+  // Route from pickup through each distinct passenger drop-off, in stop order.
   useEffect(() => {
-    if (!pickupCoords || !dropoffCoords || !isMapsLoaded || !(window as any).google) return;
-    const DirectionsService = new (window as any).google.maps.DirectionsService();
+    setDestinationRoutePath([]);
+    if (!pickupCoords || !isMapsLoaded || !(window as any).google) return;
+
+    const destinations = orderLobbyDropoffs(lobby?.passengers_json || [], pickupCoords)
+      .flatMap(({ passenger }) => {
+        if (passenger.dropoffLat == null || passenger.dropoffLng == null) return [];
+        const lat = Number(passenger.dropoffLat);
+        const lng = Number(passenger.dropoffLng);
+        return Number.isFinite(lat) && Number.isFinite(lng) ? [{ lat, lng }] : [];
+      });
+    if (dropoffCoords && !destinations.some(point =>
+      Math.abs(point.lat - dropoffCoords.lat) < 0.00001 && Math.abs(point.lng - dropoffCoords.lng) < 0.00001
+    )) {
+      destinations.push(dropoffCoords);
+    }
+    const uniqueDestinations = destinations.filter((point, index) =>
+      destinations.findIndex(candidate =>
+        Math.abs(candidate.lat - point.lat) < 0.00001 && Math.abs(candidate.lng - point.lng) < 0.00001
+      ) === index
+    ).sort((a, b) => haversineDistanceMeters(pickupCoords, a) - haversineDistanceMeters(pickupCoords, b));
+    if (uniqueDestinations.length === 0) return;
+
+    let active = true;
+    const maps = (window as any).google.maps;
+    const DirectionsService = new maps.DirectionsService();
     DirectionsService.route({
-      origin: new (window as any).google.maps.LatLng(pickupCoords.lat, pickupCoords.lng),
-      destination: new (window as any).google.maps.LatLng(dropoffCoords.lat, dropoffCoords.lng),
-      travelMode: (window as any).google.maps.TravelMode.DRIVING,
+      origin: new maps.LatLng(pickupCoords.lat, pickupCoords.lng),
+      destination: new maps.LatLng(
+        uniqueDestinations[uniqueDestinations.length - 1].lat,
+        uniqueDestinations[uniqueDestinations.length - 1].lng,
+      ),
+      waypoints: uniqueDestinations.slice(0, -1).map(point => ({
+        location: new maps.LatLng(point.lat, point.lng),
+        stopover: true,
+      })),
+      optimizeWaypoints: false,
+      travelMode: maps.TravelMode.DRIVING,
     }, (result: any, status: string) => {
+      if (!active) return;
       if (status === 'OK' && result?.routes?.[0]?.overview_polyline?.points) {
         setDestinationRoutePath(decodePolyline(result.routes[0].overview_polyline.points));
       }
     });
-  }, [pickupCoords, dropoffCoords, isMapsLoaded]);
+
+    return () => { active = false; };
+  }, [pickupCoords, dropoffCoords, lobby?.passengers_json, isMapsLoaded]);
 
   /*
    * Resolve the profile photo of everyone in the lobby.
@@ -1539,13 +1622,20 @@ if (loading) {
   const passengers = lobby.passengers_json || [];
   const isTerminal = terminalStatus !== null;
   const getPassengerDisplayName = (passenger: LobbyPassenger) => {
-    const companionMarker = passenger.id.indexOf('_companion_');
-    if (companionMarker < 0) return passenger.name;
-    const ownerId = passenger.id.slice(0, companionMarker);
-    const owner = passengers.find((candidate) => candidate.id === ownerId);
-    return owner?.name
-      ? `${passenger.name || 'Companion'} of ${owner.name}`
-      : passenger.name || 'Companion';
+    if (passenger.id === user?.id) return 'You';
+
+    const ownCompanionPrefix = user?.id ? `${user.id}_companion_` : null;
+    if (ownCompanionPrefix && passenger.id.startsWith(ownCompanionPrefix)) {
+      const ownCompanions = passengers.filter((candidate) => candidate.id.startsWith(ownCompanionPrefix));
+      const companionNumber = ownCompanions.findIndex((candidate) => candidate.id === passenger.id) + 1;
+      return ownCompanions.length > 1 ? `Your companion ${companionNumber}` : 'Your companion';
+    }
+
+    const otherPassengers = passengers.filter((candidate) =>
+      candidate.id !== user?.id && !(ownCompanionPrefix && candidate.id.startsWith(ownCompanionPrefix))
+    );
+    const passengerNumber = otherPassengers.findIndex((candidate) => candidate.id === passenger.id) + 1;
+    return `Passenger ${passengerNumber}`;
   };
 
   // Old lobbies stored one total on the row; newer passengers carry their own
@@ -1575,30 +1665,42 @@ if (loading) {
     )
   );
 
-  /*
-   * Drop-off order: the destination closest to the pickup is reached first.
-   *
-   * Measured from the trip's own pickup, because the sequence of stops is a fact
-   * about the route, not about who joined when. A passenger whose destination has
-   * no coordinates keeps their join position and sorts after the ones that do, so
-   * a missing pin never pushes a known stop down the list.
-   */
-  const dropoffOrder = passengers
-    .map((passenger, index) => {
-      const lat = passenger.dropoffLat;
-      const lng = passenger.dropoffLng;
-      const distance =
-        pickupCoords && Number.isFinite(lat) && Number.isFinite(lng)
-          ? haversineDistanceMeters(pickupCoords, { lat: Number(lat), lng: Number(lng) })
-          : null;
-      return { passenger, index, distance };
-    })
-    .sort((a, b) => {
-      if (a.distance == null && b.distance == null) return a.index - b.index;
-      if (a.distance == null) return 1;
-      if (b.distance == null) return -1;
-      return a.distance - b.distance;
+  // Stop order and map markers follow the lobby's current passenger records.
+  const dropoffOrder = orderLobbyDropoffs(passengers, pickupCoords);
+  const mapDropoffStops = dropoffOrder.reduce<Array<{
+    key: string;
+    coords: { lat: number; lng: number };
+    order: number;
+    passengers: LobbyPassenger[];
+    fallbackLabel?: string;
+  }>>((stops, { passenger }) => {
+    if (passenger.dropoffLat == null || passenger.dropoffLng == null) return stops;
+    const lat = Number(passenger.dropoffLat);
+    const lng = Number(passenger.dropoffLng);
+    if (!Number.isFinite(lat) || !Number.isFinite(lng)) return stops;
+    const key = `${lat.toFixed(5)},${lng.toFixed(5)}`;
+    const existingStop = stops.find(stop => stop.key === key);
+    if (existingStop) existingStop.passengers.push(passenger);
+    else stops.push({ key, coords: { lat, lng }, order: stops.length + 1, passengers: [passenger] });
+    return stops;
+  }, []);
+  if (dropoffCoords && !mapDropoffStops.some(stop =>
+    Math.abs(stop.coords.lat - dropoffCoords.lat) < 0.00001 && Math.abs(stop.coords.lng - dropoffCoords.lng) < 0.00001
+  )) {
+    mapDropoffStops.push({
+      key: 'current-user-dropoff',
+      coords: dropoffCoords,
+      order: 0,
+      passengers: ownPassenger ? [ownPassenger] : [],
+      fallbackLabel: ownDropoff,
     });
+  }
+  mapDropoffStops.sort((a, b) =>
+    pickupCoords
+      ? haversineDistanceMeters(pickupCoords, a.coords) - haversineDistanceMeters(pickupCoords, b.coords)
+      : a.order - b.order,
+  );
+  mapDropoffStops.forEach((stop, index) => { stop.order = index + 1; });
 
   // Full lobby view
   return (
@@ -1711,16 +1813,10 @@ if (loading) {
                             )}
                           </div>
                           <p className="mt-0.5 flex items-center gap-1 text-xs text-[var(--muted-foreground)]">
-                            {isCurrentUserOrCompanion ? (
-                              <>
-                                <MapPin className="h-3 w-3 flex-shrink-0" />
-                                <span className="truncate">
-                                  Drop-off: {passenger.dropoff || passenger.dropoffAddress || ownDropoff}
-                                </span>
-                              </>
-                            ) : (
-                              <span className="italic">Drop-off hidden for privacy</span>
-                            )}
+                            <MapPin className="h-3 w-3 flex-shrink-0" />
+                            <span className="truncate">
+                              Drop-off: {passenger.dropoff || passenger.dropoffAddress || (isCurrentUserOrCompanion ? ownDropoff : 'Location unavailable')}
+                            </span>
                           </p>
                           <p className="text-[10px] text-[var(--muted-foreground)]">
                             Joined {new Date(passenger.joinedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
@@ -1747,8 +1843,7 @@ if (loading) {
                 ))}
               </div>
 
-              {/* Keep the stop order visible while hiding other passengers' exact
-                  locations from the customer view. */}
+              {/* Show the full ordered stop list from the current lobby passengers. */}
               {passengers.length > 0 && (
                 <div className="mt-4 rounded-xl border border-[var(--border)] bg-[var(--muted)] p-3">
                   <p className="mb-2 text-xs font-bold uppercase tracking-widest text-[var(--muted-foreground)]">
@@ -1768,9 +1863,7 @@ if (loading) {
                           {entry.passenger.id === user?.id ? 'You' : getPassengerDisplayName(entry.passenger)}
                         </span>
                         <span className="max-w-[45%] truncate text-right text-[10px] text-[var(--muted-foreground)]">
-                          {isCurrentCustomerPassenger(entry.passenger)
-                            ? entry.passenger.dropoff || entry.passenger.dropoffAddress || ownDropoff
-                            : 'Hidden for privacy'}
+                          {entry.passenger.dropoff || entry.passenger.dropoffAddress || (isCurrentCustomerPassenger(entry.passenger) ? ownDropoff : 'Location unavailable')}
                         </span>
                       </div>
                     ))}
@@ -1833,7 +1926,7 @@ if (loading) {
             )}
 
             {/* Terminal route and live tracking map */}
-            {isMapsLoaded && ((lobby.status === 'driver_found' && driverLocation) || terminalRoutePath.length > 0) && (
+            {isMapsLoaded && ((lobby.status === 'driver_found' && driverLocation) || terminalRoutePath.length > 0 || mapDropoffStops.length > 0) && (
               <div className="rounded-xl overflow-hidden mb-3 border border-[var(--border)] shadow-sm">
                 <GoogleMap
                   mapContainerStyle={{ width: '100%', height: '240px' }}
@@ -1882,20 +1975,23 @@ if (loading) {
                       }}
                     />
                   )}
-                  {/* Dropoff marker */}
-                  {dropoffCoords && (
-                    <MarkerF
-                      position={dropoffCoords}
-                      title="Drop-off"
-                      icon={{
-                        url: 'data:image/svg+xml;charset=UTF-8,' + encodeURIComponent(
-                          '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="var(--primary)" stroke="white" stroke-width="1"><path d="M12 2C8.13 2 5 5.13 5 9c0 4.95 6.1 11.53 6.36 11.81.36.39.92.39 1.28 0C13.9 20.53 20 13.95 20 9c0-3.87-3.13-7-8-7z"/><path d="M7.8 9.6l2.1 2.1 4.3-4.3" fill="none" stroke="#FFFFFF" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>'
-                        ),
-                        scaledSize: new (window as any).google.maps.Size(32, 32),
-                        anchor: new (window as any).google.maps.Point(16, 32),
-                      }}
-                    />
-                  )}
+                  {/* Numbered markers for every distinct passenger drop-off. */}
+                  {mapDropoffStops.map(stop => {
+                    const passengerNames = stop.passengers.map(getPassengerDisplayName).join(', ') || 'You';
+                    const address = stop.passengers
+                      .map(passenger => passenger.dropoff || passenger.dropoffAddress)
+                      .find(Boolean) || stop.fallbackLabel;
+                    return (
+                      <MarkerF
+                        key={stop.key}
+                        position={stop.coords}
+                        title={`Stop ${stop.order}: ${passengerNames}${address ? ` · ${address}` : ''}`}
+                        icon={createDropoffStopIcon(terminalRouteColor)}
+                        label={{ text: String(stop.order), color: '#FFFFFF', fontSize: '11px', fontWeight: '700' }}
+                        zIndex={20 + stop.order}
+                      />
+                    );
+                  })}
                   {/* Terminal route corridor, visible before and after driver assignment. */}
                   {terminalRoutePath.length > 0 && (
                     <Polyline

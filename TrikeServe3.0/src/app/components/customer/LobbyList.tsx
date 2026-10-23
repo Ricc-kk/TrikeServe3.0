@@ -196,7 +196,6 @@ export default function LobbyList({
                         <div
                           key={passenger.id}
                           className="w-8 h-8 rounded-full bg-[var(--primary)] flex items-center justify-center text-sm border-2 border-white"
-                          title={passenger.name}
                         >
                           {passenger.emoji}
                         </div>
