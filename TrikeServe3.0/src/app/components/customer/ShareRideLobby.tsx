@@ -1061,7 +1061,18 @@ export default function ShareRideLobby({
         { dropoffCoords, routePoints, routeWidthM },
       );
 
-      if (!matchError && matchingLobby) {
+      // A failed lookup is not the same as "there is no matching lobby". The
+      // old flow silently fell through and created a new lobby when this query
+      // failed, which made the same-route prompt appear to be broken and could
+      // leave two lobbies for the same trip. Keep the customer in this flow and
+      // show the existing error dialog so they can retry instead.
+      if (matchError) {
+        console.error('Failed to check for a matching shared ride lobby:', matchError);
+        setError("We couldn't check for a lobby on this route. Check your connection and try booking again.");
+        return null;
+      }
+
+      if (matchingLobby) {
         let passengers = backfillLegacySharedRidePassengerFares(
           dedupePassengers(normalizePassengers(matchingLobby.passengers_json)),
           Number(matchingLobby.price_per_seat || 0),
