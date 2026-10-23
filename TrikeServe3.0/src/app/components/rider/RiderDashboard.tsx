@@ -118,7 +118,6 @@ export default function RiderDashboard() {
       terminalRoadWidthM,
       myEntry: queueEntry,
       leave: leaveQueue,
-      isFirst: isFirstInQueue,
       hasNoTerminal,
       isResolvingTerminal,
     } = terminalQueueApi;
@@ -355,12 +354,12 @@ export default function RiderDashboard() {
             }
 
             if (request.terminal_id && queueTerminalId && request.terminal_id !== queueTerminalId) return false;
-            if (queueTerminalId && !isFirstInQueue) return false;
             return true;
           };
 
-          // Match the request page: exclude declined requests, deduplicate orders,
-          // then count only the requests this rider can accept.
+          // Count pending requests for this rider's terminal and service types
+          // even before they join the queue. Queue position controls accepting,
+          // not whether the dashboard reflects incoming passenger demand.
           const seenOrderIds = new Set<string>();
           let availableRideRequestCount = 0;
           (rideRequests || []).forEach((request: any) => {
@@ -372,8 +371,8 @@ export default function RiderDashboard() {
             if (canAcceptRequest(request)) availableRideRequestCount += 1;
           });
 
-          // Shared lobbies contribute their waiting passenger count only when the
-          // rider can accept that shared ride.
+          // Shared lobbies contribute their waiting passengers for the assigned
+          // terminal even while this driver is outside the queue.
           const availableLobbyPassengers = (waitingLobbies || []).reduce((total: number, lobby: any) => {
             if (!canAcceptRequest({ ...lobby, ride_type: 'shared', pickup_location: lobby.pickup_location })) return total;
             if (lobby.terminal_id && queueTerminalId && lobby.terminal_id !== queueTerminalId) return total;
@@ -455,7 +454,6 @@ export default function RiderDashboard() {
      queueTerminalId,
      terminalBoundary,
      terminalRoadWidthM,
-     isFirstInQueue,
      hasNoTerminal,
      isResolvingTerminal,
    ]);

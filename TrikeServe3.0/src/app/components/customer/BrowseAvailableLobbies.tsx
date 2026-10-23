@@ -6,7 +6,7 @@ import { Badge } from "../ui/badge";
 import { useAuth } from "../../contexts/AuthContext";
 import {
   supabaseHelpers,
-  isSamePickup,
+  isSimilarRoute,
   isPointWithinAnyTerminalBorder,
   isPointWithinAnyTerminalRoute,
   isPointWithinTerminalRoute,
@@ -97,15 +97,15 @@ export default function BrowseAvailableLobbies({
   const joiningFare = computeSharedRideFarePerPassenger(rates, joiningDistanceKm);
   const joiningFareHasDistance = joiningDistanceKm != null;
 
-  // When a terminal route is selected, its ID is the authoritative match.
-  // Pickup names and addresses can be shared by different terminals, so only
-  // use fuzzy pickup matching for older flows that have no selected terminal.
+  // Match the selected pickup and drop-off. A terminal can have several
+  // destinations, and terminal IDs only identify the pickup side of a trip.
   const routeMatches = useCallback((lobby: AvailableLobby) => {
     if (!sameRouteLobbyFilter) return true;
-    return terminalId
-      ? lobby.terminal_id === terminalId
-      : isSamePickup(lobby, pickup, pickupAddress);
-  }, [sameRouteLobbyFilter, terminalId, pickup, pickupAddress]);
+    // Treat a stored terminal ID as authoritative when both sides have one;
+    // older lobbies without one fall back to normalized place matching.
+    if (terminalId && lobby.terminal_id && lobby.terminal_id !== terminalId) return false;
+    return isSimilarRoute(lobby, pickup, dropoff, pickupAddress, dropoffAddress, terminalId);
+  }, [sameRouteLobbyFilter, terminalId, pickup, pickupAddress, dropoff, dropoffAddress]);
 
   // Fetch available lobbies on mount
   useEffect(() => {
@@ -214,7 +214,7 @@ export default function BrowseAvailableLobbies({
       const joinedDropoffAddress = dropoffAddress || dropoff;
 
       if (!routeMatches(lobby)) {
-        setError(`This lobby is not on the selected ${pickup || 'terminal'} route. Refresh the list and choose a matching lobby.`);
+        setError('This lobby does not match your selected pickup and drop-off. Refresh the list and choose a matching lobby.');
         return;
       }
 
@@ -370,7 +370,7 @@ export default function BrowseAvailableLobbies({
             </div>
             <h2 className="text-xl font-bold text-[var(--ink)]">Available Lobbies</h2>
               <p className="text-xs text-[var(--muted-foreground)] mt-0.5">
-                Lobbies on the {pickup || 'selected terminal'} route
+                {pickup || 'Selected pickup'} → {dropoff || 'selected drop-off'}
               </p>
             </div>
           <button
@@ -390,7 +390,7 @@ export default function BrowseAvailableLobbies({
               </div>
               <p className="text-lg font-semibold text-[var(--ink)] mb-1">No lobbies available</p>
               <p className="text-sm text-[var(--muted-foreground)]">
-                Nobody else is waiting on this terminal route right now. Be the
+                Nobody else is waiting on this route right now. Be the
                 first to start a lobby.
               </p>
             </div>

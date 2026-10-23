@@ -1744,7 +1744,7 @@ export function isSamePickup(
 //
 // Used where a shared ride means the same trip for both parties -- quietly
 // joining someone else's lobby on the way to a different place is not that.
-// The browse list deliberately does not use this; see isSamePickup's callers.
+// Callers that only need the same pickup can use isSamePickup instead.
 export function isSimilarRoute(
   lobby: any,
   userPickup: string,
@@ -4596,7 +4596,9 @@ export const supabaseHelpers = {
   },
 
   // ─── Ride reports ────────────────────────────────────────────────────
-  // Customers report a completed ride; Super Admins review these.
+  // Customers and riders submit ride reports; Super Admins review these. Rider
+  // report categories are prefixed with `Rider report: ` so the shared table
+  // keeps the reporter role clear without changing its existing schema.
   async createRideReport(report: {
     rideId?: string;
     reporterId?: string;

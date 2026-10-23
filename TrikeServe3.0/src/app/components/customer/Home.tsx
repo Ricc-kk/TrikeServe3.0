@@ -8,7 +8,10 @@ import { Input } from "../ui/input";
 import BottomNav from "../ui/BottomNav";
 import {
   isActiveRideStatus,
+  customerActiveRideStorageKey,
+  customerActiveShareLobbyStorageKey,
   getActiveRideContext,
+  isCustomerLobbyPassenger,
   isDeliveryRideRequest,
   useActiveRideContext,
 } from "../../../lib/rideLock";
@@ -54,6 +57,28 @@ type RecommendedLocation = {
 };
 
 type LatLng = { lat: number; lng: number };
+
+type TerminalPickerFilter = "all" | "closest" | "frequent" | "selected";
+
+const TERMINAL_PICKER_USAGE_KEY = "trikeserve_terminal_picker_usage";
+
+function readTerminalPickerUsage(): Record<string, number> {
+  if (typeof window === "undefined") return {};
+  try {
+    const saved = JSON.parse(window.localStorage.getItem(TERMINAL_PICKER_USAGE_KEY) || "{}");
+    if (!saved || typeof saved !== "object" || Array.isArray(saved)) return {};
+
+    const counts: Record<string, number> = {};
+    for (const [terminalId, count] of Object.entries(saved)) {
+      if (terminalId && typeof count === "number" && Number.isFinite(count) && count > 0) {
+        counts[terminalId] = count;
+      }
+    }
+    return counts;
+  } catch {
+    return {};
+  }
+}
 
 type GeocodedLocation = {
    lat: number;
@@ -390,8 +415,10 @@ const polygonBiasRadius = (polygon: { lat: number; lng: number }[]): number => {
 
 export default function CustomerHome() {
   const { user } = useAuth();
+  const activeRideStorageKey = user?.id ? customerActiveRideStorageKey(user.id) : null;
+  const activeShareLobbyStorageKey = user?.id ? customerActiveShareLobbyStorageKey(user.id) : null;
+  const rideStateIdentity = user?.id ? `${user.id}:${user.role}` : null;
   const [enforceBoundary] = useDevModeOverride("enforceBoundary");
-  const [onlyNearestTerminal] = useDevModeOverride("nearestTerminalOnly");
   const navigate = useNavigate();
   const location = useLocation();
   const navigationState = location.state as { selectedPickupTerminalId?: string; customerHomeTab?: boolean } | null;
@@ -464,6 +491,9 @@ export default function CustomerHome() {
    */
   const [isSearchMinimized, setIsSearchMinimized] = useState(false);
   const [currentRequestId, setCurrentRequestId] = useState<string | null>(null);
+  const [rideStateOwnerId, setRideStateOwnerId] = useState<string | null>(rideStateIdentity);
+  const previousRideStateOwnerIdRef = useRef<string | null>(rideStateIdentity);
+  const rideStateBelongsToCurrentUser = Boolean(user?.id && rideStateOwnerId === rideStateIdentity);
 
   /*
    * Write or clear the resume marker, but only clear it after a ride has actually
@@ -475,7 +505,9 @@ export default function CustomerHome() {
    * "ended" once it has been observed as live and is now no longer live.
    */
   const hadRideRef = useRef(false);
-  const isRideLive = rideStatus !== null && rideStatus !== 'searching';
+  const isRideLive = rideStateBelongsToCurrentUser && rideStatus !== null && rideStatus !== 'searching';
+  const visibleRideStatus = rideStateBelongsToCurrentUser ? rideStatus : null;
+  const visibleActiveRide = rideStateBelongsToCurrentUser ? activeRide : null;
 
    // Running wait on the current driver search. Driven by its own 1s timer rather
    // than by the ride polling, so it counts in real seconds while the request is
@@ -486,8 +518,16 @@ export default function CustomerHome() {
    // `requestedAt` in each of them would be a dozen chances to miss one. Passing
    // null here is the single point that stops the clock, and it also means the
    // 1s interval is not left running in the background for the rest of the ride.
-   const searchingTime = useElapsedTime(rideStatus === 'searching' ? requestedAt : null);
+   const searchingTime = useElapsedTime(
+     rideStateBelongsToCurrentUser && rideStatus === 'searching' ? requestedAt : null,
+   );
   useEffect(() => {
+    const currentOwnerId = rideStateIdentity;
+    if (previousRideStateOwnerIdRef.current !== currentOwnerId) {
+      previousRideStateOwnerIdRef.current = currentOwnerId;
+      hadRideRef.current = false;
+      return;
+    }
     if (isRideLive && currentRequestId) {
       hadRideRef.current = true;
       syncRideResume(currentRequestId);
@@ -496,7 +536,7 @@ export default function CustomerHome() {
       hadRideRef.current = false;
       syncRideResume(null);
     }
-  }, [isRideLive, currentRequestId, syncRideResume]);
+  }, [rideStateIdentity, user?.id, isRideLive, currentRequestId, syncRideResume]);
    const [currentSharedRideId, setCurrentSharedRideId] = useState<string | null>(null);
    /*
     * The live ride this customer is already in, straight from the database.
@@ -764,6 +804,26 @@ export default function CustomerHome() {
    const routePreviewMapRef = useRef<any>(null);
    const [selectedTerminalId, setSelectedTerminalId] = useState<string | null>(null);
    const [selectedTerminalRouteId, setSelectedTerminalRouteId] = useState<string | null>(null);
+   const terminalPickerUsageRef = useRef<Record<string, number>>({});
+   const [terminalPickerUsage, setTerminalPickerUsage] = useState(() => {
+     const savedUsage = readTerminalPickerUsage();
+     terminalPickerUsageRef.current = savedUsage;
+     return savedUsage;
+   });
+   const [terminalPickerFilter, setTerminalPickerFilter] = useState<TerminalPickerFilter>("all");
+   const recordTerminalPickerUse = useCallback((terminalId: string) => {
+     const nextUsage = {
+       ...terminalPickerUsageRef.current,
+       [terminalId]: (terminalPickerUsageRef.current[terminalId] || 0) + 1,
+     };
+     terminalPickerUsageRef.current = nextUsage;
+     setTerminalPickerUsage(nextUsage);
+     try {
+       window.localStorage.setItem(TERMINAL_PICKER_USAGE_KEY, JSON.stringify(nextUsage));
+     } catch {
+       // The frequent filter remains available for this session if storage is blocked.
+     }
+   }, []);
   // Hub state: what they want (all / a ride / a meal) and whether they have
   // opened the header's search field.
     // The chosen pickup terminal and its plotted service road. Drop-off search,
@@ -1214,12 +1274,60 @@ export default function CustomerHome() {
     }
   };
 
+  // Ride UI state is account-bound. Clear it before this mounted screen restores
+  // anything belonging to the newly signed-in customer.
+  useEffect(() => {
+    const nextOwnerId = rideStateIdentity;
+    if (rideStateOwnerId === nextOwnerId) return;
+
+    setRideStateOwnerId(nextOwnerId);
+    setShowShareLobby(false);
+    setActiveShareLobbyId(null);
+    setShowLobbyList(false);
+    setShowSharedRides(false);
+    setShowBookingConfirm(false);
+    setShowPassengerCount(false);
+    setShowLocationPicker(false);
+    setActiveLocationInput(null);
+    setRideStatus(null);
+    setRequestedAt(null);
+    setCurrentRequestId(null);
+    setActiveRide(null);
+    setRideDriverId(null);
+    setDriverLiveStatus('');
+    setDriverUnread(0);
+    setCustomerChatPopup(false);
+    setDriverStatusPopup(null);
+    setDriverAcceptedPopup(null);
+    setShowCancelConfirm(false);
+    setRideCompletedPopup(false);
+    setShowRatingModal(false);
+    setCurrentSharedRideId(null);
+    setPassengerCount(1);
+    driverChatId.current = null;
+    resetCustomerRideVisuals();
+  }, [rideStateIdentity, rideStateOwnerId]);
+
   // Load persisted ride data on mount
   useEffect(() => {
-    const savedRideData = localStorage.getItem('trikeserve_active_ride');
+    let active = true;
+    if (!user?.id || !activeRideStorageKey || !activeShareLobbyStorageKey) {
+      return () => {
+        active = false;
+      };
+    }
+
+    const customerId = user.id;
+    const savedRideData = localStorage.getItem(activeRideStorageKey);
     if (savedRideData) {
       try {
         const rideData = JSON.parse(savedRideData);
+        if (rideData?.customerId !== customerId) {
+          localStorage.removeItem(activeRideStorageKey);
+          return () => {
+            active = false;
+          };
+        }
         if (isDeliveryRideRequest({
           order_id: rideData?.order_id || rideData?.orderId,
           ride_type: rideData?.ride_type || rideData?.rideType || rideData?.vehicleType,
@@ -1228,7 +1336,7 @@ export default function CustomerHome() {
           // Older builds persisted order deliveries in the customer's ride slot.
           // Keep order tracking on OrderDetail instead of restoring a food order
           // as a passenger ride on /customer.
-          localStorage.removeItem('trikeserve_active_ride');
+          localStorage.removeItem(activeRideStorageKey);
           forgetActiveRide();
           setRideStatus(null);
           setCurrentRequestId(null);
@@ -1295,13 +1403,20 @@ export default function CustomerHome() {
           supabaseHelpers
             .getRideRequest(restoredRequestId)
             .then(({ data: fresh }) => {
-              if (!fresh) return;
+              if (!active || !fresh) return;
+              if (fresh.customer_id !== customerId) {
+                localStorage.removeItem(activeRideStorageKey);
+                setRideStatus(null);
+                setActiveRide(null);
+                setCurrentRequestId(null);
+                return;
+              }
 
               if (isDeliveryRideRequest(fresh)) {
                 setRideStatus(null);
                 setActiveRide(null);
                 setCurrentRequestId(null);
-                localStorage.removeItem('trikeserve_active_ride');
+                localStorage.removeItem(activeRideStorageKey);
                 forgetActiveRide();
                 setRideDriverId(null);
                 setDriverLiveStatus('');
@@ -1328,7 +1443,7 @@ export default function CustomerHome() {
                 // next booking starts clean.
                 setRideStatus(null);
                 setActiveRide(null);
-                localStorage.removeItem('trikeserve_active_ride');
+                localStorage.removeItem(activeRideStorageKey);
                 return;
               }
 
@@ -1366,19 +1481,16 @@ export default function CustomerHome() {
 
     // Check if user is in an active lobby
     const checkActiveLobby = () => {
-      if (!user?.id) return;
-
       const lobbiesData = localStorage.getItem('trikeserve_share_lobbies');
       if (!lobbiesData) return;
 
       try {
-        const lobbies = JSON.parse(lobbiesData);
+        const parsedLobbies = JSON.parse(lobbiesData);
+        const lobbies = Array.isArray(parsedLobbies) ? parsedLobbies : [];
         // Find lobby where user is a passenger (waiting OR driver-found status)
-        const userLobby = lobbies.find((lobby: any) => 
-          (lobby.status === 'waiting' || lobby.status === 'driver-found') &&
-          lobby.passengers.some((p: any) => 
-            p.id === user.id || p.id.startsWith(`${user.id}_companion_`)
-          )
+        const userLobby = lobbies.find((lobby: any) =>
+          (lobby.status === 'waiting' || lobby.status === 'driver-found' || lobby.status === 'driver_found') &&
+          isCustomerLobbyPassenger(lobby, customerId)
         );
 
         if (userLobby) {
@@ -1392,10 +1504,12 @@ export default function CustomerHome() {
           setSelectedVehicle('share');
           
           // Count how many seats the user has (main + companions)
-          const userSeats = userLobby.passengers.filter((p: any) => 
-            p.id === user.id || p.id.startsWith(`${user.id}_companion_`)
+          const passengers = Array.isArray(userLobby.passengers) ? userLobby.passengers : [];
+          const userSeats = passengers.filter((p: any) =>
+            p?.id === customerId || String(p?.id || '').startsWith(`${customerId}_companion_`)
           ).length;
           setPassengerCount(userSeats);
+          setActiveShareLobbyId(userLobby.id);
           
           // Show the lobby
           setShowShareLobby(true);
@@ -1413,15 +1527,16 @@ export default function CustomerHome() {
     // Restore an active share ride lobby (the current mechanism) so that
     // returning to the rides page reopens the lobby during an active ride,
     // just like the private-ride active card is restored.
-    const storedLobbyId = localStorage.getItem('trikeserve_active_share_lobby');
+    const storedLobbyId = localStorage.getItem(activeShareLobbyStorageKey);
     if (storedLobbyId) {
       supabaseHelpers.getLobbyById(storedLobbyId).then(({ data: storedLobby, error }) => {
-        if (error || !storedLobby) {
-          localStorage.removeItem('trikeserve_active_share_lobby');
+        if (!active) return;
+        if (error || !storedLobby || !isCustomerLobbyPassenger(storedLobby, customerId)) {
+          localStorage.removeItem(activeShareLobbyStorageKey);
           return;
         }
-        if (storedLobby.status === 'completed' || storedLobby.status === 'cancelled') {
-          localStorage.removeItem('trikeserve_active_share_lobby');
+        if (!['waiting', 'driver_found', 'in_progress'].includes(storedLobby.status)) {
+          localStorage.removeItem(activeShareLobbyStorageKey);
           return;
         }
         // Ride still active - reopen the lobby automatically.
@@ -1429,7 +1544,10 @@ export default function CustomerHome() {
         if (!cameFromCustomerHomeTab) setShowShareLobby(true);
       });
     }
-  }, [user, cameFromCustomerHomeTab]);
+    return () => {
+      active = false;
+    };
+  }, [user?.id, rideStateIdentity, activeRideStorageKey, activeShareLobbyStorageKey, cameFromCustomerHomeTab]);
 
   /*
    * Restore a shared ride when the customer returns to the ride screen.
@@ -1440,12 +1558,14 @@ export default function CustomerHome() {
     if (!activeRideLobby?.id) return;
     setActiveShareLobbyId(activeRideLobby.id);
     try {
-      localStorage.setItem('trikeserve_active_share_lobby', activeRideLobby.id);
+      if (activeShareLobbyStorageKey) {
+        localStorage.setItem(activeShareLobbyStorageKey, activeRideLobby.id);
+      }
     } catch {
       // Storage unavailable; the active lobby remains available in memory.
     }
     if (!cameFromCustomerHomeTab) setShowShareLobby(true);
-  }, [activeRideLobby?.id, cameFromCustomerHomeTab]);
+  }, [activeRideLobby?.id, activeShareLobbyStorageKey, cameFromCustomerHomeTab]);
 
   // The Home tab must be able to uncover the home hub even when this same
   // screen is currently showing the full-screen shared-ride lobby.
@@ -1469,7 +1589,7 @@ export default function CustomerHome() {
     if (activeRide || rideStatus) return;
     let hasStoredRide = true;
     try {
-      hasStoredRide = !!localStorage.getItem('trikeserve_active_ride');
+      hasStoredRide = !!activeRideStorageKey && !!localStorage.getItem(activeRideStorageKey);
     } catch {
       // Storage unavailable; prefer the database copy.
     }
@@ -1500,7 +1620,7 @@ export default function CustomerHome() {
       setRideStatus('driver-found');
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeRideRequest?.id]);
+  }, [activeRideRequest?.id, rideStateOwnerId]);
 
    // Poll unread delivery notifications for the bell badge.
    useEffect(() => {
@@ -1993,7 +2113,7 @@ export default function CustomerHome() {
         });
         setRideStatus(null);
         setCurrentRequestId(null);
-        localStorage.removeItem('trikeserve_active_ride');
+        if (activeRideStorageKey) localStorage.removeItem(activeRideStorageKey);
         resetCustomerRideVisuals();
         return;
       }
@@ -2057,8 +2177,10 @@ export default function CustomerHome() {
 
   // Persist ride data whenever it changes
   useEffect(() => {
+    if (!rideStateBelongsToCurrentUser || !activeRideStorageKey) return;
     if (rideStatus) {
       const rideData = {
+        customerId: user?.id,
         status: rideStatus,
         requestedAt,
         pickup,
@@ -2077,11 +2199,11 @@ export default function CustomerHome() {
         rideDriverId,
         bookedFare,
       };
-      localStorage.setItem('trikeserve_active_ride', JSON.stringify(rideData));
+      localStorage.setItem(activeRideStorageKey, JSON.stringify(rideData));
     } else {
-      localStorage.removeItem('trikeserve_active_ride');
+      localStorage.removeItem(activeRideStorageKey);
     }
-   }, [rideStatus, requestedAt, pickup, pickupAddress, pickupCoords, dropoff, dropoffAddress, dropoffCoords, selectedVehicle, paymentMethod, activeRide, currentRequestId, rideDriverId, bookedFare]);
+   }, [user?.id, rideStateBelongsToCurrentUser, activeRideStorageKey, rideStatus, requestedAt, pickup, pickupAddress, pickupCoords, dropoff, dropoffAddress, dropoffCoords, selectedVehicle, paymentMethod, activeRide, currentRequestId, rideDriverId, bookedFare]);
 
    // Compute driver's route to pickup/dropoff location (real-time tracking)
    useEffect(() => {
@@ -2466,7 +2588,7 @@ export default function CustomerHome() {
 
   // The booking UI lives on top of the map and stays out of the way while a
   // ride is active, already being searched for, or already running elsewhere.
-  const showBookingFlow = !activeRide && rideStatus !== 'searching' && !rideBlocked;
+  const showBookingFlow = !visibleActiveRide && visibleRideStatus !== 'searching' && !rideBlocked;
   const showCustomerHomeHub = bookingStep === 'home' && (showBookingFlow || cameFromCustomerHomeTab);
 
   /**
@@ -2577,7 +2699,9 @@ export default function CustomerHome() {
           setActiveShareLobbyId(lobby.id);
           setShowShareLobby(true);
           try {
-            localStorage.setItem('trikeserve_active_share_lobby', lobby.id);
+            if (activeShareLobbyStorageKey) {
+              localStorage.setItem(activeShareLobbyStorageKey, lobby.id);
+            }
           } catch {
             // Storage unavailable; the lobby still opens for this mount.
           }
@@ -2755,7 +2879,7 @@ export default function CustomerHome() {
   const handleCancelRide = async (reason?: string) => {
     const storedRequestId = currentRequestId || (() => {
       try {
-        const savedRideData = localStorage.getItem('trikeserve_active_ride');
+        const savedRideData = activeRideStorageKey ? localStorage.getItem(activeRideStorageKey) : null;
         if (!savedRideData) return null;
 
         const parsedRide = JSON.parse(savedRideData);
@@ -2835,7 +2959,7 @@ export default function CustomerHome() {
         }
       }
 
-      localStorage.removeItem('trikeserve_active_ride');
+      if (activeRideStorageKey) localStorage.removeItem(activeRideStorageKey);
       setRideCompletedPopup(false);
       setDriverAcceptedPopup(null);
       setDriverStatusPopup(null);
@@ -2906,25 +3030,42 @@ export default function CustomerHome() {
       return terminalDistance < nearestDistance ? terminal : nearest;
     });
   }, [terminals, currentLocation]);
-  const terminalPickerOptions = onlyNearestTerminal
-    ? nearestTerminal ? [nearestTerminal] : []
-    : terminals;
-  const terminalPickerDescription = onlyNearestTerminal
-    ? enforceBoundary
-      ? 'Choose the nearest terminal route. Drop-offs must stay on it.'
-      : 'Choose the nearest terminal for pickup. Boundary checks are disabled in Dev Mode.'
-    : enforceBoundary
-      ? 'Choose a terminal route. Drop-offs must stay on it.'
-      : 'Choose a terminal for pickup. Boundary checks are disabled in Dev Mode.';
+  const terminalPickerOptions = useMemo(() => {
+    const distanceFromCurrentLocation = (terminal: typeof terminals[number]) =>
+      haversineDistanceMeters(currentLocation, {
+        lat: terminal.center_lat,
+        lng: terminal.center_lng,
+      });
+    const nearestFirst = (left: typeof terminals[number], right: typeof terminals[number]) =>
+      distanceFromCurrentLocation(left) - distanceFromCurrentLocation(right);
+
+    if (terminalPickerFilter === "closest") return nearestTerminal ? [nearestTerminal] : [];
+    if (terminalPickerFilter === "selected") return selectedTerminal ? [selectedTerminal] : [];
+    if (terminalPickerFilter === "frequent") {
+      return terminals
+        .filter(terminal => (terminalPickerUsage[terminal.id] || 0) > 0)
+        .sort((left, right) =>
+          (terminalPickerUsage[right.id] || 0) - (terminalPickerUsage[left.id] || 0)
+          || nearestFirst(left, right)
+        );
+    }
+    return [...terminals].sort(nearestFirst);
+  }, [currentLocation, nearestTerminal, selectedTerminal, terminalPickerFilter, terminalPickerUsage, terminals]);
+  const frequentlyUsedTerminalCount = useMemo(
+    () => terminals.filter(terminal => (terminalPickerUsage[terminal.id] || 0) > 0).length,
+    [terminalPickerUsage, terminals]
+  );
+  const terminalPickerDescription = enforceBoundary
+    ? 'Choose a pickup route. Drop-offs must stay on the selected route.'
+    : 'Choose a terminal for pickup.';
+  const terminalPickerEmptyMessage = terminalPickerFilter === "closest"
+    ? 'The closest terminal could not be determined from your current location.'
+    : terminalPickerFilter === "frequent"
+      ? 'Terminals you select will appear here as your frequently used routes.'
+      : 'Choose a pickup route first to see the selected terminal here.';
   const selectTerminalRoute = useCallback((terminalId: string, requestedRouteId?: string | null) => {
     const terminal = terminals.find(item => item.id === terminalId);
     if (!terminal) return;
-    if (onlyNearestTerminal && (!nearestTerminal || terminal.id !== nearestTerminal.id)) {
-      setTerminalPickerWarning(nearestTerminal
-        ? 'Only the nearest terminal route can be selected from this screen.'
-        : 'The nearest terminal could not be determined. Please try again.');
-      return;
-    }
 
     const terminalRoutes = mapTerminalRoutes.filter(route => route.terminalId === terminal.id);
     const route = requestedRouteId
@@ -2969,6 +3110,7 @@ export default function CustomerHome() {
     setPickupMarker(coords);
     setSelectedTerminalId(terminal.id);
     setSelectedTerminalRouteId(nextSelectedRouteId);
+    recordTerminalPickerUse(terminal.id);
     setMapCenter(coords);
     setTerminalPickerWarning(null);
     setPickerBoundaryWarning(null);
@@ -2992,13 +3134,11 @@ export default function CustomerHome() {
     setShowLocationPicker(true);
     hasManualPickupSelectionRef.current = true;
     customerMapRef.current?.panTo(coords);
-  }, [terminals, mapTerminalRoutes, nearestTerminal, onlyNearestTerminal, selectedTerminalId, selectedTerminalRouteId, dropoffCoords, dropoff, dropoffAddress, enforceBoundary]);
+  }, [terminals, mapTerminalRoutes, selectedTerminalId, selectedTerminalRouteId, dropoffCoords, dropoff, dropoffAddress, enforceBoundary, recordTerminalPickerUse]);
   const routePreviewTerminal = useMemo(
     () => terminals.find(t => t.id === routePreviewTerminalId) || null,
     [terminals, routePreviewTerminalId]
   );
-  const routePreviewIsSelectable = !onlyNearestTerminal
-    || Boolean(nearestTerminal && routePreviewTerminal?.id === nearestTerminal.id);
   const activeMapTerminalId = routePreviewTerminalId ?? selectedTerminalId ?? nearestTerminal?.id ?? null;
   const mapRoutesInView = useMemo(
     () => activeMapTerminalId
@@ -3271,8 +3411,8 @@ const getPrice = () => {
     setRideStatus(null);
     setCurrentRequestId(null);
     setCompletionPopupType('ride');
-    localStorage.removeItem('trikeserve_active_ride');
-    localStorage.removeItem('trikeserve_active_share_lobby');
+    if (activeRideStorageKey) localStorage.removeItem(activeRideStorageKey);
+    if (activeShareLobbyStorageKey) localStorage.removeItem(activeShareLobbyStorageKey);
     window.location.reload();
   };
 
@@ -3392,7 +3532,7 @@ const getPrice = () => {
                   used to be omitted here and drawn only inside the (now removed)
                   embedded card map, so the destination route had no visible start
                   point. */}
-              {rideStatus !== 'searching' && pickupCoords && (
+              {rideStateBelongsToCurrentUser && visibleRideStatus !== 'searching' && pickupCoords && (
                 <MarkerF
                   position={pickupCoords}
                   title={isDeliveryRide ? 'Restaurant pickup' : 'Pickup location'}
@@ -3401,7 +3541,7 @@ const getPrice = () => {
               )}
 
               {/* Drop-off marker only */}
-              {dropoffCoords && (
+              {rideStateBelongsToCurrentUser && dropoffCoords && (
                 <MarkerF
                   position={dropoffCoords}
                   title={isDeliveryRide ? 'Customer drop-off' : 'Drop-off location'}
@@ -3440,7 +3580,7 @@ const getPrice = () => {
               })}
 
               {/* Driver location marker (real-time tracking) */}
-              {driverLocation && rideStatus === 'driver-found' && (
+              {rideStateBelongsToCurrentUser && driverLocation && visibleRideStatus === 'driver-found' && (
                 <MarkerF
                   position={driverLocation}
                   title="Driver Location"
@@ -3448,17 +3588,17 @@ const getPrice = () => {
                 />
               )}
 
-              {routePath.length > 0 && (
+              {rideStateBelongsToCurrentUser && routePath.length > 0 && (
                 <Polyline path={routePath} options={buildNavigationRouteOptions('#BC4B1F', 5)} />
               )}
 
               {/* Driver route polyline (real-time) */}
-              {driverRoutePath.length > 0 && rideStatus === 'driver-found' && (
+              {rideStateBelongsToCurrentUser && driverRoutePath.length > 0 && visibleRideStatus === 'driver-found' && (
                 <Polyline path={driverRoutePath} options={buildNavigationRouteOptions('#1D4ED8', 4)} />
               )}
 
               {/* Destination route polyline (pickup to dropoff) */}
-              {destinationRoutePath.length > 0 && rideStatus !== 'searching' && (
+              {rideStateBelongsToCurrentUser && destinationRoutePath.length > 0 && visibleRideStatus !== 'searching' && (
                 <Polyline path={destinationRoutePath} options={buildNavigationRouteOptions('#BC4B1F', 5)} />
               )}
 
@@ -3504,7 +3644,7 @@ const getPrice = () => {
       {/* Chat as an overlay rather than a page, so the map and the floating head
           stay behind it and no gap has to be reserved above the thread header. */}
       <RideChatOverlay
-        open={customerChatPopup}
+        open={rideStateBelongsToCurrentUser && customerChatPopup}
         conversationId={driverChatId.current}
         peerId={rideDriverId}
         currentUserId={user?.id ?? null}
@@ -3516,7 +3656,7 @@ const getPrice = () => {
 
       {/* Hidden while the panel is open, so the two heads cannot stack in the
           same corner. */}
-      {chatHeadActivated && rideStatus === 'driver-found' && activeRide && rideDriverId && (
+      {rideStateBelongsToCurrentUser && chatHeadActivated && visibleRideStatus === 'driver-found' && visibleActiveRide && rideDriverId && (
         <FloatingChatHead
           headId={driverChatId.current || undefined}
           hidden={customerChatPopup}
@@ -3533,7 +3673,7 @@ const getPrice = () => {
       {/* Already on a ride, but no ride card is on screen yet -- the shared lobby
           is still opening, or a restored ride lands a beat late. Says so rather
           than offering a second booking. */}
-      {rideBlocked && !showShareLobby && !activeRide && rideStatus !== 'searching' && bookingStep === 'home' && (
+      {rideBlocked && !(rideStateBelongsToCurrentUser && showShareLobby) && !visibleActiveRide && visibleRideStatus !== 'searching' && bookingStep === 'home' && (
         <div className="relative z-[999] px-4 pt-3 pb-24">
           <Card className="mx-auto max-w-3xl bg-surface p-6 text-center">
             <div className="mx-auto mb-3 grid h-14 w-14 place-items-center rounded-full bg-[var(--primary-soft)]">
@@ -3543,11 +3683,11 @@ const getPrice = () => {
             <p className="mt-1 text-sm text-[var(--muted-foreground)]">
               Finish this trip before booking another ride.
             </p>
-            {(activeRideLobby?.id || activeShareLobbyId) && (
+            {(activeRideLobby?.id || (rideStateBelongsToCurrentUser && activeShareLobbyId)) && (
               <Button
                 className="mt-4 bg-[var(--primary)] hover:bg-[var(--primary)] text-white"
                 onClick={() => {
-                  const id = activeRideLobby?.id || activeShareLobbyId;
+                  const id = activeRideLobby?.id || (rideStateBelongsToCurrentUser ? activeShareLobbyId : null);
                   if (id) {
                     setActiveShareLobbyId(id);
                     setShowShareLobby(true);
@@ -3780,6 +3920,11 @@ const getPrice = () => {
                       <div className="flex-1 min-w-0">
                         <p className="font-bold text-sm text-[var(--ink)] mb-0.5">{dropoff || 'Tap to set destination'}</p>
                         <p className="text-xs text-[var(--muted-foreground)] truncate">{dropoffAddress || (dropoffCoords ? `${dropoffCoords.lat.toFixed(5)}, ${dropoffCoords.lng.toFixed(5)}` : 'Select drop-off location')}</p>
+                        {fareInfo.distanceKm != null && (
+                          <p className="mt-1 text-xs font-semibold text-[var(--primary)]">
+                            Approx. {formatKm(fareInfo.distanceKm)} km from pickup
+                          </p>
+                        )}
                         <p className="mt-1 text-xs font-medium text-[var(--info)]">{selectedRouteDropoffGuide}</p>
                       </div>
                       <button className="mt-0.5 flex-shrink-0">
@@ -3821,7 +3966,7 @@ const getPrice = () => {
 
 
         {/* Active Ride Card - Driver Info with embedded map */}
-        {rideStatus === 'driver-found' && activeRide && (
+        {rideStateBelongsToCurrentUser && visibleRideStatus === 'driver-found' && visibleActiveRide && (
           <>
             {/*
               "Live Tracking" badge.
@@ -4176,8 +4321,8 @@ const getPrice = () => {
                       setRideDriverId(null);
                       setDeliveryBusiness(null);
                       resetCustomerRideVisuals();
-                      localStorage.removeItem('trikeserve_active_ride');
-                      localStorage.removeItem('trikeserve_active_share_lobby');
+                      if (activeRideStorageKey) localStorage.removeItem(activeRideStorageKey);
+                      if (activeShareLobbyStorageKey) localStorage.removeItem(activeShareLobbyStorageKey);
                       // Refresh the page to fully reset the ride page
                       window.location.reload();
                     }}
@@ -4279,6 +4424,28 @@ const getPrice = () => {
             </div>
           </div>
           <div className="flex-1 overflow-y-auto p-4 space-y-3">
+            <div className="-mx-1 flex gap-2 overflow-x-auto px-1 pb-1" role="group" aria-label="Filter pickup terminals">
+              {([
+                { id: "all", label: `All (${terminals.length})` },
+                { id: "closest", label: "Closest" },
+                { id: "frequent", label: `Often used${frequentlyUsedTerminalCount ? ` (${frequentlyUsedTerminalCount})` : ""}` },
+                { id: "selected", label: "Selected" },
+              ] as const).map(filter => (
+                <button
+                  key={filter.id}
+                  type="button"
+                  aria-pressed={terminalPickerFilter === filter.id}
+                  onClick={() => setTerminalPickerFilter(filter.id)}
+                  className={`min-h-10 shrink-0 rounded-full border px-4 text-xs font-semibold transition-colors ${
+                    terminalPickerFilter === filter.id
+                      ? 'border-[var(--primary)] bg-[var(--primary)] text-[var(--primary-foreground)]'
+                      : 'border-line bg-[var(--surface)] text-[var(--muted-foreground)] hover:border-[var(--primary)]'
+                  }`}
+                >
+                  {filter.label}
+                </button>
+              ))}
+            </div>
             {terminalPickerWarning && (
               <div role="alert" className="rounded-xl border border-[var(--error)] bg-[var(--error-soft)] px-3 py-2 text-sm font-semibold text-[var(--error)]">
                 {terminalPickerWarning}
@@ -4291,10 +4458,18 @@ const getPrice = () => {
                 <p className="text-xs text-[var(--muted-foreground)] mt-1">Please try again later</p>
               </div>
             ) : terminalPickerOptions.length === 0 ? (
-              <div className="text-center py-12">
+              <div role="status" className="py-12 text-center">
                 <MapPin className="w-12 h-12 text-[var(--border)] mx-auto mb-3" />
-                <p className="text-sm font-semibold text-[var(--muted-foreground)]">Terminal location unavailable</p>
-                <p className="text-xs text-[var(--muted-foreground)] mt-1">Please try again later</p>
+                <p className="text-sm font-semibold text-[var(--muted-foreground)]">{terminalPickerEmptyMessage}</p>
+                {terminalPickerFilter !== "all" && (
+                  <button
+                    type="button"
+                    onClick={() => setTerminalPickerFilter("all")}
+                    className="mt-3 min-h-10 rounded-xl px-4 text-sm font-semibold text-[var(--primary)] hover:bg-[var(--primary-soft)]"
+                  >
+                    Show all terminals
+                  </button>
+                )}
               </div>
             ) : (
               terminalPickerOptions.map((terminal) => (
@@ -4514,31 +4689,21 @@ const getPrice = () => {
             )}
           </div>
           <div className="border-t border-line bg-[var(--surface)] p-4 pb-safe">
-            {!routePreviewIsSelectable && (
-              <p role="status" className="mb-3 rounded-xl border border-[var(--info-soft)] bg-[var(--info-soft)] px-3 py-2 text-sm text-[var(--info)]">
-                {nearestTerminal
-                  ? 'This route is for viewing. Only the nearest terminal route can be selected.'
-                  : 'This route is for viewing until the nearest terminal can be determined.'}
-              </p>
-            )}
-            {routePreviewIsSelectable && enforceBoundary && (!routePreviewSelectionRoute || !routePreviewSelectionRoute.enabled) && (
+            {enforceBoundary && (!routePreviewSelectionRoute || !routePreviewSelectionRoute.enabled) && (
               <p role="alert" className="mb-3 rounded-xl border border-[var(--error)] bg-[var(--error-soft)] px-3 py-2 text-sm font-semibold text-[var(--error)]">
                 {routePreviewSelectionRoute
                   ? `${routePreviewSelectionRoute.name} is disabled. Choose an enabled route to set your pickup.`
                   : `${routePreviewTerminal.name} has no enabled mapped route yet. Drop-off selection is unavailable until one is set.`}
               </p>
             )}
-            {routePreviewIsSelectable && !enforceBoundary && !routePreviewSelectionRoute && (
+            {!enforceBoundary && !routePreviewSelectionRoute && (
               <p role="status" className="mb-3 rounded-xl border border-[var(--info-soft)] bg-[var(--info-soft)] px-3 py-2 text-sm text-[var(--info)]">
-                No route is mapped for this terminal. It can still be selected while boundary checks are disabled in Dev Mode.
+                No route is mapped for this terminal. You can still select it for pickup.
               </p>
             )}
             <Button
               type="button"
-              disabled={
-                !routePreviewIsSelectable ||
-                (enforceBoundary && (!routePreviewSelectionRoute || !routePreviewSelectionRoute.enabled))
-              }
+              disabled={enforceBoundary && (!routePreviewSelectionRoute || !routePreviewSelectionRoute.enabled)}
               className="min-h-12 w-full bg-[var(--primary)] font-bold text-[var(--primary-foreground)]"
               onClick={() => {
                 selectTerminalRoute(routePreviewTerminal.id, routePreviewFocusRouteId);
@@ -4962,7 +5127,7 @@ const getPrice = () => {
       )}
 
       {/* Searching for Driver Modal */}
-      {rideStatus === 'searching' && !isSearchMinimized && (
+      {rideStateBelongsToCurrentUser && visibleRideStatus === 'searching' && !isSearchMinimized && (
         <div className="fixed inset-0 bg-black/50 z-[2000] flex items-center justify-center p-4">
           <Card className="bg-surface p-8 max-w-sm w-full text-center relative">
             {/* Minimize Button */}
@@ -4995,7 +5160,7 @@ const getPrice = () => {
       )}
 
       {/* Minimized Floating Icon */}
-      {rideStatus === 'searching' && isSearchMinimized && (
+      {rideStateBelongsToCurrentUser && visibleRideStatus === 'searching' && isSearchMinimized && (
         <button
           onClick={() => setIsSearchMinimized(false)}
           className="fixed bottom-24 right-4 z-[2000] w-16 h-16 bg-[var(--primary)] rounded-full shadow-2xl flex items-center justify-center hover:bg-[var(--primary)] transition-all hover:scale-110"
@@ -5015,7 +5180,7 @@ const getPrice = () => {
       )}
 
       {/* Share Ride Lobby */}
-      {showShareLobby && (
+      {rideStateBelongsToCurrentUser && showShareLobby && (
         <ShareRideLobby
           lobbyId={activeShareLobbyId || undefined}
           pickup={pickup}
@@ -5025,13 +5190,16 @@ const getPrice = () => {
           pickupCoords={pickupCoords}
           dropoffCoords={dropoffCoords}
           passengerCount={passengerCount}
+          maxPassengersAllowed={terminalSeatLimit}
           pricePerSeat={shareFarePerSeat}
           paymentMethod={paymentMethod}
           selectedTerminalId={selectedTerminalId}
           onLobbyLoaded={(lobbyId) => {
             // Persist the active lobby as soon as it opens so the return-to-ride
             // button works even before a driver accepts.
-            localStorage.setItem('trikeserve_active_share_lobby', lobbyId);
+            if (activeShareLobbyStorageKey) {
+              localStorage.setItem(activeShareLobbyStorageKey, lobbyId);
+            }
           }}
           onDriverFound={(lobbyId) => {
             // Don't close the lobby - let customers see driver info in the lobby itself
@@ -5039,7 +5207,9 @@ const getPrice = () => {
             setCurrentRequestId(`lobby_${lobbyId}`);
             setRideStatus('driver-found');
             // Remember the active lobby so the customer can return after leaving.
-            localStorage.setItem('trikeserve_active_share_lobby', lobbyId);
+            if (activeShareLobbyStorageKey) {
+              localStorage.setItem(activeShareLobbyStorageKey, lobbyId);
+            }
             console.log('âœ… Driver found for lobby:', lobbyId);
           }}
           onClose={(status) => {
@@ -5049,7 +5219,7 @@ const getPrice = () => {
             // Ride finished - no longer offer to return. If the customer left
             // mid-ride (no terminal status), keep the return button.
             if (status === 'completed' || status === 'cancelled') {
-              localStorage.removeItem('trikeserve_active_share_lobby');
+              if (activeShareLobbyStorageKey) localStorage.removeItem(activeShareLobbyStorageKey);
             }
           }}
         />
@@ -5083,7 +5253,9 @@ const getPrice = () => {
             setShowLobbyList(false);
             setShowShareLobby(true);
             // Remember the active lobby so the customer can return after leaving.
-            localStorage.setItem('trikeserve_active_share_lobby', lobbyId);
+            if (activeShareLobbyStorageKey) {
+              localStorage.setItem(activeShareLobbyStorageKey, lobbyId);
+            }
           }}
           onClose={() => {
             setShowLobbyList(false);
@@ -5151,14 +5323,14 @@ const getPrice = () => {
 
       {/* Cancel Ride Popup â€” asks for a reason before dropping the ride */}
       <ReasonPromptModal
-        isOpen={showCancelConfirm}
-        title={rideStatus === 'driver-found' ? 'Cancel this ride? / Kanselahin ang biyahe?' : 'Cancel Request? / Kanselahin ang request?'}
+        isOpen={rideStateBelongsToCurrentUser && showCancelConfirm}
+        title={visibleRideStatus === 'driver-found' ? 'Cancel this ride? / Kanselahin ang biyahe?' : 'Cancel Request? / Kanselahin ang request?'}
         description={
-          rideStatus === 'driver-found'
+          visibleRideStatus === 'driver-found'
             ? 'A driver is already on the way. Let them know why you need to cancel so they are told to stop.'
             : 'Are you sure you want to cancel this ride request?'
         }
-        confirmLabel={rideStatus === 'driver-found' ? 'Yes, Cancel Ride' : 'Yes, Cancel'}
+        confirmLabel={visibleRideStatus === 'driver-found' ? 'Yes, Cancel Ride' : 'Yes, Cancel'}
         placeholder="e.g. Changed my mind, found another ride, wrong pickup pointâ€¦"
         variant="danger"
         zIndexClassName="z-[3500]"

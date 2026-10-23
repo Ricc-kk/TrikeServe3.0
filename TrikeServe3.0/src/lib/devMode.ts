@@ -1,14 +1,13 @@
 const DEV_MODE_KEY = "trikeserve_dev_mode";
 const DEV_MODE_CHANGE_EVENT = "trikeserve:dev-mode-change";
 
-export type DevModeFeature = "quickAccess" | "testDataTools" | "enforceBoundary" | "imageProofRequired" | "nearestTerminalOnly" | "sameRouteLobbyFilter";
+export type DevModeFeature = "quickAccess" | "testDataTools" | "enforceBoundary" | "imageProofRequired" | "sameRouteLobbyFilter";
 
 const FEATURE_KEYS: Record<DevModeFeature, string> = {
   quickAccess: "trikeserve_dev_quick_access",
   testDataTools: "trikeserve_dev_test_data_tools",
   enforceBoundary: "trikeserve_dev_enforce_boundary",
   imageProofRequired: "trikeserve_dev_image_proof_required",
-  nearestTerminalOnly: "trikeserve_dev_nearest_terminal_only",
   sameRouteLobbyFilter: "trikeserve_dev_same_route_lobby_filter",
 };
 

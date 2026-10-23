@@ -135,10 +135,21 @@ interface PassengerRequest {
     name: string;
     emoji: string;
     joinedAt: string;
+    dropoff?: string;
+    dropoffAddress?: string;
+    dropoffLat?: number | null;
+    dropoffLng?: number | null;
     fare?: number;
   }>;
   maxPassengers?: number;
   terminalId?: string | null;
+}
+
+interface PassengerDropoffStop {
+  id: string;
+  passengerNames: string[];
+  address: string;
+  coords: google.maps.LatLngLiteral | null;
 }
 
 export default function PassengerRequests() {
@@ -158,6 +169,7 @@ export default function PassengerRequests() {
   const [resolvedPickupCoords, setResolvedPickupCoords] = useState<{ lat: number; lng: number } | null>(null);
   const [resolvedPickupAddress, setResolvedPickupAddress] = useState<string | null>(null);
   const [resolvedDropoffCoords, setResolvedDropoffCoords] = useState<{ lat: number; lng: number } | null>(null);
+  const [resolvedPassengerDropoffs, setResolvedPassengerDropoffs] = useState<PassengerDropoffStop[]>([]);
   const [previewMapCenter, setPreviewMapCenter] = useState<{ lat: number; lng: number }>({ lat: 14.5995, lng: 120.9842 });
   const previewMapRef = useRef<google.maps.Map | null>(null);
   const packagePhotoColumnAvailableRef = useRef<boolean | null>(null);
@@ -237,10 +249,13 @@ export default function PassengerRequests() {
     } as any;
   };
 
-  const createDropoffMarkerIcon = () => {
+  const createDropoffMarkerIcon = (stopNumber?: number) => {
     const google = (window as any)?.google;
     if (!google?.maps?.Size || !google?.maps?.Point) return undefined;
-    const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="var(--primary)" stroke="white" stroke-width="1"><path d="M12 2C8.13 2 5 5.13 5 9c0 4.95 6.1 11.53 6.36 11.81.36.39.92.39 1.28 0C13.9 20.53 20 13.95 20 9c0-3.87-3.13-7-8-7z"/><path d="M7.8 9.6l2.1 2.1 4.3-4.3" fill="none" stroke="#FFFFFF" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
+    const markerDetail = stopNumber == null
+      ? '<path d="M7.8 9.6l2.1 2.1 4.3-4.3" fill="none" stroke="#FFFFFF" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>'
+      : `<text x="12" y="10" text-anchor="middle" dominant-baseline="middle" fill="#FFFFFF" stroke="none" font-size="9" font-family="Arial, sans-serif" font-weight="700">${stopNumber}</text>`;
+    const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="var(--primary)" stroke="white" stroke-width="1"><path d="M12 2C8.13 2 5 5.13 5 9c0 4.95 6.1 11.53 6.36 11.81.36.39.92.39 1.28 0C13.9 20.53 20 13.95 20 9c0-3.87-3.13-7-8-7z"/>${markerDetail}</svg>`;
     return { url: 'data:image/svg+xml;charset=UTF-8,' + encodeURIComponent(svg), scaledSize: new google.maps.Size(40, 40), anchor: new google.maps.Point(20, 40) } as any;
   };
 
@@ -551,12 +566,14 @@ export default function PassengerRequests() {
     if (!previewRequest || !isMapsLoaded || !(window as any).google) return;
 
     let cancelled = false;
-    const resolveCoords = async (lat?: number, lng?: number, address?: string) => {
+    const resolveCoords = async (lat?: number | null, lng?: number | null, address?: string) => {
       const parsedLat = Number(lat);
       const parsedLng = Number(lng);
       if (Number.isFinite(parsedLat) && Number.isFinite(parsedLng) && (lat != null && lng != null)) {
         return { lat: parsedLat, lng: parsedLng };
       }
+      const addressCoords = readAddressCoordinates(address);
+      if (addressCoords) return addressCoords;
       return address ? geocodeAddress(address) : null;
     };
     const calculateRoute = async (
@@ -617,6 +634,7 @@ export default function PassengerRequests() {
       setRoutePath(null);
       setPickupRoutePath(null);
       setDropoffRoutePath(null);
+      setResolvedPassengerDropoffs([]);
       setRouteError(null);
       const savedPickupLat = previewRequest.restaurantLat ?? previewRequest.pickupLat;
       const savedPickupLng = previewRequest.restaurantLng ?? previewRequest.pickupLng;
@@ -680,7 +698,32 @@ export default function PassengerRequests() {
       }
       if (cancelled) return;
       if (!pickup) {
-        setRouteError('Could not locate the restaurant near your current location. A business map pin or street address can improve directions.');
+        if (previewRequest.type === 'shared') {
+          const passengers = previewRequest.passengerDetails?.length
+            ? previewRequest.passengerDetails
+            : [{
+                id: previewRequest.customerId || previewRequest.id,
+                name: previewRequest.customerName,
+                dropoff: previewRequest.dropoff,
+                dropoffAddress: previewRequest.dropoffAddress,
+              }];
+          setResolvedPassengerDropoffs(passengers.map((passenger) => {
+            const addressParts = [displayOrderAddress(passenger.dropoff), displayOrderAddress(passenger.dropoffAddress)]
+              .filter((value): value is string => typeof value === 'string' && value.length > 0);
+            const lobbyAddress = displayOrderAddress(previewRequest.dropoffAddress || previewRequest.dropoff);
+            return {
+              id: passenger.id,
+              passengerNames: [passenger.name || previewRequest.customerName || 'Passenger'],
+              address: addressParts.join(' · ') || lobbyAddress || 'Drop-off location unavailable',
+              coords: null,
+            };
+          }));
+        }
+        setRouteError(previewRequest.type === 'delivery'
+          ? 'Could not locate the restaurant near your current location. A business map pin or street address can improve directions.'
+          : previewRequest.type === 'shared'
+            ? 'Could not locate the pickup. Passenger drop-offs are listed, but the route order could not be calculated.'
+            : 'Could not locate the pickup near your current location. A pickup pin or street address can improve directions.');
         return;
       }
 
@@ -690,6 +733,125 @@ export default function PassengerRequests() {
       reverseGeocodeNearestRoad(pickup).then(address => {
         if (!cancelled && address) setResolvedPickupAddress(address);
       });
+
+      if (previewRequest.type === 'shared') {
+        const passengers = previewRequest.passengerDetails?.length
+          ? previewRequest.passengerDetails
+          : [{
+              id: previewRequest.customerId || previewRequest.id,
+              name: previewRequest.customerName,
+              dropoff: previewRequest.dropoff,
+              dropoffAddress: previewRequest.dropoffAddress,
+              dropoffLat: previewRequest.dropoffLat,
+              dropoffLng: previewRequest.dropoffLng,
+            }];
+        const passengerDestinations = await Promise.all(passengers.map(async (passenger) => {
+          const lookupAddress = passenger.dropoffAddress || passenger.dropoff
+            || previewRequest.dropoffAddress || previewRequest.dropoff;
+          const coords = await resolveCoords(passenger.dropoffLat, passenger.dropoffLng, lookupAddress);
+          const passengerName = displayOrderAddress(passenger.dropoff);
+          const fullAddress = displayOrderAddress(passenger.dropoffAddress);
+          const lobbyAddress = displayOrderAddress(previewRequest.dropoffAddress || previewRequest.dropoff);
+          const hasPassengerDropoff = Boolean(passengerName || fullAddress);
+          const addressCandidates = hasPassengerDropoff ? [passengerName, fullAddress] : [lobbyAddress];
+          const addressParts = addressCandidates.filter((value): value is string => typeof value === 'string' && value.trim().length > 0);
+          const uniqueAddressParts = addressParts.filter((value, index, all) =>
+            all.findIndex((candidate) => candidate.trim().toLowerCase() === value.trim().toLowerCase()) === index,
+          );
+          const address = uniqueAddressParts.join(' · ')
+            || (coords ? `${coords.lat.toFixed(5)}, ${coords.lng.toFixed(5)}` : 'Drop-off location unavailable');
+          return {
+            id: passenger.id,
+            name: passenger.name || previewRequest.customerName || 'Passenger',
+            address,
+            coords,
+          };
+        }));
+        if (cancelled) return;
+
+        // Keep passengers sharing one destination together so their numbered
+        // map pins stay readable while the list still names every passenger.
+        const groupedStops: PassengerDropoffStop[] = [];
+        passengerDestinations.forEach((destination) => {
+          const normalizedAddress = destination.address.trim().toLowerCase().replace(/[^\p{L}\p{N}]+/gu, ' ');
+          const matchingStop = groupedStops.find((stop) => {
+            const sameAddress = normalizedAddress && normalizedAddress !== 'drop off location unavailable'
+              && stop.address.trim().toLowerCase().replace(/[^\p{L}\p{N}]+/gu, ' ') === normalizedAddress;
+            const sameCoordinates = destination.coords && stop.coords
+              && haversineDistance(destination.coords, stop.coords) <= 25;
+            return Boolean(sameAddress || sameCoordinates);
+          });
+          if (matchingStop) {
+            matchingStop.passengerNames.push(destination.name);
+            if (!matchingStop.coords && destination.coords) matchingStop.coords = destination.coords;
+          } else {
+            groupedStops.push({
+              id: destination.id,
+              passengerNames: [destination.name],
+              address: destination.address,
+              coords: destination.coords,
+            });
+          }
+        });
+
+        // Choose the next mapped stop from the current point, then leave any
+        // addresses without usable map coordinates at the end of the list.
+        const remainingStops = groupedStops.filter((stop) => stop.coords);
+        const orderedStops: PassengerDropoffStop[] = [];
+        let routeCursor = pickup;
+        while (remainingStops.length > 0) {
+          let nearestIndex = 0;
+          let nearestDistance = Number.POSITIVE_INFINITY;
+          remainingStops.forEach((stop, index) => {
+            const distance = haversineDistance(routeCursor, stop.coords!);
+            if (distance < nearestDistance) {
+              nearestDistance = distance;
+              nearestIndex = index;
+            }
+          });
+          const [nearestStop] = remainingStops.splice(nearestIndex, 1);
+          orderedStops.push(nearestStop);
+          routeCursor = nearestStop.coords!;
+        }
+        orderedStops.push(...groupedStops.filter((stop) => !stop.coords));
+        setResolvedPassengerDropoffs(orderedStops);
+        setResolvedDropoffCoords(null);
+
+        const mappedStops = orderedStops.filter((stop) => stop.coords);
+        const [toPickup, dropoffLegs] = await Promise.all([
+          calculateRoute(currentLocation, pickup),
+          Promise.all(mappedStops.map((stop, index) => {
+            const origin = index === 0 ? pickup : mappedStops[index - 1].coords!;
+            return calculateRoute(origin, stop.coords!);
+          })),
+        ]);
+        if (cancelled) return;
+
+        const successfulDropoffLegs = dropoffLegs.filter((leg) => leg.path);
+        const dropoffPath: google.maps.LatLngLiteral[] = [];
+        for (const leg of dropoffLegs) {
+          if (!leg.path) break;
+          dropoffPath.push(...leg.path);
+        }
+        const combinedPath = [...(toPickup.path || []), ...dropoffPath];
+        setPickupRoutePath(toPickup.path);
+        setDropoffRoutePath(dropoffPath.length > 1 ? dropoffPath : null);
+        if (combinedPath.length > 1) setRoutePath(combinedPath);
+
+        const missingMapCount = orderedStops
+          .filter((stop) => !stop.coords)
+          .reduce((count, stop) => count + stop.passengerNames.length, 0);
+        const failedLegCount = dropoffLegs.length - successfulDropoffLegs.length;
+        const routeNotes = [
+          !toPickup.path ? `pickup directions unavailable (${toPickup.status})` : null,
+          missingMapCount > 0 ? `${missingMapCount} passenger drop-off${missingMapCount === 1 ? '' : 's'} could not be mapped` : null,
+          failedLegCount > 0 ? `${failedLegCount} passenger route leg${failedLegCount === 1 ? '' : 's'} unavailable` : null,
+          mappedStops.length === 0 ? 'no passenger drop-off locations could be mapped' : null,
+        ].filter(Boolean);
+        setRouteError(routeNotes.length > 0 ? `The drop-off order is shown, but ${routeNotes.join('; ')}.` : null);
+        return;
+      }
+
       const dropoff = await resolveCoords(
         previewRequest.dropoffLat,
         previewRequest.dropoffLng,
@@ -738,6 +900,7 @@ export default function PassengerRequests() {
     setResolvedPickupCoords(null);
     setResolvedPickupAddress(null);
     setResolvedDropoffCoords(null);
+    setResolvedPassengerDropoffs([]);
     setPreviewRequest(request);
   };
 
@@ -1257,7 +1420,11 @@ export default function PassengerRequests() {
               <div className="min-w-0">
                 <h2 id="rider-route-preview-title" className="text-lg font-bold">Route Preview</h2>
                 <p className="truncate text-xs text-[var(--muted-foreground)]">
-                  {previewRequest.type === 'delivery' ? previewRequest.restaurantName || 'Restaurant delivery' : `${previewRequest.pickup} → ${previewRequest.dropoff}`}
+                  {previewRequest.type === 'delivery'
+                    ? previewRequest.restaurantName || 'Restaurant delivery'
+                    : previewRequest.type === 'shared'
+                      ? `${previewRequest.pickup} → ${previewRequest.passengerDetails?.length || 1} passenger drop-off${(previewRequest.passengerDetails?.length || 1) === 1 ? '' : 's'}`
+                      : `${previewRequest.pickup} → ${previewRequest.dropoff}`}
                 </p>
               </div>
             </header>
@@ -1286,7 +1453,15 @@ export default function PassengerRequests() {
                 >
                   <Marker position={currentLocation} icon={createDriverMarkerIcon()} title="Your Location" />
                   {resolvedPickupCoords && <Marker position={resolvedPickupCoords} icon={previewRequest.type === 'delivery' ? createRestaurantMarkerIcon() : createCustomerMarkerIcon()} title={previewRequest.type === 'delivery' ? 'Restaurant pickup' : 'Pickup'} />}
-                  {resolvedDropoffCoords && (
+                  {previewRequest.type === 'shared' && resolvedPassengerDropoffs.map((stop, index) => stop.coords && (
+                    <Marker
+                      key={stop.id}
+                      position={stop.coords}
+                      icon={createDropoffMarkerIcon(index + 1)}
+                      title={`Drop-off ${index + 1}: ${stop.passengerNames.join(', ')} · ${stop.address}`}
+                    />
+                  ))}
+                  {previewRequest.type !== 'shared' && resolvedDropoffCoords && (
                     <Marker position={resolvedDropoffCoords} icon={previewRequest.type === 'delivery' ? createCustomerMarkerIcon() : createDropoffMarkerIcon()} title={previewRequest.type === 'delivery' ? 'Customer' : 'Drop-off'} />
                   )}
                   {showPickupRoute && pickupRoutePath && (
@@ -1334,7 +1509,12 @@ export default function PassengerRequests() {
                     {routeError}
                   </div>
                 )}
-                {!routeError && routePath && (
+                {!routeError && routePath && previewRequest.type === 'shared' && (
+                  <div className="absolute bottom-2 left-2 rounded-lg border border-[var(--border)] bg-[var(--surface)] px-3 py-2 text-xs font-semibold text-[var(--ink)] shadow">
+                    Road route: Your location → Pickup → {resolvedPassengerDropoffs.filter(stop => stop.coords).length} passenger drop-offs
+                  </div>
+                )}
+                {!routeError && routePath && previewRequest.type !== 'shared' && (
                   <div className="absolute bottom-2 left-2 rounded-lg border border-[var(--border)] bg-[var(--surface)] px-3 py-2 text-xs font-semibold text-[var(--ink)] shadow">
                     Road route: Your location → {previewRequest.type === 'delivery' ? 'Store → Customer' : 'Pickup → Drop-off'}
                   </div>
@@ -1374,7 +1554,7 @@ export default function PassengerRequests() {
                       </div>
                     </div>
                   </div>
-                  <div className={`p-2 rounded-lg ${previewRequest.type === 'delivery' ? 'bg-[var(--error-soft)]' : ''}`}>
+                  <div className={`${previewRequest.type === 'shared' ? 'hidden' : ''} p-2 rounded-lg ${previewRequest.type === 'delivery' ? 'bg-[var(--error-soft)]' : ''}`}>
                     <div className="flex items-center gap-2">
                       <div className="size-9 shrink-0 rounded-full border border-[var(--border)] bg-surface flex items-center justify-center">
                         <MapPin className="size-4 text-[var(--primary)]" />
@@ -1389,6 +1569,29 @@ export default function PassengerRequests() {
                   </div>
                 </div>
               </div>
+              {previewRequest.type === 'shared' && (
+                <section className="mt-4 rounded-xl border border-[var(--border)] bg-[var(--muted)] p-3">
+                  <h3 className="mb-2 text-sm font-bold text-[var(--ink)]">Drop-off order</h3>
+                  {resolvedPassengerDropoffs.length > 0 ? (
+                    <ol className="space-y-2">
+                      {resolvedPassengerDropoffs.map((stop, index) => (
+                        <li key={stop.id} className="flex items-start gap-3 rounded-lg border border-[var(--border)] bg-[var(--surface)] px-3 py-2">
+                          <span className={`grid size-7 shrink-0 place-items-center rounded-full text-xs font-extrabold ${stop.coords ? 'bg-[var(--primary)] text-[var(--primary-foreground)]' : 'bg-[var(--border)] text-[var(--muted-foreground)]'}`}>
+                            {stop.coords ? index + 1 : '–'}
+                          </span>
+                          <div className="min-w-0">
+                            <p className="text-[10px] font-bold text-[var(--muted-foreground)]">{stop.coords ? `Drop-off ${index + 1}` : 'Location not mapped'}</p>
+                            <p className="text-sm font-semibold text-[var(--ink)]">{stop.address}</p>
+                            <p className="text-xs text-[var(--muted-foreground)]">{stop.passengerNames.join(', ')}</p>
+                          </div>
+                        </li>
+                      ))}
+                    </ol>
+                  ) : (
+                    <p className="text-sm text-[var(--muted-foreground)]">Loading passenger drop-offs…</p>
+                  )}
+                </section>
+              )}
               {previewRequest.type === 'delivery' && (
                 <section className="mt-4 rounded-xl border border-[var(--border)] bg-[var(--muted)] p-3">
                   <h3 className="mb-3 text-sm font-bold text-[var(--ink)]">Food Ordered</h3>

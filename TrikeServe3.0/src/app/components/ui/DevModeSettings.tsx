@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { Camera, Code2, MapPin, Navigation, Route, Settings2, Trash2, Users, X } from "lucide-react";
+import { Camera, Code2, MapPin, Route, Settings2, Trash2, Users, X } from "lucide-react";
 import { useDevModeFeature, useDevModeStatus } from "../../hooks/useDevModeSettings";
 import { Switch } from "./switch";
 
@@ -46,7 +46,6 @@ export default function DevModeSettings() {
   const [testDataToolsEnabled, setTestDataToolsEnabled] = useDevModeFeature("testDataTools");
   const [enforceBoundary, setEnforceBoundary] = useDevModeFeature("enforceBoundary");
   const [imageProofRequired, setImageProofRequired] = useDevModeFeature("imageProofRequired");
-  const [nearestTerminalOnly, setNearestTerminalOnly] = useDevModeFeature("nearestTerminalOnly");
   const [sameRouteLobbyFilter, setSameRouteLobbyFilter] = useDevModeFeature("sameRouteLobbyFilter");
   const [isOpen, setIsOpen] = useState(false);
   const panelRef = useRef<HTMLDivElement>(null);
@@ -135,18 +134,9 @@ export default function DevModeSettings() {
               icon={Trash2}
             />
             <SettingRow
-              id="dev-mode-nearest-terminal-only"
-              title="Only nearest terminal"
-              description="Limit pickup route choices to the terminal closest to your current location."
-              checked={nearestTerminalOnly}
-              onCheckedChange={setNearestTerminalOnly}
-              disabled={!isEnabled}
-              icon={Navigation}
-            />
-            <SettingRow
               id="dev-mode-same-route-lobby-filter"
               title="Same-route lobby filter"
-              description="Only show and allow joining shared lobbies on the selected pickup route."
+              description="Only show and allow joining shared lobbies with the selected pickup and drop-off."
               checked={sameRouteLobbyFilter}
               onCheckedChange={setSameRouteLobbyFilter}
               disabled={!isEnabled}

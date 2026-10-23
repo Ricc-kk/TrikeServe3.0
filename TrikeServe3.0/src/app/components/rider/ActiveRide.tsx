@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { useNavigate, useLocation } from "react-router";
-import { ArrowLeft, Navigation, MapPin, CheckCircle, Users, User, X, MessageSquare } from "lucide-react";
+import { ArrowLeft, Navigation, MapPin, CheckCircle, Users, User, X, MessageSquare, Flag } from "lucide-react";
 import { GoogleMap, Marker, InfoWindow, DirectionsRenderer, Polyline } from "@react-google-maps/api";
 import { Button } from "../ui/button";
 import { Card } from "../ui/card";
@@ -24,6 +24,29 @@ import tricycleIcon from "../../../assets/0b76d1aa56b8ad6e15dd4efc8a0100b0ca5762
 import { useDevModeOverride } from "../../hooks/useDevModeSettings";
 
 type RideStatus = 'on-the-way' | 'arrived' | 'pickup' | 'drop-off' | 'payment';
+
+const RIDER_REPORT_CATEGORIES = [
+  'Passenger behavior',
+  'Safety concern',
+  'Fare or payment issue',
+  'Route or navigation issue',
+  'Vehicle or road issue',
+  'Other',
+];
+const DELIVERY_REPORT_CATEGORIES = [
+  'Customer behavior',
+  'Safety concern',
+  'Order or handoff issue',
+  'Route or navigation issue',
+  'Vehicle or road issue',
+  'Other',
+];
+
+const passengerAccountId = (id: unknown): string => {
+  const passengerId = String(id ?? '');
+  const companionMarker = passengerId.indexOf('_companion_');
+  return companionMarker < 0 ? passengerId : passengerId.slice(0, companionMarker);
+};
 
 interface ActiveRideData {
   id: string;
@@ -302,6 +325,12 @@ export default function ActiveRide() {
   driverLocationRef.current = driverLocation;
   const [showRideComplete, setShowRideComplete] = useState(false);
   const [showCancelPrompt, setShowCancelPrompt] = useState(false);
+  const [showReportModal, setShowReportModal] = useState(false);
+  const [reportCategory, setReportCategory] = useState(RIDER_REPORT_CATEGORIES[0]);
+  const [reportDescription, setReportDescription] = useState('');
+  const [reportSubmitError, setReportSubmitError] = useState<string | null>(null);
+  const [isSubmittingReport, setIsSubmittingReport] = useState(false);
+  const [reportSubmitted, setReportSubmitted] = useState(false);
 
   /*
    * The handover photo, for deliveries only.
@@ -324,6 +353,8 @@ export default function ActiveRide() {
   const [resolvedName, setResolvedName] = useState<string | null>(null);
   /** The passenger's profile photo, resolved by id from the users table. */
   const [passengerAvatar, setPassengerAvatar] = useState<string | null>(null);
+  /** Profile photos for every passenger in a shared ride, keyed by account id. */
+  const [passengerAvatars, setPassengerAvatars] = useState<Record<string, string>>({});
   /** The current restaurant profile for accepted delivery orders. */
   const [restaurantProfile, setRestaurantProfile] = useState<{
     businessUserId: string | null;
@@ -593,15 +624,36 @@ export default function ActiveRide() {
   }, [chatId, user?.id]);
 
   useEffect(() => {
-    const cid = rideData?.customerId || rideData?.passengerDetails?.[0]?.id;
-    if (!cid) {
+    const passengerDetails = Array.isArray(rideData?.passengerDetails) ? rideData.passengerDetails : [];
+    const profileIds = [...new Set([
+      rideData?.customerId,
+      ...passengerDetails.map((passenger: any) => passenger?.id),
+    ].map(passengerAccountId).filter(Boolean))];
+    if (profileIds.length === 0) {
       setPassengerAvatar(null);
+      setPassengerAvatars({});
       return;
     }
+    setPassengerAvatar(null);
+    setPassengerAvatars({});
     let active = true;
-    supabase.from('users').select('avatar_url').eq('id', cid).maybeSingle()
-      .then(({ data }) => { if (active) setPassengerAvatar(data?.avatar_url || null); })
-      .catch(() => { /* no photo is not a failure; the name still renders */ });
+    supabase.from('users').select('id, avatar_url').in('id', profileIds)
+      .then(({ data }) => {
+        if (!active) return;
+        const avatars = Object.fromEntries(
+          (data || [])
+            .filter((profile: any) => profile?.id && profile?.avatar_url)
+            .map((profile: any) => [String(profile.id), String(profile.avatar_url)]),
+        ) as Record<string, string>;
+        const primaryId = passengerAccountId(rideData?.customerId || passengerDetails[0]?.id);
+        setPassengerAvatars(avatars);
+        setPassengerAvatar(avatars[primaryId] || null);
+      })
+      .catch(() => {
+        if (!active) return;
+        setPassengerAvatar(null);
+        setPassengerAvatars({});
+      });
     return () => { active = false; };
   }, [rideData?.customerId, rideData?.passengerDetails]);
 
@@ -1133,6 +1185,9 @@ export default function ActiveRide() {
     ride?.type === 'delivery' ||
     Boolean(ride?.orderId || ride?.orderNumber) ||
     String(ride?.pickup || '').startsWith('DELIVERY');
+  const reportCategories = rideData && isDeliveryRide(rideData)
+    ? DELIVERY_REPORT_CATEGORIES
+    : RIDER_REPORT_CATEGORIES;
 
   // Use the restaurant details carried by the accepted request immediately,
   // then refresh them from the current profile so the driver sees up-to-date
@@ -1719,6 +1774,56 @@ export default function ActiveRide() {
     }
   };
 
+  const openRideReport = () => {
+    setReportCategory(reportCategories[0]);
+    setReportDescription('');
+    setReportSubmitError(null);
+    setReportSubmitted(false);
+    setShowReportModal(true);
+  };
+
+  const submitRideReport = async () => {
+    if (!rideData || !user?.id || isSubmittingReport) return;
+    const description = reportDescription.trim();
+    if (description.length < 10) {
+      setReportSubmitError('Please describe the issue in at least 10 characters.');
+      return;
+    }
+
+    setIsSubmittingReport(true);
+    setReportSubmitError(null);
+    try {
+      const category = `Rider report: ${reportCategory}`;
+      const { error } = await supabaseHelpers.createRideReport({
+        rideId: rideData.id || rideData.lobbyId,
+        reporterId: user.id,
+        reporterName: user.name || 'Rider',
+        reporterEmail: user.email,
+        category,
+        description,
+        rideRoute: `${rideData.pickup || 'Unknown pickup'} → ${rideData.dropoff || 'Unknown drop-off'}`,
+      });
+      if (error) throw error;
+
+      logAudit({
+        action: 'report_ride',
+        actorRole: 'rider',
+        entityType: rideData.lobbyId ? 'lobby' : 'ride_request',
+        entityId: rideData.lobbyId || rideData.id,
+        summary: `Reported a ride issue: ${reportCategory}`,
+        details: { category: reportCategory },
+        actorEmail: user.email,
+        actorName: user.name,
+      });
+      setReportSubmitted(true);
+    } catch (error: any) {
+      console.error('[ActiveRide] Failed to submit ride report:', error);
+      setReportSubmitError('Could not submit your report. Please try again.');
+    } finally {
+      setIsSubmittingReport(false);
+    }
+  };
+
   // Watch for the customer cancelling the accepted ride. Lobbies manage their own
   // lifecycle, so only private/delivery requests (which carry an id) are polled.
   useEffect(() => {
@@ -2209,26 +2314,56 @@ export default function ActiveRide() {
                 order rather than the order they appear in `className`. Without
                 the explicit row direction the whole bar stacked vertically and
                 read as a narrow column, which is the opposite of what it is for. */}
-            <div className="size-11 flex-shrink-0 overflow-hidden rounded-full bg-[var(--primary-soft)] flex items-center justify-center">
-              {passengerAvatar ? (
-                <img
-                  src={passengerAvatar}
-                  alt={`${resolvedName || rideData.customerName || 'Passenger'}'s profile`}
-                  className="w-full h-full object-cover"
-                />
-              ) : rideData.customerPhoto === 'shared' ? (
-                <Users className="w-5 h-5 text-[var(--primary)]" aria-hidden="true" />
-              ) : (
-                <User className="w-5 h-5 text-[var(--primary)]" aria-hidden="true" />
-              )}
-            </div>
+            {isSharedRide && rideData.passengerDetails?.length ? (
+              <div className="flex shrink-0 items-center pl-1">
+                {rideData.passengerDetails.map((passenger: any, index: number) => {
+                  const passengerId = String(passenger?.id ?? `passenger-${index}`);
+                  const accountId = passengerAccountId(passengerId);
+                  const companionOwner = passengerId.includes('_companion_')
+                    ? rideData.passengerDetails?.find((candidate: any) => String(candidate?.id || '') === accountId)
+                    : null;
+                  const displayName = companionOwner?.name
+                    ? `${passenger.name || 'Companion'} of ${companionOwner.name}`
+                    : passenger.name || 'Passenger';
+                  const profileUrl = passengerAvatars[accountId]
+                    || (typeof passenger.avatar === 'string' && (/^https?:\/\//i.test(passenger.avatar) || passenger.avatar.startsWith('data:image/')) ? passenger.avatar : null);
+                  return (
+                    <span
+                      key={passengerId}
+                      title={displayName}
+                      className="-ml-2 grid size-8 place-items-center overflow-hidden rounded-full border-2 border-[var(--surface)] bg-[var(--primary-soft)] text-sm first:ml-0"
+                    >
+                      {profileUrl ? (
+                        <img src={profileUrl} alt={`${displayName}'s profile`} className="size-full object-cover" />
+                      ) : (
+                        passenger.emoji || <User className="size-4 text-[var(--primary)]" aria-hidden="true" />
+                      )}
+                    </span>
+                  );
+                })}
+              </div>
+            ) : (
+              <div className="size-11 flex-shrink-0 overflow-hidden rounded-full bg-[var(--primary-soft)] flex items-center justify-center">
+                {passengerAvatar ? (
+                  <img
+                    src={passengerAvatar}
+                    alt={`${resolvedName || rideData.customerName || 'Passenger'}'s profile`}
+                    className="w-full h-full object-cover"
+                  />
+                ) : rideData.customerPhoto === 'shared' ? (
+                  <Users className="w-5 h-5 text-[var(--primary)]" aria-hidden="true" />
+                ) : (
+                  <User className="w-5 h-5 text-[var(--primary)]" aria-hidden="true" />
+                )}
+              </div>
+            )}
             {/* Details run left to right across the bar: photo, name, fare and
                 destination, then the controls. The name and the detail were
                 stacked in a column, which made the bar taller for no gain and
                 pushed the action button toward the edge. */}
             <div className="min-w-0 flex-1 flex items-center gap-2">
               <p className="truncate font-bold text-[var(--ink)]">
-                {resolvedName || rideData.customerName}
+                {isSharedRide ? 'Passengers' : resolvedName || rideData.customerName}
               </p>
               <span className="text-[var(--muted-foreground)]" aria-hidden="true">·</span>
               <p className="truncate text-xs text-[var(--muted-foreground)]">
@@ -2264,9 +2399,8 @@ export default function ActiveRide() {
           <>
             <Card className="p-4 border-2 border-[var(--muted)] shadow-sm">
               <div className="flex items-start gap-4 mb-3">
-                {/* Round passenger photo, cropped by the wrapper. A shared ride has
-                    several passengers and no single person to show, so it keeps the
-                    group glyph. */}
+                {/* The profile row shows the primary passenger; the roster below
+                    displays every shared passenger profile. */}
                 <div className="size-14 flex-shrink-0 overflow-hidden rounded-full bg-[var(--primary-soft)] flex items-center justify-center">
                   {passengerAvatar ? (
                     <img
@@ -2281,19 +2415,36 @@ export default function ActiveRide() {
                   )}
                 </div>
                 <div className="min-w-0 flex-1">
-                  <h2 className="font-bold text-lg">{resolvedName || rideData.customerName}</h2>
-                  {rideData.passengerDetails && rideData.passengerDetails.length > 1 && (
+                  <h2 className="font-bold text-lg">{isSharedRide ? 'Passengers' : resolvedName || rideData.customerName}</h2>
+                  {isSharedRide && rideData.passengerDetails && rideData.passengerDetails.length > 0 && (
                     <div className="mt-1 space-y-0.5 text-xs text-[var(--muted-foreground)]">
                       {rideData.passengerDetails.map((p: any, index: number) => {
-                        const stop = sharedDropoffStops.find(item => item.id === String(p.id ?? `passenger-${index}`));
+                        const passengerId = String(p.id ?? `passenger-${index}`);
+                        const ownerId = passengerAccountId(passengerId);
+                        const companionOwner = passengerId.includes('_companion_')
+                          ? rideData.passengerDetails?.find((candidate: any) => String(candidate?.id || '') === ownerId)
+                          : null;
+                        const passengerName = companionOwner?.name
+                          ? `${p.name || 'Companion'} of ${companionOwner.name}`
+                          : p.name || 'Passenger';
+                        const profileUrl = passengerAvatars[ownerId]
+                          || (typeof p.avatar === 'string' && (/^https?:\/\//i.test(p.avatar) || p.avatar.startsWith('data:image/')) ? p.avatar : null);
+                        const stop = sharedDropoffStops.find(item => item.id === passengerId);
                         return (
-                          <p key={p.id || `passenger-${index}`} className="flex justify-between gap-3">
-                            <span className="flex min-w-0 items-center gap-1.5 truncate">
+                          <div key={passengerId} className="flex items-center justify-between gap-3 rounded-lg px-1 py-1">
+                            <span className="flex min-w-0 items-center gap-2">
+                              <span className="grid size-9 shrink-0 place-items-center overflow-hidden rounded-full border border-[var(--border)] bg-[var(--primary-soft)] text-base">
+                                {profileUrl ? (
+                                  <img src={profileUrl} alt={`${passengerName}'s profile`} className="size-full object-cover" />
+                                ) : (
+                                  p.emoji || <User className="size-4 text-[var(--primary)]" aria-hidden="true" />
+                                )}
+                              </span>
                               {stop && <span className="size-2 shrink-0 rounded-full" style={{ background: stop.color }} aria-hidden="true" />}
-                              <span className="truncate">{p.name || 'Passenger'}</span>
+                              <span className="min-w-0 truncate">{passengerName}</span>
                             </span>
                             {p.fare != null && <span className="shrink-0 font-semibold">₱{Number(p.fare).toFixed(2)}</span>}
-                          </p>
+                          </div>
                         );
                       })}
                     </div>
@@ -2414,6 +2565,15 @@ export default function ActiveRide() {
         <Button
           type="button"
           variant="outline"
+          onClick={openRideReport}
+          className="-mx-1 mt-2 w-[calc(100%+0.5rem)] border-[var(--border)] py-3 font-semibold text-[var(--muted-foreground)]"
+        >
+          <Flag className="size-4" aria-hidden="true" />
+          Report an issue
+        </Button>
+        <Button
+          type="button"
+          variant="outline"
           onClick={() => setShowCancelPrompt(true)}
           aria-label={cancelActionLabel}
           className="-mx-1 mt-2 w-[calc(100%+0.5rem)] border-[var(--error)] py-3 font-bold text-[var(--error)] hover:bg-[var(--error-soft)]"
@@ -2422,6 +2582,114 @@ export default function ActiveRide() {
         </Button>
 
       </div>
+
+      {showReportModal && (
+        <div
+          className="fixed inset-0 z-[4100] flex items-center justify-center bg-black/60 p-4"
+          onClick={() => { if (!isSubmittingReport) setShowReportModal(false); }}
+        >
+          <Card
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="active-ride-report-title"
+            className="w-full max-w-md gap-0 rounded-2xl bg-surface p-5 shadow-2xl"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <h2 id="active-ride-report-title" className="text-lg font-bold text-[var(--ink)]">
+                  {reportSubmitted ? 'Report sent' : 'Report a ride issue'}
+                </h2>
+                <p className="mt-1 text-sm text-[var(--muted-foreground)]">
+                  {reportSubmitted
+                    ? 'Support has received your report.'
+                    : 'Send the details to support for review.'}
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => { if (!isSubmittingReport) setShowReportModal(false); }}
+                disabled={isSubmittingReport}
+                aria-label="Close report form"
+                className="grid size-9 shrink-0 place-items-center rounded-full text-[var(--muted-foreground)] hover:bg-[var(--muted)] disabled:opacity-50"
+              >
+                <X className="size-5" aria-hidden="true" />
+              </button>
+            </div>
+
+            {reportSubmitted ? (
+              <div className="mt-5 rounded-xl border border-[var(--success)]/20 bg-[var(--success-soft)] p-4 text-sm font-medium text-[var(--success-ink)]">
+                Thank you for letting us know. The ride details were included with your report.
+              </div>
+            ) : (
+              <div className="mt-5 space-y-4">
+                <div>
+                  <label htmlFor="active-ride-report-category" className="mb-1.5 block text-sm font-semibold text-[var(--ink)]">
+                    Issue type
+                  </label>
+                  <select
+                    id="active-ride-report-category"
+                    value={reportCategory}
+                    onChange={(event) => setReportCategory(event.target.value)}
+                    className="min-h-11 w-full rounded-xl border border-[var(--border)] bg-[var(--surface)] px-3 text-sm text-[var(--ink)] outline-none focus-visible:ring-2 focus-visible:ring-[var(--primary)]"
+                  >
+                    {reportCategories.map((category) => (
+                      <option key={category} value={category}>{category}</option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label htmlFor="active-ride-report-description" className="mb-1.5 block text-sm font-semibold text-[var(--ink)]">
+                    What happened?
+                  </label>
+                  <textarea
+                    id="active-ride-report-description"
+                    value={reportDescription}
+                    onChange={(event) => {
+                      setReportDescription(event.target.value);
+                      if (reportSubmitError) setReportSubmitError(null);
+                    }}
+                    maxLength={1000}
+                    rows={4}
+                    placeholder="Describe the issue for support..."
+                    className="w-full resize-none rounded-xl border border-[var(--border)] bg-[var(--surface)] px-3 py-2.5 text-sm text-[var(--ink)] outline-none focus-visible:ring-2 focus-visible:ring-[var(--primary)]"
+                  />
+                  <p className="mt-1 text-right text-xs text-[var(--muted-foreground)]">{reportDescription.length}/1000</p>
+                </div>
+                {reportSubmitError && <p role="alert" className="text-sm text-[var(--error)]">{reportSubmitError}</p>}
+              </div>
+            )}
+
+            <div className="mt-5 flex gap-2">
+              {reportSubmitted ? (
+                <Button type="button" onClick={() => setShowReportModal(false)} className="w-full bg-[var(--primary)] text-white">
+                  Done
+                </Button>
+              ) : (
+                <>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => setShowReportModal(false)}
+                    disabled={isSubmittingReport}
+                    className="flex-1"
+                  >
+                    Cancel
+                  </Button>
+                  <Button
+                    type="button"
+                    onClick={submitRideReport}
+                    disabled={isSubmittingReport || !reportDescription.trim()}
+                    className="flex-1 bg-[var(--primary)] text-white"
+                  >
+                    {isSubmittingReport ? 'Sending…' : 'Send report'}
+                  </Button>
+                </>
+              )}
+            </div>
+          </Card>
+        </div>
+      )}
 
       {/*
         The handover photo sheet.

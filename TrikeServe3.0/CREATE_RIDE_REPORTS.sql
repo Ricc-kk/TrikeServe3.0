@@ -1,7 +1,8 @@
--- Customer ride reports.
+-- Ride reports from customers and riders.
 --
--- Customers can report a completed ride (rides only, not deliveries) from their
--- Activity page. Reports are reviewed by the Super Admin on /admin/reports.
+-- Customers can report completed rides from their Activity page. Riders can
+-- report issues during an active ride. Reports are reviewed by the Super Admin
+-- on /admin/reports.
 --
 -- Run this once in the Supabase SQL editor.
 

@@ -41,6 +41,40 @@ export function isActiveRideStatus(status: string | null | undefined): boolean {
   return !!status && ACTIVE.has(status);
 }
 
+/** Customer-only storage keys keep browser state from following another account. */
+export function customerActiveRideStorageKey(customerId: string): string {
+  return `trikeserve_active_ride_customer:${customerId}`;
+}
+
+export function customerActiveShareLobbyStorageKey(customerId: string): string {
+  return `trikeserve_active_share_lobby_customer:${customerId}`;
+}
+
+/** Parse a lobby passenger list and confirm that a customer is actually in it. */
+export function isCustomerLobbyPassenger(lobby: any, customerId: string | null | undefined): boolean {
+  if (!customerId || !lobby) return false;
+
+  const passengerLists = [lobby.passengers_json, lobby.passengers].flatMap((source) => {
+    if (Array.isArray(source)) return [source];
+    if (typeof source === "string") {
+      try {
+        const parsed = JSON.parse(source);
+        return Array.isArray(parsed) ? [parsed] : [];
+      } catch {
+        return [];
+      }
+    }
+    return [];
+  });
+
+  return passengerLists.some((passengers) =>
+    passengers.some((passenger: any) => {
+      const passengerId = String(passenger?.id || "");
+      return passengerId === customerId || passengerId.startsWith(`${customerId}_companion_`);
+    }),
+  );
+}
+
 /**
  * Whether the customer is mid-ride, read straight from the database.
  *
@@ -181,13 +215,7 @@ export async function getActiveRideContext(customerId: string): Promise<{
 
   const lobby =
     (!lobbyError &&
-      (lobbies || []).find((l: any) => {
-        const passengers = Array.isArray(l.passengers_json) ? l.passengers_json : [];
-        return passengers.some(
-          (p: any) =>
-            p?.id === customerId || String(p?.id || "").startsWith(`${customerId}_companion_`)
-        );
-      })) ||
+      (lobbies || []).find((l: any) => isCustomerLobbyPassenger(l, customerId))) ||
     null;
 
   return { privateRide, lobby };
@@ -201,25 +229,30 @@ export async function getActiveRideContext(customerId: string): Promise<{
  * exactly the case this guards. The lookup is two indexed reads.
  */
 export function useActiveRideContext(customerId: string | null | undefined, pollMs = 8000) {
-  const [context, setContext] = useState<{ privateRide: any | null; lobby: any | null }>({
+  const [context, setContext] = useState<{
+    customerId: string | null;
+    privateRide: any | null;
+    lobby: any | null;
+    checked: boolean;
+  }>({
+    customerId: null,
     privateRide: null,
     lobby: null,
+    checked: false,
   });
-  const [checked, setChecked] = useState(false);
 
   useEffect(() => {
     if (!customerId) {
-      setContext({ privateRide: null, lobby: null });
-      setChecked(true);
+      setContext({ customerId: null, privateRide: null, lobby: null, checked: true });
       return;
     }
     let active = true;
+    setContext({ customerId, privateRide: null, lobby: null, checked: false });
 
     const check = async () => {
       const result = await getActiveRideContext(customerId);
       if (!active) return;
-      setContext(result);
-      setChecked(true);
+      setContext({ customerId, ...result, checked: true });
     };
 
     check();
@@ -230,5 +263,7 @@ export function useActiveRideContext(customerId: string | null | undefined, poll
     };
   }, [customerId, pollMs]);
 
-  return { ...context, checked };
+  if (!customerId) return { privateRide: null, lobby: null, checked: true };
+  if (context.customerId !== customerId) return { privateRide: null, lobby: null, checked: false };
+  return context;
 }

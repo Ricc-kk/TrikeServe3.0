@@ -12,8 +12,9 @@ import tricycleIcon from '../../../assets/0b76d1aa56b8ad6e15dd4efc8a0100b0ca5762
 import FloatingChatHead from "../ui/FloatingChatHead";
 import RideChatOverlay from "../rider/RideChatOverlay";
 import { normalizeRouteColor } from "../ui/TerminalIcon";
-import { backfillLegacySharedRidePassengerFares, sumSharedRidePassengerFares } from "@/lib/pricing";
+import { backfillLegacySharedRidePassengerFares, sumSharedRidePassengerFares, DEFAULT_MAX_PASSENGERS } from "@/lib/pricing";
 import { useDevModeOverride } from "../../hooks/useDevModeSettings";
+import { customerActiveShareLobbyStorageKey, isCustomerLobbyPassenger } from "../../../lib/rideLock";
 
 const DRIVER_STATUS_ICONS: Record<string, typeof MapPin> = {
   cancelled: X,
@@ -47,8 +48,8 @@ interface LobbyPassenger {
   joinedAt: string;
   pickup: string;  // Individual pickup location
   pickupAddress: string;  // Individual pickup address
-  // Each passenger rides to their own destination, captured when they join, so
-  // the lobby can show every drop-off and the order they happen in.
+  // Each passenger's destination is stored for individual fares and driver
+  // routing; customer views keep other passengers' locations private.
   dropoff?: string;
   dropoffAddress?: string;
   dropoffLat?: number | null;
@@ -115,6 +116,7 @@ interface ShareRideLobbyProps {
   pickupCoords?: { lat: number; lng: number } | null;
   dropoffCoords?: { lat: number; lng: number } | null;
   passengerCount?: number;
+  maxPassengersAllowed?: number;
   pricePerSeat?: number;
   paymentMethod?: 'COD';
   selectedTerminalId?: string | null;
@@ -132,6 +134,7 @@ export default function ShareRideLobby({
   pickupCoords,
   dropoffCoords,
   passengerCount = 1,
+  maxPassengersAllowed = DEFAULT_MAX_PASSENGERS,
   pricePerSeat = 15,
   paymentMethod = 'COD',
   selectedTerminalId,
@@ -140,6 +143,9 @@ export default function ShareRideLobby({
   onClose
 }: ShareRideLobbyProps) {
   const { user } = useAuth();
+  const lobbySeatLimit = Number.isFinite(maxPassengersAllowed) && maxPassengersAllowed >= 1
+    ? Math.floor(maxPassengersAllowed)
+    : DEFAULT_MAX_PASSENGERS;
   const [enforceBoundary] = useDevModeOverride("enforceBoundary");
   const [openingChat, setOpeningChat] = useState(false);
   /**
@@ -542,6 +548,10 @@ export default function ShareRideLobby({
      const initializeLobby = async () => {
        try {
          if (!isMounted) return;
+         if (!user?.id) {
+           setError('Please sign in to open this ride lobby.');
+           return;
+         }
          setLoading(true);
          let existingLobby: ShareRideLobby | null = null;
 
@@ -549,16 +559,32 @@ export default function ShareRideLobby({
            const { data: selectedLobby, error: selectedLobbyError } = await supabaseHelpers.getLobbyById(lobbyId);
            if (selectedLobbyError) {
              console.error('Error loading selected lobby:', selectedLobbyError);
-           } else if (selectedLobby) {
-             existingLobby = {
-               ...selectedLobby,
-               passengers_json: normalizePassengers(selectedLobby.passengers_json)
-             };
+             if (isMounted) setError('Unable to load this ride lobby. Please close and try again.');
+             return;
            }
+           if (!selectedLobby) {
+             if (isMounted) setError('This ride lobby is no longer available.');
+             return;
+           }
+
+           const normalizedLobby = {
+             ...selectedLobby,
+             passengers_json: normalizePassengers(selectedLobby.passengers_json),
+           };
+           if (!isCustomerLobbyPassenger(normalizedLobby, user.id)) {
+             if (isMounted) setError('This ride lobby is not linked to your account.');
+             return;
+           }
+           existingLobby = normalizedLobby;
          }
 
-         if (!existingLobby) {
+         if (!existingLobby && !lobbyId) {
            existingLobby = await findOrCreateLobby();
+         }
+
+         if (existingLobby && !isCustomerLobbyPassenger(existingLobby, user.id)) {
+           if (isMounted) setError('This ride lobby is not linked to your account.');
+           return;
          }
 
          if (existingLobby && isMounted) {
@@ -756,7 +782,7 @@ export default function ShareRideLobby({
          }
        }
      };
-   }, [lobbyId]);
+   }, [lobbyId, user?.id]);
 
   // Poll for driver location in the lobby (every 3 seconds)
   useEffect(() => {
@@ -1117,7 +1143,7 @@ export default function ShareRideLobby({
         dropoff_lat: dropoffCoords?.lat || null,
         dropoff_lng: dropoffCoords?.lng || null,
         passengers_json: passengers,
-        max_seats: 3,
+        max_seats: lobbySeatLimit,
         price_per_seat: pricePerSeat,
         payment_method: paymentMethod,
         terminal_id: selectedTerminalId || null,
@@ -1172,7 +1198,9 @@ export default function ShareRideLobby({
 
        console.log('✅ Successfully left lobby');
        try {
-         localStorage.removeItem('trikeserve_active_share_lobby');
+         if (user?.id) {
+           localStorage.removeItem(customerActiveShareLobbyStorageKey(user.id));
+         }
        } catch {
          // The database membership is already removed; storage is only a resume hint.
        }
@@ -1425,6 +1453,15 @@ if (loading) {
 
   const passengers = lobby.passengers_json || [];
   const isTerminal = terminalStatus !== null;
+  const getPassengerDisplayName = (passenger: LobbyPassenger) => {
+    const companionMarker = passenger.id.indexOf('_companion_');
+    if (companionMarker < 0) return passenger.name;
+    const ownerId = passenger.id.slice(0, companionMarker);
+    const owner = passengers.find((candidate) => candidate.id === ownerId);
+    return owner?.name
+      ? `${passenger.name || 'Companion'} of ${owner.name}`
+      : passenger.name || 'Companion';
+  };
 
   // Old lobbies stored one total on the row; newer passengers carry their own
   // fare because each can have a different drop-off distance.
@@ -1439,6 +1476,19 @@ if (loading) {
   const yourSeatTotal = sumSharedRidePassengerFares(yourPassengers);
   const yourFarePerSeat = yourSeatCount > 0 ? yourSeatTotal / yourSeatCount : pricePerSeat;
   const currentLobbyTotal = sumSharedRidePassengerFares(passengersWithFares);
+  const ownPassenger = yourPassengers.find(passenger => passenger.id === user?.id) || yourPassengers[0];
+  const ownDropoff =
+    ownPassenger?.dropoff?.trim() ||
+    ownPassenger?.dropoffAddress?.trim() ||
+    dropoff?.trim() ||
+    dropoffAddress?.trim() ||
+    (lobby.customer_id === user?.id ? lobby.dropoff_location : 'Your drop-off');
+  const isCurrentCustomerPassenger = (passenger: LobbyPassenger) => Boolean(
+    user?.id && (
+      passenger.id === user.id ||
+      passenger.id.startsWith(`${user.id}_companion_`)
+    )
+  );
 
   /*
    * Drop-off order: the destination closest to the pickup is reached first.
@@ -1524,7 +1574,7 @@ if (loading) {
                 </div>
                 <div className="min-w-0 flex-1">
                   <p className="text-[10px] text-[var(--muted-foreground)] font-bold tracking-wider">Drop-off</p>
-                  <p className="font-bold text-sm text-[var(--ink)] truncate">{lobby.dropoff_location}</p>
+                  <p className="font-bold text-sm text-[var(--ink)] truncate">{ownDropoff}</p>
                 </div>
                 {etaToDestination && (
                   <div className="flex-shrink-0 bg-[var(--error-soft)] text-[var(--error)] px-2 py-1 rounded-lg">
@@ -1548,9 +1598,7 @@ if (loading) {
               {/* Passenger Cards */}
               <div className="space-y-2">
                 {passengers.map((passenger) => {
-                  const isCurrentUserOrCompanion =
-                    passenger.id === user?.id || 
-                    passenger.id.startsWith(`${user?.id}_companion_`);
+                  const isCurrentUserOrCompanion = isCurrentCustomerPassenger(passenger);
                   
                   return (
                     <Card 
@@ -1570,7 +1618,7 @@ if (loading) {
                         </div>
                         <div className="flex-1 min-w-0">
                           <div className="flex items-center gap-2">
-                            <p className="font-bold text-[var(--ink)] truncate">{passenger.name}</p>
+                            <p className="font-bold text-[var(--ink)] truncate">{getPassengerDisplayName(passenger)}</p>
                             {passenger.id === user?.id && (
                               <Badge variant="outline" className="border-[var(--primary)] text-[var(--primary)] text-[10px]">
                                 YOU
@@ -1578,20 +1626,21 @@ if (loading) {
                             )}
                           </div>
                           <p className="mt-0.5 flex items-center gap-1 text-xs text-[var(--muted-foreground)]">
-                            <MapPin className="h-3 w-3 flex-shrink-0" />
-                            <span className="truncate">
-                              Drop-off: {passenger.dropoff || passenger.dropoffAddress || lobby.dropoff_location}
-                            </span>
+                            {isCurrentUserOrCompanion ? (
+                              <>
+                                <MapPin className="h-3 w-3 flex-shrink-0" />
+                                <span className="truncate">
+                                  Drop-off: {passenger.dropoff || passenger.dropoffAddress || ownDropoff}
+                                </span>
+                              </>
+                            ) : (
+                              <span className="italic">Drop-off hidden for privacy</span>
+                            )}
                           </p>
                           <p className="text-[10px] text-[var(--muted-foreground)]">
                             Joined {new Date(passenger.joinedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                           </p>
                         </div>
-                        {passenger.id === lobby.customer_id && (
-                          <Badge className="bg-[var(--violet)] text-white text-[10px]">
-                            HOST
-                          </Badge>
-                        )}
                       </div>
                     </Card>
                   );
@@ -1613,8 +1662,8 @@ if (loading) {
                 ))}
               </div>
 
-              {/* Drop-off order — every passenger's stop, soonest first, with the
-                  first one called out so the group knows whose stop is next. */}
+              {/* Keep the stop order visible while hiding other passengers' exact
+                  locations from the customer view. */}
               {passengers.length > 0 && (
                 <div className="mt-4 rounded-xl border border-[var(--border)] bg-[var(--muted)] p-3">
                   <p className="mb-2 text-xs font-bold uppercase tracking-widest text-[var(--muted-foreground)]">
@@ -1631,17 +1680,21 @@ if (loading) {
                           {order + 1}
                         </span>
                         <span className="min-w-0 flex-1 truncate text-xs font-semibold text-[var(--ink)]">
-                          {entry.passenger.id === user?.id ? 'You' : entry.passenger.name}
+                          {entry.passenger.id === user?.id ? 'You' : getPassengerDisplayName(entry.passenger)}
                         </span>
                         <span className="max-w-[45%] truncate text-right text-[10px] text-[var(--muted-foreground)]">
-                          {entry.passenger.dropoff || entry.passenger.dropoffAddress || lobby.dropoff_location}
+                          {isCurrentCustomerPassenger(entry.passenger)
+                            ? entry.passenger.dropoff || entry.passenger.dropoffAddress || ownDropoff
+                            : 'Hidden for privacy'}
                         </span>
                       </div>
                     ))}
                   </div>
                   <p className="mt-2 text-[10px] font-semibold text-[var(--primary)]">
                     Drop off first:{' '}
-                    {dropoffOrder[0]?.passenger.id === user?.id ? 'You' : dropoffOrder[0]?.passenger.name}
+                    {dropoffOrder[0]?.passenger.id === user?.id
+                      ? 'You'
+                      : dropoffOrder[0] ? getPassengerDisplayName(dropoffOrder[0].passenger) : ''}
                   </p>
                 </div>
               )}
