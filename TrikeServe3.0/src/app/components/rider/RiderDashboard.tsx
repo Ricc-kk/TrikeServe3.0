@@ -18,6 +18,8 @@ import {
   Clock,
   TrendingDown,
   Check,
+  Car,
+  Package,
 } from "lucide-react";
 import { Link, useNavigate } from "react-router";
 import { Button } from "../ui/button";
@@ -51,6 +53,12 @@ interface IncomingRequest {
   waitingPassengers?: number;
 }
 
+const SERVICE_TYPE_LABELS = {
+  shared: 'Ride Share',
+  private: 'Private Ride',
+  delivery: 'Delivery',
+} as const;
+
 export default function RiderDashboard() {
   const navigate = useNavigate();
   const { user, updateProfile } = useAuth();
@@ -68,7 +76,11 @@ export default function RiderDashboard() {
   // Explains the offline tap instead of leaving a dead button.
   const [showOfflineNotice, setShowOfflineNotice] = useState(false);
   const [showMore, setShowMore] = useState(false);
-  const activeServiceCategory = user?.serviceTypes?.includes('delivery') ? 'delivery' : 'rides';
+  const configuredServiceTypes = Array.isArray(user?.serviceTypes) ? user.serviceTypes : [];
+  const activeServiceCategory = configuredServiceTypes.includes('delivery') ? 'delivery' : 'rides';
+  const activeServiceTypes = activeServiceCategory === 'delivery'
+    ? (['delivery'] as const)
+    : (['shared', 'private'] as const).filter((serviceType) => configuredServiceTypes.includes(serviceType));
   const [totalPendingRequests, setTotalPendingRequests] = useState(0);
   const [hasActiveRide, setHasActiveRide] = useState(false);
   const [activeRideData, setActiveRideData] = useState<any>(null);
@@ -1184,6 +1196,34 @@ export default function RiderDashboard() {
         {!activeTrip && !isMapFullscreen && (
           <div className="absolute bottom-[calc(5rem+env(safe-area-inset-bottom))] left-0 right-0 z-[999] px-3">
             <Card className="w-full gap-0 rounded-3xl border border-line bg-card shadow-xl max-h-[calc(100dvh-10rem-env(safe-area-inset-top)-env(safe-area-inset-bottom))] sm:max-h-[min(76dvh,calc(100dvh-9rem))] overflow-y-auto overscroll-contain">
+
+              <div className="border-b border-line px-4 py-3 sm:px-5">
+                <p className="mb-2 text-[10px] font-bold uppercase tracking-[0.14em] text-[var(--muted-foreground)]">
+                  Active service{activeServiceTypes.length === 1 ? '' : 's'}
+                </p>
+                {activeServiceTypes.length > 0 ? (
+                  <div role="group" aria-label="Active service types" className="flex flex-wrap gap-2">
+                    {activeServiceTypes.map((serviceType) => {
+                      const ServiceIcon = serviceType === 'delivery'
+                        ? Package
+                        : serviceType === 'private'
+                          ? Car
+                          : Users;
+                      return (
+                        <span
+                          key={serviceType}
+                          className="inline-flex min-h-9 items-center gap-2 rounded-full border border-[var(--primary)]/20 bg-[var(--primary-soft)] px-3 py-1 text-sm font-bold text-[var(--primary)]"
+                        >
+                          <ServiceIcon className="size-4" aria-hidden="true" />
+                          {SERVICE_TYPE_LABELS[serviceType]}
+                        </span>
+                      );
+                    })}
+                  </div>
+                ) : (
+                  <p className="text-sm font-medium text-[var(--muted-foreground)]">No service type selected</p>
+                )}
+              </div>
 
               {/* Terminal Queue - determines which driver may accept private/share rides.
                   Only shown on the Rides service type: delivery is never queue-gated, and

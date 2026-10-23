@@ -5244,6 +5244,8 @@ const getPrice = () => {
           pickupAddress={pickupAddress}
           pickupCoords={pickupCoords}
           terminalId={selectedTerminalId}
+          routePoints={selectedTerminalBoundary.displayRoad}
+          routeWidthM={selectedTerminalBoundary.routeWidthM}
           dropoff={dropoff}
           dropoffAddress={dropoffAddress}
           dropoffCoords={dropoffCoords}

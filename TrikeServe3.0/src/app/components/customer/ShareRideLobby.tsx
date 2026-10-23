@@ -125,6 +125,8 @@ interface ShareRideLobbyProps {
   onClose: (status?: string) => void;
 }
 
+type MatchingLobbyChoice = 'join' | 'create' | 'cancel';
+
 export default function ShareRideLobby({
   lobbyId,
   pickup,
@@ -193,6 +195,9 @@ export default function ShareRideLobby({
   const [passengerAvatars, setPassengerAvatars] = useState<Record<string, string>>({});
   const [driverProfileAvatar, setDriverProfileAvatar] = useState<string | null>(null);
   const [lobby, setLobby] = useState<ShareRideLobby | null>(null);
+  const [matchingRouteLobby, setMatchingRouteLobby] = useState<ShareRideLobby | null>(null);
+  const matchingLobbyChoiceResolver = useRef<((choice: MatchingLobbyChoice) => void) | null>(null);
+  const [bookingCancelled, setBookingCancelled] = useState(false);
   const [isMinimized, setIsMinimized] = useState(false);
   const [showLeaveConfirm, setShowLeaveConfirm] = useState(false);
   const [terminalStatus, setTerminalStatus] = useState<'completed' | 'cancelled' | null>(null);
@@ -210,7 +215,6 @@ export default function ShareRideLobby({
   const [computedDriverRating, setComputedDriverRating] = useState<string | null>(null);
   const { isLoaded: isMapsLoaded } = useMapLoader();
   const [showFullCapacityPopup, setShowFullCapacityPopup] = useState(false);
-  const [showLobbyFullPopup, setShowLobbyFullPopup] = useState(false);
   const [showOutOfBoundaryPopup, setShowOutOfBoundaryPopup] = useState(false);
   // Distinguishes "we found it and it's outside every terminal" from "we could
   // not find it at all" — the same dialog covers both and the wording differs.
@@ -219,7 +223,6 @@ export default function ShareRideLobby({
   // the drop-off not being on a route, and not being able to locate the drop-off
   // are three different things a customer can fix in three different ways.
   const [gateFailure, setGateFailure] = useState<'unresolved' | 'border' | 'route' | 'lookup' | null>(null);
-  const [fullLobbyInfo, setFullLobbyInfo] = useState<{ passengers: number; maxSeats: number } | null>(null);
   const [driverLocation, setDriverLocation] = useState<{ lat: number; lng: number } | null>(null);
   const [driverRoutePath, setDriverRoutePath] = useState<Array<{ lat: number; lng: number }>>([]);
   const [etaToDestination, setEtaToDestination] = useState<string | null>(null);
@@ -485,6 +488,24 @@ export default function ShareRideLobby({
       seen.add(p.id);
       return true;
     });
+  };
+
+  const askAboutMatchingLobby = (candidate: ShareRideLobby): Promise<MatchingLobbyChoice> => {
+    setMatchingRouteLobby(candidate);
+    return new Promise((resolve) => {
+      matchingLobbyChoiceResolver.current = resolve;
+    });
+  };
+
+  const resolveMatchingLobbyChoice = (choice: MatchingLobbyChoice) => {
+    const resolve = matchingLobbyChoiceResolver.current;
+    matchingLobbyChoiceResolver.current = null;
+    setMatchingRouteLobby(null);
+    if (choice === 'cancel') {
+      setBookingCancelled(true);
+      onClose();
+    }
+    resolve?.(choice);
   };
 
   const toTime = (value?: string) => new Date(value || 0).getTime();
@@ -765,6 +786,11 @@ export default function ShareRideLobby({
 
      return () => {
        isMounted = false;
+       // Let initialization finish if this effect is cleaned up while the
+       // matching lobby choice dialog is open.
+       const pendingChoiceResolver = matchingLobbyChoiceResolver.current;
+       matchingLobbyChoiceResolver.current = null;
+       pendingChoiceResolver?.('cancel');
         if (terminalCloseTimeoutRef.current) {
           clearTimeout(terminalCloseTimeoutRef.current);
         }
@@ -1027,16 +1053,35 @@ export default function ShareRideLobby({
       );
 
       if (!matchError && matchingLobby) {
-        const storedPassengers = Array.isArray(matchingLobby.passengers_json)
-          ? matchingLobby.passengers_json
-          : [];
-        const passengers = backfillLegacySharedRidePassengerFares(
-          storedPassengers,
+        let passengers = backfillLegacySharedRidePassengerFares(
+          dedupePassengers(normalizePassengers(matchingLobby.passengers_json)),
           Number(matchingLobby.price_per_seat || 0),
         );
 
-        // Check if we have space
-        if (passengers.length + passengerCount <= matchingLobby.max_seats) {
+        const choice = await askAboutMatchingLobby({
+          ...matchingLobby,
+          passengers_json: passengers,
+        } as ShareRideLobby);
+        if (choice === 'cancel') return null;
+
+        if (choice === 'join') {
+          // Refresh after the choice so a passenger who joined meanwhile is not
+          // overwritten by this booking.
+          const { data: latestLobby, error: latestLobbyError } = await supabaseHelpers.getLobbyById(matchingLobby.id);
+          if (latestLobbyError || !latestLobby || latestLobby.status !== 'waiting') {
+            setError('This lobby is no longer available. Please try booking again.');
+            return null;
+          }
+          passengers = backfillLegacySharedRidePassengerFares(
+            dedupePassengers(normalizePassengers(latestLobby.passengers_json)),
+            Number(latestLobby.price_per_seat || 0),
+          );
+          const latestMaxSeats = Number(latestLobby.max_seats || lobbySeatLimit);
+          if (passengers.length + passengerCount > latestMaxSeats) {
+            setError('This lobby filled up while you were deciding. Please try booking again.');
+            return null;
+          }
+
           // Join the lobby
           const mainPassenger: LobbyPassenger = {
             id: user?.id || `user_${Date.now()}`,
@@ -1084,14 +1129,12 @@ export default function ShareRideLobby({
             console.log('✅ Joined existing lobby:', matchingLobby.id);
             return {
               ...updated,
-              passengers_json: Array.isArray(updated.passengers_json) ? updated.passengers_json : []
+              passengers_json: dedupePassengers(normalizePassengers(updated.passengers_json))
             };
           }
-        } else {
-          // Lobby is full - show popup
-          console.log('🚫 Lobby is full:', matchingLobby.id);
-          setFullLobbyInfo({ passengers: passengers.length, maxSeats: matchingLobby.max_seats });
-          setShowLobbyFullPopup(true);
+          console.error('Failed to join selected shared ride lobby:', updateError);
+          setError('Unable to join that lobby. Please try booking again.');
+          return null;
         }
       }
 
@@ -1232,6 +1275,59 @@ export default function ShareRideLobby({
  */
 const waitingTime = useElapsedTime(lobby?.created_at);
 
+const matchingLobbyPassengers = matchingRouteLobby
+  ? dedupePassengers(normalizePassengers(matchingRouteLobby.passengers_json))
+  : [];
+const matchingLobbyMaxSeats = matchingRouteLobby
+  ? Number(matchingRouteLobby.max_seats || lobbySeatLimit)
+  : 0;
+const matchingLobbySeatsLeft = Math.max(0, matchingLobbyMaxSeats - matchingLobbyPassengers.length);
+const canJoinMatchingLobby = matchingLobbySeatsLeft >= passengerCount;
+
+if (bookingCancelled) return null;
+
+if (matchingRouteLobby) {
+  return (
+    <div className="fixed inset-0 bg-black/60 z-[2600] flex items-center justify-center p-4">
+      <Card role="dialog" aria-modal="true" aria-labelledby="matching-lobby-title" className="bg-surface p-6 max-w-sm w-full shadow-2xl">
+        <div className="w-14 h-14 rounded-full bg-[var(--primary-soft)] flex items-center justify-center mx-auto mb-4">
+          <Users className="size-7 text-[var(--primary)]" aria-hidden="true" />
+        </div>
+        <h3 id="matching-lobby-title" className="text-xl font-bold text-[var(--ink)] text-center mb-2">
+          A lobby already matches your route
+        </h3>
+        <p className="text-sm text-[var(--muted-foreground)] text-center mb-4">
+          Choose whether to join the existing shared ride or start a separate lobby.
+        </p>
+        <div className="rounded-xl bg-[var(--muted)] p-3 mb-4">
+          <p className="text-sm font-semibold text-[var(--ink)] truncate">{matchingRouteLobby.pickup_location || pickup}</p>
+          <p className="text-xs text-[var(--muted-foreground)] my-1">to</p>
+          <p className="text-sm font-semibold text-[var(--ink)] truncate">{matchingRouteLobby.dropoff_location || dropoff}</p>
+          <p className="text-xs text-[var(--muted-foreground)] mt-3">
+            {matchingLobbyPassengers.length} of {matchingLobbyMaxSeats} seats are taken.
+            {canJoinMatchingLobby
+              ? ` Your group of ${passengerCount} can join.`
+              : ` Only ${matchingLobbySeatsLeft} seat${matchingLobbySeatsLeft === 1 ? '' : 's'} left; your group needs ${passengerCount}.`}
+          </p>
+        </div>
+        <div className="grid gap-2">
+          {canJoinMatchingLobby && (
+            <Button onClick={() => resolveMatchingLobbyChoice('join')} className="w-full bg-[var(--primary)] text-white">
+              Join existing lobby
+            </Button>
+          )}
+          <Button variant="outline" onClick={() => resolveMatchingLobbyChoice('create')} className="w-full">
+            Create a new lobby
+          </Button>
+          <Button variant="ghost" onClick={() => resolveMatchingLobbyChoice('cancel')} className="w-full">
+            Cancel booking
+          </Button>
+        </div>
+      </Card>
+    </div>
+  );
+}
+
 if (loading) {
     return (
       <div className="fixed inset-0 bg-black/50 z-[2000] flex items-center justify-center">
@@ -1253,37 +1349,6 @@ if (loading) {
             Close
           </Button>
         </Card>
-      </div>
-    );
-  }
-
-  // Lobby Full Popup (can show even when lobby is null)
-  if (showLobbyFullPopup) {
-    return (
-      <div className="fixed inset-0 bg-black/50 z-[2000] flex items-center justify-center p-4">
-        <div className="bg-surface p-6 max-w-sm w-full rounded-2xl shadow-xl">
-          <div className="w-16 h-16 bg-[var(--amber-soft)] rounded-full flex items-center justify-center mx-auto mb-4">
-            <span className="text-3xl">🚫</span>
-          </div>
-          <h3 className="text-xl font-bold text-[var(--ink)] text-center mb-2">Lobby is Full!</h3>
-          <p className="text-[var(--muted-foreground)] text-center mb-4 text-sm">
-            This ride already has {fullLobbyInfo?.maxSeats} passengers. No more seats available.
-          </p>
-          <div className="bg-[var(--muted)] rounded-xl p-3 mb-6">
-            <p className="text-sm text-[var(--muted-foreground)] text-center">
-              A new lobby will be created for you instead.
-            </p>
-          </div>
-          <button
-            onClick={() => {
-              setShowLobbyFullPopup(false);
-              setFullLobbyInfo(null);
-            }}
-            className="w-full py-3 bg-[var(--primary)] text-white font-bold rounded-xl active:scale-95 transition-transform"
-          >
-            OK
-          </button>
-        </div>
       </div>
     );
   }

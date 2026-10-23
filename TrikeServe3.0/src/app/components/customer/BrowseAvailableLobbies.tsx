@@ -7,6 +7,7 @@ import { useAuth } from "../../contexts/AuthContext";
 import {
   supabaseHelpers,
   isSimilarRoute,
+  isSamePickup,
   isPointWithinAnyTerminalBorder,
   isPointWithinAnyTerminalRoute,
   isPointWithinTerminalRoute,
@@ -23,6 +24,8 @@ interface AvailableLobby {
   pickup_address: string;
   dropoff_location: string;
   dropoff_address: string;
+  dropoff_lat?: number | string | null;
+  dropoff_lng?: number | string | null;
   passengers_json?: Array<{
     id: string;
     name: string;
@@ -51,6 +54,9 @@ interface BrowseAvailableLobbiesProps {
   pickupCoords?: { lat: number; lng: number } | null;
   /** Terminal the pickup came from, when it came from the terminal picker. */
   terminalId?: string | null;
+  /** The selected terminal service road, used to match different drop-offs on one route. */
+  routePoints?: Array<{ lat: number; lng: number }> | null;
+  routeWidthM?: number | null;
   /** The joining customer's own drop-off, recorded on their lobby passenger. */
   dropoff: string;
   dropoffAddress: string;
@@ -78,6 +84,8 @@ export default function BrowseAvailableLobbies({
   pickupAddress,
   pickupCoords,
   terminalId,
+  routePoints,
+  routeWidthM,
   dropoff,
   dropoffAddress,
   dropoffCoords,
@@ -104,8 +112,30 @@ export default function BrowseAvailableLobbies({
     // Treat a stored terminal ID as authoritative when both sides have one;
     // older lobbies without one fall back to normalized place matching.
     if (terminalId && lobby.terminal_id && lobby.terminal_id !== terminalId) return false;
+
+    const hasCoordinates = lobby.dropoff_lat != null && lobby.dropoff_lng != null && dropoffCoords;
+    const hasSelectedRoute = Array.isArray(routePoints) && routePoints.length >= 2;
+    if (hasCoordinates && hasSelectedRoute) {
+      const lobbyDropoff = { lat: Number(lobby.dropoff_lat), lng: Number(lobby.dropoff_lng) };
+      const validLobbyDropoff = Number.isFinite(lobbyDropoff.lat) && Number.isFinite(lobbyDropoff.lng);
+      const customerDropoffOnRoute = isPointWithinTerminalRoute(dropoffCoords.lat, dropoffCoords.lng, {
+        road: routePoints,
+        widthM: routeWidthM,
+      });
+      const lobbyDropoffOnRoute = validLobbyDropoff && isPointWithinTerminalRoute(
+        lobbyDropoff.lat,
+        lobbyDropoff.lng,
+        { road: routePoints, widthM: routeWidthM },
+      );
+
+      // Passengers can get off at different addresses along the same plotted
+      // road, so compare their drop-off points to the selected route itself.
+      return customerDropoffOnRoute && lobbyDropoffOnRoute &&
+        isSamePickup(lobby, pickup, pickupAddress, terminalId);
+    }
+
     return isSimilarRoute(lobby, pickup, dropoff, pickupAddress, dropoffAddress, terminalId);
-  }, [sameRouteLobbyFilter, terminalId, pickup, pickupAddress, dropoff, dropoffAddress]);
+  }, [sameRouteLobbyFilter, terminalId, pickup, pickupAddress, dropoff, dropoffAddress, dropoffCoords, routePoints, routeWidthM]);
 
   // Fetch available lobbies on mount
   useEffect(() => {
