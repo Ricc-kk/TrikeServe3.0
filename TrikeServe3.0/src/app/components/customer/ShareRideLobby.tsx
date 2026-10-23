@@ -120,6 +120,8 @@ interface ShareRideLobbyProps {
   pricePerSeat?: number;
   paymentMethod?: 'COD';
   selectedTerminalId?: string | null;
+  routePoints?: Array<{ lat: number; lng: number }> | null;
+  routeWidthM?: number | null;
   onDriverFound: (lobbyId: string) => void;
   onLobbyLoaded?: (lobbyId: string) => void;
   onClose: (status?: string) => void;
@@ -140,6 +142,8 @@ export default function ShareRideLobby({
   pricePerSeat = 15,
   paymentMethod = 'COD',
   selectedTerminalId,
+  routePoints,
+  routeWidthM,
   onDriverFound,
   onLobbyLoaded,
   onClose
@@ -1026,7 +1030,11 @@ export default function ShareRideLobby({
         });
 
         const routeMatchedLobby = userLobbyCandidates
-          .filter((l: any) => isSimilarRoute(l, pickup, dropoff, pickupAddress, dropoffAddress, selectedTerminalId))
+          .filter((l: any) => isSimilarRoute(l, pickup, dropoff, pickupAddress, dropoffAddress, selectedTerminalId, {
+            dropoffCoords,
+            routePoints,
+            routeWidthM,
+          }))
           .sort((a: any, b: any) => toTime(b.updated_at || b.created_at) - toTime(a.updated_at || a.created_at))[0];
 
         const existingUserLobby = routeMatchedLobby || userLobbyCandidates
@@ -1049,7 +1057,8 @@ export default function ShareRideLobby({
         dropoffAddress,
         pickup,
         dropoff,
-        selectedTerminalId
+        selectedTerminalId,
+        { dropoffCoords, routePoints, routeWidthM },
       );
 
       if (!matchError && matchingLobby) {
@@ -1294,10 +1303,10 @@ if (matchingRouteLobby) {
           <Users className="size-7 text-[var(--primary)]" aria-hidden="true" />
         </div>
         <h3 id="matching-lobby-title" className="text-xl font-bold text-[var(--ink)] text-center mb-2">
-          A lobby already matches your route
+          A lobby is already on this route
         </h3>
         <p className="text-sm text-[var(--muted-foreground)] text-center mb-4">
-          Choose whether to join the existing shared ride or start a separate lobby.
+          There's already a lobby with the same route. Do you want to join it?
         </p>
         <div className="rounded-xl bg-[var(--muted)] p-3 mb-4">
           <p className="text-sm font-semibold text-[var(--ink)] truncate">{matchingRouteLobby.pickup_location || pickup}</p>

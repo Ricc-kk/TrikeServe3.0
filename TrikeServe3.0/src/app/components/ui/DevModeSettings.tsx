@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
 import { Camera, Code2, MapPin, Route, Settings2, Trash2, Users, X } from "lucide-react";
 import { useDevModeFeature, useDevModeStatus } from "../../hooks/useDevModeSettings";
 import { Switch } from "./switch";
@@ -40,6 +40,51 @@ function SettingRow({
   );
 }
 
+interface FloatingPosition {
+  left: number;
+  top: number;
+}
+
+interface FloatingDrag {
+  pointerId: number;
+  startX: number;
+  startY: number;
+  startLeft: number;
+  startTop: number;
+  position: FloatingPosition;
+  moved: boolean;
+}
+
+const DEV_SETTINGS_POSITION_KEY = "trikeserve_dev_settings_position";
+const SETTINGS_ICON_SIZE = 56;
+const SETTINGS_MARGIN = 12;
+
+function clampFloatingPosition(position: FloatingPosition): FloatingPosition {
+  if (typeof window === "undefined") return position;
+  return {
+    left: Math.max(SETTINGS_MARGIN, Math.min(window.innerWidth - SETTINGS_ICON_SIZE - SETTINGS_MARGIN, position.left)),
+    top: Math.max(SETTINGS_MARGIN, Math.min(window.innerHeight - SETTINGS_ICON_SIZE - SETTINGS_MARGIN, position.top)),
+  };
+}
+
+function getInitialFloatingPosition(): FloatingPosition {
+  if (typeof window === "undefined") return { left: SETTINGS_MARGIN, top: SETTINGS_MARGIN };
+
+  try {
+    const saved = JSON.parse(window.localStorage.getItem(DEV_SETTINGS_POSITION_KEY) || "null");
+    if (Number.isFinite(saved?.left) && Number.isFinite(saved?.top)) {
+      return clampFloatingPosition({ left: saved.left, top: saved.top });
+    }
+  } catch {
+    // Use the default corner if the saved position is missing or unavailable.
+  }
+
+  return clampFloatingPosition({
+    left: window.innerWidth - SETTINGS_ICON_SIZE - 16,
+    top: window.innerHeight - SETTINGS_ICON_SIZE - 104,
+  });
+}
+
 export default function DevModeSettings() {
   const [isEnabled, setIsEnabled] = useDevModeStatus();
   const [quickAccessEnabled, setQuickAccessEnabled] = useDevModeFeature("quickAccess");
@@ -48,8 +93,74 @@ export default function DevModeSettings() {
   const [imageProofRequired, setImageProofRequired] = useDevModeFeature("imageProofRequired");
   const [sameRouteLobbyFilter, setSameRouteLobbyFilter] = useDevModeFeature("sameRouteLobbyFilter");
   const [isOpen, setIsOpen] = useState(false);
+  const [position, setPosition] = useState<FloatingPosition>(getInitialFloatingPosition);
   const panelRef = useRef<HTMLDivElement>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
+  const dragRef = useRef<FloatingDrag | null>(null);
+  const ignoreNextClickRef = useRef(false);
+
+  const handleDragStart = (event: ReactPointerEvent<HTMLElement>) => {
+    if (event.pointerType === "mouse" && event.button !== 0) return;
+    dragRef.current = {
+      pointerId: event.pointerId,
+      startX: event.clientX,
+      startY: event.clientY,
+      startLeft: position.left,
+      startTop: position.top,
+      position,
+      moved: false,
+    };
+    event.currentTarget.setPointerCapture(event.pointerId);
+  };
+
+  const handleDragMove = (event: ReactPointerEvent<HTMLElement>) => {
+    const drag = dragRef.current;
+    if (!drag || drag.pointerId !== event.pointerId) return;
+
+    const deltaX = event.clientX - drag.startX;
+    const deltaY = event.clientY - drag.startY;
+    if (!drag.moved && Math.hypot(deltaX, deltaY) < 4) return;
+
+    drag.moved = true;
+    drag.position = clampFloatingPosition({
+      left: drag.startLeft + deltaX,
+      top: drag.startTop + deltaY,
+    });
+    setPosition(drag.position);
+  };
+
+  const handleDragEnd = (event: ReactPointerEvent<HTMLElement>) => {
+    const drag = dragRef.current;
+    if (!drag || drag.pointerId !== event.pointerId) return;
+
+    dragRef.current = null;
+    if (!drag.moved) return;
+
+    setPosition(drag.position);
+    try {
+      window.localStorage.setItem(DEV_SETTINGS_POSITION_KEY, JSON.stringify(drag.position));
+    } catch {
+      // The icon remains movable for this session if storage is unavailable.
+    }
+    ignoreNextClickRef.current = true;
+    window.setTimeout(() => {
+      ignoreNextClickRef.current = false;
+    }, 0);
+  };
+
+  const handleTriggerClick = () => {
+    if (ignoreNextClickRef.current) {
+      ignoreNextClickRef.current = false;
+      return;
+    }
+    setIsOpen((open) => !open);
+  };
+
+  useEffect(() => {
+    const clampPositionOnResize = () => setPosition((current) => clampFloatingPosition(current));
+    window.addEventListener("resize", clampPositionOnResize);
+    return () => window.removeEventListener("resize", clampPositionOnResize);
+  }, []);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -76,18 +187,41 @@ export default function DevModeSettings() {
 
   if (!isEnabled) return null;
 
+  const panelWidth = Math.min(352, window.innerWidth - 32);
+  const panelLeft = Math.max(
+    16,
+    Math.min(window.innerWidth - panelWidth - 16, position.left + SETTINGS_ICON_SIZE - panelWidth),
+  );
+  const aboveSpace = position.top - SETTINGS_MARGIN;
+  const belowSpace = window.innerHeight - position.top - SETTINGS_ICON_SIZE - SETTINGS_MARGIN;
+  const panelOpensBelow = belowSpace > aboveSpace;
+  const panelMaxHeight = Math.max(160, Math.min(window.innerHeight - SETTINGS_MARGIN * 2, Math.max(aboveSpace, belowSpace)));
+
   return (
-    <div className="fixed bottom-[calc(5.5rem+env(safe-area-inset-bottom))] right-4 z-[10001]">
+    <div className="fixed z-[10001]" style={{ left: position.left, top: position.top }}>
       {isOpen && (
         <div
           ref={panelRef}
           id="dev-mode-settings-panel"
           role="dialog"
           aria-labelledby="dev-mode-settings-title"
-          className="absolute bottom-[calc(100%+0.75rem)] right-0 w-[min(22rem,calc(100vw-2rem))] overflow-hidden rounded-2xl border border-line bg-card p-4 shadow-2xl shadow-black/20 animate-in fade-in slide-in-from-bottom-2"
+          style={{
+            left: panelLeft - position.left,
+            top: panelOpensBelow ? `calc(100% + 0.75rem)` : "auto",
+            bottom: panelOpensBelow ? "auto" : `calc(100% + 0.75rem)`,
+            maxHeight: panelMaxHeight,
+          }}
+          className="absolute w-[min(22rem,calc(100vw-2rem))] overflow-y-auto rounded-2xl border border-line bg-card p-4 shadow-2xl shadow-black/20 animate-in fade-in slide-in-from-bottom-2"
         >
           <div className="mb-4 flex items-start justify-between gap-3">
-            <div>
+            <div
+              className="min-w-0 cursor-move touch-none select-none"
+              title="Drag to move developer settings"
+              onPointerDown={handleDragStart}
+              onPointerMove={handleDragMove}
+              onPointerUp={handleDragEnd}
+              onPointerCancel={handleDragEnd}
+            >
               <div className="mb-1 flex items-center gap-2">
                 <span className="grid size-8 place-items-center rounded-lg bg-[var(--primary-soft)] text-[var(--primary)]">
                   <Code2 className="size-4" aria-hidden="true" />
@@ -168,12 +302,16 @@ export default function DevModeSettings() {
       <button
         ref={triggerRef}
         type="button"
-        onClick={() => setIsOpen((open) => !open)}
+        onClick={handleTriggerClick}
+        onPointerDown={handleDragStart}
+        onPointerMove={handleDragMove}
+        onPointerUp={handleDragEnd}
+        onPointerCancel={handleDragEnd}
         aria-label={isOpen ? "Close developer settings" : "Open developer settings"}
         aria-expanded={isOpen}
         aria-controls="dev-mode-settings-panel"
-        title="Developer settings"
-        className="grid size-14 place-items-center rounded-full border border-white/15 bg-[var(--ink-solid)] text-white shadow-lg shadow-black/25 transition-transform hover:scale-105 hover:bg-[var(--primary)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--primary)] focus-visible:ring-offset-2"
+        title="Drag to move; click to open developer settings"
+        className="grid size-14 touch-none cursor-move place-items-center rounded-full border border-white/15 bg-[var(--ink-solid)] text-white shadow-lg shadow-black/25 transition-transform hover:scale-105 hover:bg-[var(--primary)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--primary)] focus-visible:ring-offset-2"
       >
         {isOpen ? <X className="size-6" aria-hidden="true" /> : <Settings2 className="size-6" aria-hidden="true" />}
         <span className="sr-only">Dev mode on</span>

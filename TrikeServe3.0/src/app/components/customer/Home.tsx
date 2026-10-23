@@ -5194,6 +5194,8 @@ const getPrice = () => {
           pricePerSeat={shareFarePerSeat}
           paymentMethod={paymentMethod}
           selectedTerminalId={selectedTerminalId}
+          routePoints={selectedTerminalBoundary.displayRoad}
+          routeWidthM={selectedTerminalBoundary.routeWidthM}
           onLobbyLoaded={(lobbyId) => {
             // Persist the active lobby as soon as it opens so the return-to-ride
             // button works even before a driver accepts.

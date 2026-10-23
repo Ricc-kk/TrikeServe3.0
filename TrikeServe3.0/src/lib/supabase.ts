@@ -1729,7 +1729,7 @@ export function isSamePickup(
   userPickupAddress?: string,
   userTerminalId?: string | null
 ): boolean {
-  if (userTerminalId && lobby.terminal_id && lobby.terminal_id === userTerminalId) return true;
+  if (userTerminalId && lobby.terminal_id) return lobby.terminal_id === userTerminalId;
 
   return (
     placesMatch(lobby.pickup_location, userPickup) ||
@@ -1751,15 +1751,38 @@ export function isSimilarRoute(
   userDropoff: string,
   userPickupAddress?: string,
   userDropoffAddress?: string,
-  userTerminalId?: string | null
+  userTerminalId?: string | null,
+  routeContext?: {
+    dropoffCoords?: LatLngPoint | null;
+    routePoints?: LatLngPoint[] | null;
+    routeWidthM?: number | null;
+  }
 ): boolean {
+  const pickupMatch = isSamePickup(lobby, userPickup, userPickupAddress, userTerminalId);
+  if (!pickupMatch) return false;
+
+  const lobbyDropoffLat = Number(lobby.dropoff_lat);
+  const lobbyDropoffLng = Number(lobby.dropoff_lng);
+  const hasLobbyDropoffCoords = lobby.dropoff_lat != null && lobby.dropoff_lng != null &&
+    Number.isFinite(lobbyDropoffLat) && Number.isFinite(lobbyDropoffLng);
+  const hasRouteGeometry = Array.isArray(routeContext?.routePoints) && routeContext.routePoints.length >= 2;
+
+  if (routeContext?.dropoffCoords && hasLobbyDropoffCoords && hasRouteGeometry) {
+    const route = { road: routeContext.routePoints!, widthM: routeContext.routeWidthM };
+    return isPointWithinTerminalRoute(
+      routeContext.dropoffCoords.lat,
+      routeContext.dropoffCoords.lng,
+      route,
+    ) && isPointWithinTerminalRoute(lobbyDropoffLat, lobbyDropoffLng, route);
+  }
+
   const dropoffMatch =
     placesMatch(lobby.dropoff_location, userDropoff) ||
     placesMatch(lobby.dropoff_location, userDropoffAddress) ||
     placesMatch(lobby.dropoff_address, userDropoffAddress) ||
     placesMatch(lobby.dropoff_address, userDropoff);
 
-  return isSamePickup(lobby, userPickup, userPickupAddress, userTerminalId) && dropoffMatch;
+  return dropoffMatch;
 }
 
 /**
@@ -2083,7 +2106,18 @@ export const supabaseHelpers = {
   },
 
   // Enhanced Shared Ride Lobby Operations
-  async getAvailableLobbyByRoute(pickupAddr: string, dropoffAddr: string, pickupLoc?: string, dropoffLoc?: string, terminalId?: string | null) {
+  async getAvailableLobbyByRoute(
+    pickupAddr: string,
+    dropoffAddr: string,
+    pickupLoc?: string,
+    dropoffLoc?: string,
+    terminalId?: string | null,
+    routeContext?: {
+      dropoffCoords?: LatLngPoint | null;
+      routePoints?: LatLngPoint[] | null;
+      routeWidthM?: number | null;
+    },
+  ) {
     const { data, error } = await supabase
       .from('shared_ride_lobbies')
       .select('*')
@@ -2095,7 +2129,7 @@ export const supabaseHelpers = {
 
     // Match on short display names first, falling back to the full addresses.
     const match = (data || []).find((l: any) =>
-      isSimilarRoute(l, pickupLoc || pickupAddr, dropoffLoc || dropoffAddr, pickupAddr, dropoffAddr, terminalId)
+      isSimilarRoute(l, pickupLoc || pickupAddr, dropoffLoc || dropoffAddr, pickupAddr, dropoffAddr, terminalId, routeContext)
     );
 
     return { data: match || null, error };
