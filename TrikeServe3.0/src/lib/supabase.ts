@@ -2581,6 +2581,55 @@ export const supabaseHelpers = {
     return { data, error };
   },
 
+  // Persist drop-off progress per passenger so a rider can advance through a
+  // shared ride without treating every passenger as dropped off at once.
+  async updateLobbyPassengerDropoffStatus(lobbyId: string, passengerId: string, status: string) {
+    const { data: lobby, error: readError } = await supabase
+      .from('shared_ride_lobbies')
+      .select('passengers_json')
+      .eq('id', lobbyId)
+      .maybeSingle();
+
+    if (readError || !lobby) {
+      return { data: null, error: readError || new Error('Shared ride lobby was not found') };
+    }
+
+    let passengers = lobby.passengers_json;
+    if (typeof passengers === 'string') {
+      try {
+        passengers = JSON.parse(passengers);
+      } catch {
+        passengers = [];
+      }
+    }
+    if (!Array.isArray(passengers)) passengers = [];
+
+    let foundPassenger = false;
+    const timestamp = new Date().toISOString();
+    const updatedPassengers = passengers.map((passenger: any) => {
+      if (String(passenger?.id || '') !== passengerId) return passenger;
+      foundPassenger = true;
+      return {
+        ...passenger,
+        dropoff_status: status,
+        dropoff_status_updated_at: timestamp,
+      };
+    });
+
+    if (!foundPassenger) {
+      return { data: null, error: new Error('Passenger was not found in this shared ride') };
+    }
+
+    const { data, error } = await supabase
+      .from('shared_ride_lobbies')
+      .update({ passengers_json: updatedPassengers, updated_at: timestamp })
+      .eq('id', lobbyId)
+      .select('id, passengers_json')
+      .single();
+
+    return { data, error };
+  },
+
   // Save the driver's real-time GPS location to the lobby so customers
   // can see live tracking on their map.
   async updateLobbyDriverLocation(lobbyId: string, lat: number, lng: number) {

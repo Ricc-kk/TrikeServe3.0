@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { useNavigate, useLocation } from "react-router";
-import { ArrowLeft, Navigation, MapPin, CheckCircle, Users, User, X, MessageSquare, Flag } from "lucide-react";
+import { Navigation, MapPin, CheckCircle, Users, User, X, MessageSquare, Flag } from "lucide-react";
 import { GoogleMap, Marker, InfoWindow, DirectionsRenderer, Polyline } from "@react-google-maps/api";
 import { Button } from "../ui/button";
 import { Card } from "../ui/card";
@@ -122,6 +122,10 @@ const SHARED_DROPOFF_COLORS = [
   '#A16207', // amber
 ];
 
+const SILENT_LOBBY_STATUS_MESSAGE = '__silent__';
+const passengerStatusMessage = (passengerId: string, message: string) =>
+  `[[passenger:${passengerId}]] ${message}`;
+
 type RideCoordinate = { lat: number; lng: number };
 
 interface SharedDropoffStop {
@@ -152,6 +156,9 @@ function getSharedDropoffStops(ride: ActiveRideData | null): SharedDropoffStop[]
   const primaryDropoff = coordinateFromValues(ride.dropoffLat, ride.dropoffLng);
   const pickup = coordinateFromValues(ride.pickupLat, ride.pickupLng);
   const passengerStops = passengers.flatMap((passenger: any, index: number) => {
+    if (['dropped-off', 'completed'].includes(String(passenger?.dropoff_status || passenger?.dropoffStatus || '').toLowerCase())) {
+      return [];
+    }
     const passengerId = passenger?.id == null ? '' : String(passenger.id);
     const isPrimaryPassenger = passengerId && ride.customerId
       ? passengerAccountId(passengerId) === String(ride.customerId)
@@ -406,8 +413,15 @@ export default function ActiveRide() {
    * both sides land in one thread rather than two half-used ones.
    */
   const [chatId, setChatId] = useState<string | null>(null);
+  const [chatPeer, setChatPeer] = useState<{
+    id: string;
+    name: string;
+    avatar: string | null;
+    isGroup: boolean;
+  } | null>(null);
   /** Whether the chat overlay is showing. */
   const [chatPopupOpen, setChatPopupOpen] = useState(false);
+  const [confirmingDropoffPassengerId, setConfirmingDropoffPassengerId] = useState<string | null>(null);
   /** Messages from the passenger the driver has not looked at yet. */
   const [unreadFromPassenger, setUnreadFromPassenger] = useState(0);
   /** Latest message seen in this ride thread, excluding badge-only updates. */
@@ -531,16 +545,30 @@ export default function ActiveRide() {
    * messages. Handing off to the real Messages tab means one conversation list,
    * one place where "unread" means something.
    */
-  const openPassengerChat = useCallback(async () => {
-    const peerId = rideData?.customerId || rideData?.passengerDetails?.[0]?.id;
+  const openPassengerChat = useCallback(async (target?: { id: string; name: string }) => {
+    const passengers = Array.isArray(rideData?.passengerDetails) ? rideData.passengerDetails : [];
+    const defaultPeerId = rideData?.customerId || passengerAccountId(passengers[0]?.id);
+    const peerId = target
+      ? passengerAccountId(target.id) || rideData?.customerId
+      : chatPeer?.id || defaultPeerId;
     if (!peerId || !user?.id) return;
+
+    const peerPassenger = passengers.find((passenger: any) =>
+      String(passenger?.id || '') === peerId && !String(passenger?.id || '').includes('_companion_')
+    ) || passengers.find((passenger: any) => passengerAccountId(passenger?.id) === peerId);
+    const peerName = target
+      ? peerPassenger?.name || target.name
+      : chatPeer?.name || peerPassenger?.name || rideData?.customerName || 'Passenger';
+    const peerAvatar = passengerAvatars[peerId] || (!target ? passengerAvatar : null);
+    const peerIsGroup = !target && !chatPeer && rideData?.customerPhoto === 'shared';
+    setChatPeer({ id: peerId, name: peerName, avatar: peerAvatar, isGroup: peerIsGroup });
 
     const { data, error } = await supabaseHelpers.findOrCreateRideChat({
       currentUserId: user.id,
       currentUserName: user.name,
       currentUserRole: user.role,
       peerId,
-      peerName: rideData.customerName,
+      peerName,
       contextId: rideData.id,
     });
     if (error || !data) return;
@@ -565,7 +593,20 @@ export default function ActiveRide() {
     // the map, the ride sheet and the floating head are all still there behind
     // the chat, and closing it costs the driver nothing.
     setChatPopupOpen(true);
-  }, [rideData?.customerId, rideData?.id, user?.id, navigate, passengerAvatar, resolvedName, rideData?.customerName]);
+  }, [
+    chatPeer?.id,
+    chatPeer?.name,
+    passengerAvatar,
+    passengerAvatars,
+    rideData?.customerId,
+    rideData?.customerName,
+    rideData?.customerPhoto,
+    rideData?.id,
+    rideData?.passengerDetails,
+    user?.id,
+    user?.name,
+    user?.role,
+  ]);
 
   /**
    * Park the chat head mid-screen the first time it appears.
@@ -590,7 +631,8 @@ export default function ActiveRide() {
    * for them every time this screen mounts.
    */
   const resolvePassengerChat = useCallback(async () => {
-    const peerId = rideData?.customerId || rideData?.passengerDetails?.[0]?.id;
+    const firstPassengerId = passengerAccountId(rideData?.passengerDetails?.[0]?.id);
+    const peerId = rideData?.customerId || firstPassengerId;
     if (!peerId || !user?.id) return;
 
     const { data } = await supabase
@@ -607,7 +649,7 @@ export default function ActiveRide() {
     // actually in use rather than an arbitrary stale copy.
     mine.sort((a: any, b: any) => (b.updated_at || '').localeCompare(a.updated_at || ''));
     setChatId(mine[0].id);
-  }, [rideData?.customerId, user?.id]);
+  }, [rideData?.customerId, rideData?.passengerDetails, user?.id]);
 
   useEffect(() => {
     if (chatId || !chatStarted || !user?.id) return;
@@ -1375,7 +1417,13 @@ export default function ActiveRide() {
     }).catch((err) => console.error('❌ Failed to send delivery notification:', err));
   };
 
-  const notifyRideProgress = async (ride: any, dbStatus: string, reason?: string) => {
+  const notifyRideProgress = async (
+    ride: any,
+    dbStatus: string,
+    reason?: string,
+    targetPassengerId?: string,
+    customMessage?: string,
+  ) => {
     if (isDeliveryRide(ride) || !user?.id) return;
 
     const statusMessages: Record<string, string> = {
@@ -1386,15 +1434,15 @@ export default function ActiveRide() {
       'awaiting-payment': "I'm at your destination. Please prepare your fare.",
       completed: "I've completed the ride. Thank you for riding with me.",
     };
-    const message = dbStatus === 'cancelled'
+    const message = customMessage || (dbStatus === 'cancelled'
       ? `I've cancelled this ride.${reason ? ` Reason: ${reason}` : ''}`
-      : statusMessages[dbStatus];
+      : statusMessages[dbStatus]);
     if (!message) return;
 
     const passengers = Array.isArray(ride.passengerDetails) ? ride.passengerDetails : [];
     const passengerNames = new Map(
       passengers
-        .filter((passenger: any) => passenger?.id)
+        .filter((passenger: any) => passenger?.id && !String(passenger.id).includes('_companion_'))
         .map((passenger: any) => [String(passenger.id), passenger.name || 'Customer']),
     );
     const passengerIds = passengers
@@ -1402,10 +1450,12 @@ export default function ActiveRide() {
       .filter((id: string) => id && !/_companion_\d+$/.test(id));
     const sharedRide = Boolean(ride.lobbyId) || ride.type === 'shared';
     const primaryPassengerId = String(ride.customerId || (!sharedRide ? passengerIds[0] : '') || '');
-    const recipientIds = [...new Set(
+    const allRecipientIds = [...new Set(
       (sharedRide ? [...passengerIds, primaryPassengerId] : [primaryPassengerId])
         .filter((id) => id && !/_companion_\d+$/.test(id)),
     )];
+    const targetedRecipientId = targetPassengerId ? passengerAccountId(targetPassengerId) : '';
+    const recipientIds = targetedRecipientId ? [targetedRecipientId] : allRecipientIds;
     const rideId = String(ride.lobbyId || ride.id || '');
     if (!rideId || recipientIds.length === 0) return;
 
@@ -1424,6 +1474,78 @@ export default function ActiveRide() {
     });
   };
 
+  const confirmSharedPassengerDropoff = async (passengerId: string) => {
+    if (!rideData || !isSharedRide || confirmingDropoffPassengerId) return;
+    const passengers = Array.isArray(rideData.passengerDetails) ? rideData.passengerDetails : [];
+    const targetPassenger = passengers.find((passenger: any) => String(passenger?.id || '') === passengerId);
+    if (!targetPassenger || ['dropped-off', 'completed'].includes(String(targetPassenger.dropoff_status || targetPassenger.dropoffStatus || '').toLowerCase())) {
+      return;
+    }
+
+    setConfirmingDropoffPassengerId(passengerId);
+    const updatedPassengers = passengers.map((passenger: any) =>
+      String(passenger?.id || '') === passengerId
+        ? { ...passenger, dropoff_status: 'dropped-off', dropoff_status_updated_at: new Date().toISOString() }
+        : passenger,
+    );
+    const remainingPassengers = updatedPassengers.filter((passenger: any) =>
+      !['dropped-off', 'completed'].includes(String(passenger?.dropoff_status || passenger?.dropoffStatus || '').toLowerCase())
+    );
+    const hasMoreDropoffs = remainingPassengers.length > 0;
+    const nextStatus: RideStatus = hasMoreDropoffs ? 'pickup' : 'payment';
+    const updatedRide = { ...rideData, passengerDetails: updatedPassengers, status: nextStatus };
+    setRideData(updatedRide);
+    writeRiderActiveRide(updatedRide);
+
+    try {
+      if (rideData.lobbyId) {
+        const passengerUpdate = await supabaseHelpers.updateLobbyPassengerDropoffStatus(
+          rideData.lobbyId,
+          passengerId,
+          'dropped-off',
+        );
+        if (passengerUpdate.error) {
+          console.error('[ActiveRide] Could not save passenger drop-off status:', passengerUpdate.error);
+        }
+
+        const lobbyStatus = hasMoreDropoffs ? 'picked-up' : 'awaiting-payment';
+        const lobbyMessage = hasMoreDropoffs
+          ? passengerStatusMessage(passengerId, 'Your driver has dropped you off.')
+          : 'Please complete the payment.';
+        const lobbyUpdate = await supabaseHelpers.updateLobbyDriverStatus(
+          rideData.lobbyId,
+          lobbyStatus,
+          lobbyMessage,
+        );
+        if (lobbyUpdate.error) {
+          console.error('[ActiveRide] Could not update shared ride progress:', lobbyUpdate.error);
+        }
+      } else {
+        const rideStatus = hasMoreDropoffs ? 'picked-up' : 'awaiting-payment';
+        const rideMessage = hasMoreDropoffs
+          ? passengerStatusMessage(passengerId, 'Your driver has dropped you off.')
+          : 'Please complete the payment.';
+        const rideUpdate = await supabaseHelpers.updateDriverRideStatus(rideData.id, rideStatus, rideMessage);
+        if (rideUpdate.error) console.error('[ActiveRide] Could not update shared ride progress:', rideUpdate.error);
+      }
+
+      await notifyRideProgress(
+        updatedRide,
+        'dropped-off',
+        undefined,
+        passengerId,
+        'Your driver has dropped you off.',
+      );
+      if (!hasMoreDropoffs) {
+        await notifyRideProgress(updatedRide, 'awaiting-payment');
+      }
+    } catch (error) {
+      console.error('[ActiveRide] Could not finish passenger drop-off:', error);
+    } finally {
+      setConfirmingDropoffPassengerId(null);
+    }
+  };
+
   const updateStatus = (newStatus: RideStatus) => {
     if (!rideData) return;
     const updated = { ...rideData, status: newStatus };
@@ -1437,16 +1559,27 @@ export default function ActiveRide() {
       'drop-off': 'Arrived at drop-off!',
       'payment': 'Please complete the payment.',
     };
+    const waitsForPassengerDropoff = Boolean(
+      newStatus === 'drop-off' && isSharedRide && rideData.passengerDetails?.length,
+    );
     if (rideData.lobbyId) {
       // Lobby rides have no ride_requests row until completion, so track the
       // driver's progress on the lobby itself so customers see status popups.
-      supabaseHelpers.updateLobbyDriverStatus(rideData.lobbyId, dbMap[newStatus], messageMap[newStatus]);
-      void notifyRideProgress(rideData, dbMap[newStatus]);
+      supabaseHelpers.updateLobbyDriverStatus(
+        rideData.lobbyId,
+        dbMap[newStatus],
+        waitsForPassengerDropoff ? SILENT_LOBBY_STATUS_MESSAGE : messageMap[newStatus],
+      );
+      if (!waitsForPassengerDropoff) void notifyRideProgress(rideData, dbMap[newStatus]);
     } else {
-      supabaseHelpers.updateDriverRideStatus(rideData.id, dbMap[newStatus], 'Status updated');
+      supabaseHelpers.updateDriverRideStatus(
+        rideData.id,
+        dbMap[newStatus],
+        waitsForPassengerDropoff ? SILENT_LOBBY_STATUS_MESSAGE : messageMap[newStatus],
+      );
       // Deliveries: notify the customer and the business.
       notifyDeliveryStatus(rideData, dbMap[newStatus], messageMap[newStatus]);
-      void notifyRideProgress(rideData, dbMap[newStatus]);
+      if (!waitsForPassengerDropoff) void notifyRideProgress(rideData, dbMap[newStatus]);
 
       /*
        * Accepting no longer moves the order itself -- it only records the rider,
@@ -1913,6 +2046,22 @@ export default function ActiveRide() {
 
   if (!rideData) return null;
 
+  const nextSharedDropoffPassenger = isSharedRide && rideData.passengerDetails?.length
+    ? rideData.passengerDetails.find((passenger: any) => String(passenger?.id || '') === sharedDropoffStops[0]?.id)
+      || rideData.passengerDetails.find((passenger: any) =>
+        !['dropped-off', 'completed'].includes(String(passenger?.dropoff_status || passenger?.dropoffStatus || '').toLowerCase())
+      )
+    : null;
+  const nextSharedDropoffPassengerId = nextSharedDropoffPassenger?.id == null
+    ? ''
+    : String(nextSharedDropoffPassenger.id);
+  const nextSharedDropoffPassengerIndex = nextSharedDropoffPassengerId
+    ? rideData.passengerDetails?.findIndex((passenger: any) => String(passenger?.id || '') === nextSharedDropoffPassengerId) ?? -1
+    : -1;
+  const nextSharedDropoffPassengerName = nextSharedDropoffPassenger && nextSharedDropoffPassengerIndex >= 0
+    ? getSharedPassengerName(nextSharedDropoffPassenger, nextSharedDropoffPassengerIndex, rideData.passengerDetails || [])
+    : '';
+
   /**
    * The single action for the ride's current phase.
    *
@@ -1932,7 +2081,13 @@ export default function ActiveRide() {
       case 'arrived':
         return { label: 'Confirm Pickup', onClick: () => updateStatus('pickup'), isComplete: false };
       case 'pickup':
-        return { label: 'Arrived at Drop-off', onClick: () => updateStatus('drop-off'), isComplete: false };
+        return {
+          label: isSharedRide && nextSharedDropoffPassengerName
+            ? `Arrived at ${nextSharedDropoffPassengerName}'s drop-off`
+            : 'Arrived at Drop-off',
+          onClick: () => updateStatus('drop-off'),
+          isComplete: false,
+        };
       case 'drop-off':
         if (isDeliveryRide(rideData)) {
           return {
@@ -1940,6 +2095,11 @@ export default function ActiveRide() {
             onClick: startDeliveryCompletion,
             isComplete: true,
           };
+        }
+        if (isSharedRide && rideData.passengerDetails?.length) {
+          return !nextSharedDropoffPassengerId
+            ? { label: 'Continue to payment', onClick: () => updateStatus('payment'), isComplete: false }
+            : null;
         }
         return { label: 'Confirm Drop-off', onClick: () => updateStatus('payment'), isComplete: false };
       case 'payment':
@@ -2036,21 +2196,8 @@ export default function ActiveRide() {
           and the ride screen is still there underneath it. */}
       {!chatPopupOpen && (
       <header className="bg-[var(--primary)] px-3 pt-[calc(env(safe-area-inset-top)+0.5rem)] pb-2 text-white shadow-md">
-        <div className="grid h-10 grid-cols-[2.25rem_minmax(0,1fr)_2.25rem] items-center">
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={() => navigate('/rider')}
-            aria-label="Back to rider dashboard"
-            className="rounded-full text-white hover:bg-white/20"
-          >
-            <ArrowLeft className="h-5 w-5" />
-          </Button>
+        <div className="flex h-10 items-center justify-center">
           <h1 className="text-center text-base font-bold leading-5">Active Ride</h1>
-          {/* The map and the detail sheet are resized by dragging the sheet's
-              handle, so this toggle was a redundant second way to do the same
-              thing. Removed rather than kept as a duplicate control. */}
-          <span className="size-9" aria-hidden="true" />
         </div>
       </header>
       )}
@@ -2290,11 +2437,11 @@ export default function ActiveRide() {
       <RideChatOverlay
         open={chatPopupOpen}
         conversationId={chatId}
-        peerId={rideData?.customerId || rideData?.passengerDetails?.[0]?.id || null}
+        peerId={chatPeer?.id || rideData?.customerId || passengerAccountId(rideData?.passengerDetails?.[0]?.id) || null}
         currentUserId={user?.id ?? null}
-        peerAvatar={passengerAvatar}
-        peerName={resolvedName || rideData.customerName || 'Passenger'}
-        peerIsGroup={rideData.customerPhoto === 'shared'}
+        peerAvatar={chatPeer ? chatPeer.avatar : passengerAvatar}
+        peerName={chatPeer?.name || resolvedName || rideData.customerName || 'Passenger'}
+        peerIsGroup={chatPeer?.isGroup ?? rideData.customerPhoto === 'shared'}
         senderRole="rider"
         onClose={() => setChatPopupOpen(false)}
       />
@@ -2306,9 +2453,9 @@ export default function ActiveRide() {
           headId={chatId || undefined}
           hidden={chatPopupOpen}
           storageKey="trikeserve_chat_head_pos_rider"
-          peerAvatar={passengerAvatar}
-          peerIsGroup={rideData.customerPhoto === 'shared'}
-          peerLabel={resolvedName || rideData.customerName || 'passenger'}
+          peerAvatar={chatPeer ? chatPeer.avatar : passengerAvatar}
+          peerIsGroup={chatPeer?.isGroup ?? rideData.customerPhoto === 'shared'}
+          peerLabel={chatPeer?.name || resolvedName || rideData.customerName || 'passenger'}
           unread={unreadFromPassenger}
           pulseKey={pulseKey}
           opened={chatOpened}
@@ -2412,13 +2559,15 @@ export default function ActiveRide() {
                 ₱{rideData.amount} · {isHeadingToPickup ? 'To pickup' : 'To drop-off'}
               </p>
             </div>
-            <Button
-              onClick={openPassengerChat}
-              aria-label="Message passenger"
-              className="size-11 flex-shrink-0 rounded-full bg-[var(--surface)] border-2 border-[var(--primary)] flex items-center justify-center"
-            >
-              <MessageSquare className="w-4 h-4 text-[var(--primary)]" aria-hidden="true" />
-            </Button>
+            {!isSharedRide && (
+              <Button
+                onClick={() => openPassengerChat()}
+                aria-label="Message passenger"
+                className="size-11 flex-shrink-0 rounded-full bg-[var(--surface)] border-2 border-[var(--primary)] flex items-center justify-center"
+              >
+                <MessageSquare className="w-4 h-4 text-[var(--primary)]" aria-hidden="true" />
+              </Button>
+            )}
           </Card>
         )}
 
@@ -2441,22 +2590,21 @@ export default function ActiveRide() {
           <>
             <Card className="p-4 border-2 border-[var(--muted)] shadow-sm">
               <div className="flex items-start gap-4 mb-3">
-                {/* Shared rides use individual passenger cards below. */}
-                <div className="size-14 flex-shrink-0 overflow-hidden rounded-full bg-[var(--primary-soft)] flex items-center justify-center">
-                  {isSharedRide ? (
-                    <Users className="w-6 h-6 text-[var(--primary)]" aria-hidden="true" />
-                  ) : passengerAvatar ? (
-                    <img
-                      src={passengerAvatar}
-                      alt={`${resolvedName || rideData.customerName || 'Passenger'}'s profile`}
-                      className="w-full h-full object-cover"
-                    />
-                  ) : rideData.customerPhoto === 'shared' ? (
-                    <Users className="w-6 h-6 text-[var(--primary)]" aria-hidden="true" />
-                  ) : (
-                    <User className="w-6 h-6 text-[var(--primary)]" aria-hidden="true" />
-                  )}
-                </div>
+                {!isSharedRide && (
+                  <div className="size-14 flex-shrink-0 overflow-hidden rounded-full bg-[var(--primary-soft)] flex items-center justify-center">
+                    {passengerAvatar ? (
+                      <img
+                        src={passengerAvatar}
+                        alt={`${resolvedName || rideData.customerName || 'Passenger'}'s profile`}
+                        className="w-full h-full object-cover"
+                      />
+                    ) : rideData.customerPhoto === 'shared' ? (
+                      <Users className="w-6 h-6 text-[var(--primary)]" aria-hidden="true" />
+                    ) : (
+                      <User className="w-6 h-6 text-[var(--primary)]" aria-hidden="true" />
+                    )}
+                  </div>
+                )}
                 <div className="min-w-0 flex-1">
                   <h2 className="font-bold text-lg">{isSharedRide ? 'Passengers' : resolvedName || rideData.customerName}</h2>
                   {isSharedRide && rideData.passengerDetails && rideData.passengerDetails.length > 0 && (
@@ -2468,6 +2616,8 @@ export default function ActiveRide() {
                         const profileUrl = passengerAvatars[ownerId]
                           || (typeof p.avatar === 'string' && (/^https?:\/\//i.test(p.avatar) || p.avatar.startsWith('data:image/')) ? p.avatar : null);
                         const stop = sharedDropoffStops.find(item => item.id === passengerId);
+                        const isDroppedOff = ['dropped-off', 'completed'].includes(String(p.dropoff_status || p.dropoffStatus || '').toLowerCase());
+                        const isNextDropoff = !isDroppedOff && nextSharedDropoffPassengerId === passengerId;
                         return (
                           <Card key={passengerId} className="border border-[var(--border)] bg-[var(--surface)] p-3 shadow-sm">
                             <div className="flex items-center justify-between gap-3">
@@ -2494,6 +2644,32 @@ export default function ActiveRide() {
                                 </span>
                               )}
                             </div>
+                            <div className="mt-3 flex items-center justify-between gap-2 border-t border-[var(--border)] pt-3">
+                              <span className={`rounded-full px-2.5 py-1 text-[10px] font-bold ${isDroppedOff ? 'bg-[var(--success-soft)] text-[var(--success)]' : isNextDropoff ? 'bg-[var(--primary-soft)] text-[var(--primary)]' : 'bg-[var(--muted)] text-[var(--muted-foreground)]'}`}>
+                                {isDroppedOff ? 'Dropped off' : isNextDropoff ? (rideData.status === 'drop-off' ? 'At drop-off' : 'Next drop-off') : 'Upcoming'}
+                              </span>
+                              <Button
+                                type="button"
+                                variant="outline"
+                                size="sm"
+                                onClick={() => void openPassengerChat({ id: passengerId, name: passengerName })}
+                                aria-label={`Message ${passengerName}`}
+                                className="min-h-9 border-[var(--border)] px-3 text-xs font-semibold"
+                              >
+                                <MessageSquare className="mr-1.5 size-4" aria-hidden="true" />
+                                Message
+                              </Button>
+                            </div>
+                            {isNextDropoff && rideData.status === 'drop-off' && (
+                              <Button
+                                type="button"
+                                onClick={() => void confirmSharedPassengerDropoff(passengerId)}
+                                disabled={confirmingDropoffPassengerId !== null}
+                                className="mt-2 w-full bg-[var(--primary)] py-2.5 text-sm font-bold text-white disabled:opacity-60"
+                              >
+                                {confirmingDropoffPassengerId === passengerId ? 'Saving drop-off…' : `Confirm ${passengerName} drop-off`}
+                              </Button>
+                            )}
                             <Button
                               type="button"
                               variant="outline"
@@ -2514,15 +2690,17 @@ export default function ActiveRide() {
                     <Badge variant="outline" className="text-[var(--muted-foreground)]">{rideData.payment === 'COD' ? 'Cash' : 'Prepaid'}</Badge>
                   </div>
                 </div>
-                <Button
-                  type="button"
-                  onClick={openPassengerChat}
-                  aria-label="Message customer"
-                  title="Message customer"
-                  className="size-11 flex-shrink-0 rounded-full bg-[var(--surface)] border-2 border-[var(--primary)] flex items-center justify-center"
-                >
-                  <MessageSquare className="w-4 h-4 text-[var(--primary)]" aria-hidden="true" />
-                </Button>
+                {!isSharedRide && (
+                  <Button
+                    type="button"
+                    onClick={() => openPassengerChat()}
+                    aria-label="Message customer"
+                    title="Message customer"
+                    className="size-11 flex-shrink-0 rounded-full bg-[var(--surface)] border-2 border-[var(--primary)] flex items-center justify-center"
+                  >
+                    <MessageSquare className="w-4 h-4 text-[var(--primary)]" aria-hidden="true" />
+                  </Button>
+                )}
               </div>
               <div className="space-y-3 mt-4">
                 <div className={`flex gap-3 p-2 rounded-lg ${isHeadingToPickup ? 'bg-[var(--success-soft)] border border-[var(--success-soft)]' : ''}`}>

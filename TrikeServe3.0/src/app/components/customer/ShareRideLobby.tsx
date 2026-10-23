@@ -477,12 +477,24 @@ export default function ShareRideLobby({
   const processDriverStatusUpdate = (lobbyId: string, driverStatus?: string, message?: string) => {
     if (!driverStatus) return;
     const normalizedStatus = String(driverStatus).toLowerCase();
-    const lastShownKey = `last_shown_status_lobby_${lobbyId}`;
+    const rawMessage = String(message || '');
+    if (rawMessage === '__silent__') return;
+
+    const targetedMessage = rawMessage.match(/^\[\[passenger:([^\]]+)\]\]\s*(.*)$/);
+    const targetPassengerId = targetedMessage?.[1] || '';
+    const notificationMessage = targetedMessage?.[2] || '';
+    if (targetPassengerId) {
+      const targetAccountId = targetPassengerId.split('_companion_')[0];
+      if (!user?.id || targetAccountId !== user.id) return;
+    }
+
+    const lastShownKey = `last_shown_status_lobby_${lobbyId}_${user?.id || 'guest'}`;
     const lastShownStatus = localStorage.getItem(lastShownKey);
+    const statusEventKey = `${normalizedStatus}:${targetPassengerId || 'all'}`;
 
     if (normalizedStatus === 'completed' || normalizedStatus === 'cancelled') return;
 
-    if (normalizedStatus && normalizedStatus !== 'pending' && normalizedStatus !== lastShownStatus) {
+    if (normalizedStatus && normalizedStatus !== 'pending' && statusEventKey !== lastShownStatus) {
       const statusDisplayMap: { [key: string]: string } = {
         'on-the-way': 'Your driver is on the way to pick you up.',
         'arrived': 'Your driver has arrived.',
@@ -504,9 +516,9 @@ export default function ShareRideLobby({
 
       setDriverStatusPopup({
         status: displayStatus,
-        message: statusDisplayMap[normalizedStatus] || message || 'Ride status updated',
+        message: notificationMessage || statusDisplayMap[normalizedStatus] || rawMessage || 'Ride status updated',
       });
-      localStorage.setItem(lastShownKey, normalizedStatus);
+      localStorage.setItem(lastShownKey, statusEventKey);
 
       // Auto-dismiss after 2 seconds for every status, not only payment, so the
       // popup never sits over the lobby waiting for an OK tap. It also closes on
@@ -595,12 +607,19 @@ export default function ShareRideLobby({
     const maps = (window as any).google?.maps;
     if (!map || !maps?.LatLngBounds) return;
 
-    const passengerDropoffs = (lobby?.passengers_json || []).flatMap(passenger => {
-      if (passenger.dropoffLat == null || passenger.dropoffLng == null) return [];
-      const lat = Number(passenger.dropoffLat);
-      const lng = Number(passenger.dropoffLng);
-      return Number.isFinite(lat) && Number.isFinite(lng) ? [{ lat, lng }] : [];
-    });
+    const passengerDropoffs = (lobby?.passengers_json || [])
+      .filter(passenger => Boolean(
+        user?.id && (
+          passenger.id === user.id ||
+          passenger.id.startsWith(`${user.id}_companion_`)
+        )
+      ))
+      .flatMap(passenger => {
+        if (passenger.dropoffLat == null || passenger.dropoffLng == null) return [];
+        const lat = Number(passenger.dropoffLat);
+        const lng = Number(passenger.dropoffLng);
+        return Number.isFinite(lat) && Number.isFinite(lng) ? [{ lat, lng }] : [];
+      });
     const endpoints = [pickupCoords, dropoffCoords, ...passengerDropoffs].filter(
       (point): point is { lat: number; lng: number } => point !== null && point !== undefined,
     );
@@ -609,7 +628,7 @@ export default function ShareRideLobby({
     const bounds = new maps.LatLngBounds();
     points.forEach((point) => bounds.extend(point));
     map.fitBounds(bounds, 24);
-  }, [terminalRoutePath, pickupCoords, dropoffCoords, lobby?.passengers_json]);
+  }, [terminalRoutePath, pickupCoords, dropoffCoords, lobby?.passengers_json, user?.id]);
 
   useEffect(() => {
     fitLobbyRouteBounds();
@@ -933,12 +952,18 @@ export default function ShareRideLobby({
     });
   }, [driverLocation, isMapsLoaded, lobby?.driver_status, pickupCoords, dropoffCoords]);
 
-  // Route from pickup through each distinct passenger drop-off, in stop order.
+  // Route from pickup through only this customer's drop-offs.
   useEffect(() => {
     setDestinationRoutePath([]);
     if (!pickupCoords || !isMapsLoaded || !(window as any).google) return;
 
-    const destinations = orderLobbyDropoffs(lobby?.passengers_json || [], pickupCoords)
+    const customerPassengers = (lobby?.passengers_json || []).filter(passenger => Boolean(
+      user?.id && (
+        passenger.id === user.id ||
+        passenger.id.startsWith(`${user.id}_companion_`)
+      )
+    ));
+    const destinations = orderLobbyDropoffs(customerPassengers, pickupCoords)
       .flatMap(({ passenger }) => {
         if (passenger.dropoffLat == null || passenger.dropoffLng == null) return [];
         const lat = Number(passenger.dropoffLat);
@@ -980,7 +1005,7 @@ export default function ShareRideLobby({
     });
 
     return () => { active = false; };
-  }, [pickupCoords, dropoffCoords, lobby?.passengers_json, isMapsLoaded]);
+  }, [pickupCoords, dropoffCoords, lobby?.passengers_json, isMapsLoaded, user?.id]);
 
   // Only load the signed-in customer's own profile photo for this lobby.
   const passengerIdsKey = user?.id && (lobby?.passengers_json || []).some(passenger => passenger.id === user.id)
@@ -1383,26 +1408,7 @@ if (matchingRouteLobby) {
   return (
     <div className="fixed inset-0 bg-black/60 z-[2600] flex items-center justify-center p-4">
       <Card role="dialog" aria-modal="true" aria-labelledby="matching-lobby-title" className="bg-surface p-6 max-w-sm w-full shadow-2xl">
-        <div className="w-14 h-14 rounded-full bg-[var(--primary-soft)] flex items-center justify-center mx-auto mb-4">
-          <Users className="size-7 text-[var(--primary)]" aria-hidden="true" />
-        </div>
-        <h3 id="matching-lobby-title" className="text-xl font-bold text-[var(--ink)] text-center mb-2">
-          A lobby is already on this route
-        </h3>
-        <p className="text-sm text-[var(--muted-foreground)] text-center mb-4">
-          There's already a lobby with the same route. Do you want to join it?
-        </p>
-        <div className="rounded-xl bg-[var(--muted)] p-3 mb-4">
-          <p className="text-sm font-semibold text-[var(--ink)] truncate">{matchingRouteLobby.pickup_location || pickup}</p>
-          <p className="text-xs text-[var(--muted-foreground)] my-1">to</p>
-          <p className="text-sm font-semibold text-[var(--ink)] truncate">{matchingRouteLobby.dropoff_location || dropoff}</p>
-          <p className="text-xs text-[var(--muted-foreground)] mt-3">
-            {matchingLobbyPassengers.length} of {matchingLobbyMaxSeats} seats are taken.
-            {canJoinMatchingLobby
-              ? ` Your group of ${passengerCount} can join.`
-              : ` Only ${matchingLobbySeatsLeft} seat${matchingLobbySeatsLeft === 1 ? '' : 's'} left; your group needs ${passengerCount}.`}
-          </p>
-        </div>
+        <h3 id="matching-lobby-title" className="sr-only">Matching route options</h3>
         <div className="grid gap-2">
           {canJoinMatchingLobby && (
             <Button onClick={() => resolveMatchingLobbyChoice('join')} className="w-full bg-[var(--primary)] text-white">
@@ -1655,23 +1661,18 @@ if (loading) {
     )
   );
 
-  // Stop order and map markers follow the lobby's current passenger records.
-  const dropoffOrder = orderLobbyDropoffs(passengers, pickupCoords);
-  const mapDropoffStops = dropoffOrder.reduce<Array<{
+  // Only show this customer's own drop-offs on their map.
+  const ownDropoffOrder = orderLobbyDropoffs(yourPassengers, pickupCoords);
+  const mapDropoffStops = ownDropoffOrder.reduce<Array<{
     key: string;
     coords: { lat: number; lng: number };
-    order: number;
-    passengers: LobbyPassenger[];
-    fallbackLabel?: string;
   }>>((stops, { passenger }) => {
     if (passenger.dropoffLat == null || passenger.dropoffLng == null) return stops;
     const lat = Number(passenger.dropoffLat);
     const lng = Number(passenger.dropoffLng);
     if (!Number.isFinite(lat) || !Number.isFinite(lng)) return stops;
     const key = `${lat.toFixed(5)},${lng.toFixed(5)}`;
-    const existingStop = stops.find(stop => stop.key === key);
-    if (existingStop) existingStop.passengers.push(passenger);
-    else stops.push({ key, coords: { lat, lng }, order: stops.length + 1, passengers: [passenger] });
+    if (!stops.some(stop => stop.key === key)) stops.push({ key, coords: { lat, lng } });
     return stops;
   }, []);
   if (dropoffCoords && !mapDropoffStops.some(stop =>
@@ -1680,17 +1681,13 @@ if (loading) {
     mapDropoffStops.push({
       key: 'current-user-dropoff',
       coords: dropoffCoords,
-      order: 0,
-      passengers: ownPassenger ? [ownPassenger] : [],
-      fallbackLabel: ownDropoff,
     });
   }
   mapDropoffStops.sort((a, b) =>
     pickupCoords
       ? haversineDistanceMeters(pickupCoords, a.coords) - haversineDistanceMeters(pickupCoords, b.coords)
-      : a.order - b.order,
+      : 0,
   );
-  mapDropoffStops.forEach((stop, index) => { stop.order = index + 1; });
 
   // Full lobby view
   return (
@@ -1803,12 +1800,6 @@ if (loading) {
                               </Badge>
                             )}
                           </div>
-                          <p className="mt-0.5 flex items-center gap-1 text-xs text-[var(--muted-foreground)]">
-                            <MapPin className="h-3 w-3 flex-shrink-0" />
-                            <span className="truncate">
-                              Drop-off: {passenger.dropoff || passenger.dropoffAddress || (isCurrentUserOrCompanion ? ownDropoff : 'Location unavailable')}
-                            </span>
-                          </p>
                           <p className="text-[10px] text-[var(--muted-foreground)]">
                             Joined {new Date(passenger.joinedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                           </p>
@@ -1834,39 +1825,6 @@ if (loading) {
                 ))}
               </div>
 
-              {/* Show the full ordered stop list from the current lobby passengers. */}
-              {passengers.length > 0 && (
-                <div className="mt-4 rounded-xl border border-[var(--border)] bg-[var(--muted)] p-3">
-                  <p className="mb-2 text-xs font-bold uppercase tracking-widest text-[var(--muted-foreground)]">
-                    Drop-off order
-                  </p>
-                  <div className="space-y-1.5">
-                    {dropoffOrder.map((entry, order) => (
-                      <div key={entry.passenger.id} className="flex items-center gap-2">
-                        <span
-                          className={`grid h-5 w-5 flex-shrink-0 place-items-center rounded-full text-[10px] font-bold ${
-                            order === 0 ? 'bg-[var(--primary)] text-white' : 'bg-[var(--border)] text-[var(--ink)]'
-                          }`}
-                        >
-                          {order + 1}
-                        </span>
-                        <span className="min-w-0 flex-1 truncate text-xs font-semibold text-[var(--ink)]">
-                          {entry.passenger.id === user?.id ? 'You' : getPassengerDisplayName(entry.passenger)}
-                        </span>
-                        <span className="max-w-[45%] truncate text-right text-[10px] text-[var(--muted-foreground)]">
-                          {entry.passenger.dropoff || entry.passenger.dropoffAddress || (isCurrentCustomerPassenger(entry.passenger) ? ownDropoff : 'Location unavailable')}
-                        </span>
-                      </div>
-                    ))}
-                  </div>
-                  <p className="mt-2 text-[10px] font-semibold text-[var(--primary)]">
-                    Drop off first:{' '}
-                    {dropoffOrder[0]?.passenger.id === user?.id
-                      ? 'You'
-                      : dropoffOrder[0] ? getPassengerDisplayName(dropoffOrder[0].passenger) : ''}
-                  </p>
-                </div>
-              )}
             </div>
 
             {/* Driver Info (when found) */}
@@ -1966,20 +1924,15 @@ if (loading) {
                       }}
                     />
                   )}
-                  {/* Numbered markers for every distinct passenger drop-off. */}
+                  {/* Markers show only this customer's own drop-offs. */}
                   {mapDropoffStops.map(stop => {
-                    const passengerNames = stop.passengers.map(getPassengerDisplayName).join(', ') || 'You';
-                    const address = stop.passengers
-                      .map(passenger => passenger.dropoff || passenger.dropoffAddress)
-                      .find(Boolean) || stop.fallbackLabel;
                     return (
                       <MarkerF
                         key={stop.key}
                         position={stop.coords}
-                        title={`Stop ${stop.order}: ${passengerNames}${address ? ` · ${address}` : ''}`}
+                        title="Your drop-off"
                         icon={createDropoffStopIcon(terminalRouteColor)}
-                        label={{ text: String(stop.order), color: '#FFFFFF', fontSize: '11px', fontWeight: '700' }}
-                        zIndex={20 + stop.order}
+                        zIndex={20}
                       />
                     );
                   })}
