@@ -29,6 +29,7 @@ import BusinessMessages from "./components/business/BusinessMessages";
 import BusinessDirectChat from "./components/business/BusinessDirectChat";
 import CustomerApp from "./components/customer/CustomerApp";
 import CustomerHome from "./components/customer/Home";
+import ActiveShareRidePage from "./components/customer/ActiveShareRidePage";
 import FoodHome from "./components/customer/FoodHome";
 import RestaurantDetail from "./components/customer/RestaurantDetail";
 import Cart from "./components/customer/Cart";
@@ -283,6 +284,14 @@ export const router = createBrowserRouter([
         element: (
           <ProtectedRoute allowedRoles={['customer']}>
             <CustomerHome />
+          </ProtectedRoute>
+        )
+      },
+      {
+        path: "customer/active-share-ride",
+        element: (
+          <ProtectedRoute allowedRoles={['customer']}>
+            <ActiveShareRidePage />
           </ProtectedRoute>
         )
       },

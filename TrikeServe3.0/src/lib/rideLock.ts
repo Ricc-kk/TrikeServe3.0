@@ -50,11 +50,9 @@ export function customerActiveShareLobbyStorageKey(customerId: string): string {
   return `trikeserve_active_share_lobby_customer:${customerId}`;
 }
 
-/** Parse a lobby passenger list and confirm that a customer is actually in it. */
-export function isCustomerLobbyPassenger(lobby: any, customerId: string | null | undefined): boolean {
-  if (!customerId || !lobby) return false;
-
-  const passengerLists = [lobby.passengers_json, lobby.passengers].flatMap((source) => {
+function getLobbyPassengerLists(lobby: any): any[][] {
+  if (!lobby) return [];
+  return [lobby.passengers_json, lobby.passengers].flatMap((source) => {
     if (Array.isArray(source)) return [source];
     if (typeof source === "string") {
       try {
@@ -66,13 +64,43 @@ export function isCustomerLobbyPassenger(lobby: any, customerId: string | null |
     }
     return [];
   });
+}
 
-  return passengerLists.some((passengers) =>
+/** Parse a lobby passenger list and confirm that a customer is actually in it. */
+export function isCustomerLobbyPassenger(lobby: any, customerId: string | null | undefined): boolean {
+  if (!customerId || !lobby) return false;
+  return getLobbyPassengerLists(lobby).some((passengers) =>
     passengers.some((passenger: any) => {
       const passengerId = String(passenger?.id || "");
       return passengerId === customerId || passengerId.startsWith(`${customerId}_companion_`);
     }),
   );
+}
+
+/** A customer's own seats stop blocking bookings once each is completed and paid. */
+function hasUnfinishedLobbyPassenger(lobby: any, customerId: string): boolean {
+  const ownedPassengers = getLobbyPassengerLists(lobby)
+    .flat()
+    .filter((passenger: any) => {
+      const passengerId = String(passenger?.id || "");
+      return passengerId === customerId || passengerId.startsWith(`${customerId}_companion_`);
+    });
+  const uniquePassengersById = new Map<string, any>();
+  ownedPassengers.forEach((passenger: any) => {
+    const passengerId = String(passenger?.id || "");
+    // `passengers_json` is the authoritative field when both legacy shapes exist.
+    if (passengerId && !uniquePassengersById.has(passengerId)) {
+      uniquePassengersById.set(passengerId, passenger);
+    }
+  });
+  const uniquePassengers = [...uniquePassengersById.values()];
+
+  if (uniquePassengers.length === 0) return false;
+  return uniquePassengers.some((passenger: any) => {
+    const dropoffStatus = String(passenger?.dropoff_status || passenger?.dropoffStatus || "").toLowerCase();
+    const paymentStatus = String(passenger?.payment_status || passenger?.paymentStatus || "").toLowerCase();
+    return dropoffStatus !== "completed" || !["received", "prepaid"].includes(paymentStatus);
+  });
 }
 
 /**
@@ -180,10 +208,11 @@ export function useActiveRideLock(customerId: string | null | undefined) {
  * The customer's currently blocking ride, if any.
  *
  * Two things mean "this customer is already travelling": an active private ride
- * request, and membership of a shared-ride lobby that is still gathering or
- * carrying passengers. Read live rather than from screen state, because the
- * booking surfaces can be reached by deep link, the browser back button, or a
- * tab that was opened before the ride started.
+ * request, and an unfinished passenger seat in a shared-ride lobby. Read live
+ * rather than from screen state, because the booking surfaces can be reached by
+ * deep link, the browser back button, or a tab that was opened before the ride
+ * started. A shared lobby may stay active for other riders after this customer
+ * has completed and paid for all of their own seats.
  *
  * The private ride is the customer's latest passenger-ride request, skipping
  * order delivery jobs. A superseded booking never reaches a terminal status,
@@ -215,7 +244,9 @@ export async function getActiveRideContext(customerId: string): Promise<{
 
   const lobby =
     (!lobbyError &&
-      (lobbies || []).find((l: any) => isCustomerLobbyPassenger(l, customerId))) ||
+      (lobbies || []).find((l: any) =>
+        isCustomerLobbyPassenger(l, customerId) && hasUnfinishedLobbyPassenger(l, customerId),
+      )) ||
     null;
 
   return { privateRide, lobby };

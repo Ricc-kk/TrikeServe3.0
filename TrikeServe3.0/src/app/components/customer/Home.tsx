@@ -39,7 +39,6 @@ import ReasonPromptModal from "../ui/reason-prompt-modal";
 import { supabase } from "../../../utils/supabase";
 import { isAwaitingApproval } from "../../../lib/roleAccess";
 import SharedRides from "./SharedRides";
-import ShareRideLobby from "./ShareRideLobby";
 import BrowseAvailableLobbies from "./BrowseAvailableLobbies";
 import CustomerHubHeader from "./CustomerHubHeader";
 import RecommendedRestaurants from "./RecommendedRestaurants";
@@ -1718,6 +1717,56 @@ export default function CustomerHome() {
     setBookingStep('home');
   }, [cameFromCustomerHomeTab, location.key]);
 
+  // Shared rides use their own page so the live lobby, map, and passenger
+  // details have the full screen. New bookings pass their selected route into
+  // that page; restored and joined lobbies pass their persisted lobby id.
+  useEffect(() => {
+    if (!showShareLobby || !rideStateBelongsToCurrentUser) return;
+
+    const state = activeShareLobbyId
+      ? { lobbyId: activeShareLobbyId }
+      : {
+          booking: {
+            pickup,
+            pickupAddress,
+            dropoff,
+            dropoffAddress,
+            pickupCoords,
+            dropoffCoords,
+            passengerCount,
+            maxPassengersAllowed: terminalSeatLimit,
+            pricePerSeat: shareFarePerSeat,
+            paymentMethod,
+            selectedTerminalId,
+            selectedRouteId: selectedTerminalBoundary.selectedRoute?.id || null,
+            routePoints: selectedTerminalBoundary.displayRoad,
+            routeWidthM: selectedTerminalBoundary.routeWidthM,
+          },
+        };
+
+    setShowShareLobby(false);
+    navigate('/customer/active-share-ride', { state });
+  }, [
+    showShareLobby,
+    rideStateBelongsToCurrentUser,
+    activeShareLobbyId,
+    pickup,
+    pickupAddress,
+    dropoff,
+    dropoffAddress,
+    pickupCoords,
+    dropoffCoords,
+    passengerCount,
+    terminalSeatLimit,
+    shareFarePerSeat,
+    paymentMethod,
+    selectedTerminalId,
+    selectedTerminalBoundary.selectedRoute?.id,
+    selectedTerminalBoundary.displayRoad,
+    selectedTerminalBoundary.routeWidthM,
+    navigate,
+  ]);
+
   /*
    * Rebuild the active private ride card when this tab holds no copy of it.
    *
@@ -2408,7 +2457,8 @@ export default function CustomerHome() {
      );
    }, [activeShareRideMapDetails.isActive, driverLocation, pickupCoords, isMapsLoaded, rideStatus]);
 
-   // Compute pickup-to-dropoff route during ride tracking (like driver preview)
+   // Compute the private ride's pickup-to-dropoff route during tracking.
+   // Share rides use the selected terminal route geometry instead.
    useEffect(() => {
      if (activeShareRideMapDetails.isActive) {
        setDestinationRoutePath([]);
@@ -2442,55 +2492,9 @@ export default function CustomerHome() {
      );
    }, [activeShareRideMapDetails.isActive, pickupCoords, dropoffCoords, isMapsLoaded, rideStatus]);
 
-   // The Home map remains visible behind the minimized lobby. Rebuild the same
-   // multi-stop path from this customer's own lobby drop-offs so the map does
-   // not keep showing a stale single-drop-off path from another booking.
-   useEffect(() => {
-     if (!activeShareRideMapDetails.isActive) return;
-     if (!activeShareRideMapPickup || activeShareRideMapDetails.dropoffs.length === 0) {
-       setDestinationRoutePath([]);
-       return;
-     }
-     if (!isMapsLoaded || !(window as any).google?.maps) return;
-
-     let active = true;
-     setDestinationRoutePath([]);
-     const maps = (window as any).google.maps;
-     const destinations = activeShareRideMapDetails.dropoffs;
-     const directionsService = new maps.DirectionsService();
-     directionsService.route({
-       origin: new maps.LatLng(activeShareRideMapPickup.lat, activeShareRideMapPickup.lng),
-       destination: new maps.LatLng(
-         destinations[destinations.length - 1].lat,
-         destinations[destinations.length - 1].lng,
-       ),
-       waypoints: destinations.slice(0, -1).map(point => ({
-         location: new maps.LatLng(point.lat, point.lng),
-         stopover: true,
-       })),
-       optimizeWaypoints: false,
-       travelMode: maps.TravelMode.DRIVING,
-     }, (result: any, status: string) => {
-       if (!active) return;
-       if (status === 'OK' && result?.routes?.[0]) {
-         const path = routePathFromResult(result.routes[0]);
-         if (path.length > 0) setDestinationRoutePath(path);
-       }
-     });
-
-     return () => { active = false; };
-   }, [
-     activeRideLobby?.id,
-     activeShareRideMapDetails.isActive,
-     activeShareRideMapPickup?.lat,
-     activeShareRideMapPickup?.lng,
-     activeShareRideStopsKey,
-     isMapsLoaded,
-   ]);
-
     /*
-     * Re-frame once the road line actually exists, and again if either endpoint
-     * moves.
+     * Re-frame a private ride once its road line exists, and again if either
+     * endpoint moves.
      *
      * Keyed on the route becoming non-empty rather than on `driverLocation`, so
      * this does not re-fit on every GPS tick and yank the map out from under
@@ -2499,21 +2503,11 @@ export default function CustomerHome() {
      */
     const tripRouteDrawn = destinationRoutePath.length > 0;
     useEffect(() => {
-      if (!tripRouteDrawn) return;
-      const shareRideBounds = activeShareRideMapDetails.isActive
-        ? [
-            ...(activeShareRideMapDetails.pickup ? [activeShareRideMapDetails.pickup] : []),
-            ...activeShareRideMapDetails.dropoffs,
-            ...terminalRouteBoundsRef.current,
-          ]
-        : undefined;
-      fitTripBounds(shareRideBounds);
+      if (!tripRouteDrawn || activeShareRideMapDetails.isActive) return;
+      fitTripBounds();
     }, [
       tripRouteDrawn,
       activeShareRideMapDetails.isActive,
-      activeShareRideMapDetails.pickup?.lat,
-      activeShareRideMapDetails.pickup?.lng,
-      activeShareRideStopsKey,
       pickupCoords?.lat,
       pickupCoords?.lng,
       dropoffCoords?.lat,
@@ -3883,7 +3877,7 @@ const getPrice = () => {
               )}
 
               {/* Destination route polyline (pickup to dropoff) */}
-              {rideStateBelongsToCurrentUser && destinationRoutePath.length > 0 && (isActiveShareRideMap || visibleRideStatus !== 'searching') && (
+              {rideStateBelongsToCurrentUser && !isActiveShareRideMap && destinationRoutePath.length > 0 && visibleRideStatus !== 'searching' && (
                 <Polyline path={destinationRoutePath} options={buildNavigationRouteOptions('#BC4B1F', 5)} />
               )}
 
@@ -5507,61 +5501,6 @@ const getPrice = () => {
             {searchingTime}
           </span>
         </button>
-      )}
-
-      {/* Share Ride Lobby */}
-      {rideStateBelongsToCurrentUser && showShareLobby && (
-        <ShareRideLobby
-          lobbyId={activeShareLobbyId || undefined}
-          pickup={pickup}
-          pickupAddress={pickupAddress}
-          dropoff={dropoff}
-          dropoffAddress={dropoffAddress}
-          pickupCoords={pickupCoords}
-          dropoffCoords={dropoffCoords}
-          passengerCount={passengerCount}
-          maxPassengersAllowed={terminalSeatLimit}
-          pricePerSeat={shareFarePerSeat}
-          paymentMethod={paymentMethod}
-          selectedTerminalId={selectedTerminalId}
-          selectedRouteId={selectedTerminalBoundary.selectedRoute?.id || null}
-          routePoints={selectedTerminalBoundary.displayRoad}
-          routeWidthM={selectedTerminalBoundary.routeWidthM}
-          onLobbyLoaded={(lobbyId) => {
-            // Persist the active lobby as soon as it opens so the return-to-ride
-            // button works even before a driver accepts.
-            if (activeShareLobbyStorageKey) {
-              localStorage.setItem(activeShareLobbyStorageKey, lobbyId);
-            }
-          }}
-          onDriverFound={(lobbyId) => {
-            // Don't close the lobby - let customers see driver info in the lobby itself
-            // Just update the status for tracking
-            setCurrentRequestId(`lobby_${lobbyId}`);
-            setRideStatus('driver-found');
-            // Remember the active lobby so the customer can return after leaving.
-            if (activeShareLobbyStorageKey) {
-              localStorage.setItem(activeShareLobbyStorageKey, lobbyId);
-            }
-            console.log('âœ… Driver found for lobby:', lobbyId);
-          }}
-          onClose={(status) => {
-            setShowShareLobby(false);
-            setActiveShareLobbyId(null);
-            setCurrentRequestId(null);
-            // Ride finished - no longer offer to return. If the customer left
-            // mid-ride (no terminal status), keep the return button.
-            if (status === 'completed' || status === 'cancelled') {
-              if (activeShareLobbyStorageKey) localStorage.removeItem(activeShareLobbyStorageKey);
-              setRideStatus(null);
-              setRequestedAt(null);
-              setCurrentSharedRideId(null);
-              setShowCustomerPaymentModal(false);
-              setPassengerCount(1);
-              resetCustomerRideVisuals();
-            }
-          }}
-        />
       )}
 
       {/* Browse Available Lobbies Modal */}

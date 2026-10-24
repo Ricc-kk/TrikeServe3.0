@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from "react";
-import { MapPin, Users, Clock, X, ChevronDown, MessageCircle, User, Minimize2, Star, Navigation, Flag, CreditCard, Check } from "lucide-react";
+import { ArrowLeft, MapPin, Users, Clock, X, ChevronDown, MessageCircle, User, Minimize2, Star, Navigation, Flag, CreditCard, Check } from "lucide-react";
 import { Button } from "../ui/button";
 import { Card } from "../ui/card";
 import { Badge } from "../ui/badge";
@@ -179,6 +179,7 @@ interface ShareRideLobbyProps {
   selectedRouteId?: string | null;
   routePoints?: Array<{ lat: number; lng: number }> | null;
   routeWidthM?: number | null;
+  presentation?: 'sheet' | 'page';
   onDriverFound: (lobbyId: string) => void;
   onLobbyLoaded?: (lobbyId: string) => void;
   onClose: (status?: string) => void;
@@ -202,6 +203,7 @@ export default function ShareRideLobby({
   selectedRouteId,
   routePoints,
   routeWidthM,
+  presentation = 'sheet',
   onDriverFound,
   onLobbyLoaded,
   onClose
@@ -262,6 +264,13 @@ export default function ShareRideLobby({
   const [terminalCancelMessage, setTerminalCancelMessage] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [driverAssignedNotice, setDriverAssignedNotice] = useState<{
+    lobbyId: string;
+    driverId: string;
+    driverName: string;
+    driverPlate?: string;
+  } | null>(null);
+  const handledDriverAssignmentRef = useRef<string | null>(null);
   const hasHandledTerminalLobbyStatus = useRef(false);
   const terminalCloseTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [driverStatusPopup, setDriverStatusPopup] = useState<{ status: string; message: string } | null>(null);
@@ -289,6 +298,7 @@ export default function ShareRideLobby({
   const [terminalRoutePath, setTerminalRoutePath] = useState<Array<{ lat: number; lng: number }>>([]);
   const [terminalRouteColor, setTerminalRouteColor] = useState(() => normalizeRouteColor(undefined));
   const lobbyMapRef = useRef<any>(null);
+  const lobbyMapWasManuallyMovedRef = useRef(false);
   const driverLocationIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   useEffect(() => {
@@ -444,6 +454,21 @@ export default function ShareRideLobby({
         }, driverCancelled ? 5000 : 1600);
       }
     }
+  };
+
+  const showDriverAssignedNotice = (assignedLobby: ShareRideLobby) => {
+    if (assignedLobby.status !== 'driver_found' || !assignedLobby.driver_id) return;
+
+    const assignmentKey = `${assignedLobby.id}:${assignedLobby.driver_id}`;
+    if (handledDriverAssignmentRef.current === assignmentKey) return;
+
+    handledDriverAssignmentRef.current = assignmentKey;
+    setDriverAssignedNotice({
+      lobbyId: assignedLobby.id,
+      driverId: assignedLobby.driver_id,
+      driverName: assignedLobby.driver_name || 'Your driver',
+      driverPlate: assignedLobby.driver_plate,
+    });
   };
 
   const openRatingModal = () => {
@@ -651,6 +676,8 @@ export default function ShareRideLobby({
   }, [lobby?.terminal_id, lobby?.passengers_json, selectedTerminalId, routePoints, dropoffCoords, user?.id]);
 
   const fitLobbyRouteBounds = useCallback(() => {
+    if (lobbyMapWasManuallyMovedRef.current) return;
+
     const map = lobbyMapRef.current;
     const maps = (window as any).google?.maps;
     if (!map || !maps?.LatLngBounds) return;
@@ -732,6 +759,7 @@ export default function ShareRideLobby({
 
          if (existingLobby && isMounted) {
            setLobby(existingLobby);
+            showDriverAssignedNotice(existingLobby);
             // Tell the parent the lobby is open so it can persist the id for
             // the return-to-ride button (even before a driver accepts).
             if (typeof onLobbyLoaded === 'function') {
@@ -793,6 +821,7 @@ export default function ShareRideLobby({
 
                       return newLobby;
                     });
+                    showDriverAssignedNotice(freshLobby);
 
                     // Show full capacity popup when lobby becomes full
                     if (newPassengerCount >= freshLobby.max_seats && prevPassengerCount < freshLobby.max_seats) {
@@ -842,6 +871,7 @@ export default function ShareRideLobby({
                 }
 
                 const latestPassengers = dedupePassengers(normalizePassengers(latestLobby.passengers_json));
+                showDriverAssignedNotice(latestLobby);
                 setLobby((prevLobby) => {
                   if (!prevLobby) return prevLobby;
                   const prevCount = (prevLobby.passengers_json || []).length;
@@ -1639,6 +1669,53 @@ if (loading) {
 
   if (!lobby) return null;
 
+  const driverAssignedModal = driverAssignedNotice?.lobbyId === lobby.id ? (
+    <div className="fixed inset-0 z-[11000] flex items-center justify-center bg-black/60 p-4">
+      <Card
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="share-ride-driver-assigned-title"
+        className="w-full max-w-sm rounded-2xl bg-surface p-6 text-center shadow-2xl"
+      >
+        <div className="mx-auto mb-4 flex size-16 items-center justify-center rounded-full bg-[var(--success-soft)] text-[var(--success)]">
+          <Tricycle className="size-8" aria-hidden="true" />
+        </div>
+        <h2 id="share-ride-driver-assigned-title" className="mb-2 text-xl font-bold text-[var(--ink)]">
+          Driver assigned!
+        </h2>
+        <p className="mb-5 text-sm text-[var(--muted-foreground)]">
+          A driver has accepted your share ride and is heading to your pickup.
+        </p>
+        <div className="mb-5 flex items-center gap-3 rounded-xl bg-[var(--muted)] p-3 text-left">
+          <div className="flex size-12 shrink-0 items-center justify-center overflow-hidden rounded-full bg-[var(--primary)] text-sm font-bold text-white">
+            {driverProfileAvatar && lobby.driver_id === driverAssignedNotice.driverId ? (
+              <img
+                src={driverProfileAvatar}
+                alt=""
+                className="size-full object-cover"
+                onError={() => setDriverProfileAvatar(null)}
+              />
+            ) : (
+              getDriverInitials(driverAssignedNotice.driverName)
+            )}
+          </div>
+          <div className="min-w-0 flex-1">
+            <p className="text-xs text-[var(--muted-foreground)]">Your driver</p>
+            <p className="truncate font-bold text-[var(--ink)]">{driverAssignedNotice.driverName}</p>
+            {driverAssignedNotice.driverPlate && (
+              <p className="mt-0.5 text-xs text-[var(--muted-foreground)]">
+                Plate: {driverAssignedNotice.driverPlate}
+              </p>
+            )}
+          </div>
+        </div>
+        <Button onClick={() => setDriverAssignedNotice(null)} className="w-full bg-[var(--primary)] text-white">
+          Got it
+        </Button>
+      </Card>
+    </div>
+  ) : null;
+
   const passengers = lobby.passengers_json || [];
   // Old lobbies stored one fare for the whole group; keep the per-passenger
   // values available here so payment prompts work in both minimized and full views.
@@ -1765,6 +1842,7 @@ if (loading) {
       <>
         {chatLayer}
         {paymentModal}
+        {driverAssignedModal}
         <button
         onClick={() => setIsMinimized(false)}
         className="fixed bottom-24 right-4 z-[2000] shadow-2xl"
@@ -1857,8 +1935,12 @@ if (loading) {
   // Full lobby view
   return (
     <>
-      <div className="fixed inset-0 bg-black/50 z-[2000] flex items-end">
-        <div className="bg-surface w-full rounded-t-3xl max-h-[92vh] overflow-hidden flex flex-col animate-slide-up">
+      <div className={presentation === 'page'
+        ? "fixed inset-0 z-[2000] bg-[var(--background)]"
+        : "fixed inset-0 bg-black/50 z-[2000] flex items-end"}>
+        <div className={presentation === 'page'
+          ? "flex h-full w-full flex-col overflow-hidden bg-surface pt-[env(safe-area-inset-top)] pb-[env(safe-area-inset-bottom)]"
+          : "bg-surface w-full rounded-t-3xl max-h-[92vh] overflow-hidden flex flex-col animate-slide-up"}>
           {/* Header - Gradient */}
           <div className="bg-[var(--primary)] p-4">
             <div className="flex items-center justify-between">
@@ -1878,10 +1960,13 @@ if (loading) {
               </div>
               <div className="flex items-center gap-2">
                 <button
-                  onClick={() => setIsMinimized(true)}
+                  onClick={() => presentation === 'page' ? onClose() : setIsMinimized(true)}
+                  aria-label={presentation === 'page' ? 'Back to customer home' : 'Minimize share ride'}
                   className="w-9 h-9 flex items-center justify-center rounded-full bg-white/20 hover:bg-white/30 transition-colors"
                 >
-                  <ChevronDown className="w-5 h-5 text-white" />
+                  {presentation === 'page'
+                    ? <ArrowLeft className="w-5 h-5 text-white" />
+                    : <ChevronDown className="w-5 h-5 text-white" />}
                 </button>
                 {/* Only show cancel button while still searching for a driver */}
                 {lobby.status === 'waiting' && (
@@ -2051,12 +2136,14 @@ if (loading) {
                     fitLobbyRouteBounds();
                   }}
                   onUnmount={() => { lobbyMapRef.current = null; }}
+                  onDragStart={() => { lobbyMapWasManuallyMovedRef.current = true; }}
                   options={{
                     zoomControl: false,
                     fullscreenControl: false,
                     streetViewControl: false,
                     mapTypeControl: false,
-                    gestureHandling: 'none',
+                    draggable: true,
+                    gestureHandling: 'greedy',
                   }}
                 >
                   <MapTypeToggle />
@@ -2310,6 +2397,7 @@ if (loading) {
       {chatLayer}
 
       {paymentModal}
+      {driverAssignedModal}
 
       {/* Driver Status Update Popup (same as private rides) */}
       {driverStatusPopup && (
