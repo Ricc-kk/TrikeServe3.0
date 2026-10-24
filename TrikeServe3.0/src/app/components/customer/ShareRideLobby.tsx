@@ -1646,6 +1646,11 @@ const matchingLobbyMaxSeats = matchingRouteLobby
   : 0;
 const matchingLobbySeatsLeft = Math.max(0, matchingLobbyMaxSeats - matchingLobbyPassengers.length);
 const canJoinMatchingLobby = matchingLobbySeatsLeft >= passengerCount;
+const matchingLobbyBackgroundRoute = routePoints?.length ? routePoints : terminalRoutePath;
+const matchingLobbyBackgroundCenter = pickupCoords
+  || dropoffCoords
+  || matchingLobbyBackgroundRoute[0]
+  || { lat: 14.5995, lng: 120.9842 };
 
 if (bookingCancelled) return null;
 
@@ -1654,7 +1659,61 @@ if (matchingRouteLobby) {
     resolveMatchingLobbyChoice(matchingLobbyPromptMode === 'after-create' ? 'stay' : 'cancel');
 
   return (
-    <div className="fixed inset-0 z-[2600] flex items-center justify-center bg-transparent p-4">
+    <div className="fixed inset-0 z-[2600] overflow-hidden bg-[var(--background)]">
+      {isMapsLoaded ? (
+        <GoogleMap
+          mapContainerStyle={{ width: '100%', height: '100%' }}
+          center={matchingLobbyBackgroundCenter}
+          zoom={15}
+          options={{
+            disableDefaultUI: true,
+            zoomControl: false,
+            fullscreenControl: false,
+            streetViewControl: false,
+            mapTypeControl: false,
+            gestureHandling: 'none',
+            keyboardShortcuts: false,
+          }}
+          onLoad={(map: any) => {
+            const maps = (window as any)?.google?.maps;
+            const points = [
+              ...matchingLobbyBackgroundRoute,
+              ...(pickupCoords ? [pickupCoords] : []),
+              ...(dropoffCoords ? [dropoffCoords] : []),
+            ];
+            if (points.length > 1 && maps?.LatLngBounds) {
+              const bounds = new maps.LatLngBounds();
+              points.forEach(point => bounds.extend(point));
+              map.fitBounds(bounds, 56);
+            }
+          }}
+        >
+          {matchingLobbyBackgroundRoute.length > 1 && (
+            <Polyline
+              path={matchingLobbyBackgroundRoute}
+              options={{ strokeColor: terminalRouteColor, strokeOpacity: 0.9, strokeWeight: 5, clickable: false }}
+            />
+          )}
+          {pickupCoords && (
+            <MarkerF
+              position={pickupCoords}
+              title="Pickup"
+              icon={terminalMarkerIcon(terminalMarkerColor, 58)}
+            />
+          )}
+          {dropoffCoords && (
+            <MarkerF
+              position={dropoffCoords}
+              title="Drop-off"
+              icon={createDropoffStopIcon(terminalRouteColor)}
+            />
+          )}
+        </GoogleMap>
+      ) : (
+        <div className="absolute inset-0 bg-[var(--background)]" aria-hidden="true" />
+      )}
+
+      <div className="absolute inset-0 flex items-center justify-center bg-[var(--background)]/10 p-4">
       <Card role="dialog" aria-modal="true" aria-labelledby="matching-lobby-title" className="relative w-full max-w-sm border border-[var(--border)] bg-surface p-6 pt-12 shadow-2xl">
         <Button
           type="button"
@@ -1699,6 +1758,7 @@ if (matchingRouteLobby) {
           )}
         </div>
       </Card>
+      </div>
     </div>
   );
 }
