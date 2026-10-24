@@ -513,7 +513,7 @@ export default function PassengerRequests() {
             amount: sumSharedRidePassengerFares(passengers),
             passengers: passengers.length,
             maxPassengers: Number(lobby.max_seats || 3),
-            customerName: passengers.length > 1 ? passengers.map((p: any) => p.name || nameMap[p.id] || 'Passenger').join(', ') : (passengers[0]?.name || nameMap[passengers[0]?.id] || 'Customer'),
+            customerName: passengers.length > 1 ? passengers.map((p: any) => nameMap[p.id] || p.name || 'Passenger').join(', ') : (nameMap[passengers[0]?.id] || passengers[0]?.name || 'Customer'),
             customerPhoto: 'shared',
             distance: '2.5 km',
             estimatedTime: '7 mins',
@@ -521,7 +521,7 @@ export default function PassengerRequests() {
             lobbyId: lobby.id,
             passengerDetails: passengers.map((passenger: any) => ({
               ...passenger,
-              name: passenger.name || nameMap[passenger.id] || 'Passenger',
+              name: nameMap[passenger.id] || passenger.name || 'Passenger',
               emoji: passenger.emoji || '👤',
             })),
             created_at: lobby.created_at,
@@ -1791,8 +1791,8 @@ export default function PassengerRequests() {
                   <h3 className="mb-2 text-sm font-bold text-[var(--ink)]">Passengers</h3>
                   <div className="space-y-2">
                     {previewRequest.passengerDetails?.map((passenger) => (
-                      <div key={passenger.id} className="flex items-center justify-between gap-3 rounded-lg border border-[var(--border)] bg-[var(--surface)] px-3 py-2 text-xs">
-                        <span className="truncate font-semibold text-[var(--ink)]">{passenger.name}</span>
+                      <div key={passenger.id} className="flex items-start justify-between gap-3 rounded-lg border border-[var(--border)] bg-[var(--surface)] px-3 py-2 text-xs">
+                        <span className="min-w-0 flex-1 whitespace-normal break-words font-semibold text-[var(--ink)]">{passenger.name}</span>
                         <span className="shrink-0 font-bold text-[var(--primary)]">
                           {passenger.fare == null ? "Fare unavailable" : `₱${Number(passenger.fare).toFixed(2)}`}
                         </span>

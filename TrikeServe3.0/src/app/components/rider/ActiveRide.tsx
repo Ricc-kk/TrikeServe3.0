@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { useNavigate, useLocation } from "react-router";
-import { Navigation, MapPin, CheckCircle, Users, User, X, MessageSquare, Flag } from "lucide-react";
+import { Navigation, MapPin, CheckCircle, Users, User, X, MessageSquare, Flag, ChevronDown, ChevronUp, CreditCard } from "lucide-react";
 import { GoogleMap, Marker, InfoWindow, DirectionsRenderer, Polyline } from "@react-google-maps/api";
 import MapTypeToggle from "../ui/MapTypeToggle";
 import { Button } from "../ui/button";
@@ -330,6 +330,8 @@ export default function ActiveRide() {
   const routePhaseRef = useRef<string | null>(null);
   const fittedRoutePhaseRef = useRef<string | null>(null);
   const hasPersistedLocationRef = useRef(false);
+  const [paymentPromptDismissed, setPaymentPromptDismissed] = useState(false);
+  const [sharedPaymentPromptPassengerId, setSharedPaymentPromptPassengerId] = useState<string | null>(null);
   // Set briefly while we change the zoom ourselves, so the resulting
   // `zoom_changed` is not read as the driver zooming in by hand. See
   // `stopFollowingOnZoom`.
@@ -366,6 +368,9 @@ export default function ActiveRide() {
   }, [rideData?.id, rideData?.status, syncRideResume]);
   rideDataRef.current = rideData;
   driverLocationRef.current = driverLocation;
+  useEffect(() => {
+    setPaymentPromptDismissed(false);
+  }, [rideData?.id, rideData?.status]);
   const [showRideComplete, setShowRideComplete] = useState(false);
   const [showCancelPrompt, setShowCancelPrompt] = useState(false);
   const [showReportModal, setShowReportModal] = useState(false);
@@ -1009,6 +1014,34 @@ export default function ActiveRide() {
   // Determine if we're heading to pickup or dropoff
   const isHeadingToPickup = rideData?.status === 'on-the-way' || rideData?.status === 'arrived';
   const isSharedRide = Boolean(rideData && (rideData.type === 'shared' || rideData.lobbyId));
+
+  // Shared passengers have separate destinations and fares, so keep a payment
+  // prompt for each completed passenger instead of waiting for the whole lobby.
+  // Dismissals are scoped to the passenger so a refresh can restore a pending
+  // prompt without reopening one the rider already handled.
+  useEffect(() => {
+    if (confirmingDropoffPassengerId) return;
+    if (!rideData || !isSharedRide || rideData.status === 'completed') {
+      setSharedPaymentPromptPassengerId(null);
+      return;
+    }
+
+    const passengers = Array.isArray(rideData.passengerDetails) ? rideData.passengerDetails : [];
+    const pendingPassenger = passengers.find((passenger: any) => {
+      const passengerId = String(passenger?.id || '');
+      if (!passengerId || !['dropped-off', 'completed'].includes(String(passenger.dropoff_status || passenger.dropoffStatus || '').toLowerCase())) {
+        return false;
+      }
+
+      try {
+        return localStorage.getItem(`rider_shared_payment_dismissed_${rideData.id}_${passengerId}`) !== '1';
+      } catch {
+        return true;
+      }
+    });
+
+    setSharedPaymentPromptPassengerId(pendingPassenger ? String(pendingPassenger.id) : null);
+  }, [rideData?.id, rideData?.passengerDetails, rideData?.status, isSharedRide, sharedPaymentPromptPassengerId, confirmingDropoffPassengerId]);
   const sharedDropoffStops = useMemo(() => getSharedDropoffStops(rideData), [
     rideData?.id,
     rideData?.type,
@@ -1798,6 +1831,17 @@ export default function ActiveRide() {
     }
   };
 
+  const dismissSharedPaymentPrompt = () => {
+    if (rideData && sharedPaymentPromptPassengerId) {
+      try {
+        localStorage.setItem(`rider_shared_payment_dismissed_${rideData.id}_${sharedPaymentPromptPassengerId}`, '1');
+      } catch {
+        // The prompt can still be dismissed for this mounted ride if storage is unavailable.
+      }
+    }
+    setSharedPaymentPromptPassengerId(null);
+  };
+
   const cancelActiveRide = async (reason: string) => {
     if (!rideData || !user?.id || isCancelling.current || isCompleting.current) return;
     isCancelling.current = true;
@@ -2064,6 +2108,26 @@ export default function ActiveRide() {
   const nextSharedDropoffPassengerName = nextSharedDropoffPassenger && nextSharedDropoffPassengerIndex >= 0
     ? getSharedPassengerName(nextSharedDropoffPassenger, nextSharedDropoffPassengerIndex, rideData.passengerDetails || [])
     : '';
+  const sharedPaymentPassengerIndex = sharedPaymentPromptPassengerId
+    ? rideData.passengerDetails?.findIndex((passenger: any) => String(passenger?.id || '') === sharedPaymentPromptPassengerId) ?? -1
+    : -1;
+  const sharedPaymentPassenger = sharedPaymentPassengerIndex >= 0
+    ? rideData.passengerDetails?.[sharedPaymentPassengerIndex] || null
+    : null;
+  const sharedPaymentPassengerName = sharedPaymentPassenger
+    ? getSharedPassengerName(sharedPaymentPassenger, sharedPaymentPassengerIndex, rideData.passengerDetails || [])
+    : '';
+  const sharedPaymentPassengerFare = sharedPaymentPassenger
+    ? Number(sharedPaymentPassenger.fare ?? rideData.amount ?? 0)
+    : 0;
+  const sharedPaymentPassengerIsLast = Boolean(sharedPaymentPassenger) && !(rideData.passengerDetails || []).some((passenger: any) =>
+    !['dropped-off', 'completed'].includes(String(passenger?.dropoff_status || passenger?.dropoffStatus || '').toLowerCase())
+  );
+  const handleSharedPaymentAction = () => {
+    const finishRide = sharedPaymentPassengerIsLast;
+    dismissSharedPaymentPrompt();
+    if (finishRide) void completeRide();
+  };
 
   /**
    * The single action for the ride's current phase.
@@ -2192,6 +2256,67 @@ export default function ActiveRide() {
               <p className="text-[var(--success)] font-bold text-lg">Great job! 🎉</p>
             </div>
           </div>
+        </div>
+      )}
+      {!isDeliveryRide(rideData) && !showRideComplete && (
+        (isSharedRide && sharedPaymentPassenger) ||
+        (!isSharedRide && ['drop-off', 'payment'].includes(rideData.status) && !paymentPromptDismissed)
+      ) && (
+        <div className="fixed inset-0 z-[4200] flex items-center justify-center bg-black/60 p-4">
+          <Card
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="rider-payment-title"
+            className="w-full max-w-sm rounded-2xl bg-surface p-6 text-center shadow-2xl"
+          >
+            <div className="mx-auto mb-4 flex size-16 items-center justify-center rounded-full bg-[var(--primary-soft)]">
+              <CreditCard className="size-8 text-[var(--primary)]" aria-hidden="true" />
+            </div>
+            <h2 id="rider-payment-title" className="mb-2 text-xl font-bold text-[var(--ink)]">
+              {isSharedRide
+                ? `Payment for ${sharedPaymentPassengerName || 'passenger'}`
+                : rideData.payment === 'PREPAID' ? 'Confirm ride completion' : 'Collect payment'}
+            </h2>
+            <p className="mb-5 text-sm text-[var(--muted-foreground)]">
+              {rideData.payment === 'PREPAID'
+                ? isSharedRide
+                  ? 'This passenger’s fare was prepaid. Continue the ride after confirming the drop-off.'
+                  : 'This ride was prepaid. Confirm completion after the passenger reaches their drop-off.'
+                : isSharedRide
+                  ? `Collect this passenger’s fare at their drop-off${sharedPaymentPassengerIsLast ? ' before completing the ride' : ''}.`
+                  : 'Collect the fare from the passenger before completing the ride.'}
+            </p>
+            <div className="mb-5 rounded-xl bg-[var(--muted)] p-4 text-left">
+              <div className="flex items-center justify-between gap-3">
+                <span className="text-sm text-[var(--muted-foreground)]">{isSharedRide ? 'Passenger fare' : 'Total fare'}</span>
+                <strong className="text-lg text-[var(--primary)]">₱{(isSharedRide ? sharedPaymentPassengerFare : Number(rideData.amount || 0)).toFixed(2)}</strong>
+              </div>
+              <div className="mt-2 flex items-center justify-between gap-3">
+                <span className="text-sm text-[var(--muted-foreground)]">Payment method</span>
+                <strong className="text-sm text-[var(--ink)]">{rideData.payment === 'PREPAID' ? 'Prepaid' : 'Cash'}</strong>
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-2">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => isSharedRide ? dismissSharedPaymentPrompt() : setPaymentPromptDismissed(true)}
+              >
+                Later
+              </Button>
+              <Button
+                type="button"
+                onClick={() => isSharedRide ? handleSharedPaymentAction() : void completeRide()}
+                className="bg-[var(--primary)] text-white"
+              >
+                {isSharedRide
+                  ? sharedPaymentPassengerIsLast
+                    ? rideData.payment === 'PREPAID' ? 'Complete ride' : 'Payment received'
+                    : rideData.payment === 'PREPAID' ? 'Continue route' : 'Payment received'
+                  : rideData.payment === 'PREPAID' ? 'Complete ride' : 'Payment received'}
+              </Button>
+            </div>
+          </Card>
         </div>
       )}
       {/* Hidden entirely while the chat panel is open, not made transparent.
@@ -2423,10 +2548,10 @@ export default function ActiveRide() {
             type="button"
             onClick={handleRecenter}
             aria-label="Re-centre map on my location"
-            className="absolute left-1/2 bottom-4 -translate-x-1/2 z-[4003] inline-flex items-center gap-2 rounded-full bg-surface pl-3 pr-5 py-3 shadow-xl active:scale-95 transition-transform"
+            className="absolute left-1/2 bottom-4 -translate-x-1/2 z-[4003] inline-flex items-center gap-2 rounded-full border border-[var(--primary)] bg-[var(--primary)] pl-3 pr-5 py-3 text-[var(--primary-foreground)] shadow-xl active:scale-95 transition-transform"
           >
-            <Navigation className="w-5 h-5 text-[var(--primary)]" />
-            <span className="text-sm font-bold text-[var(--ink)]">Re-centre</span>
+            <Navigation className="w-5 h-5 text-[var(--primary-foreground)]" />
+            <span className="text-sm font-bold text-[var(--primary-foreground)]">Re-centre</span>
           </button>
         )}
         {/* Route phase indicator banner */}
@@ -2494,11 +2619,13 @@ export default function ActiveRide() {
         <button
           type="button"
           onClick={() => setIsMinimized((v) => !v)}
-          aria-label={isMinimized ? 'Show ride details' : 'Expand map'}
-          aria-expanded={isMinimized}
-          className="mx-auto mb-1 flex h-6 w-full max-w-24 items-center justify-center rounded-full hover:bg-[var(--muted)] active:bg-[var(--muted)]"
+          aria-label={isMinimized ? 'Show ride details' : 'Minimize ride details'}
+          aria-expanded={!isMinimized}
+          className="mx-auto mb-1 flex h-9 w-full max-w-16 items-center justify-center rounded-full hover:bg-[var(--muted)] active:bg-[var(--muted)]"
         >
-          <span className="h-1.5 w-12 rounded-full bg-[var(--muted-foreground)] opacity-60" aria-hidden="true" />
+          {isMinimized
+            ? <ChevronUp className="size-5 text-[var(--muted-foreground)]" aria-hidden="true" />
+            : <ChevronDown className="size-5 text-[var(--muted-foreground)]" aria-hidden="true" />}
         </button>
 
         {isMinimized && (

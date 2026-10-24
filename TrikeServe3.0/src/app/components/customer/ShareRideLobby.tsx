@@ -4,7 +4,7 @@ import { Button } from "../ui/button";
 import { Card } from "../ui/card";
 import { Badge } from "../ui/badge";
 import { useAuth } from "../../contexts/AuthContext";
-import { supabase, supabaseHelpers, isSimilarRoute, isPointWithinAnyTerminalBorder, isPointOnRoadCorridor, haversineDistanceMeters, normalizeBoundaryRoad, normalizeRoadWidth } from "@/lib/supabase";
+import { supabase, supabaseHelpers, isSimilarRoute, isPointWithinAnyTerminalBorder, isPointOnRoadCorridor, haversineDistanceMeters, normalizeRoadWidth } from "@/lib/supabase";
 import { GoogleMap, MarkerF, Polyline } from "@react-google-maps/api";
 import MapTypeToggle from "../ui/MapTypeToggle";
 import useMapLoader from "@/lib/mapLoader";
@@ -16,6 +16,7 @@ import { normalizeRouteColor } from "../ui/TerminalIcon";
 import { backfillLegacySharedRidePassengerFares, sumSharedRidePassengerFares, DEFAULT_MAX_PASSENGERS } from "@/lib/pricing";
 import { useDevModeOverride } from "../../hooks/useDevModeSettings";
 import { customerActiveShareLobbyStorageKey, isCustomerLobbyPassenger } from "../../../lib/rideLock";
+import { legacyRouteFromBoundary, normalizeTerminalRoutes } from "@/lib/terminalRoutes";
 
 const DRIVER_STATUS_ICONS: Record<string, typeof MapPin> = {
   cancelled: X,
@@ -258,6 +259,7 @@ export default function ShareRideLobby({
   const hasHandledTerminalLobbyStatus = useRef(false);
   const terminalCloseTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [driverStatusPopup, setDriverStatusPopup] = useState<{ status: string; message: string } | null>(null);
+  const [paymentModalPassengerId, setPaymentModalPassengerId] = useState<string | null>(null);
   const driverStatusTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [showRatingModal, setShowRatingModal] = useState(false);
   const [selectedRating, setSelectedRating] = useState(0);
@@ -480,6 +482,7 @@ export default function ShareRideLobby({
   const processDriverStatusUpdate = (lobbyId: string, driverStatus?: string, message?: string) => {
     if (!driverStatus) return;
     const normalizedStatus = String(driverStatus).toLowerCase();
+    if (normalizedStatus === 'awaiting-payment' || normalizedStatus === 'payment') return;
     const rawMessage = String(message || '');
     if (rawMessage === '__silent__') return;
 
@@ -599,7 +602,35 @@ export default function ShareRideLobby({
           setTerminalRoutePath([]);
           return;
         }
-        setTerminalRoutePath(normalizeBoundaryRoad(data.boundary_polygon) || []);
+        const storedRoutes = normalizeTerminalRoutes(data.routes);
+        const routes = (storedRoutes.length > 0
+          ? storedRoutes
+          : legacyRouteFromBoundary(data.boundary_polygon, data.road_width_m))
+          .filter(route => route.points.length >= 2);
+        const currentSelectionMatchesLobby = Boolean(
+          routePoints?.length && selectedTerminalId && selectedTerminalId === terminalId,
+        );
+        const ownPassenger = (lobby?.passengers_json || []).find(passenger => Boolean(
+          user?.id && (
+            passenger.id === user.id ||
+            passenger.id.startsWith(`${user.id}_companion_`)
+          ) && passenger.dropoffLat != null && passenger.dropoffLng != null
+        ));
+        const dropoffPoint = ownPassenger
+          ? { lat: Number(ownPassenger.dropoffLat), lng: Number(ownPassenger.dropoffLng) }
+          : dropoffCoords;
+        const routeForPassenger = dropoffPoint
+          ? routes.find(route => route.enabled && isPointOnRoadCorridor(
+              dropoffPoint.lat,
+              dropoffPoint.lng,
+              route.points,
+              route.buffer_m,
+            ))
+          : null;
+        const selectedRoute = currentSelectionMatchesLobby
+          ? null
+          : routeForPassenger || routes.find(route => route.enabled) || routes[0];
+        setTerminalRoutePath(currentSelectionMatchesLobby ? routePoints! : selectedRoute?.points || []);
         setTerminalRouteColor(normalizeRouteColor(data.route_color));
       })
       .catch(() => {
@@ -609,7 +640,7 @@ export default function ShareRideLobby({
     return () => {
       active = false;
     };
-  }, [lobby?.terminal_id, selectedTerminalId]);
+  }, [lobby?.terminal_id, lobby?.passengers_json, selectedTerminalId, routePoints, dropoffCoords, user?.id]);
 
   const fitLobbyRouteBounds = useCallback(() => {
     const map = lobbyMapRef.current;
@@ -632,12 +663,12 @@ export default function ShareRideLobby({
     const endpoints = [pickupCoords, dropoffCoords, ...passengerDropoffs].filter(
       (point): point is { lat: number; lng: number } => point !== null && point !== undefined,
     );
-    const points = [...terminalRoutePath, ...endpoints];
+    const points = [...terminalRoutePath, ...endpoints, ...(driverLocation ? [driverLocation] : [])];
     if (points.length === 0) return;
     const bounds = new maps.LatLngBounds();
     points.forEach((point) => bounds.extend(point));
     map.fitBounds(bounds, 24);
-  }, [terminalRoutePath, pickupCoords, dropoffCoords, lobby?.passengers_json, user?.id]);
+  }, [terminalRoutePath, pickupCoords, dropoffCoords, lobby?.passengers_json, driverLocation, user?.id]);
 
   useEffect(() => {
     fitLobbyRouteBounds();
@@ -896,7 +927,7 @@ export default function ShareRideLobby({
 
   // Poll for driver location in the lobby (every 3 seconds)
   useEffect(() => {
-    if (!lobby || lobby.status !== 'driver_found') {
+    if (!lobby || !['driver_found', 'in_progress'].includes(lobby.status)) {
       setDriverLocation(null);
       setDriverRoutePath([]);
       return;
@@ -905,8 +936,9 @@ export default function ShareRideLobby({
     const pollDriverLocation = async () => {
       try {
         const { data: freshLobby } = await supabaseHelpers.getLobbyById(lobby.id);
-        if (freshLobby && freshLobby.driver_lat && freshLobby.driver_lng) {
-          const loc = { lat: freshLobby.driver_lat, lng: freshLobby.driver_lng };
+        if (freshLobby?.driver_lat != null && freshLobby?.driver_lng != null) {
+          const loc = { lat: Number(freshLobby.driver_lat), lng: Number(freshLobby.driver_lng) };
+          if (!Number.isFinite(loc.lat) || !Number.isFinite(loc.lng)) return;
           setDriverLocation(loc);
         }
       } catch (err) {
@@ -923,6 +955,34 @@ export default function ShareRideLobby({
       }
     };
   }, [lobby?.id, lobby?.status]);
+
+  useEffect(() => {
+    if (!lobby?.id || !user?.id || terminalStatus || ['completed', 'cancelled'].includes(String(lobby.status || '').toLowerCase())) {
+      setPaymentModalPassengerId(null);
+      return;
+    }
+
+    const ownPassengers = normalizePassengers(lobby.passengers_json).filter(passenger =>
+      passenger.id === user.id || passenger.id.startsWith(`${user.id}_companion_`)
+    );
+    const pendingPassenger = ownPassengers.find(passenger => {
+      if (!['dropped-off', 'completed'].includes(String(passenger.dropoff_status || passenger.dropoffStatus || '').toLowerCase())) {
+        return false;
+      }
+
+      try {
+        return localStorage.getItem(`share_ride_payment_modal_dismissed_${lobby.id}_${user.id}_${passenger.id}`) !== '1';
+      } catch {
+        return true;
+      }
+    });
+
+    if (pendingPassenger) {
+      if (driverStatusTimerRef.current) clearTimeout(driverStatusTimerRef.current);
+      setDriverStatusPopup(null);
+    }
+    setPaymentModalPassengerId(pendingPassenger?.id || null);
+  }, [lobby?.id, lobby?.status, lobby?.passengers_json, user?.id, terminalStatus, paymentModalPassengerId]);
 
   // Compute route from driver to pickup/dropoff
   useEffect(() => {
@@ -1423,7 +1483,14 @@ if (matchingRouteLobby) {
   return (
     <div className="fixed inset-0 bg-black/60 z-[2600] flex items-center justify-center p-4">
       <Card role="dialog" aria-modal="true" aria-labelledby="matching-lobby-title" className="bg-surface p-6 max-w-sm w-full shadow-2xl">
-        <h3 id="matching-lobby-title" className="sr-only">Matching route options</h3>
+        <div className="mb-5 text-center">
+          <h3 id="matching-lobby-title" className="text-lg font-bold text-[var(--ink)]">
+            A lobby with the same route already exists
+          </h3>
+          <p className="mt-2 text-sm text-[var(--muted-foreground)]">
+            Join the existing lobby or create a new one for this route.
+          </p>
+        </div>
         <div className="grid gap-2">
           {canJoinMatchingLobby && (
             <Button onClick={() => resolveMatchingLobbyChoice('join')} className="w-full bg-[var(--primary)] text-white">
@@ -1434,7 +1501,7 @@ if (matchingRouteLobby) {
             Create a new lobby
           </Button>
           <Button variant="ghost" onClick={() => resolveMatchingLobbyChoice('cancel')} className="w-full">
-            Cancel booking
+            Close
           </Button>
         </div>
       </Card>
@@ -1554,7 +1621,14 @@ if (loading) {
 
   if (!lobby) return null;
 
-  const ownLobbyPassengers = normalizePassengers(lobby.passengers_json).filter(passenger => Boolean(
+  const passengers = lobby.passengers_json || [];
+  // Old lobbies stored one fare for the whole group; keep the per-passenger
+  // values available here so payment prompts work in both minimized and full views.
+  const passengersWithFares = backfillLegacySharedRidePassengerFares(
+    passengers,
+    Number(lobby.price_per_seat || pricePerSeat * passengers.length),
+  );
+  const ownLobbyPassengers = normalizePassengers(passengersWithFares).filter(passenger => Boolean(
     user?.id && (
       passenger.id === user.id ||
       passenger.id.startsWith(`${user.id}_companion_`)
@@ -1563,6 +1637,57 @@ if (loading) {
   const ownRideCompleted = ownLobbyPassengers.length > 0 && ownLobbyPassengers.every(passenger =>
     ['dropped-off', 'completed'].includes(String(passenger.dropoff_status || passenger.dropoffStatus || '').toLowerCase())
   );
+  const paymentModalPassenger = ownLobbyPassengers.find(passenger => passenger.id === paymentModalPassengerId) || null;
+  const dismissPaymentModal = () => {
+    if (lobby.id && user?.id && paymentModalPassenger) {
+      try {
+        localStorage.setItem(
+          `share_ride_payment_modal_dismissed_${lobby.id}_${user.id}_${paymentModalPassenger.id}`,
+          '1',
+        );
+      } catch {
+        // The prompt can still be dismissed for this mounted lobby if storage is unavailable.
+      }
+    }
+    setPaymentModalPassengerId(null);
+  };
+  const paymentModal = paymentModalPassenger ? (
+    <div className="fixed inset-0 z-[2600] flex items-center justify-center bg-black/60 p-4">
+      <Card
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="share-ride-payment-title"
+        className="w-full max-w-sm rounded-2xl bg-surface p-6 text-center shadow-2xl"
+      >
+        <div className="mx-auto mb-4 flex size-16 items-center justify-center rounded-full bg-[var(--primary-soft)]">
+          <CreditCard className="size-8 text-[var(--primary)]" aria-hidden="true" />
+        </div>
+        <h2 id="share-ride-payment-title" className="mb-2 text-xl font-bold text-[var(--ink)]">
+          Payment at drop-off
+        </h2>
+        <p className="mb-5 text-sm text-[var(--muted-foreground)]">
+          {String(lobby.payment_method || 'COD').toUpperCase() === 'COD'
+            ? 'Please settle this passenger’s fare with the driver.'
+            : 'This passenger’s fare is prepaid. The driver will continue the ride shortly.'}
+        </p>
+        <div className="mb-5 rounded-xl bg-[var(--muted)] p-4 text-left">
+          <div className="flex items-center justify-between gap-3">
+            <span className="text-sm text-[var(--muted-foreground)]">Your fare</span>
+            <strong className="text-lg text-[var(--primary)]">₱{Number(paymentModalPassenger.fare ?? pricePerSeat).toFixed(2)}</strong>
+          </div>
+          <div className="mt-2 flex items-center justify-between gap-3">
+            <span className="text-sm text-[var(--muted-foreground)]">Payment method</span>
+            <strong className="text-sm text-[var(--ink)]">
+              {String(lobby.payment_method || 'COD').toUpperCase() === 'COD' ? 'Cash to driver' : 'Prepaid'}
+            </strong>
+          </div>
+        </div>
+        <Button onClick={dismissPaymentModal} className="w-full bg-[var(--primary)] text-white">
+          Got it
+        </Button>
+      </Card>
+    </div>
+  ) : null;
 
   /*
    * The chat layer: the floating head and the overlay it opens.
@@ -1620,6 +1745,7 @@ if (loading) {
     return (
       <>
         {chatLayer}
+        {paymentModal}
         <button
         onClick={() => setIsMinimized(false)}
         className="fixed bottom-24 right-4 z-[2000] shadow-2xl"
@@ -1640,7 +1766,6 @@ if (loading) {
     );
   }
 
-  const passengers = lobby.passengers_json || [];
   const effectiveTerminalStatus = terminalStatus || (ownRideCompleted ? 'completed' : null);
   const isTerminal = effectiveTerminalStatus !== null;
   const getPassengerDisplayName = (passenger: LobbyPassenger) => {
@@ -1662,10 +1787,6 @@ if (loading) {
 
   // Old lobbies stored one total on the row; newer passengers carry their own
   // fare because each can have a different drop-off distance.
-  const passengersWithFares = backfillLegacySharedRidePassengerFares(
-    passengers,
-    Number(lobby?.price_per_seat || pricePerSeat * passengers.length),
-  );
   const yourPassengers = user
     ? passengersWithFares.filter(passenger => passenger.id === user.id || passenger.id.startsWith(`${user.id}_companion_`))
     : [];
@@ -1686,7 +1807,6 @@ if (loading) {
       passenger.id.startsWith(`${user.id}_companion_`)
     )
   );
-
   // Only show this customer's own drop-offs on their map.
   const ownDropoffOrder = orderLobbyDropoffs(yourPassengers, pickupCoords);
   const mapDropoffStops = ownDropoffOrder.reduce<Array<{
@@ -1901,7 +2021,7 @@ if (loading) {
             )}
 
             {/* Terminal route and live tracking map */}
-            {isMapsLoaded && ((lobby.status === 'driver_found' && driverLocation) || terminalRoutePath.length > 0 || mapDropoffStops.length > 0) && (
+            {isMapsLoaded && ((['driver_found', 'in_progress'].includes(lobby.status) && driverLocation) || terminalRoutePath.length > 0 || mapDropoffStops.length > 0) && (
               <div className="rounded-xl overflow-hidden mb-3 border border-[var(--border)] shadow-sm">
                 <GoogleMap
                   mapContainerStyle={{ width: '100%', height: '240px' }}
@@ -2169,6 +2289,8 @@ if (loading) {
       {/* Chat layer (floating head + overlay). Defined once above the minimized
           branch so the head stays on screen in both views. */}
       {chatLayer}
+
+      {paymentModal}
 
       {/* Driver Status Update Popup (same as private rides) */}
       {driverStatusPopup && (

@@ -562,6 +562,7 @@ export default function CustomerHome() {
    const [unreadMessagesCount, setUnreadMessagesCount] = useState(0);
    const [driverAcceptedPopup, setDriverAcceptedPopup] = useState<any>(null);
    const [driverStatusPopup, setDriverStatusPopup] = useState<{ status: string; message: string } | null>(null);
+   const [showCustomerPaymentModal, setShowCustomerPaymentModal] = useState(false);
   /**
    * The driver's latest status, kept permanently.
    *
@@ -1446,6 +1447,8 @@ export default function CustomerHome() {
                 // next booking starts clean.
                 setRideStatus(null);
                 setActiveRide(null);
+                setCurrentRequestId(null);
+                resetCustomerRideVisuals();
                 localStorage.removeItem(activeRideStorageKey);
                 return;
               }
@@ -1691,6 +1694,7 @@ export default function CustomerHome() {
          console.log('   Setting rideCompletedPopup = TRUE');
          setCompletionPopupType(inferredCompletionType);
          setRideCompletedPopup(true);
+         setShowCustomerPaymentModal(false);
         localStorage.setItem(lastShownStatusKey, status);
 
         // For deliveries, remember which business the customer can rate.
@@ -1698,9 +1702,11 @@ export default function CustomerHome() {
           captureDeliveryBusiness(rideContext);
         }
 
-        // Clear visible ride state so the driver card disappears
-        // but delay clearing currentRequestId to avoid racing popup render.
+        // Clear the finished route and stop polling the completed request.
         resetCustomerRideVisuals();
+        setRideStatus(null);
+        setCurrentRequestId(null);
+        if (activeRideStorageKey) localStorage.removeItem(activeRideStorageKey);
       }
 
         if (normalizedStatus && normalizedStatus !== 'pending' && normalizedStatus !== 'cancelled') {
@@ -1721,6 +1727,16 @@ export default function CustomerHome() {
         // when the status changes -- a re-poll of the same status must still correct
         // the card if the page was mounted mid-ride.
         setDriverLiveStatus(normalizedStatus);
+
+        if (['dropped-off', 'payment', 'awaiting-payment'].includes(normalizedStatus)) {
+          const dismissedKey = `customer_payment_modal_dismissed_${currentRequestId}`;
+          if (!String(currentRequestId || '').startsWith('lobby_') && localStorage.getItem(dismissedKey) !== '1') {
+            setShowCustomerPaymentModal(true);
+          }
+          if (driverStatusTimerRef.current) clearTimeout(driverStatusTimerRef.current);
+          setDriverStatusPopup(null);
+          return;
+        }
 
         if (normalizedStatus !== lastShownStatus) {
           // Normalize driver-side statuses to the display keys used by the popup UI.
@@ -2072,6 +2088,7 @@ export default function CustomerHome() {
 
        // Handle completion status only.
        if (realtimeStatus === 'completed') {
+         setShowCustomerPaymentModal(false);
          const lastShownStatusKey = `last_shown_status_${currentRequestId}`;
          const lastShownStatus = localStorage.getItem(lastShownStatusKey);
          const inferredCompletionType: 'ride' | 'delivery' =
@@ -2102,9 +2119,11 @@ export default function CustomerHome() {
            }
 
            // Immediately clear most ride UI so the driver card disappears while
-           // the completion popup is shown, but keep currentRequestId briefly to
-           // avoid racing the popup render.
+           // the completion popup is shown and stop polling the finished request.
            resetCustomerRideVisuals();
+           setRideStatus(null);
+           setCurrentRequestId(null);
+           if (activeRideStorageKey) localStorage.removeItem(activeRideStorageKey);
          }
        }
 
@@ -2121,8 +2140,18 @@ export default function CustomerHome() {
         return;
       }
 
-      // Check for other driver status updates (for popup messages)
-       if (realtimeStatus && realtimeStatus !== 'pending' && realtimeStatus !== 'completed' && realtimeStatus !== 'cancelled') {
+       // Payment stays open until the customer acknowledges it; the brief status
+       // sheet remains reserved for the other ride milestones.
+       if (['dropped-off', 'payment', 'awaiting-payment'].includes(realtimeStatus)) {
+         setDriverLiveStatus(realtimeStatus);
+         const dismissedKey = `customer_payment_modal_dismissed_${currentRequestId}`;
+         if (!String(currentRequestId || '').startsWith('lobby_') && localStorage.getItem(dismissedKey) !== '1') {
+           setShowCustomerPaymentModal(true);
+         }
+         if (driverStatusTimerRef.current) clearTimeout(driverStatusTimerRef.current);
+         setDriverStatusPopup(null);
+       // Check for other driver status updates (for popup messages)
+       } else if (realtimeStatus && realtimeStatus !== 'pending' && realtimeStatus !== 'completed' && realtimeStatus !== 'cancelled') {
         const statusDisplayMap: { [key: string]: string } = {
           'on-the-way': 'Your driver is on the way to pick you up.',
           'arrived': 'Your driver has arrived.',
@@ -3304,12 +3333,19 @@ const getPrice = () => {
 };
 
   const resetCustomerRideVisuals = () => {
-    setPickup('');
+    hasManualPickupSelectionRef.current = false;
+    setPickup(currentLocation ? 'Current Location' : '');
     setPickupAddress('');
     setDropoff('');
     setDropoffAddress('');
-    setPickupCoords(null);
+    setPickupCoords(currentLocation || null);
     setDropoffCoords(null);
+    setPickupMarker(null);
+    setDropoffMarker(null);
+    setMapCenter(currentLocation);
+    setSelectedMarker(null);
+    setFocusedMarker(null);
+    setRouteTarget(null);
     setRoutePath([]);
     setDriverLocation(null);
     setSelectedTerminalId(null);
@@ -3317,16 +3353,29 @@ const getPrice = () => {
     setDriverRoutePath([]);
     setDestinationRoutePath([]);
     setEtaToDestination(null);
-    setSelectedMarker(null);
     setLocationPreview(null);
     setPredictions([]);
     setSearchQuery('');
+    setActiveLocationInput(null);
+    setShowLocationPicker(false);
+    setRoutePreviewTerminalId(null);
+    setRoutePreviewFocusRouteId(null);
+    setRoutePreviewVisibleRouteIds([]);
+    setShowRoutePreviewList(false);
     setActiveRide(null);
     setBookedFare(null);
+    setShowCustomerPaymentModal(false);
     setSelectedVehicle(null);
     setIsSearchMinimized(false);
     // A finished ride drops the customer back on the plain map + Book a Ride.
     setBookingStep('home');
+  };
+
+  const dismissCustomerPaymentModal = () => {
+    if (currentRequestId) {
+      localStorage.setItem(`customer_payment_modal_dismissed_${currentRequestId}`, '1');
+    }
+    setShowCustomerPaymentModal(false);
   };
 
   // When a delivery completes, capture which business the customer can rate.
@@ -5261,6 +5310,12 @@ const getPrice = () => {
             // mid-ride (no terminal status), keep the return button.
             if (status === 'completed' || status === 'cancelled') {
               if (activeShareLobbyStorageKey) localStorage.removeItem(activeShareLobbyStorageKey);
+              setRideStatus(null);
+              setRequestedAt(null);
+              setCurrentSharedRideId(null);
+              setShowCustomerPaymentModal(false);
+              setPassengerCount(1);
+              resetCustomerRideVisuals();
             }
           }}
         />
@@ -5308,6 +5363,42 @@ const getPrice = () => {
 
 
       {/* Driver Status Update Popup */}
+      {rideStateBelongsToCurrentUser && showCustomerPaymentModal && !showShareLobby && !isDeliveryRide && (
+        <div className="fixed inset-0 z-[3600] flex items-center justify-center bg-black/60 p-4">
+          <Card
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="customer-payment-title"
+            className="w-full max-w-sm rounded-2xl bg-surface p-6 text-center shadow-2xl"
+          >
+            <div className="mx-auto mb-4 flex size-16 items-center justify-center rounded-full bg-[var(--primary-soft)]">
+              <CreditCard className="size-8 text-[var(--primary)]" aria-hidden="true" />
+            </div>
+            <h2 id="customer-payment-title" className="mb-2 text-xl font-bold text-[var(--ink)]">
+              Payment at drop-off
+            </h2>
+            <p className="mb-5 text-sm text-[var(--muted-foreground)]">
+              {paymentMethod === 'COD'
+                ? 'Please pay your driver to complete the ride.'
+                : 'Your ride was prepaid. The driver will complete the ride shortly.'}
+            </p>
+            <div className="mb-5 rounded-xl bg-[var(--muted)] p-4 text-left">
+              <div className="flex items-center justify-between gap-3">
+                <span className="text-sm text-[var(--muted-foreground)]">Ride fare</span>
+                <strong className="text-lg text-[var(--primary)]">₱{Number(bookedFare ?? getPrice()).toFixed(2)}</strong>
+              </div>
+              <div className="mt-2 flex items-center justify-between gap-3">
+                <span className="text-sm text-[var(--muted-foreground)]">Payment method</span>
+                <strong className="text-sm text-[var(--ink)]">{paymentMethod === 'COD' ? 'Cash to driver' : 'Prepaid'}</strong>
+              </div>
+            </div>
+            <Button onClick={dismissCustomerPaymentModal} className="w-full bg-[var(--primary)] text-white">
+              Got it
+            </Button>
+          </Card>
+        </div>
+      )}
+
       {driverStatusPopup && (
         <div
           className="fixed inset-0 bg-black/50 z-[3000] flex items-end"
