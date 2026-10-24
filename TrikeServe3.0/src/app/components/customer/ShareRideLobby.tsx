@@ -18,6 +18,7 @@ import { useDevModeOverride } from "../../hooks/useDevModeSettings";
 import { customerActiveShareLobbyStorageKey, isCustomerLobbyPassenger } from "../../../lib/rideLock";
 import { legacyRouteFromBoundary, normalizeTerminalRoutes } from "@/lib/terminalRoutes";
 import { Tricycle } from "../ui/Tricycle";
+import BrowseAvailableLobbies from "./BrowseAvailableLobbies";
 
 const DRIVER_STATUS_ICONS: Record<string, typeof MapPin> = {
   cancelled: X,
@@ -182,10 +183,12 @@ interface ShareRideLobbyProps {
   presentation?: 'sheet' | 'page';
   onDriverFound: (lobbyId: string) => void;
   onLobbyLoaded?: (lobbyId: string) => void;
+  onLobbyMoved?: (lobbyId: string) => void;
   onClose: (status?: string) => void;
 }
 
-type MatchingLobbyChoice = 'join' | 'create' | 'cancel';
+type MatchingLobbyChoice = 'join' | 'create' | 'cancel' | 'stay';
+type MatchingLobbyPromptMode = 'booking' | 'after-create';
 
 export default function ShareRideLobby({
   lobbyId,
@@ -206,6 +209,7 @@ export default function ShareRideLobby({
   presentation = 'sheet',
   onDriverFound,
   onLobbyLoaded,
+  onLobbyMoved,
   onClose
 }: ShareRideLobbyProps) {
   const { user } = useAuth();
@@ -256,10 +260,13 @@ export default function ShareRideLobby({
   const [driverProfileAvatar, setDriverProfileAvatar] = useState<string | null>(null);
   const [lobby, setLobby] = useState<ShareRideLobby | null>(null);
   const [matchingRouteLobby, setMatchingRouteLobby] = useState<ShareRideLobby | null>(null);
+  const [matchingLobbyPromptMode, setMatchingLobbyPromptMode] = useState<MatchingLobbyPromptMode>('booking');
   const matchingLobbyChoiceResolver = useRef<((choice: MatchingLobbyChoice) => void) | null>(null);
   const [bookingCancelled, setBookingCancelled] = useState(false);
   const [isMinimized, setIsMinimized] = useState(false);
   const [showLeaveConfirm, setShowLeaveConfirm] = useState(false);
+  const [showLobbyBrowser, setShowLobbyBrowser] = useState(false);
+  const [moveFailureMessage, setMoveFailureMessage] = useState<string | null>(null);
   const [terminalStatus, setTerminalStatus] = useState<'completed' | 'cancelled' | null>(null);
   const [terminalCancelMessage, setTerminalCancelMessage] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -595,8 +602,12 @@ export default function ShareRideLobby({
     });
   };
 
-  const askAboutMatchingLobby = (candidate: ShareRideLobby): Promise<MatchingLobbyChoice> => {
+  const askAboutMatchingLobby = (
+    candidate: ShareRideLobby,
+    promptMode: MatchingLobbyPromptMode = 'booking',
+  ): Promise<MatchingLobbyChoice> => {
     setMatchingRouteLobby(candidate);
+    setMatchingLobbyPromptMode(promptMode);
     return new Promise((resolve) => {
       matchingLobbyChoiceResolver.current = resolve;
     });
@@ -606,6 +617,7 @@ export default function ShareRideLobby({
     const resolve = matchingLobbyChoiceResolver.current;
     matchingLobbyChoiceResolver.current = null;
     setMatchingRouteLobby(null);
+    setMatchingLobbyPromptMode('booking');
     if (choice === 'cancel') {
       setBookingCancelled(true);
       onClose();
@@ -614,6 +626,41 @@ export default function ShareRideLobby({
   };
 
   const toTime = (value?: string) => new Date(value || 0).getTime();
+
+  const movePassengerGroup = async (
+    sourceLobby: ShareRideLobby,
+    destinationLobbyId: string,
+    group: LobbyPassenger[],
+  ) => {
+    if (!user?.id || group.length === 0) {
+      return { data: null, error: new Error('Your passenger group could not be loaded') };
+    }
+
+    const { data: destinationLobby, error: joinError } = await supabaseHelpers.joinShareRideLobbyGroup(
+      destinationLobbyId,
+      group,
+    );
+    if (joinError || !destinationLobby) return { data: null, error: joinError || new Error('Could not join that lobby') };
+
+    const { data: latestSource, error: sourceError } = await supabaseHelpers.getLobbyById(sourceLobby.id);
+    if (sourceError || !latestSource || latestSource.status !== 'waiting') {
+      await supabaseHelpers.leaveShareRideLobby(destinationLobbyId, user.id);
+      return { data: null, error: new Error('Your current lobby is no longer waiting, so the move was cancelled') };
+    }
+
+    const { error: leaveError } = await supabaseHelpers.leaveShareRideLobby(sourceLobby.id, user.id);
+    if (leaveError) {
+      const { error: rollbackError } = await supabaseHelpers.leaveShareRideLobby(destinationLobbyId, user.id);
+      return {
+        data: null,
+        error: new Error(rollbackError
+          ? 'The move could not be completed. Check both lobbies before trying again.'
+          : 'Could not leave your current lobby, so you remain there.'),
+      };
+    }
+
+    return { data: destinationLobby, error: null };
+  };
 
   useEffect(() => {
     const terminalId = lobby?.terminal_id || selectedTerminalId;
@@ -1188,6 +1235,7 @@ export default function ShareRideLobby({
   };
 
   const findOrCreateLobby = async (): Promise<ShareRideLobby | null> => {
+    let declinedMatchingLobbyId: string | null = null;
     try {
       // The booking screen runs these two gates too, but a lobby can also be
       // opened directly from the shared-rides browser, so they cannot be assumed.
@@ -1300,6 +1348,7 @@ export default function ShareRideLobby({
           passengers_json: passengers,
         } as ShareRideLobby);
         if (choice === 'cancel') return null;
+        if (choice === 'create') declinedMatchingLobbyId = matchingLobby.id;
 
         if (choice === 'join') {
           // Refresh after the choice so a passenger who joined meanwhile is not
@@ -1359,9 +1408,9 @@ export default function ShareRideLobby({
           }
 
           // Update the lobby
-          const { data: updated, error: updateError } = await supabaseHelpers.updateLobbyPassengers(
+          const { data: updated, error: updateError } = await supabaseHelpers.joinShareRideLobbyGroup(
             matchingLobby.id,
-            newPassengers
+            newPassengers.slice(passengers.length),
           );
 
           if (!updateError && updated) {
@@ -1438,10 +1487,60 @@ export default function ShareRideLobby({
 
       if (!createError && createdLobby) {
         console.log('✅ Created new lobby:', createdLobby.id);
-        return {
+        const normalizedCreatedLobby = {
           ...createdLobby,
-          passengers_json: Array.isArray(createdLobby.passengers_json) ? createdLobby.passengers_json : []
-        };
+          passengers_json: dedupePassengers(normalizePassengers(createdLobby.passengers_json)),
+        } as ShareRideLobby;
+
+        // Two customers can both pass the pre-create lookup before either
+        // insert is visible. Briefly recheck after our insert so the second
+        // lobby can offer an explicit move into the first one.
+        let concurrentMatch: any = null;
+        for (let attempt = 0; attempt < 4 && !concurrentMatch; attempt += 1) {
+          const { data: waitingLobbies, error: waitingError } = await supabaseHelpers.getAvailableLobbies();
+          if (!waitingError && waitingLobbies) {
+            concurrentMatch = waitingLobbies.find((candidate: any) =>
+              candidate.id !== normalizedCreatedLobby.id &&
+              candidate.id !== declinedMatchingLobbyId &&
+              isSimilarRoute(candidate, pickup, dropoff, pickupAddress, dropoffAddress, selectedTerminalId, {
+                dropoffCoords,
+                routePoints,
+                routeWidthM,
+              })
+            ) || null;
+          }
+          if (!concurrentMatch && attempt < 3) {
+            await new Promise((resolve) => setTimeout(resolve, 350));
+          }
+        }
+
+        if (concurrentMatch) {
+          const choice = await askAboutMatchingLobby({
+            ...concurrentMatch,
+            passengers_json: dedupePassengers(normalizePassengers(concurrentMatch.passengers_json)),
+          } as ShareRideLobby, 'after-create');
+
+          if (choice === 'join') {
+            const sourceGroup = normalizedCreatedLobby.passengers_json.filter((passenger) =>
+              passenger.id === user?.id || passenger.id.startsWith(`${user?.id}_companion_`)
+            );
+            const { data: movedLobby, error: moveError } = await movePassengerGroup(
+              normalizedCreatedLobby,
+              concurrentMatch.id,
+              sourceGroup,
+            );
+            if (moveError || !movedLobby) {
+              setMoveFailureMessage(`${moveError?.message || 'Could not move your group'}. You are still in your new lobby.`);
+              return normalizedCreatedLobby;
+            }
+            return {
+              ...movedLobby,
+              passengers_json: dedupePassengers(normalizePassengers(movedLobby.passengers_json)),
+            } as ShareRideLobby;
+          }
+        }
+
+        return normalizedCreatedLobby;
       }
 
       setError('Failed to create lobby');
@@ -1533,24 +1632,38 @@ if (matchingRouteLobby) {
       <Card role="dialog" aria-modal="true" aria-labelledby="matching-lobby-title" className="bg-surface p-6 max-w-sm w-full shadow-2xl">
         <div className="mb-5 text-center">
           <h3 id="matching-lobby-title" className="text-lg font-bold text-[var(--ink)]">
-            A lobby with the same route already exists
+            {matchingLobbyPromptMode === 'after-create'
+              ? 'Another lobby was created on this route'
+              : 'A lobby with the same route already exists'}
           </h3>
           <p className="mt-2 text-sm text-[var(--muted-foreground)]">
-            Join the existing lobby or create a new one for this route.
+            {matchingLobbyPromptMode === 'after-create'
+              ? canJoinMatchingLobby
+                ? 'A customer created a lobby for this route at the same time. Do you want to move your group into it?'
+                : 'A customer created a lobby for this route at the same time, but it does not have enough seats for your group.'
+              : 'Join the existing lobby or create a new one for this route.'}
           </p>
         </div>
         <div className="grid gap-2">
           {canJoinMatchingLobby && (
             <Button onClick={() => resolveMatchingLobbyChoice('join')} className="w-full bg-[var(--primary)] text-white">
-              Join existing lobby
+              {matchingLobbyPromptMode === 'after-create' ? 'Move to this lobby' : 'Join existing lobby'}
             </Button>
           )}
-          <Button variant="outline" onClick={() => resolveMatchingLobbyChoice('create')} className="w-full">
-            Create a new lobby
-          </Button>
-          <Button variant="ghost" onClick={() => resolveMatchingLobbyChoice('cancel')} className="w-full">
-            Close
-          </Button>
+          {matchingLobbyPromptMode === 'after-create' ? (
+            <Button variant="outline" onClick={() => resolveMatchingLobbyChoice('stay')} className="w-full">
+              Stay in this lobby
+            </Button>
+          ) : (
+            <>
+              <Button variant="outline" onClick={() => resolveMatchingLobbyChoice('create')} className="w-full">
+                Create a new lobby
+              </Button>
+              <Button variant="ghost" onClick={() => resolveMatchingLobbyChoice('cancel')} className="w-full">
+                Close
+              </Button>
+            </>
+          )}
         </div>
       </Card>
     </div>
@@ -2014,9 +2127,21 @@ if (loading) {
             <div className="p-4">
               <div className="flex items-center justify-between mb-3">
                 <h3 className="text-xs font-bold text-[var(--muted-foreground)] uppercase tracking-widest">Passengers</h3>
-                <span className="text-xs font-bold text-[var(--primary)] bg-[var(--primary-soft)] px-2.5 py-1 rounded-full">
-                  {passengers.length}/{lobby.max_seats}
-                </span>
+                <div className="flex items-center gap-2">
+                  <span className="text-xs font-bold text-[var(--primary)] bg-[var(--primary-soft)] px-2.5 py-1 rounded-full">
+                    {passengers.length}/{lobby.max_seats}
+                  </span>
+                  {lobby.status === 'waiting' && (
+                    <Button
+                      variant="outline"
+                      onClick={() => setShowLobbyBrowser(true)}
+                      className="h-8 px-2 text-xs"
+                    >
+                      <Users className="mr-1.5 size-4" aria-hidden="true" />
+                      View lobbies
+                    </Button>
+                  )}
+                </div>
               </div>
 
               {/* Passenger Cards */}
@@ -2502,6 +2627,49 @@ if (loading) {
                 Leave Lobby
               </Button>
             </div>
+          </Card>
+        </div>
+      )}
+
+      {showLobbyBrowser && lobby.status === 'waiting' && (
+        <BrowseAvailableLobbies
+          pickup={lobby.pickup_location}
+          pickupAddress={lobby.pickup_address || lobby.pickup_location}
+          pickupCoords={pickupCoords || (
+            lobby.pickup_lat != null && lobby.pickup_lng != null
+              ? { lat: Number(lobby.pickup_lat), lng: Number(lobby.pickup_lng) }
+              : null
+          )}
+          terminalId={lobby.terminal_id || selectedTerminalId}
+          routePoints={routePoints}
+          routeWidthM={routeWidthM}
+          dropoff={ownDropoff}
+          dropoffAddress={ownPassenger?.dropoffAddress || ownDropoff}
+          dropoffCoords={dropoffCoords || (
+            ownPassenger?.dropoffLat != null && ownPassenger?.dropoffLng != null
+              ? { lat: Number(ownPassenger.dropoffLat), lng: Number(ownPassenger.dropoffLng) }
+              : null
+          )}
+          rates={{ baseFare: yourFarePerSeat, baseFareIncludedKm: 0, perKm: 0 }}
+          moveFromLobbyId={lobby.id}
+          movingPassengers={yourPassengers}
+          fareOverride={yourSeatTotal}
+          onLobbyJoined={(nextLobbyId) => {
+            setShowLobbyBrowser(false);
+            onLobbyMoved?.(nextLobbyId);
+          }}
+          onClose={() => setShowLobbyBrowser(false)}
+        />
+      )}
+
+      {moveFailureMessage && (
+        <div className="fixed inset-0 z-[2700] flex items-center justify-center bg-black/60 p-4">
+          <Card role="dialog" aria-modal="true" className="w-full max-w-sm p-6">
+            <h3 className="mb-2 text-lg font-bold text-[var(--ink)]">Could not move lobbies</h3>
+            <p className="mb-5 text-sm text-[var(--muted-foreground)]">{moveFailureMessage}</p>
+            <Button onClick={() => setMoveFailureMessage(null)} className="w-full bg-[var(--primary)] text-white">
+              Stay in this lobby
+            </Button>
           </Card>
         </div>
       )}

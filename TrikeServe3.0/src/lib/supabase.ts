@@ -2381,6 +2381,71 @@ export const supabaseHelpers = {
     return { data, error };
   },
 
+  /**
+   * Add a customer's complete passenger group in one guarded update. The
+   * updated_at comparison makes concurrent joins retry against the newest
+   * passenger list instead of overwriting another customer's booking.
+   */
+  async joinShareRideLobbyGroup(lobbyId: string, group: any[]) {
+    const groupPassengers = Array.isArray(group) ? group.filter((passenger) => passenger?.id) : [];
+    if (groupPassengers.length === 0) {
+      return { data: null, error: new Error('No passengers were provided to move') };
+    }
+
+    for (let attempt = 0; attempt < 4; attempt += 1) {
+      const { data: lobby, error: fetchError } = await supabase
+        .from('shared_ride_lobbies')
+        .select('*')
+        .eq('id', lobbyId)
+        .maybeSingle();
+
+      if (fetchError) return { data: null, error: fetchError };
+      if (!lobby) return { data: null, error: new Error('Lobby not found') };
+      if (lobby.status !== 'waiting') {
+        return { data: null, error: new Error('This lobby is no longer waiting for passengers') };
+      }
+
+      let passengers: any[] = [];
+      try {
+        passengers = Array.isArray(lobby.passengers_json)
+          ? lobby.passengers_json
+          : JSON.parse(lobby.passengers_json || '[]');
+      } catch {
+        passengers = [];
+      }
+
+      const existingIds = new Set(passengers.map((passenger) => passenger?.id).filter(Boolean));
+      const passengersToAdd = groupPassengers.filter((passenger) => !existingIds.has(passenger.id));
+      if (passengersToAdd.length === 0) return { data: lobby, error: null };
+
+      const maxSeats = Number(lobby.max_seats || 0);
+      if (passengers.length + passengersToAdd.length > maxSeats) {
+        return {
+          data: null,
+          error: new Error(`This lobby does not have enough seats for your group of ${groupPassengers.length}`),
+        };
+      }
+
+      let updateQuery = supabase
+        .from('shared_ride_lobbies')
+        .update({
+          passengers_json: [...passengers, ...passengersToAdd],
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', lobbyId)
+        .eq('status', 'waiting')
+        .eq('passengers_json', JSON.stringify(passengers));
+
+      if (lobby.updated_at) updateQuery = updateQuery.eq('updated_at', lobby.updated_at);
+
+      const { data, error } = await updateQuery.select().maybeSingle();
+      if (error) return { data: null, error };
+      if (data) return { data, error: null };
+    }
+
+    return { data: null, error: new Error('This lobby changed while you were moving. Refresh the list and try again.') };
+  },
+
    async leaveShareRideLobby(lobbyId: string, passengerId: string) {
      console.log(`🚪 LEAVE LOBBY: lobbyId=${lobbyId}, passengerId=${passengerId}`);
 

@@ -208,6 +208,12 @@ export default function ActiveShareRidePage() {
     }
   };
 
+  const handleLobbyMoved = (id: string) => {
+    saveLobbyId(id);
+    setLobbyId(id);
+    navigate(location.pathname, { replace: true, state: { lobbyId: id } });
+  };
+
   return (
     <ShareRideLobby
       lobbyId={lobbyId || undefined}
@@ -228,6 +234,7 @@ export default function ActiveShareRidePage() {
       routeWidthM={booking?.routeWidthM ?? null}
       onLobbyLoaded={saveLobbyId}
       onDriverFound={saveLobbyId}
+      onLobbyMoved={handleLobbyMoved}
       onClose={returnToCustomerHome}
     />
   );

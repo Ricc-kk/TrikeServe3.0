@@ -61,6 +61,11 @@ interface BrowseAvailableLobbiesProps {
   dropoffAddress: string;
   dropoffCoords?: { lat: number; lng: number } | null;
   rates: Pick<RideRates, "baseFare" | "baseFareIncludedKm" | "perKm">;
+  /** Current lobby and group to transfer when browsing from an active lobby. */
+  moveFromLobbyId?: string | null;
+  movingPassengers?: any[];
+  /** Keep the displayed fare aligned with the passengers being moved. */
+  fareOverride?: number | null;
   onLobbyJoined: (lobbyId: string) => void;
   onClose: () => void;
 }
@@ -89,6 +94,9 @@ export default function BrowseAvailableLobbies({
   dropoffAddress,
   dropoffCoords,
   rates,
+  moveFromLobbyId,
+  movingPassengers,
+  fareOverride,
   onLobbyJoined,
   onClose
 }: BrowseAvailableLobbiesProps) {
@@ -100,9 +108,13 @@ export default function BrowseAvailableLobbies({
   const [error, setError] = useState<string | null>(null);
   const [selectedLobby, setSelectedLobby] = useState<string | null>(null);
   const [joiningLobby, setJoiningLobby] = useState(false);
+  const movingGroup = Boolean(moveFromLobbyId && movingPassengers?.length);
+  const seatsNeeded = movingGroup ? movingPassengers!.length : 1;
   const joiningDistanceKm = straightLineKm(pickupCoords, dropoffCoords);
-  const joiningFare = computeSharedRideFarePerPassenger(rates, joiningDistanceKm);
-  const joiningFareHasDistance = joiningDistanceKm != null;
+  const joiningFare = fareOverride != null && Number.isFinite(Number(fareOverride))
+    ? Number(fareOverride)
+    : computeSharedRideFarePerPassenger(rates, joiningDistanceKm);
+  const joiningFareHasDistance = fareOverride == null && joiningDistanceKm != null;
 
   // Match the selected pickup and drop-off. A terminal can have several
   // destinations, and terminal IDs only identify the pickup side of a trip.
@@ -223,6 +235,43 @@ export default function BrowseAvailableLobbies({
         return;
       }
 
+      if (lobby.status !== 'waiting') {
+        setError('This lobby is no longer waiting for passengers. Refresh the list and choose another lobby.');
+        return;
+      }
+
+      if (movingGroup && moveFromLobbyId) {
+        const { data: sourceLobby, error: sourceError } = await supabaseHelpers.getLobbyById(moveFromLobbyId);
+        if (sourceError || !sourceLobby || sourceLobby.status !== 'waiting') {
+          setError('Your current lobby is no longer waiting, so it cannot be moved.');
+          return;
+        }
+        let sourcePassengers: any[] = [];
+        try {
+          sourcePassengers = Array.isArray(sourceLobby.passengers_json)
+            ? sourceLobby.passengers_json
+            : JSON.parse(sourceLobby.passengers_json || '[]');
+        } catch {
+          sourcePassengers = [];
+        }
+        const currentSourceIds = new Set(sourcePassengers.map((passenger) => passenger?.id));
+        if (movingPassengers!.some((passenger) => !currentSourceIds.has(passenger.id))) {
+          setError('Your passenger group changed. Close this list and open it again to refresh.');
+          return;
+        }
+      }
+
+      const currentTargetPassengers = Array.isArray(lobby.passengers_json) ? lobby.passengers_json : [];
+      if (currentTargetPassengers.length + seatsNeeded > Number(lobby.max_seats || 0)) {
+        setError(`This lobby does not have enough seats for your group of ${seatsNeeded}. Choose another lobby.`);
+        return;
+      }
+
+      if (moveFromLobbyId && !movingGroup) {
+        setError('Your current lobby group could not be loaded. Please close this list and try again.');
+        return;
+      }
+
       const joinedDropoffAddress = dropoffAddress || dropoff;
 
       if (!routeMatches(lobby)) {
@@ -297,7 +346,7 @@ export default function BrowseAvailableLobbies({
       // Create passenger object. The joiner's own profile and destination ride
       // with them, so the lobby can show who is in it and where each person gets
       // off -- not just the lobby creator's details.
-      const passenger = {
+      const defaultPassenger = {
         id: user.id,
         name: user.name || 'Customer',
         emoji: '👤',
@@ -312,15 +361,36 @@ export default function BrowseAvailableLobbies({
         fare: computeSharedRideFarePerPassenger(rates, straightLineKm(pickupCoords, coords)),
       };
 
-      // Join the lobby
-      const { data: updatedLobby, error: joinError } = await supabaseHelpers.joinShareRideLobby(
-        lobbyId,
-        passenger
-      );
+      const passengersToJoin = movingGroup
+        ? movingPassengers!.map((passenger) => ({
+            ...passenger,
+            pickup: lobby.pickup_location,
+            pickupAddress: lobby.pickup_address || lobby.pickup_location,
+            fare: passenger.fare ?? joiningFare,
+          }))
+        : [defaultPassenger];
 
-      if (joinError) {
-        setError(joinError.message || 'Could not join lobby');
+      const { data: updatedLobby, error: joinError } = movingGroup
+        ? await supabaseHelpers.joinShareRideLobbyGroup(lobbyId, passengersToJoin)
+        : await supabaseHelpers.joinShareRideLobby(lobbyId, passengersToJoin[0]);
+
+      if (joinError || !updatedLobby) {
+        setError(joinError?.message || 'Could not join lobby');
         return;
+      }
+
+      if (movingGroup && moveFromLobbyId) {
+        const { data: currentSource } = await supabaseHelpers.getLobbyById(moveFromLobbyId);
+        const { error: leaveCurrentError } = currentSource?.status === 'waiting'
+          ? await supabaseHelpers.leaveShareRideLobby(moveFromLobbyId, user.id)
+          : { error: new Error('Your current lobby is no longer waiting') };
+        if (leaveCurrentError) {
+          const { error: rollbackError } = await supabaseHelpers.leaveShareRideLobby(lobbyId, user.id);
+          setError(rollbackError
+            ? 'The move could not be completed. Please check both lobbies before trying again.'
+            : 'Could not leave your current lobby, so you remain there. Please try again.');
+          return;
+        }
       }
 
       if (updatedLobby) {
@@ -456,9 +526,9 @@ export default function BrowseAvailableLobbies({
                         <span className="text-sm font-semibold text-[var(--ink)]">
                           {passengers.length}/{lobby.max_seats}
                         </span>
-                        {availableSeats > 0 && (
+                        {availableSeats > 0 && availableSeats >= seatsNeeded && (
                           <Badge variant="outline" className="border-[var(--success)] text-[var(--success)] ml-auto">
-                            {availableSeats} seats
+                            {availableSeats} {availableSeats === 1 ? 'seat' : 'seats'}
                           </Badge>
                         )}
                       </div>
@@ -466,10 +536,16 @@ export default function BrowseAvailableLobbies({
                       {/* Price and Time */}
                       <div className="flex items-center justify-between">
                         <div>
-                          <p className="text-xs text-[var(--muted-foreground)]">Your fare</p>
+                          <p className="text-xs text-[var(--muted-foreground)]">
+                            {movingGroup ? `Your group fare (${seatsNeeded} seats)` : 'Your fare'}
+                          </p>
                           <p className="text-lg font-bold text-[var(--primary)]">₱{joiningFare.toFixed(2)}</p>
                           <p className="text-[10px] text-[var(--muted-foreground)]">
-                            {joiningFareHasDistance ? "Base fare + your distance" : "Base fare; distance charge added when located"}
+                            {fareOverride != null
+                              ? 'Current total for your passenger group'
+                              : joiningFareHasDistance
+                                ? 'Base fare + your distance'
+                                : 'Base fare; distance charge added when located'}
                           </p>
                         </div>
                         <div className="text-right">
@@ -484,7 +560,7 @@ export default function BrowseAvailableLobbies({
                       {selectedLobby === lobby.id && (
                         <Button
                           onClick={() => handleJoinLobby(lobby.id)}
-                          disabled={joiningLobby || availableSeats === 0}
+                          disabled={joiningLobby || availableSeats < seatsNeeded}
                           className="w-full bg-[var(--primary)] hover:bg-[var(--primary)] text-white"
                         >
                           {joiningLobby ? (
@@ -492,11 +568,11 @@ export default function BrowseAvailableLobbies({
                               <div className="animate-spin w-4 h-4 border-2 border-white border-t-transparent rounded-full mr-2"></div>
                               Joining...
                             </>
-                          ) : availableSeats === 0 ? (
-                            'Lobby Full'
+                          ) : availableSeats < seatsNeeded ? (
+                            `Not enough seats for your group (${seatsNeeded})`
                           ) : (
                             <>
-                              Join Lobby
+                              {movingGroup ? 'Move to this lobby' : 'Join Lobby'}
                               <ChevronRight className="w-4 h-4 ml-2" />
                             </>
                           )}
