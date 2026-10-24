@@ -4731,13 +4731,6 @@ const getPrice = () => {
                 </button>
               </div>
 
-              {activeLocationInput === 'dropoff' && (
-                <div className="mt-2">
-                  <p className="text-sm font-bold text-[var(--info)]">{enforceBoundary ? 'Choose a drop-off along the highlighted route' : 'Choose a drop-off location'}</p>
-                  <p className="mt-0.5 text-xs leading-relaxed text-[var(--muted-foreground)]">{enforceBoundary ? 'Search for a place or tap the highlighted route on the map.' : 'Search for a place or tap the map to choose your destination.'}</p>
-                </div>
-              )}
-
                <div className="mt-3">
                  {pickerBoundaryWarning && activeLocationInput === 'pickup' && (
                    <div
