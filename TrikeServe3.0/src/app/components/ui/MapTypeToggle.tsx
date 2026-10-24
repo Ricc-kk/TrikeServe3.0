@@ -15,7 +15,7 @@ export default function MapTypeToggle() {
   useEffect(() => {
     const control = document.createElement("div");
     control.style.margin = "8px";
-    const controls = map.controls[google.maps.ControlPosition.TOP_RIGHT];
+    const controls = map.controls[google.maps.ControlPosition.TOP_LEFT];
 
     // The app supplies its own consistent control, so hide Google's default
     // map-type selector (where it would otherwise be enabled).

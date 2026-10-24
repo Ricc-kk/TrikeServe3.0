@@ -4713,8 +4713,8 @@ const getPrice = () => {
       {/* Location Picker Modal */}
       {showLocationPicker && (
         <div className="fixed inset-0 z-[2000] flex flex-col bg-[var(--background)]">
-          <div className="absolute top-4 left-4 right-4 z-[2010]">
-            <Card className="gap-0 border border-line bg-[var(--card)] p-4 shadow-xl">
+          <div className="absolute inset-x-0 top-0 z-[2010]">
+            <header className="border-b border-line bg-[var(--card)] px-4 pb-3 pt-[calc(env(safe-area-inset-top)+1rem)] shadow-xl sm:px-6">
               <div className="flex items-center justify-between gap-3">
                 <div className="flex-1">
                   <p className="text-xs uppercase tracking-widest text-[var(--muted-foreground)] font-semibold">
@@ -4731,13 +4731,14 @@ const getPrice = () => {
                 </button>
               </div>
 
+              {activeLocationInput === 'dropoff' && (
+                <div className="mt-2">
+                  <p className="text-sm font-bold text-[var(--info)]">{enforceBoundary ? 'Choose a drop-off along the highlighted route' : 'Choose a drop-off location'}</p>
+                  <p className="mt-0.5 text-xs leading-relaxed text-[var(--muted-foreground)]">{enforceBoundary ? 'Search for a place or tap the highlighted route on the map.' : 'Search for a place or tap the map to choose your destination.'}</p>
+                </div>
+              )}
+
                <div className="mt-3">
-                 {activeLocationInput === 'dropoff' && (
-                   <div className="mb-2 rounded-xl border border-[var(--info-soft)] bg-[var(--info-soft)] px-3 py-2 text-xs text-[var(--info)]">
-                     <p className="font-bold">{enforceBoundary ? 'Choose a drop-off along the highlighted route' : 'Choose a drop-off location'}</p>
-                     <p className="mt-0.5">{enforceBoundary ? 'Search for a place or tap the highlighted route on the map.' : 'Search for a place or tap the map to choose your destination.'}</p>
-                   </div>
-                 )}
                  {pickerBoundaryWarning && activeLocationInput === 'pickup' && (
                    <div
                      role="alert"
@@ -4765,7 +4766,7 @@ const getPrice = () => {
                    </div>
                  )}
                 </div>
-             </Card>
+            </header>
            </div>
 
           <div className="flex-1 pt-40 relative">
