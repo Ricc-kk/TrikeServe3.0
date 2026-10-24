@@ -1756,10 +1756,28 @@ export function isSimilarRoute(
     dropoffCoords?: LatLngPoint | null;
     routePoints?: LatLngPoint[] | null;
     routeWidthM?: number | null;
+    routeId?: string | null;
   }
 ): boolean {
   const pickupMatch = isSamePickup(lobby, userPickup, userPickupAddress, userTerminalId);
   if (!pickupMatch) return false;
+
+  // A selected terminal route ID identifies the route even when older lobby
+  // rows have incomplete coordinates or differently formatted drop-off names.
+  if (routeContext?.routeId) {
+    let passengers: any[] = [];
+    try {
+      passengers = Array.isArray(lobby.passengers_json)
+        ? lobby.passengers_json
+        : JSON.parse(lobby.passengers_json || '[]');
+    } catch {
+      passengers = [];
+    }
+    const lobbyRouteIds = new Set(
+      passengers.map((passenger) => String(passenger?.route_id || '').trim()).filter(Boolean),
+    );
+    if (lobbyRouteIds.size > 0) return lobbyRouteIds.has(String(routeContext.routeId));
+  }
 
   const lobbyDropoffLat = Number(lobby.dropoff_lat);
   const lobbyDropoffLng = Number(lobby.dropoff_lng);
@@ -2116,6 +2134,7 @@ export const supabaseHelpers = {
       dropoffCoords?: LatLngPoint | null;
       routePoints?: LatLngPoint[] | null;
       routeWidthM?: number | null;
+      routeId?: string | null;
     },
   ) {
     const { data, error } = await supabase

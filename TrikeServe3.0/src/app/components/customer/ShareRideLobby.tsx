@@ -1299,6 +1299,7 @@ export default function ShareRideLobby({
             dropoffCoords,
             routePoints,
             routeWidthM,
+            routeId: selectedRouteId,
           }))
           .sort((a: any, b: any) => toTime(b.updated_at || b.created_at) - toTime(a.updated_at || a.created_at))[0];
 
@@ -1323,7 +1324,7 @@ export default function ShareRideLobby({
         pickup,
         dropoff,
         selectedTerminalId,
-        { dropoffCoords, routePoints, routeWidthM },
+        { dropoffCoords, routePoints, routeWidthM, routeId: selectedRouteId },
       );
 
       // A failed lookup is not the same as "there is no matching lobby". The
@@ -1506,6 +1507,7 @@ export default function ShareRideLobby({
                 dropoffCoords,
                 routePoints,
                 routeWidthM,
+                routeId: selectedRouteId,
               })
             ) || null;
           }
@@ -1627,9 +1629,22 @@ const canJoinMatchingLobby = matchingLobbySeatsLeft >= passengerCount;
 if (bookingCancelled) return null;
 
 if (matchingRouteLobby) {
+  const closeMatchingLobbyPrompt = () =>
+    resolveMatchingLobbyChoice(matchingLobbyPromptMode === 'after-create' ? 'stay' : 'cancel');
+
   return (
-    <div className="fixed inset-0 bg-black/60 z-[2600] flex items-center justify-center p-4">
-      <Card role="dialog" aria-modal="true" aria-labelledby="matching-lobby-title" className="bg-surface p-6 max-w-sm w-full shadow-2xl">
+    <div className="fixed inset-0 z-[2600] flex items-center justify-center bg-transparent p-4">
+      <Card role="dialog" aria-modal="true" aria-labelledby="matching-lobby-title" className="relative w-full max-w-sm border border-[var(--border)] bg-surface p-6 pt-12 shadow-2xl">
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon"
+          aria-label="Close"
+          onClick={closeMatchingLobbyPrompt}
+          className="absolute right-3 top-3 rounded-full text-[var(--muted-foreground)]"
+        >
+          <X className="size-5" aria-hidden="true" />
+        </Button>
         <div className="mb-5 text-center">
           <h3 id="matching-lobby-title" className="text-lg font-bold text-[var(--ink)]">
             {matchingLobbyPromptMode === 'after-create'
@@ -1658,9 +1673,6 @@ if (matchingRouteLobby) {
             <>
               <Button variant="outline" onClick={() => resolveMatchingLobbyChoice('create')} className="w-full">
                 Create a new lobby
-              </Button>
-              <Button variant="ghost" onClick={() => resolveMatchingLobbyChoice('cancel')} className="w-full">
-                Close
               </Button>
             </>
           )}
@@ -2641,6 +2653,7 @@ if (loading) {
               : null
           )}
           terminalId={lobby.terminal_id || selectedTerminalId}
+          routeId={ownPassenger?.route_id || selectedRouteId}
           routePoints={routePoints}
           routeWidthM={routeWidthM}
           dropoff={ownDropoff}

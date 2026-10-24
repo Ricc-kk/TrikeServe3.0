@@ -53,6 +53,8 @@ interface BrowseAvailableLobbiesProps {
   pickupCoords?: { lat: number; lng: number } | null;
   /** Terminal the pickup came from, when it came from the terminal picker. */
   terminalId?: string | null;
+  /** Configured terminal route selected for this ride. */
+  routeId?: string | null;
   /** The selected terminal service road, used to match different drop-offs on one route. */
   routePoints?: Array<{ lat: number; lng: number }> | null;
   routeWidthM?: number | null;
@@ -88,6 +90,7 @@ export default function BrowseAvailableLobbies({
   pickupAddress,
   pickupCoords,
   terminalId,
+  routeId,
   routePoints,
   routeWidthM,
   dropoff,
@@ -128,8 +131,9 @@ export default function BrowseAvailableLobbies({
       dropoffCoords,
       routePoints,
       routeWidthM,
+      routeId,
     });
-  }, [sameRouteLobbyFilter, terminalId, pickup, pickupAddress, dropoff, dropoffAddress, dropoffCoords, routePoints, routeWidthM]);
+  }, [sameRouteLobbyFilter, terminalId, routeId, pickup, pickupAddress, dropoff, dropoffAddress, dropoffCoords, routePoints, routeWidthM]);
 
   // Fetch available lobbies on mount
   useEffect(() => {

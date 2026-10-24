@@ -1803,14 +1803,16 @@ export default function PassengerRequests() {
               )}
             </div>
             <div className="shrink-0 border-t border-[var(--border)] bg-[var(--surface)] p-3 pb-[calc(env(safe-area-inset-bottom)+0.75rem)]">
-              <div className="mx-auto grid w-full max-w-3xl grid-cols-2 gap-2">
-                <Button
-                  onClick={() => { setDeclineTarget(previewRequest); setShowDeclinePrompt(true); }}
-                  variant="outline"
-                  className="min-h-12 w-full border-[var(--primary)] px-2 text-xs font-bold text-[var(--primary)] sm:text-sm"
-                >
-                  Decline Request
-                </Button>
+              <div className={`mx-auto grid w-full max-w-3xl gap-2 ${previewRequest.lobbyId ? 'grid-cols-1' : 'grid-cols-2'}`}>
+                {!previewRequest.lobbyId && (
+                  <Button
+                    onClick={() => { setDeclineTarget(previewRequest); setShowDeclinePrompt(true); }}
+                    variant="outline"
+                    className="min-h-12 w-full border-[var(--primary)] px-2 text-xs font-bold text-[var(--primary)] sm:text-sm"
+                  >
+                    Decline Request
+                  </Button>
+                )}
                 <Button onClick={() => { setConfirmRequest(previewRequest); setShowConfirmAccept(true); }} className="min-h-12 w-full px-2 text-xs font-bold sm:text-sm">Accept & Navigate</Button>
               </div>
             </div>
