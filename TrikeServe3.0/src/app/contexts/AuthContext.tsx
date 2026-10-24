@@ -1,4 +1,4 @@
-import { createContext, useContext, useState, useEffect, useRef, useCallback, ReactNode } from 'react';
+import { createContext, useContext, useState, useEffect, useRef, ReactNode } from 'react';
 import { supabase } from '../../utils/supabase';
 import { isDevModeEnabled, isDevModeFeatureEnabled, subscribeToDevModeChanges } from '../../lib/devMode';
 
@@ -43,7 +43,6 @@ export interface User {
 interface AuthContextType {
   user: User | null;
   isLoading: boolean;
-  checkAccountHasOtherSession: (email: string) => Promise<boolean>;
   login: (email: string, password: string) => Promise<{ success: boolean; error?: string }>;
   logout: () => void;
   signup: (data: SignupData) => Promise<{ success: boolean; error?: string; userId?: string }>;
@@ -312,6 +311,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [sessionWarningSeconds, setSessionWarningSeconds] = useState<number | null>(null);
   const [sessionConflictMessage, setSessionConflictMessage] = useState(false);
   const sessionWarningRef = useRef<HTMLElement>(null);
+  const sessionConflictRef = useRef<HTMLElement>(null);
   // Set while logout() is running, so the SIGNED_OUT it causes is read as a
   // deliberate sign-out rather than a token refresh that failed.
   const signOutRequestedRef = useRef(false);
@@ -321,65 +321,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     userIdRef.current = user?.id ?? null;
   }, [user]);
-
-  // Look up the account by email, then observe its existing Realtime presence
-  // channel without joining presence. This lets the login page warn before
-  // credentials are submitted, while leaving the actual sign-in flow intact.
-  const checkAccountHasOtherSession = useCallback(async (email: string): Promise<boolean> => {
-    const normalizedEmail = email.trim().toLowerCase();
-    if (!normalizedEmail) return false;
-
-    try {
-      const [{ data: admin }, { data: profile }] = await Promise.all([
-        supabase.from('admins').select('id').eq('email', normalizedEmail).maybeSingle(),
-        supabase.from('users').select('id').eq('email', normalizedEmail).maybeSingle(),
-      ]);
-      const accountId = admin?.id || profile?.id;
-      if (!accountId) return false;
-
-      let ownSessionKey: string | null = null;
-      const { data: { session } } = await supabase.auth.getSession();
-      if (user?.id === accountId && user.role === 'admin') {
-        ownSessionKey = await getLocalSessionPresenceKey(accountId);
-      } else if (session?.user.id === accountId) {
-        ownSessionKey = await getSessionPresenceKey(session.access_token)
-          || await getLocalSessionPresenceKey(accountId);
-      } else if (user?.id === accountId) {
-        ownSessionKey = await getLocalSessionPresenceKey(accountId);
-      }
-
-      return await new Promise<boolean>((resolve) => {
-        let finished = false;
-        const channel = supabase.channel(`account-session-limit:${accountId}`, {
-          config: { presence: { key: `login-check-${Date.now()}-${Math.random().toString(36).slice(2)}` } },
-        });
-        const finish = (hasOtherSession: boolean) => {
-          if (finished) return;
-          finished = true;
-          clearTimeout(timeout);
-          void supabase.removeChannel(channel);
-          resolve(hasOtherSession);
-        };
-        const timeout = setTimeout(() => finish(false), 2500);
-
-        channel.on('presence', { event: 'sync' }, () => {
-          const presence = channel.presenceState<Record<string, unknown>>();
-          const hasOtherSession = Object.entries(presence).some(([presenceKey, metas]) =>
-            presenceKey !== ownSessionKey && metas.length > 0,
-          );
-          finish(hasOtherSession);
-        });
-        channel.subscribe((status) => {
-          if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT' || status === 'CLOSED') {
-            finish(false);
-          }
-        });
-      });
-    } catch (error) {
-      console.warn('[AuthContext] Could not check account session presence:', error);
-      return false;
-    }
-  }, [user?.id, user?.role]);
 
   useEffect(() => {
     if (sessionWarningSeconds === null) return;
@@ -400,6 +341,47 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (previouslyFocused?.isConnected) previouslyFocused.focus();
     };
   }, [sessionWarningSeconds !== null]);
+
+  useEffect(() => {
+    if (!sessionConflictMessage || sessionWarningSeconds !== null || !user) return;
+    const dialog = sessionConflictRef.current;
+    const previouslyFocused = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    const focusableSelector = 'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
+    const getFocusableElements = () => dialog?.querySelectorAll<HTMLElement>(focusableSelector);
+    getFocusableElements()?.[0]?.focus();
+    if (!getFocusableElements()?.length) dialog?.focus();
+
+    const keepConflictModalFocused = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        event.stopPropagation();
+        setSessionConflictMessage(false);
+        return;
+      }
+      if (event.key === 'Tab') {
+        const focusable = getFocusableElements();
+        if (!focusable?.length) {
+          event.preventDefault();
+          dialog?.focus();
+          return;
+        }
+        const first = focusable[0];
+        const last = focusable[focusable.length - 1];
+        if (event.shiftKey && document.activeElement === first) {
+          event.preventDefault();
+          last.focus();
+        } else if (!event.shiftKey && document.activeElement === last) {
+          event.preventDefault();
+          first.focus();
+        }
+      }
+    };
+    document.addEventListener('keydown', keepConflictModalFocused, true);
+    return () => {
+      document.removeEventListener('keydown', keepConflictModalFocused, true);
+      if (previouslyFocused?.isConnected) previouslyFocused.focus();
+    };
+  }, [sessionConflictMessage, sessionWarningSeconds, user?.id]);
 
   // Track active app sessions separately from `users.is_online`, which means a
   // driver is available for rides. Realtime presence drops automatically when
@@ -440,7 +422,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     let firstSeenAt = Date.now();
     let evictionTimer: ReturnType<typeof setTimeout> | null = null;
     let countdownTimer: ReturnType<typeof setInterval> | null = null;
-    let conflictMessageTimer: ReturnType<typeof setTimeout> | null = null;
     let conflictMessageShown = false;
     let scheduledEvictionKey: string | null = null;
 
@@ -454,8 +435,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     };
 
     const clearConflictMessage = () => {
-      if (conflictMessageTimer) clearTimeout(conflictMessageTimer);
-      conflictMessageTimer = null;
       conflictMessageShown = false;
       setSessionConflictMessage(false);
     };
@@ -464,7 +443,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (conflictMessageShown) return;
       conflictMessageShown = true;
       setSessionConflictMessage(true);
-      conflictMessageTimer = setTimeout(() => setSessionConflictMessage(false), 6000);
     };
 
     const signOutThisSession = async () => {
@@ -1401,16 +1379,31 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   return (
-    <AuthContext.Provider value={{ user, isLoading, checkAccountHasOtherSession, login, logout, signup, updateProfile, switchUiRole, restoreOriginalRole, resendVerificationEmail }}>
+    <AuthContext.Provider value={{ user, isLoading, login, logout, signup, updateProfile, switchUiRole, restoreOriginalRole, resendVerificationEmail }}>
       {children}
-      {sessionConflictMessage && sessionWarningSeconds === null && (
-        <div
-          role="status"
-          aria-live="polite"
-          className="fixed left-1/2 top-4 z-[10040] w-[min(28rem,calc(100vw-2rem))] -translate-x-1/2 rounded-xl border border-line bg-card px-4 py-3 text-center shadow-xl"
-        >
-          <p className="text-sm font-semibold text-[var(--ink)]">Account already signed in</p>
-          <p className="mt-1 text-xs text-[var(--muted-foreground)]">This account is also signed in on another device.</p>
+      {user && sessionConflictMessage && sessionWarningSeconds === null && (
+        <div className="fixed inset-0 z-[10040] grid place-items-center bg-black/55 px-4 backdrop-blur-sm" role="presentation">
+          <section
+            ref={sessionConflictRef}
+            tabIndex={-1}
+            role="alertdialog"
+            aria-modal="true"
+            aria-labelledby="account-session-conflict-title"
+            aria-describedby="account-session-conflict-description"
+            className="w-full max-w-sm rounded-2xl border border-line bg-card p-6 text-center shadow-2xl"
+          >
+            <h2 id="account-session-conflict-title" className="text-lg font-bold text-[var(--ink)]">Account already signed in</h2>
+            <p id="account-session-conflict-description" className="mt-2 text-sm text-[var(--muted-foreground)]">
+              This account is also signed in on another device.
+            </p>
+            <button
+              type="button"
+              onClick={() => setSessionConflictMessage(false)}
+              className="mt-5 w-full rounded-xl bg-[var(--primary)] px-4 py-3 text-sm font-semibold text-white transition-opacity hover:opacity-90 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--primary)]"
+            >
+              Got it
+            </button>
+          </section>
         </div>
       )}
       {sessionWarningSeconds !== null && (
@@ -1427,7 +1420,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             <div className="mx-auto mb-4 grid size-12 place-items-center rounded-full bg-[var(--primary-soft)] text-[var(--primary)]">
               <span className="text-xl font-bold" aria-hidden="true">{sessionWarningSeconds}</span>
             </div>
-            <h2 id="session-limit-title" className="text-lg font-bold text-[var(--ink)]">Account signed in elsewhere</h2>
+            <h2 id="session-limit-title" className="text-lg font-bold text-[var(--ink)]">Account already signed in</h2>
             <p id="session-limit-description" className="mt-2 text-sm text-[var(--muted-foreground)]">
               This account has reached its active session limit. This session will sign out in {sessionWarningSeconds} {sessionWarningSeconds === 1 ? 'second' : 'seconds'}.
             </p>

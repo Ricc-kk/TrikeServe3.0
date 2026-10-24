@@ -72,7 +72,7 @@ function roleLabel(acc: TestAccount): string {
 
 export default function Login() {
   const navigate = useNavigate();
-  const { login, resendVerificationEmail, checkAccountHasOtherSession } = useAuth();
+  const { login, resendVerificationEmail } = useAuth();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
@@ -84,31 +84,7 @@ export default function Login() {
   const [accounts, setAccounts] = useState<TestAccount[]>([]);
   const [resendStatus, setResendStatus] = useState<"idle" | "sending" | "sent" | "error">("idle");
   const [resendMessage, setResendMessage] = useState("");
-  const [accountSessionStatus, setAccountSessionStatus] = useState<"idle" | "checking" | "active" | "none">("idle");
   const devModeHoldTimer = useRef<number | null>(null);
-
-  useEffect(() => {
-    const normalizedEmail = email.trim().toLowerCase();
-    const looksLikeEmail = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalizedEmail);
-    if (!looksLikeEmail) {
-      setAccountSessionStatus("idle");
-      return;
-    }
-
-    let cancelled = false;
-    setAccountSessionStatus("idle");
-    const timer = window.setTimeout(() => {
-      setAccountSessionStatus("checking");
-      void checkAccountHasOtherSession(normalizedEmail).then((hasOtherSession) => {
-        if (!cancelled) setAccountSessionStatus(hasOtherSession ? "active" : "none");
-      });
-    }, 500);
-
-    return () => {
-      cancelled = true;
-      window.clearTimeout(timer);
-    };
-  }, [email, checkAccountHasOtherSession]);
 
   const startDevModeHold = () => {
     if (devModeHoldTimer.current !== null) return;
@@ -483,16 +459,6 @@ export default function Login() {
                 required
                 disabled={isLoading}
               />
-              {accountSessionStatus === "checking" && (
-                <p className="mt-2 text-xs text-[var(--muted-foreground)]" role="status" aria-live="polite">
-                  Checking for another active sign-in…
-                </p>
-              )}
-              {accountSessionStatus === "active" && (
-                <p className="mt-2 text-xs font-medium text-[var(--primary)]" role="status" aria-live="polite">
-                  This account is already signed in on another device.
-                </p>
-              )}
             </div>
 
             <div>
