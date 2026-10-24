@@ -4713,56 +4713,54 @@ const getPrice = () => {
       {/* Location Picker Modal */}
       {showLocationPicker && (
         <div className="fixed inset-0 z-[2000] flex flex-col bg-[var(--background)]">
-          <div className="absolute inset-x-0 top-0 z-[2010]">
-            <header className="border-b border-line bg-[var(--card)] px-4 pb-3 pt-[calc(env(safe-area-inset-top)+1rem)] shadow-xl sm:px-6">
-              <div className="flex items-center justify-between gap-3">
-                <div className="flex-1">
-                  <p className="text-xs uppercase tracking-widest text-[var(--muted-foreground)] font-semibold">
-                    {activeLocationInput === 'pickup' ? 'Pickup \u2014 search or tap map' : 'Drop-off \u2014 search or tap map'}
-                  </p>
-                  <h2 className="text-lg font-bold text-[var(--ink)]">Find a nearby place or tap the map</h2>
-                </div>
-                <button
-                  type="button"
-                  aria-label="Close location picker"
-                  onClick={() => { setShowLocationPicker(false); setActiveLocationInput(null); setLocationPreview(null); setPredictions([]); setSearchQuery(""); setPickerBoundaryWarning(null); }}
-                >
-                  <X className="w-6 h-6 text-[var(--error)]" />
-                </button>
+          <header className="relative z-[2010] shrink-0 border-b border-line bg-[var(--card)] px-4 pb-3 pt-[calc(env(safe-area-inset-top)+1rem)] shadow-xl sm:px-6">
+            <div className="flex items-center justify-between gap-3">
+              <div className="flex-1">
+                <p className="text-xs uppercase tracking-widest text-[var(--muted-foreground)] font-semibold">
+                  {activeLocationInput === 'pickup' ? 'Pickup \u2014 search or tap map' : 'Drop-off \u2014 search or tap map'}
+                </p>
+                <h2 className="text-lg font-bold text-[var(--ink)]">Find a nearby place or tap the map</h2>
               </div>
+              <button
+                type="button"
+                aria-label="Close location picker"
+                onClick={() => { setShowLocationPicker(false); setActiveLocationInput(null); setLocationPreview(null); setPredictions([]); setSearchQuery(""); setPickerBoundaryWarning(null); }}
+              >
+                <X className="w-6 h-6 text-[var(--error)]" />
+              </button>
+            </div>
 
-               <div className="mt-3">
-                 {pickerBoundaryWarning && activeLocationInput === 'pickup' && (
-                   <div
-                     role="alert"
-                     className="mb-2 flex items-start gap-2 rounded-xl border-2 border-[var(--error)] bg-[var(--error-soft)] px-3 py-2 text-sm font-semibold text-[var(--error)]"
-                   >
-                     <span aria-hidden="true">ðŸ“</span>
-                     <span>{pickerBoundaryWarning}</span>
-                   </div>
-                 )}
-                 <Input
-                   value={searchQuery}
-                   onChange={(e) => { fetchPredictions((e.target as HTMLInputElement).value); }}
-                   placeholder={activeLocationInput === 'dropoff' && enforceBoundary ? 'Search for a place along the selected route...' : 'Search restaurants, parks, hotels, terminals...'}
-                   aria-label="Search for a place"
-                   className="text-[var(--ink)] placeholder:text-[var(--muted-foreground)]"
-                 />
-                 {predictions.length > 0 && (
-                   <div className="mt-2 bg-surface border border-[var(--border)] rounded-lg max-h-48 overflow-y-auto">
-                     {predictions.map((p, i) => (
-                       <button key={i} onClick={() => selectPrediction(p.place_id)} className="w-full text-left p-3 hover:bg-[var(--muted)] border-b last:border-b-0">
-                         <div className="text-sm font-semibold text-[var(--ink)]">{p.displayName}</div>
-                         {p.secondaryText && <div className="text-xs text-[var(--muted-foreground)] mt-0.5">{p.secondaryText}</div>}
-                       </button>
-                     ))}
-                   </div>
-                 )}
+            <div className="mt-3">
+              {pickerBoundaryWarning && activeLocationInput === 'pickup' && (
+                <div
+                  role="alert"
+                  className="mb-2 flex items-start gap-2 rounded-xl border-2 border-[var(--error)] bg-[var(--error-soft)] px-3 py-2 text-sm font-semibold text-[var(--error)]"
+                >
+                  <span aria-hidden="true">ðŸ“</span>
+                  <span>{pickerBoundaryWarning}</span>
                 </div>
-            </header>
-           </div>
+              )}
+              <Input
+                value={searchQuery}
+                onChange={(e) => { fetchPredictions((e.target as HTMLInputElement).value); }}
+                placeholder={activeLocationInput === 'dropoff' && enforceBoundary ? 'Search for a place along the selected route...' : 'Search restaurants, parks, hotels, terminals...'}
+                aria-label="Search for a place"
+                className="text-[var(--ink)] placeholder:text-[var(--muted-foreground)]"
+              />
+              {predictions.length > 0 && (
+                <div className="mt-2 bg-surface border border-[var(--border)] rounded-lg max-h-48 overflow-y-auto">
+                  {predictions.map((p, i) => (
+                    <button key={i} onClick={() => selectPrediction(p.place_id)} className="w-full text-left p-3 hover:bg-[var(--muted)] border-b last:border-b-0">
+                      <div className="text-sm font-semibold text-[var(--ink)]">{p.displayName}</div>
+                      {p.secondaryText && <div className="text-xs text-[var(--muted-foreground)] mt-0.5">{p.secondaryText}</div>}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          </header>
 
-          <div className="flex-1 pt-40 relative">
+          <div className="relative min-h-0 flex-1">
             {!isMapsLoaded ? (
               <div className="h-full w-full flex items-center justify-center bg-[var(--muted)]">
                 <p className="text-sm text-[var(--muted-foreground)]">Loading picker map...</p>
