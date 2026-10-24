@@ -1717,56 +1717,6 @@ export default function CustomerHome() {
     setBookingStep('home');
   }, [cameFromCustomerHomeTab, location.key]);
 
-  // Shared rides use their own page so the live lobby, map, and passenger
-  // details have the full screen. New bookings pass their selected route into
-  // that page; restored and joined lobbies pass their persisted lobby id.
-  useEffect(() => {
-    if (!showShareLobby || !rideStateBelongsToCurrentUser) return;
-
-    const state = activeShareLobbyId
-      ? { lobbyId: activeShareLobbyId }
-      : {
-          booking: {
-            pickup,
-            pickupAddress,
-            dropoff,
-            dropoffAddress,
-            pickupCoords,
-            dropoffCoords,
-            passengerCount,
-            maxPassengersAllowed: terminalSeatLimit,
-            pricePerSeat: shareFarePerSeat,
-            paymentMethod,
-            selectedTerminalId,
-            selectedRouteId: selectedTerminalBoundary.selectedRoute?.id || null,
-            routePoints: selectedTerminalBoundary.displayRoad,
-            routeWidthM: selectedTerminalBoundary.routeWidthM,
-          },
-        };
-
-    setShowShareLobby(false);
-    navigate('/customer/active-share-ride', { state });
-  }, [
-    showShareLobby,
-    rideStateBelongsToCurrentUser,
-    activeShareLobbyId,
-    pickup,
-    pickupAddress,
-    dropoff,
-    dropoffAddress,
-    pickupCoords,
-    dropoffCoords,
-    passengerCount,
-    terminalSeatLimit,
-    shareFarePerSeat,
-    paymentMethod,
-    selectedTerminalId,
-    selectedTerminalBoundary.selectedRoute?.id,
-    selectedTerminalBoundary.displayRoad,
-    selectedTerminalBoundary.routeWidthM,
-    navigate,
-  ]);
-
   /*
    * Rebuild the active private ride card when this tab holds no copy of it.
    *
@@ -3541,6 +3491,58 @@ const shareFareBreakdown = [
   `\u20B1${activeRates.baseFare} base fare per passenger`,
   `\u20B1${activeRates.perKm}/km per passenger after ${formatKm(Math.max(0, activeRates.baseFareIncludedKm))} km${shareExtraKm == null ? "" : ` (${formatKm(shareExtraKm)} extra km)`}`,
 ].join(" \u00B7 ");
+
+  // Shared rides use their own page so the live lobby, map, and passenger
+  // details have the full screen. New bookings pass their selected route into
+  // that page; restored and joined lobbies pass their persisted lobby id.
+  // Keep this effect after fare and seat calculations, since React evaluates
+  // the dependency array during render before it invokes the effect callback.
+  useEffect(() => {
+    if (!showShareLobby || !rideStateBelongsToCurrentUser) return;
+
+    const state = activeShareLobbyId
+      ? { lobbyId: activeShareLobbyId }
+      : {
+          booking: {
+            pickup,
+            pickupAddress,
+            dropoff,
+            dropoffAddress,
+            pickupCoords,
+            dropoffCoords,
+            passengerCount,
+            maxPassengersAllowed: terminalSeatLimit,
+            pricePerSeat: shareFarePerSeat,
+            paymentMethod,
+            selectedTerminalId,
+            selectedRouteId: selectedTerminalBoundary.selectedRoute?.id || null,
+            routePoints: selectedTerminalBoundary.displayRoad,
+            routeWidthM: selectedTerminalBoundary.routeWidthM,
+          },
+        };
+
+    setShowShareLobby(false);
+    navigate('/customer/active-share-ride', { state });
+  }, [
+    showShareLobby,
+    rideStateBelongsToCurrentUser,
+    activeShareLobbyId,
+    pickup,
+    pickupAddress,
+    dropoff,
+    dropoffAddress,
+    pickupCoords,
+    dropoffCoords,
+    passengerCount,
+    terminalSeatLimit,
+    shareFarePerSeat,
+    paymentMethod,
+    selectedTerminalId,
+    selectedTerminalBoundary.selectedRoute?.id,
+    selectedTerminalBoundary.displayRoad,
+    selectedTerminalBoundary.routeWidthM,
+    navigate,
+  ]);
 
 const getPrice = () => {
   if (selectedVehicle === 'share') return shareFareForParty;
