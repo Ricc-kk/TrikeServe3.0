@@ -1,4 +1,4 @@
-import { createContext, useContext, useState, useEffect, useRef, ReactNode } from 'react';
+import { createContext, useContext, useState, useEffect, useRef, useCallback, ReactNode } from 'react';
 import { supabase } from '../../utils/supabase';
 import { isDevModeEnabled, isDevModeFeatureEnabled, subscribeToDevModeChanges } from '../../lib/devMode';
 
@@ -43,6 +43,7 @@ export interface User {
 interface AuthContextType {
   user: User | null;
   isLoading: boolean;
+  checkAccountHasOtherSession: (email: string) => Promise<boolean>;
   login: (email: string, password: string) => Promise<{ success: boolean; error?: string }>;
   logout: () => void;
   signup: (data: SignupData) => Promise<{ success: boolean; error?: string; userId?: string }>;
@@ -320,6 +321,65 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     userIdRef.current = user?.id ?? null;
   }, [user]);
+
+  // Look up the account by email, then observe its existing Realtime presence
+  // channel without joining presence. This lets the login page warn before
+  // credentials are submitted, while leaving the actual sign-in flow intact.
+  const checkAccountHasOtherSession = useCallback(async (email: string): Promise<boolean> => {
+    const normalizedEmail = email.trim().toLowerCase();
+    if (!normalizedEmail) return false;
+
+    try {
+      const [{ data: admin }, { data: profile }] = await Promise.all([
+        supabase.from('admins').select('id').eq('email', normalizedEmail).maybeSingle(),
+        supabase.from('users').select('id').eq('email', normalizedEmail).maybeSingle(),
+      ]);
+      const accountId = admin?.id || profile?.id;
+      if (!accountId) return false;
+
+      let ownSessionKey: string | null = null;
+      const { data: { session } } = await supabase.auth.getSession();
+      if (user?.id === accountId && user.role === 'admin') {
+        ownSessionKey = await getLocalSessionPresenceKey(accountId);
+      } else if (session?.user.id === accountId) {
+        ownSessionKey = await getSessionPresenceKey(session.access_token)
+          || await getLocalSessionPresenceKey(accountId);
+      } else if (user?.id === accountId) {
+        ownSessionKey = await getLocalSessionPresenceKey(accountId);
+      }
+
+      return await new Promise<boolean>((resolve) => {
+        let finished = false;
+        const channel = supabase.channel(`account-session-limit:${accountId}`, {
+          config: { presence: { key: `login-check-${Date.now()}-${Math.random().toString(36).slice(2)}` } },
+        });
+        const finish = (hasOtherSession: boolean) => {
+          if (finished) return;
+          finished = true;
+          clearTimeout(timeout);
+          void supabase.removeChannel(channel);
+          resolve(hasOtherSession);
+        };
+        const timeout = setTimeout(() => finish(false), 2500);
+
+        channel.on('presence', { event: 'sync' }, () => {
+          const presence = channel.presenceState<Record<string, unknown>>();
+          const hasOtherSession = Object.entries(presence).some(([presenceKey, metas]) =>
+            presenceKey !== ownSessionKey && metas.length > 0,
+          );
+          finish(hasOtherSession);
+        });
+        channel.subscribe((status) => {
+          if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT' || status === 'CLOSED') {
+            finish(false);
+          }
+        });
+      });
+    } catch (error) {
+      console.warn('[AuthContext] Could not check account session presence:', error);
+      return false;
+    }
+  }, [user?.id, user?.role]);
 
   useEffect(() => {
     if (sessionWarningSeconds === null) return;
@@ -1341,7 +1401,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   return (
-    <AuthContext.Provider value={{ user, isLoading, login, logout, signup, updateProfile, switchUiRole, restoreOriginalRole, resendVerificationEmail }}>
+    <AuthContext.Provider value={{ user, isLoading, checkAccountHasOtherSession, login, logout, signup, updateProfile, switchUiRole, restoreOriginalRole, resendVerificationEmail }}>
       {children}
       {sessionConflictMessage && sessionWarningSeconds === null && (
         <div
