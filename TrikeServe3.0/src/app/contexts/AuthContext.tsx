@@ -40,10 +40,17 @@ export interface User {
   password?: string;
 }
 
+type LoginResult = {
+  success: boolean;
+  error?: string;
+  otherSessionActive?: boolean;
+  otherSessionWillBeSignedOut?: boolean;
+};
+
 interface AuthContextType {
   user: User | null;
   isLoading: boolean;
-  login: (email: string, password: string) => Promise<{ success: boolean; error?: string }>;
+  login: (email: string, password: string) => Promise<LoginResult>;
   logout: () => void;
   signup: (data: SignupData) => Promise<{ success: boolean; error?: string; userId?: string }>;
   updateProfile: (data: Partial<User>) => Promise<{ success: boolean; error?: string }>;
@@ -305,13 +312,74 @@ function getSessionFirstSeenAt(userId: string, sessionKey: string): number {
   }
 }
 
+async function checkOtherAccountSessions(
+  accountId: string,
+  ownSessionKey: string,
+  currentSessionAllowsTwo: boolean,
+): Promise<Pick<LoginResult, 'otherSessionActive' | 'otherSessionWillBeSignedOut'>> {
+  try {
+    return await new Promise((resolve) => {
+      let finished = false;
+      let timeout: ReturnType<typeof setTimeout> | null = null;
+      const channel = supabase.channel(`account-session-limit:${accountId}`, {
+        config: { presence: { key: `login-check-${Date.now()}-${Math.random().toString(36).slice(2)}` } },
+      });
+      const finish = (result: Pick<LoginResult, 'otherSessionActive' | 'otherSessionWillBeSignedOut'>) => {
+        if (finished) return;
+        finished = true;
+        if (timeout) clearTimeout(timeout);
+        void supabase.removeChannel(channel);
+        resolve(result);
+      };
+      timeout = setTimeout(() => finish({ otherSessionActive: false, otherSessionWillBeSignedOut: false }), 2500);
+
+      channel.on('presence', { event: 'sync' }, () => {
+        const presence = channel.presenceState<Record<string, unknown>>();
+        const otherSessions = Object.entries(presence)
+          .filter(([presenceKey, metas]) => presenceKey !== ownSessionKey && metas.length > 0);
+        const anotherSessionAllowsTwo = otherSessions.some(([, metas]) =>
+          metas.some((meta) => Boolean((meta as { allowTwoSessions?: boolean }).allowTwoSessions)),
+        );
+        const sessionLimit = currentSessionAllowsTwo || anotherSessionAllowsTwo ? 2 : 1;
+        finish({
+          otherSessionActive: otherSessions.length > 0,
+          otherSessionWillBeSignedOut: otherSessions.length >= sessionLimit,
+        });
+      });
+      channel.subscribe((status) => {
+        if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT' || status === 'CLOSED') {
+          finish({ otherSessionActive: false, otherSessionWillBeSignedOut: false });
+        }
+      });
+    });
+  } catch (error) {
+    console.warn('[AuthContext] Could not check existing account sessions after sign-in:', error);
+    return { otherSessionActive: false, otherSessionWillBeSignedOut: false };
+  }
+}
+
+async function getCurrentLoginSessionKey(accountId: string, accessToken?: string, role?: UserRole): Promise<string> {
+  if (role !== 'admin') {
+    if (accessToken) {
+      return await getSessionPresenceKey(accessToken) || await getLocalSessionPresenceKey(accountId);
+    }
+    const { data: { session } } = await supabase.auth.getSession();
+    if (session?.user.id === accountId) {
+      return await getSessionPresenceKey(session.access_token) || await getLocalSessionPresenceKey(accountId);
+    }
+  }
+  return getLocalSessionPresenceKey(accountId);
+}
+
+function currentSessionAllowsTwo(): boolean {
+  return isDevModeEnabled() && isDevModeFeatureEnabled('allowTwoSessions');
+}
+
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [sessionWarningSeconds, setSessionWarningSeconds] = useState<number | null>(null);
-  const [sessionConflictMessage, setSessionConflictMessage] = useState(false);
   const sessionWarningRef = useRef<HTMLElement>(null);
-  const sessionConflictRef = useRef<HTMLElement>(null);
   // Set while logout() is running, so the SIGNED_OUT it causes is read as a
   // deliberate sign-out rather than a token refresh that failed.
   const signOutRequestedRef = useRef(false);
@@ -341,47 +409,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (previouslyFocused?.isConnected) previouslyFocused.focus();
     };
   }, [sessionWarningSeconds !== null]);
-
-  useEffect(() => {
-    if (!sessionConflictMessage || sessionWarningSeconds !== null || !user) return;
-    const dialog = sessionConflictRef.current;
-    const previouslyFocused = document.activeElement instanceof HTMLElement ? document.activeElement : null;
-    const focusableSelector = 'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
-    const getFocusableElements = () => dialog?.querySelectorAll<HTMLElement>(focusableSelector);
-    getFocusableElements()?.[0]?.focus();
-    if (!getFocusableElements()?.length) dialog?.focus();
-
-    const keepConflictModalFocused = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') {
-        event.preventDefault();
-        event.stopPropagation();
-        setSessionConflictMessage(false);
-        return;
-      }
-      if (event.key === 'Tab') {
-        const focusable = getFocusableElements();
-        if (!focusable?.length) {
-          event.preventDefault();
-          dialog?.focus();
-          return;
-        }
-        const first = focusable[0];
-        const last = focusable[focusable.length - 1];
-        if (event.shiftKey && document.activeElement === first) {
-          event.preventDefault();
-          last.focus();
-        } else if (!event.shiftKey && document.activeElement === last) {
-          event.preventDefault();
-          first.focus();
-        }
-      }
-    };
-    document.addEventListener('keydown', keepConflictModalFocused, true);
-    return () => {
-      document.removeEventListener('keydown', keepConflictModalFocused, true);
-      if (previouslyFocused?.isConnected) previouslyFocused.focus();
-    };
-  }, [sessionConflictMessage, sessionWarningSeconds, user?.id]);
 
   // Track active app sessions separately from `users.is_online`, which means a
   // driver is available for rides. Realtime presence drops automatically when
@@ -422,7 +449,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     let firstSeenAt = Date.now();
     let evictionTimer: ReturnType<typeof setTimeout> | null = null;
     let countdownTimer: ReturnType<typeof setInterval> | null = null;
-    let conflictMessageShown = false;
     let scheduledEvictionKey: string | null = null;
 
     const clearEvictionWarning = () => {
@@ -432,17 +458,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       countdownTimer = null;
       scheduledEvictionKey = null;
       setSessionWarningSeconds(null);
-    };
-
-    const clearConflictMessage = () => {
-      conflictMessageShown = false;
-      setSessionConflictMessage(false);
-    };
-
-    const showConflictMessage = () => {
-      if (conflictMessageShown) return;
-      conflictMessageShown = true;
-      setSessionConflictMessage(true);
     };
 
     const signOutThisSession = async () => {
@@ -491,12 +506,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
       const sessions = Array.from(sessionsByKey.entries())
         .map(([key, details]) => ({ key, ...details }))
-        .sort((a, b) => a.firstSeenAt - b.firstSeenAt || a.key.localeCompare(b.key));
+        .sort((a, b) => b.firstSeenAt - a.firstSeenAt || b.key.localeCompare(a.key));
       const sessionLimit = sessions.some((session) => session.allowsTwo) ? 2 : 1;
-      const mustSignOut = sessions.slice(0, Math.max(0, sessions.length - sessionLimit)).some((session) => session.key === sessionKey);
-
-      if (sessions.length > 1 && !mustSignOut) showConflictMessage();
-      if (sessions.length <= 1) clearConflictMessage();
+      const mustSignOut = sessions.slice(sessionLimit).some((session) => session.key === sessionKey);
 
       if (!mustSignOut) {
         if (scheduledEvictionKey) clearEvictionWarning();
@@ -527,7 +539,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     const disconnectSessionPresence = () => {
       clearEvictionWarning();
-      clearConflictMessage();
       sessionKey = null;
       hasSupabaseAuthSession = false;
       if (sessionChannel) {
@@ -879,7 +890,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const loginLegacyFromLocalStorage = async (
     email: string,
     password: string
-  ): Promise<{ success: boolean; error?: string } | null> => {
+  ): Promise<LoginResult | null> => {
     try {
       const usersJson = localStorage.getItem('trikeserve_users');
       if (!usersJson) return null;
@@ -899,13 +910,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
       if (profile) {
         const mappedUser = mapSupabaseUser(profile);
+        const ownSessionKey = await getCurrentLoginSessionKey(mappedUser.id, undefined, mappedUser.role);
+        const sessionNotice = await checkOtherAccountSessions(
+          mappedUser.id,
+          ownSessionKey,
+          currentSessionAllowsTwo(),
+        );
 
         syncCachedLegacyUserProfile(mappedUser);
         clearUserScopedCaches(mappedUser.email, mappedUser.role === 'business');
         setUser(mappedUser);
         localStorage.setItem('trikeserve_current_user', JSON.stringify(mappedUser));
         console.log('[AuthContext] Legacy login successful (users table profile):', mappedUser.email);
-        return { success: true };
+        return { success: true, ...sessionNotice };
       }
 
       // Profile missing from the users table — build one from the localStorage record
@@ -927,18 +944,24 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         businessAddress: match.businessAddress,
         address: match.address,
       };
+      const ownSessionKey = await getCurrentLoginSessionKey(mappedUser.id, undefined, mappedUser.role);
+      const sessionNotice = await checkOtherAccountSessions(
+        mappedUser.id,
+        ownSessionKey,
+        currentSessionAllowsTwo(),
+      );
       clearUserScopedCaches(mappedUser.email, mappedUser.role === 'business');
       setUser(mappedUser);
       localStorage.setItem('trikeserve_current_user', JSON.stringify(mappedUser));
       console.log('[AuthContext] Legacy login successful (localStorage profile):', mappedUser.email);
-      return { success: true };
+      return { success: true, ...sessionNotice };
     } catch (error) {
       console.error('[AuthContext] Legacy fallback error:', error);
       return null;
     }
   };
 
-  const login = async (email: string, password: string): Promise<{ success: boolean; error?: string }> => {
+  const login = async (email: string, password: string): Promise<LoginResult> => {
     try {
       // First, check if user is an admin
       let adminUser = null;
@@ -979,6 +1002,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           password: adminUser.password_hash,
         } as User;
 
+        const ownSessionKey = await getCurrentLoginSessionKey(userToSet.id, undefined, userToSet.role);
+        const sessionNotice = await checkOtherAccountSessions(
+          userToSet.id,
+          ownSessionKey,
+          currentSessionAllowsTwo(),
+        );
+
         clearUserScopedCaches(userToSet.email, userToSet.role === 'business');
         setUser(userToSet);
         localStorage.setItem('trikeserve_current_user', JSON.stringify(userToSet));
@@ -987,7 +1017,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           email: adminUser.email,
           password: adminUser.password_hash,
         }));
-        return { success: true };
+        return { success: true, ...sessionNotice };
       }
 
       // Regular users: use Supabase Auth
@@ -1024,6 +1054,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
         if (profile) {
           const mappedUser = mapSupabaseUser(profile);
+          const ownSessionKey = await getCurrentLoginSessionKey(
+            mappedUser.id,
+            authData.session?.access_token,
+            mappedUser.role,
+          );
+          const sessionNotice = await checkOtherAccountSessions(
+            mappedUser.id,
+            ownSessionKey,
+            currentSessionAllowsTwo(),
+          );
           syncCachedLegacyUserProfile(mappedUser);
           clearUserScopedCaches(mappedUser.email, mappedUser.role === 'business');
           setUser(mappedUser);
@@ -1036,7 +1076,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           // Email confirmation is already enforced above: Supabase rejects the
           // sign-in with "Email not confirmed" until the link is clicked.
           console.log('[AuthContext] Login complete:', mappedUser.email, mappedUser.role);
-          return { success: true };
+          return { success: true, ...sessionNotice };
         } else {
           // Profile doesn't exist — create a basic one from auth metadata
           console.warn('[AuthContext] No profile found, creating one from auth metadata');
@@ -1093,11 +1133,21 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           }
 
           const mappedUser = mapSupabaseUser(newProfile);
+          const ownSessionKey = await getCurrentLoginSessionKey(
+            mappedUser.id,
+            authData.session?.access_token,
+            mappedUser.role,
+          );
+          const sessionNotice = await checkOtherAccountSessions(
+            mappedUser.id,
+            ownSessionKey,
+            currentSessionAllowsTwo(),
+          );
           syncCachedLegacyUserProfile(mappedUser);
           clearUserScopedCaches(mappedUser.email, mappedUser.role === 'business');
           setUser(mappedUser);
           localStorage.setItem('trikeserve_current_user', JSON.stringify(mappedUser));
-          return { success: true };
+          return { success: true, ...sessionNotice };
         }
       }
 
@@ -1381,31 +1431,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   return (
     <AuthContext.Provider value={{ user, isLoading, login, logout, signup, updateProfile, switchUiRole, restoreOriginalRole, resendVerificationEmail }}>
       {children}
-      {user && sessionConflictMessage && sessionWarningSeconds === null && (
-        <div className="fixed inset-0 z-[10040] grid place-items-center bg-black/55 px-4 backdrop-blur-sm" role="presentation">
-          <section
-            ref={sessionConflictRef}
-            tabIndex={-1}
-            role="alertdialog"
-            aria-modal="true"
-            aria-labelledby="account-session-conflict-title"
-            aria-describedby="account-session-conflict-description"
-            className="w-full max-w-sm rounded-2xl border border-line bg-card p-6 text-center shadow-2xl"
-          >
-            <h2 id="account-session-conflict-title" className="text-lg font-bold text-[var(--ink)]">Account already signed in</h2>
-            <p id="account-session-conflict-description" className="mt-2 text-sm text-[var(--muted-foreground)]">
-              This account is also signed in on another device.
-            </p>
-            <button
-              type="button"
-              onClick={() => setSessionConflictMessage(false)}
-              className="mt-5 w-full rounded-xl bg-[var(--primary)] px-4 py-3 text-sm font-semibold text-white transition-opacity hover:opacity-90 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--primary)]"
-            >
-              Got it
-            </button>
-          </section>
-        </div>
-      )}
       {sessionWarningSeconds !== null && (
         <div className="fixed inset-0 z-[10050] grid place-items-center bg-black/55 px-4 backdrop-blur-sm" role="presentation">
           <section
@@ -1420,9 +1445,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             <div className="mx-auto mb-4 grid size-12 place-items-center rounded-full bg-[var(--primary-soft)] text-[var(--primary)]">
               <span className="text-xl font-bold" aria-hidden="true">{sessionWarningSeconds}</span>
             </div>
-            <h2 id="session-limit-title" className="text-lg font-bold text-[var(--ink)]">Account already signed in</h2>
+            <h2 id="session-limit-title" className="text-lg font-bold text-[var(--ink)]">Another device signed in</h2>
             <p id="session-limit-description" className="mt-2 text-sm text-[var(--muted-foreground)]">
-              This account has reached its active session limit. This session will sign out in {sessionWarningSeconds} {sessionWarningSeconds === 1 ? 'second' : 'seconds'}.
+              This session will be signed out in {sessionWarningSeconds} {sessionWarningSeconds === 1 ? 'second' : 'seconds'} to keep your newer sign-in active.
             </p>
           </section>
         </div>
