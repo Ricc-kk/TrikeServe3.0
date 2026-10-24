@@ -124,8 +124,6 @@ const SHARED_DROPOFF_COLORS = [
 ];
 
 const SILENT_LOBBY_STATUS_MESSAGE = '__silent__';
-const passengerStatusMessage = (passengerId: string, message: string) =>
-  `[[passenger:${passengerId}]] ${message}`;
 
 type RideCoordinate = { lat: number; lng: number };
 
@@ -330,7 +328,6 @@ export default function ActiveRide() {
   const routePhaseRef = useRef<string | null>(null);
   const fittedRoutePhaseRef = useRef<string | null>(null);
   const hasPersistedLocationRef = useRef(false);
-  const [paymentPromptDismissed, setPaymentPromptDismissed] = useState(false);
   const [sharedPaymentPromptPassengerId, setSharedPaymentPromptPassengerId] = useState<string | null>(null);
   // Set briefly while we change the zoom ourselves, so the resulting
   // `zoom_changed` is not read as the driver zooming in by hand. See
@@ -368,9 +365,6 @@ export default function ActiveRide() {
   }, [rideData?.id, rideData?.status, syncRideResume]);
   rideDataRef.current = rideData;
   driverLocationRef.current = driverLocation;
-  useEffect(() => {
-    setPaymentPromptDismissed(false);
-  }, [rideData?.id, rideData?.status]);
   const [showRideComplete, setShowRideComplete] = useState(false);
   const [showCancelPrompt, setShowCancelPrompt] = useState(false);
   const [showReportModal, setShowReportModal] = useState(false);
@@ -433,6 +427,8 @@ export default function ActiveRide() {
   /** Whether the chat overlay is showing. */
   const [chatPopupOpen, setChatPopupOpen] = useState(false);
   const [confirmingDropoffPassengerId, setConfirmingDropoffPassengerId] = useState<string | null>(null);
+  const [confirmingSharedPaymentPassengerId, setConfirmingSharedPaymentPassengerId] = useState<string | null>(null);
+  const [sharedPaymentError, setSharedPaymentError] = useState<string | null>(null);
   /** Messages from the passenger the driver has not looked at yet. */
   const [unreadFromPassenger, setUnreadFromPassenger] = useState(0);
   /** Latest message seen in this ride thread, excluding badge-only updates. */
@@ -1016,9 +1012,7 @@ export default function ActiveRide() {
   const isSharedRide = Boolean(rideData && (rideData.type === 'shared' || rideData.lobbyId));
 
   // Shared passengers have separate destinations and fares, so keep a payment
-  // prompt for each completed passenger instead of waiting for the whole lobby.
-  // Dismissals are scoped to the passenger so a refresh can restore a pending
-  // prompt without reopening one the rider already handled.
+  // prompt for each passenger who has been dropped off but not paid.
   useEffect(() => {
     if (confirmingDropoffPassengerId) return;
     if (!rideData || !isSharedRide || rideData.status === 'completed') {
@@ -1029,15 +1023,16 @@ export default function ActiveRide() {
     const passengers = Array.isArray(rideData.passengerDetails) ? rideData.passengerDetails : [];
     const pendingPassenger = passengers.find((passenger: any) => {
       const passengerId = String(passenger?.id || '');
-      if (!passengerId || !['dropped-off', 'completed'].includes(String(passenger.dropoff_status || passenger.dropoffStatus || '').toLowerCase())) {
+      const dropoffStatus = String(passenger.dropoff_status || passenger.dropoffStatus || '').toLowerCase();
+      const paymentStatus = String(passenger.payment_status || passenger.paymentStatus || '').toLowerCase();
+      if (
+        !passengerId ||
+        !['dropped-off', 'completed'].includes(dropoffStatus) ||
+        ['received', 'prepaid'].includes(paymentStatus)
+      ) {
         return false;
       }
-
-      try {
-        return localStorage.getItem(`rider_shared_payment_dismissed_${rideData.id}_${passengerId}`) !== '1';
-      } catch {
-        return true;
-      }
+      return true;
     });
 
     setSharedPaymentPromptPassengerId(pendingPassenger ? String(pendingPassenger.id) : null);
@@ -1522,9 +1517,15 @@ export default function ActiveRide() {
     }
 
     setConfirmingDropoffPassengerId(passengerId);
+    const droppedOffAt = new Date().toISOString();
     const updatedPassengers = passengers.map((passenger: any) =>
       String(passenger?.id || '') === passengerId
-        ? { ...passenger, dropoff_status: 'completed', dropoff_status_updated_at: new Date().toISOString() }
+        ? {
+            ...passenger,
+            dropoff_status: 'dropped-off',
+            dropoff_status_updated_at: droppedOffAt,
+            payment_status: 'pending',
+          }
         : passenger,
     );
     const remainingPassengers = updatedPassengers.filter((passenger: any) =>
@@ -1533,9 +1534,6 @@ export default function ActiveRide() {
     const hasMoreDropoffs = remainingPassengers.length > 0;
     const nextStatus: RideStatus = hasMoreDropoffs ? 'pickup' : 'payment';
     const updatedRide = { ...rideData, passengerDetails: updatedPassengers, status: nextStatus };
-    const passengerCompletionMessage = hasMoreDropoffs
-      ? 'Your ride is complete. The driver will continue with the remaining passengers.'
-      : 'Your ride is complete. Please settle any due fare with your driver.';
     setRideData(updatedRide);
     writeRiderActiveRide(updatedRide);
 
@@ -1544,36 +1542,27 @@ export default function ActiveRide() {
         const passengerUpdate = await supabaseHelpers.updateLobbyPassengerDropoffStatus(
           rideData.lobbyId,
           passengerId,
-          'completed',
+          'dropped-off',
+          { payment_status: 'pending' },
         );
         if (passengerUpdate.error) {
           console.error('[ActiveRide] Could not save passenger drop-off status:', passengerUpdate.error);
         }
 
         const lobbyStatus = hasMoreDropoffs ? 'picked-up' : 'awaiting-payment';
-        const lobbyMessage = passengerStatusMessage(passengerId, passengerCompletionMessage);
         const lobbyUpdate = await supabaseHelpers.updateLobbyDriverStatus(
           rideData.lobbyId,
           lobbyStatus,
-          lobbyMessage,
+          SILENT_LOBBY_STATUS_MESSAGE,
         );
         if (lobbyUpdate.error) {
           console.error('[ActiveRide] Could not update shared ride progress:', lobbyUpdate.error);
         }
       } else {
         const rideStatus = hasMoreDropoffs ? 'picked-up' : 'awaiting-payment';
-        const rideMessage = passengerStatusMessage(passengerId, passengerCompletionMessage);
-        const rideUpdate = await supabaseHelpers.updateDriverRideStatus(rideData.id, rideStatus, rideMessage);
+        const rideUpdate = await supabaseHelpers.updateDriverRideStatus(rideData.id, rideStatus, SILENT_LOBBY_STATUS_MESSAGE);
         if (rideUpdate.error) console.error('[ActiveRide] Could not update shared ride progress:', rideUpdate.error);
       }
-
-      await notifyRideProgress(
-        updatedRide,
-        'completed',
-        undefined,
-        passengerId,
-        passengerCompletionMessage,
-      );
     } catch (error) {
       console.error('[ActiveRide] Could not finish passenger drop-off:', error);
     } finally {
@@ -1832,13 +1821,6 @@ export default function ActiveRide() {
   };
 
   const dismissSharedPaymentPrompt = () => {
-    if (rideData && sharedPaymentPromptPassengerId) {
-      try {
-        localStorage.setItem(`rider_shared_payment_dismissed_${rideData.id}_${sharedPaymentPromptPassengerId}`, '1');
-      } catch {
-        // The prompt can still be dismissed for this mounted ride if storage is unavailable.
-      }
-    }
     setSharedPaymentPromptPassengerId(null);
   };
 
@@ -2117,16 +2099,106 @@ export default function ActiveRide() {
   const sharedPaymentPassengerName = sharedPaymentPassenger
     ? getSharedPassengerName(sharedPaymentPassenger, sharedPaymentPassengerIndex, rideData.passengerDetails || [])
     : '';
+  const sharedPaymentPassengerId = String(sharedPaymentPassenger?.id || '');
+  const paymentPassengerId = isSharedRide
+    ? sharedPaymentPassengerId
+    : String(rideData.customerId || rideData.passengerDetails?.[0]?.id || '');
+  const paymentPassengerName = isSharedRide ? sharedPaymentPassengerName : customerDisplayName;
+  const sharedPaymentAvatar = sharedPaymentPassenger?.avatar;
+  const sharedPaymentPassengerPhoto = passengerAvatars[passengerAccountId(sharedPaymentPassengerId)]
+    || (typeof sharedPaymentAvatar === 'string' && (/^https?:\/\//i.test(sharedPaymentAvatar) || sharedPaymentAvatar.startsWith('data:image/')) ? sharedPaymentAvatar : null);
+  const paymentPassengerPhoto = isSharedRide ? sharedPaymentPassengerPhoto : passengerAvatar;
   const sharedPaymentPassengerFare = sharedPaymentPassenger
     ? Number(sharedPaymentPassenger.fare ?? rideData.amount ?? 0)
     : 0;
-  const sharedPaymentPassengerIsLast = Boolean(sharedPaymentPassenger) && !(rideData.passengerDetails || []).some((passenger: any) =>
-    !['dropped-off', 'completed'].includes(String(passenger?.dropoff_status || passenger?.dropoffStatus || '').toLowerCase())
-  );
-  const handleSharedPaymentAction = () => {
-    const finishRide = sharedPaymentPassengerIsLast;
-    dismissSharedPaymentPrompt();
-    if (finishRide) void completeRide();
+  const isFinalSharedPassengerPayment = Boolean(sharedPaymentPassenger) && (rideData.passengerDetails || []).every((passenger: any) => {
+    if (String(passenger?.id || '') === sharedPaymentPassengerId) return true;
+    const dropoffStatus = String(passenger?.dropoff_status || passenger?.dropoffStatus || '').toLowerCase();
+    const paymentStatus = String(passenger?.payment_status || passenger?.paymentStatus || '').toLowerCase();
+    return dropoffStatus === 'completed' && ['received', 'prepaid'].includes(paymentStatus);
+  });
+  const handleSharedPaymentAction = async () => {
+    if (
+      !rideData ||
+      !sharedPaymentPassenger ||
+      !sharedPaymentPassengerId ||
+      confirmingSharedPaymentPassengerId
+    ) return;
+
+    const paymentSettledAt = new Date().toISOString();
+    const paymentStatus = rideData.payment === 'PREPAID' ? 'prepaid' : 'received';
+    const updatedPassengers = (rideData.passengerDetails || []).map((passenger: any) =>
+      String(passenger?.id || '') === sharedPaymentPassengerId
+        ? {
+            ...passenger,
+            dropoff_status: 'completed',
+            dropoff_status_updated_at: paymentSettledAt,
+            payment_status: paymentStatus,
+            payment_settled_at: paymentSettledAt,
+            ...(paymentStatus === 'received' ? { payment_received_at: paymentSettledAt } : {}),
+          }
+        : passenger,
+    );
+    const updatedRide = { ...rideData, passengerDetails: updatedPassengers };
+    const hasMoreDropoffs = updatedPassengers.some((passenger: any) =>
+      !['dropped-off', 'completed'].includes(String(passenger?.dropoff_status || passenger?.dropoffStatus || '').toLowerCase())
+    );
+    const progressStatus = hasMoreDropoffs ? 'picked-up' : 'awaiting-payment';
+
+    setConfirmingSharedPaymentPassengerId(sharedPaymentPassengerId);
+    setSharedPaymentError(null);
+    try {
+      if (rideData.lobbyId) {
+        const paymentUpdate = await supabaseHelpers.updateLobbyPassengerDropoffStatus(
+          rideData.lobbyId,
+          sharedPaymentPassengerId,
+          'completed',
+          {
+            payment_status: paymentStatus,
+            payment_settled_at: paymentSettledAt,
+            ...(paymentStatus === 'received' ? { payment_received_at: paymentSettledAt } : {}),
+          },
+        );
+        if (paymentUpdate.error) throw paymentUpdate.error;
+
+        const progressUpdate = await supabaseHelpers.updateLobbyDriverStatus(
+          rideData.lobbyId,
+          progressStatus,
+          SILENT_LOBBY_STATUS_MESSAGE,
+        );
+        if (progressUpdate.error) {
+          console.error('[ActiveRide] Could not update shared ride progress after payment:', progressUpdate.error);
+        }
+      } else {
+        const paymentUpdate = await supabaseHelpers.updateDriverRideStatus(
+          rideData.id,
+          progressStatus,
+          SILENT_LOBBY_STATUS_MESSAGE,
+        );
+        if (paymentUpdate.error) throw paymentUpdate.error;
+      }
+
+      setRideData(updatedRide);
+      writeRiderActiveRide(updatedRide);
+      dismissSharedPaymentPrompt();
+      try {
+        await notifyRideProgress(
+          updatedRide,
+          'completed',
+          undefined,
+          sharedPaymentPassengerId,
+          'Your ride is complete. The driver has received your payment.',
+        );
+      } catch (error) {
+        console.error('[ActiveRide] Could not notify passenger that payment was received:', error);
+      }
+      if (isFinalSharedPassengerPayment) void completeRide();
+    } catch (error) {
+      console.error('[ActiveRide] Could not confirm shared passenger payment:', error);
+      setSharedPaymentError('Could not confirm payment. Check your connection and try again.');
+    } finally {
+      setConfirmingSharedPaymentPassengerId(null);
+    }
   };
 
   /**
@@ -2260,62 +2332,81 @@ export default function ActiveRide() {
       )}
       {!isDeliveryRide(rideData) && !showRideComplete && (
         (isSharedRide && sharedPaymentPassenger) ||
-        (!isSharedRide && ['drop-off', 'payment'].includes(rideData.status) && !paymentPromptDismissed)
+        (!isSharedRide && ['drop-off', 'payment'].includes(rideData.status))
       ) && (
         <div className="fixed inset-0 z-[4200] flex items-center justify-center bg-black/60 p-4">
           <Card
             role="dialog"
             aria-modal="true"
             aria-labelledby="rider-payment-title"
-            className="w-full max-w-sm rounded-2xl bg-surface p-6 text-center shadow-2xl"
+            className="w-full max-w-sm gap-0 rounded-2xl bg-surface p-5 text-left shadow-2xl sm:p-6"
           >
-            <div className="mx-auto mb-4 flex size-16 items-center justify-center rounded-full bg-[var(--primary-soft)]">
-              <CreditCard className="size-8 text-[var(--primary)]" aria-hidden="true" />
+            <div className="mb-5 flex items-center gap-3">
+              <span className="grid size-12 shrink-0 place-items-center overflow-hidden rounded-full border border-[var(--border)] bg-[var(--primary-soft)] text-lg">
+                {paymentPassengerPhoto ? (
+                  <img src={paymentPassengerPhoto} alt={`${paymentPassengerName || 'Passenger'}’s profile`} className="size-full object-cover" />
+                ) : isSharedRide && sharedPaymentPassenger?.emoji ? (
+                  sharedPaymentPassenger.emoji
+                ) : (
+                  <User className="size-5 text-[var(--primary)]" aria-hidden="true" />
+                )}
+              </span>
+              <div className="min-w-0 flex-1">
+                <h2 id="rider-payment-title" className="truncate text-lg font-bold leading-6 text-[var(--ink)]">
+                  Payment for {paymentPassengerName || 'passenger'}
+                </h2>
+                <p className="mt-1 text-sm leading-5 text-[var(--muted-foreground)]">
+                  {rideData.payment === 'PREPAID'
+                    ? isSharedRide
+                      ? 'This passenger’s fare was prepaid. Continue the ride after confirming the drop-off.'
+                      : 'This ride was prepaid. Confirm completion after the passenger reaches their drop-off.'
+                    : isSharedRide
+                      ? `Collect this passenger’s fare at their drop-off${isFinalSharedPassengerPayment ? ' before completing the ride' : ''}.`
+                      : 'Collect the fare from the passenger before completing the ride.'}
+                </p>
+              </div>
+              <Button
+                type="button"
+                variant="outline"
+                size="icon"
+                onClick={() => openRideReport(paymentPassengerId ? { id: paymentPassengerId, name: paymentPassengerName || 'Passenger' } : undefined)}
+                aria-label={`Report an issue with ${paymentPassengerName || 'the passenger'}`}
+                title={`Report an issue with ${paymentPassengerName || 'the passenger'}`}
+                className="size-10 shrink-0 border-[var(--border)] text-[var(--muted-foreground)]"
+              >
+                <Flag className="size-4" aria-hidden="true" />
+              </Button>
             </div>
-            <h2 id="rider-payment-title" className="mb-2 text-xl font-bold text-[var(--ink)]">
-              {isSharedRide
-                ? `Payment for ${sharedPaymentPassengerName || 'passenger'}`
-                : rideData.payment === 'PREPAID' ? 'Confirm ride completion' : 'Collect payment'}
-            </h2>
-            <p className="mb-5 text-sm text-[var(--muted-foreground)]">
-              {rideData.payment === 'PREPAID'
-                ? isSharedRide
-                  ? 'This passenger’s fare was prepaid. Continue the ride after confirming the drop-off.'
-                  : 'This ride was prepaid. Confirm completion after the passenger reaches their drop-off.'
-                : isSharedRide
-                  ? `Collect this passenger’s fare at their drop-off${sharedPaymentPassengerIsLast ? ' before completing the ride' : ''}.`
-                  : 'Collect the fare from the passenger before completing the ride.'}
-            </p>
-            <div className="mb-5 rounded-xl bg-[var(--muted)] p-4 text-left">
+            <div className="mb-4 space-y-3 rounded-xl bg-[var(--muted)] p-4 text-left">
               <div className="flex items-center justify-between gap-3">
                 <span className="text-sm text-[var(--muted-foreground)]">{isSharedRide ? 'Passenger fare' : 'Total fare'}</span>
                 <strong className="text-lg text-[var(--primary)]">₱{(isSharedRide ? sharedPaymentPassengerFare : Number(rideData.amount || 0)).toFixed(2)}</strong>
               </div>
-              <div className="mt-2 flex items-center justify-between gap-3">
+              <div className="flex items-center justify-between gap-3 border-t border-[var(--border)] pt-3">
                 <span className="text-sm text-[var(--muted-foreground)]">Payment method</span>
                 <strong className="text-sm text-[var(--ink)]">{rideData.payment === 'PREPAID' ? 'Prepaid' : 'Cash'}</strong>
               </div>
             </div>
-            <div className="grid grid-cols-2 gap-2">
-              <Button
-                type="button"
-                variant="outline"
-                onClick={() => isSharedRide ? dismissSharedPaymentPrompt() : setPaymentPromptDismissed(true)}
-              >
-                Later
-              </Button>
-              <Button
-                type="button"
-                onClick={() => isSharedRide ? handleSharedPaymentAction() : void completeRide()}
-                className="bg-[var(--primary)] text-white"
-              >
-                {isSharedRide
-                  ? sharedPaymentPassengerIsLast
-                    ? rideData.payment === 'PREPAID' ? 'Complete ride' : 'Payment received'
-                    : rideData.payment === 'PREPAID' ? 'Continue route' : 'Payment received'
-                  : rideData.payment === 'PREPAID' ? 'Complete ride' : 'Payment received'}
-              </Button>
-            </div>
+            {sharedPaymentError && (
+              <p role="alert" className="mb-3 text-sm text-[var(--error)]">
+                {sharedPaymentError}
+              </p>
+            )}
+            <Button
+              type="button"
+              onClick={() => isSharedRide ? handleSharedPaymentAction() : void completeRide()}
+              disabled={Boolean(confirmingSharedPaymentPassengerId)}
+              aria-busy={Boolean(confirmingSharedPaymentPassengerId)}
+              className="h-12 w-full bg-[var(--primary)] text-white"
+            >
+              {isSharedRide && confirmingSharedPaymentPassengerId === sharedPaymentPassengerId
+                ? 'Saving payment…'
+                : isSharedRide
+                ? isFinalSharedPassengerPayment
+                  ? rideData.payment === 'PREPAID' ? 'Complete ride' : 'Payment received'
+                  : rideData.payment === 'PREPAID' ? 'Continue route' : 'Payment received'
+                : rideData.payment === 'PREPAID' ? 'Complete ride' : 'Payment received'}
+            </Button>
           </Card>
         </div>
       )}
@@ -2755,6 +2846,7 @@ export default function ActiveRide() {
                           || (typeof p.avatar === 'string' && (/^https?:\/\//i.test(p.avatar) || p.avatar.startsWith('data:image/')) ? p.avatar : null);
                         const stop = sharedDropoffStops.find(item => item.id === passengerId);
                         const isDroppedOff = ['dropped-off', 'completed'].includes(String(p.dropoff_status || p.dropoffStatus || '').toLowerCase());
+                        const isPaymentSettled = ['received', 'prepaid'].includes(String(p.payment_status || p.paymentStatus || '').toLowerCase());
                         const isNextDropoff = !isDroppedOff && nextSharedDropoffPassengerId === passengerId;
                         return (
                           <Card key={passengerId} className="border border-[var(--border)] bg-[var(--surface)] p-3 shadow-sm">
@@ -2783,8 +2875,8 @@ export default function ActiveRide() {
                               )}
                             </div>
                             <div className="mt-2 flex items-center justify-between gap-2 border-t border-[var(--border)] pt-2">
-                              <span className={`rounded-full px-2.5 py-1 text-[10px] font-bold ${isDroppedOff ? 'bg-[var(--success-soft)] text-[var(--success)]' : isNextDropoff ? 'bg-[var(--primary-soft)] text-[var(--primary)]' : 'bg-[var(--muted)] text-[var(--muted-foreground)]'}`}>
-                                {isDroppedOff ? 'Completed' : isNextDropoff ? (rideData.status === 'drop-off' ? 'At drop-off' : 'Next drop-off') : 'Upcoming'}
+                              <span className={`rounded-full px-2.5 py-1 text-[10px] font-bold ${isPaymentSettled ? 'bg-[var(--success-soft)] text-[var(--success)]' : isDroppedOff ? 'bg-[var(--amber-soft)] text-[var(--amber-ink)]' : isNextDropoff ? 'bg-[var(--primary-soft)] text-[var(--primary)]' : 'bg-[var(--muted)] text-[var(--muted-foreground)]'}`}>
+                                {isPaymentSettled ? 'Completed' : isDroppedOff ? 'Payment due' : isNextDropoff ? (rideData.status === 'drop-off' ? 'At drop-off' : 'Next drop-off') : 'Upcoming'}
                               </span>
                               <Button
                                 type="button"
@@ -2975,7 +3067,7 @@ export default function ActiveRide() {
 
       {showReportModal && (
         <div
-          className="fixed inset-0 z-[4100] flex items-center justify-center bg-black/60 p-4"
+          className="fixed inset-0 z-[4300] flex items-center justify-center bg-black/60 p-4"
           onClick={() => { if (!isSubmittingReport) setShowReportModal(false); }}
         >
           <Card

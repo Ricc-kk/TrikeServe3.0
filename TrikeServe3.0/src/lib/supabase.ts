@@ -2583,7 +2583,12 @@ export const supabaseHelpers = {
 
   // Persist drop-off progress per passenger so a rider can advance through a
   // shared ride without treating every passenger as dropped off at once.
-  async updateLobbyPassengerDropoffStatus(lobbyId: string, passengerId: string, status: string) {
+  async updateLobbyPassengerDropoffStatus(
+    lobbyId: string,
+    passengerId: string,
+    status: string,
+    extraFields: Record<string, unknown> = {},
+  ) {
     const { data: lobby, error: readError } = await supabase
       .from('shared_ride_lobbies')
       .select('passengers_json')
@@ -2611,6 +2616,7 @@ export const supabaseHelpers = {
       foundPassenger = true;
       return {
         ...passenger,
+        ...extraFields,
         dropoff_status: status,
         dropoff_status_updated_at: timestamp,
       };

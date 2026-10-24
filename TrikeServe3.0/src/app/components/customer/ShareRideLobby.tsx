@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from "react";
-import { MapPin, Users, Clock, X, ChevronDown, MessageCircle, User, Minimize2, Star, Navigation, CarTaxiFront, Flag, CreditCard, Check } from "lucide-react";
+import { MapPin, Users, Clock, X, ChevronDown, MessageCircle, User, Minimize2, Star, Navigation, Flag, CreditCard, Check } from "lucide-react";
 import { Button } from "../ui/button";
 import { Card } from "../ui/card";
 import { Badge } from "../ui/badge";
@@ -17,11 +17,11 @@ import { backfillLegacySharedRidePassengerFares, sumSharedRidePassengerFares, DE
 import { useDevModeOverride } from "../../hooks/useDevModeSettings";
 import { customerActiveShareLobbyStorageKey, isCustomerLobbyPassenger } from "../../../lib/rideLock";
 import { legacyRouteFromBoundary, normalizeTerminalRoutes } from "@/lib/terminalRoutes";
+import { Tricycle } from "../ui/Tricycle";
 
 const DRIVER_STATUS_ICONS: Record<string, typeof MapPin> = {
   cancelled: X,
-  'on-the-way': CarTaxiFront,
-  arrived: MapPin,
+  'on-the-way': Tricycle,
   pickup: Navigation,
   'drop-off': Flag,
   payment: CreditCard,
@@ -58,6 +58,8 @@ interface LobbyPassenger {
   dropoffLng?: number | null;
   dropoff_status?: string | null;
   dropoffStatus?: string | null;
+  payment_status?: string | null;
+  paymentStatus?: string | null;
   /** This passenger's fare: the full base fare plus their distance charge. */
   fare?: number;
 }
@@ -482,6 +484,10 @@ export default function ShareRideLobby({
   const processDriverStatusUpdate = (lobbyId: string, driverStatus?: string, message?: string) => {
     if (!driverStatus) return;
     const normalizedStatus = String(driverStatus).toLowerCase();
+    // Shared ride customers see the status flow from pickup onward. The driver
+    // still uses the travel and arrival steps to navigate to the pickup, but
+    // those intermediate steps do not create customer status popups.
+    if (normalizedStatus === 'on-the-way' || normalizedStatus === 'arrived') return;
     if (normalizedStatus === 'awaiting-payment' || normalizedStatus === 'payment') return;
     const rawMessage = String(message || '');
     if (rawMessage === '__silent__') return;
@@ -508,8 +514,6 @@ export default function ShareRideLobby({
 
     if (normalizedStatus && normalizedStatus !== 'pending' && statusEventKey !== lastShownStatus) {
       const statusDisplayMap: { [key: string]: string } = {
-        'on-the-way': 'Your driver is on the way to pick you up.',
-        'arrived': 'Your driver has arrived.',
         'pickup': 'You have been picked up! On the way to your destination.',
         'picked-up': 'You have been picked up! On the way to your destination.',
         'drop-off': 'You have arrived at your destination.',
@@ -793,7 +797,8 @@ export default function ShareRideLobby({
 
                     handleTerminalLobbyStatus(freshLobby.status, freshLobby.driver_status_message);
 
-                    // Show driver status popups (on-the-way, arrived, picked-up, etc.)
+                    // Customer status popups begin at pickup; earlier driver
+                    // navigation steps are intentionally kept quiet here.
                     processDriverStatusUpdate(existingLobby.id, freshLobby.driver_status, freshLobby.driver_status_message);
 
                     // Use the driver's real average rating from driver_ratings.
@@ -966,7 +971,12 @@ export default function ShareRideLobby({
       passenger.id === user.id || passenger.id.startsWith(`${user.id}_companion_`)
     );
     const pendingPassenger = ownPassengers.find(passenger => {
-      if (!['dropped-off', 'completed'].includes(String(passenger.dropoff_status || passenger.dropoffStatus || '').toLowerCase())) {
+      const dropoffStatus = String(passenger.dropoff_status || passenger.dropoffStatus || '').toLowerCase();
+      const paymentStatus = String(passenger.payment_status || passenger.paymentStatus || '').toLowerCase();
+      if (
+        !['dropped-off', 'completed'].includes(dropoffStatus) ||
+        ['received', 'prepaid'].includes(paymentStatus)
+      ) {
         return false;
       }
 
@@ -1635,7 +1645,8 @@ if (loading) {
     )
   ));
   const ownRideCompleted = ownLobbyPassengers.length > 0 && ownLobbyPassengers.every(passenger =>
-    ['dropped-off', 'completed'].includes(String(passenger.dropoff_status || passenger.dropoffStatus || '').toLowerCase())
+    String(passenger.dropoff_status || passenger.dropoffStatus || '').toLowerCase() === 'completed' &&
+    ['received', 'prepaid'].includes(String(passenger.payment_status || passenger.paymentStatus || '').toLowerCase())
   );
   const paymentModalPassenger = ownLobbyPassengers.find(passenger => passenger.id === paymentModalPassengerId) || null;
   const dismissPaymentModal = () => {
@@ -2128,9 +2139,9 @@ if (loading) {
                     <span className="text-xs font-semibold text-[var(--ink)]">
                       {!driverLocation
                         ? (lobby.driver_id ? 'Connecting to driver' : 'Waiting for a driver')
-                        : (lobby.driver_status === 'on-the-way' || lobby.driver_status === 'arrived')
-                          ? 'Heading to pickup'
-                          : 'On the way to destination'}
+                        : ['picked-up', 'pickup', 'drop-off', 'dropped-off', 'payment', 'awaiting-payment', 'completed'].includes(String(lobby.driver_status || '').toLowerCase())
+                          ? 'On the way to destination'
+                          : 'Waiting for pickup'}
                     </span>
                   </div>
                   <div className="flex items-center gap-1">
@@ -2307,8 +2318,6 @@ if (loading) {
 
               {/* Status Message */}
               <h3 className="text-2xl font-bold text-[var(--ink)] text-center mb-2">
-                {driverStatusPopup.status === 'on-the-way' && 'Driver On The Way'}
-                {driverStatusPopup.status === 'arrived' && 'Driver Arrived'}
                 {driverStatusPopup.status === 'pickup' && 'Picked Up!'}
                 {driverStatusPopup.status === 'drop-off' && 'Arrived at Destination'}
                 {driverStatusPopup.status === 'payment' && 'Complete Payment'}
@@ -2322,8 +2331,6 @@ if (loading) {
                 <div className="flex items-center justify-between">
                   <span className="text-sm text-[var(--muted-foreground)]">Status Update</span>
                   <span className="font-bold text-[var(--ink)]">
-                    {driverStatusPopup.status === 'on-the-way' && 'On the way'}
-                    {driverStatusPopup.status === 'arrived' && 'Arrived'}
                     {driverStatusPopup.status === 'pickup' && 'Picked up'}
                     {driverStatusPopup.status === 'drop-off' && 'At destination'}
                     {driverStatusPopup.status === 'payment' && 'Payment pending'}

@@ -1,5 +1,5 @@
 import { Fragment, useState, useEffect, useRef, useCallback, useMemo } from "react";
-import { Search, MapPin, Users, UsersRound, CarTaxiFront, ChevronDown, X, Clock, Utensils, User, Navigation, MessageCircle, Home as HomeIcon, ShoppingCart, ClipboardList, Star, ArrowLeft, Flag, CreditCard, Check, Route as RouteIcon, Eye, EyeOff } from "lucide-react";
+import { Search, MapPin, Users, UsersRound, ChevronDown, X, Clock, Utensils, User, Navigation, MessageCircle, Home as HomeIcon, ShoppingCart, ClipboardList, Star, ArrowLeft, Flag, CreditCard, Check, Route as RouteIcon, Eye, EyeOff } from "lucide-react";
 import { Link, useLocation, useNavigate } from "react-router";
 import { Button } from "../ui/button";
 import { Card } from "../ui/card";
@@ -32,6 +32,7 @@ import { useAuth } from "../../contexts/AuthContext";
 import { supabaseHelpers, isPointWithinAnyTerminalBorder, isPointInPolygon, isPointOnRoadCorridor, normalizeBoundaryRoad, normalizeBoundaryArea, normalizeRoadWidth, geocodeAddress, logAudit, haversineDistanceMeters, type LatLngPoint } from "@/lib/supabase";
 import { legacyRouteFromBoundary, normalizeTerminalRoutes } from "@/lib/terminalRoutes";
 import { TerminalIconGlyph, terminalMarkerIcon, normalizeTerminalColor, normalizeRouteColor, normalizeBorderColor } from "../ui/TerminalIcon";
+import { Tricycle } from "../ui/Tricycle";
 import { computeRideFare, computeSharedRideFarePerPassenger, normalizeRates, terminalRates, privateRideRates, DEFAULT_MAX_PASSENGERS } from "@/lib/pricing";
 import { useElapsedTime } from "@/app/hooks/useElapsedTime";
 import ReasonPromptModal from "../ui/reason-prompt-modal";
@@ -347,7 +348,7 @@ const DELIVERY_DRIVER_STATUS_LABELS: { [key: string]: string } = {
 
 const DRIVER_STATUS_ICONS: Record<string, typeof MapPin> = {
   cancelled: X,
-  'on-the-way': CarTaxiFront,
+  'on-the-way': Tricycle,
   arrived: MapPin,
   pickup: Navigation,
   'drop-off': Flag,
@@ -549,6 +550,87 @@ export default function CustomerHome() {
     * been given a driver yet.
     */
    const { privateRide: activeRideRequest, lobby: activeRideLobby, checked: rideContextChecked } = useActiveRideContext(user?.id);
+   const isActiveShareRideMap = Boolean(
+     activeRideLobby?.id ||
+     (showShareLobby && selectedVehicle === 'share'),
+   );
+   const activeShareRideMapDetails = useMemo(() => {
+     const toPoint = (latValue: unknown, lngValue: unknown) => {
+       if (latValue == null || lngValue == null) return null;
+       const lat = Number(latValue);
+       const lng = Number(lngValue);
+       return Number.isFinite(lat) && Number.isFinite(lng) ? { lat, lng } : null;
+     };
+
+     let passengers: any[] = [];
+     const rawPassengers = activeRideLobby?.passengers_json;
+     if (Array.isArray(rawPassengers)) {
+       passengers = rawPassengers;
+     } else if (typeof rawPassengers === 'string') {
+       try {
+         const parsed = JSON.parse(rawPassengers);
+         if (Array.isArray(parsed)) passengers = parsed;
+       } catch {
+         // Older or malformed lobby data falls back to the lobby's saved stop.
+       }
+     }
+
+     const ownPassengers = user?.id
+       ? passengers.filter(passenger =>
+           passenger?.id === user.id || String(passenger?.id || '').startsWith(`${user.id}_companion_`)
+         )
+       : [];
+     const pickup =
+       toPoint(activeRideLobby?.pickup_lat, activeRideLobby?.pickup_lng) || pickupCoords;
+     const dropoffs = ownPassengers
+       .map(passenger => toPoint(
+         passenger?.dropoffLat ?? passenger?.dropoff_lat,
+         passenger?.dropoffLng ?? passenger?.dropoff_lng,
+       ))
+       .filter((point): point is { lat: number; lng: number } => Boolean(point));
+
+     if (dropoffs.length === 0) {
+       const lobbyDropoff = toPoint(activeRideLobby?.dropoff_lat, activeRideLobby?.dropoff_lng);
+       const fallbackDropoff = activeRideLobby?.id
+         ? activeRideLobby.customer_id === user?.id
+           ? lobbyDropoff || dropoffCoords
+           : null
+         : lobbyDropoff || dropoffCoords;
+       if (fallbackDropoff) dropoffs.push(fallbackDropoff);
+     }
+
+     const uniqueDropoffs = dropoffs.filter((point, index) =>
+       dropoffs.findIndex(candidate =>
+         Math.abs(candidate.lat - point.lat) < 0.00001 && Math.abs(candidate.lng - point.lng) < 0.00001
+       ) === index
+     );
+     if (pickup) {
+       uniqueDropoffs.sort((left, right) =>
+         haversineDistanceMeters(pickup, left) - haversineDistanceMeters(pickup, right)
+       );
+     }
+
+     return { isActive: isActiveShareRideMap, pickup, dropoffs: uniqueDropoffs };
+   }, [
+     activeRideLobby?.pickup_lat,
+     activeRideLobby?.pickup_lng,
+     activeRideLobby?.dropoff_lat,
+     activeRideLobby?.dropoff_lng,
+     activeRideLobby?.passengers_json,
+     dropoffCoords,
+     isActiveShareRideMap,
+     pickupCoords,
+     user?.id,
+   ]);
+   const activeShareRideStopsKey = activeShareRideMapDetails.dropoffs
+     .map(point => `${point.lat.toFixed(6)},${point.lng.toFixed(6)}`)
+     .join('|');
+   const activeShareRideMapPickup = activeShareRideMapDetails.isActive
+     ? activeShareRideMapDetails.pickup
+     : pickupCoords;
+   const activeShareRideMapDropoff = activeShareRideMapDetails.isActive
+     ? activeShareRideMapDetails.dropoffs[activeShareRideMapDetails.dropoffs.length - 1] || null
+     : dropoffCoords;
    const isDeliveryRide = Boolean(
      activeRideRequest?.order_id ||
      String(activeRideRequest?.ride_type || activeRideRequest?.type || '').toLowerCase() === 'delivery' ||
@@ -752,11 +834,13 @@ export default function CustomerHome() {
    * Frame the terminal road with the passenger, pickup, driver, and drop-off so
    * the service path remains in view alongside the active trip.
    */
-  const fitTripBounds = useCallback(() => {
+  const fitTripBounds = useCallback((pointsOverride?: LatLng[]) => {
     const map = customerMapRef.current;
     const maps = (window as any).google?.maps;
     if (!map || !maps?.LatLngBounds) return;
-    const points = [currentLocation, pickupCoords, dropoffCoords, driverLocation, ...terminalRouteBoundsRef.current].filter(Boolean) as LatLng[];
+    const points: LatLng[] = pointsOverride || (
+      [currentLocation, pickupCoords, dropoffCoords, driverLocation, ...terminalRouteBoundsRef.current].filter(Boolean) as LatLng[]
+    );
     if (points.length < 2) return;
     const bounds = new maps.LatLngBounds();
     points.forEach((p) => bounds.extend(p));
@@ -853,6 +937,39 @@ export default function CustomerHome() {
         routeWidthM: terminal ? normalizeRoadWidth(selectedRoute?.bufferM ?? terminal.road_width_m) : undefined,
       };
     }, [terminals, mapTerminalRoutes, selectedTerminalId, selectedTerminalRouteId]);
+    const activeShareRideRoute = useMemo(() => {
+      const terminalId = activeRideLobby?.terminal_id;
+      if (!terminalId) return null;
+
+      const terminalRoutes = mapTerminalRoutes.filter(route => route.terminalId === terminalId);
+      if (terminalRoutes.length === 0) return null;
+
+      const dropoffPoint = activeShareRideMapDetails.dropoffs[0];
+      const selectedRoute = selectedTerminalId === terminalId
+        ? terminalRoutes.find(route => route.id === selectedTerminalRouteId) || null
+        : null;
+      const routeMatchesDropoff = (route: typeof terminalRoutes[number]) => Boolean(
+        dropoffPoint && isPointOnRoadCorridor(
+          dropoffPoint.lat,
+          dropoffPoint.lng,
+          route.points,
+          normalizeRoadWidth(route.bufferM),
+        )
+      );
+      const matchingRoutes = terminalRoutes.filter(route => route.enabled && routeMatchesDropoff(route));
+
+      return matchingRoutes.find(route => route.id === selectedRoute?.id)
+        || matchingRoutes[0]
+        || selectedRoute
+        || terminalRoutes.find(route => route.enabled)
+        || terminalRoutes[0];
+    }, [
+      activeRideLobby?.terminal_id,
+      activeShareRideMapDetails.dropoffs,
+      mapTerminalRoutes,
+      selectedTerminalId,
+      selectedTerminalRouteId,
+    ]);
     const selectedRouteDropoffGuide = !enforceBoundary
       ? 'Choose a drop-off location.'
       : selectedTerminalBoundary.terminal && selectedTerminalBoundary.displayRoad
@@ -872,10 +989,30 @@ export default function CustomerHome() {
     }, [enforceBoundary, selectedTerminalBoundary]);
 
   useEffect(() => {
-    const route = selectedTerminalBoundary.displayRoad || [];
+    const route = activeShareRideMapDetails.isActive
+      ? activeShareRideRoute?.points || (activeRideLobby?.terminal_id ? [] : selectedTerminalBoundary.displayRoad || [])
+      : selectedTerminalBoundary.displayRoad || [];
     terminalRouteBoundsRef.current = route;
-    if (route.length > 0) fitTripBounds();
-  }, [selectedTerminalBoundary.displayRoad, fitTripBounds]);
+    if (activeShareRideMapDetails.isActive) {
+      const points = [
+        ...(activeShareRideMapDetails.pickup ? [activeShareRideMapDetails.pickup] : []),
+        ...activeShareRideMapDetails.dropoffs,
+        ...route,
+      ];
+      if (points.length > 1) fitTripBounds(points);
+    } else if (route.length > 0) {
+      fitTripBounds();
+    }
+  }, [
+    activeRideLobby?.terminal_id,
+    activeShareRideMapDetails.isActive,
+    activeShareRideMapDetails.pickup?.lat,
+    activeShareRideMapDetails.pickup?.lng,
+    activeShareRideStopsKey,
+    activeShareRideRoute,
+    selectedTerminalBoundary.displayRoad,
+    fitTripBounds,
+  ]);
 
   /*
    * The picker map draws the selected terminal's shapes in that terminal's own
@@ -2239,6 +2376,10 @@ export default function CustomerHome() {
 
    // Compute driver's route to pickup/dropoff location (real-time tracking)
    useEffect(() => {
+     if (activeShareRideMapDetails.isActive) {
+       setDriverRoutePath([]);
+       return;
+     }
      if (!driverLocation || !pickupCoords || !isMapsLoaded || !(window as any).google || rideStatus !== 'driver-found') return;
 
      const DirectionsService = new (window as any).google.maps.DirectionsService();
@@ -2265,10 +2406,14 @@ export default function CustomerHome() {
          }
        }
      );
-   }, [driverLocation, pickupCoords, isMapsLoaded, rideStatus]);
+   }, [activeShareRideMapDetails.isActive, driverLocation, pickupCoords, isMapsLoaded, rideStatus]);
 
    // Compute pickup-to-dropoff route during ride tracking (like driver preview)
    useEffect(() => {
+     if (activeShareRideMapDetails.isActive) {
+       setDestinationRoutePath([]);
+       return;
+     }
      if (!pickupCoords || !dropoffCoords || !isMapsLoaded || !(window as any).google) return;
      if (!rideStatus || rideStatus === 'searching') return;
 
@@ -2295,7 +2440,53 @@ export default function CustomerHome() {
          }
        }
      );
-   }, [pickupCoords, dropoffCoords, isMapsLoaded, rideStatus]);
+   }, [activeShareRideMapDetails.isActive, pickupCoords, dropoffCoords, isMapsLoaded, rideStatus]);
+
+   // The Home map remains visible behind the minimized lobby. Rebuild the same
+   // multi-stop path from this customer's own lobby drop-offs so the map does
+   // not keep showing a stale single-drop-off path from another booking.
+   useEffect(() => {
+     if (!activeShareRideMapDetails.isActive) return;
+     if (!activeShareRideMapPickup || activeShareRideMapDetails.dropoffs.length === 0) {
+       setDestinationRoutePath([]);
+       return;
+     }
+     if (!isMapsLoaded || !(window as any).google?.maps) return;
+
+     let active = true;
+     setDestinationRoutePath([]);
+     const maps = (window as any).google.maps;
+     const destinations = activeShareRideMapDetails.dropoffs;
+     const directionsService = new maps.DirectionsService();
+     directionsService.route({
+       origin: new maps.LatLng(activeShareRideMapPickup.lat, activeShareRideMapPickup.lng),
+       destination: new maps.LatLng(
+         destinations[destinations.length - 1].lat,
+         destinations[destinations.length - 1].lng,
+       ),
+       waypoints: destinations.slice(0, -1).map(point => ({
+         location: new maps.LatLng(point.lat, point.lng),
+         stopover: true,
+       })),
+       optimizeWaypoints: false,
+       travelMode: maps.TravelMode.DRIVING,
+     }, (result: any, status: string) => {
+       if (!active) return;
+       if (status === 'OK' && result?.routes?.[0]) {
+         const path = routePathFromResult(result.routes[0]);
+         if (path.length > 0) setDestinationRoutePath(path);
+       }
+     });
+
+     return () => { active = false; };
+   }, [
+     activeRideLobby?.id,
+     activeShareRideMapDetails.isActive,
+     activeShareRideMapPickup?.lat,
+     activeShareRideMapPickup?.lng,
+     activeShareRideStopsKey,
+     isMapsLoaded,
+   ]);
 
     /*
      * Re-frame once the road line actually exists, and again if either endpoint
@@ -2309,9 +2500,20 @@ export default function CustomerHome() {
     const tripRouteDrawn = destinationRoutePath.length > 0;
     useEffect(() => {
       if (!tripRouteDrawn) return;
-      fitTripBounds();
+      const shareRideBounds = activeShareRideMapDetails.isActive
+        ? [
+            ...(activeShareRideMapDetails.pickup ? [activeShareRideMapDetails.pickup] : []),
+            ...activeShareRideMapDetails.dropoffs,
+            ...terminalRouteBoundsRef.current,
+          ]
+        : undefined;
+      fitTripBounds(shareRideBounds);
     }, [
       tripRouteDrawn,
+      activeShareRideMapDetails.isActive,
+      activeShareRideMapDetails.pickup?.lat,
+      activeShareRideMapDetails.pickup?.lng,
+      activeShareRideStopsKey,
       pickupCoords?.lat,
       pickupCoords?.lng,
       dropoffCoords?.lat,
@@ -3161,13 +3363,35 @@ export default function CustomerHome() {
     () => terminals.find(t => t.id === routePreviewTerminalId) || null,
     [terminals, routePreviewTerminalId]
   );
-  const activeMapTerminalId = routePreviewTerminalId ?? selectedTerminalId ?? nearestTerminal?.id ?? null;
-  const mapRoutesInView = useMemo(
-    () => activeMapTerminalId
-      ? mapTerminalRoutes.filter(route => route.terminalId === activeMapTerminalId)
-      : [],
-    [mapTerminalRoutes, activeMapTerminalId]
-  );
+  const activeMapTerminalId = routePreviewTerminalId
+    ?? (isActiveShareRideMap ? activeRideLobby?.terminal_id || selectedTerminalId : selectedTerminalId)
+    ?? nearestTerminal?.id
+    ?? null;
+  const mapRoutesInView = useMemo(() => {
+    if (!activeMapTerminalId) return [];
+    const terminalRoutes = mapTerminalRoutes.filter(route => route.terminalId === activeMapTerminalId);
+
+    // The minimized lobby leaves the Home map behind. Keep that map on the
+    // lobby's actual route instead of drawing every route for the terminal.
+    if (isActiveShareRideMap && !routePreviewTerminalId) {
+      const selectedRoute = activeShareRideRoute?.terminalId === activeMapTerminalId
+        ? activeShareRideRoute
+        : terminalRoutes.find(route => route.id === selectedTerminalRouteId)
+          || terminalRoutes.find(route => route.isPrimary)
+          || terminalRoutes[0]
+          || null;
+      return selectedRoute ? [selectedRoute] : [];
+    }
+
+    return terminalRoutes;
+  }, [
+    activeMapTerminalId,
+    activeShareRideRoute,
+    isActiveShareRideMap,
+    mapTerminalRoutes,
+    routePreviewTerminalId,
+    selectedTerminalRouteId,
+  ]);
   const routePreviewFocusedRoute = useMemo(
     () => mapTerminalRoutes.find(route => route.id === routePreviewFocusRouteId) || null,
     [mapTerminalRoutes, routePreviewFocusRouteId]
@@ -3552,7 +3776,14 @@ const getPrice = () => {
                // The route may already be drawn by the time the map finishes
                // loading, in which case the fit effect above ran with no instance
                // to call and did nothing.
-               fitTripBounds();
+               const shareRideBounds = activeShareRideMapDetails.isActive
+                 ? [
+                     ...(activeShareRideMapDetails.pickup ? [activeShareRideMapDetails.pickup] : []),
+                     ...activeShareRideMapDetails.dropoffs,
+                     ...terminalRouteBoundsRef.current,
+                   ]
+                 : undefined;
+               fitTripBounds(shareRideBounds);
              }}
              options={{
                gestureHandling: 'greedy',
@@ -3575,30 +3806,41 @@ const getPrice = () => {
                   used to be omitted here and drawn only inside the (now removed)
                   embedded card map, so the destination route had no visible start
                   point. */}
-              {rideStateBelongsToCurrentUser && visibleRideStatus !== 'searching' && pickupCoords && (
+              {rideStateBelongsToCurrentUser && (isActiveShareRideMap || visibleRideStatus !== 'searching') && activeShareRideMapPickup && (
                 <MarkerF
-                  position={pickupCoords}
+                  position={activeShareRideMapPickup}
                   title={isDeliveryRide ? 'Restaurant pickup' : 'Pickup location'}
                   icon={isDeliveryRide ? createRestaurantMarkerIcon() : createCustomerMarkerIcon()}
                 />
               )}
 
-              {/* Drop-off marker only */}
-              {rideStateBelongsToCurrentUser && dropoffCoords && (
-                <MarkerF
-                  position={dropoffCoords}
-                  title={isDeliveryRide ? 'Customer drop-off' : 'Drop-off location'}
-                  icon={isDeliveryRide ? createDeliveryCustomerMarkerIcon() : createDropoffMarkerIcon()}
-                />
-              )}
+              {/* Share rides can have multiple stops for this customer's group. */}
+              {rideStateBelongsToCurrentUser && isActiveShareRideMap
+                ? activeShareRideMapDetails.dropoffs.map((point, index) => (
+                    <MarkerF
+                      key={`share-dropoff-${index}-${point.lat}-${point.lng}`}
+                      position={point}
+                      title={`Your drop-off ${index + 1}`}
+                      icon={createDropoffMarkerIcon()}
+                    />
+                  ))
+                : rideStateBelongsToCurrentUser && activeShareRideMapDropoff && (
+                    <MarkerF
+                      position={activeShareRideMapDropoff}
+                      title={isDeliveryRide ? 'Customer drop-off' : 'Drop-off location'}
+                      icon={isDeliveryRide ? createDeliveryCustomerMarkerIcon() : createDropoffMarkerIcon()}
+                    />
+                  )}
 
               {/* Show only routes for the active terminal. */}
               {mapRoutesInView.map(route => {
-                const isSelectedRoute = route.terminalId === activeMapTerminalId && (
-                  selectedTerminalId === activeMapTerminalId
-                    ? route.id === selectedTerminalBoundary.selectedRoute?.id
-                    : route.isPrimary
-                );
+                const isSelectedRoute = isActiveShareRideMap
+                  ? route.id === (activeShareRideRoute?.id || selectedTerminalBoundary.selectedRoute?.id)
+                  : route.terminalId === activeMapTerminalId && (
+                      selectedTerminalId === activeMapTerminalId
+                        ? route.id === selectedTerminalBoundary.selectedRoute?.id
+                        : route.isPrimary
+                    );
                 const routeColor = route.terminalId === selectedTerminalId ? selectedTerminalRouteColor : route.color;
                 return (
                   <Fragment key={route.id}>
@@ -3623,7 +3865,7 @@ const getPrice = () => {
               })}
 
               {/* Driver location marker (real-time tracking) */}
-              {rideStateBelongsToCurrentUser && driverLocation && visibleRideStatus === 'driver-found' && (
+              {rideStateBelongsToCurrentUser && !isActiveShareRideMap && driverLocation && visibleRideStatus === 'driver-found' && (
                 <MarkerF
                   position={driverLocation}
                   title="Driver Location"
@@ -3631,17 +3873,17 @@ const getPrice = () => {
                 />
               )}
 
-              {rideStateBelongsToCurrentUser && routePath.length > 0 && (
+              {rideStateBelongsToCurrentUser && !isActiveShareRideMap && routePath.length > 0 && (
                 <Polyline path={routePath} options={buildNavigationRouteOptions('#BC4B1F', 5)} />
               )}
 
               {/* Driver route polyline (real-time) */}
-              {rideStateBelongsToCurrentUser && driverRoutePath.length > 0 && visibleRideStatus === 'driver-found' && (
+              {rideStateBelongsToCurrentUser && !isActiveShareRideMap && driverRoutePath.length > 0 && visibleRideStatus === 'driver-found' && (
                 <Polyline path={driverRoutePath} options={buildNavigationRouteOptions('#1D4ED8', 4)} />
               )}
 
               {/* Destination route polyline (pickup to dropoff) */}
-              {rideStateBelongsToCurrentUser && destinationRoutePath.length > 0 && visibleRideStatus !== 'searching' && (
+              {rideStateBelongsToCurrentUser && destinationRoutePath.length > 0 && (isActiveShareRideMap || visibleRideStatus !== 'searching') && (
                 <Polyline path={destinationRoutePath} options={buildNavigationRouteOptions('#BC4B1F', 5)} />
               )}
 
