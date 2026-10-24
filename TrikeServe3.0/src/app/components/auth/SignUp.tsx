@@ -95,9 +95,8 @@ const FIELD_VALIDATORS: Partial<
   todaPlate: (d) => {
     if (d.role !== "rider") return null;
     const v = d.todaPlate?.trim() ?? "";
-    if (!v) return "TODA Plate Number is required for drivers";
-    if (!/^[A-Za-z0-9][A-Za-z0-9 -]{2,14}$/.test(v))
-      return "Use letters and numbers only, 3-15 characters (e.g. TV-1234)";
+    if (!v) return "Body Number Plate is required for drivers";
+    if (!/^\d{4}$/.test(v)) return "Enter exactly 4 numbers";
     return null;
   },
   terminalId: (d) => {
@@ -599,13 +598,18 @@ export default function SignUp() {
                 <>
                   <div>
                     <label className="block text-sm font-semibold text-[var(--ink)] mb-2">
-                      TODA Plate Number
+                      Body Number Plate
                     </label>
                     <Input
                       type="text"
-                      placeholder="ABC 1234"
+                      inputMode="numeric"
+                      pattern="[0-9]{4}"
+                      maxLength={4}
+                      placeholder="1234"
                       value={formData.todaPlate || ""}
-                      onChange={(e) => handleInputChange("todaPlate", e.target.value)}
+                      onChange={(e) =>
+                        handleInputChange("todaPlate", e.target.value.replace(/\D/g, "").slice(0, 4))
+                      }
                       onBlur={() => handleBlur("todaPlate")}
                       data-field="todaPlate"
                       aria-invalid={!!errorFor("todaPlate")}
