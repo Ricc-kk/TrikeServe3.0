@@ -1625,7 +1625,7 @@ export default function PassengerRequests() {
                 >
                   <MapTypeToggle showFullscreenControl={false} />
                   <Marker position={currentLocation} icon={createDriverMarkerIcon()} title="Your Location" />
-                  {resolvedPickupCoords && <Marker position={resolvedPickupCoords} icon={previewRequest.type === 'delivery' ? createRestaurantMarkerIcon() : createCustomerMarkerIcon()} title={previewRequest.type === 'delivery' ? 'Restaurant pickup' : 'Pickup'} />}
+                  {resolvedPickupCoords && <Marker position={resolvedPickupCoords} icon={previewRequest.type === 'delivery' ? createRestaurantMarkerIcon() : terminalMarkerIcon(todaMarkerColor, 58)} title={previewRequest.type === 'delivery' ? 'Restaurant pickup' : 'Pickup'} />}
                   {previewRequest.type === 'shared' && resolvedPassengerDropoffs.map((stop, index) => stop.coords && (
                     <Marker
                       key={stop.id}

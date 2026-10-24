@@ -21,6 +21,7 @@ import { supabase } from "../../../utils/supabase";
 import useMapLoader from "@/lib/mapLoader";
 import { createCustomerMarkerIcon, createRestaurantMarkerIcon } from "@/lib/mapIcons";
 import { legacyRouteFromBoundary, normalizeTerminalRoutes, type TerminalRoute } from "@/lib/terminalRoutes";
+import { DEFAULT_TERMINAL_COLOR, normalizeTerminalColor, terminalMarkerIcon } from "../ui/TerminalIcon";
 import PassengerMessagingDB from "./PassengerMessagingDB";
 import tricycleIcon from "../../../assets/0b76d1aa56b8ad6e15dd4efc8a0100b0ca5762a1.png";
 import { useDevModeOverride } from "../../hooks/useDevModeSettings";
@@ -479,6 +480,7 @@ export default function ActiveRide() {
   const [routePath, setRoutePath] = useState<google.maps.LatLngLiteral[] | null>(null);
   const [sharedDropoffRoutes, setSharedDropoffRoutes] = useState<SharedDropoffRoute[]>([]);
   const [sharedTerminalRoute, setSharedTerminalRoute] = useState<TerminalRoute | null>(null);
+  const [pickupTerminalColor, setPickupTerminalColor] = useState(DEFAULT_TERMINAL_COLOR);
   const [mapCenter, setMapCenter] = useState<{ lat: number; lng: number }>({ lat: 14.6037, lng: 120.9793 });
   // Whether the camera is locked to the driver. Defaults on so the opening view is
   // the driver, and turns off by itself the first time they pan or zoom.
@@ -1217,6 +1219,34 @@ export default function ActiveRide() {
     rideData?.dropoffLng,
     rideData?.passengerDetails,
   ]);
+
+  // The pickup marker follows the marker colour configured for this terminal.
+  // Use the driver's assigned terminal for older private ride records that do
+  // not carry a terminal id in the saved ride payload.
+  useEffect(() => {
+    const isDeliveryPickup = rideData?.type === 'delivery' || rideData?.pickup?.startsWith('DELIVERY|');
+    const terminalId = rideData?.terminalId || user?.terminalId;
+    if (!rideData || isDeliveryPickup || !terminalId) {
+      setPickupTerminalColor(DEFAULT_TERMINAL_COLOR);
+      return;
+    }
+
+    let active = true;
+    setPickupTerminalColor(DEFAULT_TERMINAL_COLOR);
+    supabase
+      .from('terminals')
+      .select('marker_color')
+      .eq('id', terminalId)
+      .maybeSingle()
+      .then(({ data }) => {
+        if (active) setPickupTerminalColor(normalizeTerminalColor(data?.marker_color));
+      })
+      .catch(() => {
+        if (active) setPickupTerminalColor(DEFAULT_TERMINAL_COLOR);
+      });
+
+    return () => { active = false; };
+  }, [rideData?.id, rideData?.terminalId, rideData?.type, rideData?.pickup, user?.terminalId]);
 
   // Load the route selected for this lobby. New bookings carry the route id on
   // each passenger; older lobbies are matched to the plotted road that contains
@@ -2716,7 +2746,7 @@ export default function ActiveRide() {
             {rideData.pickupLat && (
               <Marker
                 position={{ lat: Number(rideData.pickupLat), lng: Number(rideData.pickupLng) }}
-                icon={isDeliveryRide(rideData) ? createRestaurantMarkerIcon() : markerIcon(PICKUP_HEX)}
+                icon={isDeliveryRide(rideData) ? createRestaurantMarkerIcon() : terminalMarkerIcon(pickupTerminalColor, 58)}
                 title={isDeliveryRide(rideData) ? "Restaurant pickup" : "Pickup"}
                 zIndex={isHeadingToPickup ? 90 : 70}
               />

@@ -2763,6 +2763,19 @@ export default function CustomerHome() {
    * tap Book a Ride.
    */
   const rideBlocked = rideContextChecked && (!!activeRideRequest || !!activeRideLobby);
+  const resumableShareLobbyId = activeRideLobby?.id
+    || (rideStateBelongsToCurrentUser ? activeShareLobbyId : null);
+  const activeShareRidePassengerCount = useMemo(() => {
+    const rawPassengers = activeRideLobby?.passengers_json;
+    if (Array.isArray(rawPassengers)) return rawPassengers.length;
+    if (typeof rawPassengers !== 'string') return 0;
+    try {
+      const parsed = JSON.parse(rawPassengers);
+      return Array.isArray(parsed) ? parsed.length : 0;
+    } catch {
+      return 0;
+    }
+  }, [activeRideLobby?.passengers_json]);
 
   // The booking UI lives on top of the map and stays out of the way while a
   // ride is active, already being searched for, or already running elsewhere.
@@ -3806,7 +3819,7 @@ const getPrice = () => {
                 <MarkerF
                   position={activeShareRideMapPickup}
                   title={isDeliveryRide ? 'Restaurant pickup' : 'Pickup location'}
-                  icon={isDeliveryRide ? createRestaurantMarkerIcon() : createCustomerMarkerIcon()}
+                  icon={isDeliveryRide ? createRestaurantMarkerIcon() : terminalMarkerIcon(pickerMarkerColor, 58)}
                 />
               )}
 
@@ -3951,10 +3964,38 @@ const getPrice = () => {
         />
       )}
 
-      {/* Already on a ride, but no ride card is on screen yet -- the shared lobby
-          is still opening, or a restored ride lands a beat late. Says so rather
-          than offering a second booking. */}
-      {rideBlocked && !(rideStateBelongsToCurrentUser && showShareLobby) && !visibleActiveRide && visibleRideStatus !== 'searching' && bookingStep === 'home' && (
+      {/* Resume a shared ride from the Home tab with the same floating shortcut
+          used when the lobby is minimized. */}
+      {rideBlocked && resumableShareLobbyId && !(rideStateBelongsToCurrentUser && showShareLobby) && !visibleActiveRide && visibleRideStatus !== 'searching' && bookingStep === 'home' && (
+        <button
+          type="button"
+          onClick={() => {
+            setActiveShareLobbyId(resumableShareLobbyId);
+            navigate('/customer/active-share-ride', { state: { lobbyId: resumableShareLobbyId } });
+          }}
+          aria-label="Open your active Share Ride"
+          title="Share Ride"
+          className="fixed bottom-24 right-4 z-[2000] shadow-2xl transition-transform hover:scale-110"
+        >
+          <div className="relative">
+            <div className="flex h-16 w-16 items-center justify-center rounded-full bg-[var(--primary)] transition-all hover:bg-[var(--primary)]">
+              <Users className="h-8 w-8 text-white" aria-hidden="true" />
+            </div>
+            {activeShareRidePassengerCount > 0 && (
+              <div className="absolute -right-1 -top-1 flex h-7 min-w-7 items-center justify-center rounded-full border-2 border-[var(--primary)] bg-surface px-1">
+                <span className="text-xs font-bold text-[var(--primary)]">
+                  {activeShareRidePassengerCount}/{activeRideLobby?.max_seats || '—'}
+                </span>
+              </div>
+            )}
+            <div className="absolute inset-0 animate-ping rounded-full bg-[var(--primary)] opacity-20" aria-hidden="true" />
+          </div>
+        </button>
+      )}
+
+      {/* Private rides do not have a share-lobby shortcut, so keep their status
+          note while preventing a second booking. */}
+      {rideBlocked && !resumableShareLobbyId && !(rideStateBelongsToCurrentUser && showShareLobby) && !visibleActiveRide && visibleRideStatus !== 'searching' && bookingStep === 'home' && (
         <div className="relative z-[999] px-4 pt-3 pb-24">
           <Card className="mx-auto max-w-3xl bg-surface p-6 text-center">
             <div className="mx-auto mb-3 grid h-14 w-14 place-items-center rounded-full bg-[var(--primary-soft)]">
@@ -3964,20 +4005,6 @@ const getPrice = () => {
             <p className="mt-1 text-sm text-[var(--muted-foreground)]">
               Finish this trip before booking another ride.
             </p>
-            {(activeRideLobby?.id || (rideStateBelongsToCurrentUser && activeShareLobbyId)) && (
-              <Button
-                className="mt-4 bg-[var(--primary)] hover:bg-[var(--primary)] text-white"
-                onClick={() => {
-                  const id = activeRideLobby?.id || (rideStateBelongsToCurrentUser ? activeShareLobbyId : null);
-                  if (id) {
-                    setActiveShareLobbyId(id);
-                    setShowShareLobby(true);
-                  }
-                }}
-              >
-                Back to my ride
-              </Button>
-            )}
           </Card>
         </div>
       )}
@@ -5134,6 +5161,7 @@ const getPrice = () => {
                   <MarkerF
                     position={{ lat: locationPreview.lat, lng: locationPreview.lng }}
                     title={activeLocationInput === 'pickup' ? 'Pickup preview' : 'Drop-off preview'}
+                    icon={activeLocationInput === 'pickup' ? terminalMarkerIcon(pickerMarkerColor, 44) : undefined}
                   />
                 )}
               </GoogleMap>

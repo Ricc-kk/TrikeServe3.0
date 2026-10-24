@@ -12,7 +12,7 @@ import { useElapsedTime } from "@/app/hooks/useElapsedTime";
 import tricycleIcon from '../../../assets/0b76d1aa56b8ad6e15dd4efc8a0100b0ca5762a1.png'
 import FloatingChatHead from "../ui/FloatingChatHead";
 import RideChatOverlay from "../rider/RideChatOverlay";
-import { normalizeRouteColor } from "../ui/TerminalIcon";
+import { normalizeRouteColor, normalizeTerminalColor, terminalMarkerIcon } from "../ui/TerminalIcon";
 import { backfillLegacySharedRidePassengerFares, sumSharedRidePassengerFares, DEFAULT_MAX_PASSENGERS } from "@/lib/pricing";
 import { useDevModeOverride } from "../../hooks/useDevModeSettings";
 import { customerActiveShareLobbyStorageKey, isCustomerLobbyPassenger } from "../../../lib/rideLock";
@@ -304,6 +304,7 @@ export default function ShareRideLobby({
   const [destinationRoutePath, setDestinationRoutePath] = useState<Array<{ lat: number; lng: number }>>([]);
   const [terminalRoutePath, setTerminalRoutePath] = useState<Array<{ lat: number; lng: number }>>([]);
   const [terminalRouteColor, setTerminalRouteColor] = useState(() => normalizeRouteColor(undefined));
+  const [terminalMarkerColor, setTerminalMarkerColor] = useState(() => normalizeTerminalColor(undefined));
   const lobbyMapRef = useRef<any>(null);
   const lobbyMapWasManuallyMovedRef = useRef(false);
   const driverLocationIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -667,10 +668,12 @@ export default function ShareRideLobby({
     if (!terminalId) {
       setTerminalRoutePath([]);
       setTerminalRouteColor(normalizeRouteColor(undefined));
+      setTerminalMarkerColor(normalizeTerminalColor(undefined));
       return;
     }
 
     let active = true;
+    setTerminalMarkerColor(normalizeTerminalColor(undefined));
     supabase
       .from('terminals')
       .select('*')
@@ -680,6 +683,7 @@ export default function ShareRideLobby({
         if (!active) return;
         if (error || !data) {
           setTerminalRoutePath([]);
+          setTerminalMarkerColor(normalizeTerminalColor(undefined));
           return;
         }
         const storedRoutes = normalizeTerminalRoutes(data.routes);
@@ -712,9 +716,13 @@ export default function ShareRideLobby({
           : routeForPassenger || routes.find(route => route.enabled) || routes[0];
         setTerminalRoutePath(currentSelectionMatchesLobby ? routePoints! : selectedRoute?.points || []);
         setTerminalRouteColor(normalizeRouteColor(data.route_color));
+        setTerminalMarkerColor(normalizeTerminalColor(data.marker_color));
       })
       .catch(() => {
-        if (active) setTerminalRoutePath([]);
+        if (active) {
+          setTerminalRoutePath([]);
+          setTerminalMarkerColor(normalizeTerminalColor(undefined));
+        }
       });
 
     return () => {
@@ -2069,10 +2077,16 @@ if (loading) {
           {/* Header - Gradient */}
           <div className="bg-[var(--primary)] p-4">
             <div className="flex items-center justify-between">
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 bg-white/20 rounded-full flex items-center justify-center">
-                  <Users className="w-5 h-5 text-white" />
-                </div>
+              <div className="flex min-w-0 items-center gap-3">
+                <button
+                  onClick={() => presentation === 'page' ? onClose() : setIsMinimized(true)}
+                  aria-label={presentation === 'page' ? 'Back to customer home' : 'Minimize share ride'}
+                  className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-white/20 transition-colors hover:bg-white/30"
+                >
+                  {presentation === 'page'
+                    ? <ArrowLeft className="h-5 w-5 text-white" />
+                    : <ChevronDown className="h-5 w-5 text-white" />}
+                </button>
                 <div>
                   <h2 className="text-lg font-bold text-white">Share Ride</h2>
                   <div className="flex items-center gap-2">
@@ -2084,15 +2098,6 @@ if (loading) {
                 </div>
               </div>
               <div className="flex items-center gap-2">
-                <button
-                  onClick={() => presentation === 'page' ? onClose() : setIsMinimized(true)}
-                  aria-label={presentation === 'page' ? 'Back to customer home' : 'Minimize share ride'}
-                  className="w-9 h-9 flex items-center justify-center rounded-full bg-white/20 hover:bg-white/30 transition-colors"
-                >
-                  {presentation === 'page'
-                    ? <ArrowLeft className="w-5 h-5 text-white" />
-                    : <ChevronDown className="w-5 h-5 text-white" />}
-                </button>
                 {/* Only show cancel button while still searching for a driver */}
                 {lobby.status === 'waiting' && (
                   <button
@@ -2305,13 +2310,7 @@ if (loading) {
                     <MarkerF
                       position={pickupCoords}
                       title="Pickup"
-                      icon={{
-                        url: 'data:image/svg+xml;charset=UTF-8,' + encodeURIComponent(
-                          '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="var(--info)" stroke="white" stroke-width="1"><path d="M12 2C8.13 2 5 5.13 5 9c0 4.95 6.1 11.53 6.36 11.81.36.39.92.39 1.28 0C13.9 20.53 20 13.95 20 9c0-3.87-3.13-7-8-7z"/><circle cx="12" cy="8.6" r="2.3" fill="#FFFFFF" stroke="none"/></svg>'
-                        ),
-                        scaledSize: new (window as any).google.maps.Size(32, 32),
-                        anchor: new (window as any).google.maps.Point(16, 32),
-                      }}
+                      icon={terminalMarkerIcon(terminalMarkerColor, 58)}
                     />
                   )}
                   {/* Markers show only this customer's own drop-offs. */}
