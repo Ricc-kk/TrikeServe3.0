@@ -84,45 +84,7 @@ export default function Login() {
   const [accounts, setAccounts] = useState<TestAccount[]>([]);
   const [resendStatus, setResendStatus] = useState<"idle" | "sending" | "sent" | "error">("idle");
   const [resendMessage, setResendMessage] = useState("");
-  const [loginSessionNotice, setLoginSessionNotice] = useState<{
-    displayName: string;
-    otherSessionWillBeSignedOut: boolean;
-  } | null>(null);
-  const loginSessionNoticeRef = useRef<HTMLElement>(null);
   const devModeHoldTimer = useRef<number | null>(null);
-
-  useEffect(() => {
-    if (!loginSessionNotice) return;
-    const dialog = loginSessionNoticeRef.current;
-    const previouslyFocused = document.activeElement instanceof HTMLElement ? document.activeElement : null;
-    const focusableSelector = 'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
-    const getFocusableElements = () => dialog?.querySelectorAll<HTMLElement>(focusableSelector);
-    getFocusableElements()?.[0]?.focus();
-
-    const keepNoticeFocused = (event: KeyboardEvent) => {
-      if (event.key !== 'Tab') return;
-      const focusable = getFocusableElements();
-      if (!focusable?.length) {
-        event.preventDefault();
-        dialog?.focus();
-        return;
-      }
-      const first = focusable[0];
-      const last = focusable[focusable.length - 1];
-      if (event.shiftKey && document.activeElement === first) {
-        event.preventDefault();
-        last.focus();
-      } else if (!event.shiftKey && document.activeElement === last) {
-        event.preventDefault();
-        first.focus();
-      }
-    };
-    document.addEventListener('keydown', keepNoticeFocused, true);
-    return () => {
-      document.removeEventListener('keydown', keepNoticeFocused, true);
-      if (previouslyFocused?.isConnected) previouslyFocused.focus();
-    };
-  }, [loginSessionNotice !== null]);
 
   const startDevModeHold = () => {
     if (devModeHoldTimer.current !== null) return;
@@ -273,9 +235,12 @@ export default function Login() {
       const matched = accounts.find(a => a.email.toLowerCase() === email.toLowerCase());
       const displayName = matched?.name || email.split('@')[0];
       if (result.otherSessionActive) {
-        setLoginSessionNotice({
-          displayName,
-          otherSessionWillBeSignedOut: Boolean(result.otherSessionWillBeSignedOut),
+        navigate('/session-notice', {
+          replace: true,
+          state: {
+            displayName,
+            otherSessionWillBeSignedOut: Boolean(result.otherSessionWillBeSignedOut),
+          },
         });
         return;
       }
@@ -284,13 +249,6 @@ export default function Login() {
     } else {
       setError(result.error || "Login failed");
     }
-  };
-
-  const continueAfterSessionNotice = () => {
-    if (!loginSessionNotice) return;
-    armWelcomeGreeting(loginSessionNotice.displayName);
-    setLoginSessionNotice(null);
-    navigate('/redirect');
   };
 
   const handleResendVerification = async () => {
@@ -318,33 +276,6 @@ export default function Login() {
 
   return (
     <div className="min-h-screen flex">
-      {loginSessionNotice && (
-        <div className="fixed inset-0 z-[10060] grid place-items-center bg-black/55 px-4 backdrop-blur-sm" role="presentation">
-          <section
-            ref={loginSessionNoticeRef}
-            tabIndex={-1}
-            role="alertdialog"
-            aria-modal="true"
-            aria-labelledby="login-session-notice-title"
-            aria-describedby="login-session-notice-description"
-            className="w-full max-w-sm rounded-2xl border border-line bg-card p-6 text-center shadow-2xl"
-          >
-            <h2 id="login-session-notice-title" className="text-lg font-bold text-[var(--ink)]">Account already signed in</h2>
-            <p id="login-session-notice-description" className="mt-2 text-sm text-[var(--muted-foreground)]">
-              {loginSessionNotice.otherSessionWillBeSignedOut
-                ? "Another session is already active. The other signed-in device will be signed out so you can continue here."
-                : "Another session is active. Both devices can stay signed in under the current session limit."}
-            </p>
-            <Button
-              type="button"
-              onClick={continueAfterSessionNotice}
-              className="mt-5 w-full bg-[var(--primary)] text-base"
-            >
-              Continue to home
-            </Button>
-          </section>
-        </div>
-      )}
       {/* Left Side - Background Design (hidden on mobile) */}
       <div className="hidden lg:flex lg:flex-1 relative overflow-hidden">
         {/* Background Image */}

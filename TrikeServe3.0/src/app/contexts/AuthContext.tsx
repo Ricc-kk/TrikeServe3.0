@@ -312,6 +312,25 @@ function getSessionFirstSeenAt(userId: string, sessionKey: string): number {
   }
 }
 
+function reconnectRealtimeIfClosed(attempt = 0): void {
+  const connectionState = supabase.realtime.connectionState();
+  if (connectionState === 'closed') {
+    try {
+      supabase.realtime.connect();
+    } catch (error) {
+      console.warn('[AuthContext] Could not restart the account-session realtime connection:', error);
+    }
+    return;
+  }
+
+  // removeChannel() can briefly leave the shared socket in its closing state.
+  // Retry a few times so the authenticated presence channel is not stranded
+  // between the sign-in check and the new session subscription.
+  if (connectionState === 'closing' && attempt < 6) {
+    setTimeout(() => reconnectRealtimeIfClosed(attempt + 1), 250);
+  }
+}
+
 async function checkOtherAccountSessions(
   accountId: string,
   ownSessionKey: string,
@@ -328,10 +347,13 @@ async function checkOtherAccountSessions(
         if (finished) return;
         finished = true;
         if (timeout) clearTimeout(timeout);
-        void supabase.removeChannel(channel);
+        // Keep the socket alive while login() sets the new user and the
+        // authenticated session-presence channel joins. Removing the last
+        // temporary channel immediately can close the shared socket in between.
+        setTimeout(() => void supabase.removeChannel(channel), 1000);
         resolve(result);
       };
-      timeout = setTimeout(() => finish({ otherSessionActive: false, otherSessionWillBeSignedOut: false }), 2500);
+      timeout = setTimeout(() => finish({ otherSessionActive: false, otherSessionWillBeSignedOut: false }), 7000);
 
       channel.on('presence', { event: 'sync' }, () => {
         const presence = channel.presenceState<Record<string, unknown>>();
@@ -348,7 +370,8 @@ async function checkOtherAccountSessions(
       });
       channel.subscribe((status) => {
         if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT' || status === 'CLOSED') {
-          finish({ otherSessionActive: false, otherSessionWillBeSignedOut: false });
+          console.warn('[AuthContext] Account-session check is reconnecting after a Realtime error:', status);
+          reconnectRealtimeIfClosed();
         }
       });
     });
@@ -571,7 +594,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       sessionChannel.subscribe((status) => {
         if (status === 'SUBSCRIBED') refreshPresenceSettings();
         if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
-          console.warn('[AuthContext] Account session presence is temporarily unavailable:', status);
+          console.warn('[AuthContext] Account session presence is reconnecting after a Realtime error:', status);
+          reconnectRealtimeIfClosed();
         }
       });
     };
@@ -631,7 +655,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       unsubscribeDevMode();
       authSubscription.unsubscribe();
       disconnectSessionPresence();
-      if (conflictMessageTimer) clearTimeout(conflictMessageTimer);
     };
   }, [user?.id, user?.role]);
 

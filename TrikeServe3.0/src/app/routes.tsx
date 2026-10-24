@@ -5,6 +5,7 @@ import SignUp from "./components/auth/SignUp";
 import ForgotPassword from "./components/auth/ForgotPassword";
 import VerifyEmail from "./components/auth/VerifyEmail";
 import SetPassword from "./components/auth/SetPassword";
+import AccountSessionNotice from "./components/auth/AccountSessionNotice";
 import ProtectedRoute from "./components/ProtectedRoute";
 import RoleRedirect from "./components/RoleRedirect";
 import RiderDashboard from "./components/rider/RiderDashboard";
@@ -72,6 +73,7 @@ export const router = createBrowserRouter([
       { path: "forgot-password", Component: ForgotPassword },
       { path: "verify-email", Component: VerifyEmail },
       { path: "set-password", Component: SetPassword },
+      { path: "session-notice", Component: AccountSessionNotice },
       { 
         path: "redirect", 
         element: <RoleRedirect /> 
