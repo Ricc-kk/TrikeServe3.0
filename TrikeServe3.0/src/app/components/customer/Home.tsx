@@ -3508,7 +3508,7 @@ const getPrice = () => {
              options={{
                gestureHandling: 'greedy',
                zoomControl: false,
-               fullscreenControl: true,
+               fullscreenControl: false,
                streetViewControl: false,
                mapTypeControl: false,
              }}

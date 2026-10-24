@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from "react";
 import { GoogleMap, Marker, InfoWindow, DirectionsRenderer } from "@react-google-maps/api";
 import useMapLoader from "@/lib/mapLoader";
+import MapFullscreenToggle from "../ui/MapFullscreenToggle";
 import {
   Home as HomeIcon, 
   Users, 
@@ -988,6 +989,7 @@ export default function RiderDashboard() {
               mapRef.current = null;
             }}
           >
+            <MapFullscreenToggle />
             {/* Current Location Marker - Driver (Red Car) */}
             <Marker
               position={mapCenter}

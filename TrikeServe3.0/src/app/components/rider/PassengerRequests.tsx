@@ -1245,7 +1245,7 @@ export default function PassengerRequests() {
                         }}
                         onUnmount={() => { todaMapRef.current = null; }}
                       >
-                        <MapTypeToggle />
+                        <MapTypeToggle showFullscreenControl={false} />
                         {todaArea && (
                           <Polygon
                             path={todaArea}
@@ -1623,7 +1623,7 @@ export default function PassengerRequests() {
                   }}
                   onUnmount={() => { previewMapRef.current = null; }}
                 >
-                  <MapTypeToggle />
+                  <MapTypeToggle showFullscreenControl={false} />
                   <Marker position={currentLocation} icon={createDriverMarkerIcon()} title="Your Location" />
                   {resolvedPickupCoords && <Marker position={resolvedPickupCoords} icon={previewRequest.type === 'delivery' ? createRestaurantMarkerIcon() : createCustomerMarkerIcon()} title={previewRequest.type === 'delivery' ? 'Restaurant pickup' : 'Pickup'} />}
                   {previewRequest.type === 'shared' && resolvedPassengerDropoffs.map((stop, index) => stop.coords && (

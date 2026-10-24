@@ -55,6 +55,8 @@ interface LobbyPassenger {
   dropoffAddress?: string;
   dropoffLat?: number | null;
   dropoffLng?: number | null;
+  dropoff_status?: string | null;
+  dropoffStatus?: string | null;
   /** This passenger's fare: the full base fare plus their distance charge. */
   fare?: number;
 }
@@ -484,10 +486,16 @@ export default function ShareRideLobby({
     const targetedMessage = rawMessage.match(/^\[\[passenger:([^\]]+)\]\]\s*(.*)$/);
     const targetPassengerId = targetedMessage?.[1] || '';
     const notificationMessage = targetedMessage?.[2] || '';
+    const isPassengerRideCompleted = Boolean(
+      targetPassengerId && notificationMessage.toLowerCase().startsWith('your ride is complete.'),
+    );
     if (targetPassengerId) {
       const targetAccountId = targetPassengerId.split('_companion_')[0];
       if (!user?.id || targetAccountId !== user.id) return;
     }
+    // The passenger completion modal is driven by their own saved drop-off
+    // status below; don't stack a transient progress popup over it.
+    if (isPassengerRideCompleted) return;
 
     const lastShownKey = `last_shown_status_lobby_${lobbyId}_${user?.id || 'guest'}`;
     const lastShownStatus = localStorage.getItem(lastShownKey);
@@ -1546,6 +1554,16 @@ if (loading) {
 
   if (!lobby) return null;
 
+  const ownLobbyPassengers = normalizePassengers(lobby.passengers_json).filter(passenger => Boolean(
+    user?.id && (
+      passenger.id === user.id ||
+      passenger.id.startsWith(`${user.id}_companion_`)
+    )
+  ));
+  const ownRideCompleted = ownLobbyPassengers.length > 0 && ownLobbyPassengers.every(passenger =>
+    ['dropped-off', 'completed'].includes(String(passenger.dropoff_status || passenger.dropoffStatus || '').toLowerCase())
+  );
+
   /*
    * The chat layer: the floating head and the overlay it opens.
    *
@@ -1580,7 +1598,7 @@ if (loading) {
 
       {/* Floating chat head -- the same component the driver's ride screen uses.
           Hidden while the overlay is open so two heads never stack. */}
-      {chatHeadActivated && lobby.driver_id && lobby.status === 'driver_found' && terminalStatus === null && (
+      {chatHeadActivated && lobby.driver_id && lobby.status === 'driver_found' && terminalStatus === null && !ownRideCompleted && (
         <FloatingChatHead
           headId={driverChatId.current || undefined}
           zIndexClass="z-[10000]"
@@ -1598,7 +1616,7 @@ if (loading) {
   );
 
   // Minimized floating icon
-  if (isMinimized) {
+  if (isMinimized && !ownRideCompleted) {
     return (
       <>
         {chatLayer}
@@ -1623,7 +1641,8 @@ if (loading) {
   }
 
   const passengers = lobby.passengers_json || [];
-  const isTerminal = terminalStatus !== null;
+  const effectiveTerminalStatus = terminalStatus || (ownRideCompleted ? 'completed' : null);
+  const isTerminal = effectiveTerminalStatus !== null;
   const getPassengerDisplayName = (passenger: LobbyPassenger) => {
     if (passenger.id === user?.id) return 'You';
 
@@ -2058,19 +2077,19 @@ if (loading) {
         <div className="fixed inset-0 bg-black/60 z-[2200] flex items-center justify-center p-4">
           <Card className="bg-surface p-6 max-w-sm w-full text-center shadow-2xl border-2 border-[var(--success-soft)]">
             <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-[var(--success-soft)] flex items-center justify-center">
-              {terminalStatus === 'completed'
+              {effectiveTerminalStatus === 'completed'
                 ? <Check className="size-8 text-[var(--success)]" aria-hidden="true" />
                 : <X className="size-8 text-[var(--error)]" aria-hidden="true" />}
             </div>
             <h3 className="text-xl font-bold text-[var(--ink)] mb-2">
-              {terminalStatus === 'completed' ? 'Ride Completed' : 'Ride Cancelled'}
+              {effectiveTerminalStatus === 'completed' ? 'Ride Completed' : 'Ride Cancelled'}
             </h3>
             <p className="text-sm text-[var(--muted-foreground)] mb-6">
-              {terminalStatus === 'completed'
-                ? 'Your driver has completed the ride. Thank you for using TrikeServe!'
+              {effectiveTerminalStatus === 'completed'
+                ? 'Your drop-off is confirmed. Your ride is complete. Thank you for riding with TrikeServe!'
                 : terminalCancelMessage || 'This ride has been cancelled. Returning you to the customer screen...'}
             </p>
-            {terminalStatus === 'completed' && lobby.driver_id && (
+            {effectiveTerminalStatus === 'completed' && lobby.driver_id && (
               <div className="grid grid-cols-2 gap-3">
                 <Button
                   onClick={openRatingModal}
@@ -2081,7 +2100,7 @@ if (loading) {
                 </Button>
                 <Button
                   onClick={() => {
-                    if (typeof onClose === 'function') onClose(terminalStatus || undefined);
+                    if (typeof onClose === 'function') onClose(effectiveTerminalStatus || undefined);
                   }}
                   className="w-full bg-[var(--primary)] hover:bg-[var(--primary)] text-white py-3 font-bold"
                 >

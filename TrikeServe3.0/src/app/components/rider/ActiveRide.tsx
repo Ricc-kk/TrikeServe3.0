@@ -184,7 +184,7 @@ function getSharedDropoffStops(ride: ActiveRideData | null): SharedDropoffStop[]
   if (passengerStops.length === 0 && passengers.length === 0 && primaryDropoff) {
     return [{
       id: String(ride.customerId || ride.id),
-      name: ride.customerName || 'Passenger',
+      name: firstNameOnly(ride.customerName) || 'Passenger',
       color: SHARED_DROPOFF_COLORS[0],
       position: primaryDropoff,
     }];
@@ -204,9 +204,14 @@ function getSharedPassengerName(passenger: any, index: number, passengers: any[]
   const companionOwner = passengerId.includes('_companion_')
     ? passengers.find(candidate => String(candidate?.id || '') === ownerId)
     : null;
+  const passengerName = firstNameOnly(passenger?.name) || `Passenger ${index + 1}`;
   return companionOwner?.name
-    ? `${passenger?.name || 'Companion'} of ${companionOwner.name}`
-    : String(passenger?.name || `Passenger ${index + 1}`).trim();
+    ? `${passengerName} of ${firstNameOnly(companionOwner.name)}`
+    : passengerName;
+}
+
+function firstNameOnly(name: unknown): string {
+  return String(name || '').trim().split(/\s+/)[0] || '';
 }
 
 function getSharedPassengerDropoff(passenger: any, index: number, ride: ActiveRideData): string {
@@ -557,9 +562,9 @@ export default function ActiveRide() {
     const peerPassenger = passengers.find((passenger: any) =>
       String(passenger?.id || '') === peerId && !String(passenger?.id || '').includes('_companion_')
     ) || passengers.find((passenger: any) => passengerAccountId(passenger?.id) === peerId);
-    const peerName = target
+    const peerName = firstNameOnly(target
       ? peerPassenger?.name || target.name
-      : chatPeer?.name || peerPassenger?.name || rideData?.customerName || 'Passenger';
+      : chatPeer?.name || peerPassenger?.name || rideData?.customerName) || 'Passenger';
     const peerAvatar = passengerAvatars[peerId] || (!target ? passengerAvatar : null);
     const peerIsGroup = !target && !chatPeer && rideData?.customerPhoto === 'shared';
     setChatPeer({ id: peerId, name: peerName, avatar: peerAvatar, isGroup: peerIsGroup });
@@ -1486,7 +1491,7 @@ export default function ActiveRide() {
     setConfirmingDropoffPassengerId(passengerId);
     const updatedPassengers = passengers.map((passenger: any) =>
       String(passenger?.id || '') === passengerId
-        ? { ...passenger, dropoff_status: 'dropped-off', dropoff_status_updated_at: new Date().toISOString() }
+        ? { ...passenger, dropoff_status: 'completed', dropoff_status_updated_at: new Date().toISOString() }
         : passenger,
     );
     const remainingPassengers = updatedPassengers.filter((passenger: any) =>
@@ -1495,6 +1500,9 @@ export default function ActiveRide() {
     const hasMoreDropoffs = remainingPassengers.length > 0;
     const nextStatus: RideStatus = hasMoreDropoffs ? 'pickup' : 'payment';
     const updatedRide = { ...rideData, passengerDetails: updatedPassengers, status: nextStatus };
+    const passengerCompletionMessage = hasMoreDropoffs
+      ? 'Your ride is complete. The driver will continue with the remaining passengers.'
+      : 'Your ride is complete. Please settle any due fare with your driver.';
     setRideData(updatedRide);
     writeRiderActiveRide(updatedRide);
 
@@ -1503,16 +1511,14 @@ export default function ActiveRide() {
         const passengerUpdate = await supabaseHelpers.updateLobbyPassengerDropoffStatus(
           rideData.lobbyId,
           passengerId,
-          'dropped-off',
+          'completed',
         );
         if (passengerUpdate.error) {
           console.error('[ActiveRide] Could not save passenger drop-off status:', passengerUpdate.error);
         }
 
         const lobbyStatus = hasMoreDropoffs ? 'picked-up' : 'awaiting-payment';
-        const lobbyMessage = hasMoreDropoffs
-          ? passengerStatusMessage(passengerId, 'Your driver has dropped you off.')
-          : 'Please complete the payment.';
+        const lobbyMessage = passengerStatusMessage(passengerId, passengerCompletionMessage);
         const lobbyUpdate = await supabaseHelpers.updateLobbyDriverStatus(
           rideData.lobbyId,
           lobbyStatus,
@@ -1523,23 +1529,18 @@ export default function ActiveRide() {
         }
       } else {
         const rideStatus = hasMoreDropoffs ? 'picked-up' : 'awaiting-payment';
-        const rideMessage = hasMoreDropoffs
-          ? passengerStatusMessage(passengerId, 'Your driver has dropped you off.')
-          : 'Please complete the payment.';
+        const rideMessage = passengerStatusMessage(passengerId, passengerCompletionMessage);
         const rideUpdate = await supabaseHelpers.updateDriverRideStatus(rideData.id, rideStatus, rideMessage);
         if (rideUpdate.error) console.error('[ActiveRide] Could not update shared ride progress:', rideUpdate.error);
       }
 
       await notifyRideProgress(
         updatedRide,
-        'dropped-off',
+        'completed',
         undefined,
         passengerId,
-        'Your driver has dropped you off.',
+        passengerCompletionMessage,
       );
-      if (!hasMoreDropoffs) {
-        await notifyRideProgress(updatedRide, 'awaiting-payment');
-      }
     } catch (error) {
       console.error('[ActiveRide] Could not finish passenger drop-off:', error);
     } finally {
@@ -2046,6 +2047,7 @@ export default function ActiveRide() {
   const DROPOFF_HEX = '#BC4B1F';  // the existing destination route colour
 
   if (!rideData) return null;
+  const customerDisplayName = firstNameOnly(resolvedName || rideData.customerName) || 'Passenger';
 
   const nextSharedDropoffPassenger = isSharedRide && rideData.passengerDetails?.length
     ? rideData.passengerDetails.find((passenger: any) => String(passenger?.id || '') === sharedDropoffStops[0]?.id)
@@ -2100,7 +2102,14 @@ export default function ActiveRide() {
         if (isSharedRide && rideData.passengerDetails?.length) {
           return !nextSharedDropoffPassengerId
             ? { label: 'Continue to payment', onClick: () => updateStatus('payment'), isComplete: false }
-            : null;
+            : {
+                label: confirmingDropoffPassengerId === nextSharedDropoffPassengerId
+                  ? 'Saving drop-off…'
+                  : `Confirm ${nextSharedDropoffPassengerName}'s drop-off`,
+                onClick: () => void confirmSharedPassengerDropoff(nextSharedDropoffPassengerId),
+                isComplete: false,
+                disabled: confirmingDropoffPassengerId !== null,
+              };
         }
         return { label: 'Confirm Drop-off', onClick: () => updateStatus('payment'), isComplete: false };
       case 'payment':
@@ -2442,7 +2451,7 @@ export default function ActiveRide() {
         peerId={chatPeer?.id || rideData?.customerId || passengerAccountId(rideData?.passengerDetails?.[0]?.id) || null}
         currentUserId={user?.id ?? null}
         peerAvatar={chatPeer ? chatPeer.avatar : passengerAvatar}
-        peerName={chatPeer?.name || resolvedName || rideData.customerName || 'Passenger'}
+        peerName={firstNameOnly(chatPeer?.name || customerDisplayName) || 'Passenger'}
         peerIsGroup={chatPeer?.isGroup ?? rideData.customerPhoto === 'shared'}
         senderRole="rider"
         onClose={() => setChatPopupOpen(false)}
@@ -2457,7 +2466,7 @@ export default function ActiveRide() {
           storageKey="trikeserve_chat_head_pos_rider"
           peerAvatar={chatPeer ? chatPeer.avatar : passengerAvatar}
           peerIsGroup={chatPeer?.isGroup ?? rideData.customerPhoto === 'shared'}
-          peerLabel={chatPeer?.name || resolvedName || rideData.customerName || 'passenger'}
+          peerLabel={firstNameOnly(chatPeer?.name || customerDisplayName) || 'passenger'}
           unread={unreadFromPassenger}
           pulseKey={pulseKey}
           opened={chatOpened}
@@ -2538,7 +2547,7 @@ export default function ActiveRide() {
                 {passengerAvatar ? (
                   <img
                     src={passengerAvatar}
-                    alt={`${resolvedName || rideData.customerName || 'Passenger'}'s profile`}
+                    alt={`${customerDisplayName}'s profile`}
                     className="w-full h-full object-cover"
                   />
                 ) : rideData.customerPhoto === 'shared' ? (
@@ -2554,7 +2563,7 @@ export default function ActiveRide() {
                 pushed the action button toward the edge. */}
             <div className="min-w-0 flex-1 flex items-center gap-2">
               <p className="truncate font-bold text-[var(--ink)]">
-                {isSharedRide ? 'Passengers' : resolvedName || rideData.customerName}
+                {isSharedRide ? 'Passengers' : customerDisplayName}
               </p>
               <span className="text-[var(--muted-foreground)]" aria-hidden="true">·</span>
               <p className="truncate text-xs text-[var(--muted-foreground)]">
@@ -2597,7 +2606,7 @@ export default function ActiveRide() {
                     {passengerAvatar ? (
                       <img
                         src={passengerAvatar}
-                        alt={`${resolvedName || rideData.customerName || 'Passenger'}'s profile`}
+                        alt={`${customerDisplayName}'s profile`}
                         className="w-full h-full object-cover"
                       />
                     ) : rideData.customerPhoto === 'shared' ? (
@@ -2608,7 +2617,7 @@ export default function ActiveRide() {
                   </div>
                 )}
                 <div className="min-w-0 flex-1">
-                  <h2 className="font-bold text-lg">{isSharedRide ? 'Passengers' : resolvedName || rideData.customerName}</h2>
+                  <h2 className="font-bold text-lg">{isSharedRide ? 'Passengers' : customerDisplayName}</h2>
                   {isSharedRide && rideData.passengerDetails && rideData.passengerDetails.length > 0 && (
                     <div className="mt-3 space-y-2">
                       {rideData.passengerDetails.map((p: any, index: number) => {
@@ -2646,9 +2655,9 @@ export default function ActiveRide() {
                                 </span>
                               )}
                             </div>
-                            <div className="mt-3 flex items-center justify-between gap-2 border-t border-[var(--border)] pt-3">
+                            <div className="mt-2 flex items-center justify-between gap-2 border-t border-[var(--border)] pt-2">
                               <span className={`rounded-full px-2.5 py-1 text-[10px] font-bold ${isDroppedOff ? 'bg-[var(--success-soft)] text-[var(--success)]' : isNextDropoff ? 'bg-[var(--primary-soft)] text-[var(--primary)]' : 'bg-[var(--muted)] text-[var(--muted-foreground)]'}`}>
-                                {isDroppedOff ? 'Dropped off' : isNextDropoff ? (rideData.status === 'drop-off' ? 'At drop-off' : 'Next drop-off') : 'Upcoming'}
+                                {isDroppedOff ? 'Completed' : isNextDropoff ? (rideData.status === 'drop-off' ? 'At drop-off' : 'Next drop-off') : 'Upcoming'}
                               </span>
                               <Button
                                 type="button"
@@ -2662,22 +2671,12 @@ export default function ActiveRide() {
                                 <Flag className="size-4" aria-hidden="true" />
                               </Button>
                             </div>
-                            {isNextDropoff && rideData.status === 'drop-off' && (
-                              <Button
-                                type="button"
-                                onClick={() => void confirmSharedPassengerDropoff(passengerId)}
-                                disabled={confirmingDropoffPassengerId !== null}
-                                className="mt-2 w-full bg-[var(--primary)] py-2.5 text-sm font-bold text-white disabled:opacity-60"
-                              >
-                                {confirmingDropoffPassengerId === passengerId ? 'Saving drop-off…' : `Confirm ${passengerName} drop-off`}
-                              </Button>
-                            )}
                             <Button
                               type="button"
                               variant="outline"
                               onClick={() => void openPassengerChat({ id: passengerId, name: passengerName })}
                               aria-label={`Message ${passengerName}`}
-                              className="mt-3 w-full justify-start border-[var(--border)] py-2 text-sm font-semibold text-[var(--muted-foreground)]"
+                              className="mt-2 w-full justify-start border-[var(--border)] py-2 text-sm font-semibold text-[var(--muted-foreground)]"
                             >
                               <MessageSquare className="mr-1.5 size-4" aria-hidden="true" />
                               Message
@@ -2818,6 +2817,7 @@ export default function ActiveRide() {
         {activeAction && (
           <Button
             onClick={activeAction.onClick}
+            disabled={'disabled' in activeAction && activeAction.disabled}
             className={`${activeAction.isComplete ? 'bg-[var(--success)]' : 'bg-[var(--primary)]'} -mx-1 mt-2 w-[calc(100%+0.5rem)] py-4 text-base font-bold shadow-lg`}
           >
             {activeAction.label}
@@ -2989,7 +2989,7 @@ export default function ActiveRide() {
                 <h2 className="text-lg font-bold text-[var(--ink)]">Handover photo</h2>
                 <p className="mt-1 text-sm text-[var(--muted-foreground)]">
                   Take a photo of the food being handed over
-                  {rideData?.customerName ? ` to ${rideData.customerName}` : ''}. It is
+                  {rideData?.customerName ? ` to ${customerDisplayName}` : ''}. It is
                   kept on the order as proof of delivery. This photo is required to complete the delivery.
                 </p>
               </div>
