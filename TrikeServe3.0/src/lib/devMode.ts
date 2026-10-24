@@ -1,7 +1,7 @@
 const DEV_MODE_KEY = "trikeserve_dev_mode";
 const DEV_MODE_CHANGE_EVENT = "trikeserve:dev-mode-change";
 
-export type DevModeFeature = "quickAccess" | "testDataTools" | "enforceBoundary" | "imageProofRequired" | "sameRouteLobbyFilter";
+export type DevModeFeature = "quickAccess" | "testDataTools" | "enforceBoundary" | "imageProofRequired" | "sameRouteLobbyFilter" | "allowTwoSessions";
 
 const FEATURE_KEYS: Record<DevModeFeature, string> = {
   quickAccess: "trikeserve_dev_quick_access",
@@ -9,6 +9,7 @@ const FEATURE_KEYS: Record<DevModeFeature, string> = {
   enforceBoundary: "trikeserve_dev_enforce_boundary",
   imageProofRequired: "trikeserve_dev_image_proof_required",
   sameRouteLobbyFilter: "trikeserve_dev_same_route_lobby_filter",
+  allowTwoSessions: "trikeserve_dev_allow_two_sessions",
 };
 
 function notifyDevModeChange(): void {
@@ -31,9 +32,9 @@ export function isDevModeFeatureEnabled(feature: DevModeFeature): boolean {
   if (typeof window === "undefined") return true;
   try {
     const value = window.localStorage.getItem(FEATURE_KEYS[feature]);
-    return value === null ? true : value === "true";
+    return value === null ? feature !== "allowTwoSessions" : value === "true";
   } catch {
-    return true;
+    return feature !== "allowTwoSessions";
   }
 }
 

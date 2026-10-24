@@ -1,5 +1,6 @@
 import { createContext, useContext, useState, useEffect, useRef, ReactNode } from 'react';
 import { supabase } from '../../utils/supabase';
+import { isDevModeEnabled, isDevModeFeatureEnabled, subscribeToDevModeChanges } from '../../lib/devMode';
 
 export type UserRole = 'customer' | 'rider' | 'business' | 'admin';
 
@@ -244,9 +245,48 @@ function syncCachedLegacyUserProfile(user: User) {
   }
 }
 
+async function getSessionPresenceKey(accessToken: string): Promise<string | null> {
+  try {
+    const payloadPart = accessToken.split('.')[1];
+    if (!payloadPart) return null;
+    const payload = JSON.parse(atob(payloadPart.replace(/-/g, '+').replace(/_/g, '/')));
+    const sessionId = typeof payload.session_id === 'string' ? payload.session_id : '';
+    if (!sessionId) return null;
+
+    if (globalThis.crypto?.subtle) {
+      const digest = await globalThis.crypto.subtle.digest('SHA-256', new TextEncoder().encode(sessionId));
+      return `session-${Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, '0')).join('')}`;
+    }
+
+    // Keep the realtime presence key opaque even in browsers without Web Crypto.
+    let hash = 2166136261;
+    for (let index = 0; index < sessionId.length; index += 1) {
+      hash = Math.imul(hash ^ sessionId.charCodeAt(index), 16777619);
+    }
+    return `session-${(hash >>> 0).toString(16)}`;
+  } catch {
+    return null;
+  }
+}
+
+function getSessionFirstSeenAt(userId: string, sessionKey: string): number {
+  const storageKey = `trikeserve_session_first_seen:${userId}:${sessionKey}`;
+  try {
+    const existing = Number(localStorage.getItem(storageKey));
+    if (Number.isFinite(existing) && existing > 0) return existing;
+    const firstSeenAt = Date.now();
+    localStorage.setItem(storageKey, String(firstSeenAt));
+    return Number(localStorage.getItem(storageKey)) || firstSeenAt;
+  } catch {
+    return Date.now();
+  }
+}
+
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [sessionWarningSeconds, setSessionWarningSeconds] = useState<number | null>(null);
+  const sessionWarningRef = useRef<HTMLElement>(null);
   // Set while logout() is running, so the SIGNED_OUT it causes is read as a
   // deliberate sign-out rather than a token refresh that failed.
   const signOutRequestedRef = useRef(false);
@@ -256,6 +296,26 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     userIdRef.current = user?.id ?? null;
   }, [user]);
+
+  useEffect(() => {
+    if (sessionWarningSeconds === null) return;
+    const dialog = sessionWarningRef.current;
+    const previouslyFocused = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    dialog?.focus();
+
+    const keepWarningModalFocused = (event: KeyboardEvent) => {
+      if (event.key === 'Escape' || event.key === 'Tab') {
+        event.preventDefault();
+        event.stopPropagation();
+        dialog?.focus();
+      }
+    };
+    document.addEventListener('keydown', keepWarningModalFocused, true);
+    return () => {
+      document.removeEventListener('keydown', keepWarningModalFocused, true);
+      if (previouslyFocused?.isConnected) previouslyFocused.focus();
+    };
+  }, [sessionWarningSeconds !== null]);
 
   // Track active app sessions separately from `users.is_online`, which means a
   // driver is available for rides. Realtime presence drops automatically when
@@ -278,6 +338,174 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       void supabase.removeChannel(channel);
     };
   }, [user?.id, user?.role]);
+
+  // Limit concurrent Supabase sessions for the same account. A session ID is
+  // shared by tabs using the same Supabase login, so those tabs count as one.
+  // Dev Mode can advertise a two-session allowance to all active sessions.
+  useEffect(() => {
+    if (!user?.id) {
+      setSessionWarningSeconds(null);
+      return;
+    }
+
+    let disposed = false;
+    let sessionChannel: ReturnType<typeof supabase.channel> | null = null;
+    let sessionKey: string | null = null;
+    let sessionGeneration = 0;
+    let firstSeenAt = Date.now();
+    let evictionTimer: ReturnType<typeof setTimeout> | null = null;
+    let countdownTimer: ReturnType<typeof setInterval> | null = null;
+    let scheduledEvictionKey: string | null = null;
+
+    const clearEvictionWarning = () => {
+      if (evictionTimer) clearTimeout(evictionTimer);
+      if (countdownTimer) clearInterval(countdownTimer);
+      evictionTimer = null;
+      countdownTimer = null;
+      scheduledEvictionKey = null;
+      setSessionWarningSeconds(null);
+    };
+
+    const signOutThisSession = async () => {
+      if (disposed) return;
+      signOutRequestedRef.current = true;
+      try {
+        const { error } = await supabase.auth.signOut({ scope: 'local' });
+        if (error) throw error;
+      } catch (error) {
+        signOutRequestedRef.current = false;
+        console.error('[AuthContext] Could not sign out the older account session:', error);
+        setSessionWarningSeconds(null);
+        scheduledEvictionKey = null;
+        return;
+      }
+
+      setUser(null);
+      localStorage.removeItem('trikeserve_current_user');
+      localStorage.removeItem('trikeserve_original_role');
+      localStorage.removeItem('trikeserve_post_switch_route');
+      setSessionWarningSeconds(null);
+    };
+
+    const evaluateActiveSessions = () => {
+      if (disposed || !sessionChannel || !sessionKey) return;
+
+      const sessionsByKey = new Map<string, { firstSeenAt: number; allowsTwo: boolean }>();
+      const presence = sessionChannel.presenceState<Record<string, unknown>>();
+      for (const [presenceKey, metas] of Object.entries(presence)) {
+        for (const meta of metas) {
+          const metadata = meta as { firstSeenAt?: number; allowTwoSessions?: boolean };
+          const seenAt = Number(metadata.firstSeenAt);
+          const current = sessionsByKey.get(presenceKey);
+          sessionsByKey.set(presenceKey, {
+            firstSeenAt: current
+              ? Math.min(current.firstSeenAt, Number.isFinite(seenAt) && seenAt > 0 ? seenAt : Date.now())
+              : Number.isFinite(seenAt) && seenAt > 0 ? seenAt : Date.now(),
+            allowsTwo: Boolean(current?.allowsTwo || metadata.allowTwoSessions),
+          });
+        }
+      }
+
+      const sessions = Array.from(sessionsByKey.entries())
+        .map(([key, details]) => ({ key, ...details }))
+        .sort((a, b) => a.firstSeenAt - b.firstSeenAt || a.key.localeCompare(b.key));
+      const sessionLimit = sessions.some((session) => session.allowsTwo) ? 2 : 1;
+      const mustSignOut = sessions.slice(0, Math.max(0, sessions.length - sessionLimit)).some((session) => session.key === sessionKey);
+
+      if (!mustSignOut) {
+        if (scheduledEvictionKey) clearEvictionWarning();
+        return;
+      }
+      if (scheduledEvictionKey === sessionKey) return;
+
+      clearEvictionWarning();
+      scheduledEvictionKey = sessionKey;
+      setSessionWarningSeconds(3);
+      let secondsRemaining = 3;
+      countdownTimer = setInterval(() => {
+        secondsRemaining -= 1;
+        if (secondsRemaining > 0) setSessionWarningSeconds(secondsRemaining);
+      }, 1000);
+      evictionTimer = setTimeout(() => {
+        void signOutThisSession();
+      }, 3000);
+    };
+
+    const refreshPresenceSettings = () => {
+      if (!sessionChannel || !sessionKey || disposed) return;
+      const allowTwoSessions = isDevModeEnabled() && isDevModeFeatureEnabled('allowTwoSessions');
+      void sessionChannel.track({ firstSeenAt, allowTwoSessions })
+        .then(evaluateActiveSessions)
+        .catch((error) => console.warn('[AuthContext] Could not update account session presence:', error));
+    };
+
+    const disconnectSessionPresence = () => {
+      clearEvictionWarning();
+      sessionKey = null;
+      if (sessionChannel) {
+        const channel = sessionChannel;
+        sessionChannel = null;
+        void supabase.removeChannel(channel);
+      }
+    };
+
+    const connectSessionPresence = async (
+      session: { access_token: string; user: { id: string } },
+      generation: number,
+    ) => {
+      const nextSessionKey = await getSessionPresenceKey(session.access_token);
+      if (disposed || generation !== sessionGeneration || !nextSessionKey) return;
+      if (sessionKey === nextSessionKey && sessionChannel) {
+        refreshPresenceSettings();
+        return;
+      }
+
+      disconnectSessionPresence();
+      sessionKey = nextSessionKey;
+      firstSeenAt = getSessionFirstSeenAt(user.id, nextSessionKey);
+      sessionChannel = supabase.channel(`account-session-limit:${user.id}`, {
+        config: { presence: { key: nextSessionKey } },
+      });
+      sessionChannel.on('presence', { event: 'sync' }, evaluateActiveSessions);
+      sessionChannel.subscribe((status) => {
+        if (status === 'SUBSCRIBED') refreshPresenceSettings();
+        if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
+          console.warn('[AuthContext] Account session presence is temporarily unavailable:', status);
+        }
+      });
+    };
+
+    const unsubscribeDevMode = subscribeToDevModeChanges(refreshPresenceSettings);
+    const { data: { subscription: authSubscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      const generation = ++sessionGeneration;
+      if (!session?.access_token || session.user.id !== user.id) {
+        disconnectSessionPresence();
+        return;
+      }
+      void connectSessionPresence(session, generation);
+    });
+
+    const restoreCurrentSessionPresence = async () => {
+      const generation = ++sessionGeneration;
+      try {
+        const { data: { session } } = await supabase.auth.getSession();
+        if (disposed || generation !== sessionGeneration) return;
+        if (session?.access_token && session.user.id === user.id) {
+          void connectSessionPresence(session, generation);
+        }
+      } catch (error) {
+        console.warn('[AuthContext] Could not inspect the current account session:', error);
+      }
+    };
+    void restoreCurrentSessionPresence();
+
+    return () => {
+      disposed = true;
+      unsubscribeDevMode();
+      authSubscription.unsubscribe();
+      disconnectSessionPresence();
+    };
+  }, [user?.id]);
 
   // Listen for Supabase auth state changes
   useEffect(() => {
@@ -347,6 +575,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         console.log('[AuthContext] Auth event:', event);
         if (!mounted) return;
         if (event === 'SIGNED_IN') {
+          signOutRequestedRef.current = false;
           /*
            * Another tab signed in.
            *
@@ -1033,6 +1262,27 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   return (
     <AuthContext.Provider value={{ user, isLoading, login, logout, signup, updateProfile, switchUiRole, restoreOriginalRole, resendVerificationEmail }}>
       {children}
+      {sessionWarningSeconds !== null && (
+        <div className="fixed inset-0 z-[10050] grid place-items-center bg-black/55 px-4 backdrop-blur-sm" role="presentation">
+          <section
+            ref={sessionWarningRef}
+            tabIndex={-1}
+            role="alertdialog"
+            aria-modal="true"
+            aria-labelledby="session-limit-title"
+            aria-describedby="session-limit-description"
+            className="w-full max-w-sm rounded-2xl border border-line bg-card p-6 text-center shadow-2xl"
+          >
+            <div className="mx-auto mb-4 grid size-12 place-items-center rounded-full bg-[var(--primary-soft)] text-[var(--primary)]">
+              <span className="text-xl font-bold" aria-hidden="true">{sessionWarningSeconds}</span>
+            </div>
+            <h2 id="session-limit-title" className="text-lg font-bold text-[var(--ink)]">Account signed in elsewhere</h2>
+            <p id="session-limit-description" className="mt-2 text-sm text-[var(--muted-foreground)]">
+              This account has reached its active session limit. This session will sign out in {sessionWarningSeconds} {sessionWarningSeconds === 1 ? 'second' : 'seconds'}.
+            </p>
+          </section>
+        </div>
+      )}
     </AuthContext.Provider>
   );
 }

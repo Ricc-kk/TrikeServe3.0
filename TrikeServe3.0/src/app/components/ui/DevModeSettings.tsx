@@ -92,6 +92,7 @@ export default function DevModeSettings() {
   const [enforceBoundary, setEnforceBoundary] = useDevModeFeature("enforceBoundary");
   const [imageProofRequired, setImageProofRequired] = useDevModeFeature("imageProofRequired");
   const [sameRouteLobbyFilter, setSameRouteLobbyFilter] = useDevModeFeature("sameRouteLobbyFilter");
+  const [allowTwoSessions, setAllowTwoSessions] = useDevModeFeature("allowTwoSessions");
   const [isOpen, setIsOpen] = useState(false);
   const [position, setPosition] = useState<FloatingPosition>(getInitialFloatingPosition);
   const panelRef = useRef<HTMLDivElement>(null);
@@ -293,6 +294,15 @@ export default function DevModeSettings() {
               onCheckedChange={setImageProofRequired}
               disabled={!isEnabled}
               icon={Camera}
+            />
+            <SettingRow
+              id="dev-mode-allow-two-sessions"
+              title="Allow 2 account sessions"
+              description="Keep this account signed in on up to two devices at once."
+              checked={allowTwoSessions}
+              onCheckedChange={setAllowTwoSessions}
+              disabled={!isEnabled}
+              icon={Users}
             />
           </div>
           <p className="mt-3 text-center text-[10px] text-[var(--muted-foreground)]">Settings are saved on this device.</p>
