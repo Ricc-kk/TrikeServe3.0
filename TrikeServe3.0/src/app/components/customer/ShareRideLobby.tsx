@@ -479,6 +479,19 @@ export default function ShareRideLobby({
     });
   };
 
+  useEffect(() => {
+    if (!driverAssignedNotice || driverAssignedNotice.lobbyId !== lobby?.id) return;
+
+    const { lobbyId, driverId } = driverAssignedNotice;
+    const timeout = setTimeout(() => {
+      setDriverAssignedNotice(current =>
+        current?.lobbyId === lobbyId && current.driverId === driverId ? null : current
+      );
+    }, 3000);
+
+    return () => clearTimeout(timeout);
+  }, [driverAssignedNotice, lobby?.id]);
+
   const openRatingModal = () => {
     // Cancel any pending auto-close so the customer has time to rate.
     if (terminalCloseTimeoutRef.current) {
