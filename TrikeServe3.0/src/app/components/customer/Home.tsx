@@ -5524,6 +5524,7 @@ const getPrice = () => {
           pricePerSeat={shareFarePerSeat}
           paymentMethod={paymentMethod}
           selectedTerminalId={selectedTerminalId}
+          selectedRouteId={selectedTerminalBoundary.selectedRoute?.id || null}
           routePoints={selectedTerminalBoundary.displayRoad}
           routeWidthM={selectedTerminalBoundary.routeWidthM}
           onLobbyLoaded={(lobbyId) => {

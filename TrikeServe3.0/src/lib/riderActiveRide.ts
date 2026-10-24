@@ -157,6 +157,8 @@ function mapLobbyToRiderRide(lobby: any) {
     passengers: passengers.length,
     maxPassengers: Number(lobby.max_seats || 3),
     customerId: lobby.customer_id,
+    terminalId: lobby.terminal_id ?? null,
+    selectedRouteId: passengers.find((passenger: any) => passenger?.route_id)?.route_id ?? null,
     passengerDetails: passengers,
     status: mapDriverStatusToRideStatus(lobby.driver_status),
     driverId: lobby.driver_id,

@@ -56,6 +56,8 @@ interface LobbyPassenger {
   dropoffAddress?: string;
   dropoffLat?: number | null;
   dropoffLng?: number | null;
+  /** The terminal road selected when this passenger booked. */
+  route_id?: string | null;
   dropoff_status?: string | null;
   dropoffStatus?: string | null;
   payment_status?: string | null;
@@ -174,6 +176,7 @@ interface ShareRideLobbyProps {
   pricePerSeat?: number;
   paymentMethod?: 'COD';
   selectedTerminalId?: string | null;
+  selectedRouteId?: string | null;
   routePoints?: Array<{ lat: number; lng: number }> | null;
   routeWidthM?: number | null;
   onDriverFound: (lobbyId: string) => void;
@@ -196,6 +199,7 @@ export default function ShareRideLobby({
   pricePerSeat = 15,
   paymentMethod = 'COD',
   selectedTerminalId,
+  selectedRouteId,
   routePoints,
   routeWidthM,
   onDriverFound,
@@ -1300,6 +1304,7 @@ export default function ShareRideLobby({
             dropoffAddress,
             dropoffLat: dropoffCoords?.lat ?? null,
             dropoffLng: dropoffCoords?.lng ?? null,
+            route_id: selectedRouteId || null,
             fare: pricePerSeat,
           };
 
@@ -1318,6 +1323,7 @@ export default function ShareRideLobby({
               dropoffAddress,
               dropoffLat: dropoffCoords?.lat ?? null,
               dropoffLng: dropoffCoords?.lng ?? null,
+              route_id: selectedRouteId || null,
               fare: pricePerSeat,
             });
           }
@@ -1356,6 +1362,7 @@ export default function ShareRideLobby({
         dropoffAddress,
         dropoffLat: dropoffCoords?.lat ?? null,
         dropoffLng: dropoffCoords?.lng ?? null,
+        route_id: selectedRouteId || null,
         fare: pricePerSeat,
       };
 
@@ -1374,6 +1381,7 @@ export default function ShareRideLobby({
           dropoffAddress,
           dropoffLat: dropoffCoords?.lat ?? null,
           dropoffLng: dropoffCoords?.lng ?? null,
+          route_id: selectedRouteId || null,
           fare: pricePerSeat,
         });
       }

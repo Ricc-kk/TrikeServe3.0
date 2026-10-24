@@ -15,11 +15,12 @@ import ProofCapture from "../ui/ProofCapture";
 import ReasonPromptModal from "../ui/reason-prompt-modal";
 import StoreLogo from "../figma/StoreLogo";
 import { useAuth } from "../../contexts/AuthContext";
-import { supabaseHelpers, logAudit } from "@/lib/supabase";
+import { supabaseHelpers, logAudit, isPointOnRoadCorridor } from "@/lib/supabase";
 import { readRiderActiveRide, writeRiderActiveRide, clearRiderActiveRide, fetchRiderActiveRide } from "../../../lib/riderActiveRide";
 import { supabase } from "../../../utils/supabase";
 import useMapLoader from "@/lib/mapLoader";
 import { createCustomerMarkerIcon, createRestaurantMarkerIcon } from "@/lib/mapIcons";
+import { legacyRouteFromBoundary, normalizeTerminalRoutes, type TerminalRoute } from "@/lib/terminalRoutes";
 import PassengerMessagingDB from "./PassengerMessagingDB";
 import tricycleIcon from "../../../assets/0b76d1aa56b8ad6e15dd4efc8a0100b0ca5762a1.png";
 import { useDevModeOverride } from "../../hooks/useDevModeSettings";
@@ -76,6 +77,8 @@ interface ActiveRideData {
   pickupAddress?: string;
   dropoffAddress?: string;
   lobbyId?: string;
+  terminalId?: string | null;
+  selectedRouteId?: string | null;
   passengerDetails?: any[];
 }
 
@@ -263,6 +266,170 @@ function decodeRoutePolyline(encoded: string): google.maps.LatLngLiteral[] {
   return points;
 }
 
+interface RouteProjection {
+  point: RideCoordinate;
+  distanceAlong: number;
+  distanceFromRoute: number;
+}
+
+function interpolateCoordinate(a: RideCoordinate, b: RideCoordinate, fraction: number): RideCoordinate {
+  return {
+    lat: a.lat + (b.lat - a.lat) * fraction,
+    lng: a.lng + (b.lng - a.lng) * fraction,
+  };
+}
+
+function cumulativePathDistances(path: RideCoordinate[]): number[] {
+  const distances = [0];
+  for (let index = 1; index < path.length; index++) {
+    distances.push(distances[index - 1] + distanceInMeters(path[index - 1], path[index]));
+  }
+  return distances;
+}
+
+/** Snap a point to the closest plotted terminal-road segment. */
+function projectOntoRoute(point: RideCoordinate, path: RideCoordinate[]): RouteProjection | null {
+  if (path.length < 2) return null;
+  const cumulative = cumulativePathDistances(path);
+  let closest: RouteProjection | null = null;
+  const longitudeScale = Math.cos(toRadians(point.lat));
+
+  for (let index = 1; index < path.length; index++) {
+    const start = path[index - 1];
+    const end = path[index];
+    const ax = start.lng * longitudeScale;
+    const ay = start.lat;
+    const bx = end.lng * longitudeScale;
+    const by = end.lat;
+    const px = point.lng * longitudeScale;
+    const py = point.lat;
+    const dx = bx - ax;
+    const dy = by - ay;
+    const lengthSquared = dx * dx + dy * dy;
+    const fraction = lengthSquared > 0
+      ? Math.max(0, Math.min(1, ((px - ax) * dx + (py - ay) * dy) / lengthSquared))
+      : 0;
+    const projected = interpolateCoordinate(start, end, fraction);
+    const fromRoute = distanceInMeters(point, projected);
+    if (closest && fromRoute >= closest.distanceFromRoute) continue;
+
+    closest = {
+      point: projected,
+      distanceAlong: cumulative[index - 1] + distanceInMeters(start, projected),
+      distanceFromRoute: fromRoute,
+    };
+  }
+  return closest;
+}
+
+function routeSlice(path: RideCoordinate[], startDistance: number, endDistance: number): RideCoordinate[] {
+  if (path.length < 2) return [...path];
+  const cumulative = cumulativePathDistances(path);
+  const totalDistance = cumulative[cumulative.length - 1];
+  const start = Math.max(0, Math.min(totalDistance, startDistance));
+  const end = Math.max(0, Math.min(totalDistance, endDistance));
+  if (Math.abs(end - start) < 0.01) return [pointAtRouteDistance(path, cumulative, start)];
+  if (end < start) return routeSlice(path, end, start).reverse();
+
+  const result = [pointAtRouteDistance(path, cumulative, start)];
+  for (let index = 1; index < path.length - 1; index++) {
+    if (cumulative[index] > start && cumulative[index] < end) result.push(path[index]);
+  }
+  result.push(pointAtRouteDistance(path, cumulative, end));
+  return result;
+}
+
+function pointAtRouteDistance(
+  path: RideCoordinate[],
+  cumulative: number[],
+  distance: number,
+): RideCoordinate {
+  if (distance <= 0) return path[0];
+  const lastIndex = path.length - 1;
+  if (distance >= cumulative[lastIndex]) return path[lastIndex];
+  for (let index = 1; index < path.length; index++) {
+    if (distance > cumulative[index]) continue;
+    const segmentDistance = cumulative[index] - cumulative[index - 1];
+    const fraction = segmentDistance > 0 ? (distance - cumulative[index - 1]) / segmentDistance : 0;
+    return interpolateCoordinate(path[index - 1], path[index], fraction);
+  }
+  return path[lastIndex];
+}
+
+/**
+ * Draw the shared itinerary on the selected terminal road. Destinations are
+ * snapped to that road and ordered by their progress along it; no routing API is
+ * asked to replace the selected road with its fastest alternative.
+ */
+function buildSharedDropoffRoutes(
+  pickup: RideCoordinate,
+  stops: SharedDropoffStop[],
+  selectedRoute: TerminalRoute | null,
+): SharedDropoffRoute[] {
+  const routePoints = selectedRoute?.points || [];
+  if (routePoints.length < 2 || stops.length === 0) return [];
+
+  const buildDirection = (path: RideCoordinate[]) => {
+    const cumulative = cumulativePathDistances(path);
+    const totalDistance = cumulative[cumulative.length - 1];
+    const pickupProjection = projectOntoRoute(pickup, path);
+    if (!pickupProjection) return null;
+
+    const turnaroundTravel = totalDistance - pickupProjection.distanceAlong;
+    const visits = stops.flatMap((stop, index) => {
+      const projection = projectOntoRoute(stop.position, path);
+      if (!projection) return [];
+      const travelDistance = projection.distanceAlong >= pickupProjection.distanceAlong
+        ? projection.distanceAlong - pickupProjection.distanceAlong
+        : turnaroundTravel + totalDistance - projection.distanceAlong;
+      return [{ stop, index, projection, travelDistance }];
+    }).sort((a, b) => a.travelDistance - b.travelDistance || a.index - b.index);
+
+    return { path, cumulative, totalDistance, pickupProjection, turnaroundTravel, visits };
+  };
+
+  const forward = buildDirection(routePoints);
+  const reverse = buildDirection([...routePoints].reverse());
+  const getTravelCost = (candidate: ReturnType<typeof buildDirection>) =>
+    candidate?.visits.length ? candidate.visits[candidate.visits.length - 1].travelDistance : Number.POSITIVE_INFINITY;
+  const itinerary = getTravelCost(reverse) < getTravelCost(forward) ? reverse : forward;
+  if (!itinerary || itinerary.visits.length === 0) return [];
+
+  const routeBetweenVisits = (fromTravel: number, toTravel: number): RideCoordinate[] => {
+    const stationAt = (travel: number) => travel <= itinerary.turnaroundTravel
+      ? itinerary.pickupProjection.distanceAlong + travel
+      : itinerary.totalDistance - (travel - itinerary.turnaroundTravel);
+    const startStation = stationAt(fromTravel);
+    const endStation = stationAt(toTravel);
+    if (fromTravel <= itinerary.turnaroundTravel && toTravel > itinerary.turnaroundTravel) {
+      return [
+        ...routeSlice(itinerary.path, startStation, itinerary.totalDistance),
+        ...routeSlice(itinerary.path, endStation, itinerary.totalDistance).reverse().slice(1),
+      ];
+    }
+    return routeSlice(itinerary.path, startStation, endStation);
+  };
+
+  let previousTravel = 0;
+  let previousStop: RideCoordinate | null = null;
+  let previousProjection: RideCoordinate | null = null;
+  return itinerary.visits.map(({ stop, projection, travelDistance }, index) => {
+    const roadPath = routeBetweenVisits(previousTravel, travelDistance);
+    const path: RideCoordinate[] = index === 0
+      ? [pickup, ...roadPath]
+      : [
+          ...(previousStop ? [previousStop] : []),
+          ...(previousProjection ? [previousProjection] : []),
+          ...roadPath.slice(1),
+        ];
+    path.push(stop.position);
+    previousTravel = travelDistance;
+    previousStop = stop.position;
+    previousProjection = projection.point;
+    return { ...stop, path };
+  });
+}
+
 // Ceiling on how fast the map is allowed to rotate, in degrees per second. GPS fixes
 // arrive seconds apart, so without a limit each one would snap the map to a new
 // angle and the rotation would be unreadable.
@@ -311,6 +478,7 @@ export default function ActiveRide() {
   const [directions, setDirections] = useState<google.maps.DirectionsResult | null>(null);
   const [routePath, setRoutePath] = useState<google.maps.LatLngLiteral[] | null>(null);
   const [sharedDropoffRoutes, setSharedDropoffRoutes] = useState<SharedDropoffRoute[]>([]);
+  const [sharedTerminalRoute, setSharedTerminalRoute] = useState<TerminalRoute | null>(null);
   const [mapCenter, setMapCenter] = useState<{ lat: number; lng: number }>({ lat: 14.6037, lng: 120.9793 });
   // Whether the camera is locked to the driver. Defaults on so the opening view is
   // the driver, and turns off by itself the first time they pan or zoom.
@@ -1050,68 +1218,143 @@ export default function ActiveRide() {
     rideData?.passengerDetails,
   ]);
 
-  // A shared ride has one colored road segment for each passenger stop. Route the
-  // ordered itinerary from the common pickup, so every segment can keep the
-  // color of the passenger who gets off at its end.
+  // Load the route selected for this lobby. New bookings carry the route id on
+  // each passenger; older lobbies are matched to the plotted road that contains
+  // the most passenger destinations.
   useEffect(() => {
-    if (!isSharedRide || !rideData || !isMapsLoaded || !(window as any).google) {
-      setSharedDropoffRoutes([]);
+    if (!isSharedRide || !rideData?.lobbyId) {
+      setSharedTerminalRoute(null);
       return;
     }
-
-    const pickup = coordinateFromValues(rideData.pickupLat, rideData.pickupLng);
-    if (!pickup || sharedDropoffStops.length === 0) {
-      setSharedDropoffRoutes([]);
-      return;
-    }
-
-    const fallbackRoutes: SharedDropoffRoute[] = [];
-    let previousStop = pickup;
-    for (const stop of sharedDropoffStops) {
-      fallbackRoutes.push({ ...stop, path: [previousStop, stop.position] });
-      previousStop = stop.position;
-    }
-    setSharedDropoffRoutes(fallbackRoutes);
 
     let cancelled = false;
-    const lastStop = sharedDropoffStops[sharedDropoffStops.length - 1];
-    const waypoints = sharedDropoffStops.slice(0, -1).map(stop => ({
-      location: stop.position,
-      stopover: true,
-    }));
-    const service = new (window as any).google.maps.DirectionsService();
-    service.route({
-      origin: pickup,
-      destination: lastStop.position,
-      waypoints,
-      optimizeWaypoints: false,
-      travelMode: (window as any).google.maps.TravelMode.DRIVING,
-    }, (result: any, status: string) => {
-      if (cancelled || status !== (window as any).google.maps.DirectionsStatus.OK) return;
+    const loadSelectedTerminalRoute = async () => {
+      let terminalId = rideData.terminalId || null;
+      let passengers = Array.isArray(rideData.passengerDetails) ? rideData.passengerDetails : [];
+      try {
+        const { data: lobby } = await supabase
+          .from('shared_ride_lobbies')
+          .select('terminal_id, passengers_json')
+          .eq('id', rideData.lobbyId)
+          .maybeSingle();
+        if (lobby) {
+          terminalId = terminalId || lobby.terminal_id || null;
+          if (Array.isArray(lobby.passengers_json)) passengers = lobby.passengers_json;
+          else if (typeof lobby.passengers_json === 'string') {
+            try {
+              const parsed = JSON.parse(lobby.passengers_json);
+              if (Array.isArray(parsed)) passengers = parsed;
+            } catch {
+              // Keep the passenger details already carried by the active ride.
+            }
+          }
+        }
+      } catch {
+        // The accepted ride may still have the terminal and passengers cached.
+      }
 
-      const legs = result?.routes?.[0]?.legs;
-      if (!Array.isArray(legs) || legs.length !== sharedDropoffStops.length) return;
+      if (!terminalId) {
+        if (!cancelled) setSharedTerminalRoute(null);
+        return;
+      }
 
-      const routedSegments = sharedDropoffStops.map((stop, index) => {
-        const legPath = (legs[index]?.steps || []).flatMap((step: any) =>
-          (step.path || []).map((point: any) => ({ lat: point.lat(), lng: point.lng() })),
+      const { data: terminal, error } = await supabase
+        .from('terminals')
+        .select('routes, boundary_polygon, road_width_m')
+        .eq('id', terminalId)
+        .maybeSingle();
+      if (cancelled) return;
+      if (error || !terminal) {
+        setSharedTerminalRoute(null);
+        return;
+      }
+
+      const storedRoutes = normalizeTerminalRoutes(terminal.routes);
+      const routes = (storedRoutes.length > 0
+        ? storedRoutes
+        : legacyRouteFromBoundary(terminal.boundary_polygon, terminal.road_width_m))
+        .filter(route => route.points.length >= 2);
+      if (routes.length === 0) {
+        setSharedTerminalRoute(null);
+        return;
+      }
+
+      const requestedRouteId = rideData.selectedRouteId || passengers
+        .map((passenger: any) => passenger?.route_id || passenger?.routeId || passenger?.selectedRouteId)
+        .find((routeId: unknown) => typeof routeId === 'string' && routeId.length > 0);
+      const savedRoute = requestedRouteId
+        ? routes.find(route => route.id === requestedRouteId)
+        : null;
+      const destinations = passengers.flatMap((passenger: any) => {
+        const point = coordinateFromValues(
+          passenger?.dropoffLat ?? passenger?.dropoff_lat,
+          passenger?.dropoffLng ?? passenger?.dropoff_lng,
         );
-        return {
-          ...stop,
-          path: legPath.length > 1 ? legPath : fallbackRoutes[index].path,
-        };
+        return point ? [point] : [];
       });
-      setSharedDropoffRoutes(routedSegments);
-    });
+      if (destinations.length === 0) {
+        const primaryDropoff = coordinateFromValues(rideData.dropoffLat, rideData.dropoffLng);
+        if (primaryDropoff) destinations.push(primaryDropoff);
+      }
 
+      const matchingRoute = routes
+        .map(route => ({
+          route,
+          matches: destinations.filter(point => isPointOnRoadCorridor(
+            point.lat,
+            point.lng,
+            route.points,
+            route.buffer_m,
+          )).length,
+        }))
+        .sort((a, b) => b.matches - a.matches)[0];
+
+      setSharedTerminalRoute(
+        savedRoute
+        || (matchingRoute?.matches ? matchingRoute.route : null)
+        || routes.find(route => route.enabled)
+        || routes[0]
+        || null,
+      );
+    };
+
+    void loadSelectedTerminalRoute();
     return () => { cancelled = true; };
+  }, [
+    isSharedRide,
+    rideData?.id,
+    rideData?.lobbyId,
+    rideData?.terminalId,
+    rideData?.selectedRouteId,
+    rideData?.passengerDetails,
+    rideData?.dropoffLat,
+    rideData?.dropoffLng,
+  ]);
+
+  // A shared ride has one colored road segment for each passenger stop. Route the
+  // ordered itinerary on the selected terminal road, so every segment keeps the
+  // color of the passenger who gets off at its end.
+  useEffect(() => {
+    if (!isSharedRide || !rideData) {
+      setSharedDropoffRoutes([]);
+      return;
+    }
+
+    const pickup = coordinateFromValues(rideData.pickupLat, rideData.pickupLng) || driverLocation;
+    if (!pickup || sharedDropoffStops.length === 0 || !sharedTerminalRoute) {
+      setSharedDropoffRoutes([]);
+      return;
+    }
+    setSharedDropoffRoutes(buildSharedDropoffRoutes(pickup, sharedDropoffStops, sharedTerminalRoute));
   }, [
     isSharedRide,
     rideData?.id,
     rideData?.pickupLat,
     rideData?.pickupLng,
     sharedDropoffStops,
-    isMapsLoaded,
+    sharedTerminalRoute,
+    driverLocation?.lat,
+    driverLocation?.lng,
   ]);
 
   // For delivery rides: geocode the restaurant pickup address if lat/lng are missing
@@ -2216,7 +2459,6 @@ export default function ActiveRide() {
   const activeAction = (() => {
     switch (rideData.status) {
       case 'on-the-way':
-        return { label: "I've Arrived", onClick: () => updateStatus('arrived'), isComplete: false };
       case 'arrived':
         return { label: 'Confirm Pickup', onClick: () => updateStatus('pickup'), isComplete: false };
       case 'pickup':
