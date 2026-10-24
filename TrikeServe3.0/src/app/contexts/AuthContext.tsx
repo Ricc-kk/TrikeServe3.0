@@ -245,28 +245,51 @@ function syncCachedLegacyUserProfile(user: User) {
   }
 }
 
+async function hashPresenceIdentity(identity: string): Promise<string> {
+  if (globalThis.crypto?.subtle) {
+    const digest = await globalThis.crypto.subtle.digest('SHA-256', new TextEncoder().encode(identity));
+    return `session-${Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, '0')).join('')}`;
+  }
+
+  // Keep the realtime presence key opaque even in browsers without Web Crypto.
+  let hash = 2166136261;
+  for (let index = 0; index < identity.length; index += 1) {
+    hash = Math.imul(hash ^ identity.charCodeAt(index), 16777619);
+  }
+  return `session-${(hash >>> 0).toString(16)}`;
+}
+
 async function getSessionPresenceKey(accessToken: string): Promise<string | null> {
   try {
     const payloadPart = accessToken.split('.')[1];
     if (!payloadPart) return null;
-    const payload = JSON.parse(atob(payloadPart.replace(/-/g, '+').replace(/_/g, '/')));
+    const base64Payload = payloadPart.replace(/-/g, '+').replace(/_/g, '/');
+    const paddedPayload = base64Payload.padEnd(Math.ceil(base64Payload.length / 4) * 4, '=');
+    const payload = JSON.parse(atob(paddedPayload));
     const sessionId = typeof payload.session_id === 'string' ? payload.session_id : '';
     if (!sessionId) return null;
-
-    if (globalThis.crypto?.subtle) {
-      const digest = await globalThis.crypto.subtle.digest('SHA-256', new TextEncoder().encode(sessionId));
-      return `session-${Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, '0')).join('')}`;
-    }
-
-    // Keep the realtime presence key opaque even in browsers without Web Crypto.
-    let hash = 2166136261;
-    for (let index = 0; index < sessionId.length; index += 1) {
-      hash = Math.imul(hash ^ sessionId.charCodeAt(index), 16777619);
-    }
-    return `session-${(hash >>> 0).toString(16)}`;
+    return hashPresenceIdentity(`supabase:${sessionId}`);
   } catch {
     return null;
   }
+}
+
+async function getLocalSessionPresenceKey(userId: string): Promise<string> {
+  const storageKey = `trikeserve_local_session:${userId}`;
+  let localSessionId = '';
+  try {
+    localSessionId = localStorage.getItem(storageKey) || '';
+    if (!localSessionId) {
+      localSessionId = globalThis.crypto?.randomUUID?.()
+        || `${Date.now()}-${Math.random().toString(36).slice(2)}-${Math.random().toString(36).slice(2)}`;
+      localStorage.setItem(storageKey, localSessionId);
+      // Re-read so tabs that initialize together converge on one browser key.
+      localSessionId = localStorage.getItem(storageKey) || localSessionId;
+    }
+  } catch {
+    localSessionId = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+  }
+  return hashPresenceIdentity(`local:${userId}:${localSessionId}`);
 }
 
 function getSessionFirstSeenAt(userId: string, sessionKey: string): number {
@@ -286,6 +309,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [sessionWarningSeconds, setSessionWarningSeconds] = useState<number | null>(null);
+  const [sessionConflictMessage, setSessionConflictMessage] = useState(false);
   const sessionWarningRef = useRef<HTMLElement>(null);
   // Set while logout() is running, so the SIGNED_OUT it causes is read as a
   // deliberate sign-out rather than a token refresh that failed.
@@ -352,9 +376,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     let sessionChannel: ReturnType<typeof supabase.channel> | null = null;
     let sessionKey: string | null = null;
     let sessionGeneration = 0;
+    let hasSupabaseAuthSession = false;
     let firstSeenAt = Date.now();
     let evictionTimer: ReturnType<typeof setTimeout> | null = null;
     let countdownTimer: ReturnType<typeof setInterval> | null = null;
+    let conflictMessageTimer: ReturnType<typeof setTimeout> | null = null;
+    let conflictMessageShown = false;
     let scheduledEvictionKey: string | null = null;
 
     const clearEvictionWarning = () => {
@@ -366,24 +393,42 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setSessionWarningSeconds(null);
     };
 
+    const clearConflictMessage = () => {
+      if (conflictMessageTimer) clearTimeout(conflictMessageTimer);
+      conflictMessageTimer = null;
+      conflictMessageShown = false;
+      setSessionConflictMessage(false);
+    };
+
+    const showConflictMessage = () => {
+      if (conflictMessageShown) return;
+      conflictMessageShown = true;
+      setSessionConflictMessage(true);
+      conflictMessageTimer = setTimeout(() => setSessionConflictMessage(false), 6000);
+    };
+
     const signOutThisSession = async () => {
       if (disposed) return;
-      signOutRequestedRef.current = true;
-      try {
-        const { error } = await supabase.auth.signOut({ scope: 'local' });
-        if (error) throw error;
-      } catch (error) {
-        signOutRequestedRef.current = false;
-        console.error('[AuthContext] Could not sign out the older account session:', error);
-        setSessionWarningSeconds(null);
-        scheduledEvictionKey = null;
-        return;
+      if (hasSupabaseAuthSession) {
+        signOutRequestedRef.current = true;
+        try {
+          const { error } = await supabase.auth.signOut({ scope: 'local' });
+          if (error) throw error;
+        } catch (error) {
+          signOutRequestedRef.current = false;
+          console.error('[AuthContext] Could not sign out the older account session:', error);
+          setSessionWarningSeconds(null);
+          scheduledEvictionKey = null;
+          return;
+        }
       }
 
       setUser(null);
       localStorage.removeItem('trikeserve_current_user');
       localStorage.removeItem('trikeserve_original_role');
       localStorage.removeItem('trikeserve_post_switch_route');
+      localStorage.removeItem(`trikeserve_local_session:${user.id}`);
+      if (user.role === 'admin') localStorage.removeItem('trikeserve_admin_credentials');
       setSessionWarningSeconds(null);
     };
 
@@ -411,6 +456,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         .sort((a, b) => a.firstSeenAt - b.firstSeenAt || a.key.localeCompare(b.key));
       const sessionLimit = sessions.some((session) => session.allowsTwo) ? 2 : 1;
       const mustSignOut = sessions.slice(0, Math.max(0, sessions.length - sessionLimit)).some((session) => session.key === sessionKey);
+
+      if (sessions.length > 1 && !mustSignOut) showConflictMessage();
+      if (sessions.length <= 1) clearConflictMessage();
 
       if (!mustSignOut) {
         if (scheduledEvictionKey) clearEvictionWarning();
@@ -441,7 +489,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     const disconnectSessionPresence = () => {
       clearEvictionWarning();
+      clearConflictMessage();
       sessionKey = null;
+      hasSupabaseAuthSession = false;
       if (sessionChannel) {
         const channel = sessionChannel;
         sessionChannel = null;
@@ -449,19 +499,21 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
     };
 
-    const connectSessionPresence = async (
-      session: { access_token: string; user: { id: string } },
+    const connectPresenceKey = (
+      nextSessionKey: string,
       generation: number,
+      isSupabaseSession: boolean,
     ) => {
-      const nextSessionKey = await getSessionPresenceKey(session.access_token);
-      if (disposed || generation !== sessionGeneration || !nextSessionKey) return;
+      if (disposed || generation !== sessionGeneration) return;
       if (sessionKey === nextSessionKey && sessionChannel) {
+        hasSupabaseAuthSession = isSupabaseSession;
         refreshPresenceSettings();
         return;
       }
 
       disconnectSessionPresence();
       sessionKey = nextSessionKey;
+      hasSupabaseAuthSession = isSupabaseSession;
       firstSeenAt = getSessionFirstSeenAt(user.id, nextSessionKey);
       sessionChannel = supabase.channel(`account-session-limit:${user.id}`, {
         config: { presence: { key: nextSessionKey } },
@@ -475,14 +527,38 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       });
     };
 
+    const connectSupabaseSession = async (
+      session: { access_token: string; user: { id: string } },
+      generation: number,
+    ) => {
+      const nextSessionKey = await getSessionPresenceKey(session.access_token)
+        || await getLocalSessionPresenceKey(user.id);
+      connectPresenceKey(nextSessionKey, generation, true);
+    };
+
+    const connectLocalSession = async (generation: number) => {
+      const localSessionKey = await getLocalSessionPresenceKey(user.id);
+      connectPresenceKey(localSessionKey, generation, false);
+    };
+
     const unsubscribeDevMode = subscribeToDevModeChanges(refreshPresenceSettings);
-    const { data: { subscription: authSubscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+    const { data: { subscription: authSubscription } } = supabase.auth.onAuthStateChange((event, session) => {
       const generation = ++sessionGeneration;
-      if (!session?.access_token || session.user.id !== user.id) {
-        disconnectSessionPresence();
+      if (user.role === 'admin') {
+        void connectLocalSession(generation);
         return;
       }
-      void connectSessionPresence(session, generation);
+      if (session?.access_token && session.user.id === user.id) {
+        void connectSupabaseSession(session, generation);
+        return;
+      }
+      if (!session?.access_token && event !== 'SIGNED_OUT') {
+        void connectLocalSession(generation);
+        return;
+      }
+      if (session?.user.id !== user.id || event === 'SIGNED_OUT') {
+        disconnectSessionPresence();
+      }
     });
 
     const restoreCurrentSessionPresence = async () => {
@@ -490,8 +566,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       try {
         const { data: { session } } = await supabase.auth.getSession();
         if (disposed || generation !== sessionGeneration) return;
-        if (session?.access_token && session.user.id === user.id) {
-          void connectSessionPresence(session, generation);
+        if (user.role === 'admin' || !session) {
+          void connectLocalSession(generation);
+        } else if (session.user.id === user.id) {
+          void connectSupabaseSession(session, generation);
         }
       } catch (error) {
         console.warn('[AuthContext] Could not inspect the current account session:', error);
@@ -504,8 +582,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       unsubscribeDevMode();
       authSubscription.unsubscribe();
       disconnectSessionPresence();
+      if (conflictMessageTimer) clearTimeout(conflictMessageTimer);
     };
-  }, [user?.id]);
+  }, [user?.id, user?.role]);
 
   // Listen for Supabase auth state changes
   useEffect(() => {
@@ -998,6 +1077,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     localStorage.removeItem('trikeserve_current_user');
     localStorage.removeItem('trikeserve_original_role');
     localStorage.removeItem('trikeserve_post_switch_route');
+    if (user) localStorage.removeItem(`trikeserve_local_session:${user.id}`);
+    localStorage.removeItem('trikeserve_admin_credentials');
   };
 
   const switchUiRole = async (role: User['role']) => {
@@ -1262,6 +1343,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   return (
     <AuthContext.Provider value={{ user, isLoading, login, logout, signup, updateProfile, switchUiRole, restoreOriginalRole, resendVerificationEmail }}>
       {children}
+      {sessionConflictMessage && sessionWarningSeconds === null && (
+        <div
+          role="status"
+          aria-live="polite"
+          className="fixed left-1/2 top-4 z-[10040] w-[min(28rem,calc(100vw-2rem))] -translate-x-1/2 rounded-xl border border-line bg-card px-4 py-3 text-center shadow-xl"
+        >
+          <p className="text-sm font-semibold text-[var(--ink)]">Account already signed in</p>
+          <p className="mt-1 text-xs text-[var(--muted-foreground)]">This account is also signed in on another device.</p>
+        </div>
+      )}
       {sessionWarningSeconds !== null && (
         <div className="fixed inset-0 z-[10050] grid place-items-center bg-black/55 px-4 backdrop-blur-sm" role="presentation">
           <section
