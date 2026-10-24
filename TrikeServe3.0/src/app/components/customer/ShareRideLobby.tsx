@@ -283,7 +283,6 @@ export default function ShareRideLobby({
   const [driverStatusPopup, setDriverStatusPopup] = useState<{ status: string; message: string } | null>(null);
   const [paymentModalPassengerId, setPaymentModalPassengerId] = useState<string | null>(null);
   const driverStatusTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const [showRatingModal, setShowRatingModal] = useState(false);
   const [selectedRating, setSelectedRating] = useState(0);
   const [ratingSubmitting, setRatingSubmitting] = useState(false);
   const [ratingSubmitted, setRatingSubmitted] = useState(false);
@@ -448,7 +447,7 @@ export default function ShareRideLobby({
         && statusMessage?.startsWith('The driver cancelled this shared ride.');
       setTerminalCancelMessage(driverCancelled ? statusMessage || null : null);
 
-      // Completed rides stay open so the customer can leave a rating or tap
+      // Completed rides stay open so the customer can rate the driver or tap
       // Done; cancelled rides auto-close after a short delay.
       if (status === 'cancelled') {
         if (terminalCloseTimeoutRef.current) {
@@ -492,17 +491,6 @@ export default function ShareRideLobby({
     return () => clearTimeout(timeout);
   }, [driverAssignedNotice, lobby?.id]);
 
-  const openRatingModal = () => {
-    // Cancel any pending auto-close so the customer has time to rate.
-    if (terminalCloseTimeoutRef.current) {
-      clearTimeout(terminalCloseTimeoutRef.current);
-      terminalCloseTimeoutRef.current = null;
-    }
-    setSelectedRating(0);
-    setRatingSubmitted(false);
-    setShowRatingModal(true);
-  };
-
   const handleSubmitRating = async () => {
     if (!selectedRating || !lobby?.driver_id || !user) return;
     setRatingSubmitting(true);
@@ -519,13 +507,6 @@ export default function ShareRideLobby({
       return;
     }
     setRatingSubmitted(true);
-  };
-
-  const closeAfterRating = () => {
-    setShowRatingModal(false);
-    if (typeof onClose === 'function') {
-      onClose('completed');
-    }
   };
 
   // Show the same driver-status popups customers get for private rides.
@@ -1959,32 +1940,45 @@ if (loading) {
         role="dialog"
         aria-modal="true"
         aria-labelledby="share-ride-payment-title"
-        className="w-full max-w-sm rounded-2xl bg-surface p-6 text-center shadow-2xl"
+        className="w-full max-w-sm gap-0 rounded-2xl bg-surface p-5 text-left shadow-2xl sm:p-6"
       >
-        <div className="mx-auto mb-4 flex size-16 items-center justify-center rounded-full bg-[var(--primary-soft)]">
-          <CreditCard className="size-8 text-[var(--primary)]" aria-hidden="true" />
+        <div className="mb-5 flex items-center gap-3">
+          <span className="grid size-12 shrink-0 place-items-center overflow-hidden rounded-full border border-[var(--border)] bg-[var(--primary-soft)] text-sm font-bold text-[var(--primary)]">
+            {driverProfileAvatar ? (
+              <img
+                src={driverProfileAvatar}
+                alt={`${lobby.driver_name || 'Driver'}'s profile`}
+                className="size-full object-cover"
+                onError={() => setDriverProfileAvatar(null)}
+              />
+            ) : (
+              getDriverInitials(lobby.driver_name)
+            )}
+          </span>
+          <div className="min-w-0 flex-1">
+            <h2 id="share-ride-payment-title" className="text-lg font-bold leading-6 text-[var(--ink)]">
+              Payment to {lobby.driver_name || 'your driver'}
+            </h2>
+            <p className="mt-1 text-sm leading-5 text-[var(--muted-foreground)]">
+              {String(lobby.payment_method || 'COD').toUpperCase() === 'COD'
+                ? 'Pay your fare at drop-off to complete the ride.'
+                : 'This ride was prepaid. The driver will continue the ride shortly.'}
+            </p>
+          </div>
         </div>
-        <h2 id="share-ride-payment-title" className="mb-2 text-xl font-bold text-[var(--ink)]">
-          Payment at drop-off
-        </h2>
-        <p className="mb-5 text-sm text-[var(--muted-foreground)]">
-          {String(lobby.payment_method || 'COD').toUpperCase() === 'COD'
-            ? 'Please settle this passenger’s fare with the driver.'
-            : 'This passenger’s fare is prepaid. The driver will continue the ride shortly.'}
-        </p>
-        <div className="mb-5 rounded-xl bg-[var(--muted)] p-4 text-left">
+        <div className="mb-4 space-y-3 rounded-xl bg-[var(--muted)] p-4 text-left">
           <div className="flex items-center justify-between gap-3">
             <span className="text-sm text-[var(--muted-foreground)]">Your fare</span>
             <strong className="text-lg text-[var(--primary)]">₱{Number(paymentModalPassenger.fare ?? pricePerSeat).toFixed(2)}</strong>
           </div>
-          <div className="mt-2 flex items-center justify-between gap-3">
+          <div className="flex items-center justify-between gap-3 border-t border-[var(--border)] pt-3">
             <span className="text-sm text-[var(--muted-foreground)]">Payment method</span>
             <strong className="text-sm text-[var(--ink)]">
               {String(lobby.payment_method || 'COD').toUpperCase() === 'COD' ? 'Cash to driver' : 'Prepaid'}
             </strong>
           </div>
         </div>
-        <Button onClick={dismissPaymentModal} className="w-full bg-[var(--primary)] text-white">
+        <Button onClick={dismissPaymentModal} className="h-12 w-full bg-[var(--primary)] text-white">
           Got it
         </Button>
       </Card>
@@ -2096,7 +2090,6 @@ if (loading) {
   const yourSeatCount = yourPassengers.length;
   const yourSeatTotal = sumSharedRidePassengerFares(yourPassengers);
   const yourFarePerSeat = yourSeatCount > 0 ? yourSeatTotal / yourSeatCount : pricePerSeat;
-  const currentLobbyTotal = sumSharedRidePassengerFares(passengersWithFares);
   const ownPassenger = yourPassengers.find(passenger => passenger.id === user?.id) || yourPassengers[0];
   const ownDropoff =
     ownPassenger?.dropoff?.trim() ||
@@ -2480,20 +2473,15 @@ if (loading) {
 
           {/* Footer - Price Info */}
           <div className="p-4 border-t border-[var(--border)] bg-surface">
-            <div className="flex items-center justify-between">
+            <div className="flex items-center">
               <div>
-                <p className="text-[10px] text-[var(--muted-foreground)] font-bold tracking-wider">Fare per passenger</p>
+                <p className="text-[10px] text-[var(--muted-foreground)] font-bold tracking-wider">Your Fare</p>
                 <p className="text-2xl font-bold text-[var(--primary)]">₱{yourFarePerSeat.toFixed(2)}</p>
                 {yourSeatCount > 1 && (
                   <p className="text-[10px] text-[var(--muted-foreground)]">
                     Your {yourSeatCount} seats: ₱{yourSeatTotal.toFixed(2)}
                   </p>
                 )}
-              </div>
-              <div className="text-right">
-                <p className="text-[10px] text-[var(--muted-foreground)] font-bold tracking-wider">Current group total</p>
-                <p className="text-lg font-bold text-[var(--ink)]">₱{currentLobbyTotal.toFixed(2)}</p>
-                <p className="text-[10px] text-[var(--muted-foreground)]">{passengers.length} passengers with individual fares</p>
               </div>
             </div>
 
@@ -2510,92 +2498,104 @@ if (loading) {
 
       {isTerminal && (
         <div className="fixed inset-0 bg-black/60 z-[2200] flex items-center justify-center p-4">
-          <Card className="bg-surface p-6 max-w-sm w-full text-center shadow-2xl border-2 border-[var(--success-soft)]">
-            <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-[var(--success-soft)] flex items-center justify-center">
+          <Card className="bg-surface p-5 max-w-sm w-full gap-0 text-center shadow-2xl border-2 border-[var(--success-soft)]">
+            <div className="w-14 h-14 mx-auto mb-3 rounded-full bg-[var(--success-soft)] flex items-center justify-center">
               {effectiveTerminalStatus === 'completed'
                 ? <Check className="size-8 text-[var(--success)]" aria-hidden="true" />
                 : <X className="size-8 text-[var(--error)]" aria-hidden="true" />}
             </div>
-            <h3 className="text-xl font-bold text-[var(--ink)] mb-2">
+            <h3 className="text-lg font-bold text-[var(--ink)] mb-1">
               {effectiveTerminalStatus === 'completed' ? 'Ride Completed' : 'Ride Cancelled'}
             </h3>
-            <p className="text-sm text-[var(--muted-foreground)] mb-6">
+            <p className="text-sm text-[var(--muted-foreground)] mb-4">
               {effectiveTerminalStatus === 'completed'
                 ? 'Your drop-off is confirmed. Your ride is complete. Thank you for riding with TrikeServe!'
                 : terminalCancelMessage || 'This ride has been cancelled. Returning you to the customer screen...'}
             </p>
             {effectiveTerminalStatus === 'completed' && lobby.driver_id && (
-              <div className="grid grid-cols-2 gap-3">
-                <Button
-                  onClick={openRatingModal}
-                  className="flex w-full items-center justify-center gap-2 bg-surface border-2 border-[var(--primary)] text-[var(--primary)] py-3 font-bold"
-                >
-                  <Star className="size-4 fill-current" aria-hidden="true" />
-                  Leave a Rating
-                </Button>
-                <Button
-                  onClick={() => {
-                    if (typeof onClose === 'function') onClose(effectiveTerminalStatus || undefined);
-                  }}
-                  className="w-full bg-[var(--primary)] hover:bg-[var(--primary)] text-white py-3 font-bold"
-                >
-                  Done
-                </Button>
+              <div className="mb-4 rounded-xl bg-[var(--muted)] p-3 text-left">
+                <div className="flex items-center gap-3">
+                  <span className="grid size-12 shrink-0 place-items-center overflow-hidden rounded-full border border-[var(--border)] bg-[var(--primary-soft)] text-sm font-bold text-[var(--primary)]">
+                    {driverProfileAvatar ? (
+                      <img
+                        src={driverProfileAvatar}
+                        alt={`${lobby.driver_name || 'Driver'}'s profile`}
+                        className="size-full object-cover"
+                        onError={() => setDriverProfileAvatar(null)}
+                      />
+                    ) : (
+                      getDriverInitials(lobby.driver_name)
+                    )}
+                  </span>
+                  <div className="min-w-0 flex-1">
+                    <p className="text-[10px] font-bold uppercase tracking-wide text-[var(--muted-foreground)]">Your driver</p>
+                    <p className="truncate text-sm font-bold text-[var(--ink)]">{lobby.driver_name || 'Your driver'}</p>
+                  </div>
+                </div>
+
+                {ratingSubmitted ? (
+                  <p role="status" className="mt-3 flex items-center gap-2 rounded-lg bg-[var(--success-soft)] p-2 text-sm font-semibold text-[var(--success)]">
+                    <Check className="size-4 shrink-0" aria-hidden="true" />
+                    Thank you! Your rating has been submitted.
+                  </p>
+                ) : (
+                  <>
+                    <p className="mt-3 text-center text-sm font-semibold text-[var(--ink)]">How was your ride?</p>
+                    <div role="radiogroup" aria-label="Rate your driver" className="mt-1 flex justify-center gap-1">
+                      {[1, 2, 3, 4, 5].map((star) => (
+                        <button
+                          key={star}
+                          type="button"
+                          role="radio"
+                          aria-label={`${star} out of 5 stars`}
+                          aria-checked={selectedRating === star}
+                          onClick={() => setSelectedRating(star)}
+                          className="grid size-10 place-items-center rounded-lg transition-transform hover:scale-110 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--primary)]"
+                        >
+                          <Star
+                            className={`size-7 ${
+                              star <= selectedRating
+                                ? 'fill-[var(--amber)] text-[var(--amber)]'
+                                : 'fill-[var(--border)] text-[var(--border)]'
+                            }`}
+                            aria-hidden="true"
+                          />
+                        </button>
+                      ))}
+                    </div>
+                    <div className="mt-2 grid grid-cols-2 gap-2">
+                      <Button
+                        type="button"
+                        onClick={handleSubmitRating}
+                        disabled={!selectedRating || ratingSubmitting}
+                        className="h-11 w-full bg-[var(--primary)] font-bold text-white hover:bg-[var(--primary)] disabled:opacity-50"
+                      >
+                        {ratingSubmitting ? 'Submitting...' : 'Submit Rating'}
+                      </Button>
+                      <Button
+                        type="button"
+                        onClick={() => {
+                          if (typeof onClose === 'function') onClose('completed');
+                        }}
+                        className="h-11 w-full border-2 border-[var(--border)] bg-surface font-bold text-[var(--ink)]"
+                      >
+                        Done
+                      </Button>
+                    </div>
+                  </>
+                )}
               </div>
             )}
-          </Card>
-        </div>
-      )}
-
-      {/* Leave a Rating Modal */}
-      {showRatingModal && (
-        <div className="fixed inset-0 bg-black/70 z-[2400] flex items-center justify-center p-4">
-          <Card className="bg-surface p-6 max-w-sm w-full text-center">
-            {ratingSubmitted ? (
-              <>
-                <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-[var(--success-soft)] flex items-center justify-center">
-                  <Check className="size-8 text-[var(--success)]" aria-hidden="true" />
-                </div>
-                <h3 className="text-xl font-bold text-[var(--ink)] mb-2">Thank you!</h3>
-                <p className="text-sm text-[var(--muted-foreground)] mb-6">Your rating has been submitted.</p>
-                <Button
-                  onClick={closeAfterRating}
-                  className="w-full bg-[var(--primary)] hover:bg-[var(--primary)] text-white py-3 font-bold"
-                >
-                  Done
-                </Button>
-              </>
-            ) : (
-              <>
-                <h3 className="text-xl font-bold text-[var(--ink)] mb-2">Rate Your Driver</h3>
-                <p className="text-sm text-[var(--muted-foreground)] mb-6">
-                  How was your ride with {lobby.driver_name || 'your driver'}?
-                </p>
-                <div className="flex justify-center gap-2 mb-6">
-                  {[1, 2, 3, 4, 5].map((star) => (
-                    <button
-                      key={star}
-                      onClick={() => setSelectedRating(star)}
-                      className="transition-transform hover:scale-110 focus:outline-none"
-                    >
-                      <Star
-                        className={`w-10 h-10 ${
-                          star <= selectedRating
-                            ? 'fill-[var(--amber)] text-[var(--amber)]'
-                            : 'fill-[var(--border)] text-[var(--border)]'
-                        }`}
-                      />
-                    </button>
-                  ))}
-                </div>
-                <Button
-                  onClick={handleSubmitRating}
-                  disabled={!selectedRating || ratingSubmitting}
-                  className="w-full bg-[var(--primary)] hover:bg-[var(--primary)] text-white py-3 font-bold disabled:opacity-50"
-                >
-                  {ratingSubmitting ? 'Submitting...' : 'Submit Rating'}
-                </Button>
-              </>
+            {effectiveTerminalStatus === 'completed' && (!lobby.driver_id || ratingSubmitted) && (
+              <Button
+                type="button"
+                onClick={() => {
+                  if (typeof onClose === 'function') onClose('completed');
+                }}
+                className="w-full bg-[var(--primary)] font-bold text-white hover:bg-[var(--primary)]"
+              >
+                Done
+              </Button>
             )}
           </Card>
         </div>

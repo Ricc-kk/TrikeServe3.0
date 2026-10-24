@@ -4078,7 +4078,9 @@ const getPrice = () => {
               />
               <CustomerCartPreview />
 
-              <RecommendedRestaurants />
+              <RecommendedRestaurants
+                fallbackOrigin={!isLoadingLocation && !locationProblem ? currentLocation : null}
+              />
             </main>
           </div>
         )}
@@ -5581,30 +5583,43 @@ const getPrice = () => {
             role="dialog"
             aria-modal="true"
             aria-labelledby="customer-payment-title"
-            className="w-full max-w-sm rounded-2xl bg-surface p-6 text-center shadow-2xl"
+            className="w-full max-w-sm gap-0 rounded-2xl bg-surface p-5 text-left shadow-2xl sm:p-6"
           >
-            <div className="mx-auto mb-4 flex size-16 items-center justify-center rounded-full bg-[var(--primary-soft)]">
-              <CreditCard className="size-8 text-[var(--primary)]" aria-hidden="true" />
+            <div className="mb-5 flex items-center gap-3">
+              <span className="grid size-12 shrink-0 place-items-center overflow-hidden rounded-full border border-[var(--border)] bg-[var(--primary-soft)] text-sm font-bold text-[var(--primary)]">
+                {rideDriverAvatar ? (
+                  <img
+                    src={rideDriverAvatar}
+                    alt={`${activeRide?.driver || 'Driver'}'s profile`}
+                    className="size-full object-cover"
+                    onError={() => setRideDriverAvatar(null)}
+                  />
+                ) : (
+                  getDriverInitials(activeRide?.driver)
+                )}
+              </span>
+              <div className="min-w-0 flex-1">
+                <h2 id="customer-payment-title" className="text-lg font-bold leading-6 text-[var(--ink)]">
+                  Payment to {activeRide?.driver || 'your driver'}
+                </h2>
+                <p className="mt-1 text-sm leading-5 text-[var(--muted-foreground)]">
+                  {paymentMethod === 'COD'
+                    ? 'Pay your fare at drop-off to complete the ride.'
+                    : 'This ride was prepaid. The driver will complete it shortly.'}
+                </p>
+              </div>
             </div>
-            <h2 id="customer-payment-title" className="mb-2 text-xl font-bold text-[var(--ink)]">
-              Payment at drop-off
-            </h2>
-            <p className="mb-5 text-sm text-[var(--muted-foreground)]">
-              {paymentMethod === 'COD'
-                ? 'Please pay your driver to complete the ride.'
-                : 'Your ride was prepaid. The driver will complete the ride shortly.'}
-            </p>
-            <div className="mb-5 rounded-xl bg-[var(--muted)] p-4 text-left">
+            <div className="mb-4 space-y-3 rounded-xl bg-[var(--muted)] p-4 text-left">
               <div className="flex items-center justify-between gap-3">
                 <span className="text-sm text-[var(--muted-foreground)]">Ride fare</span>
                 <strong className="text-lg text-[var(--primary)]">₱{Number(bookedFare ?? getPrice()).toFixed(2)}</strong>
               </div>
-              <div className="mt-2 flex items-center justify-between gap-3">
+              <div className="flex items-center justify-between gap-3 border-t border-[var(--border)] pt-3">
                 <span className="text-sm text-[var(--muted-foreground)]">Payment method</span>
                 <strong className="text-sm text-[var(--ink)]">{paymentMethod === 'COD' ? 'Cash to driver' : 'Prepaid'}</strong>
               </div>
             </div>
-            <Button onClick={dismissCustomerPaymentModal} className="w-full bg-[var(--primary)] text-white">
+            <Button onClick={dismissCustomerPaymentModal} className="h-12 w-full bg-[var(--primary)] text-white">
               Got it
             </Button>
           </Card>

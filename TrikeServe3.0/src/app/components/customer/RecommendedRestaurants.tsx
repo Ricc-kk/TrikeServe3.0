@@ -45,13 +45,17 @@ const FALLBACK_IMAGE =
  * themselves still appear, last, so a shop is never silently dropped for
  * missing a setting.
  */
-export default function RecommendedRestaurants({ query = "" }: { query?: string } = {}) {
+export default function RecommendedRestaurants({
+  query = "",
+  fallbackOrigin = null,
+}: { query?: string; fallbackOrigin?: LatLng | null } = {}) {
   const delivery = useDeliveryAddress();
   const [rows, setRows] = useState<Row[]>([]);
   const [loading, setLoading] = useState(true);
 
   /*
-   * Ranked from the same place the "Deliver to" line names.
+   * Prefer the pinned delivery address, with the home page's confirmed device
+   * position as a fallback when an older profile address has no coordinates.
    *
    * This used to ask the device for a position itself and ignore any chosen
    * delivery address, so a customer who set delivery to their sister's place was
@@ -59,10 +63,11 @@ export default function RecommendedRestaurants({ query = "" }: { query?: string 
    * header above it and checkout each asked the device separately, which is also
    * why opening search could raise two location prompts.
    *
-   * `delivery.origin` is the chosen address when there is one and the device
-   * position otherwise, so one fact now decides all three.
+   * A text-only profile address cannot produce a distance, so using the home
+   * page's live position keeps shop distances useful without changing checkout's
+   * delivery destination.
    */
-  const origin = delivery.origin;
+  const origin = delivery.origin ?? fallbackOrigin;
 
   useEffect(() => {
     let cancelled = false;
@@ -109,18 +114,19 @@ export default function RecommendedRestaurants({ query = "" }: { query?: string 
     };
   }, []);
 
+  const rankableRows = useMemo(
+    () => rows.map((r) => ({
+      ...r,
+      coords: hasCoords({ lat: r.latitude, lng: r.longitude })
+        ? { lat: Number(r.latitude), lng: Number(r.longitude) }
+        : null,
+    })),
+    [rows],
+  );
+
   const ranked = useMemo(
-    () =>
-      rankRestaurants(
-        rows.map((r) => ({
-          ...r,
-          coords: hasCoords({ lat: r.latitude, lng: r.longitude })
-            ? { lat: Number(r.latitude), lng: Number(r.longitude) }
-            : null,
-        })),
-        origin,
-      ).slice(0, 6),
-    [rows, origin],
+    () => rankRestaurants(rankableRows, origin).slice(0, 6),
+    [rankableRows, origin],
   );
 
   /**
@@ -143,7 +149,11 @@ export default function RecommendedRestaurants({ query = "" }: { query?: string 
     [ranked, term],
   );
 
-  const nothingNear = !loading && ranked.length > 0 && isEmptyRadius(rows, origin);
+  const nothingNear =
+    !loading &&
+    Boolean(origin) &&
+    rankableRows.length > 0 &&
+    isEmptyRadius(rankableRows, origin);
 
   if (loading) {
     return (
@@ -184,9 +194,11 @@ export default function RecommendedRestaurants({ query = "" }: { query?: string 
           {/* On its own line: sitting beside the title it wrapped to two lines
               the moment "See all" became a pill, and this is the one heading
               on the screen that should never reflow. */}
-          <span className="mt-0.5 block text-sm font-normal text-[var(--muted-foreground)]">
-            {nothingNear ? "Mga pinakabuti" : "Lapit sa iyo"}
-          </span>
+          {!nothingNear && (
+            <span className="mt-0.5 block text-sm font-normal text-[var(--muted-foreground)]">
+              Lapit sa iyo
+            </span>
+          )}
         </h2>
         {/* Filled rather than plain text: on a cream page a bare coral word
             disappears, and this is the one route off the home feed. The
@@ -202,7 +214,7 @@ export default function RecommendedRestaurants({ query = "" }: { query?: string 
 
       {nothingNear && (
         <p className="mb-4 rounded-xl border border-line bg-soft px-3 py-2 text-xs text-[var(--muted-foreground)]">
-          No shops have pinned a location yet, so these are the best rated.
+          No shops with a pinned location are nearby, so these are the best rated.
         </p>
       )}
 
@@ -250,7 +262,12 @@ export default function RecommendedRestaurants({ query = "" }: { query?: string 
                     <span className="font-bold text-[var(--ink)]">
                       {r.rating ? r.rating.toFixed(1) : "New"}
                     </span>
-                    <span className="ml-auto truncate text-[var(--muted-foreground)]" title={distance ? "Distance from your delivery location" : "Distance unavailable"}>
+                    <span
+                      className="ml-auto truncate text-[var(--muted-foreground)]"
+                      title={distance
+                        ? delivery.origin ? "Distance from your delivery location" : "Distance from your current location"
+                        : "Distance unavailable"}
+                    >
                       {distance ?? "—"}
                     </span>
                   </span>

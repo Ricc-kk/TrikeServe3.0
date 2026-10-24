@@ -2894,7 +2894,7 @@ export default function ActiveRide() {
               )}
           </div>
         )}
-        {/* Re-centre on the driver.
+        {/* Re-center on the driver.
             Appears only once following has stopped, i.e. only when the camera is
             somewhere the driver chose. Tapping it brings the tricycle back to the
             middle of the map, resumes following, and resumes facing the direction
@@ -2904,17 +2904,17 @@ export default function ActiveRide() {
             middle: the centre is where the driver is looking and where the tricycle
             marker is drawn, so a control there covered the very thing it acts on.
             At the bottom it is in thumb reach and clear of the marker. `bottom-4`
-            is measured against the map's own container, which ends above the detail
-            sheet, so the button never ends up underneath it. */}
+            is measured against the map's own container; when minimized, `bottom-28`
+            lifts it above the detail sheet's chevron and compact passenger bar. */}
         {!followDriver && driverLocation && (
           <button
             type="button"
             onClick={handleRecenter}
-            aria-label="Re-centre map on my location"
-            className="absolute left-1/2 bottom-4 -translate-x-1/2 z-[4003] inline-flex items-center gap-2 rounded-full border border-[var(--primary)] bg-[var(--primary)] pl-3 pr-5 py-3 text-[var(--primary-foreground)] shadow-xl active:scale-95 transition-transform"
+            aria-label="Re-center map on my location"
+            className={`absolute left-1/2 ${isMinimized ? 'bottom-28' : 'bottom-4'} -translate-x-1/2 z-[4003] inline-flex items-center gap-2 rounded-full border border-[var(--primary)] bg-[var(--primary)] pl-3 pr-5 py-3 text-[var(--primary-foreground)] shadow-xl active:scale-95 transition-transform`}
           >
             <Navigation className="w-5 h-5 text-[var(--primary-foreground)]" />
-            <span className="text-sm font-bold text-[var(--primary-foreground)]">Re-centre</span>
+            <span className="text-sm font-bold text-[var(--primary-foreground)]">Re-center</span>
           </button>
         )}
         {/* Route phase indicator banner */}
@@ -3109,7 +3109,7 @@ export default function ActiveRide() {
                 <div className="min-w-0 flex-1">
                   <h2 className="font-bold text-lg">{isSharedRide ? 'Passengers' : customerDisplayName}</h2>
                   {isSharedRide && rideData.passengerDetails && rideData.passengerDetails.length > 0 && (
-                    <div className="mt-3 space-y-2">
+                    <div className="mt-2 space-y-1.5">
                       {rideData.passengerDetails.map((p: any, index: number) => {
                         const passengerId = String(p.id ?? `passenger-${index}`);
                         const ownerId = passengerAccountId(passengerId);
@@ -3121,10 +3121,10 @@ export default function ActiveRide() {
                         const isPaymentSettled = ['received', 'prepaid'].includes(String(p.payment_status || p.paymentStatus || '').toLowerCase());
                         const isNextDropoff = !isDroppedOff && nextSharedDropoffPassengerId === passengerId;
                         return (
-                          <Card key={passengerId} className="border border-[var(--border)] bg-[var(--surface)] p-3 shadow-sm">
-                            <div className="flex items-center justify-between gap-3">
-                              <span className="flex min-w-0 items-center gap-2">
-                                <span className="grid size-10 shrink-0 place-items-center overflow-hidden rounded-full border border-[var(--border)] bg-[var(--primary-soft)] text-base">
+                          <Card key={passengerId} className="border border-[var(--border)] bg-[var(--surface)] p-2 shadow-sm">
+                            <div className="flex items-center justify-between gap-2">
+                              <span className="flex min-w-0 items-center gap-1.5">
+                                <span className="grid size-8 shrink-0 place-items-center overflow-hidden rounded-full border border-[var(--border)] bg-[var(--primary-soft)] text-sm">
                                   {profileUrl ? (
                                     <img src={profileUrl} alt={`${passengerName}'s profile`} className="size-full object-cover" />
                                   ) : (
@@ -3134,7 +3134,7 @@ export default function ActiveRide() {
                                 {stop && <span className="size-2 shrink-0 rounded-full" style={{ background: stop.color }} aria-hidden="true" />}
                                 <span className="min-w-0 flex-1">
                                   <span className="block truncate text-sm font-semibold text-[var(--ink)]">{passengerName}</span>
-                                  <span className="mt-0.5 block truncate text-xs text-[var(--muted-foreground)]">
+                                  <span className="block truncate text-xs text-[var(--muted-foreground)]">
                                     Drop-off: {getSharedPassengerDropoff(p, index, rideData)}
                                   </span>
                                 </span>
@@ -3146,8 +3146,8 @@ export default function ActiveRide() {
                                 </span>
                               )}
                             </div>
-                            <div className="mt-2 flex items-center justify-between gap-2 border-t border-[var(--border)] pt-2">
-                              <span className={`rounded-full px-2.5 py-1 text-[10px] font-bold ${isPaymentSettled ? 'bg-[var(--success-soft)] text-[var(--success)]' : isDroppedOff ? 'bg-[var(--amber-soft)] text-[var(--amber-ink)]' : isNextDropoff ? 'bg-[var(--primary-soft)] text-[var(--primary)]' : 'bg-[var(--muted)] text-[var(--muted-foreground)]'}`}>
+                            <div className="mt-1.5 flex items-center justify-between gap-2 border-t border-[var(--border)] pt-1.5">
+                              <span className={`rounded-full px-2 py-0.5 text-[10px] font-bold ${isPaymentSettled ? 'bg-[var(--success-soft)] text-[var(--success)]' : isDroppedOff ? 'bg-[var(--amber-soft)] text-[var(--amber-ink)]' : isNextDropoff ? 'bg-[var(--primary-soft)] text-[var(--primary)]' : 'bg-[var(--muted)] text-[var(--muted-foreground)]'}`}>
                                 {isPaymentSettled ? 'Completed' : isDroppedOff ? 'Payment due' : isNextDropoff ? (rideData.status === 'drop-off' ? 'At drop-off' : 'Next drop-off') : 'Upcoming'}
                               </span>
                               <Button
@@ -3167,7 +3167,7 @@ export default function ActiveRide() {
                               variant="outline"
                               onClick={() => void openPassengerChat({ id: passengerId, name: passengerName })}
                               aria-label={`Message ${passengerName}`}
-                              className="mt-2 w-full justify-start border-[var(--border)] py-2 text-sm font-semibold text-[var(--muted-foreground)]"
+                              className="mt-1.5 w-full justify-start border-[var(--border)] py-1.5 text-sm font-semibold text-[var(--muted-foreground)]"
                             >
                               <MessageSquare className="mr-1.5 size-4" aria-hidden="true" />
                               Message
