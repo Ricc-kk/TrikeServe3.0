@@ -331,6 +331,58 @@ function reconnectRealtimeIfClosed(attempt = 0): void {
   }
 }
 
+type AccountSessionPresenceStatusListener = (status: string, error?: Error) => void;
+
+interface AccountSessionPresenceChannel {
+  accountId: string;
+  sessionKey: string;
+  channel: ReturnType<typeof supabase.channel>;
+  started: boolean;
+  status: string | null;
+  syncListeners: Set<() => void>;
+  statusListeners: Set<AccountSessionPresenceStatusListener>;
+}
+
+// Supabase returns the existing channel for a topic instead of creating a
+// second one. Login's presence check and the long-lived session tracker must
+// therefore share one channel and its listeners, then let the tracker own its
+// cleanup after login completes.
+const accountSessionPresenceChannels = new Map<string, AccountSessionPresenceChannel>();
+
+function getAccountSessionPresenceChannel(
+  accountId: string,
+  sessionKey: string,
+): AccountSessionPresenceChannel {
+  const existing = accountSessionPresenceChannels.get(accountId);
+  if (existing) return existing;
+
+  const handle: AccountSessionPresenceChannel = {
+    accountId,
+    sessionKey,
+    channel: supabase.channel(`account-session-limit:${accountId}`, {
+      config: { presence: { key: sessionKey } },
+    }),
+    started: false,
+    status: null,
+    syncListeners: new Set(),
+    statusListeners: new Set(),
+  };
+  accountSessionPresenceChannels.set(accountId, handle);
+  handle.channel.on('presence', { event: 'sync' }, () => {
+    handle.syncListeners.forEach((listener) => listener());
+  });
+  return handle;
+}
+
+function startAccountSessionPresenceChannel(handle: AccountSessionPresenceChannel): void {
+  if (handle.started) return;
+  handle.started = true;
+  handle.channel.subscribe((status, error) => {
+    handle.status = status;
+    handle.statusListeners.forEach((listener) => listener(status, error));
+  });
+}
+
 async function checkOtherAccountSessions(
   accountId: string,
   ownSessionKey: string,
@@ -340,22 +392,25 @@ async function checkOtherAccountSessions(
     return await new Promise((resolve) => {
       let finished = false;
       let timeout: ReturnType<typeof setTimeout> | null = null;
-      const channel = supabase.channel(`account-session-limit:${accountId}`, {
-        config: { presence: { key: `login-check-${Date.now()}-${Math.random().toString(36).slice(2)}` } },
-      });
+      const presenceChannel = getAccountSessionPresenceChannel(accountId, ownSessionKey);
+      const channel = presenceChannel.channel;
+      const removeListeners = () => {
+        presenceChannel.syncListeners.delete(checkPresence);
+        presenceChannel.statusListeners.delete(handleStatus);
+      };
       const finish = (result: Pick<LoginResult, 'otherSessionActive' | 'otherSessionWillBeSignedOut'>) => {
         if (finished) return;
         finished = true;
         if (timeout) clearTimeout(timeout);
-        // Keep the socket alive while login() sets the new user and the
-        // authenticated session-presence channel joins. Removing the last
-        // temporary channel immediately can close the shared socket in between.
-        setTimeout(() => void supabase.removeChannel(channel), 1000);
+        // The AuthProvider adopts this channel after setUser(). Removing it
+        // here would also remove the new session's live presence.
+        removeListeners();
         resolve(result);
       };
       timeout = setTimeout(() => finish({ otherSessionActive: false, otherSessionWillBeSignedOut: false }), 7000);
 
-      channel.on('presence', { event: 'sync' }, () => {
+      const checkPresence = () => {
+        if (finished) return;
         const presence = channel.presenceState<Record<string, unknown>>();
         const otherSessions = Object.entries(presence)
           .filter(([presenceKey, metas]) => presenceKey !== ownSessionKey && metas.length > 0);
@@ -367,13 +422,17 @@ async function checkOtherAccountSessions(
           otherSessionActive: otherSessions.length > 0,
           otherSessionWillBeSignedOut: otherSessions.length >= sessionLimit,
         });
-      });
-      channel.subscribe((status) => {
+      };
+      const handleStatus: AccountSessionPresenceStatusListener = (status, error) => {
         if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT' || status === 'CLOSED') {
-          console.warn('[AuthContext] Account-session check is reconnecting after a Realtime error:', status);
+          console.warn('[AuthContext] Account-session check is reconnecting after a Realtime error:', status, error?.message);
           reconnectRealtimeIfClosed();
         }
-      });
+      };
+      presenceChannel.syncListeners.add(checkPresence);
+      presenceChannel.statusListeners.add(handleStatus);
+      startAccountSessionPresenceChannel(presenceChannel);
+      if (presenceChannel.status === 'SUBSCRIBED') checkPresence();
     });
   } catch (error) {
     console.warn('[AuthContext] Could not check existing account sessions after sign-in:', error);
@@ -466,6 +525,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     let disposed = false;
     let sessionChannel: ReturnType<typeof supabase.channel> | null = null;
+    let sessionPresenceHandle: AccountSessionPresenceChannel | null = null;
     let sessionKey: string | null = null;
     let sessionGeneration = 0;
     let hasSupabaseAuthSession = false;
@@ -560,13 +620,30 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         .catch((error) => console.warn('[AuthContext] Could not update account session presence:', error));
     };
 
+    const handleSessionPresenceStatus: AccountSessionPresenceStatusListener = (status, error) => {
+      if (status === 'SUBSCRIBED') refreshPresenceSettings();
+      if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
+        console.warn('[AuthContext] Account session presence is reconnecting after a Realtime error:', status, error?.message);
+        reconnectRealtimeIfClosed();
+      }
+    };
+
     const disconnectSessionPresence = () => {
       clearEvictionWarning();
       sessionKey = null;
       hasSupabaseAuthSession = false;
       if (sessionChannel) {
         const channel = sessionChannel;
+        const presenceHandle = sessionPresenceHandle;
         sessionChannel = null;
+        sessionPresenceHandle = null;
+        if (presenceHandle) {
+          presenceHandle.syncListeners.delete(evaluateActiveSessions);
+          presenceHandle.statusListeners.delete(handleSessionPresenceStatus);
+          if (accountSessionPresenceChannels.get(user.id) === presenceHandle) {
+            accountSessionPresenceChannels.delete(user.id);
+          }
+        }
         void supabase.removeChannel(channel);
       }
     };
@@ -587,17 +664,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       sessionKey = nextSessionKey;
       hasSupabaseAuthSession = isSupabaseSession;
       firstSeenAt = getSessionFirstSeenAt(user.id, nextSessionKey);
-      sessionChannel = supabase.channel(`account-session-limit:${user.id}`, {
-        config: { presence: { key: nextSessionKey } },
-      });
-      sessionChannel.on('presence', { event: 'sync' }, evaluateActiveSessions);
-      sessionChannel.subscribe((status) => {
-        if (status === 'SUBSCRIBED') refreshPresenceSettings();
-        if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
-          console.warn('[AuthContext] Account session presence is reconnecting after a Realtime error:', status);
-          reconnectRealtimeIfClosed();
-        }
-      });
+      sessionPresenceHandle = getAccountSessionPresenceChannel(user.id, nextSessionKey);
+      sessionChannel = sessionPresenceHandle.channel;
+      sessionPresenceHandle.syncListeners.add(evaluateActiveSessions);
+      sessionPresenceHandle.statusListeners.add(handleSessionPresenceStatus);
+      startAccountSessionPresenceChannel(sessionPresenceHandle);
+      if (sessionPresenceHandle.status === 'SUBSCRIBED') refreshPresenceSettings();
     };
 
     const connectSupabaseSession = async (
