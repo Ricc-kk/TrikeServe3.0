@@ -4,7 +4,7 @@ import { Button } from "../ui/button";
 import { Card } from "../ui/card";
 import { Badge } from "../ui/badge";
 import { useAuth } from "../../contexts/AuthContext";
-import { supabase, supabaseHelpers, isSimilarRoute, isPointWithinAnyTerminalBorder, isPointWithinAnyTerminalRoute, haversineDistanceMeters, normalizeBoundaryRoad } from "@/lib/supabase";
+import { supabase, supabaseHelpers, isSimilarRoute, isPointWithinAnyTerminalBorder, isPointOnRoadCorridor, haversineDistanceMeters, normalizeBoundaryRoad, normalizeRoadWidth } from "@/lib/supabase";
 import { GoogleMap, MarkerF, Polyline } from "@react-google-maps/api";
 import MapTypeToggle from "../ui/MapTypeToggle";
 import useMapLoader from "@/lib/mapLoader";
@@ -1106,14 +1106,20 @@ export default function ShareRideLobby({
           return null;
         }
 
-        const route = await isPointWithinAnyTerminalRoute(dropoffCoords.lat, dropoffCoords.lng);
-        if (route.lookupFailed) {
-          setGateFailure('lookup');
-          setShowOutOfBoundaryPopup(true);
-          return null;
-        }
-        if (!route.allowed) {
-          console.log('🚫 Share ride drop-off outside every terminal route:', dropoffCoords);
+        // Validate against the exact selected route geometry used by the
+        // customer picker. The legacy terminal-wide lookup can disagree with
+        // mapped routes and reject a drop-off accepted by the highlighted route.
+        const routeAllowed = Boolean(
+          routePoints?.length &&
+          isPointOnRoadCorridor(
+            dropoffCoords.lat,
+            dropoffCoords.lng,
+            routePoints,
+            normalizeRoadWidth(routeWidthM),
+          )
+        );
+        if (!routeAllowed) {
+          console.log('🚫 Share ride drop-off outside the selected terminal route:', dropoffCoords);
           setGateFailure('route');
           setShowOutOfBoundaryPopup(true);
           return null;

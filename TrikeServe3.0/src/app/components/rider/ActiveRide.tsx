@@ -2653,13 +2653,13 @@ export default function ActiveRide() {
                               <Button
                                 type="button"
                                 variant="outline"
-                                size="sm"
-                                onClick={() => void openPassengerChat({ id: passengerId, name: passengerName })}
-                                aria-label={`Message ${passengerName}`}
-                                className="min-h-9 border-[var(--border)] px-3 text-xs font-semibold"
+                                size="icon"
+                                onClick={() => openRideReport({ id: passengerId, name: passengerName })}
+                                aria-label={`Report an issue with ${passengerName}`}
+                                title={`Report an issue with ${passengerName}`}
+                                className="shrink-0 border-[var(--border)]"
                               >
-                                <MessageSquare className="mr-1.5 size-4" aria-hidden="true" />
-                                Message
+                                <Flag className="size-4" aria-hidden="true" />
                               </Button>
                             </div>
                             {isNextDropoff && rideData.status === 'drop-off' && (
@@ -2675,12 +2675,12 @@ export default function ActiveRide() {
                             <Button
                               type="button"
                               variant="outline"
-                              onClick={() => openRideReport({ id: passengerId, name: passengerName })}
-                              aria-label={`Report an issue with ${passengerName}`}
+                              onClick={() => void openPassengerChat({ id: passengerId, name: passengerName })}
+                              aria-label={`Message ${passengerName}`}
                               className="mt-3 w-full justify-start border-[var(--border)] py-2 text-sm font-semibold text-[var(--muted-foreground)]"
                             >
-                              <Flag className="size-4" aria-hidden="true" />
-                              Report an issue
+                              <MessageSquare className="mr-1.5 size-4" aria-hidden="true" />
+                              Message
                             </Button>
                           </Card>
                         );
