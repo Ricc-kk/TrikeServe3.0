@@ -8,6 +8,7 @@ import {
   Settings, Eye, EyeOff, Car, Truck
 } from "lucide-react";
 import { GoogleMap, Marker, InfoWindow, Polygon, Polyline } from "@react-google-maps/api";
+import MapTypeToggle from "../ui/MapTypeToggle";
 import useMapLoader from "@/lib/mapLoader";
 import { autocompletePlacesNew, createPlacesSessionToken, fetchPlaceDetailsNew } from "@/lib/placesApi";
 
@@ -3724,6 +3725,7 @@ async function applyAssignDriver(rider: StoredRider, terminal: Terminal) {
                 clickableIcons: false,
               }}
             >
+              <MapTypeToggle />
               {/* The pin changes with the tab, so what is under the finger is
                   never ambiguous: the terminal's own icon on Terminal, and the
                   shape's colour on the two plotting tabs.

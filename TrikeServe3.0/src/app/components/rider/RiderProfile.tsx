@@ -19,6 +19,7 @@ import {
   Shield
 } from "lucide-react";
 import { GoogleMap, MarkerF, Polygon, Polyline } from "@react-google-maps/api";
+import MapTypeToggle from "../ui/MapTypeToggle";
 import useMapLoader from "@/lib/mapLoader";
 import { supabase } from "../../../utils/supabase";
 import { supabaseHelpers, getDriverTerminalAdmin, normalizeBoundaryRoad, normalizeBoundaryArea, type LatLngPoint } from "@/lib/supabase";
@@ -504,6 +505,7 @@ export default function RiderProfile() {
                     draggable: false,
                   }}
                 >
+                  <MapTypeToggle />
                   {/* Enclosing border area first, under the road it contains, so
                       the corridor reads on top of its coverage area. */}
                   {terminalData.area && (

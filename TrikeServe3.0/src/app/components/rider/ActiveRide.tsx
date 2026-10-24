@@ -2,6 +2,7 @@ import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { useNavigate, useLocation } from "react-router";
 import { Navigation, MapPin, CheckCircle, Users, User, X, MessageSquare, Flag } from "lucide-react";
 import { GoogleMap, Marker, InfoWindow, DirectionsRenderer, Polyline } from "@react-google-maps/api";
+import MapTypeToggle from "../ui/MapTypeToggle";
 import { Button } from "../ui/button";
 import { Card } from "../ui/card";
 import FloatingChatHead from "../ui/FloatingChatHead";
@@ -2238,6 +2239,7 @@ export default function ActiveRide() {
               disableDoubleClickZoom: true,
             }}
           >
+            <MapTypeToggle />
             {driverLocation && (
               <Marker position={driverLocation} icon={{ url: tricycleIcon, scaledSize: new (window as any).google.maps.Size(44, 44), anchor: new (window as any).google.maps.Point(22, 22) }} zIndex={100} />
             )}

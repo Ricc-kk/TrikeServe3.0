@@ -22,6 +22,7 @@ import LocationBanner, { type LocationProblem } from "../ui/LocationBanner";
 import FloatingChatHead from "../ui/FloatingChatHead";
 import RideChatOverlay from "../rider/RideChatOverlay";
 import { GoogleMap, MarkerF, InfoWindow, Polygon, Polyline } from "@react-google-maps/api";
+import MapTypeToggle from "../ui/MapTypeToggle";
 import useMapLoader from "@/lib/mapLoader";
 import { GOOGLE_MAPS_LIBRARIES } from "@/lib/googleMaps";
 import { createCustomerMarkerIcon as createDeliveryCustomerMarkerIcon, createRestaurantMarkerIcon } from "@/lib/mapIcons";
@@ -3509,9 +3510,10 @@ const getPrice = () => {
                zoomControl: false,
                fullscreenControl: true,
                streetViewControl: false,
-               mapTypeControl: true,
+               mapTypeControl: false,
              }}
            >
+             <MapTypeToggle />
              {/* Current location marker (always visible, reference point) */}
              <MarkerF
                position={currentLocation}
@@ -4574,6 +4576,7 @@ const getPrice = () => {
                 onUnmount={() => { routePreviewMapRef.current = null; }}
                 options={{ gestureHandling: 'greedy', zoomControl: true, fullscreenControl: false, streetViewControl: false, mapTypeControl: false }}
               >
+                <MapTypeToggle />
                 <MarkerF
                   position={{ lat: routePreviewTerminal.center_lat, lng: routePreviewTerminal.center_lng }}
                   title={routePreviewTerminal.name}
@@ -4790,6 +4793,7 @@ const getPrice = () => {
                   mapTypeControl: false,
                 }}
               >
+                <MapTypeToggle />
                 <MarkerF position={currentLocation} title="Current location" icon={createCurrentLocationIcon()} />
 
                 {/* The terminal this pickup/drop-off belongs to. Without it the

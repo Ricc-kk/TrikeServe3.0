@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { GoogleMap, MarkerF, InfoWindow } from "@react-google-maps/api";
 import { ArrowLeft, MapPin, Navigation, Search, X, Loader2 } from "lucide-react";
+import MapTypeToggle from "../ui/MapTypeToggle";
 import useMapLoader from "@/lib/mapLoader";
 import {
   autocompletePlacesNew,
@@ -350,6 +351,7 @@ export default function MapSelector({ onClose, onSelectLocation, currentLocation
           mapRef.current = map;
         }}
       >
+        <MapTypeToggle />
         {/* Pin the customer placed (click or search) */}
         {pickedPin && (
           <MarkerF

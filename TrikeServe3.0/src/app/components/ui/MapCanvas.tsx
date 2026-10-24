@@ -3,6 +3,7 @@ import { GoogleMap } from "@react-google-maps/api";
 import { Loader2, MapPinOff, RefreshCw } from "lucide-react";
 
 import useMapLoader from "@/lib/mapLoader";
+import MapTypeToggle from "./MapTypeToggle";
 import { cn } from "./utils";
 
 export type MapPoint = { lat: number; lng: number };
@@ -113,6 +114,7 @@ export default function MapCanvas({
           gestureHandling: "greedy",
         }}
       >
+        <MapTypeToggle />
         {children}
       </GoogleMap>
 

@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from "react";
 import { useNavigate } from "react-router";
 import { ArrowLeft, Navigation, Store, Users, Car, Clock, Check, X, CheckCircle, MapPin, ChevronDown, Maximize2, Minimize2, Route as RouteIcon, Eye, EyeOff } from "lucide-react";
 import { GoogleMap, Marker, InfoWindow, Polyline, Polygon } from "@react-google-maps/api";
+import MapTypeToggle from "../ui/MapTypeToggle";
 import { Button } from "../ui/button";
 import { Card } from "../ui/card";
 import FullSizeImagePreview from "../ui/FullSizeImagePreview";
@@ -1244,6 +1245,7 @@ export default function PassengerRequests() {
                         }}
                         onUnmount={() => { todaMapRef.current = null; }}
                       >
+                        <MapTypeToggle />
                         {todaArea && (
                           <Polygon
                             path={todaArea}
@@ -1621,6 +1623,7 @@ export default function PassengerRequests() {
                   }}
                   onUnmount={() => { previewMapRef.current = null; }}
                 >
+                  <MapTypeToggle />
                   <Marker position={currentLocation} icon={createDriverMarkerIcon()} title="Your Location" />
                   {resolvedPickupCoords && <Marker position={resolvedPickupCoords} icon={previewRequest.type === 'delivery' ? createRestaurantMarkerIcon() : createCustomerMarkerIcon()} title={previewRequest.type === 'delivery' ? 'Restaurant pickup' : 'Pickup'} />}
                   {previewRequest.type === 'shared' && resolvedPassengerDropoffs.map((stop, index) => stop.coords && (

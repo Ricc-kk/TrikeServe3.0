@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { GoogleMap, MarkerF } from "@react-google-maps/api";
 import { ChevronLeft, Loader2, MapPin, Search } from "lucide-react";
+import MapTypeToggle from "../ui/MapTypeToggle";
 import { useLocation, useNavigate } from "react-router";
 
 import useMapLoader from "@/lib/mapLoader";
@@ -344,6 +345,7 @@ export default function PinOnMapPage() {
             }}
             options={{ disableDefaultUI: true, zoomControl: true, gestureHandling: 'greedy' }}
           >
+            <MapTypeToggle />
             {pin && <MarkerF position={{ lat: draft.latitude!, lng: draft.longitude! }} />}
           </GoogleMap>
         ) : (

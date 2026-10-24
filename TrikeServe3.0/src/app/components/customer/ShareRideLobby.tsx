@@ -6,6 +6,7 @@ import { Badge } from "../ui/badge";
 import { useAuth } from "../../contexts/AuthContext";
 import { supabase, supabaseHelpers, isSimilarRoute, isPointWithinAnyTerminalBorder, isPointWithinAnyTerminalRoute, haversineDistanceMeters, normalizeBoundaryRoad } from "@/lib/supabase";
 import { GoogleMap, MarkerF, Polyline } from "@react-google-maps/api";
+import MapTypeToggle from "../ui/MapTypeToggle";
 import useMapLoader from "@/lib/mapLoader";
 import { useElapsedTime } from "@/app/hooks/useElapsedTime";
 import tricycleIcon from '../../../assets/0b76d1aa56b8ad6e15dd4efc8a0100b0ca5762a1.png'
@@ -1894,6 +1895,7 @@ if (loading) {
                     gestureHandling: 'none',
                   }}
                 >
+                  <MapTypeToggle />
                   {/* Driver marker (tricycle icon) */}
                   {driverLocation && (
                     <MarkerF

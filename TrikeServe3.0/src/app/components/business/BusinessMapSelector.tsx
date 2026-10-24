@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { GoogleMap, MarkerF, InfoWindow } from "@react-google-maps/api";
 import { ArrowLeft, MapPin, Navigation, Search, X, Loader2 } from "lucide-react";
+import MapTypeToggle from "../ui/MapTypeToggle";
 import useMapLoader from "@/lib/mapLoader";
 import { createRestaurantMarkerIcon } from "@/lib/mapIcons";
 import {
@@ -375,6 +376,7 @@ export default function BusinessMapSelector({ onClose, onSelectLocation, current
           mapRef.current = map;
         }}
       >
+        <MapTypeToggle />
         {/* Pin the business placed (click or search) */}
         {pickedPin && (
           <MarkerF

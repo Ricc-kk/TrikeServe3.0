@@ -2,6 +2,7 @@ import { useState } from "react";
 import { GoogleMap, MarkerF } from "@react-google-maps/api";
 import { ChevronLeft, Loader2, Pencil } from "lucide-react";
 import { useLocation, useNavigate } from "react-router";
+import MapTypeToggle from "../ui/MapTypeToggle";
 
 import { usePreviousPage } from "../../hooks/usePreviousPage";
 
@@ -139,6 +140,7 @@ export default function SaveAddressPage() {
                 keyboardShortcuts: false,
               }}
             >
+              <MapTypeToggle />
               {pin && <MarkerF position={center} />}
             </GoogleMap>
           ) : (

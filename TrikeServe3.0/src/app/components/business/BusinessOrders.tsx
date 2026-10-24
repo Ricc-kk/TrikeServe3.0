@@ -19,6 +19,7 @@ import ReasonPromptModal from "../ui/reason-prompt-modal";
 import { getOrderProgress, isRiderHeadingToRestaurant } from "@/lib/orderProgress";
 import { OrderStatusUpdates } from "../ui/OrderStatusUpdates";
 import { GoogleMap, MarkerF, Polyline } from "@react-google-maps/api";
+import MapTypeToggle from "../ui/MapTypeToggle";
 import useMapLoader from "@/lib/mapLoader";
 import { createCustomerMarkerIcon, createRestaurantMarkerIcon } from "@/lib/mapIcons";
 import tricycleIcon from '../../../assets/0b76d1aa56b8ad6e15dd4efc8a0100b0ca5762a1.png'
@@ -2212,6 +2213,7 @@ export default function BusinessOrders() {
                           zoom={15}
                           options={{ zoomControl: false, fullscreenControl: false, streetViewControl: false, mapTypeControl: false, gestureHandling: 'none' }}
                         >
+                          <MapTypeToggle />
                           {restaurantLocation && (
                             <MarkerF position={restaurantLocation} title="Restaurant" icon={createRestaurantMarkerIcon()} />
                           )}

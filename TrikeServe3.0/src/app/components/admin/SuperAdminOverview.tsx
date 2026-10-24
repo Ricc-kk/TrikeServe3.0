@@ -4,6 +4,7 @@ import { Link } from "react-router";
 
 import { Card } from "../ui/card";
 import ConfirmationModal from "../ui/confirmation-modal";
+import ListPagination from "../ui/ListPagination";
 import { TerminalIconGlyph } from "../ui/TerminalIcon";
 import AdminAnalytics from "./AdminAnalytics";
 import { useDevModeFeature, useDevModeStatus } from "../../hooks/useDevModeSettings";
@@ -66,6 +67,8 @@ const SHORTCUTS = [
   { to: "/admin/approvals", label: "Change requests", detail: "Review terminal updates", Icon: ClipboardCheck },
 ];
 
+const ONLINE_USERS_PAGE_SIZE = 10;
+
 /** Account actions retain the page's existing confirmation flow. */
 export default function SuperAdminOverview({
   stats, pending, loading, error, lastUpdated, refreshToken, onApprove, onReject,
@@ -74,12 +77,23 @@ export default function SuperAdminOverview({
   const [showAllPending, setShowAllPending] = useState(false);
   const [showClearTestDataConfirmation, setShowClearTestDataConfirmation] = useState(false);
   const [onlineAccounts, setOnlineAccounts] = useState<OnlineAccount[]>([]);
+  const [onlinePage, setOnlinePage] = useState(1);
   const [presenceStatus, setPresenceStatus] = useState<"connecting" | "live" | "error">("connecting");
   const [isDevMode, setIsDevMode] = useDevModeStatus();
   const [testDataToolsEnabled] = useDevModeFeature("testDataTools");
   const hasData = lastUpdated !== null;
   const firstLoad = loading && !hasData;
   const shown = showAllPending ? pending : pending.slice(0, 3);
+  const onlinePageCount = Math.max(1, Math.ceil(onlineAccounts.length / ONLINE_USERS_PAGE_SIZE));
+  const safeOnlinePage = Math.min(Math.max(onlinePage, 1), onlinePageCount);
+  const shownOnlineAccounts = onlineAccounts.slice(
+    (safeOnlinePage - 1) * ONLINE_USERS_PAGE_SIZE,
+    safeOnlinePage * ONLINE_USERS_PAGE_SIZE,
+  );
+  const firstOnlineAccount = onlineAccounts.length === 0
+    ? 0
+    : (safeOnlinePage - 1) * ONLINE_USERS_PAGE_SIZE + 1;
+  const lastOnlineAccount = Math.min(safeOnlinePage * ONLINE_USERS_PAGE_SIZE, onlineAccounts.length);
 
   useEffect(() => {
     let active = true;
@@ -229,22 +243,40 @@ export default function SuperAdminOverview({
           ) : onlineAccounts.length === 0 ? (
             <p className="px-5 py-8 text-center text-sm text-[var(--muted-foreground)]">No customers, drivers, or businesses are online right now.</p>
           ) : (
-            <ul aria-label="Users currently online" className="grid max-h-96 gap-2 overflow-y-auto p-4 sm:grid-cols-2 sm:p-5">
-              {onlineAccounts.map(account => (
-                <li key={account.id} className="flex min-w-0 items-center gap-3 rounded-2xl border border-line bg-card px-3 py-3">
-                  <span className="grid size-10 shrink-0 place-items-center rounded-full bg-soft text-sm font-bold uppercase text-[var(--ink)]" aria-hidden="true">
-                    {account.name.trim().charAt(0) || "U"}
-                  </span>
-                  <span className="min-w-0 flex-1">
-                    <span className="block truncate text-sm font-bold text-[var(--ink)]">{account.name}</span>
-                    {account.email && <span className="block truncate text-xs text-[var(--muted-foreground)]">{account.email}</span>}
-                  </span>
-                  <span className="shrink-0 rounded-md bg-[var(--success-soft)] px-2 py-1 text-[10px] font-bold text-[var(--success-ink)]">
-                    {account.role === "rider" ? "Driver" : account.role === "business" ? "Business" : "Customer"}
-                  </span>
-                </li>
-              ))}
-            </ul>
+            <>
+              <ul aria-label="Users currently online" className="grid gap-2 p-4 sm:grid-cols-2 sm:p-5">
+                {shownOnlineAccounts.map(account => (
+                  <li key={account.id} className="flex min-w-0 items-center gap-3 rounded-2xl border border-line bg-card px-3 py-3">
+                    <span className="grid size-10 shrink-0 place-items-center rounded-full bg-soft text-sm font-bold uppercase text-[var(--ink)]" aria-hidden="true">
+                      {account.name.trim().charAt(0) || "U"}
+                    </span>
+                    <span className="min-w-0 flex-1">
+                      <span className="block truncate text-sm font-bold text-[var(--ink)]">{account.name}</span>
+                      {account.email && <span className="block truncate text-xs text-[var(--muted-foreground)]">{account.email}</span>}
+                    </span>
+                    <span className="shrink-0 rounded-md bg-[var(--success-soft)] px-2 py-1 text-[10px] font-bold text-[var(--success-ink)]">
+                      {account.role === "rider" ? "Driver" : account.role === "business" ? "Business" : "Customer"}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+              <div className="border-t border-line px-4 py-3 sm:px-5">
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <p className="text-xs text-[var(--muted-foreground)]">
+                    Showing <span className="font-bold text-[var(--ink)] tabular-nums">{firstOnlineAccount}</span>
+                    –<span className="font-bold text-[var(--ink)] tabular-nums">{lastOnlineAccount}</span> of{" "}
+                    <span className="font-bold text-[var(--ink)] tabular-nums">{onlineAccounts.length.toLocaleString()}</span>{" "}
+                    {onlineAccounts.length === 1 ? "user" : "users"}
+                  </p>
+                  <ListPagination
+                    page={safeOnlinePage}
+                    pageCount={onlinePageCount}
+                    onChange={setOnlinePage}
+                    label="Online users"
+                  />
+                </div>
+              </div>
+            </>
           )}
           <p className="border-t border-line px-4 py-3 text-xs text-[var(--muted-foreground)] sm:px-5">Updates live while users have TrikeServe open.</p>
         </Card>
