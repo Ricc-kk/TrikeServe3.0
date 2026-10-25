@@ -3,6 +3,7 @@ import { Search, MapPin, Users, UsersRound, ChevronDown, X, Clock, Utensils, Use
 import { Link, useLocation, useNavigate } from "react-router";
 import { Button } from "../ui/button";
 import { Card } from "../ui/card";
+import { RideModal, RideSurfaceCard } from "../ui/RideUI";
 import { Badge } from "../ui/badge";
 import { Input } from "../ui/input";
 import BottomNav from "../ui/BottomNav";
@@ -26,6 +27,7 @@ import MapTypeToggle from "../ui/MapTypeToggle";
 import useMapLoader from "@/lib/mapLoader";
 import { GOOGLE_MAPS_LIBRARIES } from "@/lib/googleMaps";
 import { createCustomerMarkerIcon as createDeliveryCustomerMarkerIcon, createRestaurantMarkerIcon } from "@/lib/mapIcons";
+import { RIDE_MAP_DROPOFF_COLOR, RIDE_MAP_DRIVER_COLOR, RIDE_MAP_PICKUP_COLOR } from "@/lib/rideMapColors";
 import { autocompletePlacesNew, createPlacesSessionToken, fetchPlaceDetailsNew, searchPlacesText, type PlaceResult, type PlacesAutocompleteSuggestion } from "@/lib/placesApi";
 import tricycleIcon from '../../../assets/0b76d1aa56b8ad6e15dd4efc8a0100b0ca5762a1.png';
 import { useAuth } from "../../contexts/AuthContext";
@@ -266,10 +268,10 @@ const createCurrentLocationIcon = () => {
 const createDropoffMarkerIcon = () => {
   const google = (window as any)?.google;
   if (!google?.maps?.Size || !google?.maps?.Point) {
-    return buildNavigationMarkerIcon('#BC4B1F');
+    return buildNavigationMarkerIcon(RIDE_MAP_DROPOFF_COLOR);
   }
 
-  const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="#BC4B1F" stroke="white" stroke-width="1">
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="${RIDE_MAP_DROPOFF_COLOR}" stroke="white" stroke-width="1">
     <path d="M12 2C8.13 2 5 5.13 5 9c0 4.95 6.1 11.53 6.36 11.81.36.39.92.39 1.28 0C13.9 20.53 20 13.95 20 9c0-3.87-3.13-7-8-7z"/>
     <path d="M7.8 9.6l2.1 2.1 4.3-4.3" fill="none" stroke="#FFFFFF" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>
   </svg>`;
@@ -3844,7 +3846,7 @@ const getPrice = () => {
                 <MarkerF
                   position={activeShareRideMapPickup}
                   title={isDeliveryRide ? 'Restaurant pickup' : 'Pickup location'}
-                  icon={isDeliveryRide ? createRestaurantMarkerIcon() : terminalMarkerIcon(pickerMarkerColor, 58)}
+                  icon={isDeliveryRide ? createRestaurantMarkerIcon() : terminalMarkerIcon(RIDE_MAP_PICKUP_COLOR, 58)}
                 />
               )}
 
@@ -3908,17 +3910,17 @@ const getPrice = () => {
               )}
 
               {rideStateBelongsToCurrentUser && !isActiveShareRideMap && routePath.length > 0 && (
-                <Polyline path={routePath} options={buildNavigationRouteOptions('#BC4B1F', 5)} />
+                <Polyline path={routePath} options={buildNavigationRouteOptions(RIDE_MAP_DROPOFF_COLOR, 5)} />
               )}
 
               {/* Driver route polyline (real-time) */}
               {rideStateBelongsToCurrentUser && !isActiveShareRideMap && driverRoutePath.length > 0 && visibleRideStatus === 'driver-found' && (
-                <Polyline path={driverRoutePath} options={buildNavigationRouteOptions('#1D4ED8', 4)} />
+                <Polyline path={driverRoutePath} options={buildNavigationRouteOptions(RIDE_MAP_DRIVER_COLOR, 4)} />
               )}
 
               {/* Destination route polyline (pickup to dropoff) */}
               {rideStateBelongsToCurrentUser && !isActiveShareRideMap && destinationRoutePath.length > 0 && visibleRideStatus !== 'searching' && (
-                <Polyline path={destinationRoutePath} options={buildNavigationRouteOptions('#BC4B1F', 5)} />
+                <Polyline path={destinationRoutePath} options={buildNavigationRouteOptions(RIDE_MAP_DROPOFF_COLOR, 5)} />
               )}
 
               {/* No straight-line fallback here on purpose.
@@ -4320,7 +4322,7 @@ const getPrice = () => {
             </div>
 
             <div className="absolute bottom-16 left-0 right-0 z-[1100] p-3">
-            <Card className="bg-surface shadow-2xl border-2 border-[var(--primary)] rounded-2xl overflow-hidden">
+            <RideSurfaceCard className="gap-0 bg-surface shadow-2xl border-2 border-[var(--primary)] rounded-2xl overflow-hidden">
               {/*
                 No second map here.
 
@@ -4457,7 +4459,7 @@ const getPrice = () => {
                   )}
                 </div>
               </div>
-            </Card>
+            </RideSurfaceCard>
           </div>
           </>
         )}
@@ -5718,13 +5720,7 @@ const getPrice = () => {
 
       {/* Driver Status Update Popup */}
       {rideStateBelongsToCurrentUser && showCustomerPaymentModal && !showShareLobby && !isDeliveryRide && (
-        <div className="fixed inset-0 z-[3600] flex items-center justify-center bg-black/60 p-4">
-          <Card
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby="customer-payment-title"
-            className="w-full max-w-sm gap-0 rounded-2xl bg-surface p-5 text-left shadow-2xl sm:p-6"
-          >
+        <RideModal labelledBy="customer-payment-title" zIndexClassName="z-[3600]" contentClassName="text-left sm:p-6">
             <div className="mb-5 flex items-center gap-3">
               <span className="grid size-12 shrink-0 place-items-center overflow-hidden rounded-full border border-[var(--border)] bg-[var(--primary-soft)] text-sm font-bold text-[var(--primary)]">
                 {rideDriverAvatar ? (
@@ -5762,8 +5758,7 @@ const getPrice = () => {
             <Button onClick={dismissCustomerPaymentModal} className="h-12 w-full bg-[var(--primary)] text-white">
               Got it
             </Button>
-          </Card>
-        </div>
+        </RideModal>
       )}
 
       {driverStatusPopup && (

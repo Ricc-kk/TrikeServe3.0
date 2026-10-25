@@ -21,6 +21,7 @@ import { GoogleMap, MarkerF, Polyline } from "@react-google-maps/api";
 import MapTypeToggle from "../ui/MapTypeToggle";
 import useMapLoader from "@/lib/mapLoader";
 import { createCustomerMarkerIcon, createRestaurantMarkerIcon } from "@/lib/mapIcons";
+import { RIDE_MAP_DROPOFF_COLOR } from "@/lib/rideMapColors";
 import tricycleIcon from '../../../assets/0b76d1aa56b8ad6e15dd4efc8a0100b0ca5762a1.png'
 
 interface OrderData {
@@ -837,7 +838,7 @@ export default function OrderDetail() {
                 );
               })()}
               {routePath.length > 0 && (
-                <Polyline path={routePath} options={{ strokeColor: 'var(--success)', strokeOpacity: 0.9, strokeWeight: 4, geodesic: true }} />
+                <Polyline path={routePath} options={{ strokeColor: RIDE_MAP_DROPOFF_COLOR, strokeOpacity: 0.9, strokeWeight: 4, geodesic: true }} />
               )}
             </GoogleMap>
             <div className="px-4 py-2.5 bg-surface border-t border-[var(--border)] flex items-center justify-between">

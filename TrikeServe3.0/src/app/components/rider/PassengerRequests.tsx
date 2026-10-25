@@ -5,6 +5,7 @@ import { GoogleMap, Marker, InfoWindow, Polyline, Polygon } from "@react-google-
 import MapTypeToggle from "../ui/MapTypeToggle";
 import { Button } from "../ui/button";
 import { Card } from "../ui/card";
+import { RideModal, RideSurfaceCard } from "../ui/RideUI";
 import FullSizeImagePreview from "../ui/FullSizeImagePreview";
 import { Badge } from "../ui/badge";
 import { ImageWithFallback } from "../figma/ImageWithFallback";
@@ -16,6 +17,7 @@ import { supabase } from "../../../lib/supabase";
 import useMapLoader from "@/lib/mapLoader";
 import { searchPlacesText } from "@/lib/placesApi";
 import { createCustomerMarkerIcon, createRestaurantMarkerIcon } from "@/lib/mapIcons";
+import { RIDE_MAP_DROPOFF_COLOR, RIDE_MAP_PICKUP_COLOR } from "@/lib/rideMapColors";
 import {
   DEFAULT_BORDER_COLOR,
   DEFAULT_ROUTE_COLOR,
@@ -259,7 +261,7 @@ export default function PassengerRequests() {
     const markerDetail = stopNumber == null
       ? '<path d="M7.8 9.6l2.1 2.1 4.3-4.3" fill="none" stroke="#FFFFFF" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>'
       : `<text x="12" y="10" text-anchor="middle" dominant-baseline="middle" fill="#FFFFFF" stroke="none" font-size="9" font-family="Arial, sans-serif" font-weight="700">${stopNumber}</text>`;
-    const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="var(--primary)" stroke="white" stroke-width="1"><path d="M12 2C8.13 2 5 5.13 5 9c0 4.95 6.1 11.53 6.36 11.81.36.39.92.39 1.28 0C13.9 20.53 20 13.95 20 9c0-3.87-3.13-7-8-7z"/>${markerDetail}</svg>`;
+    const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="${RIDE_MAP_DROPOFF_COLOR}" stroke="white" stroke-width="1"><path d="M12 2C8.13 2 5 5.13 5 9c0 4.95 6.1 11.53 6.36 11.81.36.39.92.39 1.28 0C13.9 20.53 20 13.95 20 9c0-3.87-3.13-7-8-7z"/>${markerDetail}</svg>`;
     return { url: 'data:image/svg+xml;charset=UTF-8,' + encodeURIComponent(svg), scaledSize: new google.maps.Size(40, 40), anchor: new google.maps.Point(20, 40) } as any;
   };
 
@@ -1420,13 +1422,13 @@ export default function PassengerRequests() {
           const canAccept = canAcceptRequest(request);
           const queueBlocked = isQueueBlocked(request);
           return (
-            <Card key={request.id} className={`border-2 transition-all overflow-hidden ${
+            <RideSurfaceCard key={request.id} className={`gap-6 rounded-2xl border-2 transition-all overflow-hidden ${
               !canAccept ? 'bg-[var(--muted)] opacity-70 border-[var(--border)]' :
               recommendedPickup && request.id === recommendedPickup.id ? 'bg-gradient-to-br from-[var(--success-soft)] to-[var(--success-soft)] border-[var(--success)] shadow-md' :
               'bg-surface border-[var(--border)] shadow-sm'
             }`}>
               {/* Top: Type icon + Name + Amount */}
-              <div className="flex items-center justify-between px-4 pt-3 pb-2">
+              <div className="flex items-center justify-between px-4 pt-5 pb-2">
                 <div className="flex items-center gap-2.5">
                   <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${
                     request.type === 'delivery' ? 'bg-[var(--info-soft)]' :
@@ -1474,14 +1476,14 @@ export default function PassengerRequests() {
               </div>
 
               {/* Pickup & Dropoff with connector */}
-              <div className="px-4 py-2">
+              <div className="px-4 pt-4 pb-2">
                 <div className="flex items-stretch gap-2">
                   <div className="flex flex-col items-center pt-1">
                     <div className="w-2 h-2 rounded-full bg-[var(--success)] shrink-0" />
                     <div className="w-0.5 flex-1 bg-[var(--border)] my-0.5" />
                     <div className="w-2 h-2 rounded-full bg-[var(--primary)] shrink-0" />
                   </div>
-                  <div className="flex-1 space-y-1.5 min-w-0">
+                  <div className="flex-1 space-y-3 min-w-0">
                     <div>
                       <p className="text-[10px] text-[var(--success)] font-bold">Pickup</p>
                       <p className="text-xs font-semibold text-[var(--ink)] truncate">{request.pickup}</p>
@@ -1498,7 +1500,7 @@ export default function PassengerRequests() {
               </div>
 
               {/* Action Button */}
-              <div className="px-4 pb-3 pt-1">
+              <div className="px-4 pb-2 pt-0">
                 {isUnassigned && (
                   <Badge className="bg-[var(--error-soft)] text-[var(--error)] text-[10px] mb-2 border border-[var(--error-soft)]">🚏 No terminal assigned</Badge>
                 )}
@@ -1513,7 +1515,7 @@ export default function PassengerRequests() {
                 <Button
                   onClick={() => handleOpenPreview(request)}
                   disabled={!canAccept}
-                  className={`w-full text-xs md:text-sm py-5 md:py-6 font-bold rounded-xl ${
+                  className={`h-11 w-full py-0 text-xs font-bold rounded-xl md:text-sm ${
                     canAccept ? 'bg-[var(--primary)] hover:bg-[var(--primary)] shadow-lg shadow-[var(--error-soft)]' : 'bg-[var(--border)] text-[var(--muted-foreground)] cursor-not-allowed'
                   }`}
                 >
@@ -1521,10 +1523,10 @@ export default function PassengerRequests() {
                     ? '🚏 No Terminal Assigned'
                     : queueBlocked
                       ? (queueEntry ? `⏳ Wait — You're #${queuePosition}` : '🚏 Join Queue to Accept')
-                      : canAccept ? (request.lobbyId ? '👥 View Lobby' : 'View') : 'Not Available'}
+                      : canAccept ? (request.lobbyId || request.type === 'private' ? '👥 View Lobby' : 'View') : 'Not Available'}
                 </Button>
               </div>
-            </Card>
+            </RideSurfaceCard>
           );
         })}
 
@@ -1539,12 +1541,11 @@ export default function PassengerRequests() {
 
       {/* Confirm Accept Popup */}
       {showConfirmAccept && confirmRequest && (
-        <div className="fixed inset-0 bg-black/60 z-[2000] flex items-center justify-center">
-          <div className="bg-surface rounded-3xl p-6 mx-6 text-center shadow-2xl animate-in fade-in zoom-in duration-300">
+        <RideModal labelledBy="request-accept-title" contentClassName="p-6 text-center animate-in fade-in zoom-in duration-300">
             <div className="w-16 h-16 bg-[var(--error-soft)] rounded-full flex items-center justify-center mx-auto mb-4">
               <CheckCircle className="w-9 h-9 text-[var(--primary)]" />
             </div>
-            <h2 className="text-xl font-extrabold text-[var(--ink)] mb-1">Accept this request?</h2>
+            <h2 id="request-accept-title" className="text-xl font-extrabold text-[var(--ink)] mb-1">Accept this request?</h2>
             <p className="text-[var(--muted-foreground)] text-sm mb-1">
               {confirmRequest.type === 'shared' ? 'Shared Ride' : confirmRequest.type === 'delivery' ? 'Delivery' : 'Private Ride'}
             </p>
@@ -1554,21 +1555,18 @@ export default function PassengerRequests() {
               <Button onClick={() => { setShowConfirmAccept(false); setConfirmRequest(null); }} variant="outline" className="flex-1 border-[var(--border)] text-[var(--muted-foreground)]">Cancel</Button>
               <Button onClick={async () => { setShowConfirmAccept(false); setConfirmRequest(null); await handleAcceptRequest(confirmRequest); }} className="flex-1 bg-[var(--primary)] hover:bg-[var(--primary)]">Confirm</Button>
             </div>
-          </div>
-        </div>
+        </RideModal>
       )}
 
       {/* Request Accepted Popup */}
       {showAccepted && (
-        <div className="fixed inset-0 bg-black/60 z-[2000] flex items-center justify-center">
-          <div className="bg-surface rounded-3xl p-8 mx-6 text-center shadow-2xl animate-in fade-in zoom-in duration-300">
+        <RideModal labelledBy="request-accepted-title" contentClassName="p-6 text-center animate-in fade-in zoom-in duration-300">
             <div className="w-20 h-20 bg-[var(--success-soft)] rounded-full flex items-center justify-center mx-auto mb-4">
               <CheckCircle className="w-12 h-12 text-[var(--success)]" />
             </div>
-            <h2 className="text-2xl font-extrabold text-[var(--ink)] mb-2">Request Accepted!</h2>
+            <h2 id="request-accepted-title" className="text-2xl font-extrabold text-[var(--ink)] mb-2">Request Accepted!</h2>
             <p className="text-[var(--muted-foreground)] text-sm">Opening your active ride...</p>
-          </div>
-        </div>
+        </RideModal>
       )}
 
       {/* Full-page route preview */}
@@ -1601,7 +1599,11 @@ export default function PassengerRequests() {
               </div>
             </header>
             {isMapsLoaded ? (
-              <div className={isPreviewMapFullscreen ? 'fixed inset-0 z-[4001] h-[100dvh] w-screen' : 'relative h-[42dvh] min-h-[250px] w-full shrink-0 md:h-[48dvh]'}>
+              <div className={isPreviewMapFullscreen
+                ? 'fixed inset-0 z-[4001] h-[100dvh] w-screen'
+                : previewRequest.type === 'private'
+                  ? 'relative min-h-[180px] w-full flex-1'
+                  : 'relative h-[42dvh] min-h-[250px] w-full shrink-0 md:h-[48dvh]'}>
                 <GoogleMap
                   mapContainerStyle={{ width: '100%', height: '100%' }}
                   center={previewMapCenter}
@@ -1625,7 +1627,7 @@ export default function PassengerRequests() {
                 >
                   <MapTypeToggle showFullscreenControl={false} />
                   <Marker position={currentLocation} icon={createDriverMarkerIcon()} title="Your Location" />
-                  {resolvedPickupCoords && <Marker position={resolvedPickupCoords} icon={previewRequest.type === 'delivery' ? createRestaurantMarkerIcon() : terminalMarkerIcon(todaMarkerColor, 58)} title={previewRequest.type === 'delivery' ? 'Restaurant pickup' : 'Pickup'} />}
+                  {resolvedPickupCoords && <Marker position={resolvedPickupCoords} icon={previewRequest.type === 'delivery' ? createRestaurantMarkerIcon() : terminalMarkerIcon(RIDE_MAP_PICKUP_COLOR, 58)} title={previewRequest.type === 'delivery' ? 'Restaurant pickup' : 'Pickup'} />}
                   {previewRequest.type === 'shared' && resolvedPassengerDropoffs.map((stop, index) => stop.coords && (
                     <Marker
                       key={stop.id}
@@ -1638,10 +1640,10 @@ export default function PassengerRequests() {
                     <Marker position={resolvedDropoffCoords} icon={previewRequest.type === 'delivery' ? createCustomerMarkerIcon() : createDropoffMarkerIcon()} title={previewRequest.type === 'delivery' ? 'Customer' : 'Drop-off'} />
                   )}
                   {showPickupRoute && pickupRoutePath && (
-                    <Polyline path={pickupRoutePath} options={{ strokeColor: "#16a34a", strokeWeight: 7, strokeOpacity: 0.95, zIndex: 10 }} />
+                    <Polyline path={pickupRoutePath} options={{ strokeColor: RIDE_MAP_PICKUP_COLOR, strokeWeight: 7, strokeOpacity: 0.95, zIndex: 10 }} />
                   )}
                   {showDropoffRoute && dropoffRoutePath && (
-                    <Polyline path={dropoffRoutePath} options={{ strokeColor: "#2563eb", strokeWeight: 7, strokeOpacity: 0.95, zIndex: 11 }} />
+                    <Polyline path={dropoffRoutePath} options={{ strokeColor: RIDE_MAP_DROPOFF_COLOR, strokeWeight: 7, strokeOpacity: 0.95, zIndex: 11 }} />
                   )}
                 </GoogleMap>
                 <div className="absolute bottom-2 left-2 z-10 flex gap-2">
@@ -1651,9 +1653,10 @@ export default function PassengerRequests() {
                     aria-pressed={showPickupRoute}
                     disabled={!pickupRoutePath}
                     onClick={() => setShowPickupRoute(visible => !visible)}
-                    className={`flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-xs font-bold shadow-md transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${showPickupRoute ? 'border-[var(--primary)] bg-[var(--primary)] text-[var(--primary-foreground)]' : 'border-[var(--border)] bg-[var(--surface)] text-[var(--muted-foreground)]'}`}
+                    className={`flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-xs font-bold shadow-md transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${showPickupRoute ? 'text-white' : 'border-[var(--border)] bg-[var(--surface)] text-[var(--muted-foreground)]'}`}
+                    style={showPickupRoute ? { borderColor: RIDE_MAP_PICKUP_COLOR, backgroundColor: RIDE_MAP_PICKUP_COLOR } : undefined}
                   >
-                    <span className="size-2.5 rounded-full bg-[#16a34a]" />
+                    <span className="size-2.5 rounded-full" style={{ backgroundColor: RIDE_MAP_PICKUP_COLOR }} />
                     Pickup
                   </button>
                   <button
@@ -1662,9 +1665,10 @@ export default function PassengerRequests() {
                     aria-pressed={showDropoffRoute}
                     disabled={!dropoffRoutePath}
                     onClick={() => setShowDropoffRoute(visible => !visible)}
-                    className={`flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-xs font-bold shadow-md transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${showDropoffRoute ? 'border-[var(--primary)] bg-[var(--primary)] text-[var(--primary-foreground)]' : 'border-[var(--border)] bg-[var(--surface)] text-[var(--muted-foreground)]'}`}
+                    className={`flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-xs font-bold shadow-md transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${showDropoffRoute ? 'text-white' : 'border-[var(--border)] bg-[var(--surface)] text-[var(--muted-foreground)]'}`}
+                    style={showDropoffRoute ? { borderColor: RIDE_MAP_DROPOFF_COLOR, backgroundColor: RIDE_MAP_DROPOFF_COLOR } : undefined}
                   >
-                    <span className="size-2.5 rounded-full bg-[#2563eb]" />
+                    <span className="size-2.5 rounded-full" style={{ backgroundColor: RIDE_MAP_DROPOFF_COLOR }} />
                     Drop off
                   </button>
                 </div>
@@ -1684,9 +1688,11 @@ export default function PassengerRequests() {
                 )}
               </div>
             ) : (
-              <div className="grid h-[42dvh] min-h-[250px] shrink-0 place-items-center bg-[var(--muted)] text-[var(--muted-foreground)] md:h-[48dvh]">Loading map...</div>
+              <div className={previewRequest.type === 'private'
+                ? 'grid min-h-[180px] w-full flex-1 place-items-center bg-[var(--muted)] text-[var(--muted-foreground)]'
+                : 'grid h-[42dvh] min-h-[250px] shrink-0 place-items-center bg-[var(--muted)] text-[var(--muted-foreground)] md:h-[48dvh]'}>Loading map...</div>
             )}
-            <div className={`mx-auto min-h-0 w-full max-w-3xl flex-1 space-y-4 overflow-y-auto px-4 ${previewRequest.type === 'shared' ? 'py-4' : 'py-5'}`}>
+            <div className={`mx-auto min-h-0 w-full max-w-3xl ${previewRequest.type === 'private' ? 'max-h-[36dvh] shrink-0 overflow-y-auto' : 'flex-1 overflow-y-auto'} space-y-4 px-4 ${previewRequest.type === 'shared' ? 'py-4' : 'py-5'}`}>
               <div className="flex items-stretch gap-2">
                 <div className="flex flex-col items-center pt-1">
                   <div className="w-2.5 h-2.5 rounded-full bg-[var(--success)] shrink-0" />

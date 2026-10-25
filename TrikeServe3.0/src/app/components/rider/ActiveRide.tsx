@@ -5,6 +5,7 @@ import { GoogleMap, Marker, InfoWindow, DirectionsRenderer, Polyline } from "@re
 import MapTypeToggle from "../ui/MapTypeToggle";
 import { Button } from "../ui/button";
 import { Card } from "../ui/card";
+import { RideModal, RideSurfaceCard } from "../ui/RideUI";
 import FloatingChatHead from "../ui/FloatingChatHead";
 import { useRideResume } from "../../../lib/rideResume";
 import RideChatOverlay from "../rider/RideChatOverlay";
@@ -20,8 +21,9 @@ import { readRiderActiveRide, writeRiderActiveRide, clearRiderActiveRide, fetchR
 import { supabase } from "../../../utils/supabase";
 import useMapLoader from "@/lib/mapLoader";
 import { createCustomerMarkerIcon, createRestaurantMarkerIcon } from "@/lib/mapIcons";
+import { RIDE_MAP_DROPOFF_COLOR, RIDE_MAP_PICKUP_COLOR } from "@/lib/rideMapColors";
 import { legacyRouteFromBoundary, normalizeTerminalRoutes, type TerminalRoute } from "@/lib/terminalRoutes";
-import { DEFAULT_TERMINAL_COLOR, normalizeTerminalColor, terminalMarkerIcon } from "../ui/TerminalIcon";
+import { terminalMarkerIcon } from "../ui/TerminalIcon";
 import PassengerMessagingDB from "./PassengerMessagingDB";
 import tricycleIcon from "../../../assets/0b76d1aa56b8ad6e15dd4efc8a0100b0ca5762a1.png";
 import { useDevModeOverride } from "../../hooks/useDevModeSettings";
@@ -118,15 +120,6 @@ const MIN_HEADING_SPEED_MPS = 1.5;
 // would make it spin on the spot.
 const MIN_HEADING_BASELINE_METERS = 10;
 
-const SHARED_DROPOFF_COLORS = [
-  '#2563EB', // blue
-  '#7C3AED', // violet
-  '#DB2777', // pink
-  '#EA580C', // orange
-  '#0891B2', // cyan
-  '#A16207', // amber
-];
-
 const SILENT_LOBBY_STATUS_MESSAGE = '__silent__';
 
 type RideCoordinate = { lat: number; lng: number };
@@ -175,7 +168,7 @@ function getSharedDropoffStops(ride: ActiveRideData | null): SharedDropoffStop[]
     return [{
       id: passengerId || `passenger-${index}`,
       name: getSharedPassengerName(passenger, index, passengers),
-      color: SHARED_DROPOFF_COLORS[index % SHARED_DROPOFF_COLORS.length],
+      color: RIDE_MAP_DROPOFF_COLOR,
       position,
       index,
     }];
@@ -187,7 +180,7 @@ function getSharedDropoffStops(ride: ActiveRideData | null): SharedDropoffStop[]
     return [{
       id: String(ride.customerId || ride.id),
       name: firstNameOnly(ride.customerName) || 'Passenger',
-      color: SHARED_DROPOFF_COLORS[0],
+      color: RIDE_MAP_DROPOFF_COLOR,
       position: primaryDropoff,
     }];
   }
@@ -480,7 +473,6 @@ export default function ActiveRide() {
   const [routePath, setRoutePath] = useState<google.maps.LatLngLiteral[] | null>(null);
   const [sharedDropoffRoutes, setSharedDropoffRoutes] = useState<SharedDropoffRoute[]>([]);
   const [sharedTerminalRoute, setSharedTerminalRoute] = useState<TerminalRoute | null>(null);
-  const [pickupTerminalColor, setPickupTerminalColor] = useState(DEFAULT_TERMINAL_COLOR);
   const [mapCenter, setMapCenter] = useState<{ lat: number; lng: number }>({ lat: 14.6037, lng: 120.9793 });
   // Whether the camera is locked to the driver. Defaults on so the opening view is
   // the driver, and turns off by itself the first time they pan or zoom.
@@ -1180,6 +1172,7 @@ export default function ActiveRide() {
   // Determine if we're heading to pickup or dropoff
   const isHeadingToPickup = rideData?.status === 'on-the-way' || rideData?.status === 'arrived';
   const isSharedRide = Boolean(rideData && (rideData.type === 'shared' || rideData.lobbyId));
+  const isPrivateRide = Boolean(rideData && !isSharedRide && !isDeliveryRide(rideData));
 
   // Shared passengers have separate destinations and fares, so keep a payment
   // prompt for each passenger who has been dropped off but not paid.
@@ -1219,34 +1212,6 @@ export default function ActiveRide() {
     rideData?.dropoffLng,
     rideData?.passengerDetails,
   ]);
-
-  // The pickup marker follows the marker colour configured for this terminal.
-  // Use the driver's assigned terminal for older private ride records that do
-  // not carry a terminal id in the saved ride payload.
-  useEffect(() => {
-    const isDeliveryPickup = rideData?.type === 'delivery' || rideData?.pickup?.startsWith('DELIVERY|');
-    const terminalId = rideData?.terminalId || user?.terminalId;
-    if (!rideData || isDeliveryPickup || !terminalId) {
-      setPickupTerminalColor(DEFAULT_TERMINAL_COLOR);
-      return;
-    }
-
-    let active = true;
-    setPickupTerminalColor(DEFAULT_TERMINAL_COLOR);
-    supabase
-      .from('terminals')
-      .select('marker_color')
-      .eq('id', terminalId)
-      .maybeSingle()
-      .then(({ data }) => {
-        if (active) setPickupTerminalColor(normalizeTerminalColor(data?.marker_color));
-      })
-      .catch(() => {
-        if (active) setPickupTerminalColor(DEFAULT_TERMINAL_COLOR);
-      });
-
-    return () => { active = false; };
-  }, [rideData?.id, rideData?.terminalId, rideData?.type, rideData?.pickup, user?.terminalId]);
 
   // Load the route selected for this lobby. New bookings carry the route id on
   // each passenger; older lobbies are matched to the plotted road that contains
@@ -2340,13 +2305,12 @@ export default function ActiveRide() {
     anchor: new (window as any).google.maps.Point(20, 40)
   });
 
-  // Literal hex values, matching the theme tokens they stand in for. Maps cannot
-  // read CSS custom properties; see markerIcon above.
-  const PICKUP_HEX = '#2f9e77';   // --success
-  const DROPOFF_HEX = '#BC4B1F';  // the existing destination route colour
-
   if (!rideData) return null;
   const customerDisplayName = firstNameOnly(resolvedName || rideData.customerName) || 'Passenger';
+  const privatePassengerId = String(rideData.customerId || rideData.passengerDetails?.[0]?.id || '');
+  const privatePassengerReportTarget = privatePassengerId
+    ? { id: privatePassengerId, name: customerDisplayName }
+    : undefined;
 
   const nextSharedDropoffPassenger = isSharedRide && rideData.passengerDetails?.length
     ? rideData.passengerDetails.find((passenger: any) => String(passenger?.id || '') === sharedDropoffStops[0]?.id)
@@ -2557,8 +2521,7 @@ export default function ActiveRide() {
   // The customer cancelled — say so, and show the reason they gave.
   if (customerCancellation) {
     return (
-      <div className="fixed inset-0 bg-black/60 z-[4000] flex items-center justify-center p-4">
-        <Card className="bg-surface p-6 max-w-sm w-full rounded-2xl shadow-2xl text-center">
+      <RideModal ariaLabel="Ride cancelled" zIndexClassName="z-[4000]" contentClassName="p-6 text-center">
           <div className="w-16 h-16 bg-[var(--error-soft)] rounded-full flex items-center justify-center mx-auto mb-4">
             <span className="text-3xl">🚫</span>
           </div>
@@ -2580,39 +2543,30 @@ export default function ActiveRide() {
           >
             Back to Dashboard
           </Button>
-        </Card>
-      </div>
+      </RideModal>
     );
   }
 
   return (
-    <div className="min-h-screen bg-[var(--muted)] pb-20 relative overflow-hidden">
+    <div className={`min-h-screen bg-[var(--muted)] ${isSharedRide ? 'pb-0' : 'pb-20'} relative overflow-hidden`}>
       {/* Ride Complete Popup */}
       {showRideComplete && (
-        <div className="fixed inset-0 bg-black/60 z-[2000] flex items-center justify-center">
-          <div className="bg-surface rounded-3xl p-8 mx-6 text-center shadow-2xl animate-in fade-in zoom-in duration-300">
+        <RideModal labelledBy="rider-ride-complete-title" contentClassName="p-6 text-center animate-in fade-in zoom-in duration-300">
             <div className="w-20 h-20 bg-[var(--success-soft)] rounded-full flex items-center justify-center mx-auto mb-4">
               <CheckCircle className="w-12 h-12 text-[var(--success)]" />
             </div>
-            <h2 className="text-2xl font-extrabold text-[var(--ink)] mb-2">Ride Complete!</h2>
+            <h2 id="rider-ride-complete-title" className="text-2xl font-extrabold text-[var(--ink)] mb-2">Ride Complete!</h2>
             <p className="text-[var(--muted-foreground)] text-sm">Thank you for completing this trip.</p>
             <div className="mt-4 px-4 py-2 bg-[var(--success-soft)] rounded-xl">
               <p className="text-[var(--success)] font-bold text-lg">Great job! 🎉</p>
             </div>
-          </div>
-        </div>
+        </RideModal>
       )}
       {!isDeliveryRide(rideData) && !showRideComplete && (
         (isSharedRide && sharedPaymentPassenger) ||
         (!isSharedRide && ['drop-off', 'payment'].includes(rideData.status))
       ) && (
-        <div className="fixed inset-0 z-[4200] flex items-center justify-center bg-black/60 p-4">
-          <Card
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby="rider-payment-title"
-            className="w-full max-w-sm gap-0 rounded-2xl bg-surface p-5 text-left shadow-2xl sm:p-6"
-          >
+        <RideModal labelledBy="rider-payment-title" zIndexClassName="z-[4200]" contentClassName="text-left sm:p-6">
             <div className="mb-5 flex items-center gap-3">
               <span className="grid size-12 shrink-0 place-items-center overflow-hidden rounded-full border border-[var(--border)] bg-[var(--primary-soft)] text-lg">
                 {paymentPassengerPhoto ? (
@@ -2679,8 +2633,7 @@ export default function ActiveRide() {
                   : rideData.payment === 'PREPAID' ? 'Continue route' : 'Payment received'
                 : rideData.payment === 'PREPAID' ? 'Complete ride' : 'Payment received'}
             </Button>
-          </Card>
-        </div>
+        </RideModal>
       )}
       {/* Hidden entirely while the chat panel is open, not made transparent.
 
@@ -2746,7 +2699,7 @@ export default function ActiveRide() {
             {rideData.pickupLat && (
               <Marker
                 position={{ lat: Number(rideData.pickupLat), lng: Number(rideData.pickupLng) }}
-                icon={isDeliveryRide(rideData) ? createRestaurantMarkerIcon() : terminalMarkerIcon(pickupTerminalColor, 58)}
+                icon={isDeliveryRide(rideData) ? createRestaurantMarkerIcon() : terminalMarkerIcon(RIDE_MAP_PICKUP_COLOR, 58)}
                 title={isDeliveryRide(rideData) ? "Restaurant pickup" : "Pickup"}
                 zIndex={isHeadingToPickup ? 90 : 70}
               />
@@ -2765,7 +2718,7 @@ export default function ActiveRide() {
               : rideData.dropoffLat != null && rideData.dropoffLng != null && (
                 <Marker
                   position={{ lat: Number(rideData.dropoffLat), lng: Number(rideData.dropoffLng) }}
-                  icon={isDeliveryRide(rideData) ? createCustomerMarkerIcon() : markerIcon(DROPOFF_HEX)}
+                  icon={isDeliveryRide(rideData) ? createCustomerMarkerIcon() : markerIcon(RIDE_MAP_DROPOFF_COLOR)}
                   title={isDeliveryRide(rideData) ? "Customer drop-off" : "Drop-off"}
                   zIndex={!isHeadingToPickup ? 90 : 70}
                 />
@@ -2790,7 +2743,7 @@ export default function ActiveRide() {
               <Polyline
                 path={routePath}
                 options={{
-                  strokeColor: isHeadingToPickup ? PICKUP_HEX : DROPOFF_HEX,
+                  strokeColor: isHeadingToPickup ? RIDE_MAP_PICKUP_COLOR : RIDE_MAP_DROPOFF_COLOR,
                   strokeWeight: 6,
                   strokeOpacity: 0.9,
                   zIndex: 10,
@@ -2812,7 +2765,7 @@ export default function ActiveRide() {
                   polylineOptions: {
                     // Literal hex: Maps does not resolve CSS custom properties,
                     // so `var(--success)` here left the route undrawn.
-                    strokeColor: isHeadingToPickup ? PICKUP_HEX : DROPOFF_HEX,
+                    strokeColor: isHeadingToPickup ? RIDE_MAP_PICKUP_COLOR : RIDE_MAP_DROPOFF_COLOR,
                     strokeWeight: 6,
                     strokeOpacity: 0.9,
                   },
@@ -2836,7 +2789,7 @@ export default function ActiveRide() {
                 <Polyline
                   path={[{ lat: driverLocation.lat, lng: driverLocation.lng }, dest]}
                   options={{
-                    strokeColor: isHeadingToPickup ? PICKUP_HEX : DROPOFF_HEX,
+                    strokeColor: isHeadingToPickup ? RIDE_MAP_PICKUP_COLOR : RIDE_MAP_DROPOFF_COLOR,
                     strokeOpacity: 0.75,
                     strokeWeight: 4,
                     geodesic: true,
@@ -2876,7 +2829,7 @@ export default function ActiveRide() {
         {isMinimized && (
           <div className="absolute left-3 bottom-3 flex flex-col gap-1.5 pointer-events-none">
             <span className="inline-flex w-fit items-center gap-1.5 rounded-full bg-surface px-2.5 py-1 text-[11px] font-bold shadow-md">
-              <span className="size-2.5 rounded-full" style={{ background: PICKUP_HEX }} aria-hidden="true" />
+              <span className="size-2.5 rounded-full" style={{ background: RIDE_MAP_PICKUP_COLOR }} aria-hidden="true" />
               Pickup · {rideData.pickup}
             </span>
             {isSharedRide && sharedDropoffStops.length > 0
@@ -2888,7 +2841,7 @@ export default function ActiveRide() {
               ))
               : (
                 <span className="inline-flex w-fit items-center gap-1.5 rounded-full bg-surface px-2.5 py-1 text-[11px] font-bold shadow-md">
-                  <span className="size-2.5 rounded-full" style={{ background: DROPOFF_HEX }} aria-hidden="true" />
+                  <span className="size-2.5 rounded-full" style={{ background: RIDE_MAP_DROPOFF_COLOR }} aria-hidden="true" />
                   Drop-off · {rideData.dropoff}
                 </span>
               )}
@@ -2971,7 +2924,7 @@ export default function ActiveRide() {
         className={
           isMinimized
             ? 'fixed bottom-0 left-0 right-0 bg-surface rounded-t-3xl shadow-[0_-10px_40px_rgba(0,0,0,0.1)] p-3 z-[1001]'
-            : 'p-4 space-y-4'
+            : 'px-4 pt-4 pb-2 space-y-3'
         }
       >
         {/* Drag handle: pulls the sheet up to cover the map, or pushes it back
@@ -2996,7 +2949,7 @@ export default function ActiveRide() {
              This collapses to the three things a driver needs at a glance while
              driving: who is in the car, and the one action for the current
              phase. Everything else comes back on a tap. */
-          <Card className="flex-row items-center gap-3 p-3 border-2 border-[var(--primary)] shadow-2xl">
+          <RideSurfaceCard className="flex-row items-center gap-3 p-3 border-2 border-[var(--primary)] shadow-2xl">
             {/* `flex-row` is load-bearing: the shared Card component ships its own
                 `flex-col`, and Tailwind resolves the two classes by stylesheet
                 order rather than the order they appear in `className`. Without
@@ -3067,7 +3020,7 @@ export default function ActiveRide() {
                 <MessageSquare className="w-4 h-4 text-[var(--primary)]" aria-hidden="true" />
               </Button>
             )}
-          </Card>
+          </RideSurfaceCard>
         )}
 
         {/*
@@ -3087,7 +3040,8 @@ export default function ActiveRide() {
         */}
         {!isMinimized && (
           <>
-            <Card className={`p-4 border-2 border-[var(--muted)] shadow-sm ${isSharedRide ? 'gap-0' : ''}`}>
+            <RideSurfaceCard className="gap-0 rounded-2xl border-2 border-[var(--muted)] bg-surface p-4 shadow-sm">
+              {!isPrivateRide && (
               <div className={`flex items-start gap-4 ${isSharedRide ? 'mb-0' : 'mb-3'}`}>
                 {!isSharedRide && (
                   <div className="size-14 flex-shrink-0 overflow-hidden rounded-full bg-[var(--primary-soft)] flex items-center justify-center">
@@ -3119,7 +3073,7 @@ export default function ActiveRide() {
                         const isPaymentSettled = ['received', 'prepaid'].includes(String(p.payment_status || p.paymentStatus || '').toLowerCase());
                         const isNextDropoff = !isDroppedOff && nextSharedDropoffPassengerId === passengerId;
                         return (
-                          <Card key={passengerId} className="gap-2 border border-[var(--border)] bg-[var(--surface)] p-2 shadow-sm">
+                          <RideSurfaceCard key={passengerId} className="gap-2 rounded-xl bg-[var(--surface)] p-2">
                             <div className="flex items-center justify-between gap-2">
                               <span className="flex min-w-0 items-center gap-1.5">
                                 <span className="grid size-8 shrink-0 place-items-center overflow-hidden rounded-full border border-[var(--border)] bg-[var(--primary-soft)] text-sm">
@@ -3170,7 +3124,7 @@ export default function ActiveRide() {
                               <MessageSquare className="mr-1.5 size-4" aria-hidden="true" />
                               Message
                             </Button>
-                          </Card>
+                          </RideSurfaceCard>
                         );
                       })}
                     </div>
@@ -3192,6 +3146,64 @@ export default function ActiveRide() {
                   </Button>
                 )}
               </div>
+              )}
+              {isPrivateRide && (
+                <div className="min-w-0">
+                  <h2 className="mb-2 font-bold text-lg">Passenger</h2>
+                    <RideSurfaceCard className="gap-2 rounded-xl bg-[var(--surface)] p-2">
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="flex min-w-0 items-center gap-1.5">
+                        <span className="grid size-8 shrink-0 place-items-center overflow-hidden rounded-full border border-[var(--border)] bg-[var(--primary-soft)] text-sm">
+                          {passengerAvatar ? (
+                            <img src={passengerAvatar} alt={`${customerDisplayName}'s profile`} className="size-full object-cover" />
+                          ) : (
+                            <User className="size-4 text-[var(--primary)]" aria-hidden="true" />
+                          )}
+                        </span>
+                        <span className="min-w-0 flex-1">
+                          <span className="block truncate text-sm font-semibold text-[var(--ink)]">{customerDisplayName}</span>
+                          <span className="block truncate text-xs text-[var(--muted-foreground)]">Drop-off: {rideData.dropoff}</span>
+                        </span>
+                      </span>
+                      <span className="shrink-0 text-right">
+                        <span className="block text-[10px] text-[var(--muted-foreground)]">Fare</span>
+                        <span className="text-sm font-bold text-[var(--ink)]">â‚±{Number(rideData.amount || 0).toFixed(2)}</span>
+                      </span>
+                    </div>
+                    <div className="flex items-center justify-between gap-2 border-t border-[var(--border)] pt-1.5">
+                      <span className="flex min-w-0 items-center gap-1.5">
+                        <span className={`rounded-full px-2 py-0.5 text-[10px] font-bold ${isHeadingToPickup ? 'bg-[var(--primary-soft)] text-[var(--primary)]' : 'bg-[var(--muted)] text-[var(--muted-foreground)]'}`}>
+                          {isHeadingToPickup ? 'To pickup' : 'To drop-off'}
+                        </span>
+                        <Badge variant="outline" className="text-[var(--muted-foreground)]">
+                          {rideData.payment === 'COD' ? 'Cash' : 'Prepaid'}
+                        </Badge>
+                      </span>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="icon"
+                        onClick={() => openRideReport(privatePassengerReportTarget)}
+                        aria-label={`Report an issue with ${customerDisplayName}`}
+                        title={`Report an issue with ${customerDisplayName}`}
+                        className="shrink-0 border-[var(--border)]"
+                      >
+                        <Flag className="size-4" aria-hidden="true" />
+                      </Button>
+                    </div>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={() => void openPassengerChat()}
+                      aria-label={`Message ${customerDisplayName}`}
+                      className="w-full justify-start border-[var(--border)] py-1.5 text-sm font-semibold text-[var(--muted-foreground)]"
+                    >
+                      <MessageSquare className="mr-1.5 size-4" aria-hidden="true" />
+                      Message
+                    </Button>
+                  </RideSurfaceCard>
+                </div>
+              )}
               <div className="space-y-3 mt-4">
                 <div className={`flex gap-3 p-2 rounded-lg ${isHeadingToPickup ? 'bg-[var(--success-soft)] border border-[var(--success-soft)]' : ''}`}>
                   <div className={`w-2 h-2 rounded-full mt-1.5 ${isHeadingToPickup ? 'bg-[var(--success)]' : 'bg-[var(--muted-foreground)]'}`} />
@@ -3210,7 +3222,7 @@ export default function ActiveRide() {
                       <div key={`dropoff-${passengerId}`} className="flex gap-3 rounded-lg border border-[var(--border)] p-2">
                         <span
                           className="mt-1.5 size-2 shrink-0 rounded-full"
-                          style={{ background: stop?.color || SHARED_DROPOFF_COLORS[index % SHARED_DROPOFF_COLORS.length] }}
+                          style={{ background: stop?.color || RIDE_MAP_DROPOFF_COLOR }}
                           aria-hidden="true"
                         />
                         <div className="min-w-0 flex-1 text-sm">
@@ -3231,9 +3243,9 @@ export default function ActiveRide() {
                   </div>
                 )}
               </div>
-            </Card>
+            </RideSurfaceCard>
             {isDeliveryRide(rideData) && (
-              <Card className="p-4 border-2 border-[var(--muted)] shadow-sm">
+              <RideSurfaceCard className="gap-0 border-2 border-[var(--muted)] p-4">
                 <div className="flex items-start gap-3">
                   <div className="size-14 flex-shrink-0 overflow-hidden rounded-full bg-[var(--primary-soft)] flex items-center justify-center">
                     <StoreLogo logo={restaurantProfile?.logoImage || undefined} />
@@ -3269,17 +3281,17 @@ export default function ActiveRide() {
                     <span>{restaurantProfile.address}</span>
                   </div>
                 )}
-              </Card>
+              </RideSurfaceCard>
             )}
             {isDeliveryRide(rideData) && (
-              <Card className="p-4 border-2 border-[var(--muted)] shadow-sm">
+              <RideSurfaceCard className="gap-0 border-2 border-[var(--muted)] p-4">
                 <h3 className="text-center font-bold text-[var(--ink)] text-sm mb-3">Order Progress</h3>
                 <OrderStatusUpdates
                   status="preparing"
                   driverStatus={driverProgressStatus[rideData.status]}
                   deliveryMode="delivery"
                 />
-              </Card>
+              </RideSurfaceCard>
             )}
           </>
         )}
@@ -3303,21 +3315,21 @@ export default function ActiveRide() {
             hand-tuned offset can drift out of alignment with a bar whose height
             changes with the name and fare.
         */}
-        {activeAction && (
+        {activeAction && !showRideComplete && (
           <Button
             onClick={activeAction.onClick}
             disabled={'disabled' in activeAction && activeAction.disabled}
-            className={`${activeAction.isComplete ? 'bg-[var(--success)]' : 'bg-[var(--primary)]'} -mx-1 mt-2 w-[calc(100%+0.5rem)] py-4 text-base font-bold shadow-lg`}
+            className={`${activeAction.isComplete ? 'bg-[var(--success)]' : 'bg-[var(--primary)]'} -mx-1 w-[calc(100%+0.5rem)] py-4 text-base font-bold shadow-lg`}
           >
             {activeAction.label}
           </Button>
         )}
-        {(!isSharedRide || !rideData.passengerDetails?.length) && (
+        {(!isSharedRide || !rideData.passengerDetails?.length) && !isPrivateRide && (
           <Button
             type="button"
             variant="outline"
             onClick={() => openRideReport()}
-            className="-mx-1 mt-2 w-[calc(100%+0.5rem)] border-[var(--border)] py-3 font-semibold text-[var(--muted-foreground)]"
+            className="-mx-1 w-[calc(100%+0.5rem)] border-[var(--border)] py-3 font-semibold text-[var(--muted-foreground)]"
           >
             <Flag className="size-4" aria-hidden="true" />
             Report an issue
@@ -3328,7 +3340,7 @@ export default function ActiveRide() {
           variant="outline"
           onClick={() => setShowCancelPrompt(true)}
           aria-label={cancelActionLabel}
-          className="-mx-1 mt-2 w-[calc(100%+0.5rem)] border-[var(--error)] py-3 font-bold text-[var(--error)] hover:bg-[var(--error-soft)]"
+          className="-mx-1 w-[calc(100%+0.5rem)] border-[var(--error)] py-3 font-bold text-[var(--error)] hover:bg-[var(--error-soft)]"
         >
           {cancelActionLabel}
         </Button>
@@ -3336,17 +3348,12 @@ export default function ActiveRide() {
       </div>
 
       {showReportModal && (
-        <div
-          className="fixed inset-0 z-[4300] flex items-center justify-center bg-black/60 p-4"
-          onClick={() => { if (!isSubmittingReport) setShowReportModal(false); }}
+        <RideModal
+          labelledBy="active-ride-report-title"
+          zIndexClassName="z-[4300]"
+          contentClassName="max-w-md"
+          onBackdropClick={() => { if (!isSubmittingReport) setShowReportModal(false); }}
         >
-          <Card
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby="active-ride-report-title"
-            className="w-full max-w-md gap-0 rounded-2xl bg-surface p-5 shadow-2xl"
-            onClick={(event) => event.stopPropagation()}
-          >
             <div className="flex items-start justify-between gap-3">
               <div>
                 <h2 id="active-ride-report-title" className="text-lg font-bold text-[var(--ink)]">
@@ -3445,8 +3452,7 @@ export default function ActiveRide() {
                 </>
               )}
             </div>
-          </Card>
-        </div>
+        </RideModal>
       )}
 
       {/*

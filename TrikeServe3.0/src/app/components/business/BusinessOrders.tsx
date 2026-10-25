@@ -22,6 +22,7 @@ import { GoogleMap, MarkerF, Polyline } from "@react-google-maps/api";
 import MapTypeToggle from "../ui/MapTypeToggle";
 import useMapLoader from "@/lib/mapLoader";
 import { createCustomerMarkerIcon, createRestaurantMarkerIcon } from "@/lib/mapIcons";
+import { RIDE_MAP_DROPOFF_COLOR, RIDE_MAP_PICKUP_COLOR } from "@/lib/rideMapColors";
 import tricycleIcon from '../../../assets/0b76d1aa56b8ad6e15dd4efc8a0100b0ca5762a1.png'
 /**
  * "9:08PM" / "1:00AM" — 12-hour, no space before the meridiem.
@@ -2247,7 +2248,7 @@ export default function BusinessOrders() {
                                      shop, a different colour once they are carrying
                                      the order, so the route line tells you which leg
                                      it is. */
-                                  strokeColor: isRiderEnRouteToShop ? 'var(--success)' : 'var(--primary)',
+                                  strokeColor: isRiderEnRouteToShop ? RIDE_MAP_PICKUP_COLOR : RIDE_MAP_DROPOFF_COLOR,
                                   strokeOpacity: 0.9,
                                   strokeWeight: 4,
                                   geodesic: true,

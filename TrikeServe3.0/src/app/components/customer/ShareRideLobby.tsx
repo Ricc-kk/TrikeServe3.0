@@ -2,6 +2,7 @@ import { useState, useEffect, useRef, useCallback } from "react";
 import { ArrowLeft, MapPin, Users, Clock, X, ChevronDown, MessageCircle, User, Minimize2, Star, Navigation, Flag, CreditCard, Check } from "lucide-react";
 import { Button } from "../ui/button";
 import { Card } from "../ui/card";
+import { RideModal, RideSurfaceCard } from "../ui/RideUI";
 import { Badge } from "../ui/badge";
 import { useAuth } from "../../contexts/AuthContext";
 import { supabase, supabaseHelpers, isSimilarRoute, isPointWithinAnyTerminalBorder, isPointOnRoadCorridor, haversineDistanceMeters, normalizeRoadWidth } from "@/lib/supabase";
@@ -13,7 +14,8 @@ import tricycleIcon from '../../../assets/0b76d1aa56b8ad6e15dd4efc8a0100b0ca5762
 import FloatingChatHead from "../ui/FloatingChatHead";
 import BottomNav from "../ui/BottomNav";
 import RideChatOverlay from "../rider/RideChatOverlay";
-import { normalizeRouteColor, normalizeTerminalColor, terminalMarkerIcon, TerminalIconGlyph } from "../ui/TerminalIcon";
+import { RIDE_MAP_DROPOFF_COLOR, RIDE_MAP_DRIVER_COLOR, RIDE_MAP_PICKUP_COLOR } from "@/lib/rideMapColors";
+import { normalizeRouteColor, terminalMarkerIcon, TerminalIconGlyph } from "../ui/TerminalIcon";
 import { backfillLegacySharedRidePassengerFares, sumSharedRidePassengerFares, DEFAULT_MAX_PASSENGERS } from "@/lib/pricing";
 import { useDevModeOverride } from "../../hooks/useDevModeSettings";
 import { customerActiveShareLobbyStorageKey, isCustomerLobbyPassenger } from "../../../lib/rideLock";
@@ -431,7 +433,6 @@ export default function ShareRideLobby({
   const [destinationRoutePath, setDestinationRoutePath] = useState<Array<{ lat: number; lng: number }>>([]);
   const [terminalRoutePath, setTerminalRoutePath] = useState<Array<{ lat: number; lng: number }>>([]);
   const [terminalRouteColor, setTerminalRouteColor] = useState(() => normalizeRouteColor(undefined));
-  const [terminalMarkerColor, setTerminalMarkerColor] = useState(() => normalizeTerminalColor(undefined));
   const lobbyMapRef = useRef<any>(null);
   const lobbyMapWasManuallyMovedRef = useRef(false);
   const driverLocationIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -594,10 +595,21 @@ export default function ShareRideLobby({
   const showDriverAssignedNotice = (assignedLobby: ShareRideLobby) => {
     if (assignedLobby.status !== 'driver_found' || !assignedLobby.driver_id) return;
 
-    const assignmentKey = `${assignedLobby.id}:${assignedLobby.driver_id}`;
+    const assignmentKey = `${user?.id || 'customer'}:${assignedLobby.id}`;
     if (handledDriverAssignmentRef.current === assignmentKey) return;
 
     handledDriverAssignmentRef.current = assignmentKey;
+    if (user?.id) {
+      // The ref handles repeated polls while mounted; storage covers returning to this ride later.
+      const seenAssignmentKey = `trikeserve_driver_assigned_notice:${user.id}:${assignedLobby.id}`;
+      try {
+        if (localStorage.getItem(seenAssignmentKey)) return;
+        localStorage.setItem(seenAssignmentKey, '1');
+      } catch {
+        // The ref still prevents repeated notices while this lobby view is mounted.
+      }
+    }
+
     setDriverAssignedNotice({
       lobbyId: assignedLobby.id,
       driverId: assignedLobby.driver_id,
@@ -790,22 +802,19 @@ export default function ShareRideLobby({
     if (!terminalId) {
       setTerminalRoutePath([]);
       setTerminalRouteColor(normalizeRouteColor(undefined));
-      setTerminalMarkerColor(normalizeTerminalColor(undefined));
       return;
     }
 
     let active = true;
-    setTerminalMarkerColor(normalizeTerminalColor(undefined));
     supabase
       .from('terminals')
-      .select('*')
+      .select('routes, boundary_polygon, road_width_m, route_color')
       .eq('id', terminalId)
       .maybeSingle()
       .then(({ data, error }) => {
         if (!active) return;
         if (error || !data) {
           setTerminalRoutePath([]);
-          setTerminalMarkerColor(normalizeTerminalColor(undefined));
           return;
         }
         const storedRoutes = normalizeTerminalRoutes(data.routes);
@@ -838,12 +847,10 @@ export default function ShareRideLobby({
           : routeForPassenger || routes.find(route => route.enabled) || routes[0];
         setTerminalRoutePath(currentSelectionMatchesLobby ? routePoints! : selectedRoute?.points || []);
         setTerminalRouteColor(normalizeRouteColor(data.route_color));
-        setTerminalMarkerColor(normalizeTerminalColor(data.marker_color));
       })
       .catch(() => {
         if (active) {
           setTerminalRoutePath([]);
-          setTerminalMarkerColor(normalizeTerminalColor(undefined));
         }
       });
 
@@ -1886,14 +1893,14 @@ if (matchingRouteLobby) {
             <MarkerF
               position={pickupCoords}
               title="Pickup"
-              icon={terminalMarkerIcon(terminalMarkerColor, 58)}
+              icon={terminalMarkerIcon(RIDE_MAP_PICKUP_COLOR, 58)}
             />
           )}
           {dropoffCoords && (
             <MarkerF
               position={dropoffCoords}
               title="Drop-off"
-              icon={createDropoffStopIcon(terminalRouteColor)}
+              icon={createDropoffStopIcon(RIDE_MAP_DROPOFF_COLOR)}
             />
           )}
         </GoogleMap>
@@ -2064,13 +2071,7 @@ if (loading) {
   if (!lobby) return null;
 
   const driverAssignedModal = driverAssignedNotice?.lobbyId === lobby.id ? (
-    <div className="fixed inset-0 z-[11000] flex items-center justify-center bg-black/60 p-4">
-      <Card
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="share-ride-driver-assigned-title"
-        className="w-full max-w-sm rounded-2xl bg-surface p-6 text-center shadow-2xl"
-      >
+    <RideModal labelledBy="share-ride-driver-assigned-title" zIndexClassName="z-[11000]" contentClassName="p-6 text-center">
         <div className="mx-auto mb-4 flex size-16 items-center justify-center rounded-full bg-[var(--success-soft)] text-[var(--success)]">
           <TerminalIconGlyph className="size-8" aria-hidden="true" />
         </div>
@@ -2106,8 +2107,7 @@ if (loading) {
         <Button onClick={() => setDriverAssignedNotice(null)} className="w-full bg-[var(--primary)] text-white">
           Got it
         </Button>
-      </Card>
-    </div>
+    </RideModal>
   ) : null;
 
   const passengers = lobby.passengers_json || [];
@@ -2142,13 +2142,7 @@ if (loading) {
     setPaymentModalPassengerId(null);
   };
   const paymentModal = paymentModalPassenger ? (
-    <div className="fixed inset-0 z-[2600] flex items-center justify-center bg-black/60 p-4">
-      <Card
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="share-ride-payment-title"
-        className="w-full max-w-sm gap-0 rounded-2xl bg-surface p-5 text-left shadow-2xl sm:p-6"
-      >
+    <RideModal labelledBy="share-ride-payment-title" zIndexClassName="z-[2600]" contentClassName="text-left sm:p-6">
         <div className="mb-5 flex items-center gap-3">
           <span className="grid size-12 shrink-0 place-items-center overflow-hidden rounded-full border border-[var(--border)] bg-[var(--primary-soft)] text-sm font-bold text-[var(--primary)]">
             {driverProfileAvatar ? (
@@ -2188,8 +2182,7 @@ if (loading) {
         <Button onClick={dismissPaymentModal} className="h-12 w-full bg-[var(--primary)] text-white">
           Got it
         </Button>
-      </Card>
-    </div>
+    </RideModal>
   ) : null;
 
   /*
@@ -2634,7 +2627,7 @@ if (loading) {
                     <MarkerF
                       position={pickupCoords}
                       title="Pickup"
-                      icon={terminalMarkerIcon(terminalMarkerColor, 58)}
+                      icon={terminalMarkerIcon(RIDE_MAP_PICKUP_COLOR, 58)}
                     />
                   )}
                   {/* Markers show only this customer's own drop-offs. */}
@@ -2644,7 +2637,7 @@ if (loading) {
                         key={stop.key}
                         position={stop.coords}
                         title="Your drop-off"
-                        icon={createDropoffStopIcon(terminalRouteColor)}
+                        icon={createDropoffStopIcon(RIDE_MAP_DROPOFF_COLOR)}
                         zIndex={20}
                       />
                     );
@@ -2667,7 +2660,7 @@ if (loading) {
                     <Polyline
                       path={driverRoutePath}
                       options={{
-                        strokeColor: (lobby.driver_status === 'on-the-way' || lobby.driver_status === 'arrived') ? 'var(--success)' : 'var(--info)',
+                        strokeColor: RIDE_MAP_DRIVER_COLOR,
                         strokeOpacity: 0.9,
                         strokeWeight: 4,
                         geodesic: true,
@@ -2679,7 +2672,7 @@ if (loading) {
                     <Polyline
                       path={destinationRoutePath}
                       options={{
-                        strokeColor: 'var(--primary)',
+                        strokeColor: RIDE_MAP_DROPOFF_COLOR,
                         strokeOpacity: 0.9,
                         strokeWeight: 5,
                         geodesic: true,
@@ -2793,14 +2786,14 @@ if (loading) {
                   />
                 )}
                 {pickupCoords && (
-                  <MarkerF position={pickupCoords} title="Pickup" icon={terminalMarkerIcon(terminalMarkerColor, 58)} />
+                  <MarkerF position={pickupCoords} title="Pickup" icon={terminalMarkerIcon(RIDE_MAP_PICKUP_COLOR, 58)} />
                 )}
                 {mapDropoffStops.map(stop => (
                   <MarkerF
                     key={stop.key}
                     position={stop.coords}
                     title="Your drop-off"
-                    icon={createDropoffStopIcon(terminalRouteColor)}
+                    icon={createDropoffStopIcon(RIDE_MAP_DROPOFF_COLOR)}
                     zIndex={20}
                   />
                 ))}
@@ -2820,7 +2813,7 @@ if (loading) {
                   <Polyline
                     path={driverRoutePath}
                     options={{
-                      strokeColor: (lobby.driver_status === 'on-the-way' || lobby.driver_status === 'arrived') ? 'var(--success)' : 'var(--info)',
+                      strokeColor: RIDE_MAP_DRIVER_COLOR,
                       strokeOpacity: 0.9,
                       strokeWeight: 4,
                       geodesic: true,
@@ -2830,7 +2823,7 @@ if (loading) {
                 {destinationRoutePath.length > 0 && (
                   <Polyline
                     path={destinationRoutePath}
-                    options={{ strokeColor: 'var(--primary)', strokeOpacity: 0.9, strokeWeight: 5, geodesic: true }}
+                    options={{ strokeColor: RIDE_MAP_DROPOFF_COLOR, strokeOpacity: 0.9, strokeWeight: 5, geodesic: true }}
                   />
                 )}
               </GoogleMap>
@@ -2856,7 +2849,7 @@ if (loading) {
             className="absolute left-0 right-0 z-20 px-3"
             style={{ bottom: 'calc(4.5rem + env(safe-area-inset-bottom))' }}
           >
-            <Card className="max-h-[calc(100dvh-12rem)] overflow-y-auto rounded-2xl border-2 border-[var(--primary)] bg-surface shadow-2xl">
+            <RideSurfaceCard className="max-h-[calc(100dvh-12rem)] overflow-y-auto rounded-2xl border-2 border-[var(--primary)] bg-surface shadow-2xl">
               <div className="p-4">
                 <div className="mb-3 flex items-center gap-3">
                   <div className="grid size-14 shrink-0 place-items-center overflow-hidden rounded-full bg-[var(--primary-soft)] text-sm font-bold text-[var(--primary)]">
@@ -2947,7 +2940,7 @@ if (loading) {
                   </Button>
                 </div>
               </div>
-            </Card>
+            </RideSurfaceCard>
           </div>
 
           <BottomNav active="home" />
