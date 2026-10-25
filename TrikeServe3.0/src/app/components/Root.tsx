@@ -10,6 +10,7 @@ import BusinessScrollBehavior from "./business/BusinessScrollBehavior";
 import GlobalChatHead from "./chat/GlobalChatHead";
 import { ChatHeadVisibilityProvider } from "../contexts/ChatHeadVisibilityContext";
 import DevModeSettings from "./ui/DevModeSettings";
+import CustomerPrivateRideShortcut from "./customer/CustomerPrivateRideShortcut";
 
 function NotificationToasts() {
   const { notifications, removeNotification } = useNotification();
@@ -43,6 +44,7 @@ export default function Root() {
                 <div className="min-h-screen">
                   <Outlet />
                 </div>
+                <CustomerPrivateRideShortcut />
                 <DevModeSettings />
                 <GlobalChatHead />
               </NotificationProvider>

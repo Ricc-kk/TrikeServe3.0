@@ -119,6 +119,7 @@ interface PassengerRequest {
   waitingPassengers?: number;
   customerName: string;
   customerPhoto: string;
+  customerAvatar?: string | null;
   restaurantName?: string;
   restaurantImage?: string;
   restaurantAddress?: string;
@@ -479,6 +480,7 @@ export default function PassengerRequests() {
           amount: Number(req.amount || 0),
           foodCost: Number(req.food_cost || 0),
           customerName: req.customer_name || nameMap[req.customer_id] || 'Customer',
+          customerAvatar: avatarMap[String(req.customer_id || '').split('_companion_')[0]] || null,
           restaurantName: requestType === 'delivery' ? restaurant?.name || 'Restaurant' : undefined,
           restaurantImage: restaurant?.logo_image || undefined,
           businessUserId: restaurant?.business_user_id || order?.business_id || undefined,
@@ -1839,11 +1841,27 @@ export default function PassengerRequests() {
                 <section className="rounded-xl border border-[var(--border)] bg-[var(--muted)] p-3">
                   <h3 className="mb-2 text-sm font-bold text-[var(--ink)]">Passengers</h3>
                   <div className="space-y-2">
-                    <div className="flex items-center gap-3 rounded-lg border border-[var(--border)] bg-[var(--surface)] px-3 py-2">
-                      <div className="grid size-10 shrink-0 place-items-center rounded-full border border-[var(--border)] bg-[var(--primary-soft)] text-[var(--primary)]">
-                        <Users className="size-5" />
+                    <div className="flex items-center justify-between gap-3 rounded-lg border border-[var(--border)] bg-[var(--surface)] px-3 py-2">
+                      <div className="flex min-w-0 items-center gap-3">
+                        <div className="grid size-10 shrink-0 place-items-center overflow-hidden rounded-full border border-[var(--border)] bg-[var(--primary-soft)] text-base">
+                          {previewRequest.customerAvatar ? (
+                            <ImageWithFallback
+                              src={previewRequest.customerAvatar}
+                              alt={`${passengerFirstName(previewRequest.customerName)}'s profile`}
+                              className="size-full rounded-full object-cover"
+                            />
+                          ) : (
+                            '👤'
+                          )}
+                        </div>
+                        <span className="min-w-0 break-words text-sm font-semibold text-[var(--ink)]">{passengerFirstName(previewRequest.customerName)}</span>
                       </div>
-                      <span className="min-w-0 break-words text-sm font-semibold text-[var(--ink)]">{passengerFirstName(previewRequest.customerName)}</span>
+                      {Number.isFinite(Number(previewRequest.amount)) && (
+                        <span className="shrink-0 text-right">
+                          <span className="block text-[10px] text-[var(--muted-foreground)]">Fare</span>
+                          <span className="text-sm font-bold text-[var(--ink)]">{"\u20B1"}{Number(previewRequest.amount).toFixed(2)}</span>
+                        </span>
+                      )}
                     </div>
                   </div>
                 </section>
