@@ -146,9 +146,13 @@ export interface FloatingChatHeadStackItem {
 
 const STACK_PEEK = 14;
 const STACK_DRAG_DELAY = 115;
+const STACK_FOLLOW_DELAY = 95;
+const STACK_FOLLOW_STEP_DELAY = 55;
+const STACK_FOLLOW_TRANSITION = 65;
 const MAX_STACK_ITEMS = 3;
 const CHAT_HEAD_SIZE = 56;
 const CHAT_HEAD_ROW_GAP = 8;
+type DragPositionSample = { x: number; y: number; time: number };
 
 export default function FloatingChatHead({
   storageKey,
@@ -297,10 +301,46 @@ export default function FloatingChatHead({
       el.style.transition = animated
         ? `left ${STACK_DRAG_DELAY}ms ease-out, top ${STACK_DRAG_DELAY}ms ease-out`
         : 'none';
-      // Stack heads share the main head's positioned wrapper. Their offset is
-      // relative to that wrapper so dragging the stack cannot leave them behind.
+      // These are the resting offsets; during a drag, history offsets let each
+      // head follow the lead head's path before settling back into the stack.
       el.style.left = `${direction * offset * (index + 1)}px`;
       el.style.top = '0px';
+    });
+  }, [showStackItems, visibleStackItems.length]);
+
+  const followStackHeads = useCallback((
+    nextSide: Side,
+    leader: { x: number; y: number },
+    history: DragPositionSample[],
+    now: number,
+  ) => {
+    const direction = nextSide === 'right' ? -1 : 1;
+    const offset = showStackItems ? CHAT_HEAD_SIZE + CHAT_HEAD_ROW_GAP : STACK_PEEK;
+    stackHeadRefs.current.slice(0, visibleStackItems.length).forEach((el, index) => {
+      if (!el || history.length === 0) return;
+
+      const targetTime = now - STACK_FOLLOW_DELAY - index * STACK_FOLLOW_STEP_DELAY;
+      let before = history[0];
+      let after = history[history.length - 1];
+      for (let sampleIndex = 1; sampleIndex < history.length; sampleIndex += 1) {
+        if (history[sampleIndex].time >= targetTime) {
+          before = history[sampleIndex - 1];
+          after = history[sampleIndex];
+          break;
+        }
+        before = history[sampleIndex];
+      }
+
+      const sampleDuration = after.time - before.time;
+      const progress = sampleDuration > 0
+        ? Math.min(1, Math.max(0, (targetTime - before.time) / sampleDuration))
+        : 0;
+      const followedX = before.x + (after.x - before.x) * progress;
+      const followedY = before.y + (after.y - before.y) * progress;
+
+      el.style.transition = `left ${STACK_FOLLOW_TRANSITION}ms linear, top ${STACK_FOLLOW_TRANSITION}ms linear`;
+      el.style.left = `${direction * offset * (index + 1) + followedX - leader.x}px`;
+      el.style.top = `${followedY - leader.y}px`;
     });
   }, [showStackItems, visibleStackItems.length]);
 
@@ -579,6 +619,7 @@ export default function FloatingChatHead({
     const pointerId = e.pointerId;
     const startX = e.clientX;
     const startY = e.clientY;
+    const dragHistory: DragPositionSample[] = [{ ...pos.current, time: performance.now() }];
     pointerCleanupRef.current?.();
     moved.current = false;
     setIsDragging(false);
@@ -613,7 +654,7 @@ export default function FloatingChatHead({
         group.style.left = `${pos.current.x}px`;
         group.style.top = `${pos.current.y}px`;
       }
-      positionStackHeads(next, false);
+      positionStackHeads(next, true);
       save(next);
     };
 
@@ -640,7 +681,15 @@ export default function FloatingChatHead({
       // Decided during the drag but applied on release, so it does not jump
       // sides under the finger mid-gesture.
       drag.current.side = pos.current.x + w / 2 < window.innerWidth / 2 ? 'left' : 'right';
-      positionStackHeads(drag.current.side, true);
+      const now = performance.now();
+      dragHistory.push({ ...pos.current, time: now });
+      const oldestNeededTime = now - STACK_FOLLOW_DELAY -
+        Math.max(0, visibleStackItems.length - 1) * STACK_FOLLOW_STEP_DELAY -
+        STACK_FOLLOW_TRANSITION;
+      while (dragHistory.length > 2 && dragHistory[1].time < oldestNeededTime) {
+        dragHistory.shift();
+      }
+      followStackHeads(drag.current.side, pos.current, dragHistory, now);
       setIsOverCloseTarget(moved.current && isOnCloseTarget(pos.current.x, pos.current.y, w, h));
     };
 
@@ -684,7 +733,7 @@ export default function FloatingChatHead({
     window.addEventListener('pointerup', onUp);
     window.addEventListener('pointercancel', onCancel);
     pointerCleanupRef.current = cleanup;
-  }, [positionStackHeads, resolvedDismissalStorageKey, save]);
+  }, [followStackHeads, positionStackHeads, resolvedDismissalStorageKey, save, visibleStackItems.length]);
 
   /**
    * Park the head in the top-right corner once chat has been opened.

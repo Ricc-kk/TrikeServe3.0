@@ -11,8 +11,9 @@ import useMapLoader from "@/lib/mapLoader";
 import { useElapsedTime } from "@/app/hooks/useElapsedTime";
 import tricycleIcon from '../../../assets/0b76d1aa56b8ad6e15dd4efc8a0100b0ca5762a1.png'
 import FloatingChatHead from "../ui/FloatingChatHead";
+import BottomNav from "../ui/BottomNav";
 import RideChatOverlay from "../rider/RideChatOverlay";
-import { normalizeRouteColor, normalizeTerminalColor, terminalMarkerIcon } from "../ui/TerminalIcon";
+import { normalizeRouteColor, normalizeTerminalColor, terminalMarkerIcon, TerminalIconGlyph } from "../ui/TerminalIcon";
 import { backfillLegacySharedRidePassengerFares, sumSharedRidePassengerFares, DEFAULT_MAX_PASSENGERS } from "@/lib/pricing";
 import { useDevModeOverride } from "../../hooks/useDevModeSettings";
 import { customerActiveShareLobbyStorageKey, isCustomerLobbyPassenger } from "../../../lib/rideLock";
@@ -93,6 +94,133 @@ function orderLobbyDropoffs(
       if (b.distance == null) return -1;
       return a.distance - b.distance;
     });
+}
+
+type RouteOrderedLobbyStop = {
+  passenger: LobbyPassenger;
+  coords: { lat: number; lng: number };
+  travelDistance: number;
+};
+
+type LobbyRouteItinerary = {
+  path: Array<{ lat: number; lng: number }>;
+  pickupDistance: number;
+  totalDistance: number;
+  stops: RouteOrderedLobbyStop[];
+};
+
+function projectPointAlongRoute(
+  point: { lat: number; lng: number },
+  path: Array<{ lat: number; lng: number }>,
+) {
+  if (path.length < 2) return null;
+
+  let distanceBeforeSegment = 0;
+  let totalDistance = 0;
+  let closest: { distanceAlong: number; distanceFromRoute: number } | null = null;
+
+  for (let index = 1; index < path.length; index++) {
+    const start = path[index - 1];
+    const end = path[index];
+    const latitudeScale = Math.cos(((start.lat + end.lat + point.lat) / 3) * Math.PI / 180);
+    const ax = start.lng * latitudeScale;
+    const ay = start.lat;
+    const bx = end.lng * latitudeScale;
+    const by = end.lat;
+    const px = point.lng * latitudeScale;
+    const py = point.lat;
+    const dx = bx - ax;
+    const dy = by - ay;
+    const lengthSquared = dx * dx + dy * dy;
+    const fraction = lengthSquared > 0
+      ? Math.max(0, Math.min(1, ((px - ax) * dx + (py - ay) * dy) / lengthSquared))
+      : 0;
+    const projected = {
+      lat: start.lat + (end.lat - start.lat) * fraction,
+      lng: start.lng + (end.lng - start.lng) * fraction,
+    };
+    const segmentDistance = haversineDistanceMeters(start, end);
+    const distanceFromRoute = haversineDistanceMeters(point, projected);
+
+    if (!closest || distanceFromRoute < closest.distanceFromRoute) {
+      closest = {
+        distanceAlong: distanceBeforeSegment + segmentDistance * fraction,
+        distanceFromRoute,
+      };
+    }
+
+    distanceBeforeSegment += segmentDistance;
+    totalDistance += segmentDistance;
+  }
+
+  return closest ? { ...closest, totalDistance } : null;
+}
+
+/** Order shared passenger stops along the same selected terminal road used by the driver. */
+function buildLobbyRouteItinerary(
+  passengers: LobbyPassenger[],
+  pickup: { lat: number; lng: number },
+  route: Array<{ lat: number; lng: number }>,
+): LobbyRouteItinerary | null {
+  if (route.length < 2) return null;
+
+  const buildDirection = (path: Array<{ lat: number; lng: number }>): LobbyRouteItinerary | null => {
+    const pickupProjection = projectPointAlongRoute(pickup, path);
+    if (!pickupProjection) return null;
+
+    const stops = passengers.flatMap((passenger) => {
+      const rawPassenger = passenger as LobbyPassenger & { dropoff_lat?: number | null; dropoff_lng?: number | null };
+      const latValue = rawPassenger.dropoffLat ?? rawPassenger.dropoff_lat;
+      const lngValue = rawPassenger.dropoffLng ?? rawPassenger.dropoff_lng;
+      if (latValue == null || lngValue == null) return [];
+      const lat = Number(latValue);
+      const lng = Number(lngValue);
+      if (!Number.isFinite(lat) || !Number.isFinite(lng)) return [];
+
+      const coords = { lat, lng };
+      const projection = projectPointAlongRoute(coords, path);
+      if (!projection) return [];
+      const travelDistance = projection.distanceAlong >= pickupProjection.distanceAlong
+        ? projection.distanceAlong - pickupProjection.distanceAlong
+        : (pickupProjection.totalDistance - pickupProjection.distanceAlong)
+          + (pickupProjection.totalDistance - projection.distanceAlong);
+      return [{ passenger, coords, travelDistance }];
+    }).sort((a, b) => a.travelDistance - b.travelDistance);
+
+    return {
+      path,
+      pickupDistance: pickupProjection.distanceAlong,
+      totalDistance: pickupProjection.totalDistance,
+      stops,
+    };
+  };
+
+  const forward = buildDirection(route);
+  const reverse = buildDirection([...route].reverse());
+  const finalStopDistance = (itinerary: LobbyRouteItinerary | null) =>
+    itinerary?.stops[itinerary.stops.length - 1]?.travelDistance ?? Number.POSITIVE_INFINITY;
+
+  return finalStopDistance(reverse) < finalStopDistance(forward) ? reverse : forward;
+}
+
+function routeTravelDistanceFromPickup(
+  point: { lat: number; lng: number },
+  itinerary: LobbyRouteItinerary,
+): number | null {
+  const projection = projectPointAlongRoute(point, itinerary.path);
+  if (!projection) return null;
+  return projection.distanceAlong >= itinerary.pickupDistance
+    ? projection.distanceAlong - itinerary.pickupDistance
+    : (itinerary.totalDistance - itinerary.pickupDistance)
+      + (itinerary.totalDistance - projection.distanceAlong);
+}
+
+function formatEtaFromSeconds(seconds: number): string {
+  const totalMinutes = Math.max(1, Math.ceil(seconds / 60));
+  const hours = Math.floor(totalMinutes / 60);
+  const minutes = totalMinutes % 60;
+  if (hours === 0) return `${totalMinutes} mins`;
+  return minutes === 0 ? `${hours} hr` : `${hours} hr ${minutes} mins`;
 }
 
 function createDropoffStopIcon(color: string): google.maps.Symbol | undefined {
@@ -751,8 +879,9 @@ export default function ShareRideLobby({
     if (points.length === 0) return;
     const bounds = new maps.LatLngBounds();
     points.forEach((point) => bounds.extend(point));
-    map.fitBounds(bounds, 24);
-  }, [terminalRoutePath, pickupCoords, dropoffCoords, lobby?.passengers_json, driverLocation, user?.id]);
+    const assignedPage = presentation === 'page' && ['driver_found', 'in_progress'].includes(String(lobby?.status || ''));
+    map.fitBounds(bounds, assignedPage ? { top: 88, right: 24, bottom: 340, left: 24 } : 24);
+  }, [terminalRoutePath, pickupCoords, dropoffCoords, lobby?.passengers_json, lobby?.status, driverLocation, user?.id, presentation]);
 
   useEffect(() => {
     fitLobbyRouteBounds();
@@ -1077,10 +1206,13 @@ export default function ShareRideLobby({
     setPaymentModalPassengerId(pendingPassenger?.id || null);
   }, [lobby?.id, lobby?.status, lobby?.passengers_json, user?.id, terminalStatus, paymentModalPassengerId]);
 
-  // Compute route from driver to pickup/dropoff
+  // Calculate the ETA from the same ordered road itinerary used for shared
+  // drop-offs. While the driver is going to pickup this is one road route; once
+  // the ride is underway, include any remaining passenger stops before yours.
   useEffect(() => {
     if (!driverLocation || !isMapsLoaded || !(window as any).google) {
       setDriverRoutePath([]);
+      setEtaToDestination(null);
       return;
     }
 
@@ -1088,33 +1220,106 @@ export default function ShareRideLobby({
       || lobby?.driver_status === 'arrived'
       || (lobby?.status === 'driver_found' && !lobby?.driver_status);
     let dest: { lat: number; lng: number } | null = null;
+    let waypoints: Array<{ lat: number; lng: number }> = [];
 
     if (isHeadingToPickup && pickupCoords) {
       dest = pickupCoords;
     } else if (dropoffCoords) {
       dest = dropoffCoords;
+
+      const passengers = normalizePassengers(lobby?.passengers_json);
+      const ownPassengers = passengers.filter(passenger => Boolean(
+        user?.id && (
+          passenger.id === user.id ||
+          passenger.id.startsWith(`${user.id}_companion_`)
+        )
+      ));
+      const targetPassenger = ownPassengers.find(passenger => passenger.id === user?.id) || ownPassengers[0];
+      const targetDropoffStatus = String(targetPassenger?.dropoff_status || targetPassenger?.dropoffStatus || '').toLowerCase();
+      if (targetPassenger && ['dropped-off', 'completed'].includes(targetDropoffStatus)) {
+        setDriverRoutePath([]);
+        setEtaToDestination('Arrived');
+        return;
+      }
+      const remainingPassengers = passengers.filter(passenger =>
+        !['dropped-off', 'completed'].includes(String(passenger.dropoff_status || passenger.dropoffStatus || '').toLowerCase())
+      );
+      const itinerary = pickupCoords
+        ? buildLobbyRouteItinerary(remainingPassengers, pickupCoords, terminalRoutePath)
+        : null;
+      const targetStopIndex = targetPassenger
+        ? itinerary?.stops.findIndex(stop => stop.passenger.id === targetPassenger.id) ?? -1
+        : -1;
+
+      if (itinerary && targetStopIndex >= 0) {
+        const currentTravelDistance = routeTravelDistanceFromPickup(driverLocation, itinerary);
+        waypoints = itinerary.stops
+          .slice(0, targetStopIndex)
+          .filter(stop => {
+            const dropoffStatus = String(stop.passenger.dropoff_status || stop.passenger.dropoffStatus || '').toLowerCase();
+            const alreadyDroppedOff = ['dropped-off', 'completed'].includes(dropoffStatus);
+            const stillAhead = currentTravelDistance == null || stop.travelDistance > currentTravelDistance + 25;
+            return !alreadyDroppedOff && stillAhead;
+          })
+          .map(stop => stop.coords);
+      }
     }
 
-    if (!dest) { setDriverRoutePath([]); return; }
+    if (!dest) {
+      setDriverRoutePath([]);
+      setEtaToDestination(null);
+      return;
+    }
 
+    let active = true;
     const DirectionsService = new (window as any).google.maps.DirectionsService();
     DirectionsService.route({
       origin: new (window as any).google.maps.LatLng(driverLocation.lat, driverLocation.lng),
       destination: new (window as any).google.maps.LatLng(dest.lat, dest.lng),
+      ...(waypoints.length > 0 ? {
+        waypoints: waypoints.map(point => ({
+          location: new (window as any).google.maps.LatLng(point.lat, point.lng),
+          stopover: true,
+        })),
+        optimizeWaypoints: false,
+      } : {}),
       travelMode: (window as any).google.maps.TravelMode.DRIVING,
     }, (result: any, status: string) => {
+      if (!active) return;
       if (status === 'OK' && result?.routes?.[0]) {
         const route = result.routes[0];
-        if (route.overview_polyline?.points) {
-          setDriverRoutePath(decodePolyline(route.overview_polyline.points));
+        const routePath = route.overview_polyline?.points
+          ? decodePolyline(route.overview_polyline.points)
+          : route.overview_path?.map((point: any) => ({ lat: point.lat(), lng: point.lng() })) || [];
+        if (routePath.length > 0) setDriverRoutePath(routePath);
+
+        const durationSeconds = (route.legs || []).reduce(
+          (total: number, leg: any) => total + Number(leg.duration?.value || 0),
+          0,
+        );
+        if (durationSeconds > 0) {
+          setEtaToDestination(formatEtaFromSeconds(durationSeconds));
+        } else {
+          const durationText = route.legs?.[route.legs.length - 1]?.duration?.text;
+          setEtaToDestination(durationText || null);
         }
-        const leg = route.legs?.[0];
-        if (leg?.duration?.text) {
-          setEtaToDestination(leg.duration.text);
-        }
+      } else {
+        setDriverRoutePath([]);
+        setEtaToDestination(null);
       }
     });
-  }, [driverLocation, isMapsLoaded, lobby?.driver_status, pickupCoords, dropoffCoords]);
+    return () => { active = false; };
+  }, [
+    driverLocation,
+    isMapsLoaded,
+    lobby?.driver_status,
+    lobby?.status,
+    lobby?.passengers_json,
+    pickupCoords,
+    dropoffCoords,
+    terminalRoutePath,
+    user?.id,
+  ]);
 
   // Route from pickup through only this customer's drop-offs.
   useEffect(() => {
@@ -1748,8 +1953,8 @@ if (matchingRouteLobby) {
 
 if (loading) {
     return (
-      <div className="fixed inset-0 bg-black/50 z-[2000] flex items-center justify-center">
-        <div className="bg-surface rounded-lg p-8 text-center">
+      <div className="fixed inset-0 z-[2000] flex items-center justify-center bg-black/50" aria-busy="true">
+        <div className="rounded-lg bg-surface p-8 text-center" role="status" aria-live="polite">
           <div className="animate-spin w-12 h-12 border-4 border-[var(--primary)] border-t-transparent rounded-full mx-auto mb-4"></div>
           <p className="text-[var(--muted-foreground)]">Creating lobby...</p>
         </div>
@@ -1867,7 +2072,7 @@ if (loading) {
         className="w-full max-w-sm rounded-2xl bg-surface p-6 text-center shadow-2xl"
       >
         <div className="mx-auto mb-4 flex size-16 items-center justify-center rounded-full bg-[var(--success-soft)] text-[var(--success)]">
-          <Tricycle className="size-8" aria-hidden="true" />
+          <TerminalIconGlyph className="size-8" aria-hidden="true" />
         </div>
         <h2 id="share-ride-driver-assigned-title" className="mb-2 text-xl font-bold text-[var(--ink)]">
           Driver assigned!
@@ -2133,10 +2338,12 @@ if (loading) {
       : 0,
   );
 
+  const showAssignedRidePage = presentation === 'page' && ['driver_found', 'in_progress'].includes(lobby.status);
+
   // Full lobby view
   return (
     <>
-      <div className={presentation === 'page'
+      {!showAssignedRidePage ? <div className={presentation === 'page'
         ? "fixed inset-0 z-[2000] bg-[var(--background)]"
         : "fixed inset-0 bg-black/50 z-[2000] flex items-end"}>
         <div className={presentation === 'page'
@@ -2545,7 +2752,207 @@ if (loading) {
             )}
           </div>
         </div>
-      </div>
+      </div> : (
+        <div className="fixed inset-0 z-[2000] overflow-hidden bg-[var(--background)]">
+          <div className="absolute inset-0">
+            {isMapsLoaded ? (
+              <GoogleMap
+                mapContainerStyle={{ width: '100%', height: '100%' }}
+                center={driverLocation || pickupCoords || terminalRoutePath[0] || { lat: 14.5995, lng: 120.9842 }}
+                zoom={15}
+                onLoad={(map: any) => {
+                  lobbyMapRef.current = map;
+                  fitLobbyRouteBounds();
+                }}
+                onUnmount={() => { lobbyMapRef.current = null; }}
+                onDragStart={() => { lobbyMapWasManuallyMovedRef.current = true; }}
+                options={{
+                  zoomControl: false,
+                  fullscreenControl: false,
+                  streetViewControl: false,
+                  mapTypeControl: false,
+                  clickableIcons: false,
+                  draggable: true,
+                  gestureHandling: 'greedy',
+                }}
+              >
+                <MapTypeToggle />
+                {driverLocation && (
+                  <MarkerF
+                    position={driverLocation}
+                    title="Driver Location"
+                    icon={(() => {
+                      const google = (window as any)?.google;
+                      if (!google?.maps?.Size || !google?.maps?.Point) return undefined;
+                      return {
+                        url: tricycleIcon,
+                        scaledSize: new google.maps.Size(44, 44),
+                        anchor: new google.maps.Point(22, 22),
+                      };
+                    })()}
+                  />
+                )}
+                {pickupCoords && (
+                  <MarkerF position={pickupCoords} title="Pickup" icon={terminalMarkerIcon(terminalMarkerColor, 58)} />
+                )}
+                {mapDropoffStops.map(stop => (
+                  <MarkerF
+                    key={stop.key}
+                    position={stop.coords}
+                    title="Your drop-off"
+                    icon={createDropoffStopIcon(terminalRouteColor)}
+                    zIndex={20}
+                  />
+                ))}
+                {terminalRoutePath.length > 0 && (
+                  <Polyline
+                    path={terminalRoutePath}
+                    options={{ strokeColor: terminalRouteColor, strokeOpacity: 0.22, strokeWeight: 10, geodesic: true, clickable: false }}
+                  />
+                )}
+                {terminalRoutePath.length > 0 && (
+                  <Polyline
+                    path={terminalRoutePath}
+                    options={{ strokeColor: terminalRouteColor, strokeOpacity: 0.95, strokeWeight: 4, geodesic: true, clickable: false }}
+                  />
+                )}
+                {driverRoutePath.length > 0 && (
+                  <Polyline
+                    path={driverRoutePath}
+                    options={{
+                      strokeColor: (lobby.driver_status === 'on-the-way' || lobby.driver_status === 'arrived') ? 'var(--success)' : 'var(--info)',
+                      strokeOpacity: 0.9,
+                      strokeWeight: 4,
+                      geodesic: true,
+                    }}
+                  />
+                )}
+                {destinationRoutePath.length > 0 && (
+                  <Polyline
+                    path={destinationRoutePath}
+                    options={{ strokeColor: 'var(--primary)', strokeOpacity: 0.9, strokeWeight: 5, geodesic: true }}
+                  />
+                )}
+              </GoogleMap>
+            ) : (
+              <div className="absolute inset-0 bg-[var(--muted)]" aria-label="Loading ride map" />
+            )}
+          </div>
+
+          <div className="pointer-events-none absolute left-3 top-[calc(env(safe-area-inset-top)+3.75rem)] z-10 flex items-center gap-2 rounded-full bg-surface/95 px-3 py-1.5 shadow-lg backdrop-blur-sm">
+            <span className={`size-2 rounded-full ${driverLocation ? 'animate-pulse bg-[var(--success)]' : 'bg-[var(--info)]'}`} />
+            <span className="text-xs font-bold text-[var(--ink)]">Live Tracking</span>
+          </div>
+          <button
+            type="button"
+            onClick={() => onClose()}
+            aria-label="Back to customer home"
+            className="absolute right-3 top-[calc(env(safe-area-inset-top)+3.5rem)] z-10 grid size-11 place-items-center rounded-full bg-surface/95 text-[var(--ink)] shadow-lg backdrop-blur-sm"
+          >
+            <ArrowLeft className="size-5" aria-hidden="true" />
+          </button>
+
+          <div
+            className="absolute left-0 right-0 z-20 px-3"
+            style={{ bottom: 'calc(4.5rem + env(safe-area-inset-bottom))' }}
+          >
+            <Card className="max-h-[calc(100dvh-12rem)] overflow-y-auto rounded-2xl border-2 border-[var(--primary)] bg-surface shadow-2xl">
+              <div className="p-4">
+                <div className="mb-3 flex items-center gap-3">
+                  <div className="grid size-14 shrink-0 place-items-center overflow-hidden rounded-full bg-[var(--primary-soft)] text-sm font-bold text-[var(--primary)]">
+                    {driverProfileAvatar ? (
+                      <img
+                        src={driverProfileAvatar}
+                        alt={`${lobby.driver_name || 'Driver'}'s profile`}
+                        className="size-full object-cover"
+                        onError={() => setDriverProfileAvatar(null)}
+                      />
+                    ) : (
+                      <span role="img" aria-label={`${lobby.driver_name || 'Driver'}'s initials`}>
+                        {getDriverInitials(lobby.driver_name)}
+                      </span>
+                    )}
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <div className="flex min-w-0 items-center gap-2">
+                      <h2 className="truncate text-base font-bold text-[var(--ink)]">{lobby.driver_name || 'Your driver'}</h2>
+                      <span className="shrink-0 rounded-full border border-[var(--success)]/40 bg-[var(--success-soft)] px-2 py-0.5 text-[10px] font-semibold text-[var(--success)]">
+                        {lobby.driver_status === 'arrived' ? 'Arrived' : 'On the way'}
+                      </span>
+                    </div>
+                    <div className="mt-0.5 flex items-center gap-2">
+                      <Badge className="bg-[var(--success)] text-[10px] text-white">Driver Found</Badge>
+                      <span className="truncate text-xs text-[var(--muted-foreground)]">{lobby.driver_plate || 'Plate not available'}</span>
+                    </div>
+                  </div>
+                  <div className="shrink-0 text-right">
+                    {(computedDriverRating || lobby.driver_rating) && (
+                      <div className="flex items-center justify-end gap-1 text-[var(--amber)]">
+                        <Star className="size-4 fill-current" aria-hidden="true" />
+                        <span className="text-sm font-bold text-[var(--ink)]">{computedDriverRating || lobby.driver_rating}</span>
+                      </div>
+                    )}
+                    <p className="text-xs text-[var(--muted-foreground)]">ETA: {etaToDestination || 'Updating'}</p>
+                  </div>
+                </div>
+
+                <div className="mb-3 space-y-1.5 rounded-xl bg-[var(--muted)] p-3">
+                  <div className="flex min-w-0 items-start gap-2">
+                    <span className="mt-0.5 grid size-5 shrink-0 place-items-center rounded-full bg-[var(--ink-solid)]">
+                      <span className="size-2 rounded-full bg-surface" />
+                    </span>
+                    <div className="min-w-0 flex-1">
+                      <p className="text-[10px] font-semibold text-[var(--muted-foreground)]">Pickup</p>
+                      <p className="truncate text-xs font-semibold text-[var(--ink)]">{lobby.pickup_location}</p>
+                    </div>
+                  </div>
+                  <div className="flex min-w-0 items-start gap-2">
+                    <span className="mt-0.5 grid size-5 shrink-0 place-items-center rounded-full bg-[var(--primary)]">
+                      <span className="size-2 rounded-full bg-surface" />
+                    </span>
+                    <div className="min-w-0 flex-1">
+                      <p className="text-[10px] font-semibold text-[var(--muted-foreground)]">Drop-off</p>
+                      <p className="truncate text-xs font-semibold text-[var(--ink)]">{ownPassenger?.dropoffAddress || dropoffAddress || ownDropoff}</p>
+                    </div>
+                    {etaToDestination && (
+                      <span className="shrink-0 rounded-lg bg-[var(--error-soft)] px-2 py-1 text-[10px] font-bold text-[var(--error)]">{etaToDestination}</span>
+                    )}
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <div className="min-w-0 flex-1">
+                    <p className="text-[10px] font-semibold text-[var(--muted-foreground)]">Fare</p>
+                    <p className="text-xl font-bold text-[var(--primary)]">₱{yourSeatTotal.toFixed(2)}</p>
+                    <p className="text-[10px] text-[var(--muted-foreground)]">{String(lobby.payment_method || paymentMethod).toUpperCase() === 'COD' ? 'Cash' : lobby.payment_method || paymentMethod}</p>
+                  </div>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={openLobbyChatThread}
+                    disabled={openingChat}
+                    className="h-10 gap-1.5 px-3 text-xs"
+                  >
+                    <MessageCircle className="size-4" aria-hidden="true" />
+                    Chat
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => setShowLeaveConfirm(true)}
+                    className="h-10 gap-1 border-[var(--error)] px-3 text-xs text-[var(--error)] hover:bg-[var(--error-soft)]"
+                  >
+                    <X className="size-4" aria-hidden="true" />
+                    Cancel
+                  </Button>
+                </div>
+              </div>
+            </Card>
+          </div>
+
+          <BottomNav active="home" />
+        </div>
+      )}
 
       {isTerminal && (
         <div className="fixed inset-0 bg-black/60 z-[2200] flex items-center justify-center p-4">

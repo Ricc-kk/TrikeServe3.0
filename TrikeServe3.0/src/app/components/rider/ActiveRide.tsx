@@ -3087,8 +3087,8 @@ export default function ActiveRide() {
         */}
         {!isMinimized && (
           <>
-            <Card className="p-4 border-2 border-[var(--muted)] shadow-sm">
-              <div className="flex items-start gap-4 mb-3">
+            <Card className={`p-4 border-2 border-[var(--muted)] shadow-sm ${isSharedRide ? 'gap-0' : ''}`}>
+              <div className={`flex items-start gap-4 ${isSharedRide ? 'mb-0' : 'mb-3'}`}>
                 {!isSharedRide && (
                   <div className="size-14 flex-shrink-0 overflow-hidden rounded-full bg-[var(--primary-soft)] flex items-center justify-center">
                     {passengerAvatar ? (
@@ -3119,7 +3119,7 @@ export default function ActiveRide() {
                         const isPaymentSettled = ['received', 'prepaid'].includes(String(p.payment_status || p.paymentStatus || '').toLowerCase());
                         const isNextDropoff = !isDroppedOff && nextSharedDropoffPassengerId === passengerId;
                         return (
-                          <Card key={passengerId} className="border border-[var(--border)] bg-[var(--surface)] p-2 shadow-sm">
+                          <Card key={passengerId} className="gap-2 border border-[var(--border)] bg-[var(--surface)] p-2 shadow-sm">
                             <div className="flex items-center justify-between gap-2">
                               <span className="flex min-w-0 items-center gap-1.5">
                                 <span className="grid size-8 shrink-0 place-items-center overflow-hidden rounded-full border border-[var(--border)] bg-[var(--primary-soft)] text-sm">
@@ -3144,7 +3144,7 @@ export default function ActiveRide() {
                                 </span>
                               )}
                             </div>
-                            <div className="mt-1.5 flex items-center justify-between gap-2 border-t border-[var(--border)] pt-1.5">
+                            <div className="flex items-center justify-between gap-2 border-t border-[var(--border)] pt-1.5">
                               <span className={`rounded-full px-2 py-0.5 text-[10px] font-bold ${isPaymentSettled ? 'bg-[var(--success-soft)] text-[var(--success)]' : isDroppedOff ? 'bg-[var(--amber-soft)] text-[var(--amber-ink)]' : isNextDropoff ? 'bg-[var(--primary-soft)] text-[var(--primary)]' : 'bg-[var(--muted)] text-[var(--muted-foreground)]'}`}>
                                 {isPaymentSettled ? 'Completed' : isDroppedOff ? 'Payment due' : isNextDropoff ? (rideData.status === 'drop-off' ? 'At drop-off' : 'Next drop-off') : 'Upcoming'}
                               </span>
@@ -3165,7 +3165,7 @@ export default function ActiveRide() {
                               variant="outline"
                               onClick={() => void openPassengerChat({ id: passengerId, name: passengerName })}
                               aria-label={`Message ${passengerName}`}
-                              className="mt-1.5 w-full justify-start border-[var(--border)] py-1.5 text-sm font-semibold text-[var(--muted-foreground)]"
+                              className="w-full justify-start border-[var(--border)] py-1.5 text-sm font-semibold text-[var(--muted-foreground)]"
                             >
                               <MessageSquare className="mr-1.5 size-4" aria-hidden="true" />
                               Message

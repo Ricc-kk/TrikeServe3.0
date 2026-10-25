@@ -40,6 +40,7 @@ import { supabase } from "../../../utils/supabase";
 import { isAwaitingApproval } from "../../../lib/roleAccess";
 import SharedRides from "./SharedRides";
 import BrowseAvailableLobbies from "./BrowseAvailableLobbies";
+import ShareRideLobby from "./ShareRideLobby";
 import CustomerHubHeader from "./CustomerHubHeader";
 import RecommendedRestaurants from "./RecommendedRestaurants";
 import CustomerServiceHub from "./CustomerServiceHub";
@@ -460,6 +461,7 @@ export default function CustomerHome() {
   const [showBookingConfirm, setShowBookingConfirm] = useState(false);
   const [showSharedRides, setShowSharedRides] = useState(false);
   const [showShareLobby, setShowShareLobby] = useState(false);
+  const [shareLobbyInitialId, setShareLobbyInitialId] = useState<string | undefined>();
   const [paymentMethod] = useState<'COD'>('COD');
   const [activeRide, setActiveRide] = useState<any>(null);
   const [rideStatus, setRideStatus] = useState<'searching' | 'driver-found' | 'picking-up' | 'in-transit' | null>(null);
@@ -1422,6 +1424,7 @@ export default function CustomerHome() {
     setRideStateOwnerId(nextOwnerId);
     setShowShareLobby(false);
     setActiveShareLobbyId(null);
+    setShareLobbyInitialId(undefined);
     setActiveShareLobbyPromptId(null);
     setShowLobbyList(false);
     setShowSharedRides(false);
@@ -1652,8 +1655,10 @@ export default function CustomerHome() {
           ).length;
           setPassengerCount(userSeats);
           setActiveShareLobbyId(userLobby.id);
+          setShareLobbyInitialId(userLobby.id);
           
           // Show the lobby
+          setBookingStep('home');
           setShowShareLobby(true);
           console.log('âœ… Restored active lobby:', userLobby.id, 'Status:', userLobby.status);
         }
@@ -1683,7 +1688,11 @@ export default function CustomerHome() {
         }
         // Ride still active - reopen the lobby automatically.
         setActiveShareLobbyId(storedLobbyId);
-        if (!cameFromCustomerHomeTab) setShowShareLobby(true);
+        if (!cameFromCustomerHomeTab) {
+          setShareLobbyInitialId(storedLobbyId);
+          setBookingStep('home');
+          setShowShareLobby(true);
+        }
       });
     }
     return () => {
@@ -1706,8 +1715,12 @@ export default function CustomerHome() {
     } catch {
       // Storage unavailable; the active lobby remains available in memory.
     }
-    if (!cameFromCustomerHomeTab) setShowShareLobby(true);
-  }, [activeRideLobby?.id, activeShareLobbyStorageKey, cameFromCustomerHomeTab]);
+    if (!cameFromCustomerHomeTab && !showShareLobby) {
+      setShareLobbyInitialId(activeRideLobby.id);
+      setBookingStep('home');
+      setShowShareLobby(true);
+    }
+  }, [activeRideLobby?.id, activeShareLobbyStorageKey, cameFromCustomerHomeTab, showShareLobby]);
 
   // The Home tab must be able to uncover the home hub even when this same
   // screen is currently showing the full-screen shared-ride lobby.
@@ -2780,7 +2793,9 @@ export default function CustomerHome() {
   // The booking UI lives on top of the map and stays out of the way while a
   // ride is active, already being searched for, or already running elsewhere.
   const showBookingFlow = !visibleActiveRide && visibleRideStatus !== 'searching' && !rideBlocked;
-  const showCustomerHomeHub = bookingStep === 'home' && (showBookingFlow || cameFromCustomerHomeTab);
+  // Keep the home hub underneath lobby creation so its translucent loader has
+  // the actual customer home screen to reveal.
+  const showCustomerHomeHub = bookingStep === 'home' && (showBookingFlow || cameFromCustomerHomeTab || showShareLobby);
 
   /**
    * Watch the driver's messages so the floating head's badge is honest.
@@ -2966,6 +2981,8 @@ export default function CustomerHome() {
       if (!(await checkRideGates())) return;
 
       setActiveShareLobbyId(null);
+      setShareLobbyInitialId(undefined);
+      setBookingStep('home');
       setShowShareLobby(true);
     } else {
       if (!(await checkRideGates())) return;
@@ -3521,58 +3538,6 @@ const shareFareBreakdown = [
   `\u20B1${activeRates.perKm}/km per passenger after ${formatKm(Math.max(0, activeRates.baseFareIncludedKm))} km${shareExtraKm == null ? "" : ` (${formatKm(shareExtraKm)} extra km)`}`,
 ].join(" \u00B7 ");
 
-  // Shared rides use their own page so the live lobby, map, and passenger
-  // details have the full screen. New bookings pass their selected route into
-  // that page; restored and joined lobbies pass their persisted lobby id.
-  // Keep this effect after fare and seat calculations, since React evaluates
-  // the dependency array during render before it invokes the effect callback.
-  useEffect(() => {
-    if (!showShareLobby || !rideStateBelongsToCurrentUser) return;
-
-    const state = activeShareLobbyId
-      ? { lobbyId: activeShareLobbyId }
-      : {
-          booking: {
-            pickup,
-            pickupAddress,
-            dropoff,
-            dropoffAddress,
-            pickupCoords,
-            dropoffCoords,
-            passengerCount,
-            maxPassengersAllowed: terminalSeatLimit,
-            pricePerSeat: shareFarePerSeat,
-            paymentMethod,
-            selectedTerminalId,
-            selectedRouteId: selectedTerminalBoundary.selectedRoute?.id || null,
-            routePoints: selectedTerminalBoundary.displayRoad,
-            routeWidthM: selectedTerminalBoundary.routeWidthM,
-          },
-        };
-
-    setShowShareLobby(false);
-    navigate('/customer/active-share-ride', { state });
-  }, [
-    showShareLobby,
-    rideStateBelongsToCurrentUser,
-    activeShareLobbyId,
-    pickup,
-    pickupAddress,
-    dropoff,
-    dropoffAddress,
-    pickupCoords,
-    dropoffCoords,
-    passengerCount,
-    terminalSeatLimit,
-    shareFarePerSeat,
-    paymentMethod,
-    selectedTerminalId,
-    selectedTerminalBoundary.selectedRoute?.id,
-    selectedTerminalBoundary.displayRoad,
-    selectedTerminalBoundary.routeWidthM,
-    navigate,
-  ]);
-
 const getPrice = () => {
   if (selectedVehicle === 'share') return shareFareForParty;
   // A private ride is not shared, so there is nothing to divide: `privateTotal` is
@@ -3707,6 +3672,22 @@ const getPrice = () => {
     window.location.reload();
   };
 
+  const finishRideCompletion = () => {
+    setRideCompletedPopup(false);
+    setRatingSubmitted(false);
+    setSelectedRating(0);
+    setActiveRide(null);
+    setRideStatus(null);
+    setCurrentRequestId(null);
+    setCompletionPopupType('ride');
+    setRideDriverId(null);
+    setDeliveryBusiness(null);
+    resetCustomerRideVisuals();
+    if (activeRideStorageKey) localStorage.removeItem(activeRideStorageKey);
+    if (activeShareLobbyStorageKey) localStorage.removeItem(activeShareLobbyStorageKey);
+    window.location.reload();
+  };
+
   const filteredLocations = popularLocations.filter(loc =>
     loc.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
     loc.address.toLowerCase().includes(searchQuery.toLowerCase())
@@ -3714,7 +3695,7 @@ const getPrice = () => {
 
   // Home stays a scrolling service feed while the customer is riding. The map
   // remains for booking steps and ride tracking, but is hidden when Home is
-  // explicitly selected.
+  // explicitly selected or serves as the share lobby loading backdrop.
   const showMap = !showCustomerHomeHub;
 
   /**
@@ -3726,6 +3707,34 @@ const getPrice = () => {
    */
   const hubLocationLabel =
     (pickupAddress && pickupAddress.trim()) || (pickup && pickup !== 'Current Location' ? pickup : '') || 'Locating youâ€¦';
+
+  const rememberActiveShareLobby = (lobbyId: string) => {
+    setActiveShareLobbyId(lobbyId);
+    try {
+      if (activeShareLobbyStorageKey) {
+        localStorage.setItem(activeShareLobbyStorageKey, lobbyId);
+      }
+    } catch {
+      // Storage is a resume hint; the lobby remains open in this view.
+    }
+  };
+
+  const closeShareLobby = (status?: string) => {
+    setShowShareLobby(false);
+    setShareLobbyInitialId(undefined);
+    resetCustomerRideVisuals();
+    navigate('/customer', { replace: true, state: { customerHomeTab: true } });
+    if (!status) return;
+
+    setActiveShareLobbyId(null);
+    try {
+      if (activeShareLobbyStorageKey) {
+        localStorage.removeItem(activeShareLobbyStorageKey);
+      }
+    } catch {
+      // The database membership remains authoritative when storage is unavailable.
+    }
+  };
 
   /**
    * The page gets a mint wash that fades to the base colour over the first
@@ -3987,7 +3996,9 @@ const getPrice = () => {
           type="button"
           onClick={() => {
             setActiveShareLobbyId(resumableShareLobbyId);
-            navigate('/customer/active-share-ride', { state: { lobbyId: resumableShareLobbyId } });
+            setShareLobbyInitialId(resumableShareLobbyId);
+            setBookingStep('home');
+            setShowShareLobby(true);
           }}
           aria-label="Open your active Share Ride"
           title="Share Ride"
@@ -4607,59 +4618,142 @@ const getPrice = () => {
 
         {/* Ride Completed Popup */}
         {rideCompletedPopup && (
-          <div className="fixed inset-0 bg-black/50 z-[2100] flex items-end">
-            <div className="bg-surface w-full rounded-t-3xl p-6 animate-in slide-in-from-bottom duration-300">
-              <div className="max-w-sm mx-auto text-center">
-                <div className="w-16 h-16 bg-[var(--info-soft)] rounded-full flex items-center justify-center mx-auto mb-4">
-                  <Check className="size-8 text-[var(--info)]" aria-hidden="true" />
+          completionPopupType === 'ride' ? (
+            <div className="fixed inset-0 z-[2200] flex items-center justify-center bg-black/60 p-4">
+              <Card
+                role="dialog"
+                aria-modal="true"
+                aria-labelledby="customer-ride-completed-title"
+                className="w-full max-w-sm gap-0 rounded-2xl border-2 border-[var(--success-soft)] bg-surface p-5 text-center shadow-2xl"
+              >
+                <div className="mx-auto mb-3 flex size-14 items-center justify-center rounded-full bg-[var(--success-soft)]">
+                  <Check className="size-8 text-[var(--success)]" aria-hidden="true" />
                 </div>
-                <h3 className="text-2xl font-bold text-[var(--ink)] mb-2">
-                  {completionPopupType === 'delivery' ? 'Delivery Completed!' : 'Ride Completed!'}
+                <h3 id="customer-ride-completed-title" className="mb-1 text-lg font-bold text-[var(--ink)]">
+                  Ride Completed
                 </h3>
-                <p className="text-sm text-[var(--muted-foreground)] mb-6">
-                  {completionPopupType === 'delivery'
-                    ? 'Thank you for using TrikeServe. Your delivery has been completed!'
-                    : 'Thank you for using TrikeServe. We hope you had a great ride!'}
+                <p className="mb-4 text-sm text-[var(--muted-foreground)]">
+                  Your drop-off is confirmed. Your ride is complete. Thank you for riding with TrikeServe!
                 </p>
-
-                <div className="grid grid-cols-2 gap-3 mb-0">
+                {rideDriverId && (
+                  <div className="mb-4 rounded-xl bg-[var(--muted)] p-3 text-left">
+                    <div className="flex items-center gap-3">
+                      <span className="grid size-12 shrink-0 place-items-center overflow-hidden rounded-full border border-[var(--border)] bg-[var(--primary-soft)] text-sm font-bold text-[var(--primary)]">
+                        {rideDriverAvatar ? (
+                          <img
+                            src={rideDriverAvatar}
+                            alt={`${activeRide?.driver || 'Driver'}'s profile`}
+                            className="size-full object-cover"
+                            onError={() => setRideDriverAvatar(null)}
+                          />
+                        ) : (
+                          getDriverInitials(activeRide?.driver)
+                        )}
+                      </span>
+                      <div className="min-w-0 flex-1">
+                        <p className="text-[10px] font-bold uppercase tracking-wide text-[var(--muted-foreground)]">Your driver</p>
+                        <p className="truncate text-sm font-bold text-[var(--ink)]">{activeRide?.driver || 'Your driver'}</p>
+                      </div>
+                    </div>
+                    {ratingSubmitted ? (
+                      <p role="status" className="mt-3 flex items-center gap-2 rounded-lg bg-[var(--success-soft)] p-2 text-sm font-semibold text-[var(--success)]">
+                        <Check className="size-4 shrink-0" aria-hidden="true" />
+                        Thank you! Your rating has been submitted.
+                      </p>
+                    ) : (
+                      <>
+                        <p className="mt-3 text-center text-sm font-semibold text-[var(--ink)]">How was your ride?</p>
+                        <div role="radiogroup" aria-label="Rate your driver" className="mt-1 flex justify-center gap-1">
+                          {[1, 2, 3, 4, 5].map((star) => (
+                            <button
+                              key={star}
+                              type="button"
+                              role="radio"
+                              aria-label={`${star} out of 5 stars`}
+                              aria-checked={selectedRating === star}
+                              onClick={() => setSelectedRating(star)}
+                              className="grid size-10 place-items-center rounded-lg transition-transform hover:scale-110 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--primary)]"
+                            >
+                              <Star
+                                className={`size-7 ${
+                                  star <= selectedRating
+                                    ? 'fill-[var(--amber)] text-[var(--amber)]'
+                                    : 'fill-[var(--border)] text-[var(--border)]'
+                                }`}
+                                aria-hidden="true"
+                              />
+                            </button>
+                          ))}
+                        </div>
+                        <div className="mt-2 grid grid-cols-2 gap-2">
+                          <Button
+                            type="button"
+                            onClick={handleSubmitRating}
+                            disabled={!selectedRating || ratingSubmitting}
+                            className="h-11 w-full bg-[var(--primary)] font-bold text-white hover:bg-[var(--primary)] disabled:opacity-50"
+                          >
+                            {ratingSubmitting ? 'Submitting...' : 'Submit Rating'}
+                          </Button>
+                          <Button
+                            type="button"
+                            onClick={finishRideCompletion}
+                            className="h-11 w-full border-2 border-[var(--border)] bg-surface font-bold text-[var(--ink)]"
+                          >
+                            Done
+                          </Button>
+                        </div>
+                      </>
+                    )}
+                  </div>
+                )}
+                {(!rideDriverId || ratingSubmitted) && (
                   <Button
-                    onClick={() => {
-                      setRideCompletedPopup(false);
-                      setRatingSubmitted(false);
-                      setSelectedRating(0);
-                      setShowRatingModal(true);
-                      setCurrentRequestId(null);
-                    }}
-                    className="w-full bg-surface border-2 border-[var(--info-soft)] text-[var(--info)] py-3 font-bold"
-                  >
-                    {completionPopupType === 'delivery' ? 'Rate Restaurant' : 'Leave a Rating'}
-                  </Button>
-
-                  <Button
-                    onClick={() => {
-                      setRideCompletedPopup(false);
-                      // Reset ride state
-                      setActiveRide(null);
-                      setRideStatus(null);
-                      setCurrentRequestId(null);
-                      setCompletionPopupType('ride');
-                      setRideDriverId(null);
-                      setDeliveryBusiness(null);
-                      resetCustomerRideVisuals();
-                      if (activeRideStorageKey) localStorage.removeItem(activeRideStorageKey);
-                      if (activeShareLobbyStorageKey) localStorage.removeItem(activeShareLobbyStorageKey);
-                      // Refresh the page to fully reset the ride page
-                      window.location.reload();
-                    }}
-                    className="w-full bg-[var(--info)] hover:bg-[var(--info)] text-white py-3 font-bold"
+                    type="button"
+                    onClick={finishRideCompletion}
+                    className="w-full bg-[var(--primary)] font-bold text-white hover:bg-[var(--primary)]"
                   >
                     Done
                   </Button>
+                )}
+              </Card>
+            </div>
+          ) : (
+            <div className="fixed inset-0 z-[2100] flex items-end bg-black/50">
+              <div className="w-full rounded-t-3xl bg-surface p-6 animate-in slide-in-from-bottom duration-300">
+                <div className="mx-auto max-w-sm text-center">
+                  <div className="mx-auto mb-4 flex size-16 items-center justify-center rounded-full bg-[var(--info-soft)]">
+                    <Check className="size-8 text-[var(--info)]" aria-hidden="true" />
+                  </div>
+                  <h3 className="mb-2 text-2xl font-bold text-[var(--ink)]">Delivery Completed!</h3>
+                  <p className="mb-6 text-sm text-[var(--muted-foreground)]">
+                    Thank you for using TrikeServe. Your delivery has been completed!
+                  </p>
+
+                  <div className="mb-0 grid grid-cols-2 gap-3">
+                    <Button
+                      onClick={() => {
+                        setRideCompletedPopup(false);
+                        setRatingSubmitted(false);
+                        setSelectedRating(0);
+                        setShowRatingModal(true);
+                        setCurrentRequestId(null);
+                      }}
+                      className="w-full border-2 border-[var(--info-soft)] bg-surface py-3 font-bold text-[var(--info)]"
+                    >
+                      Rate Restaurant
+                    </Button>
+
+                    <Button
+                      onClick={finishRideCompletion}
+                      className="w-full bg-[var(--info)] py-3 font-bold text-white hover:bg-[var(--info)]"
+                    >
+                      Done
+                    </Button>
+                  </div>
                 </div>
               </div>
             </div>
-          </div>
+          )
         )}
 
         {/* Leave a Rating Modal (private rides) */}
@@ -5267,6 +5361,8 @@ const getPrice = () => {
                   const lobbyId = activeShareLobbyPromptId;
                   setActiveShareLobbyPromptId(null);
                   setActiveShareLobbyId(lobbyId);
+                  setShareLobbyInitialId(lobbyId);
+                  setBookingStep('home');
                   setShowShareLobby(true);
                   try {
                     if (activeShareLobbyStorageKey) {
@@ -5578,7 +5674,9 @@ const getPrice = () => {
           rates={activeRates}
           onLobbyJoined={(lobbyId) => {
             setActiveShareLobbyId(lobbyId);
+            setShareLobbyInitialId(lobbyId);
             setShowLobbyList(false);
+            setBookingStep('home');
             setShowShareLobby(true);
             // Remember the active lobby so the customer can return after leaving.
             if (activeShareLobbyStorageKey) {
@@ -5588,6 +5686,32 @@ const getPrice = () => {
           onClose={() => {
             setShowLobbyList(false);
           }}
+        />
+      )}
+
+      {/* Keep the customer home mounted below the translucent lobby loader. */}
+      {showShareLobby && rideStateBelongsToCurrentUser && (
+        <ShareRideLobby
+          lobbyId={shareLobbyInitialId}
+          pickup={pickup}
+          pickupAddress={pickupAddress}
+          dropoff={dropoff}
+          dropoffAddress={dropoffAddress}
+          pickupCoords={pickupCoords}
+          dropoffCoords={dropoffCoords}
+          passengerCount={passengerCount}
+          maxPassengersAllowed={terminalSeatLimit}
+          pricePerSeat={shareFarePerSeat}
+          paymentMethod={paymentMethod}
+          selectedTerminalId={selectedTerminalId}
+          selectedRouteId={selectedTerminalBoundary.selectedRoute?.id || null}
+          routePoints={selectedTerminalBoundary.displayRoad}
+          routeWidthM={selectedTerminalBoundary.routeWidthM}
+          presentation="page"
+          onLobbyLoaded={rememberActiveShareLobby}
+          onDriverFound={rememberActiveShareLobby}
+          onLobbyMoved={rememberActiveShareLobby}
+          onClose={closeShareLobby}
         />
       )}
 
