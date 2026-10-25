@@ -14,8 +14,8 @@ import tricycleIcon from '../../../assets/0b76d1aa56b8ad6e15dd4efc8a0100b0ca5762
 import FloatingChatHead from "../ui/FloatingChatHead";
 import BottomNav from "../ui/BottomNav";
 import RideChatOverlay from "../rider/RideChatOverlay";
-import { RIDE_MAP_DROPOFF_COLOR, RIDE_MAP_DRIVER_COLOR, RIDE_MAP_PICKUP_COLOR } from "@/lib/rideMapColors";
-import { normalizeRouteColor, terminalMarkerIcon, TerminalIconGlyph } from "../ui/TerminalIcon";
+import { RIDE_MAP_DROPOFF_COLOR, RIDE_MAP_DRIVER_COLOR } from "@/lib/rideMapColors";
+import { DEFAULT_TERMINAL_COLOR, normalizeRouteColor, normalizeTerminalColor, terminalMarkerIcon, TerminalIconGlyph } from "../ui/TerminalIcon";
 import { backfillLegacySharedRidePassengerFares, sumSharedRidePassengerFares, DEFAULT_MAX_PASSENGERS } from "@/lib/pricing";
 import { useDevModeOverride } from "../../hooks/useDevModeSettings";
 import { customerActiveShareLobbyStorageKey, isCustomerLobbyPassenger } from "../../../lib/rideLock";
@@ -433,6 +433,7 @@ export default function ShareRideLobby({
   const [destinationRoutePath, setDestinationRoutePath] = useState<Array<{ lat: number; lng: number }>>([]);
   const [terminalRoutePath, setTerminalRoutePath] = useState<Array<{ lat: number; lng: number }>>([]);
   const [terminalRouteColor, setTerminalRouteColor] = useState(() => normalizeRouteColor(undefined));
+  const [terminalMarkerColor, setTerminalMarkerColor] = useState(DEFAULT_TERMINAL_COLOR);
   const lobbyMapRef = useRef<any>(null);
   const lobbyMapWasManuallyMovedRef = useRef(false);
   const driverLocationIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -802,19 +803,21 @@ export default function ShareRideLobby({
     if (!terminalId) {
       setTerminalRoutePath([]);
       setTerminalRouteColor(normalizeRouteColor(undefined));
+      setTerminalMarkerColor(DEFAULT_TERMINAL_COLOR);
       return;
     }
 
     let active = true;
     supabase
       .from('terminals')
-      .select('routes, boundary_polygon, road_width_m, route_color')
+      .select('routes, boundary_polygon, road_width_m, route_color, marker_color')
       .eq('id', terminalId)
       .maybeSingle()
       .then(({ data, error }) => {
         if (!active) return;
         if (error || !data) {
           setTerminalRoutePath([]);
+          setTerminalMarkerColor(DEFAULT_TERMINAL_COLOR);
           return;
         }
         const storedRoutes = normalizeTerminalRoutes(data.routes);
@@ -847,10 +850,12 @@ export default function ShareRideLobby({
           : routeForPassenger || routes.find(route => route.enabled) || routes[0];
         setTerminalRoutePath(currentSelectionMatchesLobby ? routePoints! : selectedRoute?.points || []);
         setTerminalRouteColor(normalizeRouteColor(data.route_color));
+        setTerminalMarkerColor(normalizeTerminalColor(data.marker_color));
       })
       .catch(() => {
         if (active) {
           setTerminalRoutePath([]);
+          setTerminalMarkerColor(DEFAULT_TERMINAL_COLOR);
         }
       });
 
@@ -1893,7 +1898,7 @@ if (matchingRouteLobby) {
             <MarkerF
               position={pickupCoords}
               title="Pickup"
-              icon={terminalMarkerIcon(RIDE_MAP_PICKUP_COLOR, 58)}
+              icon={terminalMarkerIcon(terminalMarkerColor, 58)}
             />
           )}
           {dropoffCoords && (
@@ -2627,7 +2632,7 @@ if (loading) {
                     <MarkerF
                       position={pickupCoords}
                       title="Pickup"
-                      icon={terminalMarkerIcon(RIDE_MAP_PICKUP_COLOR, 58)}
+                      icon={terminalMarkerIcon(terminalMarkerColor, 58)}
                     />
                   )}
                   {/* Markers show only this customer's own drop-offs. */}
@@ -2786,7 +2791,7 @@ if (loading) {
                   />
                 )}
                 {pickupCoords && (
-                  <MarkerF position={pickupCoords} title="Pickup" icon={terminalMarkerIcon(RIDE_MAP_PICKUP_COLOR, 58)} />
+                  <MarkerF position={pickupCoords} title="Pickup" icon={terminalMarkerIcon(terminalMarkerColor, 58)} />
                 )}
                 {mapDropoffStops.map(stop => (
                   <MarkerF

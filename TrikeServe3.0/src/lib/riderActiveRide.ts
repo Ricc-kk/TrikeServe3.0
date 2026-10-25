@@ -190,6 +190,7 @@ function mapRideRequestToRiderRide(ride: any) {
     payment: ride.payment_method === "COD" ? "COD" : "PREPAID",
     amount: Number(ride.amount || 0),
     customerId: ride.customer_id,
+    terminalId: ride.terminal_id ?? null,
     passengerDetails: [],
     orderId: ride.order_id || undefined,
     orderNumber: ride.order_number || undefined,

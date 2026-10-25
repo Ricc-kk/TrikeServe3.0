@@ -163,6 +163,7 @@ export default function PassengerRequests() {
   const [requests, setRequests] = useState<PassengerRequest[]>([]);
   const [currentLocation, setCurrentLocation] = useState<{ lat: number; lng: number }>({ lat: 14.5995, lng: 120.9842 });
   const [previewRequest, setPreviewRequest] = useState<PassengerRequest | null>(null);
+  const [previewTerminalMarkerColor, setPreviewTerminalMarkerColor] = useState(DEFAULT_TERMINAL_COLOR);
   const [routePath, setRoutePath] = useState<google.maps.LatLngLiteral[] | null>(null);
   const [pickupRoutePath, setPickupRoutePath] = useState<google.maps.LatLngLiteral[] | null>(null);
   const [dropoffRoutePath, setDropoffRoutePath] = useState<google.maps.LatLngLiteral[] | null>(null);
@@ -351,6 +352,29 @@ export default function PassengerRequests() {
       cancelled = true;
     };
   }, [driverTerminalId]);
+
+  useEffect(() => {
+    const terminalId = previewRequest?.terminalId || driverTerminalId;
+    if (!terminalId) {
+      setPreviewTerminalMarkerColor(DEFAULT_TERMINAL_COLOR);
+      return;
+    }
+    if (terminalId === driverTerminalId) {
+      setPreviewTerminalMarkerColor(todaMarkerColor);
+      return;
+    }
+
+    let active = true;
+    supabaseHelpers.getTerminalGeofence(terminalId).then(({ data }) => {
+      if (active) setPreviewTerminalMarkerColor(normalizeTerminalColor(data?.marker_color));
+    }).catch(() => {
+      if (active) setPreviewTerminalMarkerColor(DEFAULT_TERMINAL_COLOR);
+    });
+
+    return () => {
+      active = false;
+    };
+  }, [previewRequest?.terminalId, driverTerminalId, todaMarkerColor]);
 
   // Centre the boundary map on the terminal centre, or the middle of whatever the
   // admin plotted, or the driver when neither is available.
@@ -1422,13 +1446,13 @@ export default function PassengerRequests() {
           const canAccept = canAcceptRequest(request);
           const queueBlocked = isQueueBlocked(request);
           return (
-            <RideSurfaceCard key={request.id} className={`gap-6 rounded-2xl border-2 transition-all overflow-hidden ${
+            <RideSurfaceCard key={request.id} className={`gap-0 rounded-2xl border-2 transition-all overflow-hidden ${
               !canAccept ? 'bg-[var(--muted)] opacity-70 border-[var(--border)]' :
               recommendedPickup && request.id === recommendedPickup.id ? 'bg-gradient-to-br from-[var(--success-soft)] to-[var(--success-soft)] border-[var(--success)] shadow-md' :
               'bg-surface border-[var(--border)] shadow-sm'
             }`}>
               {/* Top: Type icon + Name + Amount */}
-              <div className="flex items-center justify-between px-4 pt-5 pb-2">
+              <div className="flex items-center justify-between px-4 pt-5 pb-0">
                 <div className="flex items-center gap-2.5">
                   <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${
                     request.type === 'delivery' ? 'bg-[var(--info-soft)]' :
@@ -1476,7 +1500,7 @@ export default function PassengerRequests() {
               </div>
 
               {/* Pickup & Dropoff with connector */}
-              <div className="px-4 pt-4 pb-2">
+              <div className="px-4 pt-0 pb-2">
                 <div className="flex items-stretch gap-2">
                   <div className="flex flex-col items-center pt-1">
                     <div className="w-2 h-2 rounded-full bg-[var(--success)] shrink-0" />
@@ -1500,7 +1524,7 @@ export default function PassengerRequests() {
               </div>
 
               {/* Action Button */}
-              <div className="px-4 pb-2 pt-0">
+              <div className="px-4 pb-2 pt-6">
                 {isUnassigned && (
                   <Badge className="bg-[var(--error-soft)] text-[var(--error)] text-[10px] mb-2 border border-[var(--error-soft)]">🚏 No terminal assigned</Badge>
                 )}
@@ -1601,7 +1625,7 @@ export default function PassengerRequests() {
             {isMapsLoaded ? (
               <div className={isPreviewMapFullscreen
                 ? 'fixed inset-0 z-[4001] h-[100dvh] w-screen'
-                : previewRequest.type === 'private'
+                : previewRequest.type !== 'delivery'
                   ? 'relative min-h-[180px] w-full flex-1'
                   : 'relative h-[42dvh] min-h-[250px] w-full shrink-0 md:h-[48dvh]'}>
                 <GoogleMap
@@ -1627,7 +1651,7 @@ export default function PassengerRequests() {
                 >
                   <MapTypeToggle showFullscreenControl={false} />
                   <Marker position={currentLocation} icon={createDriverMarkerIcon()} title="Your Location" />
-                  {resolvedPickupCoords && <Marker position={resolvedPickupCoords} icon={previewRequest.type === 'delivery' ? createRestaurantMarkerIcon() : terminalMarkerIcon(RIDE_MAP_PICKUP_COLOR, 58)} title={previewRequest.type === 'delivery' ? 'Restaurant pickup' : 'Pickup'} />}
+                  {resolvedPickupCoords && <Marker position={resolvedPickupCoords} icon={previewRequest.type === 'delivery' ? createRestaurantMarkerIcon() : terminalMarkerIcon(previewTerminalMarkerColor, 58)} title={previewRequest.type === 'delivery' ? 'Restaurant pickup' : 'Pickup'} />}
                   {previewRequest.type === 'shared' && resolvedPassengerDropoffs.map((stop, index) => stop.coords && (
                     <Marker
                       key={stop.id}
@@ -1688,11 +1712,11 @@ export default function PassengerRequests() {
                 )}
               </div>
             ) : (
-              <div className={previewRequest.type === 'private'
+              <div className={previewRequest.type !== 'delivery'
                 ? 'grid min-h-[180px] w-full flex-1 place-items-center bg-[var(--muted)] text-[var(--muted-foreground)]'
                 : 'grid h-[42dvh] min-h-[250px] shrink-0 place-items-center bg-[var(--muted)] text-[var(--muted-foreground)] md:h-[48dvh]'}>Loading map...</div>
             )}
-            <div className={`mx-auto min-h-0 w-full max-w-3xl ${previewRequest.type === 'private' ? 'max-h-[36dvh] shrink-0 overflow-y-auto' : 'flex-1 overflow-y-auto'} space-y-4 px-4 ${previewRequest.type === 'shared' ? 'py-4' : 'py-5'}`}>
+            <div className={`mx-auto min-h-0 w-full max-w-3xl ${previewRequest.type === 'private' ? 'max-h-[36dvh] shrink-0 overflow-y-auto' : previewRequest.type === 'shared' ? 'grow-0 shrink overflow-y-auto' : 'flex-1 overflow-y-auto'} space-y-4 px-4 ${previewRequest.type === 'shared' ? 'py-4' : 'py-5'}`}>
               <div className="flex items-stretch gap-2">
                 <div className="flex flex-col items-center pt-1">
                   <div className="w-2.5 h-2.5 rounded-full bg-[var(--success)] shrink-0" />

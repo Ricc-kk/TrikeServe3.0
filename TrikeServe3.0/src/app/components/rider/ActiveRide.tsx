@@ -23,7 +23,7 @@ import useMapLoader from "@/lib/mapLoader";
 import { createCustomerMarkerIcon, createRestaurantMarkerIcon } from "@/lib/mapIcons";
 import { RIDE_MAP_DROPOFF_COLOR, RIDE_MAP_PICKUP_COLOR } from "@/lib/rideMapColors";
 import { legacyRouteFromBoundary, normalizeTerminalRoutes, type TerminalRoute } from "@/lib/terminalRoutes";
-import { terminalMarkerIcon } from "../ui/TerminalIcon";
+import { DEFAULT_TERMINAL_COLOR, normalizeTerminalColor, terminalMarkerIcon } from "../ui/TerminalIcon";
 import PassengerMessagingDB from "./PassengerMessagingDB";
 import tricycleIcon from "../../../assets/0b76d1aa56b8ad6e15dd4efc8a0100b0ca5762a1.png";
 import { useDevModeOverride } from "../../hooks/useDevModeSettings";
@@ -465,6 +465,7 @@ export default function ActiveRide() {
   const { sync: syncRideResume } = useRideResume();
 
   const [rideData, setRideData] = useState<ActiveRideData | null>(null);
+  const [pickupTerminalMarkerColor, setPickupTerminalMarkerColor] = useState(DEFAULT_TERMINAL_COLOR);
   const [isMinimized, setIsMinimized] = useState(false);
   const [driverLocation, setDriverLocation] = useState<{ lat: number; lng: number } | null>(null);
   // Drives the inline location banner; null while the device can give us a position.
@@ -685,6 +686,25 @@ export default function ActiveRide() {
       }
     }
   }, [location.state, user]);
+
+  useEffect(() => {
+    const terminalId = rideData?.terminalId || user?.terminalId;
+    if (!terminalId) {
+      setPickupTerminalMarkerColor(DEFAULT_TERMINAL_COLOR);
+      return;
+    }
+
+    let active = true;
+    supabaseHelpers.getTerminalGeofence(terminalId).then(({ data }) => {
+      if (active) setPickupTerminalMarkerColor(normalizeTerminalColor(data?.marker_color));
+    }).catch(() => {
+      if (active) setPickupTerminalMarkerColor(DEFAULT_TERMINAL_COLOR);
+    });
+
+    return () => {
+      active = false;
+    };
+  }, [rideData?.terminalId, user?.terminalId]);
 
   // Resolve customer name from the users table if it's missing or generic
   useEffect(() => {
@@ -1169,6 +1189,11 @@ export default function ActiveRide() {
     return () => navigator.geolocation.clearWatch(watchId);
   }, [rideData?.id, rideData?.lobbyId]);
 
+  const isDeliveryRide = (ride: any) =>
+    ride?.type === 'delivery' ||
+    Boolean(ride?.orderId || ride?.orderNumber) ||
+    String(ride?.pickup || '').startsWith('DELIVERY');
+
   // Determine if we're heading to pickup or dropoff
   const isHeadingToPickup = rideData?.status === 'on-the-way' || rideData?.status === 'arrived';
   const isSharedRide = Boolean(rideData && (rideData.type === 'shared' || rideData.lobbyId));
@@ -1526,10 +1551,6 @@ export default function ActiveRide() {
     mapMoveTimeoutRef.current = window.setTimeout(() => { mapMoveRef.current = false; }, 1000);
   }, [directions, routePath, sharedDropoffRoutes, rideData?.id, isHeadingToPickup, isSharedRide]);
 
-  const isDeliveryRide = (ride: any) =>
-    ride?.type === 'delivery' ||
-    Boolean(ride?.orderId || ride?.orderNumber) ||
-    String(ride?.pickup || '').startsWith('DELIVERY');
   const reportCategories = rideData && isDeliveryRide(rideData)
     ? DELIVERY_REPORT_CATEGORIES
     : RIDER_REPORT_CATEGORIES;
@@ -2699,7 +2720,7 @@ export default function ActiveRide() {
             {rideData.pickupLat && (
               <Marker
                 position={{ lat: Number(rideData.pickupLat), lng: Number(rideData.pickupLng) }}
-                icon={isDeliveryRide(rideData) ? createRestaurantMarkerIcon() : terminalMarkerIcon(RIDE_MAP_PICKUP_COLOR, 58)}
+                icon={isDeliveryRide(rideData) ? createRestaurantMarkerIcon() : terminalMarkerIcon(pickupTerminalMarkerColor, 58)}
                 title={isDeliveryRide(rideData) ? "Restaurant pickup" : "Pickup"}
                 zIndex={isHeadingToPickup ? 90 : 70}
               />
@@ -3319,7 +3340,7 @@ export default function ActiveRide() {
           <Button
             onClick={activeAction.onClick}
             disabled={'disabled' in activeAction && activeAction.disabled}
-            className={`${activeAction.isComplete ? 'bg-[var(--success)]' : 'bg-[var(--primary)]'} -mx-1 w-[calc(100%+0.5rem)] py-4 text-base font-bold shadow-lg`}
+            className={`${activeAction.isComplete ? 'bg-[var(--success)]' : 'bg-[var(--primary)]'} -mx-1 w-[calc(100%+0.5rem)] py-4 text-base font-bold shadow-lg ${isMinimized ? 'mt-2' : ''}`}
           >
             {activeAction.label}
           </Button>
@@ -3329,7 +3350,7 @@ export default function ActiveRide() {
             type="button"
             variant="outline"
             onClick={() => openRideReport()}
-            className="-mx-1 w-[calc(100%+0.5rem)] border-[var(--border)] py-3 font-semibold text-[var(--muted-foreground)]"
+            className={`-mx-1 w-[calc(100%+0.5rem)] border-[var(--border)] py-3 font-semibold text-[var(--muted-foreground)] ${isMinimized ? 'mt-2' : ''}`}
           >
             <Flag className="size-4" aria-hidden="true" />
             Report an issue
@@ -3340,7 +3361,7 @@ export default function ActiveRide() {
           variant="outline"
           onClick={() => setShowCancelPrompt(true)}
           aria-label={cancelActionLabel}
-          className="-mx-1 w-[calc(100%+0.5rem)] border-[var(--error)] py-3 font-bold text-[var(--error)] hover:bg-[var(--error-soft)]"
+          className={`-mx-1 w-[calc(100%+0.5rem)] border-[var(--error)] py-3 font-bold text-[var(--error)] hover:bg-[var(--error-soft)] ${isMinimized ? 'mt-2' : ''}`}
         >
           {cancelActionLabel}
         </Button>

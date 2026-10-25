@@ -214,7 +214,7 @@ export default function RecommendedRestaurants({
 
       {nothingNear && (
         <p className="mb-4 rounded-xl border border-line bg-soft px-3 py-2 text-xs text-[var(--muted-foreground)]">
-          No shops with a pinned location are nearby, so these are the best rated.
+          None of the nearest shops have a pinned location, so these are the best rated.
         </p>
       )}
 

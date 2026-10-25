@@ -27,7 +27,7 @@ import MapTypeToggle from "../ui/MapTypeToggle";
 import useMapLoader from "@/lib/mapLoader";
 import { GOOGLE_MAPS_LIBRARIES } from "@/lib/googleMaps";
 import { createCustomerMarkerIcon as createDeliveryCustomerMarkerIcon, createRestaurantMarkerIcon } from "@/lib/mapIcons";
-import { RIDE_MAP_DROPOFF_COLOR, RIDE_MAP_DRIVER_COLOR, RIDE_MAP_PICKUP_COLOR } from "@/lib/rideMapColors";
+import { RIDE_MAP_DROPOFF_COLOR, RIDE_MAP_DRIVER_COLOR } from "@/lib/rideMapColors";
 import { autocompletePlacesNew, createPlacesSessionToken, fetchPlaceDetailsNew, searchPlacesText, type PlaceResult, type PlacesAutocompleteSuggestion } from "@/lib/placesApi";
 import tricycleIcon from '../../../assets/0b76d1aa56b8ad6e15dd4efc8a0100b0ca5762a1.png';
 import { useAuth } from "../../contexts/AuthContext";
@@ -639,6 +639,10 @@ export default function CustomerHome() {
      String(activeRideRequest?.ride_type || activeRideRequest?.type || '').toLowerCase() === 'delivery' ||
      String(pickup || '').startsWith('DELIVERY'),
    );
+  const isPrivateRide =
+    !isDeliveryRide &&
+    !activeShareRideMapDetails.isActive &&
+    !String(currentRequestId || '').startsWith('lobby_');
    const [showPassengerCount, setShowPassengerCount] = useState(false);
    const [passengerCount, setPassengerCount] = useState(1);
    const [showLobbyList, setShowLobbyList] = useState(false);
@@ -1903,10 +1907,14 @@ export default function CustomerHome() {
           });
           localStorage.setItem(lastShownStatusKey, normalizedStatus);
 
-          // Every status update is a glance, not a screen to dismiss: it closes on
-          // its own after 2s, or the moment the customer taps anywhere.
+          // Status notices auto-dismiss, except private ride assignment, which
+          // stays open until the customer acknowledges it like the share ride modal.
           if (driverStatusTimerRef.current) clearTimeout(driverStatusTimerRef.current);
-          driverStatusTimerRef.current = setTimeout(() => setDriverStatusPopup(null), 2000);
+          if (displayStatus === 'on-the-way' && isPrivateRide) {
+            driverStatusTimerRef.current = null;
+          } else {
+            driverStatusTimerRef.current = setTimeout(() => setDriverStatusPopup(null), 2000);
+          }
         }
       }
     };
@@ -2127,7 +2135,7 @@ export default function CustomerHome() {
       window.removeEventListener('storage', handleStorageChange);
       window.removeEventListener('custom-storage-change', handleCustomStorageEvent);
     };
-  }, [rideStatus, currentRequestId, selectedVehicle]);
+  }, [rideStatus, currentRequestId, selectedVehicle, isPrivateRide]);
 
   // Real-time database subscriptions for driver updates
   useEffect(() => {
@@ -2336,13 +2344,16 @@ export default function CustomerHome() {
           });
           localStorage.setItem(rtLastShownStatusKey, realtimeStatus);
 
-          // Auto-dismiss after 2 seconds, for every status rather than only the
-          // payment stage, so a milestone never sits over the map waiting for an
-          // OK tap. The popup also closes on any tap (see its overlay).
+          // Keep private ride assignment open until it is acknowledged. Other
+          // status notices remain brief and dismiss themselves after 2 seconds.
           if (driverStatusTimerRef.current) clearTimeout(driverStatusTimerRef.current);
-          driverStatusTimerRef.current = setTimeout(() => {
-            setDriverStatusPopup(null);
-          }, 2000);
+          if (displayStatus === 'on-the-way' && isPrivateRide) {
+            driverStatusTimerRef.current = null;
+          } else {
+            driverStatusTimerRef.current = setTimeout(() => {
+              setDriverStatusPopup(null);
+            }, 2000);
+          }
         }
       }
     });
@@ -2356,7 +2367,7 @@ export default function CustomerHome() {
         unsubscribeRef.current();
       }
     };
-  }, [currentRequestId, user?.id]);
+  }, [currentRequestId, user?.id, isPrivateRide]);
 
   // Persist ride data whenever it changes
   useEffect(() => {
@@ -3359,6 +3370,10 @@ export default function CustomerHome() {
     ?? (isActiveShareRideMap ? activeRideLobby?.terminal_id || selectedTerminalId : selectedTerminalId)
     ?? nearestTerminal?.id
     ?? null;
+  const activeRideTerminalId = activeRideLobby?.terminal_id || activeRideRequest?.terminal_id || selectedTerminalId;
+  const activeRideTerminalMarkerColor = normalizeTerminalColor(
+    terminals.find(terminal => terminal.id === activeRideTerminalId)?.marker_color,
+  );
   const mapRoutesInView = useMemo(() => {
     if (!activeMapTerminalId) return [];
     const terminalRoutes = mapTerminalRoutes.filter(route => route.terminalId === activeMapTerminalId);
@@ -3846,7 +3861,7 @@ const getPrice = () => {
                 <MarkerF
                   position={activeShareRideMapPickup}
                   title={isDeliveryRide ? 'Restaurant pickup' : 'Pickup location'}
-                  icon={isDeliveryRide ? createRestaurantMarkerIcon() : terminalMarkerIcon(RIDE_MAP_PICKUP_COLOR, 58)}
+                  icon={isDeliveryRide ? createRestaurantMarkerIcon() : terminalMarkerIcon(activeRideTerminalMarkerColor, 58)}
                 />
               )}
 
@@ -5761,7 +5776,52 @@ const getPrice = () => {
         </RideModal>
       )}
 
-      {driverStatusPopup && (
+      {driverStatusPopup?.status === 'on-the-way' && isPrivateRide ? (
+        <RideModal labelledBy="customer-driver-assigned-title" zIndexClassName="z-[11000]" contentClassName="p-6 text-center">
+          <div className="mx-auto mb-4 flex size-16 items-center justify-center rounded-full bg-[var(--success-soft)] text-[var(--success)]">
+            <TerminalIconGlyph className="size-8" aria-hidden="true" />
+          </div>
+          <h2 id="customer-driver-assigned-title" className="mb-2 text-xl font-bold text-[var(--ink)]">
+            Driver assigned!
+          </h2>
+          <p className="mb-5 text-sm text-[var(--muted-foreground)]">
+            A driver has accepted your private ride and is heading to your pickup.
+          </p>
+          <div className="mb-5 flex items-center gap-3 rounded-xl bg-[var(--muted)] p-3 text-left">
+            <div className="flex size-12 shrink-0 items-center justify-center overflow-hidden rounded-full bg-[var(--primary)] text-sm font-bold text-white">
+              {rideDriverAvatar ? (
+                <img
+                  src={rideDriverAvatar}
+                  alt=""
+                  className="size-full object-cover"
+                  onError={() => setRideDriverAvatar(null)}
+                />
+              ) : (
+                getDriverInitials(activeRide?.driver)
+              )}
+            </div>
+            <div className="min-w-0 flex-1">
+              <p className="text-xs text-[var(--muted-foreground)]">Your driver</p>
+              <p className="truncate font-bold text-[var(--ink)]">{activeRide?.driver || 'Driver'}</p>
+              {activeRide?.plateNumber && (
+                <p className="mt-0.5 text-xs text-[var(--muted-foreground)]">
+                  Plate: {activeRide.plateNumber}
+                </p>
+              )}
+            </div>
+          </div>
+          <Button
+            onClick={() => {
+              if (driverStatusTimerRef.current) clearTimeout(driverStatusTimerRef.current);
+              driverStatusTimerRef.current = null;
+              setDriverStatusPopup(null);
+            }}
+            className="w-full bg-[var(--primary)] text-white"
+          >
+            Got it
+          </Button>
+        </RideModal>
+      ) : driverStatusPopup && (
         <div
           className="fixed inset-0 bg-black/50 z-[3000] flex items-end"
           onClick={() => setDriverStatusPopup(null)}
