@@ -3789,9 +3789,12 @@ const getPrice = () => {
    */
   return (
     <div className="relative flex min-h-screen flex-col bg-[linear-gradient(180deg,var(--teal-soft)_0%,var(--canvas)_420px)]">
-      {/* Full Screen Map */}
+      {/* Keep the booking map above the ride options; other customer views use
+          it as a full-screen background. */}
       {showMap && (
-      <div className="absolute inset-0">
+      <div className={isBookingPage && bookingStep === 'ride'
+        ? "relative h-[40vh] min-h-[260px] max-h-[420px] w-full shrink-0"
+        : "absolute inset-0"}>
         {!GOOGLE_MAPS_API_KEY ? (
           <div className="w-full h-full flex items-center justify-center bg-[var(--border)]">
             <div className="text-center">
@@ -4173,9 +4176,11 @@ const getPrice = () => {
               />
             )}
             <div className={isBookingPage && bookingStep === 'ride'
-              ? "relative z-[999] mx-auto w-full max-w-3xl flex-1 px-4 pt-[calc(env(safe-area-inset-top)+1rem)] pb-24"
+              ? "relative z-[999] mx-auto w-full max-w-3xl flex-1 px-4 pt-4 pb-28"
               : "absolute bottom-20 left-0 right-0 z-[999] mx-auto max-w-3xl px-4"}>
-            <Card className="max-h-[calc(100vh-7rem)] gap-0 overflow-y-auto rounded-3xl bg-[var(--background)] shadow-2xl">
+            <Card className={isBookingPage && bookingStep === 'ride'
+              ? "gap-0 rounded-3xl bg-[var(--background)] shadow-2xl"
+              : "max-h-[calc(100vh-7rem)] gap-0 overflow-y-auto rounded-3xl bg-[var(--background)] shadow-2xl"}>
               {/* Step header â€” back control plus plain-language context */}
               <div className="sticky top-0 z-10 flex items-center gap-3 border-b border-line bg-[var(--background)] px-4 py-3">
                 <button
