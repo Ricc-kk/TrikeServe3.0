@@ -831,7 +831,7 @@ export default function CustomerHome() {
    */
   const customerMapRef = useRef<any>(null);
   const pendingTerminalFocusRef = useRef<{ lat: number; lng: number } | null>(null);
-  const bookingMapOverviewFittedRef = useRef(false);
+  const bookingMapOverviewFittedRef = useRef<string | null>(null);
   const [customerMapReady, setCustomerMapReady] = useState(false);
    const [etaToDestination, setEtaToDestination] = useState<string | null>(null);
    const [ridePassengers, setRidePassengers] = useState<any[]>([]);
@@ -870,6 +870,7 @@ export default function CustomerHome() {
      }),
      [terminals]
    );
+   const [showAllBookingTerminals, setShowAllBookingTerminals] = useState(true);
    const [showTerminalPicker, setShowTerminalPicker] = useState(false);
    const [routePreviewTerminalId, setRoutePreviewTerminalId] = useState<string | null>(null);
    const [routePreviewFocusRouteId, setRoutePreviewFocusRouteId] = useState<string | null>(null);
@@ -1019,6 +1020,23 @@ export default function CustomerHome() {
 
      setPrivateRideAssignmentPopup({ requestId, message });
    };
+
+   useEffect(() => {
+     const requestId = privateRideAssignmentPopup?.requestId;
+     if (!requestId) return;
+
+     const timeout = setTimeout(() => {
+       acknowledgedPrivateRideAssignmentsRef.current.add(requestId);
+       try {
+         localStorage.setItem(`customer_private_ride_assignment_acknowledged_${requestId}`, '1');
+       } catch {
+         // In-memory acknowledgement still prevents polling from reopening this notice.
+       }
+       setPrivateRideAssignmentPopup(current => current?.requestId === requestId ? null : current);
+     }, 3000);
+
+     return () => clearTimeout(timeout);
+   }, [privateRideAssignmentPopup?.requestId]);
 
    // Clear any pending status-popup timer on unmount, so it cannot fire a
    // setState on a component that is no longer mounted.
@@ -2799,10 +2817,13 @@ export default function CustomerHome() {
   const showCustomerHomeHub = !isBookingPage && bookingStep === 'home' && (showBookingFlow || cameFromCustomerHomeTab || showShareLobby);
 
   useEffect(() => {
-    if (isBookingPage && rideContextChecked && rideBlocked) {
+    // A live private ride belongs on this map and driver-tracking screen. Only
+    // return to the customer hub when the booking route is blocked by a share
+    // lobby, which has its own resume flow.
+    if (isBookingPage && rideContextChecked && rideBlocked && !activeRideRequest) {
       navigate('/customer', { replace: true, state: { customerHomeTab: true } });
     }
-  }, [isBookingPage, rideContextChecked, rideBlocked, navigate]);
+  }, [isBookingPage, rideContextChecked, rideBlocked, activeRideRequest, navigate]);
 
   useEffect(() => {
     if (isBookingPage && bookingStep === 'home' && !showShareLobby) {
@@ -2995,8 +3016,33 @@ export default function CustomerHome() {
 
       setActiveShareLobbyId(null);
       setShareLobbyInitialId(undefined);
-      setBookingStep('home');
-      setShowShareLobby(true);
+      try {
+        if (activeShareLobbyStorageKey) {
+          localStorage.removeItem(activeShareLobbyStorageKey);
+        }
+      } catch {
+        // The new booking details still open the lobby if storage is unavailable.
+      }
+      navigate('/customer/active-share-ride', {
+        state: {
+          booking: {
+            pickup,
+            pickupAddress,
+            dropoff,
+            dropoffAddress,
+            pickupCoords,
+            dropoffCoords,
+            passengerCount,
+            maxPassengersAllowed: terminalSeatLimit,
+            pricePerSeat: shareFarePerSeat,
+            paymentMethod,
+            selectedTerminalId,
+            selectedRouteId: selectedTerminalBoundary.selectedRoute?.id || null,
+            routePoints: selectedTerminalBoundary.displayRoad,
+            routeWidthM: selectedTerminalBoundary.routeWidthM ?? null,
+          },
+        },
+      });
     } else {
       if (!(await checkRideGates())) return;
 
@@ -3396,7 +3442,12 @@ export default function CustomerHome() {
   const mapRoutesInView = useMemo(() => {
     // The dedicated booking map is an overview: customers need to compare all
     // available terminals and their mapped routes before choosing a pickup.
-    if (isBookingPage) return mapTerminalRoutes;
+    if (isBookingPage) {
+      if (showAllBookingTerminals) return mapTerminalRoutes;
+      return activeMapTerminalId
+        ? mapTerminalRoutes.filter(route => route.terminalId === activeMapTerminalId)
+        : [];
+    }
     if (!activeMapTerminalId) return [];
     const terminalRoutes = mapTerminalRoutes.filter(route => route.terminalId === activeMapTerminalId);
 
@@ -3420,14 +3471,18 @@ export default function CustomerHome() {
     isBookingPage,
     mapTerminalRoutes,
     routePreviewTerminalId,
+    showAllBookingTerminals,
     selectedTerminalRouteId,
   ]);
   useEffect(() => {
     if (!isBookingPage) {
-      bookingMapOverviewFittedRef.current = false;
+      bookingMapOverviewFittedRef.current = null;
       return;
     }
-    if (!isMapsLoaded || !customerMapReady || bookingMapOverviewFittedRef.current) return;
+    if (!isMapsLoaded || !customerMapReady) return;
+
+    const fitKey = showAllBookingTerminals ? 'all' : `terminal:${activeMapTerminalId || 'none'}`;
+    if (bookingMapOverviewFittedRef.current === fitKey) return;
 
     const map = customerMapRef.current;
     const maps = (window as any).google?.maps;
@@ -3435,17 +3490,24 @@ export default function CustomerHome() {
 
     const bounds = new maps.LatLngBounds();
     let pointCount = 0;
+    const visibleTerminalIds = showAllBookingTerminals
+      ? null
+      : new Set(activeMapTerminalId ? [activeMapTerminalId] : []);
     const extendBounds = (point: { lat: number; lng: number }) => {
       if (!Number.isFinite(point.lat) || !Number.isFinite(point.lng)) return;
       bounds.extend(point);
       pointCount += 1;
     };
 
-    terminals.forEach(terminal => extendBounds({
-      lat: Number(terminal.center_lat),
-      lng: Number(terminal.center_lng),
-    }));
-    mapTerminalRoutes.forEach(route => route.points.forEach(extendBounds));
+    terminals
+      .filter(terminal => !visibleTerminalIds || visibleTerminalIds.has(terminal.id))
+      .forEach(terminal => extendBounds({
+        lat: Number(terminal.center_lat),
+        lng: Number(terminal.center_lng),
+      }));
+    mapTerminalRoutes
+      .filter(route => !visibleTerminalIds || visibleTerminalIds.has(route.terminalId))
+      .forEach(route => route.points.forEach(extendBounds));
 
     if (!pointCount) return;
     if (pointCount === 1) {
@@ -3454,8 +3516,8 @@ export default function CustomerHome() {
     } else {
       map.fitBounds(bounds, 48);
     }
-    bookingMapOverviewFittedRef.current = true;
-  }, [customerMapReady, isBookingPage, isMapsLoaded, mapTerminalRoutes, terminals]);
+    bookingMapOverviewFittedRef.current = fitKey;
+  }, [activeMapTerminalId, customerMapReady, isBookingPage, isMapsLoaded, mapTerminalRoutes, showAllBookingTerminals, terminals]);
   const routePreviewFocusedRoute = useMemo(
     () => mapTerminalRoutes.find(route => route.id === routePreviewFocusRouteId) || null,
     [mapTerminalRoutes, routePreviewFocusRouteId]
@@ -3913,7 +3975,13 @@ const getPrice = () => {
                   lat: Number(terminal.center_lat),
                   lng: Number(terminal.center_lng),
                 };
-                if (!Number.isFinite(position.lat) || !Number.isFinite(position.lng)) return null;
+                if (
+                  !Number.isFinite(position.lat) ||
+                  !Number.isFinite(position.lng) ||
+                  (!showAllBookingTerminals && terminal.id !== activeMapTerminalId) ||
+                  // Keep a terminal glyph from covering the customer's own location dot.
+                  haversineDistanceMeters(currentLocation, position) < 40
+                ) return null;
                 return (
                   <MarkerF
                     key={`booking-terminal-${terminal.id}`}
@@ -4043,6 +4111,23 @@ const getPrice = () => {
           problem={locationProblem}
           className="absolute top-24 left-3 right-3 z-[1000] sm:top-28 sm:left-4 sm:right-4"
         />
+      )}
+
+      {showMap && isMapsLoaded && isBookingPage && terminals.length > 1 && (
+        <button
+          type="button"
+          onClick={() => setShowAllBookingTerminals(showAll => !showAll)}
+          aria-pressed={!showAllBookingTerminals}
+          aria-label={showAllBookingTerminals ? 'Hide other terminals' : 'Show all terminals'}
+          title={showAllBookingTerminals ? 'Hide other terminals' : 'Show all terminals'}
+          className="absolute right-4 z-[1200] flex min-h-11 items-center gap-2 rounded-xl border border-line bg-surface px-3 text-sm font-semibold text-[var(--ink)] shadow-xl transition-transform active:scale-95"
+          style={{ top: 'calc(env(safe-area-inset-top, 0px) + 8rem)' }}
+        >
+          {showAllBookingTerminals
+            ? <EyeOff className="size-4 shrink-0" aria-hidden="true" />
+            : <Eye className="size-4 shrink-0" aria-hidden="true" />}
+          <span>{showAllBookingTerminals ? 'Hide other terminals' : 'Show all terminals'}</span>
+        </button>
       )}
 
       {showMap && isMapsLoaded && !isBookingPage && (
@@ -5578,13 +5663,13 @@ const getPrice = () => {
                         ₱{shareFarePerSeat} per passenger × {passengerCount}
                       </p>
                       {/* Show the total cost for all seats while keeping the per-person rate above. */}
-                      <p className="text-3xl font-bold text-[var(--amber)]">₱{shareFareForParty}</p>
+                      <p className="text-3xl font-bold text-[var(--amber-ink)]">₱{shareFareForParty}</p>
                       <p className="text-[10px] text-[var(--amber-ink)] mt-0.5">{shareFareBreakdown}</p>
                     </>
                   ) : (
                     <>
                       <p className="text-sm text-[var(--amber-ink)] mt-0.5">{privateBreakdown}</p>
-                      <p className="text-3xl font-bold text-[var(--amber)]">{"\u20B1"}{privateTotal}</p>
+                      <p className="text-3xl font-bold text-[var(--amber-ink)]">{"\u20B1"}{privateTotal}</p>
                     </>
                   )}
                 </div>

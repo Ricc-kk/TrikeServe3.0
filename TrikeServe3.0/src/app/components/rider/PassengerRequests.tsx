@@ -142,6 +142,7 @@ interface PassengerRequest {
     id: string;
     name: string;
     emoji: string;
+    avatar?: string | null;
     joinedAt: string;
     dropoff?: string;
     dropoffAddress?: string;
@@ -410,15 +411,17 @@ export default function PassengerRequests() {
           ...(waitingLobbies || []).flatMap((lobby: any) =>
             Array.isArray(lobby.passengers_json) ? lobby.passengers_json.map((passenger: any) => passenger.id) : []
           ),
-        ].filter(Boolean))];
+        ].map((id: any) => String(id || '').split('_companion_')[0]).filter(Boolean))];
         const nameMap: Record<string, string> = {};
+        const avatarMap: Record<string, string> = {};
         if (profileIds.length > 0) {
           const { data: usersData } = await supabase
             .from('users')
-            .select('id, name')
+            .select('id, name, avatar_url')
             .in('id', profileIds);
           (usersData || []).forEach((profile: any) => {
             if (profile.name) nameMap[profile.id] = profile.name;
+            if (profile.avatar_url) avatarMap[profile.id] = profile.avatar_url;
           });
         }
         const orderIds = [...new Set((rideRequests || [])
@@ -552,6 +555,10 @@ export default function PassengerRequests() {
             passengerDetails: passengers.map((passenger: any) => ({
               ...passenger,
               name: nameMap[passenger.id] || passenger.name || 'Passenger',
+              avatar: avatarMap[String(passenger.id || '').split('_companion_')[0]]
+                || (typeof passenger.avatar === 'string' && (/^https?:\/\//i.test(passenger.avatar) || passenger.avatar.startsWith('data:image/'))
+                  ? passenger.avatar
+                  : null),
               emoji: passenger.emoji || '👤',
             })),
             created_at: lobby.created_at,
@@ -1684,7 +1691,7 @@ export default function PassengerRequests() {
                     className={`flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-xs font-bold shadow-md transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${showPickupRoute ? 'text-white' : 'border-[var(--border)] bg-[var(--surface)] text-[var(--muted-foreground)]'}`}
                     style={showPickupRoute ? { borderColor: RIDE_MAP_PICKUP_COLOR, backgroundColor: RIDE_MAP_PICKUP_COLOR } : undefined}
                   >
-                    <span className="size-2.5 rounded-full" style={{ backgroundColor: RIDE_MAP_PICKUP_COLOR }} />
+                    <span aria-hidden="true" className="size-2.5 rounded-full ring-2 ring-white" style={{ backgroundColor: RIDE_MAP_PICKUP_COLOR }} />
                     Pickup
                   </button>
                   <button
@@ -1696,7 +1703,7 @@ export default function PassengerRequests() {
                     className={`flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-xs font-bold shadow-md transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${showDropoffRoute ? 'text-white' : 'border-[var(--border)] bg-[var(--surface)] text-[var(--muted-foreground)]'}`}
                     style={showDropoffRoute ? { borderColor: RIDE_MAP_DROPOFF_COLOR, backgroundColor: RIDE_MAP_DROPOFF_COLOR } : undefined}
                   >
-                    <span className="size-2.5 rounded-full" style={{ backgroundColor: RIDE_MAP_DROPOFF_COLOR }} />
+                    <span aria-hidden="true" className="size-2.5 rounded-full ring-2 ring-white" style={{ backgroundColor: RIDE_MAP_DROPOFF_COLOR }} />
                     Drop off
                   </button>
                 </div>
@@ -1814,11 +1821,34 @@ export default function PassengerRequests() {
                 <section className="rounded-xl border border-[var(--border)] bg-[var(--muted)] p-3">
                   <h3 className="mb-2 text-sm font-bold text-[var(--ink)]">Passengers</h3>
                   <div className="space-y-2">
-                    {previewRequest.passengerDetails?.map((passenger) => (
-                      <div key={passenger.id} className="rounded-lg border border-[var(--border)] bg-[var(--surface)] px-3 py-2 text-sm font-semibold text-[var(--ink)]">
-                        <span className="break-words">{passengerFirstName(passenger.name)}</span>
-                      </div>
-                    ))}
+                    {previewRequest.passengerDetails?.map((passenger) => {
+                      const firstName = passengerFirstName(passenger.name);
+                      const fare = Number(passenger.fare);
+                      return (
+                        <div key={passenger.id} className="flex items-center justify-between gap-3 rounded-lg border border-[var(--border)] bg-[var(--surface)] px-3 py-2">
+                          <div className="flex min-w-0 items-center gap-3">
+                            <div className="grid size-10 shrink-0 place-items-center overflow-hidden rounded-full border border-[var(--border)] bg-[var(--primary-soft)] text-base">
+                              {passenger.avatar ? (
+                                <ImageWithFallback
+                                  src={passenger.avatar}
+                                  alt={`${firstName}'s profile`}
+                                  className="size-full rounded-full object-cover"
+                                />
+                              ) : (
+                                passenger.emoji || '👤'
+                              )}
+                            </div>
+                            <span className="min-w-0 break-words text-sm font-semibold text-[var(--ink)]">{firstName}</span>
+                          </div>
+                          {Number.isFinite(fare) && (
+                            <span className="shrink-0 text-right">
+                              <span className="block text-[10px] text-[var(--muted-foreground)]">Fare</span>
+                              <span className="text-sm font-bold text-[var(--ink)]">₱{fare.toFixed(2)}</span>
+                            </span>
+                          )}
+                        </div>
+                      );
+                    })}
                   </div>
                 </section>
               )}

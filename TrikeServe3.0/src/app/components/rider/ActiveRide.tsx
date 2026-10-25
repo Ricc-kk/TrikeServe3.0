@@ -2487,7 +2487,18 @@ export default function ActiveRide() {
           label: isSharedRide && nextSharedDropoffPassengerName
             ? `Arrived at ${nextSharedDropoffPassengerName}'s drop-off`
             : 'Arrived at Drop-off',
-          onClick: () => updateStatus('drop-off'),
+          onClick: () => {
+            // For a shared ride, this arrival is already the driver's
+            // confirmation that the next passenger has reached their stop.
+            // Save that passenger's drop-off now so the customer payment prompt
+            // and the driver's payment/complete action appear together.
+            if (isSharedRide && nextSharedDropoffPassengerId) {
+              void confirmSharedPassengerDropoff(nextSharedDropoffPassengerId);
+              return;
+            }
+            updateStatus('drop-off');
+          },
+          disabled: Boolean(isSharedRide && confirmingDropoffPassengerId),
           isComplete: false,
         };
       case 'drop-off':
@@ -2656,7 +2667,7 @@ export default function ActiveRide() {
                 ? 'Saving payment…'
                 : isSharedRide
                 ? isFinalSharedPassengerPayment
-                  ? rideData.payment === 'PREPAID' ? 'Complete ride' : 'Payment received'
+                  ? 'Complete Ride'
                   : rideData.payment === 'PREPAID' ? 'Continue route' : 'Payment received'
                 : rideData.payment === 'PREPAID' ? 'Complete ride' : 'Payment received'}
             </Button>
