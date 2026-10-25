@@ -3987,7 +3987,7 @@ const getPrice = () => {
                     key={`booking-terminal-${terminal.id}`}
                     position={position}
                     title={terminal.name}
-                    icon={terminalMarkerIcon(normalizeTerminalColor(terminal.marker_color), 48)}
+                    icon={terminalMarkerIcon(normalizeTerminalColor(terminal.marker_color))}
                   />
                 );
               })}
@@ -4000,7 +4000,7 @@ const getPrice = () => {
                 <MarkerF
                   position={activeShareRideTerminalMarker}
                   title={isDeliveryRide ? 'Restaurant pickup' : activeShareRideMapDetails.isActive ? 'Terminal' : 'Pickup location'}
-                  icon={isDeliveryRide ? createRestaurantMarkerIcon() : terminalMarkerIcon(activeRideTerminalMarkerColor, 58)}
+                  icon={isDeliveryRide ? createRestaurantMarkerIcon() : terminalMarkerIcon(activeRideTerminalMarkerColor)}
                 />
               )}
 
@@ -5431,7 +5431,7 @@ const getPrice = () => {
                   <MarkerF
                     position={{ lat: pickerTerminal.center_lat, lng: pickerTerminal.center_lng }}
                     title={pickerTerminal.name}
-                    icon={terminalMarkerIcon(pickerMarkerColor, 44)}
+                  icon={terminalMarkerIcon(pickerMarkerColor)}
                     zIndex={5}
                   />
                 )}
@@ -5482,7 +5482,7 @@ const getPrice = () => {
                   <MarkerF
                     position={{ lat: locationPreview.lat, lng: locationPreview.lng }}
                     title={activeLocationInput === 'pickup' ? 'Pickup preview' : 'Drop-off preview'}
-                    icon={activeLocationInput === 'pickup' ? terminalMarkerIcon(pickerMarkerColor, 44) : undefined}
+                    icon={activeLocationInput === 'pickup' ? terminalMarkerIcon(pickerMarkerColor) : undefined}
                   />
                 )}
               </GoogleMap>

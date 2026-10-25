@@ -1914,7 +1914,7 @@ if (matchingRouteLobby) {
             <MarkerF
               position={terminalMarkerPosition}
               title="Terminal"
-              icon={terminalMarkerIcon(terminalMarkerColor, 58)}
+              icon={terminalMarkerIcon(terminalMarkerColor)}
             />
           )}
           {dropoffCoords && (
@@ -2659,7 +2659,7 @@ if (loading) {
                     <MarkerF
                       position={terminalMarkerPosition}
                       title="Terminal"
-                      icon={terminalMarkerIcon(terminalMarkerColor, 58)}
+                      icon={terminalMarkerIcon(terminalMarkerColor)}
                     />
                   )}
                   {/* Markers show only this customer's own drop-offs. */}
@@ -2828,7 +2828,7 @@ if (loading) {
                   />
                 )}
                 {terminalMarkerPosition && (
-                  <MarkerF position={terminalMarkerPosition} title="Terminal" icon={terminalMarkerIcon(terminalMarkerColor, 58)} />
+                  <MarkerF position={terminalMarkerPosition} title="Terminal" icon={terminalMarkerIcon(terminalMarkerColor)} />
                 )}
                 {mapDropoffStops.map(stop => (
                   <MarkerF

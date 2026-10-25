@@ -2521,7 +2521,7 @@ export default function ActiveRide() {
                 disabled: confirmingDropoffPassengerId !== null,
               };
         }
-        return { label: 'Confirm Drop-off', onClick: () => updateStatus('payment'), isComplete: false };
+        return { label: 'Complete Ride', onClick: () => completeRide(), isComplete: true };
       case 'payment':
         /*
          * Deliveries raise the photo sheet here instead of completing.
@@ -2737,7 +2737,7 @@ export default function ActiveRide() {
             {rideData.pickupLat && (
               <Marker
                 position={{ lat: Number(rideData.pickupLat), lng: Number(rideData.pickupLng) }}
-                icon={isDeliveryRide(rideData) ? createRestaurantMarkerIcon() : terminalMarkerIcon(pickupTerminalMarkerColor, 58)}
+                icon={isDeliveryRide(rideData) ? createRestaurantMarkerIcon() : terminalMarkerIcon(pickupTerminalMarkerColor)}
                 title={isDeliveryRide(rideData) ? "Restaurant pickup" : "Pickup"}
                 zIndex={isHeadingToPickup ? 90 : 70}
               />

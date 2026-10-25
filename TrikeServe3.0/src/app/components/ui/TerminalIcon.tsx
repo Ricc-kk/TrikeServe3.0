@@ -112,7 +112,7 @@ export function terminalIconUrl(color: string) {
  * Anchored at the middle of the ground line, so the shelter stands on the
  * terminal point rather than floating above it.
  */
-export function terminalMarkerIcon(color: string, size = 76) {
+export function terminalMarkerIcon(color: string, size = 40) {
   const height = Math.round((size * GLYPH.h) / GLYPH.w);
   return {
     url: terminalIconUrl(color),

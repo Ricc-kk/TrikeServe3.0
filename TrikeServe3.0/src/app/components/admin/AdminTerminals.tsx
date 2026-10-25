@@ -3783,7 +3783,7 @@ async function applyAssignDriver(rider: StoredRider, terminal: Terminal) {
                         <Marker
                           position={{ lat: other.center_lat, lng: other.center_lng }}
                           title={other.name}
-                          icon={terminalMarkerIcon(other.marker_color, isCurrent ? 76 : 54)}
+                          icon={terminalMarkerIcon(other.marker_color)}
                           // The one thing on this map you can tap. It opens that
                           // terminal rather than moving this one.
                           onClick={() => openEditKeepingSection(other, 'toda')}
@@ -3796,7 +3796,7 @@ async function applyAssignDriver(rider: StoredRider, terminal: Terminal) {
                 <Marker
                   position={{ lat: form.center_lat, lng: form.center_lng }}
                   title={form.name}
-                  icon={terminalMarkerIcon(normalizeTerminalColor(form.marker_color), 54)}
+                  icon={terminalMarkerIcon(normalizeTerminalColor(form.marker_color))}
                 />
               ) : (
                 <Marker
