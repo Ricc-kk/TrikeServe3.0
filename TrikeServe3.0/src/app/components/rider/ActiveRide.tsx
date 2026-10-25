@@ -2297,6 +2297,11 @@ export default function ActiveRide() {
       if (cancelled || !data) return;
       if (data.status === 'cancelled') {
         console.log('🚫 Ride cancelled:', data.cancelled_by, data.cancel_reason);
+        // The local pointer describes the ride before cancellation. Clear it as
+        // soon as the terminal status is observed so the dashboard can return the
+        // driver to the terminal queue immediately.
+        clearRiderActiveRide();
+        syncRideResume(null);
         setCustomerCancellation({
           reason: data.cancel_reason || null,
           cancelledBy: data.cancelled_by || null,
@@ -2309,7 +2314,7 @@ export default function ActiveRide() {
       cancelled = true;
       clearInterval(interval);
     };
-  }, [rideData?.id, rideData?.lobbyId, customerCancellation]);
+  }, [rideData?.id, rideData?.lobbyId, customerCancellation, syncRideResume]);
 
   /**
    * Pin marker for pickup and drop-off.

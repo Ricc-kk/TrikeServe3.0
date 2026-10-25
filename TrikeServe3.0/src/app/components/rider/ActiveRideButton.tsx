@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { useLocation, useNavigate } from "react-router";
 import { Navigation } from "lucide-react";
 import { useAuth } from "../../contexts/AuthContext";
-import { readRiderActiveRide, isRiderRideActive, fetchRiderActiveRide } from "../../../lib/riderActiveRide";
+import { writeRiderActiveRide, clearRiderActiveRide, checkRiderActiveRide } from "../../../lib/riderActiveRide";
 
 /**
  * Floating "Active Ride" button shown on rider screens while a ride is in
@@ -19,19 +19,25 @@ export default function ActiveRideButton() {
     let active = true;
 
     const check = async () => {
-      const saved = readRiderActiveRide();
-      if (saved && isRiderRideActive(saved.status)) {
-        if (active) setHasActiveRide(true);
+      if (!user?.id) {
+        if (active) setHasActiveRide(false);
         return;
       }
-      // Fall back to the database, so the button still appears on a device that
-      // never accepted the ride, or that lost its saved copy.
-      if (user?.id) {
-        const dbRide = await fetchRiderActiveRide(user.id);
-        if (active) setHasActiveRide(!!dbRide);
+
+      // The database is authoritative. A local ride can still say "on-the-way"
+      // after the passenger cancels it, so never let that stale copy keep the
+      // button visible.
+      const { ride, error } = await checkRiderActiveRide(user.id);
+      if (!active || error) return;
+
+      if (ride) {
+        writeRiderActiveRide(ride);
+        setHasActiveRide(true);
         return;
       }
-      if (active) setHasActiveRide(false);
+
+      clearRiderActiveRide();
+      setHasActiveRide(false);
     };
 
     check();

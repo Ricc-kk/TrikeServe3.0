@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useCallback, useEffect, useRef } from "react";
 import { useNavigate } from "react-router";
 import { supabase } from "./supabase";
 import { useAuth } from "../app/contexts/AuthContext";
@@ -156,11 +156,10 @@ export function useRideResume() {
     };
   }, [user?.id, user?.role, loading, navigate]);
 
-  return {
-    /** Call with the ride currently on screen; pass `null` once it has ended. */
-    sync: (role: RememberedRide["role"], rideId: string | null) => {
-      if (rideId) rememberActiveRide(role, rideId);
-      else forgetActiveRide();
-    },
-  };
+  const sync = useCallback((role: RememberedRide["role"], rideId: string | null) => {
+    if (rideId) rememberActiveRide(role, rideId);
+    else forgetActiveRide();
+  }, []);
+
+  return { sync };
 }

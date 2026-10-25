@@ -510,13 +510,13 @@ export default function AdminDashboard() {
             refreshToken={analyticsRefresh}
           />
           <section aria-labelledby="driver-workspace-title">
-            <h2 id="driver-workspace-title" className="mb-4 text-lg font-bold text-[var(--ink)]">Your workspace <span className="text-xs font-normal text-[var(--muted-foreground)]">· Pamamahala</span></h2>
+            <h2 id="driver-workspace-title" className="mb-4 text-lg font-bold text-[var(--ink)]">Your workspace</h2>
             <div className="grid gap-3 @min-[40rem]:grid-cols-3">
               {[
-                { to: '/admin/terminals', title: 'Manage your terminal', filipino: 'Iyong terminal', description: 'Review your assignment, edit terminal details, and prepare driver changes.', Icon: MapPin },
-                { to: '/admin/users', title: 'Browse drivers', filipino: 'Mga driver', description: 'Find driver profiles, TODA assignments, and verification status.', Icon: Users },
-                { to: '/admin/requests', title: 'Track your requests', filipino: 'Mga kahiling', description: 'See which of your submitted changes are pending, approved, or rejected.', Icon: Send },
-              ].map(({ to, title, filipino, description, Icon }) => <Link key={to} to={to} className="group min-w-0 rounded-3xl border border-line bg-card p-5 transition-colors hover:border-[var(--teal)]/40 hover:bg-soft focus-visible:outline-2 focus-visible:outline-[var(--teal)]"><span className="mb-4 flex items-center justify-between"><span className="grid size-10 place-items-center rounded-xl bg-[var(--teal-soft)] text-[var(--teal)]"><Icon className="size-5" aria-hidden="true" /></span><ArrowUpRight className="size-4 text-[var(--muted-foreground)]" aria-hidden="true" /></span><h3 className="text-base font-bold text-[var(--ink)]">{title}</h3><p className="mt-1 text-xs text-[var(--teal)]">{filipino}</p><p className="mt-3 text-sm leading-relaxed text-[var(--muted-foreground)]">{description}</p></Link>)}
+                { to: '/admin/terminals', title: 'Manage your terminal', description: 'Review your assignment, edit terminal details, and prepare driver changes.', Icon: MapPin },
+                { to: '/admin/users', title: 'Browse drivers', description: 'Find driver profiles, TODA assignments, and verification status.', Icon: Users },
+                { to: '/admin/requests', title: 'Track your requests', description: 'See which of your submitted changes are pending, approved, or rejected.', Icon: Send },
+              ].map(({ to, title, description, Icon }) => <Link key={to} to={to} className="group min-w-0 rounded-3xl border border-line bg-card p-5 transition-colors hover:border-[var(--teal)]/40 hover:bg-soft focus-visible:outline-2 focus-visible:outline-[var(--teal)]"><span className="mb-4 flex items-center justify-between"><span className="grid size-10 place-items-center rounded-xl bg-[var(--teal-soft)] text-[var(--teal)]"><Icon className="size-5" aria-hidden="true" /></span><ArrowUpRight className="size-4 text-[var(--muted-foreground)]" aria-hidden="true" /></span><h3 className="text-base font-bold text-[var(--ink)]">{title}</h3><p className="mt-3 text-sm leading-relaxed text-[var(--muted-foreground)]">{description}</p></Link>)}
             </div>
           </section>
           <section aria-labelledby="driver-verification-title" className="overflow-hidden rounded-3xl border border-line bg-card">

@@ -85,38 +85,54 @@ export function clearRiderActiveRide() {
  * tables that can hold a live ride: a shared-ride lobby they accepted, or a
  * private/delivery request assigned to them.
  */
-export async function fetchRiderActiveRide(driverId: string): Promise<any | null> {
+export async function checkRiderActiveRide(driverId: string): Promise<{ ride: any | null; error: unknown | null }> {
+  const errors: unknown[] = [];
+
   // Shared-ride lobby: its status lives on the lobby row, not ride_requests.
   try {
-    const { data: lobbies } = await supabase
+    const { data: lobbies, error } = await supabase
       .from("shared_ride_lobbies")
       .select("*")
       .eq("driver_id", driverId)
       .in("status", ["driver_found", "in_progress"])
       .order("updated_at", { ascending: false })
       .limit(1);
+    if (error) errors.push(error);
     const lobby = (lobbies || [])[0];
-    if (lobby) return mapLobbyToRiderRide(lobby);
+    if (lobby) return { ride: mapLobbyToRiderRide(lobby), error: null };
   } catch (e) {
-    console.warn("[riderActiveRide] Could not read lobby ride:", e);
+    errors.push(e);
   }
 
   // Private / delivery request assigned to this driver.
   try {
-    const { data: rides } = await supabase
+    const { data: rides, error } = await supabase
       .from("ride_requests")
       .select("*")
       .eq("accepted_driver_id", driverId)
       .in("status", ["accepted", "on-the-way", "arrived", "in-progress"])
       .order("updated_at", { ascending: false })
       .limit(1);
+    if (error) errors.push(error);
     const ride = (rides || [])[0];
-    if (ride) return mapRideRequestToRiderRide(ride);
+    if (ride) return { ride: mapRideRequestToRiderRide(ride), error: null };
   } catch (e) {
-    console.warn("[riderActiveRide] Could not read private ride:", e);
+    errors.push(e);
   }
 
-  return null;
+  return { ride: null, error: errors[0] ?? null };
+}
+
+/**
+ * The ride this driver is actually on, read from the database.
+ *
+ * Kept as a convenience for callers that only need the ride value. Screens that
+ * decide whether to clear a saved ride should use checkRiderActiveRide so a query
+ * failure is not mistaken for a definitive cancellation.
+ */
+export async function fetchRiderActiveRide(driverId: string): Promise<any | null> {
+  const { ride } = await checkRiderActiveRide(driverId);
+  return ride;
 }
 
 /** Rebuild the active screen phase from the driver's persisted progress. */

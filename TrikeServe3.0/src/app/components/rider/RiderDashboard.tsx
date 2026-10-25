@@ -32,7 +32,7 @@ import { Input } from "../ui/input";
 import { useAuth } from "../../contexts/AuthContext";
 import { consumeWelcomeGreeting } from "../../../lib/welcomeGreeting";
 import { isPointWithinTerminalRoute, supabaseHelpers } from "@/lib/supabase";
-import { readRiderActiveRide, writeRiderActiveRide, clearRiderActiveRide, isRiderRideActive, fetchRiderActiveRide } from "../../../lib/riderActiveRide";
+import { writeRiderActiveRide, clearRiderActiveRide, checkRiderActiveRide } from "../../../lib/riderActiveRide";
 import { useTerminalQueue } from "../../hooks/useTerminalQueue";
 import TerminalQueueCard from "./TerminalQueueCard";
 import tricycleIcon from "../../../assets/0b76d1aa56b8ad6e15dd4efc8a0100b0ca5762a1.png";
@@ -208,40 +208,35 @@ export default function RiderDashboard() {
     }
   }, [isOnline, currentSeats, user?.id]);
 
-  // Check for an active ride: the saved one first, then the database.
+  // Check the database for an active ride. A saved ride is only a cache and can
+  // remain "on-the-way" after the passenger cancels, so it cannot hold the driver
+  // out of the queue on its own.
   useEffect(() => {
     let active = true;
 
     const checkActiveRide = async () => {
-      const savedRide = readRiderActiveRide();
-      // A saved ride counts only when it is live and belongs to this driver --
-      // the customer's record is a different shape and used to be read here.
-      if (
-        savedRide &&
-        isRiderRideActive(savedRide.status) &&
-        (!savedRide.driverId || savedRide.driverId === user?.id)
-      ) {
+      if (!user?.id) {
         if (active) {
-          setHasActiveRide(true);
-          setActiveRideData(savedRide);
+          setHasActiveRide(false);
+          setActiveRideData(null);
         }
         return;
       }
-      if (savedRide) clearRiderActiveRide();
 
-      // Nothing usable saved: rebuild from the database, so a ride accepted on
-      // another device (or after storage was cleared) still counts as active.
-      if (user?.id) {
-        const dbRide = await fetchRiderActiveRide(user.id);
-        if (!active) return;
-        if (dbRide) {
-          writeRiderActiveRide(dbRide);
-          setHasActiveRide(true);
-          setActiveRideData(dbRide);
-          return;
-        }
+      // This also recovers rides accepted on another device or after storage was
+      // cleared. Query failures leave the last known UI state alone; they must not
+      // be treated as proof that a ride was cancelled.
+      const { ride: dbRide, error } = await checkRiderActiveRide(user.id);
+      if (!active || error) return;
+
+      if (dbRide) {
+        writeRiderActiveRide(dbRide);
+        setHasActiveRide(true);
+        setActiveRideData(dbRide);
+        return;
       }
-      if (!active) return;
+
+      clearRiderActiveRide();
       setHasActiveRide(false);
       setActiveRideData(null);
     };
