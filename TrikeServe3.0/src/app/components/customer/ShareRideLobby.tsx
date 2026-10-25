@@ -2,13 +2,14 @@ import { useState, useEffect, useRef, useCallback } from "react";
 import { MapPin, Users, Clock, X, ChevronDown, MessageCircle, User, Minimize2, Star, Navigation, Flag, CreditCard, Check } from "lucide-react";
 import { Button } from "../ui/button";
 import { Card } from "../ui/card";
-import { RideModal, RideSurfaceCard } from "../ui/RideUI";
+import { ActiveRideDriverCard, RideModal, RideStatusModal, RideSurfaceCard } from "../ui/RideUI";
 import { Badge } from "../ui/badge";
 import { useAuth } from "../../contexts/AuthContext";
 import { supabase, supabaseHelpers, isSimilarRoute, isPointWithinAnyTerminalBorder, isPointOnRoadCorridor, haversineDistanceMeters, normalizeRoadWidth } from "@/lib/supabase";
 import { createDropoffMarkerIcon } from "@/lib/mapIcons";
 import { GoogleMap, MarkerF, Polyline } from "@react-google-maps/api";
 import MapTypeToggle from "../ui/MapTypeToggle";
+import RideMapStatusBanner from "../ui/RideMapStatusBanner";
 import useMapLoader from "@/lib/mapLoader";
 import { useElapsedTime } from "@/app/hooks/useElapsedTime";
 import { createTricycleMarkerIcon } from "@/lib/mapIcons";
@@ -2863,125 +2864,40 @@ if (loading) {
             )}
           </div>
 
-          <div className="pointer-events-none absolute left-3 top-[calc(env(safe-area-inset-top)+3.75rem)] z-10 flex items-center gap-2 rounded-full bg-surface/95 px-3 py-1.5 shadow-lg backdrop-blur-sm">
-            <span className={`size-2 rounded-full ${driverLocation ? 'animate-pulse bg-[var(--success)]' : 'bg-[var(--info)]'}`} />
-            <span className="text-xs font-bold text-[var(--ink)]">Live Tracking</span>
-          </div>
+          <RideMapStatusBanner label="Live Tracking" active={Boolean(driverLocation)} />
           <button
             type="button"
             onClick={recenterLobbyMap}
             aria-label="Re-center map"
             title="Re-center map"
-            className="absolute right-3 top-[calc(env(safe-area-inset-top)+7rem)] z-10 grid size-11 place-items-center rounded-full bg-surface/95 text-[var(--primary)] shadow-lg backdrop-blur-sm"
+            className="absolute right-3 top-[calc(env(safe-area-inset-top)+7rem)] z-10 grid size-11 place-items-center rounded-full border border-line bg-surface/95 text-[var(--primary)] shadow-lg backdrop-blur-sm"
           >
             <Navigation className="size-5" aria-hidden="true" />
           </button>
 
           <div
-            className="absolute left-0 right-0 z-20 p-3"
+            className="absolute left-0 right-0 z-20 p-3 animate-slide-up"
             style={{ bottom: 'calc(5rem + env(safe-area-inset-bottom))' }}
           >
-            <RideSurfaceCard className="gap-0 bg-surface shadow-2xl border-2 border-[var(--primary)] rounded-2xl overflow-hidden">
-              <div className="p-4">
-                <div className="mb-3 flex items-center gap-3">
-                  <div className="w-14 h-14 overflow-hidden rounded-full bg-[var(--primary-soft)] flex items-center justify-center flex-shrink-0">
-                    {driverProfileAvatar ? (
-                      <img
-                        src={driverProfileAvatar}
-                        alt={`${lobby.driver_name || 'Driver'}'s profile`}
-                        className="w-full h-full object-cover"
-                        onError={() => setDriverProfileAvatar(null)}
-                      />
-                    ) : (
-                      <span className="text-lg font-bold text-[var(--primary)]" role="img" aria-label={`${lobby.driver_name || 'Driver'}'s initials`}>
-                        {getDriverInitials(lobby.driver_name)}
-                      </span>
-                    )}
-                  </div>
-                  <div className="min-w-0 flex-1">
-                    <div className="flex min-w-0 items-center gap-2">
-                      <h3 className="truncate text-base font-bold text-[var(--ink)]">{lobby.driver_name || 'Your driver'}</h3>
-                      {driverLiveStatusLabel && (
-                        <p
-                          aria-live="polite"
-                          className="relative flex min-w-0 items-center overflow-hidden rounded-full border border-[var(--success)]/40 bg-[var(--success)]/12 px-2 py-0.5 text-xs font-semibold text-[var(--success)]"
-                        >
-                          <span aria-hidden="true" className="driver-status-wave pointer-events-none absolute inset-y-0 left-0 w-1/2" />
-                          <span aria-hidden="true" className="driver-status-wave driver-status-wave--second pointer-events-none absolute inset-y-0 left-0 w-1/2" />
-                          <span className="relative truncate">{driverLiveStatusLabel}</span>
-                        </p>
-                      )}
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <Badge className="bg-[var(--success)] text-white text-[10px]">Driver Found</Badge>
-                      <span className="text-xs text-[var(--muted-foreground)]">{lobby.driver_plate || 'Plate not available'}</span>
-                    </div>
-                  </div>
-                  <div className="shrink-0 text-right">
-                    {(computedDriverRating || lobby.driver_rating) && (
-                      <div className="flex items-center justify-end gap-1 text-[var(--amber)]">
-                        <Star className="size-4 fill-current" aria-hidden="true" />
-                        <span className="text-sm font-bold text-[var(--ink)]">{computedDriverRating || lobby.driver_rating}</span>
-                      </div>
-                    )}
-                    <p className="text-xs text-[var(--muted-foreground)]">ETA: {etaToDestination || 'Updating'}</p>
-                  </div>
-                </div>
-
-                <div className="bg-[var(--muted)] rounded-xl p-3 mb-3 space-y-1.5">
-                  <div className="flex items-start gap-2">
-                    <div className="w-5 h-5 bg-[var(--ink-solid)] rounded-full flex items-center justify-center flex-shrink-0 mt-0.5">
-                      <div className="w-2 h-2 bg-surface rounded-full" />
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <p className="text-[10px] text-[var(--muted-foreground)] font-semibold">Pickup</p>
-                      <p className="font-semibold text-xs text-[var(--ink)] truncate">{lobby.pickup_location}</p>
-                    </div>
-                  </div>
-                  <div className="flex items-start gap-2">
-                    <div className="w-5 h-5 bg-[var(--primary)] rounded-full flex items-center justify-center flex-shrink-0 mt-0.5">
-                      <div className="w-2 h-2 bg-surface rounded-full" />
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <p className="text-[10px] text-[var(--muted-foreground)] font-semibold">Drop-off</p>
-                      <p className="font-semibold text-xs text-[var(--ink)] truncate">{ownPassenger?.dropoffAddress || dropoffAddress || ownDropoff}</p>
-                    </div>
-                    {etaToDestination && (
-                      <div className="flex-shrink-0 bg-[var(--error-soft)] text-[var(--error)] px-2 py-1 rounded-lg">
-                        <p className="text-[10px] font-bold">{"\u{1F3C1}"} {etaToDestination}</p>
-                      </div>
-                    )}
-                  </div>
-                </div>
-
-                <div className="flex items-center gap-3">
-                  <div className="flex-1">
-                    <p className="text-[10px] text-[var(--muted-foreground)] font-semibold">Fare</p>
-                    <p className="text-xl font-bold text-[var(--primary)]">₱{yourSeatTotal.toFixed(2)}</p>
-                    <p className="text-[10px] text-[var(--muted-foreground)]">{"\u{1F4B5}"} {String(lobby.payment_method || paymentMethod).toUpperCase() === 'COD' ? 'Cash' : lobby.payment_method || paymentMethod}</p>
-                  </div>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    onClick={openLobbyChatThread}
-                    disabled={openingChat}
-                    className="flex items-center gap-2 h-10"
-                  >
-                    <MessageCircle className="w-4 h-4" />
-                    {openingChat ? 'Opening...' : 'Chat'}
-                  </Button>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    onClick={() => setShowLeaveConfirm(true)}
-                    className="flex items-center gap-1.5 h-10 px-3 border-[var(--error)] text-[var(--error)] hover:bg-[var(--error-soft)]"
-                  >
-                    <X className="w-4 h-4" />
-                    Cancel
-                  </Button>
-                </div>
-              </div>
-            </RideSurfaceCard>
+            <ActiveRideDriverCard
+              className="mx-auto max-w-xl"
+              driverName={lobby.driver_name || 'Your driver'}
+              avatarUrl={driverProfileAvatar}
+              onAvatarError={() => setDriverProfileAvatar(null)}
+              statusLabel={driverLiveStatusLabel}
+              plate={lobby.driver_plate || 'Plate not available'}
+              rating={computedDriverRating || lobby.driver_rating}
+              eta={etaToDestination || 'Updating'}
+              pickup={lobby.pickup_location}
+              dropoff={ownPassenger?.dropoffAddress || dropoffAddress || ownDropoff}
+              destinationEta={etaToDestination}
+              fare={`${"\u20B1"}${yourSeatTotal.toFixed(2)}`}
+              paymentLabel={String(lobby.payment_method || paymentMethod).toUpperCase() === 'COD' ? 'Cash' : lobby.payment_method || paymentMethod}
+              chatDisabled={openingChat}
+              chatLabel={openingChat ? 'Opening...' : 'Chat'}
+              onChat={openLobbyChatThread}
+              onCancel={() => setShowLeaveConfirm(true)}
+            />
           </div>
 
           <BottomNav active="home" />
@@ -2989,14 +2905,17 @@ if (loading) {
       )}
 
       {isTerminal && (
-        <div className="fixed inset-0 bg-black/60 z-[2200] flex items-center justify-center p-4">
-          <Card className="bg-surface p-5 max-w-sm w-full gap-0 text-center shadow-2xl border-2 border-[var(--success-soft)]">
+        <RideModal
+          labelledBy="share-ride-terminal-title"
+          zIndexClassName="z-[2200]"
+          contentClassName="border-2 border-[var(--success-soft)] p-5 text-center"
+        >
             <div className="w-14 h-14 mx-auto mb-3 rounded-full bg-[var(--success-soft)] flex items-center justify-center">
               {effectiveTerminalStatus === 'completed'
                 ? <Check className="size-8 text-[var(--success)]" aria-hidden="true" />
                 : <X className="size-8 text-[var(--error)]" aria-hidden="true" />}
             </div>
-            <h3 className="text-lg font-bold text-[var(--ink)] mb-1">
+            <h3 id="share-ride-terminal-title" className="text-lg font-bold text-[var(--ink)] mb-1">
               {effectiveTerminalStatus === 'completed' ? 'Ride Completed' : 'Ride Cancelled'}
             </h3>
             <p className="text-sm text-[var(--muted-foreground)] mb-4">
@@ -3089,8 +3008,7 @@ if (loading) {
                 Done
               </Button>
             )}
-          </Card>
-        </div>
+        </RideModal>
       )}
 
       {/* Chat layer (floating head + overlay). Defined once above the minimized
@@ -3102,53 +3020,25 @@ if (loading) {
 
       {/* Driver Status Update Popup (same as private rides) */}
       {driverStatusPopup && (
-        <div
-          className="fixed inset-0 bg-black/50 z-[2300] flex items-end"
-          onClick={() => setDriverStatusPopup(null)}
-        >
-          <div className="bg-surface w-full rounded-t-3xl p-6 animate-in slide-in-from-bottom duration-300">
-            <div className="max-w-sm mx-auto">
-              {/* Status Icon */}
-              <div className="w-16 h-16 bg-[var(--primary)] rounded-full flex items-center justify-center mx-auto mb-4">
-                <DriverStatusIcon status={driverStatusPopup.status} className="size-8 text-white" />
-              </div>
-
-              {/* Status Message */}
-              <h3 className="text-2xl font-bold text-[var(--ink)] text-center mb-2">
-                {driverStatusPopup.status === 'pickup' && 'Picked Up!'}
-                {driverStatusPopup.status === 'drop-off' && 'Arrived at Destination'}
-                {driverStatusPopup.status === 'payment' && 'Complete Payment'}
-                {driverStatusPopup.status === 'completed' && 'Ride Completed!'}
-              </h3>
-
-              <p className="text-[var(--muted-foreground)] text-center mb-6">{driverStatusPopup.message}</p>
-
-              {/* Status Details */}
-              <div className="bg-[var(--muted)] rounded-xl p-4 mb-6">
-                <div className="flex items-center justify-between">
-                  <span className="text-sm text-[var(--muted-foreground)]">Status Update</span>
-                  <span className="font-bold text-[var(--ink)]">
-                    {driverStatusPopup.status === 'pickup' && 'Picked up'}
-                    {driverStatusPopup.status === 'drop-off' && 'At destination'}
-                    {driverStatusPopup.status === 'payment' && 'Payment pending'}
-                    {driverStatusPopup.status === 'completed' && 'Completed'}
-                  </span>
-                </div>
-                <div className="flex items-center justify-between mt-3">
-                  <span className="text-sm text-[var(--muted-foreground)]">Time</span>
-                  <span className="text-sm text-[var(--ink)]">Just now</span>
-                </div>
-              </div>
-
-              <Button
-                onClick={() => setDriverStatusPopup(null)}
-                className="w-full bg-[var(--primary)] hover:bg-[var(--primary)] text-white py-3 text-lg font-bold"
-              >
-                OK
-              </Button>
-            </div>
-          </div>
-        </div>
+        <RideStatusModal
+          titleId="share-ride-status-title"
+          zIndexClassName="z-[2300]"
+          title={
+            driverStatusPopup.status === 'pickup' ? 'Picked Up!'
+              : driverStatusPopup.status === 'drop-off' ? 'Arrived at Destination'
+                : driverStatusPopup.status === 'payment' ? 'Complete Payment'
+                  : 'Ride Completed!'
+          }
+          statusLabel={
+            driverStatusPopup.status === 'pickup' ? 'Picked up'
+              : driverStatusPopup.status === 'drop-off' ? 'At destination'
+                : driverStatusPopup.status === 'payment' ? 'Payment pending'
+                  : 'Completed'
+          }
+          message={driverStatusPopup.message}
+          icon={<DriverStatusIcon status={driverStatusPopup.status} className="size-8 text-white" />}
+          onDismiss={() => setDriverStatusPopup(null)}
+        />
       )}
 
       {/* Full Capacity Popup */}
@@ -3179,9 +3069,13 @@ if (loading) {
 
       {/* Leave Confirmation Modal */}
       {showLeaveConfirm && (
-        <div className="fixed inset-0 bg-black/70 z-[2100] flex items-center justify-center p-4">
-          <Card className="bg-surface p-6 max-w-sm w-full">
-            <h3 className="text-lg font-bold text-[var(--ink)] mb-2">Leave Lobby?</h3>
+        <RideModal
+          labelledBy="share-lobby-leave-title"
+          zIndexClassName="z-[2100]"
+          contentClassName="p-6"
+          onBackdropClick={() => setShowLeaveConfirm(false)}
+        >
+            <h3 id="share-lobby-leave-title" className="text-lg font-bold text-[var(--ink)] mb-2">Leave Lobby?</h3>
             <p className="text-sm text-[var(--muted-foreground)] mb-6">
               You and your companion seats will leave this lobby. Other passengers can continue their ride.
               {lobby.customer_id === user?.id
@@ -3203,8 +3097,7 @@ if (loading) {
                 Leave Lobby
               </Button>
             </div>
-          </Card>
-        </div>
+        </RideModal>
       )}
 
       {showLobbyBrowser && lobby.status === 'waiting' && (

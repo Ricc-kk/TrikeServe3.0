@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { AlertTriangle, X } from "lucide-react";
+import { RideModal } from "./RideUI";
 
 type ReasonVariant = "danger" | "warning";
 
@@ -102,12 +103,12 @@ export default function ReasonPromptModal({
   };
 
   return (
-    <div className={`fixed inset-0 ${zIndexClassName} flex items-center justify-center p-4`}>
-      <div
-        className="absolute inset-0 bg-black/60"
-        onClick={() => { if (!isSubmitting) onCancel(); }}
-      />
-      <div className="relative w-full max-w-sm rounded-2xl bg-[var(--surface)] text-[var(--foreground)] shadow-2xl overflow-hidden">
+    <RideModal
+      labelledBy="ride-reason-prompt-title"
+      zIndexClassName={zIndexClassName}
+      contentClassName="overflow-hidden p-0"
+      onBackdropClick={() => { if (!isSubmitting) onCancel(); }}
+    >
         <div className="p-6">
           <div className="flex items-start justify-between mb-4">
             <div className={`w-14 h-14 ${config.iconBg} rounded-full flex items-center justify-center`}>
@@ -121,7 +122,7 @@ export default function ReasonPromptModal({
             </button>
           </div>
 
-          <h3 className="text-lg font-bold text-[var(--foreground)] mb-1">{title}</h3>
+          <h3 id="ride-reason-prompt-title" className="text-lg font-bold text-[var(--foreground)] mb-1">{title}</h3>
           {description && <p className="text-sm text-[var(--muted-foreground)] mb-4">{description}</p>}
 
           <label className="text-xs font-semibold uppercase tracking-wide text-[var(--muted-foreground)] block mb-1.5">
@@ -168,7 +169,6 @@ export default function ReasonPromptModal({
             {isSubmitting ? "Please wait…" : confirmLabel}
           </button>
         </div>
-      </div>
-    </div>
+    </RideModal>
   );
 }

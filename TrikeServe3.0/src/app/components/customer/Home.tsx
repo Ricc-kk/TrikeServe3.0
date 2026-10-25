@@ -1,10 +1,9 @@
 import { Fragment, useState, useEffect, useRef, useCallback, useMemo } from "react";
-import { Search, MapPin, Users, UsersRound, ChevronDown, X, Clock, Utensils, User, Navigation, MessageCircle, Home as HomeIcon, ShoppingCart, ClipboardList, Star, ArrowLeft, Flag, CreditCard, Check, Route as RouteIcon, Eye, EyeOff } from "lucide-react";
+import { Search, MapPin, Users, UsersRound, ChevronDown, X, Clock, Utensils, User, Navigation, Home as HomeIcon, ShoppingCart, ClipboardList, Star, ArrowLeft, Flag, CreditCard, Check, Route as RouteIcon, Eye, EyeOff } from "lucide-react";
 import { Link, useLocation, useNavigate } from "react-router";
 import { Button } from "../ui/button";
 import { Card } from "../ui/card";
-import { RideModal, RideSurfaceCard } from "../ui/RideUI";
-import { Badge } from "../ui/badge";
+import { ActiveRideDriverCard, RideModal, RideStatusModal, RideSurfaceCard } from "../ui/RideUI";
 import { Input } from "../ui/input";
 import BottomNav from "../ui/BottomNav";
 import {
@@ -4108,7 +4107,7 @@ const getPrice = () => {
                   used to be omitted here and drawn only inside the (now removed)
                   embedded card map, so the destination route had no visible start
                   point. */}
-              {rideStateBelongsToCurrentUser && (isActiveShareRideMap || visibleRideStatus !== 'searching') && activeShareRideTerminalMarker && (
+              {rideStateBelongsToCurrentUser && (isActiveShareRideMap || isPrivateRideMap || visibleRideStatus !== 'searching') && activeShareRideTerminalMarker && (
                 <MarkerF
                   position={activeShareRideTerminalMarker}
                   title={isDeliveryRide ? 'Restaurant pickup' : activeShareRideMapDetails.isActive ? 'Terminal' : 'Pickup location'}
@@ -4277,7 +4276,7 @@ const getPrice = () => {
           aria-label={isActivePrivateRidePage ? 'Re-center map on your ride' : 'Re-center map on my location'}
           title={isActivePrivateRidePage ? 'Re-center map on your ride' : 'Re-center map on my location'}
           disabled={isLoadingLocation || Boolean(locationProblem)}
-          className="absolute right-4 z-[1200] grid size-12 place-items-center rounded-full border border-line bg-surface text-[var(--primary)] shadow-xl transition-transform active:scale-95 disabled:cursor-not-allowed disabled:opacity-50"
+          className={`absolute z-[1200] grid place-items-center rounded-full border border-line bg-surface/95 text-[var(--primary)] shadow-lg backdrop-blur-sm transition-transform active:scale-95 disabled:cursor-not-allowed disabled:opacity-50 ${isActivePrivateRidePage ? 'right-3 size-11' : 'right-4 size-12'}`}
           style={{ top: `calc(env(safe-area-inset-top, 0px) + ${isActivePrivateRidePage ? '7rem' : '11rem'})` }}
         >
           <Navigation className="size-5" aria-hidden="true" />
@@ -4290,7 +4289,7 @@ const getPrice = () => {
           onClick={() => navigate('/customer', { replace: true, state: { customerHomeTab: true } })}
           aria-label="Back to customer home"
           title="Back to customer home"
-          className="absolute right-4 top-[calc(env(safe-area-inset-top,0px)+3.5rem)] z-[1200] grid size-11 place-items-center rounded-full border border-line bg-surface text-[var(--ink)] shadow-xl"
+          className="absolute right-3 top-[calc(env(safe-area-inset-top,0px)+3.5rem)] z-[1200] grid size-11 place-items-center rounded-full border border-line bg-surface/95 text-[var(--ink)] shadow-lg backdrop-blur-sm"
         >
           <ArrowLeft className="size-5" aria-hidden="true" />
         </button>
@@ -4665,154 +4664,35 @@ const getPrice = () => {
         )}
 
 
-        {/* Active Ride Card - Driver Info with embedded map */}
+        {/* Active Ride Card - Driver Info over the map */}
         {rideStateBelongsToCurrentUser && visibleRideStatus === 'driver-found' && visibleActiveRide && (
           <>
             {/* Keep the status over the full-screen map, clear of the page header. */}
-            <RideMapStatusBanner label="Live Tracking" topClassName="top-24 sm:top-28" />
+            <RideMapStatusBanner label="Live Tracking" />
 
             <div
-              className="absolute left-0 right-0 z-[1100] p-3"
+              className="absolute left-0 right-0 z-[1100] p-3 animate-slide-up"
               style={{ bottom: 'calc(5rem + env(safe-area-inset-bottom))' }}
             >
-            <RideSurfaceCard className="gap-0 bg-surface shadow-2xl border-2 border-[var(--primary)] rounded-2xl overflow-hidden">
-              {/*
-                No second map here.
-
-                There was a 220px map embedded in this card alongside the
-                full-screen background map, so an accepted ride showed the same
-                route twice and Google Maps charged two loads for one trip. The
-                background map already draws the driver marker, both polylines
-                and the pickup/drop-off markers, so this card is now just the
-                driver and trip details laid over it.
-              */}
-
-              <div className="p-4">
-                {/* Driver Info Row */}
-                <div className="flex items-center gap-3 mb-3">
-                  <div className="w-14 h-14 overflow-hidden rounded-full bg-[var(--primary-soft)] flex items-center justify-center flex-shrink-0">
-                    {rideDriverAvatar ? (
-                      <img
-                        src={rideDriverAvatar}
-                        alt={`${activeRide.driver}'s profile`}
-                        className="w-full h-full object-cover"
-                        onError={() => setRideDriverAvatar(null)}
-                      />
-                    ) : (
-                      <span className="text-lg font-bold text-[var(--primary)]" role="img" aria-label={`${activeRide.driver}'s initials`}>
-                        {getDriverInitials(activeRide.driver)}
-                      </span>
-                    )}
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    {/* Name and live status share one row.
-
-                        It was stacked under the name, which pushed the plate and
-                        "Driver Found" badge down and made the card taller than the
-                        map region it sits over. Beside the name it costs one line. */}
-                    <div className="flex items-center gap-2 min-w-0">
-                      <h3 className="font-bold text-base text-[var(--ink)] truncate">{activeRide.driver}</h3>
-                      {/* `aria-live="polite"` so a screen reader announces the change
-                          when it happens, without interrupting whatever is being read.
-                          The rings are decorative and hidden from the reader. */}
-                      {(isDeliveryRide ? DELIVERY_DRIVER_STATUS_LABELS : DRIVER_STATUS_LABELS)[driverLiveStatus] && (
-                        /*
-                          The status is a rounded pill with a wave sweeping across it,
-                          rather than an icon beside the words. The wave is clipped by
-                          `overflow-hidden` and the pill's radius, so the crest is cut
-                          to the rounded rectangle instead of showing square corners
-                          over it.
-
-                          The text sits above the wave (`relative` on its own span) so
-                          the crest passes behind the label and never washes out the
-                          words at the moment it crosses them. Both crests are
-                          `aria-hidden`; the label carries the live region.
-                        */
-                        <p
-                          aria-live="polite"
-                          className="relative flex min-w-0 items-center overflow-hidden rounded-full border border-[var(--success)]/40 bg-[var(--success)]/12 px-2 py-0.5 text-xs font-semibold text-[var(--success)]"
-                        >
-                          <span aria-hidden="true" className="driver-status-wave pointer-events-none absolute inset-y-0 left-0 w-1/2" />
-                          <span aria-hidden="true" className="driver-status-wave driver-status-wave--second pointer-events-none absolute inset-y-0 left-0 w-1/2" />
-                          <span className="relative truncate">
-                            {(isDeliveryRide ? DELIVERY_DRIVER_STATUS_LABELS : DRIVER_STATUS_LABELS)[driverLiveStatus]}
-                          </span>
-                        </p>
-                      )}
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <Badge className="bg-[var(--success)] text-white text-[10px]">Driver Found</Badge>
-                      <span className="text-xs text-[var(--muted-foreground)]">{activeRide.plateNumber}</span>
-                    </div>
-                  </div>
-                  <div className="text-right flex-shrink-0">
-                    <div className="flex items-center gap-1 text-[var(--amber)]">
-                      <Star className="size-4 fill-current" aria-hidden="true" />
-                      <span className="font-bold text-sm text-[var(--ink)]">{activeRide.rating}</span>
-                    </div>
-                    <p className="text-xs text-[var(--muted-foreground)]">ETA: {activeRide.eta}</p>
-                  </div>
-                </div>
-
-                {/* Trip Info - compact */}
-                <div className="bg-[var(--muted)] rounded-xl p-3 mb-3 space-y-1.5">
-                  {!isDeliveryRide && (
-                    <div className="flex items-start gap-2">
-                      <div className="w-5 h-5 bg-[var(--ink-solid)] rounded-full flex items-center justify-center flex-shrink-0 mt-0.5">
-                        <div className="w-2 h-2 bg-surface rounded-full" />
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <p className="text-[10px] text-[var(--muted-foreground)] font-semibold">Pickup</p>
-                        <p className="font-semibold text-xs text-[var(--ink)] truncate">{pickup}</p>
-                      </div>
-                    </div>
-                  )}
-                  <div className="flex items-start gap-2">
-                    <div className="w-5 h-5 bg-[var(--primary)] rounded-full flex items-center justify-center flex-shrink-0 mt-0.5">
-                      <div className="w-2 h-2 bg-surface rounded-full" />
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <p className="text-[10px] text-[var(--muted-foreground)] font-semibold">Drop-off</p>
-                      <p className="font-semibold text-xs text-[var(--ink)] truncate">{dropoff}</p>
-                    </div>
-                    {etaToDestination && (
-                      <div className="flex-shrink-0 bg-[var(--error-soft)] text-[var(--error)] px-2 py-1 rounded-lg">
-                        <p className="text-[10px] font-bold">{"\u{1F3C1}"} {etaToDestination}</p>
-                      </div>
-                    )}
-                  </div>
-                </div>
-
-                {/* Payment + Actions row */}
-                <div className="flex items-center gap-3">
-                  <div className="flex-1">
-                    <p className="text-[10px] text-[var(--muted-foreground)] font-semibold">Fare</p>
-                    <p className="text-xl font-bold text-[var(--primary)]">{"\u20B1"}{bookedFare ?? getPrice()}</p>
-                    <p className="text-[10px] text-[var(--muted-foreground)]">{"\u{1F4B5}"} Cash</p>
-                  </div>
-                  <Button
-                    variant="outline"
-                    className="flex items-center gap-2 h-10"
-                    onClick={handleOpenDriverChat}
-                    disabled={openingChat}
-                  >
-                    <MessageCircle className="w-4 h-4" />
-                    {openingChat ? 'Opening...' : 'Chat'}
-                  </Button>
-                  {/* Cancel an in-progress ride/delivery (shared rides are left from the lobby) */}
-                  {currentRequestId && !currentRequestId.startsWith('lobby_') && (
-                    <Button
-                      variant="outline"
-                      onClick={handleCancelRideClick}
-                      className="flex items-center gap-1.5 h-10 px-3 border-[var(--error)] text-[var(--error)] hover:bg-[var(--error-soft)]"
-                    >
-                      <X className="w-4 h-4" />
-                      Cancel
-                    </Button>
-                  )}
-                </div>
-              </div>
-            </RideSurfaceCard>
+              <ActiveRideDriverCard
+                className="mx-auto max-w-xl"
+                driverName={activeRide.driver}
+                avatarUrl={rideDriverAvatar}
+                onAvatarError={() => setRideDriverAvatar(null)}
+                statusLabel={(isDeliveryRide ? DELIVERY_DRIVER_STATUS_LABELS : DRIVER_STATUS_LABELS)[driverLiveStatus]}
+                plate={activeRide.plateNumber}
+                rating={activeRide.rating}
+                eta={activeRide.eta}
+                pickup={!isDeliveryRide ? pickup : undefined}
+                dropoff={dropoff}
+                destinationEta={etaToDestination}
+                fare={`${"\u20B1"}${Number(bookedFare ?? getPrice()).toFixed(2)}`}
+                paymentLabel={String(paymentMethod || 'COD').toUpperCase() === 'COD' ? 'Cash' : paymentMethod}
+                chatDisabled={openingChat}
+                chatLabel={openingChat ? 'Opening...' : 'Chat'}
+                onChat={handleOpenDriverChat}
+                onCancel={currentRequestId && !currentRequestId.startsWith('lobby_') ? handleCancelRideClick : undefined}
+              />
           </div>
           </>
         )}
@@ -4974,13 +4854,11 @@ const getPrice = () => {
         {/* Ride Completed Popup */}
         {rideCompletedPopup && (
           completionPopupType === 'ride' ? (
-            <div className="fixed inset-0 z-[2200] flex items-center justify-center bg-black/60 p-4">
-              <Card
-                role="dialog"
-                aria-modal="true"
-                aria-labelledby="customer-ride-completed-title"
-                className="w-full max-w-sm gap-0 rounded-2xl border-2 border-[var(--success-soft)] bg-surface p-5 text-center shadow-2xl"
-              >
+            <RideModal
+              labelledBy="customer-ride-completed-title"
+              zIndexClassName="z-[2200]"
+              contentClassName="border-2 border-[var(--success-soft)] p-5 text-center"
+            >
                 <div className="mx-auto mb-3 flex size-14 items-center justify-center rounded-full bg-[var(--success-soft)]">
                   <Check className="size-8 text-[var(--success)]" aria-hidden="true" />
                 </div>
@@ -5070,16 +4948,18 @@ const getPrice = () => {
                     Done
                   </Button>
                 )}
-              </Card>
-            </div>
+            </RideModal>
           ) : (
-            <div className="fixed inset-0 z-[2100] flex items-end bg-black/50">
-              <div className="w-full rounded-t-3xl bg-surface p-6 animate-in slide-in-from-bottom duration-300">
+            <RideModal
+              labelledBy="customer-delivery-completed-title"
+              zIndexClassName="z-[2100]"
+              contentClassName="p-6 text-center"
+            >
                 <div className="mx-auto max-w-sm text-center">
                   <div className="mx-auto mb-4 flex size-16 items-center justify-center rounded-full bg-[var(--info-soft)]">
                     <Check className="size-8 text-[var(--info)]" aria-hidden="true" />
                   </div>
-                  <h3 className="mb-2 text-2xl font-bold text-[var(--ink)]">Delivery Completed!</h3>
+                  <h3 id="customer-delivery-completed-title" className="mb-2 text-2xl font-bold text-[var(--ink)]">Delivery Completed!</h3>
                   <p className="mb-6 text-sm text-[var(--muted-foreground)]">
                     Thank you for using TrikeServe. Your delivery has been completed!
                   </p>
@@ -5106,21 +4986,23 @@ const getPrice = () => {
                     </Button>
                   </div>
                 </div>
-              </div>
-            </div>
+            </RideModal>
           )
         )}
 
         {/* Leave a Rating Modal (private rides) */}
         {showRatingModal && (
-          <div className="fixed inset-0 bg-black/70 z-[2400] flex items-center justify-center p-4">
-            <Card className="bg-surface p-6 max-w-sm w-full text-center">
+          <RideModal
+            labelledBy="customer-private-rating-title"
+            zIndexClassName="z-[2400]"
+            contentClassName="p-6 text-center"
+          >
               {ratingSubmitted ? (
                 <>
                   <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-[var(--success-soft)] flex items-center justify-center text-3xl">
                     <Check className="size-8 text-[var(--success)]" aria-hidden="true" />
                   </div>
-                  <h3 className="text-xl font-bold text-[var(--ink)] mb-2">Thank you!</h3>
+                  <h3 id="customer-private-rating-title" className="text-xl font-bold text-[var(--ink)] mb-2">Thank you!</h3>
                   <p className="text-sm text-[var(--muted-foreground)] mb-6">Your rating has been submitted.</p>
                   <Button
                     onClick={closeRatingModal}
@@ -5133,12 +5015,12 @@ const getPrice = () => {
                 <>
                   {completionPopupType === 'delivery' && deliveryBusiness ? (
                     <>
-                      <h3 className="text-xl font-bold text-[var(--ink)] mb-2">Rate {deliveryBusiness.restaurantName}</h3>
+                      <h3 id="customer-private-rating-title" className="text-xl font-bold text-[var(--ink)] mb-2">Rate {deliveryBusiness.restaurantName}</h3>
                       <p className="text-sm text-[var(--muted-foreground)] mb-6">How was your order and delivery?</p>
                     </>
                   ) : (
                     <>
-                      <h3 className="text-xl font-bold text-[var(--ink)] mb-2">Rate Your Driver</h3>
+                      <h3 id="customer-private-rating-title" className="text-xl font-bold text-[var(--ink)] mb-2">Rate Your Driver</h3>
                       <p className="text-sm text-[var(--muted-foreground)] mb-6">How was your ride?</p>
                     </>
                   )}
@@ -5168,8 +5050,7 @@ const getPrice = () => {
                   </Button>
                 </>
               )}
-            </Card>
-          </div>
+          </RideModal>
         )}
 
         {/* Driver Status Update Popup */}
@@ -5949,44 +5830,88 @@ const getPrice = () => {
         </div>
       )}
 
-      {/* Searching for Driver Modal */}
+      {/* Map-first private ride search card */}
       {rideStateBelongsToCurrentUser && visibleRideStatus === 'searching' && !isSearchMinimized && (
-        <div className="fixed inset-0 bg-black/50 z-[2000] flex items-center justify-center p-4">
-          <Card className="bg-surface p-8 max-w-sm w-full text-center relative">
-            {/* Minimize Button */}
-            <button
-              onClick={() => setIsSearchMinimized(true)}
-              className="absolute top-4 right-4 w-8 h-8 flex items-center justify-center rounded-full bg-[var(--muted)] hover:bg-[var(--border)] transition-colors"
-            >
-              <ChevronDown className="w-5 h-5 text-[var(--muted-foreground)]" />
-            </button>
-
-            <div className="w-20 h-20 bg-[var(--primary-soft)] rounded-full flex items-center justify-center mx-auto mb-4 animate-pulse">
-              <Search className="size-10 text-[var(--primary)]" aria-hidden="true" />
+        <div
+          className="fixed inset-x-0 z-[1100] px-3 animate-slide-up"
+          style={{ bottom: 'calc(5rem + env(safe-area-inset-bottom))' }}
+        >
+          <RideSurfaceCard className="mx-auto max-h-[calc(100dvh-8rem)] w-full max-w-xl gap-0 overflow-y-auto rounded-2xl border-2 border-[var(--primary)] bg-surface p-4 shadow-2xl sm:p-5">
+            <div className="mb-4 flex items-center gap-3">
+              <div className="flex size-12 shrink-0 items-center justify-center rounded-full bg-[var(--primary-soft)] animate-pulse">
+                <Search className="size-6 text-[var(--primary)]" aria-hidden="true" />
+              </div>
+              <div className="min-w-0 flex-1">
+                <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                  <h3 className="text-base font-bold text-[var(--ink)]">Finding a driver</h3>
+                  <span className="inline-flex items-center gap-1.5 rounded-full bg-[var(--primary-soft)] px-2 py-1 text-[10px] font-bold text-[var(--primary)]">
+                    <span className="size-1.5 animate-pulse rounded-full bg-[var(--primary)]" aria-hidden="true" />
+                    Searching
+                  </span>
+                </div>
+                <p className="mt-0.5 text-xs text-[var(--muted-foreground)]">Looking for a nearby driver</p>
+              </div>
+              <div className="text-right">
+                <p className="text-[10px] font-semibold uppercase tracking-wide text-[var(--muted-foreground)]">Elapsed</p>
+                <p className="text-lg font-bold tabular-nums text-[var(--primary)]" aria-live="polite">{searchingTime}</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsSearchMinimized(true)}
+                aria-label="Minimize driver search"
+                title="Minimize"
+                className="grid size-9 shrink-0 place-items-center rounded-full bg-[var(--muted)] text-[var(--muted-foreground)] transition-colors hover:bg-[var(--border)]"
+              >
+                <ChevronDown className="size-5" aria-hidden="true" />
+              </button>
             </div>
-            <h3 className="text-xl font-bold text-[var(--ink)] mb-2">Finding a Driver...</h3>
-            <p className="text-[var(--muted-foreground)] mb-1">Please wait while we find you a nearby driver</p>
-            {/* Ticks once a second. Shown because a search that feels long feels
-                longer when there is no way to tell how long it has actually been. */}
-            <p className="text-2xl font-bold text-[var(--primary)] tabular-nums mb-6" aria-live="polite">
-              {searchingTime}
-            </p>
-            <Button
-              onClick={handleCancelRideClick}
-              variant="outline"
-              className="w-full"
-            >
-              Cancel Request
-            </Button>
-          </Card>
+
+            <div className="mb-4 space-y-3 rounded-xl bg-[var(--muted)] p-3">
+              <div className="flex min-w-0 items-center gap-3">
+                <span className="grid size-7 shrink-0 place-items-center rounded-full bg-[var(--ink-solid)] text-[10px] font-bold text-white">A</span>
+                <div className="min-w-0 flex-1">
+                  <p className="text-[10px] font-semibold uppercase tracking-wide text-[var(--muted-foreground)]">Pickup</p>
+                  <p className="truncate text-sm font-semibold text-[var(--ink)]">{pickupAddress || pickup || 'Pickup location'}</p>
+                </div>
+              </div>
+              <div className="ml-3 h-3 border-l border-dashed border-[var(--border)]" aria-hidden="true" />
+              <div className="flex min-w-0 items-center gap-3">
+                <span className="grid size-7 shrink-0 place-items-center rounded-full bg-[var(--primary)] text-[10px] font-bold text-white">B</span>
+                <div className="min-w-0 flex-1">
+                  <p className="text-[10px] font-semibold uppercase tracking-wide text-[var(--muted-foreground)]">Drop-off</p>
+                  <p className="truncate text-sm font-semibold text-[var(--ink)]">{dropoffAddress || dropoff || 'Drop-off location'}</p>
+                </div>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-3">
+              <div className="min-w-0 flex-1">
+                <p className="text-[10px] font-semibold uppercase tracking-wide text-[var(--muted-foreground)]">Fare</p>
+                <p className="text-xl font-bold text-[var(--primary)]">{"\u20B1"}{Number(bookedFare ?? getPrice()).toFixed(2)}</p>
+                <p className="text-[10px] text-[var(--muted-foreground)]">{String(paymentMethod || 'COD').toUpperCase() === 'COD' ? 'Cash' : paymentMethod}</p>
+              </div>
+              <Button
+                type="button"
+                onClick={handleCancelRideClick}
+                variant="outline"
+                className="h-11 border-[var(--error)] px-4 font-bold text-[var(--error)] hover:bg-[var(--error-soft)]"
+              >
+                Cancel Request
+              </Button>
+            </div>
+          </RideSurfaceCard>
         </div>
       )}
 
       {/* Minimized Floating Icon */}
       {rideStateBelongsToCurrentUser && visibleRideStatus === 'searching' && isSearchMinimized && (
         <button
+          type="button"
           onClick={() => setIsSearchMinimized(false)}
-          className="fixed bottom-24 right-4 z-[2000] w-16 h-16 bg-[var(--primary)] rounded-full shadow-2xl flex items-center justify-center hover:bg-[var(--primary)] transition-all hover:scale-110"
+          aria-label={`Reopen driver search. Elapsed ${searchingTime}`}
+          title="Reopen driver search"
+          className="fixed right-4 z-[2000] flex h-16 w-16 items-center justify-center rounded-full bg-[var(--primary)] shadow-2xl transition-all hover:scale-110 hover:bg-[var(--primary)]"
+          style={{ bottom: 'calc(6rem + env(safe-area-inset-bottom))' }}
         >
           <div className="relative">
             <Search className="size-8 text-white animate-pulse" aria-hidden="true" />
@@ -6170,59 +6095,31 @@ const getPrice = () => {
           </Button>
         </RideModal>
       ) : driverStatusPopup && (
-        <div
-          className="fixed inset-0 bg-black/50 z-[3000] flex items-end"
-          onClick={() => setDriverStatusPopup(null)}
-        >
-          <div className="bg-surface w-full rounded-t-3xl p-6 animate-in slide-in-from-bottom duration-300">
-            <div className="max-w-sm mx-auto">
-              {/* Vector status icons stay readable on devices without emoji fonts. */}
-              <div className="w-16 h-16 bg-[var(--primary)] rounded-full flex items-center justify-center mx-auto mb-4">
-                <DriverStatusIcon status={driverStatusPopup.status} className="size-8 text-white" />
-              </div>
-
-              {/* Status Message */}
-              <h3 className="text-2xl font-bold text-[var(--ink)] text-center mb-2">
-                {driverStatusPopup.status === 'cancelled' && 'Ride Cancelled'}
-                {driverStatusPopup.status === 'on-the-way' && 'Driver On The Way'}
-                {driverStatusPopup.status === 'arrived' && 'Driver Arrived'}
-                {driverStatusPopup.status === 'pickup' && 'Picked Up!'}
-                {driverStatusPopup.status === 'drop-off' && 'Arrived at Destination'}
-                {driverStatusPopup.status === 'payment' && 'Complete Payment'}
-                {driverStatusPopup.status === 'completed' && 'Ride Completed!'}
-              </h3>
-
-              <p className="text-[var(--muted-foreground)] text-center mb-6">{driverStatusPopup.message}</p>
-
-              {/* Status Details */}
-              <div className="bg-[var(--muted)] rounded-xl p-4 mb-6">
-                <div className="flex items-center justify-between">
-                  <span className="text-sm text-[var(--muted-foreground)]">Status Update</span>
-                  <span className="font-bold text-[var(--ink)]">
-                    {driverStatusPopup.status === 'cancelled' && 'Cancelled'}
-                    {driverStatusPopup.status === 'on-the-way' && 'On the way'}
-                    {driverStatusPopup.status === 'arrived' && 'Arrived'}
-                    {driverStatusPopup.status === 'pickup' && 'Picked up'}
-                    {driverStatusPopup.status === 'drop-off' && 'At destination'}
-                    {driverStatusPopup.status === 'payment' && 'Payment pending'}
-                    {driverStatusPopup.status === 'completed' && 'Completed'}
-                  </span>
-                </div>
-                <div className="flex items-center justify-between mt-3">
-                  <span className="text-sm text-[var(--muted-foreground)]">Time</span>
-                  <span className="text-sm text-[var(--ink)]">Just now</span>
-                </div>
-              </div>
-
-              <Button
-                onClick={() => setDriverStatusPopup(null)}
-                className="w-full bg-[var(--primary)] hover:bg-[var(--primary)] text-white py-3 text-lg font-bold"
-              >
-                OK
-              </Button>
-            </div>
-           </div>
-         </div>
+        <RideStatusModal
+          titleId="private-ride-status-title"
+          zIndexClassName="z-[3000]"
+          title={
+            driverStatusPopup.status === 'cancelled' ? 'Ride Cancelled'
+              : driverStatusPopup.status === 'on-the-way' ? 'Driver On The Way'
+                : driverStatusPopup.status === 'arrived' ? 'Driver Arrived'
+                  : driverStatusPopup.status === 'pickup' ? 'Picked Up!'
+                    : driverStatusPopup.status === 'drop-off' ? 'Arrived at Destination'
+                      : driverStatusPopup.status === 'payment' ? 'Complete Payment'
+                        : 'Ride Completed!'
+          }
+          statusLabel={
+            driverStatusPopup.status === 'cancelled' ? 'Cancelled'
+              : driverStatusPopup.status === 'on-the-way' ? 'On the way'
+                : driverStatusPopup.status === 'arrived' ? 'Arrived'
+                  : driverStatusPopup.status === 'pickup' ? 'Picked up'
+                    : driverStatusPopup.status === 'drop-off' ? 'At destination'
+                      : driverStatusPopup.status === 'payment' ? 'Payment pending'
+                        : 'Completed'
+          }
+          message={driverStatusPopup.message}
+          icon={<DriverStatusIcon status={driverStatusPopup.status} className="size-8 text-white" />}
+          onDismiss={() => setDriverStatusPopup(null)}
+        />
        )}
 
       {/* Cancel Ride Popup â€” asks for a reason before dropping the ride */}
