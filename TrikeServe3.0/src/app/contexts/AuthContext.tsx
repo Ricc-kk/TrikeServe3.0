@@ -885,6 +885,68 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     };
   }, []);
 
+  // Terminal names live on `terminals`; the profile's terminal_name is a
+  // denormalized label and can lag behind an admin rename. Refresh it while
+  // the account is active so shared headers and driver screens stay current.
+  useEffect(() => {
+    if (!user?.id || !user.terminalId) return;
+    const accountId = user.id;
+    const terminalId = user.terminalId;
+    let cancelled = false;
+
+    const applyTerminalName = (name: unknown) => {
+      if (typeof name !== 'string' || !name.trim()) return;
+
+      try {
+        const cached = JSON.parse(localStorage.getItem('trikeserve_current_user') || 'null');
+        if (cached?.id === accountId && cached?.terminalId === terminalId) {
+          cached.terminalName = name;
+          localStorage.setItem('trikeserve_current_user', JSON.stringify(cached));
+        }
+      } catch {
+        // The live context can still be updated when localStorage is unavailable.
+      }
+
+      setUser(current =>
+        current?.id === accountId && current.terminalId === terminalId && current.terminalName !== name
+          ? { ...current, terminalName: name }
+          : current,
+      );
+    };
+
+    const refresh = async () => {
+      const { data, error } = await supabase
+        .from('terminals')
+        .select('name')
+        .eq('id', terminalId)
+        .maybeSingle();
+      if (!cancelled && !error) applyTerminalName(data?.name);
+    };
+
+    void refresh();
+    const channel = supabase
+      .channel(`auth-terminal-name:${accountId}:${terminalId}`)
+      .on('postgres_changes', {
+        event: 'UPDATE',
+        schema: 'public',
+        table: 'terminals',
+        filter: `id=eq.${terminalId}`,
+      }, payload => applyTerminalName((payload.new as { name?: unknown })?.name))
+      .subscribe();
+    const refreshWhenVisible = () => {
+      if (document.visibilityState === 'visible') void refresh();
+    };
+    window.addEventListener('focus', refreshWhenVisible);
+    document.addEventListener('visibilitychange', refreshWhenVisible);
+
+    return () => {
+      cancelled = true;
+      window.removeEventListener('focus', refreshWhenVisible);
+      document.removeEventListener('visibilitychange', refreshWhenVisible);
+      void supabase.removeChannel(channel);
+    };
+  }, [user?.id, user?.terminalId]);
+
   const loadUserProfile = async (authUserId: string, clearBusinessCaches = false) => {
     try {
       console.log('[AuthContext] Loading profile for:', authUserId);

@@ -125,20 +125,32 @@ export function useTerminalQueue() {
       .select("terminal_id, terminal_name")
       .eq("id", driverId)
       .single()
-      .then(({ data }) => {
+      .then(async ({ data }) => {
+        if (cancelled) return;
+
+        const assignedTerminalId = data?.terminal_id || null;
+        let assignedTerminalName = data?.terminal_name || null;
+        if (assignedTerminalId) {
+          const { data: terminal } = await supabase
+            .from("terminals")
+            .select("name")
+            .eq("id", assignedTerminalId)
+            .maybeSingle();
+          assignedTerminalName = terminal?.name || assignedTerminalName;
+        }
         if (cancelled) return;
 
         // The database is the authority: this also clears a stale assignment
         // when an admin unassigns the driver's terminal.
-        setTerminalId(data?.terminal_id || null);
-        setTerminalName(data?.terminal_name || null);
+        setTerminalId(assignedTerminalId);
+        setTerminalName(assignedTerminalName);
 
-        if (data?.terminal_id) {
+        if (assignedTerminalId) {
           try {
             const stored = JSON.parse(localStorage.getItem("trikeserve_current_user") || "{}");
-            if (!stored.terminalId) {
-              stored.terminalId = data.terminal_id;
-              stored.terminalName = data.terminal_name;
+            if (stored.terminalId !== assignedTerminalId || stored.terminalName !== assignedTerminalName) {
+              stored.terminalId = assignedTerminalId;
+              stored.terminalName = assignedTerminalName;
               localStorage.setItem("trikeserve_current_user", JSON.stringify(stored));
             }
           } catch {
@@ -150,7 +162,7 @@ export function useTerminalQueue() {
         // driver (keeps none) and one reassigned from t2 -> t1 (keeps t1), so a
         // ghost row can never keep blocking some other terminal's first slot.
         supabaseHelpers
-          .clearTerminalQueueRows(driverId, data?.terminal_id || null)
+          .clearTerminalQueueRows(driverId, assignedTerminalId)
           .catch(() => {});
 
         setIsResolvingTerminal(false);
@@ -163,6 +175,12 @@ export function useTerminalQueue() {
       cancelled = true;
     };
   }, [driverId]);
+
+  useEffect(() => {
+    if (user?.terminalId === terminalId && user.terminalName) {
+      setTerminalName(user.terminalName);
+    }
+  }, [user?.terminalId, user?.terminalName, terminalId]);
 
   // The terminal's coverage area changes only when an admin edits it, so this is
   // fetched whenever the driver's terminal assignment settles.

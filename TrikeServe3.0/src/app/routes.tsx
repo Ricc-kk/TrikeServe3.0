@@ -288,6 +288,14 @@ export const router = createBrowserRouter([
         )
       },
       {
+        path: "customer/book-ride",
+        element: (
+          <ProtectedRoute allowedRoles={['customer']}>
+            <CustomerHome />
+          </ProtectedRoute>
+        )
+      },
+      {
         path: "customer/active-share-ride",
         element: (
           <ProtectedRoute allowedRoles={['customer']}>

@@ -20,6 +20,7 @@ import { forgetActiveRide, useRideResume } from "../../../lib/rideResume";
 import ChoiceCard from "../ui/ChoiceCard";
 import SectionHeading from "../ui/SectionHeading";
 import LocationBanner, { type LocationProblem } from "../ui/LocationBanner";
+import RideMapStatusBanner from "../ui/RideMapStatusBanner";
 import FloatingChatHead from "../ui/FloatingChatHead";
 import RideChatOverlay from "../rider/RideChatOverlay";
 import { GoogleMap, MarkerF, InfoWindow, Polygon, Polyline } from "@react-google-maps/api";
@@ -425,6 +426,7 @@ export default function CustomerHome() {
   const [enforceBoundary] = useDevModeOverride("enforceBoundary");
   const navigate = useNavigate();
   const location = useLocation();
+  const isBookingPage = location.pathname === '/customer/book-ride';
   const navigationState = location.state as { selectedPickupTerminalId?: string; customerHomeTab?: boolean } | null;
   const searchSelectedTerminalId = navigationState?.selectedPickupTerminalId;
   const cameFromCustomerHomeTab = navigationState?.customerHomeTab === true;
@@ -432,7 +434,7 @@ export default function CustomerHome() {
   const [driverApprovalModalDismissed, setDriverApprovalModalDismissed] = useState(false);
   // Booking is a three-step flow on top of the full-screen map:
   // home (map + Book a Ride) â†’ ride type â†’ pickup / drop-off.
-  const [bookingStep, setBookingStep] = useState<'home' | 'ride' | 'locations'>('home');
+  const [bookingStep, setBookingStep] = useState<'home' | 'ride' | 'locations'>(isBookingPage ? 'ride' : 'home');
   const [currentLocation, setCurrentLocation] = useState<{ lat: number; lng: number }>({ lat: 14.5995, lng: 120.9842 }); // Default: Manila
   const [mapCenter, setMapCenter] = useState<{ lat: number; lng: number }>({ lat: 14.5995, lng: 120.9842 });
   const [selectedMarker, setSelectedMarker] = useState<{ lat: number; lng: number } | null>(null);
@@ -625,12 +627,6 @@ export default function CustomerHome() {
      pickupCoords,
      user?.id,
    ]);
-   const activeShareRideStopsKey = activeShareRideMapDetails.dropoffs
-     .map(point => `${point.lat.toFixed(6)},${point.lng.toFixed(6)}`)
-     .join('|');
-   const activeShareRideMapPickup = activeShareRideMapDetails.isActive
-     ? activeShareRideMapDetails.pickup
-     : pickupCoords;
    const activeShareRideMapDropoff = activeShareRideMapDetails.isActive
      ? activeShareRideMapDetails.dropoffs[activeShareRideMapDetails.dropoffs.length - 1] || null
      : dropoffCoords;
@@ -651,13 +647,13 @@ export default function CustomerHome() {
    const [unreadMessagesCount, setUnreadMessagesCount] = useState(0);
    const [driverAcceptedPopup, setDriverAcceptedPopup] = useState<any>(null);
    const [driverStatusPopup, setDriverStatusPopup] = useState<{ status: string; message: string } | null>(null);
+   const [privateRideAssignmentPopup, setPrivateRideAssignmentPopup] = useState<{ requestId: string; message: string } | null>(null);
    const [showCustomerPaymentModal, setShowCustomerPaymentModal] = useState(false);
   /**
-   * The driver's latest status, kept permanently.
+    * The driver's latest status, kept permanently.
    *
-   * `driverStatusPopup` is not a substitute: it deliberately clears itself after
-   * four seconds, so it is a notification and not a state. The card needs the
-   * current status to still be readable after that.
+    * Brief status notices and the private ride assignment modal are separate
+    * from this value, so the card remains readable after either is dismissed.
    */
   const [driverLiveStatus, setDriverLiveStatus] = useState<string>('');
    const [showValidationError, setShowValidationError] = useState(false);
@@ -835,24 +831,6 @@ export default function CustomerHome() {
    */
   const customerMapRef = useRef<any>(null);
   const pendingTerminalFocusRef = useRef<{ lat: number; lng: number } | null>(null);
-  const terminalRouteBoundsRef = useRef<LatLng[]>([]);
-
-  /**
-   * Frame the terminal road with the passenger, pickup, driver, and drop-off so
-   * the service path remains in view alongside the active trip.
-   */
-  const fitTripBounds = useCallback((pointsOverride?: LatLng[]) => {
-    const map = customerMapRef.current;
-    const maps = (window as any).google?.maps;
-    if (!map || !maps?.LatLngBounds) return;
-    const points: LatLng[] = pointsOverride || (
-      [currentLocation, pickupCoords, dropoffCoords, driverLocation, ...terminalRouteBoundsRef.current].filter(Boolean) as LatLng[]
-    );
-    if (points.length < 2) return;
-    const bounds = new maps.LatLngBounds();
-    points.forEach((p) => bounds.extend(p));
-    map.fitBounds(bounds, 56);
-  }, [currentLocation, pickupCoords, dropoffCoords, driverLocation]);
    const [etaToDestination, setEtaToDestination] = useState<string | null>(null);
    const [ridePassengers, setRidePassengers] = useState<any[]>([]);
    const [passengerLocations, setPassengerLocations] = useState<{ [key: string]: { lat: number; lng: number } }>({});
@@ -995,32 +973,6 @@ export default function CustomerHome() {
       );
     }, [enforceBoundary, selectedTerminalBoundary]);
 
-  useEffect(() => {
-    const route = activeShareRideMapDetails.isActive
-      ? activeShareRideRoute?.points || (activeRideLobby?.terminal_id ? [] : selectedTerminalBoundary.displayRoad || [])
-      : selectedTerminalBoundary.displayRoad || [];
-    terminalRouteBoundsRef.current = route;
-    if (activeShareRideMapDetails.isActive) {
-      const points = [
-        ...(activeShareRideMapDetails.pickup ? [activeShareRideMapDetails.pickup] : []),
-        ...activeShareRideMapDetails.dropoffs,
-        ...route,
-      ];
-      if (points.length > 1) fitTripBounds(points);
-    } else if (route.length > 0) {
-      fitTripBounds();
-    }
-  }, [
-    activeRideLobby?.terminal_id,
-    activeShareRideMapDetails.isActive,
-    activeShareRideMapDetails.pickup?.lat,
-    activeShareRideMapDetails.pickup?.lng,
-    activeShareRideStopsKey,
-    activeShareRideRoute,
-    selectedTerminalBoundary.displayRoad,
-    fitTripBounds,
-  ]);
-
   /*
    * The picker map draws the selected terminal's shapes in that terminal's own
    * colours.
@@ -1045,6 +997,26 @@ export default function CustomerHome() {
    const hasManualPickupSelectionRef = useRef(false);
    const unsubscribeRef = useRef<(() => void) | null>(null);
    const driverStatusTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+   const acknowledgedPrivateRideAssignmentsRef = useRef<Set<string>>(new Set());
+
+   const privateRideAssignmentAcknowledgementKey = (requestId: string) =>
+     `customer_private_ride_assignment_acknowledged_${requestId}`;
+
+   const showPrivateRideAssignmentUnlessAcknowledged = (requestId: string, message: string) => {
+     if (driverStatusTimerRef.current) clearTimeout(driverStatusTimerRef.current);
+     driverStatusTimerRef.current = null;
+     setDriverStatusPopup(current => current?.status === 'on-the-way' ? null : current);
+
+     let acknowledged = acknowledgedPrivateRideAssignmentsRef.current.has(requestId);
+     try {
+       acknowledged = acknowledged || localStorage.getItem(privateRideAssignmentAcknowledgementKey(requestId)) === '1';
+     } catch {
+       // The in-memory acknowledgement still works if browser storage is unavailable.
+     }
+     if (acknowledged) return;
+
+     setPrivateRideAssignmentPopup({ requestId, message });
+   };
 
    // Clear any pending status-popup timer on unmount, so it cannot fire a
    // setState on a component that is no longer mounted.
@@ -1148,13 +1120,34 @@ export default function CustomerHome() {
   // Load terminals from Supabase for pickup selection. `select('*')` keeps this
   // working before ADD_TERMINAL_FARES.sql adds the per-terminal fare columns.
   useEffect(() => {
-    supabase.from('terminals').select('*')
-      .then(({ data, error }) => {
-        if (!error && data) {
-          setTerminals(data.filter((t: any) => t.is_active !== false));
-        }
-      })
-      .catch(() => {});
+    let cancelled = false;
+    const refreshTerminals = () => {
+      void supabase.from('terminals').select('*')
+        .then(({ data, error }) => {
+          if (!cancelled && !error && data) {
+            setTerminals(data.filter((t: any) => t.is_active !== false));
+          }
+        })
+        .catch(() => {});
+    };
+
+    refreshTerminals();
+    const channel = supabase
+      .channel('customer-home-terminal-updates')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'terminals' }, refreshTerminals)
+      .subscribe();
+    const refreshWhenVisible = () => {
+      if (document.visibilityState === 'visible') refreshTerminals();
+    };
+    window.addEventListener('focus', refreshWhenVisible);
+    document.addEventListener('visibilitychange', refreshWhenVisible);
+
+    return () => {
+      cancelled = true;
+      window.removeEventListener('focus', refreshWhenVisible);
+      document.removeEventListener('visibilitychange', refreshWhenVisible);
+      void supabase.removeChannel(channel);
+    };
   }, []);
 
   // A terminal selected from /customer/search returns here as a pickup and
@@ -1446,6 +1439,7 @@ export default function CustomerHome() {
     setDriverLiveStatus('');
     setDriverUnread(0);
     setCustomerChatPopup(false);
+    setPrivateRideAssignmentPopup(null);
     setDriverStatusPopup(null);
     setDriverAcceptedPopup(null);
     setShowCancelConfirm(false);
@@ -1839,6 +1833,7 @@ export default function CustomerHome() {
        const rideType = String(rideContext?.ride_type || rideContext?.type || rideContext?.rideType || selectedVehicle || '').toLowerCase();
        const inferredCompletionType: 'ride' | 'delivery' =
          rideType === 'delivery' || message?.toLowerCase().includes('delivery') ? 'delivery' : 'ride';
+       const isPrivateRideCompletion = normalizedStatus === 'completed' && inferredCompletionType === 'ride' && isPrivateRide;
 
         console.log('ðŸ“£ PROCESS DRIVER STATUS UPDATE:', { status: normalizedStatus, message, source, currentRequestId, lastShownStatus, inferredCompletionType });
 
@@ -1850,6 +1845,11 @@ export default function CustomerHome() {
          setCompletionPopupType(inferredCompletionType);
          setRideCompletedPopup(true);
          setShowCustomerPaymentModal(false);
+         if (isPrivateRideCompletion) {
+           if (driverStatusTimerRef.current) clearTimeout(driverStatusTimerRef.current);
+           driverStatusTimerRef.current = null;
+           setDriverStatusPopup(null);
+         }
         localStorage.setItem(lastShownStatusKey, status);
 
         // For deliveries, remember which business the customer can rate.
@@ -1893,7 +1893,19 @@ export default function CustomerHome() {
           return;
         }
 
-        if (normalizedStatus !== lastShownStatus) {
+        // Keep a private ride assignment outside the short-lived status notice.
+        // This runs even when the status was already seen, so polling can restore
+        // an unacknowledged assignment after the ride type finishes loading.
+        if (normalizedStatus === 'on-the-way' && isPrivateRide && currentRequestId) {
+          showPrivateRideAssignmentUnlessAcknowledged(
+            currentRequestId,
+            statusDisplayMap[normalizedStatus] || message || 'Your driver is on the way to pick you up.',
+          );
+          localStorage.setItem(lastShownStatusKey, normalizedStatus);
+          return;
+        }
+
+        if (normalizedStatus !== lastShownStatus && !isPrivateRideCompletion) {
           // Normalize driver-side statuses to the display keys used by the popup UI.
           const displayStatus =
             normalizedStatus === 'picked-up' ? 'pickup' :
@@ -1907,14 +1919,8 @@ export default function CustomerHome() {
           });
           localStorage.setItem(lastShownStatusKey, normalizedStatus);
 
-          // Status notices auto-dismiss, except private ride assignment, which
-          // stays open until the customer acknowledges it like the share ride modal.
           if (driverStatusTimerRef.current) clearTimeout(driverStatusTimerRef.current);
-          if (displayStatus === 'on-the-way' && isPrivateRide) {
-            driverStatusTimerRef.current = null;
-          } else {
-            driverStatusTimerRef.current = setTimeout(() => setDriverStatusPopup(null), 2000);
-          }
+          driverStatusTimerRef.current = setTimeout(() => setDriverStatusPopup(null), 2000);
         }
       }
     };
@@ -2330,6 +2336,15 @@ export default function CustomerHome() {
         const rtLastShownStatusKey = `last_shown_status_${currentRequestId}`;
         const rtLastShownStatus = localStorage.getItem(rtLastShownStatusKey);
 
+        if (realtimeStatus === 'on-the-way' && isPrivateRide && currentRequestId) {
+          showPrivateRideAssignmentUnlessAcknowledged(
+            currentRequestId,
+            statusDisplayMap[realtimeStatus] || updatedRide.driver_status_message || 'Your driver is on the way to pick you up.',
+          );
+          localStorage.setItem(rtLastShownStatusKey, realtimeStatus);
+          return;
+        }
+
         if (realtimeStatus !== rtLastShownStatus) {
           // Normalize driver-side statuses to the display keys used by the popup UI.
           const displayStatus =
@@ -2344,16 +2359,10 @@ export default function CustomerHome() {
           });
           localStorage.setItem(rtLastShownStatusKey, realtimeStatus);
 
-          // Keep private ride assignment open until it is acknowledged. Other
-          // status notices remain brief and dismiss themselves after 2 seconds.
           if (driverStatusTimerRef.current) clearTimeout(driverStatusTimerRef.current);
-          if (displayStatus === 'on-the-way' && isPrivateRide) {
-            driverStatusTimerRef.current = null;
-          } else {
-            driverStatusTimerRef.current = setTimeout(() => {
-              setDriverStatusPopup(null);
-            }, 2000);
-          }
+          driverStatusTimerRef.current = setTimeout(() => {
+            setDriverStatusPopup(null);
+          }, 2000);
         }
       }
     });
@@ -2467,29 +2476,6 @@ export default function CustomerHome() {
        }
      );
    }, [activeShareRideMapDetails.isActive, pickupCoords, dropoffCoords, isMapsLoaded, rideStatus]);
-
-    /*
-     * Re-frame a private ride once its road line exists, and again if either
-     * endpoint moves.
-     *
-     * Keyed on the route becoming non-empty rather than on `driverLocation`, so
-     * this does not re-fit on every GPS tick and yank the map out from under
-     * someone who has panned somewhere deliberately. The driver's live position is
-     * still folded into the bounds, it just is not the trigger.
-     */
-    const tripRouteDrawn = destinationRoutePath.length > 0;
-    useEffect(() => {
-      if (!tripRouteDrawn || activeShareRideMapDetails.isActive) return;
-      fitTripBounds();
-    }, [
-      tripRouteDrawn,
-      activeShareRideMapDetails.isActive,
-      pickupCoords?.lat,
-      pickupCoords?.lng,
-      dropoffCoords?.lat,
-      dropoffCoords?.lng,
-      // eslint-disable-next-line react-hooks/exhaustive-deps
-    ]);
 
    // Count unread messages from drivers
    useEffect(() => {
@@ -2808,7 +2794,19 @@ export default function CustomerHome() {
   const showBookingFlow = !visibleActiveRide && visibleRideStatus !== 'searching' && !rideBlocked;
   // Keep the home hub underneath lobby creation so its translucent loader has
   // the actual customer home screen to reveal.
-  const showCustomerHomeHub = bookingStep === 'home' && (showBookingFlow || cameFromCustomerHomeTab || showShareLobby);
+  const showCustomerHomeHub = !isBookingPage && bookingStep === 'home' && (showBookingFlow || cameFromCustomerHomeTab || showShareLobby);
+
+  useEffect(() => {
+    if (isBookingPage && rideContextChecked && rideBlocked) {
+      navigate('/customer', { replace: true, state: { customerHomeTab: true } });
+    }
+  }, [isBookingPage, rideContextChecked, rideBlocked, navigate]);
+
+  useEffect(() => {
+    if (isBookingPage && bookingStep === 'home' && !showShareLobby) {
+      navigate('/customer', { replace: true, state: { customerHomeTab: true } });
+    }
+  }, [isBookingPage, bookingStep, showShareLobby, navigate]);
 
   /**
    * Watch the driver's messages so the floating head's badge is honest.
@@ -3374,6 +3372,25 @@ export default function CustomerHome() {
   const activeRideTerminalMarkerColor = normalizeTerminalColor(
     terminals.find(terminal => terminal.id === activeRideTerminalId)?.marker_color,
   );
+  const shareRideTerminal = useMemo(
+    () => terminals.find(terminal => terminal.id === (activeRideLobby?.terminal_id || selectedTerminalId)) || null,
+    [terminals, activeRideLobby?.terminal_id, selectedTerminalId],
+  );
+  const shareRideTerminalPickup = useMemo(() => {
+    if (!shareRideTerminal) return null;
+    return {
+      lat: Number(shareRideTerminal.center_lat),
+      lng: Number(shareRideTerminal.center_lng),
+    };
+  }, [shareRideTerminal]);
+  const activeShareRideMapPickup = activeShareRideMapDetails.isActive
+    ? activeShareRideMapDetails.pickup || pickupCoords
+    : pickupCoords;
+  const activeShareRideTerminalMarker = activeShareRideMapDetails.isActive
+    ? shareRideTerminalPickup && Number.isFinite(shareRideTerminalPickup.lat) && Number.isFinite(shareRideTerminalPickup.lng)
+      ? shareRideTerminalPickup
+      : null
+    : pickupCoords;
   const mapRoutesInView = useMemo(() => {
     if (!activeMapTerminalId) return [];
     const terminalRoutes = mapTerminalRoutes.filter(route => route.terminalId === activeMapTerminalId);
@@ -3594,6 +3611,7 @@ const getPrice = () => {
     setRoutePreviewVisibleRouteIds([]);
     setShowRoutePreviewList(false);
     setActiveRide(null);
+    setPrivateRideAssignmentPopup(null);
     setBookedFare(null);
     setShowCustomerPaymentModal(false);
     setSelectedVehicle(null);
@@ -3713,7 +3731,7 @@ const getPrice = () => {
   // Home stays a scrolling service feed while the customer is riding. The map
   // remains for booking steps and ride tracking, but is hidden when Home is
   // explicitly selected or serves as the share lobby loading backdrop.
-  const showMap = !showCustomerHomeHub;
+  const showMap = !showCustomerHomeHub && !(isBookingPage && bookingStep === 'ride');
 
   /**
    * What the header shows above the search field once search is opened.
@@ -3813,7 +3831,7 @@ const getPrice = () => {
           ) : (
            <GoogleMap
              mapContainerStyle={{ width: "100%", height: "100%" }}
-             center={currentLocation}
+             center={mapCenter}
              zoom={15}
              onLoad={(map: any) => {
                customerMapRef.current = map;
@@ -3822,19 +3840,7 @@ const getPrice = () => {
                  map.panTo(pendingTerminalFocus);
                  map.setZoom(16);
                  pendingTerminalFocusRef.current = null;
-                 return;
                }
-               // The route may already be drawn by the time the map finishes
-               // loading, in which case the fit effect above ran with no instance
-               // to call and did nothing.
-               const shareRideBounds = activeShareRideMapDetails.isActive
-                 ? [
-                     ...(activeShareRideMapDetails.pickup ? [activeShareRideMapDetails.pickup] : []),
-                     ...activeShareRideMapDetails.dropoffs,
-                     ...terminalRouteBoundsRef.current,
-                   ]
-                 : undefined;
-               fitTripBounds(shareRideBounds);
              }}
              options={{
                gestureHandling: 'greedy',
@@ -3857,10 +3863,10 @@ const getPrice = () => {
                   used to be omitted here and drawn only inside the (now removed)
                   embedded card map, so the destination route had no visible start
                   point. */}
-              {rideStateBelongsToCurrentUser && (isActiveShareRideMap || visibleRideStatus !== 'searching') && activeShareRideMapPickup && (
+              {rideStateBelongsToCurrentUser && (isActiveShareRideMap || visibleRideStatus !== 'searching') && activeShareRideTerminalMarker && (
                 <MarkerF
-                  position={activeShareRideMapPickup}
-                  title={isDeliveryRide ? 'Restaurant pickup' : 'Pickup location'}
+                  position={activeShareRideTerminalMarker}
+                  title={isDeliveryRide ? 'Restaurant pickup' : activeShareRideMapDetails.isActive ? 'Terminal' : 'Pickup location'}
                   icon={isDeliveryRide ? createRestaurantMarkerIcon() : terminalMarkerIcon(activeRideTerminalMarkerColor, 58)}
                 />
               )}
@@ -3972,6 +3978,26 @@ const getPrice = () => {
           problem={locationProblem}
           className="absolute top-24 left-3 right-3 z-[1000] sm:top-28 sm:left-4 sm:right-4"
         />
+      )}
+
+      {showMap && isMapsLoaded && (
+        <button
+          type="button"
+          onClick={() => {
+            const map = customerMapRef.current;
+            if (!map || isLoadingLocation || locationProblem) return;
+            map.panTo(currentLocation);
+            map.setZoom(15);
+            setMapCenter(currentLocation);
+          }}
+          aria-label="Re-center map on my location"
+          title="Re-center map on my location"
+          disabled={isLoadingLocation || Boolean(locationProblem)}
+          className="absolute right-4 z-[1200] grid size-12 place-items-center rounded-full border border-line bg-surface text-[var(--primary)] shadow-xl transition-transform active:scale-95 disabled:cursor-not-allowed disabled:opacity-50"
+          style={{ top: 'calc(env(safe-area-inset-top, 0px) + 11rem)' }}
+        >
+          <Navigation className="size-5" aria-hidden="true" />
+        </button>
       )}
 
       {/* Floating chat head, the same component the driver's ride screen uses.
@@ -4108,7 +4134,9 @@ const getPrice = () => {
             <CustomerHubHeader
               avatarUrl={user?.avatarUrl}
               unreadCount={unreadDeliveryNotifications}
-              onOpenSearch={() => navigate('/customer/search')}
+              onOpenSearch={() => navigate('/customer/search', { state: {
+                fallbackOrigin: !isLoadingLocation && !locationProblem ? currentLocation : null,
+              } })}
             />
 
             <main className="mx-auto w-full max-w-4xl space-y-5 px-4 py-5 sm:space-y-6 sm:px-6 sm:py-6">
@@ -4116,7 +4144,13 @@ const getPrice = () => {
                   The filter / search / terminal feed is what the app bar
                   search field opens now, so it lives on /customer/search. */}
               <CustomerServiceHub
-                onBookRide={() => setBookingStep('ride')}
+                onBookRide={() => {
+                  setSelectedVehicle(null);
+                  setBookingStep('ride');
+                  navigate('/customer/book-ride', {
+                    state: selectedTerminalId ? { selectedPickupTerminalId: selectedTerminalId } : undefined,
+                  });
+                }}
                 onOrderFood={() => navigate('/customer/food')}
                 rideDisabled={!showBookingFlow}
               />
@@ -4132,18 +4166,32 @@ const getPrice = () => {
         {/* Booking flow â€” Steps 2 & 3: ride type first, then pickup and drop-off */}
         {showBookingFlow && bookingStep !== 'home' && (
           <>
-            <div
-              className="pointer-events-none absolute inset-0 z-[998] bg-black/25"
-              aria-hidden="true"
-            />
-            <div className="absolute bottom-20 left-0 right-0 z-[999] mx-auto max-w-3xl px-4">
+            {!(isBookingPage && bookingStep === 'ride') && (
+              <div
+                className="pointer-events-none absolute inset-0 z-[998] bg-black/25"
+                aria-hidden="true"
+              />
+            )}
+            <div className={isBookingPage && bookingStep === 'ride'
+              ? "relative z-[999] mx-auto w-full max-w-3xl flex-1 px-4 pt-[calc(env(safe-area-inset-top)+1rem)] pb-24"
+              : "absolute bottom-20 left-0 right-0 z-[999] mx-auto max-w-3xl px-4"}>
             <Card className="max-h-[calc(100vh-7rem)] gap-0 overflow-y-auto rounded-3xl bg-[var(--background)] shadow-2xl">
               {/* Step header â€” back control plus plain-language context */}
               <div className="sticky top-0 z-10 flex items-center gap-3 border-b border-line bg-[var(--background)] px-4 py-3">
                 <button
                   type="button"
-                  onClick={() => setBookingStep(bookingStep === 'ride' ? 'home' : 'ride')}
-                  aria-label={bookingStep === 'ride' ? 'Back to map' : 'Back to ride type'}
+                  onClick={() => {
+                    if (bookingStep === 'ride') {
+                      if (isBookingPage) {
+                        navigate('/customer', { state: { customerHomeTab: true } });
+                      } else {
+                        setBookingStep('home');
+                      }
+                    } else {
+                      setBookingStep('ride');
+                    }
+                  }}
+                  aria-label={bookingStep === 'ride' ? 'Back to Home' : 'Back to ride type'}
                   className="flex h-11 w-11 flex-shrink-0 items-center justify-center rounded-full bg-[var(--muted)] transition-transform active:scale-90"
                 >
                   <ArrowLeft className="h-5 w-5 text-[var(--ink)]" />
@@ -4322,21 +4370,13 @@ const getPrice = () => {
         {/* Active Ride Card - Driver Info with embedded map */}
         {rideStateBelongsToCurrentUser && visibleRideStatus === 'driver-found' && visibleActiveRide && (
           <>
-            {/*
-              "Live Tracking" badge.
+            {/* Keep the status over the full-screen map, clear of the page header. */}
+            <RideMapStatusBanner label="Live Tracking" topClassName="top-24 sm:top-28" />
 
-              Sits outside the ride card rather than inside it. As a child it was
-              absolutely positioned against the card's own box, so it scrolled and
-              shifted with the card and read as part of the driver's details --
-              when it describes the map behind them. As a sibling it is anchored to
-              the viewport, on the left, above the map's zoom controls.
-            */}
-            <div className="pointer-events-none absolute left-3 top-24 z-[1101] sm:top-28 bg-white/95 backdrop-blur-sm rounded-full px-3 py-1.5 shadow-lg flex items-center gap-2">
-              <div className="w-2 h-2 bg-[var(--success)] rounded-full animate-pulse" />
-              <span className="text-xs font-bold text-[#122724]">Live Tracking</span>
-            </div>
-
-            <div className="absolute bottom-16 left-0 right-0 z-[1100] p-3">
+            <div
+              className="absolute left-0 right-0 z-[1100] p-3"
+              style={{ bottom: 'calc(5rem + env(safe-area-inset-bottom))' }}
+            >
             <RideSurfaceCard className="gap-0 bg-surface shadow-2xl border-2 border-[var(--primary)] rounded-2xl overflow-hidden">
               {/*
                 No second map here.
@@ -4650,7 +4690,7 @@ const getPrice = () => {
                   Ride Completed
                 </h3>
                 <p className="mb-4 text-sm text-[var(--muted-foreground)]">
-                  Your drop-off is confirmed. Your ride is complete. Thank you for riding with TrikeServe!
+                  Thank you for riding with TrikeServe!
                 </p>
                 {rideDriverId && (
                   <div className="mb-4 rounded-xl bg-[var(--muted)] p-3 text-left">
@@ -4839,7 +4879,7 @@ const getPrice = () => {
         {/* This was showing status updates like "On the Way", "Arrived", etc. */}
 
       {/* Bottom Navigation */}
-      <BottomNav active="home" messagesBadge={unreadMessagesCount} />
+      <BottomNav active={!isBookingPage && bookingStep === 'home' ? "home" : undefined} messagesBadge={unreadMessagesCount} />
 
       {/* Terminal Picker Modal */}
       {showTerminalPicker && (
@@ -5720,7 +5760,8 @@ const getPrice = () => {
           maxPassengersAllowed={terminalSeatLimit}
           pricePerSeat={shareFarePerSeat}
           paymentMethod={paymentMethod}
-          selectedTerminalId={selectedTerminalId}
+          selectedTerminalId={activeRideLobby?.terminal_id || selectedTerminalId}
+          terminalCoords={shareRideTerminalPickup}
           selectedRouteId={selectedTerminalBoundary.selectedRoute?.id || null}
           routePoints={selectedTerminalBoundary.displayRoad}
           routeWidthM={selectedTerminalBoundary.routeWidthM}
@@ -5776,7 +5817,7 @@ const getPrice = () => {
         </RideModal>
       )}
 
-      {driverStatusPopup?.status === 'on-the-way' && isPrivateRide ? (
+      {privateRideAssignmentPopup?.requestId === currentRequestId ? (
         <RideModal labelledBy="customer-driver-assigned-title" zIndexClassName="z-[11000]" contentClassName="p-6 text-center">
           <div className="mx-auto mb-4 flex size-16 items-center justify-center rounded-full bg-[var(--success-soft)] text-[var(--success)]">
             <TerminalIconGlyph className="size-8" aria-hidden="true" />
@@ -5785,7 +5826,7 @@ const getPrice = () => {
             Driver assigned!
           </h2>
           <p className="mb-5 text-sm text-[var(--muted-foreground)]">
-            A driver has accepted your private ride and is heading to your pickup.
+            {privateRideAssignmentPopup.message}
           </p>
           <div className="mb-5 flex items-center gap-3 rounded-xl bg-[var(--muted)] p-3 text-left">
             <div className="flex size-12 shrink-0 items-center justify-center overflow-hidden rounded-full bg-[var(--primary)] text-sm font-bold text-white">
@@ -5814,7 +5855,16 @@ const getPrice = () => {
             onClick={() => {
               if (driverStatusTimerRef.current) clearTimeout(driverStatusTimerRef.current);
               driverStatusTimerRef.current = null;
-              setDriverStatusPopup(null);
+              const requestId = privateRideAssignmentPopup?.requestId;
+              if (requestId) {
+                acknowledgedPrivateRideAssignmentsRef.current.add(requestId);
+                try {
+                  localStorage.setItem(privateRideAssignmentAcknowledgementKey(requestId), '1');
+                } catch {
+                  // The in-memory acknowledgement still prevents repeat polling from reopening it.
+                }
+              }
+              setPrivateRideAssignmentPopup(null);
             }}
             className="w-full bg-[var(--primary)] text-white"
           >

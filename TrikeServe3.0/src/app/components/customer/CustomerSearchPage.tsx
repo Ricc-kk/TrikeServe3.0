@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useState } from "react";
 import { ChevronDown, ChevronLeft, Loader2, Search } from "lucide-react";
-import { useNavigate } from "react-router";
+import { useLocation, useNavigate } from "react-router";
 
 import { supabase } from "../../../utils/supabase";
+import { hasCoords, type LatLng } from "@/lib/distance";
 import { useAuth } from "../../contexts/AuthContext";
 import { useDeliveryAddress } from "../../contexts/useDeliveryAddress";
 import BottomNav from "../ui/BottomNav";
@@ -35,6 +36,7 @@ type Terminal = {
  */
 export default function CustomerSearchPage() {
   const navigate = useNavigate();
+  const location = useLocation();
   // Search is reached from the hub, but it is also the landing screen for a
   // shared search link; back should undo the tap, not force a fixed parent.
   const goBack = usePreviousPage("/customer");
@@ -44,6 +46,21 @@ export default function CustomerSearchPage() {
   const [query, setQuery] = useState("");
   const [filter, setFilter] = useState<HubFilter>("all");
   const [terminals, setTerminals] = useState<Terminal[]>([]);
+
+  // Keep the home screen's confirmed position when its search button opens this
+  // route, and resolve a fresh browser position when search is opened directly.
+  // This is only a distance fallback; it never changes the selected delivery
+  // address or the origin used by checkout.
+  const routeOrigin = useMemo<LatLng | null>(() => {
+    const candidate = (location.state as { fallbackOrigin?: unknown } | null)?.fallbackOrigin;
+    if (!candidate || typeof candidate !== "object") return null;
+    const point = candidate as { lat?: unknown; lng?: unknown };
+    const lat = Number(point.lat);
+    const lng = Number(point.lng);
+    return hasCoords({ lat, lng }) ? { lat, lng } : null;
+  }, [location.state]);
+  const [geolocationOrigin, setGeolocationOrigin] = useState<LatLng | null>(null);
+  const fallbackOrigin = routeOrigin ?? geolocationOrigin;
 
   /*
    * The delivery address, or where the customer is standing.
@@ -66,21 +83,59 @@ export default function CustomerSearchPage() {
     (delivery.locating ? "Locating you…" : "Add delivery address");
 
   useEffect(() => {
-    // `select('*')` keeps this working before ADD_TERMINAL_FARES.sql adds the
-    // per-terminal fare columns.
+    if (delivery.origin || fallbackOrigin || delivery.locating) return;
+    if (typeof navigator === "undefined" || !navigator.geolocation) return;
+
     let cancelled = false;
-    supabase
-      .from("terminals")
-      .select("*")
-      .then(({ data, error }) => {
-        if (cancelled || error || !data) return;
-        setTerminals(data.filter((t: any) => t.is_active !== false) as Terminal[]);
-      })
-      .catch(() => {
-        // No terminals is a degraded search, not a broken screen.
-      });
+    navigator.geolocation.getCurrentPosition(
+      ({ coords }) => {
+        const point = { lat: coords.latitude, lng: coords.longitude };
+        if (!cancelled && hasCoords(point)) setGeolocationOrigin(point);
+      },
+      () => {
+        // Distances remain unavailable when location access is denied.
+      },
+      { enableHighAccuracy: false, timeout: 10000, maximumAge: 300000 },
+    );
+
     return () => {
       cancelled = true;
+    };
+  }, [delivery.origin, delivery.locating, fallbackOrigin]);
+
+  useEffect(() => {
+    let cancelled = false;
+    const refreshTerminals = () => {
+      // `select('*')` keeps this working before ADD_TERMINAL_FARES.sql adds the
+      // per-terminal fare columns.
+      void supabase
+        .from("terminals")
+        .select("*")
+        .then(({ data, error }) => {
+          if (cancelled || error || !data) return;
+          setTerminals(data.filter((t: any) => t.is_active !== false) as Terminal[]);
+        })
+        .catch(() => {
+          // No terminals is a degraded search, not a broken screen.
+        });
+    };
+
+    refreshTerminals();
+    const channel = supabase
+      .channel("customer-search-terminal-updates")
+      .on("postgres_changes", { event: "*", schema: "public", table: "terminals" }, refreshTerminals)
+      .subscribe();
+    const refreshWhenVisible = () => {
+      if (document.visibilityState === "visible") refreshTerminals();
+    };
+    window.addEventListener("focus", refreshWhenVisible);
+    document.addEventListener("visibilitychange", refreshWhenVisible);
+
+    return () => {
+      cancelled = true;
+      window.removeEventListener("focus", refreshWhenVisible);
+      document.removeEventListener("visibilitychange", refreshWhenVisible);
+      void supabase.removeChannel(channel);
     };
   }, []);
 
@@ -170,11 +225,11 @@ export default function CustomerSearchPage() {
         {showTerminals && (
           <HubTerminals
             terminals={matchingTerminals}
-            onSelect={(terminalId) => navigate("/customer", { state: { selectedPickupTerminalId: terminalId } })}
+            onSelect={(terminalId) => navigate("/customer/book-ride", { state: { selectedPickupTerminalId: terminalId } })}
           />
         )}
 
-        {showFood && <RecommendedRestaurants query={query} />}
+        {showFood && <RecommendedRestaurants query={query} fallbackOrigin={fallbackOrigin} />}
 
       </main>
 

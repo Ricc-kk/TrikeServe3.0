@@ -19,6 +19,7 @@ import {
   getApprovalRequests,
   setDriverTerminalAdmin,
   getAdminTerminalAssignment,
+  syncTerminalAssignmentNames,
   normalizeBoundaryRoad,
   normalizeBoundaryArea,
   normalizeRoadWidth,
@@ -2210,6 +2211,13 @@ export default function AdminTerminals() {
           variant: 'error',
         });
         return;
+      }
+
+      if (editTerminal && editTerminal.name !== target.name) {
+        const nameSync = await syncTerminalAssignmentNames(target.id, target.name);
+        if (!nameSync.success) {
+          console.warn('[AdminTerminals] Terminal saved, but assigned account labels could not be synced:', nameSync.error);
+        }
       }
 
       logAudit({

@@ -326,6 +326,41 @@ export async function getAdminTerminalAssignment(
   }
 }
 
+/** Keep the denormalized assignment labels in step with the canonical terminal row. */
+export async function syncTerminalAssignmentNames(
+  terminalId: string,
+  terminalName: string
+): Promise<{ success: boolean; error?: string }> {
+  try {
+    const [drivers, admins] = await Promise.all([
+      supabase
+        .from('users')
+        .update({ terminal_name: terminalName })
+        .eq('terminal_id', terminalId),
+      supabase
+        .from('admins')
+        .update({ terminal_name: terminalName })
+        .eq('terminal_id', terminalId),
+    ]);
+
+    if (drivers.error) return { success: false, error: drivers.error.message };
+
+    // Rider Admin assignments are optional on older databases. Their missing
+    // columns don't prevent driver labels from being synchronized.
+    const missingOptionalAdminColumns = admins.error &&
+      (admins.error.code === '42703' || admins.error.code === 'PGRST204') &&
+      /terminal_(id|name)/i.test(admins.error.message);
+    if (admins.error && !missingOptionalAdminColumns) {
+      return { success: false, error: admins.error.message };
+    }
+
+    return { success: true };
+  } catch (error) {
+    console.error('[syncTerminalAssignmentNames] error:', error);
+    return { success: false, error: 'Network error while syncing terminal names' };
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Driver as terminal admin
 // ---------------------------------------------------------------------------
@@ -1183,6 +1218,12 @@ async function applyApprovalRequest(
           { onConflict: 'id' }
         );
         if (error) return { success: false, error: describeApprovalError(error) };
+        if (request.request_type === 'terminal_update' && typeof payload.name === 'string') {
+          const nameSync = await syncTerminalAssignmentNames(payload.id, payload.name);
+          if (!nameSync.success) {
+            console.warn('[applyApprovalRequest] Terminal updated, but assigned account labels could not be synced:', nameSync.error);
+          }
+        }
         return { success: true };
       }
 

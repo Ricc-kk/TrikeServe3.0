@@ -653,7 +653,7 @@ export default function RiderProfile() {
               Your Apps
             </h2>
             <p className="text-sm text-[var(--muted-foreground)] mb-4">
-              You are the admin of {todaAdminStatus.terminalName || 'your terminal'}. You can
+              You are the admin of {user.terminalName || terminalData?.name || todaAdminStatus.terminalName || 'your terminal'}. You can
               drive, order, and run your terminal all from this one account.
             </p>
 
@@ -862,7 +862,7 @@ export default function RiderProfile() {
         const app = DRIVER_APPS.find(a => a.key === switchTarget);
         if (!app) return null;
         const Icon = app.Icon;
-        const terminalName = todaAdminStatus.terminalName || 'your terminal';
+        const terminalName = user.terminalName || terminalData?.name || todaAdminStatus.terminalName || 'your terminal';
         // Only the admin app has something to warn about; driving and ordering
         // need no caveat, and saying so anyway would train the driver to skip
         // the confirmation.

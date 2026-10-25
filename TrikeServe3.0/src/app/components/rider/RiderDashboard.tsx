@@ -1062,7 +1062,7 @@ export default function RiderDashboard() {
         }
 
         {/* Service types control */}
-        <div className="absolute right-3 top-[calc(env(safe-area-inset-top)+0.75rem)] z-[1000] flex gap-1 sm:right-6 sm:top-[calc(env(safe-area-inset-top)+1.5rem)] sm:gap-2">
+        <div className="absolute right-3 top-[calc(env(safe-area-inset-top)+4rem)] z-[1000] flex gap-1 sm:right-6 sm:top-[calc(env(safe-area-inset-top)+5rem)] sm:gap-2">
           {!isMapFullscreen && !activeTrip && (
             <button
               onClick={() => navigate('/rider/service-types', { state: { returnTo: '/rider' } })}

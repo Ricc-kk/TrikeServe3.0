@@ -307,6 +307,7 @@ interface ShareRideLobbyProps {
   pricePerSeat?: number;
   paymentMethod?: 'COD';
   selectedTerminalId?: string | null;
+  terminalCoords?: { lat: number; lng: number } | null;
   selectedRouteId?: string | null;
   routePoints?: Array<{ lat: number; lng: number }> | null;
   routeWidthM?: number | null;
@@ -333,6 +334,7 @@ export default function ShareRideLobby({
   pricePerSeat = 15,
   paymentMethod = 'COD',
   selectedTerminalId,
+  terminalCoords,
   selectedRouteId,
   routePoints,
   routeWidthM,
@@ -434,8 +436,12 @@ export default function ShareRideLobby({
   const [terminalRoutePath, setTerminalRoutePath] = useState<Array<{ lat: number; lng: number }>>([]);
   const [terminalRouteColor, setTerminalRouteColor] = useState(() => normalizeRouteColor(undefined));
   const [terminalMarkerColor, setTerminalMarkerColor] = useState(DEFAULT_TERMINAL_COLOR);
+  const [terminalMarkerPosition, setTerminalMarkerPosition] = useState(terminalCoords || null);
   const lobbyMapRef = useRef<any>(null);
   const lobbyMapWasManuallyMovedRef = useRef(false);
+  const lobbyMapInitialCenterRef = useRef(
+    terminalCoords || pickupCoords || routePoints?.[0] || { lat: 14.5995, lng: 120.9842 },
+  );
   const driverLocationIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   useEffect(() => {
@@ -800,17 +806,19 @@ export default function ShareRideLobby({
 
   useEffect(() => {
     const terminalId = lobby?.terminal_id || selectedTerminalId;
+    setTerminalMarkerPosition(terminalCoords || null);
     if (!terminalId) {
       setTerminalRoutePath([]);
       setTerminalRouteColor(normalizeRouteColor(undefined));
       setTerminalMarkerColor(DEFAULT_TERMINAL_COLOR);
+      setTerminalMarkerPosition(terminalCoords || null);
       return;
     }
 
     let active = true;
     supabase
       .from('terminals')
-      .select('routes, boundary_polygon, road_width_m, route_color, marker_color')
+      .select('center_lat, center_lng, routes, boundary_polygon, road_width_m, route_color, marker_color')
       .eq('id', terminalId)
       .maybeSingle()
       .then(({ data, error }) => {
@@ -818,8 +826,15 @@ export default function ShareRideLobby({
         if (error || !data) {
           setTerminalRoutePath([]);
           setTerminalMarkerColor(DEFAULT_TERMINAL_COLOR);
+          setTerminalMarkerPosition(terminalCoords || null);
           return;
         }
+        const center = { lat: Number(data.center_lat), lng: Number(data.center_lng) };
+        setTerminalMarkerPosition(
+          Number.isFinite(center.lat) && Number.isFinite(center.lng)
+            ? center
+            : terminalCoords || null,
+        );
         const storedRoutes = normalizeTerminalRoutes(data.routes);
         const routes = (storedRoutes.length > 0
           ? storedRoutes
@@ -856,13 +871,14 @@ export default function ShareRideLobby({
         if (active) {
           setTerminalRoutePath([]);
           setTerminalMarkerColor(DEFAULT_TERMINAL_COLOR);
+          setTerminalMarkerPosition(terminalCoords || null);
         }
       });
 
     return () => {
       active = false;
     };
-  }, [lobby?.terminal_id, lobby?.passengers_json, selectedTerminalId, routePoints, dropoffCoords, user?.id]);
+  }, [lobby?.terminal_id, lobby?.passengers_json, selectedTerminalId, terminalCoords, routePoints, dropoffCoords, user?.id]);
 
   const fitLobbyRouteBounds = useCallback(() => {
     if (lobbyMapWasManuallyMovedRef.current) return;
@@ -887,13 +903,13 @@ export default function ShareRideLobby({
     const endpoints = [pickupCoords, dropoffCoords, ...passengerDropoffs].filter(
       (point): point is { lat: number; lng: number } => point !== null && point !== undefined,
     );
-    const points = [...terminalRoutePath, ...endpoints, ...(driverLocation ? [driverLocation] : [])];
+    const points = [...terminalRoutePath, ...endpoints];
     if (points.length === 0) return;
     const bounds = new maps.LatLngBounds();
     points.forEach((point) => bounds.extend(point));
     const assignedPage = presentation === 'page' && ['driver_found', 'in_progress'].includes(String(lobby?.status || ''));
     map.fitBounds(bounds, assignedPage ? { top: 88, right: 24, bottom: 340, left: 24 } : 24);
-  }, [terminalRoutePath, pickupCoords, dropoffCoords, lobby?.passengers_json, lobby?.status, driverLocation, user?.id, presentation]);
+  }, [terminalRoutePath, pickupCoords, dropoffCoords, lobby?.passengers_json, lobby?.status, user?.id, presentation]);
 
   useEffect(() => {
     fitLobbyRouteBounds();
@@ -1894,10 +1910,10 @@ if (matchingRouteLobby) {
               options={{ strokeColor: terminalRouteColor, strokeOpacity: 0.9, strokeWeight: 5, clickable: false }}
             />
           )}
-          {pickupCoords && (
+          {terminalMarkerPosition && (
             <MarkerF
-              position={pickupCoords}
-              title="Pickup"
+              position={terminalMarkerPosition}
+              title="Terminal"
               icon={terminalMarkerIcon(terminalMarkerColor, 58)}
             />
           )}
@@ -2336,6 +2352,15 @@ if (loading) {
       : 0,
   );
 
+  const recenterLobbyMap = () => {
+    const map = lobbyMapRef.current;
+    const target = driverLocation || terminalMarkerPosition || pickupCoords || terminalRoutePath[0];
+    if (!map || !target) return;
+    lobbyMapWasManuallyMovedRef.current = true;
+    map.panTo(target);
+    map.setZoom(15);
+  };
+
   const showAssignedRidePage = presentation === 'page' && ['driver_found', 'in_progress'].includes(lobby.status);
 
   // Full lobby view
@@ -2590,10 +2615,10 @@ if (loading) {
 
             {/* Terminal route and live tracking map */}
             {isMapsLoaded && ((['driver_found', 'in_progress'].includes(lobby.status) && driverLocation) || terminalRoutePath.length > 0 || mapDropoffStops.length > 0) && (
-              <div className="rounded-xl overflow-hidden mb-3 border border-[var(--border)] shadow-sm">
+              <div className="relative mb-3 overflow-hidden rounded-xl border border-[var(--border)] shadow-sm">
                 <GoogleMap
                   mapContainerStyle={{ width: '100%', height: '240px' }}
-                  center={pickupCoords || terminalRoutePath[0] || driverLocation || { lat: 14.5995, lng: 120.9842 }}
+                  center={lobbyMapInitialCenterRef.current}
                   zoom={15}
                   onLoad={(map: any) => {
                     lobbyMapRef.current = map;
@@ -2601,6 +2626,7 @@ if (loading) {
                   }}
                   onUnmount={() => { lobbyMapRef.current = null; }}
                   onDragStart={() => { lobbyMapWasManuallyMovedRef.current = true; }}
+                  onZoomChanged={() => { lobbyMapWasManuallyMovedRef.current = true; }}
                   options={{
                     zoomControl: false,
                     fullscreenControl: false,
@@ -2628,10 +2654,10 @@ if (loading) {
                     />
                   )}
                   {/* Pickup marker */}
-                  {pickupCoords && (
+                  {terminalMarkerPosition && (
                     <MarkerF
-                      position={pickupCoords}
-                      title="Pickup"
+                      position={terminalMarkerPosition}
+                      title="Terminal"
                       icon={terminalMarkerIcon(terminalMarkerColor, 58)}
                     />
                   )}
@@ -2685,6 +2711,15 @@ if (loading) {
                     />
                   )}
                 </GoogleMap>
+                <button
+                  type="button"
+                  onClick={recenterLobbyMap}
+                  aria-label="Re-center map"
+                  title="Re-center map"
+                  className="absolute right-2 top-2 z-[1000] grid size-10 place-items-center rounded-full border border-line bg-surface/95 text-[var(--primary)] shadow-lg backdrop-blur-sm"
+                >
+                  <Navigation className="size-4" aria-hidden="true" />
+                </button>
                 {/* Driver status indicator */}
                 <div className="px-3 py-2 bg-surface border-t border-[var(--border)] flex items-center justify-between">
                   <div className="flex items-center gap-2">
@@ -2756,7 +2791,7 @@ if (loading) {
             {isMapsLoaded ? (
               <GoogleMap
                 mapContainerStyle={{ width: '100%', height: '100%' }}
-                center={driverLocation || pickupCoords || terminalRoutePath[0] || { lat: 14.5995, lng: 120.9842 }}
+                center={lobbyMapInitialCenterRef.current}
                 zoom={15}
                 onLoad={(map: any) => {
                   lobbyMapRef.current = map;
@@ -2764,6 +2799,7 @@ if (loading) {
                 }}
                 onUnmount={() => { lobbyMapRef.current = null; }}
                 onDragStart={() => { lobbyMapWasManuallyMovedRef.current = true; }}
+                onZoomChanged={() => { lobbyMapWasManuallyMovedRef.current = true; }}
                 options={{
                   zoomControl: false,
                   fullscreenControl: false,
@@ -2790,8 +2826,8 @@ if (loading) {
                     })()}
                   />
                 )}
-                {pickupCoords && (
-                  <MarkerF position={pickupCoords} title="Pickup" icon={terminalMarkerIcon(terminalMarkerColor, 58)} />
+                {terminalMarkerPosition && (
+                  <MarkerF position={terminalMarkerPosition} title="Terminal" icon={terminalMarkerIcon(terminalMarkerColor, 58)} />
                 )}
                 {mapDropoffStops.map(stop => (
                   <MarkerF
@@ -2848,6 +2884,15 @@ if (loading) {
             className="absolute right-3 top-[calc(env(safe-area-inset-top)+3.5rem)] z-10 grid size-11 place-items-center rounded-full bg-surface/95 text-[var(--ink)] shadow-lg backdrop-blur-sm"
           >
             <ArrowLeft className="size-5" aria-hidden="true" />
+          </button>
+          <button
+            type="button"
+            onClick={recenterLobbyMap}
+            aria-label="Re-center map"
+            title="Re-center map"
+            className="absolute right-3 top-[calc(env(safe-area-inset-top)+7rem)] z-10 grid size-11 place-items-center rounded-full bg-surface/95 text-[var(--primary)] shadow-lg backdrop-blur-sm"
+          >
+            <Navigation className="size-5" aria-hidden="true" />
           </button>
 
           <div

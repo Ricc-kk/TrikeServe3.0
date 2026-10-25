@@ -12,6 +12,7 @@ import RideChatOverlay from "../rider/RideChatOverlay";
 import { Badge } from "../ui/badge";
 import { OrderStatusUpdates } from "../ui/OrderStatusUpdates";
 import LocationBanner, { type LocationProblem } from "../ui/LocationBanner";
+import RideMapStatusBanner from "../ui/RideMapStatusBanner";
 import ProofCapture from "../ui/ProofCapture";
 import ReasonPromptModal from "../ui/reason-prompt-modal";
 import StoreLogo from "../figma/StoreLogo";
@@ -2574,7 +2575,7 @@ export default function ActiveRide() {
   }
 
   return (
-    <div className={`min-h-screen bg-[var(--muted)] ${isSharedRide ? 'pb-0' : 'pb-20'} relative overflow-hidden`}>
+    <div className="min-h-screen bg-[var(--muted)] relative overflow-hidden">
       {/* Ride Complete Popup */}
       {showRideComplete && (
         <RideModal labelledBy="rider-ride-complete-title" contentClassName="p-6 text-center animate-in fade-in zoom-in duration-300">
@@ -2894,11 +2895,7 @@ export default function ActiveRide() {
             <span className="text-sm font-bold text-[var(--primary-foreground)]">Re-center</span>
           </button>
         )}
-        {/* Route phase indicator banner */}
-        <div className={`absolute top-3 left-3 px-3 py-1.5 rounded-full text-white text-xs font-bold shadow-md flex items-center gap-1.5 ${isHeadingToPickup ? 'bg-[var(--success)]' : 'bg-[var(--primary)]'}`}>
-          <div className={`w-2 h-2 rounded-full ${isHeadingToPickup ? 'bg-surface animate-pulse' : 'bg-surface animate-pulse'}`} />
-          {isHeadingToPickup ? 'Heading to Pickup' : 'Heading to Drop-off'}
-        </div>
+        <RideMapStatusBanner label={isHeadingToPickup ? 'Heading to Pickup' : 'Heading to Drop-off'} />
       </div>
 
       {/* Floating chat head. See FloatingChatHead for the drag, snap, badge and
@@ -2950,7 +2947,7 @@ export default function ActiveRide() {
         className={
           isMinimized
             ? 'fixed bottom-0 left-0 right-0 bg-surface rounded-t-3xl shadow-[0_-10px_40px_rgba(0,0,0,0.1)] p-3 z-[1001]'
-            : 'px-4 pt-4 pb-2 space-y-3'
+            : 'px-4 pt-4 pb-0 space-y-3'
         }
       >
         {/* Drag handle: pulls the sheet up to cover the map, or pushes it back
@@ -3037,15 +3034,15 @@ export default function ActiveRide() {
                 ₱{rideData.amount} · {isHeadingToPickup ? 'To pickup' : 'To drop-off'}
               </p>
             </div>
-            {!isSharedRide && (
-              <Button
-                onClick={() => openPassengerChat()}
-                aria-label="Message passenger"
-                className="size-11 flex-shrink-0 rounded-full bg-[var(--surface)] border-2 border-[var(--primary)] flex items-center justify-center"
-              >
-                <MessageSquare className="w-4 h-4 text-[var(--primary)]" aria-hidden="true" />
-              </Button>
-            )}
+            <Button
+              type="button"
+              onClick={() => openPassengerChat()}
+              aria-label={isSharedRide ? 'Message passengers' : 'Message passenger'}
+              title={isSharedRide ? 'Message passengers' : 'Message passenger'}
+              className="size-11 flex-shrink-0 rounded-full bg-[var(--surface)] border-2 border-[var(--primary)] flex items-center justify-center"
+            >
+              <MessageSquare className="w-4 h-4 text-[var(--primary)]" aria-hidden="true" />
+            </Button>
           </RideSurfaceCard>
         )}
 

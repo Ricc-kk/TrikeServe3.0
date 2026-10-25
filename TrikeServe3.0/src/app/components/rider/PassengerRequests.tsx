@@ -104,6 +104,10 @@ function displayOrderAddress(address?: string | null): string | undefined {
   return readable || undefined;
 }
 
+function passengerFirstName(name: unknown): string {
+  return String(name ?? '').trim().split(/\s+/)[0] || 'Passenger';
+}
+
 interface PassengerRequest {
   id: string;
   type: 'delivery' | 'shared' | 'private';
@@ -193,6 +197,7 @@ export default function PassengerRequests() {
   const terminalQueueApi = useTerminalQueue();
   const {
     terminalId: queueTerminalId,
+    terminalName: queueTerminalName,
     myEntry: queueEntry,
     position: queuePosition,
     isFirst: isFirstInQueue,
@@ -281,7 +286,6 @@ export default function PassengerRequests() {
   const [todaMarkerColor, setTodaMarkerColor] = useState(DEFAULT_TERMINAL_COLOR);
   const [todaRouteColor, setTodaRouteColor] = useState(DEFAULT_ROUTE_COLOR);
   const [todaBorderColor, setTodaBorderColor] = useState(DEFAULT_BORDER_COLOR);
-  const [todaName, setTodaName] = useState<string | null>(user?.terminalName || null);
   const [showTodaMap, setShowTodaMap] = useState(true);
   const [visibleTodaRouteIds, setVisibleTodaRouteIds] = useState<string[]>([]);
   const [focusedTodaRouteId, setFocusedTodaRouteId] = useState<string | null>(null);
@@ -789,7 +793,7 @@ export default function PassengerRequests() {
             const lobbyAddress = displayOrderAddress(previewRequest.dropoffAddress || previewRequest.dropoff);
             return {
               id: passenger.id,
-              passengerNames: [passenger.name || previewRequest.customerName || 'Passenger'],
+              passengerNames: [passengerFirstName(passenger.name || previewRequest.customerName)],
               address: addressParts.join(' · ') || lobbyAddress || 'Drop-off location unavailable',
               coords: null,
             };
@@ -838,7 +842,7 @@ export default function PassengerRequests() {
             || (coords ? `${coords.lat.toFixed(5)}, ${coords.lng.toFixed(5)}` : 'Drop-off location unavailable');
           return {
             id: passenger.id,
-            name: passenger.name || previewRequest.customerName || 'Passenger',
+            name: passengerFirstName(passenger.name || previewRequest.customerName),
             address,
             coords,
           };
@@ -1239,7 +1243,7 @@ export default function PassengerRequests() {
                 <div className="min-w-0 text-left">
                   <p className="text-sm font-extrabold text-[var(--ink)] truncate">Your TODA Boundary</p>
                   <p className="text-[11px] text-[var(--muted-foreground)] truncate">
-                    {todaName || "Assigned terminal"}
+                    {queueTerminalName || "Assigned terminal"}
                     {todaRoutes.length > 0 || todaArea
                       ? ` • ${todaRoutes.length > 0 ? `${todaRoutes.length} route${todaRoutes.length === 1 ? '' : 's'}${todaArea ? ' + area' : ''}` : 'area'} plotted`
                       : ' • no boundary set yet'}
@@ -1305,7 +1309,7 @@ export default function PassengerRequests() {
                         {todaCenter && (
                           <Marker
                             position={todaCenter}
-                            title={todaName || 'Assigned terminal'}
+                            title={queueTerminalName || 'Assigned terminal'}
                             icon={terminalMarkerIcon(todaMarkerColor, 58)}
                             zIndex={5}
                           />
@@ -1352,7 +1356,7 @@ export default function PassengerRequests() {
                         <div className="max-h-[min(65vh,32rem)] overflow-hidden rounded-2xl border border-line bg-[var(--surface)] shadow-xl">
                           <div className="flex items-center justify-between gap-2 border-b border-line px-3 py-3">
                             <div>
-                              <p className="text-sm font-bold text-[var(--ink)]">{todaName || 'Terminal'} routes</p>
+                              <p className="text-sm font-bold text-[var(--ink)]">{queueTerminalName || 'Terminal'} routes</p>
                               <p className="text-xs text-[var(--muted-foreground)]">View a route or hide it from the map.</p>
                             </div>
                             <div className="flex shrink-0 gap-1">
@@ -1428,7 +1432,7 @@ export default function PassengerRequests() {
                   </div>
                 ) : (
                   <p className="px-4 py-6 text-center text-xs text-[var(--muted-foreground)]">
-                    {todaName || "Your terminal"} has no boundary area set yet.
+                    {queueTerminalName || "Your terminal"} has no boundary area set yet.
                   </p>
                 )}
               </div>
@@ -1476,14 +1480,14 @@ export default function PassengerRequests() {
                   </div>
                   <div className="min-w-0">
                     <p className="font-bold text-[var(--ink)] text-sm truncate">
-                      {request.type === 'delivery' ? request.restaurantName || 'Restaurant' : request.customerName}
+                      {request.type === 'delivery' ? request.restaurantName || 'Restaurant' : passengerFirstName(request.customerName)}
                     </p>
                     {request.type === 'delivery' && (
-                      <p className="text-[10px] text-[var(--muted-foreground)] truncate">Customer: {request.customerName}</p>
+                      <p className="text-[10px] text-[var(--muted-foreground)] truncate">Customer: {passengerFirstName(request.customerName)}</p>
                     )}
                     {request.type === 'shared' && request.passengerDetails && request.passengerDetails.length > 1 && (
                       <p className="text-[10px] text-[var(--muted-foreground)] truncate">
-                        {request.passengerDetails.map((p: any) => p.name || 'Passenger').join(', ')}
+                        {request.passengerDetails.map((p: any) => passengerFirstName(p.name)).join(', ')}
                       </p>
                     )}
                   </div>
@@ -1754,7 +1758,7 @@ export default function PassengerRequests() {
                       </div>
                       <div className="min-w-0">
                         <p className={`text-[10px] font-bold ${previewRequest.type === 'delivery' ? 'text-[var(--ink)]' : 'text-[var(--muted-foreground)]'}`}>
-                          {previewRequest.type === 'delivery' ? `Customer · ${previewRequest.customerName}` : 'Drop-off'}
+                          {previewRequest.type === 'delivery' ? `Customer · ${passengerFirstName(previewRequest.customerName)}` : 'Drop-off'}
                         </p>
                         <p className="text-sm font-semibold">{previewRequest.dropoff}</p>
                       </div>
@@ -1812,7 +1816,7 @@ export default function PassengerRequests() {
                   <div className="space-y-2">
                     {previewRequest.passengerDetails?.map((passenger) => (
                       <div key={passenger.id} className="rounded-lg border border-[var(--border)] bg-[var(--surface)] px-3 py-2 text-sm font-semibold text-[var(--ink)]">
-                        <span className="break-words">{passenger.name || 'Passenger'}</span>
+                        <span className="break-words">{passengerFirstName(passenger.name)}</span>
                       </div>
                     ))}
                   </div>
@@ -1823,7 +1827,7 @@ export default function PassengerRequests() {
                   <h3 className="mb-2 text-sm font-bold text-[var(--ink)]">Passengers</h3>
                   <div className="flex items-center gap-3 rounded-lg border border-[var(--border)] bg-[var(--surface)] px-3 py-2">
                     <Users className="size-4 shrink-0 text-[var(--primary)]" />
-                    <span className="min-w-0 break-words text-sm font-semibold text-[var(--ink)]">{previewRequest.customerName || 'Passenger'}</span>
+                    <span className="min-w-0 break-words text-sm font-semibold text-[var(--ink)]">{passengerFirstName(previewRequest.customerName)}</span>
                   </div>
                 </section>
               )}
