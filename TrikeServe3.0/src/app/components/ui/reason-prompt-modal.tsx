@@ -107,7 +107,7 @@ export default function ReasonPromptModal({
         className="absolute inset-0 bg-black/60"
         onClick={() => { if (!isSubmitting) onCancel(); }}
       />
-      <div className="relative w-full max-w-sm bg-surface rounded-2xl shadow-2xl overflow-hidden">
+      <div className="relative w-full max-w-sm rounded-2xl bg-[var(--surface)] text-[var(--foreground)] shadow-2xl overflow-hidden">
         <div className="p-6">
           <div className="flex items-start justify-between mb-4">
             <div className={`w-14 h-14 ${config.iconBg} rounded-full flex items-center justify-center`}>
@@ -115,16 +115,16 @@ export default function ReasonPromptModal({
             </div>
             <button
               onClick={() => { if (!isSubmitting) onCancel(); }}
-              className="w-8 h-8 rounded-full bg-[#F8F9FA] flex items-center justify-center active:scale-90 transition-transform"
+              className="w-8 h-8 rounded-full bg-[var(--muted)] flex items-center justify-center active:scale-90 transition-transform"
             >
-              <X size={16} className="text-[#64748B]" />
+              <X size={16} className="text-[var(--muted-foreground)]" />
             </button>
           </div>
 
-          <h3 className="text-lg font-bold text-[#121212] mb-1">{title}</h3>
-          {description && <p className="text-sm text-[#64748B] mb-4">{description}</p>}
+          <h3 className="text-lg font-bold text-[var(--foreground)] mb-1">{title}</h3>
+          {description && <p className="text-sm text-[var(--muted-foreground)] mb-4">{description}</p>}
 
-          <label className="text-xs font-semibold uppercase tracking-wide text-[#64748B] block mb-1.5">
+          <label className="text-xs font-semibold uppercase tracking-wide text-[var(--muted-foreground)] block mb-1.5">
             Reason <span className="text-[var(--error)]">*</span>
           </label>
           <textarea
@@ -137,29 +137,29 @@ export default function ReasonPromptModal({
             maxLength={MAX_REASON_LENGTH}
             rows={3}
             placeholder={placeholder}
-            className={`w-full px-3 py-2.5 border-2 rounded-xl text-sm outline-none resize-none transition-colors ${
-              error ? "border-[#EF4444]" : "border-[#CBD5E1] focus:border-[var(--error)]"
+            className={`w-full bg-[var(--background)] text-[var(--foreground)] placeholder:text-[var(--muted-foreground)] px-3 py-2.5 border-2 rounded-xl text-sm outline-none resize-none transition-colors ${
+              error ? "border-[#EF4444]" : "border-[var(--border)] focus:border-[var(--error)]"
             }`}
           />
 
           {error ? (
             <p className="text-xs text-[#EF4444] mt-1.5 font-medium">{error}</p>
           ) : (
-            <p className="text-xs text-[#94A3B8] mt-1.5">
+            <p className="text-xs text-[var(--muted-foreground)] mt-1.5">
               {reason.length}/{MAX_REASON_LENGTH} — this is shared with the other party.
             </p>
           )}
         </div>
 
-        <div className="flex border-t-2 border-[#E2E8F0]">
+        <div className="flex border-t-2 border-[var(--border)]">
           <button
             onClick={onCancel}
             disabled={isSubmitting}
-            className="flex-1 py-3 text-sm font-semibold text-[#64748B] hover:bg-[#F8F9FA] transition-colors disabled:opacity-50"
+            className="flex-1 py-3 text-sm font-semibold text-[var(--muted-foreground)] hover:bg-[var(--muted)] transition-colors disabled:opacity-50"
           >
             Go Back
           </button>
-          <div className="w-px bg-[#E2E8F0]" />
+          <div className="w-px bg-[var(--border)]" />
           <button
             onClick={submit}
             disabled={isSubmitting}

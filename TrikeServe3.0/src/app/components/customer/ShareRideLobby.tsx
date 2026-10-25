@@ -1084,7 +1084,9 @@ export default function ShareRideLobby({
       return;
     }
 
-    const isHeadingToPickup = lobby?.driver_status === 'on-the-way' || lobby?.driver_status === 'arrived';
+    const isHeadingToPickup = lobby?.driver_status === 'on-the-way'
+      || lobby?.driver_status === 'arrived'
+      || (lobby?.status === 'driver_found' && !lobby?.driver_status);
     let dest: { lat: number; lng: number } | null = null;
 
     if (isHeadingToPickup && pickupCoords) {
@@ -2285,51 +2287,100 @@ if (loading) {
 
             </div>
 
-            {/* Driver Info (when found) */}
-            {lobby.status === 'driver_found' && lobby.driver_name && (
-              <div className="bg-gradient-to-r from-[var(--success-soft)] to-[var(--success-soft)] border-2 border-[var(--success)] rounded-xl p-3.5 mb-3">
-                <div className="flex items-center gap-3">
-                  <div className="w-12 h-12 flex-shrink-0 overflow-hidden rounded-full bg-[var(--success)] flex items-center justify-center">
-                    {driverProfileAvatar ? (
-                      <img
-                        src={driverProfileAvatar}
-                        alt={`${lobby.driver_name || 'Driver'}'s profile`}
-                        className="size-full object-cover"
-                        onError={() => setDriverProfileAvatar(null)}
-                      />
-                    ) : (
-                      <span className="text-sm font-bold text-white" role="img" aria-label={`${lobby.driver_name || 'Driver'}'s initials`}>
-                        {getDriverInitials(lobby.driver_name)}
-                      </span>
-                    )}
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <p className="text-[10px] text-[var(--success)] font-bold tracking-wider">Your Driver</p>
-                    <p className="font-bold text-[var(--ink)] truncate">{lobby.driver_name}</p>
-                    <div className="flex items-center gap-2">
-                      <span className="text-xs text-[var(--muted-foreground)]">{lobby.driver_plate}</span>
-                      {(computedDriverRating || lobby.driver_rating) && (
-                        <span className="flex items-center gap-0.5">
-                          <Star className="size-3 fill-[var(--amber)] text-[var(--amber)]" aria-hidden="true" />
-                          <span className="text-xs font-semibold text-[var(--ink)]">{computedDriverRating || lobby.driver_rating}</span>
+            {/* Driver found card, matching the customer's private ride card. */}
+            {lobby.status === 'driver_found' && (
+              <Card className="mb-3 overflow-hidden rounded-2xl border-2 border-[var(--primary)] bg-surface shadow-xl">
+                <div className="p-3.5">
+                  <div className="mb-3 flex items-center gap-3">
+                    <div className="grid size-12 shrink-0 place-items-center overflow-hidden rounded-full bg-[var(--primary-soft)] text-sm font-bold text-[var(--primary)]">
+                      {driverProfileAvatar ? (
+                        <img
+                          src={driverProfileAvatar}
+                          alt={`${lobby.driver_name || 'Driver'}'s profile`}
+                          className="size-full object-cover"
+                          onError={() => setDriverProfileAvatar(null)}
+                        />
+                      ) : (
+                        <span role="img" aria-label={`${lobby.driver_name || 'Driver'}'s initials`}>
+                          {getDriverInitials(lobby.driver_name)}
                         </span>
                       )}
                     </div>
+                    <div className="min-w-0 flex-1">
+                      <div className="flex min-w-0 items-center gap-2">
+                        <h3 className="truncate text-sm font-bold text-[var(--ink)]">{lobby.driver_name || 'Your driver'}</h3>
+                        <span className="shrink-0 rounded-full border border-[var(--success)]/40 bg-[var(--success-soft)] px-2 py-0.5 text-[10px] font-semibold text-[var(--success)]">
+                          {lobby.driver_status === 'arrived' ? 'Arrived' : 'On the way'}
+                        </span>
+                      </div>
+                      <div className="mt-0.5 flex items-center gap-2">
+                        <Badge className="bg-[var(--success)] text-[10px] text-white">Driver Found</Badge>
+                        <span className="truncate text-xs text-[var(--muted-foreground)]">{lobby.driver_plate || 'Plate not available'}</span>
+                      </div>
+                    </div>
+                    <div className="shrink-0 text-right">
+                      {(computedDriverRating || lobby.driver_rating) && (
+                        <div className="flex items-center justify-end gap-1 text-[var(--amber)]">
+                          <Star className="size-4 fill-current" aria-hidden="true" />
+                          <span className="text-sm font-bold text-[var(--ink)]">{computedDriverRating || lobby.driver_rating}</span>
+                        </div>
+                      )}
+                      <p className="text-xs text-[var(--muted-foreground)]">ETA: {etaToDestination || 'Updating'}</p>
+                    </div>
                   </div>
-                  {/* Opens the same chat the floating head does, in place.
-                      It used to navigate to the Messages tab, which unmounted
-                      the lobby -- two different behaviours for one thread. */}
-                  <Button
-                    size="icon"
-                    aria-label="Message driver"
-                    className="bg-[var(--success)] hover:bg-[var(--success)] text-white h-10 w-10"
-                    onClick={openLobbyChatThread}
-                    disabled={openingChat}
-                  >
-                    <MessageCircle className="w-5 h-5" />
-                  </Button>
+
+                  <div className="mb-3 space-y-2 rounded-xl bg-[var(--muted)] p-3">
+                    <div className="flex min-w-0 items-center gap-2">
+                      <span className="grid size-5 shrink-0 place-items-center rounded-full bg-[var(--ink-solid)]">
+                        <span className="size-2 rounded-full bg-[var(--surface)]" />
+                      </span>
+                      <div className="min-w-0 flex-1">
+                        <p className="text-[10px] font-semibold text-[var(--muted-foreground)]">Pickup</p>
+                        <p className="truncate text-xs font-semibold text-[var(--ink)]">{lobby.pickup_location}</p>
+                      </div>
+                    </div>
+                    <div className="flex min-w-0 items-center gap-2">
+                      <span className="grid size-5 shrink-0 place-items-center rounded-full bg-[var(--primary)]">
+                        <span className="size-2 rounded-full bg-[var(--surface)]" />
+                      </span>
+                      <div className="min-w-0 flex-1">
+                        <p className="text-[10px] font-semibold text-[var(--muted-foreground)]">Drop-off</p>
+                        <p className="truncate text-xs font-semibold text-[var(--ink)]">{ownDropoff}</p>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-2">
+                    <div className="min-w-0 flex-1">
+                      <p className="text-[10px] font-semibold text-[var(--muted-foreground)]">Your Fare</p>
+                      <p className="text-lg font-bold text-[var(--primary)]">₱{yourFarePerSeat.toFixed(2)}</p>
+                      <p className="text-[10px] text-[var(--muted-foreground)]">{String(lobby.payment_method || paymentMethod).toUpperCase() === 'COD' ? 'Cash' : lobby.payment_method || paymentMethod}</p>
+                      {yourSeatCount > 1 && (
+                        <p className="text-[10px] text-[var(--muted-foreground)]">Your {yourSeatCount} seats: ₱{yourSeatTotal.toFixed(2)}</p>
+                      )}
+                    </div>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={openLobbyChatThread}
+                      disabled={openingChat}
+                      className="h-10 gap-1.5 px-2.5 text-xs"
+                    >
+                      <MessageCircle className="size-4" aria-hidden="true" />
+                      Chat
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={() => setShowLeaveConfirm(true)}
+                      className="h-10 gap-1 border-[var(--error)] px-2.5 text-xs text-[var(--error)] hover:bg-[var(--error-soft)]"
+                    >
+                      <X className="size-4" aria-hidden="true" />
+                      Cancel
+                    </Button>
+                  </div>
                 </div>
-              </div>
+              </Card>
             )}
 
             {/* Terminal route and live tracking map */}

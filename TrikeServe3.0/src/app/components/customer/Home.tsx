@@ -3154,6 +3154,22 @@ export default function CustomerHome() {
     }
   };
 
+  const cancelRequiresReason = Boolean(
+    rideDriverId ||
+    activeRide?.driver ||
+    (visibleRideStatus !== null && visibleRideStatus !== 'searching')
+  );
+
+  const handleCancelRideClick = () => {
+    if (!cancelRequiresReason) {
+      setShowCancelConfirm(false);
+      void handleCancelRide();
+      return;
+    }
+
+    setShowCancelConfirm(true);
+  };
+
   const handleOpenDriverChat = async () => {
     if (!user?.id || !rideDriverId || openingChat) return;
     setOpeningChat(true);
@@ -4421,7 +4437,7 @@ const getPrice = () => {
                   {currentRequestId && !currentRequestId.startsWith('lobby_') && (
                     <Button
                       variant="outline"
-                      onClick={() => setShowCancelConfirm(true)}
+                      onClick={handleCancelRideClick}
                       className="flex items-center gap-1.5 h-10 px-3 border-[var(--error)] text-[var(--error)] hover:bg-[var(--error-soft)]"
                     >
                       <X className="w-4 h-4" />
@@ -5505,7 +5521,7 @@ const getPrice = () => {
               {searchingTime}
             </p>
             <Button
-              onClick={() => setShowCancelConfirm(true)}
+              onClick={handleCancelRideClick}
               variant="outline"
               className="w-full"
             >
@@ -5684,7 +5700,7 @@ const getPrice = () => {
 
       {/* Cancel Ride Popup â€” asks for a reason before dropping the ride */}
       <ReasonPromptModal
-        isOpen={rideStateBelongsToCurrentUser && showCancelConfirm}
+        isOpen={rideStateBelongsToCurrentUser && showCancelConfirm && cancelRequiresReason}
         title={visibleRideStatus === 'driver-found' ? 'Cancel this ride? / Kanselahin ang biyahe?' : 'Cancel Request? / Kanselahin ang request?'}
         description={
           visibleRideStatus === 'driver-found'

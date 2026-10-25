@@ -2900,18 +2900,16 @@ export default function ActiveRide() {
             middle of the map, resumes following, and resumes facing the direction
             of travel. The zoom is deliberately untouched.
 
-            Centred horizontally but sitting at the bottom of the map rather than dead in the
-            middle: the centre is where the driver is looking and where the tricycle
-            marker is drawn, so a control there covered the very thing it acts on.
-            At the bottom it is in thumb reach and clear of the marker. `bottom-4`
-            is measured against the map's own container; when minimized, `bottom-28`
-            lifts it above the detail sheet's chevron and compact passenger bar. */}
+            Right-aligned so it stays clear of the centered detail-sheet chevron.
+            `bottom-4` is measured against the map's own container; when minimized,
+            `bottom-28` keeps it above the compact passenger bar. The minimized
+            sheet is stacked above this control as a final safeguard for taps. */}
         {!followDriver && driverLocation && (
           <button
             type="button"
             onClick={handleRecenter}
             aria-label="Re-center map on my location"
-            className={`absolute left-1/2 ${isMinimized ? 'bottom-28' : 'bottom-4'} -translate-x-1/2 z-[4003] inline-flex items-center gap-2 rounded-full border border-[var(--primary)] bg-[var(--primary)] pl-3 pr-5 py-3 text-[var(--primary-foreground)] shadow-xl active:scale-95 transition-transform`}
+            className={`absolute right-4 ${isMinimized ? 'bottom-28' : 'bottom-4'} z-[1000] inline-flex items-center gap-2 rounded-full border border-[var(--primary)] bg-[var(--primary)] pl-3 pr-5 py-3 text-[var(--primary-foreground)] shadow-xl active:scale-95 transition-transform`}
           >
             <Navigation className="w-5 h-5 text-[var(--primary-foreground)]" />
             <span className="text-sm font-bold text-[var(--primary-foreground)]">Re-center</span>
