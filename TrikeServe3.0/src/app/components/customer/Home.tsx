@@ -831,6 +831,8 @@ export default function CustomerHome() {
    */
   const customerMapRef = useRef<any>(null);
   const pendingTerminalFocusRef = useRef<{ lat: number; lng: number } | null>(null);
+  const bookingMapOverviewFittedRef = useRef(false);
+  const [customerMapReady, setCustomerMapReady] = useState(false);
    const [etaToDestination, setEtaToDestination] = useState<string | null>(null);
    const [ridePassengers, setRidePassengers] = useState<any[]>([]);
    const [passengerLocations, setPassengerLocations] = useState<{ [key: string]: { lat: number; lng: number } }>({});
@@ -3392,6 +3394,9 @@ export default function CustomerHome() {
       : null
     : pickupCoords;
   const mapRoutesInView = useMemo(() => {
+    // The dedicated booking map is an overview: customers need to compare all
+    // available terminals and their mapped routes before choosing a pickup.
+    if (isBookingPage) return mapTerminalRoutes;
     if (!activeMapTerminalId) return [];
     const terminalRoutes = mapTerminalRoutes.filter(route => route.terminalId === activeMapTerminalId);
 
@@ -3412,10 +3417,45 @@ export default function CustomerHome() {
     activeMapTerminalId,
     activeShareRideRoute,
     isActiveShareRideMap,
+    isBookingPage,
     mapTerminalRoutes,
     routePreviewTerminalId,
     selectedTerminalRouteId,
   ]);
+  useEffect(() => {
+    if (!isBookingPage) {
+      bookingMapOverviewFittedRef.current = false;
+      return;
+    }
+    if (!isMapsLoaded || !customerMapReady || bookingMapOverviewFittedRef.current) return;
+
+    const map = customerMapRef.current;
+    const maps = (window as any).google?.maps;
+    if (!map || !maps?.LatLngBounds) return;
+
+    const bounds = new maps.LatLngBounds();
+    let pointCount = 0;
+    const extendBounds = (point: { lat: number; lng: number }) => {
+      if (!Number.isFinite(point.lat) || !Number.isFinite(point.lng)) return;
+      bounds.extend(point);
+      pointCount += 1;
+    };
+
+    terminals.forEach(terminal => extendBounds({
+      lat: Number(terminal.center_lat),
+      lng: Number(terminal.center_lng),
+    }));
+    mapTerminalRoutes.forEach(route => route.points.forEach(extendBounds));
+
+    if (!pointCount) return;
+    if (pointCount === 1) {
+      map.panTo(bounds.getCenter());
+      map.setZoom(15);
+    } else {
+      map.fitBounds(bounds, 48);
+    }
+    bookingMapOverviewFittedRef.current = true;
+  }, [customerMapReady, isBookingPage, isMapsLoaded, mapTerminalRoutes, terminals]);
   const routePreviewFocusedRoute = useMemo(
     () => mapTerminalRoutes.find(route => route.id === routePreviewFocusRouteId) || null,
     [mapTerminalRoutes, routePreviewFocusRouteId]
@@ -3838,12 +3878,17 @@ const getPrice = () => {
              zoom={15}
              onLoad={(map: any) => {
                customerMapRef.current = map;
+               setCustomerMapReady(true);
                const pendingTerminalFocus = pendingTerminalFocusRef.current;
                if (pendingTerminalFocus) {
                  map.panTo(pendingTerminalFocus);
                  map.setZoom(16);
                  pendingTerminalFocusRef.current = null;
                }
+             }}
+             onUnmount={() => {
+               customerMapRef.current = null;
+               setCustomerMapReady(false);
              }}
              options={{
                gestureHandling: 'greedy',
@@ -3861,6 +3906,23 @@ const getPrice = () => {
                title="Your location (start)"
                 icon={createCurrentLocationIcon()}
              />
+
+              {/* Booking starts with an overview of every active terminal. */}
+              {isBookingPage && terminals.map(terminal => {
+                const position = {
+                  lat: Number(terminal.center_lat),
+                  lng: Number(terminal.center_lng),
+                };
+                if (!Number.isFinite(position.lat) || !Number.isFinite(position.lng)) return null;
+                return (
+                  <MarkerF
+                    key={`booking-terminal-${terminal.id}`}
+                    position={position}
+                    title={terminal.name}
+                    icon={terminalMarkerIcon(normalizeTerminalColor(terminal.marker_color), 48)}
+                  />
+                );
+              })}
 
               {/* Pickup and drop-off both, once a ride is live. The pickup pin
                   used to be omitted here and drawn only inside the (now removed)
@@ -3983,7 +4045,7 @@ const getPrice = () => {
         />
       )}
 
-      {showMap && isMapsLoaded && (
+      {showMap && isMapsLoaded && !isBookingPage && (
         <button
           type="button"
           onClick={() => {
