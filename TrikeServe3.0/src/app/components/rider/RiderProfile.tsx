@@ -234,7 +234,7 @@ export default function RiderProfile() {
   return (
     <div className="min-h-dvh bg-[var(--muted)] pb-[env(safe-area-inset-bottom)]">
       {/* Header */}
-      <div className="w-full rounded-b-[2rem] border-b border-line bg-surface px-5 py-5 text-[var(--ink)]">
+      <div className="mx-3 mt-3 rounded-[2rem] border border-line bg-surface px-5 py-5 text-[var(--ink)] shadow-sm sm:mx-6 lg:mx-8">
         <div className="flex items-center justify-between mb-6">
           <button 
             onClick={() => navigate('/rider')}
