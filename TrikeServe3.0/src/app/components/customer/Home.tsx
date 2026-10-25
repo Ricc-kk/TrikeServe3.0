@@ -3728,10 +3728,10 @@ const getPrice = () => {
     loc.address.toLowerCase().includes(searchQuery.toLowerCase())
   );
 
-  // Home stays a scrolling service feed while the customer is riding. The map
-  // remains for booking steps and ride tracking, but is hidden when Home is
-  // explicitly selected or serves as the share lobby loading backdrop.
-  const showMap = !showCustomerHomeHub && !(isBookingPage && bookingStep === 'ride');
+  // Home stays a scrolling service feed while the customer is riding. Keep the
+  // map visible throughout booking and ride tracking, hiding it only when Home
+  // is explicitly selected or serves as the share lobby loading backdrop.
+  const showMap = !showCustomerHomeHub;
 
   /**
    * What the header shows above the search field once search is opened.
