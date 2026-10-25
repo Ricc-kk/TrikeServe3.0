@@ -1,4 +1,4 @@
-import { X, Camera, ArrowLeft, Check, LogOut, User, MapPin } from "lucide-react";
+import { X, Camera, ArrowLeft, Check, LogOut, MapPin } from "lucide-react";
 
 import { uploadErrorMessage } from "@/lib/uploadErrors";
 import { Link, useNavigate } from "react-router";
@@ -10,6 +10,7 @@ import { supabase } from "../../../lib/supabase";
 import { supabaseHelpers } from "@/lib/supabase";
 import MapSelector from "./MapSelector";
 import { getDefaultAddress, setDefaultAddress, type DefaultAddress } from "@/lib/defaultAddress";
+import { getProfileInitials } from "@/lib/profileInitials";
 
 export default function Profile() {
   const navigate = useNavigate();
@@ -128,8 +129,8 @@ export default function Profile() {
             {user?.avatarUrl ? (
               <img src={user.avatarUrl} alt="Profile" className="w-full h-full object-cover" />
             ) : (
-              <div className="w-full h-full flex items-center justify-center">
-                <User className="w-12 h-12 text-white" />
+              <div className="grid size-full place-items-center text-3xl font-extrabold text-white" aria-hidden="true">
+                {getProfileInitials(user?.name, user?.email)}
               </div>
             )}
           </div>

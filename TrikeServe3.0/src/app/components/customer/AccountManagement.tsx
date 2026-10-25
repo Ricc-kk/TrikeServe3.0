@@ -5,6 +5,7 @@ import { useAuth } from "../../contexts/AuthContext";
 import { Button } from "../ui/button";
 import { Card } from "../ui/card";
 import { Badge } from "../ui/badge";
+import { getProfileInitials } from "@/lib/profileInitials";
 
 interface CustomerProfile {
   id: string;
@@ -57,7 +58,7 @@ export default function AccountManagement() {
       const defaultProfile: CustomerProfile = {
         id: `profile_${Date.now()}`,
         name: user.name || "Primary Profile",
-        emoji: "👤",
+        emoji: getProfileInitials(user.name, user.email),
         phone: user.phone || "",
         email: user.email || "",
         address: "",

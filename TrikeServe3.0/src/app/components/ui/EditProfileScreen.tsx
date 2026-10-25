@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Link, useBlocker } from "react-router";
 import { usePreviousPage } from "../../hooks/usePreviousPage";
-import { ArrowLeft, Camera, Check, User } from "lucide-react";
+import { ArrowLeft, Camera, Check } from "lucide-react";
 
 import { useAuth } from "../../contexts/AuthContext";
 import { supabaseHelpers, supabase } from "@/lib/supabase";
@@ -9,6 +9,7 @@ import { uploadErrorMessage } from "@/lib/uploadErrors";
 import PhotoAdjustModal from "./PhotoAdjustModal";
 import BottomNav from "./BottomNav";
 import ConfirmationModal from "./confirmation-modal";
+import { getProfileInitials } from "@/lib/profileInitials";
 
 type ExtraField = {
   key: string;
@@ -286,7 +287,9 @@ export default function EditProfileScreen({
                   <img src={avatarUrl} alt="Profile" className="size-full object-cover" />
                 ) : (
                   <span className="grid size-full place-items-center">
-                    <User className="size-9 text-[var(--muted-foreground)]" aria-hidden="true" />
+                    <span className="text-xl font-extrabold text-[var(--primary)]" aria-hidden="true">
+                      {getProfileInitials(name, user?.email)}
+                    </span>
                   </span>
                 )}
               </div>

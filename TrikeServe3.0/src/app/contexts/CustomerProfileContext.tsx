@@ -1,5 +1,6 @@
 import { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 import { useAuth } from './AuthContext';
+import { getProfileInitials } from '@/lib/profileInitials';
 
 interface CustomerProfile {
   id: string;
@@ -45,7 +46,7 @@ export function CustomerProfileProvider({ children }: { children: ReactNode }) {
       const defaultProfile: CustomerProfile = {
         id: `profile_${Date.now()}`,
         name: user.name || "Primary Profile",
-        emoji: "👤",
+        emoji: getProfileInitials(user.name, user.email),
         phone: user.phone || "",
         email: user.email || "",
         address: "",

@@ -4,6 +4,7 @@ import { BadgeCheck, Bell, MapPin, Menu } from "lucide-react";
 
 import { useAuth, type UserRole } from "../../contexts/AuthContext";
 import { cn } from "./utils";
+import { getProfileInitials } from "@/lib/profileInitials";
 
 /** Service area shown across every role header until terminals are per-user. */
 export const SERVICE_AREA = "Gen. T. de Leon, Valenzuela";
@@ -48,15 +49,6 @@ const ROLE_META: Record<
     settingsHref: "/admin/settings",
   },
 };
-
-/** First letters of a name, for the avatar fallback. */
-function initialsOf(name: string | undefined, email: string | undefined): string {
-  const source = name?.trim() || email?.split("@")[0] || "";
-  const parts = source.split(/\s+/).filter(Boolean);
-  if (parts.length === 0) return "?";
-  if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
-  return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
-}
 
 function timeOfDayGreeting() {
   const hour = new Date().getHours();
@@ -159,7 +151,7 @@ export default function AppHeader({
   // the old "TS" when neither exists — "TS" said "TrikeServe", not "you", so it
   // read as a watermark next to a personalised greeting.
   const resolvedAvatar = user?.avatarUrl ?? avatarSrc ?? null;
-  const avatarInitials = initialsOf(user?.name, user?.email);
+  const avatarInitials = getProfileInitials(user?.name, user?.email);
   const notificationLabel =
     notificationCount > 0
       ? `Notifications, ${notificationCount} unread`

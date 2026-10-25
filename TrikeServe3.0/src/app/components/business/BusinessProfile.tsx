@@ -12,6 +12,7 @@ import { useAuth } from "../../contexts/AuthContext";
 import { supabase } from "../../../utils/supabase";
 import { supabaseHelpers } from "../../../lib/supabase";
 import { useRestaurantProfile } from "@/lib/restaurantProfile";
+import { getProfileInitials } from "@/lib/profileInitials";
 
 export default function BusinessProfile() {
   const navigate = useNavigate();
@@ -210,7 +211,9 @@ export default function BusinessProfile() {
                 {avatarUrl ? (
                   <img src={avatarUrl} alt="Your profile photo" className="size-full object-cover" />
                 ) : (
-                  <User className="size-8 text-white" />
+                  <span className="text-xl font-extrabold text-white" aria-hidden="true">
+                    {getProfileInitials(user?.name, user?.email)}
+                  </span>
                 )}
               </div>
               {/* Camera badge. Deliberately outside the staged-save flow below:

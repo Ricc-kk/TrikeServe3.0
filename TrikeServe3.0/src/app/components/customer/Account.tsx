@@ -1,4 +1,4 @@
-import { ChevronRight, Home as HomeIcon, MessageCircle, User, ShoppingCart, ClipboardList, ArrowLeft, LogOut, Shield, Bell, HelpCircle, Pencil, Heart, Check, MapPin } from "lucide-react";
+import { ChevronRight, Home as HomeIcon, MessageCircle, ShoppingCart, ClipboardList, ArrowLeft, LogOut, Shield, Bell, HelpCircle, Pencil, Heart, Check, MapPin } from "lucide-react";
 
 import { uploadErrorMessage } from "@/lib/uploadErrors";
 import { Link, useNavigate } from "react-router";
@@ -12,6 +12,7 @@ import { supabaseHelpers } from "@/lib/supabase";
 import MapSelector from "./MapSelector";
 import { getDefaultAddress, setDefaultAddress, type DefaultAddress } from "@/lib/defaultAddress";
 import ThemeModeSwitcher from "../ui/ThemeModeSwitcher";
+import { getProfileInitials } from "@/lib/profileInitials";
 
 export default function Account() {
   const navigate = useNavigate();
@@ -124,7 +125,9 @@ export default function Account() {
               {user?.avatarUrl ? (
                 <img src={user.avatarUrl} alt="Profile" className="w-full h-full object-cover" />
               ) : (
-                <User className="w-8 h-8 text-white" />
+                <span className="text-2xl font-extrabold text-white" aria-hidden="true">
+                  {getProfileInitials(user?.name || formData.name, user?.email || formData.email)}
+                </span>
               )}
             </div>
             {/* Photo editing lives on /customer/edit-profile. Nothing here is editable,

@@ -4379,7 +4379,7 @@ const getPrice = () => {
           aria-label={isActivePrivateRidePage ? 'Re-center map on your ride' : 'Re-center map on my location'}
           title={isActivePrivateRidePage ? 'Re-center map on your ride' : 'Re-center map on my location'}
           disabled={isLoadingLocation || Boolean(locationProblem)}
-          className={`absolute z-[1200] grid place-items-center rounded-full border border-line bg-surface/95 text-[var(--primary)] shadow-lg backdrop-blur-sm transition-transform active:scale-95 disabled:cursor-not-allowed disabled:opacity-50 ${isActivePrivateRidePage ? 'right-3 size-11' : 'right-4 size-12'}`}
+          className={`absolute z-[1200] grid place-items-center rounded-full border border-line bg-surface/95 text-[var(--primary)] shadow-lg backdrop-blur-sm transition-transform active:scale-95 disabled:cursor-not-allowed disabled:opacity-50 ${isActivePrivateRidePage ? 'left-1/2 -translate-x-1/2 size-11' : 'right-4 size-12'}`}
           style={{ top: `calc(env(safe-area-inset-top, 0px) + ${isActivePrivateRidePage ? '7rem' : '11rem'})` }}
         >
           <Navigation className="size-5" aria-hidden="true" />
@@ -4531,6 +4531,8 @@ const getPrice = () => {
           <div className="relative z-[999] flex flex-1 flex-col pb-28">
             <CustomerHubHeader
               avatarUrl={user?.avatarUrl}
+              userName={user?.name}
+              userEmail={user?.email}
               unreadCount={unreadDeliveryNotifications}
               onOpenSearch={() => navigate('/customer/search', { state: {
                 fallbackOrigin: !isLoadingLocation && !locationProblem ? currentLocation : null,

@@ -232,6 +232,92 @@ function routeTravelDistanceFromPickup(
       + (itinerary.totalDistance - projection.distanceAlong);
 }
 
+function cumulativePathDistances(path: Array<{ lat: number; lng: number }>): number[] {
+  const distances = [0];
+  for (let index = 1; index < path.length; index++) {
+    distances.push(distances[index - 1] + haversineDistanceMeters(path[index - 1], path[index]));
+  }
+  return distances;
+}
+
+function pointAtPathDistance(
+  path: Array<{ lat: number; lng: number }>,
+  cumulative: number[],
+  distance: number,
+): { lat: number; lng: number } {
+  if (distance <= 0) return path[0];
+  const lastIndex = path.length - 1;
+  if (distance >= cumulative[lastIndex]) return path[lastIndex];
+
+  for (let index = 1; index < path.length; index++) {
+    if (distance > cumulative[index]) continue;
+    const segmentDistance = cumulative[index] - cumulative[index - 1];
+    const fraction = segmentDistance > 0 ? (distance - cumulative[index - 1]) / segmentDistance : 0;
+    return {
+      lat: path[index - 1].lat + (path[index].lat - path[index - 1].lat) * fraction,
+      lng: path[index - 1].lng + (path[index].lng - path[index - 1].lng) * fraction,
+    };
+  }
+
+  return path[lastIndex];
+}
+
+function sliceRoutePath(
+  path: Array<{ lat: number; lng: number }>,
+  startDistance: number,
+  endDistance: number,
+): Array<{ lat: number; lng: number }> {
+  if (path.length < 2 || endDistance < startDistance) return [];
+  const cumulative = cumulativePathDistances(path);
+  const totalDistance = cumulative[cumulative.length - 1];
+  const start = Math.max(0, Math.min(startDistance, totalDistance));
+  const end = Math.max(start, Math.min(endDistance, totalDistance));
+  const result = [pointAtPathDistance(path, cumulative, start)];
+
+  for (let index = 1; index < path.length - 1; index++) {
+    if (cumulative[index] > start && cumulative[index] < end) result.push(path[index]);
+  }
+
+  const endpoint = pointAtPathDistance(path, cumulative, end);
+  if (haversineDistanceMeters(result[result.length - 1], endpoint) > 1) result.push(endpoint);
+  return result;
+}
+
+function buildRouteThroughDropoff(
+  route: Array<{ lat: number; lng: number }>,
+  pickup: { lat: number; lng: number } | null,
+  dropoff: { lat: number; lng: number } | null,
+): Array<{ lat: number; lng: number }> {
+  if (!pickup || !dropoff || route.length < 2) return [];
+
+  const itinerary = buildLobbyRouteItinerary([{
+    id: 'customer-dropoff',
+    name: '',
+    emoji: '',
+    joinedAt: '',
+    pickup: '',
+    pickupAddress: '',
+    dropoffLat: dropoff.lat,
+    dropoffLng: dropoff.lng,
+  }], pickup, route);
+  const destination = itinerary?.stops[0];
+  if (!itinerary || !destination) return [];
+
+  const pickupProjection = projectPointAlongRoute(pickup, itinerary.path);
+  if (!pickupProjection) return [];
+  const loopedPath = [...itinerary.path, ...itinerary.path.slice(0, -1).reverse()];
+  const visiblePath = sliceRoutePath(
+    loopedPath,
+    pickupProjection.distanceAlong,
+    pickupProjection.distanceAlong + destination.travelDistance,
+  );
+  const finalPoint = visiblePath[visiblePath.length - 1];
+  if (finalPoint && haversineDistanceMeters(finalPoint, destination.coords) > 1) {
+    visiblePath.push(destination.coords);
+  }
+  return visiblePath;
+}
+
 function formatEtaFromSeconds(seconds: number): string {
   const totalMinutes = Math.max(1, Math.ceil(seconds / 60));
   const hours = Math.floor(totalMinutes / 60);
@@ -889,7 +975,10 @@ export default function ShareRideLobby({
     const maps = (window as any).google?.maps;
     if (!map || !maps?.LatLngBounds) return;
 
-    const passengerDropoffs = (lobby?.passengers_json || [])
+    const visibleRoutePath = presentation === 'page'
+      ? buildRouteThroughDropoff(terminalRoutePath, pickupCoords, dropoffCoords)
+      : terminalRoutePath;
+    const passengerDropoffs = presentation === 'page' ? [] : (lobby?.passengers_json || [])
       .filter(passenger => Boolean(
         user?.id && (
           passenger.id === user.id ||
@@ -905,7 +994,7 @@ export default function ShareRideLobby({
     const endpoints = [pickupCoords, dropoffCoords, ...passengerDropoffs].filter(
       (point): point is { lat: number; lng: number } => point !== null && point !== undefined,
     );
-    const points = [...terminalRoutePath, ...endpoints];
+    const points = [...visibleRoutePath, ...endpoints];
     if (points.length === 0) return;
     const bounds = new maps.LatLngBounds();
     points.forEach((point) => bounds.extend(point));
@@ -1362,13 +1451,15 @@ export default function ShareRideLobby({
         passenger.id.startsWith(`${user.id}_companion_`)
       )
     ));
-    const destinations = orderLobbyDropoffs(customerPassengers, pickupCoords)
-      .flatMap(({ passenger }) => {
-        if (passenger.dropoffLat == null || passenger.dropoffLng == null) return [];
-        const lat = Number(passenger.dropoffLat);
-        const lng = Number(passenger.dropoffLng);
-        return Number.isFinite(lat) && Number.isFinite(lng) ? [{ lat, lng }] : [];
-      });
+    const destinations = presentation === 'page'
+      ? dropoffCoords ? [dropoffCoords] : []
+      : orderLobbyDropoffs(customerPassengers, pickupCoords)
+          .flatMap(({ passenger }) => {
+            if (passenger.dropoffLat == null || passenger.dropoffLng == null) return [];
+            const lat = Number(passenger.dropoffLat);
+            const lng = Number(passenger.dropoffLng);
+            return Number.isFinite(lat) && Number.isFinite(lng) ? [{ lat, lng }] : [];
+          });
     if (dropoffCoords && !destinations.some(point =>
       Math.abs(point.lat - dropoffCoords.lat) < 0.00001 && Math.abs(point.lng - dropoffCoords.lng) < 0.00001
     )) {
@@ -1404,7 +1495,7 @@ export default function ShareRideLobby({
     });
 
     return () => { active = false; };
-  }, [pickupCoords, dropoffCoords, lobby?.passengers_json, isMapsLoaded, user?.id]);
+  }, [pickupCoords, dropoffCoords, lobby?.passengers_json, isMapsLoaded, user?.id, presentation]);
 
   // Only load the signed-in customer's own profile photo for this lobby.
   const passengerIdsKey = user?.id && (lobby?.passengers_json || []).some(passenger => passenger.id === user.id)
@@ -1865,9 +1956,12 @@ const matchingLobbyMaxSeats = matchingRouteLobby
 const matchingLobbySeatsLeft = Math.max(0, matchingLobbyMaxSeats - matchingLobbyPassengers.length);
 const canJoinMatchingLobby = matchingLobbySeatsLeft >= passengerCount;
 const matchingLobbyBackgroundRoute = routePoints?.length ? routePoints : terminalRoutePath;
+const matchingLobbyVisibleRoute = presentation === 'page'
+  ? buildRouteThroughDropoff(matchingLobbyBackgroundRoute, pickupCoords, dropoffCoords)
+  : matchingLobbyBackgroundRoute;
 const matchingLobbyBackgroundCenter = pickupCoords
   || dropoffCoords
-  || matchingLobbyBackgroundRoute[0]
+  || matchingLobbyVisibleRoute[0]
   || { lat: 14.5995, lng: 120.9842 };
 
 if (bookingCancelled) return null;
@@ -1895,7 +1989,7 @@ if (matchingRouteLobby) {
           onLoad={(map: any) => {
             const maps = (window as any)?.google?.maps;
             const points = [
-              ...matchingLobbyBackgroundRoute,
+              ...matchingLobbyVisibleRoute,
               ...(pickupCoords ? [pickupCoords] : []),
               ...(dropoffCoords ? [dropoffCoords] : []),
             ];
@@ -1906,9 +2000,9 @@ if (matchingRouteLobby) {
             }
           }}
         >
-          {matchingLobbyBackgroundRoute.length > 1 && (
+          {matchingLobbyVisibleRoute.length > 1 && (
             <Polyline
-              path={matchingLobbyBackgroundRoute}
+              path={matchingLobbyVisibleRoute}
               options={{ strokeColor: terminalRouteColor, strokeOpacity: 0.9, strokeWeight: 5, clickable: false }}
             />
           )}
@@ -2353,6 +2447,9 @@ if (loading) {
       ? haversineDistanceMeters(pickupCoords, a.coords) - haversineDistanceMeters(pickupCoords, b.coords)
       : 0,
   );
+  const mapTerminalRoutePath = presentation === 'page'
+    ? buildRouteThroughDropoff(terminalRoutePath, pickupCoords, dropoffCoords)
+    : terminalRoutePath;
 
   const recenterLobbyMap = () => {
     const map = lobbyMapRef.current;
@@ -2672,16 +2769,16 @@ if (loading) {
                       />
                     );
                   })}
-                  {/* Terminal route corridor, visible before and after driver assignment. */}
-                  {terminalRoutePath.length > 0 && (
+                  {/* The page map ends the selected route at this customer's drop-off. */}
+                  {mapTerminalRoutePath.length > 0 && (
                     <Polyline
-                      path={terminalRoutePath}
+                      path={mapTerminalRoutePath}
                       options={{ strokeColor: terminalRouteColor, strokeOpacity: 0.22, strokeWeight: 10, geodesic: true, clickable: false }}
                     />
                   )}
-                  {terminalRoutePath.length > 0 && (
+                  {mapTerminalRoutePath.length > 0 && (
                     <Polyline
-                      path={terminalRoutePath}
+                      path={mapTerminalRoutePath}
                       options={{ strokeColor: terminalRouteColor, strokeOpacity: 0.95, strokeWeight: 4, geodesic: true, clickable: false }}
                     />
                   )}
@@ -2715,7 +2812,7 @@ if (loading) {
                   onClick={recenterLobbyMap}
                   aria-label="Re-center map"
                   title="Re-center map"
-                  className="absolute right-2 top-2 z-[1000] grid size-10 place-items-center rounded-full border border-line bg-surface/95 text-[var(--primary)] shadow-lg backdrop-blur-sm"
+                  className={`absolute ${presentation === 'page' ? 'left-1/2 -translate-x-1/2' : 'right-2'} top-2 z-[1000] grid size-10 place-items-center rounded-full border border-line bg-surface/95 text-[var(--primary)] shadow-lg backdrop-blur-sm`}
                 >
                   <Navigation className="size-4" aria-hidden="true" />
                 </button>
@@ -2829,15 +2926,15 @@ if (loading) {
                     zIndex={20}
                   />
                 ))}
-                {terminalRoutePath.length > 0 && (
+                {mapTerminalRoutePath.length > 0 && (
                   <Polyline
-                    path={terminalRoutePath}
+                    path={mapTerminalRoutePath}
                     options={{ strokeColor: terminalRouteColor, strokeOpacity: 0.22, strokeWeight: 10, geodesic: true, clickable: false }}
                   />
                 )}
-                {terminalRoutePath.length > 0 && (
+                {mapTerminalRoutePath.length > 0 && (
                   <Polyline
-                    path={terminalRoutePath}
+                    path={mapTerminalRoutePath}
                     options={{ strokeColor: terminalRouteColor, strokeOpacity: 0.95, strokeWeight: 4, geodesic: true, clickable: false }}
                   />
                 )}
@@ -2870,7 +2967,7 @@ if (loading) {
             onClick={recenterLobbyMap}
             aria-label="Re-center map"
             title="Re-center map"
-            className="absolute right-3 top-[calc(env(safe-area-inset-top)+7rem)] z-10 grid size-11 place-items-center rounded-full border border-line bg-surface/95 text-[var(--primary)] shadow-lg backdrop-blur-sm"
+            className={`absolute ${presentation === 'page' ? 'left-1/2 -translate-x-1/2' : 'right-3'} top-[calc(env(safe-area-inset-top)+7rem)] z-10 grid size-11 place-items-center rounded-full border border-line bg-surface/95 text-[var(--primary)] shadow-lg backdrop-blur-sm`}
           >
             <Navigation className="size-5" aria-hidden="true" />
           </button>

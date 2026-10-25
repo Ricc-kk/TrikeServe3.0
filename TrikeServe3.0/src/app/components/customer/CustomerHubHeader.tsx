@@ -1,7 +1,8 @@
 import { Link } from "react-router";
-import { Bell, MapPin, Search, User, X } from "lucide-react";
+import { Bell, MapPin, Search, X } from "lucide-react";
 
 import { useTypingPlaceholder } from "../../hooks/useTypingPlaceholder";
+import { getProfileInitials } from "@/lib/profileInitials";
 
 // Module scope on purpose: `useTypingPlaceholder` reads this inside a timer
 // effect on every tick, so an array literal in the component body would give
@@ -21,6 +22,8 @@ type CustomerHubHeaderProps = {
   unreadCount?: number;
   /** Profile picture, when the account has one. */
   avatarUrl?: string | null;
+  userName?: string | null;
+  userEmail?: string | null;
   /** True once the customer has tapped into search. */
   searching?: boolean;
   /** Current location line shown above the search field while searching. */
@@ -49,6 +52,8 @@ type CustomerHubHeaderProps = {
 export default function CustomerHubHeader({
   unreadCount = 0,
   avatarUrl,
+  userName,
+  userEmail,
   searching = false,
   locationLabel,
   query = "",
@@ -136,7 +141,9 @@ export default function CustomerHubHeader({
             {avatarUrl ? (
               <img src={avatarUrl} alt="" className="size-full object-cover" loading="lazy" />
             ) : (
-              <User className="size-6 text-[var(--ink)]" aria-hidden="true" />
+              <span className="text-sm font-extrabold text-[var(--primary)]" aria-hidden="true">
+                {getProfileInitials(userName, userEmail)}
+              </span>
             )}
           </Link>
         </div>

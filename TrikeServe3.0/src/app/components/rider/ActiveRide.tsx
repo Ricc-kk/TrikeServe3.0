@@ -3054,15 +3054,15 @@ export default function ActiveRide() {
                 />
               )}
 
-            {/* Each colored segment ends at the matching passenger's drop-off. */}
-            {sharedDropoffRoutes.map(route => (
+            {/* Keep the next passenger's route prominent; later stops stay dimmed until they move up. */}
+            {sharedDropoffRoutes.map((route, routeIndex) => (
               <Polyline
                 key={`dropoff-route-${route.id}`}
                 path={route.path}
                 options={{
                   strokeColor: route.color,
                   strokeWeight: 6,
-                  strokeOpacity: 0.92,
+                  strokeOpacity: routeIndex === 0 ? 0.92 : 0.2,
                   zIndex: 20,
                 }}
               />
@@ -3197,16 +3197,16 @@ export default function ActiveRide() {
             middle of the map, resumes following, and resumes facing the direction
             of travel. The zoom is deliberately untouched.
 
-            Right-aligned so it stays clear of the centered detail-sheet chevron.
-            `bottom-4` is measured against the map's own container; when minimized,
-            `bottom-28` keeps it above the compact passenger bar. The minimized
-            sheet is stacked above this control as a final safeguard for taps. */}
+            Centered horizontally within the map. `bottom-4` is measured against
+            the map's own container; when minimized, `bottom-28` keeps it above the
+            compact passenger bar. The minimized sheet is stacked above this
+            control as a final safeguard for taps. */}
         {!followDriver && driverLocation && (
           <button
             type="button"
             onClick={handleRecenter}
             aria-label="Re-center map on my location"
-            className={`absolute right-4 ${isMinimized ? 'bottom-28' : 'bottom-4'} z-[1000] inline-flex items-center gap-2 rounded-full border border-[var(--primary)] bg-[var(--primary)] pl-3 pr-5 py-3 text-[var(--primary-foreground)] shadow-xl active:scale-95 transition-transform`}
+            className={`absolute left-1/2 -translate-x-1/2 ${isMinimized ? 'bottom-28' : 'bottom-4'} z-[1000] inline-flex items-center gap-2 rounded-full border border-[var(--primary)] bg-[var(--primary)] pl-3 pr-5 py-3 text-[var(--primary-foreground)] shadow-xl active:scale-95 transition-transform`}
           >
             <Navigation className="w-5 h-5 text-[var(--primary-foreground)]" />
             <span className="text-sm font-bold text-[var(--primary-foreground)]">Re-center</span>
@@ -3555,26 +3555,7 @@ export default function ActiveRide() {
                   </div>
                   {isHeadingToPickup && <span className="text-[10px] bg-[var(--success)] text-white px-2 py-0.5 rounded-full font-bold self-center">HERE</span>}
                 </div>
-                {isSharedRide && rideData.passengerDetails?.length ? (
-                  rideData.passengerDetails.map((passenger: any, index: number) => {
-                    const passengerId = String(passenger?.id ?? `passenger-${index}`);
-                    const passengerName = getSharedPassengerName(passenger, index, rideData.passengerDetails || []);
-                    const stop = sharedDropoffStops.find(item => item.id === passengerId);
-                    return (
-                      <div key={`dropoff-${passengerId}`} className="flex gap-3 rounded-lg border border-[var(--border)] p-2">
-                        <span
-                          className="mt-1.5 size-2 shrink-0 rounded-full"
-                          style={{ background: stop?.color || RIDE_MAP_DROPOFF_COLOR }}
-                          aria-hidden="true"
-                        />
-                        <div className="min-w-0 flex-1 text-sm">
-                          <p className="text-xs text-[var(--muted-foreground)]">Drop-off for {passengerName}</p>
-                          <p className="truncate font-semibold">{getSharedPassengerDropoff(passenger, index, rideData)}</p>
-                        </div>
-                      </div>
-                    );
-                  })
-                ) : (
+                {!isSharedRide && (
                   <div className={`flex gap-3 p-2 rounded-lg ${!isHeadingToPickup && ['pickup', 'drop-off'].includes(rideData.status) ? 'bg-[var(--error-soft)] border border-[var(--error-soft)]' : ''}`}>
                     <div className={`w-2 h-2 rounded-full mt-1.5 ${!isHeadingToPickup && ['pickup', 'drop-off'].includes(rideData.status) ? 'bg-[var(--primary)]' : 'bg-[var(--muted-foreground)]'}`} />
                     <div className="flex-1 text-sm">

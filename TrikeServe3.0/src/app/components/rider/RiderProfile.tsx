@@ -31,6 +31,7 @@ import { useAuth } from "../../contexts/AuthContext";
 import { DRIVER_APPS, useDriverAppSwitch, type DriverAppKey } from "../../hooks/useDriverAppSwitch";
 import ActiveRideButton from "./ActiveRideButton";
 import ThemeModeSwitcher from "../ui/ThemeModeSwitcher";
+import { getProfileInitials } from "@/lib/profileInitials";
 
 export default function RiderProfile() {
   const navigate = useNavigate();
@@ -283,7 +284,9 @@ export default function RiderProfile() {
               {user.avatarUrl ? (
                 <img src={user.avatarUrl} alt="Profile" className="w-full h-full object-cover" />
               ) : (
-                <User className="h-12 w-12 text-[var(--muted-foreground)]" />
+                <span className="text-3xl font-extrabold text-[var(--primary)]" aria-hidden="true">
+                  {getProfileInitials(user.name, user.email)}
+                </span>
               )}
             </div>
             <input

@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { Link, useBlocker } from "react-router";
-import { ArrowLeft, Camera, Check, User } from "lucide-react";
+import { ArrowLeft, Camera, Check } from "lucide-react";
 
 import { useAuth } from "../../contexts/AuthContext";
 import { supabaseHelpers } from "@/lib/supabase";
@@ -10,6 +10,7 @@ import ConfirmationModal from "../ui/confirmation-modal";
 import ChangePasswordSection from "../ui/ChangePasswordSection";
 
 import BottomNav from "../ui/BottomNav";
+import { getProfileInitials } from "@/lib/profileInitials";
 
 /**
  * Edit profile.
@@ -215,7 +216,9 @@ export default function EditProfile() {
                   <img src={avatarUrl} alt="Profile" className="size-full object-cover" />
                 ) : (
                   <span className="grid size-full place-items-center">
-                    <User className="size-9 text-[var(--muted-foreground)]" aria-hidden="true" />
+                    <span className="text-xl font-extrabold text-[var(--primary)]" aria-hidden="true">
+                      {getProfileInitials(name, user?.email)}
+                    </span>
                   </span>
                 )}
               </div>
