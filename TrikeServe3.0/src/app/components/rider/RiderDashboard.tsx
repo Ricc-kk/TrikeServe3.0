@@ -1062,14 +1062,14 @@ export default function RiderDashboard() {
         }
 
         {/* Service types control */}
-        <div className="absolute right-3 top-[calc(env(safe-area-inset-top)+4rem)] z-[1000] flex gap-1 sm:right-6 sm:top-[calc(env(safe-area-inset-top)+5rem)] sm:gap-2">
+        <div className="absolute right-14 top-[calc(env(safe-area-inset-top)+0.5rem)] z-[1000]">
           {!isMapFullscreen && !activeTrip && (
             <button
               onClick={() => navigate('/rider/service-types', { state: { returnTo: '/rider' } })}
               aria-label="Choose service types"
-              className="w-10 h-10 sm:w-12 sm:h-12 bg-[var(--primary)] rounded-2xl shadow-xl flex items-center justify-center hover:shadow-2xl active:scale-95 transition-all border-2 border-white"
+              className="flex size-10 items-center justify-center rounded-lg border-2 border-white bg-[var(--primary)] shadow-xl transition-all hover:shadow-2xl active:scale-95"
             >
-              <Settings className="w-7 h-7 text-white" />
+              <Settings className="size-5 text-white" />
             </button>
           )}
         </div>

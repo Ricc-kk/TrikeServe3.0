@@ -2354,7 +2354,7 @@ if (loading) {
 
   const recenterLobbyMap = () => {
     const map = lobbyMapRef.current;
-    const target = driverLocation || terminalMarkerPosition || pickupCoords || terminalRoutePath[0];
+    const target = driverLocation || terminalMarkerPosition || pickupCoords || terminalRoutePath[0] || lobbyMapInitialCenterRef.current;
     if (!map || !target) return;
     lobbyMapWasManuallyMovedRef.current = true;
     map.panTo(target);
@@ -2613,8 +2613,9 @@ if (loading) {
               </Card>
             )}
 
-            {/* Terminal route and live tracking map */}
-            {isMapsLoaded && ((['driver_found', 'in_progress'].includes(lobby.status) && driverLocation) || terminalRoutePath.length > 0 || mapDropoffStops.length > 0) && (
+            {/* Keep the terminal map and its recenter control available while
+                passengers wait, before live driver tracking begins. */}
+            {isMapsLoaded && (
               <div className="relative mb-3 overflow-hidden rounded-xl border border-[var(--border)] shadow-sm">
                 <GoogleMap
                   mapContainerStyle={{ width: '100%', height: '240px' }}
