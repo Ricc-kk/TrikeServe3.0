@@ -151,6 +151,79 @@ const routePathFromResult = (route: any): LatLng[] => {
   return path;
 };
 
+type TerminalRouteProjection = {
+  point: LatLng;
+  distanceAlong: number;
+  distanceFromRoute: number;
+  segmentIndex: number;
+};
+
+/** Snap a coordinate to the closest segment of a terminal route. */
+const projectOntoTerminalRoute = (point: LatLng, path: LatLng[]): TerminalRouteProjection | null => {
+  if (path.length < 2) return null;
+
+  const cumulativeDistances = [0];
+  for (let index = 1; index < path.length; index++) {
+    cumulativeDistances.push(
+      cumulativeDistances[index - 1] + haversineDistanceMeters(path[index - 1], path[index]),
+    );
+  }
+
+  const longitudeScale = Math.cos((point.lat * Math.PI) / 180);
+  let closest: TerminalRouteProjection | null = null;
+  for (let index = 1; index < path.length; index++) {
+    const start = path[index - 1];
+    const end = path[index];
+    const dx = (end.lng - start.lng) * longitudeScale;
+    const dy = end.lat - start.lat;
+    const px = (point.lng - start.lng) * longitudeScale;
+    const py = point.lat - start.lat;
+    const lengthSquared = dx * dx + dy * dy;
+    const fraction = lengthSquared > 0
+      ? Math.max(0, Math.min(1, (px * dx + py * dy) / lengthSquared))
+      : 0;
+    const projected = {
+      lat: start.lat + (end.lat - start.lat) * fraction,
+      lng: start.lng + (end.lng - start.lng) * fraction,
+    };
+    const distanceFromRoute = haversineDistanceMeters(point, projected);
+    if (closest && distanceFromRoute >= closest.distanceFromRoute) continue;
+
+    closest = {
+      point: projected,
+      distanceAlong: cumulativeDistances[index - 1] + haversineDistanceMeters(start, projected),
+      distanceFromRoute,
+      segmentIndex: index - 1,
+    };
+  }
+  return closest;
+};
+
+/** Build only the terminal-road segment between a private ride's pickup and drop-off. */
+const buildTerminalRouteSegment = (path: LatLng[], pickup: LatLng, dropoff: LatLng): LatLng[] => {
+  if (path.length < 2) return [];
+  const pickupProjection = projectOntoTerminalRoute(pickup, path);
+  const dropoffProjection = projectOntoTerminalRoute(dropoff, path);
+  if (!pickupProjection || !dropoffProjection) return [];
+
+  const forward = pickupProjection.distanceAlong <= dropoffProjection.distanceAlong;
+  const intermediatePoints = forward
+    ? path.slice(pickupProjection.segmentIndex + 1, dropoffProjection.segmentIndex + 1)
+    : path.slice(dropoffProjection.segmentIndex + 1, pickupProjection.segmentIndex + 1).reverse();
+  const segmentPoints = [pickupProjection.point, ...intermediatePoints, dropoffProjection.point];
+  const result: LatLng[] = [];
+  const append = (point: LatLng) => {
+    if (!result.length || haversineDistanceMeters(result[result.length - 1], point) > 1) {
+      result.push(point);
+    }
+  };
+
+  append(pickup);
+  segmentPoints.forEach(append);
+  append(dropoff);
+  return result;
+};
+
 const decodeGooglePolyline = (encoded: string): LatLng[] => {
   let index = 0;
   let lat = 0;
@@ -793,6 +866,10 @@ export default function CustomerHome() {
    const [driverLocation, setDriverLocation] = useState<{ lat: number; lng: number } | null>(null);
    const [driverRoutePath, setDriverRoutePath] = useState<LatLng[]>([]);
    const [destinationRoutePath, setDestinationRoutePath] = useState<LatLng[]>([]);
+   const hasPassengerBeenPickedUp =
+     rideStatus === 'in-transit' ||
+     ['pickup', 'picked-up', 'in-progress', 'drop-off', 'dropped-off', 'payment', 'awaiting-payment']
+       .includes(String(driverLiveStatus || '').toLowerCase());
   /**
    * The customer's own map instance.
    *
@@ -2435,6 +2512,10 @@ export default function CustomerHome() {
        setDriverRoutePath([]);
        return;
      }
+     if (hasPassengerBeenPickedUp) {
+       setDriverRoutePath([]);
+       return;
+     }
      if (!driverLocation || !pickupCoords || !isMapsLoaded || !(window as any).google || rideStatus !== 'driver-found') return;
 
      const DirectionsService = new (window as any).google.maps.DirectionsService();
@@ -2461,12 +2542,17 @@ export default function CustomerHome() {
          }
        }
      );
-   }, [activeShareRideMapDetails.isActive, driverLocation, pickupCoords, isMapsLoaded, rideStatus]);
+   }, [activeShareRideMapDetails.isActive, hasPassengerBeenPickedUp, driverLocation, pickupCoords, isMapsLoaded, rideStatus]);
 
-   // Compute the private ride's pickup-to-dropoff route during tracking.
-   // Share rides use the selected terminal route geometry instead.
+   // Before pickup, show road directions from pickup to drop-off. Once the
+   // passenger is onboard, the selected terminal route is used for this leg.
+   // Share rides keep their own terminal route rendering.
    useEffect(() => {
      if (activeShareRideMapDetails.isActive) {
+       setDestinationRoutePath([]);
+       return;
+     }
+     if (hasPassengerBeenPickedUp) {
        setDestinationRoutePath([]);
        return;
      }
@@ -2496,7 +2582,7 @@ export default function CustomerHome() {
          }
        }
      );
-   }, [activeShareRideMapDetails.isActive, pickupCoords, dropoffCoords, isMapsLoaded, rideStatus]);
+   }, [activeShareRideMapDetails.isActive, hasPassengerBeenPickedUp, pickupCoords, dropoffCoords, isMapsLoaded, rideStatus]);
 
    // Count unread messages from drivers
    useEffect(() => {
@@ -3577,6 +3663,15 @@ export default function CustomerHome() {
     selectedTerminalId,
     selectedTerminalRouteId,
   ]);
+  const privateRideTerminalDestinationPath = useMemo(() => {
+    if (!hasPassengerBeenPickedUp || !activePrivateRideRoute || !pickupCoords || !dropoffCoords) {
+      return [];
+    }
+    return buildTerminalRouteSegment(activePrivateRideRoute.points, pickupCoords, dropoffCoords);
+  }, [hasPassengerBeenPickedUp, activePrivateRideRoute, pickupCoords, dropoffCoords]);
+  const activeDestinationRoutePath = hasPassengerBeenPickedUp
+    ? privateRideTerminalDestinationPath
+    : destinationRoutePath;
   useEffect(() => {
     if (!isBookingPage) {
       bookingMapOverviewFittedRef.current = null;
@@ -4192,7 +4287,7 @@ const getPrice = () => {
               )}
 
               {/* Driver route polyline (real-time) */}
-              {rideStateBelongsToCurrentUser && !isActiveShareRideMap && driverRoutePath.length > 0 && visibleRideStatus === 'driver-found' && (
+              {rideStateBelongsToCurrentUser && !isActiveShareRideMap && !hasPassengerBeenPickedUp && driverRoutePath.length > 0 && visibleRideStatus === 'driver-found' && (
                 <Polyline
                   path={driverRoutePath}
                   options={{
@@ -4202,9 +4297,9 @@ const getPrice = () => {
                 />
               )}
 
-              {/* Destination route polyline (pickup to dropoff) */}
-              {rideStateBelongsToCurrentUser && !isActiveShareRideMap && destinationRoutePath.length > 0 && visibleRideStatus !== 'searching' && (
-                <Polyline path={destinationRoutePath} options={buildNavigationRouteOptions(RIDE_MAP_DROPOFF_COLOR, 5)} />
+              {/* After pickup, guide the passenger along the selected terminal route. */}
+              {rideStateBelongsToCurrentUser && !isActiveShareRideMap && activeDestinationRoutePath.length > 0 && visibleRideStatus !== 'searching' && (
+                <Polyline path={activeDestinationRoutePath} options={buildNavigationRouteOptions(RIDE_MAP_DROPOFF_COLOR, 5)} />
               )}
 
               {/* No straight-line fallback here on purpose.
