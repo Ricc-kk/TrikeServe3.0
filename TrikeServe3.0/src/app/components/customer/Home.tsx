@@ -3789,18 +3789,12 @@ const getPrice = () => {
    * fails on the very next tag.)
    */
   return (
-    <div className="relative flex min-h-screen flex-col bg-[linear-gradient(180deg,var(--teal-soft)_0%,var(--canvas)_420px)]">
-      {/* Keep the booking map above the ride options; other customer views use
-          it as a full-screen background. */}
+    <div className={isRideOptionsBookingPage
+      ? "relative flex h-dvh min-h-[32rem] flex-col overflow-hidden bg-[linear-gradient(180deg,var(--teal-soft)_0%,var(--canvas)_420px)]"
+      : "relative flex min-h-screen flex-col bg-[linear-gradient(180deg,var(--teal-soft)_0%,var(--canvas)_420px)]"}>
+      {/* Full-screen map, matching the driver dashboard layout. */}
       {showMap && (
-      <div
-        className={isRideOptionsBookingPage
-          ? "relative mx-4 mt-4 shrink-0 overflow-hidden rounded-[2rem] border border-line shadow-sm sm:mx-6 sm:mt-6 lg:mx-8"
-          : "absolute inset-0"}
-        style={isRideOptionsBookingPage
-          ? { position: 'relative', inset: 'auto', height: '40vh', minHeight: 260, maxHeight: 420, flexShrink: 0 }
-          : undefined}
-      >
+      <div className="absolute inset-0">
         {!GOOGLE_MAPS_API_KEY ? (
           <div className="w-full h-full flex items-center justify-center bg-[var(--border)]">
             <div className="text-center">
@@ -4182,10 +4176,10 @@ const getPrice = () => {
               />
             )}
             <div className={isRideOptionsBookingPage
-              ? "mx-auto w-full max-w-3xl px-4 pt-4 pb-28"
+              ? "absolute bottom-[calc(5rem+env(safe-area-inset-bottom))] left-0 right-0 z-[999] mx-auto w-full max-w-3xl px-3 sm:px-5"
               : "absolute bottom-20 left-0 right-0 z-[999] mx-auto max-w-3xl px-4"}>
             <Card className={isRideOptionsBookingPage
-              ? "gap-0 overflow-hidden rounded-[2rem] border-line bg-[var(--background)] shadow-xl"
+              ? "max-h-[calc(100dvh-8rem-env(safe-area-inset-top)-env(safe-area-inset-bottom))] gap-0 overflow-y-auto rounded-3xl border border-line bg-[var(--background)] shadow-2xl"
               : "max-h-[calc(100vh-7rem)] gap-0 overflow-y-auto rounded-3xl bg-[var(--background)] shadow-2xl"}>
               {/* Step header â€” back control plus plain-language context */}
               <div className="sticky top-0 z-10 flex items-center gap-3 border-b border-line bg-[var(--background)] px-4 py-3">
