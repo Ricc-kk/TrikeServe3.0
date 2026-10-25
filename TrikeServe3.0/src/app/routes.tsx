@@ -303,6 +303,14 @@ export const router = createBrowserRouter([
           </ProtectedRoute>
         )
       },
+      {
+        path: "customer/active-private-ride",
+        element: (
+          <ProtectedRoute allowedRoles={['customer']}>
+            <CustomerHome />
+          </ProtectedRoute>
+        )
+      },
       { 
         path: "customer/old", 
         element: (

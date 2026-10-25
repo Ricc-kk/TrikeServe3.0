@@ -20,9 +20,8 @@ import { useState, useEffect, useRef, useMemo } from "react";
 import { GoogleMap, MarkerF, Polyline } from "@react-google-maps/api";
 import MapTypeToggle from "../ui/MapTypeToggle";
 import useMapLoader from "@/lib/mapLoader";
-import { createCustomerMarkerIcon, createRestaurantMarkerIcon } from "@/lib/mapIcons";
+import { createCustomerMarkerIcon, createRestaurantMarkerIcon, createTricycleMarkerIcon } from "@/lib/mapIcons";
 import { RIDE_MAP_DROPOFF_COLOR } from "@/lib/rideMapColors";
-import tricycleIcon from '../../../assets/0b76d1aa56b8ad6e15dd4efc8a0100b0ca5762a1.png'
 
 interface OrderData {
   id: string;
@@ -820,11 +819,7 @@ export default function OrderDetail() {
               {restaurantLocation && (
                 <MarkerF position={restaurantLocation} title={`${order.restaurantName} restaurant`} icon={createRestaurantMarkerIcon()} />
               )}
-              <MarkerF position={driverLocation} title="Driver" icon={(() => {
-                const g = (window as any)?.google;
-                if (!g?.maps?.Size || !g?.maps?.Point) return undefined;
-                return { url: tricycleIcon, scaledSize: new g.maps.Size(44, 44), anchor: new g.maps.Point(22, 22) };
-              })()} />
+              <MarkerF position={driverLocation} title="Driver" icon={createTricycleMarkerIcon()} />
               {(() => {
                 const coords = (order?.address || '').includes('|') ? order.address.split('|')[1] : (order?.address || '');
                 const m = coords.match(/(\d+\.\d+)\s*,\s*(\d+\.\d+)/);

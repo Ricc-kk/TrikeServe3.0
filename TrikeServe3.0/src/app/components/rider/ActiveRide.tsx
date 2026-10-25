@@ -21,12 +21,11 @@ import { supabaseHelpers, logAudit, isPointOnRoadCorridor } from "@/lib/supabase
 import { readRiderActiveRide, writeRiderActiveRide, clearRiderActiveRide, fetchRiderActiveRide } from "../../../lib/riderActiveRide";
 import { supabase } from "../../../utils/supabase";
 import useMapLoader from "@/lib/mapLoader";
-import { createCustomerMarkerIcon, createRestaurantMarkerIcon } from "@/lib/mapIcons";
+import { createCustomerMarkerIcon, createRestaurantMarkerIcon, createTricycleMarkerIcon } from "@/lib/mapIcons";
 import { RIDE_MAP_DROPOFF_COLOR, RIDE_MAP_PICKUP_COLOR } from "@/lib/rideMapColors";
 import { legacyRouteFromBoundary, normalizeTerminalRoutes, type TerminalRoute } from "@/lib/terminalRoutes";
 import { DEFAULT_TERMINAL_COLOR, normalizeTerminalColor, terminalMarkerIcon } from "../ui/TerminalIcon";
 import PassengerMessagingDB from "./PassengerMessagingDB";
-import tricycleIcon from "../../../assets/0b76d1aa56b8ad6e15dd4efc8a0100b0ca5762a1.png";
 import { useDevModeOverride } from "../../hooks/useDevModeSettings";
 
 type RideStatus = 'on-the-way' | 'arrived' | 'pickup' | 'drop-off' | 'payment';
@@ -2729,7 +2728,7 @@ export default function ActiveRide() {
           >
             <MapTypeToggle />
             {driverLocation && (
-              <Marker position={driverLocation} icon={{ url: tricycleIcon, scaledSize: new (window as any).google.maps.Size(44, 44), anchor: new (window as any).google.maps.Point(22, 22) }} zIndex={100} />
+              <Marker position={driverLocation} icon={createTricycleMarkerIcon()} zIndex={100} />
             )}
             {/* Both endpoints stay pinned for the whole ride, not just whichever
                 one is next. Showing only the active leg hid the destination from

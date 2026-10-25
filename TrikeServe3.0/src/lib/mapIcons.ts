@@ -1,4 +1,19 @@
 import { RIDE_MAP_DROPOFF_COLOR, RIDE_MAP_PICKUP_COLOR } from './rideMapColors';
+import tricycleIcon from '../assets/0b76d1aa56b8ad6e15dd4efc8a0100b0ca5762a1.png';
+
+/** Build the shared tricycle marker, anchored at the visible wheel baseline. */
+export function createTricycleMarkerIcon(size = 44): google.maps.Icon | undefined {
+  const maps = typeof window !== "undefined" ? (window as any)?.google?.maps : undefined;
+  if (!maps?.Size || !maps?.Point) return undefined;
+
+  return {
+    url: tricycleIcon,
+    scaledSize: new maps.Size(size, size),
+    // Its ground line is near 91% of the transparent square asset; anchoring at
+    // the center made the wheels hang below the driver's actual road position.
+    anchor: new maps.Point(size / 2, Math.round(size * 0.91)),
+  };
+}
 
 /** Build the shared restaurant pin used by every map that shows a shop. */
 export function createRestaurantMarkerIcon(size = 40): google.maps.Icon | undefined {

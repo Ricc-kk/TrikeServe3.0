@@ -35,7 +35,7 @@ import { isPointWithinTerminalRoute, supabaseHelpers } from "@/lib/supabase";
 import { writeRiderActiveRide, clearRiderActiveRide, checkRiderActiveRide } from "../../../lib/riderActiveRide";
 import { useTerminalQueue } from "../../hooks/useTerminalQueue";
 import TerminalQueueCard from "./TerminalQueueCard";
-import tricycleIcon from "../../../assets/0b76d1aa56b8ad6e15dd4efc8a0100b0ca5762a1.png";
+import { createTricycleMarkerIcon } from "@/lib/mapIcons";
 import { supabase } from "../../../lib/supabase";
 import ActiveRideButton from "./ActiveRideButton";
 
@@ -522,14 +522,7 @@ export default function RiderDashboard() {
 
   // Helper: Create custom marker for driver (tricycle image)
   const createDriverMarkerIcon = (): google.maps.Icon | undefined => {
-    const google = (window as any)?.google;
-    if (!google?.maps?.Size || !google?.maps?.Point) return undefined;
-
-    return {
-      url: tricycleIcon,
-      scaledSize: new google.maps.Size(44, 44),
-      anchor: new google.maps.Point(22, 22),
-    } as any;
+    return createTricycleMarkerIcon();
   };
 
   // Helper: Create custom SVG marker for customer/passenger (person icon)

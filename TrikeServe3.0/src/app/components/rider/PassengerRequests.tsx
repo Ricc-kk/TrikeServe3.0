@@ -16,7 +16,7 @@ import { isPointInPolygon, isPointWithinTerminalRoute, normalizeBoundaryRoad, no
 import { supabase } from "../../../lib/supabase";
 import useMapLoader from "@/lib/mapLoader";
 import { searchPlacesText } from "@/lib/placesApi";
-import { createCustomerMarkerIcon, createRestaurantMarkerIcon } from "@/lib/mapIcons";
+import { createCustomerMarkerIcon, createRestaurantMarkerIcon, createTricycleMarkerIcon } from "@/lib/mapIcons";
 import { RIDE_MAP_DROPOFF_COLOR, RIDE_MAP_PICKUP_COLOR } from "@/lib/rideMapColors";
 import {
   DEFAULT_BORDER_COLOR,
@@ -27,7 +27,6 @@ import {
   normalizeTerminalColor,
   terminalMarkerIcon,
 } from "../ui/TerminalIcon";
-import tricycleIcon from "../../../assets/0b76d1aa56b8ad6e15dd4efc8a0100b0ca5762a1.png";
 import ActiveRideButton from "./ActiveRideButton";
 import ReasonPromptModal from "../ui/reason-prompt-modal";
 import { backfillLegacySharedRidePassengerFares, sumSharedRidePassengerFares } from "@/lib/pricing";
@@ -253,13 +252,7 @@ export default function PassengerRequests() {
   };
 
   const createDriverMarkerIcon = (): google.maps.Icon | undefined => {
-    const google = (window as any)?.google;
-    if (!google?.maps?.Size || !google?.maps?.Point) return undefined;
-    return {
-      url: tricycleIcon,
-      scaledSize: new google.maps.Size(44, 44),
-      anchor: new google.maps.Point(22, 22),
-    } as any;
+    return createTricycleMarkerIcon();
   };
 
   const createDropoffMarkerIcon = (stopNumber?: number) => {

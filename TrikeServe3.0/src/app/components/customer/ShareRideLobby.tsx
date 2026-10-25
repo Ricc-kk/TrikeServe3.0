@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from "react";
-import { ArrowLeft, MapPin, Users, Clock, X, ChevronDown, MessageCircle, User, Minimize2, Star, Navigation, Flag, CreditCard, Check } from "lucide-react";
+import { MapPin, Users, Clock, X, ChevronDown, MessageCircle, User, Minimize2, Star, Navigation, Flag, CreditCard, Check } from "lucide-react";
 import { Button } from "../ui/button";
 import { Card } from "../ui/card";
 import { RideModal, RideSurfaceCard } from "../ui/RideUI";
@@ -10,7 +10,7 @@ import { GoogleMap, MarkerF, Polyline } from "@react-google-maps/api";
 import MapTypeToggle from "../ui/MapTypeToggle";
 import useMapLoader from "@/lib/mapLoader";
 import { useElapsedTime } from "@/app/hooks/useElapsedTime";
-import tricycleIcon from '../../../assets/0b76d1aa56b8ad6e15dd4efc8a0100b0ca5762a1.png'
+import { createTricycleMarkerIcon } from "@/lib/mapIcons";
 import FloatingChatHead from "../ui/FloatingChatHead";
 import BottomNav from "../ui/BottomNav";
 import RideChatOverlay from "../rider/RideChatOverlay";
@@ -2376,15 +2376,15 @@ if (loading) {
           <div className="bg-[var(--primary)] p-4">
             <div className="flex items-center justify-between">
               <div className="flex min-w-0 items-center gap-3">
-                <button
-                  onClick={() => presentation === 'page' ? onClose() : setIsMinimized(true)}
-                  aria-label={presentation === 'page' ? 'Back to customer home' : 'Minimize share ride'}
-                  className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-white/20 transition-colors hover:bg-white/30"
-                >
-                  {presentation === 'page'
-                    ? <ArrowLeft className="h-5 w-5 text-white" />
-                    : <ChevronDown className="h-5 w-5 text-white" />}
-                </button>
+                {presentation !== 'page' && (
+                  <button
+                    onClick={() => setIsMinimized(true)}
+                    aria-label="Minimize share ride"
+                    className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-white/20 transition-colors hover:bg-white/30"
+                  >
+                    <ChevronDown className="h-5 w-5 text-white" />
+                  </button>
+                )}
                 <div>
                   <h2 className="text-lg font-bold text-white">Share Ride</h2>
                   <div className="flex items-center gap-2">
@@ -2643,15 +2643,7 @@ if (loading) {
                     <MarkerF
                       position={driverLocation}
                       title="Driver Location"
-                      icon={(() => {
-                        const google = (window as any)?.google;
-                        if (!google?.maps?.Size || !google?.maps?.Point) return undefined;
-                        return {
-                          url: tricycleIcon,
-                          scaledSize: new google.maps.Size(44, 44),
-                          anchor: new google.maps.Point(22, 22),
-                        };
-                      })()}
+                      icon={createTricycleMarkerIcon()}
                     />
                   )}
                   {/* Pickup marker */}
@@ -2816,15 +2808,7 @@ if (loading) {
                   <MarkerF
                     position={driverLocation}
                     title="Driver Location"
-                    icon={(() => {
-                      const google = (window as any)?.google;
-                      if (!google?.maps?.Size || !google?.maps?.Point) return undefined;
-                      return {
-                        url: tricycleIcon,
-                        scaledSize: new google.maps.Size(44, 44),
-                        anchor: new google.maps.Point(22, 22),
-                      };
-                    })()}
+                    icon={createTricycleMarkerIcon()}
                   />
                 )}
                 {terminalMarkerPosition && (
@@ -2880,14 +2864,6 @@ if (loading) {
           </div>
           <button
             type="button"
-            onClick={() => onClose()}
-            aria-label="Back to customer home"
-            className="absolute right-3 top-[calc(env(safe-area-inset-top)+3.5rem)] z-10 grid size-11 place-items-center rounded-full bg-surface/95 text-[var(--ink)] shadow-lg backdrop-blur-sm"
-          >
-            <ArrowLeft className="size-5" aria-hidden="true" />
-          </button>
-          <button
-            type="button"
             onClick={recenterLobbyMap}
             aria-label="Re-center map"
             title="Re-center map"
@@ -2897,10 +2873,10 @@ if (loading) {
           </button>
 
           <div
-            className="absolute left-0 right-0 z-20 px-3"
-            style={{ bottom: 'calc(4.5rem + env(safe-area-inset-bottom))' }}
+            className="absolute left-0 right-0 z-20 p-3"
+            style={{ bottom: 'calc(5rem + env(safe-area-inset-bottom))' }}
           >
-            <RideSurfaceCard className="max-h-[calc(100dvh-12rem)] overflow-y-auto rounded-2xl border-2 border-[var(--primary)] bg-surface shadow-2xl">
+            <RideSurfaceCard className="gap-0 max-h-[calc(100dvh-12rem)] overflow-y-auto rounded-2xl border-2 border-[var(--primary)] bg-surface shadow-2xl">
               <div className="p-4">
                 <div className="mb-3 flex items-center gap-3">
                   <div className="grid size-14 shrink-0 place-items-center overflow-hidden rounded-full bg-[var(--primary-soft)] text-sm font-bold text-[var(--primary)]">

@@ -27,10 +27,9 @@ import { GoogleMap, MarkerF, InfoWindow, Polygon, Polyline } from "@react-google
 import MapTypeToggle from "../ui/MapTypeToggle";
 import useMapLoader from "@/lib/mapLoader";
 import { GOOGLE_MAPS_LIBRARIES } from "@/lib/googleMaps";
-import { createCustomerMarkerIcon as createDeliveryCustomerMarkerIcon, createRestaurantMarkerIcon } from "@/lib/mapIcons";
+import { createCustomerMarkerIcon as createDeliveryCustomerMarkerIcon, createRestaurantMarkerIcon, createTricycleMarkerIcon } from "@/lib/mapIcons";
 import { RIDE_MAP_DROPOFF_COLOR, RIDE_MAP_DRIVER_COLOR } from "@/lib/rideMapColors";
 import { autocompletePlacesNew, createPlacesSessionToken, fetchPlaceDetailsNew, searchPlacesText, type PlaceResult, type PlacesAutocompleteSuggestion } from "@/lib/placesApi";
-import tricycleIcon from '../../../assets/0b76d1aa56b8ad6e15dd4efc8a0100b0ca5762a1.png';
 import { useAuth } from "../../contexts/AuthContext";
 import { supabaseHelpers, isPointWithinAnyTerminalBorder, isPointInPolygon, isPointOnRoadCorridor, normalizeBoundaryRoad, normalizeBoundaryArea, normalizeRoadWidth, geocodeAddress, logAudit, haversineDistanceMeters, type LatLngPoint } from "@/lib/supabase";
 import { legacyRouteFromBoundary, normalizeTerminalRoutes } from "@/lib/terminalRoutes";
@@ -206,16 +205,7 @@ const buildNavigationMarkerIcon = (color: string) => {
 };
 
 const createDriverMarkerIcon = () => {
-  const google = (window as any)?.google;
-  if (!google?.maps?.Size || !google?.maps?.Point) {
-    return buildNavigationMarkerIcon('#EF4444');
-  }
-
-  return {
-    url: tricycleIcon,
-    scaledSize: new google.maps.Size(44, 44),
-    anchor: new google.maps.Point(22, 22),
-  } as any;
+  return createTricycleMarkerIcon() ?? buildNavigationMarkerIcon('#EF4444');
 };
 
 const createCustomerMarkerIcon = () => {
@@ -426,7 +416,9 @@ export default function CustomerHome() {
   const [enforceBoundary] = useDevModeOverride("enforceBoundary");
   const navigate = useNavigate();
   const location = useLocation();
-  const isBookingPage = location.pathname.replace(/\/+$/, '') === '/customer/book-ride';
+  const currentPath = location.pathname.replace(/\/+$/, '');
+  const isBookingPage = currentPath === '/customer/book-ride';
+  const isActivePrivateRidePage = currentPath === '/customer/active-private-ride';
   const navigationState = location.state as { selectedPickupTerminalId?: string; customerHomeTab?: boolean } | null;
   const searchSelectedTerminalId = navigationState?.selectedPickupTerminalId;
   const cameFromCustomerHomeTab = navigationState?.customerHomeTab === true;
@@ -1751,12 +1743,12 @@ export default function CustomerHome() {
   }, [cameFromCustomerHomeTab, location.key]);
 
   /*
-   * Rebuild the active private ride card when this tab holds no copy of it.
+   * Rebuild the active private ride state when this tab holds no copy of it.
    *
    * Without this, arriving on the booking screen with a ride that was accepted
    * in another tab showed the booking options and no ride, inviting a second
-   * booking while the first was under way. Only a ride with an assigned driver is
-   * rebuilt; one still waiting for a driver is left to the normal search flow.
+   * booking while the first was under way. The dedicated active-ride route also
+   * restores a pending request so its searching state survives a refresh.
    */
   useEffect(() => {
     if (!activeRideRequest?.id) return;
@@ -1793,9 +1785,13 @@ export default function CustomerHome() {
         eta: r.eta || '5 mins',
       });
       setRideStatus('driver-found');
+    } else if (isActivePrivateRidePage) {
+      setRideStatus('searching');
+      const createdAt = r.created_at ? Date.parse(r.created_at) : NaN;
+      if (Number.isFinite(createdAt)) setRequestedAt(createdAt);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeRideRequest?.id, rideStateOwnerId]);
+  }, [activeRideRequest?.id, rideStateOwnerId, isActivePrivateRidePage]);
 
    // Poll unread delivery notifications for the bell badge.
    useEffect(() => {
@@ -2428,6 +2424,30 @@ export default function CustomerHome() {
     }
    }, [user?.id, rideStateBelongsToCurrentUser, activeRideStorageKey, rideStatus, requestedAt, pickup, pickupAddress, pickupCoords, dropoff, dropoffAddress, dropoffCoords, selectedVehicle, paymentMethod, activeRide, currentRequestId, rideDriverId, bookedFare]);
 
+   // Once a private ride has a request row, move the booking flow to its own
+   // active-ride page. The persistence effect above writes the resumable ride
+   // first, so refreshing the new route restores the same search or driver card.
+   useEffect(() => {
+     if (
+       currentPath !== '/customer/book-ride' ||
+       !rideStateBelongsToCurrentUser ||
+       selectedVehicle !== 'special' ||
+       isDeliveryRide ||
+       !currentRequestId ||
+       !['searching', 'driver-found', 'picking-up', 'in-transit'].includes(visibleRideStatus || '')
+     ) return;
+
+     navigate('/customer/active-private-ride', { replace: true });
+   }, [
+     currentPath,
+     rideStateBelongsToCurrentUser,
+     selectedVehicle,
+     isDeliveryRide,
+     currentRequestId,
+     visibleRideStatus,
+     navigate,
+   ]);
+
    // Compute driver's route to pickup/dropoff location (real-time tracking)
    useEffect(() => {
      if (activeShareRideMapDetails.isActive) {
@@ -2814,7 +2834,34 @@ export default function CustomerHome() {
   const showBookingFlow = !visibleActiveRide && visibleRideStatus !== 'searching' && !rideBlocked;
   // Keep the home hub underneath lobby creation so its translucent loader has
   // the actual customer home screen to reveal.
-  const showCustomerHomeHub = !isBookingPage && bookingStep === 'home' && (showBookingFlow || cameFromCustomerHomeTab || showShareLobby);
+  const showCustomerHomeHub = !isBookingPage && !isActivePrivateRidePage && bookingStep === 'home' && (showBookingFlow || cameFromCustomerHomeTab || showShareLobby);
+
+  // A direct visit to the private ride route resumes a stored private ride or
+  // its authoritative database request. Send stale/invalid links back to booking.
+  useEffect(() => {
+    if (!isActivePrivateRidePage || !user?.id || !rideContextChecked) return;
+
+    let hasStoredPrivateRide = false;
+    try {
+      const saved = activeRideStorageKey ? localStorage.getItem(activeRideStorageKey) : null;
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        hasStoredPrivateRide =
+          parsed?.customerId === user.id &&
+          parsed?.vehicleType === 'special' &&
+          Boolean(parsed?.requestId || parsed?.id);
+      }
+    } catch {
+      // Fall through to the database-backed active ride check.
+    }
+
+    const hasActivePrivateRequest = Boolean(
+      activeRideRequest?.id && !isDeliveryRideRequest(activeRideRequest),
+    );
+    if (!hasStoredPrivateRide && !hasActivePrivateRequest) {
+      navigate('/customer/book-ride', { replace: true });
+    }
+  }, [isActivePrivateRidePage, user?.id, rideContextChecked, activeRideStorageKey, activeRideRequest, rideStatus, currentRequestId, navigate]);
 
   useEffect(() => {
     // A live private ride belongs on this map and driver-tracking screen. Only
@@ -3224,6 +3271,9 @@ export default function CustomerHome() {
       setRideStatus(null);
       setCurrentRequestId(null);
       setShowBookingConfirm(false);
+      if (isActivePrivateRidePage) {
+        navigate('/customer', { replace: true, state: { customerHomeTab: true } });
+      }
     } catch (error: any) {
       console.error('âŒ Error cancelling ride:', error);
       alert(`âŒ Failed to cancel ride: ${error?.message || 'Please try again.'}`);
@@ -3269,7 +3319,9 @@ export default function CustomerHome() {
       navigate(`/customer/messages/thread/${data.id}`, {
         state: {
           fromActiveRide: true,
-          rideBackTo: '/customer',
+          rideBackTo: selectedVehicle === 'special' && !isDeliveryRide
+            ? '/customer/active-private-ride'
+            : '/customer',
           peerAvatar: rideDriverAvatar || undefined,
           peerLabel: activeRide?.driver || 'Driver',
         },
@@ -3413,7 +3465,7 @@ export default function CustomerHome() {
     [terminals, routePreviewTerminalId]
   );
   const activeMapTerminalId = routePreviewTerminalId
-    ?? (isActiveShareRideMap ? activeRideLobby?.terminal_id || selectedTerminalId : selectedTerminalId)
+    ?? (isActiveShareRideMap ? activeRideLobby?.terminal_id || selectedTerminalId : activeRideRequest?.terminal_id || selectedTerminalId)
     ?? nearestTerminal?.id
     ?? null;
   const activeRideTerminalId = activeRideLobby?.terminal_id || activeRideRequest?.terminal_id || selectedTerminalId;
@@ -3806,6 +3858,10 @@ const getPrice = () => {
     setCompletionPopupType('ride');
     if (activeRideStorageKey) localStorage.removeItem(activeRideStorageKey);
     if (activeShareLobbyStorageKey) localStorage.removeItem(activeShareLobbyStorageKey);
+    if (isActivePrivateRidePage) {
+      navigate('/customer', { replace: true, state: { customerHomeTab: true } });
+      return;
+    }
     window.location.reload();
   };
 
@@ -3822,6 +3878,10 @@ const getPrice = () => {
     resetCustomerRideVisuals();
     if (activeRideStorageKey) localStorage.removeItem(activeRideStorageKey);
     if (activeShareLobbyStorageKey) localStorage.removeItem(activeShareLobbyStorageKey);
+    if (isActivePrivateRidePage) {
+      navigate('/customer', { replace: true, state: { customerHomeTab: true } });
+      return;
+    }
     window.location.reload();
   };
 
@@ -3891,7 +3951,7 @@ const getPrice = () => {
    * fails on the very next tag.)
    */
   return (
-    <div className={isRideOptionsBookingPage
+    <div className={isRideOptionsBookingPage || isActivePrivateRidePage
       ? "relative flex h-dvh min-h-[32rem] flex-col overflow-hidden bg-[linear-gradient(180deg,var(--teal-soft)_0%,var(--canvas)_420px)]"
       : "relative flex min-h-screen flex-col bg-[linear-gradient(180deg,var(--teal-soft)_0%,var(--canvas)_420px)]"}>
       {/* Full-screen map, matching the driver dashboard layout. */}
@@ -4136,17 +4196,32 @@ const getPrice = () => {
           onClick={() => {
             const map = customerMapRef.current;
             if (!map || isLoadingLocation || locationProblem) return;
-            map.panTo(currentLocation);
+            const target = isActivePrivateRidePage
+              ? driverLocation || pickupCoords || currentLocation
+              : currentLocation;
+            map.panTo(target);
             map.setZoom(15);
-            setMapCenter(currentLocation);
+            setMapCenter(target);
           }}
-          aria-label="Re-center map on my location"
-          title="Re-center map on my location"
+          aria-label={isActivePrivateRidePage ? 'Re-center map on your ride' : 'Re-center map on my location'}
+          title={isActivePrivateRidePage ? 'Re-center map on your ride' : 'Re-center map on my location'}
           disabled={isLoadingLocation || Boolean(locationProblem)}
           className="absolute right-4 z-[1200] grid size-12 place-items-center rounded-full border border-line bg-surface text-[var(--primary)] shadow-xl transition-transform active:scale-95 disabled:cursor-not-allowed disabled:opacity-50"
-          style={{ top: 'calc(env(safe-area-inset-top, 0px) + 11rem)' }}
+          style={{ top: `calc(env(safe-area-inset-top, 0px) + ${isActivePrivateRidePage ? '7rem' : '11rem'})` }}
         >
           <Navigation className="size-5" aria-hidden="true" />
+        </button>
+      )}
+
+      {showMap && isActivePrivateRidePage && (
+        <button
+          type="button"
+          onClick={() => navigate('/customer', { replace: true, state: { customerHomeTab: true } })}
+          aria-label="Back to customer home"
+          title="Back to customer home"
+          className="absolute right-4 top-[calc(env(safe-area-inset-top,0px)+3.5rem)] z-[1200] grid size-11 place-items-center rounded-full border border-line bg-surface text-[var(--ink)] shadow-xl"
+        >
+          <ArrowLeft className="size-5" aria-hidden="true" />
         </button>
       )}
 

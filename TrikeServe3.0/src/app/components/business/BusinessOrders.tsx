@@ -21,9 +21,8 @@ import { OrderStatusUpdates } from "../ui/OrderStatusUpdates";
 import { GoogleMap, MarkerF, Polyline } from "@react-google-maps/api";
 import MapTypeToggle from "../ui/MapTypeToggle";
 import useMapLoader from "@/lib/mapLoader";
-import { createCustomerMarkerIcon, createRestaurantMarkerIcon } from "@/lib/mapIcons";
+import { createCustomerMarkerIcon, createRestaurantMarkerIcon, createTricycleMarkerIcon } from "@/lib/mapIcons";
 import { RIDE_MAP_DROPOFF_COLOR, RIDE_MAP_PICKUP_COLOR } from "@/lib/rideMapColors";
-import tricycleIcon from '../../../assets/0b76d1aa56b8ad6e15dd4efc8a0100b0ca5762a1.png'
 /**
  * "9:08PM" / "1:00AM" — 12-hour, no space before the meridiem.
  *
@@ -2221,11 +2220,7 @@ export default function BusinessOrders() {
                           <MarkerF
                             position={driverLocation}
                             title="Driver"
-                            icon={(() => {
-                              const g = (window as any)?.google;
-                              if (!g?.maps?.Size || !g?.maps?.Point) return undefined;
-                              return { url: tricycleIcon, scaledSize: new g.maps.Size(44, 44), anchor: new g.maps.Point(22, 22) };
-                            })()}
+                            icon={createTricycleMarkerIcon()}
                           />
                           {(() => {
                             const addr = selectedOrder?.address || '';
