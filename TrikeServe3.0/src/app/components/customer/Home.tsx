@@ -1423,11 +1423,17 @@ export default function CustomerHome() {
       setPredictions([]);
       setSearchQuery('');
 
-      // If we now have both pickup and dropoff coords, compute directions client-side
+      // Delivery legs use road directions. Passenger rides use the selected
+      // terminal route geometry for pickup-to-drop-off instead.
       const origin = pickupCoords || (activeLocationInput === 'pickup' ? coords : pickupCoords);
       const destination = dropoffCoords || (activeLocationInput === 'dropoff' ? coords : dropoffCoords);
 
-      if (origin && destination && isMapsLoaded && (window as any).google) {
+      if (!isDeliveryRide) {
+        setRoutePath([]);
+        setRouteApiError(null);
+      }
+
+      if (isDeliveryRide && origin && destination && isMapsLoaded && (window as any).google) {
         const DirectionsService = new (window as any).google.maps.DirectionsService();
         DirectionsService.route(
           {
@@ -2544,15 +2550,15 @@ export default function CustomerHome() {
      );
    }, [activeShareRideMapDetails.isActive, hasPassengerBeenPickedUp, driverLocation, pickupCoords, isMapsLoaded, rideStatus]);
 
-   // Before pickup, show road directions from pickup to drop-off. Once the
-   // passenger is onboard, the selected terminal route is used for this leg.
-   // Share rides keep their own terminal route rendering.
+   // Passenger drop-off legs always use the selected terminal route. Google
+   // Directions remains for delivery requests, while share rides render their
+   // own selected terminal route geometry.
    useEffect(() => {
      if (activeShareRideMapDetails.isActive) {
        setDestinationRoutePath([]);
        return;
      }
-     if (hasPassengerBeenPickedUp) {
+     if (!isDeliveryRide) {
        setDestinationRoutePath([]);
        return;
      }
@@ -2582,7 +2588,7 @@ export default function CustomerHome() {
          }
        }
      );
-   }, [activeShareRideMapDetails.isActive, hasPassengerBeenPickedUp, pickupCoords, dropoffCoords, isMapsLoaded, rideStatus]);
+   }, [activeShareRideMapDetails.isActive, isDeliveryRide, pickupCoords, dropoffCoords, isMapsLoaded, rideStatus]);
 
    // Count unread messages from drivers
    useEffect(() => {
@@ -3663,14 +3669,14 @@ export default function CustomerHome() {
     selectedTerminalId,
     selectedTerminalRouteId,
   ]);
-  const privateRideTerminalDestinationPath = useMemo(() => {
-    if (!hasPassengerBeenPickedUp || !activePrivateRideRoute || !pickupCoords || !dropoffCoords) {
+  const privateRideTerminalRoutePath = useMemo(() => {
+    if (!isPrivateRideMap || !activePrivateRideRoute || !pickupCoords || !dropoffCoords) {
       return [];
     }
     return buildTerminalRouteSegment(activePrivateRideRoute.points, pickupCoords, dropoffCoords);
-  }, [hasPassengerBeenPickedUp, activePrivateRideRoute, pickupCoords, dropoffCoords]);
-  const activeDestinationRoutePath = hasPassengerBeenPickedUp
-    ? privateRideTerminalDestinationPath
+  }, [isPrivateRideMap, activePrivateRideRoute, pickupCoords, dropoffCoords]);
+  const activeDestinationRoutePath = isPrivateRideMap
+    ? privateRideTerminalRoutePath
     : destinationRoutePath;
   useEffect(() => {
     if (!isBookingPage) {
@@ -4282,7 +4288,7 @@ const getPrice = () => {
                 />
               )}
 
-              {rideStateBelongsToCurrentUser && !isActiveShareRideMap && routePath.length > 0 && (
+              {rideStateBelongsToCurrentUser && !isActiveShareRideMap && isDeliveryRide && routePath.length > 0 && (
                 <Polyline path={routePath} options={buildNavigationRouteOptions(RIDE_MAP_DROPOFF_COLOR, 5)} />
               )}
 
@@ -4297,19 +4303,20 @@ const getPrice = () => {
                 />
               )}
 
-              {/* After pickup, guide the passenger along the selected terminal route. */}
-              {rideStateBelongsToCurrentUser && !isActiveShareRideMap && activeDestinationRoutePath.length > 0 && visibleRideStatus !== 'searching' && (
+              {/* Passenger drop-off path follows the terminal route geometry. */}
+              {!isActiveShareRideMap && isPrivateRideMap && privateRideTerminalRoutePath.length > 0 && (
+                <Polyline path={privateRideTerminalRoutePath} options={buildNavigationRouteOptions(RIDE_MAP_DROPOFF_COLOR, 5)} />
+              )}
+
+              {/* Delivery drop-off path follows road directions. */}
+              {rideStateBelongsToCurrentUser && !isActiveShareRideMap && isDeliveryRide && activeDestinationRoutePath.length > 0 && visibleRideStatus !== 'searching' && (
                 <Polyline path={activeDestinationRoutePath} options={buildNavigationRouteOptions(RIDE_MAP_DROPOFF_COLOR, 5)} />
               )}
 
-              {/* No straight-line fallback here on purpose.
-                  The passenger should always see the real road the driver will
-                  take. A direct pickup-to-drop-off chord cuts across blocks and
-                  rivers, which reads as "this is the route" and is wrong. If
-                  DirectionsService has not answered yet the route is simply
-                  absent for a moment, which is far better than a misleading
-                  one. The driver-side fallback stays because a driver needs some
-                  indication of heading even if routing fails. */}
+              {/* No straight-line fallback here on purpose. Passenger ride paths
+                  follow the selected terminal geometry; delivery and driver
+                  paths use DirectionsService. If source geometry is unavailable,
+                  leave the route absent instead of drawing a misleading chord. */}
 
              {/* Info Window for selected marker */}
              {selectedMarker && (
