@@ -31,6 +31,7 @@ import ActiveRideButton from "./ActiveRideButton";
 import ReasonPromptModal from "../ui/reason-prompt-modal";
 import { backfillLegacySharedRidePassengerFares, sumSharedRidePassengerFares } from "@/lib/pricing";
 import { legacyRouteFromBoundary, normalizeTerminalRoutes, type TerminalRoute } from "@/lib/terminalRoutes";
+import { getProfileInitials } from "@/lib/profileInitials";
 
 function decodeRoutePolyline(encoded: string): google.maps.LatLngLiteral[] {
   const points: google.maps.LatLngLiteral[] = [];
@@ -1823,7 +1824,11 @@ export default function PassengerRequests() {
                                   className="size-full rounded-full object-cover"
                                 />
                               ) : (
-                                passenger.emoji || '👤'
+                                <span className="font-bold text-[var(--primary)]" aria-hidden="true">
+                                  {getProfileInitials(
+                                    passenger.name.startsWith('+') ? previewRequest.customerName : passenger.name,
+                                  )}
+                                </span>
                               )}
                             </div>
                             <span className="min-w-0 break-words text-sm font-semibold text-[var(--ink)]">{firstName}</span>
@@ -1854,7 +1859,9 @@ export default function PassengerRequests() {
                               className="size-full rounded-full object-cover"
                             />
                           ) : (
-                            '👤'
+                            <span className="font-bold text-[var(--primary)]" aria-hidden="true">
+                              {getProfileInitials(previewRequest.customerName)}
+                            </span>
                           )}
                         </div>
                         <span className="min-w-0 break-words text-sm font-semibold text-[var(--ink)]">{passengerFirstName(previewRequest.customerName)}</span>

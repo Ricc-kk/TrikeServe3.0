@@ -4379,10 +4379,20 @@ const getPrice = () => {
           aria-label={isActivePrivateRidePage ? 'Re-center map on your ride' : 'Re-center map on my location'}
           title={isActivePrivateRidePage ? 'Re-center map on your ride' : 'Re-center map on my location'}
           disabled={isLoadingLocation || Boolean(locationProblem)}
-          className={`absolute z-[1200] grid place-items-center rounded-full border border-line bg-surface/95 text-[var(--primary)] shadow-lg backdrop-blur-sm transition-transform active:scale-95 disabled:cursor-not-allowed disabled:opacity-50 ${isActivePrivateRidePage ? 'left-1/2 -translate-x-1/2 size-11' : 'right-4 size-12'}`}
-          style={{ top: `calc(env(safe-area-inset-top, 0px) + ${isActivePrivateRidePage ? '7rem' : '11rem'})` }}
+          className={`absolute z-[1200] rounded-full shadow-lg transition-transform active:scale-95 disabled:cursor-not-allowed disabled:opacity-50 ${isActivePrivateRidePage
+            ? 'left-1/2 -translate-x-1/2 inline-flex h-12 items-center gap-2 border border-[var(--primary)] bg-[var(--primary)] py-3 pl-3 pr-5 text-[var(--primary-foreground)] shadow-xl'
+            : 'right-4 grid size-12 place-items-center border border-line bg-surface/95 text-[var(--primary)] backdrop-blur-sm'}`}
+          style={isActivePrivateRidePage
+            ? { bottom: 'calc(env(safe-area-inset-bottom, 0px) + 5rem + 15rem + 0.75rem)' }
+            : { top: 'calc(env(safe-area-inset-top, 0px) + 11rem)' }}
         >
-          <Navigation className="size-5" aria-hidden="true" />
+          <Navigation
+            className={isActivePrivateRidePage ? 'size-5 text-[var(--primary-foreground)]' : 'size-5'}
+            aria-hidden="true"
+          />
+          {isActivePrivateRidePage && (
+            <span className="text-sm font-bold text-[var(--primary-foreground)]">Re-center</span>
+          )}
         </button>
       )}
 

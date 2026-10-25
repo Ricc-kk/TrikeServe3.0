@@ -632,7 +632,22 @@ export default function FloatingChatHead({
     drag.current = { dx: startX - rect.left, dy: startY - rect.top };
     el.setPointerCapture?.(pointerId);
 
+    let followFrame: number | null = null;
+    const updateStackFollowers = () => {
+      if (!drag.current) {
+        followFrame = null;
+        return;
+      }
+      const now = performance.now();
+      const followSide = drag.current.side
+        ?? (pos.current.x + rect.width / 2 < window.innerWidth / 2 ? 'left' : 'right');
+      followStackHeads(followSide, pos.current, dragHistory, now);
+      followFrame = requestAnimationFrame(updateStackFollowers);
+    };
+
     const cleanup = () => {
+      if (followFrame !== null) cancelAnimationFrame(followFrame);
+      followFrame = null;
       window.removeEventListener('pointermove', onMove);
       window.removeEventListener('pointerup', onUp);
       window.removeEventListener('pointercancel', onCancel);
@@ -669,6 +684,9 @@ export default function FloatingChatHead({
       ) {
         moved.current = true;
         setIsDragging(true);
+        if (visibleStackItems.length > 0 && followFrame === null) {
+          followFrame = requestAnimationFrame(updateStackFollowers);
+        }
       }
       const w = rect.width;
       const h = rect.height;

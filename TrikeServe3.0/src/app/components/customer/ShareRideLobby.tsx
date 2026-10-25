@@ -24,6 +24,7 @@ import { customerActiveShareLobbyStorageKey, isCustomerLobbyPassenger } from "..
 import { legacyRouteFromBoundary, normalizeTerminalRoutes } from "@/lib/terminalRoutes";
 import { Tricycle } from "../ui/Tricycle";
 import BrowseAvailableLobbies from "./BrowseAvailableLobbies";
+import { getProfileInitials } from "@/lib/profileInitials";
 
 const DRIVER_STATUS_ICONS: Record<string, typeof MapPin> = {
   cancelled: X,
@@ -64,7 +65,7 @@ interface LobbyPassenger {
   id: string;
   name: string;
   emoji: string;
-  /** The passenger's own avatar: a profile photo URL, or an emoji fallback. */
+  /** The passenger's own avatar: a profile photo URL, or a legacy fallback. */
   avatar?: string;
   joinedAt: string;
   pickup: string;  // Individual pickup location
@@ -326,24 +327,19 @@ function formatEtaFromSeconds(seconds: number): string {
   return minutes === 0 ? `${hours} hr` : `${hours} hr ${minutes} mins`;
 }
 
-/**
- * A passenger's avatar.
- *
- * `avatar` holds either a real profile photo URL or an emoji placeholder, so a
- * bare string cannot be dropped into the JSX: a URL would print as its own
- * address. Anything that looks like an image renders as one; everything else is
- * treated as the emoji it is. Falls back to the legacy `emoji` field for
- * passengers stored before avatars were captured.
- */
+/** Shows the current customer's initial when they do not have a profile photo. */
 function PassengerAvatar({
   passenger,
   resolvedAvatar,
+  initial,
   showProfile,
   className,
 }: {
   passenger: LobbyPassenger;
   /** The passenger's live photo from `users.avatar_url`, when known. */
   resolvedAvatar?: string | null;
+  /** The current user's first-name initial. */
+  initial?: string;
   /** Only the signed-in customer's account may display a profile photo. */
   showProfile: boolean;
   className?: string;
@@ -354,10 +350,11 @@ function PassengerAvatar({
 
   // The live profile photo wins: it is the only source that also covers a
   // passenger who joined before the lobby row stored an avatar.
-  const value = (resolvedAvatar || passenger.avatar || passenger.emoji || '👤').trim();
+  const value = (resolvedAvatar || passenger.avatar || '').trim();
   const isImage = /^https?:\/\//i.test(value) || value.startsWith('data:image/');
-  if (!isImage) return <span className={className}>{value}</span>;
-  return <img src={value} alt="" className={`size-full object-cover ${className || ''}`} />;
+  if (isImage) return <img src={value} alt="" className={`size-full object-cover ${className || ''}`} />;
+  if (initial) return <span className={className} aria-hidden="true">{initial}</span>;
+  return <span className={className}>{passenger.avatar || passenger.emoji || '👥'}</span>;
 }
 
 interface ShareRideLobby {
@@ -2451,15 +2448,6 @@ if (loading) {
     ? buildRouteThroughDropoff(terminalRoutePath, pickupCoords, dropoffCoords)
     : terminalRoutePath;
 
-  const recenterLobbyMap = () => {
-    const map = lobbyMapRef.current;
-    const target = driverLocation || terminalMarkerPosition || pickupCoords || terminalRoutePath[0] || lobbyMapInitialCenterRef.current;
-    if (!map || !target) return;
-    lobbyMapWasManuallyMovedRef.current = true;
-    map.panTo(target);
-    map.setZoom(15);
-  };
-
   const showAssignedRidePage = presentation === 'page' && ['driver_found', 'in_progress'].includes(lobby.status);
   const normalizedDriverStatus = String(
     lobby.driver_status || (lobby.status === 'driver_found' ? 'on-the-way' : 'in-progress'),
@@ -2577,10 +2565,11 @@ if (loading) {
                       }`}
                     >
                       <div className="flex items-center gap-3">
-                        <div className="w-12 h-12 flex-shrink-0 overflow-hidden rounded-full bg-[var(--primary)] flex items-center justify-center text-2xl">
+                        <div className="w-12 h-12 flex-shrink-0 overflow-hidden rounded-full bg-[var(--primary)] flex items-center justify-center text-2xl text-[var(--primary-foreground)]">
                           <PassengerAvatar
                             passenger={passenger}
                             resolvedAvatar={passengerAvatars[passenger.id]}
+                            initial={passenger.id === user?.id ? getProfileInitials(user?.name, user?.email) : undefined}
                             showProfile={isCurrentUserOrCompanion}
                           />
                         </div>
@@ -2807,15 +2796,6 @@ if (loading) {
                     />
                   )}
                 </GoogleMap>
-                <button
-                  type="button"
-                  onClick={recenterLobbyMap}
-                  aria-label="Re-center map"
-                  title="Re-center map"
-                  className={`absolute ${presentation === 'page' ? 'left-1/2 -translate-x-1/2' : 'right-2'} top-2 z-[1000] grid size-10 place-items-center rounded-full border border-line bg-surface/95 text-[var(--primary)] shadow-lg backdrop-blur-sm`}
-                >
-                  <Navigation className="size-4" aria-hidden="true" />
-                </button>
                 {/* Driver status indicator */}
                 <div className="px-3 py-2 bg-surface border-t border-[var(--border)] flex items-center justify-between">
                   <div className="flex items-center gap-2">
@@ -2962,16 +2942,6 @@ if (loading) {
           </div>
 
           <RideMapStatusBanner label="Live Tracking" active={Boolean(driverLocation)} />
-          <button
-            type="button"
-            onClick={recenterLobbyMap}
-            aria-label="Re-center map"
-            title="Re-center map"
-            className={`absolute ${presentation === 'page' ? 'left-1/2 -translate-x-1/2' : 'right-3'} top-[calc(env(safe-area-inset-top)+7rem)] z-10 grid size-11 place-items-center rounded-full border border-line bg-surface/95 text-[var(--primary)] shadow-lg backdrop-blur-sm`}
-          >
-            <Navigation className="size-5" aria-hidden="true" />
-          </button>
-
           <div
             className="absolute left-0 right-0 z-20 p-3 animate-slide-up"
             style={{ bottom: 'calc(5rem + env(safe-area-inset-bottom))' }}
