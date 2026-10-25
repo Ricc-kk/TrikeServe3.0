@@ -6,6 +6,7 @@ import { RideModal, RideSurfaceCard } from "../ui/RideUI";
 import { Badge } from "../ui/badge";
 import { useAuth } from "../../contexts/AuthContext";
 import { supabase, supabaseHelpers, isSimilarRoute, isPointWithinAnyTerminalBorder, isPointOnRoadCorridor, haversineDistanceMeters, normalizeRoadWidth } from "@/lib/supabase";
+import { createDropoffMarkerIcon } from "@/lib/mapIcons";
 import { GoogleMap, MarkerF, Polyline } from "@react-google-maps/api";
 import MapTypeToggle from "../ui/MapTypeToggle";
 import useMapLoader from "@/lib/mapLoader";
@@ -30,6 +31,19 @@ const DRIVER_STATUS_ICONS: Record<string, typeof MapPin> = {
   'drop-off': Flag,
   payment: CreditCard,
   completed: Check,
+};
+
+const DRIVER_STATUS_LABELS: Record<string, string> = {
+  'on-the-way': 'On the way',
+  arrived: 'Arrived at pickup',
+  pickup: 'Heading to your destination',
+  'picked-up': 'Heading to your destination',
+  'drop-off': 'Arrived at your destination',
+  'dropped-off': 'Arrived at your destination',
+  'in-progress': 'Ride in progress',
+  payment: 'Awaiting payment',
+  'awaiting-payment': 'Awaiting payment',
+  completed: 'Completed',
 };
 
 const getDriverInitials = (name?: string | null) =>
@@ -223,19 +237,6 @@ function formatEtaFromSeconds(seconds: number): string {
   const minutes = totalMinutes % 60;
   if (hours === 0) return `${totalMinutes} mins`;
   return minutes === 0 ? `${hours} hr` : `${hours} hr ${minutes} mins`;
-}
-
-function createDropoffStopIcon(color: string): google.maps.Symbol | undefined {
-  const maps = (window as any)?.google?.maps;
-  if (!maps?.SymbolPath) return undefined;
-  return {
-    path: maps.SymbolPath.CIRCLE,
-    fillColor: color,
-    fillOpacity: 1,
-    strokeColor: '#FFFFFF',
-    strokeWeight: 2,
-    scale: 12,
-  } as google.maps.Symbol;
 }
 
 /**
@@ -1921,7 +1922,7 @@ if (matchingRouteLobby) {
             <MarkerF
               position={dropoffCoords}
               title="Drop-off"
-              icon={createDropoffStopIcon(RIDE_MAP_DROPOFF_COLOR)}
+              icon={createDropoffMarkerIcon({ color: RIDE_MAP_DROPOFF_COLOR })}
             />
           )}
         </GoogleMap>
@@ -2362,6 +2363,10 @@ if (loading) {
   };
 
   const showAssignedRidePage = presentation === 'page' && ['driver_found', 'in_progress'].includes(lobby.status);
+  const normalizedDriverStatus = String(
+    lobby.driver_status || (lobby.status === 'driver_found' ? 'on-the-way' : 'in-progress'),
+  ).toLowerCase();
+  const driverLiveStatusLabel = DRIVER_STATUS_LABELS[normalizedDriverStatus];
 
   // Full lobby view
   return (
@@ -2661,7 +2666,7 @@ if (loading) {
                         key={stop.key}
                         position={stop.coords}
                         title="Your drop-off"
-                        icon={createDropoffStopIcon(RIDE_MAP_DROPOFF_COLOR)}
+                        icon={createDropoffMarkerIcon({ color: RIDE_MAP_DROPOFF_COLOR })}
                         zIndex={20}
                       />
                     );
@@ -2819,7 +2824,7 @@ if (loading) {
                     key={stop.key}
                     position={stop.coords}
                     title="Your drop-off"
-                    icon={createDropoffStopIcon(RIDE_MAP_DROPOFF_COLOR)}
+                    icon={createDropoffMarkerIcon({ color: RIDE_MAP_DROPOFF_COLOR })}
                     zIndex={20}
                   />
                 ))}
@@ -2876,33 +2881,40 @@ if (loading) {
             className="absolute left-0 right-0 z-20 p-3"
             style={{ bottom: 'calc(5rem + env(safe-area-inset-bottom))' }}
           >
-            <RideSurfaceCard className="gap-0 max-h-[calc(100dvh-12rem)] overflow-y-auto rounded-2xl border-2 border-[var(--primary)] bg-surface shadow-2xl">
+            <RideSurfaceCard className="gap-0 bg-surface shadow-2xl border-2 border-[var(--primary)] rounded-2xl overflow-hidden">
               <div className="p-4">
                 <div className="mb-3 flex items-center gap-3">
-                  <div className="grid size-14 shrink-0 place-items-center overflow-hidden rounded-full bg-[var(--primary-soft)] text-sm font-bold text-[var(--primary)]">
+                  <div className="w-14 h-14 overflow-hidden rounded-full bg-[var(--primary-soft)] flex items-center justify-center flex-shrink-0">
                     {driverProfileAvatar ? (
                       <img
                         src={driverProfileAvatar}
                         alt={`${lobby.driver_name || 'Driver'}'s profile`}
-                        className="size-full object-cover"
+                        className="w-full h-full object-cover"
                         onError={() => setDriverProfileAvatar(null)}
                       />
                     ) : (
-                      <span role="img" aria-label={`${lobby.driver_name || 'Driver'}'s initials`}>
+                      <span className="text-lg font-bold text-[var(--primary)]" role="img" aria-label={`${lobby.driver_name || 'Driver'}'s initials`}>
                         {getDriverInitials(lobby.driver_name)}
                       </span>
                     )}
                   </div>
                   <div className="min-w-0 flex-1">
                     <div className="flex min-w-0 items-center gap-2">
-                      <h2 className="truncate text-base font-bold text-[var(--ink)]">{lobby.driver_name || 'Your driver'}</h2>
-                      <span className="shrink-0 rounded-full border border-[var(--success)]/40 bg-[var(--success-soft)] px-2 py-0.5 text-[10px] font-semibold text-[var(--success)]">
-                        {lobby.driver_status === 'arrived' ? 'Arrived' : 'On the way'}
-                      </span>
+                      <h3 className="truncate text-base font-bold text-[var(--ink)]">{lobby.driver_name || 'Your driver'}</h3>
+                      {driverLiveStatusLabel && (
+                        <p
+                          aria-live="polite"
+                          className="relative flex min-w-0 items-center overflow-hidden rounded-full border border-[var(--success)]/40 bg-[var(--success)]/12 px-2 py-0.5 text-xs font-semibold text-[var(--success)]"
+                        >
+                          <span aria-hidden="true" className="driver-status-wave pointer-events-none absolute inset-y-0 left-0 w-1/2" />
+                          <span aria-hidden="true" className="driver-status-wave driver-status-wave--second pointer-events-none absolute inset-y-0 left-0 w-1/2" />
+                          <span className="relative truncate">{driverLiveStatusLabel}</span>
+                        </p>
+                      )}
                     </div>
-                    <div className="mt-0.5 flex items-center gap-2">
-                      <Badge className="bg-[var(--success)] text-[10px] text-white">Driver Found</Badge>
-                      <span className="truncate text-xs text-[var(--muted-foreground)]">{lobby.driver_plate || 'Plate not available'}</span>
+                    <div className="flex items-center gap-2">
+                      <Badge className="bg-[var(--success)] text-white text-[10px]">Driver Found</Badge>
+                      <span className="text-xs text-[var(--muted-foreground)]">{lobby.driver_plate || 'Plate not available'}</span>
                     </div>
                   </div>
                   <div className="shrink-0 text-right">
@@ -2916,53 +2928,55 @@ if (loading) {
                   </div>
                 </div>
 
-                <div className="mb-3 space-y-1.5 rounded-xl bg-[var(--muted)] p-3">
-                  <div className="flex min-w-0 items-start gap-2">
-                    <span className="mt-0.5 grid size-5 shrink-0 place-items-center rounded-full bg-[var(--ink-solid)]">
-                      <span className="size-2 rounded-full bg-surface" />
-                    </span>
-                    <div className="min-w-0 flex-1">
-                      <p className="text-[10px] font-semibold text-[var(--muted-foreground)]">Pickup</p>
-                      <p className="truncate text-xs font-semibold text-[var(--ink)]">{lobby.pickup_location}</p>
+                <div className="bg-[var(--muted)] rounded-xl p-3 mb-3 space-y-1.5">
+                  <div className="flex items-start gap-2">
+                    <div className="w-5 h-5 bg-[var(--ink-solid)] rounded-full flex items-center justify-center flex-shrink-0 mt-0.5">
+                      <div className="w-2 h-2 bg-surface rounded-full" />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-[10px] text-[var(--muted-foreground)] font-semibold">Pickup</p>
+                      <p className="font-semibold text-xs text-[var(--ink)] truncate">{lobby.pickup_location}</p>
                     </div>
                   </div>
-                  <div className="flex min-w-0 items-start gap-2">
-                    <span className="mt-0.5 grid size-5 shrink-0 place-items-center rounded-full bg-[var(--primary)]">
-                      <span className="size-2 rounded-full bg-surface" />
-                    </span>
-                    <div className="min-w-0 flex-1">
-                      <p className="text-[10px] font-semibold text-[var(--muted-foreground)]">Drop-off</p>
-                      <p className="truncate text-xs font-semibold text-[var(--ink)]">{ownPassenger?.dropoffAddress || dropoffAddress || ownDropoff}</p>
+                  <div className="flex items-start gap-2">
+                    <div className="w-5 h-5 bg-[var(--primary)] rounded-full flex items-center justify-center flex-shrink-0 mt-0.5">
+                      <div className="w-2 h-2 bg-surface rounded-full" />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-[10px] text-[var(--muted-foreground)] font-semibold">Drop-off</p>
+                      <p className="font-semibold text-xs text-[var(--ink)] truncate">{ownPassenger?.dropoffAddress || dropoffAddress || ownDropoff}</p>
                     </div>
                     {etaToDestination && (
-                      <span className="shrink-0 rounded-lg bg-[var(--error-soft)] px-2 py-1 text-[10px] font-bold text-[var(--error)]">{etaToDestination}</span>
+                      <div className="flex-shrink-0 bg-[var(--error-soft)] text-[var(--error)] px-2 py-1 rounded-lg">
+                        <p className="text-[10px] font-bold">{"\u{1F3C1}"} {etaToDestination}</p>
+                      </div>
                     )}
                   </div>
                 </div>
 
-                <div className="flex items-center gap-2">
-                  <div className="min-w-0 flex-1">
-                    <p className="text-[10px] font-semibold text-[var(--muted-foreground)]">Fare</p>
+                <div className="flex items-center gap-3">
+                  <div className="flex-1">
+                    <p className="text-[10px] text-[var(--muted-foreground)] font-semibold">Fare</p>
                     <p className="text-xl font-bold text-[var(--primary)]">₱{yourSeatTotal.toFixed(2)}</p>
-                    <p className="text-[10px] text-[var(--muted-foreground)]">{String(lobby.payment_method || paymentMethod).toUpperCase() === 'COD' ? 'Cash' : lobby.payment_method || paymentMethod}</p>
+                    <p className="text-[10px] text-[var(--muted-foreground)]">{"\u{1F4B5}"} {String(lobby.payment_method || paymentMethod).toUpperCase() === 'COD' ? 'Cash' : lobby.payment_method || paymentMethod}</p>
                   </div>
                   <Button
                     type="button"
                     variant="outline"
                     onClick={openLobbyChatThread}
                     disabled={openingChat}
-                    className="h-10 gap-1.5 px-3 text-xs"
+                    className="flex items-center gap-2 h-10"
                   >
-                    <MessageCircle className="size-4" aria-hidden="true" />
-                    Chat
+                    <MessageCircle className="w-4 h-4" />
+                    {openingChat ? 'Opening...' : 'Chat'}
                   </Button>
                   <Button
                     type="button"
                     variant="outline"
                     onClick={() => setShowLeaveConfirm(true)}
-                    className="h-10 gap-1 border-[var(--error)] px-3 text-xs text-[var(--error)] hover:bg-[var(--error-soft)]"
+                    className="flex items-center gap-1.5 h-10 px-3 border-[var(--error)] text-[var(--error)] hover:bg-[var(--error-soft)]"
                   >
-                    <X className="size-4" aria-hidden="true" />
+                    <X className="w-4 h-4" />
                     Cancel
                   </Button>
                 </div>

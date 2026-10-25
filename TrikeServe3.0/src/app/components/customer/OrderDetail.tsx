@@ -20,7 +20,7 @@ import { useState, useEffect, useRef, useMemo } from "react";
 import { GoogleMap, MarkerF, Polyline } from "@react-google-maps/api";
 import MapTypeToggle from "../ui/MapTypeToggle";
 import useMapLoader from "@/lib/mapLoader";
-import { createCustomerMarkerIcon, createRestaurantMarkerIcon, createTricycleMarkerIcon } from "@/lib/mapIcons";
+import { createDropoffMarkerIcon, createRestaurantMarkerIcon, createTricycleMarkerIcon } from "@/lib/mapIcons";
 import { RIDE_MAP_DROPOFF_COLOR } from "@/lib/rideMapColors";
 
 interface OrderData {
@@ -828,7 +828,7 @@ export default function OrderDetail() {
                   <MarkerF
                     position={{ lat: parseFloat(m[1]), lng: parseFloat(m[2]) }}
                     title="Customer drop-off"
-                    icon={createCustomerMarkerIcon(32)}
+                    icon={createDropoffMarkerIcon({ size: 32 })}
                   />
                 );
               })()}

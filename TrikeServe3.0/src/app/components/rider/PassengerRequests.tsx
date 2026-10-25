@@ -16,7 +16,7 @@ import { isPointInPolygon, isPointWithinTerminalRoute, normalizeBoundaryRoad, no
 import { supabase } from "../../../lib/supabase";
 import useMapLoader from "@/lib/mapLoader";
 import { searchPlacesText } from "@/lib/placesApi";
-import { createCustomerMarkerIcon, createRestaurantMarkerIcon, createTricycleMarkerIcon } from "@/lib/mapIcons";
+import { createDropoffMarkerIcon, createRestaurantMarkerIcon, createTricycleMarkerIcon } from "@/lib/mapIcons";
 import { RIDE_MAP_DROPOFF_COLOR, RIDE_MAP_PICKUP_COLOR } from "@/lib/rideMapColors";
 import {
   DEFAULT_BORDER_COLOR,
@@ -253,16 +253,6 @@ export default function PassengerRequests() {
 
   const createDriverMarkerIcon = (): google.maps.Icon | undefined => {
     return createTricycleMarkerIcon();
-  };
-
-  const createDropoffMarkerIcon = (stopNumber?: number) => {
-    const google = (window as any)?.google;
-    if (!google?.maps?.Size || !google?.maps?.Point) return undefined;
-    const markerDetail = stopNumber == null
-      ? '<path d="M7.8 9.6l2.1 2.1 4.3-4.3" fill="none" stroke="#FFFFFF" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>'
-      : `<text x="12" y="10" text-anchor="middle" dominant-baseline="middle" fill="#FFFFFF" stroke="none" font-size="9" font-family="Arial, sans-serif" font-weight="700">${stopNumber}</text>`;
-    const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="${RIDE_MAP_DROPOFF_COLOR}" stroke="white" stroke-width="1"><path d="M12 2C8.13 2 5 5.13 5 9c0 4.95 6.1 11.53 6.36 11.81.36.39.92.39 1.28 0C13.9 20.53 20 13.95 20 9c0-3.87-3.13-7-8-7z"/>${markerDetail}</svg>`;
-    return { url: 'data:image/svg+xml;charset=UTF-8,' + encodeURIComponent(svg), scaledSize: new google.maps.Size(40, 40), anchor: new google.maps.Point(20, 40) } as any;
   };
 
   // Get driver's terminal info for filtering - fetch fresh from Supabase to avoid stale localStorage
@@ -1660,12 +1650,12 @@ export default function PassengerRequests() {
                     <Marker
                       key={stop.id}
                       position={stop.coords}
-                      icon={createDropoffMarkerIcon(index + 1)}
+                      icon={createDropoffMarkerIcon({ stopNumber: index + 1 })}
                       title={stop.passengerNames.join(', ')}
                     />
                   ))}
                   {previewRequest.type !== 'shared' && resolvedDropoffCoords && (
-                    <Marker position={resolvedDropoffCoords} icon={previewRequest.type === 'delivery' ? createCustomerMarkerIcon() : createDropoffMarkerIcon()} title={previewRequest.type === 'delivery' ? 'Customer' : 'Drop-off'} />
+                    <Marker position={resolvedDropoffCoords} icon={createDropoffMarkerIcon()} title={previewRequest.type === 'delivery' ? 'Customer' : 'Drop-off'} />
                   )}
                   {showPickupRoute && pickupRoutePath && (
                     <Polyline path={pickupRoutePath} options={{ strokeColor: RIDE_MAP_PICKUP_COLOR, strokeWeight: 7, strokeOpacity: 0.95, zIndex: 10 }} />
@@ -1848,9 +1838,13 @@ export default function PassengerRequests() {
               {previewRequest.type === 'private' && (
                 <section className="rounded-xl border border-[var(--border)] bg-[var(--muted)] p-3">
                   <h3 className="mb-2 text-sm font-bold text-[var(--ink)]">Passengers</h3>
-                  <div className="flex items-center gap-3 rounded-lg border border-[var(--border)] bg-[var(--surface)] px-3 py-2">
-                    <Users className="size-4 shrink-0 text-[var(--primary)]" />
-                    <span className="min-w-0 break-words text-sm font-semibold text-[var(--ink)]">{passengerFirstName(previewRequest.customerName)}</span>
+                  <div className="space-y-2">
+                    <div className="flex items-center gap-3 rounded-lg border border-[var(--border)] bg-[var(--surface)] px-3 py-2">
+                      <div className="grid size-10 shrink-0 place-items-center rounded-full border border-[var(--border)] bg-[var(--primary-soft)] text-[var(--primary)]">
+                        <Users className="size-5" />
+                      </div>
+                      <span className="min-w-0 break-words text-sm font-semibold text-[var(--ink)]">{passengerFirstName(previewRequest.customerName)}</span>
+                    </div>
                   </div>
                 </section>
               )}

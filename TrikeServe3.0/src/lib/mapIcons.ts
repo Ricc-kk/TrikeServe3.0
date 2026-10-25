@@ -28,15 +28,31 @@ export function createRestaurantMarkerIcon(size = 40): google.maps.Icon | undefi
   };
 }
 
-/** Build the person pin used for the customer end of a delivery route. */
-export function createCustomerMarkerIcon(size = 40): google.maps.Icon | undefined {
+/** Build the shared location pin used for every ride or delivery drop-off. */
+export function createDropoffMarkerIcon({
+  size = 40,
+  color = RIDE_MAP_DROPOFF_COLOR,
+  stopNumber,
+}: {
+  size?: number;
+  color?: string;
+  stopNumber?: number;
+} = {}): google.maps.Icon | undefined {
   const maps = typeof window !== "undefined" ? (window as any)?.google?.maps : undefined;
   if (!maps?.Size || !maps?.Point) return undefined;
 
-  const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 2C8.13 2 5 5.13 5 9c0 4.95 6.1 11.53 6.36 11.81.36.39.92.39 1.28 0C13.9 20.53 20 13.95 20 9c0-3.87-3.13-7-8-7z" fill="${RIDE_MAP_DROPOFF_COLOR}" stroke="white" stroke-width="1"/><circle cx="12" cy="8.6" r="2.3" fill="#FFFFFF"/><path d="M8.7 15.9c.55-2.05 2.15-3.3 3.3-3.3s2.75 1.25 3.3 3.3" fill="#FFFFFF"/></svg>`;
+  const centerMark = stopNumber == null
+    ? '<circle cx="12" cy="9" r="2.3" fill="#FFFFFF" stroke="none"/>'
+    : `<text x="12" y="9.2" text-anchor="middle" dominant-baseline="middle" fill="#FFFFFF" stroke="none" font-size="8.5" font-family="Arial, sans-serif" font-weight="700">${stopNumber}</text>`;
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 2C8.13 2 5 5.13 5 9c0 4.95 6.1 11.53 6.36 11.81.36.39.92.39 1.28 0C13.9 20.53 20 13.95 20 9c0-3.87-3.13-7-8-7z" fill="${color}" stroke="#FFFFFF" stroke-width="1"/>${centerMark}</svg>`;
   return {
     url: "data:image/svg+xml;charset=UTF-8," + encodeURIComponent(svg),
     scaledSize: new maps.Size(size, size),
     anchor: new maps.Point(size / 2, size),
   };
+}
+
+/** Kept as a compatibility alias for existing delivery map callers. */
+export function createCustomerMarkerIcon(size = 40): google.maps.Icon | undefined {
+  return createDropoffMarkerIcon({ size });
 }

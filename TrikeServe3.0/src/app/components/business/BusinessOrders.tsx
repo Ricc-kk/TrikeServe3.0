@@ -21,7 +21,7 @@ import { OrderStatusUpdates } from "../ui/OrderStatusUpdates";
 import { GoogleMap, MarkerF, Polyline } from "@react-google-maps/api";
 import MapTypeToggle from "../ui/MapTypeToggle";
 import useMapLoader from "@/lib/mapLoader";
-import { createCustomerMarkerIcon, createRestaurantMarkerIcon, createTricycleMarkerIcon } from "@/lib/mapIcons";
+import { createDropoffMarkerIcon, createRestaurantMarkerIcon, createTricycleMarkerIcon } from "@/lib/mapIcons";
 import { RIDE_MAP_DROPOFF_COLOR, RIDE_MAP_PICKUP_COLOR } from "@/lib/rideMapColors";
 /**
  * "9:08PM" / "1:00AM" — 12-hour, no space before the meridiem.
@@ -2231,7 +2231,7 @@ export default function BusinessOrders() {
                             <MarkerF
                               position={{ lat: parseFloat(cm[1]), lng: parseFloat(cm[2]) }}
                               title="Customer"
-                              icon={createCustomerMarkerIcon(32)}
+                              icon={createDropoffMarkerIcon({ size: 32 })}
                             />
                             );
                           })()}

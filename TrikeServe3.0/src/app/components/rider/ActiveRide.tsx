@@ -21,7 +21,7 @@ import { supabaseHelpers, logAudit, isPointOnRoadCorridor } from "@/lib/supabase
 import { readRiderActiveRide, writeRiderActiveRide, clearRiderActiveRide, fetchRiderActiveRide } from "../../../lib/riderActiveRide";
 import { supabase } from "../../../utils/supabase";
 import useMapLoader from "@/lib/mapLoader";
-import { createCustomerMarkerIcon, createRestaurantMarkerIcon, createTricycleMarkerIcon } from "@/lib/mapIcons";
+import { createDropoffMarkerIcon, createRestaurantMarkerIcon, createTricycleMarkerIcon } from "@/lib/mapIcons";
 import { RIDE_MAP_DROPOFF_COLOR, RIDE_MAP_PICKUP_COLOR } from "@/lib/rideMapColors";
 import { legacyRouteFromBoundary, normalizeTerminalRoutes, type TerminalRoute } from "@/lib/terminalRoutes";
 import { DEFAULT_TERMINAL_COLOR, normalizeTerminalColor, terminalMarkerIcon } from "../ui/TerminalIcon";
@@ -2316,21 +2316,6 @@ export default function ActiveRide() {
     };
   }, [rideData?.id, rideData?.lobbyId, customerCancellation, syncRideResume]);
 
-  /**
-   * Pin marker for pickup and drop-off.
-   *
-   * `color` must be a literal hex, not a CSS variable. Google Maps renders
-   * markers in its own canvas and never resolves `var(--x)`, so passing a custom
-   * property produced an invalid fill and the pin simply did not draw. Kept
-   * explicit hex here for that reason, with the theme token noted alongside so
-   * the pairing stays traceable.
-   */
-  const markerIcon = (hex: string) => ({
-    url: `data:image/svg+xml;charset=UTF-8,${encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="${hex}" stroke="white" stroke-width="1"><path d="M12 2C8.13 2 5 5.13 5 9c0 4.95 6.1 11.53 6.36 11.81.36.39.92.39 1.28 0C13.9 20.53 20 13.95 20 9c0-3.87-3.13-7-8-7z"/></svg>`)}`,
-    scaledSize: new (window as any).google.maps.Size(40, 40),
-    anchor: new (window as any).google.maps.Point(20, 40)
-  });
-
   if (!rideData) return null;
   const customerDisplayName = firstNameOnly(resolvedName || rideData.customerName) || 'Passenger';
   const privatePassengerId = String(rideData.customerId || rideData.passengerDetails?.[0]?.id || '');
@@ -2746,16 +2731,15 @@ export default function ActiveRide() {
                 <Marker
                   key={stop.id}
                   position={stop.position}
-                  icon={markerIcon(stop.color)}
+                  icon={createDropoffMarkerIcon({ color: stop.color, stopNumber: index + 1 })}
                   title={`${stop.name} drop-off`}
-                  label={{ text: String(index + 1), color: '#FFFFFF', fontSize: '11px', fontWeight: '700' }}
                   zIndex={!isHeadingToPickup ? 90 + index : 70 + index}
                 />
               ))
               : rideData.dropoffLat != null && rideData.dropoffLng != null && (
                 <Marker
                   position={{ lat: Number(rideData.dropoffLat), lng: Number(rideData.dropoffLng) }}
-                  icon={isDeliveryRide(rideData) ? createCustomerMarkerIcon() : markerIcon(RIDE_MAP_DROPOFF_COLOR)}
+                  icon={createDropoffMarkerIcon()}
                   title={isDeliveryRide(rideData) ? "Customer drop-off" : "Drop-off"}
                   zIndex={!isHeadingToPickup ? 90 : 70}
                 />
@@ -3162,10 +3146,12 @@ export default function ActiveRide() {
                       })}
                     </div>
                   )}
-                  <div className="flex gap-2 mt-1">
-                    <Badge className="bg-[var(--primary)]">₱{rideData.amount}</Badge>
-                    <Badge variant="outline" className="text-[var(--muted-foreground)]">{rideData.payment === 'COD' ? 'Cash' : 'Prepaid'}</Badge>
-                  </div>
+                  {!isSharedRide && (
+                    <div className="flex gap-2 mt-1">
+                      <Badge className="bg-[var(--primary)]">₱{rideData.amount}</Badge>
+                      <Badge variant="outline" className="text-[var(--muted-foreground)]">{rideData.payment === 'COD' ? 'Cash' : 'Prepaid'}</Badge>
+                    </div>
+                  )}
                 </div>
                 {!isSharedRide && (
                   <Button
@@ -3200,7 +3186,7 @@ export default function ActiveRide() {
                       </span>
                       <span className="shrink-0 text-right">
                         <span className="block text-[10px] text-[var(--muted-foreground)]">Fare</span>
-                        <span className="text-sm font-bold text-[var(--ink)]">â‚±{Number(rideData.amount || 0).toFixed(2)}</span>
+                        <span className="text-sm font-bold text-[var(--ink)]">{"\u20B1"}{Number(rideData.amount || 0).toFixed(2)}</span>
                       </span>
                     </div>
                     <div className="flex items-center justify-between gap-2 border-t border-[var(--border)] pt-1.5">
