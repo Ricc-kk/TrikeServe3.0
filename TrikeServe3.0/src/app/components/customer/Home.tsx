@@ -3793,7 +3793,7 @@ const getPrice = () => {
           it as a full-screen background. */}
       {showMap && (
       <div className={isBookingPage && bookingStep === 'ride'
-        ? "relative h-[40vh] min-h-[260px] max-h-[420px] w-full shrink-0"
+        ? "relative mx-4 mt-4 h-[40vh] min-h-[260px] max-h-[420px] shrink-0 overflow-hidden rounded-[2rem] border border-line shadow-sm sm:mx-6 sm:mt-6 lg:mx-8"
         : "absolute inset-0"}>
         {!GOOGLE_MAPS_API_KEY ? (
           <div className="w-full h-full flex items-center justify-center bg-[var(--border)]">
@@ -4179,7 +4179,7 @@ const getPrice = () => {
               ? "relative z-[999] mx-auto w-full max-w-3xl flex-1 px-4 pt-4 pb-28"
               : "absolute bottom-20 left-0 right-0 z-[999] mx-auto max-w-3xl px-4"}>
             <Card className={isBookingPage && bookingStep === 'ride'
-              ? "gap-0 rounded-3xl bg-[var(--background)] shadow-2xl"
+              ? "gap-0 overflow-hidden rounded-[2rem] border-line bg-[var(--background)] shadow-xl"
               : "max-h-[calc(100vh-7rem)] gap-0 overflow-y-auto rounded-3xl bg-[var(--background)] shadow-2xl"}>
               {/* Step header â€” back control plus plain-language context */}
               <div className="sticky top-0 z-10 flex items-center gap-3 border-b border-line bg-[var(--background)] px-4 py-3">
