@@ -1,11 +1,14 @@
 import { ArrowRight, ShoppingCart } from "lucide-react";
 import { Link } from "react-router";
 
-import { useCart } from "../../contexts/CartContext";
+import { useCartOptional } from "../../contexts/CartContext";
 
 /** A compact reminder, without pushing the home feed behind a full cart list. */
 export default function CustomerCartPreview() {
-  const { cartRestaurants, getTotalItems } = useCart();
+  const cart = useCartOptional();
+  if (!cart) return null;
+
+  const { cartRestaurants, getTotalItems } = cart;
   const count = getTotalItems();
   if (count === 0) return null;
 

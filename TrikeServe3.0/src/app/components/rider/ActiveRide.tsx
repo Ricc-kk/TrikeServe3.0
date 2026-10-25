@@ -333,6 +333,34 @@ function routeSlice(path: RideCoordinate[], startDistance: number, endDistance: 
   return result;
 }
 
+/** Start at the driver's live position, join the selected terminal road, and
+ * follow it to the passenger's drop-off. */
+function buildPrivateTerminalRoutePath(
+  currentLocation: RideCoordinate,
+  dropoff: RideCoordinate,
+  selectedRoute: TerminalRoute | null,
+): RideCoordinate[] {
+  const path = selectedRoute?.points || [];
+  if (path.length < 2) return [];
+
+  const currentProjection = projectOntoRoute(currentLocation, path);
+  const dropoffProjection = projectOntoRoute(dropoff, path);
+  if (!currentProjection || !dropoffProjection) return [];
+
+  const terminalSegment = routeSlice(
+    path,
+    currentProjection.distanceAlong,
+    dropoffProjection.distanceAlong,
+  );
+  const route: RideCoordinate[] = [];
+  [currentLocation, ...terminalSegment, dropoff].forEach(point => {
+    if (!route.length || distanceInMeters(route[route.length - 1], point) > 1) {
+      route.push(point);
+    }
+  });
+  return route;
+}
+
 function pointAtRouteDistance(
   path: RideCoordinate[],
   cumulative: number[],
@@ -474,6 +502,7 @@ export default function ActiveRide() {
   const [routePath, setRoutePath] = useState<google.maps.LatLngLiteral[] | null>(null);
   const [sharedDropoffRoutes, setSharedDropoffRoutes] = useState<SharedDropoffRoute[]>([]);
   const [sharedTerminalRoute, setSharedTerminalRoute] = useState<TerminalRoute | null>(null);
+  const [privateTerminalRoute, setPrivateTerminalRoute] = useState<TerminalRoute | null>(null);
   const [mapCenter, setMapCenter] = useState<{ lat: number; lng: number }>({ lat: 14.6037, lng: 120.9793 });
   // Whether the camera is locked to the driver. Defaults on so the opening view is
   // the driver, and turns off by itself the first time they pan or zoom.
@@ -1351,6 +1380,83 @@ export default function ActiveRide() {
     rideData?.dropoffLng,
   ]);
 
+  // Private passengers travel along the terminal route they booked. Requests
+  // from older clients may not carry a route id, so match the route that
+  // contains the passenger's drop-off point.
+  useEffect(() => {
+    if (!rideData || !isPrivateRide || rideData.status === 'completed') {
+      setPrivateTerminalRoute(null);
+      return;
+    }
+
+    let cancelled = false;
+    const loadPrivateTerminalRoute = async () => {
+      const terminalId = rideData.terminalId || user?.terminalId || null;
+      if (!terminalId) {
+        setPrivateTerminalRoute(null);
+        return;
+      }
+
+      const { data: terminal, error } = await supabase
+        .from('terminals')
+        .select('routes, boundary_polygon, road_width_m')
+        .eq('id', terminalId)
+        .maybeSingle();
+      if (cancelled) return;
+      if (error || !terminal) {
+        setPrivateTerminalRoute(null);
+        return;
+      }
+
+      const storedRoutes = normalizeTerminalRoutes(terminal.routes);
+      const routes = (storedRoutes.length > 0
+        ? storedRoutes
+        : legacyRouteFromBoundary(terminal.boundary_polygon, terminal.road_width_m))
+        .filter(route => route.points.length >= 2);
+      const requestedRouteId = rideData.selectedRouteId;
+      const requestedRoute = requestedRouteId
+        ? routes.find(route => route.id === requestedRouteId) || null
+        : null;
+      const dropoff = coordinateFromValues(rideData.dropoffLat, rideData.dropoffLng);
+      const matchingRoute = dropoff
+        ? routes.find(route => route.enabled && isPointOnRoadCorridor(
+            dropoff.lat,
+            dropoff.lng,
+            route.points,
+            route.buffer_m,
+          )) || routes.find(route => isPointOnRoadCorridor(
+            dropoff.lat,
+            dropoff.lng,
+            route.points,
+            route.buffer_m,
+          )) || null
+        : null;
+
+      setPrivateTerminalRoute(
+        requestedRoute
+        || matchingRoute
+        || (!dropoff ? routes.find(route => route.enabled) || routes[0] || null : null),
+      );
+    };
+
+    void loadPrivateTerminalRoute().catch(error => {
+      if (!cancelled) {
+        console.warn('[ActiveRide] Could not load private terminal route:', error);
+        setPrivateTerminalRoute(null);
+      }
+    });
+    return () => { cancelled = true; };
+  }, [
+    rideData?.id,
+    rideData?.terminalId,
+    rideData?.selectedRouteId,
+    rideData?.dropoffLat,
+    rideData?.dropoffLng,
+    rideData?.status,
+    isPrivateRide,
+    user?.terminalId,
+  ]);
+
   // A shared ride has one colored road segment for each passenger stop. Route the
   // ordered itinerary on the selected terminal road, so every segment keeps the
   // color of the passenger who gets off at its end.
@@ -1375,6 +1481,36 @@ export default function ActiveRide() {
     sharedTerminalRoute,
     driverLocation?.lat,
     driverLocation?.lng,
+  ]);
+
+  const privateTerminalDropoffPath = useMemo(() => {
+    if (
+      !rideData ||
+      !isPrivateRide ||
+      isHeadingToPickup ||
+      rideData.status === 'completed' ||
+      !driverLocation ||
+      rideData.dropoffLat == null ||
+      rideData.dropoffLng == null
+    ) {
+      return [];
+    }
+
+    return buildPrivateTerminalRoutePath(
+      driverLocation,
+      { lat: Number(rideData.dropoffLat), lng: Number(rideData.dropoffLng) },
+      privateTerminalRoute,
+    );
+  }, [
+    rideData?.id,
+    rideData?.status,
+    rideData?.dropoffLat,
+    rideData?.dropoffLng,
+    isPrivateRide,
+    isHeadingToPickup,
+    driverLocation?.lat,
+    driverLocation?.lng,
+    privateTerminalRoute,
   ]);
 
   // For delivery rides: geocode the restaurant pickup address if lat/lng are missing
@@ -1423,6 +1559,14 @@ export default function ActiveRide() {
       routePhaseRef.current = phaseKey;
       setDirections(null);
       setRoutePath(null);
+    }
+
+    if (isPrivateRide && !isHeadingToPickup) {
+      // The private drop-off leg is drawn from the driver's live GPS position
+      // along the selected terminal route below, not from Google Directions.
+      setDirections(null);
+      setRoutePath(null);
+      return;
     }
 
     let cancelled = false;
@@ -1523,7 +1667,7 @@ export default function ActiveRide() {
       cancelled = true;
       window.clearTimeout(routeTimer);
     };
-  }, [rideData?.id, rideData?.status, rideData?.pickupLat, rideData?.pickupLng, rideData?.dropoffLat, rideData?.dropoffLng, isMapsLoaded, isHeadingToPickup, isSharedRide]);
+  }, [rideData?.id, rideData?.status, rideData?.pickupLat, rideData?.pickupLng, rideData?.dropoffLat, rideData?.dropoffLng, isMapsLoaded, isHeadingToPickup, isSharedRide, isPrivateRide]);
 
   // Match the accept-preview map: zoom to the road route once for each leg so
   // the route is in view when the rider enters the restaurant or customer phase.
@@ -1535,11 +1679,13 @@ export default function ActiveRide() {
     const phaseKey = `${rideData.id}:${isHeadingToPickup ? 'restaurant' : 'customer'}`;
     if (fittedRoutePhaseRef.current === phaseKey) return;
 
-    const routePoints = isSharedRide && !isHeadingToPickup
-      ? sharedDropoffRoutes.flatMap(route => route.path)
-      : routePath
-        || directions?.routes?.[0]?.overview_path?.map(point => ({ lat: point.lat(), lng: point.lng() }))
-        || sharedDropoffRoutes.flatMap(route => route.path);
+    const routePoints = isPrivateRide && !isHeadingToPickup
+      ? privateTerminalDropoffPath
+      : isSharedRide && !isHeadingToPickup
+        ? sharedDropoffRoutes.flatMap(route => route.path)
+        : routePath
+          || directions?.routes?.[0]?.overview_path?.map(point => ({ lat: point.lat(), lng: point.lng() }))
+          || sharedDropoffRoutes.flatMap(route => route.path);
     if (routePoints.length < 2) return;
 
     const bounds = new (window as any).google.maps.LatLngBounds();
@@ -1549,7 +1695,7 @@ export default function ActiveRide() {
     map.fitBounds(bounds, 48);
     window.clearTimeout(mapMoveTimeoutRef.current);
     mapMoveTimeoutRef.current = window.setTimeout(() => { mapMoveRef.current = false; }, 1000);
-  }, [directions, routePath, sharedDropoffRoutes, rideData?.id, isHeadingToPickup, isSharedRide]);
+  }, [directions, routePath, sharedDropoffRoutes, privateTerminalDropoffPath, rideData?.id, isHeadingToPickup, isSharedRide, isPrivateRide]);
 
   const reportCategories = rideData && isDeliveryRide(rideData)
     ? DELIVERY_REPORT_CATEGORIES
@@ -2759,8 +2905,22 @@ export default function ActiveRide() {
               />
             ))}
 
+            {/* After pickup, move the private drop-off path with the tricycle
+                while keeping it on the selected terminal road. */}
+            {isPrivateRide && !isHeadingToPickup && privateTerminalDropoffPath.length > 1 && (
+              <Polyline
+                path={privateTerminalDropoffPath}
+                options={{
+                  strokeColor: RIDE_MAP_DROPOFF_COLOR,
+                  strokeWeight: 6,
+                  strokeOpacity: 0.9,
+                  zIndex: 20,
+                }}
+              />
+            )}
+
             {/* Road route for the current leg from Routes API. */}
-            {routePath && (!isSharedRide || isHeadingToPickup) && (
+            {routePath && (!isSharedRide || isHeadingToPickup) && (!isPrivateRide || isHeadingToPickup) && (
               <Polyline
                 path={routePath}
                 options={{
@@ -2773,7 +2933,7 @@ export default function ActiveRide() {
             )}
 
             {/* Legacy Directions service fallback route line. */}
-            {directions && (!isSharedRide || isHeadingToPickup) && (
+            {directions && (!isSharedRide || isHeadingToPickup) && (!isPrivateRide || isHeadingToPickup) && (
               <DirectionsRenderer
                 directions={directions}
                 options={{
@@ -2797,7 +2957,7 @@ export default function ActiveRide() {
             {/* Straight-line fallback. If both road-routing APIs fail while the
                 destination coordinates are known, keep a visible line toward
                 the active destination until a road route can be loaded. */}
-            {!directions && !routePath && driverLocation && (!isSharedRide || isHeadingToPickup) && (() => {
+            {!directions && !routePath && driverLocation && (!isSharedRide || isHeadingToPickup) && (!isPrivateRide || isHeadingToPickup) && (() => {
               const dest = isHeadingToPickup
                 ? (rideData.pickupLat != null && rideData.pickupLng != null
                     ? { lat: Number(rideData.pickupLat), lng: Number(rideData.pickupLng) }

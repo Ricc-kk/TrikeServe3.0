@@ -1,7 +1,7 @@
 import { UtensilsCrossed } from "lucide-react";
 
 import { TerminalIconGlyph } from "../ui/TerminalIcon";
-import { useCart } from "../../contexts/CartContext";
+import { useCartOptional } from "../../contexts/CartContext";
 
 type CustomerServiceHubProps = {
   /** Enters the existing booking flow at its first step. */
@@ -31,8 +31,8 @@ export default function CustomerServiceHub({
   onOrderFood,
   serviceArea = "Gen. T. de Leon",
 }: CustomerServiceHubProps) {
-  const { getTotalItems } = useCart();
-  const cartCount = getTotalItems();
+  const cart = useCartOptional();
+  const cartCount = cart?.getTotalItems() ?? 0;
 
   return (
     <section
