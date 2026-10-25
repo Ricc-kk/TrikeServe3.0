@@ -339,6 +339,7 @@ function buildPrivateTerminalRoutePath(
   currentLocation: RideCoordinate,
   dropoff: RideCoordinate,
   selectedRoute: TerminalRoute | null,
+  driverToRoutePath: RideCoordinate[] | null,
 ): RideCoordinate[] {
   const path = selectedRoute?.points || [];
   if (path.length < 2) return [];
@@ -347,13 +348,33 @@ function buildPrivateTerminalRoutePath(
   const dropoffProjection = projectOntoRoute(dropoff, path);
   if (!currentProjection || !dropoffProjection) return [];
 
+  // If the driver is still off the selected terminal road, connect to the
+  // plotted route along the road geometry returned for the approach leg. Do not
+  // draw a straight line from GPS to the terminal route when directions are not
+  // available; the route itself remains visible from the road join point.
+  let approachPath: RideCoordinate[] = [];
+  let terminalRouteStart = currentProjection;
+  if (currentProjection.distanceFromRoute > 20 && driverToRoutePath?.length && driverToRoutePath.length > 1) {
+    const currentOnApproach = projectOntoRoute(currentLocation, driverToRoutePath);
+    if (currentOnApproach && currentOnApproach.distanceFromRoute <= 75) {
+      const approachDistances = cumulativePathDistances(driverToRoutePath);
+      approachPath = routeSlice(
+        driverToRoutePath,
+        currentOnApproach.distanceAlong,
+        approachDistances[approachDistances.length - 1],
+      );
+      const routeJoin = projectOntoRoute(driverToRoutePath[driverToRoutePath.length - 1], path);
+      if (routeJoin) terminalRouteStart = routeJoin;
+    }
+  }
+
   const terminalSegment = routeSlice(
     path,
-    currentProjection.distanceAlong,
+    terminalRouteStart.distanceAlong,
     dropoffProjection.distanceAlong,
   );
   const route: RideCoordinate[] = [];
-  [currentLocation, ...terminalSegment, dropoff].forEach(point => {
+  [...approachPath, ...terminalSegment, dropoff].forEach(point => {
     if (!route.length || distanceInMeters(route[route.length - 1], point) > 1) {
       route.push(point);
     }
@@ -503,6 +524,7 @@ export default function ActiveRide() {
   const [sharedDropoffRoutes, setSharedDropoffRoutes] = useState<SharedDropoffRoute[]>([]);
   const [sharedTerminalRoute, setSharedTerminalRoute] = useState<TerminalRoute | null>(null);
   const [privateTerminalRoute, setPrivateTerminalRoute] = useState<TerminalRoute | null>(null);
+  const [privateDriverToRoutePath, setPrivateDriverToRoutePath] = useState<RideCoordinate[] | null>(null);
   const [mapCenter, setMapCenter] = useState<{ lat: number; lng: number }>({ lat: 14.6037, lng: 120.9793 });
   // Whether the camera is locked to the driver. Defaults on so the opening view is
   // the driver, and turns off by itself the first time they pan or zoom.
@@ -1494,6 +1516,134 @@ export default function ActiveRide() {
     driverLocation?.lng,
   ]);
 
+  // After pickup, route only the short off-route approach from the live driver
+  // position to the selected terminal road. The terminal-road-to-drop-off leg
+  // continues to use the terminal's own plotted geometry below.
+  useEffect(() => {
+    if (
+      !rideData ||
+      !isPrivateRide ||
+      isHeadingToPickup ||
+      rideData.status === 'completed' ||
+      !privateTerminalRoute ||
+      privateTerminalRoute.points.length < 2 ||
+      !isMapsLoaded ||
+      !(window as any).google?.maps
+    ) {
+      setPrivateDriverToRoutePath(null);
+      return;
+    }
+
+    let cancelled = false;
+    let inFlight = false;
+    let routeTimer: number | undefined;
+
+    const scheduleNext = (delay = 12000) => {
+      if (cancelled) return;
+      routeTimer = window.setTimeout(() => { void calculateApproachRoute(); }, delay);
+    };
+
+    const calculateApproachRoute = async () => {
+      if (cancelled || inFlight) return;
+      const origin = driverLocationRef.current;
+      if (!origin) {
+        scheduleNext(1500);
+        return;
+      }
+
+      const routeJoin = projectOntoRoute(origin, privateTerminalRoute.points);
+      if (!routeJoin) {
+        setPrivateDriverToRoutePath(null);
+        scheduleNext();
+        return;
+      }
+
+      // GPS may sit a few metres beside the drawn route even while the driver is
+      // already on that road. In that case use the local terminal line directly.
+      if (routeJoin.distanceFromRoute <= 20) {
+        setPrivateDriverToRoutePath(null);
+        scheduleNext();
+        return;
+      }
+
+      inFlight = true;
+      try {
+        let roadPath: RideCoordinate[] = [];
+        const apiKey = import.meta.env.VITE_GOOGLE_MAPS_API_KEY || '';
+        if (apiKey) {
+          try {
+            const response = await fetch(`https://routes.googleapis.com/directions/v2:computeRoutes?key=${apiKey}`, {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                'X-Goog-FieldMask': 'routes.polyline.encodedPolyline',
+              },
+              body: JSON.stringify({
+                origin: { location: { latLng: { latitude: origin.lat, longitude: origin.lng } } },
+                destination: {
+                  location: {
+                    latLng: {
+                      latitude: routeJoin.point.lat,
+                      longitude: routeJoin.point.lng,
+                    },
+                  },
+                },
+                travelMode: 'DRIVE',
+                computeAlternativeRoutes: false,
+              }),
+            });
+            const data = await response.json();
+            const encoded = response.ok ? data.routes?.[0]?.polyline?.encodedPolyline : null;
+            roadPath = encoded ? decodeRoutePolyline(encoded) : [];
+          } catch (error) {
+            console.warn('[ActiveRide] Road route to terminal route failed:', error);
+          }
+        }
+
+        // The road service is only used for the driver's approach to the
+        // terminal's plotted route. It never replaces the terminal route to the
+        // passenger's drop-off.
+        if (roadPath.length < 2) {
+          const result = await new Promise<{ result: any; status: string }>(resolve => {
+            const DirectionsService = new (window as any).google.maps.DirectionsService();
+            DirectionsService.route({
+              origin: new (window as any).google.maps.LatLng(origin.lat, origin.lng),
+              destination: new (window as any).google.maps.LatLng(routeJoin.point.lat, routeJoin.point.lng),
+              travelMode: (window as any).google.maps.TravelMode.DRIVING,
+            }, (directionsResult: any, status: string) => resolve({ result: directionsResult, status }));
+          });
+          if (result.status === 'OK') {
+            roadPath = (result.result.routes?.[0]?.overview_path || [])
+              .map((point: any) => ({ lat: point.lat(), lng: point.lng() }));
+          }
+        }
+
+        if (!cancelled) setPrivateDriverToRoutePath(roadPath.length > 1 ? roadPath : null);
+      } catch (error) {
+        if (!cancelled) {
+          setPrivateDriverToRoutePath(null);
+          console.warn('[ActiveRide] Could not route driver to terminal road:', error);
+        }
+      } finally {
+        inFlight = false;
+        scheduleNext();
+      }
+    };
+
+    void calculateApproachRoute();
+    return () => {
+      cancelled = true;
+      window.clearTimeout(routeTimer);
+    };
+  }, [
+    rideData?.id,
+    rideData?.status,
+    isPrivateRide,
+    isHeadingToPickup,
+    isMapsLoaded,
+    privateTerminalRoute,
+  ]);
+
   const privateTerminalDropoffPath = useMemo(() => {
     if (
       !rideData ||
@@ -1511,6 +1661,7 @@ export default function ActiveRide() {
       driverLocation,
       { lat: Number(rideData.dropoffLat), lng: Number(rideData.dropoffLng) },
       privateTerminalRoute,
+      privateDriverToRoutePath,
     );
   }, [
     rideData?.id,
@@ -1522,6 +1673,7 @@ export default function ActiveRide() {
     driverLocation?.lat,
     driverLocation?.lng,
     privateTerminalRoute,
+    privateDriverToRoutePath,
   ]);
 
   // For delivery rides: geocode the restaurant pickup address if lat/lng are missing
