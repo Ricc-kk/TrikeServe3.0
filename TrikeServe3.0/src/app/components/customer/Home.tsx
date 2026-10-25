@@ -426,7 +426,7 @@ export default function CustomerHome() {
   const [enforceBoundary] = useDevModeOverride("enforceBoundary");
   const navigate = useNavigate();
   const location = useLocation();
-  const isBookingPage = location.pathname === '/customer/book-ride';
+  const isBookingPage = location.pathname.replace(/\/+$/, '') === '/customer/book-ride';
   const navigationState = location.state as { selectedPickupTerminalId?: string; customerHomeTab?: boolean } | null;
   const searchSelectedTerminalId = navigationState?.selectedPickupTerminalId;
   const cameFromCustomerHomeTab = navigationState?.customerHomeTab === true;
@@ -3732,6 +3732,7 @@ const getPrice = () => {
   // map visible throughout booking and ride tracking, hiding it only when Home
   // is explicitly selected or serves as the share lobby loading backdrop.
   const showMap = !showCustomerHomeHub;
+  const isRideOptionsBookingPage = isBookingPage && bookingStep === 'ride';
 
   /**
    * What the header shows above the search field once search is opened.
@@ -3792,9 +3793,14 @@ const getPrice = () => {
       {/* Keep the booking map above the ride options; other customer views use
           it as a full-screen background. */}
       {showMap && (
-      <div className={isBookingPage && bookingStep === 'ride'
-        ? "relative mx-4 mt-4 h-[40vh] min-h-[260px] max-h-[420px] shrink-0 overflow-hidden rounded-[2rem] border border-line shadow-sm sm:mx-6 sm:mt-6 lg:mx-8"
-        : "absolute inset-0"}>
+      <div
+        className={isRideOptionsBookingPage
+          ? "relative mx-4 mt-4 shrink-0 overflow-hidden rounded-[2rem] border border-line shadow-sm sm:mx-6 sm:mt-6 lg:mx-8"
+          : "absolute inset-0"}
+        style={isRideOptionsBookingPage
+          ? { position: 'relative', inset: 'auto', height: '40vh', minHeight: 260, maxHeight: 420, flexShrink: 0 }
+          : undefined}
+      >
         {!GOOGLE_MAPS_API_KEY ? (
           <div className="w-full h-full flex items-center justify-center bg-[var(--border)]">
             <div className="text-center">
@@ -4169,16 +4175,16 @@ const getPrice = () => {
         {/* Booking flow â€” Steps 2 & 3: ride type first, then pickup and drop-off */}
         {showBookingFlow && bookingStep !== 'home' && (
           <>
-            {!(isBookingPage && bookingStep === 'ride') && (
+            {!isRideOptionsBookingPage && (
               <div
                 className="pointer-events-none absolute inset-0 z-[998] bg-black/25"
                 aria-hidden="true"
               />
             )}
-            <div className={isBookingPage && bookingStep === 'ride'
-              ? "relative z-[999] mx-auto w-full max-w-3xl flex-1 px-4 pt-4 pb-28"
+            <div className={isRideOptionsBookingPage
+              ? "mx-auto w-full max-w-3xl px-4 pt-4 pb-28"
               : "absolute bottom-20 left-0 right-0 z-[999] mx-auto max-w-3xl px-4"}>
-            <Card className={isBookingPage && bookingStep === 'ride'
+            <Card className={isRideOptionsBookingPage
               ? "gap-0 overflow-hidden rounded-[2rem] border-line bg-[var(--background)] shadow-xl"
               : "max-h-[calc(100vh-7rem)] gap-0 overflow-y-auto rounded-3xl bg-[var(--background)] shadow-2xl"}>
               {/* Step header â€” back control plus plain-language context */}
