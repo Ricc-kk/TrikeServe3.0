@@ -207,6 +207,7 @@ function mapRideRequestToRiderRide(ride: any) {
     amount: Number(ride.amount || 0),
     customerId: ride.customer_id,
     terminalId: ride.terminal_id ?? null,
+    selectedRouteId: ride.route_id || ride.selected_route_id || null,
     passengerDetails: [],
     orderId: ride.order_id || undefined,
     orderNumber: ride.order_number || undefined,

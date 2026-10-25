@@ -152,6 +152,7 @@ interface PassengerRequest {
   }>;
   maxPassengers?: number;
   terminalId?: string | null;
+  selectedRouteId?: string | null;
 }
 
 interface PassengerDropoffStop {
@@ -498,6 +499,8 @@ export default function PassengerRequests() {
           estimatedTime: '7 mins',
           passengers: req.passenger_count || 1,
           customerId: req.customer_id,
+          terminalId: req.terminal_id ?? null,
+          selectedRouteId: req.route_id || req.selected_route_id || null,
           ...parseDeliveryTag(req.pickup_location),
           orderId: requestOrderId,
           restaurantPackagePhotoUrl: order?.restaurant_package_photo_url || undefined,

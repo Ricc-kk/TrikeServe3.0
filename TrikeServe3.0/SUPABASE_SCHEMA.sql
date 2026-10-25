@@ -46,6 +46,7 @@ CREATE TABLE IF NOT EXISTS ride_requests (
   dropoff_location VARCHAR(255) NOT NULL,
   status VARCHAR(50) NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'accepted', 'in_progress', 'completed', 'cancelled')),
   ride_type VARCHAR(50) NOT NULL CHECK (ride_type IN ('share', 'special')),
+  route_id TEXT,
   payment_method VARCHAR(50) NOT NULL CHECK (payment_method IN ('COD', 'GCASH')),
   amount DECIMAL(10, 2) NOT NULL,
   passenger_count INTEGER NOT NULL DEFAULT 1,

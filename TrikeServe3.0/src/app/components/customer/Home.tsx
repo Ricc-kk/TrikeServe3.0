@@ -3200,6 +3200,7 @@ export default function CustomerHome() {
            status: 'pending',
            ride_type: 'special',
            terminal_id: selectedTerminalId || null,
+           route_id: selectedTerminalBoundary.selectedRoute?.id || null,
            payment_method: paymentMethod === 'GCASH' ? 'GCASH' : 'COD',
            amount: fareAmount,
            passenger_count: passengerCount,

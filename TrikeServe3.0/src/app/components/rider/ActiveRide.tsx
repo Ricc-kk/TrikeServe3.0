@@ -1418,18 +1418,29 @@ export default function ActiveRide() {
         ? routes.find(route => route.id === requestedRouteId) || null
         : null;
       const dropoff = coordinateFromValues(rideData.dropoffLat, rideData.dropoffLng);
+      const pickup = coordinateFromValues(rideData.pickupLat, rideData.pickupLng);
       const matchingRoute = dropoff
-        ? routes.find(route => route.enabled && isPointOnRoadCorridor(
-            dropoff.lat,
-            dropoff.lng,
-            route.points,
-            route.buffer_m,
-          )) || routes.find(route => isPointOnRoadCorridor(
-            dropoff.lat,
-            dropoff.lng,
-            route.points,
-            route.buffer_m,
-          )) || null
+        ? routes
+            .map(route => ({
+              route,
+              matchesDropoff: isPointOnRoadCorridor(
+                dropoff.lat,
+                dropoff.lng,
+                route.points,
+                route.buffer_m,
+              ),
+              matchesPickup: Boolean(pickup && isPointOnRoadCorridor(
+                pickup.lat,
+                pickup.lng,
+                route.points,
+                route.buffer_m,
+              )),
+            }))
+            .filter(candidate => candidate.matchesDropoff)
+            .sort((a, b) =>
+              Number(b.matchesPickup) - Number(a.matchesPickup)
+              || Number(b.route.enabled) - Number(a.route.enabled),
+            )[0]?.route || null
         : null;
 
       setPrivateTerminalRoute(
