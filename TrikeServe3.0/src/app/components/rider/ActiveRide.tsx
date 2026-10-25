@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { useNavigate, useLocation } from "react-router";
-import { Navigation, MapPin, CheckCircle, Users, User, X, MessageSquare, Flag, ChevronDown, ChevronUp, CreditCard } from "lucide-react";
+import { Navigation, MapPin, CheckCircle, X, MessageSquare, Flag, ChevronDown, ChevronUp, CreditCard } from "lucide-react";
 import { GoogleMap, Marker, InfoWindow, DirectionsRenderer, Polyline } from "@react-google-maps/api";
 import MapTypeToggle from "../ui/MapTypeToggle";
 import { Button } from "../ui/button";
@@ -27,6 +27,7 @@ import { legacyRouteFromBoundary, normalizeTerminalRoutes, type TerminalRoute } 
 import { DEFAULT_TERMINAL_COLOR, normalizeTerminalColor, terminalMarkerIcon } from "../ui/TerminalIcon";
 import PassengerMessagingDB from "./PassengerMessagingDB";
 import { useDevModeOverride } from "../../hooks/useDevModeSettings";
+import { getProfileInitials } from "@/lib/profileInitials";
 
 type RideStatus = 'on-the-way' | 'arrived' | 'pickup' | 'drop-off' | 'payment';
 
@@ -2899,13 +2900,11 @@ export default function ActiveRide() {
       ) && (
         <RideModal labelledBy="rider-payment-title" zIndexClassName="z-[4200]" contentClassName="text-left sm:p-6">
             <div className="mb-5 flex items-center gap-3">
-              <span className="grid size-12 shrink-0 place-items-center overflow-hidden rounded-full border border-[var(--border)] bg-[var(--primary-soft)] text-lg">
+              <span className="grid size-12 shrink-0 place-items-center overflow-hidden rounded-full border border-[var(--border)] bg-[var(--primary-soft)] text-lg font-bold text-[var(--primary)]">
                 {paymentPassengerPhoto ? (
                   <img src={paymentPassengerPhoto} alt={`${paymentPassengerName || 'Passenger'}’s profile`} className="size-full object-cover" />
-                ) : isSharedRide && sharedPaymentPassenger?.emoji ? (
-                  sharedPaymentPassenger.emoji
                 ) : (
-                  <User className="size-5 text-[var(--primary)]" aria-hidden="true" />
+                  getProfileInitials(paymentPassengerName)
                 )}
               </span>
               <div className="min-w-0 flex-1">
@@ -3312,29 +3311,27 @@ export default function ActiveRide() {
                     <span
                       key={passengerId}
                       title={displayName}
-                      className="-ml-2 grid size-8 place-items-center overflow-hidden rounded-full border-2 border-[var(--surface)] bg-[var(--primary-soft)] text-sm first:ml-0"
+                      className="-ml-2 grid size-8 place-items-center overflow-hidden rounded-full border-2 border-[var(--surface)] bg-[var(--primary-soft)] text-sm font-semibold text-[var(--primary)] first:ml-0"
                     >
                       {profileUrl ? (
                         <img src={profileUrl} alt={`${displayName}'s profile`} className="size-full object-cover" />
                       ) : (
-                        passenger.emoji || <User className="size-4 text-[var(--primary)]" aria-hidden="true" />
+                        getProfileInitials(displayName)
                       )}
                     </span>
                   );
                 })}
               </div>
             ) : (
-              <div className="size-11 flex-shrink-0 overflow-hidden rounded-full bg-[var(--primary-soft)] flex items-center justify-center">
+              <div className="size-11 flex-shrink-0 overflow-hidden rounded-full bg-[var(--primary-soft)] flex items-center justify-center text-lg font-bold text-[var(--primary)]">
                 {passengerAvatar ? (
                   <img
                     src={passengerAvatar}
                     alt={`${customerDisplayName}'s profile`}
                     className="w-full h-full object-cover"
                   />
-                ) : rideData.customerPhoto === 'shared' ? (
-                  <Users className="w-5 h-5 text-[var(--primary)]" aria-hidden="true" />
                 ) : (
-                  <User className="w-5 h-5 text-[var(--primary)]" aria-hidden="true" />
+                  getProfileInitials(customerDisplayName)
                 )}
               </div>
             )}
@@ -3384,17 +3381,15 @@ export default function ActiveRide() {
               {!isPrivateRide && (
               <div className={`flex items-start gap-4 ${isSharedRide ? 'mb-0' : 'mb-3'}`}>
                 {!isSharedRide && (
-                  <div className="size-14 flex-shrink-0 overflow-hidden rounded-full bg-[var(--primary-soft)] flex items-center justify-center">
+                  <div className="size-14 flex-shrink-0 overflow-hidden rounded-full bg-[var(--primary-soft)] flex items-center justify-center text-xl font-bold text-[var(--primary)]">
                     {passengerAvatar ? (
                       <img
                         src={passengerAvatar}
                         alt={`${customerDisplayName}'s profile`}
                         className="w-full h-full object-cover"
                       />
-                    ) : rideData.customerPhoto === 'shared' ? (
-                      <Users className="w-6 h-6 text-[var(--primary)]" aria-hidden="true" />
                     ) : (
-                      <User className="w-6 h-6 text-[var(--primary)]" aria-hidden="true" />
+                      getProfileInitials(customerDisplayName)
                     )}
                   </div>
                 )}
@@ -3416,11 +3411,11 @@ export default function ActiveRide() {
                           <RideSurfaceCard key={passengerId} className="gap-2 rounded-xl bg-[var(--surface)] p-2">
                             <div className="flex items-center justify-between gap-2">
                               <span className="flex min-w-0 items-center gap-1.5">
-                                <span className="grid size-8 shrink-0 place-items-center overflow-hidden rounded-full border border-[var(--border)] bg-[var(--primary-soft)] text-sm">
+                                <span className="grid size-8 shrink-0 place-items-center overflow-hidden rounded-full border border-[var(--border)] bg-[var(--primary-soft)] text-sm font-semibold text-[var(--primary)]">
                                   {profileUrl ? (
                                     <img src={profileUrl} alt={`${passengerName}'s profile`} className="size-full object-cover" />
                                   ) : (
-                                    p.emoji || <User className="size-4 text-[var(--primary)]" aria-hidden="true" />
+                                    getProfileInitials(passengerName)
                                   )}
                                 </span>
                                 {stop && <span className="size-2 shrink-0 rounded-full" style={{ background: stop.color }} aria-hidden="true" />}
@@ -3495,11 +3490,11 @@ export default function ActiveRide() {
                     <RideSurfaceCard className="gap-2 rounded-xl bg-[var(--surface)] p-2">
                     <div className="flex items-center justify-between gap-2">
                       <span className="flex min-w-0 items-center gap-1.5">
-                        <span className="grid size-8 shrink-0 place-items-center overflow-hidden rounded-full border border-[var(--border)] bg-[var(--primary-soft)] text-sm">
+                        <span className="grid size-8 shrink-0 place-items-center overflow-hidden rounded-full border border-[var(--border)] bg-[var(--primary-soft)] text-sm font-semibold text-[var(--primary)]">
                           {passengerAvatar ? (
                             <img src={passengerAvatar} alt={`${customerDisplayName}'s profile`} className="size-full object-cover" />
                           ) : (
-                            <User className="size-4 text-[var(--primary)]" aria-hidden="true" />
+                            getProfileInitials(customerDisplayName)
                           )}
                         </span>
                         <span className="min-w-0 flex-1">

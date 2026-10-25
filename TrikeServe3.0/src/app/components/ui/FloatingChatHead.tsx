@@ -262,6 +262,7 @@ export default function FloatingChatHead({
   const [placed2, setPlaced2] = useState(false);
   const [viewportWidth, setViewportWidth] = useState(0);
   const [mountRetry, setMountRetry] = useState(0);
+  const [isPointerDown, setIsPointerDown] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
   const [isOverCloseTarget, setIsOverCloseTarget] = useState(false);
   const [dismissed, setDismissed] = useState(() => {
@@ -595,7 +596,7 @@ export default function FloatingChatHead({
 
   useEffect(() => {
     const stackHeads = stackHeadRefs.current.slice(0, visibleStackItems.length);
-    if (!isDragging || hidden) {
+    if ((!isPointerDown && !isDragging) || hidden) {
       stackHeads.forEach((el) => el?.getAnimations().forEach((animation) => animation.cancel()));
       return;
     }
@@ -611,7 +612,7 @@ export default function FloatingChatHead({
         { duration: 190, delay: index * 35, easing: 'ease-out' },
       );
     });
-  }, [hidden, isDragging, placed2, side, stackAnimationKey, visibleStackItems.length]);
+  }, [hidden, isDragging, isPointerDown, placed2, side, stackAnimationKey, visibleStackItems.length]);
 
   const onPointerDown = useCallback((e: React.PointerEvent<HTMLButtonElement>) => {
     const el = headRef.current;
@@ -622,6 +623,7 @@ export default function FloatingChatHead({
     const dragHistory: DragPositionSample[] = [{ ...pos.current, time: performance.now() }];
     pointerCleanupRef.current?.();
     moved.current = false;
+    setIsPointerDown(true);
     setIsDragging(false);
     setIsOverCloseTarget(false);
     const rect = el.getBoundingClientRect();
@@ -700,6 +702,7 @@ export default function FloatingChatHead({
       const shouldDismiss = moved.current && isOnCloseTarget(pos.current.x, pos.current.y, w, h);
       drag.current = null;
       cleanup();
+      setIsPointerDown(false);
       setIsDragging(false);
       setIsOverCloseTarget(false);
 
@@ -724,6 +727,7 @@ export default function FloatingChatHead({
       if (!drag.current || ev.pointerId !== pointerId) return;
       drag.current = null;
       cleanup();
+      setIsPointerDown(false);
       setIsDragging(false);
       setIsOverCloseTarget(false);
       snapToEdge();
@@ -792,7 +796,7 @@ export default function FloatingChatHead({
             left: (stackSide === 'right' ? -1 : 1) *
               (showStackItems ? CHAT_HEAD_SIZE + CHAT_HEAD_ROW_GAP : STACK_PEEK) * (index + 1),
             top: 0,
-            opacity: showStackItems || isDragging ? 1 : 0,
+            opacity: showStackItems || isPointerDown || isDragging ? 1 : 0,
             pointerEvents: isHidden || (!showStackItems && !isDragging) ? 'none' : 'auto',
             zIndex: visibleStackItems.length - index,
           }}

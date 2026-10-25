@@ -173,7 +173,9 @@ export default function AccountManagement() {
             </div>
             <div className="flex items-center gap-3 mt-3">
               <div className="w-16 h-16 rounded-full bg-[var(--primary)] flex items-center justify-center text-3xl">
-                {activeProfile.emoji}
+                {activeProfile.isPrimary
+                  ? getProfileInitials(activeProfile.name, activeProfile.email)
+                  : activeProfile.emoji}
               </div>
               <div className="flex-1">
                 <h3 className="text-lg font-bold text-[var(--ink)]">{activeProfile.name}</h3>
@@ -214,7 +216,7 @@ export default function AccountManagement() {
                     ? 'bg-[var(--primary)]'
                     : 'bg-[var(--border)]'
                 }`}>
-                  {profile.emoji}
+                  {profile.isPrimary ? getProfileInitials(profile.name, profile.email) : profile.emoji}
                 </div>
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2">
