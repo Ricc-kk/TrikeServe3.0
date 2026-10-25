@@ -3485,6 +3485,12 @@ export default function CustomerHome() {
     if (!activeMapTerminalId) return [];
     const terminalRoutes = mapTerminalRoutes.filter(route => route.terminalId === activeMapTerminalId);
 
+    // Keep the terminal's route network visible during a private ride. The
+    // active route is highlighted separately and the other routes are dimmed.
+    if ((isActivePrivateRidePage || isPrivateRide) && !isActiveShareRideMap) {
+      return terminalRoutes;
+    }
+
     // The minimized lobby leaves the Home map behind. Keep that map on the
     // lobby's actual route instead of drawing every route for the terminal.
     if (isActiveShareRideMap && !routePreviewTerminalId) {
@@ -3502,10 +3508,74 @@ export default function CustomerHome() {
     activeMapTerminalId,
     activeShareRideRoute,
     isActiveShareRideMap,
+    isActivePrivateRidePage,
+    isPrivateRide,
     isBookingPage,
     mapTerminalRoutes,
     routePreviewTerminalId,
     showAllBookingTerminals,
+    selectedTerminalRouteId,
+  ]);
+  const isPrivateRideMap = (isActivePrivateRidePage || isPrivateRide) && !isActiveShareRideMap;
+  const activePrivateRideRoute = useMemo(() => {
+    if (!isPrivateRideMap) return null;
+
+    const requestRouteId = String(
+      activeRideRequest?.route_id || activeRideRequest?.selected_route_id || '',
+    );
+    const requestRoute = requestRouteId
+      ? mapRoutesInView.find(route => route.id === requestRouteId || route.routeId === requestRouteId) || null
+      : null;
+    const requestDropoffLat = activeRideRequest?.dropoff_lat == null
+      ? Number.NaN
+      : Number(activeRideRequest.dropoff_lat);
+    const requestDropoffLng = activeRideRequest?.dropoff_lng == null
+      ? Number.NaN
+      : Number(activeRideRequest.dropoff_lng);
+    const privateRideDropoff = Number.isFinite(requestDropoffLat) && Number.isFinite(requestDropoffLng)
+      ? { lat: requestDropoffLat, lng: requestDropoffLng }
+      : dropoffCoords;
+    const isRouteForDropoff = (route: typeof mapRoutesInView[number]) => Boolean(
+      privateRideDropoff && isPointOnRoadCorridor(
+        privateRideDropoff.lat,
+        privateRideDropoff.lng,
+        route.points,
+        normalizeRoadWidth(route.bufferM),
+      )
+    );
+    const inMemorySelectedRoute = selectedTerminalId === activeMapTerminalId
+      ? mapRoutesInView.find(route => route.id === selectedTerminalRouteId) || null
+      : null;
+    const selectedRouteMatchesDropoff = inMemorySelectedRoute && (
+      !privateRideDropoff || isRouteForDropoff(inMemorySelectedRoute)
+    )
+      ? inMemorySelectedRoute
+      : null;
+    const routesMatchingDropoff = privateRideDropoff
+      ? mapRoutesInView.filter(isRouteForDropoff)
+      : [];
+    const routeForDropoff = routesMatchingDropoff.find(route => route.enabled && route.isPrimary)
+      || routesMatchingDropoff.find(route => route.enabled)
+      || routesMatchingDropoff.find(route => route.isPrimary)
+      || routesMatchingDropoff[0]
+      || null;
+
+    return requestRoute
+      || selectedRouteMatchesDropoff
+      || routeForDropoff
+      || (!privateRideDropoff
+        ? inMemorySelectedRoute || mapRoutesInView.find(route => route.isPrimary) || mapRoutesInView[0] || null
+        : null);
+  }, [
+    activeMapTerminalId,
+    activeRideRequest?.dropoff_lat,
+    activeRideRequest?.dropoff_lng,
+    activeRideRequest?.route_id,
+    activeRideRequest?.selected_route_id,
+    dropoffCoords,
+    isPrivateRideMap,
+    mapRoutesInView,
+    selectedTerminalId,
     selectedTerminalRouteId,
   ]);
   useEffect(() => {
@@ -4068,26 +4138,39 @@ const getPrice = () => {
               {mapRoutesInView.map(route => {
                 const isSelectedRoute = isActiveShareRideMap
                   ? route.id === (activeShareRideRoute?.id || selectedTerminalBoundary.selectedRoute?.id)
-                  : route.terminalId === activeMapTerminalId && (
-                      selectedTerminalId === activeMapTerminalId
-                        ? route.id === selectedTerminalBoundary.selectedRoute?.id
-                        : route.isPrimary
-                    );
+                  : isPrivateRideMap
+                    ? route.id === activePrivateRideRoute?.id
+                    : route.terminalId === activeMapTerminalId && (
+                        selectedTerminalId === activeMapTerminalId
+                          ? route.id === selectedTerminalBoundary.selectedRoute?.id
+                          : route.isPrimary
+                      );
                 const routeColor = route.terminalId === selectedTerminalId ? selectedTerminalRouteColor : route.color;
+                const routeOpacity = isPrivateRideMap && !isSelectedRoute
+                  ? route.enabled ? 0.12 : 0.06
+                  : isSelectedRoute ? 0.95 : route.enabled ? 0.82 : 0.38;
                 return (
                   <Fragment key={route.id}>
                     {isSelectedRoute && (
                       <Polyline
                         path={route.points}
-                        options={{ strokeColor: routeColor, strokeWeight: 10, strokeOpacity: 0.22, clickable: false, geodesic: true }}
+                        options={{
+                          strokeColor: routeColor,
+                          strokeWeight: 10,
+                          strokeOpacity: 0.22,
+                          zIndex: isPrivateRideMap ? 19 : 1,
+                          clickable: false,
+                          geodesic: true,
+                        }}
                       />
                     )}
                     <Polyline
                       path={route.points}
                       options={{
                         strokeColor: routeColor,
-                        strokeWeight: isSelectedRoute ? 4 : 5,
-                        strokeOpacity: isSelectedRoute ? 0.95 : route.enabled ? 0.82 : 0.38,
+                        strokeWeight: isSelectedRoute ? 4 : isPrivateRideMap ? 3 : 5,
+                        strokeOpacity: routeOpacity,
+                        zIndex: isPrivateRideMap ? (isSelectedRoute ? 20 : 1) : undefined,
                         clickable: false,
                         geodesic: true,
                       }}
@@ -4111,7 +4194,13 @@ const getPrice = () => {
 
               {/* Driver route polyline (real-time) */}
               {rideStateBelongsToCurrentUser && !isActiveShareRideMap && driverRoutePath.length > 0 && visibleRideStatus === 'driver-found' && (
-                <Polyline path={driverRoutePath} options={buildNavigationRouteOptions(RIDE_MAP_DRIVER_COLOR, 4)} />
+                <Polyline
+                  path={driverRoutePath}
+                  options={{
+                    ...buildNavigationRouteOptions(RIDE_MAP_DRIVER_COLOR, 4),
+                    zIndex: 1000,
+                  }}
+                />
               )}
 
               {/* Destination route polyline (pickup to dropoff) */}
