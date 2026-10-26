@@ -28,6 +28,7 @@ import { DEFAULT_TERMINAL_COLOR, normalizeTerminalColor, terminalMarkerIcon } fr
 import PassengerMessagingDB from "./PassengerMessagingDB";
 import { useDevModeOverride } from "../../hooks/useDevModeSettings";
 import { getProfileInitials } from "@/lib/profileInitials";
+import { backfillLegacySharedRidePassengerFares, sumSharedRidePassengerFares } from "@/lib/pricing";
 
 type RideStatus = 'on-the-way' | 'arrived' | 'pickup' | 'drop-off' | 'payment';
 
@@ -81,6 +82,7 @@ interface ActiveRideData {
   pickupAddress?: string;
   dropoffAddress?: string;
   lobbyId?: string;
+  passengers?: number;
   terminalId?: string | null;
   selectedRouteId?: string | null;
   passengerDetails?: any[];
@@ -689,6 +691,7 @@ export default function ActiveRide() {
   const [customerCancellation, setCustomerCancellation] = useState<{
     reason: string | null;
     cancelledBy: string | null;
+    passenger: { id: string; name: string; avatarUrl: string | null } | null;
   } | null>(null);
   const { isLoaded: isMapsLoaded } = useMapLoader();
 
@@ -2619,14 +2622,92 @@ export default function ActiveRide() {
     }
   };
 
-  // Watch for the customer cancelling the accepted ride. Lobbies manage their own
-  // lifecycle, so only private/delivery requests (which carry an id) are polled.
+  // Watch for a customer cancelling the accepted ride. A shared lobby has no
+  // ride_requests row, so its own status is the cancellation source of truth.
   useEffect(() => {
     const requestId = rideData?.id;
-    if (!requestId || rideData?.lobbyId || customerCancellation) return;
+    const lobbyId = rideData?.lobbyId;
+    if ((!requestId && !lobbyId) || customerCancellation) return;
 
     let cancelled = false;
     const checkForCancellation = async () => {
+      if (lobbyId) {
+        const { data } = await supabaseHelpers.getLobbyById(lobbyId);
+        if (cancelled || !data) return;
+
+        if (data.status !== 'cancelled') {
+          let storedPassengers: any[] = [];
+          if (Array.isArray(data.passengers_json)) {
+            storedPassengers = data.passengers_json;
+          } else if (typeof data.passengers_json === 'string') {
+            try {
+              const parsed = JSON.parse(data.passengers_json);
+              if (Array.isArray(parsed)) storedPassengers = parsed;
+            } catch {
+              storedPassengers = [];
+            }
+          }
+          const updatedPassengers = backfillLegacySharedRidePassengerFares(
+            storedPassengers,
+            Number(data.price_per_seat || 0),
+          );
+          if (
+            rideData?.lobbyId === lobbyId &&
+            JSON.stringify(rideData.passengerDetails || []) !== JSON.stringify(updatedPassengers)
+          ) {
+            const passengerNames = updatedPassengers.map((passenger: any) => passenger?.name).filter(Boolean);
+            const nextRide: ActiveRideData = {
+              ...rideData,
+              passengerDetails: updatedPassengers,
+              passengers: updatedPassengers.length,
+              customerName: passengerNames.join(', ') || 'Customer',
+              customerId: data.customer_id || rideData.customerId,
+              amount: sumSharedRidePassengerFares(updatedPassengers, Number(data.price_per_seat || 0)),
+              dropoff: data.dropoff_location || rideData.dropoff,
+              dropoffAddress: data.dropoff_address || rideData.dropoffAddress,
+              dropoffLat: data.dropoff_lat == null ? rideData.dropoffLat : Number(data.dropoff_lat),
+              dropoffLng: data.dropoff_lng == null ? rideData.dropoffLng : Number(data.dropoff_lng),
+            };
+            setRideData(nextRide);
+            writeRiderActiveRide(nextRide);
+          }
+          return;
+        }
+
+        const statusMessage = String(data.driver_status_message || '');
+        const reason = statusMessage.match(/Reason:\s*([\s\S]*)$/i)?.[1]?.trim() || null;
+        const cancelledBy = statusMessage.startsWith('The driver cancelled this shared ride.')
+          ? 'driver'
+          : 'customer';
+        const passengerId = String(data.customer_id || rideData.customerId || '');
+        const passenger = (rideData.passengerDetails || []).find((item: any) =>
+          passengerAccountId(item?.id) === passengerId,
+        );
+        const passengerName = String(passenger?.name || (
+          passengerId && passengerId === String(rideData.customerId || '')
+            ? resolvedName || rideData.customerName
+            : ''
+        ) || 'Passenger').trim();
+        const storedAvatar = typeof passenger?.avatar === 'string'
+          && (/^https?:\/\//i.test(passenger.avatar) || passenger.avatar.startsWith('data:image/'))
+          ? passenger.avatar
+          : null;
+        const primaryPassengerAvatar = passengerId === String(rideData.customerId || '') ? passengerAvatar : null;
+        clearRiderActiveRide();
+        syncRideResume(null);
+        setCustomerCancellation({
+          reason,
+          cancelledBy,
+          passenger: passengerId ? {
+            id: passengerId,
+            name: passengerName,
+            avatarUrl: passengerAvatars[passengerId] || storedAvatar || primaryPassengerAvatar,
+          } : null,
+        });
+        return;
+      }
+
+      if (!requestId) return;
       const { data } = await supabaseHelpers.getRideRequest(requestId);
       if (cancelled || !data) return;
       if (data.status === 'cancelled') {
@@ -2639,16 +2720,26 @@ export default function ActiveRide() {
         setCustomerCancellation({
           reason: data.cancel_reason || null,
           cancelledBy: data.cancelled_by || null,
+          passenger: String(data.customer_id || rideData.customerId || '')
+            ? {
+                id: String(data.customer_id || rideData.customerId),
+                name: String(resolvedName || rideData.customerName || 'Passenger').trim(),
+                avatarUrl: passengerAvatar || (rideData.customerPhoto && /^https?:\/\//i.test(rideData.customerPhoto)
+                  ? rideData.customerPhoto
+                  : null),
+              }
+            : null,
         });
       }
     };
 
+    void checkForCancellation();
     const interval = setInterval(checkForCancellation, 5000);
     return () => {
       cancelled = true;
       clearInterval(interval);
     };
-  }, [rideData?.id, rideData?.lobbyId, customerCancellation, syncRideResume]);
+  }, [rideData?.id, rideData?.lobbyId, rideData?.passengerDetails, rideData?.customerId, rideData?.customerPhoto, customerCancellation, syncRideResume, passengerAvatars, passengerAvatar, resolvedName]);
 
   if (!rideData) return null;
   const customerDisplayName = firstNameOnly(resolvedName || rideData.customerName) || 'Passenger';
@@ -2876,30 +2967,74 @@ export default function ActiveRide() {
 
   // The customer cancelled — say so, and show the reason they gave.
   if (customerCancellation) {
+    const cancelledPassenger = customerCancellation.passenger;
+    const cancelledPassengerAvatar = cancelledPassenger?.avatarUrl
+      || (cancelledPassenger?.id ? passengerAvatars[cancelledPassenger.id] : null)
+      || passengerAvatar;
     return (
-      <RideModal ariaLabel="Ride cancelled" zIndexClassName="z-[4000]" contentClassName="p-6 text-center">
-          <div className="w-16 h-16 bg-[var(--error-soft)] rounded-full flex items-center justify-center mx-auto mb-4">
-            <span className="text-3xl">🚫</span>
-          </div>
-          <h3 className="text-xl font-bold text-[#121212] mb-2">Ride cancelled</h3>
-          <p className="text-sm text-[#64748B] mb-4">
-            {customerCancellation.cancelledBy === 'driver' || customerCancellation.cancelledBy === 'rider'
-              ? 'The driver cancelled this ride.'
-              : 'The customer cancelled this ride request.'}
-          </p>
-          {customerCancellation.reason && (
-            <div className="p-3 rounded-xl border border-[var(--error)] bg-[var(--error-soft)] text-left mb-4">
-              <p className="text-xs font-bold uppercase tracking-widest text-[var(--error)] mb-1">Reason</p>
-              <p className="text-sm text-[var(--error)]">{customerCancellation.reason}</p>
+      <>
+        {showReportModal ? (
+          <RideModal labelledBy="active-ride-cancellation-report-title" zIndexClassName="z-[4300]" contentClassName="max-w-md">
+            <h2 id="active-ride-cancellation-report-title" className="text-lg font-bold text-[var(--ink)]">
+              {reportSubmitted ? 'Report sent' : `Report ${reportPassenger?.name || 'passenger'}`}
+            </h2>
+            {reportSubmitted ? (
+              <>
+                <p className="mt-2 text-sm text-[var(--muted-foreground)]">Support has received your report.</p>
+                <Button type="button" onClick={() => setShowReportModal(false)} className="mt-5 w-full bg-[var(--primary)] text-white">Done</Button>
+              </>
+            ) : (
+              <div className="mt-4 space-y-4">
+                <div>
+                  <label htmlFor="cancellation-report-category" className="mb-1.5 block text-sm font-semibold text-[var(--ink)]">Issue type</label>
+                  <select id="cancellation-report-category" value={reportCategory} onChange={(event) => setReportCategory(event.target.value)} className="min-h-11 w-full rounded-xl border border-[var(--border)] bg-[var(--surface)] px-3 text-sm text-[var(--ink)]">
+                    {reportCategories.map((category) => <option key={category} value={category}>{category}</option>)}
+                  </select>
+                </div>
+                <div>
+                  <label htmlFor="cancellation-report-description" className="mb-1.5 block text-sm font-semibold text-[var(--ink)]">What happened?</label>
+                  <textarea id="cancellation-report-description" value={reportDescription} onChange={(event) => { setReportDescription(event.target.value); if (reportSubmitError) setReportSubmitError(null); }} maxLength={1000} rows={4} placeholder="Describe the issue for support..." className="w-full resize-none rounded-xl border border-[var(--border)] bg-[var(--surface)] px-3 py-2.5 text-sm text-[var(--ink)]" />
+                </div>
+                {reportSubmitError && <p role="alert" className="text-sm text-[var(--error)]">{reportSubmitError}</p>}
+                <div className="flex gap-2">
+                  <Button type="button" variant="outline" onClick={() => setShowReportModal(false)} disabled={isSubmittingReport} className="flex-1">Back</Button>
+                  <Button type="button" onClick={submitRideReport} disabled={isSubmittingReport || reportDescription.trim().length < 10} className="flex-1 bg-[var(--primary)] text-white">{isSubmittingReport ? 'Sending...' : 'Send report'}</Button>
+                </div>
+              </div>
+            )}
+          </RideModal>
+        ) : (
+          <RideModal ariaLabel="Ride cancelled" zIndexClassName="z-[4000]" contentClassName="p-6">
+            <div className="text-center">
+              <div className="mx-auto mb-4 grid size-14 place-items-center rounded-full bg-[var(--error-soft)] text-[var(--error)]"><X className="size-7" aria-hidden="true" /></div>
+              <h3 className="mb-2 text-xl font-bold text-[var(--ink)]">Ride cancelled</h3>
+              <p className="mb-4 text-sm text-[var(--muted-foreground)]">
+                {customerCancellation.cancelledBy === 'driver' || customerCancellation.cancelledBy === 'rider'
+                  ? 'This ride was cancelled by the driver.'
+                  : rideData.lobbyId ? 'The last passenger left this shared ride.' : 'The passenger cancelled this ride.'}
+              </p>
             </div>
-          )}
-          <Button
-            onClick={() => navigate('/rider')}
-            className="w-full bg-[var(--error)] hover:opacity-90 text-white font-bold"
-          >
-            Back to Dashboard
-          </Button>
-      </RideModal>
+            {cancelledPassenger && (
+              <div className="mb-4 flex items-center gap-3 rounded-xl bg-[var(--muted)] p-3">
+                <span className="grid size-12 shrink-0 place-items-center overflow-hidden rounded-full border border-[var(--border)] bg-[var(--primary-soft)] text-sm font-bold text-[var(--primary)]">
+                  {cancelledPassengerAvatar ? <img src={cancelledPassengerAvatar} alt={`${cancelledPassenger.name}'s profile`} className="size-full object-cover" onError={() => { setPassengerAvatar(null); setCustomerCancellation((current) => current ? { ...current, passenger: current.passenger ? { ...current.passenger, avatarUrl: null } : null } : current); }} /> : getProfileInitials(cancelledPassenger.name)}
+                </span>
+                <div className="min-w-0"><p className="text-[10px] font-bold uppercase tracking-wide text-[var(--muted-foreground)]">Passenger</p><p className="truncate text-sm font-bold text-[var(--ink)]">{cancelledPassenger.name}</p></div>
+              </div>
+            )}
+            {customerCancellation.reason && (
+              <div className="mb-4 rounded-xl border border-[var(--error)] bg-[var(--error-soft)] p-3">
+                <p className="mb-1 text-xs font-bold uppercase tracking-widest text-[var(--error)]">Reason</p>
+                <p className="text-sm text-[var(--error)]">{customerCancellation.reason}</p>
+              </div>
+            )}
+            <div className="grid grid-cols-2 gap-2">
+              <Button type="button" variant="outline" onClick={() => openRideReport(cancelledPassenger ? { id: cancelledPassenger.id, name: cancelledPassenger.name } : undefined)} className="border-[var(--error)] text-[var(--error)] hover:bg-[var(--error-soft)]"><Flag className="mr-2 size-4" aria-hidden="true" />Report</Button>
+              <Button onClick={() => navigate('/rider')} className="bg-[var(--primary)] font-bold text-white">Confirm</Button>
+            </div>
+          </RideModal>
+        )}
+      </>
     );
   }
 

@@ -12,6 +12,7 @@ import MapTypeToggle from "../ui/MapTypeToggle";
 import RideMapStatusBanner from "../ui/RideMapStatusBanner";
 import useMapLoader from "@/lib/mapLoader";
 import { useElapsedTime } from "@/app/hooks/useElapsedTime";
+import ReasonPromptModal from "../ui/reason-prompt-modal";
 import { createTricycleMarkerIcon } from "@/lib/mapIcons";
 import FloatingChatHead from "../ui/FloatingChatHead";
 import BottomNav from "../ui/BottomNav";
@@ -47,6 +48,7 @@ const DRIVER_STATUS_LABELS: Record<string, string> = {
   'awaiting-payment': 'Awaiting payment',
   completed: 'Completed',
 };
+const CANCELLATION_REPORT_CATEGORIES = ['Driver behavior', 'Safety concern', 'Route or navigation issue', 'Other'];
 
 const getDriverInitials = (name?: string | null) =>
   (name || 'Driver')
@@ -482,10 +484,17 @@ export default function ShareRideLobby({
   const [bookingCancelled, setBookingCancelled] = useState(false);
   const [isMinimized, setIsMinimized] = useState(false);
   const [showLeaveConfirm, setShowLeaveConfirm] = useState(false);
+  const [showLeaveReason, setShowLeaveReason] = useState(false);
   const [showLobbyBrowser, setShowLobbyBrowser] = useState(false);
   const [moveFailureMessage, setMoveFailureMessage] = useState<string | null>(null);
   const [terminalStatus, setTerminalStatus] = useState<'completed' | 'cancelled' | null>(null);
   const [terminalCancelMessage, setTerminalCancelMessage] = useState<string | null>(null);
+  const [showCancellationReport, setShowCancellationReport] = useState(false);
+  const [cancellationReportCategory, setCancellationReportCategory] = useState(CANCELLATION_REPORT_CATEGORIES[0]);
+  const [cancellationReportDescription, setCancellationReportDescription] = useState('');
+  const [cancellationReportError, setCancellationReportError] = useState<string | null>(null);
+  const [cancellationReportSubmitting, setCancellationReportSubmitting] = useState(false);
+  const [cancellationReportSubmitted, setCancellationReportSubmitted] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [driverAssignedNotice, setDriverAssignedNotice] = useState<{
@@ -675,11 +684,13 @@ export default function ShareRideLobby({
           clearTimeout(terminalCloseTimeoutRef.current);
         }
 
-        terminalCloseTimeoutRef.current = setTimeout(() => {
-          if (typeof onClose === 'function') {
-            onClose(status);
-          }
-        }, driverCancelled ? 5000 : 1600);
+        if (!driverCancelled) {
+          terminalCloseTimeoutRef.current = setTimeout(() => {
+            if (typeof onClose === 'function') {
+              onClose(status);
+            }
+          }, 1600);
+        }
       }
     }
   };
@@ -739,6 +750,38 @@ export default function ShareRideLobby({
       return;
     }
     setRatingSubmitted(true);
+  };
+
+  const submitCancellationReport = async () => {
+    if (!lobby || !user?.id || !lobby.driver_id || cancellationReportSubmitting) return;
+    const description = cancellationReportDescription.trim();
+    if (description.length < 10) {
+      setCancellationReportError('Please describe the issue in at least 10 characters.');
+      return;
+    }
+
+    setCancellationReportSubmitting(true);
+    setCancellationReportError(null);
+    try {
+      const { error } = await supabaseHelpers.createRideReport({
+        rideId: lobby.id,
+        reporterId: user.id,
+        reporterName: user.name,
+        reporterEmail: user.email,
+        driverId: lobby.driver_id,
+        driverName: lobby.driver_name || 'Driver',
+        category: `Ride cancellation: ${cancellationReportCategory}`,
+        description,
+        rideRoute: `${lobby.pickup_location || 'Unknown pickup'} → ${lobby.dropoff_location || 'Unknown drop-off'}`,
+      });
+      if (error) throw error;
+      setCancellationReportSubmitted(true);
+    } catch (submitError) {
+      console.error('[ShareRideLobby] Failed to submit cancellation report:', submitError);
+      setCancellationReportError('Could not submit your report. Please try again.');
+    } finally {
+      setCancellationReportSubmitting(false);
+    }
   };
 
   // Show the same driver-status popups customers get for private rides.
@@ -1881,10 +1924,26 @@ export default function ShareRideLobby({
     }
   };
 
-   const handleLeaveLobby = async () => {
+   const requestLeaveLobby = () => {
+     setError(null);
+     if (lobby?.driver_id) {
+       setShowLeaveConfirm(false);
+       setShowLeaveReason(true);
+       return;
+     }
+     setShowLeaveConfirm(true);
+   };
+
+   const handleLeaveLobby = async (reason?: string) => {
      if (!lobby || !user) {
        console.error('❌ Missing lobby or user data');
        setError('Cannot leave lobby: missing data');
+       return;
+     }
+
+     const leaveReason = reason?.trim() || '';
+     if (lobby.driver_id && leaveReason.length < 3) {
+       setError('Please provide a reason before leaving this assigned ride.');
        return;
      }
 
@@ -1893,7 +1952,8 @@ export default function ShareRideLobby({
 
        const { data: updatedLobby, error: leaveError } = await supabaseHelpers.leaveShareRideLobby(
          lobby.id,
-         user.id
+         user.id,
+         lobby.driver_id ? leaveReason : undefined,
        );
 
        if (leaveError) {
@@ -1909,6 +1969,28 @@ export default function ShareRideLobby({
        }
 
        console.log('✅ Successfully left lobby');
+       setShowLeaveConfirm(false);
+       setShowLeaveReason(false);
+
+       if (lobby.driver_id && leaveReason && updatedLobby?.status !== 'cancelled') {
+         try {
+           const thread = await ensureDriverThread();
+           if (!thread) throw new Error('Could not open the driver chat.');
+           const { error: messageError } = await supabaseHelpers.sendChatMessage({
+             conversationId: thread.id,
+             senderId: user.id,
+             receiverId: lobby.driver_id,
+             senderName: user.name || 'Customer',
+             senderRole: 'customer',
+             receiverRole: 'rider',
+             message: `I left the shared ride. Reason: ${leaveReason}`,
+           });
+           if (messageError) throw messageError;
+         } catch (messageError) {
+           console.error('Could not send the shared-ride leave reason to the driver:', messageError);
+         }
+       }
+
        try {
          if (user?.id) {
            localStorage.removeItem(customerActiveShareLobbyStorageKey(user.id));
@@ -1916,7 +1998,6 @@ export default function ShareRideLobby({
        } catch {
          // The database membership is already removed; storage is only a resume hint.
        }
-       setShowLeaveConfirm(false);
        // Small delay to ensure database update completes
        await new Promise(resolve => setTimeout(resolve, 500));
        // FIX: Add defensive check
@@ -2378,6 +2459,8 @@ if (loading) {
   }
 
   const effectiveTerminalStatus = terminalStatus || (ownRideCompleted ? 'completed' : null);
+  const isDriverCancellation = effectiveTerminalStatus === 'cancelled'
+    && Boolean(terminalCancelMessage?.startsWith('The driver cancelled this shared ride.'));
   const isTerminal = effectiveTerminalStatus !== null;
   const getPassengerDisplayName = (passenger: LobbyPassenger) => {
     if (passenger.id === user?.id) return 'You';
@@ -2490,7 +2573,7 @@ if (loading) {
                 {/* Only show cancel button while still searching for a driver */}
                 {lobby.status === 'waiting' && (
                   <button
-                    onClick={() => setShowLeaveConfirm(true)}
+                    onClick={requestLeaveLobby}
                     className="w-9 h-9 flex items-center justify-center rounded-full bg-white/20 hover:bg-white/30 transition-colors"
                   >
                     <X className="w-5 h-5 text-white" />
@@ -2694,7 +2777,7 @@ if (loading) {
                     <Button
                       type="button"
                       variant="outline"
-                      onClick={() => setShowLeaveConfirm(true)}
+                      onClick={requestLeaveLobby}
                       className="h-10 gap-1 border-[var(--error)] px-2.5 text-xs text-[var(--error)] hover:bg-[var(--error-soft)]"
                     >
                       <X className="size-4" aria-hidden="true" />
@@ -2963,7 +3046,7 @@ if (loading) {
               chatDisabled={openingChat}
               chatLabel={openingChat ? 'Opening...' : 'Chat'}
               onChat={openLobbyChatThread}
-              onCancel={() => setShowLeaveConfirm(true)}
+              onCancel={requestLeaveLobby}
             />
           </div>
 
@@ -2988,8 +3071,39 @@ if (loading) {
             <p className="text-sm text-[var(--muted-foreground)] mb-4">
               {effectiveTerminalStatus === 'completed'
                 ? 'Your drop-off is confirmed. Your ride is complete. Thank you for riding with TrikeServe!'
-                : terminalCancelMessage || 'This ride has been cancelled. Returning you to the customer screen...'}
+                : isDriverCancellation
+                  ? 'Your driver cancelled this shared ride.'
+                  : terminalCancelMessage || 'This ride has been cancelled. Returning you to the customer screen...'}
             </p>
+            {isDriverCancellation && (
+              <>
+                {lobby.driver_id && (
+                  <div className="mb-4 flex items-center gap-3 rounded-xl bg-[var(--muted)] p-3 text-left">
+                    <span className="grid size-12 shrink-0 place-items-center overflow-hidden rounded-full border border-[var(--border)] bg-[var(--primary-soft)] text-sm font-bold text-[var(--primary)]">
+                      {driverProfileAvatar ? (
+                        <img src={driverProfileAvatar} alt={`${lobby.driver_name || 'Driver'}'s profile`} className="size-full object-cover" onError={() => setDriverProfileAvatar(null)} />
+                      ) : getProfileInitials(lobby.driver_name || 'Driver')}
+                    </span>
+                    <div className="min-w-0 text-left">
+                      <p className="text-[10px] font-bold uppercase tracking-wide text-[var(--muted-foreground)]">Your driver</p>
+                      <p className="truncate text-sm font-bold text-[var(--ink)]">{lobby.driver_name || 'Your driver'}</p>
+                    </div>
+                  </div>
+                )}
+                {terminalCancelMessage?.match(/Reason:\s*([\s\S]*)$/i)?.[1]?.trim() && (
+                  <div className="mb-4 rounded-xl border border-[var(--error)] bg-[var(--error-soft)] p-3 text-left">
+                    <p className="mb-1 text-xs font-bold uppercase tracking-wide text-[var(--error)]">Reason</p>
+                    <p className="text-sm text-[var(--error)]">{terminalCancelMessage.match(/Reason:\s*([\s\S]*)$/i)?.[1]?.trim()}</p>
+                  </div>
+                )}
+                <div className="grid grid-cols-2 gap-2">
+                  <Button type="button" variant="outline" onClick={() => { setCancellationReportCategory(CANCELLATION_REPORT_CATEGORIES[0]); setCancellationReportDescription(''); setCancellationReportError(null); setCancellationReportSubmitted(false); setShowCancellationReport(true); }} className="border-[var(--error)] text-[var(--error)] hover:bg-[var(--error-soft)]">
+                    <Flag className="mr-2 size-4" aria-hidden="true" />Report
+                  </Button>
+                  <Button type="button" onClick={() => { if (terminalCloseTimeoutRef.current) clearTimeout(terminalCloseTimeoutRef.current); onClose('cancelled'); }} className="bg-[var(--primary)] font-bold text-white">Confirm</Button>
+                </div>
+              </>
+            )}
             {effectiveTerminalStatus === 'completed' && lobby.driver_id && (
               <div className="mb-4 rounded-xl bg-[var(--muted)] p-3 text-left">
                 <div className="flex items-center gap-3">
@@ -3078,6 +3192,38 @@ if (loading) {
         </RideModal>
       )}
 
+      {isDriverCancellation && showCancellationReport && (
+        <RideModal labelledBy="share-ride-cancellation-report-title" zIndexClassName="z-[2400]" contentClassName="max-w-md">
+          <h2 id="share-ride-cancellation-report-title" className="text-lg font-bold text-[var(--ink)]">
+            {cancellationReportSubmitted ? 'Report sent' : `Report ${lobby.driver_name || 'your driver'}`}
+          </h2>
+          {cancellationReportSubmitted ? (
+            <>
+              <p className="mt-2 text-sm text-[var(--muted-foreground)]">Support has received your report.</p>
+              <Button type="button" onClick={() => setShowCancellationReport(false)} className="mt-5 w-full bg-[var(--primary)] text-white">Done</Button>
+            </>
+          ) : (
+            <div className="mt-4 space-y-4">
+              <div>
+                <label htmlFor="share-ride-cancellation-category" className="mb-1.5 block text-sm font-semibold text-[var(--ink)]">Issue type</label>
+                <select id="share-ride-cancellation-category" value={cancellationReportCategory} onChange={(event) => setCancellationReportCategory(event.target.value)} className="min-h-11 w-full rounded-xl border border-[var(--border)] bg-[var(--surface)] px-3 text-sm text-[var(--ink)]">
+                  {CANCELLATION_REPORT_CATEGORIES.map((category) => <option key={category} value={category}>{category}</option>)}
+                </select>
+              </div>
+              <div>
+                <label htmlFor="share-ride-cancellation-description" className="mb-1.5 block text-sm font-semibold text-[var(--ink)]">What happened?</label>
+                <textarea id="share-ride-cancellation-description" value={cancellationReportDescription} onChange={(event) => { setCancellationReportDescription(event.target.value); if (cancellationReportError) setCancellationReportError(null); }} maxLength={1000} rows={4} placeholder="Describe the issue for support..." className="w-full resize-none rounded-xl border border-[var(--border)] bg-[var(--surface)] px-3 py-2.5 text-sm text-[var(--ink)]" />
+              </div>
+              {cancellationReportError && <p role="alert" className="text-sm text-[var(--error)]">{cancellationReportError}</p>}
+              <div className="flex gap-2">
+                <Button type="button" variant="outline" onClick={() => setShowCancellationReport(false)} disabled={cancellationReportSubmitting} className="flex-1">Back</Button>
+                <Button type="button" onClick={submitCancellationReport} disabled={cancellationReportSubmitting || cancellationReportDescription.trim().length < 10} className="flex-1 bg-[var(--primary)] text-white">{cancellationReportSubmitting ? 'Sending...' : 'Send report'}</Button>
+              </div>
+            </div>
+          )}
+        </RideModal>
+      )}
+
       {/* Chat layer (floating head + overlay). Defined once above the minimized
           branch so the head stays on screen in both views. */}
       {chatLayer}
@@ -3158,7 +3304,7 @@ if (loading) {
                 Stay
               </Button>
               <Button
-                onClick={handleLeaveLobby}
+                onClick={() => lobby.driver_id ? requestLeaveLobby() : handleLeaveLobby()}
                 className="flex-1 bg-[var(--error)] hover:bg-[var(--error)] text-white"
               >
                 Leave Lobby
@@ -3166,6 +3312,17 @@ if (loading) {
             </div>
         </RideModal>
       )}
+
+      <ReasonPromptModal
+        isOpen={showLeaveReason}
+        title="Leave assigned ride?"
+        description="Your reason will be sent to the driver. If no passengers remain, the shared ride will be cancelled."
+        confirmLabel="Leave ride"
+        placeholder="Tell the driver why you are leaving"
+        zIndexClassName="z-[10002]"
+        onSubmit={handleLeaveLobby}
+        onCancel={() => setShowLeaveReason(false)}
+      />
 
       {showLobbyBrowser && lobby.status === 'waiting' && (
         <BrowseAvailableLobbies

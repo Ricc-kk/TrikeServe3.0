@@ -264,6 +264,7 @@ export default function FloatingChatHead({
   const [mountRetry, setMountRetry] = useState(0);
   const [isPointerDown, setIsPointerDown] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
+  const stackExpandedRef = useRef(false);
   const [isOverCloseTarget, setIsOverCloseTarget] = useState(false);
   const [dismissed, setDismissed] = useState(() => {
     if (!resolvedDismissalStorageKey || typeof window === 'undefined') return false;
@@ -293,17 +294,21 @@ export default function FloatingChatHead({
   const visibleStackItems = showStackItems
     ? stackItems.slice(0, maxRowHeadCount - 1)
     : stackItems.slice(0, MAX_STACK_ITEMS);
+  const isStackExpanded = showStackItems || isPointerDown || isDragging;
 
   const positionStackHeads = useCallback((nextSide: Side, animated: boolean) => {
     const direction = nextSide === 'right' ? -1 : 1;
-    const offset = showStackItems ? CHAT_HEAD_SIZE + CHAT_HEAD_ROW_GAP : STACK_PEEK;
+    const offset = showStackItems || stackExpandedRef.current
+      ? CHAT_HEAD_SIZE + CHAT_HEAD_ROW_GAP
+      : STACK_PEEK;
     stackHeadRefs.current.slice(0, visibleStackItems.length).forEach((el, index) => {
       if (!el) return;
       el.style.transition = animated
         ? `left ${STACK_DRAG_DELAY}ms ease-out, top ${STACK_DRAG_DELAY}ms ease-out`
         : 'none';
-      // These are the resting offsets; during a drag, history offsets let each
-      // head follow the lead head's path before settling back into the stack.
+      // At rest, each head only peeks out. While pressed, the full spacing keeps
+      // every head visible; during a drag, history offsets make them follow the
+      // lead head's path before settling back into the stack.
       el.style.left = `${direction * offset * (index + 1)}px`;
       el.style.top = '0px';
     });
@@ -316,7 +321,9 @@ export default function FloatingChatHead({
     now: number,
   ) => {
     const direction = nextSide === 'right' ? -1 : 1;
-    const offset = showStackItems ? CHAT_HEAD_SIZE + CHAT_HEAD_ROW_GAP : STACK_PEEK;
+    const offset = showStackItems || stackExpandedRef.current
+      ? CHAT_HEAD_SIZE + CHAT_HEAD_ROW_GAP
+      : STACK_PEEK;
     stackHeadRefs.current.slice(0, visibleStackItems.length).forEach((el, index) => {
       if (!el || history.length === 0) return;
 
@@ -574,9 +581,9 @@ export default function FloatingChatHead({
     };
   }, [dismissed, initialPlacement, isGlobal, mountRetry, positionStackHeads, save, showStackItems, user?.id, visibleStackItems.length]);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (placed.current) positionStackHeads(side, false);
-  }, [side, visibleStackItems.length, positionStackHeads]);
+  }, [isStackExpanded, side, visibleStackItems.length, positionStackHeads]);
 
   const stackAnimationKey = visibleStackItems.map((item) => item.id).join('|');
   useEffect(() => {
@@ -622,6 +629,7 @@ export default function FloatingChatHead({
     const startY = e.clientY;
     const dragHistory: DragPositionSample[] = [{ ...pos.current, time: performance.now() }];
     pointerCleanupRef.current?.();
+    stackExpandedRef.current = true;
     moved.current = false;
     setIsPointerDown(true);
     setIsDragging(false);
@@ -719,6 +727,7 @@ export default function FloatingChatHead({
       const h = rect.height;
       const shouldDismiss = moved.current && isOnCloseTarget(pos.current.x, pos.current.y, w, h);
       drag.current = null;
+      stackExpandedRef.current = false;
       cleanup();
       setIsPointerDown(false);
       setIsDragging(false);
@@ -744,6 +753,7 @@ export default function FloatingChatHead({
     const onCancel = (ev: PointerEvent) => {
       if (!drag.current || ev.pointerId !== pointerId) return;
       drag.current = null;
+      stackExpandedRef.current = false;
       cleanup();
       setIsPointerDown(false);
       setIsDragging(false);
@@ -812,7 +822,7 @@ export default function FloatingChatHead({
           type="button"
           style={{
             left: (stackSide === 'right' ? -1 : 1) *
-              (showStackItems ? CHAT_HEAD_SIZE + CHAT_HEAD_ROW_GAP : STACK_PEEK) * (index + 1),
+              (isStackExpanded ? CHAT_HEAD_SIZE + CHAT_HEAD_ROW_GAP : STACK_PEEK) * (index + 1),
             top: 0,
             opacity: showStackItems || isPointerDown || isDragging ? 1 : 0,
             pointerEvents: isHidden || (!showStackItems && !isDragging) ? 'none' : 'auto',

@@ -47,9 +47,11 @@ import RecommendedRestaurants from "./RecommendedRestaurants";
 import CustomerServiceHub from "./CustomerServiceHub";
 import CustomerCartPreview from "./CustomerCartPreview";
 import { useDevModeOverride } from "../../hooks/useDevModeSettings";
+import { getProfileInitials } from "@/lib/profileInitials";
 
 // Get Google Maps API Key from environment variable
 const GOOGLE_MAPS_API_KEY = import.meta.env.VITE_GOOGLE_MAPS_API_KEY || "";
+const CANCELLATION_REPORT_CATEGORIES = ['Driver behavior', 'Safety concern', 'Route or navigation issue', 'Other'];
 
 type RecommendedLocation = {
   id: string;
@@ -693,6 +695,21 @@ export default function CustomerHome() {
    const [unreadMessagesCount, setUnreadMessagesCount] = useState(0);
    const [driverAcceptedPopup, setDriverAcceptedPopup] = useState<any>(null);
    const [driverStatusPopup, setDriverStatusPopup] = useState<{ status: string; message: string } | null>(null);
+   const [driverCancellationNotice, setDriverCancellationNotice] = useState<{
+     rideId: string;
+     driverId: string | null;
+     driverName: string;
+     avatarUrl: string | null;
+     reason: string | null;
+     pickup: string;
+     dropoff: string;
+   } | null>(null);
+   const [showDriverCancellationReport, setShowDriverCancellationReport] = useState(false);
+   const [driverCancellationReportCategory, setDriverCancellationReportCategory] = useState(CANCELLATION_REPORT_CATEGORIES[0]);
+   const [driverCancellationReportDescription, setDriverCancellationReportDescription] = useState('');
+   const [driverCancellationReportError, setDriverCancellationReportError] = useState<string | null>(null);
+   const [driverCancellationReportSubmitting, setDriverCancellationReportSubmitting] = useState(false);
+   const [driverCancellationReportSubmitted, setDriverCancellationReportSubmitted] = useState(false);
    const [privateRideAssignmentPopup, setPrivateRideAssignmentPopup] = useState<{ requestId: string; message: string } | null>(null);
    const [showCustomerPaymentModal, setShowCustomerPaymentModal] = useState(false);
   /**
@@ -920,7 +937,6 @@ export default function CustomerHome() {
      }),
      [terminals]
    );
-   const [showAllBookingTerminals, setShowAllBookingTerminals] = useState(true);
    const [showTerminalPicker, setShowTerminalPicker] = useState(false);
    const [routePreviewTerminalId, setRoutePreviewTerminalId] = useState<string | null>(null);
    const [routePreviewFocusRouteId, setRoutePreviewFocusRouteId] = useState<string | null>(null);
@@ -1658,6 +1674,26 @@ export default function CustomerHome() {
               }
 
               if (fresh.status === 'completed' || fresh.status === 'cancelled') {
+                const cancellationMessage = String(fresh.driver_status_message || '');
+                const driverCancelled = fresh.status === 'cancelled'
+                  && (String(fresh.cancelled_by || '').toLowerCase() === 'driver' || /^the driver cancelled/i.test(cancellationMessage));
+                if (driverCancelled) {
+                  const driverId = String(fresh.accepted_driver_id || fresh.driver_id || '') || null;
+                  const driverName = String(fresh.driver_name || 'Driver');
+                  if (driverId) setRideDriverId(driverId);
+                  setDriverCancellationNotice({
+                    rideId: String(restoredRequestId),
+                    driverId,
+                    driverName,
+                    avatarUrl: fresh.driver_photo || null,
+                    reason: fresh.cancel_reason || cancellationMessage.match(/Reason:\s*([\s\S]*)$/i)?.[1]?.trim() || null,
+                    pickup: String(fresh.pickup_location || rideData?.pickup || ''),
+                    dropoff: String(fresh.dropoff_location || rideData?.dropoff || ''),
+                  });
+                  setDriverCancellationReportSubmitted(false);
+                  setShowDriverCancellationReport(false);
+                  return;
+                }
                 // The ride ended while away; drop the stale local copy so the
                 // next booking starts clean.
                 setRideStatus(null);
@@ -1904,7 +1940,7 @@ export default function CustomerHome() {
   // Listen for accepted rides and status updates (polling + storage events)
   useEffect(() => {
     // Continue polling as long as there's an active ride or we're searching
-    if (!currentRequestId) return;
+    if (!currentRequestId || driverCancellationNotice?.rideId === currentRequestId) return;
 
       const processDriverStatusUpdate = (status: string, message?: string, source: string = 'unknown', rideContext?: any) => {
         const normalizedStatus = String(status || '').toLowerCase();
@@ -1916,6 +1952,44 @@ export default function CustomerHome() {
        const isPrivateRideCompletion = normalizedStatus === 'completed' && inferredCompletionType === 'ride' && isPrivateRide;
 
         console.log('ðŸ“£ PROCESS DRIVER STATUS UPDATE:', { status: normalizedStatus, message, source, currentRequestId, lastShownStatus, inferredCompletionType });
+
+        if (normalizedStatus === 'cancelled') {
+          if (driverCancellationNotice?.rideId === currentRequestId) return;
+          const statusMessage = String(rideContext?.driver_status_message || message || '');
+          const cancellationActor = String(rideContext?.cancelled_by || '').toLowerCase();
+          const driverCancelled = cancellationActor === 'driver' || /^the driver cancelled/i.test(statusMessage);
+          if (driverCancelled) {
+            const driverId = String(rideContext?.accepted_driver_id || rideContext?.driver_id || rideDriverId || '') || null;
+            const driverName = String(rideContext?.driver_name || activeRide?.driver || 'Driver');
+            setDriverCancellationNotice({
+              rideId: String(currentRequestId),
+              driverId,
+              driverName,
+              avatarUrl: rideContext?.driver_photo || rideDriverAvatar,
+              reason: rideContext?.cancel_reason || statusMessage.match(/Reason:\s*([\s\S]*)$/i)?.[1]?.trim() || null,
+              pickup: String(rideContext?.pickup_location || pickup || ''),
+              dropoff: String(rideContext?.dropoff_location || dropoff || ''),
+            });
+            if (driverId) setRideDriverId(driverId);
+            setShowDriverCancellationReport(false);
+            setDriverCancellationReportCategory(CANCELLATION_REPORT_CATEGORIES[0]);
+            setDriverCancellationReportDescription('');
+            setDriverCancellationReportError(null);
+            setDriverCancellationReportSubmitted(false);
+            setDriverStatusPopup(null);
+          } else {
+            setDriverStatusPopup({ status: 'cancelled', message: statusMessage || 'This ride has been cancelled.' });
+          }
+          if (driverStatusTimerRef.current) clearTimeout(driverStatusTimerRef.current);
+          setShowCustomerPaymentModal(false);
+          if (!driverCancelled) {
+            setRideStatus(null);
+            setCurrentRequestId(null);
+            if (activeRideStorageKey) localStorage.removeItem(activeRideStorageKey);
+            resetCustomerRideVisuals();
+          }
+          return;
+        }
 
         if (normalizedStatus === 'completed' && !rideCompletedPopup) {
          console.log('âœ…âœ…âœ… COMPLETION STATUS RECEIVED - showing completion popup now');
@@ -2221,7 +2295,7 @@ export default function CustomerHome() {
       window.removeEventListener('storage', handleStorageChange);
       window.removeEventListener('custom-storage-change', handleCustomStorageEvent);
     };
-  }, [rideStatus, currentRequestId, selectedVehicle, isPrivateRide]);
+  }, [rideStatus, currentRequestId, selectedVehicle, isPrivateRide, driverCancellationNotice]);
 
   // Real-time database subscriptions for driver updates
   useEffect(() => {
@@ -2374,14 +2448,38 @@ export default function CustomerHome() {
 
       if (realtimeStatus === 'cancelled') {
         if (driverStatusTimerRef.current) clearTimeout(driverStatusTimerRef.current);
-        setDriverStatusPopup({
-          status: 'cancelled',
-          message: updatedRide.driver_status_message || 'Your driver had to cancel this ride.',
-        });
-        setRideStatus(null);
-        setCurrentRequestId(null);
-        if (activeRideStorageKey) localStorage.removeItem(activeRideStorageKey);
-        resetCustomerRideVisuals();
+        const cancellationMessage = String(updatedRide.driver_status_message || 'This ride has been cancelled.');
+        const driverCancelled = String(updatedRide.cancelled_by || '').toLowerCase() === 'driver'
+          || /^the driver cancelled/i.test(cancellationMessage);
+        if (driverCancelled && driverCancellationNotice?.rideId === currentRequestId) return;
+        if (driverCancelled) {
+          const driverId = String(updatedRide.accepted_driver_id || updatedRide.driver_id || rideDriverId || '') || null;
+          const driverName = String(updatedRide.driver_name || activeRide?.driver || 'Driver');
+          setDriverCancellationNotice({
+            rideId: String(currentRequestId),
+            driverId,
+            driverName,
+            avatarUrl: updatedRide.driver_photo || rideDriverAvatar,
+            reason: updatedRide.cancel_reason || cancellationMessage.match(/Reason:\s*([\s\S]*)$/i)?.[1]?.trim() || null,
+            pickup: String(updatedRide.pickup_location || pickup || ''),
+            dropoff: String(updatedRide.dropoff_location || dropoff || ''),
+          });
+          if (driverId) setRideDriverId(driverId);
+          setShowDriverCancellationReport(false);
+          setDriverCancellationReportCategory(CANCELLATION_REPORT_CATEGORIES[0]);
+          setDriverCancellationReportDescription('');
+          setDriverCancellationReportError(null);
+          setDriverCancellationReportSubmitted(false);
+          setDriverStatusPopup(null);
+        } else {
+          setDriverStatusPopup({ status: 'cancelled', message: cancellationMessage });
+        }
+        if (!driverCancelled) {
+          setRideStatus(null);
+          setCurrentRequestId(null);
+          if (activeRideStorageKey) localStorage.removeItem(activeRideStorageKey);
+          resetCustomerRideVisuals();
+        }
         return;
       }
 
@@ -2456,7 +2554,7 @@ export default function CustomerHome() {
         unsubscribeRef.current();
       }
     };
-  }, [currentRequestId, user?.id, isPrivateRide]);
+  }, [currentRequestId, user?.id, isPrivateRide, driverCancellationNotice]);
 
   // Persist ride data whenever it changes
   useEffect(() => {
@@ -3254,6 +3352,49 @@ export default function CustomerHome() {
     }
   };
 
+  const submitDriverCancellationReport = async () => {
+    const cancellation = driverCancellationNotice;
+    if (!cancellation || !user?.id || driverCancellationReportSubmitting) return;
+    const description = driverCancellationReportDescription.trim();
+    if (description.length < 10) {
+      setDriverCancellationReportError('Please describe the issue in at least 10 characters.');
+      return;
+    }
+
+    setDriverCancellationReportSubmitting(true);
+    setDriverCancellationReportError(null);
+    try {
+      const { error } = await supabaseHelpers.createRideReport({
+        rideId: cancellation.rideId,
+        reporterId: user.id,
+        reporterName: user.name,
+        reporterEmail: user.email,
+        driverId: cancellation.driverId || undefined,
+        driverName: cancellation.driverName,
+        category: `Ride cancellation: ${driverCancellationReportCategory}`,
+        description,
+        rideRoute: `${cancellation.pickup || 'Unknown pickup'} → ${cancellation.dropoff || 'Unknown drop-off'}`,
+      });
+      if (error) throw error;
+      logAudit({
+        action: 'report_ride',
+        actorRole: 'customer',
+        entityType: 'ride_request',
+        entityId: cancellation.rideId,
+        summary: `Reported a driver cancellation: ${driverCancellationReportCategory}`,
+        details: { category: driverCancellationReportCategory, driverId: cancellation.driverId },
+        actorEmail: user.email,
+        actorName: user.name,
+      });
+      setDriverCancellationReportSubmitted(true);
+    } catch (error) {
+      console.error('[CustomerHome] Failed to submit driver cancellation report:', error);
+      setDriverCancellationReportError('Could not submit your report. Please try again.');
+    } finally {
+      setDriverCancellationReportSubmitting(false);
+    }
+  };
+
   const handleCancelRide = async (reason?: string) => {
     const storedRequestId = currentRequestId || (() => {
       try {
@@ -3569,10 +3710,7 @@ export default function CustomerHome() {
     // The dedicated booking map is an overview: customers need to compare all
     // available terminals and their mapped routes before choosing a pickup.
     if (isBookingPage) {
-      if (showAllBookingTerminals) return mapTerminalRoutes;
-      return activeMapTerminalId
-        ? mapTerminalRoutes.filter(route => route.terminalId === activeMapTerminalId)
-        : [];
+      return mapTerminalRoutes;
     }
     if (!activeMapTerminalId) return [];
     const terminalRoutes = mapTerminalRoutes.filter(route => route.terminalId === activeMapTerminalId);
@@ -3605,7 +3743,6 @@ export default function CustomerHome() {
     isBookingPage,
     mapTerminalRoutes,
     routePreviewTerminalId,
-    showAllBookingTerminals,
     selectedTerminalRouteId,
   ]);
   const isPrivateRideMap = (isActivePrivateRidePage || isPrivateRide) && !isActiveShareRideMap;
@@ -3686,7 +3823,7 @@ export default function CustomerHome() {
     }
     if (!isMapsLoaded || !customerMapReady) return;
 
-    const fitKey = showAllBookingTerminals ? 'all' : `terminal:${activeMapTerminalId || 'none'}`;
+    const fitKey = 'all';
     if (bookingMapOverviewFittedRef.current === fitKey) return;
 
     const map = customerMapRef.current;
@@ -3695,24 +3832,17 @@ export default function CustomerHome() {
 
     const bounds = new maps.LatLngBounds();
     let pointCount = 0;
-    const visibleTerminalIds = showAllBookingTerminals
-      ? null
-      : new Set(activeMapTerminalId ? [activeMapTerminalId] : []);
     const extendBounds = (point: { lat: number; lng: number }) => {
       if (!Number.isFinite(point.lat) || !Number.isFinite(point.lng)) return;
       bounds.extend(point);
       pointCount += 1;
     };
 
-    terminals
-      .filter(terminal => !visibleTerminalIds || visibleTerminalIds.has(terminal.id))
-      .forEach(terminal => extendBounds({
+    terminals.forEach(terminal => extendBounds({
         lat: Number(terminal.center_lat),
         lng: Number(terminal.center_lng),
       }));
-    mapTerminalRoutes
-      .filter(route => !visibleTerminalIds || visibleTerminalIds.has(route.terminalId))
-      .forEach(route => route.points.forEach(extendBounds));
+    mapTerminalRoutes.forEach(route => route.points.forEach(extendBounds));
 
     if (!pointCount) return;
     if (pointCount === 1) {
@@ -3722,7 +3852,7 @@ export default function CustomerHome() {
       map.fitBounds(bounds, 48);
     }
     bookingMapOverviewFittedRef.current = fitKey;
-  }, [activeMapTerminalId, customerMapReady, isBookingPage, isMapsLoaded, mapTerminalRoutes, showAllBookingTerminals, terminals]);
+  }, [customerMapReady, isBookingPage, isMapsLoaded, mapTerminalRoutes, terminals]);
   const routePreviewFocusedRoute = useMemo(
     () => mapTerminalRoutes.find(route => route.id === routePreviewFocusRouteId) || null,
     [mapTerminalRoutes, routePreviewFocusRouteId]
@@ -4191,7 +4321,6 @@ const getPrice = () => {
                 if (
                   !Number.isFinite(position.lat) ||
                   !Number.isFinite(position.lng) ||
-                  (!showAllBookingTerminals && terminal.id !== activeMapTerminalId) ||
                   // Keep a terminal glyph from covering the customer's own location dot.
                   haversineDistanceMeters(currentLocation, position) < 40
                 ) return null;
@@ -4344,23 +4473,6 @@ const getPrice = () => {
           problem={locationProblem}
           className="absolute top-24 left-3 right-3 z-[1000] sm:top-28 sm:left-4 sm:right-4"
         />
-      )}
-
-      {showMap && isMapsLoaded && isBookingPage && terminals.length > 1 && (
-        <button
-          type="button"
-          onClick={() => setShowAllBookingTerminals(showAll => !showAll)}
-          aria-pressed={!showAllBookingTerminals}
-          aria-label={showAllBookingTerminals ? 'Hide other terminals' : 'Show all terminals'}
-          title={showAllBookingTerminals ? 'Hide other terminals' : 'Show all terminals'}
-          className="absolute right-4 z-[1200] flex min-h-11 items-center gap-2 rounded-xl border border-line bg-surface px-3 text-sm font-semibold text-[var(--ink)] shadow-xl transition-transform active:scale-95"
-          style={{ top: 'calc(env(safe-area-inset-top, 0px) + 8rem)' }}
-        >
-          {showAllBookingTerminals
-            ? <EyeOff className="size-4 shrink-0" aria-hidden="true" />
-            : <Eye className="size-4 shrink-0" aria-hidden="true" />}
-          <span>{showAllBookingTerminals ? 'Hide other terminals' : 'Show all terminals'}</span>
-        </button>
       )}
 
       {showMap && isMapsLoaded && !isBookingPage && (
@@ -6238,6 +6350,57 @@ const getPrice = () => {
        )}
 
       {/* Cancel Ride Popup â€” asks for a reason before dropping the ride */}
+      {driverCancellationNotice && (showDriverCancellationReport ? (
+        <RideModal labelledBy="driver-cancellation-report-title" zIndexClassName="z-[13000]" contentClassName="max-w-md">
+          <h2 id="driver-cancellation-report-title" className="text-lg font-bold text-[var(--ink)]">
+            {driverCancellationReportSubmitted ? 'Report sent' : `Report ${driverCancellationNotice.driverName}`}
+          </h2>
+          {driverCancellationReportSubmitted ? (
+            <>
+              <p className="mt-2 text-sm text-[var(--muted-foreground)]">Support has received your report.</p>
+              <Button type="button" onClick={() => setShowDriverCancellationReport(false)} className="mt-5 w-full bg-[var(--primary)] text-white">Done</Button>
+            </>
+          ) : (
+            <div className="mt-4 space-y-4">
+              <div>
+                <label htmlFor="driver-cancellation-report-category" className="mb-1.5 block text-sm font-semibold text-[var(--ink)]">Issue type</label>
+                <select id="driver-cancellation-report-category" value={driverCancellationReportCategory} onChange={(event) => setDriverCancellationReportCategory(event.target.value)} className="min-h-11 w-full rounded-xl border border-[var(--border)] bg-[var(--surface)] px-3 text-sm text-[var(--ink)]">
+                  {CANCELLATION_REPORT_CATEGORIES.map((category) => <option key={category} value={category}>{category}</option>)}
+                </select>
+              </div>
+              <div>
+                <label htmlFor="driver-cancellation-report-description" className="mb-1.5 block text-sm font-semibold text-[var(--ink)]">What happened?</label>
+                <textarea id="driver-cancellation-report-description" value={driverCancellationReportDescription} onChange={(event) => { setDriverCancellationReportDescription(event.target.value); if (driverCancellationReportError) setDriverCancellationReportError(null); }} maxLength={1000} rows={4} placeholder="Describe the issue for support..." className="w-full resize-none rounded-xl border border-[var(--border)] bg-[var(--surface)] px-3 py-2.5 text-sm text-[var(--ink)]" />
+              </div>
+              {driverCancellationReportError && <p role="alert" className="text-sm text-[var(--error)]">{driverCancellationReportError}</p>}
+              <div className="flex gap-2">
+                <Button type="button" variant="outline" onClick={() => setShowDriverCancellationReport(false)} disabled={driverCancellationReportSubmitting} className="flex-1">Back</Button>
+                <Button type="button" onClick={submitDriverCancellationReport} disabled={driverCancellationReportSubmitting || driverCancellationReportDescription.trim().length < 10} className="flex-1 bg-[var(--primary)] text-white">{driverCancellationReportSubmitting ? 'Sending...' : 'Send report'}</Button>
+              </div>
+            </div>
+          )}
+        </RideModal>
+      ) : driverCancellationNotice ? (
+        <RideModal labelledBy="driver-cancellation-title" zIndexClassName="z-[12000]" contentClassName="p-6">
+          <div className="text-center">
+            <div className="mx-auto mb-4 grid size-14 place-items-center rounded-full bg-[var(--error-soft)] text-[var(--error)]"><X className="size-7" aria-hidden="true" /></div>
+            <h2 id="driver-cancellation-title" className="mb-2 text-xl font-bold text-[var(--ink)]">Ride cancelled</h2>
+            <p className="mb-4 text-sm text-[var(--muted-foreground)]">Your driver cancelled this ride.</p>
+          </div>
+          <div className="mb-4 flex items-center gap-3 rounded-xl bg-[var(--muted)] p-3">
+            <span className="grid size-12 shrink-0 place-items-center overflow-hidden rounded-full border border-[var(--border)] bg-[var(--primary-soft)] text-sm font-bold text-[var(--primary)]">
+              {(driverCancellationNotice.avatarUrl || rideDriverAvatar) ? <img src={driverCancellationNotice.avatarUrl || rideDriverAvatar || ''} alt={`${driverCancellationNotice.driverName}'s profile`} className="size-full object-cover" onError={() => { setRideDriverAvatar(null); setDriverCancellationNotice((current) => current ? { ...current, avatarUrl: null } : current); }} /> : getProfileInitials(driverCancellationNotice.driverName, user?.email)}
+            </span>
+            <div className="min-w-0"><p className="text-[10px] font-bold uppercase tracking-wide text-[var(--muted-foreground)]">Your driver</p><p className="truncate text-sm font-bold text-[var(--ink)]">{driverCancellationNotice.driverName}</p></div>
+          </div>
+          {driverCancellationNotice.reason && <div className="mb-4 rounded-xl border border-[var(--error)] bg-[var(--error-soft)] p-3"><p className="mb-1 text-xs font-bold uppercase tracking-widest text-[var(--error)]">Reason</p><p className="text-sm text-[var(--error)]">{driverCancellationNotice.reason}</p></div>}
+          <div className="grid grid-cols-2 gap-2">
+            <Button type="button" variant="outline" onClick={() => { setDriverCancellationReportCategory(CANCELLATION_REPORT_CATEGORIES[0]); setDriverCancellationReportDescription(''); setDriverCancellationReportError(null); setDriverCancellationReportSubmitted(false); setShowDriverCancellationReport(true); }} className="border-[var(--error)] text-[var(--error)] hover:bg-[var(--error-soft)]"><Flag className="mr-2 size-4" aria-hidden="true" />Report</Button>
+            <Button type="button" onClick={() => { setDriverCancellationNotice(null); setDriverStatusPopup(null); setRideStatus(null); setCurrentRequestId(null); setRideDriverId(null); if (activeRideStorageKey) localStorage.removeItem(activeRideStorageKey); forgetActiveRide(); resetCustomerRideVisuals(); }} className="bg-[var(--primary)] font-bold text-white">Confirm</Button>
+          </div>
+        </RideModal>
+      ) : null)}
+
       <ReasonPromptModal
         isOpen={rideStateBelongsToCurrentUser && showCancelConfirm && cancelRequiresReason}
         title={visibleRideStatus === 'driver-found' ? 'Cancel this ride? / Kanselahin ang biyahe?' : 'Cancel Request? / Kanselahin ang request?'}

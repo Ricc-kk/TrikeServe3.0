@@ -7,7 +7,6 @@ import {
   Phone,
   MapPin,
   Car,
-  CreditCard,
   Calendar,
   CheckCircle,
   Edit2,
@@ -43,7 +42,6 @@ export default function RiderProfile() {
     name: user?.name || "",
     phone: user?.phone || "",
     todaPlate: user?.todaPlate || "",
-    licenseNumber: user?.licenseNumber || "",
   });
   const [showGoodbye, setShowGoodbye] = useState(false);
   const [showSwitchConfirm, setShowSwitchConfirm] = useState(false);
@@ -212,7 +210,6 @@ export default function RiderProfile() {
       name: user?.name || "",
       phone: user?.phone || "",
       todaPlate: user?.todaPlate || "",
-      licenseNumber: user?.licenseNumber || "",
       pickupLocation: user?.pickupLocation || "",
       dropoffLocation: user?.dropoffLocation || "",
     });
@@ -420,20 +417,6 @@ export default function RiderProfile() {
               <p className="text-xs text-[var(--muted-foreground)] mt-1">Visit the TrikeServe office to update</p>
             </div>
 
-            {/* Driver's License Number */}
-            <div>
-              <label className="text-xs font-semibold text-[var(--muted-foreground)] uppercase tracking-widest mb-2 block">
-                Driver's License Number
-              </label>
-              <div className="flex items-center gap-2">
-                <CreditCard className="w-4 h-4 text-[var(--muted-foreground)]" />
-                <p className="min-w-0 break-all text-sm font-mono text-[var(--ink)]">
-                  {user.licenseNumber || "Not provided"}
-                </p>
-              </div>
-              <p className="text-xs text-[var(--muted-foreground)] mt-1">Visit the TrikeServe office to update</p>
-            </div>
-
             {/* Verification Status */}
             <div>
               <label className="text-xs font-semibold text-[var(--muted-foreground)] uppercase tracking-widest mb-2 block">
@@ -588,10 +571,6 @@ export default function RiderProfile() {
           </h2>
           
           <div className="space-y-3">
-            <div className="flex flex-wrap justify-between items-center gap-2 py-2 border-b border-[var(--border)]">
-              <span className="text-sm text-[var(--muted-foreground)]">User ID</span>
-              <span className="text-sm font-mono text-[var(--ink)]">{user.id.substring(0, 12)}...</span>
-            </div>
             <div className="flex flex-wrap justify-between items-center gap-2 py-2 border-b border-[var(--border)]">
               <span className="text-sm text-[var(--muted-foreground)]">Account Type</span>
               <span className="text-sm font-semibold text-[var(--primary)]">Driver</span>

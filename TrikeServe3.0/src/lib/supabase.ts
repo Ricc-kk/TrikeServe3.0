@@ -2,6 +2,16 @@ import { createClient } from '@supabase/supabase-js';
 import { buildChatThreadKey } from './chat';
 import { normalizeTerminalColor, normalizeRouteColor, normalizeBorderColor } from '../app/components/ui/TerminalIcon';
 
+function isChatProfileImage(value: unknown): boolean {
+  const src = typeof value === 'string' ? value.trim() : '';
+  return /^https?:\/\//i.test(src) || src.startsWith('data:image/');
+}
+
+function isChatPlaceholderName(value: unknown): boolean {
+  const name = typeof value === 'string' ? value.trim().toLocaleLowerCase() : '';
+  return !name || ['user', 'passenger', 'driver', 'restaurant'].includes(name);
+}
+
 // Initialize Supabase client
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
 // Support both legacy and current env var names for the client key.
@@ -2506,7 +2516,7 @@ export const supabaseHelpers = {
     return { data: null, error: new Error('This lobby changed while you were moving. Refresh the list and try again.') };
   },
 
-   async leaveShareRideLobby(lobbyId: string, passengerId: string) {
+   async leaveShareRideLobby(lobbyId: string, passengerId: string, reason?: string) {
      console.log(`🚪 LEAVE LOBBY: lobbyId=${lobbyId}, passengerId=${passengerId}`);
 
      try {
@@ -2568,9 +2578,15 @@ export const supabaseHelpers = {
            .update({
              status: 'cancelled',
              passengers_json: [],
+             ...(lobby.driver_id ? {
+               driver_status: 'cancelled',
+               driver_status_message: `The customer cancelled this shared ride. Reason: ${reason?.trim() || 'No passengers remain in the lobby.'}`,
+             } : {}),
              updated_at: timestamp
            })
            .eq('id', lobbyId)
+           .eq('status', lobby.status)
+           .eq('passengers_json', JSON.stringify(passengers))
            .select()
            .single();
 
@@ -2593,6 +2609,11 @@ export const supabaseHelpers = {
          passengers_json: updatedPassengers,
          updated_at: timestamp,
        };
+
+       if (lobby.driver_id && reason?.trim()) {
+         updates.driver_status_message = `A passenger left this shared ride. Reason: ${reason.trim()}`;
+         updates.driver_status_updated_at = timestamp;
+       }
 
        if (nextHost) {
          updates.customer_id = nextHost.id;
@@ -2619,6 +2640,8 @@ export const supabaseHelpers = {
          .from('shared_ride_lobbies')
          .update(updates)
          .eq('id', lobbyId)
+         .eq('status', lobby.status)
+         .eq('passengers_json', JSON.stringify(passengers))
          .select()
          .single();
 
@@ -3583,6 +3606,12 @@ export const supabaseHelpers = {
     participantBAvatar?: string;
     subject?: string | null;
   }) {
+    const resolveProfiles = async (row: any) => {
+      if (!row) return row;
+      const [resolved] = await supabaseHelpers.resolveChatDisplayProfiles([row]);
+      return resolved || row;
+    };
+
     const findExistingForPair = async () => {
       const { data, error } = await supabase
         .from('chat_conversations')
@@ -3632,10 +3661,18 @@ export const supabaseHelpers = {
         if (participant.role && existing[roleField] !== participant.role) {
           updates[roleField] = participant.role;
         }
-        if (participant.name && existing[nameField] !== participant.name) {
+        if (
+          participant.name &&
+          (!isChatPlaceholderName(participant.name) || isChatPlaceholderName(existing[nameField])) &&
+          existing[nameField] !== participant.name
+        ) {
           updates[nameField] = participant.name;
         }
-        if (participant.avatar && existing[avatarField] !== participant.avatar) {
+        if (
+          participant.avatar &&
+          !isChatProfileImage(existing[avatarField]) &&
+          existing[avatarField] !== participant.avatar
+        ) {
           updates[avatarField] = participant.avatar;
         }
       }
@@ -3670,10 +3707,10 @@ export const supabaseHelpers = {
           .eq('id', existing.id)
           .select()
           .single();
-        return { data: updated || existing, error: null };
+        return { data: await resolveProfiles(updated || existing), error: null };
       }
 
-      return { data: existing, error: null };
+      return { data: await resolveProfiles(existing), error: null };
     };
 
     const existing = await findExistingForPair();
@@ -3710,7 +3747,7 @@ export const supabaseHelpers = {
       if (racedConversation.data) return updateExistingConversation(racedConversation.data);
     }
 
-    return { data, error };
+    return { data: await resolveProfiles(data), error };
   },
 
   // Find or create the one persistent chat between two users. Ride context is
@@ -3775,10 +3812,30 @@ export const supabaseHelpers = {
 
     const profiles: Record<string, { avatar_url: string | null; name: string | null; role?: string | null }> = {};
     try {
-      const { data: people } = await supabase
-        .from('users')
-        .select('id, name, avatar_url, role')
-        .in('id', ids);
+      // The users table intentionally exposes a user's row only to that user.
+      // Resolve peer photos through the chat-scoped RPC, which only returns
+      // profiles for people who share a conversation with the signed-in user.
+      const { data: chatPeers, error: chatPeerError } = await supabase.rpc(
+        'get_chat_peer_profiles',
+        { p_user_ids: ids },
+      );
+      let people: any[] = chatPeers || [];
+
+      // Keep older installations and legacy local accounts usable until the
+      // chat profile RPC migration has been applied.
+      const resolvedIds = new Set(people.map((person) => person.id));
+      const unresolvedIds = ids.filter((id) => !resolvedIds.has(id));
+      if (chatPeerError || unresolvedIds.length > 0) {
+        const { data: fallbackPeople } = await supabase
+          .from('users')
+          .select('id, name, avatar_url, role')
+          .in('id', unresolvedIds.length > 0 ? unresolvedIds : ids);
+        const profilesById = new Map(
+          [...(fallbackPeople || []), ...people].map((person) => [person.id, person]),
+        );
+        people = Array.from(profilesById.values());
+      }
+
       for (const person of people || []) {
         profiles[person.id] = {
           avatar_url: person.avatar_url,
@@ -3799,16 +3856,23 @@ export const supabaseHelpers = {
      * profile, rather than an owner name or an older name saved on the thread.
      */
     const shopNames: Record<string, string> = {};
-    const businessIds = ids.filter((id) => profiles[id]?.role === 'business');
+    const shopAvatars: Record<string, string> = {};
+    const businessIds = Array.from(new Set(rows.flatMap((conversation: any) => [
+      conversation.participant_a_role === 'business' ? conversation.participant_a_id : null,
+      conversation.participant_b_role === 'business' ? conversation.participant_b_id : null,
+    ]).filter((id): id is string => Boolean(id))));
     if (businessIds.length > 0) {
       try {
         const { data: shops } = await supabase
           .from('restaurants')
-          .select('business_user_id, name')
+          .select('business_user_id, name, logo_image')
           .in('business_user_id', businessIds);
         for (const shop of shops || []) {
           if (shop.business_user_id && shop.name) {
             shopNames[shop.business_user_id] = shop.name;
+          }
+          if (shop.business_user_id && shop.logo_image) {
+            shopAvatars[shop.business_user_id] = shop.logo_image;
           }
         }
       } catch (e) {
@@ -3820,8 +3884,8 @@ export const supabaseHelpers = {
     // initial or emoji for older threads.
     return rows.map((c: any) => ({
       ...c,
-      participant_a_avatar: profiles[c.participant_a_id]?.avatar_url || c.participant_a_avatar,
-      participant_b_avatar: profiles[c.participant_b_id]?.avatar_url || c.participant_b_avatar,
+      participant_a_avatar: shopAvatars[c.participant_a_id] || profiles[c.participant_a_id]?.avatar_url || c.participant_a_avatar,
+      participant_b_avatar: shopAvatars[c.participant_b_id] || profiles[c.participant_b_id]?.avatar_url || c.participant_b_avatar,
       participant_a_name: shopNames[c.participant_a_id] || profiles[c.participant_a_id]?.name || c.participant_a_name,
       participant_b_name: shopNames[c.participant_b_id] || profiles[c.participant_b_id]?.name || c.participant_b_name,
     }));
@@ -4451,7 +4515,15 @@ export const supabaseHelpers = {
       .from('user_profiles')
       .getPublicUrl(filePath);
 
-    return { data: publicUrlData, error: null };
+    // The object path is intentionally stable for each user. Add a version
+    // query so browsers and the CDN don't keep showing the previous photo
+    // after that object is replaced with `upsert: true`.
+    const versionedPublicUrl = new URL(publicUrlData.publicUrl);
+    versionedPublicUrl.searchParams.set('v', String(Date.now()));
+    return {
+      data: { ...publicUrlData, publicUrl: versionedPublicUrl.toString() },
+      error: null,
+    };
   },
 
   async uploadMenuItemImage(menuItemId: string, file: File) {

@@ -581,6 +581,16 @@ function PeerAvatar({
   return <span className={`${className || ""} font-semibold`}>{initial}</span>;
 }
 
+function isProfileImage(value: string | null | undefined): boolean {
+  const src = value?.trim() || '';
+  return /^https?:\/\//i.test(src) || src.startsWith('data:image/');
+}
+
+function isPlaceholderPeerName(value: string | null | undefined): boolean {
+  const name = value?.trim().toLocaleLowerCase();
+  return !name || ['user', 'passenger', 'driver', 'restaurant'].includes(name);
+}
+
 function getConversationPeer(conversation: ChatConversation) {
     const participantA = {
       id: conversation.participant_a_id,
@@ -986,9 +996,15 @@ function getConversationPeer(conversation: ChatConversation) {
     }
 
     const dbPeer = getConversationPeer(activeConversation);
-    // In direct mode, prefer the props-provided name (which is fetched fresh)
-    const peer = isDirectMode && directPeerName
-      ? { ...dbPeer, name: directPeerName, avatar: directPeerAvatar || dbPeer.avatar }
+    // Direct routes often begin with generic name / emoji placeholders while
+    // ride or profile details load. Do not let those temporary values hide the
+    // profile resolved from the conversation itself.
+    const peer = isDirectMode
+      ? {
+          ...dbPeer,
+          name: isPlaceholderPeerName(directPeerName) ? dbPeer.name : directPeerName!,
+          avatar: isProfileImage(directPeerAvatar) ? directPeerAvatar! : dbPeer.avatar,
+        }
       : dbPeer;
     const peerTheme = getRoleTheme(peer.role);
     /**
@@ -1523,8 +1539,8 @@ function getConversationPeer(conversation: ChatConversation) {
                     <div className="flex items-start gap-2">
                       <button
                         type="button"
-                        aria-label={`Open conversation with ${peer.name}`}
-                        onClick={() => void openConversation(conversation)}
+                        aria-label={`Open chat head with ${peer.name}`}
+                        onClick={() => openChatHead(conversation)}
                         className="flex min-w-0 flex-1 items-start gap-3 text-left"
                       >
                         {/* `overflow-hidden` keeps the photo clipped into its circle. */}
