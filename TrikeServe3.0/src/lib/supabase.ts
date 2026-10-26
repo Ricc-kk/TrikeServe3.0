@@ -4857,14 +4857,18 @@ export const supabaseHelpers = {
     return { data: data || [], error };
   },
 
-  async updateRideReportStatus(id: string, status: string, adminNotes?: string) {
+  async updateRideReportStatus(id: string, status: 'resolved' | 'dismissed', adminNotes?: string) {
     const { data, error } = await supabase
       .from('ride_reports')
       .update({ status, admin_notes: adminNotes ?? null, updated_at: new Date().toISOString() })
       .eq('id', id)
+      .in('status', ['pending', 'reviewing'])
       .select()
-      .single();
-    return { data, error };
+      .maybeSingle();
+    if (error || !data) {
+      return { data: null, error: error ?? new Error('This report has already reached a final status.') };
+    }
+    return { data, error: null };
   },
 
   // Follow the driver's active ride for a delivery order: the ride request the

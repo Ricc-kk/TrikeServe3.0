@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { X, Plus, Minus } from "lucide-react";
+import { X, Plus, Minus, Check } from "lucide-react";
 import { Button } from "../ui/button";
 import { Card } from "../ui/card";
 import { ImageWithFallback } from "../figma/ImageWithFallback";
@@ -13,6 +13,7 @@ export interface CustomizationOption {
 export interface CustomizationGroup {
   id: number;
   name: string;
+  enabled?: boolean;
   required: boolean;
   minSelections: number;
   maxSelections: number;
@@ -112,9 +113,6 @@ export default function CustomizationModal({
       const count = groupSelections.length;
 
       if (group.required && count < group.minSelections) {
-        errors[group.id] = `Please select at least ${group.minSelections} option${group.minSelections > 1 ? 's' : ''}`;
-        isValid = false;
-      } else if (count < group.minSelections) {
         errors[group.id] = `Please select at least ${group.minSelections} option${group.minSelections > 1 ? 's' : ''}`;
         isValid = false;
       }
@@ -248,14 +246,16 @@ export default function CustomizationModal({
                           {group.required && <span className="text-[var(--primary)] ml-1">*</span>}
                         </h3>
                         <span className="text-xs font-semibold text-[var(--muted-foreground)] bg-[var(--muted)] px-2 py-1 rounded-full">
-                          {group.maxSelections === 1 ? "Pick 1" : `Pick up to ${group.maxSelections}`}
+                          {group.maxSelections === 1
+                            ? "Pick 1"
+                            : `Pick up to ${Math.min(group.maxSelections, group.options.length)}`}
                         </span>
                       </div>
-                      {group.minSelections > 0 && (
-                        <p className="text-xs text-[var(--muted-foreground)]">
-                          {group.required ? "Required" : `Select at least ${group.minSelections}`}
-                        </p>
-                      )}
+                      <p className="text-xs text-[var(--muted-foreground)]">
+                        {group.required
+                          ? `Required · Select at least ${group.minSelections} option${group.minSelections > 1 ? "s" : ""}`
+                          : "Optional · You can continue without choosing"}
+                      </p>
                       {validationErrors[group.id] && (
                         <p className="text-xs text-[var(--primary)] mt-1 font-semibold">
                           {validationErrors[group.id]}
@@ -269,6 +269,7 @@ export default function CustomizationModal({
                         return (
                           <button
                             key={option.id}
+                            type="button"
                             onClick={() => handleOptionToggle(group.id, option.id, group.maxSelections)}
                             className={`w-full flex items-center justify-between p-3 rounded-xl border-2 transition-all ${
                               isSelected
@@ -279,14 +280,16 @@ export default function CustomizationModal({
                             <div className="flex items-center gap-3">
                               {/* Radio/Checkbox Indicator */}
                               <div
-                                className={`w-5 h-5 rounded-full border-2 flex items-center justify-center flex-shrink-0 ${
+                                className={`w-5 h-5 ${group.maxSelections === 1 ? "rounded-full" : "rounded-md"} border-2 flex items-center justify-center flex-shrink-0 ${
                                   isSelected
                                     ? "border-[var(--primary)] bg-[var(--primary)]"
                                     : "border-[var(--border)]"
                                 }`}
                               >
                                 {isSelected && (
-                                  <div className="w-2 h-2 bg-surface rounded-full" />
+                                  group.maxSelections === 1
+                                    ? <div className="w-2 h-2 bg-surface rounded-full" />
+                                    : <Check className="size-3 text-white" aria-hidden="true" />
                                 )}
                               </div>
                               <span className="font-semibold text-[var(--ink)] text-left">

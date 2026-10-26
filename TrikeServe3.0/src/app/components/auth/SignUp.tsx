@@ -613,13 +613,18 @@ export default function SignUp() {
                       onBlur={() => handleBlur("todaPlate")}
                       data-field="todaPlate"
                       aria-invalid={!!errorFor("todaPlate")}
-                      aria-describedby={errorFor("todaPlate") ? "todaPlate-error" : undefined}
+                      aria-describedby={errorFor("todaPlate") ? "todaPlate-error" : "todaPlate-help"}
                       className={`border focus:border-[var(--primary)] ${
                         errorFor("todaPlate") ? "border-[var(--error)]" : "border-line"
                       }`}
                       required
                       disabled={isLoading}
                     />
+                    {!errorFor("todaPlate") && (
+                      <p id="todaPlate-help" className="mt-1 text-xs text-[var(--muted-foreground)]">
+                        Enter the 4-digit plate number only (e.g. 1234).
+                      </p>
+                    )}
                     <FieldError id="todaPlate-error" message={errorFor("todaPlate")} />
                   </div>
 

@@ -16,6 +16,7 @@ type ExtraField = {
   label: string;
   value: string;
   placeholder: string;
+  hint?: string;
   onChange: (v: string) => void;
   type?: string;
 };
@@ -401,6 +402,7 @@ export default function EditProfileScreen({
                   id={`edit-${f.key}`}
                   type={f.type ?? "text"}
                   value={f.value}
+                  aria-describedby={f.hint ? `edit-${f.key}-hint` : undefined}
                   onChange={(e) => {
                     f.onChange(e.target.value);
                     setSaved(false);
@@ -408,6 +410,11 @@ export default function EditProfileScreen({
                   placeholder={f.placeholder}
                   className="min-h-12 w-full rounded-xl border border-line bg-[var(--surface)] px-4 text-base text-[var(--ink)] outline-none focus:border-[var(--primary)]"
                 />
+                {f.hint && (
+                  <p id={`edit-${f.key}-hint`} className="mt-1 text-xs text-[var(--muted-foreground)]">
+                    {f.hint}
+                  </p>
+                )}
               </div>
             ))}
             {extraNote && (

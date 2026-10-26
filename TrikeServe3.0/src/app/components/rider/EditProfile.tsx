@@ -65,7 +65,8 @@ export default function RiderEditProfile() {
           // Show what was submitted while it is under review; otherwise the
           // field would read as though the edit never took.
           value: pendingPlate ?? todaPlate,
-          placeholder: "ABC 1234",
+          placeholder: "1234",
+          hint: "Enter the 4-digit plate number only (e.g. 1234).",
           onChange: (v) => {
             setTodaPlate(v);
             // Editing after submitting invalidates the queued request, so clear

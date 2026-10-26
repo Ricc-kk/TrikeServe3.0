@@ -4247,7 +4247,7 @@ const getPrice = () => {
                           : route.isPrimary
                       );
                 const routeColor = route.terminalId === selectedTerminalId ? selectedTerminalRouteColor : route.color;
-                const routeOpacity = isPrivateRideMap && !isSelectedRoute
+                const routeOpacity = isPrivateRideMap && visibleRideStatus !== 'searching' && !isSelectedRoute
                   ? route.enabled ? 0.12 : 0.06
                   : isSelectedRoute ? 0.95 : route.enabled ? 0.82 : 0.38;
                 return (
@@ -4383,7 +4383,7 @@ const getPrice = () => {
             ? 'left-1/2 -translate-x-1/2 inline-flex h-12 items-center gap-2 border border-[var(--primary)] bg-[var(--primary)] py-3 pl-3 pr-5 text-[var(--primary-foreground)] shadow-xl'
             : 'right-4 grid size-12 place-items-center border border-line bg-surface/95 text-[var(--primary)] backdrop-blur-sm'}`}
           style={isActivePrivateRidePage
-            ? { bottom: 'calc(env(safe-area-inset-bottom, 0px) + 5rem + 15rem + 0.75rem)' }
+            ? { bottom: 'calc(env(safe-area-inset-bottom, 0px) + 5rem + 18rem + 0.75rem)' }
             : { top: 'calc(env(safe-area-inset-top, 0px) + 11rem)' }}
         >
           <Navigation

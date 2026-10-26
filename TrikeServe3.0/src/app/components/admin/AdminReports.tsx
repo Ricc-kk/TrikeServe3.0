@@ -35,6 +35,11 @@ const STATUS_META: Record<string, { label: string; badge: string }> = {
 
 const STATUS_FILTERS = ["All", "pending", "reviewing", "resolved", "dismissed"] as const;
 type ReportStatusFilter = Exclude<(typeof STATUS_FILTERS)[number], "All">;
+type FinalReportStatus = "resolved" | "dismissed";
+
+function isFinalReportStatus(status: string): status is FinalReportStatus {
+  return status === "resolved" || status === "dismissed";
+}
 
 function statusMeta(status: string) {
   return STATUS_META[status] || { label: status, badge: "bg-soft text-[var(--muted-foreground)]" };
@@ -78,12 +83,15 @@ export default function AdminReports() {
     return () => clearInterval(interval);
   }, [isSuperAdmin]);
 
-  const setStatus = async (id: string, status: string) => {
+  const setStatus = async (id: string, status: FinalReportStatus) => {
+    const report = reports.find((item) => item.id === id);
+    if (!isSuperAdmin || busyId === id || !report || isFinalReportStatus(report.status)) return;
+
     setBusyId(id);
     const previous = reports;
     setReports((prev) => prev.map((r) => (r.id === id ? { ...r, status } : r)));
-    const { error } = await supabaseHelpers.updateRideReportStatus(id, status);
-    if (error) {
+    const { data, error } = await supabaseHelpers.updateRideReportStatus(id, status);
+    if (error || !data) {
       setReports(previous);
       alert("Could not update the report. Please try again.");
     }
@@ -292,25 +300,29 @@ export default function AdminReports() {
                           </div>
 
                           <div className="grid w-full grid-cols-2 gap-2 border-t border-line pt-4">
-                            {report.status !== "resolved" && (
-                              <button
-                                disabled={busyId === report.id}
-                                onClick={() => setStatus(report.id, "resolved")}
-                                aria-label={`Resolve ${report.category} report from ${report.reporter_name || (isRiderReport ? "a rider" : "a customer")}`}
-                                className="min-h-11 px-3 rounded-lg bg-[var(--success-ink)] text-[var(--background)] text-xs font-bold active:scale-95 transition-transform disabled:opacity-50"
-                              >
-                                Resolve
-                              </button>
-                            )}
-                            {report.status !== "dismissed" && (
-                              <button
-                                disabled={busyId === report.id}
-                                onClick={() => setStatus(report.id, "dismissed")}
-                                aria-label={`Dismiss ${report.category} report from ${report.reporter_name || (isRiderReport ? "a rider" : "a customer")}`}
-                                className="min-h-11 px-3 rounded-lg bg-[var(--muted)] border border-line text-[var(--muted-foreground)] text-xs font-bold active:scale-95 transition-transform disabled:opacity-50"
-                              >
-                                Dismiss
-                              </button>
+                            {isFinalReportStatus(report.status) ? (
+                              <p className="col-span-2 text-center text-xs font-semibold text-[var(--muted-foreground)]">
+                                Final status — this report can’t be changed.
+                              </p>
+                            ) : (
+                              <>
+                                <button
+                                  disabled={busyId === report.id}
+                                  onClick={() => setStatus(report.id, "resolved")}
+                                  aria-label={`Resolve ${report.category} report from ${report.reporter_name || (isRiderReport ? "a rider" : "a customer")}`}
+                                  className="min-h-11 px-3 rounded-lg bg-[var(--success-ink)] text-[var(--background)] text-xs font-bold active:scale-95 transition-transform disabled:opacity-50"
+                                >
+                                  Resolve
+                                </button>
+                                <button
+                                  disabled={busyId === report.id}
+                                  onClick={() => setStatus(report.id, "dismissed")}
+                                  aria-label={`Dismiss ${report.category} report from ${report.reporter_name || (isRiderReport ? "a rider" : "a customer")}`}
+                                  className="min-h-11 px-3 rounded-lg bg-[var(--muted)] border border-line text-[var(--muted-foreground)] text-xs font-bold active:scale-95 transition-transform disabled:opacity-50"
+                                >
+                                  Dismiss
+                                </button>
+                              </>
                             )}
                           </div>
                         </div>

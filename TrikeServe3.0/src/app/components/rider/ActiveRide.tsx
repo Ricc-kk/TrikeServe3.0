@@ -1466,9 +1466,24 @@ export default function ActiveRide() {
             )[0]?.route || null
         : null;
 
+      // Older rides may not have saved a route id, and a drop-off can sit just
+      // outside a route's corridor width. Keep the closest plotted road as a
+      // fallback so the rider still gets a terminal-to-drop-off path.
+      const nearestRoute = dropoff
+        ? routes
+            .map(route => ({
+              route,
+              distance: projectOntoRoute(dropoff, route.points)?.distanceFromRoute ?? Number.POSITIVE_INFINITY,
+            }))
+            .sort((a, b) =>
+              a.distance - b.distance || Number(b.route.enabled) - Number(a.route.enabled),
+            )[0]?.route || null
+        : null;
+
       setPrivateTerminalRoute(
         requestedRoute
         || matchingRoute
+        || nearestRoute
         || (!dropoff ? routes.find(route => route.enabled) || routes[0] || null : null),
       );
     };
@@ -1484,6 +1499,8 @@ export default function ActiveRide() {
     rideData?.id,
     rideData?.terminalId,
     rideData?.selectedRouteId,
+    rideData?.pickupLat,
+    rideData?.pickupLng,
     rideData?.dropoffLat,
     rideData?.dropoffLng,
     rideData?.status,
@@ -1651,22 +1668,29 @@ export default function ActiveRide() {
       !isPrivateRide ||
       isHeadingToPickup ||
       rideData.status === 'completed' ||
-      !driverLocation ||
       rideData.dropoffLat == null ||
       rideData.dropoffLng == null
     ) {
       return [];
     }
 
+    // This leg belongs to the terminal and passenger destination, so keep it
+    // visible even if the driver's GPS has not reported a position yet.
+    const pickup = coordinateFromValues(rideData.pickupLat, rideData.pickupLng);
+    const routeStart = pickup || driverLocation || privateTerminalRoute?.points[0] || null;
+    if (!routeStart) return [];
+
     return buildPrivateTerminalRoutePath(
-      driverLocation,
+      routeStart,
       { lat: Number(rideData.dropoffLat), lng: Number(rideData.dropoffLng) },
       privateTerminalRoute,
-      privateDriverToRoutePath,
+      pickup ? null : privateDriverToRoutePath,
     );
   }, [
     rideData?.id,
     rideData?.status,
+    rideData?.pickupLat,
+    rideData?.pickupLng,
     rideData?.dropoffLat,
     rideData?.dropoffLng,
     isPrivateRide,
@@ -3067,8 +3091,8 @@ export default function ActiveRide() {
               />
             ))}
 
-            {/* After pickup, move the private drop-off path with the tricycle
-                while keeping it on the selected terminal road. */}
+            {/* Keep the full terminal-to-drop-off leg visible after pickup,
+                including when the driver's GPS is unavailable. */}
             {isPrivateRide && !isHeadingToPickup && privateTerminalDropoffPath.length > 1 && (
               <Polyline
                 path={privateTerminalDropoffPath}

@@ -129,7 +129,8 @@ export default function ItemOptionsEditor({
       </div>
       <p className="text-xs text-[var(--muted-foreground)] mb-3">
         Let the customer pick from a list before they add it &mdash; a drink to go
-        with, a size, a flavour. Rename a choice to whatever your shop calls it.
+        with, a size, a flavour. Choose whether it is required and whether customers
+        can pick one or several options.
       </p>
 
       {savingBlocked && (
@@ -206,6 +207,72 @@ export default function ItemOptionsEditor({
                   className="grid size-8 shrink-0 place-items-center rounded-lg border border-line text-[var(--error)] transition-colors hover:bg-[var(--error-soft)] active:scale-95"
                 >
                   <Trash2 className="size-4" aria-hidden="true" />
+                </button>
+              </div>
+
+              <div className="mt-3 flex flex-wrap items-center gap-2 rounded-lg bg-[var(--muted)] p-2">
+                <label className="flex items-center gap-2 text-xs font-semibold text-[var(--ink)]">
+                  <span>Customers can</span>
+                  <select
+                    value={group.maxSelections > 1 ? "multiple" : "single"}
+                    onChange={(event) => {
+                      const allowMultiple = event.target.value === "multiple";
+                      const maxAvailable = Math.max(2, group.options.length);
+                      updateGroup(group.id, {
+                        maxSelections: allowMultiple
+                          ? Math.max(2, Math.min(group.maxSelections > 1 ? group.maxSelections : maxAvailable, maxAvailable))
+                          : 1,
+                      });
+                    }}
+                    aria-label={`${group.name || "Choice"} selection mode`}
+                    className="rounded-lg border border-line bg-surface px-2 py-1.5 text-xs font-semibold focus:border-[var(--primary)] focus:outline-none"
+                  >
+                    <option value="single">Choose one</option>
+                    <option value="multiple">Choose multiple</option>
+                  </select>
+                </label>
+
+                {group.maxSelections > 1 && (
+                  <label className="flex items-center gap-2 text-xs font-semibold text-[var(--ink)]">
+                    <span>Max picks</span>
+                    <input
+                      type="number"
+                      min={2}
+                      max={Math.max(2, group.options.length)}
+                      value={Math.min(group.maxSelections, Math.max(2, group.options.length))}
+                      onChange={(event) => {
+                        const value = Number.parseInt(event.target.value, 10);
+                        if (Number.isFinite(value)) {
+                          updateGroup(group.id, {
+                            maxSelections: Math.max(2, Math.min(value, Math.max(2, group.options.length))),
+                          });
+                        }
+                      }}
+                      aria-label={`${group.name || "Choice"} maximum selections`}
+                      className="w-14 rounded-lg border border-line bg-surface px-2 py-1.5 text-xs focus:border-[var(--primary)] focus:outline-none"
+                    />
+                  </label>
+                )}
+
+                <button
+                  type="button"
+                  role="switch"
+                  aria-checked={group.required}
+                  aria-label={`${group.required ? "Make" : "Mark"} ${group.name || "choice"} ${group.required ? "optional" : "required"}`}
+                  onClick={() => {
+                    const required = !group.required;
+                    updateGroup(group.id, {
+                      required,
+                      minSelections: required ? 1 : 0,
+                    });
+                  }}
+                  className={`ml-auto inline-flex items-center gap-1.5 rounded-full px-2.5 py-1.5 text-xs font-bold transition-colors ${
+                    group.required
+                      ? "bg-[var(--primary-soft)] text-[var(--primary)]"
+                      : "bg-surface text-[var(--muted-foreground)]"
+                  }`}
+                >
+                  {group.required ? "Required" : "Optional"}
                 </button>
               </div>
 

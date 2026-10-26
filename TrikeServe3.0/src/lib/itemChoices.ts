@@ -73,7 +73,22 @@ export const newChoiceGroup = (index: number): ItemChoiceGroup => ({
 export const usableChoiceGroups = (groups: ItemChoiceGroup[]): ItemChoiceGroup[] =>
   groups
     .filter((g) => g.name.trim() !== "" && g.options.some((o) => o.name.trim() !== ""))
-    .map((g) => ({ ...g, options: g.options.filter((o) => o.name.trim() !== "") }));
+    .map((g) => {
+      const options = g.options.filter((o) => o.name.trim() !== "");
+      const maxAvailable = Math.max(2, options.length);
+      const required = g.required !== false;
+      const maxSelections = g.maxSelections > 1
+        ? Math.min(maxAvailable, Math.max(2, g.maxSelections))
+        : 1;
+
+      return {
+        ...g,
+        required,
+        minSelections: required ? Math.max(1, g.minSelections || 1) : 0,
+        maxSelections,
+        options,
+      };
+    });
 
 /**
  * Read the column into groups, whatever shape it arrives in.
@@ -107,6 +122,8 @@ export function parseChoiceGroups(raw: unknown): ItemChoiceGroup[] {
     .map((g) => {
       const options = Array.isArray(g.options) ? g.options : [];
       const maxSelections = Number(g.maxSelections);
+      const required = g.required !== false;
+      const minSelections = Number(g.minSelections);
       return {
         id: Number.isFinite(Number(g.id)) ? Number(g.id) : freshId(),
         name: typeof g.name === "string" ? g.name : "",
@@ -114,8 +131,10 @@ export function parseChoiceGroups(raw: unknown): ItemChoiceGroup[] {
         // `enabled` key, and defaulting those to off would silently delete every
         // customer's drink choice on the first load.
         enabled: g.enabled !== false,
-        required: g.required !== false,
-        minSelections: Number.isFinite(Number(g.minSelections)) ? Number(g.minSelections) : 1,
+        required,
+        minSelections: required
+          ? Number.isFinite(minSelections) ? Math.max(1, minSelections) : 1
+          : 0,
         maxSelections: Number.isFinite(maxSelections) && maxSelections > 0 ? maxSelections : 1,
         options: options
           .filter((o): o is Record<string, unknown> => !!o && typeof o === "object")
