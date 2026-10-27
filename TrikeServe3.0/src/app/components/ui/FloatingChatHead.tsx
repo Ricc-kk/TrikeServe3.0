@@ -145,10 +145,13 @@ export interface FloatingChatHeadStackItem {
 }
 
 const STACK_PEEK = 14;
-const STACK_DRAG_DELAY = 115;
+const STACK_REPOSITION_DURATION = 115;
 const STACK_FOLLOW_DELAY = 95;
 const STACK_FOLLOW_STEP_DELAY = 55;
 const STACK_FOLLOW_TRANSITION = 65;
+const STACK_FOLLOW_IDLE_DELAY = 180;
+const STACK_FOLLOW_HIDE_DURATION = 190;
+const STACK_FOLLOW_HIDE_STEP_DELAY = 45;
 const MAX_STACK_ITEMS = 3;
 const CHAT_HEAD_SIZE = 56;
 const CHAT_HEAD_ROW_GAP = 8;
@@ -240,7 +243,8 @@ export default function FloatingChatHead({
   const pos = useRef({ x: 0, y: 0 });
   const placed = useRef(false);
   const moved = useRef(false);
-  const drag = useRef<{ dx: number; dy: number; side?: Side } | null>(null);
+  const drag = useRef<{ dx: number; dy: number; side?: Side; followSide?: Side } | null>(null);
+  const pointerMovingRef = useRef(false);
   const pointerCleanupRef = useRef<(() => void) | null>(null);
 
   /**
@@ -264,6 +268,8 @@ export default function FloatingChatHead({
   const [mountRetry, setMountRetry] = useState(0);
   const [isPointerDown, setIsPointerDown] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
+  const [isPointerMoving, setIsPointerMoving] = useState(false);
+  const [isFollowerHideAnimating, setIsFollowerHideAnimating] = useState(false);
   const stackExpandedRef = useRef(false);
   const [isOverCloseTarget, setIsOverCloseTarget] = useState(false);
   const [dismissed, setDismissed] = useState(() => {
@@ -304,29 +310,24 @@ export default function FloatingChatHead({
     stackHeadRefs.current.slice(0, visibleStackItems.length).forEach((el, index) => {
       if (!el) return;
       el.style.transition = animated
-        ? `left ${STACK_DRAG_DELAY}ms ease-out, top ${STACK_DRAG_DELAY}ms ease-out`
+        ? `left ${STACK_REPOSITION_DURATION}ms ease-out, top ${STACK_REPOSITION_DURATION}ms ease-out`
         : 'none';
-      // At rest, each head only peeks out. While pressed, the full spacing keeps
-      // every head visible; during a drag, history offsets make them follow the
-      // lead head's path before settling back into the stack.
+      // At rest, stacked heads stay tucked toward the screen's center.
       el.style.left = `${direction * offset * (index + 1)}px`;
       el.style.top = '0px';
     });
   }, [showStackItems, visibleStackItems.length]);
 
   const followStackHeads = useCallback((
-    nextSide: Side,
     leader: { x: number; y: number },
     history: DragPositionSample[],
     now: number,
   ) => {
-    const direction = nextSide === 'right' ? -1 : 1;
-    const offset = showStackItems || stackExpandedRef.current
-      ? CHAT_HEAD_SIZE + CHAT_HEAD_ROW_GAP
-      : STACK_PEEK;
     stackHeadRefs.current.slice(0, visibleStackItems.length).forEach((el, index) => {
       if (!el || history.length === 0) return;
 
+      // Delaying the sampled path converts speed into distance: faster drags
+      // leave each follower farther back, while slow drags close the gap.
       const targetTime = now - STACK_FOLLOW_DELAY - index * STACK_FOLLOW_STEP_DELAY;
       let before = history[0];
       let after = history[history.length - 1];
@@ -347,10 +348,12 @@ export default function FloatingChatHead({
       const followedY = before.y + (after.y - before.y) * progress;
 
       el.style.transition = `left ${STACK_FOLLOW_TRANSITION}ms linear, top ${STACK_FOLLOW_TRANSITION}ms linear`;
-      el.style.left = `${direction * offset * (index + 1) + followedX - leader.x}px`;
+      // Place every follower at an earlier point on the lead's exact path.
+      // Each extra delay makes the following head trail farther behind.
+      el.style.left = `${followedX - leader.x}px`;
       el.style.top = `${followedY - leader.y}px`;
     });
-  }, [showStackItems, visibleStackItems.length]);
+  }, [visibleStackItems.length]);
 
   useLayoutEffect(() => {
     if (isGlobal) return;
@@ -604,7 +607,9 @@ export default function FloatingChatHead({
   useEffect(() => {
     const stackHeads = stackHeadRefs.current.slice(0, visibleStackItems.length);
     if (isPointerDown || isDragging || hidden || !showStackItems) {
-      stackHeads.forEach((el) => el?.getAnimations().forEach((animation) => animation.cancel()));
+      if (!isFollowerHideAnimating) {
+        stackHeads.forEach((el) => el?.getAnimations().forEach((animation) => animation.cancel()));
+      }
       return;
     }
     if (!placed2 || !stackAnimationKey) return;
@@ -619,7 +624,7 @@ export default function FloatingChatHead({
         { duration: 190, delay: index * 35, easing: 'ease-out' },
       );
     });
-  }, [hidden, isDragging, isPointerDown, placed2, showStackItems, side, stackAnimationKey, visibleStackItems.length]);
+  }, [hidden, isDragging, isPointerDown, isFollowerHideAnimating, placed2, showStackItems, side, stackAnimationKey, visibleStackItems.length]);
 
   const onPointerDown = useCallback((e: React.PointerEvent<HTMLButtonElement>) => {
     const el = headRef.current;
@@ -629,43 +634,108 @@ export default function FloatingChatHead({
     const startY = e.clientY;
     const dragHistory: DragPositionSample[] = [{ ...pos.current, time: performance.now() }];
     pointerCleanupRef.current?.();
+    pointerMovingRef.current = false;
     stackExpandedRef.current = true;
     moved.current = false;
     setIsPointerDown(true);
     setIsDragging(false);
+    setIsPointerMoving(false);
+    setIsFollowerHideAnimating(false);
     setIsOverCloseTarget(false);
     const rect = el.getBoundingClientRect();
     // Remember where inside the button the finger landed, so the head does not
     // snap its corner to the touch point.
-    drag.current = { dx: startX - rect.left, dy: startY - rect.top };
+    const followSide: Side = rect.left + rect.width / 2 < window.innerWidth / 2 ? 'left' : 'right';
+    drag.current = {
+      dx: startX - rect.left,
+      dy: startY - rect.top,
+      side: followSide,
+      followSide,
+    };
+    stackHeadRefs.current.slice(0, visibleStackItems.length).forEach((stackHead) => {
+      if (!stackHead) return;
+      stackHead.style.opacity = '0';
+      stackHead.style.pointerEvents = 'none';
+    });
     el.setPointerCapture?.(pointerId);
 
     let followFrame: number | null = null;
+    let movementIdleTimeout: number | null = null;
+    let followerHideTimeout: number | null = null;
     const updateStackFollowers = () => {
-      if (!drag.current) {
+      if (!drag.current || !pointerMovingRef.current) {
         followFrame = null;
         return;
       }
       const now = performance.now();
-      const followSide = drag.current.side
-        ?? (pos.current.x + rect.width / 2 < window.innerWidth / 2 ? 'left' : 'right');
-      followStackHeads(followSide, pos.current, dragHistory, now);
+      followStackHeads(pos.current, dragHistory, now);
       followFrame = requestAnimationFrame(updateStackFollowers);
+    };
+    const animateFollowersBehindLeader = (nextSide: Side) => {
+      const leader = headRef.current;
+      const followers = stackHeadRefs.current.slice(0, visibleStackItems.length).filter(
+        (stackHead): stackHead is HTMLButtonElement => Boolean(stackHead),
+      );
+      if (showStackItems || !leader || followers.length === 0) {
+        setIsFollowerHideAnimating(false);
+        if (showStackItems) positionStackHeads(nextSide, true);
+        return;
+      }
+
+      const leaderRect = leader.getBoundingClientRect();
+      setIsFollowerHideAnimating(true);
+      followers.forEach((stackHead, index) => {
+        const rect = stackHead.getBoundingClientRect();
+        stackHead.style.transition = 'none';
+        stackHead.style.pointerEvents = 'none';
+        stackHead.animate(
+          [
+            {
+              left: `${rect.left - leaderRect.left}px`,
+              top: `${rect.top - leaderRect.top}px`,
+              opacity: 1,
+              transform: 'scale(1)',
+            },
+            { left: '0px', top: '0px', opacity: 0, transform: 'scale(0.18)' },
+          ],
+          {
+            duration: STACK_FOLLOW_HIDE_DURATION,
+            delay: index * STACK_FOLLOW_HIDE_STEP_DELAY,
+            easing: 'ease-in',
+            // Keep delayed followers at their moving position until their own
+            // tuck begins; forwards alone lets React's resting offset show
+            // during the stagger.
+            fill: 'both',
+          },
+        );
+      });
+      followerHideTimeout = window.setTimeout(() => {
+        followerHideTimeout = null;
+        setIsFollowerHideAnimating(false);
+      }, STACK_FOLLOW_HIDE_DURATION + (followers.length - 1) * STACK_FOLLOW_HIDE_STEP_DELAY);
     };
 
     const cleanup = () => {
       if (followFrame !== null) cancelAnimationFrame(followFrame);
       followFrame = null;
+      if (movementIdleTimeout !== null) window.clearTimeout(movementIdleTimeout);
+      movementIdleTimeout = null;
+      if (followerHideTimeout !== null) window.clearTimeout(followerHideTimeout);
+      followerHideTimeout = null;
+      stackHeadRefs.current.slice(0, visibleStackItems.length).forEach((stackHead) => {
+        stackHead?.getAnimations().forEach((animation) => animation.cancel());
+      });
       window.removeEventListener('pointermove', onMove);
       window.removeEventListener('pointerup', onUp);
       window.removeEventListener('pointercancel', onCancel);
       if (pointerCleanupRef.current === cleanup) pointerCleanupRef.current = null;
     };
 
-    const snapToEdge = () => {
+    const snapToEdge = (preserveFollowerPosition = false, requestedSide?: Side) => {
       const w = rect.width;
       const h = rect.height;
       const next =
+        requestedSide ??
         drag.current?.side ??
         (pos.current.x + w / 2 < window.innerWidth / 2 ? 'left' : 'right');
 
@@ -679,8 +749,9 @@ export default function FloatingChatHead({
         group.style.left = `${pos.current.x}px`;
         group.style.top = `${pos.current.y}px`;
       }
-      positionStackHeads(next, true);
+      if (!preserveFollowerPosition) positionStackHeads(next, true);
       save(next);
+      return next;
     };
 
     const onMove = (ev: PointerEvent) => {
@@ -692,9 +763,33 @@ export default function FloatingChatHead({
       ) {
         moved.current = true;
         setIsDragging(true);
+      }
+      if (moved.current) {
+        pointerMovingRef.current = true;
+        setIsPointerMoving(true);
+        setIsFollowerHideAnimating(false);
+        if (followerHideTimeout !== null) window.clearTimeout(followerHideTimeout);
+        followerHideTimeout = null;
+        stackHeadRefs.current.slice(0, visibleStackItems.length).forEach((stackHead) => {
+          if (!stackHead) return;
+          stackHead.getAnimations().forEach((animation) => animation.cancel());
+          stackHead.style.opacity = '1';
+          stackHead.style.pointerEvents = 'auto';
+        });
         if (visibleStackItems.length > 0 && followFrame === null) {
           followFrame = requestAnimationFrame(updateStackFollowers);
         }
+        if (movementIdleTimeout !== null) window.clearTimeout(movementIdleTimeout);
+        movementIdleTimeout = window.setTimeout(() => {
+          movementIdleTimeout = null;
+          pointerMovingRef.current = false;
+          setIsPointerMoving(false);
+          if (followFrame !== null) cancelAnimationFrame(followFrame);
+          followFrame = null;
+          const nextSide = drag.current?.side ??
+            (pos.current.x + rect.width / 2 < window.innerWidth / 2 ? 'left' : 'right');
+          animateFollowersBehindLeader(nextSide);
+        }, STACK_FOLLOW_IDLE_DELAY);
       }
       const w = rect.width;
       const h = rect.height;
@@ -709,15 +804,17 @@ export default function FloatingChatHead({
       // Decided during the drag but applied on release, so it does not jump
       // sides under the finger mid-gesture.
       drag.current.side = pos.current.x + w / 2 < window.innerWidth / 2 ? 'left' : 'right';
-      const now = performance.now();
-      dragHistory.push({ ...pos.current, time: now });
-      const oldestNeededTime = now - STACK_FOLLOW_DELAY -
-        Math.max(0, visibleStackItems.length - 1) * STACK_FOLLOW_STEP_DELAY -
-        STACK_FOLLOW_TRANSITION;
-      while (dragHistory.length > 2 && dragHistory[1].time < oldestNeededTime) {
-        dragHistory.shift();
+      if (moved.current) {
+        const now = performance.now();
+        dragHistory.push({ ...pos.current, time: now });
+        const oldestNeededTime = now - STACK_FOLLOW_DELAY -
+          Math.max(0, visibleStackItems.length - 1) * STACK_FOLLOW_STEP_DELAY -
+          STACK_FOLLOW_TRANSITION;
+        while (dragHistory.length > 2 && dragHistory[1].time < oldestNeededTime) {
+          dragHistory.shift();
+        }
+        followStackHeads(pos.current, dragHistory, now);
       }
-      followStackHeads(drag.current.side, pos.current, dragHistory, now);
       setIsOverCloseTarget(moved.current && isOnCloseTarget(pos.current.x, pos.current.y, w, h));
     };
 
@@ -726,14 +823,20 @@ export default function FloatingChatHead({
       const w = rect.width;
       const h = rect.height;
       const shouldDismiss = moved.current && isOnCloseTarget(pos.current.x, pos.current.y, w, h);
+      const didDrag = moved.current;
+      const nextSide = drag.current.side ??
+        (pos.current.x + w / 2 < window.innerWidth / 2 ? 'left' : 'right');
       drag.current = null;
+      pointerMovingRef.current = false;
       stackExpandedRef.current = false;
       cleanup();
       setIsPointerDown(false);
       setIsDragging(false);
+      setIsPointerMoving(false);
       setIsOverCloseTarget(false);
 
       if (shouldDismiss) {
+        setIsFollowerHideAnimating(false);
         if (resolvedDismissalStorageKey) {
           try {
             window.localStorage.setItem(resolvedDismissalStorageKey, 'true');
@@ -747,25 +850,34 @@ export default function FloatingChatHead({
 
       // Snap to the edge it was released nearest, so it never ends up covering
       // whatever the driver or customer is looking at.
-      snapToEdge();
+      snapToEdge(didDrag && !showStackItems, nextSide);
+      if (didDrag) animateFollowersBehindLeader(nextSide);
+      else setIsFollowerHideAnimating(false);
     };
 
     const onCancel = (ev: PointerEvent) => {
       if (!drag.current || ev.pointerId !== pointerId) return;
+      const didDrag = moved.current;
+      const nextSide = drag.current.side ??
+        (pos.current.x + rect.width / 2 < window.innerWidth / 2 ? 'left' : 'right');
       drag.current = null;
+      pointerMovingRef.current = false;
       stackExpandedRef.current = false;
       cleanup();
       setIsPointerDown(false);
       setIsDragging(false);
+      setIsPointerMoving(false);
       setIsOverCloseTarget(false);
-      snapToEdge();
+      snapToEdge(didDrag && !showStackItems, nextSide);
+      if (didDrag) animateFollowersBehindLeader(nextSide);
+      else setIsFollowerHideAnimating(false);
     };
 
     window.addEventListener('pointermove', onMove);
     window.addEventListener('pointerup', onUp);
     window.addEventListener('pointercancel', onCancel);
     pointerCleanupRef.current = cleanup;
-  }, [followStackHeads, positionStackHeads, resolvedDismissalStorageKey, save, visibleStackItems.length]);
+  }, [followStackHeads, positionStackHeads, resolvedDismissalStorageKey, save, showStackItems, visibleStackItems.length]);
 
   /**
    * Park the head in the top-right corner once chat has been opened.
@@ -800,10 +912,12 @@ export default function FloatingChatHead({
   }, [opened, positionStackHeads, storageKey]);
 
   if (dismissed || !user?.id) return null;
-  const stackSide = isDragging ? drag.current?.side ?? side : side;
   const isThisConversationOpen = Boolean(headId && openedConversationId === headId);
   const isHidden = hidden || isThisConversationOpen;
-  const stackItemsHidden = isHidden || isPointerDown || isDragging || !showStackItems;
+  const stackItemsHidden = isHidden || (
+    !showStackItems && !isFollowerHideAnimating && (!isDragging || !isPointerMoving)
+  );
+  const stackItemsUnavailable = stackItemsHidden || (!showStackItems && isFollowerHideAnimating);
 
   return createPortal(
     <div
@@ -822,11 +936,11 @@ export default function FloatingChatHead({
           ref={(el) => { stackHeadRefs.current[index] = el; }}
           type="button"
           style={{
-            left: (stackSide === 'right' ? -1 : 1) *
-              (isStackExpanded ? CHAT_HEAD_SIZE + CHAT_HEAD_ROW_GAP : STACK_PEEK) * (index + 1),
-            top: 0,
+            // Position is managed by the stack layout and drag-history code.
+            // Keeping left/top out of React props prevents a rerender from
+            // snapping a follower away from the lead head's sampled path.
             opacity: stackItemsHidden ? 0 : 1,
-            pointerEvents: stackItemsHidden ? 'none' : 'auto',
+            pointerEvents: stackItemsUnavailable ? 'none' : 'auto',
             zIndex: visibleStackItems.length - index,
           }}
           onPointerDown={(event) => event.stopPropagation()}
@@ -835,8 +949,8 @@ export default function FloatingChatHead({
             item.onOpen();
           }}
           aria-label={`Chat with ${item.peerLabel}`}
-          aria-hidden={stackItemsHidden || undefined}
-          tabIndex={stackItemsHidden ? -1 : undefined}
+          aria-hidden={stackItemsUnavailable || undefined}
+          tabIndex={stackItemsUnavailable ? -1 : undefined}
           className="absolute grid size-14 place-items-center overflow-visible rounded-full border-2 border-[var(--border)] bg-[var(--surface)] shadow-xl touch-none select-none"
         >
           <span className="relative size-full overflow-hidden rounded-full">
