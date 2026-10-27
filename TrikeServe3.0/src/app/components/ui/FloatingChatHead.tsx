@@ -38,6 +38,7 @@ const TAP_SLOP = 6;
 const CLOSE_TARGET_WIDTH = 56;
 const CLOSE_TARGET_HEIGHT = 56;
 const CLOSE_TARGET_BOTTOM = 24;
+const CLOSE_TARGET_STICKY_PADDING = 16;
 
 /**
  * Whether a stored avatar value is actually a URL.
@@ -52,14 +53,14 @@ function isImageUrl(value: string | null | undefined): value is string {
   return /^https?:\/\//i.test(v) || v.startsWith('data:image/');
 }
 
-function isOnCloseTarget(x: number, y: number, width: number, height: number) {
+function isOnCloseTarget(x: number, y: number, width: number, height: number, padding = 0) {
   const centerX = x + width / 2;
   const centerY = y + height / 2;
-  const left = (window.innerWidth - CLOSE_TARGET_WIDTH) / 2;
-  const top = window.innerHeight - CLOSE_TARGET_BOTTOM - CLOSE_TARGET_HEIGHT;
+  const left = (window.innerWidth - CLOSE_TARGET_WIDTH) / 2 - padding;
+  const top = window.innerHeight - CLOSE_TARGET_BOTTOM - CLOSE_TARGET_HEIGHT - padding;
   return (
-    centerX >= left && centerX <= left + CLOSE_TARGET_WIDTH &&
-    centerY >= top && centerY <= top + CLOSE_TARGET_HEIGHT
+    centerX >= left && centerX <= left + CLOSE_TARGET_WIDTH + padding * 2 &&
+    centerY >= top && centerY <= top + CLOSE_TARGET_HEIGHT + padding * 2
   );
 }
 
@@ -243,7 +244,13 @@ export default function FloatingChatHead({
   const pos = useRef({ x: 0, y: 0 });
   const placed = useRef(false);
   const moved = useRef(false);
-  const drag = useRef<{ dx: number; dy: number; side?: Side; followSide?: Side } | null>(null);
+  const drag = useRef<{
+    dx: number;
+    dy: number;
+    side?: Side;
+    followSide?: Side;
+    isOverCloseTarget?: boolean;
+  } | null>(null);
   const pointerMovingRef = useRef(false);
   const pointerCleanupRef = useRef<(() => void) | null>(null);
 
@@ -651,6 +658,7 @@ export default function FloatingChatHead({
       dy: startY - rect.top,
       side: followSide,
       followSide,
+      isOverCloseTarget: false,
     };
     stackHeadRefs.current.slice(0, visibleStackItems.length).forEach((stackHead) => {
       if (!stackHead) return;
@@ -793,9 +801,25 @@ export default function FloatingChatHead({
       }
       const w = rect.width;
       const h = rect.height;
-      const x = Math.min(Math.max(0, ev.clientX - drag.current.dx), window.innerWidth - w);
-      const y = Math.min(Math.max(0, ev.clientY - drag.current.dy), window.innerHeight - h);
-      pos.current = { x: Math.round(x), y: Math.round(y) };
+      const candidateX = Math.min(Math.max(0, ev.clientX - drag.current.dx), window.innerWidth - w);
+      const candidateY = Math.min(Math.max(0, ev.clientY - drag.current.dy), window.innerHeight - h);
+      const nextIsOverCloseTarget = moved.current && (
+        isOnCloseTarget(candidateX, candidateY, w, h) ||
+        Boolean(drag.current.isOverCloseTarget && isOnCloseTarget(
+          candidateX,
+          candidateY,
+          w,
+          h,
+          CLOSE_TARGET_STICKY_PADDING,
+        ))
+      );
+      drag.current.isOverCloseTarget = nextIsOverCloseTarget;
+      pos.current = nextIsOverCloseTarget
+        ? {
+            x: Math.round((window.innerWidth - w) / 2),
+            y: Math.round(window.innerHeight - CLOSE_TARGET_BOTTOM - (CLOSE_TARGET_HEIGHT + h) / 2),
+          }
+        : { x: Math.round(candidateX), y: Math.round(candidateY) };
       const group = groupRef.current;
       if (group) {
         group.style.left = `${pos.current.x}px`;
@@ -815,14 +839,16 @@ export default function FloatingChatHead({
         }
         followStackHeads(pos.current, dragHistory, now);
       }
-      setIsOverCloseTarget(moved.current && isOnCloseTarget(pos.current.x, pos.current.y, w, h));
+      setIsOverCloseTarget(nextIsOverCloseTarget);
     };
 
     const onUp = (ev: PointerEvent) => {
       if (!drag.current || ev.pointerId !== pointerId) return;
       const w = rect.width;
       const h = rect.height;
-      const shouldDismiss = moved.current && isOnCloseTarget(pos.current.x, pos.current.y, w, h);
+      const shouldDismiss = moved.current && (
+        Boolean(drag.current.isOverCloseTarget) || isOnCloseTarget(pos.current.x, pos.current.y, w, h)
+      );
       const didDrag = moved.current;
       const nextSide = drag.current.side ??
         (pos.current.x + w / 2 < window.innerWidth / 2 ? 'left' : 'right');
@@ -1050,7 +1076,15 @@ export default function FloatingChatHead({
           aria-hidden="true"
           className={`fixed ${zIndexClass} pointer-events-none bottom-6 left-1/2 -translate-x-1/2 transition-transform duration-150 ${isOverCloseTarget ? 'scale-110' : 'scale-100'}`}
         >
-          <span className={`flex h-14 w-14 items-center justify-center rounded-full border-2 shadow-xl transition-colors ${isOverCloseTarget ? 'border-red-700 bg-red-700 text-white' : 'border-red-500 bg-red-600 text-white'}`}>
+          <span
+            className="flex h-14 w-14 items-center justify-center rounded-full border-2 text-white shadow-xl transition-colors"
+            style={{
+              backgroundColor: isOverCloseTarget
+                ? 'rgba(15, 23, 42, 0.42)'
+                : 'rgba(15, 23, 42, 0.26)',
+              borderColor: 'rgba(255, 255, 255, 0.72)',
+            }}
+          >
             <X className="size-5" strokeWidth={2.5} />
           </span>
         </div>

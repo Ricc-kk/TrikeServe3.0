@@ -59,6 +59,7 @@ export default function GlobalChatHead() {
   const [selectedConversationId, setSelectedConversationId] = useState<string | null>(null);
   const [pulseKey, setPulseKey] = useState(0);
   const [isHeadActivated, setIsHeadActivated] = useState(false);
+  const [hideOtherHeadsAfterDismissal, setHideOtherHeadsAfterDismissal] = useState(false);
   const messageSignalsByUserRef = useRef(new Map<string, Map<string, string>>());
   const consumedOpenRequestRef = useRef<number | null>(null);
   const conversationsOwnerRef = useRef<string | null>(null);
@@ -121,6 +122,7 @@ export default function GlobalChatHead() {
           const newestMessage = [...changedMessages].sort((a, b) => activityOf(b) - activityOf(a))[0];
           setIsHeadActivated(true);
           setSelectedConversationId(newestMessage.id);
+          setHideOtherHeadsAfterDismissal(false);
           setPulseKey((key) => key + 1);
           try {
             window.localStorage.removeItem(`trikeserve_global_chat_head_dismissed_${user.id}`);
@@ -173,6 +175,7 @@ export default function GlobalChatHead() {
     setSelectedConversationId(null);
     setRequestedConversation(null);
     setIsHeadActivated(false);
+    setHideOtherHeadsAfterDismissal(false);
   }, [user?.id]);
 
   useEffect(() => {
@@ -226,6 +229,11 @@ export default function GlobalChatHead() {
     setSelectedConversationId(request.conversationId);
     setPulseKey((key) => key + 1);
     try {
+      // A manual reopen after the user dismissed the floating row should bring
+      // back only the requested conversation, not the old recent-head stack.
+      if (window.localStorage.getItem(`trikeserve_global_chat_head_dismissed_${user.id}`) === 'true') {
+        setHideOtherHeadsAfterDismissal(true);
+      }
       window.localStorage.removeItem(`trikeserve_global_chat_head_dismissed_${user.id}`);
       window.localStorage.removeItem(
         `trikeserve_chat_head_dismissed_${user.id}_trikeserve_chat_head_pos_${user.role}`,
@@ -355,19 +363,21 @@ export default function GlobalChatHead() {
   const peerAvatar = conversation
     ? peerIsA ? conversation.participant_a_avatar : conversation.participant_b_avatar
     : null;
-  const stackItems = recentConversations.filter((item) => item.id !== conversation?.id).map((item) => {
-    const peerIsA = item.participant_a_id !== user.id;
-    return {
-      id: item.id,
-      peerAvatar: peerIsA ? item.participant_a_avatar : item.participant_b_avatar,
-      peerLabel: peerDisplayName(
-        peerIsA ? item.participant_a_name : item.participant_b_name,
-        peerIsA ? item.participant_a_role : item.participant_b_role,
-      ),
-      unread: unreadCount(item, user.id),
-      onOpen: () => toggleChatOverlay(item.id),
-    };
-  });
+  const stackItems = hideOtherHeadsAfterDismissal
+    ? []
+    : recentConversations.filter((item) => item.id !== conversation?.id).map((item) => {
+        const peerIsA = item.participant_a_id !== user.id;
+        return {
+          id: item.id,
+          peerAvatar: peerIsA ? item.participant_a_avatar : item.participant_b_avatar,
+          peerLabel: peerDisplayName(
+            peerIsA ? item.participant_a_name : item.participant_b_name,
+            peerIsA ? item.participant_a_role : item.participant_b_role,
+          ),
+          unread: unreadCount(item, user.id),
+          onOpen: () => toggleChatOverlay(item.id),
+        };
+      });
   const orderDetailHasLocalHead = user.role === 'customer' &&
     location.pathname.startsWith('/customer/order-detail/') &&
     localHeadIds.length > 0;

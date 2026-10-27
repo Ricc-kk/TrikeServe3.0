@@ -1,8 +1,14 @@
-import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
+import { useEffect, useMemo, useRef, useState, type FormEvent, type PointerEvent as ReactPointerEvent } from 'react';
 import { useNavigate, useParams, useLocation } from 'react-router';
 import { ArrowLeft, Camera, ChevronRight, Flag, ImagePlus, MessageCircle, MessagesSquare, MoreVertical, Send, Trash2, X } from 'lucide-react';
 import { Button } from '../ui/button';
 import FloatingChatHead from '../ui/FloatingChatHead';
+import ChatHeadDragPreview, {
+  animateChatHeadReorder,
+  getChatHeadClosePosition,
+  isChatHeadOverCloseTarget,
+  type ChatHeadDragPosition,
+} from '../ui/ChatHeadDragPreview';
 import { Card } from '../ui/card';
 import { Badge } from '../ui/badge';
 import BottomNav from '../ui/BottomNav';
@@ -77,6 +83,20 @@ const QUICK_REPLIES = [
   "You're on the tricycle, let's go",
 ];
 
+interface ChatHeadPointerGesture {
+  conversationId: string;
+  pointerId: number;
+  startX: number;
+  startY: number;
+  pointerOffsetX: number;
+  pointerOffsetY: number;
+  width: number;
+  height: number;
+  isDragging: boolean;
+  overCloseTarget: boolean;
+  targetId: string | null;
+}
+
 interface ChatMessage {
   id: string;
   conversation_id: string;
@@ -127,10 +147,16 @@ export default function ChatHub({
   const [attachmentControlsOpen, setAttachmentControlsOpen] = useState(true);
   const [isChatHeadMode, setIsChatHeadMode] = useState(false);
   const [chatHeadOrder, setChatHeadOrder] = useState<string[]>([]);
+  const [hiddenChatHeadIds, setHiddenChatHeadIds] = useState<string[]>([]);
+  const [draggingChatHeadId, setDraggingChatHeadId] = useState<string | null>(null);
+  const [chatHeadDropTargetId, setChatHeadDropTargetId] = useState<string | null>(null);
+  const [chatHeadDragPosition, setChatHeadDragPosition] = useState<ChatHeadDragPosition | null>(null);
+  const [isOverChatHeadCloseTarget, setIsOverChatHeadCloseTarget] = useState(false);
   const chatHeadListRef = useRef<HTMLDivElement | null>(null);
   const [chatHeadListWidth, setChatHeadListWidth] = useState(0);
-  const draggedChatHeadIdRef = useRef<string | null>(null);
   const suppressChatHeadClickRef = useRef(false);
+  const chatHeadGestureRef = useRef<ChatHeadPointerGesture | null>(null);
+  const chatHeadPointerCleanupRef = useRef<(() => void) | null>(null);
   const [isUploadingImage, setIsUploadingImage] = useState(false);
   const [pendingImage, setPendingImage] = useState<{
     conversationId: string;
@@ -174,6 +200,7 @@ export default function ChatHub({
   const isDirectMode = !!directPeerId;
   const activeConversationId = isDirectMode ? activeConversation?.id : conversationId;
   const chatHeadOrderStorageKey = user?.id ? `trikeserve_chat_head_order_${user.id}` : null;
+  const chatHeadHiddenStorageKey = user?.id ? `trikeserve_chat_head_hidden_${user.id}` : null;
 
   useEffect(() => {
     if (!chatHeadOrderStorageKey) {
@@ -190,6 +217,24 @@ export default function ChatHub({
   }, [chatHeadOrderStorageKey]);
 
   useEffect(() => {
+    if (!chatHeadHiddenStorageKey) {
+      setHiddenChatHeadIds([]);
+      return;
+    }
+
+    try {
+      const saved = JSON.parse(localStorage.getItem(chatHeadHiddenStorageKey) || '[]');
+      setHiddenChatHeadIds(Array.isArray(saved) ? saved.filter((id): id is string => typeof id === 'string') : []);
+    } catch {
+      setHiddenChatHeadIds([]);
+    }
+  }, [chatHeadHiddenStorageKey]);
+
+  useEffect(() => () => {
+    chatHeadPointerCleanupRef.current?.();
+  }, []);
+
+  useEffect(() => {
     setPendingImage((pending) =>
       pending?.conversationId === activeConversationId ? pending : null,
     );
@@ -203,6 +248,7 @@ export default function ChatHub({
   }, [pendingImage?.previewUrl]);
 
   const recentHeadConversations = useMemo(() => {
+    const hiddenIds = new Set(hiddenChatHeadIds);
     const rows = new Map<string, ChatConversation>();
     conversations.forEach((conversation) => rows.set(conversation.id, conversation));
     if (activeConversation) rows.set(activeConversation.id, activeConversation);
@@ -215,8 +261,10 @@ export default function ChatHub({
         : conversation.participant_a_id;
       if (peerId && !newestByPeer.has(peerId)) newestByPeer.set(peerId, conversation);
     }
-    return [...newestByPeer.values()].sort((a, b) => activityOf(b) - activityOf(a));
-  }, [activeConversation, conversations, user?.id]);
+    return [...newestByPeer.values()]
+      .filter((conversation) => !hiddenIds.has(conversation.id))
+      .sort((a, b) => activityOf(b) - activityOf(a));
+  }, [activeConversation, conversations, hiddenChatHeadIds, user?.id]);
 
   const orderedRecentHeadConversations = useMemo(() => {
     const conversationsById = new Map<string, ChatConversation>();
@@ -269,6 +317,26 @@ export default function ChatHub({
     }
   };
 
+  const saveHiddenChatHeads = (nextIds: string[]) => {
+    setHiddenChatHeadIds(nextIds);
+    if (!chatHeadHiddenStorageKey) return;
+    try {
+      localStorage.setItem(chatHeadHiddenStorageKey, JSON.stringify(nextIds));
+    } catch {
+      // Hiding still works for this visit if storage is unavailable.
+    }
+  };
+
+  const closeChatHead = (conversationId: string) => {
+    if (hiddenChatHeadIds.includes(conversationId)) return;
+    saveHiddenChatHeads([...hiddenChatHeadIds, conversationId]);
+  };
+
+  const restoreChatHead = (conversationId: string) => {
+    if (!hiddenChatHeadIds.includes(conversationId)) return;
+    saveHiddenChatHeads(hiddenChatHeadIds.filter((id) => id !== conversationId));
+  };
+
   const reorderChatHead = (draggedId: string, targetId: string, targetSide: 'left' | 'right' = 'left') => {
     if (draggedId === targetId) return;
     const nextOrder = orderedRecentHeadConversations.map((conversation) => conversation.id);
@@ -281,6 +349,116 @@ export default function ChatHub({
     // in this array, while an item to its right comes before it.
     nextOrder.splice(targetIndex + (targetSide === 'left' ? 1 : 0), 0, movedId);
     saveChatHeadOrder(nextOrder);
+  };
+
+  const chatHeadAtPoint = (clientX: number, clientY: number) => {
+    const heads = chatHeadListRef.current?.querySelectorAll<HTMLElement>('[data-chat-head-id]');
+    if (!heads) return null;
+    return Array.from(heads).find((head) => {
+      const bounds = head.getBoundingClientRect();
+      return clientX >= bounds.left && clientX <= bounds.right &&
+        clientY >= bounds.top && clientY <= bounds.bottom;
+    }) || null;
+  };
+
+  const startChatHeadGesture = (
+    event: ReactPointerEvent<HTMLButtonElement>,
+    conversationId: string,
+  ) => {
+    if (event.button !== 0) return;
+    chatHeadPointerCleanupRef.current?.();
+    const bounds = event.currentTarget.getBoundingClientRect();
+
+    const gesture: ChatHeadPointerGesture = {
+      conversationId,
+      pointerId: event.pointerId,
+      startX: event.clientX,
+      startY: event.clientY,
+      pointerOffsetX: event.clientX - bounds.left,
+      pointerOffsetY: event.clientY - bounds.top,
+      width: bounds.width,
+      height: bounds.height,
+      isDragging: false,
+      overCloseTarget: false,
+      targetId: null,
+    };
+    chatHeadGestureRef.current = gesture;
+
+    const cleanup = () => {
+      window.removeEventListener('pointermove', onPointerMove);
+      window.removeEventListener('pointerup', onPointerUp);
+      window.removeEventListener('pointercancel', onPointerCancel);
+      if (chatHeadGestureRef.current === gesture) chatHeadGestureRef.current = null;
+      if (chatHeadPointerCleanupRef.current === cleanup) chatHeadPointerCleanupRef.current = null;
+    };
+    const finish = (finishedEvent: PointerEvent, canceled = false) => {
+      if (finishedEvent.pointerId !== gesture.pointerId) return;
+      if (gesture.isDragging && !canceled) {
+        const left = finishedEvent.clientX - gesture.pointerOffsetX;
+        const top = finishedEvent.clientY - gesture.pointerOffsetY;
+        const overCloseTarget = gesture.overCloseTarget || isChatHeadOverCloseTarget(
+          left + gesture.width / 2,
+          top + gesture.height / 2,
+        );
+        if (overCloseTarget) {
+          closeChatHead(gesture.conversationId);
+        } else {
+          const targetElement = chatHeadAtPoint(finishedEvent.clientX, finishedEvent.clientY);
+          const targetId = targetElement?.dataset.chatHeadId || gesture.targetId;
+          if (targetId && targetElement) {
+            const targetBounds = targetElement.getBoundingClientRect();
+            const targetSide = finishedEvent.clientX < targetBounds.left + targetBounds.width / 2 ? 'left' : 'right';
+            animateChatHeadReorder(chatHeadListRef.current, () =>
+              reorderChatHead(gesture.conversationId, targetId, targetSide),
+            );
+          }
+        }
+      }
+      if (gesture.isDragging) {
+        suppressChatHeadClickRef.current = true;
+        window.setTimeout(() => { suppressChatHeadClickRef.current = false; }, 0);
+      }
+      setDraggingChatHeadId(null);
+      setChatHeadDropTargetId(null);
+      setChatHeadDragPosition(null);
+      setIsOverChatHeadCloseTarget(false);
+      cleanup();
+    };
+    const onPointerMove = (moveEvent: PointerEvent) => {
+      if (moveEvent.pointerId !== gesture.pointerId) return;
+      if (!gesture.isDragging && Math.hypot(moveEvent.clientX - gesture.startX, moveEvent.clientY - gesture.startY) > 7) {
+        gesture.isDragging = true;
+        suppressChatHeadClickRef.current = true;
+        setDraggingChatHeadId(gesture.conversationId);
+      }
+      if (!gesture.isDragging) return;
+
+      moveEvent.preventDefault();
+      const maxLeft = Math.max(0, window.innerWidth - gesture.width);
+      const maxTop = Math.max(0, window.innerHeight - gesture.height);
+      const candidateLeft = Math.min(Math.max(0, moveEvent.clientX - gesture.pointerOffsetX), maxLeft);
+      const candidateTop = Math.min(Math.max(0, moveEvent.clientY - gesture.pointerOffsetY), maxTop);
+      const overCloseTarget = isChatHeadOverCloseTarget(
+        candidateLeft + gesture.width / 2,
+        candidateTop + gesture.height / 2,
+      );
+      gesture.overCloseTarget = overCloseTarget;
+      const position = overCloseTarget
+        ? getChatHeadClosePosition(gesture.width, gesture.height)
+        : { left: candidateLeft, top: candidateTop };
+      setChatHeadDragPosition(position);
+      setIsOverChatHeadCloseTarget(overCloseTarget);
+      const targetElement = chatHeadAtPoint(moveEvent.clientX, moveEvent.clientY);
+      gesture.targetId = targetElement?.dataset.chatHeadId || null;
+      setChatHeadDropTargetId(gesture.targetId);
+    };
+    const onPointerUp = (upEvent: PointerEvent) => finish(upEvent);
+    const onPointerCancel = (cancelEvent: PointerEvent) => finish(cancelEvent, true);
+
+    window.addEventListener('pointermove', onPointerMove, { passive: false });
+    window.addEventListener('pointerup', onPointerUp);
+    window.addEventListener('pointercancel', onPointerCancel);
+    chatHeadPointerCleanupRef.current = cleanup;
   };
 
   useEffect(() => {
@@ -315,8 +493,9 @@ export default function ChatHub({
   const threadBack = isDirectMode
     ? backPath
     : ((location.state as any)?.rideBackTo as string) ?? (threadBackPath ?? basePath);
-  const showThreadChatHeadRow = !enhancedInbox || Boolean(
-    (location.state as any)?.fromActiveRide || (location.state as any)?.rideBackTo,
+  const navigationState = location.state as { fromMessages?: boolean; fromActiveRide?: boolean; rideBackTo?: string } | null;
+  const showThreadChatHeadRow = !enhancedInbox || (
+    !navigationState?.fromMessages && Boolean(navigationState?.fromActiveRide || navigationState?.rideBackTo)
   );
 
   const loadInbox = async () => {
@@ -574,6 +753,7 @@ function PeerAvatar({
       <img
         src={src}
         alt=""
+        draggable={false}
         className={`size-full object-cover ${className || ""}`}
         onError={() => setFailedSrc(src)}
       />
@@ -650,10 +830,17 @@ function getConversationPeer(conversation: ChatConversation) {
   }
 
   const openConversation = (conversation: ChatConversation) => {
+    restoreChatHead(conversation.id);
     setIsChatHeadMode(false);
     setActiveConversation(conversation);
     setMessages([]);
-    navigate(`${basePath}/thread/${conversation.id}`);
+    const cameFromLiveRide = Boolean(
+      /\/messages\/(?:thread|business|driver)\//.test(location.pathname) &&
+      (navigationState?.fromActiveRide || navigationState?.rideBackTo),
+    );
+    navigate(`${basePath}/thread/${conversation.id}`, {
+      state: cameFromLiveRide ? navigationState : { fromMessages: true },
+    });
   };
 
   /** Sends the composer text and staged image, or a quick-reply override. */
@@ -795,6 +982,7 @@ function getConversationPeer(conversation: ChatConversation) {
 
   const openChatHead = (conversation = activeConversation) => {
     if (!conversation || !user?.id) return;
+    restoreChatHead(conversation.id);
     setOpenMenuConversationId(null);
     requestChatHeadOpen(user.id, conversation.id);
     if (isDirectMode && activeConversation?.id === conversation.id) {
@@ -1044,74 +1232,55 @@ function getConversationPeer(conversation: ChatConversation) {
         {showThreadChatHeadRow && (
         <div
           role="group"
-          aria-label="Chat heads. Drag to reorder."
+          aria-label="Chat heads. Drag to reorder or drag a head to the X to close it."
           className="flex h-14 w-full shrink-0 flex-row-reverse items-center justify-start gap-1 overflow-hidden px-2"
         >
           <div ref={chatHeadListRef} className="flex min-w-0 flex-1 flex-row-reverse items-center gap-1 overflow-hidden">
           {visibleRecentHeadConversations.map((conversation) => {
             const peer = getConversationPeer(conversation);
             const isActive = conversation.id === activeConversation.id;
+            const isDraggingThisHead = draggingChatHeadId === conversation.id;
+            const isDropTarget = chatHeadDropTargetId === conversation.id && !isDraggingThisHead;
             const unread = (conversation as any)._collapsedUnread ?? (
               conversation.participant_a_id === user.id
                 ? conversation.unread_count_a || 0
                 : conversation.unread_count_b || 0
             );
             return (
-              <button
+              <div
                 key={conversation.id}
-                type="button"
-                draggable
                 data-chat-head-id={conversation.id}
-                title={`${peer.name} · Drag to reorder`}
-                aria-label={`Open chat with ${peer.name}${unread > 0 ? `, ${unread} unread` : ''}. Drag to reorder.`}
-                aria-current={isActive ? 'page' : undefined}
-                onDragStart={(event) => {
-                  draggedChatHeadIdRef.current = conversation.id;
-                  suppressChatHeadClickRef.current = true;
-                  event.dataTransfer.effectAllowed = 'move';
-                  event.dataTransfer.setData('text/plain', conversation.id);
-                }}
-                onDragOver={(event) => {
-                  if (!draggedChatHeadIdRef.current) return;
-                  event.preventDefault();
-                  event.dataTransfer.dropEffect = 'move';
-                }}
-                onDrop={(event) => {
-                  event.preventDefault();
-                  const draggedId = event.dataTransfer.getData('text/plain') || draggedChatHeadIdRef.current;
-                  if (draggedId) {
-                    const bounds = event.currentTarget.getBoundingClientRect();
-                    const targetSide = event.clientX < bounds.left + bounds.width / 2 ? 'left' : 'right';
-                    reorderChatHead(draggedId, conversation.id, targetSide);
-                  }
-                  draggedChatHeadIdRef.current = null;
-                }}
-                onDragEnd={() => {
-                  draggedChatHeadIdRef.current = null;
-                  window.setTimeout(() => { suppressChatHeadClickRef.current = false; }, 0);
-                }}
-                onClick={() => {
-                  if (suppressChatHeadClickRef.current) {
-                    suppressChatHeadClickRef.current = false;
-                    return;
-                  }
-                  if (isActive) {
-                    if ((location.state as any)?.fromActiveRide) navigate(threadBack);
-                    return;
-                  }
-                  void openConversation(conversation);
-                }}
-                className={`relative grid size-11 shrink-0 cursor-grab place-items-center overflow-visible rounded-full border-2 bg-[var(--surface)] shadow-sm transition-transform hover:scale-105 active:cursor-grabbing focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--primary)] ${isActive ? 'border-[var(--primary)]' : 'border-[var(--border)]'}`}
+                className="relative size-11 shrink-0"
               >
-                <span className="size-full overflow-hidden rounded-full">
-                  <PeerAvatar value={peer.avatar} name={peer.name} className="grid size-full place-items-center text-xl object-cover" />
-                </span>
-                {unread > 0 && (
-                  <span className="absolute -right-1 -top-1 grid min-w-[16px] place-items-center rounded-full bg-[var(--primary)] px-1 text-[10px] font-bold text-[var(--primary-foreground)] shadow">
-                    {unread > 99 ? '99+' : unread}
+                <button
+                  type="button"
+                  title={`${peer.name} · Drag to reorder or drag to the X to close.`}
+                  aria-label={`Open chat with ${peer.name}${unread > 0 ? `, ${unread} unread` : ''}. Drag to reorder or to the X to close.`}
+                  aria-current={isActive ? 'page' : undefined}
+                  onPointerDown={(event) => startChatHeadGesture(event, conversation.id)}
+                  onClick={() => {
+                    if (suppressChatHeadClickRef.current) {
+                      suppressChatHeadClickRef.current = false;
+                      return;
+                    }
+                    if (isActive) {
+                      if (navigationState?.fromActiveRide || navigationState?.rideBackTo) navigate(threadBack);
+                      return;
+                    }
+                    void openConversation(conversation);
+                  }}
+                  className={`grid size-11 touch-none select-none place-items-center overflow-visible rounded-full border-2 bg-[var(--surface)] shadow-sm transition-transform hover:scale-105 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--primary)] ${isActive ? 'border-[var(--primary)]' : 'border-[var(--border)]'} ${isDraggingThisHead ? 'opacity-0' : ''} ${isDropTarget ? 'ring-2 ring-[var(--primary)]' : ''}`}
+                >
+                  <span className="size-full overflow-hidden rounded-full">
+                    <PeerAvatar value={peer.avatar} name={peer.name} className="grid size-full place-items-center text-xl object-cover" />
                   </span>
-                )}
-              </button>
+                  {unread > 0 && (
+                    <span className="absolute -right-1 -top-1 grid min-w-[16px] place-items-center rounded-full bg-[var(--primary)] px-1 text-[10px] font-bold text-[var(--primary-foreground)] shadow">
+                      {unread > 99 ? '99+' : unread}
+                    </span>
+                  )}
+                </button>
+              </div>
             );
           })}
           </div>
@@ -1456,6 +1625,34 @@ function getConversationPeer(conversation: ChatConversation) {
               <Send className="w-5 h-5" />
             </Button>
           </div>
+        {draggingChatHeadId && chatHeadDragPosition && (() => {
+          const draggedConversation = visibleRecentHeadConversations.find(
+            (conversation) => conversation.id === draggingChatHeadId,
+          );
+          if (!draggedConversation) return null;
+          const draggedPeer = getConversationPeer(draggedConversation);
+          const unread = (draggedConversation as any)._collapsedUnread ?? (
+            draggedConversation.participant_a_id === user.id
+              ? draggedConversation.unread_count_a || 0
+              : draggedConversation.unread_count_b || 0
+          );
+          return (
+            <ChatHeadDragPreview
+              position={chatHeadDragPosition}
+              size={44}
+              overCloseTarget={isOverChatHeadCloseTarget}
+            >
+              <span className="relative size-full overflow-hidden rounded-full">
+                <PeerAvatar value={draggedPeer.avatar} name={draggedPeer.name} className="grid size-full place-items-center text-xl object-cover" />
+                {unread > 0 && (
+                  <span className="absolute -right-1 -top-1 grid min-w-[16px] place-items-center rounded-full bg-[var(--primary)] px-1 text-[10px] font-bold text-[var(--primary-foreground)] shadow">
+                    {unread > 99 ? '99+' : unread}
+                  </span>
+                )}
+              </span>
+            </ChatHeadDragPreview>
+          );
+        })()}
         </div>
       </div>
     );
