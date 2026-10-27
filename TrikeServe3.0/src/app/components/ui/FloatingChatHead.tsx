@@ -206,7 +206,7 @@ export default function FloatingChatHead({
   pulseKey: number;
   /** Stable conversation id, used to animate a newly promoted top head. */
   headId?: string;
-  /** Recent conversations shown beside the latest head or revealed on drag. */
+  /** Recent conversations shown beside the latest head when enabled. */
   stackItems?: FloatingChatHeadStackItem[];
   /** Show the stack as a single row instead of revealing it only while dragging. */
   showStackItems?: boolean;
@@ -603,7 +603,7 @@ export default function FloatingChatHead({
 
   useEffect(() => {
     const stackHeads = stackHeadRefs.current.slice(0, visibleStackItems.length);
-    if ((!isPointerDown && !isDragging) || hidden) {
+    if (isPointerDown || isDragging || hidden || !showStackItems) {
       stackHeads.forEach((el) => el?.getAnimations().forEach((animation) => animation.cancel()));
       return;
     }
@@ -619,7 +619,7 @@ export default function FloatingChatHead({
         { duration: 190, delay: index * 35, easing: 'ease-out' },
       );
     });
-  }, [hidden, isDragging, isPointerDown, placed2, side, stackAnimationKey, visibleStackItems.length]);
+  }, [hidden, isDragging, isPointerDown, placed2, showStackItems, side, stackAnimationKey, visibleStackItems.length]);
 
   const onPointerDown = useCallback((e: React.PointerEvent<HTMLButtonElement>) => {
     const el = headRef.current;
@@ -803,6 +803,7 @@ export default function FloatingChatHead({
   const stackSide = isDragging ? drag.current?.side ?? side : side;
   const isThisConversationOpen = Boolean(headId && openedConversationId === headId);
   const isHidden = hidden || isThisConversationOpen;
+  const stackItemsHidden = isHidden || isPointerDown || isDragging || !showStackItems;
 
   return createPortal(
     <div
@@ -824,8 +825,8 @@ export default function FloatingChatHead({
             left: (stackSide === 'right' ? -1 : 1) *
               (isStackExpanded ? CHAT_HEAD_SIZE + CHAT_HEAD_ROW_GAP : STACK_PEEK) * (index + 1),
             top: 0,
-            opacity: showStackItems || isPointerDown || isDragging ? 1 : 0,
-            pointerEvents: isHidden || (!showStackItems && !isDragging) ? 'none' : 'auto',
+            opacity: stackItemsHidden ? 0 : 1,
+            pointerEvents: stackItemsHidden ? 'none' : 'auto',
             zIndex: visibleStackItems.length - index,
           }}
           onPointerDown={(event) => event.stopPropagation()}
@@ -834,8 +835,8 @@ export default function FloatingChatHead({
             item.onOpen();
           }}
           aria-label={`Chat with ${item.peerLabel}`}
-          aria-hidden={isHidden || (!showStackItems && !isDragging) || undefined}
-          tabIndex={isHidden || (!showStackItems && !isDragging) ? -1 : undefined}
+          aria-hidden={stackItemsHidden || undefined}
+          tabIndex={stackItemsHidden ? -1 : undefined}
           className="absolute grid size-14 place-items-center overflow-visible rounded-full border-2 border-[var(--border)] bg-[var(--surface)] shadow-xl touch-none select-none"
         >
           <span className="relative size-full overflow-hidden rounded-full">

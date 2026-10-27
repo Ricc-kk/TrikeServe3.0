@@ -315,6 +315,9 @@ export default function ChatHub({
   const threadBack = isDirectMode
     ? backPath
     : ((location.state as any)?.rideBackTo as string) ?? (threadBackPath ?? basePath);
+  const showThreadChatHeadRow = !enhancedInbox || Boolean(
+    (location.state as any)?.fromActiveRide || (location.state as any)?.rideBackTo,
+  );
 
   const loadInbox = async () => {
     if (!user?.id) return;
@@ -646,11 +649,10 @@ function getConversationPeer(conversation: ChatConversation) {
     }
   }
 
-  const openConversation = async (conversation: ChatConversation) => {
-    setMinimizedConversation(null);
+  const openConversation = (conversation: ChatConversation) => {
     setIsChatHeadMode(false);
     setActiveConversation(conversation);
-    await loadMessages(conversation.id);
+    setMessages([]);
     navigate(`${basePath}/thread/${conversation.id}`);
   };
 
@@ -1036,17 +1038,10 @@ function getConversationPeer(conversation: ChatConversation) {
 
     return (
       <div className={`flex-1 flex flex-col min-h-0 ${driverLayout || customerLayout ? 'mx-auto w-full max-w-5xl border-x border-line' : ''}`}>
-        {/*
-            Clearance strip above the thread header.
-
-            Only when the chat was opened from a live ride, where the floating chat
-            head is pinned to the top-right. Sized to the head itself (56px) rather
-            than a generous band: at 64px plus a solid fill it read as a heavy bar
-            across the top of the chat rather than space for a control, and it
-            pushed the whole conversation down.
-
-            Transparent, so it reads as "nothing here" rather than as a surface.
-        */}
+        {/* Keep the quick-switch chat-head row for chats opened from a live ride.
+            Threads opened from the Messages tab use the inbox for navigation, so
+            the extra row is omitted there. */}
+        {showThreadChatHeadRow && (
         <div
           role="group"
           aria-label="Chat heads. Drag to reorder."
@@ -1130,6 +1125,7 @@ function getConversationPeer(conversation: ChatConversation) {
             <MessagesSquare className="size-5" aria-hidden="true" />
           </button>
         </div>
+        )}
         <div className="relative bg-[var(--primary)] text-white px-4 py-4 flex items-center gap-3 sticky top-0 z-10">
           <Button
             variant="ghost"
@@ -1140,17 +1136,9 @@ function getConversationPeer(conversation: ChatConversation) {
           >
             <ArrowLeft className="w-5 h-5" />
           </Button>
-          {/* Peer identity, tappable to their profile.
-              Opening a chat from the active ride usually happens mid-journey, and
-              "who am I about to argue with about the fare" is a reasonable thing
-              to want answered right then. The whole name/photo block is the link,
-              not just the avatar, because the name is what people aim at. */}
-          <button
-            type="button"
-            onClick={() => peer.id && navigate(`/${basePath.split('/')[1]}/profile`)}
-            aria-label={`View ${peer.name}'s profile`}
-            className="flex flex-1 items-center gap-3 min-w-0 text-left hover:opacity-90 transition-opacity"
-          >
+          {/* Keep the identity in the thread header informational; tapping it
+              should not leave the conversation for the profile screen. */}
+          <div className="flex flex-1 items-center gap-3 min-w-0 text-left">
             <div className={`w-11 h-11 overflow-hidden rounded-full border flex items-center justify-center text-2xl flex-shrink-0 ${peerTheme.avatarWrap}`}>
               <PeerAvatar value={peer.avatar} name={peer.name} />
             </div>
@@ -1161,7 +1149,7 @@ function getConversationPeer(conversation: ChatConversation) {
                 <span className="text-xs text-white/80 truncate">{activeConversation.subject || activeConversation.context_type || 'Chat'}</span>
               </div>
             </div>
-          </button>
+          </div>
           <div className="relative ml-auto shrink-0">
             <Button
               type="button"
@@ -1539,8 +1527,8 @@ function getConversationPeer(conversation: ChatConversation) {
                     <div className="flex items-start gap-2">
                       <button
                         type="button"
-                        aria-label={`Open chat head with ${peer.name}`}
-                        onClick={() => openChatHead(conversation)}
+                        aria-label={`Open conversation with ${peer.name}`}
+                        onClick={() => openConversation(conversation)}
                         className="flex min-w-0 flex-1 items-start gap-3 text-left"
                       >
                         {/* `overflow-hidden` keeps the photo clipped into its circle. */}
