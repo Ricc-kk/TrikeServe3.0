@@ -44,6 +44,10 @@ export default function GlobalChatHead() {
   const { user, isLoading } = useAuth();
   const {
     localHeadIds,
+    hasOpenChatOverlay,
+    clearOpenedChatHeads,
+    openedChatHeadIds,
+    rememberOpenChatHead,
     openedConversationId,
     toggleChatOverlay,
     closeChatOverlay,
@@ -57,6 +61,7 @@ export default function GlobalChatHead() {
   const [overlayConversation, setOverlayConversation] = useState<ChatConversation | null>(null);
   const [requestedConversation, setRequestedConversation] = useState<ChatConversation | null>(null);
   const [selectedConversationId, setSelectedConversationId] = useState<string | null>(null);
+  const hasExplicitHeadSelectionRef = useRef(false);
   const [pulseKey, setPulseKey] = useState(0);
   const [isHeadActivated, setIsHeadActivated] = useState(false);
   const [hideOtherHeadsAfterDismissal, setHideOtherHeadsAfterDismissal] = useState(false);
@@ -71,6 +76,7 @@ export default function GlobalChatHead() {
     const previous = previousAuthRef.current;
     const current = user?.id ? { id: user.id, role: user.role } : null;
     if (previous && (!current || current.id !== previous.id)) {
+      clearOpenedChatHeads();
       // A session ending is not new message activity. Persist the closed state
       // so authentication changes do not bring the heads back by themselves.
       try {
@@ -84,7 +90,7 @@ export default function GlobalChatHead() {
       }
     }
     previousAuthRef.current = current;
-  }, [user?.id, user?.role]);
+  }, [clearOpenedChatHeads, user?.id, user?.role]);
 
   useEffect(() => {
     if (!user?.id) {
@@ -121,7 +127,9 @@ export default function GlobalChatHead() {
         if (changedMessages.length > 0) {
           const newestMessage = [...changedMessages].sort((a, b) => activityOf(b) - activityOf(a))[0];
           setIsHeadActivated(true);
-          setSelectedConversationId(newestMessage.id);
+          if (!hasExplicitHeadSelectionRef.current) {
+            setSelectedConversationId(newestMessage.id);
+          }
           setHideOtherHeadsAfterDismissal(false);
           setPulseKey((key) => key + 1);
           try {
@@ -168,10 +176,16 @@ export default function GlobalChatHead() {
   }, [conversations, user?.id]);
 
   useEffect(() => {
-    if (openedConversationId) setSelectedConversationId(openedConversationId);
-  }, [openedConversationId]);
+    if (openedConversationId) {
+      hasExplicitHeadSelectionRef.current = true;
+      setHideOtherHeadsAfterDismissal(false);
+      setSelectedConversationId(openedConversationId);
+      rememberOpenChatHead(openedConversationId);
+    }
+  }, [openedConversationId, rememberOpenChatHead]);
 
   useEffect(() => {
+    hasExplicitHeadSelectionRef.current = false;
     setSelectedConversationId(null);
     setRequestedConversation(null);
     setIsHeadActivated(false);
@@ -198,7 +212,12 @@ export default function GlobalChatHead() {
     if (openedConversationId) setSelectedConversationId(openedConversationId);
     else if (enteredThreadWhileSignedIn) {
       const threadId = location.pathname.match(/\/messages\/thread\/([^/]+)/)?.[1];
-      if (threadId) setSelectedConversationId(decodeURIComponent(threadId));
+      if (threadId) {
+        hasExplicitHeadSelectionRef.current = true;
+        const conversationId = decodeURIComponent(threadId);
+        setSelectedConversationId(conversationId);
+        rememberOpenChatHead(conversationId);
+      }
     }
 
     // Manually opening a thread also restores the screen-specific head used by
@@ -211,7 +230,7 @@ export default function GlobalChatHead() {
     } catch {
       // Dismissal persistence is a convenience; manual open still works here.
     }
-  }, [location.pathname, openedConversationId, user?.id, user?.role]);
+  }, [location.pathname, openedConversationId, rememberOpenChatHead, user?.id, user?.role]);
 
   useEffect(() => {
     const request = chatHeadOpenRequest;
@@ -226,13 +245,19 @@ export default function GlobalChatHead() {
 
     consumedOpenRequestRef.current = request.requestId;
     setIsHeadActivated(true);
+    hasExplicitHeadSelectionRef.current = true;
     setSelectedConversationId(request.conversationId);
+    rememberOpenChatHead(request.conversationId);
     setPulseKey((key) => key + 1);
     try {
       // A manual reopen after the user dismissed the floating row should bring
       // back only the requested conversation, not the old recent-head stack.
       if (window.localStorage.getItem(`trikeserve_global_chat_head_dismissed_${user.id}`) === 'true') {
+        clearOpenedChatHeads();
+        rememberOpenChatHead(request.conversationId);
         setHideOtherHeadsAfterDismissal(true);
+      } else {
+        setHideOtherHeadsAfterDismissal(false);
       }
       window.localStorage.removeItem(`trikeserve_global_chat_head_dismissed_${user.id}`);
       window.localStorage.removeItem(
@@ -241,7 +266,7 @@ export default function GlobalChatHead() {
     } catch {
       // Manual open still activates the head for this session.
     }
-  }, [chatHeadOpenRequest, user?.id, user?.role]);
+  }, [chatHeadOpenRequest, clearOpenedChatHeads, rememberOpenChatHead, user?.id, user?.role]);
 
   useEffect(() => {
     const request = chatHeadOpenRequest;
@@ -363,21 +388,30 @@ export default function GlobalChatHead() {
   const peerAvatar = conversation
     ? peerIsA ? conversation.participant_a_avatar : conversation.participant_b_avatar
     : null;
+  const stackConversationById = new Map(
+    [...conversations, ...(requestedConversation ? [requestedConversation] : []), ...(overlayConversation ? [overlayConversation] : [])]
+      .map((item) => [item.id, item] as const),
+  );
   const stackItems = hideOtherHeadsAfterDismissal
     ? []
-    : recentConversations.filter((item) => item.id !== conversation?.id).map((item) => {
-        const peerIsA = item.participant_a_id !== user.id;
-        return {
-          id: item.id,
-          peerAvatar: peerIsA ? item.participant_a_avatar : item.participant_b_avatar,
-          peerLabel: peerDisplayName(
-            peerIsA ? item.participant_a_name : item.participant_b_name,
-            peerIsA ? item.participant_a_role : item.participant_b_role,
-          ),
-          unread: unreadCount(item, user.id),
-          onOpen: () => toggleChatOverlay(item.id),
-        };
-      });
+    : [...openedChatHeadIds]
+        .reverse()
+        .filter((id) => id !== conversation?.id)
+        .flatMap((id) => {
+          const item = stackConversationById.get(id);
+          if (!item) return [];
+          const peerIsA = item.participant_a_id !== user.id;
+          return [{
+            id: item.id,
+            peerAvatar: peerIsA ? item.participant_a_avatar : item.participant_b_avatar,
+            peerLabel: peerDisplayName(
+              peerIsA ? item.participant_a_name : item.participant_b_name,
+              peerIsA ? item.participant_a_role : item.participant_b_role,
+            ),
+            unread: unreadCount(item, user.id),
+            onOpen: () => toggleChatOverlay(item.id),
+          }];
+        });
   const orderDetailHasLocalHead = user.role === 'customer' &&
     location.pathname.startsWith('/customer/order-detail/') &&
     localHeadIds.length > 0;
@@ -389,6 +423,7 @@ export default function GlobalChatHead() {
         isGlobal
         hidden={
           !isHeadActivated ||
+          hasOpenChatOverlay ||
           orderDetailHasLocalHead ||
           Boolean(conversation && localHeadIds.includes(conversation.id)) ||
           Boolean(openedConversationId) ||

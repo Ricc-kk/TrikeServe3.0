@@ -135,6 +135,13 @@ function PeerAvatar({
 }
 
 type Side = 'left' | 'right';
+type FloatingHeadProfile = {
+  avatar: string | null;
+  label: string;
+  group: boolean;
+  messages: boolean;
+  unread: number;
+};
 
 export interface FloatingChatHeadStackItem {
   id: string;
@@ -275,6 +282,8 @@ export default function FloatingChatHead({
   const [mountRetry, setMountRetry] = useState(0);
   const [isPointerDown, setIsPointerDown] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
+  const [dragHeadProfile, setDragHeadProfile] = useState<FloatingHeadProfile | null>(null);
+  const [dragStackItems, setDragStackItems] = useState<FloatingChatHeadStackItem[] | null>(null);
   const [isPointerMoving, setIsPointerMoving] = useState(false);
   const [isFollowerHideAnimating, setIsFollowerHideAnimating] = useState(false);
   const stackExpandedRef = useRef(false);
@@ -304,9 +313,14 @@ export default function FloatingChatHead({
   const maxRowHeadCount = viewportWidth > 0
     ? Math.max(1, Math.floor((viewportWidth - GAP * 2 + CHAT_HEAD_ROW_GAP) / (CHAT_HEAD_SIZE + CHAT_HEAD_ROW_GAP)))
     : 1;
+  const displayedStackItems = (isPointerDown || isDragging) && dragStackItems
+    ? dragStackItems
+    : stackItems;
   const visibleStackItems = showStackItems
-    ? stackItems.slice(0, maxRowHeadCount - 1)
-    : stackItems.slice(0, MAX_STACK_ITEMS);
+    ? displayedStackItems.slice(0, maxRowHeadCount - 1)
+    : displayedStackItems.slice(0, MAX_STACK_ITEMS);
+  const stackItemsAtRenderRef = useRef(visibleStackItems);
+  stackItemsAtRenderRef.current = visibleStackItems;
   const isStackExpanded = showStackItems || isPointerDown || isDragging;
 
   const positionStackHeads = useCallback((nextSide: Side, animated: boolean) => {
@@ -639,6 +653,13 @@ export default function FloatingChatHead({
     const pointerId = e.pointerId;
     const startX = e.clientX;
     const startY = e.clientY;
+    const profileAtDragStart: FloatingHeadProfile = {
+      avatar: peerAvatar,
+      label: peerLabel,
+      group: Boolean(peerIsGroup),
+      messages: peerIsMessages,
+      unread,
+    };
     const dragHistory: DragPositionSample[] = [{ ...pos.current, time: performance.now() }];
     pointerCleanupRef.current?.();
     pointerMovingRef.current = false;
@@ -646,6 +667,8 @@ export default function FloatingChatHead({
     moved.current = false;
     setIsPointerDown(true);
     setIsDragging(false);
+    setDragHeadProfile(profileAtDragStart);
+    setDragStackItems(stackItemsAtRenderRef.current.map((item) => ({ ...item })));
     setIsPointerMoving(false);
     setIsFollowerHideAnimating(false);
     setIsOverCloseTarget(false);
@@ -858,6 +881,8 @@ export default function FloatingChatHead({
       cleanup();
       setIsPointerDown(false);
       setIsDragging(false);
+      setDragHeadProfile(null);
+      setDragStackItems(null);
       setIsPointerMoving(false);
       setIsOverCloseTarget(false);
 
@@ -892,6 +917,8 @@ export default function FloatingChatHead({
       cleanup();
       setIsPointerDown(false);
       setIsDragging(false);
+      setDragHeadProfile(null);
+      setDragStackItems(null);
       setIsPointerMoving(false);
       setIsOverCloseTarget(false);
       snapToEdge(didDrag && !showStackItems, nextSide);
@@ -903,7 +930,7 @@ export default function FloatingChatHead({
     window.addEventListener('pointerup', onUp);
     window.addEventListener('pointercancel', onCancel);
     pointerCleanupRef.current = cleanup;
-  }, [followStackHeads, positionStackHeads, resolvedDismissalStorageKey, save, showStackItems, visibleStackItems.length]);
+  }, [followStackHeads, peerAvatar, peerIsGroup, peerIsMessages, peerLabel, positionStackHeads, resolvedDismissalStorageKey, save, showStackItems, unread, visibleStackItems.length]);
 
   /**
    * Park the head in the top-right corner once chat has been opened.
@@ -940,6 +967,9 @@ export default function FloatingChatHead({
   if (dismissed || !user?.id) return null;
   const isThisConversationOpen = Boolean(headId && openedConversationId === headId);
   const isHidden = hidden || isThisConversationOpen;
+  const activeHeadProfile = (isPointerDown || isDragging) && dragHeadProfile
+    ? dragHeadProfile
+    : { avatar: peerAvatar, label: peerLabel, group: Boolean(peerIsGroup), messages: peerIsMessages, unread };
   const stackItemsHidden = isHidden || (
     !showStackItems && !isFollowerHideAnimating && (!isDragging || !isPointerMoving)
   );
@@ -1012,7 +1042,7 @@ export default function FloatingChatHead({
         }
         onOpen();
       }}
-      aria-label={`Chat with ${peerLabel}. Drag to move.`}
+      aria-label={`Chat with ${activeHeadProfile.label}. Drag to move.`}
       aria-hidden={isHidden || undefined}
       tabIndex={isHidden ? -1 : undefined}
       className="absolute grid size-14 place-items-center overflow-visible rounded-full bg-[var(--surface)] border-2 border-[var(--primary)] shadow-xl touch-none select-none"
@@ -1052,22 +1082,22 @@ export default function FloatingChatHead({
       */}
       <span className="relative size-full overflow-hidden rounded-full">
         <PeerAvatar
-          src={peerAvatar}
-          label={peerLabel}
-          group={peerIsGroup}
-          messages={peerIsMessages}
+          src={activeHeadProfile.avatar}
+          label={activeHeadProfile.label}
+          group={activeHeadProfile.group}
+          messages={activeHeadProfile.messages}
         />
       </span>
 
       {/* Unread count on the side facing into the screen, so it is never clipped
           by the edge the head is docked to. */}
-      {unread > 0 && (
+      {activeHeadProfile.unread > 0 && (
         <span
           className={`absolute -top-1 grid min-w-[20px] place-items-center rounded-full bg-[var(--primary)] px-1 text-[11px] font-bold text-[var(--primary-foreground)] shadow ${
             side === 'right' ? '-left-2' : '-right-2'
           }`}
         >
-          {unread > 99 ? '99+' : unread}
+          {activeHeadProfile.unread > 99 ? '99+' : activeHeadProfile.unread}
         </span>
       )}
       </button>

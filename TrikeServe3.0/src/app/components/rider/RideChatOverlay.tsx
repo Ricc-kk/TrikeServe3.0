@@ -1,9 +1,9 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
 import { createPortal } from "react-dom";
 import { useNavigate } from "react-router";
 import { Camera, ImagePlus, MessagesSquare, Send, User, Users, X } from "lucide-react";
 import { supabaseHelpers } from "@/lib/supabase";
-import { useChatHeadVisibility } from "../../contexts/ChatHeadVisibilityContext";
+import { useChatHeadVisibility, type RecentChatHead } from "../../contexts/ChatHeadVisibilityContext";
 import ChatHeadDragPreview, {
   animateChatHeadReorder,
   getChatHeadClosePosition,
@@ -42,6 +42,7 @@ const QUICK_REPLIES = [
 
 interface RecentChatHeadGesture {
   conversationId: string;
+  head: RecentChatHead;
   pointerId: number;
   startX: number;
   startY: number;
@@ -164,14 +165,24 @@ export default function RideChatOverlay({
   receiverRole?: 'rider' | 'customer' | 'business';
   onClose: () => void;
 }) {
-  const { openedConversationId, recentChatHeads, toggleChatOverlay } = useChatHeadVisibility();
+  const {
+    openedConversationId,
+    openedChatHeadIds,
+    recentChatHeads,
+    toggleChatOverlay,
+    registerOpenChatOverlay,
+    rememberOpenChatHead,
+    forgetOpenChatHead,
+  } = useChatHeadVisibility();
   const navigate = useNavigate();
   const [chatHeadOrder, setChatHeadOrder] = useState<string[]>([]);
   const [hiddenChatHeadIds, setHiddenChatHeadIds] = useState<string[]>([]);
   const [draggingChatHeadId, setDraggingChatHeadId] = useState<string | null>(null);
   const [chatHeadDropTargetId, setChatHeadDropTargetId] = useState<string | null>(null);
+  const [draggedChatHead, setDraggedChatHead] = useState<RecentChatHead | null>(null);
   const [chatHeadDragPosition, setChatHeadDragPosition] = useState<ChatHeadDragPosition | null>(null);
   const [isOverChatHeadCloseTarget, setIsOverChatHeadCloseTarget] = useState(false);
+  const [activeHeadPointer, setActiveHeadPointer] = useState<{ left: number; top: number } | null>(null);
   const [messages, setMessages] = useState<any[]>([]);
   const [text, setText] = useState('');
   const [pendingImage, setPendingImage] = useState<{
@@ -188,6 +199,8 @@ export default function RideChatOverlay({
    * would simply vanish. This holds the node up until the animation ends.
    */
   const [closing, setClosing] = useState(false);
+  const [isActiveHeadHandoff, setIsActiveHeadHandoff] = useState(false);
+  const activeHeadHandoffTimerRef = useRef<number | null>(null);
   /** Whether the in-place profile card under the header name is expanded. */
   const [profileOpen, setProfileOpen] = useState(false);
   const [sending, setSending] = useState(false);
@@ -196,6 +209,8 @@ export default function RideChatOverlay({
   const [viewportWidth, setViewportWidth] = useState(0);
   const listRef = useRef<HTMLDivElement>(null);
   const recentChatHeadRowRef = useRef<HTMLDivElement>(null);
+  const activeChatHeadRef = useRef<HTMLDivElement>(null);
+  const chatThreadPanelRef = useRef<HTMLDivElement>(null);
   const recentChatHeadGestureRef = useRef<RecentChatHeadGesture | null>(null);
   const recentChatHeadPointerCleanupRef = useRef<(() => void) | null>(null);
   const suppressRecentChatHeadClickRef = useRef(false);
@@ -239,7 +254,20 @@ export default function RideChatOverlay({
 
   useEffect(() => () => {
     recentChatHeadPointerCleanupRef.current?.();
+    if (activeHeadHandoffTimerRef.current !== null) {
+      window.clearTimeout(activeHeadHandoffTimerRef.current);
+    }
   }, []);
+
+  useEffect(() => {
+    if (open || !closing) setIsActiveHeadHandoff(false);
+  }, [closing, open]);
+
+  useLayoutEffect(() => {
+    if (!open && !closing) return;
+    if (conversationId) rememberOpenChatHead(conversationId);
+    return registerOpenChatOverlay();
+  }, [closing, conversationId, open, registerOpenChatOverlay, rememberOpenChatHead]);
 
   const visibleRecentChatHeads = useMemo(() => {
     const hiddenIds = new Set(hiddenChatHeadIds);
@@ -260,18 +288,27 @@ export default function RideChatOverlay({
     const heads = current
       ? [...recentChatHeads.filter((item) => item.peerId !== current.peerId), current]
       : recentChatHeads;
+    const currentThreadShouldKeepItsHead = Boolean(current && (open || closing));
     const sortedHeads = [...heads].sort((a, b) =>
       new Date(b.lastActivityAt || 0).getTime() - new Date(a.lastActivityAt || 0).getTime(),
-    ).filter((item) => !hiddenIds.has(item.conversationId));
+    ).filter((item) => (
+      !hiddenIds.has(item.conversationId) ||
+      (currentThreadShouldKeepItsHead && item.conversationId === current?.conversationId)
+    ));
     const maxHeads = viewportWidth > 0
       ? Math.max(0, Math.floor((viewportWidth - 24 - 44 - 8) / 64))
       : 1;
     if (maxHeads === 0) return [];
 
-    const currentIsVisible = Boolean(current && !hiddenIds.has(current.conversationId));
+    const currentIsVisible = Boolean(
+      current && (!hiddenIds.has(current.conversationId) || currentThreadShouldKeepItsHead),
+    );
+    const candidateHeads = currentThreadShouldKeepItsHead
+      ? sortedHeads.filter((item) => openedChatHeadIds.includes(item.conversationId))
+      : sortedHeads;
     const candidates = current
       ? [
-          ...sortedHeads
+          ...candidateHeads
             .filter((item) => item.conversationId !== current.conversationId)
             .slice(0, Math.max(0, maxHeads - (currentIsVisible ? 1 : 0))),
           ...(currentIsVisible ? [current] : []),
@@ -290,7 +327,46 @@ export default function RideChatOverlay({
       ...candidates.filter((item) => !savedIds.has(item.conversationId)),
       ...savedOrder,
     ].filter((item) => candidateIds.has(item.conversationId));
-  }, [chatHeadOrder, conversationId, hiddenChatHeadIds, peerAvatar, peerId, peerIsGroup, peerName, recentChatHeads, viewportWidth]);
+  }, [chatHeadOrder, closing, conversationId, hiddenChatHeadIds, open, openedChatHeadIds, peerAvatar, peerId, peerIsGroup, peerName, recentChatHeads, viewportWidth]);
+
+  const displayedRecentChatHeads = open || closing
+    ? visibleRecentChatHeads.filter((item) => (
+        item.conversationId === conversationId || openedChatHeadIds.includes(item.conversationId)
+      ))
+    : visibleRecentChatHeads;
+
+  useLayoutEffect(() => {
+    const updateActiveHeadPointer = () => {
+      const activeHead = activeChatHeadRef.current;
+      const panel = chatThreadPanelRef.current;
+      if (!activeHead || !panel) {
+        setActiveHeadPointer((current) => current === null ? current : null);
+        return;
+      }
+
+      const headBounds = activeHead.getBoundingClientRect();
+      const sheetBounds = panel.closest('.ride-chat-sheet')?.getBoundingClientRect();
+      const next = {
+        left: headBounds.left + headBounds.width / 2 - (sheetBounds?.left || 0),
+        // offsetTop gives the panel's stable layout position without including
+        // its short slide transition when switching between open conversations.
+        top: panel.offsetTop,
+      };
+      setActiveHeadPointer((current) => (
+        current && Math.abs(current.left - next.left) < 0.5 && Math.abs(current.top - next.top) < 0.5
+          ? current
+          : next
+      ));
+    };
+
+    updateActiveHeadPointer();
+    const settleTimer = window.setTimeout(updateActiveHeadPointer, 240);
+    window.addEventListener('resize', updateActiveHeadPointer);
+    return () => {
+      window.clearTimeout(settleTimer);
+      window.removeEventListener('resize', updateActiveHeadPointer);
+    };
+  }, [chatHeadOrder, conversationId, draggingChatHeadId, open, viewportWidth, visibleRecentChatHeads]);
 
   const saveChatHeadOrder = (nextOrder: string[]) => {
     setChatHeadOrder(nextOrder);
@@ -313,9 +389,32 @@ export default function RideChatOverlay({
   };
 
   const closeChatHead = (headId: string) => {
-    if (!hiddenChatHeadIds.includes(headId)) {
-      saveHiddenChatHeads([...hiddenChatHeadIds, headId]);
+    if (hiddenChatHeadIds.includes(headId)) return;
+
+    const headIndex = displayedRecentChatHeads.findIndex((item) => item.conversationId === headId);
+    // Keep the conversation next to the one being closed active. The visual row
+    // is reversed, so the previous array item is the head immediately to the
+    // right when the active head sits later in the row.
+    const adjacentIndex = headIndex > 0 ? headIndex - 1 : 1;
+    const nextHead = displayedRecentChatHeads[adjacentIndex]?.conversationId !== headId
+      ? displayedRecentChatHeads[adjacentIndex]
+      : displayedRecentChatHeads.find((item) => item.conversationId !== headId);
+
+    saveHiddenChatHeads([...hiddenChatHeadIds, headId]);
+    forgetOpenChatHead(headId);
+    if (headId !== conversationId || !open) return;
+
+    // Reveal the ride beneath its dim film before handing off to the next chat.
+    // This also gives the dragged head's dismissal a clear visual response.
+    setIsActiveHeadHandoff(true);
+    if (activeHeadHandoffTimerRef.current !== null) {
+      window.clearTimeout(activeHeadHandoffTimerRef.current);
     }
+    activeHeadHandoffTimerRef.current = window.setTimeout(() => {
+      activeHeadHandoffTimerRef.current = null;
+      onClose();
+      if (nextHead) toggleChatOverlay(nextHead.conversationId);
+    }, 200);
   };
 
   const restoreChatHead = (headId: string) => {
@@ -349,13 +448,14 @@ export default function RideChatOverlay({
 
   const startRecentChatHeadGesture = (
     event: ReactPointerEvent<HTMLButtonElement>,
-    conversationId: string,
+    head: RecentChatHead,
   ) => {
     if (event.button !== 0) return;
     recentChatHeadPointerCleanupRef.current?.();
     const bounds = event.currentTarget.getBoundingClientRect();
     const gesture: RecentChatHeadGesture = {
-      conversationId,
+      conversationId: head.conversationId,
+      head,
       pointerId: event.pointerId,
       startX: event.clientX,
       startY: event.clientY,
@@ -404,6 +504,7 @@ export default function RideChatOverlay({
         window.setTimeout(() => { suppressRecentChatHeadClickRef.current = false; }, 0);
       }
       setDraggingChatHeadId(null);
+      setDraggedChatHead(null);
       setChatHeadDropTargetId(null);
       setChatHeadDragPosition(null);
       setIsOverChatHeadCloseTarget(false);
@@ -415,6 +516,7 @@ export default function RideChatOverlay({
         gesture.isDragging = true;
         suppressRecentChatHeadClickRef.current = true;
         setDraggingChatHeadId(gesture.conversationId);
+        setDraggedChatHead(gesture.head);
       }
       if (!gesture.isDragging) return;
 
@@ -654,6 +756,8 @@ export default function RideChatOverlay({
   // is applied, the parent still owns whether the sheet is open.
   if (!open && !closing) return null;
 
+  const hideThreadContent = isActiveHeadHandoff || draggingChatHeadId === conversationId;
+
   /*
    * The chat fills the screen, but the head sits outside the chatbox.
 
@@ -674,7 +778,9 @@ export default function RideChatOverlay({
     <div className={`pointer-events-none fixed inset-0 ${zIndexClass}`}>
       <div
         aria-hidden="true"
-        className={`pointer-events-none absolute inset-0 bg-black/40 transition-opacity duration-200 ease-out ${
+        className={`pointer-events-none absolute inset-0 transition-opacity duration-200 ease-out ${
+          hideThreadContent ? 'bg-black/45' : 'bg-black/40'
+        } ${
           closing ? 'opacity-0' : 'opacity-100'
         }`}
       />
@@ -704,12 +810,13 @@ export default function RideChatOverlay({
           aria-label="Recent chats, newest on the right. Drag a head to reorder or drag it to the X to close."
           className="pointer-events-none mb-2 mt-2 flex h-14 w-full flex-shrink-0 flex-row-reverse items-center justify-start gap-2 overflow-hidden px-3"
         >
-          {visibleRecentChatHeads.map((item) => {
+          {displayedRecentChatHeads.map((item) => {
             const isOpen = item.conversationId === conversationId;
             const isDraggingThisHead = draggingChatHeadId === item.conversationId;
             const isDropTarget = chatHeadDropTargetId === item.conversationId && !isDraggingThisHead;
             return (
               <div
+                ref={isOpen ? activeChatHeadRef : null}
                 key={item.conversationId}
                 data-chat-head-id={item.conversationId}
                 className="relative size-14 flex-shrink-0"
@@ -717,7 +824,7 @@ export default function RideChatOverlay({
                 <button
                   type="button"
                   draggable={false}
-                  onPointerDown={(event) => startRecentChatHeadGesture(event, item.conversationId)}
+                  onPointerDown={(event) => startRecentChatHeadGesture(event, item)}
                   onClick={() => {
                     if (suppressRecentChatHeadClickRef.current) {
                       suppressRecentChatHeadClickRef.current = false;
@@ -754,11 +861,8 @@ export default function RideChatOverlay({
             <MessagesSquare className="size-5" aria-hidden="true" />
           </button>
         </div>
-        {draggingChatHeadId && chatHeadDragPosition && (() => {
-          const draggedHead = visibleRecentChatHeads.find(
-            (item) => item.conversationId === draggingChatHeadId,
-          );
-          if (!draggedHead) return null;
+        {draggingChatHeadId && draggedChatHead && chatHeadDragPosition && (() => {
+          const draggedHead = draggedChatHead;
           return (
             <ChatHeadDragPreview
               position={chatHeadDragPosition}
@@ -777,6 +881,22 @@ export default function RideChatOverlay({
           );
         })()}
 
+        {activeHeadPointer && !hideThreadContent && !closing && (
+          <div
+            aria-hidden="true"
+            className="pointer-events-none absolute z-10 size-0"
+            style={{
+              left: activeHeadPointer.left,
+              top: activeHeadPointer.top,
+              transform: 'translate(-50%, -100%)',
+              borderLeft: '8px solid transparent',
+              borderRight: '8px solid transparent',
+              borderBottom: '8px solid var(--primary)',
+              transition: 'left 200ms ease-out, top 200ms ease-out',
+            }}
+          />
+        )}
+
         {/*
             The panel. `flex-1 min-h-0` rather than a set height: it takes exactly
             the space left under the head, so the chat reaches the bottom of the
@@ -788,7 +908,9 @@ export default function RideChatOverlay({
             they only ever cut notches out of the corners, drawing attention to the
             seam this panel is supposed to stop having.
         */}
-        <div className="pointer-events-auto flex min-h-0 flex-1 flex-col overflow-hidden">
+        <div ref={chatThreadPanelRef} className={`pointer-events-auto flex min-h-0 flex-1 flex-col overflow-hidden transition-[opacity,transform] duration-200 ease-out ${
+          hideThreadContent ? 'pointer-events-none translate-y-3 opacity-0' : 'translate-y-0 opacity-100'
+        }`}>
           {/* No avatar here: the head directly above already shows it. Repeating
               the same photo twice, 8px apart, was just noise. */}
           {/*

@@ -19,6 +19,12 @@ export interface ChatHeadOpenRequest {
 interface ChatHeadVisibilityContextValue {
   localHeadIds: string[];
   registerLocalHead: (conversationId?: string) => () => void;
+  hasOpenChatOverlay: boolean;
+  registerOpenChatOverlay: () => () => void;
+  openedChatHeadIds: string[];
+  rememberOpenChatHead: (conversationId: string) => void;
+  forgetOpenChatHead: (conversationId: string) => void;
+  clearOpenedChatHeads: () => void;
   openedConversationId: string | null;
   toggleChatOverlay: (conversationId: string) => void;
   closeChatOverlay: () => void;
@@ -32,9 +38,12 @@ const ChatHeadVisibilityContext = createContext<ChatHeadVisibilityContextValue |
 
 export function ChatHeadVisibilityProvider({ children }: { children: ReactNode }) {
   const [localHeads, setLocalHeads] = useState<Array<{ key: number; conversationId?: string }>>([]);
+  const [openChatOverlayKeys, setOpenChatOverlayKeys] = useState<number[]>([]);
+  const [openedChatHeadIds, setOpenedChatHeadIds] = useState<string[]>([]);
   const [openedConversationId, setOpenedConversationId] = useState<string | null>(null);
   const [recentChatHeads, setRecentChatHeads] = useState<RecentChatHead[]>([]);
   const nextHeadKey = useRef(0);
+  const nextOverlayKey = useRef(0);
   const nextOpenRequestId = useRef(0);
   const [chatHeadOpenRequest, setChatHeadOpenRequest] = useState<ChatHeadOpenRequest | null>(null);
 
@@ -43,7 +52,20 @@ export function ChatHeadVisibilityProvider({ children }: { children: ReactNode }
     setLocalHeads((heads) => [...heads, { key, conversationId }]);
     return () => setLocalHeads((heads) => heads.filter((head) => head.key !== key));
   }, []);
+  const registerOpenChatOverlay = useCallback(() => {
+    const key = ++nextOverlayKey.current;
+    setOpenChatOverlayKeys((keys) => [...keys, key]);
+    return () => setOpenChatOverlayKeys((keys) => keys.filter((current) => current !== key));
+  }, []);
+  const rememberOpenChatHead = useCallback((conversationId: string) => {
+    setOpenedChatHeadIds((ids) => [...ids.filter((id) => id !== conversationId), conversationId]);
+  }, []);
+  const forgetOpenChatHead = useCallback((conversationId: string) => {
+    setOpenedChatHeadIds((ids) => ids.filter((id) => id !== conversationId));
+  }, []);
+  const clearOpenedChatHeads = useCallback(() => setOpenedChatHeadIds([]), []);
   const toggleChatOverlay = useCallback((conversationId: string) => {
+    setOpenedChatHeadIds((ids) => [...ids.filter((id) => id !== conversationId), conversationId]);
     setOpenedConversationId((current) => current === conversationId ? null : conversationId);
   }, []);
   const closeChatOverlay = useCallback(() => setOpenedConversationId(null), []);
@@ -57,6 +79,12 @@ export function ChatHeadVisibilityProvider({ children }: { children: ReactNode }
     <ChatHeadVisibilityContext.Provider value={{
       localHeadIds,
       registerLocalHead,
+      hasOpenChatOverlay: openChatOverlayKeys.length > 0,
+      registerOpenChatOverlay,
+      openedChatHeadIds,
+      rememberOpenChatHead,
+      forgetOpenChatHead,
+      clearOpenedChatHeads,
       openedConversationId,
       toggleChatOverlay,
       closeChatOverlay,
