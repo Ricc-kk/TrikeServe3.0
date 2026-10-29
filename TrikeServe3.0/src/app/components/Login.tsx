@@ -325,7 +325,6 @@ export default function Login() {
               type="button"
               aria-label="Hold the TrikeServe logo for 5 seconds to toggle developer mode"
               aria-pressed={isDevMode}
-              title="Hold for 5 seconds to toggle developer mode"
               onPointerDown={startDevModeHold}
               onPointerUp={cancelDevModeHold}
               onPointerLeave={cancelDevModeHold}

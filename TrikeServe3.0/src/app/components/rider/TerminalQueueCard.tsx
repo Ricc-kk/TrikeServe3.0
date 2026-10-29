@@ -1,7 +1,9 @@
 import { useState } from "react";
 import {
   Car,
+  AlertTriangle,
   ChevronDown,
+  Clock3,
   ListOrdered,
   Lock,
   LogOut,
@@ -15,6 +17,7 @@ import {
 } from "lucide-react";
 import { Badge } from "../ui/badge";
 import { Button } from "../ui/button";
+import { RideModal } from "../ui/RideUI";
 import { useTerminalQueue } from "../../hooks/useTerminalQueue";
 import type { LatLngPoint } from "@/lib/supabase";
 
@@ -93,6 +96,12 @@ function formatWaiting(joinedAt?: string): string {
   const hours = Math.floor(minutes / 60);
   const remainder = minutes % 60;
   return remainder ? `${hours}h ${remainder}m` : `${hours}h`;
+}
+
+function formatQueueCountdown(seconds: number): string {
+  const minutes = Math.floor(seconds / 60);
+  const remainder = seconds % 60;
+  return `${minutes}:${String(remainder).padStart(2, "0")}`;
 }
 
 /** Shows which service types the driver's queue position unlocks. */
@@ -193,6 +202,10 @@ export default function TerminalQueueCard({ queue, variant = "full", canJoin = t
     isResolvingTerminal,
     isMutating,
     error,
+    outsideQueueSecondsRemaining,
+    outsideQueueAutoRemoved,
+    outsideQueueError,
+    dismissOutsideQueueNotice,
     join,
     leave,
   } = queue;
@@ -265,6 +278,56 @@ export default function TerminalQueueCard({ queue, variant = "full", canJoin = t
     </Button>
   );
 
+  const outsideQueueWarning = outsideQueueAutoRemoved || outsideQueueSecondsRemaining !== null ? (
+    <RideModal
+      ariaLabel={outsideQueueAutoRemoved ? "Removed from the terminal queue" : "Return to the terminal"}
+      zIndexClassName="z-[5000]"
+      contentClassName="max-w-md p-6"
+    >
+      <div className="text-center">
+        <div className={`mx-auto mb-4 grid size-14 place-items-center rounded-full ${outsideQueueAutoRemoved ? "bg-[var(--error-soft)] text-[var(--error)]" : "bg-[var(--amber-soft)] text-[var(--amber-ink)]"}`}>
+          <AlertTriangle className="size-7" aria-hidden="true" />
+        </div>
+        <h2 className="text-lg font-extrabold text-[var(--ink)]">
+          {outsideQueueAutoRemoved ? "Removed from the queue" : "Return to your terminal"}
+        </h2>
+        <p className="mt-2 text-sm leading-relaxed text-[var(--muted-foreground)]">
+          {outsideQueueAutoRemoved
+            ? `You were automatically removed from ${terminalLabel}'s queue after staying outside its boundary for 60 seconds. Return to the terminal to join again.`
+            : `You're outside ${terminalLabel}'s boundary. Return within 60 seconds to keep your place. If you stay outside, you'll be removed from the queue automatically.`}
+        </p>
+        {!outsideQueueAutoRemoved && outsideQueueSecondsRemaining !== null && (
+          <div className="mt-5 flex items-center justify-center gap-2 rounded-xl border border-[var(--amber)]/40 bg-[var(--amber-soft)] px-4 py-3 text-[var(--amber-ink)]" role="timer" aria-live="assertive">
+            <Clock3 className="size-5" aria-hidden="true" />
+            <span className="text-sm font-bold">Time remaining</span>
+            <span className="min-w-[3.5rem] text-right text-xl font-extrabold tabular-nums">
+              {formatQueueCountdown(outsideQueueSecondsRemaining)}
+            </span>
+          </div>
+        )}
+        {outsideQueueError && <p className="mt-3 text-xs font-semibold text-[var(--error)]" role="alert">{outsideQueueError}</p>}
+        <div className="mt-5 flex justify-center gap-2">
+          {outsideQueueAutoRemoved ? (
+            <Button type="button" onClick={dismissOutsideQueueNotice} className="min-w-28 bg-[var(--primary)] font-bold text-white">
+              Got it
+            </Button>
+          ) : (
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => runAction(leave)}
+              disabled={isMutating}
+              className="border-[var(--border)] font-bold text-[var(--muted-foreground)]"
+            >
+              <LogOut className="mr-1.5 size-4" aria-hidden="true" />
+              {isMutating ? "Leaving…" : "Leave Queue Now"}
+            </Button>
+          )}
+        </div>
+      </div>
+    </RideModal>
+  ) : null;
+
   // ---- No terminal: blocked from accepting rides ----
   if (hasNoTerminal) {
     return (
@@ -333,6 +396,7 @@ export default function TerminalQueueCard({ queue, variant = "full", canJoin = t
           <div className="flex-shrink-0">{myEntry ? leaveButton : joinButton}</div>
         </div>
         {actionError && <p className="text-[11px] text-[var(--primary)] font-semibold mt-2">{actionError}</p>}
+        {outsideQueueWarning}
       </div>
     );
   }
@@ -499,6 +563,7 @@ export default function TerminalQueueCard({ queue, variant = "full", canJoin = t
           Queue unavailable right now — retrying automatically.
         </p>
       )}
+      {outsideQueueWarning}
     </div>
   );
 }

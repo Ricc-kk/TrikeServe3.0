@@ -148,6 +148,15 @@ function coordinateFromValues(latValue: unknown, lngValue: unknown): RideCoordin
   return { lat, lng };
 }
 
+function findRideTerminalRoute(routes: TerminalRoute[], routeId: unknown, terminalId: string): TerminalRoute | null {
+  const requestedRouteId = String(routeId ?? '').trim();
+  if (!requestedRouteId) return null;
+
+  return routes.find(route =>
+    route.id === requestedRouteId || `${terminalId}::${route.id}` === requestedRouteId,
+  ) || null;
+}
+
 function getSharedDropoffStops(ride: ActiveRideData | null): SharedDropoffStop[] {
   if (!ride || (ride.type !== 'shared' && !ride.lobbyId)) return [];
 
@@ -1357,9 +1366,7 @@ export default function ActiveRide() {
       const requestedRouteId = rideData.selectedRouteId || passengers
         .map((passenger: any) => passenger?.route_id || passenger?.routeId || passenger?.selectedRouteId)
         .find((routeId: unknown) => typeof routeId === 'string' && routeId.length > 0);
-      const savedRoute = requestedRouteId
-        ? routes.find(route => route.id === requestedRouteId)
-        : null;
+      const savedRoute = findRideTerminalRoute(routes, requestedRouteId, terminalId);
       const destinations = passengers.flatMap((passenger: any) => {
         const point = coordinateFromValues(
           passenger?.dropoffLat ?? passenger?.dropoff_lat,
@@ -1440,9 +1447,7 @@ export default function ActiveRide() {
         : legacyRouteFromBoundary(terminal.boundary_polygon, terminal.road_width_m))
         .filter(route => route.points.length >= 2);
       const requestedRouteId = rideData.selectedRouteId;
-      const requestedRoute = requestedRouteId
-        ? routes.find(route => route.id === requestedRouteId) || null
-        : null;
+      const requestedRoute = findRideTerminalRoute(routes, requestedRouteId, terminalId);
       const dropoff = coordinateFromValues(rideData.dropoffLat, rideData.dropoffLng);
       const pickup = coordinateFromValues(rideData.pickupLat, rideData.pickupLng);
       const matchingRoute = dropoff
@@ -1669,7 +1674,6 @@ export default function ActiveRide() {
     if (
       !rideData ||
       !isPrivateRide ||
-      isHeadingToPickup ||
       rideData.status === 'completed' ||
       rideData.dropoffLat == null ||
       rideData.dropoffLng == null
@@ -1697,7 +1701,6 @@ export default function ActiveRide() {
     rideData?.dropoffLat,
     rideData?.dropoffLng,
     isPrivateRide,
-    isHeadingToPickup,
     driverLocation?.lat,
     driverLocation?.lng,
     privateTerminalRoute,
@@ -1867,16 +1870,28 @@ export default function ActiveRide() {
   useEffect(() => {
     const map = mapRef.current;
     if (!map || !rideData) return;
-    const phaseKey = `${rideData.id}:${isHeadingToPickup ? 'restaurant' : 'customer'}`;
+    const pickupRoutePoints = routePath
+      || directions?.routes?.[0]?.overview_path?.map(point => ({ lat: point.lat(), lng: point.lng() }))
+      || [];
+    const hasPickupRoute = pickupRoutePoints.length > 1;
+    const hasPrivateDropoffRoute = privateTerminalDropoffPath.length > 1;
+    const phaseKey = [
+      rideData.id,
+      isHeadingToPickup ? 'restaurant' : 'customer',
+      isPrivateRide && isHeadingToPickup && hasPickupRoute ? 'pickup-route' : '',
+      isPrivateRide && hasPrivateDropoffRoute ? 'dropoff-route' : '',
+    ].join(':');
     if (fittedRoutePhaseRef.current === phaseKey) return;
 
-    const routePoints = isPrivateRide && !isHeadingToPickup
-      ? privateTerminalDropoffPath
+    const routePoints = isPrivateRide
+      ? isHeadingToPickup
+        ? [...privateTerminalDropoffPath, ...pickupRoutePoints]
+        : privateTerminalDropoffPath
       : isSharedRide && !isHeadingToPickup
         ? sharedDropoffRoutes.flatMap(route => route.path)
-        : routePath
-          || directions?.routes?.[0]?.overview_path?.map(point => ({ lat: point.lat(), lng: point.lng() }))
-          || sharedDropoffRoutes.flatMap(route => route.path);
+        : pickupRoutePoints.length > 0
+          ? pickupRoutePoints
+          : sharedDropoffRoutes.flatMap(route => route.path);
     if (routePoints.length < 2) return;
 
     const bounds = new (window as any).google.maps.LatLngBounds();
@@ -3226,9 +3241,9 @@ export default function ActiveRide() {
               />
             ))}
 
-            {/* Keep the full terminal-to-drop-off leg visible after pickup,
-                including when the driver's GPS is unavailable. */}
-            {isPrivateRide && !isHeadingToPickup && privateTerminalDropoffPath.length > 1 && (
+            {/* Keep the passenger's terminal-to-drop-off leg visible while the
+                driver is approaching pickup and throughout the ride. */}
+            {isPrivateRide && privateTerminalDropoffPath.length > 1 && (
               <Polyline
                 path={privateTerminalDropoffPath}
                 options={{

@@ -724,8 +724,8 @@ export default function CustomerHome() {
    // The customer is not standing inside any terminal's border area. The border
    // is the "who we serve" gate -- it decides whether they may book at all.
    const [showOutOfBoundaryError, setShowOutOfBoundaryError] = useState(false);
-  // The drop-off is not on any terminal's route corridor. The route is the
-  // "where a tricycle can go" gate, and it is a separate refusal from the above.
+  // Shared ride drop-offs must be on their selected route. Private rides may
+  // go beyond the route network; their pickup still has a terminal boundary.
   const [showOutsideRouteError, setShowOutsideRouteError] = useState(false);
   // The drop-off could not be turned into coordinates, so it cannot be checked
   // against any terminal. Distinct from "outside every terminal" and kept
@@ -943,6 +943,7 @@ export default function CustomerHome() {
    const [routePreviewVisibleRouteIds, setRoutePreviewVisibleRouteIds] = useState<string[]>([]);
    const [showRoutePreviewList, setShowRoutePreviewList] = useState(false);
    const routePreviewMapRef = useRef<any>(null);
+  const activePrivateRideMapFitRef = useRef<string | null>(null);
    const [selectedTerminalId, setSelectedTerminalId] = useState<string | null>(null);
    const [selectedTerminalRouteId, setSelectedTerminalRouteId] = useState<string | null>(null);
    const terminalPickerUsageRef = useRef<Record<string, number>>({});
@@ -1024,23 +1025,44 @@ export default function CustomerHome() {
       selectedTerminalId,
       selectedTerminalRouteId,
     ]);
-    const selectedRouteDropoffGuide = !enforceBoundary
-      ? 'Choose a drop-off location.'
-      : selectedTerminalBoundary.terminal && selectedTerminalBoundary.displayRoad
-      ? 'Choose a drop-off along the highlighted route.'
-      : 'Select a pickup route first to choose a drop-off along it.';
+    const selectedRouteDropoffGuide = selectedVehicle === 'special'
+      ? 'Routes are for guidance. Choose any drop-off, including outside the highlighted routes.'
+      : !enforceBoundary
+        ? 'Choose a drop-off location.'
+        : selectedTerminalBoundary.terminal && selectedTerminalBoundary.displayRoad
+          ? 'Choose a drop-off along the highlighted route.'
+          : 'Select a pickup route first to choose a drop-off along it.';
     const missingSelectedRouteMessage = selectedTerminalBoundary.terminal
-      ? `${selectedTerminalBoundary.terminal.name} has no mapped route yet. Drop-off selection is unavailable until its route is set.`
-      : 'Select a pickup route first. Drop-offs are restricted to the selected route.';
+      ? selectedVehicle === 'special'
+        ? 'You can choose any drop-off, including outside the highlighted routes.'
+        : `${selectedTerminalBoundary.terminal.name} has no enabled mapped route yet. Drop-off selection is unavailable until one is set.`
+      : selectedVehicle === 'special'
+        ? 'Select a pickup terminal first. You can choose any drop-off, including outside the highlighted routes.'
+        : 'Select a pickup route first. Drop-offs are restricted to the selected route.';
+    const enabledSelectedTerminalRoutes = useMemo(
+      () => selectedTerminalBoundary.terminal
+        ? mapTerminalRoutes.filter(route => route.terminalId === selectedTerminalBoundary.terminal?.id && route.enabled)
+        : [],
+      [mapTerminalRoutes, selectedTerminalBoundary.terminal?.id],
+    );
+    const findSelectedDropoffRoute = useCallback((point: LatLngPoint) => {
+      const { terminal, selectedRoute } = selectedTerminalBoundary;
+      if (!terminal) return null;
+
+      const routes = selectedVehicle === 'special'
+        ? enabledSelectedTerminalRoutes
+        : selectedRoute ? [selectedRoute] : [];
+      return routes.find(route => isPointOnRoadCorridor(
+        point.lat,
+        point.lng,
+        route.points,
+        normalizeRoadWidth(route.bufferM ?? terminal.road_width_m),
+      )) || null;
+    }, [enabledSelectedTerminalRoutes, selectedTerminalBoundary, selectedVehicle]);
     const isPointOnSelectedRoute = useCallback((point: LatLngPoint) => {
-      if (!enforceBoundary) return true;
-      const { terminal, displayRoad, routeWidthM } = selectedTerminalBoundary;
-      return Boolean(
-        terminal &&
-        displayRoad?.length &&
-        isPointOnRoadCorridor(point.lat, point.lng, displayRoad, normalizeRoadWidth(routeWidthM)),
-      );
-    }, [enforceBoundary, selectedTerminalBoundary]);
+      if (!enforceBoundary || selectedVehicle === 'special') return true;
+      return Boolean(findSelectedDropoffRoute(point));
+    }, [enforceBoundary, findSelectedDropoffRoute, selectedVehicle]);
 
   /*
    * The picker map draws the selected terminal's shapes in that terminal's own
@@ -1057,6 +1079,11 @@ export default function CustomerHome() {
   const pickerRouteColor = normalizeRouteColor(pickerTerminal?.route_color);
   const selectedTerminalRouteColor = pickerRouteColor;
   const pickerBorderColor = normalizeBorderColor(pickerTerminal?.border_color);
+  const pickerRoutes = selectedVehicle === 'special'
+    ? enabledSelectedTerminalRoutes
+    : selectedTerminalBoundary.selectedRoute
+      ? [selectedTerminalBoundary.selectedRoute]
+      : [];
 
   useEffect(() => {
     const activeTerminalId = activeRideLobby?.terminal_id || activeRideRequest?.terminal_id;
@@ -1281,15 +1308,17 @@ export default function CustomerHome() {
     if (!isMapsLoaded || !(window as any).google) return;
 
     let cancelled = false;
+    const pickupQuery = pickupAddress || (pickup !== 'Current Location' ? pickup : '');
+    const dropoffQuery = dropoffAddress || dropoff;
 
     (async () => {
-      if (!pickupCoords && pickupAddress && pickup !== 'Current Location') {
-        const coords = await geocodeAddress(pickupAddress);
+      if (!pickupCoords && pickupQuery.trim()) {
+        const coords = await geocodeAddress(pickupQuery);
         if (!cancelled && coords) setPickupCoords(coords);
       }
 
-      if (!dropoffCoords && dropoffAddress) {
-        const coords = await geocodeAddress(dropoffAddress);
+      if (!dropoffCoords && dropoffQuery.trim()) {
+        const coords = await geocodeAddress(dropoffQuery);
         if (!cancelled && coords) setDropoffCoords(coords);
       }
     })();
@@ -1297,7 +1326,7 @@ export default function CustomerHome() {
     return () => {
       cancelled = true;
     };
-  }, [isMapsLoaded, pickup, pickupAddress, pickupCoords, dropoffAddress, dropoffCoords]);
+  }, [isMapsLoaded, pickup, pickupAddress, pickupCoords, dropoff, dropoffAddress, dropoffCoords]);
 
   // Fetch autocomplete predictions (Places API) and set predictions state
   const fetchPredictions = async (input: string) => {
@@ -1320,10 +1349,14 @@ export default function CustomerHome() {
 
       // Search is biased to the selected terminal. Pickup suggestions are kept
       // inside its service area; drop-off suggestions are checked against the
-      // selected route after the customer chooses one.
+      // permitted route after selection. Private ride drop-offs may be outside
+      // the route network; it only biases destination search results.
       const { terminal, area, widthM, displayRoad } = selectedTerminalBoundary;
       const searchingForPickup = activeLocationInput === 'pickup';
-      const gateShape = searchingForPickup ? area : displayRoad;
+      const dropoffNetwork = selectedVehicle === 'special'
+        ? enabledSelectedTerminalRoutes.flatMap(route => route.points)
+        : displayRoad;
+      const gateShape = searchingForPickup ? area : dropoffNetwork;
 
       if (enforceBoundary && gateShape && terminal) {
         // Text Search returns coordinates. Keep pickup suggestions inside the
@@ -1394,10 +1427,14 @@ export default function CustomerHome() {
         if (enforceBoundary && activeLocationInput === 'dropoff' && (!coords || !isPointOnSelectedRoute(coords))) {
           setPickerBoundaryWarning(
             coords
-              ? selectedTerminalBoundary.displayRoad
-                ? `Choose a drop-off within ${Math.round(normalizeRoadWidth(selectedTerminalBoundary.routeWidthM) / 2)} m of the highlighted ${selectedTerminalBoundary.terminal?.name || 'selected'} route.`
-                : missingSelectedRouteMessage
-              : 'We could not locate that place. Choose a result on the highlighted route or tap the route on the map.'
+              ? selectedVehicle === 'special' && selectedTerminalBoundary.terminal
+                ? `Choose a drop-off along one of ${selectedTerminalBoundary.terminal.name}'s enabled routes.`
+                : selectedTerminalBoundary.displayRoad
+                  ? `Choose a drop-off within ${Math.round(normalizeRoadWidth(selectedTerminalBoundary.routeWidthM) / 2)} m of the highlighted ${selectedTerminalBoundary.terminal?.name || 'selected'} route.`
+                  : missingSelectedRouteMessage
+              : selectedVehicle === 'special'
+                ? 'We could not locate that place. Choose another result or tap anywhere on the map.'
+                : 'We could not locate that place. Choose a result on the highlighted route or tap the route on the map.'
           );
           return;
         }
@@ -2783,31 +2820,26 @@ export default function CustomerHome() {
     // A tap that fails the relevant gate is refused outright, so the customer
     // cannot pin somewhere the booking would refuse a moment later.
     //
-    // Which gate depends on what is being placed: the customer has to stand in
-    // the border to book, but the drop-off only has to be on the route.
-    const { area, widthM, routeWidthM, displayRoad, terminal } = selectedTerminalBoundary;
+      // Pickup stays inside the terminal border. Shared ride drop-offs stay on
+      // their selected route; private ride destinations may go beyond routes.
+    const { area, widthM, terminal } = selectedTerminalBoundary;
     const pickingPickup = activeLocationInput === 'pickup';
-    if (enforceBoundary && !pickingPickup && (!terminal || !displayRoad?.length)) {
-      setPickerBoundaryWarning(missingSelectedRouteMessage);
+    const point = { lat, lng };
+    const matchingDropoffRoute = !pickingPickup && selectedVehicle !== 'special'
+      ? findSelectedDropoffRoute(point)
+      : null;
+    if (enforceBoundary && !pickingPickup && selectedVehicle !== 'special' && (!terminal || !matchingDropoffRoute)) {
+      setPickerBoundaryWarning(
+        terminal
+          ? `That spot is not on ${terminal.name}'s selected route. Tap within ${Math.round(normalizeRoadWidth(selectedTerminalBoundary.routeWidthM) / 2)} m of the highlighted road.`
+          : missingSelectedRouteMessage
+      );
       return;
     }
 
-    const gateShape = enforceBoundary ? (pickingPickup ? area : displayRoad) : null;
-    const gateWidth = pickingPickup ? widthM : routeWidthM;
-    if (gateShape) {
-      const inside = pickingPickup
-        ? isPointInPolygon(lat, lng, gateShape)
-        : isPointOnRoadCorridor(lat, lng, gateShape, normalizeRoadWidth(gateWidth));
-
-      if (!inside) {
-        const half = Math.round(normalizeRoadWidth(gateWidth) / 2);
-        setPickerBoundaryWarning(
-          pickingPickup
-            ? `That spot is outside ${terminal?.name || 'this terminal'}. Tap inside the shaded area.`
-            : `That spot is not on ${terminal?.name || 'this terminal'}'s selected route. Tap within ${half} m of the highlighted road.`
-        );
-        return;
-      }
+    if (enforceBoundary && pickingPickup && area && !isPointInPolygon(lat, lng, area)) {
+      setPickerBoundaryWarning(`That spot is outside ${terminal?.name || 'this terminal'}. Tap inside the shaded area.`);
+      return;
     }
 
     setPickerBoundaryWarning(null);
@@ -2845,9 +2877,11 @@ export default function CustomerHome() {
     const coords = { lat: locationPreview.lat, lng: locationPreview.lng };
     if (enforceBoundary && activeLocationInput === 'dropoff' && !isPointOnSelectedRoute(coords)) {
       setPickerBoundaryWarning(
-        selectedTerminalBoundary.displayRoad
-          ? `Choose a drop-off within ${Math.round(normalizeRoadWidth(selectedTerminalBoundary.routeWidthM) / 2)} m of the highlighted ${selectedTerminalBoundary.terminal?.name || 'selected'} route.`
-          : missingSelectedRouteMessage
+        selectedVehicle === 'special' && selectedTerminalBoundary.terminal
+          ? `Choose a drop-off along one of ${selectedTerminalBoundary.terminal.name}'s enabled routes.`
+          : selectedTerminalBoundary.displayRoad
+            ? `Choose a drop-off within ${Math.round(normalizeRoadWidth(selectedTerminalBoundary.routeWidthM) / 2)} m of the highlighted ${selectedTerminalBoundary.terminal?.name || 'selected'} route.`
+            : missingSelectedRouteMessage
       );
       return;
     }
@@ -2858,6 +2892,10 @@ export default function CustomerHome() {
       setPickupCoords(coords);
       setPickupMarker(coords);
     } else {
+      const matchedRoute = findSelectedDropoffRoute(coords);
+      if (selectedVehicle === 'special' && matchedRoute) {
+        setSelectedTerminalRouteId(matchedRoute.id);
+      }
       setDropoff(locationPreview.name);
       setDropoffAddress(locationPreview.fullAddress);
       setDropoffCoords(coords);
@@ -2883,9 +2921,9 @@ export default function CustomerHome() {
    *   2. The ROUTE â€” the drop-off has to sit on a terminal's road corridor.
    *      This is "where can a tricycle actually go".
    *
-   * Every ride must use the route selected by the customer. Private rides also
-   * check the selected terminal's pickup area; shared rides keep their existing
-   * any-terminal pickup-area check.
+   * Shared rides use the route selected by the customer. Private ride
+   * destinations may be outside the highlighted routes; their pickups still
+   * have to be inside the selected terminal's service area.
    *
    * Food deliveries are deliberately NOT checked here. They are placed from the
    * restaurant's own screen and never reach this function; they are gated by the
@@ -2893,7 +2931,9 @@ export default function CustomerHome() {
    */
   const checkRideGates = async (): Promise<boolean> => {
     const selectedTerminalRoad = selectedTerminalBoundary.displayRoad;
-    if (!selectedTerminalBoundary.terminal || (enforceBoundary && !selectedTerminalRoad?.length)) {
+    if (!selectedTerminalBoundary.terminal || (
+      enforceBoundary && selectedVehicle !== 'special' && !selectedTerminalRoad?.length
+    )) {
       setTerminalPickerWarning(missingSelectedRouteMessage);
       setShowTerminalPicker(true);
       return false;
@@ -2961,9 +3001,12 @@ export default function CustomerHome() {
       return false;
     }
 
-    // Gate 2: the drop-off must stay on the route the customer selected.
+    // Shared ride drop-offs must stay on the selected route. Private rides can
+    // go beyond the highlighted route network, so their route match is only
+    // used to attach a route_id when one happens to match.
+    const matchingDropoffRoute = findSelectedDropoffRoute(dropoff);
     const route = {
-      allowed: isPointOnSelectedRoute(dropoff),
+      allowed: selectedVehicle === 'special' || isPointOnSelectedRoute(dropoff),
       checkedCount: 1,
       lookupFailed: false,
     };
@@ -2973,6 +3016,10 @@ export default function CustomerHome() {
       });
       setShowOutsideRouteError(true);
       return false;
+    }
+
+    if (selectedVehicle === 'special' && matchingDropoffRoute) {
+      setSelectedTerminalRouteId(matchingDropoffRoute.id);
     }
 
     return true;
@@ -3298,7 +3345,9 @@ export default function CustomerHome() {
            status: 'pending',
            ride_type: 'special',
            terminal_id: selectedTerminalId || null,
-           route_id: selectedTerminalBoundary.selectedRoute?.id || null,
+           route_id: selectedVehicle === 'special'
+             ? (dropoffCoords ? findSelectedDropoffRoute(dropoffCoords)?.routeId || null : null)
+             : selectedTerminalBoundary.selectedRoute?.routeId || null,
            payment_method: paymentMethod === 'GCASH' ? 'GCASH' : 'COD',
            amount: fareAmount,
            passenger_count: passengerCount,
@@ -3596,13 +3645,17 @@ export default function CustomerHome() {
     [terminalPickerUsage, terminals]
   );
   const terminalPickerDescription = enforceBoundary
-    ? 'Choose a pickup route. Drop-offs must stay on the selected route.'
+    ? selectedVehicle === 'special'
+      ? 'Choose a pickup terminal. Drop-offs can be anywhere, including outside the highlighted routes.'
+      : 'Choose a pickup route. Drop-offs must stay on the selected route.'
     : 'Choose a terminal for pickup.';
   const terminalPickerEmptyMessage = terminalPickerFilter === "closest"
     ? 'The closest terminal could not be determined from your current location.'
     : terminalPickerFilter === "frequent"
-      ? 'Terminals you select will appear here as your frequently used routes.'
-      : 'Choose a pickup route first to see the selected terminal here.';
+      ? 'Terminals you select will appear here as your frequently used terminals.'
+      : selectedVehicle === 'special'
+        ? 'No pickup terminals are available right now.'
+        : 'Choose a pickup route first to see the selected terminal here.';
   const selectTerminalRoute = useCallback((terminalId: string, requestedRouteId?: string | null) => {
     const terminal = terminals.find(item => item.id === terminalId);
     if (!terminal) return;
@@ -3613,7 +3666,7 @@ export default function CustomerHome() {
       : terminalRoutes.find(item => item.enabled) || terminalRoutes[0] || null;
     const road = route?.points || null;
     const routeWidthM = route?.bufferM ?? terminal.road_width_m;
-    if (enforceBoundary && (!route || !route.enabled || !road?.length)) {
+    if (enforceBoundary && selectedVehicle !== 'special' && (!route || !route.enabled || !road?.length)) {
       const message = route && !route.enabled
         ? `${route.name} is disabled. Choose an enabled route to set your pickup.`
         : `${terminal.name} has no enabled mapped route yet. Drop-off selection is unavailable until one is set.`;
@@ -3621,11 +3674,16 @@ export default function CustomerHome() {
       return;
     }
 
-    const nextSelectedRouteId = route?.id ?? null;
-    const routeChanged = selectedTerminalId !== terminal.id || selectedTerminalRouteId !== nextSelectedRouteId;
+    const isPrivateRide = selectedVehicle === 'special';
+    const nextSelectedRouteId = isPrivateRide && selectedTerminalId === terminal.id
+      ? selectedTerminalRouteId
+      : route?.id ?? null;
+    const routeChanged = selectedTerminalId !== terminal.id || (
+      !isPrivateRide && selectedTerminalRouteId !== nextSelectedRouteId
+    );
     const coords = { lat: terminal.center_lat, lng: terminal.center_lng };
     const existingDropoffOutsideRoute = Boolean(
-      enforceBoundary &&
+      enforceBoundary && selectedVehicle !== 'special' &&
       dropoffCoords && !isPointOnRoadCorridor(
         dropoffCoords.lat,
         dropoffCoords.lng,
@@ -3715,8 +3773,8 @@ export default function CustomerHome() {
     if (!activeMapTerminalId) return [];
     const terminalRoutes = mapTerminalRoutes.filter(route => route.terminalId === activeMapTerminalId);
 
-    // Keep the terminal's route network visible during a private ride. The
-    // active route is highlighted separately and the other routes are dimmed.
+    // Keep the full terminal route network visible during private rides with
+    // one consistent style for every route.
     if ((isActivePrivateRidePage || isPrivateRide) && !isActiveShareRideMap) {
       return terminalRoutes;
     }
@@ -3746,6 +3804,8 @@ export default function CustomerHome() {
     selectedTerminalRouteId,
   ]);
   const isPrivateRideMap = (isActivePrivateRidePage || isPrivateRide) && !isActiveShareRideMap;
+  const isPrivateRideInProgress = isPrivateRideMap && rideStateBelongsToCurrentUser &&
+    ['driver-found', 'picking-up', 'in-transit'].includes(visibleRideStatus || '');
   const activePrivateRideRoute = useMemo(() => {
     if (!isPrivateRideMap) return null;
 
@@ -3764,6 +3824,15 @@ export default function CustomerHome() {
     const privateRideDropoff = Number.isFinite(requestDropoffLat) && Number.isFinite(requestDropoffLng)
       ? { lat: requestDropoffLat, lng: requestDropoffLng }
       : dropoffCoords;
+    const requestPickupLat = activeRideRequest?.pickup_lat == null
+      ? Number.NaN
+      : Number(activeRideRequest.pickup_lat);
+    const requestPickupLng = activeRideRequest?.pickup_lng == null
+      ? Number.NaN
+      : Number(activeRideRequest.pickup_lng);
+    const privateRidePickup = Number.isFinite(requestPickupLat) && Number.isFinite(requestPickupLng)
+      ? { lat: requestPickupLat, lng: requestPickupLng }
+      : pickupCoords;
     const isRouteForDropoff = (route: typeof mapRoutesInView[number]) => Boolean(
       privateRideDropoff && isPointOnRoadCorridor(
         privateRideDropoff.lat,
@@ -3772,40 +3841,50 @@ export default function CustomerHome() {
         normalizeRoadWidth(route.bufferM),
       )
     );
-    const inMemorySelectedRoute = selectedTerminalId === activeMapTerminalId
-      ? mapRoutesInView.find(route => route.id === selectedTerminalRouteId) || null
+    const routeForDropoff = privateRideDropoff
+      ? mapRoutesInView
+          .map(route => ({
+            route,
+            matchesPickup: Boolean(privateRidePickup && isPointOnRoadCorridor(
+              privateRidePickup.lat,
+              privateRidePickup.lng,
+              route.points,
+              normalizeRoadWidth(route.bufferM),
+            )),
+          }))
+          .filter(candidate => isRouteForDropoff(candidate.route))
+          .sort((a, b) =>
+            Number(b.matchesPickup) - Number(a.matchesPickup)
+            || Number(b.route.enabled) - Number(a.route.enabled),
+          )[0]?.route || null
       : null;
-    const selectedRouteMatchesDropoff = inMemorySelectedRoute && (
-      !privateRideDropoff || isRouteForDropoff(inMemorySelectedRoute)
-    )
-      ? inMemorySelectedRoute
+    const nearestRoute = privateRideDropoff
+      ? mapRoutesInView
+          .map(route => ({
+            route,
+            distance: projectOntoTerminalRoute(privateRideDropoff, route.points)?.distanceFromRoute ?? Number.POSITIVE_INFINITY,
+          }))
+          .sort((a, b) => a.distance - b.distance || Number(b.route.enabled) - Number(a.route.enabled))[0]?.route || null
       : null;
-    const routesMatchingDropoff = privateRideDropoff
-      ? mapRoutesInView.filter(isRouteForDropoff)
-      : [];
-    const routeForDropoff = routesMatchingDropoff.find(route => route.enabled && route.isPrimary)
-      || routesMatchingDropoff.find(route => route.enabled)
-      || routesMatchingDropoff.find(route => route.isPrimary)
-      || routesMatchingDropoff[0]
-      || null;
 
     return requestRoute
-      || selectedRouteMatchesDropoff
       || routeForDropoff
+      || nearestRoute
       || (!privateRideDropoff
-        ? inMemorySelectedRoute || mapRoutesInView.find(route => route.isPrimary) || mapRoutesInView[0] || null
+        ? mapRoutesInView.find(route => route.enabled) || mapRoutesInView[0] || null
         : null);
   }, [
     activeMapTerminalId,
     activeRideRequest?.dropoff_lat,
     activeRideRequest?.dropoff_lng,
+    activeRideRequest?.pickup_lat,
+    activeRideRequest?.pickup_lng,
     activeRideRequest?.route_id,
     activeRideRequest?.selected_route_id,
     dropoffCoords,
     isPrivateRideMap,
     mapRoutesInView,
-    selectedTerminalId,
-    selectedTerminalRouteId,
+    pickupCoords,
   ]);
   const privateRideTerminalRoutePath = useMemo(() => {
     if (!isPrivateRideMap || !activePrivateRideRoute || !pickupCoords || !dropoffCoords) {
@@ -3814,8 +3893,88 @@ export default function CustomerHome() {
     return buildTerminalRouteSegment(activePrivateRideRoute.points, pickupCoords, dropoffCoords);
   }, [isPrivateRideMap, activePrivateRideRoute, pickupCoords, dropoffCoords]);
   const activeDestinationRoutePath = isPrivateRideMap
-    ? privateRideTerminalRoutePath
+    ? privateRideTerminalRoutePath.length > 0 ? privateRideTerminalRoutePath : destinationRoutePath
     : destinationRoutePath;
+
+  // A restored active ride can load its coordinates after the map mounts. Fit
+  // both ends once so the destination leg is on screen while the driver is
+  // still heading to pickup.
+  useEffect(() => {
+    if (!isPrivateRideInProgress) {
+      activePrivateRideMapFitRef.current = null;
+      return;
+    }
+    if (!isMapsLoaded || !customerMapReady || !pickupCoords || !dropoffCoords) return;
+
+    const fitKey = [currentRequestId || '', pickupCoords.lat, pickupCoords.lng, dropoffCoords.lat, dropoffCoords.lng].join(':');
+    if (activePrivateRideMapFitRef.current === fitKey) return;
+
+    const map = customerMapRef.current;
+    const maps = (window as any).google?.maps;
+    if (!map || !maps?.LatLngBounds) return;
+
+    const bounds = new maps.LatLngBounds();
+    bounds.extend(pickupCoords);
+    bounds.extend(dropoffCoords);
+    if (haversineDistanceMeters(pickupCoords, dropoffCoords) < 100) {
+      map.panTo(pickupCoords);
+      map.setZoom(15);
+    } else {
+      map.fitBounds(bounds, 72);
+    }
+    activePrivateRideMapFitRef.current = fitKey;
+  }, [
+    isPrivateRideInProgress,
+    isMapsLoaded,
+    customerMapReady,
+    currentRequestId,
+    pickupCoords,
+    dropoffCoords,
+  ]);
+
+  // Private rides can end beyond TODA route geometry. During the active trip,
+  // keep the destination leg visible by requesting road directions when no
+  // terminal route segment can be built.
+  useEffect(() => {
+    if (!isPrivateRideMap || isDeliveryRide) return;
+    if (!isPrivateRideInProgress || privateRideTerminalRoutePath.length > 0) {
+      setDestinationRoutePath(current => current.length ? [] : current);
+      return;
+    }
+    if (!pickupCoords || !dropoffCoords || !isMapsLoaded || !(window as any).google) {
+      setDestinationRoutePath(current => current.length ? [] : current);
+      return;
+    }
+
+    let cancelled = false;
+    const DirectionsService = new (window as any).google.maps.DirectionsService();
+    DirectionsService.route(
+      {
+        origin: new (window as any).google.maps.LatLng(pickupCoords.lat, pickupCoords.lng),
+        destination: new (window as any).google.maps.LatLng(dropoffCoords.lat, dropoffCoords.lng),
+        travelMode: (window as any).google.maps.TravelMode.DRIVING,
+      },
+      (result: any, status: string) => {
+        if (cancelled) return;
+        const path = status === 'OK' && result?.routes?.[0]
+          ? routePathFromResult(result.routes[0])
+          : [];
+        setDestinationRoutePath(path);
+      },
+    );
+
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    isPrivateRideMap,
+    isDeliveryRide,
+    isPrivateRideInProgress,
+    privateRideTerminalRoutePath,
+    pickupCoords,
+    dropoffCoords,
+    isMapsLoaded,
+  ]);
   useEffect(() => {
     if (!isBookingPage) {
       bookingMapOverviewFittedRef.current = null;
@@ -4365,23 +4524,23 @@ const getPrice = () => {
                   )}
 
               {/* Show only routes for the active terminal. */}
-              {mapRoutesInView.map(route => {
+              {!isPrivateRideInProgress && mapRoutesInView.map(route => {
                 const isSelectedRoute = isActiveShareRideMap
                   ? route.id === (activeShareRideRoute?.id || selectedTerminalBoundary.selectedRoute?.id)
-                  : isPrivateRideMap
-                    ? route.id === activePrivateRideRoute?.id
-                    : route.terminalId === activeMapTerminalId && (
+                  : !isPrivateRideMap && route.terminalId === activeMapTerminalId && (
                         selectedTerminalId === activeMapTerminalId
                           ? route.id === selectedTerminalBoundary.selectedRoute?.id
                           : route.isPrimary
                       );
-                const routeColor = route.terminalId === selectedTerminalId ? selectedTerminalRouteColor : route.color;
-                const routeOpacity = isPrivateRideMap && visibleRideStatus !== 'searching' && !isSelectedRoute
-                  ? route.enabled ? 0.12 : 0.06
+                const routeColor = isPrivateRideMap
+                  ? selectedTerminalRouteColor
+                  : route.terminalId === selectedTerminalId ? selectedTerminalRouteColor : route.color;
+                const routeOpacity = isPrivateRideMap
+                  ? 0.85
                   : isSelectedRoute ? 0.95 : route.enabled ? 0.82 : 0.38;
                 return (
                   <Fragment key={route.id}>
-                    {isSelectedRoute && (
+                    {isSelectedRoute && !isPrivateRideMap && (
                       <Polyline
                         path={route.points}
                         options={{
@@ -4398,9 +4557,9 @@ const getPrice = () => {
                       path={route.points}
                       options={{
                         strokeColor: routeColor,
-                        strokeWeight: isSelectedRoute ? 4 : isPrivateRideMap ? 3 : 5,
+                        strokeWeight: isPrivateRideMap ? 4 : isSelectedRoute ? 4 : 5,
                         strokeOpacity: routeOpacity,
-                        zIndex: isPrivateRideMap ? (isSelectedRoute ? 20 : 1) : undefined,
+                        zIndex: isPrivateRideMap ? 20 : undefined,
                         clickable: false,
                         geodesic: true,
                       }}
@@ -4433,9 +4592,10 @@ const getPrice = () => {
                 />
               )}
 
-              {/* Passenger drop-off path follows the terminal route geometry. */}
-              {!isActiveShareRideMap && isPrivateRideMap && privateRideTerminalRoutePath.length > 0 && (
-                <Polyline path={privateRideTerminalRoutePath} options={buildNavigationRouteOptions(RIDE_MAP_DROPOFF_COLOR, 5)} />
+              {/* Keep the passenger's destination route visible, including while
+                  the driver is on the way and for drop-offs beyond TODA routes. */}
+              {!isActiveShareRideMap && isPrivateRideMap && activeDestinationRoutePath.length > 0 && (
+                <Polyline path={activeDestinationRoutePath} options={buildNavigationRouteOptions(RIDE_MAP_DROPOFF_COLOR, 5)} />
               )}
 
               {/* Delivery drop-off path follows road directions. */}
@@ -4475,12 +4635,12 @@ const getPrice = () => {
         />
       )}
 
-      {showMap && isMapsLoaded && !isBookingPage && (
+      {showMap && isMapsLoaded && !isBookingPage && !(isActivePrivateRidePage && visibleRideStatus === 'searching') && (
         <button
           type="button"
           onClick={() => {
             const map = customerMapRef.current;
-            if (!map || isLoadingLocation || locationProblem) return;
+            if (!map || (!isActivePrivateRidePage && (isLoadingLocation || locationProblem))) return;
             const target = isActivePrivateRidePage
               ? driverLocation || pickupCoords || currentLocation
               : currentLocation;
@@ -4490,7 +4650,7 @@ const getPrice = () => {
           }}
           aria-label={isActivePrivateRidePage ? 'Re-center map on your ride' : 'Re-center map on my location'}
           title={isActivePrivateRidePage ? 'Re-center map on your ride' : 'Re-center map on my location'}
-          disabled={isLoadingLocation || Boolean(locationProblem)}
+          disabled={!isActivePrivateRidePage && (isLoadingLocation || Boolean(locationProblem))}
           className={`absolute z-[1200] rounded-full shadow-lg transition-transform active:scale-95 disabled:cursor-not-allowed disabled:opacity-50 ${isActivePrivateRidePage
             ? 'left-1/2 -translate-x-1/2 inline-flex h-12 items-center gap-2 border border-[var(--primary)] bg-[var(--primary)] py-3 pl-3 pr-5 text-[var(--primary-foreground)] shadow-xl'
             : 'right-4 grid size-12 place-items-center border border-line bg-surface/95 text-[var(--primary)] backdrop-blur-sm'}`}
@@ -4793,12 +4953,18 @@ const getPrice = () => {
                       </div>
                       <div className="flex-1 min-w-0">
                         <p className="font-bold text-sm text-[var(--ink)] mb-0.5">
-                          {selectedTerminalId ? (terminals.find(t => t.id === selectedTerminalId)?.name || pickup || 'Pickup Location') : 'Select pickup route'}
+                          {selectedTerminalId
+                            ? (terminals.find(t => t.id === selectedTerminalId)?.name || pickup || 'Pickup Location')
+                            : selectedVehicle === 'special' ? 'Select pickup terminal' : 'Select pickup route'}
                         </p>
                         <p className="text-xs text-[var(--muted-foreground)] truncate">
                           {selectedTerminalId
-                            ? [selectedTerminalBoundary.selectedRoute?.name, terminals.find(t => t.id === selectedTerminalId)?.boundary || pickupAddress || 'Terminal location'].filter(Boolean).join(' · ')
-                            : 'Choose a route to limit drop-off choices'}
+                            ? selectedVehicle === 'special'
+                            ? terminals.find(t => t.id === selectedTerminalId)?.boundary || pickupAddress || 'Drop-offs can be outside the highlighted routes'
+                              : [selectedTerminalBoundary.selectedRoute?.name, terminals.find(t => t.id === selectedTerminalId)?.boundary || pickupAddress || 'Terminal location'].filter(Boolean).join(' · ')
+                            : selectedVehicle === 'special'
+                              ? 'Choose a terminal; drop-offs can be outside the highlighted routes'
+                              : 'Choose a route to limit drop-off choices'}
                         </p>
                       </div>
                       <button className="mt-0.5 flex-shrink-0">
@@ -4818,7 +4984,9 @@ const getPrice = () => {
                   <Card 
                     className="p-3 border border-line shadow-sm cursor-pointer hover:border-[var(--primary)] transition-colors"
                     onClick={() => {
-                      if (!selectedTerminalBoundary.terminal || (enforceBoundary && !selectedTerminalBoundary.displayRoad?.length)) {
+                      if (!selectedTerminalBoundary.terminal || (
+                        enforceBoundary && selectedVehicle !== 'special' && !selectedTerminalBoundary.displayRoad?.length
+                      )) {
                         setTerminalPickerWarning(missingSelectedRouteMessage);
                         setShowTerminalPicker(true);
                         return;
@@ -5034,9 +5202,9 @@ const getPrice = () => {
               </div>
               <h3 className="text-xl font-bold text-[var(--ink)] mb-2">We couldn't locate that drop-off</h3>
               <p className="text-sm text-[var(--muted-foreground)] mb-6">
-                Before we can check whether your <strong>drop-off point</strong> is
-                on the selected route we need to find it on the map.
-                Tap the highlighted route, or try a more complete address.
+                {selectedVehicle === 'special'
+                  ? 'We need to locate the drop-off on the map before booking. Choose a search result or tap anywhere on the map.'
+                  : <>Before we can check whether your <strong>drop-off point</strong> is on the selected route, we need to find it on the map. Tap the highlighted route, or try a more complete address.</>}
               </p>
 
               <Button
@@ -5293,7 +5461,9 @@ const getPrice = () => {
           <div className="bg-surface border-b-2 border-[var(--border)] px-4 py-4 sticky top-0 z-10">
             <div className="flex items-center justify-between">
               <div>
-                <h2 className="text-lg font-bold text-[var(--ink)]">Select Pickup Route</h2>
+                <h2 className="text-lg font-bold text-[var(--ink)]">
+                  {selectedVehicle === 'special' ? 'Select Pickup Terminal' : 'Select Pickup Route'}
+                </h2>
                 <p className="text-xs text-[var(--muted-foreground)]">
                   {terminalPickerDescription}
                 </p>
@@ -5360,7 +5530,11 @@ const getPrice = () => {
                   key={terminal.id}
                   onClick={() => {
                     setTerminalPickerWarning(null);
-                    openRoutePreview(terminal.id);
+                    if (selectedVehicle === 'special') {
+                      selectTerminalRoute(terminal.id);
+                    } else {
+                      openRoutePreview(terminal.id);
+                    }
                   }}
                   className={`p-4 rounded-xl border-2 cursor-pointer transition-all active:scale-[0.98] ${
                     selectedTerminalId === terminal.id
@@ -5400,7 +5574,9 @@ const getPrice = () => {
                         )}
                       </div>
                       <p className="text-xs text-[var(--muted-foreground)] mt-0.5">{terminal.boundary}</p>
-                      <p className="text-xs text-[var(--info)] mt-1">Tap to preview routes</p>
+                      <p className="text-xs text-[var(--info)] mt-1">
+                        {selectedVehicle === 'special' ? 'Tap to set as pickup terminal' : 'Tap to preview routes'}
+                      </p>
                       {terminal.max_passengers != null && (
                         <p className="text-xs text-[var(--muted-foreground)] mt-0.5">
                           Up to {terminal.max_passengers} on a shared ride
@@ -5632,7 +5808,11 @@ const getPrice = () => {
               <Input
                 value={searchQuery}
                 onChange={(e) => { fetchPredictions((e.target as HTMLInputElement).value); }}
-                placeholder={activeLocationInput === 'dropoff' && enforceBoundary ? 'Search for a place along the selected route...' : 'Search restaurants, parks, hotels, terminals...'}
+                placeholder={activeLocationInput === 'dropoff' && enforceBoundary
+                  ? selectedVehicle === 'special'
+                    ? 'Search for any drop-off location...'
+                    : 'Search for a place along the selected route...'
+                  : 'Search restaurants, parks, hotels, terminals...'}
                 aria-label="Search for a place"
                 className="text-[var(--ink)] placeholder:text-[var(--muted-foreground)]"
               />
@@ -5705,33 +5885,38 @@ const getPrice = () => {
                   />
                 )}
 
-                {/* The route: the corridor a drop-off has to sit in. Drawn twice,
-                    a wide translucent casing under a crisp line, so it reads as a
-                    road the tricycle drives rather than a single thin stroke. */}
-                {selectedTerminalBoundary.displayRoad && (
-                  <Polyline
-                    path={selectedTerminalBoundary.displayRoad}
-                    options={{
-                      strokeColor: pickerRouteColor,
-                      strokeWeight: 9,
-                      strokeOpacity: 0.25,
-                      clickable: false,
-                      geodesic: true,
-                    }}
-                  />
-                )}
-                {selectedTerminalBoundary.displayRoad && (
-                  <Polyline
-                    path={selectedTerminalBoundary.displayRoad}
-                    options={{
-                      strokeColor: pickerRouteColor,
-                      strokeWeight: 4,
-                      strokeOpacity: 0.95,
-                      clickable: false,
-                      geodesic: true,
-                    }}
-                  />
-                )}
+                {/* Private rides show the terminal's enabled routes as guidance;
+                    drop-offs may be outside them. Shared rides retain one
+                    explicitly selected route. */}
+                {pickerRoutes.map(route => {
+                  const isPrivateRide = selectedVehicle === 'special';
+                  const isSelectedRoute = !isPrivateRide && route.id === selectedTerminalBoundary.selectedRoute?.id;
+                  const routeColor = isPrivateRide ? pickerRouteColor : route.color || pickerRouteColor;
+                  return (
+                    <Fragment key={route.id}>
+                      <Polyline
+                        path={route.points}
+                        options={{
+                          strokeColor: routeColor,
+                          strokeWeight: isPrivateRide ? 7 : isSelectedRoute ? 9 : 7,
+                          strokeOpacity: isPrivateRide ? 0.25 : isSelectedRoute ? 0.25 : 0.16,
+                          clickable: false,
+                          geodesic: true,
+                        }}
+                      />
+                      <Polyline
+                        path={route.points}
+                        options={{
+                          strokeColor: routeColor,
+                          strokeWeight: isPrivateRide ? 4 : isSelectedRoute ? 4 : 3,
+                          strokeOpacity: isPrivateRide ? 0.85 : isSelectedRoute ? 0.95 : 0.68,
+                          clickable: false,
+                          geodesic: true,
+                        }}
+                      />
+                    </Fragment>
+                  );
+                })}
                 {locationPreview && (
                   <MarkerF
                     position={{ lat: locationPreview.lat, lng: locationPreview.lng }}
@@ -5744,9 +5929,11 @@ const getPrice = () => {
 
             <div className="absolute top-2 left-1/2 -translate-x-1/2 bg-black/70 text-white text-xs px-3 py-1.5 rounded-full">
               {activeLocationInput === 'dropoff'
-                ? selectedTerminalBoundary.displayRoad
-                  ? `Tap within ${Math.round(normalizeRoadWidth(selectedTerminalBoundary.routeWidthM) / 2)} m of the highlighted route`
-                  : 'Select a route before choosing a drop-off'
+                ? selectedVehicle === 'special'
+                  ? 'Routes are guidance only. You can choose any drop-off, including outside them.'
+                  : pickerRoutes.length > 0
+                    ? `Tap within ${Math.round(normalizeRoadWidth(selectedTerminalBoundary.routeWidthM) / 2)} m of the highlighted route`
+                    : 'No route is available for this terminal'
                 : selectedTerminalBoundary.area
                   ? 'Tap inside the shaded terminal area to set pickup'
                   : 'Tap map to pin pickup'}

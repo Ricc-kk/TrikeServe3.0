@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   haversineDistanceMeters,
   isPointInPolygon,
@@ -61,6 +61,7 @@ const HEARTBEAT_MS = 60_000;
  * — but note their slot is lost either way once they exceed it.
  */
 const STALE_AFTER_MS = 10 * 60_000;
+const OUTSIDE_QUEUE_GRACE_MS = 60_000;
 
 export function isQueueGatedType(type?: string): boolean {
   return type === "private" || type === "shared";
@@ -108,8 +109,18 @@ export function useTerminalQueue() {
   });
   const [driverLocation, setDriverLocation] = useState<{ lat: number; lng: number } | null>(null);
   const [isLocating, setIsLocating] = useState(true);
+  const [hasLiveQueueLocation, setHasLiveQueueLocation] = useState(false);
+  const [outsideQueueSecondsRemaining, setOutsideQueueSecondsRemaining] = useState<number | null>(null);
+  const [outsideQueueAutoRemoved, setOutsideQueueAutoRemoved] = useState(false);
+  const [outsideQueueError, setOutsideQueueError] = useState<string | null>(null);
+  const outsideQueueDeadlineRef = useRef<number | null>(null);
+  const outsideQueueLeaveInFlightRef = useRef(false);
+  const outsideQueueRetryAtRef = useRef(0);
 
   const driverId = user?.id;
+  const outsideQueueStorageKey = driverId && terminalId
+    ? `trikeserve_terminal_queue_outside_since:${driverId}:${terminalId}`
+    : null;
 
   // Resolve the driver's terminal fresh from the database — localStorage can be
   // stale when an admin assigns a terminal after the driver logged in.
@@ -301,6 +312,26 @@ export function useTerminalQueue() {
   // comes back to the foreground (timers are paused while backgrounded).
   const myEntryId = myEntry?.id;
   useEffect(() => {
+    setHasLiveQueueLocation(false);
+    if (!driverId || !myEntryId || !("geolocation" in navigator)) return;
+
+    const watchId = navigator.geolocation.watchPosition(
+      (position) => {
+        setDriverLocation({ lat: position.coords.latitude, lng: position.coords.longitude });
+        setIsLocating(false);
+        setHasLiveQueueLocation(true);
+      },
+      () => {
+        setIsLocating(false);
+        setHasLiveQueueLocation(false);
+      },
+      { enableHighAccuracy: true, timeout: 15_000, maximumAge: 5_000 },
+    );
+
+    return () => navigator.geolocation.clearWatch(watchId);
+  }, [driverId, myEntryId]);
+
+  useEffect(() => {
     if (!terminalId || !driverId || !myEntryId) return;
 
     const beat = () => {
@@ -391,19 +422,157 @@ export function useTerminalQueue() {
     await refresh();
     setIsMutating(false);
 
+    if (!joinError) {
+      setOutsideQueueAutoRemoved(false);
+      setOutsideQueueError(null);
+      outsideQueueDeadlineRef.current = null;
+      outsideQueueRetryAtRef.current = 0;
+      if (outsideQueueStorageKey) {
+        try {
+          localStorage.removeItem(outsideQueueStorageKey);
+        } catch {
+          // Queue join succeeded; local countdown storage is only best effort.
+        }
+      }
+    }
+
     return { error: joinError };
-  }, [driverId, terminalId, isResolvingTerminal, isWithinBoundary, enforceBoundary, user?.name, user?.todaPlate, refresh]);
+  }, [driverId, terminalId, isResolvingTerminal, isWithinBoundary, enforceBoundary, user?.name, user?.todaPlate, refresh, outsideQueueStorageKey]);
 
   const leave = useCallback(async () => {
     if (!driverId || !terminalId) return { error: null };
 
     setIsMutating(true);
-    const { error: leaveError } = await supabaseHelpers.leaveTerminalQueue(terminalId, driverId);
-    await refresh();
-    setIsMutating(false);
-
-    return { error: leaveError };
+    try {
+      const { error: leaveError } = await supabaseHelpers.leaveTerminalQueue(terminalId, driverId);
+      await refresh();
+      return { error: leaveError };
+    } catch (leaveError) {
+      return { error: leaveError };
+    } finally {
+      setIsMutating(false);
+    }
   }, [driverId, terminalId, refresh]);
+
+  // Start a 60-second grace period as soon as a queued driver is confirmed
+  // outside the terminal's enabled boundary. The timestamp survives navigation
+  // or reloads, and returning inside cancels it without losing queue position.
+  useEffect(() => {
+    if (!outsideQueueStorageKey) return;
+
+    const clearDeadline = () => {
+      try {
+        localStorage.removeItem(outsideQueueStorageKey);
+      } catch {
+        // The in-memory timer still resets when browser storage is unavailable.
+      }
+      outsideQueueDeadlineRef.current = null;
+      outsideQueueRetryAtRef.current = 0;
+      setOutsideQueueSecondsRemaining(null);
+    };
+
+    if (!myEntryId) {
+      if (!isLoading) {
+        clearDeadline();
+        outsideQueueLeaveInFlightRef.current = false;
+      }
+      return;
+    }
+
+    if (!enforceBoundary || !terminalGeometry.boundaryEnabled) {
+      clearDeadline();
+      setOutsideQueueError(null);
+      return;
+    }
+
+    if (isWithinBoundary === true) {
+      clearDeadline();
+      setOutsideQueueError(null);
+      return;
+    }
+
+    // A missing fix is unknown, not proof that the driver is outside.
+    if (isWithinBoundary !== false) return;
+    // Start/resume only after a live location fix confirms the driver is still
+    // outside. If GPS drops after the countdown starts, keep the timer running.
+    if (!hasLiveQueueLocation && outsideQueueDeadlineRef.current == null) return;
+
+    if (outsideQueueDeadlineRef.current == null) {
+      let startedAt = Number.NaN;
+      try {
+        const stored = JSON.parse(localStorage.getItem(outsideQueueStorageKey) || "null");
+        if (stored?.entryId === myEntryId) startedAt = Number(stored.startedAt);
+      } catch {
+        // Fall back to an in-memory deadline if storage is unavailable.
+      }
+      if (!Number.isFinite(startedAt) || startedAt <= 0) {
+        startedAt = Date.now();
+        try {
+          localStorage.setItem(outsideQueueStorageKey, JSON.stringify({ entryId: myEntryId, startedAt }));
+        } catch {
+          // The in-memory deadline still covers this open session.
+        }
+      }
+      outsideQueueDeadlineRef.current = startedAt + OUTSIDE_QUEUE_GRACE_MS;
+      setOutsideQueueError(null);
+    }
+
+    const tick = () => {
+      const deadline = outsideQueueDeadlineRef.current;
+      if (deadline == null) return;
+
+      const remaining = Math.max(0, Math.ceil((deadline - Date.now()) / 1000));
+      setOutsideQueueSecondsRemaining(remaining);
+      if (
+        remaining !== 0 ||
+        outsideQueueLeaveInFlightRef.current ||
+        Date.now() < outsideQueueRetryAtRef.current
+      ) return;
+
+      outsideQueueLeaveInFlightRef.current = true;
+      leave().then(({ error: leaveError }) => {
+        outsideQueueLeaveInFlightRef.current = false;
+        if (leaveError) {
+          setOutsideQueueError("We couldn't remove you automatically. Retrying shortly.");
+          outsideQueueRetryAtRef.current = Date.now() + 5_000;
+          return;
+        }
+
+        try {
+          localStorage.removeItem(outsideQueueStorageKey);
+        } catch {
+          // The queue row is already removed; the notice remains in memory.
+        }
+        outsideQueueDeadlineRef.current = null;
+        outsideQueueRetryAtRef.current = 0;
+        setOutsideQueueSecondsRemaining(null);
+        setOutsideQueueError(null);
+        setOutsideQueueAutoRemoved(true);
+      }).catch(() => {
+        outsideQueueLeaveInFlightRef.current = false;
+        setOutsideQueueError("We couldn't remove you automatically. Retrying shortly.");
+        outsideQueueRetryAtRef.current = Date.now() + 5_000;
+      });
+    };
+
+    tick();
+    const interval = setInterval(tick, 1_000);
+    return () => clearInterval(interval);
+  }, [
+    outsideQueueStorageKey,
+    myEntryId,
+    isLoading,
+    enforceBoundary,
+    terminalGeometry.boundaryEnabled,
+    isWithinBoundary,
+    hasLiveQueueLocation,
+    leave,
+  ]);
+
+  const dismissOutsideQueueNotice = useCallback(() => {
+    setOutsideQueueAutoRemoved(false);
+    setOutsideQueueError(null);
+  }, []);
 
   // Delivery is never queue-gated, so a driver on the Delivery service type must
   // not hold a terminal queue slot — whether they switched to it, logged in with
@@ -433,6 +602,10 @@ export function useTerminalQueue() {
     isLoading,
     isMutating,
     error,
+    outsideQueueSecondsRemaining,
+    outsideQueueAutoRemoved,
+    outsideQueueError,
+    dismissOutsideQueueNotice,
     join,
     leave,
     refresh,
