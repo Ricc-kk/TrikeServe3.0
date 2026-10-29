@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { GoogleMap, MarkerF } from "@react-google-maps/api";
+import { MarkerF } from "@react-google-maps/api";
+import GoogleMap from "@/app/components/ui/ThemedGoogleMap";
 import { ChevronLeft, Loader2, MapPin, Search } from "lucide-react";
 import MapTypeToggle from "../ui/MapTypeToggle";
 import { useLocation, useNavigate } from "react-router";

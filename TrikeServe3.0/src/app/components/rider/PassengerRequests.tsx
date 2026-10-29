@@ -1,7 +1,8 @@
 import { useState, useEffect, useRef } from "react";
 import { useNavigate } from "react-router";
 import { ArrowLeft, Navigation, Store, Users, Car, Clock, Check, X, CheckCircle, MapPin, ChevronDown, Maximize2, Minimize2, Route as RouteIcon, Eye, EyeOff } from "lucide-react";
-import { GoogleMap, Marker, InfoWindow, Polyline, Polygon } from "@react-google-maps/api";
+import { Marker, InfoWindow, Polyline, Polygon } from "@react-google-maps/api";
+import GoogleMap from "@/app/components/ui/ThemedGoogleMap";
 import MapTypeToggle from "../ui/MapTypeToggle";
 import { Button } from "../ui/button";
 import { Card } from "../ui/card";

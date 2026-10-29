@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from "react";
-import { GoogleMap, Marker, InfoWindow, DirectionsRenderer } from "@react-google-maps/api";
+import { Marker, InfoWindow, DirectionsRenderer } from "@react-google-maps/api";
+import GoogleMap from "@/app/components/ui/ThemedGoogleMap";
 import useMapLoader from "@/lib/mapLoader";
 import MapFullscreenToggle from "../ui/MapFullscreenToggle";
 import {

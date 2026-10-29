@@ -17,7 +17,8 @@ import {
   Palette,
   Shield
 } from "lucide-react";
-import { GoogleMap, MarkerF, Polygon, Polyline } from "@react-google-maps/api";
+import { MarkerF, Polygon, Polyline } from "@react-google-maps/api";
+import GoogleMap from "@/app/components/ui/ThemedGoogleMap";
 import MapTypeToggle from "../ui/MapTypeToggle";
 import useMapLoader from "@/lib/mapLoader";
 import { supabase } from "../../../utils/supabase";

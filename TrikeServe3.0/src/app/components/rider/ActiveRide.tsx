@@ -1,7 +1,8 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { useNavigate, useLocation } from "react-router";
 import { Navigation, MapPin, CheckCircle, X, MessageSquare, Flag, ChevronDown, ChevronUp, CreditCard } from "lucide-react";
-import { GoogleMap, Marker, InfoWindow, DirectionsRenderer, Polyline } from "@react-google-maps/api";
+import { Marker, InfoWindow, DirectionsRenderer, Polyline } from "@react-google-maps/api";
+import GoogleMap from "@/app/components/ui/ThemedGoogleMap";
 import MapTypeToggle from "../ui/MapTypeToggle";
 import { Button } from "../ui/button";
 import { Card } from "../ui/card";

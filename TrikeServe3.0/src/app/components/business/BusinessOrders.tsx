@@ -18,7 +18,8 @@ import { useChatHeadVisibility } from "../../contexts/ChatHeadVisibilityContext"
 import ReasonPromptModal from "../ui/reason-prompt-modal";
 import { getOrderProgress, isRiderHeadingToRestaurant } from "@/lib/orderProgress";
 import { OrderStatusUpdates } from "../ui/OrderStatusUpdates";
-import { GoogleMap, MarkerF, Polyline } from "@react-google-maps/api";
+import { MarkerF, Polyline } from "@react-google-maps/api";
+import GoogleMap from "@/app/components/ui/ThemedGoogleMap";
 import MapTypeToggle from "../ui/MapTypeToggle";
 import useMapLoader from "@/lib/mapLoader";
 import { createDropoffMarkerIcon, createRestaurantMarkerIcon, createTricycleMarkerIcon } from "@/lib/mapIcons";
