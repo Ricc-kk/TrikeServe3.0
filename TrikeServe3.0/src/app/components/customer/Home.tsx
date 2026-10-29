@@ -49,6 +49,10 @@ import CustomerServiceHub from "./CustomerServiceHub";
 import CustomerCartPreview from "./CustomerCartPreview";
 import { useDevModeOverride } from "../../hooks/useDevModeSettings";
 import { getProfileInitials } from "@/lib/profileInitials";
+import {
+  getShortestAvoidHighwaysRoadRoute,
+  getShortestAvoidHighwaysRoadRouteDetails,
+} from "@/lib/roadRouting";
 
 // Get Google Maps API Key from environment variable
 const GOOGLE_MAPS_API_KEY = import.meta.env.VITE_GOOGLE_MAPS_API_KEY || "";
@@ -152,79 +156,6 @@ const routePathFromResult = (route: any): LatLng[] => {
     path.push(...(path.length ? decoded.slice(1) : decoded));
   }
   return path;
-};
-
-type TerminalRouteProjection = {
-  point: LatLng;
-  distanceAlong: number;
-  distanceFromRoute: number;
-  segmentIndex: number;
-};
-
-/** Snap a coordinate to the closest segment of a terminal route. */
-const projectOntoTerminalRoute = (point: LatLng, path: LatLng[]): TerminalRouteProjection | null => {
-  if (path.length < 2) return null;
-
-  const cumulativeDistances = [0];
-  for (let index = 1; index < path.length; index++) {
-    cumulativeDistances.push(
-      cumulativeDistances[index - 1] + haversineDistanceMeters(path[index - 1], path[index]),
-    );
-  }
-
-  const longitudeScale = Math.cos((point.lat * Math.PI) / 180);
-  let closest: TerminalRouteProjection | null = null;
-  for (let index = 1; index < path.length; index++) {
-    const start = path[index - 1];
-    const end = path[index];
-    const dx = (end.lng - start.lng) * longitudeScale;
-    const dy = end.lat - start.lat;
-    const px = (point.lng - start.lng) * longitudeScale;
-    const py = point.lat - start.lat;
-    const lengthSquared = dx * dx + dy * dy;
-    const fraction = lengthSquared > 0
-      ? Math.max(0, Math.min(1, (px * dx + py * dy) / lengthSquared))
-      : 0;
-    const projected = {
-      lat: start.lat + (end.lat - start.lat) * fraction,
-      lng: start.lng + (end.lng - start.lng) * fraction,
-    };
-    const distanceFromRoute = haversineDistanceMeters(point, projected);
-    if (closest && distanceFromRoute >= closest.distanceFromRoute) continue;
-
-    closest = {
-      point: projected,
-      distanceAlong: cumulativeDistances[index - 1] + haversineDistanceMeters(start, projected),
-      distanceFromRoute,
-      segmentIndex: index - 1,
-    };
-  }
-  return closest;
-};
-
-/** Build only the terminal-road segment between a private ride's pickup and drop-off. */
-const buildTerminalRouteSegment = (path: LatLng[], pickup: LatLng, dropoff: LatLng): LatLng[] => {
-  if (path.length < 2) return [];
-  const pickupProjection = projectOntoTerminalRoute(pickup, path);
-  const dropoffProjection = projectOntoTerminalRoute(dropoff, path);
-  if (!pickupProjection || !dropoffProjection) return [];
-
-  const forward = pickupProjection.distanceAlong <= dropoffProjection.distanceAlong;
-  const intermediatePoints = forward
-    ? path.slice(pickupProjection.segmentIndex + 1, dropoffProjection.segmentIndex + 1)
-    : path.slice(dropoffProjection.segmentIndex + 1, pickupProjection.segmentIndex + 1).reverse();
-  const segmentPoints = [pickupProjection.point, ...intermediatePoints, dropoffProjection.point];
-  const result: LatLng[] = [];
-  const append = (point: LatLng) => {
-    if (!result.length || haversineDistanceMeters(result[result.length - 1], point) > 1) {
-      result.push(point);
-    }
-  };
-
-  append(pickup);
-  segmentPoints.forEach(append);
-  append(dropoff);
-  return result;
 };
 
 const decodeGooglePolyline = (encoded: string): LatLng[] => {
@@ -2660,11 +2591,24 @@ export default function CustomerHome() {
      }
      if (!driverLocation || !pickupCoords || !isMapsLoaded || !(window as any).google || rideStatus !== 'driver-found') return;
 
-     const DirectionsService = new (window as any).google.maps.DirectionsService();
-
      // Determine if driver is going to pickup or dropoff
      const destination = pickupCoords;
 
+     if (isDeliveryRide) {
+       let cancelled = false;
+       void getShortestAvoidHighwaysRoadRoute(
+         driverLocation,
+         destination,
+         GOOGLE_MAPS_API_KEY,
+       ).then(path => {
+         if (!cancelled && path.length > 1) setDriverRoutePath(path);
+       });
+       return () => {
+         cancelled = true;
+       };
+     }
+
+     const DirectionsService = new (window as any).google.maps.DirectionsService();
      DirectionsService.route(
        {
          origin: new (window as any).google.maps.LatLng(driverLocation.lat, driverLocation.lng),
@@ -2684,11 +2628,10 @@ export default function CustomerHome() {
          }
        }
      );
-   }, [activeShareRideMapDetails.isActive, hasPassengerBeenPickedUp, driverLocation, pickupCoords, isMapsLoaded, rideStatus]);
+   }, [activeShareRideMapDetails.isActive, hasPassengerBeenPickedUp, driverLocation, pickupCoords, isMapsLoaded, rideStatus, isDeliveryRide]);
 
-   // Passenger drop-off legs always use the selected terminal route. Google
-   // Directions remains for delivery requests, while share rides render their
-   // own selected terminal route geometry.
+   // Delivery drop-off legs use the shortest available road route while
+   // avoiding highway travel.
    useEffect(() => {
      if (activeShareRideMapDetails.isActive) {
        setDestinationRoutePath([]);
@@ -2701,29 +2644,19 @@ export default function CustomerHome() {
      if (!pickupCoords || !dropoffCoords || !isMapsLoaded || !(window as any).google) return;
      if (!rideStatus || rideStatus === 'searching') return;
 
-     const DirectionsService = new (window as any).google.maps.DirectionsService();
-     DirectionsService.route(
-       {
-         origin: new (window as any).google.maps.LatLng(pickupCoords.lat, pickupCoords.lng),
-         destination: new (window as any).google.maps.LatLng(dropoffCoords.lat, dropoffCoords.lng),
-         travelMode: (window as any).google.maps.TravelMode.DRIVING,
-       },
-       (result: any, status: string) => {
-         if (status === 'OK' && result?.routes?.[0]) {
-           const route = result.routes[0];
-           // Same guard fix as the driver-to-pickup leg: resolve first, then test.
-           // The pickup-to-drop-off line is the one the customer watches for the
-           // whole ride, and it was the one most often left undrawn.
-           const path = routePathFromResult(route);
-           if (path.length > 0) setDestinationRoutePath(path);
-           // Extract ETA from legs
-           const leg = route.legs?.[0];
-           if (leg?.duration?.text) {
-             setEtaToDestination(leg.duration.text);
-           }
-         }
-       }
-     );
+     let cancelled = false;
+     void getShortestAvoidHighwaysRoadRouteDetails(
+       pickupCoords,
+       dropoffCoords,
+       GOOGLE_MAPS_API_KEY,
+     ).then(route => {
+       if (cancelled) return;
+       setDestinationRoutePath(route.path);
+       setEtaToDestination(route.durationText || null);
+     });
+     return () => {
+       cancelled = true;
+     };
    }, [activeShareRideMapDetails.isActive, isDeliveryRide, pickupCoords, dropoffCoords, isMapsLoaded, rideStatus]);
 
    // Count unread messages from drivers
@@ -3807,95 +3740,7 @@ export default function CustomerHome() {
   const isPrivateRideMap = (isActivePrivateRidePage || isPrivateRide) && !isActiveShareRideMap;
   const isPrivateRideInProgress = isPrivateRideMap && rideStateBelongsToCurrentUser &&
     ['driver-found', 'picking-up', 'in-transit'].includes(visibleRideStatus || '');
-  const activePrivateRideRoute = useMemo(() => {
-    if (!isPrivateRideMap) return null;
-
-    const requestRouteId = String(
-      activeRideRequest?.route_id || activeRideRequest?.selected_route_id || '',
-    );
-    const requestRoute = requestRouteId
-      ? mapRoutesInView.find(route => route.id === requestRouteId || route.routeId === requestRouteId) || null
-      : null;
-    const requestDropoffLat = activeRideRequest?.dropoff_lat == null
-      ? Number.NaN
-      : Number(activeRideRequest.dropoff_lat);
-    const requestDropoffLng = activeRideRequest?.dropoff_lng == null
-      ? Number.NaN
-      : Number(activeRideRequest.dropoff_lng);
-    const privateRideDropoff = Number.isFinite(requestDropoffLat) && Number.isFinite(requestDropoffLng)
-      ? { lat: requestDropoffLat, lng: requestDropoffLng }
-      : dropoffCoords;
-    const requestPickupLat = activeRideRequest?.pickup_lat == null
-      ? Number.NaN
-      : Number(activeRideRequest.pickup_lat);
-    const requestPickupLng = activeRideRequest?.pickup_lng == null
-      ? Number.NaN
-      : Number(activeRideRequest.pickup_lng);
-    const privateRidePickup = Number.isFinite(requestPickupLat) && Number.isFinite(requestPickupLng)
-      ? { lat: requestPickupLat, lng: requestPickupLng }
-      : pickupCoords;
-    const isRouteForDropoff = (route: typeof mapRoutesInView[number]) => Boolean(
-      privateRideDropoff && isPointOnRoadCorridor(
-        privateRideDropoff.lat,
-        privateRideDropoff.lng,
-        route.points,
-        normalizeRoadWidth(route.bufferM),
-      )
-    );
-    const routeForDropoff = privateRideDropoff
-      ? mapRoutesInView
-          .map(route => ({
-            route,
-            matchesPickup: Boolean(privateRidePickup && isPointOnRoadCorridor(
-              privateRidePickup.lat,
-              privateRidePickup.lng,
-              route.points,
-              normalizeRoadWidth(route.bufferM),
-            )),
-          }))
-          .filter(candidate => isRouteForDropoff(candidate.route))
-          .sort((a, b) =>
-            Number(b.matchesPickup) - Number(a.matchesPickup)
-            || Number(b.route.enabled) - Number(a.route.enabled),
-          )[0]?.route || null
-      : null;
-    const nearestRoute = privateRideDropoff
-      ? mapRoutesInView
-          .map(route => ({
-            route,
-            distance: projectOntoTerminalRoute(privateRideDropoff, route.points)?.distanceFromRoute ?? Number.POSITIVE_INFINITY,
-          }))
-          .sort((a, b) => a.distance - b.distance || Number(b.route.enabled) - Number(a.route.enabled))[0]?.route || null
-      : null;
-
-    return requestRoute
-      || routeForDropoff
-      || nearestRoute
-      || (!privateRideDropoff
-        ? mapRoutesInView.find(route => route.enabled) || mapRoutesInView[0] || null
-        : null);
-  }, [
-    activeMapTerminalId,
-    activeRideRequest?.dropoff_lat,
-    activeRideRequest?.dropoff_lng,
-    activeRideRequest?.pickup_lat,
-    activeRideRequest?.pickup_lng,
-    activeRideRequest?.route_id,
-    activeRideRequest?.selected_route_id,
-    dropoffCoords,
-    isPrivateRideMap,
-    mapRoutesInView,
-    pickupCoords,
-  ]);
-  const privateRideTerminalRoutePath = useMemo(() => {
-    if (!isPrivateRideMap || !activePrivateRideRoute || !pickupCoords || !dropoffCoords) {
-      return [];
-    }
-    return buildTerminalRouteSegment(activePrivateRideRoute.points, pickupCoords, dropoffCoords);
-  }, [isPrivateRideMap, activePrivateRideRoute, pickupCoords, dropoffCoords]);
-  const activeDestinationRoutePath = isPrivateRideMap
-    ? privateRideTerminalRoutePath.length > 0 ? privateRideTerminalRoutePath : destinationRoutePath
-    : destinationRoutePath;
+  const activeDestinationRoutePath = destinationRoutePath;
 
   // A restored active ride can load its coordinates after the map mounts. Fit
   // both ends once so the destination leg is on screen while the driver is
@@ -3933,12 +3778,12 @@ export default function CustomerHome() {
     dropoffCoords,
   ]);
 
-  // Private rides can end beyond TODA route geometry. During the active trip,
-  // keep the destination leg visible by requesting road directions when no
-  // terminal route segment can be built.
+  // Private rides use the shortest available road route between the booked
+  // endpoints while avoiding highway travel. The same route preference is used
+  // by the rider map so both sides see the same trip.
   useEffect(() => {
     if (!isPrivateRideMap || isDeliveryRide) return;
-    if (!isPrivateRideInProgress || privateRideTerminalRoutePath.length > 0) {
+    if (!isPrivateRideInProgress) {
       setDestinationRoutePath(current => current.length ? [] : current);
       return;
     }
@@ -3946,23 +3791,16 @@ export default function CustomerHome() {
       setDestinationRoutePath(current => current.length ? [] : current);
       return;
     }
+    if (haversineDistanceMeters(pickupCoords, dropoffCoords) <= 5) {
+      setDestinationRoutePath(current => current.length ? [] : current);
+      return;
+    }
 
     let cancelled = false;
-    const DirectionsService = new (window as any).google.maps.DirectionsService();
-    DirectionsService.route(
-      {
-        origin: new (window as any).google.maps.LatLng(pickupCoords.lat, pickupCoords.lng),
-        destination: new (window as any).google.maps.LatLng(dropoffCoords.lat, dropoffCoords.lng),
-        travelMode: (window as any).google.maps.TravelMode.DRIVING,
-      },
-      (result: any, status: string) => {
-        if (cancelled) return;
-        const path = status === 'OK' && result?.routes?.[0]
-          ? routePathFromResult(result.routes[0])
-          : [];
-        setDestinationRoutePath(path);
-      },
-    );
+    setDestinationRoutePath([]);
+    void getShortestAvoidHighwaysRoadRoute(pickupCoords, dropoffCoords, GOOGLE_MAPS_API_KEY).then(path => {
+      if (!cancelled) setDestinationRoutePath(path);
+    });
 
     return () => {
       cancelled = true;
@@ -3971,9 +3809,10 @@ export default function CustomerHome() {
     isPrivateRideMap,
     isDeliveryRide,
     isPrivateRideInProgress,
-    privateRideTerminalRoutePath,
-    pickupCoords,
-    dropoffCoords,
+    pickupCoords?.lat,
+    pickupCoords?.lng,
+    dropoffCoords?.lat,
+    dropoffCoords?.lng,
     isMapsLoaded,
   ]);
   useEffect(() => {

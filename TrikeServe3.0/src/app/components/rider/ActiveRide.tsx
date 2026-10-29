@@ -30,6 +30,7 @@ import PassengerMessagingDB from "./PassengerMessagingDB";
 import { useDevModeOverride } from "../../hooks/useDevModeSettings";
 import { getProfileInitials } from "@/lib/profileInitials";
 import { backfillLegacySharedRidePassengerFares, sumSharedRidePassengerFares } from "@/lib/pricing";
+import { getShortestAvoidHighwaysRoadRoute } from "@/lib/roadRouting";
 
 type RideStatus = 'on-the-way' | 'arrived' | 'pickup' | 'drop-off' | 'payment';
 
@@ -346,55 +347,6 @@ function routeSlice(path: RideCoordinate[], startDistance: number, endDistance: 
   return result;
 }
 
-/** Start at the driver's live position, join the selected terminal road, and
- * follow it to the passenger's drop-off. */
-function buildPrivateTerminalRoutePath(
-  currentLocation: RideCoordinate,
-  dropoff: RideCoordinate,
-  selectedRoute: TerminalRoute | null,
-  driverToRoutePath: RideCoordinate[] | null,
-): RideCoordinate[] {
-  const path = selectedRoute?.points || [];
-  if (path.length < 2) return [];
-
-  const currentProjection = projectOntoRoute(currentLocation, path);
-  const dropoffProjection = projectOntoRoute(dropoff, path);
-  if (!currentProjection || !dropoffProjection) return [];
-
-  // If the driver is still off the selected terminal road, connect to the
-  // plotted route along the road geometry returned for the approach leg. Do not
-  // draw a straight line from GPS to the terminal route when directions are not
-  // available; the route itself remains visible from the road join point.
-  let approachPath: RideCoordinate[] = [];
-  let terminalRouteStart = currentProjection;
-  if (currentProjection.distanceFromRoute > 20 && driverToRoutePath?.length && driverToRoutePath.length > 1) {
-    const currentOnApproach = projectOntoRoute(currentLocation, driverToRoutePath);
-    if (currentOnApproach && currentOnApproach.distanceFromRoute <= 75) {
-      const approachDistances = cumulativePathDistances(driverToRoutePath);
-      approachPath = routeSlice(
-        driverToRoutePath,
-        currentOnApproach.distanceAlong,
-        approachDistances[approachDistances.length - 1],
-      );
-      const routeJoin = projectOntoRoute(driverToRoutePath[driverToRoutePath.length - 1], path);
-      if (routeJoin) terminalRouteStart = routeJoin;
-    }
-  }
-
-  const terminalSegment = routeSlice(
-    path,
-    terminalRouteStart.distanceAlong,
-    dropoffProjection.distanceAlong,
-  );
-  const route: RideCoordinate[] = [];
-  [...approachPath, ...terminalSegment, dropoff].forEach(point => {
-    if (!route.length || distanceInMeters(route[route.length - 1], point) > 1) {
-      route.push(point);
-    }
-  });
-  return route;
-}
-
 function pointAtRouteDistance(
   path: RideCoordinate[],
   cumulative: number[],
@@ -536,8 +488,7 @@ export default function ActiveRide() {
   const [routePath, setRoutePath] = useState<google.maps.LatLngLiteral[] | null>(null);
   const [sharedDropoffRoutes, setSharedDropoffRoutes] = useState<SharedDropoffRoute[]>([]);
   const [sharedTerminalRoute, setSharedTerminalRoute] = useState<TerminalRoute | null>(null);
-  const [privateTerminalRoute, setPrivateTerminalRoute] = useState<TerminalRoute | null>(null);
-  const [privateDriverToRoutePath, setPrivateDriverToRoutePath] = useState<RideCoordinate[] | null>(null);
+  const [privateRideRoadPath, setPrivateRideRoadPath] = useState<RideCoordinate[]>([]);
   const [mapCenter, setMapCenter] = useState<{ lat: number; lng: number }>({ lat: 14.6037, lng: 120.9793 });
   // Whether the camera is locked to the driver. Defaults on so the opening view is
   // the driver, and turns off by itself the first time they pan or zoom.
@@ -1414,109 +1365,6 @@ export default function ActiveRide() {
     rideData?.dropoffLng,
   ]);
 
-  // Private passengers travel along the terminal route they booked. Requests
-  // from older clients may not carry a route id, so match the route that
-  // contains the passenger's drop-off point.
-  useEffect(() => {
-    if (!rideData || !isPrivateRide || rideData.status === 'completed') {
-      setPrivateTerminalRoute(null);
-      return;
-    }
-
-    let cancelled = false;
-    const loadPrivateTerminalRoute = async () => {
-      const terminalId = rideData.terminalId || user?.terminalId || null;
-      if (!terminalId) {
-        setPrivateTerminalRoute(null);
-        return;
-      }
-
-      const { data: terminal, error } = await supabase
-        .from('terminals')
-        .select('routes, boundary_polygon, road_width_m')
-        .eq('id', terminalId)
-        .maybeSingle();
-      if (cancelled) return;
-      if (error || !terminal) {
-        setPrivateTerminalRoute(null);
-        return;
-      }
-
-      const storedRoutes = normalizeTerminalRoutes(terminal.routes);
-      const routes = (storedRoutes.length > 0
-        ? storedRoutes
-        : legacyRouteFromBoundary(terminal.boundary_polygon, terminal.road_width_m))
-        .filter(route => route.points.length >= 2);
-      const requestedRouteId = rideData.selectedRouteId;
-      const requestedRoute = findRideTerminalRoute(routes, requestedRouteId, terminalId);
-      const dropoff = coordinateFromValues(rideData.dropoffLat, rideData.dropoffLng);
-      const pickup = coordinateFromValues(rideData.pickupLat, rideData.pickupLng);
-      const matchingRoute = dropoff
-        ? routes
-            .map(route => ({
-              route,
-              matchesDropoff: isPointOnRoadCorridor(
-                dropoff.lat,
-                dropoff.lng,
-                route.points,
-                route.buffer_m,
-              ),
-              matchesPickup: Boolean(pickup && isPointOnRoadCorridor(
-                pickup.lat,
-                pickup.lng,
-                route.points,
-                route.buffer_m,
-              )),
-            }))
-            .filter(candidate => candidate.matchesDropoff)
-            .sort((a, b) =>
-              Number(b.matchesPickup) - Number(a.matchesPickup)
-              || Number(b.route.enabled) - Number(a.route.enabled),
-            )[0]?.route || null
-        : null;
-
-      // Older rides may not have saved a route id, and a drop-off can sit just
-      // outside a route's corridor width. Keep the closest plotted road as a
-      // fallback so the rider still gets a terminal-to-drop-off path.
-      const nearestRoute = dropoff
-        ? routes
-            .map(route => ({
-              route,
-              distance: projectOntoRoute(dropoff, route.points)?.distanceFromRoute ?? Number.POSITIVE_INFINITY,
-            }))
-            .sort((a, b) =>
-              a.distance - b.distance || Number(b.route.enabled) - Number(a.route.enabled),
-            )[0]?.route || null
-        : null;
-
-      setPrivateTerminalRoute(
-        requestedRoute
-        || matchingRoute
-        || nearestRoute
-        || (!dropoff ? routes.find(route => route.enabled) || routes[0] || null : null),
-      );
-    };
-
-    void loadPrivateTerminalRoute().catch(error => {
-      if (!cancelled) {
-        console.warn('[ActiveRide] Could not load private terminal route:', error);
-        setPrivateTerminalRoute(null);
-      }
-    });
-    return () => { cancelled = true; };
-  }, [
-    rideData?.id,
-    rideData?.terminalId,
-    rideData?.selectedRouteId,
-    rideData?.pickupLat,
-    rideData?.pickupLng,
-    rideData?.dropoffLat,
-    rideData?.dropoffLng,
-    rideData?.status,
-    isPrivateRide,
-    user?.terminalId,
-  ]);
-
   // A shared ride has one colored road segment for each passenger stop. Route the
   // ordered itinerary on the selected terminal road, so every segment keeps the
   // color of the passenger who gets off at its end.
@@ -1543,157 +1391,39 @@ export default function ActiveRide() {
     driverLocation?.lng,
   ]);
 
-  // After pickup, route only the short off-route approach from the live driver
-  // position to the selected terminal road. The terminal-road-to-drop-off leg
-  // continues to use the terminal's own plotted geometry below.
+  // Keep the planned private-trip road route visible to the driver during the
+  // approach and passenger phases. It uses the same endpoints and route policy
+  // as the customer map.
   useEffect(() => {
+    const pickup = coordinateFromValues(rideData?.pickupLat, rideData?.pickupLng);
+    const dropoff = coordinateFromValues(rideData?.dropoffLat, rideData?.dropoffLng);
     if (
       !rideData ||
       !isPrivateRide ||
-      isHeadingToPickup ||
       rideData.status === 'completed' ||
-      !privateTerminalRoute ||
-      privateTerminalRoute.points.length < 2 ||
+      !pickup ||
+      !dropoff ||
       !isMapsLoaded ||
       !(window as any).google?.maps
     ) {
-      setPrivateDriverToRoutePath(null);
+      setPrivateRideRoadPath([]);
+      return;
+    }
+
+    if (distanceInMeters(pickup, dropoff) <= 5) {
+      setPrivateRideRoadPath([]);
       return;
     }
 
     let cancelled = false;
-    let inFlight = false;
-    let routeTimer: number | undefined;
+    setPrivateRideRoadPath([]);
+    void getShortestAvoidHighwaysRoadRoute(pickup, dropoff, import.meta.env.VITE_GOOGLE_MAPS_API_KEY || '').then(path => {
+      if (!cancelled) setPrivateRideRoadPath(path);
+    });
 
-    const scheduleNext = (delay = 12000) => {
-      if (cancelled) return;
-      routeTimer = window.setTimeout(() => { void calculateApproachRoute(); }, delay);
-    };
-
-    const calculateApproachRoute = async () => {
-      if (cancelled || inFlight) return;
-      const origin = driverLocationRef.current;
-      if (!origin) {
-        scheduleNext(1500);
-        return;
-      }
-
-      const routeJoin = projectOntoRoute(origin, privateTerminalRoute.points);
-      if (!routeJoin) {
-        setPrivateDriverToRoutePath(null);
-        scheduleNext();
-        return;
-      }
-
-      // GPS may sit a few metres beside the drawn route even while the driver is
-      // already on that road. In that case use the local terminal line directly.
-      if (routeJoin.distanceFromRoute <= 20) {
-        setPrivateDriverToRoutePath(null);
-        scheduleNext();
-        return;
-      }
-
-      inFlight = true;
-      try {
-        let roadPath: RideCoordinate[] = [];
-        const apiKey = import.meta.env.VITE_GOOGLE_MAPS_API_KEY || '';
-        if (apiKey) {
-          try {
-            const response = await fetch(`https://routes.googleapis.com/directions/v2:computeRoutes?key=${apiKey}`, {
-              method: 'POST',
-              headers: {
-                'Content-Type': 'application/json',
-                'X-Goog-FieldMask': 'routes.polyline.encodedPolyline',
-              },
-              body: JSON.stringify({
-                origin: { location: { latLng: { latitude: origin.lat, longitude: origin.lng } } },
-                destination: {
-                  location: {
-                    latLng: {
-                      latitude: routeJoin.point.lat,
-                      longitude: routeJoin.point.lng,
-                    },
-                  },
-                },
-                travelMode: 'DRIVE',
-                computeAlternativeRoutes: false,
-              }),
-            });
-            const data = await response.json();
-            const encoded = response.ok ? data.routes?.[0]?.polyline?.encodedPolyline : null;
-            roadPath = encoded ? decodeRoutePolyline(encoded) : [];
-          } catch (error) {
-            console.warn('[ActiveRide] Road route to terminal route failed:', error);
-          }
-        }
-
-        // The road service is only used for the driver's approach to the
-        // terminal's plotted route. It never replaces the terminal route to the
-        // passenger's drop-off.
-        if (roadPath.length < 2) {
-          const result = await new Promise<{ result: any; status: string }>(resolve => {
-            const DirectionsService = new (window as any).google.maps.DirectionsService();
-            DirectionsService.route({
-              origin: new (window as any).google.maps.LatLng(origin.lat, origin.lng),
-              destination: new (window as any).google.maps.LatLng(routeJoin.point.lat, routeJoin.point.lng),
-              travelMode: (window as any).google.maps.TravelMode.DRIVING,
-            }, (directionsResult: any, status: string) => resolve({ result: directionsResult, status }));
-          });
-          if (result.status === 'OK') {
-            roadPath = (result.result.routes?.[0]?.overview_path || [])
-              .map((point: any) => ({ lat: point.lat(), lng: point.lng() }));
-          }
-        }
-
-        if (!cancelled) setPrivateDriverToRoutePath(roadPath.length > 1 ? roadPath : null);
-      } catch (error) {
-        if (!cancelled) {
-          setPrivateDriverToRoutePath(null);
-          console.warn('[ActiveRide] Could not route driver to terminal road:', error);
-        }
-      } finally {
-        inFlight = false;
-        scheduleNext();
-      }
-    };
-
-    void calculateApproachRoute();
     return () => {
       cancelled = true;
-      window.clearTimeout(routeTimer);
     };
-  }, [
-    rideData?.id,
-    rideData?.status,
-    isPrivateRide,
-    isHeadingToPickup,
-    isMapsLoaded,
-    privateTerminalRoute,
-  ]);
-
-  const privateTerminalDropoffPath = useMemo(() => {
-    if (
-      !rideData ||
-      !isPrivateRide ||
-      rideData.status === 'completed' ||
-      rideData.dropoffLat == null ||
-      rideData.dropoffLng == null
-    ) {
-      return [];
-    }
-
-    // This leg belongs to the terminal and passenger destination, so keep it
-    // visible even if the driver's GPS has not reported a position yet.
-    const pickup = coordinateFromValues(rideData.pickupLat, rideData.pickupLng);
-    const routeStart = pickup || driverLocation || privateTerminalRoute?.points[0] || null;
-    if (!routeStart) return [];
-
-    return buildPrivateTerminalRoutePath(
-      routeStart,
-      { lat: Number(rideData.dropoffLat), lng: Number(rideData.dropoffLng) },
-      privateTerminalRoute,
-      pickup ? null : privateDriverToRoutePath,
-    );
   }, [
     rideData?.id,
     rideData?.status,
@@ -1702,10 +1432,7 @@ export default function ActiveRide() {
     rideData?.dropoffLat,
     rideData?.dropoffLng,
     isPrivateRide,
-    driverLocation?.lat,
-    driverLocation?.lng,
-    privateTerminalRoute,
-    privateDriverToRoutePath,
+    isMapsLoaded,
   ]);
 
   // For delivery rides: geocode the restaurant pickup address if lat/lng are missing
@@ -1800,6 +1527,20 @@ export default function ActiveRide() {
       inFlight = true;
       try {
         const apiKey = import.meta.env.VITE_GOOGLE_MAPS_API_KEY || '';
+        if (isDeliveryRide) {
+          const path = await getShortestAvoidHighwaysRoadRoute(origin, dest, apiKey);
+          if (!cancelled && path.length > 1) {
+            setDirections(null);
+            setRoutePath(path);
+            hasRoute = true;
+          } else if (!cancelled) {
+            setDirections(null);
+            setRoutePath(null);
+            hasRoute = false;
+          }
+          return;
+        }
+
         if (apiKey) {
           try {
             const response = await fetch(`https://routes.googleapis.com/directions/v2:computeRoutes?key=${apiKey}`, {
@@ -1862,7 +1603,7 @@ export default function ActiveRide() {
       cancelled = true;
       window.clearTimeout(routeTimer);
     };
-  }, [rideData?.id, rideData?.status, rideData?.pickupLat, rideData?.pickupLng, rideData?.dropoffLat, rideData?.dropoffLng, isMapsLoaded, isHeadingToPickup, isSharedRide, isPrivateRide]);
+  }, [rideData?.id, rideData?.status, rideData?.pickupLat, rideData?.pickupLng, rideData?.dropoffLat, rideData?.dropoffLng, isMapsLoaded, isHeadingToPickup, isSharedRide, isPrivateRide, isDeliveryRide]);
 
   // Match the accept-preview map: zoom to the road route once for each leg so
   // the route is in view when the rider enters the restaurant or customer phase.
@@ -1875,7 +1616,7 @@ export default function ActiveRide() {
       || directions?.routes?.[0]?.overview_path?.map(point => ({ lat: point.lat(), lng: point.lng() }))
       || [];
     const hasPickupRoute = pickupRoutePoints.length > 1;
-    const hasPrivateDropoffRoute = privateTerminalDropoffPath.length > 1;
+    const hasPrivateDropoffRoute = privateRideRoadPath.length > 1;
     const phaseKey = [
       rideData.id,
       isHeadingToPickup ? 'restaurant' : 'customer',
@@ -1884,10 +1625,14 @@ export default function ActiveRide() {
     ].join(':');
     if (fittedRoutePhaseRef.current === phaseKey) return;
 
+    const privateDropoffPosition = coordinateFromValues(rideData.dropoffLat, rideData.dropoffLng);
     const routePoints = isPrivateRide
       ? isHeadingToPickup
-        ? [...privateTerminalDropoffPath, ...pickupRoutePoints]
-        : privateTerminalDropoffPath
+        ? [...privateRideRoadPath, ...pickupRoutePoints]
+        : [
+            ...privateRideRoadPath,
+            ...(privateDropoffPosition ? [privateDropoffPosition] : []),
+          ]
       : isSharedRide && !isHeadingToPickup
         ? sharedDropoffRoutes.flatMap(route => route.path)
         : pickupRoutePoints.length > 0
@@ -1902,7 +1647,7 @@ export default function ActiveRide() {
     map.fitBounds(bounds, 48);
     window.clearTimeout(mapMoveTimeoutRef.current);
     mapMoveTimeoutRef.current = window.setTimeout(() => { mapMoveRef.current = false; }, 1000);
-  }, [directions, routePath, sharedDropoffRoutes, privateTerminalDropoffPath, rideData?.id, isHeadingToPickup, isSharedRide, isPrivateRide]);
+  }, [directions, routePath, sharedDropoffRoutes, privateRideRoadPath, rideData?.id, rideData?.dropoffLat, rideData?.dropoffLng, isHeadingToPickup, isSharedRide, isPrivateRide]);
 
   const reportCategories = rideData && isDeliveryRide(rideData)
     ? DELIVERY_REPORT_CATEGORIES
@@ -3242,11 +2987,11 @@ export default function ActiveRide() {
               />
             ))}
 
-            {/* Keep the passenger's terminal-to-drop-off leg visible while the
-                driver is approaching pickup and throughout the ride. */}
-            {isPrivateRide && privateTerminalDropoffPath.length > 1 && (
+            {/* Keep the shortest road route to the passenger's drop-off visible
+                while the driver approaches pickup and throughout the ride. */}
+            {isPrivateRide && privateRideRoadPath.length > 1 && (
               <Polyline
-                path={privateTerminalDropoffPath}
+                path={privateRideRoadPath}
                 options={{
                   strokeColor: RIDE_MAP_DROPOFF_COLOR,
                   strokeWeight: 6,
