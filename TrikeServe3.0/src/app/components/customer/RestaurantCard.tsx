@@ -72,7 +72,7 @@ export default function RestaurantCard({
 
           <div className="absolute bottom-2 left-2 flex items-center gap-1 rounded-full bg-white/95 px-2 py-1 shadow">
             <Star className="size-3 fill-[var(--amber)] text-[var(--amber)]" aria-hidden="true" />
-            <span className="text-xs font-bold text-[var(--ink)]">
+            <span className="text-xs font-bold text-[var(--ink-solid)]">
               {restaurant.rating ? Number(restaurant.rating).toFixed(1) : "New"}
             </span>
           </div>
