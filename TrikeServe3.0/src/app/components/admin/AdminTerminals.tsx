@@ -3341,7 +3341,7 @@ async function applyAssignDriver(rider: StoredRider, terminal: Terminal) {
             One top bar for every section, spanning the full width of the editor —
             over the sidebar rail as well as the content.
 
-            Configuration and Fares & Delivery used to carry their own sticky
+            Configuration and Tricycle Fares used to carry their own sticky
             header *inside* the content pane while the map sections carried this
             one above it, so the rail started level with the top of the screen on
             two tabs and level with the back button on the other three. The same
@@ -3355,7 +3355,7 @@ async function applyAssignDriver(rider: StoredRider, terminal: Terminal) {
             two it read as "back to the previous step" while three tabs over it
             read as "back to the list", which is the only thing it can mean when
             the editor is a full-screen overlay over the list. Leaving from
-            Fares & Delivery mid-edit now goes through the same discard prompt
+            Tricycle Fares mid-edit now goes through the same discard prompt
             the map sections always did, rather than quietly parking the edits.
           */}
           <div className="flex-shrink-0 bg-surface border-b border-[var(--border)] px-3 py-3 flex items-center gap-2 sm:gap-3">
@@ -3435,7 +3435,7 @@ async function applyAssignDriver(rider: StoredRider, terminal: Terminal) {
                 {/* A plain "&" in a JS string, not "&amp;": entities are only decoded
                     in JSX text, so writing the entity here would put the literal
                     characters "&amp;" in the title. */}
-                {editorSection === 'fares' ? 'Fares & Delivery' : editTerminal ? 'Edit Terminal' : 'New Terminal'}
+                {editorSection === 'fares' ? 'Tricycle Fares' : editTerminal ? 'Edit Terminal' : 'New Terminal'}
               </h3>
             )}
           </div>
@@ -3456,7 +3456,7 @@ async function applyAssignDriver(rider: StoredRider, terminal: Terminal) {
                 ['terminal', 'Terminal', MapPin],
                 ['border', 'Border', Pentagon],
                 ['route', 'Route', Milestone],
-                ['fares', 'Fares & Delivery', Banknote],
+                ['fares', 'Tricycle Fares', Banknote],
                 // Last, always. Configuration is what you go to once the shape of
                 // the terminal is settled — name, corridor width, colours — so it
                 // sits below the three that draw the terminal rather than between
@@ -4289,9 +4289,9 @@ async function applyAssignDriver(rider: StoredRider, terminal: Terminal) {
             </div>
           )}
 
-          {/* Fares & Delivery. Everything a customer can buy at this terminal — the shared
+          {/* Tricycle Fares. Everything a customer can buy at this terminal — the shared
               seat, the whole vehicle, and the delivery — in one place, because the
-              dedicated Fares & Delivery page is a list of every terminal and the
+              dedicated Tricycle Fares page is a list of every terminal and the
               admin is usually already standing in this one. No header of its own:
               the editor's top bar carries the back button and the title. */}
           {editorSection === 'fares' && (
@@ -4514,7 +4514,7 @@ async function applyAssignDriver(rider: StoredRider, terminal: Terminal) {
                           PostgREST rejects the whole upsert over one missing column.
                           Rather than let that silently cost every other edit on this
                           screen, the ones we could not find are disabled and named —
-                          the same treatment the Fares & Delivery page gives them. */}
+                          the same treatment the Tricycle Fares page gives them. */}
                       {fareGroup(
                         'Private Ride',
                         'The whole vehicle, booked by one person.',
@@ -4594,7 +4594,7 @@ async function applyAssignDriver(rider: StoredRider, terminal: Terminal) {
                         onClick={() => { closeMapPicker(); navigate('/admin/fares'); }}
                         className="inline-flex min-h-11 items-center gap-2 rounded-xl border border-line px-3 py-2 text-sm font-bold text-[var(--ink)]"
                       >
-                        Seats and every terminal’s pricing on the Fares &amp; Delivery page
+                        Seats and every terminal’s pricing on the Tricycle Fares page
                       </button>
 
                       <div className="sticky bottom-0 -mx-4 px-4 py-3 bg-surface border-t border-[var(--border)]">

@@ -1,5 +1,4 @@
-import { useState } from "react";
-import { Link } from "react-router";
+import { useEffect, useState } from "react";
 import {
   ArrowLeft,
   ChevronDown,
@@ -12,76 +11,68 @@ import {
 
 import BottomNav from "../ui/BottomNav";
 import { usePreviousPage } from "../../hooks/usePreviousPage";
-
-type Faq = {
-  id: string;
-  question: string;
-  answer: string;
-};
-
-const FAQS: Faq[] = [
-  {
-    id: "delivery-areas",
-    question: "Which areas do you deliver to?",
-    answer:
-      "We deliver across Gen. T. de Leon and the wider Valenzuela area. Riders cover nearby barangays too — if your address is far enough out that no rider accepts, the order will not be confirmed.",
-  },
-  {
-    id: "how-long",
-    question: "How long does delivery take?",
-    answer:
-      "Most orders arrive in 25–35 minutes. During peak hours, or when a restaurant is preparing something made to order, it can take a little longer. You can follow the rider's progress from Activity.",
-  },
-  {
-    id: "payment",
-    question: "How do I pay?",
-    answer:
-      "You can pay cash on delivery. The exact total, including the delivery fee, is shown before you confirm the order.",
-  },
-  {
-    id: "cancel",
-    question: "Can I cancel my order?",
-    answer:
-      "Yes — as long as the restaurant has not started preparing it. Open the order from Activity and use Cancel. Once it is marked as preparing, it can no longer be cancelled.",
-  },
-  {
-    id: "wrong-order",
-    question: "My order is wrong or missing an item",
-    answer:
-      "Open the order from Activity and use Report a problem, or call us below. Include the order number so we can check it with the restaurant straight away. Missing items are refunded.",
-  },
-  {
-    id: "account",
-    question: "How do I change my account details?",
-    answer:
-      "Open Account, then Edit profile. You can change your name and phone number there, and set a profile photo from the camera button on your picture.",
-  },
-];
+import { useAuth } from "../../contexts/AuthContext";
+import { supabase } from "../../../utils/supabase";
+import {
+  createDefaultHelpSupportConfig,
+  HELP_SUPPORT_SETTING_KEY,
+  normalizeHelpSupportConfig,
+  type HelpAudience,
+} from "../../../lib/helpSupport";
 
 /**
- * Help & Support.
- *
- * Everything a customer most often needs answered, in one place reachable from
- * Account. The questions are the ones support actually gets — delivery area,
- * timing, payment, cancelling, a wrong order, account changes — rather than a
- * generic knowledge base.
+ * Role-specific Help & Support shared by customers, drivers, and businesses.
+ * FAQs and public support contacts come from the platform settings, with local
+ * defaults available when those settings cannot be read.
  */
 interface HelpSupportProps {
   /** Where the back arrow goes. Business Settings reuses this screen. */
   backPath?: string;
   /** The bottom tab bar is the customer's; hide it for other roles. */
   showBottomNav?: boolean;
+  /** Override the signed-in role when this screen is shared by a route. */
+  audience?: HelpAudience;
 }
 
 export default function HelpSupport({
-  backPath = "/customer/account",
-  showBottomNav = true,
+  backPath,
+  showBottomNav,
+  audience: audienceOverride,
 }: HelpSupportProps) {
+  const { user } = useAuth();
+  const audience = audienceOverride ?? (user?.role === "rider" ? "driver" : user?.role === "business" ? "business" : "customer");
+  const resolvedBackPath = backPath ?? (audience === "customer" ? "/customer/account" : audience === "business" ? "/business/account" : "/rider/more-options");
+  const shouldShowBottomNav = showBottomNav ?? audience === "customer";
   const [openId, setOpenId] = useState<string | null>(null);
-  const goBack = usePreviousPage(backPath);
+  const [config, setConfig] = useState(createDefaultHelpSupportConfig);
+  const goBack = usePreviousPage(resolvedBackPath);
+
+  useEffect(() => {
+    let active = true;
+    const loadSupportContent = async () => {
+      try {
+        const { data, error } = await supabase
+          .from("admin_settings")
+          .select("setting_value")
+          .eq("setting_key", HELP_SUPPORT_SETTING_KEY)
+          .maybeSingle();
+        if (error) throw error;
+        if (active) setConfig(normalizeHelpSupportConfig(data?.setting_value));
+      } catch (error) {
+        // Keep the built-in answers available if saved support content cannot load.
+        console.warn("[Help & Support] Using default support content:", error);
+      }
+    };
+    void loadSupportContent();
+    return () => { active = false; };
+  }, []);
+
+  const faqs = config.faqs[audience];
+  const contact = config.contact;
+  const phoneHref = contact.phone.trim().replace(/[^\d+]/g, "");
 
   return (
-    <div className={`min-h-screen bg-[var(--background)] ${showBottomNav ? "pb-24" : "pb-8"}`}>
+    <div className={`min-h-screen bg-[var(--background)] ${shouldShowBottomNav ? "pb-24" : "pb-8"}`}>
       <header className="sticky top-0 z-[900] border-b border-line bg-[var(--surface)] px-3 py-3 sm:px-5">
         <div className="mx-auto flex max-w-3xl items-center gap-2">
           {/*
@@ -96,7 +87,7 @@ export default function HelpSupport({
           <button
             type="button"
             onClick={goBack}
-            aria-label="Back to account"
+            aria-label="Go back"
             className="grid size-11 flex-shrink-0 place-items-center rounded-xl hover:bg-[var(--muted)]"
           >
             <ArrowLeft className="size-5 text-[var(--ink)]" aria-hidden="true" />
@@ -119,7 +110,7 @@ export default function HelpSupport({
           </h2>
 
           <ul className="overflow-hidden rounded-2xl border border-line">
-            {FAQS.map((faq) => {
+            {faqs.length > 0 ? faqs.map((faq) => {
               const open = openId === faq.id;
               return (
                 <li key={faq.id} className="border-b border-line last:border-b-0">
@@ -151,7 +142,9 @@ export default function HelpSupport({
                   )}
                 </li>
               );
-            })}
+            }) : (
+              <li className="px-4 py-5 text-sm text-[var(--muted-foreground)]">No FAQs are available right now. Contact support below for help.</li>
+            )}
           </ul>
         </section>
 
@@ -166,12 +159,12 @@ export default function HelpSupport({
           </h2>
 
           <p className="mb-3 text-sm text-[var(--muted-foreground)]">
-            Still stuck? Reach a person between 7am and 10pm, every day.
+            {contact.hours ? `Support hours: ${contact.hours}.` : "Still stuck? Reach the support team using the details below."}
           </p>
 
           <div className="space-y-2">
-            <a
-              href="tel:+639171234567"
+            {contact.phone.trim() && phoneHref && <a
+              href={`tel:${phoneHref}`}
               className="flex min-h-14 items-center gap-3 rounded-2xl border border-line bg-[var(--surface)] px-4 py-3 hover:bg-[var(--muted)]"
             >
               <span className="grid size-10 flex-shrink-0 place-items-center rounded-full bg-[var(--success-soft)]">
@@ -180,13 +173,13 @@ export default function HelpSupport({
               <span className="min-w-0">
                 <span className="block text-sm font-bold text-[var(--ink)]">Call us</span>
                 <span className="block text-xs text-[var(--muted-foreground)]">
-                  0917 123 4567
+                  {contact.phone}
                 </span>
               </span>
-            </a>
+            </a>}
 
-            <a
-              href="mailto:help@trikeserve.app?subject=Help%20and%20support%20request"
+            {contact.email.trim() && <a
+              href={`mailto:${contact.email.trim()}?subject=Help%20and%20support%20request`}
               className="flex min-h-14 items-center gap-3 rounded-2xl border border-line bg-[var(--surface)] px-4 py-3 hover:bg-[var(--muted)]"
             >
               <span className="grid size-10 flex-shrink-0 place-items-center rounded-full bg-[var(--success-soft)]">
@@ -195,27 +188,31 @@ export default function HelpSupport({
               <span className="min-w-0">
                 <span className="block text-sm font-bold text-[var(--ink)]">Email us</span>
                 <span className="block truncate text-xs text-[var(--muted-foreground)]">
-                  help@trikeserve.app
+                  {contact.email}
                 </span>
               </span>
-            </a>
+            </a>}
 
-            <div className="flex min-h-14 items-center gap-3 rounded-2xl border border-line bg-[var(--surface)] px-4 py-3">
+            {contact.serviceArea.trim() && <div className="flex min-h-14 items-center gap-3 rounded-2xl border border-line bg-[var(--surface)] px-4 py-3">
               <span className="grid size-10 flex-shrink-0 place-items-center rounded-full bg-[var(--success-soft)]">
                 <MapPin className="size-5 text-[var(--success-ink)]" aria-hidden="true" />
               </span>
               <span className="min-w-0">
                 <span className="block text-sm font-bold text-[var(--ink)]">Service area</span>
                 <span className="block truncate text-xs text-[var(--muted-foreground)]">
-                  Gen. T. de Leon, Valenzuela City
+                  {contact.serviceArea}
                 </span>
               </span>
-            </div>
+            </div>}
+
+            {!contact.phone.trim() && !contact.email.trim() && !contact.serviceArea.trim() && (
+              <p className="rounded-2xl border border-line bg-[var(--surface)] p-4 text-sm text-[var(--muted-foreground)]">Support contact details are not available right now.</p>
+            )}
           </div>
         </section>
       </div>
 
-      {showBottomNav && <BottomNav active="home" />}
+      {shouldShowBottomNav && <BottomNav active="home" />}
     </div>
   );
 }

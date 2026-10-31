@@ -59,7 +59,7 @@ export default function MoreOptions() {
           </div>
         </button>
 
-        <button className="w-full flex items-center gap-3 p-4 border border-[var(--border)] rounded-lg hover:border-[var(--primary)] transition-colors bg-surface">
+        <button onClick={() => navigate('/rider/help')} className="w-full flex items-center gap-3 p-4 border border-[var(--border)] rounded-lg hover:border-[var(--primary)] transition-colors bg-surface">
           <div className="w-10 h-10 rounded-full bg-[var(--muted)] flex items-center justify-center">
             <HelpCircle className="w-5 h-5 text-[var(--muted-foreground)]" />
           </div>

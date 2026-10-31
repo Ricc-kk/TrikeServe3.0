@@ -44,8 +44,8 @@ export default function AdminSettings() {
             {isSuperAdmin && <section aria-labelledby="pricing-settings-heading" className="rounded-3xl border border-line bg-[var(--teal-soft)] p-5 sm:p-6">
               <p className="text-[10px] font-bold uppercase tracking-widest text-[var(--teal)]">Platform configuration</p>
               <h2 id="pricing-settings-heading" className="mt-2 text-lg font-bold text-[var(--ink)]">Looking for pricing settings?</h2>
-              <p className="mt-2 text-sm leading-relaxed text-[var(--muted-foreground)]">Ride fares, delivery fees, and shared-ride capacity are managed per terminal.</p>
-              <Link to="/admin/delivery" className="mt-4 inline-flex min-h-11 items-center gap-2 rounded-xl bg-card px-4 text-sm font-bold text-[var(--teal)] hover:opacity-80">Fares &amp; Delivery <ArrowUpRight className="size-4" aria-hidden="true" /></Link>
+              <p className="mt-2 text-sm leading-relaxed text-[var(--muted-foreground)]">Tricycle fares, delivery fees, and shared-ride capacity are managed per terminal.</p>
+              <Link to="/admin/delivery" className="mt-4 inline-flex min-h-11 items-center gap-2 rounded-xl bg-card px-4 text-sm font-bold text-[var(--teal)] hover:opacity-80">Tricycle Fares <ArrowUpRight className="size-4" aria-hidden="true" /></Link>
             </section>}
           </div>
 

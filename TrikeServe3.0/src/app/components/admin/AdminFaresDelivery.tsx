@@ -550,7 +550,7 @@ export default function AdminFaresDelivery() {
 
   return (
     <AdminShell
-      title="Fares & Delivery"
+      title="Tricycle Fares"
       subtitle={selectedTerminal ? `Pricing for ${selectedTerminal.name}` : "Share ride, private ride and delivery pricing per terminal"}
       actions={hasUnsavedChanges ? (
         <button

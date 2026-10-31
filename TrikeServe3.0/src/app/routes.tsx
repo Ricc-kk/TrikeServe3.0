@@ -63,6 +63,7 @@ import AdminSubmittedRequests from "./components/admin/AdminSubmittedRequests";
 import AuditTrail from "./components/admin/AuditTrail";
 import AdminReports from "./components/admin/AdminReports";
 import AdminSettings from "./components/admin/AdminSettings";
+import AdminHelpSupport from "./components/admin/AdminHelpSupport";
 
 export const router = createBrowserRouter([
   {
@@ -226,12 +227,11 @@ export const router = createBrowserRouter([
         )
       },
       {
-        // The Settings row used to point at nothing. Help & Support is
-        // role-agnostic, so the business just borrows the customer screen.
+        // Business owners share the Help & Support layout but receive their own FAQs.
         path: "business/help",
         element: (
           <ProtectedRoute allowedRoles={['business']}>
-            <HelpSupport backPath="/business/account" showBottomNav={false} />
+            <HelpSupport backPath="/business/account" showBottomNav={false} audience="business" />
           </ProtectedRoute>
         )
       },
@@ -477,6 +477,14 @@ export const router = createBrowserRouter([
         )
             },
       {
+        path: "rider/help",
+        element: (
+          <ProtectedRoute allowedRoles={['rider']}>
+            <HelpSupport backPath="/rider/more-options" showBottomNav={false} audience="driver" />
+          </ProtectedRoute>
+        )
+      },
+      {
         // What the home page search field opens. The hub feed used to sit on
         // the landing screen; it is results, so it belongs behind search.
         path: "customer/search",
@@ -623,6 +631,14 @@ export const router = createBrowserRouter([
         element: (
           <ProtectedRoute allowedRoles={['admin']}>
             <AdminSettings />
+          </ProtectedRoute>
+        )
+      },
+      {
+        path: "admin/help-support",
+        element: (
+          <ProtectedRoute allowedRoles={['admin']}>
+            <AdminHelpSupport />
           </ProtectedRoute>
         )
       },

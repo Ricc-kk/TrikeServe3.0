@@ -81,7 +81,7 @@ export default function AdminDashboard() {
   // Rates are no longer loaded here. This screen used to fetch the platform
   // rates from admin_settings purely to show them in its own editable cards; with
   // those gone the fetch had nothing to feed, and rates are read where they are
-  // set -- the Fares & Delivery tab, per terminal.
+  // set -- the Tricycle Fares tab, per terminal.
   useEffect(() => {
     loadUsers();
   }, [user]);
