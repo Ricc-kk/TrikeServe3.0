@@ -465,9 +465,24 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   // Set while logout() is running, so the SIGNED_OUT it causes is read as a
   // deliberate sign-out rather than a token refresh that failed.
   const signOutRequestedRef = useRef(false);
+  const signOutRequestedGenerationRef = useRef<number | null>(null);
   // Mirrors the signed-in user for the auth listeners, which are registered once
   // and so cannot close over `user` without re-subscribing on every change.
   const userIdRef = useRef<string | null>(null);
+  const pendingLoginRef = useRef<{ generation: number; email: string } | null>(null);
+  // Prevent a profile request from an earlier account from writing its result
+  // after the person has logged out or started a different login.
+  const authTransitionGenerationRef = useRef(0);
+  const profileLoadGenerationRef = useRef(0);
+  const beginAuthTransition = () => {
+    authTransitionGenerationRef.current += 1;
+    profileLoadGenerationRef.current += 1;
+    return authTransitionGenerationRef.current;
+  };
+  const setCurrentUser = (nextUser: User | null) => {
+    userIdRef.current = nextUser?.id ?? null;
+    setUser(nextUser);
+  };
   useEffect(() => {
     userIdRef.current = user?.id ?? null;
   }, [user]);
@@ -545,13 +560,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     const signOutThisSession = async () => {
       if (disposed) return;
+      const evictionGeneration = beginAuthTransition();
       if (hasSupabaseAuthSession) {
         signOutRequestedRef.current = true;
+        signOutRequestedGenerationRef.current = evictionGeneration;
         try {
           const { error } = await supabase.auth.signOut({ scope: 'local' });
           if (error) throw error;
         } catch (error) {
-          signOutRequestedRef.current = false;
+          if (signOutRequestedGenerationRef.current === evictionGeneration) {
+            signOutRequestedRef.current = false;
+            signOutRequestedGenerationRef.current = null;
+          }
           console.error('[AuthContext] Could not sign out the older account session:', error);
           setSessionWarningSeconds(null);
           scheduledEvictionKey = null;
@@ -559,13 +579,23 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         }
       }
 
-      setUser(null);
+      if (disposed || evictionGeneration !== authTransitionGenerationRef.current) {
+        if (signOutRequestedGenerationRef.current === evictionGeneration) {
+          signOutRequestedRef.current = false;
+          signOutRequestedGenerationRef.current = null;
+        }
+        return;
+      }
+
+      setCurrentUser(null);
       localStorage.removeItem('trikeserve_current_user');
       localStorage.removeItem('trikeserve_original_role');
       localStorage.removeItem('trikeserve_post_switch_route');
       localStorage.removeItem(`trikeserve_local_session:${user.id}`);
       if (user.role === 'admin') localStorage.removeItem('trikeserve_admin_credentials');
       setSessionWarningSeconds(null);
+      signOutRequestedRef.current = false;
+      signOutRequestedGenerationRef.current = null;
     };
 
     const evaluateActiveSessions = () => {
@@ -733,6 +763,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   // Listen for Supabase auth state changes
   useEffect(() => {
     let mounted = true;
+    const startupGeneration = authTransitionGenerationRef.current;
 
     /**
      * Last resort on a reload: the cached user.
@@ -743,13 +774,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
      * their session was still good. A stale profile beats a spurious logout;
      * a fresh profile load will overwrite this once it lands.
      */
-    const restoreFromStorage = (why: string) => {
+    const restoreFromStorage = (why: string, expectedGeneration = authTransitionGenerationRef.current) => {
+      if (expectedGeneration !== authTransitionGenerationRef.current) return false;
       const raw = localStorage.getItem('trikeserve_current_user');
       if (!raw) return false;
       try {
         const parsed = JSON.parse(raw);
         console.log(`[AuthContext] Restoring stored user (${why}):`, parsed.email);
-        setUser(parsed);
+        setCurrentUser(parsed);
         return true;
       } catch (e) {
         console.warn('[AuthContext] Failed to parse stored user:', e);
@@ -765,7 +797,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         console.warn('[AuthContext] Safety timeout — forcing loading to stop');
         // Show the cached user rather than resolving to null, so a slow profile
         // query cannot bounce a signed-in person to the login screen.
-        restoreFromStorage('safety timeout');
+        restoreFromStorage('safety timeout', startupGeneration);
         setIsLoading(false);
       }
     }, 3000);
@@ -773,8 +805,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     // Get initial session
     supabase.auth.getSession().then(({ data: { session } }) => {
       if (!mounted) return;
+      if (startupGeneration !== authTransitionGenerationRef.current) {
+        clearTimeout(safetyTimeout);
+        setIsLoading(false);
+        return;
+      }
       if (session?.user) {
-        loadUserProfile(session.user.id).finally(() => {
+        loadUserProfile(session.user.id, false, startupGeneration).finally(() => {
           clearTimeout(safetyTimeout);
           if (mounted) setIsLoading(false);
         });
@@ -787,8 +824,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setIsLoading(false);
       }
     }).catch(() => {
+      if (startupGeneration !== authTransitionGenerationRef.current) {
+        clearTimeout(safetyTimeout);
+        if (mounted) setIsLoading(false);
+        return;
+      }
       // On error, try to restore from localStorage as fallback
-      restoreFromStorage('session error');
+      restoreFromStorage('session error', startupGeneration);
       clearTimeout(safetyTimeout);
       if (mounted) setIsLoading(false);
     });
@@ -799,6 +841,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         if (!mounted) return;
         if (event === 'SIGNED_IN') {
           signOutRequestedRef.current = false;
+          signOutRequestedGenerationRef.current = null;
           /*
            * Another tab signed in.
            *
@@ -820,9 +863,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
            * lands here, but by then login() has already set that user.
            */
           const currentId = userIdRef.current;
-          if (session?.user && currentId && session.user.id !== currentId) {
+          const pendingLogin = pendingLoginRef.current;
+          const belongsToPendingLogin = Boolean(
+            session?.user &&
+            pendingLogin?.generation === authTransitionGenerationRef.current &&
+            pendingLogin.email === (session.user.email || '').toLowerCase()
+          );
+          if (session?.user && session.user.id !== currentId && !belongsToPendingLogin) {
             console.warn('[AuthContext] Another tab signed in as a different account — following it');
-            void loadUserProfile(session.user.id, true);
+            const transitionGeneration = beginAuthTransition();
+            void loadUserProfile(session.user.id, true, transitionGeneration);
           }
           return;
         }
@@ -846,8 +896,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
            * branch above already does. Two loads of the same profile are
            * harmless: both resolve to the same user.
            */
+          if (startupGeneration !== authTransitionGenerationRef.current) {
+            clearTimeout(safetyTimeout);
+            setIsLoading(false);
+            return;
+          }
           if (session?.user) {
-            loadUserProfile(session.user.id).finally(() => {
+            loadUserProfile(session.user.id, false, startupGeneration).finally(() => {
               clearTimeout(safetyTimeout);
               if (mounted) setIsLoading(false);
             });
@@ -859,6 +914,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           return;
         }
         if (event === 'SIGNED_OUT') {
+          const requestedGeneration = signOutRequestedGenerationRef.current;
+          if (
+            signOutRequestedRef.current &&
+            requestedGeneration !== null &&
+            requestedGeneration !== authTransitionGenerationRef.current
+          ) {
+            console.log('[AuthContext] Ignoring a sign-out event from an older account transition');
+            return;
+          }
           // Distinguish a real sign-out from a token that merely failed to
           // refresh. An explicit logout() clears the cache itself, so a
           // SIGNED_OUT arriving with a cached user still present is a refresh
@@ -871,15 +935,21 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             setIsLoading(false);
             return;
           }
-          setUser(null);
+          if (!signOutRequestedRef.current) beginAuthTransition();
+          setCurrentUser(null);
           localStorage.removeItem('trikeserve_current_user');
           setIsLoading(false);
+          if (signOutRequestedGenerationRef.current === authTransitionGenerationRef.current) {
+            signOutRequestedRef.current = false;
+            signOutRequestedGenerationRef.current = null;
+          }
         }
       }
     );
 
     return () => {
       mounted = false;
+      beginAuthTransition();
       clearTimeout(safetyTimeout);
       subscription.unsubscribe();
     };
@@ -947,7 +1017,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     };
   }, [user?.id, user?.terminalId]);
 
-  const loadUserProfile = async (authUserId: string, clearBusinessCaches = false) => {
+  const loadUserProfile = async (
+    authUserId: string,
+    clearBusinessCaches = false,
+    expectedAuthGeneration = authTransitionGenerationRef.current,
+  ) => {
+    const profileLoadGeneration = ++profileLoadGenerationRef.current;
+    const isCurrentLoad = () =>
+      expectedAuthGeneration === authTransitionGenerationRef.current &&
+      profileLoadGeneration === profileLoadGenerationRef.current;
+
     try {
       console.log('[AuthContext] Loading profile for:', authUserId);
       const { data: profile, error } = await supabase
@@ -960,13 +1039,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         console.warn('[AuthContext] Profile query error:', error.message);
       }
 
+      if (!isCurrentLoad()) return;
+
       if (profile) {
         const mappedUser = mapSupabaseUser(profile);
         if (clearBusinessCaches) {
           syncCachedLegacyUserProfile(mappedUser);
           clearUserScopedCaches(mappedUser.email, mappedUser.role === 'business');
         }
-        setUser(mappedUser);
+        setCurrentUser(mappedUser);
         localStorage.setItem('trikeserve_current_user', JSON.stringify(mappedUser));
         console.log('[AuthContext] Profile loaded:', mappedUser.email, mappedUser.role);
       } else {
@@ -975,10 +1056,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         const storedUser = localStorage.getItem('trikeserve_current_user');
         if (storedUser) {
           const parsedUser = JSON.parse(storedUser);
-          setUser(parsedUser);
+          if (parsedUser?.id === authUserId) setCurrentUser(parsedUser);
         }
       }
     } catch (err) {
+      if (!isCurrentLoad()) return;
       console.error('[AuthContext] Error loading profile:', err);
       // A failed profile read must not read as a logged-out user. Falling back
       // to the cached copy keeps the session alive until the next reload gets a
@@ -987,7 +1069,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (raw) {
         try {
           const parsedUser = JSON.parse(raw);
-          setUser(parsedUser);
+          if (parsedUser?.id === authUserId) setCurrentUser(parsedUser);
         } catch {
           localStorage.removeItem('trikeserve_current_user');
         }
@@ -1046,7 +1128,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   // when there is no matching legacy account (caller shows the normal error).
   const loginLegacyFromLocalStorage = async (
     email: string,
-    password: string
+    password: string,
+    loginGeneration: number,
   ): Promise<LoginResult | null> => {
     try {
       const usersJson = localStorage.getItem('trikeserve_users');
@@ -1064,6 +1147,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         .select('*')
         .eq('email', email.toLowerCase())
         .maybeSingle();
+      if (loginGeneration !== authTransitionGenerationRef.current) return null;
 
       if (profile) {
         const mappedUser = mapSupabaseUser(profile);
@@ -1073,11 +1157,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           ownSessionKey,
           currentSessionAllowsTwo(),
         );
+        if (loginGeneration !== authTransitionGenerationRef.current) return null;
 
         syncCachedLegacyUserProfile(mappedUser);
         clearUserScopedCaches(mappedUser.email, mappedUser.role === 'business');
-        setUser(mappedUser);
+        setCurrentUser(mappedUser);
         localStorage.setItem('trikeserve_current_user', JSON.stringify(mappedUser));
+        signOutRequestedRef.current = false;
+        signOutRequestedGenerationRef.current = null;
         console.log('[AuthContext] Legacy login successful (users table profile):', mappedUser.email);
         return { success: true, ...sessionNotice };
       }
@@ -1107,9 +1194,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         ownSessionKey,
         currentSessionAllowsTwo(),
       );
+      if (loginGeneration !== authTransitionGenerationRef.current) return null;
       clearUserScopedCaches(mappedUser.email, mappedUser.role === 'business');
-      setUser(mappedUser);
+      setCurrentUser(mappedUser);
       localStorage.setItem('trikeserve_current_user', JSON.stringify(mappedUser));
+      signOutRequestedRef.current = false;
+      signOutRequestedGenerationRef.current = null;
       console.log('[AuthContext] Legacy login successful (localStorage profile):', mappedUser.email);
       return { success: true, ...sessionNotice };
     } catch (error) {
@@ -1119,6 +1209,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   const login = async (email: string, password: string): Promise<LoginResult> => {
+    const loginGeneration = beginAuthTransition();
+    pendingLoginRef.current = { generation: loginGeneration, email: email.toLowerCase() };
+    const loginWasSuperseded = () => loginGeneration !== authTransitionGenerationRef.current;
     try {
       // First, check if user is an admin
       let adminUser = null;
@@ -1136,10 +1229,29 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       } catch (adminQueryError) {
         console.warn('[AuthContext] Admin table error:', adminQueryError);
       }
+      if (loginWasSuperseded()) {
+        return { success: false, error: 'This sign-in was replaced by another account change.' };
+      }
 
       if (adminUser) {
         if (adminUser.password_hash !== password) {
           return { success: false, error: 'Invalid email or password' };
+        }
+
+        // Admin accounts use their own credentials rather than Supabase Auth.
+        // Clear any previous regular-user session before storing the admin so a
+        // resume or app restart cannot restore that user's Supabase profile.
+        signOutRequestedRef.current = true;
+        signOutRequestedGenerationRef.current = loginGeneration;
+        const { error: signOutError } = await supabase.auth.signOut({ scope: 'local' });
+        if (loginWasSuperseded()) {
+          return { success: false, error: 'This sign-in was replaced by another account change.' };
+        }
+        signOutRequestedRef.current = false;
+        signOutRequestedGenerationRef.current = null;
+        if (signOutError) {
+          console.warn('[AuthContext] Could not clear the previous Supabase session before admin login:', signOutError.message);
+          return { success: false, error: 'Could not clear the previous user session. Please try again.' };
         }
 
         const userToSet: User = {
@@ -1160,15 +1272,23 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         } as User;
 
         const ownSessionKey = await getCurrentLoginSessionKey(userToSet.id, undefined, userToSet.role);
+        if (loginWasSuperseded()) {
+          return { success: false, error: 'This sign-in was replaced by another account change.' };
+        }
         const sessionNotice = await checkOtherAccountSessions(
           userToSet.id,
           ownSessionKey,
           currentSessionAllowsTwo(),
         );
+        if (loginWasSuperseded()) {
+          return { success: false, error: 'This sign-in was replaced by another account change.' };
+        }
 
         clearUserScopedCaches(userToSet.email, userToSet.role === 'business');
-        setUser(userToSet);
+        setCurrentUser(userToSet);
         localStorage.setItem('trikeserve_current_user', JSON.stringify(userToSet));
+        signOutRequestedRef.current = false;
+        signOutRequestedGenerationRef.current = null;
         // Store admin credentials separately so Edge Functions can verify them
         localStorage.setItem('trikeserve_admin_credentials', JSON.stringify({
           email: adminUser.email,
@@ -1182,6 +1302,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         email: email.toLowerCase(),
         password: password,
       });
+      if (loginWasSuperseded()) {
+        return { success: false, error: 'This sign-in was replaced by another account change.' };
+      }
 
       if (authError) {
         if (authError.message.includes('Email not confirmed')) {
@@ -1192,8 +1315,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         }
         if (authError.message.includes('Invalid login')) {
           // Not in Supabase Auth — try legacy localStorage accounts before failing
-          const legacyResult = await loginLegacyFromLocalStorage(email, password);
+          const legacyResult = await loginLegacyFromLocalStorage(email, password, loginGeneration);
           if (legacyResult) return legacyResult;
+          if (loginWasSuperseded()) {
+            return { success: false, error: 'This sign-in was replaced by another account change.' };
+          }
           return { success: false, error: 'Invalid email or password' };
         }
         return { success: false, error: authError.message };
@@ -1208,6 +1334,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           .select('*')
           .eq('id', authData.user.id)
           .maybeSingle();
+        if (loginWasSuperseded()) {
+          return { success: false, error: 'This sign-in was replaced by another account change.' };
+        }
 
         if (profile) {
           const mappedUser = mapSupabaseUser(profile);
@@ -1221,10 +1350,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             ownSessionKey,
             currentSessionAllowsTwo(),
           );
+          if (loginWasSuperseded()) {
+            return { success: false, error: 'This sign-in was replaced by another account change.' };
+          }
           syncCachedLegacyUserProfile(mappedUser);
           clearUserScopedCaches(mappedUser.email, mappedUser.role === 'business');
-          setUser(mappedUser);
+          setCurrentUser(mappedUser);
           localStorage.setItem('trikeserve_current_user', JSON.stringify(mappedUser));
+          signOutRequestedRef.current = false;
+          signOutRequestedGenerationRef.current = null;
 
           // A business or rider awaiting superadmin approval is still signed in.
           // Their role stays 'business'/'rider' in the database — that is what
@@ -1268,9 +1402,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             if (authMeta.license_number) newProfile.license_number = authMeta.license_number;
           }
 
+          if (loginWasSuperseded()) {
+            return { success: false, error: 'This sign-in was replaced by another account change.' };
+          }
+
           const { error: insertError } = await supabase
             .from('users')
             .insert([newProfile]);
+          if (loginWasSuperseded()) {
+            return { success: false, error: 'This sign-in was replaced by another account change.' };
+          }
 
           if (insertError) {
             console.error('[AuthContext] Failed to create profile:', insertError);
@@ -1300,10 +1441,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             ownSessionKey,
             currentSessionAllowsTwo(),
           );
+          if (loginWasSuperseded()) {
+            return { success: false, error: 'This sign-in was replaced by another account change.' };
+          }
           syncCachedLegacyUserProfile(mappedUser);
           clearUserScopedCaches(mappedUser.email, mappedUser.role === 'business');
-          setUser(mappedUser);
+          setCurrentUser(mappedUser);
           localStorage.setItem('trikeserve_current_user', JSON.stringify(mappedUser));
+          signOutRequestedRef.current = false;
+          signOutRequestedGenerationRef.current = null;
           return { success: true, ...sessionNotice };
         }
       }
@@ -1312,18 +1458,42 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     } catch (error) {
       console.error('Login error:', error);
       return { success: false, error: 'An error occurred during login' };
+    } finally {
+      if (pendingLoginRef.current?.generation === loginGeneration) {
+        pendingLoginRef.current = null;
+      }
+      if (signOutRequestedGenerationRef.current === loginGeneration && loginWasSuperseded()) {
+        signOutRequestedRef.current = false;
+        signOutRequestedGenerationRef.current = null;
+      }
     }
   };
 
   const logout = async () => {
+    const logoutGeneration = beginAuthTransition();
     signOutRequestedRef.current = true;
-    await supabase.auth.signOut();
-    setUser(null);
+    signOutRequestedGenerationRef.current = logoutGeneration;
+    try {
+      const { error } = await supabase.auth.signOut({ scope: 'local' });
+      if (error) console.warn('[AuthContext] Could not clear the Supabase session during logout:', error.message);
+    } catch (error) {
+      console.warn('[AuthContext] Could not clear the Supabase session during logout:', error);
+    }
+    if (logoutGeneration !== authTransitionGenerationRef.current) {
+      if (signOutRequestedGenerationRef.current === logoutGeneration) {
+        signOutRequestedRef.current = false;
+        signOutRequestedGenerationRef.current = null;
+      }
+      return;
+    }
+    setCurrentUser(null);
     localStorage.removeItem('trikeserve_current_user');
     localStorage.removeItem('trikeserve_original_role');
     localStorage.removeItem('trikeserve_post_switch_route');
     if (user) localStorage.removeItem(`trikeserve_local_session:${user.id}`);
     localStorage.removeItem('trikeserve_admin_credentials');
+    signOutRequestedRef.current = false;
+    signOutRequestedGenerationRef.current = null;
   };
 
   const switchUiRole = async (role: User['role']) => {

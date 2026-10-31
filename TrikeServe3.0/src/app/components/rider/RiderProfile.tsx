@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from "react";
 import { useNavigate, Link } from "react-router";
 import {
   ArrowLeft,
+  ChevronRight,
   User,
   Mail,
   Phone,
@@ -15,7 +16,8 @@ import {
   LogOut,
   Camera,
   Palette,
-  Shield
+  Shield,
+  HelpCircle,
 } from "lucide-react";
 import { MarkerF, Polygon, Polyline } from "@react-google-maps/api";
 import GoogleMap from "@/app/components/ui/ThemedGoogleMap";
@@ -591,6 +593,22 @@ export default function RiderProfile() {
           </h2>
           <ThemeModeSwitcher bilingual />
         </Card>
+
+        <Link
+          to="/rider/help"
+          className="flex min-h-20 items-center justify-between gap-3 rounded-3xl border border-line bg-card p-4 transition-colors hover:bg-[var(--surface)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--rider)]"
+        >
+          <span className="flex min-w-0 items-center gap-3">
+            <span className="grid size-11 flex-shrink-0 place-items-center rounded-xl bg-[var(--rider)] text-white">
+              <HelpCircle className="size-5" aria-hidden="true" />
+            </span>
+            <span className="min-w-0">
+              <span className="block text-sm font-semibold text-[var(--ink)]">Help &amp; Support</span>
+              <span className="block text-xs text-[var(--muted-foreground)]">Driver FAQs and contact support</span>
+            </span>
+          </span>
+          <ChevronRight className="size-5 flex-shrink-0 text-[var(--muted-foreground)]" aria-hidden="true" />
+        </Link>
 
         {/* Help Card */}
         <Card className="p-5 border-0 shadow-md bg-gradient-to-br from-[var(--primary)]/5 to-[var(--primary)]/5 border-2 border-[var(--primary)]/20">
