@@ -10,6 +10,12 @@ npm run dev
 npm run build
 ```
 
+### Developer mode logo hold
+
+Set `VITE_DISABLE_DEV_MODE_HOLD=true` in `.env.local` to disable the login
+screen logo hold gesture that toggles Developer Mode. Set it to `false` (or
+remove it) to enable the gesture. Restart the dev server after changing it.
+
 ## Android setup
 
 The Android project lives in `android/` and is synced from the web build output in `dist/`.

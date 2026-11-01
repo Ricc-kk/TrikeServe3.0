@@ -40,6 +40,8 @@ interface TestAccount {
  */
 const QUICK_ACCESS_PASSWORD = "Admin12345";
 const DEV_MODE_HOLD_MS = 5000;
+const DISABLE_DEV_MODE_HOLD =
+  import.meta.env.VITE_DISABLE_DEV_MODE_HOLD?.toLowerCase() === "true";
 
 /** Roles Quick Access supplies QUICK_ACCESS_PASSWORD for. */
 const QUICK_ACCESS_ROLES = new Set(["customer", "rider", "business", "admin"]);
@@ -322,19 +324,20 @@ export default function Login() {
           <div className="mb-7 flex justify-center lg:justify-start">
             <button
               type="button"
-              aria-label="Hold the TrikeServe logo for 5 seconds to toggle developer mode"
-              aria-pressed={isDevMode}
-              onPointerDown={startDevModeHold}
-              onPointerUp={cancelDevModeHold}
-              onPointerLeave={cancelDevModeHold}
-              onPointerCancel={cancelDevModeHold}
-              onKeyDown={(event) => {
+              aria-label={DISABLE_DEV_MODE_HOLD ? "TrikeServe logo" : "Hold the TrikeServe logo for 5 seconds to toggle developer mode"}
+              aria-pressed={DISABLE_DEV_MODE_HOLD ? undefined : isDevMode}
+              disabled={DISABLE_DEV_MODE_HOLD}
+              onPointerDown={DISABLE_DEV_MODE_HOLD ? undefined : startDevModeHold}
+              onPointerUp={DISABLE_DEV_MODE_HOLD ? undefined : cancelDevModeHold}
+              onPointerLeave={DISABLE_DEV_MODE_HOLD ? undefined : cancelDevModeHold}
+              onPointerCancel={DISABLE_DEV_MODE_HOLD ? undefined : cancelDevModeHold}
+              onKeyDown={DISABLE_DEV_MODE_HOLD ? undefined : (event) => {
                 if (event.key === "Enter" || event.key === " ") {
                   event.preventDefault();
                   startDevModeHold();
                 }
               }}
-              onKeyUp={(event) => {
+              onKeyUp={DISABLE_DEV_MODE_HOLD ? undefined : (event) => {
                 if (event.key === "Enter" || event.key === " ") {
                   event.preventDefault();
                   cancelDevModeHold();
