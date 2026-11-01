@@ -116,16 +116,16 @@ export default function Account() {
 
   return (
     <div className="min-h-screen bg-[var(--muted)] pb-24">
-      {/* Gradient Header with Profile */}
-      <div className="relative bg-[var(--primary)] px-5 pt-6 pb-6 rounded-b-2xl shadow-lg">
+      {/* Profile Header */}
+      <div className="relative rounded-b-[2rem] border-b border-line bg-surface px-5 pb-6 pt-6 text-[var(--ink)]">
         <div className="relative flex flex-col items-center">
           {/* Profile Photo */}
           <div className="relative mb-2">
-            <div className="w-16 h-16 rounded-full bg-white/20 backdrop-blur-sm flex items-center justify-center border-2 border-white/30 shadow-lg overflow-hidden">
+            <div className="flex h-16 w-16 items-center justify-center overflow-hidden rounded-full border-4 border-line bg-[var(--muted)]">
               {user?.avatarUrl ? (
                 <img src={user.avatarUrl} alt="Profile" className="w-full h-full object-cover" />
               ) : (
-                <span className="text-2xl font-extrabold text-white" aria-hidden="true">
+                <span className="text-2xl font-extrabold text-[var(--primary)]" aria-hidden="true">
                   {getProfileInitials(user?.name || formData.name, user?.email || formData.email)}
                 </span>
               )}
@@ -136,13 +136,13 @@ export default function Account() {
           </div>
 
           {/* User Name & Email */}
-          <h1 className="text-white text-base font-bold">{formData.name}</h1>
-          <p className="text-white/70 text-[11px]">{formData.email || "No email set"}</p>
+          <h1 className="text-base font-bold text-[var(--ink)]">{formData.name}</h1>
+          <p className="text-[11px] text-[var(--muted-foreground)]">{formData.email || "No email set"}</p>
 
           {/* Editing lives on its own screen now. */}
           <button
             onClick={() => navigate('/customer/edit-profile')}
-            className="mt-4 flex min-h-12 w-full items-center justify-center gap-2 rounded-2xl bg-white/20 px-5 text-sm font-bold text-white backdrop-blur-sm transition-colors hover:bg-white/30 active:scale-[0.99]"
+            className="mt-4 flex min-h-12 w-full items-center justify-center gap-2 rounded-2xl border border-line bg-[var(--muted)] px-5 text-sm font-bold text-[var(--ink)] transition-colors hover:bg-[var(--border)] active:scale-[0.99]"
           >
             <Pencil className="w-4 h-4" />
             Edit profile
@@ -154,7 +154,7 @@ export default function Account() {
       <div className="px-5 mt-2 space-y-4">
 
         {/* Quick Actions Card */}
-        <div className="bg-surface rounded-2xl shadow-sm border border-[var(--muted)] overflow-hidden">
+        <div className="rounded-2xl border border-line bg-card shadow-sm overflow-hidden">
 
           <Link to="/customer/notifications">
             <div className="flex items-center justify-between p-4 hover:bg-[var(--muted)] transition-colors">
@@ -172,7 +172,7 @@ export default function Account() {
           </Link>
 
           <Link to="/customer/help">
-            <div className="flex items-center justify-between p-4 hover:bg-[var(--muted)] transition-colors border-t border-[var(--muted)]">
+            <div className="flex items-center justify-between border-t border-line p-4 transition-colors hover:bg-[var(--muted)]">
               <div className="flex items-center gap-3">
                 <div className="w-10 h-10 bg-gradient-to-br from-[var(--success)] to-[var(--success)] rounded-xl flex items-center justify-center shadow-sm">
                   <HelpCircle className="w-5 h-5 text-white" />
@@ -186,7 +186,7 @@ export default function Account() {
             </div>
           </Link>
         </div>
-        <div className="bg-surface rounded-2xl shadow-sm border border-[var(--muted)] p-5">
+        <div className="rounded-2xl border border-line bg-card p-5 shadow-sm">
           <div className="flex items-center gap-2 mb-4">
             <MapPin className="w-4 h-4 text-[var(--muted-foreground)]" />
             <h3 className="text-sm font-semibold text-[var(--muted-foreground)] tracking-wider">Delivery Address</h3>
@@ -224,7 +224,7 @@ export default function Account() {
         </div>
 
         {/* Personal Information Card */}
-        <div className="bg-surface rounded-2xl shadow-sm border border-[var(--muted)] p-5">
+        <div className="rounded-2xl border border-line bg-card p-5 shadow-sm">
           <div className="flex items-center gap-2 mb-5">
             <Shield className="w-4 h-4 text-[var(--muted-foreground)]" />
             <h3 className="text-sm font-semibold text-[var(--muted-foreground)] tracking-wider">Personal Information</h3>
@@ -259,7 +259,7 @@ export default function Account() {
         </div>
 
         {/* Appearance */}
-        <div className="bg-surface rounded-2xl shadow-sm border border-[var(--muted)] p-4">
+        <div className="rounded-2xl border border-line bg-card p-4 shadow-sm">
           <ThemeModeSwitcher bilingual />
         </div>
 
