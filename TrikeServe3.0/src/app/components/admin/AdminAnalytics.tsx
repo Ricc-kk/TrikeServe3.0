@@ -19,6 +19,9 @@ interface RideRow {
   ride_type?: string | null;
   pickup_location?: string | null;
   status?: string | null;
+  completed_at?: string | null;
+  updated_at?: string | null;
+  created_at?: string | null;
 }
 
 interface OrderRow {
@@ -27,6 +30,105 @@ interface OrderRow {
   total?: number | string | null;
   status?: string | null;
   created_at?: string | null;
+}
+
+type AnalyticsPeriod = "today" | "week" | "month";
+
+const PERIOD_OPTIONS: { value: AnalyticsPeriod; label: string }[] = [
+  { value: "today", label: "Today" },
+  { value: "week", label: "Week" },
+  { value: "month", label: "Month" },
+];
+
+const PERIOD_NAMES: Record<AnalyticsPeriod, string> = {
+  today: "today",
+  week: "this week",
+  month: "this month",
+};
+
+function getPeriodStart(now: Date, period: AnalyticsPeriod) {
+  const start = new Date(now);
+  start.setHours(0, 0, 0, 0);
+  if (period === "week") {
+    const daysSinceMonday = (start.getDay() + 6) % 7;
+    start.setDate(start.getDate() - daysSinceMonday);
+  } else if (period === "month") {
+    start.setDate(1);
+  }
+  return start;
+}
+
+function parseDate(value?: string | null): Date | null {
+  if (!value) return null;
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? null : date;
+}
+
+function getRideDate(ride: RideRow) {
+  // Completed rides are timestamped by updated_at in the ride flow; use a
+  // dedicated completion field when present and fall back for older records.
+  return parseDate(ride.completed_at || ride.updated_at || ride.created_at);
+}
+
+function getActivityBuckets(period: AnalyticsPeriod, now: Date) {
+  if (period === "today") {
+    return Array.from({ length: 8 }, (_, index) => {
+      const start = new Date(now);
+      start.setHours(index * 3, 0, 0, 0);
+      const end = new Date(start);
+      end.setHours(end.getHours() + 3);
+      return {
+        label: start.toLocaleTimeString("en-US", { hour: "numeric" }),
+        start,
+        end,
+      };
+    });
+  }
+
+  if (period === "week") {
+    const weekStart = getPeriodStart(now, period);
+    return Array.from({ length: 7 }, (_, index) => {
+      const start = new Date(weekStart);
+      start.setDate(start.getDate() + index);
+      const end = new Date(start);
+      end.setDate(end.getDate() + 1);
+      return {
+        label: start.toLocaleDateString("en-PH", { weekday: "short" }),
+        start,
+        end,
+      };
+    });
+  }
+
+  const daysElapsed = now.getDate();
+  const bucketCount = Math.ceil(daysElapsed / 7);
+  return Array.from({ length: bucketCount }, (_, index) => {
+    const firstDay = index * 7 + 1;
+    const start = new Date(now.getFullYear(), now.getMonth(), firstDay);
+    const end = new Date(now.getFullYear(), now.getMonth(), Math.min(firstDay + 7, daysElapsed + 1));
+    return { label: `Week ${index + 1}`, start, end };
+  });
+}
+
+function PeriodFilter({ value, onChange }: {
+  value: AnalyticsPeriod;
+  onChange: (period: AnalyticsPeriod) => void;
+}) {
+  return (
+    <div role="group" aria-label="Filter performance by period" className="inline-flex shrink-0 rounded-xl border border-line bg-card p-1">
+      {PERIOD_OPTIONS.map((option) => (
+        <button
+          key={option.value}
+          type="button"
+          aria-pressed={value === option.value}
+          onClick={() => onChange(option.value)}
+          className={`min-h-9 rounded-lg px-3 text-xs font-bold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--teal)] ${value === option.value ? "bg-[var(--teal)] text-white shadow-sm" : "text-[var(--muted-foreground)] hover:bg-soft hover:text-[var(--ink)]"}`}
+        >
+          {option.label}
+        </button>
+      ))}
+    </div>
+  );
 }
 
 // Literal class strings so Tailwind can statically pick up the arbitrary values.
@@ -115,12 +217,13 @@ function RankingCard({ title, description, data, tone, loading, currency = false
  * tables directly, so it works for the Super Admin regardless of terminal scope.
  */
 export default function AdminAnalytics({ compact = false, refreshToken = 0 }: { compact?: boolean; refreshToken?: number } = {}) {
-  const [rides, setRides] = useState<RideRow[]>([]);
-  const [orders, setOrders] = useState<OrderRow[]>([]);
+  const [allRides, setRides] = useState<RideRow[]>([]);
+  const [allOrders, setOrders] = useState<OrderRow[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [reload, setReload] = useState(0);
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
+  const [period, setPeriod] = useState<AnalyticsPeriod>("week");
 
   useEffect(() => {
     let active = true;
@@ -154,6 +257,16 @@ export default function AdminAnalytics({ compact = false, refreshToken = 0 }: { 
       active = false;
     };
   }, [refreshToken, reload]);
+
+  const { rides, orders } = useMemo(() => {
+    const now = new Date();
+    const start = getPeriodStart(now, period);
+    const isWithinPeriod = (date: Date | null) => Boolean(date && date >= start && date <= now);
+    return {
+      rides: allRides.filter((ride) => isWithinPeriod(getRideDate(ride))),
+      orders: allOrders.filter((order) => isWithinPeriod(parseDate(order.created_at))),
+    };
+  }, [allRides, allOrders, period]);
 
   // ---- Driver performance -------------------------------------------------
 
@@ -226,23 +339,16 @@ export default function AdminAnalytics({ compact = false, refreshToken = 0 }: { 
     [businessStats]
   );
 
-  const ordersPerDay = useMemo<BarDatum[]>(() => {
-    const labels = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
-    const out: BarDatum[] = [];
-    for (let i = 6; i >= 0; i--) {
-      const date = new Date();
-      date.setDate(date.getDate() - i);
-      date.setHours(0, 0, 0, 0);
-      const nextDate = new Date(date);
-      nextDate.setDate(nextDate.getDate() + 1);
-      const count = orders.filter((order) => {
-        const created = new Date(order.created_at || 0);
-        return created >= date && created < nextDate;
-      }).length;
-      out.push({ label: labels[date.getDay()], value: count });
-    }
-    return out;
-  }, [orders]);
+  const ordersActivity = useMemo<BarDatum[]>(() => {
+    const buckets = getActivityBuckets(period, new Date());
+    return buckets.map((bucket) => ({
+      label: bucket.label,
+      value: orders.filter((order) => {
+        const created = parseDate(order.created_at);
+        return created != null && created >= bucket.start && created < bucket.end;
+      }).length,
+    }));
+  }, [orders, period]);
 
   const totalOrders = orders.length;
   const grossRevenue = businessStats.reduce((sum, b) => sum + b.revenue, 0);
@@ -264,8 +370,9 @@ export default function AdminAnalytics({ compact = false, refreshToken = 0 }: { 
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
             <h2 id="overview-performance-title" className="text-lg font-bold tracking-tight text-[var(--ink)] sm:text-xl">Platform performance</h2>
-            <p className="mt-1 text-xs text-[var(--muted-foreground)]">All-time totals · Cancelled orders excluded</p>
+            <p className="mt-1 text-xs text-[var(--muted-foreground)]">{PERIOD_NAMES[period]} · Cancelled orders excluded</p>
           </div>
+          <PeriodFilter value={period} onChange={setPeriod} />
           <Link to="/admin/analytics" className="inline-flex min-h-11 items-center gap-2 rounded-xl px-3 text-xs font-bold text-[var(--teal)] transition-colors hover:bg-[var(--teal-soft)] sm:text-sm">
             View analytics <ArrowRight className="size-4" aria-hidden="true" />
           </Link>
@@ -289,15 +396,15 @@ export default function AdminAnalytics({ compact = false, refreshToken = 0 }: { 
                 <div className="flex flex-wrap items-start justify-between gap-2">
                   <div>
                     <h3 className="text-base font-bold text-[var(--ink)]">Order activity</h3>
-                    <p className="mt-1 text-xs text-[var(--muted-foreground)]">Orders placed over the last 7 days</p>
+                    <p className="mt-1 text-xs text-[var(--muted-foreground)]">{period === "today" ? "Orders by 3-hour block" : period === "week" ? "Orders by day this week" : "Orders by week this month"}</p>
                   </div>
-                  <span className="rounded-lg bg-[var(--primary-soft)] px-2 py-1 text-[11px] font-bold text-[var(--coral-dark)]">Last 7 days</span>
+                  <span className="rounded-lg bg-[var(--primary-soft)] px-2 py-1 text-[11px] font-bold text-[var(--coral-dark)]">{PERIOD_NAMES[period]}</span>
                 </div>
                 {isLoading ? (
                   <div role="status" aria-label="Loading order activity" className="h-52 animate-pulse rounded-xl bg-soft" />
                 ) : (
-                  <div role="img" aria-label={`Orders in the last 7 days: ${ordersPerDay.map(day => `${day.label} ${day.value}`).join(', ')}`}>
-                    <AnalyticsBarChart data={ordersPerDay} color="var(--primary)" height={190} emptyHint="No orders in the last 7 days" />
+                  <div role="img" aria-label={`Orders ${PERIOD_NAMES[period]}: ${ordersActivity.map(day => `${day.label} ${day.value}`).join(', ')}`}>
+                    <AnalyticsBarChart data={ordersActivity} color="var(--primary)" height={190} emptyHint={`No orders ${PERIOD_NAMES[period]}`} />
                   </div>
                 )}
               </Card>
@@ -351,7 +458,10 @@ export default function AdminAnalytics({ compact = false, refreshToken = 0 }: { 
           <a href="#analytics-drivers" className="inline-flex min-h-11 items-center gap-2 rounded-xl border border-line bg-card px-3 text-xs font-bold text-[var(--info)] hover:bg-[var(--info-soft)]"><TerminalIconGlyph className="size-4" aria-hidden="true" /> Drivers</a>
           <a href="#analytics-businesses" className="inline-flex min-h-11 items-center gap-2 rounded-xl border border-line bg-card px-3 text-xs font-bold text-[var(--violet)] hover:bg-[var(--violet-soft)]"><Store className="size-4" aria-hidden="true" /> Businesses</a>
         </nav>
-        <span className="inline-flex items-center gap-1.5 text-xs text-[var(--muted-foreground)]"><Clock3 className="size-3.5" aria-hidden="true" /> All-time data · Unless noted</span>
+        <div className="flex flex-wrap items-center gap-3">
+          <PeriodFilter value={period} onChange={setPeriod} />
+          <span className="inline-flex items-center gap-1.5 text-xs text-[var(--muted-foreground)]"><Clock3 className="size-3.5" aria-hidden="true" /> {PERIOD_NAMES[period]} · Cancelled orders excluded</span>
+        </div>
       </div>
 
       {loadError ? (
@@ -396,7 +506,7 @@ export default function AdminAnalytics({ compact = false, refreshToken = 0 }: { 
         </div>
 
         <div className="grid items-start gap-4 @min-[46rem]:grid-cols-2 sm:gap-5">
-          <RankingCard title="Top drivers" description="Ranked by completed rides · All time" data={topDrivers} tone="info" loading={isLoading} />
+          <RankingCard title="Top drivers" description={`Ranked by completed rides · ${PERIOD_NAMES[period]}`} data={topDrivers} tone="info" loading={isLoading} />
           <Card className="min-w-0 gap-5 rounded-3xl border-line bg-card p-4 sm:p-6">
             <div><h3 className="text-base font-bold text-[var(--ink)]">Service mix</h3><p className="mt-1 text-xs text-[var(--muted-foreground)]">How completed rides are distributed</p></div>
             {isLoading ? <div role="status" aria-label="Loading service mix" className="h-60 animate-pulse rounded-xl bg-soft" /> : (
@@ -444,15 +554,15 @@ export default function AdminAnalytics({ compact = false, refreshToken = 0 }: { 
         </div>
 
         <div className="grid items-start gap-4 @min-[46rem]:grid-cols-2 sm:gap-5">
-          <RankingCard title="Top businesses" description="Ranked by gross order value · All time" data={topBusinesses} tone="violet" loading={isLoading} currency />
+          <RankingCard title="Top businesses" description={`Ranked by gross order value · ${PERIOD_NAMES[period]}`} data={topBusinesses} tone="violet" loading={isLoading} currency />
           <Card className="min-w-0 gap-5 rounded-3xl border-line bg-card p-4 sm:p-6">
             <div className="flex flex-wrap items-start justify-between gap-2">
-              <div><h3 className="text-base font-bold text-[var(--ink)]">Order activity</h3><p className="mt-1 text-xs text-[var(--muted-foreground)]">Platform-wide orders placed per day</p></div>
-              <span className="rounded-lg bg-[var(--primary-soft)] px-2 py-1 text-[10px] font-bold text-[var(--coral-dark)]">Last 7 days</span>
+              <div><h3 className="text-base font-bold text-[var(--ink)]">Order activity</h3><p className="mt-1 text-xs text-[var(--muted-foreground)]">{period === "today" ? "Orders by 3-hour block" : period === "week" ? "Orders by day this week" : "Orders by week this month"}</p></div>
+              <span className="rounded-lg bg-[var(--primary-soft)] px-2 py-1 text-[10px] font-bold text-[var(--coral-dark)]">{PERIOD_NAMES[period]}</span>
             </div>
             {isLoading ? <div role="status" aria-label="Loading order activity" className="h-60 animate-pulse rounded-xl bg-soft" /> : (
-              <div role="img" aria-label={`Orders in the last 7 days: ${ordersPerDay.map(day => `${day.label} ${day.value}`).join(', ')}`}>
-                <AnalyticsBarChart data={ordersPerDay} color="var(--primary)" height={210} emptyHint="No orders in the last 7 days" />
+              <div role="img" aria-label={`Orders ${PERIOD_NAMES[period]}: ${ordersActivity.map(day => `${day.label} ${day.value}`).join(', ')}`}>
+                <AnalyticsBarChart data={ordersActivity} color="var(--primary)" height={210} emptyHint={`No orders ${PERIOD_NAMES[period]}`} />
               </div>
             )}
             <p className="border-t border-line pt-4 text-xs leading-relaxed text-[var(--muted-foreground)]">Order value includes all non-cancelled orders, not just delivered orders.</p>

@@ -2,11 +2,7 @@ import { useEffect, useState, type ReactNode } from "react";
 import { Link, useLocation } from "react-router";
 import { ArrowLeft, Menu, X } from "lucide-react";
 
-// The bytes in this file are JPEG, not PNG, so it carries a .jpg name. Served
-// under a .png name it was sent as image/png and Chromium's sniffing rejected it
-// intermittently, leaving an empty logo box.
-import TrikeServeLogo from "../../../assets/TRIKESERVE_logo.jpg";
-import TrimmedLogo from "../ui/TrimmedLogo";
+import TrikeServeLogo from "../../../assets/TRIKESERVE_logo_trimmed.jpg";
 import { useAuth } from "../../contexts/AuthContext";
 import { adminNavFor, isSuperAdmin } from "./adminNav";
 import { DRIVER_APPS, useDriverAppSwitch } from "../../hooks/useDriverAppSwitch";
@@ -137,9 +133,8 @@ export default function AdminShell({
               {/* The TrikeServe mark, not a generic shield: the admin panel is
                   part of this product, and the same logo already leads the
                   business sidebar. A shield said "security" but not whose.
-                  TrimmedLogo crops the asset's dead margin so the artwork fills
-                  this tile and the gradient shows through behind it. */}
-              <TrimmedLogo src={TrikeServeLogo} alt="TrikeServe" className="size-full object-contain p-0.5" />
+                  The cropped source avoids its large blank border. */}
+              <img src={TrikeServeLogo} alt="TrikeServe" className="size-full object-fill" />
             </div>
             <div className="min-w-0">
               <span className="block text-xl font-bold text-[var(--ink)]">ADMIN</span>

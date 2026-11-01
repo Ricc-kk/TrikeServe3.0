@@ -3,10 +3,9 @@ import { useNavigate, Link } from "react-router";
 import { ChevronDown, Eye, EyeOff, Users } from "lucide-react";
 import { armWelcomeGreeting } from "../../lib/welcomeGreeting";
 import { useDevModeFeature, useDevModeStatus } from "../hooks/useDevModeSettings";
-import TrikeServeLogo from "../../assets/TRIKESERVE_logo.jpg";
+import TrikeServeLogo from "../../assets/TRIKESERVE_logo_trimmed.jpg";
 import { Button } from "./ui/button";
 import { Input } from "./ui/input";
-import TrimmedLogo from "./ui/TrimmedLogo";
 import { useAuth } from "../contexts/AuthContext";
 import { supabase } from "../../utils/supabase";
 import tagalagImage from "../../assets/trikserve_loginpage.jpg";
@@ -344,7 +343,7 @@ export default function Login() {
               onContextMenu={(event) => event.preventDefault()}
               className="relative h-24 w-36 touch-none select-none overflow-hidden rounded-2xl bg-[#EBEBEB] text-left ring-1 ring-black/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--primary)] focus-visible:ring-offset-2"
             >
-              <TrimmedLogo
+              <img
                 src={TrikeServeLogo}
                 alt="TrikeServe logo"
                 className="size-full object-contain p-1"
