@@ -62,6 +62,8 @@ const HOURS_COLUMNS =
 const LEGACY_COLUMNS =
   "id, name, address, rating, is_open, banner_image, logo_image, subtitle, delivery_time, operating_hours, business_user_id";
 
+const RESTAURANT_PAGE_SIZE = 1000;
+
 /** PostgREST reports an unknown column as PGRST204, or 42703 from Postgres. */
 export function isMissingColumnError(error: any): boolean {
   if (!error) return false;
@@ -88,12 +90,34 @@ export async function fetchRestaurants(limit?: number): Promise<{
   error: any;
   hasLocationColumns: boolean;
 }> {
-  const applyLimit = (query: any) => (limit ? query.limit(limit) : query);
+  const fetchRows = async (columns: string) => {
+    const rows: any[] = [];
+    for (let offset = 0; ; offset += RESTAURANT_PAGE_SIZE) {
+      let query = supabase
+        .from("restaurants")
+        .select(columns)
+        .order("name")
+        .order("id");
+
+      if (limit) {
+        query = query.limit(limit);
+      } else {
+        query = query.range(offset, offset + RESTAURANT_PAGE_SIZE - 1);
+      }
+
+      const attempt = await query;
+      if (attempt.error) return attempt;
+
+      const page = attempt.data || [];
+      rows.push(...page);
+      if (limit || page.length < RESTAURANT_PAGE_SIZE) {
+        return { data: rows, error: null };
+      }
+    }
+  };
 
   for (const columns of [FULL_COLUMNS, HOURS_COLUMNS, LEGACY_COLUMNS]) {
-    const attempt = await applyLimit(
-      supabase.from("restaurants").select(columns).order("name"),
-    );
+    const attempt = await fetchRows(columns);
 
     if (!attempt.error) {
       return {

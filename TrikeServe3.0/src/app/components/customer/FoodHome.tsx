@@ -27,6 +27,7 @@ import { supabase } from "../../../utils/supabase";
 import { supabaseHelpers } from "@/lib/supabase";
 import { fetchRestaurants } from "@/lib/restaurantQueries";
 import { cuisineLabels, inferCuisineFromMenu } from "@/lib/foodTaxonomy";
+import { whatWeServeCategoriesByRestaurant } from "@/lib/menuSections";
 import { formatDistance, haversineMetres, hasCoords } from "@/lib/distance";
 
 import FoodHomeHeader from "./FoodHomeHeader";
@@ -71,44 +72,6 @@ function deliveryMinutes(time: string): number {
   const match = String(time || "").match(/(\d+)/);
   return match ? Number(match[1]) : Number.MAX_SAFE_INTEGER;
 }
-
-/**
- * Collapses listings that share a name and address into one entry.
- *
- * Whichever record carries a real image, an address and a delivery time wins,
- * because that is the one that reads as complete; ties fall back to rating.
- */
-function dedupeRestaurants(list: RawRestaurant[]): RawRestaurant[] {
-  const best = new Map<string, RawRestaurant>();
-
-  const completeness = (r: RawRestaurant) => {
-    let score = 0;
-    if (r.image && r.image !== FALLBACK_IMAGE) score += 4;
-    if (r.address) score += 2;
-    if (r.rating > 0) score += 2;
-    if (r.isOpen) score += 1;
-    // A pinned shop is more useful than an identical unpinned one.
-    if (hasCoords({ lat: r.latitude, lng: r.longitude })) score += 3;
-    if (r.cuisine?.length) score += 2;
-    return score;
-  };
-
-  for (const r of list) {
-    const key = `${r.name} ${r.address}`
-      .toLowerCase()
-      .normalize("NFKD")
-      .replace(/[^a-z0-9]+/g, " ")
-      .trim();
-
-    const existing = best.get(key);
-    if (!existing || completeness(r) > completeness(existing)) {
-      best.set(key, r);
-    }
-  }
-
-  return Array.from(best.values());
-}
-
 
 /**
  * The scroll position of a rail, drawn as lines instead of a scrollbar.
@@ -184,26 +147,55 @@ export default function FoodHome() {
     }
   }, []);
 
-  /** Product categories per restaurant, used by the search category filters. */
+  /** Business-created "What we serve" categories per restaurant. */
   const loadMenuCategories = useCallback(async () => {
+    const pageSize = 1000;
+    const menuSections: { restaurant_id: string | null; name: string | null; sort_order: number | null }[] = [];
+    const legacyCategories: { restaurant_id: string | null; name: string | null }[] = [];
+
     try {
-      const { data, error } = await supabase
-        .from("menu_items")
-        .select("restaurant_id, category");
-      if (error || !data) return;
-      const map: Record<string, string[]> = {};
-      for (const row of data as any[]) {
-        if (!row.restaurant_id || !row.category) continue;
-        const label = String(row.category).trim();
-        if (!label) continue;
-        // Keep one entry per product so cuisine inference remains weighted by
-        // how many products use each category.
-        (map[row.restaurant_id] ||= []).push(label);
+      // Businesses create their "What we serve" categories as menu sections.
+      // Read every page so categories belonging to later shops are included too.
+      for (let offset = 0; ; offset += pageSize) {
+        const { data, error } = await supabase
+          .from("menu_sections")
+          .select("restaurant_id, name, sort_order, id")
+          .order("restaurant_id")
+          .order("sort_order")
+          .order("id")
+          .range(offset, offset + pageSize - 1);
+        if (error) throw error;
+
+        const page = (data ?? []) as typeof menuSections;
+        menuSections.push(...page);
+        if (page.length < pageSize) break;
       }
-      setMenuCategories(map);
     } catch {
-      // Categories stay empty; every restaurant remains visible under "All".
+      // Older databases may not have menu_sections yet; try their category rows.
+      menuSections.length = 0;
     }
+
+    try {
+      for (let offset = 0; ; offset += pageSize) {
+        const { data, error } = await supabase
+          .from("categories")
+          .select("restaurant_id, name")
+          .order("restaurant_id")
+          .order("name")
+          .order("id")
+          .range(offset, offset + pageSize - 1);
+        if (error) throw error;
+
+        const page = (data ?? []) as typeof legacyCategories;
+        legacyCategories.push(...page);
+        if (page.length < pageSize) break;
+      }
+    } catch {
+      // Some deployments have sections but not the older categories table.
+      legacyCategories.length = 0;
+    }
+
+    setMenuCategories(whatWeServeCategoriesByRestaurant(menuSections, legacyCategories));
   }, []);
 
   const loadRestaurantsFromSupabase = useCallback(async () => {
@@ -253,7 +245,9 @@ export default function FoodHome() {
         longitude: r.longitude ?? null,
       }));
 
-      setRestaurants(dedupeRestaurants(mapped));
+      // Each database row is a distinct shop/owner. Name and address can match
+      // across owners, so keep every row and its own product categories.
+      setRestaurants(mapped);
     } catch (error) {
       console.error("[FoodHome] Error loading from Supabase:", error);
       setRestaurants([]);
@@ -344,11 +338,11 @@ export default function FoodHome() {
         : cuisineLabels(
             inferCuisineFromMenu(menuCategories[r.id]?.map((category) => category.toLowerCase())),
           );
-      const productCategoryLabels = new Map<string, string>();
+      const whatWeServeCategories = new Map<string, string>();
       for (const rawLabel of menuCategories[r.id] ?? []) {
         const label = rawLabel.trim();
         const key = label.toLocaleLowerCase();
-        if (label && !productCategoryLabels.has(key)) productCategoryLabels.set(key, label);
+        if (label && !whatWeServeCategories.has(key)) whatWeServeCategories.set(key, label);
       }
 
       let distanceLabel: string | null = null;
@@ -364,7 +358,7 @@ export default function FoodHome() {
       return {
         ...r,
         cuisineLabels: inferred,
-        productCategories: Array.from(productCategoryLabels.values()),
+        whatWeServeCategories: Array.from(whatWeServeCategories.values()),
         distanceLabel,
       };
     });

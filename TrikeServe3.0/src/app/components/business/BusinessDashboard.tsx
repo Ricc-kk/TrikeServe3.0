@@ -29,7 +29,7 @@ import { useAuth } from "../../contexts/AuthContext";
 import { supabase } from "../../../lib/supabase";
 import { supabaseHelpers } from "@/lib/supabase";
 import { useRestaurantProfile } from "@/lib/restaurantProfile";
-import { cuisineLabels } from "@/lib/foodTaxonomy";
+import { whatWeServeCategoriesForRestaurant } from "@/lib/menuSections";
 import {
   describeOpenState,
   describeSchedule,
@@ -160,7 +160,6 @@ export default function BusinessDashboard() {
   const { user } = useAuth();
   const profile = useRestaurantProfile();
   const profileLocation = profile.restaurant;
-  const businessCuisineLabels = cuisineLabels(profileLocation?.cuisine);
 
   /*
    * Trading hours, for the Open/Closed indicator below.
@@ -267,9 +266,20 @@ export default function BusinessDashboard() {
    * do that.
    */
   const [loadedMenuItems, setLoadedMenuItems] = useState<any[]>([]);
+  const [loadedMenuSections, setLoadedMenuSections] = useState<any[]>([]);
+  const [loadedLegacyMenuCategories, setLoadedLegacyMenuCategories] = useState<any[]>([]);
+  const [menuDataOwnerId, setMenuDataOwnerId] = useState<string | null>(null);
+  const [restaurantId, setRestaurantId] = useState<string | null>(null);
+  const whatWeServeCategories = useMemo(() => {
+    if (menuDataOwnerId !== user?.id) return [];
+    return whatWeServeCategoriesForRestaurant(
+      restaurantId,
+      loadedMenuSections,
+      loadedLegacyMenuCategories,
+    );
+  }, [loadedLegacyMenuCategories, loadedMenuSections, menuDataOwnerId, restaurantId, user?.id]);
   const [range, setRange] = useState<RangeKey>('week');
   const [isLoading, setIsLoading] = useState(true);
-  const [restaurantId, setRestaurantId] = useState<string | null>(null);
   const [notifications, setNotifications] = useState<any[]>([]);
   const messages: any[] = [];
   const [showWelcomeBack, setShowWelcomeBack] = useState(false);
@@ -363,6 +373,12 @@ export default function BusinessDashboard() {
 
   // Load dashboard data
   useEffect(() => {
+    setLoadedMenuItems([]);
+    setLoadedMenuSections([]);
+    setLoadedLegacyMenuCategories([]);
+    setMenuDataOwnerId(null);
+    setRestaurantId(null);
+    setIsLoading(true);
     loadDashboardData();
     // Refresh data every 30 seconds
     const interval = setInterval(() => {
@@ -391,28 +407,26 @@ export default function BusinessDashboard() {
         return;
       }
 
-      let businessRestaurantId = currentUser.restaurantId;
-
-      // If no restaurantId, fetch from Supabase
-      if (!businessRestaurantId && currentUser.id) {
-        const { data: restaurant } = await supabase
-          .from('restaurants')
-          .select('id')
-          .eq('business_user_id', currentUser.id)
-          .single();
-
-        if (restaurant) {
-          businessRestaurantId = restaurant.id;
-          setRestaurantId(businessRestaurantId);
-        }
-      } else if (businessRestaurantId) {
-        setRestaurantId(businessRestaurantId);
-      }
+      // SQL defines restaurants.business_user_id as the unique owner link.
+      // Resolve the shop from the signed-in account each time so a stale
+      // users.restaurant_id value cannot point the listing at another shop.
+      const { data: restaurant } = await supabase
+        .from('restaurants')
+        .select('id')
+        .eq('business_user_id', currentUser.id)
+        .maybeSingle();
+      const businessRestaurantId = restaurant?.id ?? null;
 
       if (!businessRestaurantId) {
+        setRestaurantId(null);
+        setLoadedMenuItems([]);
+        setLoadedMenuSections([]);
+        setLoadedLegacyMenuCategories([]);
+        setMenuDataOwnerId(currentUser.id);
         setIsLoading(false);
         return;
       }
+      setRestaurantId(businessRestaurantId);
 
       // The header leads with the restaurant's own profile picture, so it has
       // to be fetched here rather than inherited from the customer header.
@@ -452,17 +466,74 @@ export default function BusinessDashboard() {
       setStats({ rating, ratingCount });
 
       // Every menu item, because ranking by what actually sells needs the whole
-      // menu to rank, not the first page of it.
-      const { data: menuItems } = await supabase
-        .from('menu_items')
-        .select('*')
-        .eq('restaurant_id', businessRestaurantId)
-        .order('created_at', { ascending: false });
+      // menu to rank, not the first page of it. Supabase caps each response, so
+      // page through the shop's complete menu.
+      const menuItems: any[] = [];
+      const pageSize = 1000;
+      for (let offset = 0; ; offset += pageSize) {
+        const { data: page, error: menuError } = await supabase
+          .from('menu_items')
+          .select('*')
+          .eq('restaurant_id', businessRestaurantId)
+          .order('created_at', { ascending: false })
+          .order('id', { ascending: false })
+          .range(offset, offset + pageSize - 1);
+        if (menuError) throw menuError;
+
+        const rows = page ?? [];
+        menuItems.push(...rows);
+        if (rows.length < pageSize) break;
+      }
+
+      const menuSections: any[] = [];
+      try {
+        for (let offset = 0; ; offset += pageSize) {
+          const { data: page, error: sectionsError } = await supabase
+            .from('menu_sections')
+            .select('restaurant_id, name, sort_order, id')
+            .eq('restaurant_id', businessRestaurantId)
+            .order('sort_order')
+            .order('id')
+            .range(offset, offset + pageSize - 1);
+          if (sectionsError) throw sectionsError;
+
+          const rows = page ?? [];
+          menuSections.push(...rows);
+          if (rows.length < pageSize) break;
+        }
+      } catch (sectionsError) {
+        console.warn('[BusinessDashboard] Could not load menu sections:', sectionsError);
+        menuSections.length = 0;
+      }
+
+      const legacyMenuCategories: any[] = [];
+      try {
+        for (let offset = 0; ; offset += pageSize) {
+          const { data: page, error: categoriesError } = await supabase
+            .from('categories')
+            .select('restaurant_id, name')
+            .eq('restaurant_id', businessRestaurantId)
+            .order('name')
+            .order('id')
+            .range(offset, offset + pageSize - 1);
+          if (categoriesError) throw categoriesError;
+
+          const rows = page ?? [];
+          legacyMenuCategories.push(...rows);
+          if (rows.length < pageSize) break;
+        }
+      } catch (categoriesError) {
+        console.warn('[BusinessDashboard] Could not load legacy menu categories:', categoriesError);
+        legacyMenuCategories.length = 0;
+      }
 
       // Held raw. The ranking is range-dependent, so it is derived below rather
       // than baked in here -- otherwise switching Today/Week/Month would leave the
       // cards showing a ranking the pie beside them no longer agreed with.
-      setLoadedMenuItems(menuItems ?? []);
+      setLoadedMenuItems(menuItems);
+      setLoadedMenuSections(menuSections);
+      setLoadedLegacyMenuCategories(legacyMenuCategories);
+      setMenuDataOwnerId(currentUser.id);
 
       setIsLoading(false);
     } catch (error) {
@@ -823,7 +894,7 @@ const previousWindowWord = range === 'today' ? 'day' : range;
             </Card>
           </div>
 
-          {/* Business categories and the shop's pickup location. */}
+          {/* Business-created menu sections and the shop's pickup location. */}
           <Card className="p-4 lg:p-6 border border-line bg-surface mb-6 lg:mb-8">
             <div className="flex flex-wrap items-start justify-between gap-3">
               <h2 className="text-xl lg:text-2xl font-bold text-[var(--ink)]">Your shop listing</h2>
@@ -844,9 +915,9 @@ const previousWindowWord = range === 'today' ? 'day' : range;
                 <p className="text-[11px] font-bold uppercase tracking-wider text-[var(--muted-foreground)]">
                   What we serve
                 </p>
-                {businessCuisineLabels.length > 0 ? (
+                {whatWeServeCategories.length > 0 ? (
                   <ul className="mt-2 flex flex-wrap gap-1.5">
-                    {businessCuisineLabels.map((label) => (
+                    {whatWeServeCategories.map((label) => (
                       <li
                         key={label}
                         className="rounded-lg bg-[var(--primary-soft)] px-2 py-1 text-xs font-semibold text-[var(--primary)]"
@@ -857,7 +928,7 @@ const previousWindowWord = range === 'today' ? 'day' : range;
                   </ul>
                 ) : (
                   <p className="mt-2 text-sm text-[var(--muted-foreground)]">
-                    No business categories are set yet.
+                    No menu categories yet. Add categories in Menu to show them here.
                   </p>
                 )}
               </div>

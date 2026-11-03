@@ -19,8 +19,8 @@ export type RestaurantView = {
   hasMenu: boolean;
   /** Cuisine buckets this restaurant declares, as display labels. */
   cuisineLabels: string[];
-  /** Distinct category labels assigned to this restaurant's menu products. */
-  productCategories: string[];
+  /** Business-created menu sections shown as this shop's "What we serve". */
+  whatWeServeCategories: string[];
   /**
    * "450 m" / "1.2 km" from the selected delivery address, or null when the
    * shop has not pinned itself -- rendered as "Distance unavailable" rather

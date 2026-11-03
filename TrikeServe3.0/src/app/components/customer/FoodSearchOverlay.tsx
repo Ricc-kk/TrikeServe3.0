@@ -41,8 +41,8 @@ function pushRecent(term: string) {
   }
 }
 
-function restaurantBusinessCategories(restaurant: RestaurantView): string[] {
-  return restaurant.cuisineLabels;
+function restaurantWhatWeServeCategories(restaurant: RestaurantView): string[] {
+  return restaurant.whatWeServeCategories;
 }
 
 /**
@@ -70,7 +70,7 @@ export default function FoodSearchOverlay({
   const categories = useMemo(() => {
     const labels = new Map<string, string>();
     for (const restaurant of restaurants) {
-      for (const rawLabel of restaurantBusinessCategories(restaurant)) {
+      for (const rawLabel of restaurantWhatWeServeCategories(restaurant)) {
         const label = rawLabel.trim();
         const key = label.toLocaleLowerCase();
         if (label && !labels.has(key)) labels.set(key, label);
@@ -134,7 +134,7 @@ export default function FoodSearchOverlay({
     return restaurants.filter((r) => {
       if (
         activeCategory &&
-        !restaurantBusinessCategories(r).some(
+        !restaurantWhatWeServeCategories(r).some(
           (category) => category.trim().toLocaleLowerCase() === activeCategory.toLocaleLowerCase(),
         )
       ) {
@@ -144,7 +144,7 @@ export default function FoodSearchOverlay({
       return (
         r.name.toLowerCase().includes(term) ||
         r.address.toLowerCase().includes(term) ||
-        r.productCategories.some((category) => category.toLowerCase().includes(term)) ||
+        r.whatWeServeCategories.some((category) => category.toLowerCase().includes(term)) ||
         r.cuisineLabels.some((l) => l.toLowerCase().includes(term))
       );
     });
@@ -220,11 +220,11 @@ export default function FoodSearchOverlay({
       </div>
 
       <div className="mx-auto w-full max-w-3xl flex-1 overflow-y-auto px-4 py-4">
-        {/* Business-category quick filters. */}
+        {/* Product categories collected from every shop's "What we serve" list. */}
         {categories.length > 0 && (
           <div
             role="group"
-            aria-label="Filter by business category"
+            aria-label="Filter by product category"
             className="-mx-4 flex gap-2 overflow-x-auto px-4 pb-1 sm:-mx-5 sm:px-5 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
             tabIndex={0}
           >
