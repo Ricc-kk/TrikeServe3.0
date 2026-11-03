@@ -25,6 +25,16 @@ interface Category {
   name: string;
 }
 
+const DEFAULT_MENU_CATEGORIES: Category[] = [
+  { id: "Silog", name: "Silog" },
+  { id: "Burger", name: "Burger" },
+  { id: "Chicken", name: "Chicken" },
+  { id: "Pork", name: "Pork" },
+  { id: "Seafood", name: "Seafood" },
+  { id: "Desserts", name: "Desserts" },
+  { id: "Drinks", name: "Drinks" },
+];
+
 /**
  * A named folder on the menu ("For you", "Rice Meals").
  *
@@ -96,6 +106,8 @@ export default function BusinessMenu() {
   // When set, the section modal is renaming this one rather than creating a new one.
   const [renamingSection, setRenamingSection] = useState<MenuSection | null>(null);
   const [newSectionName, setNewSectionName] = useState("");
+  const [activeCategorySuggestionIndex, setActiveCategorySuggestionIndex] = useState(-1);
+  const [categorySuggestionsDismissed, setCategorySuggestionsDismissed] = useState(false);
   const [sectionError, setSectionError] = useState("");
   const [showDeleteSectionModal, setShowDeleteSectionModal] = useState(false);
   const [sectionToDelete, setSectionToDelete] = useState<MenuSection | null>(null);
@@ -233,14 +245,7 @@ export default function BusinessMenu() {
   // Use media query hook to detect mobile
   const isMobile = useMediaQuery('(max-width: 1023px)');
 
-  const [categories, setCategories] = useState<Category[]>([
-    { id: "Silog", name: "Silog" },
-    { id: "Chicken", name: "Chicken" },
-    { id: "Pork", name: "Pork" },
-    { id: "Seafood", name: "Seafood" },
-    { id: "Desserts", name: "Desserts" },
-    { id: "Drinks", name: "Drinks" }
-  ]);
+  const [categories, setCategories] = useState<Category[]>(DEFAULT_MENU_CATEGORIES);
 
   const categorySuggestions = useMemo(() => {
     const query = newSectionName.trim().toLocaleLowerCase();
@@ -251,7 +256,7 @@ export default function BusinessMenu() {
     );
     const matches = new Map<string, string>();
 
-    for (const category of categories) {
+    for (const category of [...DEFAULT_MENU_CATEGORIES, ...categories]) {
       const label = (category.name || category.id).trim();
       const key = label.toLocaleLowerCase();
       const searchable = `${category.name} ${category.id}`.toLocaleLowerCase();
@@ -267,6 +272,16 @@ export default function BusinessMenu() {
       return a.localeCompare(b, undefined, { sensitivity: "base" });
     });
   }, [categories, newSectionName, renamingSection, sections, showAddSection]);
+
+  const showCategorySuggestions =
+    !categorySuggestionsDismissed && categorySuggestions.length > 0;
+
+  const selectCategorySuggestion = (category: string) => {
+    setNewSectionName(category);
+    setSectionError("");
+    setActiveCategorySuggestionIndex(-1);
+    setCategorySuggestionsDismissed(true);
+  };
 
   const [menuItems, setMenuItems] = useState<MenuItem[]>([]);
   const [restaurantId, setRestaurantId] = useState<string | null>(null);
@@ -2233,6 +2248,8 @@ const addSection = async () => {
                   onClick={() => {
                     setRenamingSection(null);
                     setNewSectionName("");
+                    setActiveCategorySuggestionIndex(-1);
+                    setCategorySuggestionsDismissed(false);
                     setSectionError("");
                     setShowAddSection(true);
                   }}
@@ -2630,36 +2647,79 @@ const addSection = async () => {
               <p className="text-sm text-[var(--muted-foreground)] mb-4">
                 Categories are the headings customers see down the menu, in the order you set here.
               </p>
-              <input
-                type="text"
-                value={newSectionName}
-                onChange={(e) => { setNewSectionName(e.target.value); setSectionError(""); }}
-                placeholder="e.g. For you"
-                aria-label="Category name"
-                className="w-full px-4 py-3 border border-line rounded-xl text-sm outline-none focus:border-[var(--primary)]"
-              />
-              {categorySuggestions.length > 0 && (
-                <div className="mt-3" aria-label="Recommended categories">
-                  <p className="mb-2 text-xs font-semibold text-[var(--muted-foreground)]">
-                    Recommended categories
-                  </p>
-                  <div className="flex flex-wrap gap-2">
-                    {categorySuggestions.map((category) => (
+              <div className="relative">
+                <input
+                  type="text"
+                  value={newSectionName}
+                  onChange={(e) => {
+                    setNewSectionName(e.target.value);
+                    setSectionError("");
+                    setActiveCategorySuggestionIndex(-1);
+                    setCategorySuggestionsDismissed(false);
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key === "Escape" && showCategorySuggestions) {
+                      e.preventDefault();
+                      setCategorySuggestionsDismissed(true);
+                      setActiveCategorySuggestionIndex(-1);
+                      return;
+                    }
+                    if (!showCategorySuggestions) return;
+                    if (e.key === "ArrowDown") {
+                      e.preventDefault();
+                      setActiveCategorySuggestionIndex((index) =>
+                        Math.min(index + 1, categorySuggestions.length - 1),
+                      );
+                    } else if (e.key === "ArrowUp") {
+                      e.preventDefault();
+                      setActiveCategorySuggestionIndex((index) =>
+                        index <= 0 ? categorySuggestions.length - 1 : index - 1,
+                      );
+                    } else if (e.key === "Enter" && activeCategorySuggestionIndex >= 0) {
+                      e.preventDefault();
+                      selectCategorySuggestion(
+                        categorySuggestions[activeCategorySuggestionIndex],
+                      );
+                    }
+                  }}
+                  placeholder="e.g. For you"
+                  aria-label="Category name"
+                  role="combobox"
+                  aria-autocomplete="list"
+                  aria-expanded={showCategorySuggestions}
+                  aria-controls="business-menu-category-suggestions"
+                  aria-activedescendant={
+                    showCategorySuggestions && activeCategorySuggestionIndex >= 0
+                      ? `business-menu-category-suggestion-${activeCategorySuggestionIndex}`
+                      : undefined
+                  }
+                  className="w-full px-4 py-3 border border-line rounded-xl text-sm outline-none focus:border-[var(--primary)]"
+                />
+                {showCategorySuggestions && (
+                  <div
+                    id="business-menu-category-suggestions"
+                    role="listbox"
+                    aria-label="Recommended categories"
+                    className="absolute inset-x-0 top-full z-30 mt-1 max-h-56 overflow-y-auto rounded-xl border border-line bg-surface p-1 shadow-xl"
+                  >
+                    {categorySuggestions.map((category, index) => (
                       <button
                         key={category}
+                        id={`business-menu-category-suggestion-${index}`}
                         type="button"
-                        onClick={() => {
-                          setNewSectionName(category);
-                          setSectionError("");
-                        }}
-                        className="min-h-9 rounded-full border border-line bg-[var(--muted)] px-3 text-xs font-semibold text-[var(--ink)] transition-colors hover:border-[var(--primary)] hover:bg-[var(--primary-soft)]"
+                        role="option"
+                        aria-selected={index === activeCategorySuggestionIndex}
+                        onClick={() => selectCategorySuggestion(category)}
+                        className={`min-h-11 w-full rounded-lg px-3 text-left text-sm font-medium text-[var(--ink)] transition-colors hover:bg-[var(--muted)] ${
+                          index === activeCategorySuggestionIndex ? "bg-[var(--muted)]" : ""
+                        }`}
                       >
                         {category}
                       </button>
                     ))}
                   </div>
-                </div>
-              )}
+                )}
+              </div>
               {sectionError && <p className="text-sm text-[var(--error)] mt-2">{sectionError}</p>}
               <div className="flex gap-3 mt-5">
                 <button onClick={() => { setShowAddSection(false); setRenamingSection(null); setSectionError(""); }} className="flex-1 py-3 text-sm font-semibold text-[var(--muted-foreground)] bg-[var(--muted)] rounded-xl hover:bg-[var(--border)]">

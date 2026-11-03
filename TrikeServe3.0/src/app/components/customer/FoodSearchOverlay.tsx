@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { ArrowLeft, Clock, Flame, Search, Star, Store, Tag, X } from "lucide-react";
+import { ArrowLeft, Clock, Flame, Search, Star, Store, X } from "lucide-react";
 import { Link } from "react-router";
 
 import { supabaseHelpers } from "@/lib/supabase";
@@ -41,8 +41,8 @@ function pushRecent(term: string) {
   }
 }
 
-function restaurantCategoryLabels(restaurant: RestaurantView): string[] {
-  return [...restaurant.cuisineLabels, ...restaurant.productCategories];
+function restaurantBusinessCategories(restaurant: RestaurantView): string[] {
+  return restaurant.cuisineLabels;
 }
 
 /**
@@ -50,7 +50,7 @@ function restaurantCategoryLabels(restaurant: RestaurantView): string[] {
  *
  * The inline search this replaces filtered a list that was already on screen, so
  * results appeared above the fold with no indication that a search was running.
- * A full overlay can hold popular terms, recent terms, product-category filters and the
+ * A full overlay can hold popular terms, recent terms, business-category filters and the
  * result list at once, which is the pattern every delivery app uses.
  */
 export default function FoodSearchOverlay({
@@ -70,7 +70,7 @@ export default function FoodSearchOverlay({
   const categories = useMemo(() => {
     const labels = new Map<string, string>();
     for (const restaurant of restaurants) {
-      for (const rawLabel of restaurantCategoryLabels(restaurant)) {
+      for (const rawLabel of restaurantBusinessCategories(restaurant)) {
         const label = rawLabel.trim();
         const key = label.toLocaleLowerCase();
         if (label && !labels.has(key)) labels.set(key, label);
@@ -134,7 +134,7 @@ export default function FoodSearchOverlay({
     return restaurants.filter((r) => {
       if (
         activeCategory &&
-        !restaurantCategoryLabels(r).some(
+        !restaurantBusinessCategories(r).some(
           (category) => category.trim().toLocaleLowerCase() === activeCategory.toLocaleLowerCase(),
         )
       ) {
@@ -220,12 +220,11 @@ export default function FoodSearchOverlay({
       </div>
 
       <div className="mx-auto w-full max-w-3xl flex-1 overflow-y-auto px-4 py-4">
-        {/* Product-category quick filters, so a menu category is one tap, not a
-            typed word. */}
+        {/* Business-category quick filters. */}
         {categories.length > 0 && (
           <div
             role="group"
-            aria-label="Filter by product category"
+            aria-label="Filter by business category"
             className="-mx-4 flex gap-2 overflow-x-auto px-4 pb-1 sm:-mx-5 sm:px-5 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
             tabIndex={0}
           >
@@ -237,13 +236,12 @@ export default function FoodSearchOverlay({
                   type="button"
                   aria-pressed={selected}
                   onClick={() => setActiveCategory(selected ? null : category)}
-                  className={`flex min-h-11 flex-shrink-0 items-center gap-1.5 rounded-full border px-3.5 text-xs font-semibold transition-colors ${
+                  className={`flex min-h-11 flex-shrink-0 items-center rounded-full border px-3.5 text-xs font-semibold transition-colors ${
                     selected
                       ? "border-[var(--primary)] bg-[var(--primary-soft)] text-[var(--coral-dark)]"
                       : "border-line bg-[var(--surface)] text-[var(--muted-foreground)]"
                   }`}
                 >
-                  <Tag className="size-4" aria-hidden="true" />
                   {category}
                 </button>
               );
