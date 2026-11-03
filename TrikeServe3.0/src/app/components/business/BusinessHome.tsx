@@ -12,7 +12,7 @@ import BusinessMapSelector from "./BusinessMapSelector";
 import { useAuth } from "../../contexts/AuthContext";
 import { supabase } from "../../../utils/supabase";
 import { supabaseHelpers } from "@/lib/supabase";
-import { CUISINES, cuisineLabels, isCuisineId, type CuisineId } from "@/lib/foodTaxonomy";
+import { cuisineLabels, isCuisineId } from "@/lib/foodTaxonomy";
 import { useRestaurantProfile } from "@/lib/restaurantProfile";
 import {
   DAY_LABELS,
@@ -176,18 +176,6 @@ export default function BusinessHome() {
     }
     return groups;
   }, [menuItems, sections]);
-
-  const toggleCuisine = (id: CuisineId) => {
-    setRestaurantData((prev) => {
-      const current = Array.isArray(prev.cuisine) ? prev.cuisine : [];
-      return {
-        ...prev,
-        cuisine: current.includes(id)
-          ? current.filter((c) => c !== id)
-          : [...current, id],
-      };
-    });
-  };
 
   // Load menu items from Supabase
   useEffect(() => {
@@ -1206,11 +1194,6 @@ const clearHours = () => {
     { label: "Banner photo", done: Boolean(restaurantData.heroImage), open: () => setShowEditBanner(true) },
     { label: "Opening hours", done: hoursConfigured, open: openInfoEditor },
     { label: "Map pin", done: restaurantData.latitude != null, open: () => setShowLocationPicker(true) },
-    {
-      label: "Cuisine selected",
-      done: Array.isArray(restaurantData.cuisine) && restaurantData.cuisine.length > 0,
-      open: openInfoEditor,
-    },
     { label: "GCash instructions", done: restaurantData.paymentInstructions.trim().length > 0, open: openInfoEditor },
     { label: "Menu items", done: menuItems.length > 0, open: () => navigate("/business/menu") },
   ];
@@ -1771,44 +1754,6 @@ const clearHours = () => {
                         was undone the next time the schedule was touched. Nothing
                         read the typed value either. One source of truth now.
                       */}
-
-                      {/* Cuisine is what the customer filters match on. It used to be
-                          inferred from menu items, which called any shop selling one
-                          chicken dish an "Ihawan" -- only the business knows what it
-                          is. Only in the editing card: the read-only view never
-                          listed it, and adding a row of chips to a summary changes
-                          what the summary is. */}
-                      <section className="rounded-2xl border border-line p-4 sm:p-5">
-                        <div className="mb-3">
-                          <h4 className="text-sm font-bold text-[var(--ink)]">What we serve</h4>
-                          <p className="mt-1 text-xs text-[var(--muted-foreground)]">
-                            Pick everything that describes your shop. Customers filter by this.
-                          </p>
-                        </div>
-                        <div className="flex flex-wrap gap-2">
-                          {CUISINES.map(({ id, label, blurb, Icon }) => {
-                            const selected = Array.isArray(restaurantData.cuisine)
-                              && restaurantData.cuisine.includes(id);
-                            return (
-                              <button
-                                key={id}
-                                type="button"
-                                aria-pressed={selected}
-                                title={blurb}
-                                onClick={() => toggleCuisine(id)}
-                                className={`flex min-h-11 items-center gap-1.5 rounded-xl border-2 px-3 text-sm font-semibold transition-colors ${
-                                  selected
-                                    ? 'border-[var(--primary)] bg-[var(--primary-soft)] text-[var(--coral-dark)]'
-                                    : 'border-line text-[var(--muted-foreground)]'
-                                }`}
-                              >
-                                <Icon className="size-4" aria-hidden="true" />
-                                {label}
-                              </button>
-                            );
-                          })}
-                        </div>
-                      </section>
 
                       {/*
                         A change left over from the old approval queue. Saving

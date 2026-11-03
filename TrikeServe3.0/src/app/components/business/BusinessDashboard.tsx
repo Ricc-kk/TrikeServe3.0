@@ -29,6 +29,7 @@ import { useAuth } from "../../contexts/AuthContext";
 import { supabase } from "../../../lib/supabase";
 import { supabaseHelpers } from "@/lib/supabase";
 import { useRestaurantProfile } from "@/lib/restaurantProfile";
+import { cuisineLabels } from "@/lib/foodTaxonomy";
 import {
   describeOpenState,
   describeSchedule,
@@ -159,6 +160,7 @@ export default function BusinessDashboard() {
   const { user } = useAuth();
   const profile = useRestaurantProfile();
   const profileLocation = profile.restaurant;
+  const businessCuisineLabels = cuisineLabels(profileLocation?.cuisine);
 
   /*
    * Trading hours, for the Open/Closed indicator below.
@@ -265,16 +267,6 @@ export default function BusinessDashboard() {
    * do that.
    */
   const [loadedMenuItems, setLoadedMenuItems] = useState<any[]>([]);
-  const productCategoryLabels = useMemo(() => {
-    const labels = new Map<string, string>();
-    loadedMenuItems.forEach((item) => {
-      if (typeof item.category !== "string") return;
-      const label = item.category.trim();
-      const key = label.toLocaleLowerCase();
-      if (label && !labels.has(key)) labels.set(key, label);
-    });
-    return Array.from(labels.values());
-  }, [loadedMenuItems]);
   const [range, setRange] = useState<RangeKey>('week');
   const [isLoading, setIsLoading] = useState(true);
   const [restaurantId, setRestaurantId] = useState<string | null>(null);
@@ -831,7 +823,7 @@ const previousWindowWord = range === 'today' ? 'day' : range;
             </Card>
           </div>
 
-          {/* Product categories from the menu and the shop's pickup location. */}
+          {/* Business categories and the shop's pickup location. */}
           <Card className="p-4 lg:p-6 border border-line bg-surface mb-6 lg:mb-8">
             <div className="flex flex-wrap items-start justify-between gap-3">
               <h2 className="text-xl lg:text-2xl font-bold text-[var(--ink)]">Your shop listing</h2>
@@ -852,9 +844,9 @@ const previousWindowWord = range === 'today' ? 'day' : range;
                 <p className="text-[11px] font-bold uppercase tracking-wider text-[var(--muted-foreground)]">
                   What we serve
                 </p>
-                {productCategoryLabels.length > 0 ? (
+                {businessCuisineLabels.length > 0 ? (
                   <ul className="mt-2 flex flex-wrap gap-1.5">
-                    {productCategoryLabels.map((label) => (
+                    {businessCuisineLabels.map((label) => (
                       <li
                         key={label}
                         className="rounded-lg bg-[var(--primary-soft)] px-2 py-1 text-xs font-semibold text-[var(--primary)]"
@@ -865,7 +857,7 @@ const previousWindowWord = range === 'today' ? 'day' : range;
                   </ul>
                 ) : (
                   <p className="mt-2 text-sm text-[var(--muted-foreground)]">
-                    No product categories yet. Add categories to products in Menu to show them here.
+                    No business categories are set yet.
                   </p>
                 )}
               </div>
