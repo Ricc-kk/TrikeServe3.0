@@ -184,14 +184,7 @@ export default function FoodHome() {
     }
   }, []);
 
-  /**
-   * Fallback categories, for shops that have not declared a cuisine yet.
-   *
-   * This used to be the *only* source of a shop's category, which is what made
-   * "Ihawan" mean "sells one item under chicken". It is now strictly a fallback:
-   * a declared `cuisine` always wins, and this only decides where an undeclared
-   * shop appears so it does not vanish from every filter.
-   */
+  /** Product categories per restaurant, used by the search category filters. */
   const loadMenuCategories = useCallback(async () => {
     try {
       const { data, error } = await supabase
@@ -201,7 +194,11 @@ export default function FoodHome() {
       const map: Record<string, string[]> = {};
       for (const row of data as any[]) {
         if (!row.restaurant_id || !row.category) continue;
-        (map[row.restaurant_id] ||= []).push(String(row.category).toLowerCase());
+        const label = String(row.category).trim();
+        if (!label) continue;
+        // Keep one entry per product so cuisine inference remains weighted by
+        // how many products use each category.
+        (map[row.restaurant_id] ||= []).push(label);
       }
       setMenuCategories(map);
     } catch {
@@ -344,7 +341,15 @@ export default function FoodHome() {
       const declared = cuisineLabels(r.cuisine);
       const inferred = declared.length
         ? declared
-        : cuisineLabels(inferCuisineFromMenu(menuCategories[r.id]));
+        : cuisineLabels(
+            inferCuisineFromMenu(menuCategories[r.id]?.map((category) => category.toLowerCase())),
+          );
+      const productCategoryLabels = new Map<string, string>();
+      for (const rawLabel of menuCategories[r.id] ?? []) {
+        const label = rawLabel.trim();
+        const key = label.toLocaleLowerCase();
+        if (label && !productCategoryLabels.has(key)) productCategoryLabels.set(key, label);
+      }
 
       let distanceLabel: string | null = null;
       if (origin && hasCoords({ lat: r.latitude, lng: r.longitude })) {
@@ -356,7 +361,12 @@ export default function FoodHome() {
         );
       }
 
-      return { ...r, cuisineLabels: inferred, distanceLabel };
+      return {
+        ...r,
+        cuisineLabels: inferred,
+        productCategories: Array.from(productCategoryLabels.values()),
+        distanceLabel,
+      };
     });
   }, [restaurants, menuCategories, delivery.origin]);
 

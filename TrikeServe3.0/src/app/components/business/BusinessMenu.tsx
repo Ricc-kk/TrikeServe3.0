@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo, useRef } from "react";
-import { Store, Package, Clock, User, Plus, Edit2, Image as ImageIcon, X, Search, ChevronRight, Eye, EyeOff, Trash2, Check, BarChart3, Camera, Upload, TrendingUp, Star, Award, Settings, Save, AlertTriangle } from "lucide-react";
+import { Store, Package, Clock, User, Plus, Edit2, Image as ImageIcon, X, Search, ChevronRight, Eye, EyeOff, Trash2, Check, BarChart3, Camera, Upload, Award, Settings, Save, AlertTriangle } from "lucide-react";
 import { Link, useBlocker } from "react-router";
 import { Card } from "../ui/card";
 import { Badge } from "../ui/badge";
@@ -234,13 +234,39 @@ export default function BusinessMenu() {
   const isMobile = useMediaQuery('(max-width: 1023px)');
 
   const [categories, setCategories] = useState<Category[]>([
-    { id: "Silog", name: "Silog Meals" },
+    { id: "Silog", name: "Silog" },
     { id: "Chicken", name: "Chicken" },
     { id: "Pork", name: "Pork" },
     { id: "Seafood", name: "Seafood" },
     { id: "Desserts", name: "Desserts" },
     { id: "Drinks", name: "Drinks" }
   ]);
+
+  const categorySuggestions = useMemo(() => {
+    const query = newSectionName.trim().toLocaleLowerCase();
+    if (!showAddSection || renamingSection || !query) return [];
+
+    const existingSections = new Set(
+      sections.map((section) => section.name.trim().toLocaleLowerCase()),
+    );
+    const matches = new Map<string, string>();
+
+    for (const category of categories) {
+      const label = (category.name || category.id).trim();
+      const key = label.toLocaleLowerCase();
+      const searchable = `${category.name} ${category.id}`.toLocaleLowerCase();
+      if (label && searchable.includes(query) && !existingSections.has(key) && !matches.has(key)) {
+        matches.set(key, label);
+      }
+    }
+
+    return Array.from(matches.values()).sort((a, b) => {
+      const aStartsWithQuery = a.toLocaleLowerCase().startsWith(query);
+      const bStartsWithQuery = b.toLocaleLowerCase().startsWith(query);
+      if (aStartsWithQuery !== bStartsWithQuery) return aStartsWithQuery ? -1 : 1;
+      return a.localeCompare(b, undefined, { sensitivity: "base" });
+    });
+  }, [categories, newSectionName, renamingSection, sections, showAddSection]);
 
   const [menuItems, setMenuItems] = useState<MenuItem[]>([]);
   const [restaurantId, setRestaurantId] = useState<string | null>(null);
@@ -351,7 +377,8 @@ export default function BusinessMenu() {
             image: item.image_url || 'https://images.unsplash.com/photo-1546069901-ba9599a7e63c?w=400',
             category: item.category,
             sectionId: item.section_id ?? null,
-            badge: item.badge || undefined,
+            // Most liked comes from customer item ratings, so ignore legacy manual values.
+            badge: item.badge === "most-liked" ? undefined : item.badge || undefined,
             available: item.is_available,
             // `at` rather than the column, so a shop whose database has not run
             // ADD_MENU_ITEM_SORT_ORDER.sql yet still gets a stable, saveable order
@@ -810,7 +837,6 @@ const itemFingerprint = (item: MenuItem) =>
   const getBadgeColor = (badge?: string) => {
     switch (badge) {
       case "most-ordered": return "bg-[var(--primary)] text-white";
-      case "most-liked": return "bg-[var(--info)] text-white";
       case "signature": return "bg-[var(--amber)] text-white";
       default: return "";
     }
@@ -819,18 +845,8 @@ const itemFingerprint = (item: MenuItem) =>
   const getBadgeLabel = (badge?: string) => {
     switch (badge) {
       case "most-ordered": return "Most Ordered";
-      case "most-liked": return "Most Liked";
       case "signature": return "Signature";
       default: return "";
-    }
-  };
-
-  const getBadgeIcon = (badge?: string) => {
-    switch (badge) {
-      case "most-ordered": return <TrendingUp className="w-3 h-3" />;
-      case "most-liked": return <Star className="w-3 h-3" />;
-      case "signature": return <Award className="w-3 h-3" />;
-      default: return null;
     }
   };
 
@@ -1991,11 +2007,11 @@ const addSection = async () => {
                         <select
                           value={editingItem.sectionId ?? ""}
                           onChange={(e) => setEditingItem({ ...editingItem, sectionId: e.target.value || null })}
-                          className="w-full p-3 border border-line rounded-xl font-semibold"
+                          className="w-full p-3 border border-line rounded-xl bg-[var(--surface)] font-semibold text-[var(--ink)] dark:[color-scheme:dark]"
                         >
-                          <option value="">Unfiled</option>
+                          <option value="" className="bg-[var(--surface)] text-[var(--ink)]">Unfiled</option>
                           {sections.map((section) => (
-                            <option key={section.id} value={section.id}>{section.name}</option>
+                            <option key={section.id} value={section.id} className="bg-[var(--surface)] text-[var(--ink)]">{section.name}</option>
                           ))}
                         </select>
                       )}
@@ -2022,8 +2038,8 @@ const addSection = async () => {
                     <div>
                       <label className="text-sm font-bold text-[var(--ink)] mb-2 block">Badge (Optional)</label>
                       <p className="text-xs text-[var(--muted-foreground)] mb-3">
-                        Highlight special items to attract customers. "Most ordered" is not
-                        here because the app works it out from real sales and adds it for you.
+                        Add a signature badge to highlight a special item. Most ordered and
+                        Most liked are based on order activity and customer ratings.
                       </p>
                       <div className="grid grid-cols-2 gap-2.5">
                         <button
@@ -2036,17 +2052,6 @@ const addSection = async () => {
                           }`}
                         >
                           No Badge
-                        </button>
-                        <button
-                          onClick={() => setEditingItem({ ...editingItem, badge: "most-liked" })}
-                          className={`p-3 rounded-xl border-2 font-semibold transition-all flex items-center justify-center gap-2 ${
-                            editingItem.badge === "most-liked"
-                              ? "border-[var(--info)] bg-[var(--info-soft)] text-[var(--info)]"
-                              : "border-[var(--border)] bg-surface text-[var(--muted-foreground)]"
-                          }`}
-                        >
-                          <Star className="w-4 h-4" />
-                          Most Liked
                         </button>
                         <button
                           onClick={() => setEditingItem({ ...editingItem, badge: "signature" })}
@@ -2633,6 +2638,28 @@ const addSection = async () => {
                 aria-label="Category name"
                 className="w-full px-4 py-3 border border-line rounded-xl text-sm outline-none focus:border-[var(--primary)]"
               />
+              {categorySuggestions.length > 0 && (
+                <div className="mt-3" aria-label="Recommended categories">
+                  <p className="mb-2 text-xs font-semibold text-[var(--muted-foreground)]">
+                    Recommended categories
+                  </p>
+                  <div className="flex flex-wrap gap-2">
+                    {categorySuggestions.map((category) => (
+                      <button
+                        key={category}
+                        type="button"
+                        onClick={() => {
+                          setNewSectionName(category);
+                          setSectionError("");
+                        }}
+                        className="min-h-9 rounded-full border border-line bg-[var(--muted)] px-3 text-xs font-semibold text-[var(--ink)] transition-colors hover:border-[var(--primary)] hover:bg-[var(--primary-soft)]"
+                      >
+                        {category}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
               {sectionError && <p className="text-sm text-[var(--error)] mt-2">{sectionError}</p>}
               <div className="flex gap-3 mt-5">
                 <button onClick={() => { setShowAddSection(false); setRenamingSection(null); setSectionError(""); }} className="flex-1 py-3 text-sm font-semibold text-[var(--muted-foreground)] bg-[var(--muted)] rounded-xl hover:bg-[var(--border)]">

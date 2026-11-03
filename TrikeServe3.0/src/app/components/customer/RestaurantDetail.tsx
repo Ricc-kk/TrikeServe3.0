@@ -62,6 +62,80 @@ interface RestaurantData {
   longitude: number | null;
 }
 
+interface MenuItemRatingSummary {
+  menu_item_id: string;
+  average_rating: number;
+  rating_count: number;
+}
+
+function highestRatedMenuItemId(
+  menuItems: Array<{ id: string | number }>,
+  ratingSummaries: MenuItemRatingSummary[],
+): string | null {
+  const menuOrder = new Map(menuItems.map((item, index) => [String(item.id), index]));
+  const ranked = ratingSummaries
+    .filter((summary) => menuOrder.has(String(summary.menu_item_id)) && Number(summary.rating_count) > 0)
+    .sort((a, b) =>
+      Number(b.average_rating) - Number(a.average_rating) ||
+      Number(b.rating_count) - Number(a.rating_count) ||
+      (menuOrder.get(String(a.menu_item_id)) ?? 0) - (menuOrder.get(String(b.menu_item_id)) ?? 0),
+    );
+
+  return ranked[0] ? String(ranked[0].menu_item_id) : null;
+}
+
+function mapRestaurantMenuItems(
+  items: any[],
+  topOrderedItemId: string | null,
+  mostLikedItemId: string | null,
+): MenuItem[] {
+  return items.map((item: any) => {
+    const itemId = String(item.id);
+    const isMostLiked = itemId === mostLikedItemId;
+    const isMostOrdered = itemId === topOrderedItemId;
+    const savedBadge = item.badge === "most-liked" || item.badge === "most-ordered"
+      ? undefined
+      : item.badge || undefined;
+
+    return {
+      id: item.id,
+      name: item.name,
+      description: item.description || '',
+      price: parseFloat(item.price),
+      image: item.image_url || 'https://images.unsplash.com/photo-1546069901-ba9599a7e63c?w=400',
+      category: item.category,
+      sectionId: item.section_id ?? null,
+      available: item.is_available,
+      badge: isMostLiked ? "most-liked" : isMostOrdered ? "most-ordered" : savedBadge,
+      customizationGroups: parseChoiceGroups(item.customization_groups).filter((g) => g.enabled),
+    };
+  });
+}
+
+async function loadRestaurantMenuBadgeIds(restaurantId: string, menuItems: any[]) {
+  const [ordersResult, ratingsResult] = await Promise.all([
+    supabase
+      .from('orders')
+      .select('items, status')
+      .eq('restaurant_email', restaurantId)
+      .neq('status', 'cancelled')
+      .limit(500),
+    supabase
+      .from('menu_item_rating_summary')
+      .select('menu_item_id, average_rating, rating_count')
+      .eq('restaurant_id', restaurantId),
+  ]);
+
+  if (ratingsResult.error) {
+    console.warn('[RestaurantDetail] Could not load menu item ratings:', ratingsResult.error);
+  }
+
+  return {
+    topOrderedItemId: topDishesByUnits(ordersResult.data ?? [], menuItems, 1)[0]?.id ?? null,
+    mostLikedItemId: highestRatedMenuItemId(menuItems, (ratingsResult.data ?? []) as MenuItemRatingSummary[]),
+  };
+}
+
 export default function RestaurantDetail() {
   const navigate = useNavigate();
   // A bare navigate(-1) walks a cold deep link straight out of the app,
@@ -349,63 +423,13 @@ export default function RestaurantDetail() {
           ];
         }
 
-        /*
-         * Which dish is actually selling best.
-         *
-         * Worked out at read time rather than stored on the item. A stored badge is
-         * a claim made once, on the day somebody picked it, and it goes stale the
-         * moment the shop's best seller changes -- which is exactly the badge a
-         * customer should not be shown as current fact. Deriving it means the label
-         * is true whenever it is drawn.
-         *
-         * Only `items` and `status` are selected. The orders table holds customer
-         * names, addresses and phone numbers, and none of that is needed to count
-         * dishes, so it never leaves the database. Capped so a long-running shop
-         * cannot turn a storefront view into an unbounded read.
-         */
-        const { data: orderRows } = await supabase
-          .from('orders')
-          .select('items, status')
-          .eq('restaurant_email', restaurantId)
-          .neq('status', 'cancelled')
-          .limit(500);
-
-        const topItemId =
-          topDishesByUnits(orderRows ?? [], menuItems ?? [], 1)[0]?.id ?? null;
-
-        // Map menu items to MenuItem format
-        const mappedMenuItems = (menuItems || []).map((item: any) => ({
-          id: item.id,
-          name: item.name,
-          description: item.description || '',
-          price: parseFloat(item.price),
-          image: item.image_url || 'https://images.unsplash.com/photo-1546069901-ba9599a7e63c?w=400',
-          category: item.category,
-          sectionId: item.section_id ?? null,
-          available: item.is_available,
-          /*
-           * The real best seller wins over whatever is stored. Anything saved as
-           * "most-ordered" before this was derived is a stale guess about the same
-           * fact, and the shop's own badges ("Most liked", "Signature") are still
-           * honoured for every other dish.
-           */
-          badge:
-            (topItemId && String(item.id) === topItemId
-              ? "most-ordered"
-              : item.badge) || undefined,
-          /*
-           * The choices the shop set on this dish.
-           *
-           * Hardcoded to an empty array here, so every dish reached the customer
-           * with no options no matter what the shop had saved -- tapping one added
-           * it straight to the cart, skipping the picker entirely. `parseChoiceGroups`
-           * rather than the raw column because PostgREST returns jsonb as a string
-           * here, and a string has no `.length`.
-           */
-          customizationGroups: parseChoiceGroups(item.customization_groups).filter(
-            (g) => g.enabled,
-          ),
-        }));
+        // Work out both customer-facing badges from current activity and ratings.
+        const badgeIds = await loadRestaurantMenuBadgeIds(restaurantId, menuItems || []);
+        const mappedMenuItems = mapRestaurantMenuItems(
+          menuItems || [],
+          badgeIds.topOrderedItemId,
+          badgeIds.mostLikedItemId,
+        );
 
         // Compute the restaurant's real rating from business_ratings.
         let computedRating = restaurant.rating || 5.0;
@@ -544,77 +568,66 @@ export default function RestaurantDetail() {
 
     console.log('[RestaurantDetail] Setting up real-time menu items subscription');
 
-    // Subscribe to menu_items table changes
+    const reloadMenuItems = async () => {
+      try {
+        const { data: menuItems, error: menuError } = await supabase
+          .from('menu_items')
+          .select('*')
+          .eq('restaurant_id', restaurantId);
+
+        if (menuError) throw menuError;
+        if (!menuItems) return;
+
+        const [sectionsResult, badgeIds] = await Promise.all([
+          supabase
+            .from('menu_sections')
+            .select('id, name, sort_order')
+            .eq('restaurant_id', restaurantId)
+            .order('sort_order', { ascending: true }),
+          loadRestaurantMenuBadgeIds(restaurantId, menuItems),
+        ]);
+        const mappedMenuItems = mapRestaurantMenuItems(
+          menuItems,
+          badgeIds.topOrderedItemId,
+          badgeIds.mostLikedItemId,
+        );
+
+        setRestaurantData((current) => current ? {
+          ...current,
+          menuSections: (sectionsResult.data || []).map((section: any) => ({
+            id: section.id,
+            name: section.name,
+            sortOrder: section.sort_order ?? 0,
+          })),
+          menuItems: mappedMenuItems,
+        } : current);
+        console.log('[RestaurantDetail] Menu items updated in real time:', mappedMenuItems.length, 'items');
+      } catch (error) {
+        console.error('[RestaurantDetail] Error reloading menu items:', error);
+      }
+    };
+
     const subscription = supabase
       .channel(`menu-items-${restaurantId}`)
       .on(
         'postgres_changes',
         {
-          event: '*', // Listen to INSERT, UPDATE, DELETE
+          event: '*',
           schema: 'public',
           table: 'menu_items',
-          filter: `restaurant_id=eq.${restaurantId}`
+          filter: `restaurant_id=eq.${restaurantId}`,
         },
-        (payload) => {
-          console.log('[RestaurantDetail] Menu items changed:', payload);
-
-          // Reload menu items when they change
-          const reloadMenuItems = async () => {
-            try {
-              const { data: menuItems } = await supabase
-                .from('menu_items')
-                .select('*')
-                .eq('restaurant_id', restaurantId);
-
-               if (restaurantData && menuItems) {
-                 // Map menu items to MenuItem format
-                 const mappedMenuItems = (menuItems || []).map((item: any) => ({
-                   id: item.id,
-                   name: item.name,
-                   description: item.description || '',
-                   price: parseFloat(item.price),
-                   image: item.image_url || 'https://images.unsplash.com/photo-1546069901-ba9599a7e63c?w=400',
-                   category: item.category,
-                   sectionId: item.section_id ?? null,
-                   available: item.is_available,
-                   badge: item.badge || undefined,
-                   // Same as the first load: the options belong to the dish, and
-// leaving this empty here would drop every choice the moment the
-// menu was refreshed in place.
-customizationGroups: parseChoiceGroups(item.customization_groups).filter(
-  (g) => g.enabled,
-),
-                 }));
-
-                 // Sections ride along with the items. Reloading only the items
-                 // would leave every dish on this shop's storefront headingless the
-                 // moment the business moved one between folders.
-                 const { data: sectionsData } = await supabase
-                   .from('menu_sections')
-                   .select('id, name, sort_order')
-                   .eq('restaurant_id', restaurantId)
-                   .order('sort_order', { ascending: true });
-
-                // Update restaurant data with new menu items
-                setRestaurantData({
-                  ...restaurantData,
-                  menuSections: (sectionsData || []).map((section: any) => ({
-                    id: section.id,
-                    name: section.name,
-                    sortOrder: section.sort_order ?? 0,
-                  })),
-                  menuItems: mappedMenuItems
-                });
-
-                console.log('[RestaurantDetail] Menu items updated in real-time:', mappedMenuItems.length, 'items');
-              }
-            } catch (error) {
-              console.error('[RestaurantDetail] Error reloading menu items:', error);
-            }
-          };
-
-          reloadMenuItems();
-        }
+        () => void reloadMenuItems(),
+      )
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'menu_item_ratings',
+          filter: `restaurant_id=eq.${restaurantId}`,
+        },
+        () => void reloadMenuItems(),
       )
       .subscribe();
 

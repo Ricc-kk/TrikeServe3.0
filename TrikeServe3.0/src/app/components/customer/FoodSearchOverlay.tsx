@@ -1,8 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { ArrowLeft, Clock, Flame, Search, Star, Store, X } from "lucide-react";
+import { ArrowLeft, Clock, Flame, Search, Star, Store, Tag, X } from "lucide-react";
 import { Link } from "react-router";
 
-import { CUISINES, type CuisineId } from "@/lib/foodTaxonomy";
 import { supabaseHelpers } from "@/lib/supabase";
 import StoreLogo from "../figma/StoreLogo";
 import type { RestaurantView } from "./RestaurantCard";
@@ -47,7 +46,7 @@ function pushRecent(term: string) {
  *
  * The inline search this replaces filtered a list that was already on screen, so
  * results appeared above the fold with no indication that a search was running.
- * A full overlay can hold popular terms, recent terms, cuisine filters and the
+ * A full overlay can hold popular terms, recent terms, product-category filters and the
  * result list at once, which is the pattern every delivery app uses.
  */
 export default function FoodSearchOverlay({
@@ -59,10 +58,24 @@ export default function FoodSearchOverlay({
   const [query, setQuery] = useState(initialQuery);
   const [popular, setPopular] = useState<string[]>([]);
   const [recent, setRecent] = useState<string[]>(() => readRecent());
-  const [activeCuisine, setActiveCuisine] = useState<CuisineId | null>(null);
+  const [activeCategory, setActiveCategory] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement | null>(null);
   const restoreFocusRef = useRef<HTMLElement | null>(null);
   const loggedRef = useRef<string>('');
+
+  const categories = useMemo(() => {
+    const labels = new Map<string, string>();
+    for (const restaurant of restaurants) {
+      for (const rawLabel of restaurant.productCategories) {
+        const label = rawLabel.trim();
+        const key = label.toLocaleLowerCase();
+        if (label && !labels.has(key)) labels.set(key, label);
+      }
+    }
+    return Array.from(labels.values()).sort((a, b) =>
+      a.localeCompare(b, undefined, { sensitivity: "base" }),
+    );
+  }, [restaurants]);
 
   // Escape closes, and focus comes back to whatever opened the overlay.
   useEffect(() => {
@@ -115,19 +128,23 @@ export default function FoodSearchOverlay({
     const term = query.trim().toLowerCase();
 
     return restaurants.filter((r) => {
-      if (activeCuisine && !r.cuisineLabels.length) return false;
-      if (activeCuisine) {
-        const meta = CUISINES.find((c) => c.id === activeCuisine);
-        if (!meta || !r.cuisineLabels.includes(meta.label)) return false;
+      if (
+        activeCategory &&
+        !r.productCategories.some(
+          (category) => category.trim().toLocaleLowerCase() === activeCategory.toLocaleLowerCase(),
+        )
+      ) {
+        return false;
       }
       if (!term) return true;
       return (
         r.name.toLowerCase().includes(term) ||
         r.address.toLowerCase().includes(term) ||
+        r.productCategories.some((category) => category.toLowerCase().includes(term)) ||
         r.cuisineLabels.some((l) => l.toLowerCase().includes(term))
       );
     });
-  }, [restaurants, query, activeCuisine]);
+  }, [restaurants, query, activeCategory]);
 
   const suggestions = useMemo(() => {
     const term = query.trim().toLowerCase();
@@ -199,34 +216,36 @@ export default function FoodSearchOverlay({
       </div>
 
       <div className="mx-auto w-full max-w-3xl flex-1 overflow-y-auto px-4 py-4">
-        {/* Cuisine quick filters, so "show me an ihawan" is one tap, not a
+        {/* Product-category quick filters, so a menu category is one tap, not a
             typed word. */}
-        <div
-          role="group"
-          aria-label="Filter by cuisine"
-          className="-mx-4 flex gap-2 overflow-x-auto px-4 pb-1 sm:-mx-5 sm:px-5 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
-          tabIndex={0}
-        >
-          {CUISINES.map(({ id, label, Icon }) => {
-            const selected = activeCuisine === id;
-            return (
-              <button
-                key={id}
-                type="button"
-                aria-pressed={selected}
-                onClick={() => setActiveCuisine(selected ? null : id)}
-                className={`flex min-h-11 flex-shrink-0 items-center gap-1.5 rounded-full border px-3.5 text-xs font-semibold transition-colors ${
-                  selected
-                    ? "border-[var(--primary)] bg-[var(--primary-soft)] text-[var(--coral-dark)]"
-                    : "border-line bg-[var(--surface)] text-[var(--muted-foreground)]"
-                }`}
-              >
-                <Icon className="size-4" aria-hidden="true" />
-                {label}
-              </button>
-            );
-          })}
-        </div>
+        {categories.length > 0 && (
+          <div
+            role="group"
+            aria-label="Filter by product category"
+            className="-mx-4 flex gap-2 overflow-x-auto px-4 pb-1 sm:-mx-5 sm:px-5 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+            tabIndex={0}
+          >
+            {categories.map((category) => {
+              const selected = activeCategory === category;
+              return (
+                <button
+                  key={category}
+                  type="button"
+                  aria-pressed={selected}
+                  onClick={() => setActiveCategory(selected ? null : category)}
+                  className={`flex min-h-11 flex-shrink-0 items-center gap-1.5 rounded-full border px-3.5 text-xs font-semibold transition-colors ${
+                    selected
+                      ? "border-[var(--primary)] bg-[var(--primary-soft)] text-[var(--coral-dark)]"
+                      : "border-line bg-[var(--surface)] text-[var(--muted-foreground)]"
+                  }`}
+                >
+                  <Tag className="size-4" aria-hidden="true" />
+                  {category}
+                </button>
+              );
+            })}
+          </div>
+        )}
 
         {suggestions.length > 0 && (
           <section className="mt-5" aria-label="Suggested searches">
@@ -263,7 +282,7 @@ export default function FoodSearchOverlay({
 
         <section className="mt-6" aria-label="Search results">
           <h2 className="mb-3 text-lg font-bold text-[var(--ink)]">
-            {query.trim() || activeCuisine ? 'Matches' : 'All restaurants'}
+            {query.trim() || activeCategory ? 'Matches' : 'All restaurants'}
             <span className="ml-2 text-sm font-normal text-[var(--muted-foreground)]">
               {results.length}
             </span>
@@ -276,7 +295,7 @@ export default function FoodSearchOverlay({
               </div>
               <p className="mt-4 text-lg font-bold text-[var(--ink)]">No matches</p>
               <p className="mt-1 text-sm text-[var(--muted-foreground)]">
-                Try a different search or cuisine.
+                Try a different search or product category.
               </p>
             </div>
           ) : (
