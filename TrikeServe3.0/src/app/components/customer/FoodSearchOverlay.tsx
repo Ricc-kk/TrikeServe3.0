@@ -41,6 +41,10 @@ function pushRecent(term: string) {
   }
 }
 
+function restaurantCategoryLabels(restaurant: RestaurantView): string[] {
+  return [...restaurant.cuisineLabels, ...restaurant.productCategories];
+}
+
 /**
  * Search, covering the whole page.
  *
@@ -66,7 +70,7 @@ export default function FoodSearchOverlay({
   const categories = useMemo(() => {
     const labels = new Map<string, string>();
     for (const restaurant of restaurants) {
-      for (const rawLabel of restaurant.productCategories) {
+      for (const rawLabel of restaurantCategoryLabels(restaurant)) {
         const label = rawLabel.trim();
         const key = label.toLocaleLowerCase();
         if (label && !labels.has(key)) labels.set(key, label);
@@ -130,7 +134,7 @@ export default function FoodSearchOverlay({
     return restaurants.filter((r) => {
       if (
         activeCategory &&
-        !r.productCategories.some(
+        !restaurantCategoryLabels(r).some(
           (category) => category.trim().toLocaleLowerCase() === activeCategory.toLocaleLowerCase(),
         )
       ) {
