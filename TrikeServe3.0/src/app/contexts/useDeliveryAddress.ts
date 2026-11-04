@@ -186,8 +186,6 @@ export function useDeliveryAddress() {
     } catch {
       // Fall through to the defaults below.
     }
-    const fromRecent = readRecent()[0];
-    if (fromRecent) return fromRecent;
     return profileDefault;
   }, [profileDefault]);
 
@@ -197,7 +195,31 @@ export function useDeliveryAddress() {
       return;
     }
     const { data } = await supabaseHelpers.getSavedAddresses(user.id);
-    setSaved((data || []) as SavedAddress[]);
+    const addresses = (data || []) as SavedAddress[];
+    setSaved(addresses);
+
+    const defaultAddress = addresses.find(
+      (address) => address.is_default && address.latitude != null && address.longitude != null,
+    );
+    const savedDefault: DeliveryAddress | null = defaultAddress
+      ? {
+          id: defaultAddress.id,
+          label: defaultAddress.label,
+          address: defaultAddress.address,
+          latitude: defaultAddress.latitude,
+          longitude: defaultAddress.longitude,
+          source: "saved",
+        }
+      : null;
+
+    // The account default takes precedence over the profile's legacy text-only
+    // address. An explicitly restored delivery choice still wins.
+    setSelected((current) => {
+      if (current && current.source !== "profile") return current;
+      if (savedDefault) return savedDefault;
+      if (current) return current;
+      return readRecent()[0] ?? null;
+    });
   }, [user?.id]);
 
   useEffect(() => {

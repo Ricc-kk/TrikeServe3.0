@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useMemo, useState, useRef } from "react";
 import {
   ArrowUp,
-  CheckCircle,
   ChevronDown,
   ChevronRight,
   Search,
@@ -11,7 +10,6 @@ import {
   X,
 } from "lucide-react";
 import { Link, useNavigate } from "react-router";
-import { consumeWelcomeGreeting } from "../../../lib/welcomeGreeting";
 
 import { usePreviousPage } from "../../hooks/usePreviousPage";
 
@@ -133,8 +131,6 @@ export default function FoodHome() {
   const [featuredPage, setFeaturedPage] = useState(0);
   const [featuredPages, setFeaturedPages] = useState(1);
   const featuredRailRef = useRef<HTMLDivElement | null>(null);
-  const [showWelcomeBack, setShowWelcomeBack] = useState(false);
-  const [welcomeUserName, setWelcomeUserName] = useState("");
 
   const getUnreadNotificationsCount = useCallback(() => {
     try {
@@ -308,20 +304,6 @@ export default function FoodHome() {
     window.addEventListener("scroll", onScroll, { passive: true });
     return () => {
       window.removeEventListener("scroll", onScroll);
-    };
-  }, []);
-
-  useEffect(() => {
-    // In-memory, not sessionStorage: only a real sign-in arms this, and a reload
-    // must not replay it. See welcomeGreeting.ts.
-    const name = consumeWelcomeGreeting();
-    if (name === null) return;
-    setWelcomeUserName(name || "there");
-    const show = setTimeout(() => setShowWelcomeBack(true), 500);
-    const hide = setTimeout(() => setShowWelcomeBack(false), 3000);
-    return () => {
-      clearTimeout(show);
-      clearTimeout(hide);
     };
   }, []);
 
@@ -938,34 +920,6 @@ export default function FoodHome() {
         </div>
       )}
 
-      {/* Welcome back */}
-      {showWelcomeBack && (
-        // Tap anywhere to dismiss — a greeting shouldn't hold up the menu.
-        <div
-          onClick={() => setShowWelcomeBack(false)}
-          onKeyDown={(e) => {
-            if (e.key === "Enter" || e.key === " ") {
-              e.preventDefault();
-              setShowWelcomeBack(false);
-            }
-          }}
-          role="button"
-          tabIndex={0}
-          aria-label="Welcome message. Tap to close."
-          className="fixed inset-0 z-[2000] flex items-center justify-center bg-black/50 p-4 cursor-pointer"
-        >
-          <div className="w-full max-w-sm rounded-2xl bg-[var(--surface)] p-8 text-center shadow-xl">
-            <div className="mx-auto grid size-16 place-items-center rounded-full bg-[var(--success-soft)]">
-              <CheckCircle className="size-8 text-[var(--success)]" aria-hidden="true" />
-            </div>
-            <h3 className="mt-4 text-2xl font-bold text-[var(--ink)]">Welcome back!</h3>
-            <p className="text-sm text-[var(--muted-foreground)]">
-              Good to see you again,{" "}
-              <span className="font-semibold text-[var(--ink)]">{welcomeUserName}</span>
-            </p>
-          </div>
-        </div>
-      )}
     </div>
   );
 }

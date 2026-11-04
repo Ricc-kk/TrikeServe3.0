@@ -1,5 +1,5 @@
 import { Fragment, useState, useEffect, useRef, useCallback, useMemo } from "react";
-import { Search, MapPin, Users, UsersRound, ChevronDown, X, Clock, Utensils, User, Navigation, Home as HomeIcon, ShoppingCart, ClipboardList, Star, ArrowLeft, Flag, CreditCard, Check, Route as RouteIcon, Eye, EyeOff } from "lucide-react";
+import { Search, MapPin, Users, UsersRound, ChevronDown, X, Clock, Utensils, User, Navigation, Home as HomeIcon, ShoppingCart, ClipboardList, Star, ArrowLeft, Flag, CreditCard, Check, CheckCircle, Route as RouteIcon, Eye, EyeOff } from "lucide-react";
 import { Link, useLocation, useNavigate } from "react-router";
 import { Button } from "../ui/button";
 import { Card } from "../ui/card";
@@ -53,6 +53,7 @@ import {
   getShortestAvoidHighwaysRoadRoute,
   getShortestAvoidHighwaysRoadRouteDetails,
 } from "@/lib/roadRouting";
+import { consumeWelcomeGreeting } from "../../../lib/welcomeGreeting";
 
 // Get Google Maps API Key from environment variable
 const GOOGLE_MAPS_API_KEY = import.meta.env.VITE_GOOGLE_MAPS_API_KEY || "";
@@ -410,6 +411,8 @@ export default function CustomerHome() {
   const navigationState = location.state as { selectedPickupTerminalId?: string; customerHomeTab?: boolean } | null;
   const searchSelectedTerminalId = navigationState?.selectedPickupTerminalId;
   const cameFromCustomerHomeTab = navigationState?.customerHomeTab === true;
+  const [showWelcomeBack, setShowWelcomeBack] = useState(false);
+  const [welcomeUserName, setWelcomeUserName] = useState("");
   const [selectedVehicle, setSelectedVehicle] = useState<'share' | 'special' | null>(null);
   const [driverApprovalModalDismissed, setDriverApprovalModalDismissed] = useState(false);
   // Booking is a three-step flow on top of the full-screen map:
@@ -454,6 +457,23 @@ export default function CustomerHome() {
    // mid-search restarted the count at zero and understated how long the customer
    // had already been waiting.
    const [requestedAt, setRequestedAt] = useState<number | null>(null);
+
+  useEffect(() => {
+    // The greeting belongs to the customer service hub, where Book a Ride and
+    // Order Food are shown together. Keep it off the booking and food screens.
+    if (currentPath !== '/customer') return;
+
+    const name = consumeWelcomeGreeting();
+    if (name === null) return;
+    setWelcomeUserName(name || "there");
+    const show = setTimeout(() => setShowWelcomeBack(true), 500);
+    const hide = setTimeout(() => setShowWelcomeBack(false), 3000);
+    return () => {
+      clearTimeout(show);
+      clearTimeout(hide);
+      setShowWelcomeBack(false);
+    };
+  }, [currentPath]);
 
   /*
    * Keeps a pointer to the active ride and restores it after a session drop.
@@ -6446,6 +6466,32 @@ const getPrice = () => {
           await handleCancelRide(reason);
         }}
       />
+
+      {currentPath === '/customer' && showWelcomeBack && (
+        <div
+          onClick={() => setShowWelcomeBack(false)}
+          onKeyDown={(event) => {
+            if (event.key === "Enter" || event.key === " ") {
+              event.preventDefault();
+              setShowWelcomeBack(false);
+            }
+          }}
+          role="button"
+          tabIndex={0}
+          aria-label="Welcome message. Tap to close."
+          className="fixed inset-0 z-[2000] flex cursor-pointer items-center justify-center bg-black/50 p-4"
+        >
+          <div className="w-full max-w-sm rounded-2xl bg-[var(--surface)] p-8 text-center shadow-xl">
+            <div className="mx-auto grid size-16 place-items-center rounded-full bg-[var(--success-soft)]">
+              <CheckCircle className="size-8 text-[var(--success)]" aria-hidden="true" />
+            </div>
+            <h3 className="mt-4 text-2xl font-bold text-[var(--ink)]">Welcome back!</h3>
+            <p className="text-sm text-[var(--muted-foreground)]">
+              Good to see you again, <span className="font-semibold text-[var(--ink)]">{welcomeUserName}</span>
+            </p>
+          </div>
+        </div>
+      )}
      </div>
    );
  }

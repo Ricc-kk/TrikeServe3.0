@@ -1,21 +1,10 @@
 /**
- * The "Welcome back" greeting, armed by a real sign-in and consumed once.
+ * One-time greeting armed by a successful sign-in and consumed on the landing
+ * dashboard. Keeping it in memory lets sign-in hand it off without allowing a
+ * reload or a later app visit to replay it.
  *
- * This was a pair of `sessionStorage` keys, which broke the one rule the greeting
- * has to obey: `sessionStorage` survives a page reload within the tab. So the flag
- * set at sign-in could sit unconsumed -- customers land on `/customer`, but the
- * greeting lives in the Food tab -- and then fire much later the next time that
- * screen mounted, or on a plain refresh. The customer got "Welcome back" without
- * having logged in.
- *
- * A module-scoped variable is the right lifetime. Sign-in and the dashboard it
- * navigates to are the same JS instance, so the value survives the handoff; any
- * full page load re-imports this module and the variable starts as null. Refreshing
- * or reopening the app therefore cannot replay the greeting -- it only ever follows
- * an actual sign-in.
- *
- * `consumeWelcomeGreeting` clears before returning, so two mounted screens cannot
- * both greet.
+ * `consumeWelcomeGreeting` clears before returning, so two screens cannot greet
+ * for the same sign-in.
  */
 
 let armedName: string | null = null;

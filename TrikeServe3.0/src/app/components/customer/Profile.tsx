@@ -9,7 +9,7 @@ import { Button } from "../ui/button";
 import { supabase } from "../../../lib/supabase";
 import { supabaseHelpers } from "@/lib/supabase";
 import MapSelector from "./MapSelector";
-import { getDefaultAddress, setDefaultAddress, type DefaultAddress } from "@/lib/defaultAddress";
+import { getDefaultAddress, loadAccountDefaultAddress, saveAccountDefaultAddress, setDefaultAddress, type DefaultAddress } from "@/lib/defaultAddress";
 import { getProfileInitials } from "@/lib/profileInitials";
 
 export default function Profile() {
@@ -34,11 +34,37 @@ export default function Profile() {
   const [defaultAddress, setDefaultAddressState] = useState<DefaultAddress | null>(
     () => getDefaultAddress(user?.id, user?.email)
   );
-  const [addressSaved, setAddressSaved] = useState(false);
+  const [addressSaveStatus, setAddressSaveStatus] = useState<"idle" | "saving" | "saved" | "local" | "error">("idle");
+  const addressSelectionVersion = useRef(0);
 
   // Reload when the signed-in user resolves or changes.
   useEffect(() => {
     setDefaultAddressState(getDefaultAddress(user?.id, user?.email));
+    const userId = user?.id;
+    if (!userId) return;
+    const email = user?.email;
+
+    let cancelled = false;
+    const selectionVersion = addressSelectionVersion.current;
+    void loadAccountDefaultAddress(userId).then(async ({ address, error }) => {
+      if (cancelled || selectionVersion !== addressSelectionVersion.current) return;
+      if (error) console.warn("[Profile] Could not load the account delivery address.");
+      if (address) {
+        setDefaultAddress(address, userId, email);
+        setDefaultAddressState(address);
+        return;
+      }
+      if (error) return;
+
+      // Upgrade an address saved by the older local-only profile flow.
+      const localAddress = getDefaultAddress(userId, email);
+      if (!localAddress) return;
+      const result = await saveAccountDefaultAddress(localAddress, userId);
+      if (!cancelled && selectionVersion === addressSelectionVersion.current && result.error) {
+        console.warn("[Profile] Could not sync the saved delivery address.");
+      }
+    });
+    return () => { cancelled = true; };
   }, [user?.id, user?.email]);
 
   const handlePhotoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -230,8 +256,16 @@ export default function Profile() {
           <p className="text-xs text-[var(--muted-foreground)] mt-2 leading-relaxed">
             Used automatically as the delivery address when you place an order.
           </p>
-          {addressSaved && (
-            <p className="text-xs text-[var(--success)] mt-2 font-semibold">Default address saved.</p>
+          {addressSaveStatus !== "idle" && (
+            <p
+              role={addressSaveStatus === "error" ? "alert" : "status"}
+              className={`mt-2 text-xs font-semibold ${addressSaveStatus === "error" ? "text-[var(--error)]" : "text-[var(--success)]"}`}
+            >
+              {addressSaveStatus === "saving" ? "Saving default address…"
+                : addressSaveStatus === "saved" ? "Default address saved to your account."
+                  : addressSaveStatus === "local" ? "Saved on this device; account sync is unavailable."
+                    : "Saved on this device, but account sync failed. Please try again."}
+            </p>
           )}
         </div>
 
@@ -365,7 +399,8 @@ export default function Profile() {
       {showAddressMap && (
         <MapSelector
           onClose={() => setShowAddressMap(false)}
-          onSelectLocation={(location) => {
+          onSelectLocation={async (location) => {
+            const selectionVersion = ++addressSelectionVersion.current;
             const addr: DefaultAddress = {
               name: location.name,
               full: location.full,
@@ -375,8 +410,11 @@ export default function Profile() {
             setDefaultAddress(addr, user?.id, user?.email);
             setDefaultAddressState(addr);
             setShowAddressMap(false);
-            setAddressSaved(true);
-            setTimeout(() => setAddressSaved(false), 3000);
+            setAddressSaveStatus("saving");
+            const result = await saveAccountDefaultAddress(addr, user?.id);
+            if (selectionVersion === addressSelectionVersion.current) {
+              setAddressSaveStatus(result.error ? "error" : result.synced ? "saved" : "local");
+            }
           }}
           currentLocation={
             defaultAddress || {
