@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { ChevronDown, ChevronLeft, Loader2, Search } from "lucide-react";
+import { ChevronDown, ChevronLeft, Loader2, Search, X } from "lucide-react";
 import { useLocation, useNavigate } from "react-router";
 
 import { supabase } from "../../../utils/supabase";
@@ -207,8 +207,18 @@ export default function CustomerSearchPage() {
               placeholder="Search terminals or restaurants"
               aria-label="Search terminals or restaurants"
               autoFocus
-              className="min-h-13 w-full rounded-full border border-[#d6d3ca] bg-white pl-12 pr-4 text-base text-[#122724] shadow-md outline-none focus:border-[#122724]"
+              className="search-field-no-native-clear min-h-13 w-full rounded-full border border-[#d6d3ca] bg-white pl-12 pr-12 text-base text-[#122724] shadow-md outline-none focus:border-[#122724]"
             />
+            {query && (
+              <button
+                type="button"
+                onClick={() => setQuery("")}
+                aria-label="Clear search"
+                className="absolute right-1.5 top-1/2 grid size-9 -translate-y-1/2 place-items-center rounded-full hover:bg-[var(--muted)]"
+              >
+                <X className="size-4 text-[var(--muted-foreground)]" aria-hidden="true" />
+              </button>
+            )}
           </div>
         </div>
       </header>

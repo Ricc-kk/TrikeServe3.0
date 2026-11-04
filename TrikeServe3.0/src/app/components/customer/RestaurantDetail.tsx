@@ -302,7 +302,6 @@ export default function RestaurantDetail() {
   const [showCategoryModal, setShowCategoryModal] = useState(false);
   const [isScrolled, setIsScrolled] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
-  const [showSearchModal, setShowSearchModal] = useState(false);
   const [showRatingsModal, setShowRatingsModal] = useState(false);
   const [showCustomizationModal, setShowCustomizationModal] = useState(false);
   const [selectedItem, setSelectedItem] = useState<MenuItem | null>(null);
@@ -1069,15 +1068,25 @@ if (unfiledItems.length > 0) sectionGroups.push({ id: "__unfiled", name: "More",
           {/* Search stays above the shop's category filters. */}
           <div className="flex items-center gap-2">
             <div className="relative flex-1">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-[var(--muted-foreground)]" />
+              <Search className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-[var(--muted-foreground)]" aria-hidden="true" />
               <input
                 type="text"
                 placeholder="Search menu items..."
+                aria-label="Search menu items"
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                onClick={() => setShowSearchModal(true)}
-                className="w-full pl-10 pr-4 py-2.5 border border-line rounded-2xl text-sm bg-[var(--muted)]"
+                className="w-full rounded-2xl border border-line bg-[var(--muted)] py-2.5 pl-10 pr-12 text-sm text-[var(--ink)] outline-none focus:border-[var(--primary)]"
               />
+              {searchQuery && (
+                <button
+                  type="button"
+                  onClick={() => setSearchQuery("")}
+                  aria-label="Clear menu search"
+                  className="absolute right-1.5 top-1/2 grid size-9 -translate-y-1/2 place-items-center rounded-full hover:bg-[var(--border)]"
+                >
+                  <X className="size-4 text-[var(--muted-foreground)]" aria-hidden="true" />
+                </button>
+              )}
             </div>
           </div>
 
@@ -1179,44 +1188,6 @@ if (unfiledItems.length > 0) sectionGroups.push({ id: "__unfiled", name: "More",
 
       {/* Bottom Navigation */}
       <BottomNav />
-
-      {/* Search Modal */}
-      {showSearchModal && (
-        <div className="fixed inset-0 bg-black/50 z-[2000] flex items-end">
-          <div className="w-full bg-surface rounded-t-3xl max-h-[85vh] overflow-hidden flex flex-col animate-in slide-in-from-bottom duration-300">
-            <div className="flex items-center gap-3 px-5 py-4 border-b border-[var(--border)]">
-              <div className="relative flex-1">
-                <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-[var(--muted-foreground)]" />
-                <input
-                  type="text"
-                  placeholder="Search menu items..."
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  className="w-full pl-12 pr-4 py-3 bg-[var(--muted)] rounded-2xl text-base text-[var(--ink)] placeholder:text-[var(--muted-foreground)] border-2 border-transparent focus:border-[var(--primary)] outline-none"
-                  autoFocus
-                />
-              </div>
-              <button 
-                onClick={() => {
-                  setShowSearchModal(false);
-                  setSearchQuery("");
-                }}
-                className="w-10 h-10 flex items-center justify-center rounded-full hover:bg-[var(--muted)] active:scale-90 transition-all"
-              >
-                <X className="w-6 h-6 text-[var(--muted-foreground)]" />
-              </button>
-            </div>
-            <div className="p-5">
-              <button
-                onClick={() => setShowSearchModal(false)}
-                className="w-full py-3.5 rounded-2xl font-bold text-white bg-[var(--primary)] hover:shadow-xl active:scale-95 transition-all shadow-lg shadow-[var(--primary)]/30 text-sm tracking-wide"
-              >
-                Search
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
 
       {/* Full category picker */}
       {showCategoryModal && (

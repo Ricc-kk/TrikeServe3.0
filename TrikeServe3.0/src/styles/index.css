@@ -3,6 +3,17 @@
 @import './theme.css';
 @import 'leaflet/dist/leaflet.css';
 
+/* These search fields render their own clear button; suppress the browser's
+   native search cancel icon so there is only one X. */
+.search-field-no-native-clear::-webkit-search-cancel-button,
+.search-field-no-native-clear::-webkit-search-decoration,
+.search-field-no-native-clear::-webkit-search-results-button,
+.search-field-no-native-clear::-webkit-search-results-decoration {
+  -webkit-appearance: none;
+  appearance: none;
+  display: none;
+}
+
 /* Prevent horizontal overflow globally.
    Deliberately no min-width floor here: any floor re-creates the scrollbar
    this guards against. On a 320px device the vertical scrollbar eats ~17px,

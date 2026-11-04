@@ -203,7 +203,7 @@ export default function FoodSearchOverlay({
               onChange={(e) => setQuery(e.target.value)}
               placeholder="Search food or restaurant"
               aria-label="Search food or restaurant"
-              className="min-h-12 w-full rounded-2xl border border-line bg-[var(--background)] pl-11 pr-10 text-base text-[var(--ink)] outline-none focus:border-[var(--primary)]"
+              className="search-field-no-native-clear min-h-12 w-full rounded-2xl border border-line bg-[var(--background)] pl-11 pr-10 text-base text-[var(--ink)] outline-none focus:border-[var(--primary)]"
             />
             {query && (
               <button
