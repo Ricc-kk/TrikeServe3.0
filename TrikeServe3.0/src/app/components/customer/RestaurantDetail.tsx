@@ -144,6 +144,7 @@ export default function RestaurantDetail() {
   const [searchParams] = useSearchParams();
   const restaurantId = searchParams.get("id");
   const restaurantName = searchParams.get("name") || "Restaurant";
+  const targetMenuItemId = searchParams.get("itemId");
   const { addToCart: addItemToCart, getTotalItems, cartRestaurants, removeRestaurant } = useCart();
 
   /*
@@ -483,6 +484,12 @@ export default function RestaurantDetail() {
     loadRestaurantData();
   }, [restaurantId, restaurantName, adminDeliveryFee]);
 
+  useEffect(() => {
+    if (!targetMenuItemId || !restaurantData?.menuItems.some((item) => String(item.id) === targetMenuItemId)) return;
+    const target = document.getElementById(`favorite-menu-item-${targetMenuItemId}`);
+    target?.scrollIntoView({ behavior: "smooth", block: "center" });
+  }, [targetMenuItemId, restaurantData]);
+
   // Real-time updates for the shop-defined categories/headings customers filter by.
   useEffect(() => {
     if (!restaurantId) return;
@@ -815,7 +822,11 @@ if (unfiledItems.length > 0) sectionGroups.push({ id: "__unfiled", name: "More",
 
   const renderMenuItem = (item: (typeof filteredItems)[number]) => (
   
-              <Card key={item.id} className="overflow-hidden border-0 shadow-lg rounded-2xl bg-surface">
+              <Card
+                key={item.id}
+                id={`favorite-menu-item-${String(item.id)}`}
+                className={`scroll-mt-28 overflow-hidden border-0 shadow-lg rounded-2xl bg-surface transition-shadow ${targetMenuItemId === String(item.id) ? "ring-2 ring-[var(--primary)]" : ""}`}
+              >
                 <div className="flex items-center gap-4 p-4">
                   <div className="relative w-24 h-24 flex-shrink-0 rounded-2xl overflow-hidden">
                     <ImageWithFallback

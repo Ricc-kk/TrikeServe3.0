@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Heart, Home as HomeIcon, ShoppingCart, MessageCircle, ClipboardList, User, ArrowLeft, Star } from "lucide-react";
-import { Link, useNavigate } from "react-router";
+import { Link } from "react-router";
 import { usePreviousPage } from "../../hooks/usePreviousPage";
 import { ImageWithFallback } from "../figma/ImageWithFallback";
 import BottomNav from "../ui/BottomNav";
@@ -8,7 +8,6 @@ import { useFavorites } from "../../contexts/FavoritesContext";
 import { useCart } from "../../contexts/CartContext"
 
 export default function Favorites() {
-  const navigate = useNavigate();
   // A bare navigate(-1) walks a cold deep link straight out of the app,
   // because there is no history entry before it to return to.
   const goBack = usePreviousPage("/customer");
@@ -71,17 +70,25 @@ export default function Favorites() {
                 >
                   {/* Restaurant Image */}
                   <div className="relative h-48">
-                    <ImageWithFallback
-                      src={restaurant.image}
-                      alt={restaurant.name}
-                      className="w-full h-full object-cover"
-                    />
+                    <Link
+                      to={`/customer/restaurant-detail?id=${encodeURIComponent(String(restaurant.id))}&name=${encodeURIComponent(restaurant.name)}`}
+                      aria-label={`Open ${restaurant.name}`}
+                      className="block h-full"
+                    >
+                      <ImageWithFallback
+                        src={restaurant.image}
+                        alt={restaurant.name}
+                        className="w-full h-full object-cover"
+                      />
+                    </Link>
                     {/* Heart Button */}
                     <button
+                      type="button"
                       onClick={(e) => {
                         e.stopPropagation();
                         toggleFavorite(restaurant);
                       }}
+                      aria-label={`Remove ${restaurant.name} from favorites`}
                       className="absolute top-3 right-3 w-10 h-10 bg-white/90 backdrop-blur-sm rounded-full flex items-center justify-center active:scale-90 transition-transform shadow-lg"
                     >
                       <Heart className="w-5 h-5 text-[var(--primary)] fill-[var(--primary)]" />
@@ -89,9 +96,9 @@ export default function Favorites() {
                   </div>
 
                   {/* Restaurant Info */}
-                  <button
-                    onClick={() => navigate(`/customer/restaurant-detail?id=${restaurant.id}&name=${encodeURIComponent(restaurant.name)}`)}
-                    className="w-full p-4 text-left"
+                  <Link
+                    to={`/customer/restaurant-detail?id=${encodeURIComponent(String(restaurant.id))}&name=${encodeURIComponent(restaurant.name)}`}
+                    className="block w-full p-4 text-left"
                   >
                     <div className="flex items-start justify-between mb-2">
                       <div className="flex-1">
@@ -119,7 +126,7 @@ export default function Favorites() {
                         <span className="text-sm font-semibold text-[var(--success)]">{restaurant.priceRange}</span>
                       </div>
                     )}
-                  </button>
+                  </Link>
                 </div>
               ))}
             </div>
@@ -150,30 +157,40 @@ export default function Favorites() {
                   key={item.id}
                   className="flex items-center gap-3 bg-surface border border-line rounded-2xl p-3 active:scale-[0.98] transition-transform"
                 >
-                  {/* Item Image */}
-                  <div className="w-20 h-20 rounded-xl overflow-hidden flex-shrink-0">
-                    <ImageWithFallback
-                      src={item.image}
-                      alt={item.name}
-                      className="w-full h-full object-cover"
-                    />
-                  </div>
+                  <Link
+                    to={item.restaurantId
+                      ? `/customer/restaurant-detail?id=${encodeURIComponent(item.restaurantId)}&name=${encodeURIComponent(item.restaurantName)}&itemId=${encodeURIComponent(String(item.id))}`
+                      : "/customer/food"}
+                    aria-label={`Open ${item.name} at ${item.restaurantName}`}
+                    className="flex flex-1 min-w-0 items-center gap-3"
+                  >
+                    {/* Item Image */}
+                    <div className="w-20 h-20 rounded-xl overflow-hidden flex-shrink-0">
+                      <ImageWithFallback
+                        src={item.image}
+                        alt={item.name}
+                        className="w-full h-full object-cover"
+                      />
+                    </div>
 
                   {/* Item Info */}
-                  <div className="flex-1 min-w-0">
-                    <h4 className="font-bold text-[var(--ink)] text-sm mb-0.5 truncate">{item.name}</h4>
-                    <p className="text-xs text-[var(--muted-foreground)] truncate">{item.restaurantName}</p>
-                    {item.description && (
-                      <p className="text-xs text-[var(--muted-foreground)] mt-0.5 line-clamp-1">{item.description}</p>
-                    )}
-                    <p className="text-sm font-bold text-[var(--ink)] mt-1">
-                      <span className="text-xs">₱</span>{item.price.toFixed(2)}
-                    </p>
-                  </div>
+                    <div className="flex-1 min-w-0">
+                      <h4 className="font-bold text-[var(--ink)] text-sm mb-0.5 truncate">{item.name}</h4>
+                      <p className="text-xs text-[var(--muted-foreground)] truncate">{item.restaurantName}</p>
+                      {item.description && (
+                        <p className="text-xs text-[var(--muted-foreground)] mt-0.5 line-clamp-1">{item.description}</p>
+                      )}
+                      <p className="text-sm font-bold text-[var(--ink)] mt-1">
+                        <span className="text-xs">₱</span>{item.price.toFixed(2)}
+                      </p>
+                    </div>
+                  </Link>
 
                   {/* Heart Button */}
                   <button
+                    type="button"
                     onClick={() => toggleFavoriteItem(item)}
+                    aria-label={`Remove ${item.name} from favorites`}
                     className="w-10 h-10 bg-white/90 rounded-full flex items-center justify-center active:scale-90 transition-transform shadow-md flex-shrink-0"
                   >
                     <Heart className="w-5 h-5 text-[var(--primary)] fill-[var(--primary)]" />

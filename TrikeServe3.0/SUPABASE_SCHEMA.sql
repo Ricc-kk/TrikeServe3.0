@@ -274,11 +274,24 @@ CREATE TABLE IF NOT EXISTS favorites (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   customer_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
   restaurant_id UUID NOT NULL REFERENCES restaurants(id) ON DELETE CASCADE,
+  restaurant_snapshot JSONB,
   created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
   UNIQUE(customer_id, restaurant_id)
 );
 
 CREATE INDEX idx_favorites_customer ON favorites(customer_id);
+
+-- Saved menu-item favorites. Snapshot data keeps the Favorites screen useful
+-- even when the customer's local browser cache is cleared.
+CREATE TABLE IF NOT EXISTS favorite_menu_items (
+  customer_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  menu_item_id UUID NOT NULL REFERENCES menu_items(id) ON DELETE CASCADE,
+  item_snapshot JSONB NOT NULL,
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (customer_id, menu_item_id)
+);
+
+CREATE INDEX idx_favorite_menu_items_customer ON favorite_menu_items(customer_id);
 
 -- Enable Row Level Security (RLS)
 ALTER TABLE users ENABLE ROW LEVEL SECURITY;
@@ -290,8 +303,39 @@ ALTER TABLE orders ENABLE ROW LEVEL SECURITY;
 ALTER TABLE restaurants ENABLE ROW LEVEL SECURITY;
 ALTER TABLE menu_items ENABLE ROW LEVEL SECURITY;
 ALTER TABLE favorites ENABLE ROW LEVEL SECURITY;
+ALTER TABLE favorite_menu_items ENABLE ROW LEVEL SECURITY;
 ALTER TABLE user_addresses ENABLE ROW LEVEL SECURITY;
 ALTER TABLE restaurant_searches ENABLE ROW LEVEL SECURITY;
+GRANT SELECT, INSERT, UPDATE, DELETE ON favorites TO authenticated;
+GRANT SELECT, INSERT, UPDATE, DELETE ON favorite_menu_items TO authenticated;
+
+DROP POLICY IF EXISTS "Users can view own favorites" ON favorites;
+CREATE POLICY "Users can view own favorites" ON favorites
+  FOR SELECT TO authenticated USING (customer_id = auth.uid());
+DROP POLICY IF EXISTS "Users can add own favorites" ON favorites;
+CREATE POLICY "Users can add own favorites" ON favorites
+  FOR INSERT TO authenticated WITH CHECK (customer_id = auth.uid());
+DROP POLICY IF EXISTS "Users can update own favorites" ON favorites;
+CREATE POLICY "Users can update own favorites" ON favorites
+  FOR UPDATE TO authenticated USING (customer_id = auth.uid())
+  WITH CHECK (customer_id = auth.uid());
+DROP POLICY IF EXISTS "Users can delete own favorites" ON favorites;
+CREATE POLICY "Users can delete own favorites" ON favorites
+  FOR DELETE TO authenticated USING (customer_id = auth.uid());
+
+DROP POLICY IF EXISTS "Users can view own favorite menu items" ON favorite_menu_items;
+CREATE POLICY "Users can view own favorite menu items" ON favorite_menu_items
+  FOR SELECT TO authenticated USING (customer_id = auth.uid());
+DROP POLICY IF EXISTS "Users can add own favorite menu items" ON favorite_menu_items;
+CREATE POLICY "Users can add own favorite menu items" ON favorite_menu_items
+  FOR INSERT TO authenticated WITH CHECK (customer_id = auth.uid());
+DROP POLICY IF EXISTS "Users can update own favorite menu items" ON favorite_menu_items;
+CREATE POLICY "Users can update own favorite menu items" ON favorite_menu_items
+  FOR UPDATE TO authenticated USING (customer_id = auth.uid())
+  WITH CHECK (customer_id = auth.uid());
+DROP POLICY IF EXISTS "Users can delete own favorite menu items" ON favorite_menu_items;
+CREATE POLICY "Users can delete own favorite menu items" ON favorite_menu_items
+  FOR DELETE TO authenticated USING (customer_id = auth.uid());
 
 -- Owner-only access to saved addresses. See ADD_USER_ADDRESSES_AND_SEARCH.sql
 -- for the full policy definitions, which are applied there so an existing
