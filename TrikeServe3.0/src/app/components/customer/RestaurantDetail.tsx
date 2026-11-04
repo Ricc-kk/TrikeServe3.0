@@ -2,6 +2,8 @@ import { useState, useEffect, useMemo, useRef } from "react";
 import { ArrowLeft, Heart, Users, Calendar, Share2, Clock, Star, MapPin, Route, ChevronDown, ChevronRight, Home as HomeIcon, ShoppingCart, MessageCircle, ClipboardList, User, Search, BadgeCheck, X, Check, Trash2, ListFilter } from "lucide-react";
 import { Link, useNavigate, useSearchParams } from "react-router";
 import { usePreviousPage } from "../../hooks/usePreviousPage";
+import { useAuth } from "../../contexts/AuthContext";
+import { useChatHeadVisibility } from "../../contexts/ChatHeadVisibilityContext";
 import { Card } from "../ui/card";
 import { Badge } from "../ui/badge";
 import BottomNav from "../ui/BottomNav";
@@ -19,6 +21,7 @@ import { cuisineLabels } from "@/lib/foodTaxonomy";
 import { isEffectivelyOpen } from "@/lib/shopHours";
 import { formatDistance, haversineMetres, hasCoords } from "@/lib/distance";
 import { topDishesByUnits } from "@/lib/topDishes";
+import { buildChatThreadKey } from "../../../lib/chat";
 
 interface MenuItem extends CustomizableMenuItem {
   available: boolean;
@@ -138,6 +141,8 @@ async function loadRestaurantMenuBadgeIds(restaurantId: string, menuItems: any[]
 
 export default function RestaurantDetail() {
   const navigate = useNavigate();
+  const { user } = useAuth();
+  const { openedConversationId, requestChatHeadOpen, toggleChatOverlay } = useChatHeadVisibility();
   // A bare navigate(-1) walks a cold deep link straight out of the app,
   // because there is no history entry before it to return to.
   const goBack = usePreviousPage("/customer/food");
@@ -705,13 +710,50 @@ export default function RestaurantDetail() {
 
   // Open a direct chat with this store's business. Unlike the order-details chat,
   // this works before the customer has ordered anything.
-  const handleMessageBusiness = () => {
+  const handleMessageBusiness = async () => {
     const businessUserId = restaurantData?.businessUserId;
     if (!businessUserId) {
       showNotification("This store can't be messaged right now.", 'info');
       return;
     }
-    navigate(`/customer/messages/business/${businessUserId}`);
+    if (!user?.id || !restaurantData) {
+      showNotification("Sign in to message this store.", 'info');
+      return;
+    }
+
+    const threadKey = buildChatThreadKey({
+      participantAId: user.id,
+      participantBId: businessUserId,
+      contextType: 'order',
+    });
+
+    try {
+      const { data, error } = await supabaseHelpers.ensureChatConversation({
+        threadKey,
+        threadType: 'order',
+        contextType: 'order',
+        participantAId: user.id,
+        participantBId: businessUserId,
+        participantARole: user.role,
+        participantBRole: 'business',
+        participantAName: user.name,
+        participantBName: restaurantData.name,
+        participantAAvatar: user.name?.[0]?.toUpperCase() || '💬',
+        participantBAvatar: restaurantData.logo,
+      });
+
+      if (error || !data?.id) {
+        console.error('[RestaurantDetail] Could not open restaurant chat:', error);
+        showNotification("Couldn't open the chat right now. Please try again.", 'error');
+        return;
+      }
+
+      requestChatHeadOpen(user.id, data.id);
+      if (openedConversationId !== data.id) toggleChatOverlay(data.id);
+    } catch (error) {
+      console.error('[RestaurantDetail] Could not open restaurant chat:', error);
+      showNotification("Couldn't open the chat right now. Please try again.", 'error');
+    }
   };
 
   const handleAddToCart = (item: MenuItem) => {

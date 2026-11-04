@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { useLocation, useParams } from "react-router";
 import ChatHub from "../chat/ChatHub";
+import { useChatHeadVisibility } from "../../contexts/ChatHeadVisibilityContext";
 import { supabase } from "../../../lib/supabase";
 
 interface PeerInfo {
@@ -11,11 +12,18 @@ interface PeerInfo {
 export default function CustomerDirectChat() {
   const { businessId, driverId } = useParams();
   const location = useLocation();
+  const { closeChatOverlay } = useChatHeadVisibility();
   const routePeerInfo = location.state as { peerName?: string; peerAvatar?: string } | null;
   const [peerInfo, setPeerInfo] = useState<PeerInfo>({ name: "User", emoji: "💬" });
 
   const peerId = businessId || driverId;
   const peerRole = businessId ? "business" : "rider";
+
+  useEffect(() => {
+    // Direct-message routes should take over the page instead of leaving an
+    // older global chat-head thread layered above them.
+    closeChatOverlay();
+  }, [businessId, closeChatOverlay, driverId]);
 
   useEffect(() => {
     if (!peerId) return;

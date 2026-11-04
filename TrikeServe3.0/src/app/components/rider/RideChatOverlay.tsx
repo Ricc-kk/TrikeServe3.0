@@ -201,8 +201,6 @@ export default function RideChatOverlay({
   const [closing, setClosing] = useState(false);
   const [isActiveHeadHandoff, setIsActiveHeadHandoff] = useState(false);
   const activeHeadHandoffTimerRef = useRef<number | null>(null);
-  /** Whether the in-place profile card under the header name is expanded. */
-  const [profileOpen, setProfileOpen] = useState(false);
   const [sending, setSending] = useState(false);
   const [uploadingImage, setUploadingImage] = useState(false);
   const [revealedId, setRevealedId] = useState<string | null>(null);
@@ -757,6 +755,21 @@ export default function RideChatOverlay({
   if (!open && !closing) return null;
 
   const hideThreadContent = isActiveHeadHandoff || draggingChatHeadId === conversationId;
+  const peerRoleLabel = peerIsGroup
+    ? 'Passenger'
+    : peerRole === 'business' || receiverRole === 'business'
+      ? 'Restaurant'
+      : peerRole === 'rider' || receiverRole === 'rider'
+        ? 'Driver'
+        : peerRole === 'customer'
+          ? (senderRole === 'rider' ? 'Passenger' : 'Customer')
+          : receiverRole === 'customer'
+            ? senderRole === 'rider' ? 'Passenger' : 'Customer'
+            : senderRole === 'rider'
+              ? 'Passenger'
+              : senderRole === 'business'
+                ? 'Customer'
+                : 'Driver';
 
   /*
    * The chat fills the screen, but the head sits outside the chatbox.
@@ -923,67 +936,16 @@ export default function RideChatOverlay({
             away from it.
           */}
           <header className="relative flex items-center bg-[var(--primary)] px-4 py-3 text-white">
-            {/*
-                The name is also the profile.
-
-                There is no peer-profile route to navigate to -- `/rider/profile`
-                and its siblings render the *signed-in* user's own page, so linking
-                there would show the driver their own profile in the middle of a
-                conversation with a passenger. So the photo and name are one
-                control that expands a profile card in place instead.
-
-                Rendered in place rather than as a page on purpose: this panel is an
-                overlay on a live ride, and navigating would unmount the ride screen
-                behind it along with the head that opened the chat.
-            */}
-            <button
-              type="button"
-              onClick={() => setProfileOpen((v) => !v)}
-              aria-expanded={profileOpen}
-              aria-label={`${peerName}'s profile`}
-              className="flex min-w-0 flex-1 items-center gap-2 rounded-xl text-left transition-opacity active:opacity-70"
-            >
+            {/* Show the peer identity and role without opening a profile popup. */}
+            <div className="flex min-w-0 flex-1 items-center gap-2 rounded-xl text-left">
               <span className="size-9 flex-shrink-0 overflow-hidden rounded-full bg-[var(--primary-soft)] grid place-items-center">
                 <PeerAvatar src={peerAvatar} name={peerName} group={peerIsGroup} iconClassName="size-4" initialClassName="text-sm" />
               </span>
               <span className="min-w-0">
                 <span className="block font-bold truncate leading-tight">{peerName}</span>
-                <span className="block text-xs text-white/80">
-                  {profileOpen ? 'Hide profile' : 'Live chat · view profile'}
-                </span>
+                <span className="block text-xs text-white/80">{peerRoleLabel}</span>
               </span>
-            </button>
-
-            {profileOpen && (
-              <div className="absolute left-3 right-3 top-full z-20 mt-1 flex items-center gap-3 rounded-2xl bg-[var(--surface)] p-3 text-[var(--ink)] shadow-2xl ring-1 ring-[var(--border)]">
-                <span className="size-14 flex-shrink-0 overflow-hidden rounded-full bg-[var(--primary-soft)] grid place-items-center">
-                  <PeerAvatar src={peerAvatar} name={peerName} group={peerIsGroup} iconClassName="size-6" initialClassName="text-xl" />
-                </span>
-                <span className="min-w-0 flex-1">
-                  <span className="block font-bold truncate">{peerName}</span>
-                  <span className="block text-xs text-[var(--muted-foreground)]">
-                    {peerRole === 'business'
-                      ? 'Restaurant'
-                      : peerRole === 'rider'
-                        ? 'Driver'
-                        : peerRole === 'customer'
-                          ? 'Customer'
-                          : senderRole === 'rider'
-                            ? 'Passenger on this ride'
-                            : 'Your driver'}
-                    {peerIsGroup ? ' · shared ride' : ''}
-                  </span>
-                </span>
-                <button
-                  type="button"
-                  onClick={() => setProfileOpen(false)}
-                  aria-label="Close profile"
-                  className="grid size-8 flex-shrink-0 place-items-center rounded-full hover:bg-[var(--muted)]"
-                >
-                  <X className="size-4" />
-                </button>
-              </div>
-            )}
+            </div>
           </header>
 
       <div ref={listRef} className="flex-1 overflow-y-auto space-y-2 bg-[var(--muted)] p-4">
