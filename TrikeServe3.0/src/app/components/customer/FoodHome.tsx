@@ -9,7 +9,7 @@ import {
   Store,
   X,
 } from "lucide-react";
-import { Link, useNavigate } from "react-router";
+import { Link, useLocation, useNavigate } from "react-router";
 
 import { usePreviousPage } from "../../hooks/usePreviousPage";
 
@@ -26,7 +26,7 @@ import { supabaseHelpers } from "@/lib/supabase";
 import { fetchRestaurants } from "@/lib/restaurantQueries";
 import { cuisineLabels, inferCuisineFromMenu } from "@/lib/foodTaxonomy";
 import { whatWeServeCategoriesByRestaurant } from "@/lib/menuSections";
-import { formatDistance, haversineMetres, hasCoords } from "@/lib/distance";
+import { formatDistance, haversineMetres, hasCoords, type LatLng } from "@/lib/distance";
 
 import FoodHomeHeader from "./FoodHomeHeader";
 
@@ -104,17 +104,53 @@ function RailIndicator({ page, pages }: { page: number; pages: number }) {
 // TrikeServe Food Delivery Home - Gen T Deleon, Valenzuela
 export default function FoodHome() {
   const navigate = useNavigate();
+  const location = useLocation();
   
   const { getTotalItems } = useCart();
   const { user } = useAuth();
   const { toggleFavorite, isFavorite, getTotalFavorites } = useFavorites();
   const delivery = useDeliveryAddress();
+  const routeOrigin = useMemo<LatLng | null>(() => {
+    const candidate = (location.state as { fallbackOrigin?: unknown } | null)?.fallbackOrigin;
+    if (!candidate || typeof candidate !== "object") return null;
+    const point = candidate as { lat?: unknown; lng?: unknown };
+    const lat = Number(point.lat);
+    const lng = Number(point.lng);
+    return hasCoords({ lat, lng }) ? { lat, lng } : null;
+  }, [location.state]);
+  const [geolocationOrigin, setGeolocationOrigin] = useState<LatLng | null>(null);
+  const distanceOrigin = delivery.origin ?? routeOrigin ?? geolocationOrigin;
 
   const [restaurants, setRestaurants] = useState<RawRestaurant[]>([]);
   const [loading, setLoading] = useState(true);
   const [menuCategories, setMenuCategories] = useState<Record<string, string[]>>({});
   const [unreadNotifications, setUnreadNotifications] = useState(0);
   const [adminDeliveryFee, setAdminDeliveryFee] = useState<number>(0);
+
+  // Match the home feed: a coordinate-backed delivery address takes priority,
+  // then Home's confirmed position, then a location fix for direct food links.
+  // This fallback affects distance labels only; it never changes the address
+  // used for delivery or checkout.
+  useEffect(() => {
+    if (delivery.origin || routeOrigin || delivery.locating || !delivery.address) return;
+    if (typeof navigator === "undefined" || !navigator.geolocation) return;
+
+    let cancelled = false;
+    navigator.geolocation.getCurrentPosition(
+      ({ coords }) => {
+        const point = { lat: coords.latitude, lng: coords.longitude };
+        if (!cancelled && hasCoords(point)) setGeolocationOrigin(point);
+      },
+      () => {
+        // Distances stay unavailable when location access is denied.
+      },
+      { enableHighAccuracy: false, timeout: 10000, maximumAge: 300000 },
+    );
+
+    return () => {
+      cancelled = true;
+    };
+  }, [delivery.address, delivery.locating, delivery.origin, routeOrigin]);
 
   const [minRating, setMinRating] = useState(0);
   const [sortBy, setSortBy] = useState<SortId>("rating");
@@ -309,7 +345,7 @@ export default function FoodHome() {
 
   /** Restaurants projected into the card shape, with cuisine and distance. */
   const views: RestaurantView[] = useMemo(() => {
-    const origin = delivery.origin;
+    const origin = distanceOrigin;
 
     return restaurants.map((r) => {
       // Declared cuisine wins; the menu-derived guess is only for shops that
@@ -344,7 +380,7 @@ export default function FoodHome() {
         distanceLabel,
       };
     });
-  }, [restaurants, menuCategories, delivery.origin]);
+  }, [restaurants, menuCategories, distanceOrigin]);
 
   const results = useMemo(() => {
     const filtered = views.filter((v) => {
@@ -355,7 +391,7 @@ export default function FoodHome() {
 
     // Nearest needs an origin; without one it falls back to top rated rather
     // than an arbitrary order.
-    if (sortBy === "distance" && delivery.origin) {
+    if (sortBy === "distance" && distanceOrigin) {
       return [...filtered].sort((a, b) => {
         if (a.distanceLabel === null) return 1;
         if (b.distanceLabel === null) return -1;
@@ -370,7 +406,7 @@ export default function FoodHome() {
       }
       return a.name.localeCompare(b.name);
     });
-  }, [views, minRating, sortBy, delivery.origin]);
+  }, [views, minRating, sortBy, distanceOrigin]);
 
   const featured = useMemo(
     () =>

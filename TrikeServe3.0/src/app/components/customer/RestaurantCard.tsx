@@ -143,12 +143,14 @@ export default function RestaurantCard({
               <Route className="size-3" aria-hidden="true" />
               {restaurant.distanceLabel ?? "Distance unavailable"}
             </span>
-            <span className="inline-flex items-center gap-1 rounded-lg bg-[var(--muted)] px-2 py-1 text-xs text-[var(--muted-foreground)]">
-              <span className="text-[10px]" aria-hidden="true">
-                ₱
+            {deliveryFee > 0 && (
+              <span className="inline-flex items-center gap-1 rounded-lg bg-[var(--muted)] px-2 py-1 text-xs text-[var(--muted-foreground)]">
+                <span className="text-[10px]" aria-hidden="true">
+                  ₱
+                </span>
+                {deliveryFee} fee
               </span>
-              {deliveryFee} fee
-            </span>
+            )}
             <span
               className={`rounded-lg px-2 py-1 text-xs font-bold ${
                 closed

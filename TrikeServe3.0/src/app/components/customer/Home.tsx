@@ -4693,7 +4693,9 @@ const getPrice = () => {
                     state: selectedTerminalId ? { selectedPickupTerminalId: selectedTerminalId } : undefined,
                   });
                 }}
-                onOrderFood={() => navigate('/customer/food')}
+                onOrderFood={() => navigate('/customer/food', { state: {
+                  fallbackOrigin: !isLoadingLocation && !locationProblem ? currentLocation : null,
+                } })}
                 rideDisabled={!showBookingFlow}
               />
               <CustomerCartPreview />
