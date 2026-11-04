@@ -38,11 +38,37 @@ export default function DeliveryAddressPage() {
   const location = useLocation();
   const navigate = useNavigate();
   const routeState = location.state as
-    | { returnTo?: string; returnState?: unknown }
+    | {
+        returnTo?: string;
+        returnState?: unknown;
+        returnIndex?: number;
+        addressFlowReturnTo?: string;
+        addressFlowReturnState?: unknown;
+        addressFlowReturnIndex?: number;
+      }
     | null;
-  // Normally the food screen, but this list is also linked from the home
-  // header's "Your location" line, so back follows the actual way in.
-  const goBack = usePreviousPage("/customer/food");
+  const goBackToPreviousPage = usePreviousPage("/customer/food");
+  const goBack = () => {
+    const returnIndex = routeState?.returnIndex ?? routeState?.addressFlowReturnIndex;
+    const currentIndex = window.history.state?.idx;
+    if (typeof returnIndex === "number" && typeof currentIndex === "number" && currentIndex > returnIndex) {
+      navigate(returnIndex - currentIndex);
+      return;
+    }
+
+    const returnTo = routeState?.returnTo || routeState?.addressFlowReturnTo;
+    if (!returnTo) {
+      goBackToPreviousPage();
+      return;
+    }
+
+    navigate(returnTo, {
+      state: routeState?.returnTo
+        ? routeState.returnState
+        : routeState.addressFlowReturnState,
+      replace: true,
+    });
+  };
   const delivery = useDeliveryAddress();
 
   const [query, setQuery] = useState("");
@@ -72,11 +98,24 @@ export default function DeliveryAddressPage() {
   const saved = delivery.saved.filter((s) => matches(s.label, s.address));
 
   const returnToCaller = () => {
-    if (routeState?.returnTo) {
-      navigate(routeState.returnTo, { state: routeState.returnState });
+    const returnIndex = routeState?.returnIndex ?? routeState?.addressFlowReturnIndex;
+    const currentIndex = window.history.state?.idx;
+    if (typeof returnIndex === "number" && typeof currentIndex === "number" && currentIndex > returnIndex) {
+      navigate(returnIndex - currentIndex);
       return;
     }
-    navigate("/customer/food");
+
+    const returnTo = routeState?.returnTo || routeState?.addressFlowReturnTo;
+    if (returnTo) {
+      navigate(returnTo, {
+        state: routeState?.returnTo
+          ? routeState.returnState
+          : routeState.addressFlowReturnState,
+        replace: true,
+      });
+      return;
+    }
+    navigate("/customer/food", { replace: true });
   };
 
   const pick = (address: Parameters<typeof delivery.selectAddress>[0]) => {
@@ -94,6 +133,10 @@ export default function DeliveryAddressPage() {
         },
         returnTo: routeState?.returnTo,
         returnState: routeState?.returnState,
+        returnIndex: routeState?.returnIndex,
+        addressFlowReturnTo: routeState?.addressFlowReturnTo,
+        addressFlowReturnState: routeState?.addressFlowReturnState,
+        addressFlowReturnIndex: routeState?.addressFlowReturnIndex,
       },
     });
   };
@@ -125,7 +168,16 @@ export default function DeliveryAddressPage() {
    */
   useEffect(() => {
     const state = location.state as
-      | { draft?: AddressDraft; editingId?: string }
+      | {
+          draft?: AddressDraft;
+          editingId?: string;
+          returnTo?: string;
+          returnState?: unknown;
+          returnIndex?: number;
+          addressFlowReturnTo?: string;
+          addressFlowReturnState?: unknown;
+          addressFlowReturnIndex?: number;
+        }
       | null;
     if (!state?.draft || !state.editingId) return;
     const row = delivery.saved.find((s) => s.id === state.editingId);
@@ -138,8 +190,19 @@ export default function DeliveryAddressPage() {
         ? { latitude: state.draft.latitude, longitude: state.draft.longitude }
         : null,
     );
-    // Clear the router entry so a back-navigation does not reopen the editor.
-    navigate(".", { replace: true, state: null });
+    // Clear the edit payload so a back-navigation does not reopen the editor,
+    // while retaining the caller so Back still leaves the address flow cleanly.
+    navigate(".", {
+      replace: true,
+      state: {
+        returnTo: state.returnTo,
+        returnState: state.returnState,
+        returnIndex: state.returnIndex,
+        addressFlowReturnTo: state.addressFlowReturnTo,
+        addressFlowReturnState: state.addressFlowReturnState,
+        addressFlowReturnIndex: state.addressFlowReturnIndex,
+      },
+    });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [location.state, delivery.saved]);
 
@@ -346,6 +409,12 @@ export default function DeliveryAddressPage() {
                                 longitude: item.longitude,
                               },
                               editingId: item.id,
+                              returnTo: routeState?.returnTo,
+                              returnState: routeState?.returnState,
+                              returnIndex: routeState?.returnIndex,
+                              addressFlowReturnTo: routeState?.addressFlowReturnTo,
+                              addressFlowReturnState: routeState?.addressFlowReturnState,
+                              addressFlowReturnIndex: routeState?.addressFlowReturnIndex,
                             },
                           })
                         }
@@ -438,7 +507,20 @@ export default function DeliveryAddressPage() {
             <li className="border-t border-[var(--border)]">
               <button
                 type="button"
-                onClick={() => navigate("/customer/delivery-address/new")}
+                onClick={() => {
+                  const currentIndex = window.history.state?.idx;
+                  navigate("/customer/delivery-address/new", {
+                    state: {
+                      addressFlowReturnTo: routeState?.returnTo || routeState?.addressFlowReturnTo || "/customer/food",
+                      addressFlowReturnState: routeState?.returnTo
+                        ? routeState.returnState
+                        : routeState?.addressFlowReturnState,
+                      addressFlowReturnIndex: routeState?.returnIndex ?? routeState?.addressFlowReturnIndex ?? (
+                        typeof currentIndex === "number" && currentIndex > 0 ? currentIndex - 1 : undefined
+                      ),
+                    },
+                  });
+                }}
                 className="flex min-h-14 w-full items-center gap-2 px-4 py-3 text-left hover:bg-[var(--muted)]"
               >
                 <span className="grid size-8 flex-shrink-0 place-items-center rounded-full bg-[var(--primary-soft)]">

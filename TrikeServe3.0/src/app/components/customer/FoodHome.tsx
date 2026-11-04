@@ -364,13 +364,16 @@ export default function FoodHome() {
       }
 
       let distanceLabel: string | null = null;
+      let distanceMeters: number | null = null;
       if (origin && hasCoords({ lat: r.latitude, lng: r.longitude })) {
-        distanceLabel = formatDistance(
-          haversineMetres(origin, {
-            lat: Number(r.latitude),
-            lng: Number(r.longitude),
-          }),
-        );
+        const metres = haversineMetres(origin, {
+          lat: Number(r.latitude),
+          lng: Number(r.longitude),
+        });
+        if (Number.isFinite(metres)) {
+          distanceMeters = metres;
+          distanceLabel = formatDistance(metres);
+        }
       }
 
       return {
@@ -378,6 +381,7 @@ export default function FoodHome() {
         cuisineLabels: inferred,
         whatWeServeCategories: Array.from(whatWeServeCategories.values()),
         distanceLabel,
+        distanceMeters,
       };
     });
   }, [restaurants, menuCategories, distanceOrigin]);
@@ -389,13 +393,17 @@ export default function FoodHome() {
       return true;
     });
 
-    // Nearest needs an origin; without one it falls back to top rated rather
-    // than an arbitrary order.
-    if (sortBy === "distance" && distanceOrigin) {
+    // With no origin or no pinned shops, there is no reliable distance to sort
+    // by. Keep the list useful by showing the top-rated restaurants instead.
+    if (sortBy === "distance") {
+      if (!distanceOrigin || !filtered.some((restaurant) => restaurant.distanceMeters !== null)) {
+        return [...filtered].sort((a, b) => b.rating - a.rating);
+      }
+
       return [...filtered].sort((a, b) => {
-        if (a.distanceLabel === null) return 1;
-        if (b.distanceLabel === null) return -1;
-        return a.distanceLabel.localeCompare(b.distanceLabel, undefined, { numeric: true });
+        if (a.distanceMeters === null) return b.distanceMeters === null ? 0 : 1;
+        if (b.distanceMeters === null) return -1;
+        return a.distanceMeters - b.distanceMeters;
       });
     }
 
@@ -454,6 +462,16 @@ export default function FoodHome() {
   // Falls back to the device position through the hook, so the food header and the
   // search header cannot name two different destinations for the same order.
   const addressLabel = delivery.address?.address ?? null;
+  const openAddressPicker = () => {
+    const currentIndex = window.history.state?.idx;
+    navigate("/customer/delivery-address", {
+      state: {
+        returnTo: "/customer/food",
+        returnState: location.state,
+        returnIndex: typeof currentIndex === "number" ? currentIndex : undefined,
+      },
+    });
+  };
 
   /**
    * What is narrowing the list right now, shown beside the filter icon.
@@ -545,7 +563,7 @@ export default function FoodHome() {
         favoritesCount={getTotalFavorites()}
         onBack={goBack}
         addressLabel={addressLabel}
-        onOpenAddress={() => navigate("/customer/delivery-address")}
+        onOpenAddress={openAddressPicker}
       />
 
       {/* Search opens a full-page overlay rather than filtering in place, so the
@@ -593,7 +611,7 @@ export default function FoodHome() {
                     the fact does not change shape as the bar swaps. */}
                 <button
                   type="button"
-                  onClick={() => navigate("/customer/delivery-address")}
+                  onClick={openAddressPicker}
                   aria-label={`Deliver to ${addressLabel || "no address set"}. Change delivery address`}
                   className="min-w-0 flex-1 text-left"
                 >

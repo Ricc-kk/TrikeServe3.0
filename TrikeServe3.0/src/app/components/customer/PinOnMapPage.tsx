@@ -65,6 +65,10 @@ export default function PinOnMapPage() {
         editingId?: string;
         returnTo?: string;
         returnState?: unknown;
+        returnIndex?: number;
+        addressFlowReturnTo?: string;
+        addressFlowReturnState?: unknown;
+        addressFlowReturnIndex?: number;
       }
     | null;
   const delivery = useDeliveryAddress();
@@ -289,7 +293,12 @@ export default function PinOnMapPage() {
           editingId: routeState.editingId,
           returnTo: routeState.returnTo,
           returnState: routeState.returnState,
+          returnIndex: routeState.returnIndex,
+          addressFlowReturnTo: routeState.addressFlowReturnTo,
+          addressFlowReturnState: routeState.addressFlowReturnState,
+          addressFlowReturnIndex: routeState.addressFlowReturnIndex,
         },
+        replace: true,
       });
       return;
     }
@@ -305,7 +314,12 @@ export default function PinOnMapPage() {
         longitude: draft.longitude,
         source: "recent",
       });
-      navigate(routeState.returnTo, { state: routeState.returnState });
+      const currentIndex = window.history.state?.idx;
+      if (typeof routeState.returnIndex === "number" && typeof currentIndex === "number" && currentIndex > routeState.returnIndex) {
+        navigate(routeState.returnIndex - currentIndex);
+      } else {
+        navigate(routeState.returnTo, { state: routeState.returnState, replace: true });
+      }
       return;
     }
 
@@ -318,7 +332,14 @@ export default function PinOnMapPage() {
       longitude: draft.longitude,
       source: "recent",
     });
-    navigate("/customer/delivery-address/save", { state: { draft } });
+    navigate("/customer/delivery-address/save", {
+      state: {
+        draft,
+        addressFlowReturnTo: routeState?.addressFlowReturnTo,
+        addressFlowReturnState: routeState?.addressFlowReturnState,
+        addressFlowReturnIndex: routeState?.addressFlowReturnIndex,
+      },
+    });
   };
 
   return (

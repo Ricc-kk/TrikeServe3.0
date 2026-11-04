@@ -1103,10 +1103,12 @@ export default function CartCheckout() {
             onClick={() => {
               setAddressError(false);
               setDeliveryBoundaryError(null);
+              const currentIndex = window.history.state?.idx;
               navigate("/customer/delivery-address", {
                 state: {
                   returnTo: "/customer/cart/checkout",
                   returnState: routeState,
+                  returnIndex: typeof currentIndex === "number" ? currentIndex : undefined,
                 },
               });
             }}

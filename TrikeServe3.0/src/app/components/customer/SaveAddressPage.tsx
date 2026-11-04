@@ -51,7 +51,14 @@ export default function SaveAddressPage() {
    * only on a cold deep link where there is no history to pop.
    */
   const goBack = usePreviousPage("/customer/delivery-address/pin");
-  const routeState = useLocation().state as { draft?: AddressDraft } | null;
+  const routeState = useLocation().state as
+    | {
+        draft?: AddressDraft;
+        addressFlowReturnTo?: string;
+        addressFlowReturnState?: unknown;
+        addressFlowReturnIndex?: number;
+      }
+    | null;
   const delivery = useDeliveryAddress();
 
   const incoming = routeState?.draft ?? readAddressDraft();
@@ -91,7 +98,14 @@ export default function SaveAddressPage() {
       if (result?.error) throw result.error;
 
       clearAddressDraft();
-      navigate("/customer/delivery-address");
+      navigate("/customer/delivery-address", {
+        replace: true,
+        state: {
+          addressFlowReturnTo: routeState?.addressFlowReturnTo || "/customer/food",
+          addressFlowReturnState: routeState?.addressFlowReturnState,
+          addressFlowReturnIndex: routeState?.addressFlowReturnIndex,
+        },
+      });
     } catch (err) {
       // The reason, not just the fact. A bare "could not save" left the
       // customer unable to tell a retryable network blip from an expired

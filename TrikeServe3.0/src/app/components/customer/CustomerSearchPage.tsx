@@ -174,7 +174,16 @@ export default function CustomerSearchPage() {
                 opens the address list, so it does here too. */}
             <button
               type="button"
-              onClick={() => navigate("/customer/delivery-address")}
+              onClick={() => {
+                const currentIndex = window.history.state?.idx;
+                navigate("/customer/delivery-address", {
+                  state: {
+                    returnTo: "/customer/search",
+                    returnState: location.state,
+                    returnIndex: typeof currentIndex === "number" ? currentIndex : undefined,
+                  },
+                });
+              }}
               className="min-w-0 flex-1 pt-0.5 text-left"
             >
               <span className="block text-xs font-bold uppercase tracking-wider text-[var(--muted-foreground)]">

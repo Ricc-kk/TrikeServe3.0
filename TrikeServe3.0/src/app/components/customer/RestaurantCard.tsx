@@ -27,6 +27,8 @@ export type RestaurantView = {
    * than a fabricated number.
    */
   distanceLabel: string | null;
+  /** Exact distance for sorting; never sort by the formatted display label. */
+  distanceMeters: number | null;
 };
 
 type RestaurantCardProps = {

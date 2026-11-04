@@ -1106,10 +1106,15 @@ if (unfiledItems.length > 0) sectionGroups.push({ id: "__unfiled", name: "More",
             </p>
             
             <div className="flex items-center gap-2 text-sm">
-              <span className="text-[var(--primary)] font-bold">
-                <span className="text-xs">₱</span>{restaurantData?.deliveryFee.toFixed(2)}
+              {restaurantData && restaurantData.deliveryFee > 0 && (
+                <span className="text-[var(--primary)] font-bold">
+                  <span className="text-xs">₱</span>{restaurantData.deliveryFee.toFixed(2)}
+                </span>
+              )}
+              <span className="text-[var(--muted-foreground)]">
+                {restaurantData && restaurantData.deliveryFee > 0 ? "• " : ""}
+                From {restaurantData?.deliveryTime}
               </span>
-              <span className="text-[var(--muted-foreground)]">• From {restaurantData?.deliveryTime}</span>
             </div>
           </div>
         </div>

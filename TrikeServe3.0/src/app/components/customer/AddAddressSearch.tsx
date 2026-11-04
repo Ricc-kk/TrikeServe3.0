@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { ChevronLeft, MapPin, Search } from "lucide-react";
-import { useNavigate } from "react-router";
+import { useLocation, useNavigate } from "react-router";
 
 import {
   createPlacesSessionToken,
@@ -30,6 +30,14 @@ type Hit = { place_id: string; label: string; detail: string };
  */
 export default function AddAddressSearch() {
   const navigate = useNavigate();
+  const location = useLocation();
+  const flowState = location.state as
+    | {
+        addressFlowReturnTo?: string;
+        addressFlowReturnState?: unknown;
+        addressFlowReturnIndex?: number;
+      }
+    | null;
   const goBack = usePreviousPage("/customer/delivery-address");
   const delivery = useDeliveryAddress();
 
@@ -99,7 +107,14 @@ export default function AddAddressSearch() {
         longitude: place.lng,
       };
       writeAddressDraft(draft);
-      navigate("/customer/delivery-address/pin", { state: { draft } });
+      navigate("/customer/delivery-address/pin", {
+        state: {
+          draft,
+          addressFlowReturnTo: flowState?.addressFlowReturnTo,
+          addressFlowReturnState: flowState?.addressFlowReturnState,
+          addressFlowReturnIndex: flowState?.addressFlowReturnIndex,
+        },
+      });
     } catch {
       setError("Could not load that place. Try searching again.");
     } finally {
@@ -201,7 +216,13 @@ export default function AddAddressSearch() {
             and the button simply follows the list. */}
         <button
           type="button"
-          onClick={() => navigate("/customer/delivery-address/pin")}
+          onClick={() => navigate("/customer/delivery-address/pin", {
+            state: {
+              addressFlowReturnTo: flowState?.addressFlowReturnTo,
+              addressFlowReturnState: flowState?.addressFlowReturnState,
+              addressFlowReturnIndex: flowState?.addressFlowReturnIndex,
+            },
+          })}
           className="mt-auto flex min-h-14 w-full items-center justify-center gap-2 rounded-2xl bg-[var(--muted)] px-5 text-base font-bold text-[var(--ink)]"
         >
           <MapPin className="size-5 text-[var(--primary)]" aria-hidden="true" />
