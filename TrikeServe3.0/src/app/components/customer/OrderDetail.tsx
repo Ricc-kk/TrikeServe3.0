@@ -198,12 +198,7 @@ export default function OrderDetail() {
   const [rating, setRating] = useState(0);
   const [ratingSubmitting, setRatingSubmitting] = useState(false);
   const [ratingSubmitted, setRatingSubmitted] = useState(false);
-  const [itemRatings, setItemRatings] = useState<Record<number, number>>({});
-  const [savedItemRatings, setSavedItemRatings] = useState<Record<number, number>>({});
-  const [itemRatingsLoading, setItemRatingsLoading] = useState(false);
-  const [itemRatingsSubmitting, setItemRatingsSubmitting] = useState(false);
-  const [itemRatingError, setItemRatingError] = useState<string | null>(null);
-  const itemRatingsLoadedOrderId = useRef<string | null>(null);
+  const [showItemRatingPrompt, setShowItemRatingPrompt] = useState(false);
   // Cancelling an order asks for a reason first.
   const [showCancelOrderPrompt, setShowCancelOrderPrompt] = useState(false);
   const [ratingError, setRatingError] = useState<string | null>(null);
@@ -219,10 +214,6 @@ export default function OrderDetail() {
 
     const fetchOrder = async () => {
       try {
-        itemRatingsLoadedOrderId.current = null;
-        setItemRatings({});
-        setSavedItemRatings({});
-        setItemRatingError(null);
         setRestaurantLocation(null);
         setRestaurantProfile(null);
         const { data: dbOrder, error: dbError } = await supabase
@@ -348,45 +339,6 @@ export default function OrderDetail() {
 
     fetchOrder();
   }, [orderId]);
-
-  // Item reviews are only available after the order is delivered. Loading them
-  // on the status transition also covers orders that were open when the page loaded.
-  useEffect(() => {
-    if (!order || order.status !== 'delivered' || itemRatingsLoadedOrderId.current === order.id) return;
-
-    const targetOrderId = order.id;
-    itemRatingsLoadedOrderId.current = targetOrderId;
-    setItemRatingsLoading(true);
-    void (async () => {
-      try {
-        const { data, error } = await supabase
-          .from('menu_item_ratings')
-          .select('order_item_index, rating')
-          .eq('order_id', targetOrderId);
-
-        if (itemRatingsLoadedOrderId.current !== targetOrderId) return;
-        if (error) {
-          console.warn('[OrderDetail] Could not load item ratings:', error);
-          setItemRatingError('Could not load saved item ratings. You can still try to submit yours.');
-        } else {
-          const saved = Object.fromEntries(
-            (data || []).map((row: any) => [Number(row.order_item_index), Number(row.rating)]),
-          ) as Record<number, number>;
-          setItemRatings(saved);
-          setSavedItemRatings(saved);
-        }
-      } catch (error) {
-        console.warn('[OrderDetail] Could not load item ratings:', error);
-        if (itemRatingsLoadedOrderId.current === targetOrderId) {
-          setItemRatingError('Could not load saved item ratings. You can still try to submit yours.');
-        }
-      } finally {
-        if (itemRatingsLoadedOrderId.current === targetOrderId) {
-          setItemRatingsLoading(false);
-        }
-      }
-    })();
-  }, [order?.id, order?.status]);
 
   // Apply order status changes immediately when realtime is available. The
   // three-second poll below remains as a fallback for delayed or missed events.
@@ -726,47 +678,6 @@ export default function OrderDetail() {
     ));
   };
 
-  const handleSubmitItemRatings = async () => {
-    if (!order || order.status !== 'delivered' || !user?.id || !order.restaurantId) return;
-
-    const ratingsToSave = order.items.flatMap((item, index) => {
-      const rating = Number(itemRatings[index]);
-      const menuItemId = String(item.id ?? '').trim();
-      if (!menuItemId || !Number.isInteger(rating) || rating < 1 || rating > 5 || savedItemRatings[index] === rating) {
-        return [];
-      }
-
-      return [{
-        order_id: order.id,
-        order_item_index: index,
-        menu_item_id: menuItemId,
-        restaurant_id: order.restaurantId,
-        customer_id: user.id,
-        rating,
-      }];
-    });
-
-    if (ratingsToSave.length === 0) return;
-    setItemRatingsSubmitting(true);
-    setItemRatingError(null);
-    try {
-      const { error: saveError } = await supabase
-        .from('menu_item_ratings')
-        .upsert(ratingsToSave, { onConflict: 'order_id,order_item_index' });
-
-      if (saveError) throw saveError;
-      setSavedItemRatings((current) => ({
-        ...current,
-        ...Object.fromEntries(ratingsToSave.map((row) => [row.order_item_index, row.rating])),
-      }));
-    } catch (saveError) {
-      console.error('[OrderDetail] Failed to save item ratings:', saveError);
-      setItemRatingError('Could not save item ratings. Please try again.');
-    } finally {
-      setItemRatingsSubmitting(false);
-    }
-  };
-
   // ─── Loading / Error states ────────────────────────────────────────
   if (isLoading) {
     return (
@@ -1084,69 +995,6 @@ export default function OrderDetail() {
           </div>
         </Card>
 
-        {order.status === 'delivered' && (
-          <Card className="gap-0 p-4 md:p-5 border border-line">
-            <div className="flex items-center gap-2 mb-1">
-              <Star className="w-4 h-4 fill-[var(--amber)] text-[var(--amber)]" aria-hidden="true" />
-              <h3 className="font-bold text-[var(--ink)] text-sm md:text-base">Rate each item</h3>
-              <span className="text-xs text-[var(--muted-foreground)]">Optional</span>
-            </div>
-            <p className="text-xs text-[var(--muted-foreground)] mb-3">
-              Share a rating for any dishes in this order.
-            </p>
-            <div className="divide-y divide-[var(--border)]">
-              {order.items.map((item, index) => {
-                const selectedRating = itemRatings[index] || 0;
-                const isSaved = selectedRating > 0 && savedItemRatings[index] === selectedRating;
-
-                return (
-                  <div key={`${item.id ?? item.name}-${index}`} className="flex items-center justify-between gap-3 py-3 first:pt-0 last:pb-0">
-                    <div className="min-w-0">
-                      <p className="truncate text-sm font-semibold text-[var(--ink)]">{item.name}</p>
-                      <p className="mt-0.5 text-[11px] text-[var(--muted-foreground)]">
-                        {isSaved ? `Saved · ${selectedRating}/5` : selectedRating ? 'Ready to save' : 'Not rated'}
-                      </p>
-                    </div>
-                    <div role="group" aria-label={`Rate ${item.name}`} className="flex shrink-0 items-center gap-0.5">
-                      {[1, 2, 3, 4, 5].map((star) => (
-                        <button
-                          key={star}
-                          type="button"
-                          aria-label={`Rate ${item.name} ${star} out of 5`}
-                          aria-pressed={star === selectedRating}
-                          disabled={itemRatingsLoading || itemRatingsSubmitting}
-                          onClick={() => setItemRatings((current) => ({ ...current, [index]: star }))}
-                          className="rounded-lg p-1 transition-transform hover:scale-110 disabled:opacity-50"
-                        >
-                          <Star className={`h-6 w-6 ${star <= selectedRating ? 'fill-[var(--amber)] text-[var(--amber)]' : 'fill-[var(--border)] text-[var(--border)]'}`} />
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-            {itemRatingError && <p className="mt-3 text-xs text-[var(--error)]">{itemRatingError}</p>}
-            {!order.restaurantId && (
-              <p className="mt-3 text-xs text-[var(--error)]">This order is missing its restaurant link, so item ratings cannot be saved.</p>
-            )}
-            <Button
-              type="button"
-              onClick={handleSubmitItemRatings}
-              disabled={
-                itemRatingsLoading ||
-                itemRatingsSubmitting ||
-                !user?.id ||
-                !order.restaurantId ||
-                !order.items.some((_, index) => (itemRatings[index] || 0) !== (savedItemRatings[index] || 0))
-              }
-              className="mt-4 w-full bg-[var(--primary)] py-3 font-bold text-white hover:bg-[var(--primary)] disabled:opacity-50"
-            >
-              {itemRatingsSubmitting ? 'Saving ratings...' : 'Save item ratings'}
-            </Button>
-          </Card>
-        )}
-
         {/* Payment */}
         <Card className="gap-0 p-4 md:p-5 border border-line">
           <div className="flex items-center gap-2 mb-3">
@@ -1279,6 +1127,27 @@ export default function OrderDetail() {
                 <div className="w-14 h-14 mx-auto mb-3 rounded-full bg-[var(--success-soft)] flex items-center justify-center text-2xl">🙏</div>
                 <h3 className="text-lg font-bold text-[var(--ink)] mb-1">Thank you!</h3>
                 <p className="text-sm text-[var(--muted-foreground)]">Your rating for {order.restaurantName} has been saved.</p>
+                {showItemRatingPrompt && order.restaurantId && order.items.some((item) => String(item.id ?? "").trim()) && (
+                  <div className="mt-4 rounded-2xl bg-[var(--muted)] p-4 text-left">
+                    <p className="text-sm font-semibold text-[var(--ink)]">Would you also like to rate the items you ordered?</p>
+                    <div className="mt-3 flex flex-col gap-2 sm:flex-row">
+                      <Button
+                        type="button"
+                        onClick={() => navigate(`/customer/order-detail/${order.id}/rate-items`)}
+                        className="flex-1 bg-[var(--primary)] font-bold text-white hover:bg-[var(--primary)]"
+                      >
+                        Rate ordered items
+                      </Button>
+                      <button
+                        type="button"
+                        onClick={() => setShowItemRatingPrompt(false)}
+                        className="min-h-11 flex-1 rounded-xl px-4 text-sm font-semibold text-[var(--muted-foreground)] hover:bg-[var(--border)]"
+                      >
+                        Maybe later
+                      </button>
+                    </div>
+                  </div>
+                )}
               </div>
             ) : (
               <>
@@ -1304,6 +1173,7 @@ export default function OrderDetail() {
                     setRatingSubmitting(false);
                     if (error) { setRatingError('Failed to submit rating.'); return; }
                     setRatingSubmitted(true);
+                    setShowItemRatingPrompt(true);
                   }}
                   disabled={!rating || ratingSubmitting || !order.businessId}
                   className="w-full bg-[var(--primary)] hover:bg-[var(--primary)] text-white py-3 font-bold disabled:opacity-50"

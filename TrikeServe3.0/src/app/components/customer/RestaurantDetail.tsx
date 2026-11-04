@@ -27,6 +27,9 @@ interface MenuItem extends CustomizableMenuItem {
   available: boolean;
   /** The shop's own heading this dish sits under. Null when unfiled. */
   sectionId: string | null;
+  /** Average of customer ratings, or null before the first rating. */
+  averageRating: number | null;
+  ratingCount: number;
 }
 
 interface Review {
@@ -91,11 +94,20 @@ function mapRestaurantMenuItems(
   items: any[],
   topOrderedItemId: string | null,
   mostLikedItemId: string | null,
+  ratingSummaries: MenuItemRatingSummary[],
 ): MenuItem[] {
+  const ratingsByItemId = new Map(
+    ratingSummaries.map((summary) => [String(summary.menu_item_id), summary]),
+  );
+
   return items.map((item: any) => {
     const itemId = String(item.id);
     const isMostLiked = itemId === mostLikedItemId;
     const isMostOrdered = itemId === topOrderedItemId;
+    const ratingSummary = ratingsByItemId.get(itemId);
+    const ratingCount = Number(ratingSummary?.rating_count ?? 0);
+    const averageRating = Number(ratingSummary?.average_rating);
+    const hasRating = ratingCount > 0 && Number.isFinite(averageRating);
     const savedBadge = item.badge === "most-liked" || item.badge === "most-ordered"
       ? undefined
       : item.badge || undefined;
@@ -111,11 +123,13 @@ function mapRestaurantMenuItems(
       available: item.is_available,
       badge: isMostLiked ? "most-liked" : isMostOrdered ? "most-ordered" : savedBadge,
       customizationGroups: parseChoiceGroups(item.customization_groups).filter((g) => g.enabled),
+      averageRating: hasRating ? averageRating : null,
+      ratingCount: hasRating ? Math.floor(ratingCount) : 0,
     };
   });
 }
 
-async function loadRestaurantMenuBadgeIds(restaurantId: string, menuItems: any[]) {
+async function loadRestaurantMenuMetadata(restaurantId: string, menuItems: any[]) {
   const [ordersResult, ratingsResult] = await Promise.all([
     supabase
       .from('orders')
@@ -133,9 +147,11 @@ async function loadRestaurantMenuBadgeIds(restaurantId: string, menuItems: any[]
     console.warn('[RestaurantDetail] Could not load menu item ratings:', ratingsResult.error);
   }
 
+  const ratingSummaries = (ratingsResult.data ?? []) as MenuItemRatingSummary[];
   return {
     topOrderedItemId: topDishesByUnits(ordersResult.data ?? [], menuItems, 1)[0]?.id ?? null,
-    mostLikedItemId: highestRatedMenuItemId(menuItems, (ratingsResult.data ?? []) as MenuItemRatingSummary[]),
+    mostLikedItemId: highestRatedMenuItemId(menuItems, ratingSummaries),
+    ratingSummaries,
   };
 }
 
@@ -429,11 +445,12 @@ export default function RestaurantDetail() {
         }
 
         // Work out both customer-facing badges from current activity and ratings.
-        const badgeIds = await loadRestaurantMenuBadgeIds(restaurantId, menuItems || []);
+        const menuMetadata = await loadRestaurantMenuMetadata(restaurantId, menuItems || []);
         const mappedMenuItems = mapRestaurantMenuItems(
           menuItems || [],
-          badgeIds.topOrderedItemId,
-          badgeIds.mostLikedItemId,
+          menuMetadata.topOrderedItemId,
+          menuMetadata.mostLikedItemId,
+          menuMetadata.ratingSummaries,
         );
 
         // Compute the restaurant's real rating from business_ratings.
@@ -589,18 +606,19 @@ export default function RestaurantDetail() {
         if (menuError) throw menuError;
         if (!menuItems) return;
 
-        const [sectionsResult, badgeIds] = await Promise.all([
+        const [sectionsResult, menuMetadata] = await Promise.all([
           supabase
             .from('menu_sections')
             .select('id, name, sort_order')
             .eq('restaurant_id', restaurantId)
             .order('sort_order', { ascending: true }),
-          loadRestaurantMenuBadgeIds(restaurantId, menuItems),
+          loadRestaurantMenuMetadata(restaurantId, menuItems),
         ]);
         const mappedMenuItems = mapRestaurantMenuItems(
           menuItems,
-          badgeIds.topOrderedItemId,
-          badgeIds.mostLikedItemId,
+          menuMetadata.topOrderedItemId,
+          menuMetadata.mostLikedItemId,
+          menuMetadata.ratingSummaries,
         );
 
         setRestaurantData((current) => current ? {
@@ -894,6 +912,19 @@ if (unfiledItems.length > 0) sectionGroups.push({ id: "__unfiled", name: "More",
                     {item.description && (
                       <p className="text-xs text-[var(--muted-foreground)] mb-2 line-clamp-2">{item.description}</p>
                     )}
+                    <div className="mb-1 flex items-center gap-1.5 text-xs">
+                      {item.averageRating !== null ? (
+                        <>
+                          <Star className="size-3.5 fill-[var(--amber)] text-[var(--amber)]" aria-hidden="true" />
+                          <span className="font-semibold text-[var(--ink)]">{item.averageRating.toFixed(1)}</span>
+                          <span className="text-[var(--muted-foreground)]">
+                            ({item.ratingCount} {item.ratingCount === 1 ? "review" : "reviews"})
+                          </span>
+                        </>
+                      ) : (
+                        <span className="text-[var(--muted-foreground)]">No ratings yet</span>
+                      )}
+                    </div>
                     <p className="text-lg font-bold text-[var(--ink)]">
                       <span className="text-sm">₱</span>{item.price.toFixed(2)}
                     </p>

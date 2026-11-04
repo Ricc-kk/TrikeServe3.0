@@ -43,6 +43,7 @@ import Account from "./components/customer/Account";
 import AccountManagement from "./components/customer/AccountManagement";
 import Profile from "./components/customer/Profile";
 import OrderDetail from "./components/customer/OrderDetail";
+import OrderItemRatingPage from "./components/customer/OrderItemRatingPage";
 import Favorites from "./components/customer/Favorites";
 import HelpSupport from "./components/customer/HelpSupport";
 import EditProfile from "./components/customer/EditProfile";
@@ -76,7 +77,7 @@ export const router = createBrowserRouter([
       { path: "verify-email", Component: VerifyEmail },
       { path: "set-password", Component: SetPassword },
       { path: "session-notice", Component: AccountSessionNotice },
-      { 
+      {
         path: "redirect", 
         element: <RoleRedirect /> 
       },
@@ -438,6 +439,14 @@ export const router = createBrowserRouter([
         )
       },
       { 
+        path: "customer/order-detail/:orderId/rate-items",
+        element: (
+          <ProtectedRoute allowedRoles={['customer']}>
+            <OrderItemRatingPage />
+          </ProtectedRoute>
+        )
+      },
+      {
         path: "customer/order-detail/:orderId", 
         element: (
           <ProtectedRoute allowedRoles={['customer']}>
