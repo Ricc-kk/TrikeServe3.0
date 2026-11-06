@@ -12,6 +12,9 @@ npm run build
 
 ### Developer mode logo hold
 
+Hold the login screen logo for 2 seconds in the Android app (5 seconds in a web
+browser) to toggle Developer Mode.
+
 Set `VITE_DISABLE_DEV_MODE_HOLD=true` in `.env.local` to disable the login
 screen logo hold gesture that toggles Developer Mode. Set it to `false` (or
 remove it) to enable the gesture. Restart the dev server after changing it.

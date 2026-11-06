@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { useNavigate, Link } from "react-router";
 import { ChevronDown, Eye, EyeOff, Users } from "lucide-react";
+import { Capacitor } from "@capacitor/core";
 import { armWelcomeGreeting } from "../../lib/welcomeGreeting";
 import { useDevModeFeature, useDevModeStatus } from "../hooks/useDevModeSettings";
 import TrikeServeLogo from "../../assets/TRIKESERVE_logo_trimmed.jpg";
@@ -39,7 +40,7 @@ interface TestAccount {
  * the password being absent, so this only reaches accounts with nothing stored.
  */
 const QUICK_ACCESS_PASSWORD = "Admin12345";
-const DEV_MODE_HOLD_MS = 5000;
+const DEV_MODE_HOLD_MS = Capacitor.isNativePlatform() ? 2000 : 5000;
 const DISABLE_DEV_MODE_HOLD =
   import.meta.env.VITE_DISABLE_DEV_MODE_HOLD?.toLowerCase() === "true";
 
@@ -80,6 +81,7 @@ export default function Login() {
   const [error, setError] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [isDevMode, setIsDevMode] = useDevModeStatus();
+  const [isHoldingDevMode, setIsHoldingDevMode] = useState(false);
   const [quickAccessEnabled] = useDevModeFeature("quickAccess");
   const [showAccounts, setShowAccounts] = useState(false);
   const [accounts, setAccounts] = useState<TestAccount[]>([]);
@@ -87,13 +89,27 @@ export default function Login() {
   const [resendMessage, setResendMessage] = useState("");
   const devModeHoldTimer = useRef<number | null>(null);
 
-  const startDevModeHold = () => {
+  const startDevModeHold = (event?: React.PointerEvent<HTMLButtonElement>) => {
+    if (event?.pointerType === "mouse" && event.button !== 0) return;
     if (devModeHoldTimer.current !== null) return;
 
+    // Keep tracking the finger even if it drifts slightly across the logo.
+    // Pointer capture is supported by the Android WebView; the try/catch keeps
+    // the regular down/up handlers usable in browsers without it.
+    if (event) {
+      try {
+        event.currentTarget.setPointerCapture(event.pointerId);
+      } catch {
+        // Pointer capture is best-effort; the hold still works on the button.
+      }
+    }
+
+    setIsHoldingDevMode(true);
     devModeHoldTimer.current = window.setTimeout(() => {
       const nextMode = !isDevMode;
       setIsDevMode(nextMode);
       setShowAccounts(false);
+      setIsHoldingDevMode(false);
       devModeHoldTimer.current = null;
     }, DEV_MODE_HOLD_MS);
   };
@@ -103,6 +119,7 @@ export default function Login() {
       window.clearTimeout(devModeHoldTimer.current);
       devModeHoldTimer.current = null;
     }
+    setIsHoldingDevMode(false);
   };
 
   const exitDevMode = () => {
@@ -324,13 +341,14 @@ export default function Login() {
           <div className="mb-7 flex justify-center lg:justify-start">
             <button
               type="button"
-              aria-label={DISABLE_DEV_MODE_HOLD ? "TrikeServe logo" : "Hold the TrikeServe logo for 5 seconds to toggle developer mode"}
+              aria-label={DISABLE_DEV_MODE_HOLD ? "TrikeServe logo" : `Hold the TrikeServe logo for ${DEV_MODE_HOLD_MS / 1000} seconds to toggle developer mode`}
               aria-pressed={DISABLE_DEV_MODE_HOLD ? undefined : isDevMode}
               disabled={DISABLE_DEV_MODE_HOLD}
               onPointerDown={DISABLE_DEV_MODE_HOLD ? undefined : startDevModeHold}
               onPointerUp={DISABLE_DEV_MODE_HOLD ? undefined : cancelDevModeHold}
               onPointerLeave={DISABLE_DEV_MODE_HOLD ? undefined : cancelDevModeHold}
               onPointerCancel={DISABLE_DEV_MODE_HOLD ? undefined : cancelDevModeHold}
+              onLostPointerCapture={DISABLE_DEV_MODE_HOLD ? undefined : cancelDevModeHold}
               onKeyDown={DISABLE_DEV_MODE_HOLD ? undefined : (event) => {
                 if (event.key === "Enter" || event.key === " ") {
                   event.preventDefault();
@@ -351,6 +369,14 @@ export default function Login() {
                 alt="TrikeServe logo"
                 className="size-full object-contain p-1"
               />
+              {!DISABLE_DEV_MODE_HOLD && isHoldingDevMode && (
+                <span
+                  aria-hidden="true"
+                  className="absolute inset-x-2 bottom-2 rounded-full bg-black/70 px-2 py-1 text-center text-[10px] font-semibold text-white"
+                >
+                  Keep holding…
+                </span>
+              )}
             </button>
           </div>
 

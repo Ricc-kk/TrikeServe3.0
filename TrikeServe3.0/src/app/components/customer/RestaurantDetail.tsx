@@ -809,7 +809,7 @@ export default function RestaurantDetail() {
      // Calculate total price with customizations
      let itemPrice = item.price;
      customizations.forEach((customization: any) => {
-       itemPrice += customization.price;
+       itemPrice += customization.price * (customization.quantity ?? 1);
      });
 
      addItemToCart(restaurantInfo, {

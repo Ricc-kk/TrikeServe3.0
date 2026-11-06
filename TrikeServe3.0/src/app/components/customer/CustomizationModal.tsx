@@ -52,7 +52,7 @@ export default function CustomizationModal({
 }: CustomizationModalProps) {
   const [quantity, setQuantity] = useState(1);
   const [note, setNote] = useState("");
-  const [selections, setSelections] = useState<Record<number, number[]>>({});
+  const [selections, setSelections] = useState<Record<number, Record<number, number>>>({});
   const [validationErrors, setValidationErrors] = useState<Record<number, string>>({});
 
   useEffect(() => {
@@ -70,24 +70,25 @@ export default function CustomizationModal({
 
   const handleOptionToggle = (groupId: number, optionId: number, maxSelections: number) => {
     setSelections((prev) => {
-      const groupSelections = prev[groupId] || [];
-      const isSelected = groupSelections.includes(optionId);
+      const groupSelections = prev[groupId] || {};
+      const isSelected = (groupSelections[optionId] || 0) > 0;
 
       if (isSelected) {
-        // Remove selection
+        const nextGroupSelections = { ...groupSelections };
+        delete nextGroupSelections[optionId];
         return {
           ...prev,
-          [groupId]: groupSelections.filter((id) => id !== optionId),
+          [groupId]: nextGroupSelections,
         };
       } else {
-        // Add selection (respect max selections)
         if (maxSelections === 1) {
           // Radio behavior - replace existing selection
-          return { ...prev, [groupId]: [optionId] };
+          return { ...prev, [groupId]: { [optionId]: 1 } };
         } else {
-          // Checkbox behavior - add if under max
-          if (groupSelections.length < maxSelections) {
-            return { ...prev, [groupId]: [...groupSelections, optionId] };
+          // Count distinct add-on options, not the number ordered for each.
+          const selectedOptionCount = Object.values(groupSelections).filter((quantity) => quantity > 0).length;
+          if (selectedOptionCount < maxSelections) {
+            return { ...prev, [groupId]: { ...groupSelections, [optionId]: 1 } };
           }
         }
       }
@@ -102,6 +103,41 @@ export default function CustomizationModal({
     });
   };
 
+  const handleOptionQuantityChange = (
+    groupId: number,
+    optionId: number,
+    maxSelections: number,
+    change: number,
+  ) => {
+    setSelections((prev) => {
+      const groupSelections = prev[groupId] || {};
+      const currentQuantity = groupSelections[optionId] || 0;
+      const selectedOptionCount = Object.values(groupSelections).filter((quantity) => quantity > 0).length;
+
+      // The group limit controls how many different add-ons can be picked.
+      // Each selected add-on can still have its own quantity.
+      if (change > 0 && currentQuantity === 0 && selectedOptionCount >= maxSelections) {
+        return prev;
+      }
+
+      const nextQuantity = Math.max(0, currentQuantity + change);
+      const nextGroupSelections = { ...groupSelections };
+      if (nextQuantity === 0) {
+        delete nextGroupSelections[optionId];
+      } else {
+        nextGroupSelections[optionId] = nextQuantity;
+      }
+
+      return { ...prev, [groupId]: nextGroupSelections };
+    });
+
+    setValidationErrors((prev) => {
+      const nextErrors = { ...prev };
+      delete nextErrors[groupId];
+      return nextErrors;
+    });
+  };
+
   const validateSelections = (): boolean => {
     if (!item.customizationGroups) return true;
 
@@ -109,8 +145,8 @@ export default function CustomizationModal({
     let isValid = true;
 
     item.customizationGroups.forEach((group) => {
-      const groupSelections = selections[group.id] || [];
-      const count = groupSelections.length;
+      const groupSelections = selections[group.id] || {};
+      const count = Object.values(groupSelections).filter((quantity) => quantity > 0).length;
 
       if (group.required && count < group.minSelections) {
         errors[group.id] = `Please select at least ${group.minSelections} option${group.minSelections > 1 ? 's' : ''}`;
@@ -131,8 +167,10 @@ export default function CustomizationModal({
     const customizations: any[] = [];
     if (item.customizationGroups) {
       item.customizationGroups.forEach((group) => {
-        const groupSelections = selections[group.id] || [];
-        groupSelections.forEach((optionId) => {
+        const groupSelections = selections[group.id] || {};
+        Object.entries(groupSelections).forEach(([optionIdValue, quantity]) => {
+          if (quantity <= 0) return;
+          const optionId = Number(optionIdValue);
           const option = group.options.find((opt) => opt.id === optionId);
           if (option) {
             customizations.push({
@@ -141,6 +179,7 @@ export default function CustomizationModal({
               optionId: option.id,
               optionName: option.name,
               price: option.price,
+              quantity,
             });
           }
         });
@@ -155,11 +194,13 @@ export default function CustomizationModal({
     let total = item.price;
     if (item.customizationGroups) {
       item.customizationGroups.forEach((group) => {
-        const groupSelections = selections[group.id] || [];
-        groupSelections.forEach((optionId) => {
+        const groupSelections = selections[group.id] || {};
+        Object.entries(groupSelections).forEach(([optionIdValue, quantity]) => {
+          if (quantity <= 0) return;
+          const optionId = Number(optionIdValue);
           const option = group.options.find((opt) => opt.id === optionId);
           if (option) {
-            total += option.price;
+            total += option.price * quantity;
           }
         });
       });
@@ -265,7 +306,78 @@ export default function CustomizationModal({
 
                     <div className="space-y-3">
                       {group.options.map((option) => {
-                        const isSelected = (selections[group.id] || []).includes(option.id);
+                        const groupSelections = selections[group.id] || {};
+                        const selectedQuantity = groupSelections[option.id] || 0;
+                        const isSelected = selectedQuantity > 0;
+
+                        if (group.maxSelections > 1) {
+                          const selectedOptionCount = Object.values(groupSelections).filter((quantity) => quantity > 0).length;
+                          const reachedOptionLimit = !isSelected && selectedOptionCount >= group.maxSelections;
+
+                          return (
+                            <div
+                              key={option.id}
+                              className={`w-full flex items-center justify-between gap-2 rounded-xl border-2 p-3 transition-all ${
+                                isSelected
+                                  ? "border-[var(--primary)] bg-[var(--primary-soft)]"
+                                  : "border-[var(--border)]"
+                              }`}
+                            >
+                              <div className="flex min-w-0 items-center gap-3">
+                                <div
+                                  className={`grid size-5 shrink-0 place-items-center rounded-md border-2 ${
+                                    isSelected
+                                      ? "border-[var(--primary)] bg-[var(--primary)]"
+                                      : "border-[var(--border)]"
+                                  }`}
+                                  aria-hidden="true"
+                                >
+                                  {isSelected && <Check className="size-3 text-white" />}
+                                </div>
+                                <div className="min-w-0">
+                                  <span className="block truncate font-semibold text-left text-[var(--ink)]">
+                                    {option.name}
+                                  </span>
+                                  <span className="block text-xs text-[var(--muted-foreground)]">
+                                    {option.price > 0 ? `+₱${option.price.toFixed(2)} each` : "No extra charge"}
+                                  </span>
+                                </div>
+                              </div>
+                              <div className="flex shrink-0 items-center gap-2">
+                                <button
+                                  type="button"
+                                  onClick={() => handleOptionQuantityChange(group.id, option.id, group.maxSelections, -1)}
+                                  disabled={selectedQuantity === 0}
+                                  aria-label={`Remove one ${option.name}`}
+                                  className={`grid size-8 place-items-center rounded-full border transition-all active:scale-90 ${
+                                    selectedQuantity === 0
+                                      ? "border-[var(--border)] text-[var(--border)]"
+                                      : "border-[var(--border)] text-[var(--ink)] hover:bg-[var(--muted)]"
+                                  }`}
+                                >
+                                  <Minus className="size-4" aria-hidden="true" />
+                                </button>
+                                <span aria-live="polite" className="w-5 text-center font-bold text-[var(--ink)]">
+                                  {selectedQuantity}
+                                </span>
+                                <button
+                                  type="button"
+                                  onClick={() => handleOptionQuantityChange(group.id, option.id, group.maxSelections, 1)}
+                                  disabled={reachedOptionLimit}
+                                  aria-label={`Add one ${option.name}`}
+                                  className={`grid size-8 place-items-center rounded-full transition-all active:scale-90 ${
+                                    reachedOptionLimit
+                                      ? "bg-[var(--muted)] text-[var(--muted-foreground)]"
+                                      : "bg-[var(--primary)] text-white hover:opacity-90"
+                                  }`}
+                                >
+                                  <Plus className="size-4" aria-hidden="true" />
+                                </button>
+                              </div>
+                            </div>
+                          );
+                        }
+
                         return (
                           <button
                             key={option.id}

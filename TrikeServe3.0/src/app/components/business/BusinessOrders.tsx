@@ -1947,7 +1947,7 @@ export default function BusinessOrders() {
                           {Array.isArray(item.customizations) && item.customizations.length > 0 && (
                             <p className="text-xs text-[var(--muted-foreground)]">
                               {item.customizations
-                                .map((c: any) => c.optionName)
+                                .map((c: any) => `${c.optionName}${(c.quantity ?? 1) > 1 ? ` × ${c.quantity}` : ""}`)
                                 .join(" · ")}
                             </p>
                           )}

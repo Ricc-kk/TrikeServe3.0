@@ -970,10 +970,11 @@ export default function CartCheckout() {
                             className="text-xs text-[var(--muted-foreground)]"
                           >
                             • {customization.optionName}
+                            {(customization.quantity ?? 1) > 1 && ` × ${customization.quantity}`}
                             {customization.price > 0 && (
                               <span className="text-[var(--primary)]">
                                 {" "}
-                                +₱{customization.price}
+                                +₱{(customization.price * (customization.quantity ?? 1)).toFixed(2)}
                               </span>
                             )}
                           </p>

@@ -6,6 +6,8 @@ export interface CustomizationSelection {
   optionId: number;
   optionName: string;
   price: number;
+  /** Number of this add-on selected; omitted values from old orders mean one. */
+  quantity?: number;
 }
 
 export interface OrderItem {

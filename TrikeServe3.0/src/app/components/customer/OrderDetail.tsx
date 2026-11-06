@@ -976,7 +976,7 @@ export default function OrderDetail() {
                     <div className="space-y-0.5 mt-1">
                       {item.customizations.map((c: any, idx: number) => (
                         <p key={idx} className="text-[10px] text-[var(--muted-foreground)]">
-                          {c.groupName}: {c.optionName}{c.price > 0 && <span className="text-[var(--primary)]"> +₱{c.price}</span>}
+                          {c.groupName}: {c.optionName}{(c.quantity ?? 1) > 1 && ` × ${c.quantity}`}{c.price > 0 && <span className="text-[var(--primary)]"> +₱{(c.price * (c.quantity ?? 1)).toFixed(2)}</span>}
                         </p>
                       ))}
                     </div>

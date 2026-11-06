@@ -7,6 +7,8 @@ export interface CustomizationSelection {
   optionId: number;
   optionName: string;
   price: number;
+  /** Number of this add-on selected; omitted values from old carts mean one. */
+  quantity?: number;
 }
 
 export interface CartItem {
@@ -61,7 +63,7 @@ export const cartLineKey = (
   note?: string,
 ): string => {
   const choices = (customizations ?? [])
-    .map((c) => `${c.groupId}:${c.optionId}`)
+    .map((c) => `${c.groupId}:${c.optionId}${(c.quantity ?? 1) > 1 ? `x${c.quantity}` : ""}`)
     .sort()
     .join(",");
   // The note is part of the key. Two rows for the same dish that differ only in
