@@ -60,7 +60,7 @@ const isDriverAdmin = user?.adminType === 'rider';
 
 ### Test 1: Business & Customer Admin (Should see settings but no rates)
 ```
-1. Login: admin@gmail.com / admin123
+1. Sign in with the provisioned Super Admin credentials
 2. Go to: /admin/settings
 3. Should see:
    ✅ Settings page loads
@@ -72,7 +72,7 @@ const isDriverAdmin = user?.adminType === 'rider';
 
 ### Test 2: Driver Admin (Should see everything including rates)
 ```
-1. Login: admin1@gmail.com / admin123
+Test with a separately provisioned Rider Admin account.
 2. Go to: /admin/settings
 3. Should see:
    ✅ Fixed Rate Configuration section visible

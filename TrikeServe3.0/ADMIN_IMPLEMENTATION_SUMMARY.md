@@ -9,7 +9,7 @@
    - **Features:**
      - UUID primary key
      - Unique email constraint
-     - Admin type field (business_customer | rider)
+     - Admin type field (admin | rider)
      - Password hash field
      - Verification status
      - Timestamps (created_at, updated_at)
@@ -20,12 +20,9 @@
    - **File:** `src/app/contexts/AuthContext.tsx`
    - **Changes Made:**
 
-   **A) Initialization (useEffect)**
-   - Changed from creating admins in localStorage to creating them in Supabase
-   - Default admin accounts are now created in the `admins` table:
-     - `admin@gmail.com` (Business & Customer Admin) - Password: admin123
-     - `admin1@gmail.com` (Rider Admin) - Password: admin123
-   - Removed localStorage-based admin creation
+   **A) Initialization**
+   - The app no longer creates demo admin accounts automatically.
+   - Provision the Super Admin and any Rider Admin accounts separately in Supabase.
 
    **B) Login Function**
    - **Priority 1:** Check `admins` table first for admin authentication
@@ -72,12 +69,11 @@ User Regular Account
   Standard storage
 ```
 
-## 📋 Default Admin Accounts
+## 📋 Provisioned Super Admin Account
 
 | Email | Password | Type | Role |
 |-------|----------|------|------|
-| admin@gmail.com | admin123 | business_customer | admin |
-| admin1@gmail.com | admin123 | rider | admin |
+| trikeserveadmin@gmail.com | Configured separately | admin | admin |
 
 ## 🔐 Security Improvements
 
@@ -94,8 +90,8 @@ User Regular Account
    - This will create the `admins` table with proper indexes and RLS
 
 2. **Test Admin Login:**
-   - Test login with `admin@gmail.com` / `admin123`
-   - Test login with `admin1@gmail.com` / `admin123`
+   - Test login with the provisioned Super Admin credentials
+   - Test Rider Admin access with a separately provisioned account.
    - Verify admin accounts appear in Supabase `admins` table
 
 3. **Verify User Logins:**
@@ -120,7 +116,7 @@ User Regular Account
 
 ## ✨ Key Features
 
-✅ **Automatic Admin Creation** - Default admins created on first app initialization
+✅ **Explicit Admin Provisioning** - No demo admin accounts are seeded by the app
 ✅ **Supabase Integration** - Admin accounts stored in Supabase `admins` table
 ✅ **Separate Authentication** - Admins checked separately from regular users
 ✅ **Backward Compatibility** - Falls back to localStorage if needed
@@ -131,9 +127,9 @@ User Regular Account
 
 - [ ] SQL migration executed successfully in Supabase
 - [ ] Supabase `admins` table created with correct schema
-- [ ] Default admin accounts appear in Supabase `admins` table
-- [ ] Can login with admin@gmail.com / admin123
-- [ ] Can login with admin1@gmail.com / admin123
+- [ ] Only intended admin accounts appear in Supabase `admins` table
+- [ ] Can login with the provisioned Super Admin credentials
+- Test Rider Admin access with a separately provisioned account.
 - [ ] Admin users have correct role and adminType
 - [ ] Regular customer login still works
 - [ ] Rider login still works
@@ -142,7 +138,7 @@ User Regular Account
 
 ## 📝 Notes
 
-- Admin accounts are created automatically when the app first initializes
+- Admin accounts are provisioned separately; the app does not seed demo admins
 - The `password_hash` field currently stores plain text (should be hashed in production)
 - Admins bypass the verification requirement (isVerified = true)
 - All authentication is case-insensitive for email addresses

@@ -199,7 +199,7 @@ export default function Login() {
             name: a.name || "Admin",
             role: "admin",
             subrole: a.admin_type,
-            password: a.password_hash || "admin123",
+            password: a.password_hash || "",
           });
         });
       }

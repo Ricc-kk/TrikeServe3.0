@@ -93,7 +93,7 @@ Shows:
 
 ### From Admin Dashboard
 ```
-1. Login as admin (admin@gmail.com or admin1@gmail.com)
+Use the provisioned Super Admin account and separately provision a Rider Admin account if needed.
 2. Go to admin panel
 3. Sidebar → Click "Verified Users"
 4. Or direct URL: /admin/verified-users
@@ -230,7 +230,7 @@ Could add in future:
 
 ### Test 1: Business & Customer Admin
 ```
-1. Login as: admin@gmail.com (Business & Customer Admin)
+1. Login as: trikeserveadmin@gmail.com (Business & Customer Admin)
 2. Go to: /admin/verified-users
 3. Verify: Only business and customer users shown
 4. Create some pending business/customer users
@@ -239,7 +239,7 @@ Could add in future:
 
 ### Test 2: Driver Admin
 ```
-1. Login as: admin1@gmail.com (Driver Admin)
+Test with a separately provisioned Rider Admin account.
 2. Go to: /admin/verified-users
 3. Verify: Only rider users shown
 4. Create some pending rider users

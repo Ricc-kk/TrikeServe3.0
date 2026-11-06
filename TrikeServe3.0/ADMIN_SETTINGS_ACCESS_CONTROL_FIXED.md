@@ -86,7 +86,7 @@ return (
 
 ### Test 1: Business & Customer Admin (Should see access denied)
 ```
-1. Login as: admin@gmail.com / admin123
+1. Sign in with the provisioned Super Admin credentials
 2. Go to: /admin/settings
 3. Expected: See "Access Denied" message
 4. Option: Click "Go to Dashboard" button
@@ -94,7 +94,7 @@ return (
 
 ### Test 2: Driver Admin (Should have full access)
 ```
-1. Login as: admin1@gmail.com / admin123
+Test with a separately provisioned Rider Admin account.
 2. Go to: /admin/settings
 3. Expected: See "Fixed Rate Configuration" section
 4. Can: Edit rates and save to Supabase

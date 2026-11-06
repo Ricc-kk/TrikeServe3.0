@@ -135,8 +135,8 @@ CREATE POLICY "Anyone can delete menu items" ON menu_items
 
 ### ✅ Admins Table
 - [x] Can see admin records in Supabase table editor
-- [x] Admin accounts auto-create on app start
-- [x] Admin login works (admin@gmail.com / admin123)
+- [x] Admin accounts are provisioned separately
+- [x] Admin login works (trikeserveadmin@gmail.com / configured separately in Supabase)
 - [x] Admin data persists
 
 ### ✅ Menu Items Table
@@ -151,8 +151,8 @@ CREATE POLICY "Anyone can delete menu items" ON menu_items
 1. Supabase Dashboard → Table Editor
 2. Click on `admins` table
 3. ✅ Should see admin records with emails:
-   - admin@gmail.com
-   - admin1@gmail.com
+   - trikeserveadmin@gmail.com
+   - a separately provisioned Rider Admin account
 
 ### Test 2: Check Menu Items Insertion
 1. Open your app
@@ -167,12 +167,10 @@ CREATE POLICY "Anyone can delete menu items" ON menu_items
 7. ✅ Item should still be there
 
 ### Test 3: Check Admin Login
-1. Open your app
-2. Go to login page
-3. Try: admin@gmail.com / admin123
-4. ✅ Should login and show admin dashboard
-5. Try: admin1@gmail.com / admin123
-6. ✅ Should login and show admin dashboard
+1. Open your app and go to the login page.
+2. Sign in with the provisioned Super Admin credentials.
+3. Confirm the admin dashboard opens.
+4. If Rider Admin access is needed, test a separately provisioned account.
 
 ## Verification Checklist
 
@@ -184,7 +182,7 @@ After running both SQL fixes:
 | Menu items can be inserted without error | ✅ |
 | Menu items persist after refresh | ✅ |
 | Admin login works | ✅ |
-| Admin accounts auto-create | ✅ |
+| Admin accounts are provisioned separately | ✅ |
 
 ---
 

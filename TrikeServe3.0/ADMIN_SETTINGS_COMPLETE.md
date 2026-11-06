@@ -105,7 +105,7 @@ Should show columns: id, setting_key, setting_value, created_at, updated_at
 
 ### Test 1: Access Settings
 ```
-1. Login as: admin@gmail.com / admin123
+1. Sign in with the provisioned Super Admin credentials
    (Business & Customer Admin)
 2. Go to: Sidebar → Settings
    OR: Direct URL /admin/settings

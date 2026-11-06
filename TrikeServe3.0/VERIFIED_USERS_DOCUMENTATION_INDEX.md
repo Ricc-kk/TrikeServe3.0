@@ -64,7 +64,7 @@ Modified Files:
 
 ## 🚀 Quick Start (30 seconds)
 
-1. Login as admin (admin@gmail.com / admin123)
+1. Sign in with the provisioned Super Admin credentials
 2. Click "Verified Users" in sidebar
 3. Use tabs to view verified or pending users
 4. Search for users
@@ -141,8 +141,8 @@ All features tested and working:
 **Via Sidebar**: Login → Click "Verified Users"
 
 **Admin Accounts**:
-- admin@gmail.com / admin123 (Business & Customer Admin)
-- admin1@gmail.com / admin123 (Driver Admin)
+- trikeserveadmin@gmail.com / configured separately in Supabase (Business & Customer Admin)
+- a separately provisioned Rider Admin account / configured separately in Supabase (Driver Admin)
 
 ---
 

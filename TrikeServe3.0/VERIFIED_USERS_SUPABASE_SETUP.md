@@ -84,7 +84,7 @@ Restart: npm run dev
 
 ### Step 3: Test the Feature
 ```
-1. Login as admin (admin@gmail.com / admin123)
+1. Sign in with the provisioned Super Admin credentials
 2. Go to Verified Users dashboard
 3. Verify: Can see users from Supabase
 4. Try: Approve a pending user

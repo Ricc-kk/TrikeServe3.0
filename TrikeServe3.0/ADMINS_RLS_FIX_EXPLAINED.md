@@ -64,7 +64,7 @@ CREATE POLICY "Anyone can delete admins" ON admins
 3. ✅ You should now see admin records!
 
 ### In Your App
-1. **Admin accounts will auto-create**
+1. **Admin accounts must be provisioned in Supabase**
 2. **Admin login will work**
 3. ✅ Everything will function normally
 
@@ -85,11 +85,11 @@ After running the SQL:
 
 2. **Run your app**
    - Login page should work
-   - ✅ Admin accounts should auto-create
+   - ✅ Admin accounts must be provisioned separately
 
 3. **Check Admin Login**
-   - Try: admin@gmail.com / admin123
-   - Try: admin1@gmail.com / admin123
+   - Sign in with the provisioned Super Admin credentials.
+   Test with a separately provisioned Rider Admin account.
    - ✅ Should login successfully
 
 ## Security Note

@@ -63,7 +63,7 @@ CREATE TABLE IF NOT EXISTS admins (
   email VARCHAR(255) UNIQUE NOT NULL,
   name VARCHAR(255) NOT NULL,
   phone VARCHAR(20) NOT NULL,
-  admin_type VARCHAR(50) NOT NULL CHECK (admin_type IN ('business_customer', 'rider')),
+  admin_type VARCHAR(50) NOT NULL CHECK (admin_type IN ('admin', 'rider')),
   password_hash VARCHAR(255) NOT NULL,
   is_verified BOOLEAN DEFAULT true,
   created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
@@ -75,14 +75,8 @@ CREATE INDEX idx_admins_admin_type ON admins(admin_type);
 ALTER TABLE admins ENABLE ROW LEVEL SECURITY;
 ```
 
-### Step 2: Test Admin Login (5 minutes)
-```
-Email:    admin@gmail.com
-Password: admin123
-
-Email:    admin1@gmail.com
-Password: admin123
-```
+### Step 2: Test Admin Login
+Sign in with the Super Admin credentials configured in Supabase. Provision a Rider Admin separately if that role needs testing.
 
 ### Step 3: Verify Existing Users (5 minutes)
 - Test customer, rider, and business logins
@@ -106,7 +100,7 @@ admins table (NEW)
 ├── email (VARCHAR, UNIQUE)
 ├── name (VARCHAR)
 ├── phone (VARCHAR)
-├── admin_type (VARCHAR: 'business_customer' | 'rider')
+├── admin_type (VARCHAR: 'admin' | 'rider')
 ├── password_hash (VARCHAR)
 ├── is_verified (BOOLEAN)
 ├── created_at (TIMESTAMP)
@@ -122,14 +116,13 @@ users table (UNCHANGED)
 
 ---
 
-## 🔑 Default Admin Accounts
+## 🔑 Provisioned Super Admin Account
 
 | Email | Password | Type | Status |
 |-------|----------|------|--------|
-| admin@gmail.com | admin123 | business_customer | Auto-created |
-| admin1@gmail.com | admin123 | rider | Auto-created |
+| trikeserveadmin@gmail.com | Configured separately | admin | Provisioned separately |
 
-**Note:** These are automatically created on first app initialization if they don't exist in Supabase.
+**Note:** Admin accounts are not created automatically. Provision them explicitly in Supabase.
 
 ---
 
@@ -165,7 +158,7 @@ users table (UNCHANGED)
 ## ✅ Features
 
 ✅ **Separate Storage** - Admins stored in dedicated table
-✅ **Auto Creation** - Default admins created automatically
+✅ **Provisioning** - Admin accounts are provisioned separately
 ✅ **Priority Auth** - Admins checked before regular users
 ✅ **Backward Compatible** - Falls back to localStorage if needed
 ✅ **Performance Indexed** - Database indexes for fast lookups
@@ -236,7 +229,7 @@ See `ADMIN_IMPLEMENTATION_CHECKLIST.md` → Testing Matrix section
 
 ### Immediate (Ready)
 - ✅ Separate admin table
-- ✅ Auto-creation of default admins
+- ✅ Explicit provisioning of intended admin accounts
 - ✅ Priority authentication
 
 ### Short Term (Recommended)
@@ -276,7 +269,7 @@ SELECT * FROM admins;
 SELECT * FROM users WHERE email = 'user@example.com';
 ```
 
-### Issue: Admins not auto-created
+### Issue: Admin account not provisioned
 **Solution:** Check browser console during app initialization for errors
 
 See `ADMIN_QUICK_REFERENCE.md` for more troubleshooting
@@ -310,7 +303,7 @@ See `ADMIN_QUICK_REFERENCE.md` for more troubleshooting
 **What Changed:**
 - Admin accounts now stored in separate Supabase table
 - Authentication checks admin table first
-- Default admins auto-created on app start
+- Admin accounts must be provisioned separately before sign-in
 
 **What Stays the Same:**
 - User, rider, and business authentication unchanged

@@ -1090,40 +1090,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   };
 
-  // Keep the Rider Admin demo account available. The Super Admin account is
-  // provisioned separately, so the client never recreates it with a shared
-  // default password.
-  useEffect(() => {
-    if (isLoading) return;
-
-    const initializeAdmins = async () => {
-      try {
-        const { data: existingAdmins } = await supabase
-          .from('admins')
-          .select('email')
-          .eq('email', 'admin1@gmail.com');
-
-        const existingEmails = (existingAdmins || []).map((a: any) => a.email);
-
-        if (!existingEmails.includes('admin1@gmail.com')) {
-          await supabase.from('admins').insert([{
-            email: 'admin1@gmail.com',
-            name: 'Driver Admin',
-            phone: '09171234568',
-            admin_type: 'rider',
-            password_hash: 'admin123',
-            is_verified: true,
-            created_at: new Date().toISOString(),
-          }]);
-        }
-      } catch (error) {
-        console.warn('[AuthContext] Admin init failed (non-critical):', error);
-      }
-    };
-
-    initializeAdmins();
-  }, [isLoading]);
-
   // Legacy account fallback: users registered before Supabase Auth have no
   // auth account, so signInWithPassword fails for them. Their credentials are
   // stored in this device's localStorage (trikeserve_users) from the old

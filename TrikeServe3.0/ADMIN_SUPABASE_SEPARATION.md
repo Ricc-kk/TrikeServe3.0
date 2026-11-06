@@ -11,7 +11,7 @@ A new table has been created with the following structure:
 - `email` (VARCHAR, Unique)
 - `name` (VARCHAR)
 - `phone` (VARCHAR)
-- `admin_type` (VARCHAR) - Either 'business_customer' or 'rider'
+- `admin_type` (VARCHAR) - Either 'admin' or 'rider'
 - `password_hash` (VARCHAR) - Password for authentication
 - `is_verified` (BOOLEAN) - Verification status
 - `created_at` (TIMESTAMP)
@@ -23,12 +23,10 @@ A new table has been created with the following structure:
 
 ### 2. AuthContext Updates
 
-#### Initialization (useEffect)
-- Default admin accounts are now created in the `admins` Supabase table instead of localStorage
-- Two default admin accounts are automatically created:
-  - **admin@gmail.com** (Business & Customer Admin)
-  - **admin1@gmail.com** (Rider Admin)
-- Both use password `admin123` (in production, implement proper password hashing)
+#### Admin Provisioning
+- The app does not seed demo admin accounts.
+- Provision the Super Admin and any Rider Admin accounts separately in Supabase.
+- Set a unique password for each account.
 
 #### Login Function
 The login function now:
@@ -50,7 +48,7 @@ CREATE TABLE IF NOT EXISTS admins (
   email VARCHAR(255) UNIQUE NOT NULL,
   name VARCHAR(255) NOT NULL,
   phone VARCHAR(20) NOT NULL,
-  admin_type VARCHAR(50) NOT NULL CHECK (admin_type IN ('business_customer', 'rider')),
+  admin_type VARCHAR(50) NOT NULL CHECK (admin_type IN ('admin', 'rider')),
   password_hash VARCHAR(255) NOT NULL,
   is_verified BOOLEAN DEFAULT true,
   created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
@@ -65,12 +63,12 @@ ALTER TABLE admins ENABLE ROW LEVEL SECURITY;
 
 ### Step 2: Update Your Application
 The AuthContext has been updated to:
-- Create default admins in the Supabase `admins` table on first initialization
+- Provision intended admin accounts in the Supabase `admins` table before sign-in
 - Check the `admins` table during login before checking the `users` table
 
 ### Step 3: Test Admin Login
-- Log in with `admin@gmail.com` / `admin123`
-- Log in with `admin1@gmail.com` / `admin123`
+- Log in with the provisioned Super Admin credentials
+- Test Rider Admin access with a separately provisioned account.
 - Verify that admin accounts are now in the `admins` Supabase table
 
 ## Security Improvements
@@ -120,9 +118,9 @@ The AuthContext has been updated to:
 
 ## Testing Checklist
 
-- [ ] Default admin accounts are created in Supabase `admins` table
-- [ ] Can log in with admin@gmail.com / admin123
-- [ ] Can log in with admin1@gmail.com / admin123
+- [ ] Intended admin accounts are provisioned in Supabase `admins` table
+- [ ] Can sign in with the provisioned Super Admin account
+- Test Rider Admin access with a separately provisioned account.
 - [ ] Admin users have correct role and adminType set
 - [ ] Regular user login still works correctly
 - [ ] Rider login still works correctly

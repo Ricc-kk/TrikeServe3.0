@@ -11,7 +11,7 @@ CREATE TABLE IF NOT EXISTS admins (
   email VARCHAR(255) UNIQUE NOT NULL,
   name VARCHAR(255) NOT NULL,
   phone VARCHAR(20) NOT NULL,
-  admin_type VARCHAR(50) NOT NULL CHECK (admin_type IN ('business_customer', 'rider')),
+  admin_type VARCHAR(50) NOT NULL CHECK (admin_type IN ('admin', 'rider')),
   password_hash VARCHAR(255) NOT NULL,
   is_verified BOOLEAN DEFAULT true,
   created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
@@ -24,9 +24,9 @@ CREATE INDEX idx_admins_admin_type ON admins(admin_type);
 ALTER TABLE admins ENABLE ROW LEVEL SECURITY;
 ```
 
-### 2. Test Default Admins
-- Login 1: `admin@gmail.com` / `admin123`
-- Login 2: `admin1@gmail.com` / `admin123`
+### 2. Test Provisioned Admins
+- Sign in with the provisioned Super Admin credentials.
+- Provision a Rider Admin separately before testing that role.
 
 ---
 
@@ -38,7 +38,7 @@ admins table
 ├── email (VARCHAR) - UNIQUE
 ├── name (VARCHAR)
 ├── phone (VARCHAR)
-├── admin_type (VARCHAR) - 'business_customer' or 'rider'
+├── admin_type (VARCHAR) - 'admin' or 'rider'
 ├── password_hash (VARCHAR)
 ├── is_verified (BOOLEAN)
 ├── created_at (TIMESTAMP)
@@ -51,7 +51,7 @@ admins table
 
 | Type | Purpose | Access |
 |------|---------|--------|
-| `business_customer` | Manage business & customer features | Dashboard, Users, Orders |
+| `admin` | Super Admin access | Full platform administration |
 | `rider` | Manage rider features | Rider management, Ride management |
 
 ---
@@ -79,7 +79,7 @@ VALUES (
   'newadmin@gmail.com',
   'New Admin',
   '09171234569',
-  'business_customer',
+  'admin',
   'hashedpassword123', -- Use bcrypt in production!
   true
 );
@@ -89,7 +89,7 @@ VALUES (
 ```sql
 UPDATE admins 
 SET password_hash = 'newhashedpassword'
-WHERE email = 'admin@gmail.com';
+WHERE email = 'target-admin@example.com';
 ```
 
 ### View All Admins
@@ -103,13 +103,13 @@ ORDER BY created_at DESC;
 ```sql
 UPDATE admins 
 SET is_verified = false 
-WHERE email = 'admin@gmail.com';
+WHERE email = 'target-admin@example.com';
 ```
 
 ### Delete Admin
 ```sql
 DELETE FROM admins 
-WHERE email = 'admin@gmail.com';
+WHERE email = 'target-admin@example.com';
 ```
 
 ---
@@ -117,7 +117,7 @@ WHERE email = 'admin@gmail.com';
 ## 🛡️ Production Security Checklist
 
 - [ ] Replace plain text password with bcrypt hashing
-- [ ] Move default admin credentials to .env variables
+- [ ] Keep admin credentials out of client-side environment variables
 - [ ] Implement password reset flow
 - [ ] Add admin activity logging
 - [ ] Enable multi-factor authentication
@@ -134,16 +134,7 @@ WHERE email = 'admin@gmail.com';
 ### AuthContext.tsx Changes
 
 **Initialization:**
-```typescript
-// Now creates admins in Supabase automatically
-const initializeAuth = async () => {
-  const { data: existingAdmins } = await supabase
-    .from('admins')
-    .select('email')
-    .in('email', ['admin@gmail.com', 'admin1@gmail.com']);
-  // ... creates if not exist
-}
-```
+The app does not seed demo admin accounts. Provision intended accounts directly in Supabase.
 
 **Login:**
 ```typescript
@@ -166,7 +157,7 @@ if (adminUser && !adminError) {
 ### Problem: Admin login not working
 **Solution:** 
 1. Verify `admins` table exists in Supabase
-2. Check that default admin accounts were created
+2. Verify the intended admin accounts were provisioned in Supabase
 3. Use SQL: `SELECT * FROM admins;` to see admin records
 4. Verify password matches exactly (case-sensitive)
 
@@ -197,7 +188,7 @@ if (adminUser && !adminError) {
 ## 🎯 Key Points
 
 ✅ Admins stored separately from users in Supabase
-✅ Default admins auto-created on first app run
+✅ Admin accounts are provisioned separately in Supabase
 ✅ Admins checked first during login
 ✅ Compatible with existing user system
 ✅ Ready for production enhancements

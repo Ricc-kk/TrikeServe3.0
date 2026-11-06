@@ -50,18 +50,8 @@
 - [ ] Verify no TypeScript compilation errors
 
 ### 2.3 Admin Login Testing
-- [ ] Navigate to login page
-- [ ] Test Login 1:
-  - [ ] Email: `admin@gmail.com`
-  - [ ] Password: `admin123`
-  - [ ] Verify successful authentication
-  - [ ] Verify admin role assigned
-  - [ ] Check stored in localStorage
-- [ ] Test Login 2:
-  - [ ] Email: `admin1@gmail.com`
-  - [ ] Password: `admin123`
-  - [ ] Verify successful authentication
-  - [ ] Verify admin role assigned
+- [ ] Sign in with the provisioned Super Admin account
+- [ ] If Rider Admin access is needed, provision a separate account and test it
 
 ### 2.4 User Login Testing
 - [ ] Test customer login (if account exists)
@@ -79,7 +69,7 @@
   ```sql
   SELECT email, name, admin_type, is_verified, created_at FROM admins;
   ```
-- [ ] Verify 2 default admins exist
+- [ ] Verify only intended admin accounts exist
 - [ ] Verify emails are lowercase
 - [ ] Verify created_at timestamps
 
@@ -108,12 +98,12 @@
 
 - [ ] **Environment Variables**
   - [ ] Create `.env.local` file
-  - [ ] Move default admin credentials to env:
+  - [ ] Keep admin credentials out of client-side environment variables
     ```
-    VITE_DEFAULT_ADMIN_EMAIL=admin@gmail.com
-    VITE_DEFAULT_ADMIN_PASSWORD=admin123
+    # Admin credentials are provisioned in Supabase, not Vite client variables.
+    # Admin passwords must not be stored in Vite client variables.
     ```
-  - [ ] Update AuthContext to read from env
+  - [ ] Do not place admin credentials in client-side environment variables
   - [ ] Never commit sensitive data
 
 - [ ] **Admin Management Panel**
@@ -187,8 +177,7 @@
 ### Login Tests
 | User | Email | Password | Expected Result | Status |
 |------|-------|----------|-----------------|--------|
-| Admin 1 | admin@gmail.com | admin123 | Success - Admin role | TODO |
-| Admin 2 | admin1@gmail.com | admin123 | Success - Admin role | TODO |
+| Super Admin | provisioned account | configured password | Success - Admin role | TODO |
 | Customer | * | * | Success - Customer role | TODO |
 | Rider | * | * | Success - Rider role | TODO |
 | Business | * | * | Success - Business role | TODO |
@@ -245,7 +234,7 @@
 - Solution: Check SQL was executed in Supabase SQL Editor
 - Verify: `SELECT * FROM admins;` should return empty result
 
-**Issue: Default admins not created**
+**Issue: Admin account not provisioned**
 - Solution: Clear browser cache and localStorage
 - Check: Browser console for errors during initialization
 - Verify: App initialization completes without errors

@@ -178,8 +178,8 @@ The settings table stores configuration as JSON:
 
 1. **Login as Business & Customer Admin**
    ```
-   Email: admin@gmail.com
-   Password: admin123
+   Email: trikeserveadmin@gmail.com
+   Password: configured separately in Supabase
    ```
 
 2. **Go to Settings**
