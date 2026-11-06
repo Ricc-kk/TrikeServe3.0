@@ -39,7 +39,7 @@ interface TestAccount {
  * the password being absent, so this only reaches accounts with nothing stored.
  */
 const QUICK_ACCESS_PASSWORD = "Admin12345";
-const DEV_MODE_HOLD_MS = 5000;
+const DEV_MODE_HOLD_MS = 2000;
 const DEV_MODE_HOLD_MOVE_TOLERANCE_PX = 40;
 const DISABLE_DEV_MODE_HOLD =
   import.meta.env.VITE_DISABLE_DEV_MODE_HOLD?.toLowerCase() === "true";
