@@ -40,6 +40,7 @@ interface TestAccount {
  */
 const QUICK_ACCESS_PASSWORD = "Admin12345";
 const DEV_MODE_HOLD_MS = 5000;
+const DEV_MODE_HOLD_MOVE_TOLERANCE_PX = 40;
 const DISABLE_DEV_MODE_HOLD =
   import.meta.env.VITE_DISABLE_DEV_MODE_HOLD?.toLowerCase() === "true";
 
@@ -86,6 +87,7 @@ export default function Login() {
   const [resendStatus, setResendStatus] = useState<"idle" | "sending" | "sent" | "error">("idle");
   const [resendMessage, setResendMessage] = useState("");
   const devModeHoldTimer = useRef<number | null>(null);
+  const devModeHoldPointerOrigin = useRef<{ pointerId: number; x: number; y: number } | null>(null);
 
   const startDevModeHold = (event?: React.PointerEvent<HTMLButtonElement>) => {
     if (event?.pointerType === "mouse" && event.button !== 0) return;
@@ -95,6 +97,11 @@ export default function Login() {
     // Pointer capture is supported by the Android WebView; the try/catch keeps
     // the regular down/up handlers usable in browsers without it.
     if (event) {
+      devModeHoldPointerOrigin.current = {
+        pointerId: event.pointerId,
+        x: event.clientX,
+        y: event.clientY,
+      };
       try {
         event.currentTarget.setPointerCapture(event.pointerId);
       } catch {
@@ -107,6 +114,7 @@ export default function Login() {
       setIsDevMode(nextMode);
       setShowAccounts(false);
       devModeHoldTimer.current = null;
+      devModeHoldPointerOrigin.current = null;
     }, DEV_MODE_HOLD_MS);
   };
 
@@ -114,6 +122,17 @@ export default function Login() {
     if (devModeHoldTimer.current !== null) {
       window.clearTimeout(devModeHoldTimer.current);
       devModeHoldTimer.current = null;
+    }
+    devModeHoldPointerOrigin.current = null;
+  };
+
+  const trackDevModeHoldMovement = (event: React.PointerEvent<HTMLButtonElement>) => {
+    const origin = devModeHoldPointerOrigin.current;
+    if (!origin || origin.pointerId !== event.pointerId) return;
+
+    const distance = Math.hypot(event.clientX - origin.x, event.clientY - origin.y);
+    if (distance > DEV_MODE_HOLD_MOVE_TOLERANCE_PX) {
+      cancelDevModeHold();
     }
   };
 
@@ -340,8 +359,8 @@ export default function Login() {
               aria-pressed={DISABLE_DEV_MODE_HOLD ? undefined : isDevMode}
               disabled={DISABLE_DEV_MODE_HOLD}
               onPointerDown={DISABLE_DEV_MODE_HOLD ? undefined : startDevModeHold}
+              onPointerMove={DISABLE_DEV_MODE_HOLD ? undefined : trackDevModeHoldMovement}
               onPointerUp={DISABLE_DEV_MODE_HOLD ? undefined : cancelDevModeHold}
-              onPointerLeave={DISABLE_DEV_MODE_HOLD ? undefined : cancelDevModeHold}
               onPointerCancel={DISABLE_DEV_MODE_HOLD ? undefined : cancelDevModeHold}
               onLostPointerCapture={DISABLE_DEV_MODE_HOLD ? undefined : cancelDevModeHold}
               onKeyDown={DISABLE_DEV_MODE_HOLD ? undefined : (event) => {
