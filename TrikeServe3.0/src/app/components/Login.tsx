@@ -1,7 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { useNavigate, Link } from "react-router";
 import { ChevronDown, Eye, EyeOff, Users } from "lucide-react";
-import { Capacitor } from "@capacitor/core";
 import { armWelcomeGreeting } from "../../lib/welcomeGreeting";
 import { useDevModeFeature, useDevModeStatus } from "../hooks/useDevModeSettings";
 import TrikeServeLogo from "../../assets/TRIKESERVE_logo_trimmed.jpg";
@@ -40,7 +39,7 @@ interface TestAccount {
  * the password being absent, so this only reaches accounts with nothing stored.
  */
 const QUICK_ACCESS_PASSWORD = "Admin12345";
-const DEV_MODE_HOLD_MS = Capacitor.isNativePlatform() ? 2000 : 5000;
+const DEV_MODE_HOLD_MS = 5000;
 const DISABLE_DEV_MODE_HOLD =
   import.meta.env.VITE_DISABLE_DEV_MODE_HOLD?.toLowerCase() === "true";
 
@@ -81,7 +80,6 @@ export default function Login() {
   const [error, setError] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [isDevMode, setIsDevMode] = useDevModeStatus();
-  const [isHoldingDevMode, setIsHoldingDevMode] = useState(false);
   const [quickAccessEnabled] = useDevModeFeature("quickAccess");
   const [showAccounts, setShowAccounts] = useState(false);
   const [accounts, setAccounts] = useState<TestAccount[]>([]);
@@ -104,12 +102,10 @@ export default function Login() {
       }
     }
 
-    setIsHoldingDevMode(true);
     devModeHoldTimer.current = window.setTimeout(() => {
       const nextMode = !isDevMode;
       setIsDevMode(nextMode);
       setShowAccounts(false);
-      setIsHoldingDevMode(false);
       devModeHoldTimer.current = null;
     }, DEV_MODE_HOLD_MS);
   };
@@ -119,7 +115,6 @@ export default function Login() {
       window.clearTimeout(devModeHoldTimer.current);
       devModeHoldTimer.current = null;
     }
-    setIsHoldingDevMode(false);
   };
 
   const exitDevMode = () => {
@@ -369,14 +364,6 @@ export default function Login() {
                 alt="TrikeServe logo"
                 className="size-full object-contain p-1"
               />
-              {!DISABLE_DEV_MODE_HOLD && isHoldingDevMode && (
-                <span
-                  aria-hidden="true"
-                  className="absolute inset-x-2 bottom-2 rounded-full bg-black/70 px-2 py-1 text-center text-[10px] font-semibold text-white"
-                >
-                  Keep holding…
-                </span>
-              )}
             </button>
           </div>
 

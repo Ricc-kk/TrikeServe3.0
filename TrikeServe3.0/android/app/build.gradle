@@ -24,6 +24,14 @@ android {
     }
 }
 
+// Give the generated APK a recognizable name instead of Gradle's default
+// app-debug.apk / app-release.apk.
+android.applicationVariants.all { variant ->
+    variant.outputs.all {
+        outputFileName = "TrikeServe.apk"
+    }
+}
+
 repositories {
     flatDir{
         dirs '../capacitor-cordova-android-plugins/src/main/libs', 'libs'
@@ -49,6 +57,6 @@ try {
     if (servicesJSON.text) {
         apply plugin: 'com.google.gms.google-services'
     }
-} catch(Exception e) {
+} catch(Exception ignored) {
     logger.info("google-services.json not found, google-services plugin not applied. Push Notifications won't work")
 }
