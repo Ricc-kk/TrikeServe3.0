@@ -66,7 +66,7 @@ Deno.serve(async (request) => {
     return jsonResponse({ error: "Could not validate the Super Admin account" }, 500);
   }
 
-  if (!admin || admin.admin_type !== "business_customer" || admin.password_hash !== adminPassword) {
+  if (!admin || !["admin", "business_customer"].includes(admin.admin_type) || admin.password_hash !== adminPassword) {
     return jsonResponse({ error: "Super Admin credentials are invalid" }, 401);
   }
 

@@ -15,7 +15,7 @@ BEGIN
   SELECT id INTO legacy_id
   FROM public.admins
   WHERE lower(email) = 'admin@gmail.com'
-    AND admin_type = 'business_customer'
+    AND admin_type IN ('admin', 'business_customer')
   LIMIT 1;
 
   IF target_id IS NULL THEN
@@ -26,7 +26,7 @@ BEGIN
     UPDATE public.admins
     SET email = 'trikeserveadmin@gmail.com',
         name = 'Super Admin',
-        admin_type = 'business_customer',
+        admin_type = 'admin',
         updated_at = NOW()
     WHERE id = legacy_id;
     RETURN;
@@ -34,7 +34,7 @@ BEGIN
 
   UPDATE public.admins
   SET name = 'Super Admin',
-      admin_type = 'business_customer',
+      admin_type = 'admin',
       updated_at = NOW()
   WHERE id = target_id;
 

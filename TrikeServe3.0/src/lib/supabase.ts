@@ -993,7 +993,7 @@ export async function findDeliveryTerminalForOrder(params: {
 // Admin approval workflow
 // ---------------------------------------------------------------------------
 // The Rider Admin can only *propose* terminal/driver changes; the Super Admin
-// (admin_type = 'business_customer') reviews them here. Submitting a request
+// (admin_type = 'admin') reviews them here. Submitting a request
 // never touches the terminals/users tables — only approving one does.
 // ---------------------------------------------------------------------------
 

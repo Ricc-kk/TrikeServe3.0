@@ -16,7 +16,7 @@ CREATE TABLE IF NOT EXISTS users (
   updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
 
   -- Admin specific
-  admin_type VARCHAR(50) CHECK (admin_type IN ('business_customer', 'rider')),
+  admin_type VARCHAR(50) CHECK (admin_type IN ('admin', 'rider')),
 
   -- Rider specific
   toda_plate VARCHAR(50),

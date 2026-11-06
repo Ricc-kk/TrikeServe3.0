@@ -41,6 +41,13 @@ export interface User {
   password?: string;
 }
 
+/** Normalize the Supabase admin type into the app's existing admin categories. */
+function mapAdminType(value: unknown): User['adminType'] {
+  if (value === 'admin' || value === 'business_customer') return 'business_customer';
+  if (value === 'rider') return 'rider';
+  return undefined;
+}
+
 type LoginResult = {
   success: boolean;
   error?: string;
@@ -116,7 +123,7 @@ function mapSupabaseUser(row: any): User {
      * second login and no branch in any admin screen. Gated on the terminal too:
      * the flag without a terminal is not an admin of anything.
      */
-    adminType: row.admin_type ?? (row.is_terminal_admin && row.terminal_id ? 'rider' : undefined),
+    adminType: mapAdminType(row.admin_type) ?? (row.is_terminal_admin && row.terminal_id ? 'rider' : undefined),
     isTerminalAdmin: row.is_terminal_admin ?? false,
     todaPlate: row.toda_plate,
     licenseNumber: row.license_number,
@@ -781,6 +788,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (!raw) return false;
       try {
         const parsed = JSON.parse(raw);
+        // Older or externally-created sessions may contain the raw Supabase
+        // value. Keep the app's permission checks on the normalized category.
+        if (parsed && typeof parsed === 'object' && parsed.role === 'admin') {
+          parsed.adminType = mapAdminType(parsed.adminType);
+        }
         console.log(`[AuthContext] Restoring stored user (${why}):`, parsed.email);
         setCurrentUser(parsed);
         return true;
@@ -1253,7 +1265,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           phone: adminUser.phone,
           isVerified: adminUser.is_verified,
           createdAt: adminUser.created_at,
-          adminType: adminUser.admin_type,
+          adminType: mapAdminType(adminUser.admin_type),
           // Rider Admins are scoped to the terminal the Super Admin assigned.
           terminalId: adminUser.terminal_id,
           terminalName: adminUser.terminal_name,

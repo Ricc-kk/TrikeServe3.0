@@ -8,12 +8,18 @@ CREATE TABLE IF NOT EXISTS admins (
   email VARCHAR(255) UNIQUE NOT NULL,
   name VARCHAR(255) NOT NULL,
   phone VARCHAR(20) NOT NULL,
-  admin_type VARCHAR(50) NOT NULL CHECK (admin_type IN ('business_customer', 'rider')),
+  admin_type VARCHAR(50) NOT NULL CHECK (admin_type IN ('admin', 'rider')),
   password_hash VARCHAR(255) NOT NULL,
   is_verified BOOLEAN DEFAULT true,
   created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
   updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
+
+-- Keep existing installations compatible with the Supabase admin type.
+ALTER TABLE public.admins DROP CONSTRAINT IF EXISTS admins_admin_type_check;
+UPDATE public.admins SET admin_type = 'admin' WHERE admin_type = 'business_customer';
+ALTER TABLE public.admins
+  ADD CONSTRAINT admins_admin_type_check CHECK (admin_type IN ('admin', 'rider'));
 
 -- Create indexes for faster lookups
 CREATE INDEX idx_admins_email ON admins(email);
