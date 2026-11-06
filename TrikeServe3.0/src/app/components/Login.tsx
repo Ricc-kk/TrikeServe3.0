@@ -3,7 +3,7 @@ import { useNavigate, Link } from "react-router";
 import { ChevronDown, Eye, EyeOff, Users } from "lucide-react";
 import { armWelcomeGreeting } from "../../lib/welcomeGreeting";
 import { useDevModeFeature, useDevModeStatus } from "../hooks/useDevModeSettings";
-import { isSuperAdminEmail } from "../../lib/superAdminIdentity";
+import { isSuperAdminEmail, SUPER_ADMIN_EMAIL } from "../../lib/superAdminIdentity";
 import TrikeServeLogo from "../../assets/TRIKESERVE_logo_trimmed.jpg";
 import { Button } from "./ui/button";
 import { Input } from "./ui/input";
@@ -65,6 +65,7 @@ const ROLE_ORDER: Record<string, number> = {
 
 function roleLabel(acc: TestAccount): string {
   if (acc.role === "admin") {
+    if (isSuperAdminEmail(acc.email)) return "Super Admin";
     if (acc.subrole === "rider") return "Driver Admin";
     if (acc.subrole === "business_customer") return "Business & Customer Admin";
     return "Admin";
@@ -154,19 +155,39 @@ export default function Login() {
     const seen = new Set<string>();
 
     const add = (acc: TestAccount) => {
-      if (isSuperAdminEmail(acc.email)) return;
       const key = (acc.email || "").toLowerCase();
       if (!key || seen.has(key)) return;
       seen.add(key);
       // A password we already know is left alone. Overwriting a real stored
       // password with the shared one would guarantee the quick-access click
       // fails for that account, which is the opposite of the point.
-      if (!acc.password && QUICK_ACCESS_ROLES.has(acc.role)) {
+      if (!acc.password && QUICK_ACCESS_ROLES.has(acc.role) && !isSuperAdminEmail(acc.email)) {
         list.push({ ...acc, password: QUICK_ACCESS_PASSWORD });
         return;
       }
       list.push(acc);
     };
+
+    // The Super Admin uses the admins table and its own stored password. Load
+    // this identity first so a stale local/test-user row cannot mask it.
+    try {
+      const { data, error } = await supabase
+        .from("admins")
+        .select("email, name, admin_type, password_hash")
+        .ilike("email", SUPER_ADMIN_EMAIL)
+        .maybeSingle();
+      if (!error && data) {
+        add({
+          email: data.email,
+          name: data.name || "Super Admin",
+          role: "admin",
+          subrole: data.admin_type,
+          password: data.password_hash || "",
+        });
+      }
+    } catch {
+      /* supabase unavailable */
+    }
 
     // 1. LocalStorage users (these carry their password, unlike Supabase rows)
     try {
@@ -179,7 +200,9 @@ export default function Login() {
             [u.first_name, u.last_name].filter(Boolean).join(" ") ||
             u.email ||
             "User";
-          add({ email: u.email, name, role: u.role || "customer", password: u.password || "" });
+          if (!isSuperAdminEmail(u.email)) {
+            add({ email: u.email, name, role: u.role || "customer", password: u.password || "" });
+          }
         });
       }
     } catch {
@@ -214,7 +237,9 @@ export default function Login() {
         .select("email, name, role");
       if (!error && data) {
         data.forEach((u: any) => {
-          add({ email: u.email, name: u.name || u.email || "User", role: u.role || "customer" });
+          if (!isSuperAdminEmail(u.email)) {
+            add({ email: u.email, name: u.name || u.email || "User", role: u.role || "customer" });
+          }
         });
       }
     } catch {
@@ -245,7 +270,9 @@ export default function Login() {
     setEmail(acc.email);
     setPassword(
       acc.password ||
-      (QUICK_ACCESS_ROLES.has(acc.role) ? QUICK_ACCESS_PASSWORD : "demo123")
+      (isSuperAdminEmail(acc.email)
+        ? ""
+        : QUICK_ACCESS_ROLES.has(acc.role) ? QUICK_ACCESS_PASSWORD : "demo123")
     );
     setError("");
     setShowAccounts(false);
