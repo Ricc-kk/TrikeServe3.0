@@ -9,6 +9,7 @@ import { Input } from "../ui/input";
 import { Badge } from "../ui/badge";
 import { useAuth, UserRole } from "../../contexts/AuthContext";
 import { PASSWORD_RULES } from "../../../lib/passwordRules";
+import { isSuperAdminEmail } from "../../../lib/superAdminIdentity";
 import BusinessMapSelector from "../business/BusinessMapSelector";
 import { supabase } from "../../../utils/supabase";
 
@@ -317,6 +318,11 @@ export default function SignUp() {
         `[data-field="${failures[0].field}"]`
       );
       first?.focus();
+      return;
+    }
+
+    if (isSuperAdminEmail(formData.email)) {
+      setError("This email is reserved for the Super Admin account. Please sign in instead.");
       return;
     }
 

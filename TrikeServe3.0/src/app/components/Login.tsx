@@ -3,6 +3,7 @@ import { useNavigate, Link } from "react-router";
 import { ChevronDown, Eye, EyeOff, Users } from "lucide-react";
 import { armWelcomeGreeting } from "../../lib/welcomeGreeting";
 import { useDevModeFeature, useDevModeStatus } from "../hooks/useDevModeSettings";
+import { isSuperAdminEmail } from "../../lib/superAdminIdentity";
 import TrikeServeLogo from "../../assets/TRIKESERVE_logo_trimmed.jpg";
 import { Button } from "./ui/button";
 import { Input } from "./ui/input";
@@ -153,6 +154,7 @@ export default function Login() {
     const seen = new Set<string>();
 
     const add = (acc: TestAccount) => {
+      if (isSuperAdminEmail(acc.email)) return;
       const key = (acc.email || "").toLowerCase();
       if (!key || seen.has(key)) return;
       seen.add(key);
@@ -188,7 +190,8 @@ export default function Login() {
     try {
       const { data, error } = await supabase
         .from("admins")
-        .select("email, name, admin_type, password_hash");
+        .select("email, name, admin_type, password_hash")
+        .eq("admin_type", "rider");
       if (!error && data) {
         data.forEach((a: any) => {
           add({

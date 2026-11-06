@@ -1,6 +1,7 @@
 import { createContext, useContext, useState, useEffect, useRef, ReactNode } from 'react';
 import { supabase } from '../../utils/supabase';
 import { isDevModeEnabled, isDevModeFeatureEnabled, subscribeToDevModeChanges } from '../../lib/devMode';
+import { isSuperAdminEmail } from '../../lib/superAdminIdentity';
 
 export type UserRole = 'customer' | 'rider' | 'business' | 'admin';
 
@@ -1077,7 +1078,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   };
 
-  // Initialize default admin accounts
+  // Keep the Rider Admin demo account available. The Super Admin account is
+  // provisioned separately, so the client never recreates it with a shared
+  // default password.
   useEffect(() => {
     if (isLoading) return;
 
@@ -1086,21 +1089,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         const { data: existingAdmins } = await supabase
           .from('admins')
           .select('email')
-          .in('email', ['admin@gmail.com', 'admin1@gmail.com']);
+          .eq('email', 'admin1@gmail.com');
 
         const existingEmails = (existingAdmins || []).map((a: any) => a.email);
-
-        if (!existingEmails.includes('admin@gmail.com')) {
-          await supabase.from('admins').insert([{
-            email: 'admin@gmail.com',
-            name: 'Business & Customer Admin',
-            phone: '09171234567',
-            admin_type: 'business_customer',
-            password_hash: 'admin123',
-            is_verified: true,
-            created_at: new Date().toISOString(),
-          }]);
-        }
 
         if (!existingEmails.includes('admin1@gmail.com')) {
           await supabase.from('admins').insert([{
@@ -1537,6 +1528,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const signup = async (data: SignupData): Promise<{ success: boolean; error?: string; userId?: string }> => {
     try {
+      if (isSuperAdminEmail(data.email)) {
+        return { success: false, error: 'This email is reserved for the Super Admin account.' };
+      }
+
       // Check if email already exists
       const { data: existingUser } = await supabase
         .from('users')

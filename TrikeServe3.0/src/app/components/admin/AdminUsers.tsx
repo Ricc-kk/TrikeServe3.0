@@ -19,6 +19,7 @@ import Toast from "../ui/Toast";
 import EmptyState from "../ui/EmptyState";
 import AdminShell from "./AdminShell";
 import { StatSkeleton, TableSkeleton } from "./AdminSkeleton";
+import { isSuperAdminEmail } from "../../../lib/superAdminIdentity";
 
 interface StoredUser {
   id: string;
@@ -820,7 +821,7 @@ export default function AdminUsers() {
       const adminType = user?.adminType;
       // The database query is scoped too, so records from other terminals are
       // never fetched into a Driver Admin's browser in the first place.
-      let filteredUsers = allUsers.filter(u => u.role !== 'admin');
+      let filteredUsers = allUsers.filter(u => u.role !== 'admin' && !isSuperAdminEmail(u.email));
       if (adminType === 'rider') {
         filteredUsers = filteredUsers.filter(
           u => u.role === 'rider' && u.terminalId === riderAdminTerminalId,
@@ -849,7 +850,7 @@ export default function AdminUsers() {
       if (!usersJson) return;
       const allUsers: StoredUser[] = JSON.parse(usersJson);
       if (!Array.isArray(allUsers)) return;
-      let filteredUsers = allUsers.filter(u => u.role !== 'admin');
+      let filteredUsers = allUsers.filter(u => u.role !== 'admin' && !isSuperAdminEmail(u.email));
       if (user?.adminType === 'rider') {
         filteredUsers = riderAdminTerminalId
           ? filteredUsers.filter(u =>
