@@ -40,7 +40,7 @@ interface TestAccount {
  */
 const QUICK_ACCESS_PASSWORD = "Admin12345";
 const DEV_MODE_HOLD_MS = 2000;
-const DEV_MODE_HOLD_MOVE_TOLERANCE_PX = 40;
+const DEV_MODE_HOLD_MOVE_TOLERANCE_PX = 200;
 const DISABLE_DEV_MODE_HOLD =
   import.meta.env.VITE_DISABLE_DEV_MODE_HOLD?.toLowerCase() === "true";
 
@@ -86,7 +86,6 @@ export default function Login() {
   const [accounts, setAccounts] = useState<TestAccount[]>([]);
   const [resendStatus, setResendStatus] = useState<"idle" | "sending" | "sent" | "error">("idle");
   const [resendMessage, setResendMessage] = useState("");
-  const [isDevModeHoldActive, setIsDevModeHoldActive] = useState(false);
   const devModeHoldTimer = useRef<number | null>(null);
   const devModeHoldPointerOrigin = useRef<{ pointerId: number; x: number; y: number } | null>(null);
 
@@ -110,12 +109,10 @@ export default function Login() {
       }
     }
 
-    setIsDevModeHoldActive(true);
     devModeHoldTimer.current = window.setTimeout(() => {
       const nextMode = !isDevMode;
       setIsDevMode(nextMode);
       setShowAccounts(false);
-      setIsDevModeHoldActive(false);
       devModeHoldTimer.current = null;
       devModeHoldPointerOrigin.current = null;
     }, DEV_MODE_HOLD_MS);
@@ -126,7 +123,6 @@ export default function Login() {
       window.clearTimeout(devModeHoldTimer.current);
       devModeHoldTimer.current = null;
     }
-    setIsDevModeHoldActive(false);
     devModeHoldPointerOrigin.current = null;
   };
 
@@ -380,7 +376,7 @@ export default function Login() {
                 }
               }}
               onContextMenu={(event) => event.preventDefault()}
-              className={`relative h-24 w-36 touch-none select-none overflow-hidden rounded-2xl border-2 bg-[#EBEBEB] text-left transition-[border-color,box-shadow] duration-200 ${isDevModeHoldActive ? "border-[var(--primary)] shadow-[0_0_12px_var(--primary)]" : "border-transparent"} ring-1 ring-black/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--primary)] focus-visible:ring-offset-2`}
+              className="relative h-24 w-36 touch-none select-none overflow-hidden rounded-2xl bg-[#EBEBEB] text-left ring-1 ring-black/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--primary)] focus-visible:ring-offset-2"
             >
               <img
                 src={TrikeServeLogo}
