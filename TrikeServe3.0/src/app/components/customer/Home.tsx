@@ -3304,7 +3304,9 @@ export default function CustomerHome() {
              : selectedTerminalBoundary.selectedRoute?.routeId || null,
            payment_method: paymentMethod === 'GCASH' ? 'GCASH' : 'COD',
            amount: fareAmount,
-           passenger_count: passengerCount,
+           // Private rides don't ask for a party size; don't persist the last
+           // share-ride selection as extra passengers on this request.
+           passenger_count: 1,
            created_at: new Date().toISOString(),
            updated_at: new Date().toISOString(),
          };

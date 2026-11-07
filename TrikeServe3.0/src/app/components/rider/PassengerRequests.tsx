@@ -109,6 +109,16 @@ function passengerFirstName(name: unknown): string {
   return String(name ?? '').trim().split(/\s+/)[0] || 'Passenger';
 }
 
+function hasExcessPassengers(request: PassengerRequest): boolean {
+  const passengerCount = Math.max(1, Number(request.passengers) || 1);
+  if (request.lobbyId) {
+    return passengerCount > Math.max(1, Number(request.maxPassengers) || 3);
+  }
+  // Private bookings don't offer a passenger-count choice, so counts above one
+  // are stale share-ride selections and shouldn't be offered to drivers.
+  return request.type === 'private' && passengerCount > 1;
+}
+
 interface PassengerRequest {
   id: string;
   type: 'delivery' | 'shared' | 'private';
@@ -458,11 +468,18 @@ export default function PassengerRequests() {
         }
         // Requests this rider already declined are hidden from them — they stay
         // available to every other rider, so the customer is unaffected.
-        const visibleRideRequests = (rideRequests || []).filter(
-          (req: any) => !supabaseHelpers.isDeclinedByDriver(req, user?.id)
-        );
+        const visibleRideRequests = (rideRequests || []).filter((req: any) => {
+          if (supabaseHelpers.isDeclinedByDriver(req, user?.id)) return false;
+          const passengerCount = Math.max(1, Number(req.passenger_count) || 1);
+          return mapRideType(req.ride_type, req.pickup_location) !== 'private' || passengerCount <= 1;
+        });
         const visibleLobbies = (waitingLobbies || []).filter(
-          (lobby: any) => !supabaseHelpers.isDeclinedByDriver(lobby, user?.id)
+          (lobby: any) => {
+            if (supabaseHelpers.isDeclinedByDriver(lobby, user?.id)) return false;
+            const passengers = Array.isArray(lobby.passengers_json) ? lobby.passengers_json.length : 0;
+            const maxPassengers = Math.max(1, Number(lobby.max_seats) || 3);
+            return passengers <= maxPassengers;
+          }
         );
 
         const mappedRequests = visibleRideRequests.map((req: any) => {
@@ -1009,6 +1026,9 @@ export default function PassengerRequests() {
 
   const handleAcceptRequest = async (request: PassengerRequest) => {
     if (!user?.id) return alert('You must be logged in as a driver.');
+    if (hasExcessPassengers(request)) {
+      return alert('This request exceeds the allowed passenger count and is no longer available.');
+    }
     if (!(user?.serviceTypes || []).includes(request.type)) {
       return alert('You can only accept requests that match your service types.');
     }
@@ -1153,6 +1173,7 @@ export default function PassengerRequests() {
     !!queueTerminalId && isQueueGatedType(request.type) && !isFirstInQueue;
   const canAcceptRequest = (request: PassengerRequest) => {
     if (isUnassigned) return false;
+    if (hasExcessPassengers(request)) return false;
     if (!(user?.serviceTypes || []).includes(request.type)) return false;
     if (isWrongTerminal(request)) return false;
     if (isQueueBlocked(request)) return false;
