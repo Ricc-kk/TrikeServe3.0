@@ -306,6 +306,49 @@ ALTER TABLE favorites ENABLE ROW LEVEL SECURITY;
 ALTER TABLE favorite_menu_items ENABLE ROW LEVEL SECURITY;
 ALTER TABLE user_addresses ENABLE ROW LEVEL SECURITY;
 ALTER TABLE restaurant_searches ENABLE ROW LEVEL SECURITY;
+
+-- Customers can book a private ride only for their authenticated account.
+-- The booking client uses INSERT ... RETURNING, so customers also need to
+-- select their own newly-created row.
+GRANT INSERT, SELECT ON public.ride_requests TO authenticated;
+DROP POLICY IF EXISTS "Anyone can insert ride requests" ON public.ride_requests;
+DROP POLICY IF EXISTS "Users can insert their own ride requests" ON public.ride_requests;
+DROP POLICY IF EXISTS "Customers can create own private ride requests" ON public.ride_requests;
+CREATE POLICY "Customers can create own private ride requests" ON public.ride_requests
+  FOR INSERT TO authenticated
+  WITH CHECK (
+    customer_id = auth.uid()
+    AND ride_type = 'special'
+    AND status = 'pending'
+    AND driver_id IS NULL
+  );
+
+DROP POLICY IF EXISTS "Riders can record completed shared rides" ON public.ride_requests;
+CREATE POLICY "Riders can record completed shared rides" ON public.ride_requests
+  FOR INSERT TO authenticated
+  WITH CHECK (
+    ride_type = 'share'
+    AND status = 'completed'
+    AND driver_id = auth.uid()
+    AND EXISTS (
+      SELECT 1
+      FROM public.users AS rider
+      WHERE rider.id = auth.uid()
+        AND rider.role = 'rider'
+        AND rider.is_verified IS TRUE
+    )
+  );
+
+DROP POLICY IF EXISTS "Customers can view own ride requests" ON public.ride_requests;
+CREATE POLICY "Customers can view own ride requests" ON public.ride_requests
+  FOR SELECT TO authenticated
+  USING (customer_id = auth.uid());
+
+DROP POLICY IF EXISTS "Riders can view assigned ride requests" ON public.ride_requests;
+CREATE POLICY "Riders can view assigned ride requests" ON public.ride_requests
+  FOR SELECT TO authenticated
+  USING (driver_id = auth.uid());
+
 GRANT SELECT, INSERT, UPDATE, DELETE ON favorites TO authenticated;
 GRANT SELECT, INSERT, UPDATE, DELETE ON favorite_menu_items TO authenticated;
 

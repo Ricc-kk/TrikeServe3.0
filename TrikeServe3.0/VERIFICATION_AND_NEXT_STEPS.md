@@ -31,23 +31,9 @@
 ```
 
 ### STEP 2: Run This SQL
-```sql
-DROP POLICY IF EXISTS "Users can insert their own ride requests" ON ride_requests;
-DROP POLICY IF EXISTS "Users can view their own ride requests" ON ride_requests;
-DROP POLICY IF EXISTS "Users can update their own ride requests" ON ride_requests;
-
-CREATE POLICY "Anyone can insert ride requests" ON ride_requests
-  FOR INSERT WITH CHECK (true);
-
-CREATE POLICY "Anyone can view ride requests" ON ride_requests
-  FOR SELECT USING (true);
-
-CREATE POLICY "Anyone can update ride requests" ON ride_requests
-  FOR UPDATE WITH CHECK (true);
-
-CREATE POLICY "Anyone can delete ride requests" ON ride_requests
-  FOR DELETE USING (true);
-```
+Run [FIX_PRIVATE_RIDE_BOOKING_RLS.sql](FIX_PRIVATE_RIDE_BOOKING_RLS.sql) in
+the Supabase SQL Editor. It limits private booking creation and read-back to
+the signed-in customer's account.
 
 Then click **Run**
 

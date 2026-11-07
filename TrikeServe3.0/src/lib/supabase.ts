@@ -1965,6 +1965,21 @@ export const supabaseHelpers = {
 
   // Ride operations
   async createRideRequest(rideRequest: any) {
+    const { data: authData, error: authError } = await supabase.auth.getUser();
+    if (authError) return { data: null, error: authError };
+    if (!authData.user) {
+      return {
+        data: null,
+        error: new Error('Your session is not connected to Supabase Auth. Sign in again before booking a private ride.'),
+      };
+    }
+    if (rideRequest?.customer_id !== authData.user.id) {
+      return { data: null, error: new Error('The booking customer does not match the signed-in account.') };
+    }
+    if (rideRequest?.ride_type !== 'special') {
+      return { data: null, error: new Error('Only private ride requests can be created through this booking action.') };
+    }
+
     const { data, error } = await supabase
       .from('ride_requests')
       .insert([rideRequest])

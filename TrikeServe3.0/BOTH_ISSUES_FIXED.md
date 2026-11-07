@@ -22,13 +22,13 @@
 - Enhanced console messages to show what's failing
 
 ### Root Cause: RLS Policy Issue
-The `ride_requests` table has **Row Level Security (RLS)** policies that block inserts because:
-- Your app uses **custom authentication** (not Supabase Auth)
-- RLS policies expect `auth.uid()` which is **NULL** with custom auth
-- Result: Database rejects INSERT operations
+The private ride booking flow uses Supabase Auth. Its RLS policy checks that
+`customer_id` matches `auth.uid()` and permits the customer to read their own
+inserted row.
 
 ### The Fix: Update RLS Policies
-You need to run SQL in Supabase to fix the policies. See: `FIX_RIDE_REQUESTS_RLS_POLICY.md`
+Run [FIX_PRIVATE_RIDE_BOOKING_RLS.sql](FIX_PRIVATE_RIDE_BOOKING_RLS.sql) in
+Supabase to install the owner-scoped policies.
 
 ---
 
@@ -36,28 +36,8 @@ You need to run SQL in Supabase to fix the policies. See: `FIX_RIDE_REQUESTS_RLS
 
 ### Step 1: Fix RLS Policy in Supabase
 
-Follow instructions in: **`FIX_RIDE_REQUESTS_RLS_POLICY.md`**
-
-In Supabase SQL Editor, run:
-```sql
--- Drop old restrictive policies
-DROP POLICY IF EXISTS "Users can insert their own ride requests" ON ride_requests;
-DROP POLICY IF EXISTS "Users can view their own ride requests" ON ride_requests;
-DROP POLICY IF EXISTS "Users can update their own ride requests" ON ride_requests;
-
--- Create new PERMISSIVE policies
-CREATE POLICY "Anyone can insert ride requests" ON ride_requests
-  FOR INSERT WITH CHECK (true);
-
-CREATE POLICY "Anyone can view ride requests" ON ride_requests
-  FOR SELECT USING (true);
-
-CREATE POLICY "Anyone can update ride requests" ON ride_requests
-  FOR UPDATE WITH CHECK (true);
-
-CREATE POLICY "Anyone can delete ride requests" ON ride_requests
-  FOR DELETE USING (true);
-```
+Run [FIX_PRIVATE_RIDE_BOOKING_RLS.sql](FIX_PRIVATE_RIDE_BOOKING_RLS.sql) in
+the Supabase SQL Editor. Avoid the older open-access policy snippet.
 
 ### Step 2: Restart Dev Server
 
