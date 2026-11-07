@@ -323,6 +323,14 @@ ALTER TABLE favorite_menu_items ENABLE ROW LEVEL SECURITY;
 ALTER TABLE user_addresses ENABLE ROW LEVEL SECURITY;
 ALTER TABLE restaurant_searches ENABLE ROW LEVEL SECURITY;
 
+-- Restaurant names, menus and locations are storefront data customers need to
+-- browse. RLS must include a SELECT policy as well as table-level privileges.
+GRANT SELECT ON TABLE public.restaurants TO authenticated;
+DROP POLICY IF EXISTS "Customers can view restaurants" ON public.restaurants;
+CREATE POLICY "Customers can view restaurants" ON public.restaurants
+  FOR SELECT TO authenticated
+  USING (true);
+
 -- Shared ride customers can browse waiting lobbies, create their own lobby,
 -- join by adding their passenger row, and leave lobbies they already joined.
 GRANT SELECT, INSERT, UPDATE ON public.shared_ride_lobbies TO authenticated;
