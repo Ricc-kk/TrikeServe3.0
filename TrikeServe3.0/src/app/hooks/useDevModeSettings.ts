@@ -59,6 +59,10 @@ export function useDevModeOnlyFeature(feature: DevModeFeature): boolean {
   const canEnableFromWebsiteEnv = feature === "foodDelivery"
     ? webFoodDeliveryEnabled
     : (feature === "customerRideBooking" || feature === "driverQueueJoining") && webRideServicesEnabled;
+  // Food ordering is disabled on production websites unless the explicit
+  // website flag enables it. The Dev Mode override remains available in local
+  // development for testing without exposing that switch to website customers.
+  const canEnableFromDevMode = feature !== "foodDelivery" || import.meta.env.DEV;
 
-  return canEnableFromWebsiteEnv || (devModeEnabled && featureEnabled);
+  return canEnableFromWebsiteEnv || (canEnableFromDevMode && devModeEnabled && featureEnabled);
 }

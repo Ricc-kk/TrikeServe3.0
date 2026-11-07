@@ -24,7 +24,7 @@ import { computeDistanceFare, deliveryRates, straightLineKm } from "@/lib/pricin
 import ProofCapture from "../ui/ProofCapture";
 import { getDefaultAddress, setDefaultAddress } from "@/lib/defaultAddress";
 import { useDeliveryAddress } from "../../contexts/useDeliveryAddress";
-import { useDevModeOverride } from "../../hooks/useDevModeSettings";
+import { useDevModeOnlyFeature, useDevModeOverride } from "../../hooks/useDevModeSettings";
 
 /**
  * Checkout for one restaurant.
@@ -45,6 +45,7 @@ export default function CartCheckout() {
     useCart();
   const { addOrder } = useOrders();
   const { user } = useAuth();
+  const foodDeliveryEnabled = useDevModeOnlyFeature("foodDelivery");
   const [enforceBoundary] = useDevModeOverride("enforceBoundary");
   const [imageProofRequired] = useDevModeOverride("imageProofRequired");
 
@@ -430,6 +431,13 @@ export default function CartCheckout() {
   };
 
   const handlePlaceOrder = async () => {
+    // Route gates are the main guard; keep the mutation protected too so an
+    // already-open or alternate checkout cannot create a new order after the
+    // website feature has been disabled.
+    if (!foodDeliveryEnabled) {
+      navigate("/customer");
+      return;
+    }
     if (!restaurant) return;
     if (!hasSelectedAddress) {
       /*

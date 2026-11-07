@@ -301,10 +301,12 @@ export default function DevModeSettings() {
             <SettingRow
               id="dev-mode-food-delivery"
               title="Food delivery"
-              description="Allow customer orders and driver delivery requests while Dev Mode is on."
-              checked={foodDeliveryEnabled}
+              description={import.meta.env.DEV
+                ? "Allow customer orders and driver delivery requests while Dev Mode is on."
+                : "Set VITE_ENABLE_WEB_FOOD_DELIVERY=true to enable this on the website."}
+              checked={import.meta.env.DEV && foodDeliveryEnabled}
               onCheckedChange={setFoodDeliveryEnabled}
-              disabled={!isEnabled}
+              disabled={!isEnabled || !import.meta.env.DEV}
               icon={Package}
             />
             <SettingRow
