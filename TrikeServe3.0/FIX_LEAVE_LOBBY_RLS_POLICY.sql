@@ -1,6 +1,7 @@
 -- FIX: Allow passengers to leave lobbies by updating RLS policies
 -- Problem: Only the host (customer_id) could update the lobby, blocking other passengers from leaving
 -- Solution: Allow any passenger in the lobby to update/leave
+-- The current app uses leave_shared_ride_lobby(); also run CUSTOMER_LEAVE_RIDE_RLS_FIX.sql.
 
 -- RLS policies do not grant SQL table privileges by themselves.
 GRANT SELECT, INSERT, UPDATE ON public.shared_ride_lobbies TO authenticated;

@@ -1,6 +1,7 @@
 -- Allow a signed-in customer to create a private ride request for their own
 -- account and read it back from the INSERT ... SELECT booking call.
 -- Run this in the Supabase SQL Editor for an existing database.
+-- The current app cancels rides through an RPC; also run CUSTOMER_LEAVE_RIDE_RLS_FIX.sql.
 
 ALTER TABLE public.ride_requests ENABLE ROW LEVEL SECURITY;
 

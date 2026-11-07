@@ -1,5 +1,6 @@
 -- TrikeServe3.0 Supabase Database Schema
 -- Execute this SQL in your Supabase project's SQL Editor
+-- After this schema, run CUSTOMER_LEAVE_RIDE_RLS_FIX.sql for customer leave/cancel RPCs.
 
 -- Enable UUID extension
 CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
