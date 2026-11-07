@@ -328,6 +328,35 @@ export default function TerminalQueueCard({ queue, variant = "full", canJoin = t
     </RideModal>
   ) : null;
 
+  const actionErrorModal = actionError ? (
+    <RideModal
+      labelledBy="terminal-queue-action-error-title"
+      zIndexClassName="z-[5100]"
+      contentClassName="max-w-md p-6"
+    >
+      <div className="text-center">
+        <div className="mx-auto mb-4 grid size-14 place-items-center rounded-full bg-[var(--amber-soft)] text-[var(--amber-ink)]">
+          <AlertTriangle className="size-7" aria-hidden="true" />
+        </div>
+        <h2 id="terminal-queue-action-error-title" className="text-lg font-extrabold text-[var(--ink)]">
+          {actionError.toLowerCase().includes("outside your terminal")
+            ? "Move inside the terminal"
+            : "Queue action failed"}
+        </h2>
+        <p className="mt-2 text-sm leading-relaxed text-[var(--muted-foreground)]" role="alert">
+          {actionError}
+        </p>
+        <Button
+          type="button"
+          onClick={() => setActionError(null)}
+          className="mt-5 min-w-28 bg-[var(--primary)] font-bold text-white"
+        >
+          Got it
+        </Button>
+      </div>
+    </RideModal>
+  ) : null;
+
   // ---- No terminal: blocked from accepting rides ----
   if (hasNoTerminal) {
     return (
@@ -395,7 +424,7 @@ export default function TerminalQueueCard({ queue, variant = "full", canJoin = t
           </div>
           <div className="flex-shrink-0">{myEntry ? leaveButton : joinButton}</div>
         </div>
-        {actionError && <p className="text-[11px] text-[var(--primary)] font-semibold mt-2">{actionError}</p>}
+        {actionErrorModal}
         {outsideQueueWarning}
       </div>
     );
@@ -555,9 +584,7 @@ export default function TerminalQueueCard({ queue, variant = "full", canJoin = t
         </div>
       )}
 
-      {actionError && (
-        <p className="text-[11px] text-[var(--primary)] font-semibold text-center mt-2">{actionError}</p>
-      )}
+      {actionErrorModal}
       {error && !myEntry && (
         <p className="text-[10px] text-[var(--muted-foreground)] text-center mt-2">
           Queue unavailable right now — retrying automatically.
