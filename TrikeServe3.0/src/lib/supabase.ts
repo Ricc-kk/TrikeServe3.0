@@ -61,6 +61,21 @@ export const supabase = createClient(
   supabaseAnonKey
 );
 
+// Login-time tools such as Quick Access must not inherit a saved user's JWT.
+// Otherwise RLS correctly narrows a users-table read to that one profile,
+// which makes the directory look randomly incomplete across sessions.
+// Keep this separate from the app client and disable session persistence so
+// the request always uses the publishable/anon key and the database's public
+// SELECT policies.
+export const publicSupabase = createClient(supabaseUrl, supabaseAnonKey, {
+  auth: {
+    storageKey: 'trikeserve-public-read',
+    persistSession: false,
+    autoRefreshToken: false,
+    detectSessionInUrl: false,
+  },
+});
+
 // ---------------------------------------------------------------------------
 // Helper: resolve admin credentials (email + password) from the passed-in
 // object OR from localStorage.  Admins have no Supabase Auth session, so

@@ -1639,7 +1639,7 @@ export default function PassengerRequests() {
                   {previewRequest.type === 'delivery'
                     ? previewRequest.restaurantName || 'Restaurant delivery'
                     : previewRequest.type === 'shared'
-                      ? `${previewRequest.pickup} → ${previewRequest.passengerDetails?.length || 1} passenger drop-off${(previewRequest.passengerDetails?.length || 1) === 1 ? '' : 's'}`
+                      ? `${previewRequest.pickup} → Shared ride drop-offs`
                       : `${previewRequest.pickup} → ${previewRequest.dropoff}`}
                 </p>
               </div>

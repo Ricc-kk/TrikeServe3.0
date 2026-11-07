@@ -4,6 +4,7 @@ import { ChevronDown, Eye, EyeOff, Users } from "lucide-react";
 import { armWelcomeGreeting } from "../../lib/welcomeGreeting";
 import { useDevModeFeature, useDevModeStatus } from "../hooks/useDevModeSettings";
 import { isSuperAdminEmail, SUPER_ADMIN_EMAIL } from "../../lib/superAdminIdentity";
+import { publicSupabase } from "../../lib/supabase";
 import TrikeServeLogo from "../../assets/TRIKESERVE_logo_trimmed.jpg";
 import { Button } from "./ui/button";
 import { Input } from "./ui/input";
@@ -63,6 +64,8 @@ const ROLE_ORDER: Record<string, number> = {
   customer: 3,
 };
 
+const ACCOUNT_PAGE_SIZE = 500;
+
 function roleLabel(acc: TestAccount): string {
   if (acc.role === "admin") {
     if (isSuperAdminEmail(acc.email)) return "Super Admin";
@@ -86,10 +89,13 @@ export default function Login() {
   const [quickAccessEnabled] = useDevModeFeature("quickAccess");
   const [showAccounts, setShowAccounts] = useState(false);
   const [accounts, setAccounts] = useState<TestAccount[]>([]);
+  const [accountsLoading, setAccountsLoading] = useState(false);
+  const [accountsLoadWarning, setAccountsLoadWarning] = useState("");
   const [resendStatus, setResendStatus] = useState<"idle" | "sending" | "sent" | "error">("idle");
   const [resendMessage, setResendMessage] = useState("");
   const devModeHoldTimer = useRef<number | null>(null);
   const devModeHoldPointerOrigin = useRef<{ pointerId: number; x: number; y: number } | null>(null);
+  const accountsLoadInFlight = useRef(false);
 
   const startDevModeHold = (event?: React.PointerEvent<HTMLButtonElement>) => {
     if (event?.pointerType === "mouse" && event.button !== 0) return;
@@ -151,8 +157,14 @@ export default function Login() {
   }, []);
 
   const loadAccounts = useCallback(async () => {
+    if (accountsLoadInFlight.current) return;
+    accountsLoadInFlight.current = true;
+    setAccountsLoading(true);
+    setAccountsLoadWarning("");
+
     const list: TestAccount[] = [];
     const seen = new Set<string>();
+    let sourceFailed = false;
 
     const add = (acc: TestAccount) => {
       const key = (acc.email || "").toLowerCase();
@@ -176,6 +188,7 @@ export default function Login() {
         .select("email, name, admin_type, password_hash")
         .ilike("email", SUPER_ADMIN_EMAIL)
         .maybeSingle();
+      if (error) sourceFailed = true;
       if (!error && data) {
         add({
           email: data.email,
@@ -186,7 +199,7 @@ export default function Login() {
         });
       }
     } catch {
-      /* supabase unavailable */
+      sourceFailed = true;
     }
 
     // 1. LocalStorage users (these carry their password, unlike Supabase rows)
@@ -206,44 +219,64 @@ export default function Login() {
         });
       }
     } catch {
-      /* ignore malformed storage */
+      sourceFailed = true;
     }
 
     // 2. Supabase admins (password_hash is the plaintext password in this app)
     try {
-      const { data, error } = await supabase
-        .from("admins")
-        .select("email, name, admin_type, password_hash")
-        .eq("admin_type", "rider");
-      if (!error && data) {
-        data.forEach((a: any) => {
-          add({
-            email: a.email,
-            name: a.name || "Admin",
-            role: "admin",
-            subrole: a.admin_type,
-            password: a.password_hash || "",
-          });
+      let offset = 0;
+      while (true) {
+        const { data, error } = await supabase
+          .from("admins")
+          .select("email, name, admin_type, password_hash")
+          .order("email", { ascending: true })
+          .range(offset, offset + ACCOUNT_PAGE_SIZE - 1);
+        if (error) {
+          sourceFailed = true;
+          break;
+        }
+        (data || []).forEach((a: any) => {
+          if (!isSuperAdminEmail(a.email)) {
+            add({
+              email: a.email,
+              name: a.name || "Admin",
+              role: "admin",
+              subrole: a.admin_type,
+              password: a.password_hash || "",
+            });
+          }
         });
+        if ((data || []).length < ACCOUNT_PAGE_SIZE) break;
+        offset += ACCOUNT_PAGE_SIZE;
       }
     } catch {
-      /* supabase unavailable */
+      sourceFailed = true;
     }
 
-    // 3. Supabase users (no server-side password; login skips the check for them)
+    // 3. Supabase users (no server-side password; login skips the check for them).
+    // Fetch in pages so a large users table isn't silently cut off at the API row cap.
     try {
-      const { data, error } = await supabase
-        .from("users")
-        .select("email, name, role");
-      if (!error && data) {
-        data.forEach((u: any) => {
+      let offset = 0;
+      while (true) {
+        const { data, error } = await publicSupabase
+          .from("users")
+          .select("email, name, role")
+          .order("email", { ascending: true })
+          .range(offset, offset + ACCOUNT_PAGE_SIZE - 1);
+        if (error) {
+          sourceFailed = true;
+          break;
+        }
+        (data || []).forEach((u: any) => {
           if (!isSuperAdminEmail(u.email)) {
             add({ email: u.email, name: u.name || u.email || "User", role: u.role || "customer" });
           }
         });
+        if ((data || []).length < ACCOUNT_PAGE_SIZE) break;
+        offset += ACCOUNT_PAGE_SIZE;
       }
     } catch {
-      /* supabase unavailable */
+      sourceFailed = true;
     }
 
     // Admins first, then grouped by role, then by name
@@ -254,6 +287,11 @@ export default function Login() {
     });
 
     setAccounts(list);
+    if (sourceFailed) {
+      setAccountsLoadWarning("Some account sources could not be loaded. Refresh to try again.");
+    }
+    setAccountsLoading(false);
+    accountsLoadInFlight.current = false;
   }, []);
 
   useEffect(() => {
@@ -432,7 +470,11 @@ export default function Login() {
               <div>
                 <button
                   type="button"
-                  onClick={() => setShowAccounts(!showAccounts)}
+                  onClick={() => {
+                    const opening = !showAccounts;
+                    setShowAccounts(opening);
+                    if (opening) void loadAccounts();
+                  }}
                   aria-expanded={showAccounts}
                   aria-controls="dev-mode-test-accounts"
                   disabled={isLoading}
@@ -448,8 +490,13 @@ export default function Login() {
                   />
                 </button>
 
-                <div id="dev-mode-test-accounts" hidden={!showAccounts} className="mt-2 w-full min-w-0 border border-line rounded-xl bg-surface max-h-72 overflow-y-auto divide-y divide-[var(--border)]">
-                    {accounts.length === 0 && (
+                <div id="dev-mode-test-accounts" hidden={!showAccounts} className="mt-2 w-full min-w-0 border border-line rounded-xl bg-surface max-h-[60dvh] overflow-y-auto overscroll-contain divide-y divide-[var(--border)]">
+                    {accountsLoading && (
+                      <p role="status" className="p-4 text-sm text-[var(--muted-foreground)]">
+                        {accounts.length ? "Refreshing test accounts…" : "Loading test accounts…"}
+                      </p>
+                    )}
+                    {!accountsLoading && accounts.length === 0 && (
                       <p className="p-4 text-sm text-[var(--muted-foreground)] italic">
                         No accounts found yet — create one via Sign Up.
                       </p>
@@ -485,6 +532,26 @@ export default function Login() {
                       </button>
                     ))}
                 </div>
+                {showAccounts && (
+                  <div className="mt-2 flex flex-col items-start justify-between gap-2 sm:flex-row sm:items-center">
+                    <div className="min-w-0">
+                      <p className="text-[11px] text-[var(--muted-foreground)]">
+                        {accounts.length} account{accounts.length === 1 ? "" : "s"} loaded. Scroll the list to see more.
+                      </p>
+                      {accountsLoadWarning && (
+                        <p role="alert" className="mt-1 text-xs text-[var(--error)]">{accountsLoadWarning}</p>
+                      )}
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => void loadAccounts()}
+                      disabled={accountsLoading}
+                      className="shrink-0 text-xs font-semibold text-[var(--primary)] underline underline-offset-2 disabled:opacity-50"
+                    >
+                      {accountsLoading ? "Loading…" : "Refresh accounts"}
+                    </button>
+                  </div>
+                )}
               </div>
             </section>
           )}
