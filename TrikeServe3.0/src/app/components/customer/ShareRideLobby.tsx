@@ -1974,22 +1974,26 @@ export default function ShareRideLobby({
        setShowLeaveReason(false);
 
        if (lobby.driver_id && leaveReason && updatedLobby?.status !== 'cancelled') {
-         try {
-           const thread = await ensureDriverThread();
-           if (!thread) throw new Error('Could not open the driver chat.');
-           const { error: messageError } = await supabaseHelpers.sendChatMessage({
-             conversationId: thread.id,
-             senderId: user.id,
-             receiverId: lobby.driver_id,
-             senderName: user.name || 'Customer',
-             senderRole: 'customer',
-             receiverRole: 'rider',
-             message: `I left the shared ride. Reason: ${leaveReason}`,
-           });
-           if (messageError) throw messageError;
-         } catch (messageError) {
-           console.error('Could not send the shared-ride leave reason to the driver:', messageError);
-         }
+         // The leave is already saved in the lobby row. Sending a separate chat
+         // message is best-effort and must not keep the customer on this screen.
+         void Promise.resolve().then(async () => {
+           try {
+             const thread = await ensureDriverThread();
+             if (!thread) throw new Error('Could not open the driver chat.');
+             const { error: messageError } = await supabaseHelpers.sendChatMessage({
+               conversationId: thread.id,
+               senderId: user.id,
+               receiverId: lobby.driver_id!,
+               senderName: user.name || 'Customer',
+               senderRole: 'customer',
+               receiverRole: 'rider',
+               message: `I left the shared ride. Reason: ${leaveReason}`,
+             });
+             if (messageError) throw messageError;
+           } catch (messageError) {
+             console.error('Could not send the shared-ride leave reason to the driver:', messageError);
+           }
+         });
        }
 
        try {
@@ -1999,9 +2003,8 @@ export default function ShareRideLobby({
        } catch {
          // The database membership is already removed; storage is only a resume hint.
        }
-       // Small delay to ensure database update completes
-       await new Promise(resolve => setTimeout(resolve, 500));
-       // FIX: Add defensive check
+       // The database update above has returned its saved row, so no delay is
+       // needed before returning to the customer screen.
        if (typeof onClose === 'function') {
          onClose(updatedLobby?.status || lobby.status);
        } else {

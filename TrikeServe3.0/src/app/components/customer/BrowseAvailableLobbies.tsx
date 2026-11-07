@@ -118,6 +118,11 @@ export default function BrowseAvailableLobbies({
     ? Number(fareOverride)
     : computeSharedRideFarePerPassenger(rates, joiningDistanceKm);
   const joiningFareHasDistance = fareOverride == null && joiningDistanceKm != null;
+  // Parents may construct a fresh coordinates object during unrelated renders
+  // (for example, the active ride's elapsed-time update). Match by values so
+  // that object identity does not restart the lobby-loading effect.
+  const dropoffLat = dropoffCoords?.lat ?? null;
+  const dropoffLng = dropoffCoords?.lng ?? null;
 
   // Match the selected pickup and drop-off. A terminal can have several
   // destinations, and terminal IDs only identify the pickup side of a trip.
@@ -127,22 +132,27 @@ export default function BrowseAvailableLobbies({
     // older lobbies without one fall back to normalized place matching.
     if (terminalId && lobby.terminal_id && lobby.terminal_id !== terminalId) return false;
 
+    const matchingDropoffCoords = dropoffLat == null || dropoffLng == null
+      ? undefined
+      : { lat: dropoffLat, lng: dropoffLng };
     return isSimilarRoute(lobby, pickup, dropoff, pickupAddress, dropoffAddress, terminalId, {
-      dropoffCoords,
+      dropoffCoords: matchingDropoffCoords,
       routePoints,
       routeWidthM,
       routeId,
     });
-  }, [sameRouteLobbyFilter, terminalId, routeId, pickup, pickupAddress, dropoff, dropoffAddress, dropoffCoords, routePoints, routeWidthM]);
+  }, [sameRouteLobbyFilter, terminalId, routeId, pickup, pickupAddress, dropoff, dropoffAddress, dropoffLat, dropoffLng, routePoints, routeWidthM]);
 
   // Fetch available lobbies on mount
   useEffect(() => {
+    let isActive = true;
     const fetchLobbies = async () => {
       try {
         setLoading(true);
         // Fetch waiting lobbies (fuzzy route matching happens below)
         const { data, error: fetchError } = await supabaseHelpers.getAvailableLobbies();
 
+        if (!isActive) return;
         if (fetchError) {
           setError('Failed to load available lobbies');
           console.error('Error fetching lobbies:', fetchError);
@@ -160,10 +170,12 @@ export default function BrowseAvailableLobbies({
           setLobbies(availableLobbies);
         }
       } catch (err) {
-        console.error('Error fetching lobbies:', err);
-        setError('Error loading lobbies');
+        if (isActive) {
+          console.error('Error fetching lobbies:', err);
+          setError('Error loading lobbies');
+        }
       } finally {
-        setLoading(false);
+        if (isActive) setLoading(false);
       }
     };
 
@@ -180,6 +192,7 @@ export default function BrowseAvailableLobbies({
           table: 'shared_ride_lobbies'
         },
         (payload) => {
+          if (!isActive) return;
           const matchesRoute = routeMatches(payload.new);
 
           if (payload.eventType === 'INSERT' && payload.new.status === 'waiting' && matchesRoute) {
@@ -199,10 +212,11 @@ export default function BrowseAvailableLobbies({
 
     // Add polling to ensure lobbies are always up-to-date (every 2 seconds)
     const pollInterval = setInterval(async () => {
+      if (!isActive) return;
       try {
         const { data, error: fetchError } = await supabaseHelpers.getAvailableLobbies();
 
-        if (!fetchError && data) {
+        if (isActive && !fetchError && data) {
           const availableLobbies = (data as AvailableLobby[]).filter(lobby => {
             const passengers = lobby.passengers_json || [];
             return routeMatches(lobby) &&
@@ -212,11 +226,12 @@ export default function BrowseAvailableLobbies({
           setLobbies(availableLobbies);
         }
       } catch (err) {
-        console.error('Polling error:', err);
+        if (isActive) console.error('Polling error:', err);
       }
     }, 2000);
 
     return () => {
+      isActive = false;
       supabase.removeChannel(channel);
       clearInterval(pollInterval);
     };

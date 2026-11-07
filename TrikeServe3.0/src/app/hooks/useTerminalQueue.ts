@@ -48,6 +48,52 @@ export interface TerminalQueueEntry {
   joined_at: string;
 }
 
+function terminalGeometryFromRow(data: any): TerminalGeometry {
+  const lat = data?.center_lat == null ? Number.NaN : Number(data.center_lat);
+  const lng = data?.center_lng == null ? Number.NaN : Number(data.center_lng);
+  const radius = data?.radius_km == null ? Number.NaN : Number(data.radius_km);
+
+  return {
+    boundary: normalizeBoundaryRoad(data?.boundary_polygon),
+    area: normalizeBoundaryArea(data?.boundary_area),
+    roadWidthM: normalizeRoadWidth(data?.road_width_m),
+    boundaryEnabled: data?.boundary_enabled !== false,
+    center: Number.isFinite(lat) && Number.isFinite(lng) ? { lat, lng } : null,
+    radiusKm: Number.isFinite(radius) ? radius : null,
+  };
+}
+
+function isLocationInsideTerminal(location: LatLngPoint, geometry: TerminalGeometry): boolean | null {
+  if (geometry.area) {
+    return isPointInPolygon(location.lat, location.lng, geometry.area);
+  }
+  if (geometry.center && geometry.radiusKm != null) {
+    return haversineDistanceMeters(location, geometry.center) <= geometry.radiusKm * 1000;
+  }
+  return null;
+}
+
+function getFreshDriverLocation(): Promise<LatLngPoint> {
+  return new Promise((resolve, reject) => {
+    if (!("geolocation" in navigator)) {
+      reject(new Error("Location services are unavailable on this device."));
+      return;
+    }
+
+    navigator.geolocation.getCurrentPosition(
+      ({ coords }) => {
+        if (!Number.isFinite(coords.latitude) || !Number.isFinite(coords.longitude)) {
+          reject(new Error("Your current location could not be verified."));
+          return;
+        }
+        resolve({ lat: coords.latitude, lng: coords.longitude });
+      },
+      () => reject(new Error("Turn on location services to verify that you're at your terminal before joining.")),
+      { enableHighAccuracy: true, timeout: 10_000, maximumAge: 0 },
+    );
+  });
+}
+
 /** Ride types that are gated by queue position (delivery is not gated). */
 export const QUEUE_GATED_TYPES = ["private", "shared"] as const;
 
@@ -97,8 +143,7 @@ export function useTerminalQueue() {
   const [isMutating, setIsMutating] = useState(false);
   const [error, setError] = useState<string | null>(null);
   // Terminal geometry + the driver's live position, so the queue card can show
-  // whether the driver is inside the terminal's given radius. This is shown only
-  // — it never gates joining the queue.
+  // whether the driver is inside the terminal area and the join action can verify it.
   const [terminalGeometry, setTerminalGeometry] = useState<TerminalGeometry>({
     boundary: null,
     area: null,
@@ -193,33 +238,53 @@ export function useTerminalQueue() {
     }
   }, [user?.terminalId, user?.terminalName, terminalId]);
 
-  // The terminal's coverage area changes only when an admin edits it, so this is
-  // fetched whenever the driver's terminal assignment settles.
+  // Keep terminal boundary settings current for active drivers. Realtime updates
+  // apply immediately when available, with polling as a fallback for clients or
+  // projects where the terminals table is not in the Realtime publication.
   useEffect(() => {
     if (!terminalId) {
       setTerminalGeometry({ boundary: null, area: null, roadWidthM: DEFAULT_ROAD_WIDTH_M, boundaryEnabled: true, center: null, radiusKm: null });
       return;
     }
     let cancelled = false;
+    let requestInFlight = false;
 
-    supabaseHelpers.getTerminalGeofence(terminalId).then(({ data }) => {
-      if (cancelled) return;
-      const lat = Number(data?.center_lat);
-      const lng = Number(data?.center_lng);
-      const radius = Number(data?.radius_km);
-      setTerminalGeometry({
-        boundary: normalizeBoundaryRoad(data?.boundary_polygon),
-        area: normalizeBoundaryArea(data?.boundary_area),
-        roadWidthM: normalizeRoadWidth(data?.road_width_m),
-        boundaryEnabled: data?.boundary_enabled !== false,
-        center:
-          Number.isFinite(lat) && Number.isFinite(lng) ? { lat, lng } : null,
-        radiusKm: Number.isFinite(radius) ? radius : null,
-      });
-    }).catch(() => {});
+    const refreshTerminalGeometry = async () => {
+      if (requestInFlight) return;
+      requestInFlight = true;
+      try {
+        const { data, error } = await supabaseHelpers.getTerminalGeofence(terminalId);
+        if (cancelled) return;
+        if (error || !data) {
+          // Never keep an old boundary active after a failed refresh.
+          setTerminalGeometry({ boundary: null, area: null, roadWidthM: DEFAULT_ROAD_WIDTH_M, boundaryEnabled: true, center: null, radiusKm: null });
+          return;
+        }
+        setTerminalGeometry(terminalGeometryFromRow(data));
+      } catch {
+        if (!cancelled) {
+          setTerminalGeometry({ boundary: null, area: null, roadWidthM: DEFAULT_ROAD_WIDTH_M, boundaryEnabled: true, center: null, radiusKm: null });
+        }
+      } finally {
+        requestInFlight = false;
+      }
+    };
+
+    void refreshTerminalGeometry();
+    const subscription = supabase
+      .channel(`terminal-geofence-${terminalId}`)
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "terminals", filter: `id=eq.${terminalId}` },
+        () => void refreshTerminalGeometry(),
+      )
+      .subscribe();
+    const interval = setInterval(() => void refreshTerminalGeometry(), 5_000);
 
     return () => {
       cancelled = true;
+      clearInterval(interval);
+      supabase.removeChannel(subscription);
     };
   }, [terminalId]);
 
@@ -370,20 +435,8 @@ export function useTerminalQueue() {
    * Null when we can't tell, or when the admin has switched the check off.
    */
   const isWithinBoundary = useMemo(() => {
-    if (!driverLocation) return null;
-
-    if (terminalGeometry.area) {
-      // A disabled boundary is kept for display, so it can't judge the driver.
-      if (!terminalGeometry.boundaryEnabled) return null;
-      return isPointInPolygon(driverLocation.lat, driverLocation.lng, terminalGeometry.area);
-    }
-    if (terminalGeometry.center && terminalGeometry.radiusKm != null) {
-      return (
-        haversineDistanceMeters(driverLocation, terminalGeometry.center) <=
-        terminalGeometry.radiusKm * 1000
-      );
-    }
-    return null;
+    if (!driverLocation || !terminalGeometry.boundaryEnabled) return null;
+    return isLocationInsideTerminal(driverLocation, terminalGeometry);
   }, [driverLocation, terminalGeometry]);
   // Definitive "this driver has no terminal" — only once the DB lookup settled.
   const hasNoTerminal = !isResolvingTerminal && !terminalId;
@@ -397,47 +450,79 @@ export function useTerminalQueue() {
     }
     if (!terminalId) return { error: new Error("You are not assigned to a terminal yet.") };
 
-    /*
-     * A driver has to be standing inside the terminal's border to queue.
-     *
-     * `isWithinBoundary` is null when there is nothing plotted, or when the
-     * admin switched the check off -- that means "cannot tell", not "outside",
-     * so it must not block. Only an explicit false refuses.
-     */
-    if (enforceBoundary && isWithinBoundary === false) {
-      return {
-        error: new Error(
-          "You are outside your terminal's area. Move inside the terminal to join the queue."
-        ),
-      };
-    }
-
     setIsMutating(true);
-    const { error: joinError } = await supabaseHelpers.joinTerminalQueue({
-      terminalId,
-      driverId,
-      driverName: user?.name,
-      driverPlate: user?.todaPlate,
-    });
-    await refresh();
-    setIsMutating(false);
+    try {
+      if (enforceBoundary) {
+        // Read the saved settings at tap time as well as keeping the UI synced
+        // through Realtime. This closes the gap between an admin edit and the
+        // next client refresh.
+        const { data: terminal, error: terminalError } = await supabaseHelpers.getTerminalGeofence(terminalId);
+        if (terminalError || !terminal) {
+          return { error: new Error("Couldn't verify the terminal boundary. Check your connection and try again.") };
+        }
 
-    if (!joinError) {
-      setOutsideQueueAutoRemoved(false);
-      setOutsideQueueError(null);
-      outsideQueueDeadlineRef.current = null;
-      outsideQueueRetryAtRef.current = 0;
-      if (outsideQueueStorageKey) {
-        try {
-          localStorage.removeItem(outsideQueueStorageKey);
-        } catch {
-          // Queue join succeeded; local countdown storage is only best effort.
+        const latestGeometry = terminalGeometryFromRow(terminal);
+        setTerminalGeometry(latestGeometry);
+
+        if (latestGeometry.boundaryEnabled) {
+          let location: LatLngPoint;
+          try {
+            setIsLocating(true);
+            location = await getFreshDriverLocation();
+            setDriverLocation(location);
+          } catch (locationError) {
+            const message = locationError instanceof Error
+              ? locationError.message
+              : "Turn on location services to verify that you're at your terminal before joining.";
+            return { error: new Error(message) };
+          } finally {
+            setIsLocating(false);
+          }
+
+          const inside = isLocationInsideTerminal(location, latestGeometry);
+          if (inside !== true) {
+            return {
+              error: new Error(
+                inside === false
+                  ? "You are outside your terminal's area. Move inside the terminal to join the queue."
+                  : "This terminal has no boundary configured, so your location can't be verified. Contact an administrator."
+              ),
+            };
+          }
         }
       }
-    }
 
-    return { error: joinError };
-  }, [driverId, terminalId, isResolvingTerminal, isWithinBoundary, enforceBoundary, user?.name, user?.todaPlate, refresh, outsideQueueStorageKey]);
+      const { error: joinError } = await supabaseHelpers.joinTerminalQueue({
+        terminalId,
+        driverId,
+        driverName: user?.name,
+        driverPlate: user?.todaPlate,
+      });
+      await refresh();
+
+      if (!joinError) {
+        setOutsideQueueAutoRemoved(false);
+        setOutsideQueueError(null);
+        outsideQueueDeadlineRef.current = null;
+        outsideQueueRetryAtRef.current = 0;
+        if (outsideQueueStorageKey) {
+          try {
+            localStorage.removeItem(outsideQueueStorageKey);
+          } catch {
+            // Queue join succeeded; local countdown storage is only best effort.
+          }
+        }
+      }
+
+      return { error: joinError };
+    } catch (joinError) {
+      return {
+        error: joinError instanceof Error ? joinError : new Error("Unable to join the terminal queue."),
+      };
+    } finally {
+      setIsMutating(false);
+    }
+  }, [driverId, terminalId, isResolvingTerminal, enforceBoundary, user?.name, user?.todaPlate, refresh, outsideQueueStorageKey]);
 
   const leave = useCallback(async () => {
     if (!driverId || !terminalId) return { error: null };

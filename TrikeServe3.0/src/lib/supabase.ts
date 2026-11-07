@@ -2520,138 +2520,143 @@ export const supabaseHelpers = {
      console.log(`🚪 LEAVE LOBBY: lobbyId=${lobbyId}, passengerId=${passengerId}`);
 
      try {
-       // First get the current lobby
-       const { data: lobby, error: fetchError } = await supabase
-         .from('shared_ride_lobbies')
-         .select('*')
-         .eq('id', lobbyId)
-         .single();
+       const parsePassengers = (value: unknown): any[] => {
+         if (Array.isArray(value)) return value;
+         if (typeof value === 'string') {
+           try {
+             const parsed = JSON.parse(value);
+             return Array.isArray(parsed) ? parsed : [];
+           } catch {
+             return [];
+           }
+         }
+         return [];
+       };
+       const isPassengerOrCompanion = (passenger: any) => {
+         const id = String(passenger?.id || '');
+         return id === passengerId || id.startsWith(`${passengerId}_companion_`);
+       };
 
-       if (fetchError) {
-         console.error('❌ Error fetching lobby:', fetchError);
-         return { data: null, error: fetchError };
-       }
+       // Driver status changes and other passenger updates can race with a
+       // customer's leave action. Re-read and retry when the compare-and-set
+       // update finds that the row changed in between.
+       for (let attempt = 0; attempt < 3; attempt++) {
+         const { data: lobby, error: fetchError } = await supabase
+           .from('shared_ride_lobbies')
+           .select('*')
+           .eq('id', lobbyId)
+           .maybeSingle();
 
-       if (!lobby) {
-         console.error('❌ Lobby not found:', lobbyId);
-         return { data: null, error: new Error('Lobby not found') };
-       }
-
-       console.log('✅ Lobby found:', { id: lobbyId, status: lobby.status });
-
-       // Parse passengers
-       let passengers = [];
-       try {
-         passengers = Array.isArray(lobby.passengers_json) ? lobby.passengers_json : JSON.parse(lobby.passengers_json || '[]');
-       } catch (e) {
-         console.warn('⚠️ Error parsing passengers:', e);
-         passengers = [];
-       }
-
-       console.log(`👥 Current passengers (${passengers.length}):`, passengers.map((p: any) => p.id));
-
-       // Remove passenger and companions (companions have ID like "userId_companion_1")
-       const updatedPassengers = passengers.filter((p: any) => {
-         const isMainPassenger = p.id === passengerId;
-         const isCompanion = p.id.startsWith(`${passengerId}_companion_`);
-         const shouldKeep = !isMainPassenger && !isCompanion;
-
-         if (!shouldKeep) {
-           console.log(`  🚶 Removing passenger: ${p.id}`);
+         if (fetchError) {
+           console.error('❌ Error fetching lobby:', fetchError);
+           return { data: null, error: fetchError };
          }
 
-         return shouldKeep;
-       });
+         if (!lobby) {
+           console.error('❌ Lobby not found or not visible:', lobbyId);
+           return { data: null, error: new Error('Lobby not found or you no longer have access to it.') };
+         }
 
-       console.log(`👥 Updated passengers (${updatedPassengers.length}):`, updatedPassengers.map((p: any) => p.id));
+         const passengers = parsePassengers(lobby.passengers_json);
+         const updatedPassengers = passengers.filter((passenger) => !isPassengerOrCompanion(passenger));
 
-       const timestamp = new Date().toISOString();
+         // Treat a repeated leave as success. Realtime or another tab may
+         // already have removed this customer before this request arrived.
+         if (updatedPassengers.length === passengers.length) {
+           return { data: lobby, error: null };
+         }
 
-        const isHostLeaving = lobby.customer_id === passengerId;
+         const timestamp = new Date().toISOString();
+         const isHostLeaving = String(lobby.customer_id || '') === passengerId;
+         const updates: Record<string, any> = {
+           passengers_json: updatedPassengers,
+           updated_at: timestamp,
+         };
 
-        // Only an empty lobby ends. When its host leaves, the earliest remaining
-        // main passenger takes over; companion seats cannot become the host.
-        if (updatedPassengers.length === 0) {
-          console.log('🗑️ Lobby is now empty, marking as cancelled');
-         const { data, error } = await supabase
+         if (updatedPassengers.length === 0) {
+           updates.status = 'cancelled';
+           if (lobby.driver_id) {
+             updates.driver_status = 'cancelled';
+             updates.driver_status_message = `The customer cancelled this shared ride. Reason: ${reason?.trim() || 'No passengers remain in the lobby.'}`;
+           }
+         } else {
+           // Transfer ownership to the next main passenger in join order.
+           const nextHost = isHostLeaving
+             ? updatedPassengers.find((passenger: any) => !String(passenger?.id || '').includes('_companion_')) || updatedPassengers[0]
+             : null;
+
+           if (lobby.driver_id && reason?.trim()) {
+             updates.driver_status_message = `A passenger left this shared ride. Reason: ${reason.trim()}`;
+             updates.driver_status_updated_at = timestamp;
+           }
+
+           if (nextHost) {
+             updates.customer_id = nextHost.id;
+             const nextHostDropoff = nextHost.dropoff || nextHost.dropoffAddress;
+             if (nextHostDropoff) updates.dropoff_location = nextHost.dropoff || nextHost.dropoffAddress;
+             if (nextHost.dropoffAddress || nextHost.dropoff) {
+               updates.dropoff_address = nextHost.dropoffAddress || nextHost.dropoff;
+             }
+             const nextHostLat = Number(nextHost.dropoffLat);
+             const nextHostLng = Number(nextHost.dropoffLng);
+             if (
+               nextHost.dropoffLat != null &&
+               nextHost.dropoffLng != null &&
+               Number.isFinite(nextHostLat) &&
+               Number.isFinite(nextHostLng)
+             ) {
+               updates.dropoff_lat = nextHostLat;
+               updates.dropoff_lng = nextHostLng;
+             }
+           }
+         }
+
+         const { error } = await supabase
            .from('shared_ride_lobbies')
-           .update({
-             status: 'cancelled',
-             passengers_json: [],
-             ...(lobby.driver_id ? {
-               driver_status: 'cancelled',
-               driver_status_message: `The customer cancelled this shared ride. Reason: ${reason?.trim() || 'No passengers remain in the lobby.'}`,
-             } : {}),
-             updated_at: timestamp
-           })
+           .update(updates)
            .eq('id', lobbyId)
            .eq('status', lobby.status)
-           .eq('passengers_json', JSON.stringify(passengers))
-           .select()
-           .single();
+           .eq('passengers_json', JSON.stringify(passengers));
 
          if (error) {
-           console.error('❌ Error marking lobby as cancelled:', error);
+           console.error('❌ Error updating lobby:', error);
            return { data: null, error };
          }
 
-         console.log('✅ Lobby marked as cancelled');
-         return { data, error };
-       }
-
-       // Transfer ownership to the next main passenger in join order. This is
-       // the first remaining non-companion in passengers_json (Rob -> Lou in
-       // the example where Nixon joined after Lou).
-       const nextHost = isHostLeaving
-         ? updatedPassengers.find((passenger: any) => !String(passenger.id || '').includes('_companion_')) || updatedPassengers[0]
-         : null;
-       const updates: Record<string, any> = {
-         passengers_json: updatedPassengers,
-         updated_at: timestamp,
-       };
-
-       if (lobby.driver_id && reason?.trim()) {
-         updates.driver_status_message = `A passenger left this shared ride. Reason: ${reason.trim()}`;
-         updates.driver_status_updated_at = timestamp;
-       }
-
-       if (nextHost) {
-         updates.customer_id = nextHost.id;
-         const nextHostDropoff = nextHost.dropoff || nextHost.dropoffAddress;
-         if (nextHostDropoff) updates.dropoff_location = nextHost.dropoff || nextHost.dropoffAddress;
-         if (nextHost.dropoffAddress || nextHost.dropoff) {
-           updates.dropoff_address = nextHost.dropoffAddress || nextHost.dropoff;
+         // Read back the saved row. Avoid UPDATE ... RETURNING here: after a
+         // host leaves an assigned lobby, the new row no longer matches that
+         // customer's SELECT policy even though the update itself succeeded.
+         const { data: latest, error: latestError } = await supabase
+           .from('shared_ride_lobbies')
+           .select('*')
+           .eq('id', lobbyId)
+           .maybeSingle();
+         if (latestError) return { data: null, error: latestError };
+         if (!latest) {
+           // The leave may have succeeded but made the caller ineligible to
+           // read the resulting row (for example, a host was promoted away).
+           // The update had no error, so return the locally computed saved row.
+           console.log('✅ Successfully left lobby');
+           return { data: { ...lobby, ...updates }, error: null };
          }
-         const nextHostLat = Number(nextHost.dropoffLat);
-         const nextHostLng = Number(nextHost.dropoffLng);
-         if (
-           nextHost.dropoffLat != null &&
-           nextHost.dropoffLng != null &&
-           Number.isFinite(nextHostLat) &&
-           Number.isFinite(nextHostLng)
-         ) {
-           updates.dropoff_lat = nextHostLat;
-           updates.dropoff_lng = nextHostLng;
+
+         const latestPassengers = parsePassengers(latest.passengers_json);
+         if (!latestPassengers.some(isPassengerOrCompanion)) {
+           console.log('✅ Successfully left lobby');
+           return { data: latest, error: null };
          }
+         if (latest.status === lobby.status && JSON.stringify(latestPassengers) === JSON.stringify(passengers)) {
+           return {
+             data: null,
+             error: new Error('The lobby update was blocked. Apply the customer leave-lobby RLS policy and try again.'),
+           };
+         }
+
+         // Another operation changed the lobby while this leave was in flight.
+         // Retry from the latest snapshot if the customer is still a member.
        }
 
-       console.log(isHostLeaving ? '📝 Updating lobby and promoting the next host' : '📝 Updating lobby with remaining passengers');
-       const { data, error } = await supabase
-         .from('shared_ride_lobbies')
-         .update(updates)
-         .eq('id', lobbyId)
-         .eq('status', lobby.status)
-         .eq('passengers_json', JSON.stringify(passengers))
-         .select()
-         .single();
-
-       if (error) {
-         console.error('❌ Error updating lobby:', error);
-         return { data: null, error };
-       }
-
-       console.log('✅ Successfully left lobby');
-       return { data, error };
+       return { data: null, error: new Error('The lobby kept changing while you were leaving. Please try again.') };
      } catch (err) {
        console.error('❌ Unexpected error in leaveShareRideLobby:', err);
        return { data: null, error: err instanceof Error ? err : new Error(String(err)) };
