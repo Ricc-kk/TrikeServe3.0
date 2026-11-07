@@ -3,6 +3,7 @@ import { useLocation, useNavigate } from "react-router";
 import { ArrowLeft, Check, Package, Users, Car } from "lucide-react";
 import { Button } from "../ui/button";
 import { useAuth } from "../../contexts/AuthContext";
+import { useDevModeOnlyFeature } from "../../hooks/useDevModeSettings";
 import ActiveRideButton from "./ActiveRideButton";
 
 type ServiceCategory = 'rides' | 'delivery';
@@ -34,6 +35,7 @@ export default function ServiceTypes() {
   const navigate = useNavigate();
   const location = useLocation();
   const { user, updateProfile } = useAuth();
+  const foodDeliveryEnabled = useDevModeOnlyFeature("foodDelivery");
   const returnTo = (location.state as { returnTo?: string } | null)?.returnTo || '/rider';
 
   // Rides can include Ride Share and/or Private Ride; Delivery is exclusive with a single option
@@ -105,18 +107,26 @@ export default function ServiceTypes() {
           <p className="text-sm text-[var(--muted-foreground)]">
             Choose the kind of work you want to receive. You can offer both ride services, or switch to delivery.
           </p>
+          {!foodDeliveryEnabled && (
+            <p role="status" className="mt-2 text-sm text-[var(--muted-foreground)]">
+              Food delivery is currently unavailable on the website.
+            </p>
+          )}
           <h2 className="mb-3 mt-5 text-xs font-bold uppercase tracking-widest text-[var(--muted-foreground)]">Choose a category</h2>
           <div className="grid grid-cols-2 gap-3">
             {CATEGORIES.map((cat) => {
               const active = category === cat.key;
+              const disabled = cat.key === "delivery" && !foodDeliveryEnabled;
               const Icon = cat.icon;
               return (
                 <button
                   key={cat.key}
                   type="button"
                   aria-pressed={active}
-                  onClick={() => selectCategory(cat.key)}
-                  className={`flex min-h-28 flex-col items-start justify-between rounded-2xl border-2 p-3 text-left transition-colors ${active ? 'border-[var(--primary)] bg-[var(--error-soft)]' : 'border-[var(--border)] bg-surface hover:border-[var(--primary)]/50'}`}
+                  onClick={() => { if (!disabled) selectCategory(cat.key); }}
+                  disabled={disabled}
+                  title={disabled ? "Food delivery is currently unavailable on the website." : undefined}
+                  className={`flex min-h-28 flex-col items-start justify-between rounded-2xl border-2 p-3 text-left transition-colors ${disabled ? 'cursor-not-allowed opacity-55' : active ? 'border-[var(--primary)] bg-[var(--error-soft)]' : 'border-[var(--border)] bg-surface hover:border-[var(--primary)]/50'}`}
                 >
                   <span className={`grid size-10 place-items-center rounded-xl ${active ? 'bg-[var(--primary)] text-white' : 'bg-[var(--muted)] text-[var(--muted-foreground)]'}`}>
                     <Icon className="size-5" />

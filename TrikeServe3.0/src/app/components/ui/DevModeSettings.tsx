@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
-import { Camera, CarTaxiFront, Code2, ListOrdered, MapPin, Route, Settings2, Trash2, Users, X } from "lucide-react";
+import { Camera, CarTaxiFront, Code2, ListOrdered, MapPin, Package, Route, Settings2, Trash2, Users, X } from "lucide-react";
 import { useDevModeFeature, useDevModeStatus } from "../../hooks/useDevModeSettings";
 import { Switch } from "./switch";
 
@@ -95,6 +95,7 @@ export default function DevModeSettings() {
   const [allowTwoSessions, setAllowTwoSessions] = useDevModeFeature("allowTwoSessions");
   const [customerRideBookingEnabled, setCustomerRideBookingEnabled] = useDevModeFeature("customerRideBooking");
   const [driverQueueJoiningEnabled, setDriverQueueJoiningEnabled] = useDevModeFeature("driverQueueJoining");
+  const [foodDeliveryEnabled, setFoodDeliveryEnabled] = useDevModeFeature("foodDelivery");
   const [isOpen, setIsOpen] = useState(false);
   const [position, setPosition] = useState<FloatingPosition>(getInitialFloatingPosition);
   const panelRef = useRef<HTMLDivElement>(null);
@@ -296,6 +297,15 @@ export default function DevModeSettings() {
               onCheckedChange={setDriverQueueJoiningEnabled}
               disabled={!isEnabled}
               icon={ListOrdered}
+            />
+            <SettingRow
+              id="dev-mode-food-delivery"
+              title="Food delivery"
+              description="Allow customer orders and driver delivery requests while Dev Mode is on."
+              checked={foodDeliveryEnabled}
+              onCheckedChange={setFoodDeliveryEnabled}
+              disabled={!isEnabled}
+              icon={Package}
             />
             <SettingRow
               id="dev-mode-enforce-boundary"

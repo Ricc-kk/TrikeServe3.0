@@ -404,6 +404,7 @@ export default function CustomerHome() {
   const rideStateIdentity = user?.id ? `${user.id}:${user.role}` : null;
   const [enforceBoundary] = useDevModeOverride("enforceBoundary");
   const customerRideBookingEnabled = useDevModeOnlyFeature("customerRideBooking");
+  const foodDeliveryEnabled = useDevModeOnlyFeature("foodDelivery");
   const navigate = useNavigate();
   const location = useLocation();
   const currentPath = location.pathname.replace(/\/+$/, '');
@@ -4705,12 +4706,15 @@ const getPrice = () => {
                 } })}
                 rideDisabled={!showBookingFlow}
                 rideUnavailable={!customerRideBookingEnabled}
+                foodUnavailable={!foodDeliveryEnabled}
               />
-              <CustomerCartPreview />
+              {foodDeliveryEnabled && <CustomerCartPreview />}
 
-              <RecommendedRestaurants
-                fallbackOrigin={!isLoadingLocation && !locationProblem ? currentLocation : null}
-              />
+              {foodDeliveryEnabled && (
+                <RecommendedRestaurants
+                  fallbackOrigin={!isLoadingLocation && !locationProblem ? currentLocation : null}
+                />
+              )}
             </main>
           </div>
         )}

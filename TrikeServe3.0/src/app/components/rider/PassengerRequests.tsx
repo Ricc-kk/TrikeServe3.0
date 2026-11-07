@@ -11,6 +11,7 @@ import FullSizeImagePreview from "../ui/FullSizeImagePreview";
 import { Badge } from "../ui/badge";
 import { ImageWithFallback } from "../figma/ImageWithFallback";
 import { useAuth } from "../../contexts/AuthContext";
+import { useDevModeOnlyFeature } from "../../hooks/useDevModeSettings";
 import { isDeliveryServiceMode, isQueueGatedType, useTerminalQueue } from "../../hooks/useTerminalQueue";
 import TerminalQueueCard from "./TerminalQueueCard";
 import { isPointInPolygon, isPointWithinTerminalRoute, normalizeBoundaryRoad, normalizeBoundaryArea, normalizeRoadWidth, DEFAULT_ROAD_WIDTH_M, supabaseHelpers, logAudit, geocodeAddress, type LatLngPoint } from "@/lib/supabase";
@@ -177,6 +178,7 @@ interface PassengerDropoffStop {
 export default function PassengerRequests() {
   const navigate = useNavigate();
   const { user } = useAuth();
+  const foodDeliveryEnabled = useDevModeOnlyFeature("foodDelivery");
   const [selectedCategory, setSelectedCategory] = useState<'all' | 'shared' | 'private' | 'delivery'>('all');
   const [requests, setRequests] = useState<PassengerRequest[]>([]);
   const [currentLocation, setCurrentLocation] = useState<{ lat: number; lng: number }>({ lat: 14.5995, lng: 120.9842 });
@@ -205,6 +207,10 @@ export default function PassengerRequests() {
   // Declining asks for a reason first; the request is then hidden for this rider only.
   const [showDeclinePrompt, setShowDeclinePrompt] = useState(false);
   const [declineTarget, setDeclineTarget] = useState<PassengerRequest | null>(null);
+
+  useEffect(() => {
+    if (!foodDeliveryEnabled && selectedCategory === 'delivery') setSelectedCategory('all');
+  }, [foodDeliveryEnabled, selectedCategory]);
 
   // Terminal queue — private and share rides can only be accepted by the first
   // driver in the terminal's queue.
@@ -1026,6 +1032,9 @@ export default function PassengerRequests() {
 
   const handleAcceptRequest = async (request: PassengerRequest) => {
     if (!user?.id) return alert('You must be logged in as a driver.');
+    if (request.type === 'delivery' && !foodDeliveryEnabled) {
+      return alert('Food delivery requests are currently unavailable on the website.');
+    }
     if (hasExcessPassengers(request)) {
       return alert('This request exceeds the allowed passenger count and is no longer available.');
     }
@@ -1166,12 +1175,15 @@ export default function PassengerRequests() {
   // Rides from another terminal are hidden entirely rather than listed as
   // un-acceptable, so the driver only ever sees their own TODA's requests.
   const filteredRequests = requests.filter(r =>
-    (selectedCategory === 'all' || r.type === selectedCategory) && !isWrongTerminal(r)
+    (r.type !== 'delivery' || foodDeliveryEnabled) &&
+    (selectedCategory === 'all' || r.type === selectedCategory) &&
+    !isWrongTerminal(r)
   );
   // Private and share rides require being first in the terminal queue.
   const isQueueBlocked = (request: PassengerRequest) =>
     !!queueTerminalId && isQueueGatedType(request.type) && !isFirstInQueue;
   const canAcceptRequest = (request: PassengerRequest) => {
+    if (request.type === 'delivery' && !foodDeliveryEnabled) return false;
     if (isUnassigned) return false;
     if (hasExcessPassengers(request)) return false;
     if (!(user?.serviceTypes || []).includes(request.type)) return false;
@@ -1226,12 +1238,18 @@ export default function PassengerRequests() {
       <div className="p-3 md:p-4 space-y-3">
         {/* Filter Tabs */}
         <div className="flex gap-2 mb-3 overflow-x-auto scrollbar-hide pb-1">
-          {['all', 'shared', 'private', 'delivery'].map(cat => (
+          {(foodDeliveryEnabled ? ['all', 'shared', 'private', 'delivery'] : ['all', 'shared', 'private']).map(cat => (
             <button key={cat} onClick={() => setSelectedCategory(cat as any)} className={`px-3 md:px-4 py-1.5 md:py-2 rounded-full text-xs md:text-sm font-medium whitespace-nowrap transition-all ${selectedCategory === cat ? 'bg-[var(--primary)] text-white shadow-md' : 'bg-[var(--muted)] text-[var(--muted-foreground)]'}`}>
               {cat === 'all' ? 'All' : cat === 'shared' ? '👥 Share' : cat === 'private' ? '👤 Private' : '📦 Delivery'}
             </button>
           ))}
         </div>
+
+        {!foodDeliveryEnabled && (
+          <p role="status" className="rounded-xl border border-line bg-card px-3 py-2 text-sm text-[var(--muted-foreground)]">
+            Food delivery requests are currently unavailable on the website.
+          </p>
+        )}
 
         {/* Terminal queue status — also shows the "no terminal assigned" block.
             Hidden on the Delivery service type, where the queue never applies. */}

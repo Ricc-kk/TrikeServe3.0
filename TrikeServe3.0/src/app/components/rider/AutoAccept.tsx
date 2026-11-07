@@ -5,12 +5,14 @@ import { Button } from "../ui/button";
 import { Card } from "../ui/card";
 import { Badge } from "../ui/badge";
 import { useAuth } from "../../contexts/AuthContext";
+import { useDevModeOnlyFeature } from "../../hooks/useDevModeSettings";
 import { isAutoAcceptEnabled, setAutoAcceptEnabled } from "../../hooks/useAutoAccept";
 import ActiveRideButton from "./ActiveRideButton";
 
 export default function AutoAccept() {
   const navigate = useNavigate();
   const { user } = useAuth();
+  const foodDeliveryEnabled = useDevModeOnlyFeature("foodDelivery");
   const [autoAcceptEnabled, setAutoAcceptEnabledState] = useState<boolean>(() => isAutoAcceptEnabled(user?.id));
   const [soundNotificationEnabled, setSoundNotificationEnabled] = useState(true);
 
@@ -21,7 +23,9 @@ export default function AutoAccept() {
     setAutoAcceptEnabled(user.id, next);
   };
 
-  const eligibleServiceTypes = (user?.serviceTypes || []).filter((s) => s === 'private' || s === 'delivery');
+  const eligibleServiceTypes = (user?.serviceTypes || []).filter(
+    (s) => s === 'private' || (s === 'delivery' && foodDeliveryEnabled),
+  );
 
   const playNotificationSound = () => {
     // Create audio context for notification sound
@@ -88,9 +92,13 @@ export default function AutoAccept() {
             <Zap className="w-5 h-5 text-white" />
           </div>
           <div>
-            <h2 className="font-bold text-[var(--ink)]">Auto-accept Private Rides and Deliveries</h2>
+            <h2 className="font-bold text-[var(--ink)]">
+              {foodDeliveryEnabled ? "Auto-accept Private Rides and Deliveries" : "Auto-accept Private Rides"}
+            </h2>
             <p className="text-sm text-[var(--muted-foreground)] mt-0.5">
-              Incoming private ride and delivery requests that match your service types are accepted automatically while you're online.
+              {foodDeliveryEnabled
+                ? "Incoming private ride and delivery requests that match your service types are accepted automatically while you're online."
+                : "Incoming private ride requests that match your service types are accepted automatically while you're online. Food delivery is currently unavailable on the website."}
             </p>
           </div>
         </div>

@@ -35,6 +35,7 @@ import { consumeWelcomeGreeting } from "../../../lib/welcomeGreeting";
 import { isPointWithinTerminalRoute, supabaseHelpers } from "@/lib/supabase";
 import { writeRiderActiveRide, clearRiderActiveRide, checkRiderActiveRide } from "../../../lib/riderActiveRide";
 import { useTerminalQueue } from "../../hooks/useTerminalQueue";
+import { useDevModeOnlyFeature } from "../../hooks/useDevModeSettings";
 import TerminalQueueCard from "./TerminalQueueCard";
 import { createTricycleMarkerIcon } from "@/lib/mapIcons";
 import { supabase } from "../../../lib/supabase";
@@ -64,6 +65,7 @@ const SERVICE_TYPE_LABELS = {
 export default function RiderDashboard() {
   const navigate = useNavigate();
   const { user, updateProfile } = useAuth();
+  const foodDeliveryEnabled = useDevModeOnlyFeature("foodDelivery");
   const updateProfileRef = useRef(updateProfile);
   updateProfileRef.current = updateProfile;
   const dashboardRef = useRef<HTMLDivElement>(null);
@@ -78,7 +80,8 @@ export default function RiderDashboard() {
   // Explains the offline tap instead of leaving a dead button.
   const [showOfflineNotice, setShowOfflineNotice] = useState(false);
   const [showMore, setShowMore] = useState(false);
-  const configuredServiceTypes = Array.isArray(user?.serviceTypes) ? user.serviceTypes : [];
+  const configuredServiceTypes = (Array.isArray(user?.serviceTypes) ? user.serviceTypes : [])
+    .filter((serviceType) => serviceType !== "delivery" || foodDeliveryEnabled);
   const activeServiceCategory = configuredServiceTypes.includes('delivery') ? 'delivery' : 'rides';
   const activeServiceTypes = activeServiceCategory === 'delivery'
     ? (['delivery'] as const)
@@ -274,7 +277,11 @@ export default function RiderDashboard() {
           }
 
           // Save all pending ride requests for routing and prioritization.
-          setPendingRequestsList(rideRequests || []);
+          setPendingRequestsList((rideRequests || []).filter((request: any) => {
+            const rideType = String(request.ride_type || '').toLowerCase();
+            const isDelivery = rideType === 'delivery' || String(request.pickup_location || '').startsWith('DELIVERY|');
+            return !isDelivery || foodDeliveryEnabled;
+          }));
 
           // Passenger Requests checks delivery coverage using the restaurant's
           // saved pin, while a ride request's pickup coordinates can point at the
@@ -328,7 +335,7 @@ export default function RiderDashboard() {
             }
           }
 
-          const serviceTypes = user?.serviceTypes || [];
+          const serviceTypes = configuredServiceTypes;
           const canAcceptRequest = (request: any) => {
             if (!user?.id || hasNoTerminal || isResolvingTerminal) return false;
             if (supabaseHelpers.isDeclinedByDriver(request, user.id)) return false;
@@ -342,6 +349,7 @@ export default function RiderDashboard() {
                 ? 'shared'
                 : 'private';
 
+            if (type === 'delivery' && !foodDeliveryEnabled) return false;
             if (!serviceTypes.includes(type)) return false;
 
             if (type === 'delivery') {
@@ -460,6 +468,7 @@ export default function RiderDashboard() {
    }, [
      user?.id,
      user?.serviceTypes?.join('|'),
+     foodDeliveryEnabled,
      queueTerminalId,
      terminalBoundary,
      terminalRoadWidthM,
@@ -1212,7 +1221,11 @@ export default function RiderDashboard() {
                     })}
                   </div>
                 ) : (
-                  <p className="text-sm font-medium text-[var(--muted-foreground)]">No service type selected</p>
+                  <p className="text-sm font-medium text-[var(--muted-foreground)]">
+                    {user?.serviceTypes?.includes('delivery') && !foodDeliveryEnabled
+                      ? "Food delivery is currently unavailable on the website."
+                      : "No service type selected"}
+                  </p>
                 )}
               </div>
 

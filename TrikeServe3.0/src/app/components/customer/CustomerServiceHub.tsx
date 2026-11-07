@@ -10,6 +10,8 @@ type CustomerServiceHubProps = {
   rideDisabled?: boolean;
   /** Ride bookings are unavailable for all customers. */
   rideUnavailable?: boolean;
+  /** Food delivery is unavailable for all customers. */
+  foodUnavailable?: boolean;
   /** Opens the existing food experience. */
   onOrderFood: () => void;
   /** Service area named in the trust line. */
@@ -31,6 +33,7 @@ export default function CustomerServiceHub({
   onBookRide,
   rideDisabled = false,
   rideUnavailable = false,
+  foodUnavailable = false,
   onOrderFood,
   serviceArea = "Gen. T. de Leon",
 }: CustomerServiceHubProps) {
@@ -75,20 +78,22 @@ export default function CustomerServiceHub({
         <button
           type="button"
           onClick={onOrderFood}
-          className="relative flex min-h-44 flex-col items-center justify-center gap-2 rounded-2xl border-2 border-[var(--teal)]/20 bg-[var(--teal-soft)] px-3 py-5 text-center transition-colors hover:border-[var(--teal)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--teal)] active:scale-[0.98] sm:min-h-48"
+          disabled={foodUnavailable}
+          title={foodUnavailable ? "Food delivery is currently unavailable on the website." : undefined}
+          className={`relative flex min-h-44 flex-col items-center justify-center gap-2 rounded-2xl border-2 border-[var(--teal)]/20 bg-[var(--teal-soft)] px-3 py-5 text-center focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--teal)] sm:min-h-48 ${foodUnavailable ? "cursor-not-allowed opacity-60" : "transition-colors hover:border-[var(--teal)] active:scale-[0.98]"}`}
         >
           <span className="grid size-14 place-items-center rounded-2xl bg-[var(--teal)] sm:size-16">
             <UtensilsCrossed className="size-8 text-[var(--background)] sm:size-9" aria-hidden="true" />
           </span>
           <span className="text-base font-extrabold leading-tight text-[var(--ink)] sm:text-lg">
-            Order Food
+            {foodUnavailable ? "Delivery unavailable" : "Order Food"}
           </span>
           <span className="text-xs font-bold text-[var(--teal)]">Pagkain</span>
           <span className="text-xs leading-snug text-[var(--muted-foreground)]">
-            Nearby restaurants
+            {foodUnavailable ? "Food delivery is currently unavailable on the website" : "Nearby restaurants"}
           </span>
 
-          {cartCount > 0 && (
+          {!foodUnavailable && cartCount > 0 && (
             <span className="absolute -top-3 right-2 rounded-full bg-[var(--teal)] px-2.5 py-1 text-[11px] font-bold text-[var(--background)]">
               {cartCount} in cart
             </span>

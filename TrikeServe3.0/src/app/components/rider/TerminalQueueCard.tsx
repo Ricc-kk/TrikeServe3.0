@@ -186,6 +186,7 @@ interface TerminalQueueCardProps {
  */
 export default function TerminalQueueCard({ queue, variant = "full", canJoin = true }: TerminalQueueCardProps) {
   const queueJoiningEnabled = useDevModeOnlyFeature("driverQueueJoining");
+  const foodDeliveryEnabled = useDevModeOnlyFeature("foodDelivery");
   const {
     terminalId,
     terminalName,
@@ -414,8 +415,12 @@ export default function TerminalQueueCard({ queue, variant = "full", canJoin = t
               {myEntry
                 ? `${statusSubtitle} • ${terminalLabel}`
                 : queueJoiningEnabled
-                  ? "Get assigned to a TODA terminal to accept private and share rides."
-                  : "Queue joining is currently unavailable on the website."}
+                  ? foodDeliveryEnabled
+                    ? "Get assigned to a TODA terminal to accept private and share rides."
+                    : "Get assigned to a TODA terminal to accept private and share rides. Food delivery is currently unavailable on the website."
+                  : foodDeliveryEnabled
+                    ? "Queue joining is currently unavailable on the website. Delivery requests remain open."
+                    : "Queue joining and food delivery requests are currently unavailable on the website."}
             </p>
             <div className="mt-1.5">
               <AccessChips isFirst={isFirst} />
@@ -580,8 +585,12 @@ export default function TerminalQueueCard({ queue, variant = "full", canJoin = t
             <p className="text-sm font-extrabold text-[var(--ink)]">You're not in the queue</p>
             <p className="text-xs text-[var(--muted-foreground)] mt-0.5">
               {queueJoiningEnabled
-                ? "Get assigned to a TODA terminal to accept private and share rides. Delivery is always open."
-                : "Queue joining is currently unavailable on the website. Delivery requests remain open."}
+                ? foodDeliveryEnabled
+                  ? "Get assigned to a TODA terminal to accept private and share rides. Delivery requests remain open."
+                  : "Get assigned to a TODA terminal to accept private and share rides. Food delivery requests are currently unavailable on the website."
+                : foodDeliveryEnabled
+                  ? "Queue joining is currently unavailable on the website. Delivery requests remain open."
+                  : "Queue joining and food delivery requests are currently unavailable on the website."}
             </p>
           </div>
           <div className="flex justify-center mb-3">

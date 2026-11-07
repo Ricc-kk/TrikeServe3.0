@@ -10,6 +10,8 @@ import {
 
 const webRideServicesEnabled =
   import.meta.env.VITE_ENABLE_WEB_RIDE_SERVICES?.trim().toLowerCase() === "true";
+const webFoodDeliveryEnabled =
+  import.meta.env.VITE_ENABLE_WEB_FOOD_DELIVERY?.trim().toLowerCase() === "true";
 
 export function useDevModeStatus(): [boolean, (enabled: boolean) => void] {
   const [enabled, setEnabled] = useState(isDevModeEnabled);
@@ -54,9 +56,9 @@ export function useDevModeOverride(feature: DevModeFeature): [boolean, (enabled:
 export function useDevModeOnlyFeature(feature: DevModeFeature): boolean {
   const [devModeEnabled] = useDevModeStatus();
   const [featureEnabled] = useDevModeFeature(feature);
-  const canEnableFromWebsiteEnv =
-    webRideServicesEnabled &&
-    (feature === "customerRideBooking" || feature === "driverQueueJoining");
+  const canEnableFromWebsiteEnv = feature === "foodDelivery"
+    ? webFoodDeliveryEnabled
+    : (feature === "customerRideBooking" || feature === "driverQueueJoining") && webRideServicesEnabled;
 
   return canEnableFromWebsiteEnv || (devModeEnabled && featureEnabled);
 }

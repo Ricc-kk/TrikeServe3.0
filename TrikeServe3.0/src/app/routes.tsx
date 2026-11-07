@@ -32,6 +32,7 @@ import CustomerHome from "./components/customer/Home";
 import ActiveShareRidePage from "./components/customer/ActiveShareRidePage";
 import FoodHome from "./components/customer/FoodHome";
 import RestaurantDetail from "./components/customer/RestaurantDetail";
+import CustomerDeliveryGate from "./components/customer/CustomerDeliveryGate";
 import Cart from "./components/customer/Cart";
 import CartCheckout from "./components/customer/CartCheckout";
 import RideLock from "./components/ui/RideLock";
@@ -324,7 +325,7 @@ export const router = createBrowserRouter([
         path: "customer/food", 
         element: (
           <ProtectedRoute allowedRoles={['customer']}>
-            <FoodHome />
+            <CustomerDeliveryGate><FoodHome /></CustomerDeliveryGate>
           </ProtectedRoute>
         )
       },
@@ -332,7 +333,7 @@ export const router = createBrowserRouter([
         path: "customer/restaurant-detail", 
         element: (
           <ProtectedRoute allowedRoles={['customer']}>
-            <RestaurantDetail />
+            <CustomerDeliveryGate><RestaurantDetail /></CustomerDeliveryGate>
           </ProtectedRoute>
         )
       },
@@ -343,9 +344,9 @@ export const router = createBrowserRouter([
             {/* Food ordering is unavailable mid-ride. Guarded here as well as on the
                 nav item so the route cannot be reached by deep link or by the back
                 button from a tab opened before the ride started. */}
-            <RideLock>
-              <Cart />
-            </RideLock>
+            <CustomerDeliveryGate>
+              <RideLock><Cart /></RideLock>
+            </CustomerDeliveryGate>
           </ProtectedRoute>
         )
       },
@@ -359,9 +360,9 @@ export const router = createBrowserRouter([
             {/* Guarded separately from the cart: this route is reachable on its own
                 and a stale tab from before the ride started would otherwise land
                 straight on the payment step. */}
-            <RideLock>
-              <CartCheckout />
-            </RideLock>
+            <CustomerDeliveryGate>
+              <RideLock><CartCheckout /></RideLock>
+            </CustomerDeliveryGate>
           </ProtectedRoute>
         )
       },

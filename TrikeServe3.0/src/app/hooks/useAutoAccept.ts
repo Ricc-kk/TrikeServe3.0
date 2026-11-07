@@ -1,6 +1,7 @@
 import { useEffect, useRef } from "react";
 import { useNavigate } from "react-router";
 import { useAuth } from "../contexts/AuthContext";
+import { useDevModeOnlyFeature } from "./useDevModeSettings";
 import { supabaseHelpers } from "@/lib/supabase";
 
 const KEY_PREFIX = "trikeserve_auto_accept_";
@@ -33,6 +34,7 @@ export function setAutoAcceptEnabled(userId: string, enabled: boolean) {
 export function useAutoAccept() {
   const navigate = useNavigate();
   const { user } = useAuth();
+  const foodDeliveryEnabled = useDevModeOnlyFeature("foodDelivery");
   const acceptingRef = useRef(false);
 
   useEffect(() => {
@@ -41,7 +43,7 @@ export function useAutoAccept() {
     let cancelled = false;
 
     const eligibleTypes = (user?.serviceTypes || []).filter(
-      (s) => s === "private" || s === "delivery"
+      (s) => s === "private" || (s === "delivery" && foodDeliveryEnabled)
     );
 
     const poll = async () => {
@@ -91,5 +93,5 @@ export function useAutoAccept() {
       cancelled = true;
       clearInterval(interval);
     };
-  }, [user?.id, user?.name, user?.todaPlate, user?.serviceTypes, navigate]);
+  }, [user?.id, user?.name, user?.todaPlate, user?.serviceTypes, foodDeliveryEnabled, navigate]);
 }

@@ -19,6 +19,7 @@ import {
 
 import { TerminalIconGlyph } from "./TerminalIcon";
 import { useCartOptional } from "../../contexts/CartContext";
+import { useDevModeOnlyFeature } from "../../hooks/useDevModeSettings";
 
 type BottomNavVariant = "customer" | "rider" | "business" | "admin";
 
@@ -77,6 +78,7 @@ export default function BottomNav({
   className = "",
 }: BottomNavProps) {
   const cart = useCartOptional();
+  const foodDeliveryEnabled = useDevModeOnlyFeature("foodDelivery");
   const accent = ACCENTS[variant];
   const inactive = "var(--muted-foreground)";
   const cartCount = variant === "customer" ? cart?.getTotalItems() ?? 0 : 0;
@@ -227,6 +229,9 @@ export default function BottomNav({
                 icon: ClipboardList,
               },
             ];
+  const visibleItems = variant === "customer" && !foodDeliveryEnabled
+    ? items.filter((item) => item.key !== "cart")
+    : items;
 
   return (
     <nav
@@ -236,10 +241,10 @@ export default function BottomNav({
     >
       <div
         className={`mx-auto grid w-full max-w-3xl gap-1 px-2 pt-2 sm:px-4 ${
-          items.length === 4 ? "grid-cols-4" : "grid-cols-5"
+          visibleItems.length === 3 ? "grid-cols-3" : visibleItems.length === 4 ? "grid-cols-4" : "grid-cols-5"
         }`}
       >
-        {items.map((item) => {
+        {visibleItems.map((item) => {
           const isActive = active === item.key;
           const color = isActive ? accent : inactive;
           const Icon = item.icon;
