@@ -10,11 +10,12 @@ import { supabaseHelpers } from "@/lib/supabase";
 import { AnalyticsBarChart, AnalyticsDonutChart, type BarDatum, type DonutDatum } from "../ui/AnalyticsCharts";
 import ActiveRideButton from "./ActiveRideButton";
 
-interface CompletedTrip {
+interface TripHistoryItem {
   id: string;
   type: string;
   date: string;
   amount: number;
+  status: 'completed' | 'cancelled';
   payment: 'Cash' | 'Prepaid';
   customerName?: string;
   pickup?: string;
@@ -25,7 +26,8 @@ export default function Earnings() {
   const navigate = useNavigate();
   const { user } = useAuth();
 
-  const [completedTrips, setCompletedTrips] = useState<CompletedTrip[]>([]);
+  const [completedTrips, setCompletedTrips] = useState<TripHistoryItem[]>([]);
+  const [recentTrips, setRecentTrips] = useState<TripHistoryItem[]>([]);
   const [tripsCompletedCount, setTripsCompletedCount] = useState(0);
   const [todayEarnings, setTodayEarnings] = useState(0);
   const [weekEarnings, setWeekEarnings] = useState(0);
@@ -35,19 +37,47 @@ export default function Earnings() {
   const [driverRatingCount, setDriverRatingCount] = useState(0);
   const [filterTab, setFilterTab] = useState<'all' | 'rides' | 'deliveries'>('all');
 
-  // Fetch completed rides from database and localStorage
+  // Fetch completed and cancelled ride history; only completed trips count as earnings.
   useEffect(() => {
     const fetchCompletedTrips = async () => {
       setIsLoading(true);
       try {
-        // Get completed rides from database for this driver
-        const { data: dbRides, error: dbError } = await supabaseHelpers.getRideRequests({
-          driverId: user?.id,
-          status: 'completed'
-        });
+        // Load both statuses for Recent Trips. The completed-only collection below
+        // remains the source for earnings and trip-completion analytics.
+        const [
+          { data: dbRides, error: dbError },
+          { data: dbCancelledRides, error: cancelledDbError },
+        ] = await Promise.all([
+          supabaseHelpers.getRideRequests({ driverId: user?.id, status: 'completed' }),
+          supabaseHelpers.getRideRequests({ driverId: user?.id, status: 'cancelled' }),
+        ]);
 
         if (dbError) {
           console.error('❌ Error fetching completed rides from database:', dbError);
+        }
+        if (cancelledDbError) {
+          console.error('❌ Error fetching cancelled rides from database:', cancelledDbError);
+        }
+
+        // Shared ride cancellations live on the lobby row rather than a
+        // ride_requests row, so load cancelled lobbies assigned to this driver.
+        let dbCancelledLobbies: any[] = [];
+        try {
+          const { data: cancelledLobbies, error: lobbiesError } = await supabase
+            .from('shared_ride_lobbies')
+            .select('id, pickup_location, dropoff_location, payment_method, created_at, updated_at')
+            .eq('driver_id', user?.id)
+            .eq('status', 'cancelled');
+          if (lobbiesError) console.error('❌ Error fetching cancelled shared rides:', lobbiesError);
+          else dbCancelledLobbies = (cancelledLobbies || []).map((lobby: any) => ({
+            ...lobby,
+            ride_type: 'share',
+            status: 'cancelled',
+            amount: 0,
+            cancelled_at: lobby.updated_at || lobby.created_at,
+          }));
+        } catch (error) {
+          console.error('❌ Cancelled shared ride lookup failed:', error);
         }
 
         // Also fetch completed delivery orders assigned to this driver
@@ -70,15 +100,22 @@ export default function Earnings() {
         let localRides: any[] = [];
         if (historyData) {
           try {
-            localRides = JSON.parse(historyData).filter((r: any) => r.status === 'completed');
+            const history = JSON.parse(historyData);
+            localRides = (Array.isArray(history) ? history : []).filter((ride: any) =>
+              ['completed', 'cancelled', 'canceled'].includes(String(ride.status || '').toLowerCase()),
+            );
           } catch (error) {
             console.error('❌ Error parsing ride history:', error);
           }
         }
 
-        // Combine database rides and local rides, remove duplicates
-        const allRides = [...(dbRides || []), ...localRides];
-        const uniqueRides = Array.from(new Map(allRides.map(ride => [ride.id, ride])).values());
+        // Local history is a fallback; prefer the current database status when
+        // both sources contain the same ride so a stale cache can't undo a cancel.
+        const ridesById = new Map<string, any>();
+        [...localRides, ...(dbRides || []), ...(dbCancelledRides || []), ...dbCancelledLobbies].forEach((ride: any) => {
+          if (ride?.id) ridesById.set(String(ride.id), ride);
+        });
+        const uniqueRides = Array.from(ridesById.values());
 
         // Convert delivery orders to trip format
         const deliveryTrips = dbOrders.map((order: any) => ({
@@ -100,8 +137,11 @@ export default function Earnings() {
         const dedupedTrips = Array.from(new Map(allTrips.map(t => [t.id, t])).values());
 
         // Format rides for display
-        const formattedRides = dedupedTrips
+        const formattedRides: TripHistoryItem[] = dedupedTrips
           .map((ride: any) => {
+            const normalizedStatus = String(ride.status || 'completed').trim().toLowerCase();
+            const status: TripHistoryItem['status'] =
+              normalizedStatus === 'cancelled' || normalizedStatus === 'canceled' ? 'cancelled' : 'completed';
             let type = 'Private Ride';
             const rt = (ride.ride_type || ride.type || '').toLowerCase();
             const isDelivery = rt === 'delivery' || String(ride.pickup_location || '').startsWith('DELIVERY|');
@@ -110,7 +150,9 @@ export default function Earnings() {
 
             // Prefer the completion timestamp. The DB sets updated_at on completion and
             // may not set a dedicated completed_at column, so include it in the fallback chain.
-            const dateObj = ride.completedAt || ride.completed_at || ride.updated_at || ride.acceptedAt || ride.accepted_at || new Date();
+            const dateObj = status === 'cancelled'
+              ? ride.cancelledAt || ride.cancelled_at || ride.updated_at || ride.created_at || ride.acceptedAt || ride.accepted_at || new Date()
+              : ride.completedAt || ride.completed_at || ride.updated_at || ride.acceptedAt || ride.accepted_at || new Date();
             // Keep an ISO timestamp for reliable period math (avoid locale-sensitive parsing).
             // Use a safe parse: toISOString() throws on malformed dates, so fall back to now.
             let dateISO = new Date().toISOString();
@@ -137,6 +179,7 @@ export default function Earnings() {
               type: type,
               date: dateISO,
               amount: Number(ride.amount) || 0,
+              status,
               // Delivery earnings are the delivery fee, which the rider receives
               // in cash even when the customer's food payment was prepaid by GCash.
               payment: (isDelivery || (ride.payment_method || ride.payment) === 'COD' ? 'Cash' : 'Prepaid') as 'Cash' | 'Prepaid',
@@ -153,8 +196,10 @@ export default function Earnings() {
             }
           });
 
-        setCompletedTrips(formattedRides);
-        setTripsCompletedCount(formattedRides.length);
+        const earnedTrips = formattedRides.filter((trip) => trip.status === 'completed');
+        setRecentTrips(formattedRides);
+        setCompletedTrips(earnedTrips);
+        setTripsCompletedCount(earnedTrips.length);
 
         // Calculate earnings by time period
         const now = new Date();
@@ -167,7 +212,7 @@ export default function Earnings() {
         let weekTotal = 0;
         let monthTotal = 0;
 
-        formattedRides.forEach((trip) => {
+        earnedTrips.forEach((trip) => {
           try {
             const tripDate = new Date(trip.date);
             const tripAmount = trip.amount || 0;
@@ -260,12 +305,11 @@ export default function Earnings() {
   }, [completedTrips]);
 
   /**
-   * Recent Trips read as a day-by-day log: newest day first, each day's takings
-   * summed above its trips. Grouping happens after the tab filter and the
-   * 20-trip cap so the list still shows the most recent trips, just labelled.
+   * Recent Trips includes completed and cancelled items. Day totals only include
+   * completed earnings. Grouping happens after the tab filter and 20-trip cap.
    */
   const tripGroups = useMemo(() => {
-    const filtered = completedTrips
+    const filtered = recentTrips
       .filter((trip) => {
         if (filterTab === 'rides') return trip.type !== 'Delivery';
         if (filterTab === 'deliveries') return trip.type === 'Delivery';
@@ -283,7 +327,7 @@ export default function Earnings() {
       return date.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
     };
 
-    const groups: { key: string; title: string; total: number; items: CompletedTrip[] }[] = [];
+    const groups: { key: string; title: string; total: number; items: TripHistoryItem[] }[] = [];
     filtered.forEach((trip) => {
       const date = new Date(trip.date);
       const key = `${date.getFullYear()}-${date.getMonth()}-${date.getDate()}`;
@@ -292,11 +336,11 @@ export default function Earnings() {
         group = { key, title: dayTitle(date), total: 0, items: [] };
         groups.push(group);
       }
-      group.total += trip.amount || 0;
+      if (trip.status === 'completed') group.total += trip.amount || 0;
       group.items.push(trip);
     });
     return groups;
-  }, [completedTrips, filterTab]);
+  }, [recentTrips, filterTab]);
 
   return (
     <div className="min-h-dvh bg-[var(--muted)] pb-24">
@@ -444,18 +488,18 @@ export default function Earnings() {
                     : 'bg-[var(--muted)] text-[var(--muted-foreground)]'
                 }`}
               >
-                {tab === 'all' ? `All (${completedTrips.length})` : tab === 'rides' ? `Rides (${completedTrips.filter(t => t.type !== 'Delivery').length})` : `Deliveries (${completedTrips.filter(t => t.type === 'Delivery').length})`}
+                {tab === 'all' ? `All (${recentTrips.length})` : tab === 'rides' ? `Rides (${recentTrips.filter(t => t.type !== 'Delivery').length})` : `Deliveries (${recentTrips.filter(t => t.type === 'Delivery').length})`}
               </button>
             ))}
           </div>
 
           {isLoading ? (
             <Card className="p-4 bg-surface border-0 shadow-sm">
-              <p className="text-center text-[var(--muted-foreground)]">Loading completed trips...</p>
+              <p className="text-center text-[var(--muted-foreground)]">Loading recent trips...</p>
             </Card>
-          ) : completedTrips.length === 0 ? (
+          ) : recentTrips.length === 0 ? (
             <Card className="p-4 bg-surface border-0 shadow-sm">
-              <p className="text-center text-[var(--muted-foreground)]">No completed trips yet. Start accepting rides to see your recent trips here!</p>
+              <p className="text-center text-[var(--muted-foreground)]">No recent trips yet. Completed and cancelled rides will appear here.</p>
             </Card>
           ) : tripGroups.length === 0 ? (
             <Card className="rounded-3xl border border-line bg-card p-6 text-center text-sm text-[var(--muted-foreground)]">No trips in this category yet. Choose another filter to see your history.</Card>
@@ -466,11 +510,12 @@ export default function Earnings() {
                   <div className="flex items-center justify-between gap-2">
                     <h4 className="text-sm font-extrabold text-[var(--ink)]">{group.title}</h4>
                     <span className="text-xs font-bold text-[var(--primary)]">
-                      ₱{group.total.toFixed(2)} · {group.items.length} {group.items.length === 1 ? 'trip' : 'trips'}
+                      ₱{group.total.toFixed(2)} earned · {group.items.length} {group.items.length === 1 ? 'trip' : 'trips'}
                     </span>
                   </div>
                   {group.items.map((trip) => (
                 <Card key={trip.id} className={`bg-surface border-0 shadow-sm overflow-hidden ${
+                  trip.status === 'cancelled' ? 'border-l-4 border-l-[var(--error)]' :
                   trip.type === 'Delivery' ? 'border-l-4 border-l-[var(--info)]' :
                   trip.type === 'Ride Share' ? 'border-l-4 border-l-[var(--amber)]' :
                   'border-l-4 border-l-[var(--success)]'
@@ -492,13 +537,21 @@ export default function Earnings() {
                         </div>
                       </div>
                       <div className="text-right">
-                        <p className="font-extrabold text-lg text-[var(--primary)]">₱{trip.amount.toFixed(2)}</p>
-                        <Badge
-                          variant="outline"
-                          className={`text-[10px] rounded-full ${trip.payment === 'Cash' ? 'border-[var(--amber)] text-[var(--amber)]' : 'border-[var(--success)] text-[var(--success)]'}`}
-                        >
-                          {trip.payment === 'Cash' ? '💵 Cash' : '💳 GCash'}
-                        </Badge>
+                        {trip.status === 'cancelled' ? (
+                          <Badge variant="outline" className="rounded-full border-[var(--error)] text-[var(--error)]">
+                            Cancelled
+                          </Badge>
+                        ) : (
+                          <>
+                            <p className="font-extrabold text-lg text-[var(--primary)]">₱{trip.amount.toFixed(2)}</p>
+                            <Badge
+                              variant="outline"
+                              className={`text-[10px] rounded-full ${trip.payment === 'Cash' ? 'border-[var(--amber)] text-[var(--amber)]' : 'border-[var(--success)] text-[var(--success)]'}`}
+                            >
+                              {trip.payment === 'Cash' ? '💵 Cash' : '💳 GCash'}
+                            </Badge>
+                          </>
+                        )}
                       </div>
                     </div>
 

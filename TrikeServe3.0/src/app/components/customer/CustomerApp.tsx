@@ -11,6 +11,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "../ui/tabs";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "../ui/dialog";
 import { supabase } from "../../../utils/supabase";
 import { normalizeRates } from "@/lib/pricing";
+import { useDevModeOnlyFeature } from "../../hooks/useDevModeSettings";
 
 interface Restaurant {
   id: string;
@@ -29,6 +30,7 @@ interface MenuItem {
 }
 
 export default function CustomerApp() {
+  const customerRideBookingEnabled = useDevModeOnlyFeature("customerRideBooking");
   const [searchQuery, setSearchQuery] = useState("");
   const [cart, setCart] = useState<MenuItem[]>([]);
   const [rideType, setRideType] = useState<'shared' | 'private' | null>(null);
@@ -116,6 +118,7 @@ export default function CustomerApp() {
       <div className="max-w-6xl mx-auto p-4">
         {/* Service Type Cards */}
         <div className="grid grid-cols-2 gap-4 mb-6">
+          {customerRideBookingEnabled ? (
           <Dialog>
             <DialogTrigger asChild>
               <Card className="p-6 cursor-pointer hover:shadow-xl transition-all border border-line hover:border-[var(--primary)]">
@@ -179,6 +182,15 @@ export default function CustomerApp() {
               </div>
             </DialogContent>
           </Dialog>
+          ) : (
+            <Card aria-disabled="true" className="p-6 cursor-not-allowed border border-line opacity-60">
+              <div className="w-14 h-14 bg-[var(--border)] rounded-2xl flex items-center justify-center mb-3 mx-auto">
+                <TerminalIconGlyph className="w-7 h-7 text-[var(--muted-foreground)]" />
+              </div>
+              <h3 className="font-bold text-center text-[var(--ink)]">Rides unavailable</h3>
+              <p className="text-xs text-center text-[var(--muted-foreground)] mt-1">Ride bookings are currently unavailable on the website</p>
+            </Card>
+          )}
 
           <Card className="p-6 cursor-pointer hover:shadow-xl transition-all border border-line hover:border-[var(--primary)]">
             <div className="w-14 h-14 bg-gradient-to-br from-[var(--ink)] to-[var(--ink)] rounded-2xl flex items-center justify-center mb-3 mx-auto">

@@ -8,6 +8,9 @@ import {
   type DevModeFeature,
 } from "../../lib/devMode";
 
+const webRideServicesEnabled =
+  import.meta.env.VITE_ENABLE_WEB_RIDE_SERVICES?.trim().toLowerCase() === "true";
+
 export function useDevModeStatus(): [boolean, (enabled: boolean) => void] {
   const [enabled, setEnabled] = useState(isDevModeEnabled);
 
@@ -45,4 +48,15 @@ export function useDevModeOverride(feature: DevModeFeature): [boolean, (enabled:
   const [devModeEnabled] = useDevModeStatus();
   const [featureEnabled, updateFeature] = useDevModeFeature(feature);
   return [!devModeEnabled || featureEnabled, updateFeature];
+}
+
+/** Features that are normally off and can only be enabled while Dev Mode is on. */
+export function useDevModeOnlyFeature(feature: DevModeFeature): boolean {
+  const [devModeEnabled] = useDevModeStatus();
+  const [featureEnabled] = useDevModeFeature(feature);
+  const canEnableFromWebsiteEnv =
+    webRideServicesEnabled &&
+    (feature === "customerRideBooking" || feature === "driverQueueJoining");
+
+  return canEnableFromWebsiteEnv || (devModeEnabled && featureEnabled);
 }

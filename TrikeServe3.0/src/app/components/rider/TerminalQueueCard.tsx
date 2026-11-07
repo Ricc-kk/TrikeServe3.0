@@ -19,6 +19,7 @@ import { Badge } from "../ui/badge";
 import { Button } from "../ui/button";
 import { RideModal } from "../ui/RideUI";
 import { useTerminalQueue } from "../../hooks/useTerminalQueue";
+import { useDevModeOnlyFeature } from "../../hooks/useDevModeSettings";
 import type { LatLngPoint } from "@/lib/supabase";
 
 const MAX_VISIBLE_DRIVERS = 5;
@@ -184,6 +185,7 @@ interface TerminalQueueCardProps {
  * ("first in queue may accept private/share rides") reads identically.
  */
 export default function TerminalQueueCard({ queue, variant = "full", canJoin = true }: TerminalQueueCardProps) {
+  const queueJoiningEnabled = useDevModeOnlyFeature("driverQueueJoining");
   const {
     terminalId,
     terminalName,
@@ -232,6 +234,7 @@ export default function TerminalQueueCard({ queue, variant = "full", canJoin = t
   // While the terminal lookup is in flight the driver's terminal is unknown, so
   // don't invite them to join yet (the cached value may be a stale terminal).
   const isLoadingState = (isLoading || isResolvingTerminal) && !myEntry;
+  const canJoinQueue = queueJoiningEnabled && canJoin;
   const visibleDrivers = entries.slice(0, MAX_VISIBLE_DRIVERS);
   const hiddenDrivers = entries.length - visibleDrivers.length;
 
@@ -250,17 +253,22 @@ export default function TerminalQueueCard({ queue, variant = "full", canJoin = t
   const joinButton = (
     <Button
       onClick={() => runAction(join)}
-      disabled={isMutating || !canJoin}
+      disabled={isMutating || !canJoinQueue}
+      title={!queueJoiningEnabled ? "Joining the terminal queue is currently unavailable on the website." : undefined}
       className={`font-bold uppercase tracking-widest ${
         isCompact ? "text-[11px] px-3 h-9" : "w-full"
       } ${
-        canJoin
+        canJoinQueue
           ? "bg-[var(--primary)] hover:bg-[var(--primary)] text-white"
           : "bg-[var(--border)] text-[var(--muted-foreground)] cursor-not-allowed"
       }`}
     >
       <Ticket className="w-4 h-4 mr-1.5" />
-      {isMutating ? "Joining…" : canJoin ? "Join Queue" : isCompact ? "Offline" : "Go Online to Join"}
+      {isMutating
+        ? "Joining…"
+        : !queueJoiningEnabled
+          ? isCompact ? "Unavailable" : "Queue Unavailable"
+          : canJoin ? "Join Queue" : isCompact ? "Offline" : "Go Online to Join"}
     </Button>
   );
 
@@ -368,7 +376,7 @@ export default function TerminalQueueCard({ queue, variant = "full", canJoin = t
           <div className="min-w-0">
             <p className="text-sm font-extrabold text-[var(--ink)]">No terminal assigned yet</p>
             <p className="text-xs text-[var(--muted-foreground)] mt-0.5">
-              You can't accept rides yet. Ask an admin to assign your terminal, then go online and join the queue.
+              You can't accept rides yet. Ask an admin to assign your terminal{queueJoiningEnabled ? ", then go online and join the queue." : ". Queue joining is currently unavailable on the website."}
             </p>
           </div>
         </div>
@@ -405,7 +413,9 @@ export default function TerminalQueueCard({ queue, variant = "full", canJoin = t
             <p className={`text-[11px] ${isFirst ? "text-[var(--success)]" : "text-[var(--amber)]"}`}>
               {myEntry
                 ? `${statusSubtitle} • ${terminalLabel}`
-                : "Get assigned to a TODA terminal to accept private and share rides."}
+                : queueJoiningEnabled
+                  ? "Get assigned to a TODA terminal to accept private and share rides."
+                  : "Queue joining is currently unavailable on the website."}
             </p>
             <div className="mt-1.5">
               <AccessChips isFirst={isFirst} />
@@ -569,14 +579,16 @@ export default function TerminalQueueCard({ queue, variant = "full", canJoin = t
             </div>
             <p className="text-sm font-extrabold text-[var(--ink)]">You're not in the queue</p>
             <p className="text-xs text-[var(--muted-foreground)] mt-0.5">
-              Get assigned to a TODA terminal to accept private and share rides. Delivery is always open.
+              {queueJoiningEnabled
+                ? "Get assigned to a TODA terminal to accept private and share rides. Delivery is always open."
+                : "Queue joining is currently unavailable on the website. Delivery requests remain open."}
             </p>
           </div>
           <div className="flex justify-center mb-3">
             <AccessChips isFirst={false} />
           </div>
           {joinButton}
-          {!canJoin && (
+          {queueJoiningEnabled && !canJoin && (
             <p className="text-[10px] text-[var(--muted-foreground)] text-center mt-2">
               Turn on "You're Online" above to join the queue.
             </p>

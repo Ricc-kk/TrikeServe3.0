@@ -15,7 +15,7 @@ import {
 } from "@/lib/supabase";
 import { supabase } from "@/lib/supabase";
 import { computeSharedRideFarePerPassenger, straightLineKm, type RideRates } from "@/lib/pricing";
-import { useDevModeOverride } from "../../hooks/useDevModeSettings";
+import { useDevModeOnlyFeature, useDevModeOverride } from "../../hooks/useDevModeSettings";
 
 interface AvailableLobby {
   id: string;
@@ -106,6 +106,7 @@ export default function BrowseAvailableLobbies({
   const { user } = useAuth();
   const [enforceBoundary] = useDevModeOverride("enforceBoundary");
   const [sameRouteLobbyFilter] = useDevModeOverride("sameRouteLobbyFilter");
+  const customerRideBookingEnabled = useDevModeOnlyFeature("customerRideBooking");
   const [lobbies, setLobbies] = useState<AvailableLobby[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -238,6 +239,11 @@ export default function BrowseAvailableLobbies({
   }, [routeMatches, user?.id]);
 
   const handleJoinLobby = async (lobbyId: string) => {
+    if (!customerRideBookingEnabled) {
+      setError("Share ride bookings are currently unavailable on the website.");
+      return;
+    }
+
     if (!user) {
       setError('You must be logged in to join a lobby');
       return;
@@ -579,7 +585,8 @@ export default function BrowseAvailableLobbies({
                       {selectedLobby === lobby.id && (
                         <Button
                           onClick={() => handleJoinLobby(lobby.id)}
-                          disabled={joiningLobby || availableSeats < seatsNeeded}
+                          disabled={!customerRideBookingEnabled || joiningLobby || availableSeats < seatsNeeded}
+                          title={!customerRideBookingEnabled ? "Share ride bookings are currently unavailable on the website." : undefined}
                           className="w-full bg-[var(--primary)] hover:bg-[var(--primary)] text-white"
                         >
                           {joiningLobby ? (
@@ -587,6 +594,8 @@ export default function BrowseAvailableLobbies({
                               <div className="animate-spin w-4 h-4 border-2 border-white border-t-transparent rounded-full mr-2"></div>
                               Joining...
                             </>
+                          ) : !customerRideBookingEnabled ? (
+                            "Share ride bookings are currently unavailable on the website"
                           ) : availableSeats < seatsNeeded ? (
                             `Not enough seats for your group (${seatsNeeded})`
                           ) : (

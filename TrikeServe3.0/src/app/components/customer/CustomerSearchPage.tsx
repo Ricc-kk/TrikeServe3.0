@@ -10,6 +10,7 @@ import BottomNav from "../ui/BottomNav";
 import RecommendedRestaurants from "./RecommendedRestaurants";
 import { HubFilters, HubSearches, HubTerminals, type HubFilter } from "./CustomerHubFilters";
 import { usePreviousPage } from "../../hooks/usePreviousPage";
+import { useDevModeOnlyFeature } from "../../hooks/useDevModeSettings";
 
 type Terminal = {
   id: string;
@@ -35,6 +36,7 @@ type Terminal = {
  * them is what the customer is doing — the field is.
  */
 export default function CustomerSearchPage() {
+  const customerRideBookingEnabled = useDevModeOnlyFeature("customerRideBooking");
   const navigate = useNavigate();
   const location = useLocation();
   // Search is reached from the hub, but it is also the landing screen for a
@@ -244,6 +246,7 @@ export default function CustomerSearchPage() {
         {showTerminals && (
           <HubTerminals
             terminals={matchingTerminals}
+            disabled={!customerRideBookingEnabled}
             onSelect={(terminalId) => navigate("/customer/book-ride", { state: { selectedPickupTerminalId: terminalId } })}
           />
         )}

@@ -21,7 +21,7 @@ import RideChatOverlay from "../rider/RideChatOverlay";
 import { RIDE_MAP_DROPOFF_COLOR, RIDE_MAP_DRIVER_COLOR } from "@/lib/rideMapColors";
 import { DEFAULT_TERMINAL_COLOR, normalizeRouteColor, normalizeTerminalColor, terminalMarkerIcon, TerminalIconGlyph } from "../ui/TerminalIcon";
 import { backfillLegacySharedRidePassengerFares, sumSharedRidePassengerFares, DEFAULT_MAX_PASSENGERS } from "@/lib/pricing";
-import { useDevModeOverride } from "../../hooks/useDevModeSettings";
+import { useDevModeOnlyFeature, useDevModeOverride } from "../../hooks/useDevModeSettings";
 import { customerActiveShareLobbyStorageKey, isCustomerLobbyPassenger } from "../../../lib/rideLock";
 import { legacyRouteFromBoundary, normalizeTerminalRoutes } from "@/lib/terminalRoutes";
 import { Tricycle } from "../ui/Tricycle";
@@ -437,6 +437,7 @@ export default function ShareRideLobby({
     ? Math.floor(maxPassengersAllowed)
     : DEFAULT_MAX_PASSENGERS;
   const [enforceBoundary] = useDevModeOverride("enforceBoundary");
+  const customerRideBookingEnabled = useDevModeOnlyFeature("customerRideBooking");
   const [openingChat, setOpeningChat] = useState(false);
   /**
    * Floating chat head state, mirroring the driver's ride screen.
@@ -1300,7 +1301,7 @@ export default function ShareRideLobby({
          }
        }
      };
-   }, [lobbyId, user?.id]);
+   }, [lobbyId, user?.id, customerRideBookingEnabled]);
 
   // Poll for driver location in the lobby (every 3 seconds)
   useEffect(() => {
@@ -1608,6 +1609,29 @@ export default function ShareRideLobby({
   const findOrCreateLobby = async (): Promise<ShareRideLobby | null> => {
     let declinedMatchingLobbyId: string | null = null;
     try {
+      if (!customerRideBookingEnabled) {
+        // Allow an existing waiting lobby to reopen, but don't let a fresh
+        // booking create a lobby or add the customer to somebody else's lobby.
+        if (user?.id) {
+          const { data: userLobbies } = await supabaseHelpers.getAvailableLobbies();
+          const existingUserLobby = userLobbies?.find((candidate: any) => {
+            const passengers = Array.isArray(candidate.passengers_json) ? candidate.passengers_json : [];
+            return passengers.some((passenger: any) =>
+              passenger.id === user.id || passenger.id.startsWith(`${user.id}_companion_`),
+            );
+          });
+          if (existingUserLobby) {
+            return {
+              ...existingUserLobby,
+              passengers_json: dedupePassengers(normalizePassengers(existingUserLobby.passengers_json)),
+            };
+          }
+        }
+
+        setError("New share ride bookings are currently unavailable on the website.");
+        return null;
+      }
+
       // The booking screen runs these two gates too, but a lobby can also be
       // opened directly from the shared-rides browser, so they cannot be assumed.
       //
@@ -2624,7 +2648,7 @@ if (loading) {
                   <span className="text-xs font-bold text-[var(--primary)] bg-[var(--primary-soft)] px-2.5 py-1 rounded-full">
                     {passengers.length}/{lobby.max_seats}
                   </span>
-                  {lobby.status === 'waiting' && (
+                  {customerRideBookingEnabled && lobby.status === 'waiting' && (
                     <Button
                       variant="outline"
                       onClick={() => setShowLobbyBrowser(true)}

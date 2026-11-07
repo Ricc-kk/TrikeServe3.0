@@ -182,15 +182,17 @@ type TerminalsProps = {
   }[];
   /** Called when a terminal is chosen; the ride booking picks this up. */
   onSelect: (terminalId: string) => void;
+  /** Disable terminal selection when ride booking is unavailable. */
+  disabled?: boolean;
 };
 
 /** Every terminal the customer can board from, with its base fare. */
-export function HubTerminals({ terminals, onSelect }: TerminalsProps) {
+export function HubTerminals({ terminals, onSelect, disabled = false }: TerminalsProps) {
   return (
-    <section aria-label="Book a tricycle">
+    <section aria-label={disabled ? "Tricycle terminals" : "Book a tricycle"}>
       <h2 className="mb-2 flex items-center gap-1.5 text-lg font-bold text-[var(--ink)]">
         <TerminalIconGlyph className="size-5" aria-hidden="true" />
-        Book a Tricycle
+        {disabled ? "Tricycle terminals" : "Book a Tricycle"}
         <span className="ml-1 text-sm font-normal text-[var(--muted-foreground)]">
           terminals
         </span>
@@ -201,34 +203,46 @@ export function HubTerminals({ terminals, onSelect }: TerminalsProps) {
           No terminals are loading right now.
         </p>
       ) : (
-        <ul className="space-y-2">
-          {terminals.map((terminal) => (
-            <li key={terminal.id}>
-              <button
-                type="button"
-                onClick={() => onSelect(terminal.id)}
-                className="flex min-h-14 w-full items-center gap-3 rounded-2xl border border-line bg-[var(--surface)] p-3 text-left transition-colors hover:bg-[var(--muted)]"
-              >
-                <span className="grid size-10 flex-shrink-0 place-items-center rounded-xl bg-[var(--primary-soft)]">
-                  <MapPin className="size-5 text-[var(--primary)]" aria-hidden="true" />
-                </span>
-                <span className="min-w-0 flex-1">
-                  <span className="block truncate font-bold text-[var(--ink)]">
-                    {terminal.name}
+        <>
+          {disabled && (
+            <p className="mb-2 text-sm text-[var(--muted-foreground)]" role="status">
+              Ride bookings are currently unavailable on the website.
+            </p>
+          )}
+          <ul className="space-y-2">
+            {terminals.map((terminal) => (
+              <li key={terminal.id}>
+                <button
+                  type="button"
+                  onClick={() => onSelect(terminal.id)}
+                  disabled={disabled}
+                  className={`flex min-h-14 w-full items-center gap-3 rounded-2xl border border-line bg-[var(--surface)] p-3 text-left ${disabled ? "cursor-not-allowed opacity-60" : "transition-colors hover:bg-[var(--muted)]"}`}
+                >
+                  <span className="grid size-10 flex-shrink-0 place-items-center rounded-xl bg-[var(--primary-soft)]">
+                    <MapPin className="size-5 text-[var(--primary)]" aria-hidden="true" />
                   </span>
-                  <span className="block truncate text-xs text-[var(--muted-foreground)]">
-                    {terminal.boundary || "Valenzuela City"}
+                  <span className="min-w-0 flex-1">
+                    <span className="block truncate font-bold text-[var(--ink)]">
+                      {terminal.name}
+                    </span>
+                    <span className="block truncate text-xs text-[var(--muted-foreground)]">
+                      {terminal.boundary || "Valenzuela City"}
+                    </span>
                   </span>
-                </span>
-                {typeof terminal.base_fare === "number" && (
-                  <span className="flex-shrink-0 text-sm font-bold text-[var(--primary)]">
-                    ₱{terminal.base_fare}
-                  </span>
-                )}
-              </button>
-            </li>
-          ))}
-        </ul>
+                  {disabled ? (
+                    <span className="flex-shrink-0 text-xs font-bold text-[var(--muted-foreground)]">
+                      Unavailable
+                    </span>
+                  ) : typeof terminal.base_fare === "number" && (
+                    <span className="flex-shrink-0 text-sm font-bold text-[var(--primary)]">
+                      ₱{terminal.base_fare}
+                    </span>
+                  )}
+                </button>
+              </li>
+            ))}
+          </ul>
+        </>
       )}
     </section>
   );

@@ -11,7 +11,7 @@ import {
   type LatLngPoint,
 } from "@/lib/supabase";
 import { useAuth } from "../contexts/AuthContext";
-import { useDevModeOverride } from "./useDevModeSettings";
+import { useDevModeOnlyFeature, useDevModeOverride } from "./useDevModeSettings";
 
 export interface TerminalGeometry {
   /**
@@ -133,6 +133,7 @@ export function isDeliveryServiceMode(serviceTypes?: string[] | null): boolean {
 export function useTerminalQueue() {
   const { user } = useAuth();
   const [enforceBoundary] = useDevModeOverride("enforceBoundary");
+  const queueJoiningEnabled = useDevModeOnlyFeature("driverQueueJoining");
   const [terminalId, setTerminalId] = useState<string | null>(user?.terminalId || null);
   const [terminalName, setTerminalName] = useState<string | null>(user?.terminalName || null);
   const [queue, setQueue] = useState<TerminalQueueEntry[]>([]);
@@ -442,6 +443,9 @@ export function useTerminalQueue() {
   const hasNoTerminal = !isResolvingTerminal && !terminalId;
 
   const join = useCallback(async () => {
+    if (!queueJoiningEnabled) {
+      return { error: new Error("Joining the terminal queue is currently disabled.") };
+    }
     if (!driverId) return { error: new Error("You must be logged in as a driver.") };
     // Never join before the fresh terminal lookup settles — the cached value may
     // point at a terminal this driver has since been moved out of.
@@ -522,7 +526,7 @@ export function useTerminalQueue() {
     } finally {
       setIsMutating(false);
     }
-  }, [driverId, terminalId, isResolvingTerminal, enforceBoundary, user?.name, user?.todaPlate, refresh, outsideQueueStorageKey]);
+  }, [driverId, terminalId, isResolvingTerminal, enforceBoundary, queueJoiningEnabled, user?.name, user?.todaPlate, refresh, outsideQueueStorageKey]);
 
   const leave = useCallback(async () => {
     if (!driverId || !terminalId) return { error: null };

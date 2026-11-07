@@ -47,7 +47,7 @@ import CustomerHubHeader from "./CustomerHubHeader";
 import RecommendedRestaurants from "./RecommendedRestaurants";
 import CustomerServiceHub from "./CustomerServiceHub";
 import CustomerCartPreview from "./CustomerCartPreview";
-import { useDevModeOverride } from "../../hooks/useDevModeSettings";
+import { useDevModeOnlyFeature, useDevModeOverride } from "../../hooks/useDevModeSettings";
 import { getProfileInitials } from "@/lib/profileInitials";
 import {
   getShortestAvoidHighwaysRoadRoute,
@@ -403,6 +403,7 @@ export default function CustomerHome() {
   const activeShareLobbyStorageKey = user?.id ? customerActiveShareLobbyStorageKey(user.id) : null;
   const rideStateIdentity = user?.id ? `${user.id}:${user.role}` : null;
   const [enforceBoundary] = useDevModeOverride("enforceBoundary");
+  const customerRideBookingEnabled = useDevModeOnlyFeature("customerRideBooking");
   const navigate = useNavigate();
   const location = useLocation();
   const currentPath = location.pathname.replace(/\/+$/, '');
@@ -2884,6 +2885,8 @@ export default function CustomerHome() {
    * route alone, in `findDeliveryTerminalForOrder`.
    */
   const checkRideGates = async (): Promise<boolean> => {
+    if (!customerRideBookingEnabled) return false;
+
     const selectedTerminalRoad = selectedTerminalBoundary.displayRoad;
     if (!selectedTerminalBoundary.terminal || (
       enforceBoundary && selectedVehicle !== 'special' && !selectedTerminalRoad?.length
@@ -3007,6 +3010,12 @@ export default function CustomerHome() {
   // Keep the home hub underneath lobby creation so its translucent loader has
   // the actual customer home screen to reveal.
   const showCustomerHomeHub = !isBookingPage && !isActivePrivateRidePage && bookingStep === 'home' && (showBookingFlow || cameFromCustomerHomeTab || showShareLobby);
+
+  useEffect(() => {
+    if (isBookingPage && !customerRideBookingEnabled) {
+      navigate('/customer', { replace: true, state: { customerHomeTab: true } });
+    }
+  }, [isBookingPage, customerRideBookingEnabled, navigate]);
 
   // A direct visit to the private ride route resumes a stored private ride or
   // its authoritative database request. Send stale/invalid links back to booking.
@@ -3141,6 +3150,7 @@ export default function CustomerHome() {
   }, [passengerCount, terminalSeatLimit]);
 
   const handleBookRide = async () => {
+    if (!customerRideBookingEnabled) return;
     if (!selectedVehicle) return;
 
     /*
@@ -3227,6 +3237,11 @@ export default function CustomerHome() {
   };
 
   const handleConfirmBooking = async () => {
+    if (!customerRideBookingEnabled) {
+      setShowBookingConfirm(false);
+      setShowPassengerCount(false);
+      return;
+    }
     setShowBookingConfirm(false);
     
     // For share rides, open the lobby system
@@ -4689,6 +4704,7 @@ const getPrice = () => {
                   fallbackOrigin: !isLoadingLocation && !locationProblem ? currentLocation : null,
                 } })}
                 rideDisabled={!showBookingFlow}
+                rideUnavailable={!customerRideBookingEnabled}
               />
               <CustomerCartPreview />
 
@@ -4700,7 +4716,7 @@ const getPrice = () => {
         )}
 
         {/* Booking flow â€” Steps 2 & 3: ride type first, then pickup and drop-off */}
-        {showBookingFlow && bookingStep !== 'home' && (
+        {customerRideBookingEnabled && showBookingFlow && bookingStep !== 'home' && (
           <>
             {!isRideOptionsBookingPage && (
               <div

@@ -1,7 +1,7 @@
 const DEV_MODE_KEY = "trikeserve_dev_mode";
 const DEV_MODE_CHANGE_EVENT = "trikeserve:dev-mode-change";
 
-export type DevModeFeature = "quickAccess" | "testDataTools" | "enforceBoundary" | "imageProofRequired" | "sameRouteLobbyFilter" | "allowTwoSessions";
+export type DevModeFeature = "quickAccess" | "testDataTools" | "enforceBoundary" | "imageProofRequired" | "sameRouteLobbyFilter" | "allowTwoSessions" | "customerRideBooking" | "driverQueueJoining";
 
 const FEATURE_KEYS: Record<DevModeFeature, string> = {
   quickAccess: "trikeserve_dev_quick_access",
@@ -10,7 +10,19 @@ const FEATURE_KEYS: Record<DevModeFeature, string> = {
   imageProofRequired: "trikeserve_dev_image_proof_required",
   sameRouteLobbyFilter: "trikeserve_dev_same_route_lobby_filter",
   allowTwoSessions: "trikeserve_dev_allow_two_sessions",
+  customerRideBooking: "trikeserve_dev_customer_ride_booking",
+  driverQueueJoining: "trikeserve_dev_driver_queue_joining",
 };
+
+const DISABLED_BY_DEFAULT_FEATURES = new Set<DevModeFeature>([
+  "allowTwoSessions",
+  "customerRideBooking",
+  "driverQueueJoining",
+]);
+
+function isFeatureEnabledByDefault(feature: DevModeFeature): boolean {
+  return !DISABLED_BY_DEFAULT_FEATURES.has(feature);
+}
 
 function notifyDevModeChange(): void {
   if (typeof window === "undefined") return;
@@ -29,12 +41,12 @@ export function subscribeToDevModeChanges(onChange: () => void): () => void {
 }
 
 export function isDevModeFeatureEnabled(feature: DevModeFeature): boolean {
-  if (typeof window === "undefined") return true;
+  if (typeof window === "undefined") return isFeatureEnabledByDefault(feature);
   try {
     const value = window.localStorage.getItem(FEATURE_KEYS[feature]);
-    return value === null ? feature !== "allowTwoSessions" : value === "true";
+    return value === null ? isFeatureEnabledByDefault(feature) : value === "true";
   } catch {
-    return feature !== "allowTwoSessions";
+    return isFeatureEnabledByDefault(feature);
   }
 }
 
