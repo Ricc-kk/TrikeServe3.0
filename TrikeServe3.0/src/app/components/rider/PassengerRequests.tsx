@@ -178,7 +178,7 @@ interface PassengerDropoffStop {
 export default function PassengerRequests() {
   const navigate = useNavigate();
   const { user } = useAuth();
-  const foodDeliveryEnabled = useDevModeOnlyFeature("foodDelivery");
+  const foodDeliveryEnabled = useDevModeOnlyFeature("driverFoodDelivery");
   const [selectedCategory, setSelectedCategory] = useState<'all' | 'shared' | 'private' | 'delivery'>('all');
   const [requests, setRequests] = useState<PassengerRequest[]>([]);
   const [currentLocation, setCurrentLocation] = useState<{ lat: number; lng: number }>({ lat: 14.5995, lng: 120.9842 });

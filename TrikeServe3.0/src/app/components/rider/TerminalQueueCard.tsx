@@ -186,7 +186,7 @@ interface TerminalQueueCardProps {
  */
 export default function TerminalQueueCard({ queue, variant = "full", canJoin = true }: TerminalQueueCardProps) {
   const queueJoiningEnabled = useDevModeOnlyFeature("driverQueueJoining");
-  const foodDeliveryEnabled = useDevModeOnlyFeature("foodDelivery");
+  const foodDeliveryEnabled = useDevModeOnlyFeature("driverFoodDelivery");
   const {
     terminalId,
     terminalName,

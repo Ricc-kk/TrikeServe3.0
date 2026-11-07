@@ -12,7 +12,7 @@ import ActiveRideButton from "./ActiveRideButton";
 export default function AutoAccept() {
   const navigate = useNavigate();
   const { user } = useAuth();
-  const foodDeliveryEnabled = useDevModeOnlyFeature("foodDelivery");
+  const foodDeliveryEnabled = useDevModeOnlyFeature("driverFoodDelivery");
   const [autoAcceptEnabled, setAutoAcceptEnabledState] = useState<boolean>(() => isAutoAcceptEnabled(user?.id));
   const [soundNotificationEnabled, setSoundNotificationEnabled] = useState(true);
 

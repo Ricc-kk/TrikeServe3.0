@@ -1,7 +1,7 @@
 const DEV_MODE_KEY = "trikeserve_dev_mode";
 const DEV_MODE_CHANGE_EVENT = "trikeserve:dev-mode-change";
 
-export type DevModeFeature = "quickAccess" | "testDataTools" | "enforceBoundary" | "imageProofRequired" | "sameRouteLobbyFilter" | "allowTwoSessions" | "customerRideBooking" | "driverQueueJoining" | "foodDelivery";
+export type DevModeFeature = "quickAccess" | "testDataTools" | "enforceBoundary" | "imageProofRequired" | "sameRouteLobbyFilter" | "allowTwoSessions" | "customerRideBooking" | "driverQueueJoining" | "foodDelivery" | "driverFoodDelivery";
 
 const FEATURE_KEYS: Record<DevModeFeature, string> = {
   quickAccess: "trikeserve_dev_quick_access",
@@ -13,6 +13,7 @@ const FEATURE_KEYS: Record<DevModeFeature, string> = {
   customerRideBooking: "trikeserve_dev_customer_ride_booking",
   driverQueueJoining: "trikeserve_dev_driver_queue_joining",
   foodDelivery: "trikeserve_dev_food_delivery",
+  driverFoodDelivery: "trikeserve_dev_driver_food_delivery",
 };
 
 const DISABLED_BY_DEFAULT_FEATURES = new Set<DevModeFeature>([
@@ -20,6 +21,7 @@ const DISABLED_BY_DEFAULT_FEATURES = new Set<DevModeFeature>([
   "customerRideBooking",
   "driverQueueJoining",
   "foodDelivery",
+  "driverFoodDelivery",
 ]);
 
 function isFeatureEnabledByDefault(feature: DevModeFeature): boolean {

@@ -34,7 +34,7 @@ export function setAutoAcceptEnabled(userId: string, enabled: boolean) {
 export function useAutoAccept() {
   const navigate = useNavigate();
   const { user } = useAuth();
-  const foodDeliveryEnabled = useDevModeOnlyFeature("foodDelivery");
+  const foodDeliveryEnabled = useDevModeOnlyFeature("driverFoodDelivery");
   const acceptingRef = useRef(false);
 
   useEffect(() => {

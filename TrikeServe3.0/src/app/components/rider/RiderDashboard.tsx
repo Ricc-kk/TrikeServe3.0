@@ -65,7 +65,7 @@ const SERVICE_TYPE_LABELS = {
 export default function RiderDashboard() {
   const navigate = useNavigate();
   const { user, updateProfile } = useAuth();
-  const foodDeliveryEnabled = useDevModeOnlyFeature("foodDelivery");
+  const foodDeliveryEnabled = useDevModeOnlyFeature("driverFoodDelivery");
   const updateProfileRef = useRef(updateProfile);
   updateProfileRef.current = updateProfile;
   const dashboardRef = useRef<HTMLDivElement>(null);

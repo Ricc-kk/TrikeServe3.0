@@ -95,7 +95,8 @@ export default function DevModeSettings() {
   const [allowTwoSessions, setAllowTwoSessions] = useDevModeFeature("allowTwoSessions");
   const [customerRideBookingEnabled, setCustomerRideBookingEnabled] = useDevModeFeature("customerRideBooking");
   const [driverQueueJoiningEnabled, setDriverQueueJoiningEnabled] = useDevModeFeature("driverQueueJoining");
-  const [foodDeliveryEnabled, setFoodDeliveryEnabled] = useDevModeFeature("foodDelivery");
+  const [foodOrderingEnabled, setFoodOrderingEnabled] = useDevModeFeature("foodDelivery");
+  const [driverFoodDeliveryEnabled, setDriverFoodDeliveryEnabled] = useDevModeFeature("driverFoodDelivery");
   const [isOpen, setIsOpen] = useState(false);
   const [position, setPosition] = useState<FloatingPosition>(getInitialFloatingPosition);
   const panelRef = useRef<HTMLDivElement>(null);
@@ -283,29 +284,44 @@ export default function DevModeSettings() {
             <SettingRow
               id="dev-mode-customer-ride-booking"
               title="Customer ride booking"
-              description="Allow customers to book Share Ride and Private Ride while Dev Mode is on."
-              checked={customerRideBookingEnabled}
+              description={import.meta.env.DEV
+                ? "Allow customers to book Share Ride and Private Ride while Dev Mode is on."
+                : "Set VITE_ENABLE_WEB_RIDE_SERVICES=true to enable customer ride bookings."}
+              checked={import.meta.env.DEV && customerRideBookingEnabled}
               onCheckedChange={setCustomerRideBookingEnabled}
-              disabled={!isEnabled}
+              disabled={!isEnabled || !import.meta.env.DEV}
               icon={CarTaxiFront}
             />
             <SettingRow
               id="dev-mode-driver-queue-joining"
               title="Driver queue joining"
-              description="Allow drivers to join a terminal queue while Dev Mode is on."
-              checked={driverQueueJoiningEnabled}
+              description={import.meta.env.DEV
+                ? "Allow drivers to join a terminal queue while Dev Mode is on."
+                : "Set VITE_ENABLE_WEB_DRIVER_QUEUE_JOINING=true to enable website driver queue joining."}
+              checked={import.meta.env.DEV && driverQueueJoiningEnabled}
               onCheckedChange={setDriverQueueJoiningEnabled}
-              disabled={!isEnabled}
+              disabled={!isEnabled || !import.meta.env.DEV}
               icon={ListOrdered}
             />
             <SettingRow
               id="dev-mode-food-delivery"
-              title="Food delivery"
+              title="Customer food ordering"
               description={import.meta.env.DEV
-                ? "Allow customer orders and driver delivery requests while Dev Mode is on."
-                : "Set VITE_ENABLE_WEB_FOOD_DELIVERY=true to enable this on the website."}
-              checked={import.meta.env.DEV && foodDeliveryEnabled}
-              onCheckedChange={setFoodDeliveryEnabled}
+                ? "Allow customers to order food while Dev Mode is on."
+                : "Set VITE_ENABLE_WEB_FOOD_DELIVERY=true to enable customer food ordering on the website."}
+              checked={import.meta.env.DEV && foodOrderingEnabled}
+              onCheckedChange={setFoodOrderingEnabled}
+              disabled={!isEnabled || !import.meta.env.DEV}
+              icon={Package}
+            />
+            <SettingRow
+              id="dev-mode-driver-food-delivery"
+              title="Driver delivery requests"
+              description={import.meta.env.DEV
+                ? "Allow drivers to accept food delivery requests while Dev Mode is on."
+                : "Set VITE_ENABLE_WEB_DRIVER_FOOD_DELIVERY=true to enable driver delivery requests on the website."}
+              checked={import.meta.env.DEV && driverFoodDeliveryEnabled}
+              onCheckedChange={setDriverFoodDeliveryEnabled}
               disabled={!isEnabled || !import.meta.env.DEV}
               icon={Package}
             />

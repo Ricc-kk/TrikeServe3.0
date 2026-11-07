@@ -35,7 +35,7 @@ export default function ServiceTypes() {
   const navigate = useNavigate();
   const location = useLocation();
   const { user, updateProfile } = useAuth();
-  const foodDeliveryEnabled = useDevModeOnlyFeature("foodDelivery");
+  const foodDeliveryEnabled = useDevModeOnlyFeature("driverFoodDelivery");
   const returnTo = (location.state as { returnTo?: string } | null)?.returnTo || '/rider';
 
   // Rides can include Ride Share and/or Private Ride; Delivery is exclusive with a single option
