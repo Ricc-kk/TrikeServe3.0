@@ -2127,6 +2127,46 @@ export const supabaseHelpers = {
     return { data, error };
   },
 
+  async cancelPrivateRideRequest(rideId: string, reason?: string) {
+    const { data: authData, error: authError } = await supabase.auth.getUser();
+    if (authError) return { data: null, error: authError };
+    if (!authData.user) {
+      return {
+        data: null,
+        error: new Error('Sign in with your customer account to cancel this private ride.'),
+      };
+    }
+
+    const cancellationReason = reason?.trim() || null;
+    const { data, error } = await supabase
+      .from('ride_requests')
+      .update({
+        status: 'cancelled',
+        driver_status: 'cancelled',
+        driver_status_message: cancellationReason
+          ? `Customer cancelled the ride: ${cancellationReason}`
+          : 'Customer cancelled the ride request.',
+        cancel_reason: cancellationReason,
+        cancelled_by: 'customer',
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', rideId)
+      .eq('customer_id', authData.user.id)
+      .eq('ride_type', 'special')
+      .in('status', ['pending', 'accepted', 'in_progress'])
+      .select('id, status')
+      .maybeSingle();
+
+    if (error || data) return { data, error };
+
+    return {
+      data: null,
+      error: new Error(
+        'This private ride could not be cancelled. It may already be finished, or the private-ride cancellation RLS policy has not been applied.'
+      ),
+    };
+  },
+
   /**
    * Record a rider declining a ride request, with the reason they gave.
    *
@@ -2372,6 +2412,15 @@ export const supabaseHelpers = {
   },
 
   async createShareRideLobby(lobby: any) {
+    const { data: authData, error: authError } = await supabase.auth.getUser();
+    if (authError) return { data: null, error: authError };
+    if (!authData.user) {
+      return { data: null, error: new Error('Sign in with your customer account before creating a share ride.') };
+    }
+    if (String(lobby?.customer_id || '') !== authData.user.id) {
+      return { data: null, error: new Error('The lobby host must match the signed-in customer.') };
+    }
+
     const timestamp = new Date().toISOString();
     const lobbyData = {
       ...lobby,
@@ -2390,6 +2439,15 @@ export const supabaseHelpers = {
   },
 
   async joinShareRideLobby(lobbyId: string, passenger: any) {
+    const { data: authData, error: authError } = await supabase.auth.getUser();
+    if (authError) return { data: null, error: authError };
+    if (!authData.user) {
+      return { data: null, error: new Error('Sign in with your customer account before joining a share ride.') };
+    }
+    if (String(passenger?.id || '') !== authData.user.id) {
+      return { data: null, error: new Error('The passenger must match the signed-in customer.') };
+    }
+
     // First get the current lobby
     const { data: lobby, error: fetchError } = await supabase
       .from('shared_ride_lobbies')
@@ -2477,6 +2535,19 @@ export const supabaseHelpers = {
       return { data: null, error: new Error('No passengers were provided to move') };
     }
 
+    const { data: authData, error: authError } = await supabase.auth.getUser();
+    if (authError) return { data: null, error: authError };
+    if (!authData.user) {
+      return { data: null, error: new Error('Sign in with your customer account before joining a share ride.') };
+    }
+    const customerId = authData.user.id;
+    const isOwnPassenger = (passengerId: string) =>
+      passengerId === customerId || new RegExp(`^${customerId}_companion_[0-9]+$`).test(passengerId);
+    if (!groupPassengers.some((passenger) => String(passenger.id) === customerId) ||
+        groupPassengers.some((passenger) => !isOwnPassenger(String(passenger.id)))) {
+      return { data: null, error: new Error('The passenger group must belong to the signed-in customer.') };
+    }
+
     for (let attempt = 0; attempt < 4; attempt += 1) {
       const { data: lobby, error: fetchError } = await supabase
         .from('shared_ride_lobbies')
@@ -2535,6 +2606,15 @@ export const supabaseHelpers = {
      console.log(`🚪 LEAVE LOBBY: lobbyId=${lobbyId}, passengerId=${passengerId}`);
 
      try {
+       const { data: authData, error: authError } = await supabase.auth.getUser();
+       if (authError) return { data: null, error: authError };
+       if (!authData.user) {
+         return { data: null, error: new Error('Sign in with your customer account before leaving a share ride.') };
+       }
+       if (String(passengerId) !== authData.user.id) {
+         return { data: null, error: new Error('You can only leave a share ride with your own customer account.') };
+       }
+
        const parsePassengers = (value: unknown): any[] => {
          if (Array.isArray(value)) return value;
          if (typeof value === 'string') {

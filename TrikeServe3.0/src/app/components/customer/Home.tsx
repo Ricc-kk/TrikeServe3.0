@@ -3423,17 +3423,7 @@ export default function CustomerHome() {
         // Read the row first so a cancelled delivery can cancel its order too.
         const { data: rideRequest } = await supabaseHelpers.getRideRequest(storedRequestId);
 
-        const { error } = await supabaseHelpers.updateRideRequest(storedRequestId, {
-          status: 'cancelled',
-          driver_status: 'cancelled',
-          // Include the customer's reason so the rider can see why it was dropped.
-          driver_status_message: reason
-            ? `Customer cancelled the ride: ${reason}`
-            : 'Customer cancelled the ride request.',
-          cancel_reason: reason || null,
-          cancelled_by: 'customer',
-          updated_at: new Date().toISOString(),
-        });
+        const { error } = await supabaseHelpers.cancelPrivateRideRequest(storedRequestId, reason);
 
         if (error) {
           console.error('âŒ Failed to cancel ride request:', error);

@@ -61,11 +61,25 @@ CREATE INDEX idx_ride_requests_status ON ride_requests(status);
 -- Shared Ride Lobbies Table
 CREATE TABLE IF NOT EXISTS shared_ride_lobbies (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  customer_id UUID REFERENCES users(id) ON DELETE CASCADE,
   pickup_location VARCHAR(255) NOT NULL,
   dropoff_location VARCHAR(255) NOT NULL,
+  pickup_address VARCHAR(500),
+  dropoff_address VARCHAR(500),
+  pickup_lat DOUBLE PRECISION,
+  pickup_lng DOUBLE PRECISION,
+  dropoff_lat DOUBLE PRECISION,
+  dropoff_lng DOUBLE PRECISION,
+  terminal_id UUID,
   status VARCHAR(50) NOT NULL DEFAULT 'waiting' CHECK (status IN ('waiting', 'driver_found', 'in_progress', 'completed', 'cancelled')),
   passengers TEXT[] NOT NULL DEFAULT '{}',
+  passengers_json JSONB NOT NULL DEFAULT '[]'::jsonb,
+  max_seats INTEGER NOT NULL DEFAULT 3,
+  price_per_seat DECIMAL(10, 2) DEFAULT 15,
   driver_id UUID REFERENCES users(id) ON DELETE SET NULL,
+  driver_name VARCHAR(255),
+  driver_plate VARCHAR(50),
+  driver_rating VARCHAR(10),
   payment_method VARCHAR(50),
   driver_status VARCHAR(50),
   driver_status_message TEXT,
@@ -76,6 +90,7 @@ CREATE TABLE IF NOT EXISTS shared_ride_lobbies (
 
 CREATE INDEX idx_lobbies_status ON shared_ride_lobbies(status);
 CREATE INDEX idx_lobbies_driver ON shared_ride_lobbies(driver_id);
+CREATE INDEX idx_lobbies_customer ON shared_ride_lobbies(customer_id);
 
 -- Driver Ratings Table
 CREATE TABLE IF NOT EXISTS driver_ratings (
@@ -307,10 +322,121 @@ ALTER TABLE favorite_menu_items ENABLE ROW LEVEL SECURITY;
 ALTER TABLE user_addresses ENABLE ROW LEVEL SECURITY;
 ALTER TABLE restaurant_searches ENABLE ROW LEVEL SECURITY;
 
+-- Shared ride customers can browse waiting lobbies, create their own lobby,
+-- join by adding their passenger row, and leave lobbies they already joined.
+GRANT SELECT, INSERT, UPDATE ON public.shared_ride_lobbies TO authenticated;
+
+CREATE OR REPLACE FUNCTION public.lobby_json_contains_passenger(passenger_list JSONB, user_id UUID)
+RETURNS BOOLEAN
+LANGUAGE sql
+IMMUTABLE
+PARALLEL SAFE
+SET search_path = public
+AS $$
+  SELECT $2 IS NOT NULL AND EXISTS (
+    SELECT 1
+    FROM jsonb_array_elements(
+      CASE WHEN jsonb_typeof($1) = 'array' THEN $1 ELSE '[]'::jsonb END
+    ) AS passenger(value)
+    WHERE passenger.value->>'id' = $2::text
+       OR passenger.value->>'id' ~ ('^' || $2::text || '_companion_[0-9]+$')
+  );
+$$;
+REVOKE ALL ON FUNCTION public.lobby_json_contains_passenger(JSONB, UUID) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.lobby_json_contains_passenger(JSONB, UUID) TO authenticated;
+
+CREATE OR REPLACE FUNCTION public.is_lobby_passenger(lobby_id UUID, user_id UUID)
+RETURNS BOOLEAN
+LANGUAGE sql
+STABLE
+SECURITY DEFINER
+SET search_path = public
+AS $$
+  SELECT EXISTS (
+    SELECT 1
+    FROM public.shared_ride_lobbies AS lobby
+    WHERE lobby.id = $1
+      AND $2 IS NOT NULL
+      AND $2 = auth.uid()
+      AND public.lobby_json_contains_passenger(lobby.passengers_json, $2)
+  );
+$$;
+REVOKE ALL ON FUNCTION public.is_lobby_passenger(UUID, UUID) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.is_lobby_passenger(UUID, UUID) TO authenticated;
+
+CREATE OR REPLACE FUNCTION public.is_verified_lobby_rider(user_id UUID)
+RETURNS BOOLEAN
+LANGUAGE sql
+STABLE
+SECURITY DEFINER
+SET search_path = public
+AS $$
+  SELECT $1 IS NOT NULL
+     AND $1 = auth.uid()
+     AND EXISTS (
+       SELECT 1 FROM public.users AS rider
+       WHERE rider.id = $1
+         AND rider.role = 'rider'
+         AND rider.is_verified IS TRUE
+     );
+$$;
+REVOKE ALL ON FUNCTION public.is_verified_lobby_rider(UUID) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.is_verified_lobby_rider(UUID) TO authenticated;
+
+DROP POLICY IF EXISTS "Customers can view waiting lobbies" ON public.shared_ride_lobbies;
+CREATE POLICY "Customers can view waiting lobbies" ON public.shared_ride_lobbies
+  FOR SELECT TO authenticated USING (status = 'waiting');
+DROP POLICY IF EXISTS "Customers can view own lobbies" ON public.shared_ride_lobbies;
+CREATE POLICY "Customers can view own lobbies" ON public.shared_ride_lobbies
+  FOR SELECT TO authenticated USING (auth.uid() = customer_id);
+DROP POLICY IF EXISTS "Customers can view joined lobbies" ON public.shared_ride_lobbies;
+CREATE POLICY "Customers can view joined lobbies" ON public.shared_ride_lobbies
+  FOR SELECT TO authenticated USING (public.is_lobby_passenger(id, auth.uid()));
+DROP POLICY IF EXISTS "Drivers can view assigned lobbies" ON public.shared_ride_lobbies;
+CREATE POLICY "Drivers can view assigned lobbies" ON public.shared_ride_lobbies
+  FOR SELECT TO authenticated USING (auth.uid() = driver_id);
+
+DROP POLICY IF EXISTS "Customers can create lobbies" ON public.shared_ride_lobbies;
+CREATE POLICY "Customers can create lobbies" ON public.shared_ride_lobbies
+  FOR INSERT TO authenticated WITH CHECK (auth.uid() = customer_id);
+DROP POLICY IF EXISTS "Customers can update own lobbies" ON public.shared_ride_lobbies;
+CREATE POLICY "Customers can update own lobbies" ON public.shared_ride_lobbies
+  FOR UPDATE TO authenticated
+  USING (
+    auth.uid() = customer_id
+    OR public.is_lobby_passenger(id, auth.uid())
+  )
+  WITH CHECK (auth.uid() IS NOT NULL);
+DROP POLICY IF EXISTS "Any user can update waiting lobbies" ON public.shared_ride_lobbies;
+CREATE POLICY "Any user can update waiting lobbies" ON public.shared_ride_lobbies
+  FOR UPDATE TO authenticated
+  USING (status = 'waiting' AND driver_id IS NULL AND auth.uid() IS NOT NULL)
+  WITH CHECK (
+    status = 'waiting'
+    AND driver_id IS NULL
+    AND public.lobby_json_contains_passenger(passengers_json, auth.uid())
+  );
+DROP POLICY IF EXISTS "Drivers can update assigned lobbies" ON public.shared_ride_lobbies;
+CREATE POLICY "Drivers can update assigned lobbies" ON public.shared_ride_lobbies
+  FOR UPDATE TO authenticated USING (auth.uid() = driver_id);
+DROP POLICY IF EXISTS "Verified riders can accept waiting lobbies" ON public.shared_ride_lobbies;
+CREATE POLICY "Verified riders can accept waiting lobbies" ON public.shared_ride_lobbies
+  FOR UPDATE TO authenticated
+  USING (
+    status = 'waiting'
+    AND driver_id IS NULL
+    AND public.is_verified_lobby_rider(auth.uid())
+  )
+  WITH CHECK (
+    status = 'driver_found'
+    AND driver_id = auth.uid()
+    AND public.is_verified_lobby_rider(auth.uid())
+  );
+
 -- Customers can book a private ride only for their authenticated account.
 -- The booking client uses INSERT ... RETURNING, so customers also need to
 -- select their own newly-created row.
-GRANT INSERT, SELECT ON public.ride_requests TO authenticated;
+GRANT INSERT, SELECT, UPDATE ON public.ride_requests TO authenticated;
 DROP POLICY IF EXISTS "Anyone can insert ride requests" ON public.ride_requests;
 DROP POLICY IF EXISTS "Users can insert their own ride requests" ON public.ride_requests;
 DROP POLICY IF EXISTS "Customers can create own private ride requests" ON public.ride_requests;
@@ -343,6 +469,20 @@ DROP POLICY IF EXISTS "Customers can view own ride requests" ON public.ride_requ
 CREATE POLICY "Customers can view own ride requests" ON public.ride_requests
   FOR SELECT TO authenticated
   USING (customer_id = auth.uid());
+
+DROP POLICY IF EXISTS "Customers can cancel own private ride requests" ON public.ride_requests;
+CREATE POLICY "Customers can cancel own private ride requests" ON public.ride_requests
+  FOR UPDATE TO authenticated
+  USING (
+    customer_id = auth.uid()
+    AND ride_type = 'special'
+    AND status IN ('pending', 'accepted', 'in_progress')
+  )
+  WITH CHECK (
+    customer_id = auth.uid()
+    AND ride_type = 'special'
+    AND status = 'cancelled'
+  );
 
 DROP POLICY IF EXISTS "Riders can view assigned ride requests" ON public.ride_requests;
 CREATE POLICY "Riders can view assigned ride requests" ON public.ride_requests

@@ -4,7 +4,7 @@
 
 ALTER TABLE public.ride_requests ENABLE ROW LEVEL SECURITY;
 
-GRANT INSERT, SELECT ON public.ride_requests TO authenticated;
+GRANT INSERT, SELECT, UPDATE ON public.ride_requests TO authenticated;
 
 -- Remove the known broad/legacy insert policies before installing the scoped
 -- policy. Other read/update policies are left intact for driver workflows.
@@ -48,6 +48,22 @@ DROP POLICY IF EXISTS "Customers can view own ride requests" ON public.ride_requ
 CREATE POLICY "Customers can view own ride requests" ON public.ride_requests
   FOR SELECT TO authenticated
   USING (customer_id = auth.uid());
+
+-- Customers may cancel their own active private ride. The row remains visible
+-- through the SELECT policy above so UPDATE ... RETURNING can return the result.
+DROP POLICY IF EXISTS "Customers can cancel own private ride requests" ON public.ride_requests;
+CREATE POLICY "Customers can cancel own private ride requests" ON public.ride_requests
+  FOR UPDATE TO authenticated
+  USING (
+    customer_id = auth.uid()
+    AND ride_type = 'special'
+    AND status IN ('pending', 'accepted', 'in_progress')
+  )
+  WITH CHECK (
+    customer_id = auth.uid()
+    AND ride_type = 'special'
+    AND status = 'cancelled'
+  );
 
 DROP POLICY IF EXISTS "Riders can view assigned ride requests" ON public.ride_requests;
 CREATE POLICY "Riders can view assigned ride requests" ON public.ride_requests
