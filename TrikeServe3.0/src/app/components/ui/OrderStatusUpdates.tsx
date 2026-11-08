@@ -1,9 +1,11 @@
-import { AlertCircle, BadgeCheck, CookingPot, Package, PackageCheck, Truck } from "lucide-react";
+import { AlertCircle, BadgeCheck, CookingPot, Navigation, Package, PackageCheck, Store, Truck } from "lucide-react";
 
 type OrderStatusUpdatesProps = {
   status?: string | null;
   driverStatus?: string | null;
   deliveryMode?: string | null;
+  /** Show the driver's assignment and restaurant arrival in the business view. */
+  showRestaurantArrival?: boolean;
   className?: string;
 };
 
@@ -11,11 +13,12 @@ function normalize(value?: string | null): string {
   return (value ?? "").trim().toLowerCase().replace(/_/g, "-");
 }
 
-/** The four order milestones shared by the customer, business, and driver views. */
+/** Shared order milestones, with optional restaurant-arrival detail for business. */
 export function OrderStatusUpdates({
   status: rawStatus,
   driverStatus: rawDriverStatus,
   deliveryMode: rawDeliveryMode,
+  showRestaurantArrival = false,
   className,
 }: OrderStatusUpdatesProps) {
   const status = normalize(rawStatus);
@@ -31,17 +34,42 @@ export function OrderStatusUpdates({
     );
   }
 
-  const steps = [
-    { label: "Accepted", Icon: BadgeCheck },
-    { label: "Preparing", Icon: CookingPot },
-    { label: isPickup ? "Ready for pickup" : "Out for delivery", Icon: isPickup ? Package : Truck },
-    { label: isPickup ? "Collected" : "Delivered", Icon: PackageCheck },
-  ];
+  const hasRestaurantArrivalSteps = !isPickup && showRestaurantArrival;
+  const steps = hasRestaurantArrivalSteps
+    ? [
+        { label: "Accepted", Icon: BadgeCheck },
+        { label: "Preparing", Icon: CookingPot },
+        { label: "To restaurant", Icon: Navigation },
+        { label: "At restaurant", Icon: Store },
+        { label: "Out for delivery", Icon: Truck },
+        { label: "Delivered", Icon: PackageCheck },
+      ]
+    : [
+        { label: "Accepted", Icon: BadgeCheck },
+        { label: "Preparing", Icon: CookingPot },
+        { label: isPickup ? "Ready for pickup" : "Out for delivery", Icon: isPickup ? Package : Truck },
+        { label: isPickup ? "Collected" : "Delivered", Icon: PackageCheck },
+      ];
 
   // An order still awaiting the business must not look accepted. The first
   // milestone becomes active when the business confirms payment/accepts it.
   let current = status && status !== "pending" ? 0 : -1;
-  if (status !== "pending") {
+  if (hasRestaurantArrivalSteps) {
+    const pickedUpStatuses = ["picked-up", "in-progress"];
+    const deliveredStatuses = ["delivered", "collected", "completed"];
+
+    if (deliveredStatuses.includes(status) || driverStatus === "completed") {
+      current = steps.length - 1;
+    } else if (pickedUpStatuses.includes(status) || pickedUpStatuses.includes(driverStatus)) {
+      current = 4;
+    } else if (["arrived", "at-restaurant"].includes(driverStatus)) {
+      current = 3;
+    } else if (["accepted", "on-the-way"].includes(driverStatus) || status === "on-the-way") {
+      current = 2;
+    } else if (["preparing", "ready"].includes(status)) {
+      current = 1;
+    }
+  } else if (status !== "pending") {
     if (["delivered", "collected", "completed"].includes(status) || driverStatus === "completed") {
       current = 3;
     } else if (
@@ -62,13 +90,13 @@ export function OrderStatusUpdates({
   }
 
   return (
-    <div className={`relative grid w-full grid-cols-4 ${className ?? ""}`} role="list" aria-label="Order progress">
+    <div className={`relative grid w-full ${hasRestaurantArrivalSteps ? "grid-cols-6" : "grid-cols-4"} ${className ?? ""}`} role="list" aria-label="Order progress">
       {steps.slice(0, -1).map((_, index) => (
         <span
           key={`connector-${index}`}
           aria-hidden="true"
           className={`absolute top-4 h-0.5 ${index < current ? "bg-[var(--success)]" : "bg-[var(--border)]"}`}
-          style={{ left: `${12.5 + index * 25}%`, width: "25%" }}
+          style={{ left: `${((index + 0.5) * 100) / steps.length}%`, width: `${100 / steps.length}%` }}
         />
       ))}
       {steps.map(({ label, Icon }, index) => {

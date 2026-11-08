@@ -445,7 +445,7 @@ export default function PassengerRequests() {
           if (packagePhotoColumnAvailableRef.current !== false) {
             const { data: profilesWithPhoto, error: profilePhotoError } = await supabase
               .from('orders')
-              .select('id, business_id, address, customer_name, restaurant_package_photo_url')
+              .select('id, business_id, address, customer_name, status, restaurant_package_photo_url')
               .in('id', orderIds);
             if (profilePhotoError) {
               // The package-photo column is added by ADD_RESTAURANT_PACKAGE_PHOTO.sql.
@@ -455,7 +455,7 @@ export default function PassengerRequests() {
               }
               const { data: legacyProfiles } = await supabase
                 .from('orders')
-                .select('id, business_id, address, customer_name')
+                .select('id, business_id, address, customer_name, status')
                 .in('id', orderIds);
               orderProfiles = legacyProfiles;
             } else {
@@ -466,7 +466,7 @@ export default function PassengerRequests() {
             // Avoid retrying a known-missing column on every request refresh.
             const { data: legacyProfiles } = await supabase
               .from('orders')
-              .select('id, business_id, address, customer_name')
+              .select('id, business_id, address, customer_name, status')
               .in('id', orderIds);
             orderProfiles = legacyProfiles;
           }
@@ -484,9 +484,18 @@ export default function PassengerRequests() {
         // Requests this rider already declined are hidden from them — they stay
         // available to every other rider, so the customer is unaffected.
         const visibleRideRequests = (rideRequests || []).filter((req: any) => {
+          const requestType = mapRideType(req.ride_type, req.pickup_location);
+          if (requestType === 'delivery') {
+            const requestOrderId = req.order_id || parseDeliveryTag(req.pickup_location).orderId;
+            const orderStatus = String(orderMap[requestOrderId]?.status || '').trim().toLowerCase().replace(/_/g, '-');
+            const driverStatus = String(req.driver_status || '').trim().toLowerCase().replace(/_/g, '-');
+            if (['delivered', 'completed', 'cancelled'].includes(orderStatus) || ['completed', 'cancelled'].includes(driverStatus)) {
+              return false;
+            }
+          }
           if (supabaseHelpers.isDeclinedByDriver(req, user?.id)) return false;
           const passengerCount = Math.max(1, Number(req.passenger_count) || 1);
-          return mapRideType(req.ride_type, req.pickup_location) !== 'private' || passengerCount <= 1;
+          return requestType !== 'private' || passengerCount <= 1;
         });
         const visibleLobbies = (waitingLobbies || []).filter(
           (lobby: any) => {

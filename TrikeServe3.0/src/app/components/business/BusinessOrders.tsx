@@ -376,7 +376,8 @@ export default function BusinessOrders() {
   const hasAssignedDriver = Boolean(selectedOrder?.driverId || selectedOrder?.driverName || driverLocation);
   const showActiveDeliveryMap = Boolean(
     selectedOrder?.deliveryMode === 'delivery' &&
-    (selectedOrder.status === 'on-the-way' || (selectedOrder.status === 'confirmed' && hasAssignedDriver)),
+    ['preparing', 'ready', 'confirmed', 'on-the-way'].includes(selectedOrder.status) &&
+    hasAssignedDriver,
   );
 
   useEffect(() => {
@@ -436,7 +437,11 @@ export default function BusinessOrders() {
       setEtaToActiveStop(null);
     }
 
-    const hasRider = !!selectedOrder && ['confirmed', 'on-the-way', 'delivered'].includes(selectedOrder.status);
+    const hasRider = Boolean(
+      selectedOrder?.deliveryMode === 'delivery' &&
+      ['preparing', 'ready', 'confirmed', 'on-the-way', 'delivered'].includes(selectedOrder.status) &&
+      (selectedOrder.driverRequested || selectedOrder.driverId || selectedOrder.driverName || ['on-the-way', 'delivered'].includes(selectedOrder.status)),
+    );
 
     if (!hasRider) {
       if (trackingPollRef.current) clearInterval(trackingPollRef.current);
@@ -528,12 +533,17 @@ export default function BusinessOrders() {
     pollDriver();
     trackingPollRef.current = setInterval(pollDriver, 3000);
     return () => { if (trackingPollRef.current) clearInterval(trackingPollRef.current); };
-  }, [selectedOrder?.id, selectedOrder?.status]);
+  }, [selectedOrder?.id, selectedOrder?.status, selectedOrder?.deliveryMode, selectedOrder?.driverRequested, selectedOrder?.driverId, selectedOrder?.driverName]);
 
   // Live tracking straight from the driver's active ride (the ride request for
   // this order), so the map and the phase move the moment the rider acts.
   useEffect(() => {
-    if (!selectedOrder || !['confirmed', 'on-the-way'].includes(selectedOrder.status)) return;
+    if (
+      !selectedOrder ||
+      selectedOrder.deliveryMode !== 'delivery' ||
+      !['preparing', 'ready', 'confirmed', 'on-the-way'].includes(selectedOrder.status) ||
+      !(selectedOrder.driverRequested || selectedOrder.driverId || selectedOrder.driverName || ['on-the-way'].includes(selectedOrder.status))
+    ) return;
     const unsubscribe = supabaseHelpers.subscribeToOrderDelivery(selectedOrder.id, (ride) => {
       if (ride.driver_lat && ride.driver_lng) {
         setDriverLocation({ lat: ride.driver_lat, lng: ride.driver_lng });
@@ -548,7 +558,7 @@ export default function BusinessOrders() {
       );
     });
     return unsubscribe;
-  }, [selectedOrder?.id, selectedOrder?.status]);
+  }, [selectedOrder?.id, selectedOrder?.status, selectedOrder?.deliveryMode, selectedOrder?.driverRequested, selectedOrder?.driverId, selectedOrder?.driverName]);
 
   // Some older orders only have a written restaurant address. Resolve it once
   // when the rider is on the pickup leg and the ride request has no pinned point.
@@ -1992,6 +2002,7 @@ export default function BusinessOrders() {
                     status={selectedOrder.status}
                     driverStatus={driverStatus ?? selectedOrder.driverStatus}
                     deliveryMode={selectedOrder.deliveryMode}
+                    showRestaurantArrival
                   />
                 </Card>
 
