@@ -149,9 +149,11 @@ export default function BusinessHome() {
     closeTime: '22:00',
     days: [0, 1, 2, 3, 4, 5, 6] as number[],
   });
+  const [hasSavedHours, setHasSavedHours] = useState(false);
   const [isSavingHours, setIsSavingHours] = useState(false);
   const [hoursSaved, setHoursSaved] = useState(false);
   const [hoursError, setHoursError] = useState<string | null>(null);
+  const [storeStatusError, setStoreStatusError] = useState<string | null>(null);
   /*
    * "Open now anyway", as the ISO timestamp it expires at.
    *
@@ -190,6 +192,9 @@ export default function BusinessHome() {
     const loadMenuItems = async () => {
       if (!user?.id || user?.role !== 'business') return;
 
+      setHasSavedHours(false);
+      setForceOpenUntil(null);
+
       try {
         // Get restaurant ID
         const { data: restaurant } = await supabase
@@ -212,7 +217,7 @@ export default function BusinessHome() {
 
         // Load the store status from database
         if (restaurant.is_open !== undefined) {
-          setIsStoreOpen(restaurant.is_open);
+          setIsStoreOpen(restaurant.is_open !== false);
         }
         // Trading hours used to be read here, off a select that no longer asks
         // for them -- the columns moved to their own query below. Left in, it was
@@ -230,13 +235,24 @@ export default function BusinessHome() {
          * someone runs it. A failure here costs the owner their schedule and
          * nothing else.
          */
-        supabase
-          .from('restaurants')
-          .select('open_time, close_time, open_days, force_open_until')
-          .eq('id', restaurant.id)
-          .maybeSingle()
-          .then(({ data: hoursRow }) => {
-            if (!hoursRow?.open_time || !hoursRow.close_time) return;
+        const [scheduleResult, overrideResult] = await Promise.allSettled([
+          supabase
+            .from('restaurants')
+            .select('open_time, close_time, open_days')
+            .eq('id', restaurant.id)
+            .maybeSingle(),
+          supabase
+            .from('restaurants')
+            .select('force_open_until')
+            .eq('id', restaurant.id)
+            .maybeSingle(),
+        ]);
+
+        if (scheduleResult.status === 'fulfilled' && !scheduleResult.value.error) {
+          const hoursRow = scheduleResult.value.data;
+          const hasSchedule = Boolean(hoursRow?.open_time && hoursRow?.close_time);
+          setHasSavedHours(hasSchedule);
+          if (hasSchedule && hoursRow) {
             // `open_days` comes back as strings because the column is TEXT[].
             // Normalised here so the day chips compare numbers to numbers; taken
             // raw, `.includes(day)` never matched and every chip looked unset.
@@ -246,12 +262,13 @@ export default function BusinessHome() {
               closeTime: hoursRow.close_time,
               days: days.length > 0 ? days : [0, 1, 2, 3, 4, 5, 6],
             });
-            setForceOpenUntil(hoursRow.force_open_until ?? null);
-          })
-          .catch(() => {
-            // Migration not applied yet. The editor keeps its defaults and says so
-            // when the owner tries to save.
-          });
+          }
+        }
+        if (overrideResult.status === 'fulfilled' && !overrideResult.value.error) {
+          // Read this independently: a shop can have an active late-opening
+          // deadline even when it has not saved a trading schedule yet.
+          setForceOpenUntil(overrideResult.value.data?.force_open_until ?? null);
+        }
 
         // Load the hero banner from the database if the business has uploaded one
         if (restaurant.banner_image) {
@@ -472,6 +489,7 @@ export default function BusinessHome() {
 
     const previousIsStoreOpen = isStoreOpen;
     const previousForceOpenUntil = forceOpenUntil;
+    setStoreStatusError(null);
     setIsStoreOpen(newStatus);
     if (!newStatus) setForceOpenUntil(null);
 
@@ -507,6 +525,7 @@ export default function BusinessHome() {
           console.error('Error creating restaurant:', error);
           setIsStoreOpen(previousIsStoreOpen);
           setForceOpenUntil(previousForceOpenUntil);
+          setStoreStatusError(error.message);
           return;
         }
       } else {
@@ -525,15 +544,20 @@ export default function BusinessHome() {
         };
         if (!newStatus) patch.force_open_until = null;
 
-        const { error } = await supabase
+        const { data: updatedRestaurant, error } = await supabase
           .from('restaurants')
           .update(patch)
-          .eq('id', restaurant.id);
+          .eq('id', restaurant.id)
+          .select('id')
+          .maybeSingle();
 
-        if (error) {
-          console.error('Error updating store status:', error);
+        if (error || !updatedRestaurant) {
+          console.error('Error updating store status:', error ?? 'No restaurant row was updated.');
           setIsStoreOpen(previousIsStoreOpen);
           setForceOpenUntil(previousForceOpenUntil);
+          setStoreStatusError(
+            error?.message ?? 'Your shop status was not saved. Check that this account can edit its shop.',
+          );
           return;
         }
       }
@@ -543,6 +567,7 @@ export default function BusinessHome() {
       console.error('Error toggling store status:', error);
       setIsStoreOpen(previousIsStoreOpen);
       setForceOpenUntil(previousForceOpenUntil);
+      setStoreStatusError(error instanceof Error ? error.message : 'Could not save the shop status.');
     }
   };
 
@@ -565,39 +590,47 @@ export default function BusinessHome() {
     setForceOpenUntil(next);
     setLateOpenError(null);
 
-    const { data: row, error: lookupError } = await supabase
-      .from('restaurants')
-      .select('id')
-      .eq('business_user_id', user.id)
-      .maybeSingle();
+    try {
+      const { data: row, error: lookupError } = await supabase
+        .from('restaurants')
+        .select('id')
+        .eq('business_user_id', user.id)
+        .maybeSingle();
 
-    if (lookupError) {
-      setForceOpenUntil(previous);
-      setLateOpenError(lookupError.message);
-      return;
-    }
-    if (!row) {
-      // No shop row yet. The Shop screen creates one on first use; nothing to
-      // override before then.
-      setForceOpenUntil(previous);
-      return;
-    }
+      if (lookupError || !row) {
+        setForceOpenUntil(previous);
+        setLateOpenError(lookupError?.message ?? 'No shop is linked to this business account.');
+        return;
+      }
 
-    const { error } = await supabase
-      .from('restaurants')
-      .update({ force_open_until: next, updated_at: new Date().toISOString() })
-      .eq('id', row.id);
+      const { data: savedRow, error } = await supabase
+        .from('restaurants')
+        .update({ force_open_until: next, updated_at: new Date().toISOString() })
+        .eq('id', row.id)
+        .select('id, force_open_until')
+        .maybeSingle();
 
-    if (error) {
-      // Most likely the migration has not been run: the column is not there to
-      // write to. Say so rather than reverting silently, because the switch
-      // would otherwise appear to do nothing at all.
+      const savedUntil = savedRow?.force_open_until ?? null;
+      const savedAsRequested = next === null
+        ? savedUntil === null
+        : Boolean(savedUntil && new Date(savedUntil).getTime() === new Date(next).getTime());
+
+      if (error || !savedRow || !savedAsRequested) {
+        // Supabase can return no error when RLS silently filters an UPDATE to
+        // zero rows. Verify the returned row so a temporary UI change is never
+        // mistaken for a saved late opening.
+        const missingColumn = error?.code === 'PGRST204' || /column .* does not exist/i.test(error?.message ?? '');
+        const saveError = error?.message ?? 'Your shop update was not saved. Check that this account can edit its shop.';
+        setForceOpenUntil(previous);
+        setLateOpenError(
+          missingColumn
+            ? 'Late opening needs a database update. Run ADD_SHOP_FORCE_OPEN.sql in Supabase.'
+            : saveError,
+        );
+      }
+    } catch (error) {
       setForceOpenUntil(previous);
-      setLateOpenError(
-        /column .* does not exist|PGRST204/i.test(error.message)
-          ? 'Late opening needs a database update. Run ADD_SHOP_FORCE_OPEN.sql in Supabase.'
-          : error.message,
-      );
+      setLateOpenError(error instanceof Error ? error.message : 'Could not save late opening.');
     }
   };
 
@@ -909,7 +942,7 @@ const saveHours = async (next: {
       return;
     }
 
-    const { error: updateError } = await supabase
+    const { data: savedSchedule, error: updateError } = await supabase
       .from('restaurants')
       .update({
         open_time: next.openTime,
@@ -920,21 +953,24 @@ const saveHours = async (next: {
         operating_hours: `${describeClock(next.openTime)} - ${describeClock(next.closeTime)}`,
         updated_at: new Date().toISOString(),
       })
-      .eq('id', restaurantId);
+      .eq('id', restaurantId)
+      .select('id')
+      .maybeSingle();
 
-    if (updateError) {
+    if (updateError || !savedSchedule) {
       // The most likely cause is the migration not having been run, in which
       // case the columns simply are not there to write to.
       const missingColumns =
-        updateError.code === 'PGRST204' || /column .* does not exist/i.test(updateError.message);
+        updateError?.code === 'PGRST204' || /column .* does not exist/i.test(updateError?.message ?? '');
       setHoursError(
         missingColumns
           ? 'Opening hours need a database update. Run ADD_SHOP_HOURS.sql in Supabase.'
-          : updateError.message,
+          : updateError?.message ?? 'Your opening hours were not saved. Check that this account can edit its shop.',
       );
       return;
     }
 
+    setHasSavedHours(true);
     setRestaurantData((prev) => ({
       ...prev,
       operatingHours: `${describeClock(next.openTime)} - ${describeClock(next.closeTime)}`,
@@ -978,18 +1014,15 @@ useEffect(() => {
   return () => clearInterval(tick);
 }, []);
 
-const hoursConfigured = resolveHours({
-  open_time: hours.openTime,
-  close_time: hours.closeTime,
-  open_days: hours.days,
-}).configured;
+const hoursForStatus = hasSavedHours
+  ? { open_time: hours.openTime, close_time: hours.closeTime, open_days: hours.days }
+  : { open_time: null, close_time: null, open_days: null };
+const hoursConfigured = resolveHours(hoursForStatus).configured;
 
 const storeState = describeOpenState(
   {
     is_open: isStoreOpen,
-    open_time: hours.openTime,
-    close_time: hours.closeTime,
-    open_days: hours.days,
+    ...hoursForStatus,
     force_open_until: forceOpenUntil,
   },
   now,
@@ -1046,7 +1079,9 @@ const storeInfoSummary: Array<{
   {
     label: "Opening hours",
     Icon: Clock,
-    value: describeSchedule({ open_time: hours.openTime, close_time: hours.closeTime, open_days: hours.days }),
+    value: hoursConfigured
+      ? describeSchedule({ open_time: hours.openTime, close_time: hours.closeTime, open_days: hours.days })
+      : "No hours set",
     note: hoursConfigured ? "Closes itself outside these hours" : undefined,
   },
   {
@@ -1061,24 +1096,24 @@ const storeInfoSummary: Array<{
 ];
 
 /** Back to "always open", i.e. the shop's manual switch decides again. */
-const clearHours = () => {
-  setHours({ openTime: '08:00', closeTime: '22:00', days: [0, 1, 2, 3, 4, 5, 6] });
-
+const clearHours = async () => {
   if (!user?.id) return;
 
-  void supabase
+  const { data: clearedRow, error } = await supabase
     .from('restaurants')
     .update({ open_time: null, close_time: null, open_days: [] })
     .eq('business_user_id', user.id)
-    .then(({ error }) => {
-      if (error) {
-        setHoursError(
-          /column .* does not exist|PGRST204/i.test(error.message)
-            ? 'Opening hours need a database update. Run ADD_SHOP_HOURS.sql in Supabase.'
-            : error.message,
-        );
-      }
-    });
+    .select('id')
+    .maybeSingle();
+
+  if (error || !clearedRow) {
+    setHoursError(error?.message ?? 'Your opening hours were not cleared. Check that this account can edit its shop.');
+    return;
+  }
+
+  setHours({ openTime: '08:00', closeTime: '22:00', days: [0, 1, 2, 3, 4, 5, 6] });
+  setHasSavedHours(false);
+  setHoursError(null);
 };
 
 // Save the shop details.
@@ -1439,11 +1474,22 @@ const clearHours = () => {
                     <>Customers see your shop closed until your hours start again.</>
                   ) : (
                     <>
-                      You switched the shop off. Turning it back on here will not open it outside your
-                      trading hours.
+                      You switched the shop off.{" "}
+                      {hoursConfigured
+                        ? 'Turning it back on here will not open it outside your trading hours.'
+                        : 'Turn it back on here to accept orders.'}
                     </>
                   )}
                 </p>
+
+                {storeStatusError && (
+                  <p
+                    role="alert"
+                    className="mt-2 rounded-xl bg-[var(--error-soft)] px-3 py-2 text-xs text-[var(--error)]"
+                  >
+                    {storeStatusError}
+                  </p>
+                )}
 
                 {/*
                   Still trading after hours.
@@ -1454,7 +1500,7 @@ const clearHours = () => {
                   So this opens the shop for tonight only and leaves the hours
                   exactly as they are.
                 */}
-                {hoursConfigured && (closedByHours || forcedOpen) && (
+                {(forcedOpen || (hoursConfigured && closedByHours)) && (
                   <div className="mt-3 rounded-xl border border-line bg-[var(--muted)] p-3">
                     <p className="text-sm font-semibold text-[var(--ink)]">
                       {forcedOpen ? "Open late" : "Still trading?"}
