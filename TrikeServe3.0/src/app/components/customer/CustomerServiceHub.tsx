@@ -1,7 +1,7 @@
 import { UtensilsCrossed } from "lucide-react";
 
 import { TerminalIconGlyph } from "../ui/TerminalIcon";
-import { useCartOptional } from "../../contexts/CartContext";
+import { useCartOptional } from "@/app/contexts/CartContext";
 
 type CustomerServiceHubProps = {
   /** Enters the existing booking flow at its first step. */

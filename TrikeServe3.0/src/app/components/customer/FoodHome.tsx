@@ -17,7 +17,7 @@ import BottomNav from "../ui/BottomNav";
 import { ImageWithFallback } from "../figma/ImageWithFallback";
 
 
-import { useCart } from "../../contexts/CartContext";
+import { useCart } from "@/app/contexts/CartContext";
 import { useFavorites } from "../../contexts/FavoritesContext";
 import { useAuth } from "../../contexts/AuthContext";
 import { useDeliveryAddress } from "../../contexts/useDeliveryAddress";

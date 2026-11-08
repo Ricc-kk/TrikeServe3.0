@@ -7,7 +7,7 @@ import { TerminalIconGlyph } from "./app/components/ui/TerminalIcon";
 
 import "./styles/index.css";
 import { AuthProvider } from "./app/contexts/AuthContext";
-import { CartProvider } from "./app/contexts/CartContext";
+import { CartProvider } from "@/app/contexts/CartContext";
 import AppShell from "./app/components/ui/AppShell";
 import AppHeader from "./app/components/ui/AppHeader";
 import BottomNav from "./app/components/ui/BottomNav";

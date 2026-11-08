@@ -18,7 +18,7 @@ import {
 } from "lucide-react";
 
 import { TerminalIconGlyph } from "./TerminalIcon";
-import { useCartOptional } from "../../contexts/CartContext";
+import { useCartOptional } from "@/app/contexts/CartContext";
 
 type BottomNavVariant = "customer" | "rider" | "business" | "admin";
 

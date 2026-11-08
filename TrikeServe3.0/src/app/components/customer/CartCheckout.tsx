@@ -14,7 +14,7 @@ import { Card } from "../ui/card";
 import { Button } from "../ui/button";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { ImageWithFallback } from "../figma/ImageWithFallback";
-import { useCart, cartLineKey, cartItemTotal } from "../../contexts/CartContext";
+import { useCart, cartLineKey, cartItemTotal } from "@/app/contexts/CartContext";
 import { useOrders } from "../../contexts/OrderContext";
 import { useAuth } from "../../contexts/AuthContext";
 import { usePreviousPage } from "../../hooks/usePreviousPage";

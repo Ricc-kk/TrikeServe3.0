@@ -19,13 +19,10 @@ export default defineConfig({
       //
       // Deliberately the root-relative URL path, not an absolute filesystem
       // path. With `path.resolve(__dirname, './src')` on Windows, `@/lib/foo`
-      // resolved to `C:\...\src\lib\foo` while the same file reached by a
-      // relative import resolved to `C:/...\src/lib/foo`. Vite treated those as
-      // two different module ids and served the first as `/@fs/C:/...`, so the
-      // app ended up with two copies of AuthContext -- and `useAuth` then
-      // reported "must be used within an AuthProvider" because the context the
-      // provider created was not the one the hook read. "/src" resolves to the
-      // same id as a relative import, so one file is one module.
+      // could resolve to a different module id than a relative import and be
+      // served through `/@fs/C:/...`. For shared contexts, providers and hooks
+      // should consistently import through this alias so they share one
+      // context instance.
       '@': '/src',
     },
   },

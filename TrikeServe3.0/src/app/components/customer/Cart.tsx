@@ -4,7 +4,7 @@ import { Button } from "../ui/button";
 import { Card } from "../ui/card";
 import { useEffect, useRef, useState } from "react";
 import { ImageWithFallback } from "../figma/ImageWithFallback";
-import { cartItemTotal, useCart, type CartRestaurant } from "../../contexts/CartContext";
+import { cartItemTotal, useCart, type CartRestaurant } from "@/app/contexts/CartContext";
 import BottomNav from "../ui/BottomNav";
 import { usePreviousPage } from "../../hooks/usePreviousPage";
 

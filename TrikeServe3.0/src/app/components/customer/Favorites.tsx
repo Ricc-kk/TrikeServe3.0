@@ -5,7 +5,7 @@ import { usePreviousPage } from "../../hooks/usePreviousPage";
 import { ImageWithFallback } from "../figma/ImageWithFallback";
 import BottomNav from "../ui/BottomNav";
 import { useFavorites } from "../../contexts/FavoritesContext";
-import { useCart } from "../../contexts/CartContext"
+import { useCart } from "@/app/contexts/CartContext";
 
 export default function Favorites() {
   // A bare navigate(-1) walks a cold deep link straight out of the app,

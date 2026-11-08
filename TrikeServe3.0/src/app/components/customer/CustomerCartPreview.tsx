@@ -1,7 +1,7 @@
 import { ArrowRight, ShoppingCart } from "lucide-react";
 import { Link } from "react-router";
 
-import { cartItemTotal, useCartOptional } from "../../contexts/CartContext";
+import { cartItemTotal, useCartOptional } from "@/app/contexts/CartContext";
 
 /** A compact reminder, without pushing the home feed behind a full cart list. */
 export default function CustomerCartPreview() {

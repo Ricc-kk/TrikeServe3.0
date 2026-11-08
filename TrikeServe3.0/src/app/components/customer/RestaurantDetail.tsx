@@ -9,7 +9,7 @@ import { Badge } from "../ui/badge";
 import BottomNav from "../ui/BottomNav";
 import { ImageWithFallback } from "../figma/ImageWithFallback";
 import StoreLogo from "../figma/StoreLogo";
-import { useCart } from "../../contexts/CartContext";
+import { useCart } from "@/app/contexts/CartContext";
 import { useFavorites } from "../../contexts/FavoritesContext";
 import { useNotification } from "../../contexts/NotificationContext";
 import CustomizationModal, { MenuItem as CustomizableMenuItem, CustomizationGroup } from "./CustomizationModal";
