@@ -6,9 +6,10 @@
  * home at 10pm, forgets to flip the switch, and the storefront keeps taking
  * orders all night.
  *
- * So the shop's real state is the switch AND its trading hours. A shop with no
- * hours configured has nothing to check and behaves exactly as it did before
- * this existed — the switch alone decides.
+ * So the shop normally follows its switch AND its trading hours. A live
+ * late-opening deadline explicitly overrides that schedule. A shop with no
+ * hours configured has nothing to check and behaves as before — the switch
+ * alone decides unless a late-opening deadline is active.
  *
  * All comparisons are in the shop's local time. "Open until 10pm" has to mean
  * 10pm where the shop is, not where the reader's browser happens to be, and a
@@ -209,21 +210,23 @@ export function isForcedOpen(
 }
 
 /**
- * The shop's real open state: their switch AND their hours.
+ * The shop's real open state: its switch and hours, unless a late-opening
+ * deadline explicitly keeps it open.
  *
  * This is the value the storefront should use. `is_open` alone lets a shop that
  * forgot to close keep selling; hours alone would ignore a shop that has closed
- * early for the day.
+ * early for the day. An active late-opening deadline overrides both.
  */
 export function isEffectivelyOpen(
   row: (ShopHours & { is_open?: boolean | null }) | null | undefined,
   now: Date = new Date(),
 ): boolean {
   if (!row) return false;
-  if (row.is_open === false) return false;
-  // An explicit "still open" beats the schedule. Checked after the manual switch
-  // so turning the shop off always closes it, override or not.
+  // A valid late-opening deadline is an explicit decision to trade, so it beats
+  // the schedule and a stale manual status. The owner's off action clears this
+  // field in the same database update.
   if (isForcedOpen(row, now)) return true;
+  if (row.is_open === false) return false;
   if (!resolveHours(row).configured) return row.is_open !== false;
   return isOpenAt(row, now);
 }
@@ -243,6 +246,18 @@ export function describeOpenState(
 
   const resolved = resolveHours(row);
 
+  if (isForcedOpen(row, now)) {
+    const until = new Date(row.force_open_until as string);
+    const clock = Number.isNaN(until.getTime())
+      ? 'later'
+      : until.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+    return {
+      open: true,
+      label: 'Open — late opening',
+      detail: `Trading outside your usual hours until ${clock}. Your schedule has not changed.`,
+    };
+  }
+
   if (!resolved.configured) {
     return row.is_open === false
       ? { open: false, label: 'Manually closed', detail: 'You have the shop switched off.' }
@@ -254,18 +269,6 @@ export function describeOpenState(
       open: false,
       label: 'Manually closed',
       detail: 'Outside your hours, or you have the shop switched off.',
-    };
-  }
-
-  if (isForcedOpen(row, now)) {
-    const until = new Date(row.force_open_until as string);
-    const clock = Number.isNaN(until.getTime())
-      ? 'later'
-      : until.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
-    return {
-      open: true,
-      label: 'Open — late opening',
-      detail: `Trading outside your usual hours until ${clock}. Your schedule has not changed.`,
     };
   }
 

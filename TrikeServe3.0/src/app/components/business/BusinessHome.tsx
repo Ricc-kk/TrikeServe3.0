@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo, useRef } from "react";
-import { Store, Package, BarChart3, User, Plus, X, Image, Clock, Star, MapPin, BadgeCheck, Eye, EyeOff, Upload, ChevronRight, Settings, Camera, Check, Loader2, Mail, Phone, Truck, UtensilsCrossed, Wallet } from "lucide-react";
+import { Store, Package, BarChart3, User, Plus, X, Image, Clock, Star, MapPin, BadgeCheck, Eye, EyeOff, Upload, ChevronRight, Settings, Camera, Check, Loader2, Mail, Phone, UtensilsCrossed, Wallet } from "lucide-react";
 import { Link, useBlocker, useNavigate, useSearchParams } from "react-router";
 import { Card } from "../ui/card";
 import { Badge } from "../ui/badge";
@@ -72,7 +72,6 @@ export default function BusinessHome() {
   const bannerInputRef = useRef<HTMLInputElement | null>(null);
   const [isLogoUploading, setIsLogoUploading] = useState(false);
   const logoInputRef = useRef<HTMLInputElement | null>(null);
-  const [adminDeliveryFee, setAdminDeliveryFee] = useState(35); // Admin-set delivery fee (view-only for the business)
   const [showConfirmSaveInfo, setShowConfirmSaveInfo] = useState(false);
   const [showSaveSuccess, setShowSaveSuccess] = useState(false);
   const [saveInfoError, setSaveInfoError] = useState<string | null>(null);
@@ -466,11 +465,6 @@ export default function BusinessHome() {
       }));
     }
   }, [user, shopSeeded]);
-
-  // Load the delivery fee set by the admin (view-only for the business)
-  useEffect(() => {
-    supabaseHelpers.getAdminDeliveryFee().then(setAdminDeliveryFee);
-  }, []);
 
   // Function to toggle store status and save to Supabase
   const toggleStoreStatus = async (newStatus: boolean) => {
@@ -1000,16 +994,15 @@ const storeState = describeOpenState(
  *
  * The switch is the owner's own decision — "I am open for business" — so it is
  * left exactly as they set it. What the screen shows is the *effective* state,
- * which is that switch AND the trading hours AND any "open now anyway", so the
- * toggle turns itself off at closing time and back on at opening without
- * anything being written.
+ * which follows the schedule unless a valid "open now anyway" deadline is
+ * active. Turning the shop off clears that deadline.
  *
  * Writing `is_open = false` at closing was the obvious alternative and it does
  * not work: something would then have to write it back to true at opening, and
  * that same rule would flip a deliberate "closed for a break" back on a minute
  * later. The two features cancel out, and the owner loses the only control they
- * have. So the hours decide what customers see, the override bends them for
- * tonight, and the switch stays theirs.
+ * have. The hours decide what customers see, the override bends them for
+ * tonight, and the owner's off action clears the override.
  */
 const forcedOpen = isForcedOpen({ force_open_until: forceOpenUntil }, now);
 const closedByHours = isStoreOpen && !forcedOpen && !storeState.open;
@@ -1037,7 +1030,6 @@ const storeInfoSummary: Array<{
   { label: "Email", Icon: Mail, value: user?.email || "Not set" },
   { label: "Phone", Icon: Phone, value: user?.phone || "Not set" },
   { label: "Delivery time", Icon: Clock, value: restaurantData.deliveryTime },
-  { label: "Delivery fee", Icon: Truck, value: `₱${adminDeliveryFee}`, tone: "text-[var(--primary)]" },
   {
     label: "What we serve",
     Icon: UtensilsCrossed,
@@ -1308,11 +1300,6 @@ const clearHours = () => {
                     <span className="text-xs">{restaurantData.address}</span>
                   </div>
                 </div>
-
-                <div className="flex items-center justify-between pt-3 border-t border-[var(--border)]">
-                  <span className="text-sm text-[var(--muted-foreground)]">Delivery Fee</span>
-                  <span className="text-xl font-bold text-[var(--primary)]">₱{adminDeliveryFee}</span>
-                </div>
               </Card>
 
               {/* Menu Preview */}
@@ -1396,7 +1383,7 @@ const clearHours = () => {
                     </p>
                   </div>
                   <button
-                    onClick={() => toggleStoreStatus(!isStoreOpen)}
+                    onClick={() => toggleStoreStatus(shownOpen ? false : !isStoreOpen)}
                     aria-pressed={isStoreOpen}
                     aria-label={
                       shownOpen
@@ -1694,41 +1681,19 @@ const clearHours = () => {
                             Set the estimated time customers see at checkout.
                           </p>
                         </div>
-                        <div className="grid gap-4 sm:grid-cols-2">
-                          <div>
-                            <label htmlFor="store-delivery-time" className={infoLabel}>
-                              <Clock className="size-4 text-[var(--primary)]" aria-hidden="true" />
-                              Delivery Time
-                            </label>
-                            <input
-                              id="store-delivery-time"
-                              type="text"
-                              value={restaurantData.deliveryTime}
-                              onChange={(e) => setRestaurantData({ ...restaurantData, deliveryTime: e.target.value })}
-                              className={infoField}
-                              placeholder="15-25 min"
-                            />
-                          </div>
-
-                          <div>
-                            <label htmlFor="store-delivery-fee" className={infoLabel}>
-                              <Truck className="size-4 text-[var(--primary)]" aria-hidden="true" />
-                              Delivery Fee
-                            </label>
-                            <div className="relative">
-                              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-[var(--muted-foreground)]">₱</span>
-                              <input
-                                id="store-delivery-fee"
-                                type="number"
-                                value={adminDeliveryFee}
-                                readOnly
-                                className={`${infoField} pl-7 bg-[var(--muted)] text-[var(--muted-foreground)]`}
-                              />
-                            </div>
-                            <p className="mt-1 text-xs text-[var(--muted-foreground)]">
-                              Set by the admin. Contact the admin to change it.
-                            </p>
-                          </div>
+                        <div className="max-w-sm">
+                          <label htmlFor="store-delivery-time" className={infoLabel}>
+                            <Clock className="size-4 text-[var(--primary)]" aria-hidden="true" />
+                            Delivery Time
+                          </label>
+                          <input
+                            id="store-delivery-time"
+                            type="text"
+                            value={restaurantData.deliveryTime}
+                            onChange={(e) => setRestaurantData({ ...restaurantData, deliveryTime: e.target.value })}
+                            className={infoField}
+                            placeholder="15-25 min"
+                          />
                         </div>
                       </section>
 
@@ -2016,9 +1981,9 @@ const clearHours = () => {
                     </dd>
                   </div>
                   <div className="flex items-center justify-between gap-3">
-                    <dt className="shrink-0 text-[var(--muted-foreground)]">Delivery</dt>
+                    <dt className="shrink-0 text-[var(--muted-foreground)]">Delivery time</dt>
                     <dd className="min-w-0 truncate text-right font-semibold text-[var(--ink)]">
-                      {restaurantData.deliveryTime || 'Not set'} · ₱{adminDeliveryFee}
+                      {restaurantData.deliveryTime || 'Not set'}
                     </dd>
                   </div>
                   <div className="flex items-center justify-between gap-3">
