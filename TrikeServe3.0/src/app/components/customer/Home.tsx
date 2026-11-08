@@ -674,9 +674,16 @@ export default function CustomerHome() {
   const [driverLiveStatus, setDriverLiveStatus] = useState<string>('');
    const [showValidationError, setShowValidationError] = useState(false);
    const [showSameLocationError, setShowSameLocationError] = useState(false);
-   // The customer is not standing inside any terminal's border area. The border
-   // is the "who we serve" gate -- it decides whether they may book at all.
-   const [showOutOfBoundaryError, setShowOutOfBoundaryError] = useState(false);
+   // A pickup outside every active route can still be booked after the customer
+   // agrees to send it to the nearest terminal and allow extra wait time.
+   const [outsideRouteBookingPrompt, setOutsideRouteBookingPrompt] = useState<{
+     terminalId: string;
+     terminalName: string;
+     routeId: string | null;
+     pickupKey: string;
+     reason: 'route' | 'terminal-boundary';
+   } | null>(null);
+   const acceptedOutsideRoutePickupRef = useRef<{ terminalId: string; pickupKey: string } | null>(null);
   // Shared ride drop-offs must be on their selected route. Private rides may
   // go beyond the route network; their pickup still has a terminal boundary.
   const [showOutsideRouteError, setShowOutsideRouteError] = useState(false);
@@ -1016,6 +1023,57 @@ export default function CustomerHome() {
       if (!enforceBoundary || selectedVehicle === 'special') return true;
       return Boolean(findSelectedDropoffRoute(point));
     }, [enforceBoundary, findSelectedDropoffRoute, selectedVehicle]);
+    const enabledMapTerminalRoutes = useMemo(
+      () => mapTerminalRoutes.filter(route => route.enabled && route.points.length >= 2),
+      [mapTerminalRoutes],
+    );
+    const pickupIsOnAnyTerminalRoute = useCallback((point: LatLngPoint) =>
+      enabledMapTerminalRoutes.some(route => isPointOnRoadCorridor(
+        point.lat,
+        point.lng,
+        route.points,
+        normalizeRoadWidth(route.bufferM),
+      )), [enabledMapTerminalRoutes]);
+    const nearestTerminalAssignmentForPickup = useCallback((
+      pickupPoint: LatLngPoint,
+      dropoffPoint: LatLngPoint,
+    ) => {
+      const candidates = terminals.filter(terminal =>
+        terminal.center_lat != null &&
+        terminal.center_lng != null &&
+        Number.isFinite(Number(terminal.center_lat)) &&
+        Number.isFinite(Number(terminal.center_lng))
+      );
+      if (candidates.length === 0) return null;
+
+      const routeMatchesDropoff = (route: typeof enabledMapTerminalRoutes[number]) => isPointOnRoadCorridor(
+        dropoffPoint.lat,
+        dropoffPoint.lng,
+        route.points,
+        normalizeRoadWidth(route.bufferM),
+      );
+      const rankedCandidates = candidates
+        .slice()
+        .sort((left, right) => {
+          const leftDistance = haversineDistanceMeters(pickupPoint, {
+            lat: Number(left.center_lat),
+            lng: Number(left.center_lng),
+          });
+          const rightDistance = haversineDistanceMeters(pickupPoint, {
+            lat: Number(right.center_lat),
+            lng: Number(right.center_lng),
+          });
+          return leftDistance - rightDistance;
+        });
+      const terminal = rankedCandidates[0];
+      const terminalRoutes = enabledMapTerminalRoutes.filter(route => route.terminalId === terminal.id);
+      const route = terminalRoutes.find(routeMatchesDropoff)
+        || terminalRoutes.find(item => item.isPrimary)
+        || terminalRoutes[0]
+        || null;
+
+      return { terminal, routeId: route?.id ?? null };
+    }, [enabledMapTerminalRoutes, terminals]);
 
   /*
    * The picker map draws the selected terminal's shapes in that terminal's own
@@ -2866,44 +2924,38 @@ export default function CustomerHome() {
   };
 
   /**
-   * The two gates a share/private ride has to clear before it can be booked.
+   * Pickup coverage and drop-off routing are checked separately.
    *
-   * They answer different questions and are checked separately:
+   * Pickups outside an active route or terminal service area can continue once
+   * the customer confirms the nearest terminal. Shared ride drop-offs must
+   * remain on the selected route; private ride destinations can go beyond it.
    *
-   *   1. The BORDER â€” the customer has to be standing inside a terminal's area.
-   *      This is "who does the terminal serve"; without it a customer standing
-   *      a kilometre away could book, because the road corridor is wide.
-   *   2. The ROUTE â€” the drop-off has to sit on a terminal's road corridor.
-   *      This is "where can a tricycle actually go".
-   *
-   * Shared rides use the route selected by the customer. Private ride
-   * destinations may be outside the highlighted routes; their pickups still
-   * have to be inside the selected terminal's service area.
-   *
-   * Food deliveries are deliberately NOT checked here. They are placed from the
-   * restaurant's own screen and never reach this function; they are gated by the
-   * route alone, in `findDeliveryTerminalForOrder`.
+   * Food deliveries use their separate route check in findDeliveryTerminalForOrder.
    */
+  const promptForNearestTerminal = (
+    pickupPoint: LatLngPoint,
+    dropoffPoint: LatLngPoint,
+    reason: 'route' | 'terminal-boundary' = 'route',
+  ) => {
+    const assignment = nearestTerminalAssignmentForPickup(pickupPoint, dropoffPoint);
+    if (!assignment) {
+      setTerminalPickerWarning('No active terminal location is available. Please choose a terminal to continue.');
+      setShowTerminalPicker(true);
+      return false;
+    }
+
+    setOutsideRouteBookingPrompt({
+      terminalId: assignment.terminal.id,
+      terminalName: assignment.terminal.name || 'nearest terminal',
+      routeId: assignment.routeId,
+      pickupKey: `${pickupPoint.lat.toFixed(6)},${pickupPoint.lng.toFixed(6)}`,
+      reason,
+    });
+    return true;
+  };
+
   const checkRideGates = async (): Promise<boolean> => {
     if (!customerRideBookingEnabled) return false;
-
-    const selectedTerminalRoad = selectedTerminalBoundary.displayRoad;
-    if (!selectedTerminalBoundary.terminal || (
-      enforceBoundary && selectedVehicle !== 'special' && !selectedTerminalRoad?.length
-    )) {
-      setTerminalPickerWarning(missingSelectedRouteMessage);
-      setShowTerminalPicker(true);
-      return false;
-    }
-
-    const privateTerminal = selectedVehicle === 'special'
-      ? selectedTerminalBoundary.terminal
-      : null;
-
-    if (selectedVehicle === 'special' && !privateTerminal) {
-      setShowTerminalPicker(true);
-      return false;
-    }
 
     // A booking only requires the location *text*. If it was typed rather than
     // dropped on the map, the coordinates come from a background geocode that
@@ -2930,32 +2982,64 @@ export default function CustomerHome() {
       return false;
     }
 
-    if (!enforceBoundary) return true;
-
-    const selectedTerminalArea = selectedTerminalBoundary.area;
-
-    // Gate 1: the customer must be at a terminal.
-    const border = privateTerminal
-      ? {
-          allowed: !selectedTerminalArea || isPointInPolygon(
-            pickup.lat,
-            pickup.lng,
-            selectedTerminalArea,
-          ),
-          checkedCount: selectedTerminalArea ? 1 : 0,
-          lookupFailed: false,
-        }
-      : await isPointWithinAnyTerminalBorder(pickup.lat, pickup.lng);
-    if (border.lookupFailed) {
-      setTerminalBoundaryCheckUnavailable(true);
+    const pickupKey = `${pickup.lat.toFixed(6)},${pickup.lng.toFixed(6)}`;
+    const acceptedOutsideRoutePickup =
+      acceptedOutsideRoutePickupRef.current?.pickupKey === pickupKey &&
+      acceptedOutsideRoutePickupRef.current?.terminalId === selectedTerminalId;
+    if (
+      !acceptedOutsideRoutePickup &&
+      !pickupIsOnAnyTerminalRoute(pickup)
+    ) {
+      promptForNearestTerminal(pickup, dropoff);
       return false;
     }
-    if (!border.allowed) {
-      console.log('ðŸš« Pickup outside every terminal border:', pickup, {
-        checkedCount: border.checkedCount,
-      });
-      setShowOutOfBoundaryError(true);
+
+    const selectedTerminalRoad = selectedTerminalBoundary.displayRoad;
+    if (!selectedTerminalBoundary.terminal || (
+      enforceBoundary && selectedVehicle !== 'special' && !selectedTerminalRoad?.length
+    )) {
+      setTerminalPickerWarning(missingSelectedRouteMessage);
+      setShowTerminalPicker(true);
       return false;
+    }
+
+    const privateTerminal = selectedVehicle === 'special'
+      ? selectedTerminalBoundary.terminal
+      : null;
+
+    if (selectedVehicle === 'special' && !privateTerminal) {
+      setShowTerminalPicker(true);
+      return false;
+    }
+
+    if (!enforceBoundary) return true;
+
+    if (!acceptedOutsideRoutePickup) {
+      const selectedTerminalArea = selectedTerminalBoundary.area;
+
+      // Gate 1: the customer must be at a terminal.
+      const border = privateTerminal
+        ? {
+            allowed: !selectedTerminalArea || isPointInPolygon(
+              pickup.lat,
+              pickup.lng,
+              selectedTerminalArea,
+            ),
+            checkedCount: selectedTerminalArea ? 1 : 0,
+            lookupFailed: false,
+          }
+        : await isPointWithinAnyTerminalBorder(pickup.lat, pickup.lng);
+      if (border.lookupFailed) {
+        setTerminalBoundaryCheckUnavailable(true);
+        return false;
+      }
+      if (!border.allowed) {
+        console.log('ðŸš« Pickup outside every terminal border:', pickup, {
+          checkedCount: border.checkedCount,
+        });
+        promptForNearestTerminal(pickup, dropoff, 'terminal-boundary');
+        return false;
+      }
     }
 
     // Shared ride drop-offs must stay on the selected route. Private rides can
@@ -3152,6 +3236,7 @@ export default function CustomerHome() {
   const handleBookRide = async () => {
     if (!customerRideBookingEnabled) return;
     if (!selectedVehicle) return;
+    acceptedOutsideRoutePickupRef.current = null;
 
     /*
      * Refuse a second ride while one is under way.
@@ -3174,13 +3259,6 @@ export default function CustomerHome() {
       } catch (error) {
         console.error('Error checking active ride before booking:', error);
       }
-    }
-
-    // Validate pickup terminal is selected (for private rides)
-    if (selectedVehicle === 'special' && !selectedTerminalId) {
-      alert('Please select a pickup terminal first.');
-      setShowTerminalPicker(true);
-      return;
     }
 
     // Validate pickup and dropoff locations
@@ -3247,6 +3325,7 @@ export default function CustomerHome() {
     // For share rides, open the lobby system
     if (selectedVehicle === 'share') {
       if (!(await checkRideGates())) return;
+      acceptedOutsideRoutePickupRef.current = null;
 
       setActiveShareLobbyId(null);
       setShareLobbyInitialId(undefined);
@@ -3279,6 +3358,7 @@ export default function CustomerHome() {
       });
     } else {
       if (!(await checkRideGates())) return;
+      acceptedOutsideRoutePickupRef.current = null;
 
       // For private rides, save to Supabase database
       setRideStatus('searching');
@@ -5006,28 +5086,52 @@ const getPrice = () => {
           </div>
         )}
 
-        {/* Not standing in a terminal. This is the BORDER gate: where the customer
-            is right now, not where they want to go. */}
-        {showOutOfBoundaryError && (
+        {/* Pickup outside the active route network: show the nearest terminal
+            assignment and let the customer decide whether to continue. */}
+        {outsideRouteBookingPrompt && (
           <div className="fixed inset-0 bg-black/50 z-[2200] flex items-center justify-center p-4">
             <Card className="bg-surface p-8 max-w-sm w-full text-center">
-              <div className="w-20 h-20 bg-[var(--error-soft)] rounded-full flex items-center justify-center mx-auto mb-4">
-                <span className="text-4xl">{"\u{1F4CD}"}</span>
+              <div className="w-20 h-20 bg-[var(--amber-soft)] rounded-full flex items-center justify-center mx-auto mb-4">
+                <RouteIcon className="size-9 text-[var(--amber-ink)]" aria-hidden="true" />
               </div>
-              <h3 className="text-xl font-bold text-[var(--error)] mb-2">
-                {selectedVehicle === 'special' ? 'Pickup outside terminal boundary' : "You're not at a terminal"}
+              <h3 className="text-xl font-bold text-[var(--amber-ink)] mb-2">
+                {outsideRouteBookingPrompt.reason === 'route'
+                  ? 'Pickup outside TODA routes'
+                  : 'Pickup outside terminal service area'}
               </h3>
               <p className="text-sm text-[var(--muted-foreground)] mb-6">
-                {selectedVehicle === 'special'
-                  ? `The pickup point must be inside ${selectedTerminalBoundary.terminal?.name || 'the selected terminal'}'s service area.`
-                  : "Rides can only be booked from inside a terminal. You're currently outside every terminal's service area, so please move to one of our terminals and try again."}
+                {outsideRouteBookingPrompt.reason === 'route'
+                  ? 'Your pickup is outside every active TODA route.'
+                  : 'Your pickup is outside every terminal service area.'}
+                {' '}We’ll send the request to the nearest terminal,
+                {' '}<strong>{outsideRouteBookingPrompt.terminalName}</strong>. A driver may take longer to reach you,
+                so it may take more time for your request to be accepted.
               </p>
 
               <Button
-                onClick={() => setShowOutOfBoundaryError(false)}
-                className="w-full bg-[var(--error)] hover:bg-[var(--error)] text-white py-3 font-bold"
+                onClick={() => {
+                  const prompt = outsideRouteBookingPrompt;
+                  if (!prompt) return;
+                  acceptedOutsideRoutePickupRef.current = {
+                    terminalId: prompt.terminalId,
+                    pickupKey: prompt.pickupKey,
+                  };
+                  setSelectedTerminalId(prompt.terminalId);
+                  setSelectedTerminalRouteId(prompt.routeId);
+                  setOutsideRouteBookingPrompt(null);
+                  // Reopen the final review with the nearest terminal's fare.
+                  setShowBookingConfirm(true);
+                }}
+                className="w-full bg-[var(--primary)] hover:bg-[var(--primary)] text-white py-3 font-bold"
               >
-                Understood
+                Continue with nearest terminal
+              </Button>
+              <Button
+                variant="outline"
+                onClick={() => setOutsideRouteBookingPrompt(null)}
+                className="w-full py-3 font-semibold"
+              >
+                Change pickup
               </Button>
             </Card>
           </div>
